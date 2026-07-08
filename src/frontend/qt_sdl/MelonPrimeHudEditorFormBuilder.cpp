@@ -1,6 +1,7 @@
 #include "MelonPrimeHudEditorFormBuilder.h"
 
 #include "Config.h"
+#include "MelonPrimeColorDialogPrefs.h"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 
@@ -239,6 +240,136 @@ QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *le);
     return le;
+}
+
+namespace {
+
+// Opens the color picker for the current keyR/keyG/keyB value, and on a
+// valid pick writes it back to config + refreshes the swatch button.
+// Shared by AddColorPickerRow / AddSubColorRow / AddColorOverlayRow, all of
+// which otherwise repeat this exact sequence.
+void PickAndApplyColor(QWidget& dialogParent, Config::Table& cfg, QPushButton& btn,
+                       const std::string& keyR, const std::string& keyG, const std::string& keyB)
+{
+    const QColor cur(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
+    const QColor picked = ColorDialogPrefs::getColor(&dialogParent, cur, UiText::Tr("Pick Color"));
+    if (!picked.isValid())
+        return;
+
+    cfg.SetInt(keyR, picked.red());
+    cfg.SetInt(keyG, picked.green());
+    cfg.SetInt(keyB, picked.blue());
+    UpdateColorButton(btn, picked.red(), picked.green(), picked.blue());
+    InvalidateHudConfigCache();
+}
+
+} // namespace
+
+QPushButton* AddColorPickerRow(WidgetFactoryContext& ctx,
+                               const QString& label,
+                               const char* keyR, const char* keyG, const char* keyB)
+{
+    auto* btn = new QPushButton(&ctx.parent);
+    UpdateColorButton(*btn, ctx.cfg.GetInt(keyR), ctx.cfg.GetInt(keyG), ctx.cfg.GetInt(keyB));
+
+    std::string kR(keyR), kG(keyG), kB(keyB);
+    QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
+        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+    });
+
+    AppendLabeledRow(ctx.form, ctx.rows, label, *btn);
+    return btn;
+}
+
+void AddSubColorRow(WidgetFactoryContext& ctx,
+                    const QString& label, const char* overallKey,
+                    const char* keyR, const char* keyG, const char* keyB)
+{
+    auto* container = new QWidget(&ctx.parent);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(2);
+
+    auto* combo = new QComboBox(container);
+    combo->addItem(UiText::Tr("Overall"));
+    combo->addItem(UiText::Tr("Custom"));
+    const bool isOverall = ctx.cfg.GetBool(overallKey);
+    combo->setCurrentIndex(isOverall ? 0 : 1);
+
+    auto* btn = new QPushButton(container);
+    UpdateColorButton(*btn, ctx.cfg.GetInt(keyR), ctx.cfg.GetInt(keyG), ctx.cfg.GetInt(keyB));
+    btn->setEnabled(!isOverall);
+
+    hlay->addWidget(combo, 1);
+    hlay->addWidget(btn, 0);
+
+    std::string kOver(overallKey), kR(keyR), kG(keyG), kB(keyB);
+    QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        &ctx.signalReceiver, [ctx, btn, kOver](int idx) {
+            if (ctx.populating) return;
+            ctx.cfg.SetBool(kOver, idx == 0);
+            btn->setEnabled(idx != 0);
+            InvalidateHudConfigCache();
+        });
+    QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
+        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+    });
+
+    ctx.form.addRow(UiText::Tr(label), container);
+    ctx.rows.append(container);
+}
+
+void AddColorOverlayRow(WidgetFactoryContext& ctx,
+                        const QString& label, const char* enableKey,
+                        const char* keyR, const char* keyG, const char* keyB)
+{
+    auto* container = new QWidget(&ctx.parent);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(4);
+
+    auto* rowLabel = new QLabel(UiText::Tr(label), container);
+    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    auto* on = new QRadioButton(QStringLiteral("ON"), container);
+    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setMinimumWidth(kRadioOnWidth);
+    off->setMinimumWidth(kRadioOffWidth);
+    on->setCursor(Qt::PointingHandCursor);
+    off->setCursor(Qt::PointingHandCursor);
+
+    const bool enabled = ctx.cfg.GetBool(enableKey);
+    on->setChecked(enabled);
+    off->setChecked(!enabled);
+
+    auto* btn = new QPushButton(container);
+    UpdateColorButton(*btn, ctx.cfg.GetInt(keyR), ctx.cfg.GetInt(keyG), ctx.cfg.GetInt(keyB));
+    btn->setEnabled(enabled);
+
+    hlay->addWidget(rowLabel, 1);
+    hlay->addWidget(on, 0);
+    hlay->addWidget(off, 0);
+    hlay->addWidget(btn, 1);
+
+    std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
+    QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
+        if (ctx.populating || !checked) return;
+        ctx.cfg.SetBool(kE, true);
+        btn->setEnabled(true);
+        InvalidateHudConfigCache();
+    });
+    QObject::connect(off, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
+        if (ctx.populating || !checked) return;
+        ctx.cfg.SetBool(kE, false);
+        btn->setEnabled(false);
+        InvalidateHudConfigCache();
+    });
+    QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
+        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+    });
+
+    ctx.form.addRow(container);
+    ctx.rows.append(container);
 }
 
 } // namespace MelonPrime::HudEditorForm
