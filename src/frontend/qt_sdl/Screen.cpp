@@ -297,16 +297,7 @@ void ScreenPanel::unclip() {
 
 void ScreenPanel::releaseCursorStateForClose()
 {
-    setClipWanted(false);
-#if defined(__APPLE__)
-    MelonPrime::MacSetAimCursorCaptured(false);
-#endif
-#if defined(__linux__)
-    resetAimMouseDelta();
-#endif
-#ifdef _WIN32
-    ClipCursor(nullptr);
-#endif
+    MelonPrime::ScreenCursorPolicy::ReleaseForClose(*this);
 }
 
 void ScreenPanel::beginClose()
