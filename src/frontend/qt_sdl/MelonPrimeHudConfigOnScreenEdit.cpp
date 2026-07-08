@@ -16,8 +16,6 @@
 namespace
 {
 constexpr int kPanelWidth = 300;
-constexpr int kRadioOnWidth = 48;
-constexpr int kRadioOffWidth = 58;
 constexpr int kSliderValueWidth = 38;
 } // namespace
 
@@ -110,92 +108,36 @@ void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 
 QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(6);
-
-    auto* rowLabel = new QLabel(MelonPrime::UiText::Tr(label), container);
-    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    auto* on = new QRadioButton(QStringLiteral("ON"), container);
-    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
-    on->setMinimumWidth(kRadioOnWidth);
-    off->setMinimumWidth(kRadioOffWidth);
-    on->setCursor(Qt::PointingHandCursor);
-    off->setCursor(Qt::PointingHandCursor);
-
-    const bool enabled = cfg().GetBool(key);
-    on->setChecked(enabled);
-    off->setChecked(!enabled);
-
-    std::string k(key);
-    connect(on, &QRadioButton::toggled, this, [this, k](bool checked) {
-        if (m_populating || !checked) return;
-        MelonPrime::HudEditorForm::SetBoolIfEditing(cfg(), m_populating, k, true);
-    });
-    connect(off, &QRadioButton::toggled, this, [this, k](bool checked) {
-        if (m_populating || !checked) return;
-        MelonPrime::HudEditorForm::SetBoolIfEditing(cfg(), m_populating, k, false);
-    });
-
-    hlay->addWidget(rowLabel, 1);
-    hlay->addWidget(on, 0);
-    hlay->addWidget(off, 0);
-
-    m_form->addRow(container);
-    m_rows.append(container);
-    return container;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddBoolRadioRow(ctx, label, key);
 }
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
 
 QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
-    auto* cb = new QComboBox(this);
-    cb->setMinimumWidth(78);
-    cb->addItems(MelonPrime::UiText::TrList(items));
-    cb->setCurrentIndex(cfg().GetInt(key));
-    std::string k(key);
-    connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, k](int idx) {
-        MelonPrime::HudEditorForm::SetIntIfEditing(cfg(), m_populating, k, idx);
-    });
-    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *cb);
-    return cb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddComboBoxRow(ctx, label, key, items);
 }
 
 // ─── Factory: SpinBox ───────────────────────────────────────────────────────
 
 QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
-    auto* sb = new QSpinBox(this);
-    sb->setMinimumWidth(64);
-    sb->setRange(min, max);
-    sb->setValue(cfg().GetInt(key));
-    std::string k(key);
-    connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, k](int v) {
-        MelonPrime::HudEditorForm::SetIntIfEditing(cfg(), m_populating, k, v);
-    });
-    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *sb);
-    return sb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddSpinBoxRow(ctx, label, key, min, max);
 }
 
 // ─── Factory: DoubleSpinBox ─────────────────────────────────────────────────
 
 QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
-    auto* sb = new QDoubleSpinBox(this);
-    sb->setMinimumWidth(64);
-    sb->setRange(min, max);
-    sb->setSingleStep(step);
-    sb->setDecimals(2);
-    sb->setValue(cfg().GetDouble(key));
-    std::string k(key);
-    connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, k](double v) {
-        MelonPrime::HudEditorForm::SetDoubleIfEditing(cfg(), m_populating, k, v);
-    });
-    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *sb);
-    return sb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddDoubleSpinBoxRow(ctx, label, key, min, max, step);
 }
 
 // ─── Factory: OpacitySlider ─────────────────────────────────────────────────
