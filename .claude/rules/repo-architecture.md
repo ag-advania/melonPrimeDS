@@ -130,7 +130,9 @@ Rules:
 3. macOS cursor recentering must remain `MacWarpCursorGlobal`; `QCursor::setPos`
    under `__APPLE__` is guarded by `.claude/skills/audit-platform-scatter-budget.ps1`.
 4. The platform scatter budget excludes `MelonPrimePlatformInput.h` as the
-   canonical dispatch owner and currently ratchets call-site scatter at 22.
+   canonical dispatch owner and `MelonPrimeLocalization/` as menu-language
+   locale integration. The ratchet counts input/runtime dispatch markers at
+   22 call sites.
 
 ## Config System
 Default values live in `src/frontend/qt_sdl/Config.cpp`.

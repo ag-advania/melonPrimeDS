@@ -40,9 +40,10 @@ Rules:
 - `.inc` fragments remain unity-build includes owned by their parent `.cpp` or
   `.inc`; do not add them directly to CMake.
 - The macOS/Linux platform-condition scatter budget is also a ratchet. It is
-  fixed at 22 call-site markers; future platform branching belongs in
-  `MelonPrimePlatformInput.h` unless a review explicitly accepts the new call
-  site.
+  fixed at 22 call-site markers for **input/runtime dispatch**; future platform
+  branching belongs in `MelonPrimePlatformInput.h` unless a review explicitly
+  accepts the new call site. `MelonPrimeLocalization/` is out of scope (locale
+  detection may use `__APPLE__` without consuming the input budget).
 
 ## HUD Golden Harness
 
