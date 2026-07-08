@@ -9,25 +9,11 @@ Base: `highres_fonts_v3`
 | PR | Title | Status | Commit |
 |---|---|---|---|
 | 1 | RuntimeConfigSnapshot | ✅ Pushed | `87ccca2d` |
-| 2 | SRP/Performance Audit | ✅ Local (push blocked*) | `6b0ffdfd` |
-| 3 | InputProjection header-only | ✅ Local | (see git log) |
-| 4 | ScreenCursorPolicy | ✅ Local | (see git log) |
-| 5 | HUD Editor FormBuilder Step 1 | ✅ Local | (see git log) |
-| 6 | PatchLifecycleGateway Step 1 | ✅ Local | (see git log) |
-
-\* PR2 includes `.github/workflows/*` edits. Cursor OAuth cannot push workflow files
-without `workflow` scope. Push locally from your terminal, then wire CI:
-
-```bash
-git push origin melonprime-srp-refactor-v3
-```
-
-Pending CI wiring (apply manually if not in pushed commit):
-
-```yaml
-# build-ubuntu.yml + build-windows.yml audit step
-./.claude/skills/audit-melonprime-srp-performance.ps1
-```
+| 2 | SRP/Performance Audit | ✅ Pushed | `6b0ffdfd` |
+| 3 | InputProjection header-only | ✅ Pushed | `babc9445` |
+| 4 | ScreenCursorPolicy | ✅ Pushed | `21085bab` |
+| 5 | HUD Editor FormBuilder Step 1 | ✅ Pushed | `f8c4cc53` |
+| 6 | PatchLifecycleGateway Step 1 | ✅ Pushed | `87a99f4b` |
 
 ## PR 1: RuntimeConfigSnapshot
 
