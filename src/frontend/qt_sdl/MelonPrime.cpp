@@ -355,11 +355,12 @@ namespace MelonPrime {
                 } else {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
                     if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
-                        melonDS::NDS* const nds = emuInstance->getNDS();
-                        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
-                        Patches_RestoreOnLeave(ctx);
-                        ARM9Hook_SetMatchHooksActive(
-                            nds, localCfg, m_currentRom.romGroupIndex, this, false, emuInstance);
+                        // PatchLifecycle Step 3 / Site A — see
+                        // melonprime_patch_lifecycle_gateway_step3_plan.md.
+                        // The RESTORED flag write stays here (frame-state
+                        // ownership), not in PatchLifecycle.
+                        PatchLifecycle::RestoreOnMatchEnd(
+                            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
                         m_flags.set(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                     }
                 }

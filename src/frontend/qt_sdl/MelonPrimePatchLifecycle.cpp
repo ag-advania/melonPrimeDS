@@ -75,4 +75,21 @@ void ApplyOutOfGameFrame(melonDS::NDS* nds,
     Patches_Apply(PatchSite_OutOfGameFrame, ctx);
 }
 
+void RestoreOnMatchEnd(melonDS::NDS* nds,
+                       EmuInstance* emu,
+                       Config::Table& cfg,
+                       const RomAddresses& rom,
+                       MelonPrimeCore* core)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_RestoreOnLeave(ctx);
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        false,
+        emu);
+}
+
 } // namespace MelonPrime::PatchLifecycle
