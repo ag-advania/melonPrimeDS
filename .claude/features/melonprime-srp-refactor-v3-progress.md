@@ -537,5 +537,24 @@ PatchLifecycleGateway Step 3 Site C (explicit non-goal)
 PatchLifecycleGateway Step 3 Site D bundling (see step3_plan.md "verify first" note)
 Aim config reload path unification outcomes B/C (see
   melonprime_aim_config_reload_paths_audit.md)
-ApplyAimAdjustSetting dead-code removal (flagged in Batch 4, not removed)
 ```
+
+## Post-Batch-6 Cleanup Response (Phases 1-6, 2026-07-08)
+
+Follow-up to an external push audit of the Batch 1-6 work. Six small,
+independently-verified items, each its own commit:
+
+| Phase | Item | Result | Commit |
+|---|---|---|---|
+| 1 | Remove dead `ApplyAimAdjustSetting` | Removed — zero call sites re-confirmed, build+audit green | `8e6206b6` |
+| 2 | Verify Site B `BIT_BATTLE_RUNTIME_MODE` ordering | Confirmed unchanged vs. `b8e819e4` via `git show` — false alarm, no code change needed | `fa8e5825` |
+| 3 | Completion summary self-containment | Batch 5 run IDs copied directly into the summary doc | `77d38f30` |
+| 4 | Gameplay smoke pass | Attempted via computer-use (reached Adventure Mode load); user opted to run this pass themselves instead | handoff, no commit |
+| 5 | PatchLifecycleGateway Site D investigation | Doc-only plan; recommends **not** bundling D with anything if ever extracted, and no extraction without an S6/S7 pass | `5db10aa8` |
+| 6 | Aim reload outcome C design note | Doc-only; all three tradeoff questions answered favorably, still not implemented | `e84c46fd` |
+
+`ApplyAimAdjustSetting` dead-code removal (previously listed above as
+deferred) is now done — see Phase 1.
+
+New docs added: `melonprime_patch_lifecycle_gateway_site_d_plan.md`,
+`melonprime_aim_reload_outcome_c_design_note.md`. Latest HEAD: `e84c46fd`.
