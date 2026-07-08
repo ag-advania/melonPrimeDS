@@ -69,8 +69,10 @@ QColorDialog::ColorDialogOptions colorDialogOptions()
 
 ColorSlotList readPersistedCustomColors()
 {
+    const int slotCount = customColorSlotCount();
+
     Config::Table cfg = Config::GetGlobalTable();
-    ColorSlotList palette(static_cast<size_t>(customColorSlotCount()));
+    ColorSlotList palette(static_cast<size_t>(slotCount));
 
     if (!cfg.HasKey(kCustomColorsArrayKey))
         return palette;
@@ -78,7 +80,7 @@ ColorSlotList readPersistedCustomColors()
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
     const int count = std::min<int>(
         static_cast<int>(colors.Size()),
-        customColorSlotCount());
+        slotCount);
 
     for (int i = 0; i < count; ++i)
         palette[static_cast<size_t>(i)] = normalizeHexRgbString(colors.GetString(i));
@@ -88,9 +90,10 @@ ColorSlotList readPersistedCustomColors()
 
 ColorSlotList captureCurrentCustomColors()
 {
-    ColorSlotList palette(static_cast<size_t>(customColorSlotCount()));
+    const int slotCount = customColorSlotCount();
+    ColorSlotList palette(static_cast<size_t>(slotCount));
 
-    for (int i = 0; i < customColorSlotCount(); ++i) {
+    for (int i = 0; i < slotCount; ++i) {
         const QColor color = QColorDialog::customColor(i);
         if (!color.isValid())
             continue;
@@ -103,9 +106,10 @@ ColorSlotList captureCurrentCustomColors()
 
 void applyCustomColorsToDialog(const ColorSlotList& palette)
 {
+    const int slotCount = customColorSlotCount();
     const int count = std::min<int>(
         static_cast<int>(palette.size()),
-        customColorSlotCount());
+        slotCount);
 
     for (int i = 0; i < count; ++i) {
         const std::string& value = palette[static_cast<size_t>(i)];
@@ -123,13 +127,15 @@ void loadPersistedCustomColors()
 
 void writePersistedCustomColors(const ColorSlotList& palette)
 {
+    const int slotCount = customColorSlotCount();
+
     Config::Table cfg = Config::GetGlobalTable();
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
     colors.Clear();
 
     const int count = std::min<int>(
         static_cast<int>(palette.size()),
-        customColorSlotCount());
+        slotCount);
 
     for (int i = 0; i < count; ++i) {
         const std::string& value = palette[static_cast<size_t>(i)];
