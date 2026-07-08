@@ -16,6 +16,8 @@
 namespace
 {
 constexpr int kPanelWidth = 300;
+constexpr int kRadioOnWidth = 48;
+constexpr int kRadioOffWidth = 58;
 constexpr int kSliderValueWidth = 38;
 } // namespace
 

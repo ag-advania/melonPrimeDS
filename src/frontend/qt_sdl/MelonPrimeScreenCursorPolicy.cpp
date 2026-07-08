@@ -73,66 +73,65 @@ namespace MelonPrime::ScreenCursorPolicy {
 
 void ContainAimCursorIfNeeded(ScreenPanel& panel)
 {
-    if (panel.closing || !qApp || qApp->closingDown())
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
-    if (auto* core = panel.melonPrimeCore(); !core || !core->isClipWanted)
+    if (!panel.getClipWantedForMelonPrime())
         return;
-    if (!panel.isVisible() || !panel.window() || !panel.window()->isActiveWindow())
+    if (!panel.isActiveVisibleWindowForMelonPrime())
         return;
 
 #if defined(__APPLE__)
-    const auto* core = panel.melonPrimeCore();
+    const auto* core = panel.melonPrimeCoreForPolicy();
     if (core && core->IsGcMouseAimActive())
         return;
 #endif
 
-    const QRect local = panel.aimContainmentLocalRect();
+    const QRect local = panel.aimContainmentLocalRectForPolicy();
     const QPoint globalTopLeft = panel.mapToGlobal(local.topLeft());
     const QRect globalRect(globalTopLeft, local.size());
     const QPoint global = QCursor::pos();
     if (globalRect.contains(global))
         return;
 
-    const QPoint center = panel.mapToGlobal(local.center());
+    const QPoint center = panel.aimContainmentCenterGlobalForPolicy();
     PlatformInput_WarpCursor(center.x(), center.y());
 }
 
 void ClipCenter1px(ScreenPanel& panel)
 {
-    if (panel.closing || !qApp || qApp->closingDown())
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
-    if (auto* core = panel.melonPrimeCore())
-        core->isClipWanted = true;
+    panel.setClipWantedForMelonPrime(true);
     panel.setCursor(Qt::BlankCursor);
 #if defined(__linux__)
     panel.resetAimMouseDelta();
 #endif
 
 #if defined(__APPLE__)
-    if (panel.isVisible() && panel.window() && panel.window()->isActiveWindow()) {
-        const auto* core = panel.melonPrimeCore();
-        const QPoint c = panel.mapToGlobal(panel.aimContainmentLocalRect().center());
+    if (panel.isActiveVisibleWindowForMelonPrime()) {
+        const auto* core = panel.melonPrimeCoreForPolicy();
+        const QPoint c = panel.aimContainmentCenterGlobalForPolicy();
         const bool gcMouseActive = core && core->IsGcMouseAimActive();
         PlatformInput_WarpCursor(c.x(), c.y());
         MacSetAimCursorCaptured(gcMouseActive);
     }
 #elif defined(__linux__)
-    if (panel.isVisible() && panel.window() && panel.window()->isActiveWindow()) {
-        const auto* core = panel.melonPrimeCore();
+    if (panel.isActiveVisibleWindowForMelonPrime()) {
+        const auto* core = panel.melonPrimeCoreForPolicy();
         if (!core || !core->IsPlatformRawAimActive()) {
             const QPoint c = panel.mapToGlobal(panel.rect().center());
             PlatformInput_WarpCursor(c.x(), c.y());
         }
     }
 #elif !defined(_WIN32)
-    if (panel.isVisible() && panel.window() && panel.window()->isActiveWindow()) {
+    if (panel.isActiveVisibleWindowForMelonPrime()) {
         const QPoint c = panel.mapToGlobal(panel.rect().center());
         PlatformInput_WarpCursor(c.x(), c.y());
     }
 #endif
 
 #ifdef _WIN32
-    if (!panel.isVisible() || !panel.window() || !panel.window()->isActiveWindow()) return;
+    if (!panel.isActiveVisibleWindowForMelonPrime()) return;
     const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
     RECT clip = computeCenter1pxClipRectSafe(hwnd);
     clip = shrinkRectHeightToHalfCentered(clip);
@@ -142,10 +141,9 @@ void ClipCenter1px(ScreenPanel& panel)
 
 void Unclip(ScreenPanel& panel)
 {
-    if (panel.closing || !qApp || qApp->closingDown())
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
-    if (auto* core = panel.melonPrimeCore())
-        core->isClipWanted = false;
+    panel.setClipWantedForMelonPrime(false);
 #if defined(__APPLE__)
     MacSetAimCursorCaptured(false);
 #endif
@@ -159,10 +157,10 @@ void Unclip(ScreenPanel& panel)
 
 void UpdateClipIfNeeded(ScreenPanel& panel)
 {
-    if (panel.closing || !qApp || qApp->closingDown())
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
 
-    auto* emu = panel.emuInstance;
+    auto* emu = panel.emuInstanceForPolicy();
     auto* thread = emu ? emu->getEmuThread() : nullptr;
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
@@ -172,7 +170,7 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
         return;
     }
 
-    if (auto* core = panel.melonPrimeCore(); core && core->isClipWanted) {
+    if (panel.getClipWantedForMelonPrime()) {
         ClipCenter1px(panel);
 #if defined(__APPLE__)
         ContainAimCursorIfNeeded(panel);
@@ -180,8 +178,8 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
         return;
     }
 
-    if (panel.shouldConfineCursorToBottomScreen()) {
-        panel.clipCursorToBottomScreen();
+    if (panel.shouldConfineCursorToBottomScreenForPolicy()) {
+        panel.clipCursorToBottomScreenForPolicy();
         return;
     }
 
