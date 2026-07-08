@@ -26,6 +26,19 @@ namespace MelonPrime::HudEditorForm {
 // Qt signal, so `WidgetFactoryContext` is safe to capture *by value* inside
 // a `connect(...)` lambda — capturing it by reference would dangle once the
 // caller's stack frame (where the context is normally constructed) returns.
+//
+// LIFETIME RULE — do not violate when adding members: every field must be a
+// reference (or a trivially-copyable primitive that is itself semantically
+// a reference, like `bool&`) to an object owned by the HUD editor widget
+// for its whole lifetime. Never add:
+//   - a value member that owns data (QString, std::string, std::vector, ...)
+//   - a reference/pointer to a temporary, a by-value function parameter, or
+//     any other object whose lifetime does not outlast the panel
+// A `WidgetFactoryContext` instance is expected to be captured by value into
+// long-lived `connect(...)` lambdas; anything that violates this turns every
+// such lambda into a dangling-reference bug the first time its signal fires
+// after the constructing stack frame returns (see the Phase 12 fix in
+// melonprime-srp-refactor-v3-progress.md for the bug this pattern replaced).
 struct WidgetFactoryContext {
     QWidget& parent;
     QFormLayout& form;
@@ -35,12 +48,16 @@ struct WidgetFactoryContext {
     QObject& signalReceiver;
 };
 
+// ─── Shared helpers ─────────────────────────────────────────────────────────
+
 void UpdateColorButton(QPushButton& button, int r, int g, int b);
 
 void InvalidateHudConfigCache();
 
 void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
                       const QString& label, QWidget& widget);
+
+// ─── Config write helpers (all no-op while `populating` is true) ───────────
 
 void SetBoolIfEditing(Config::Table& cfg, bool populating,
                       const std::string& key, bool value);
@@ -53,6 +70,8 @@ void SetDoubleIfEditing(Config::Table& cfg, bool populating,
 
 void SetStringIfEditing(Config::Table& cfg, bool populating,
                         const std::string& key, const std::string& value);
+
+// ─── Plain value-widget row factories ───────────────────────────────────────
 
 QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
                          const QString& label, const char* key);
@@ -75,6 +94,9 @@ QSlider* AddOpacitySliderRow(WidgetFactoryContext& ctx,
 QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
                           const QString& label, const char* key);
 
+// ─── Color row factories (all route through ColorDialogPrefs::getColor —
+// never call QColorDialog directly; enforced by audit-color-dialog-prefs.ps1) ─
+
 QPushButton* AddColorPickerRow(WidgetFactoryContext& ctx,
                                const QString& label,
                                const char* keyR, const char* keyG, const char* keyB);
@@ -86,6 +108,8 @@ void AddSubColorRow(WidgetFactoryContext& ctx,
 void AddColorOverlayRow(WidgetFactoryContext& ctx,
                         const QString& label, const char* enableKey,
                         const char* keyR, const char* keyG, const char* keyB);
+
+// ─── Context construction ───────────────────────────────────────────────────
 
 [[nodiscard]] WidgetFactoryContext MakeFactoryContext(
     QWidget& parent,
