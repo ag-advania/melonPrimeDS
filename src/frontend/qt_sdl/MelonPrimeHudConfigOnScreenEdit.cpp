@@ -1,12 +1,12 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudConfigOnScreenEdit.h"
+#include "MelonPrimeColorDialogPrefs.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 #include "EmuInstance.h"
 #include <QApplication>
-#include <QColorDialog>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -286,7 +286,10 @@ QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& labe
     std::string kR(keyR), kG(keyG), kB(keyB);
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
+        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
+            this,
+            cur,
+            MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
@@ -333,7 +336,10 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
+        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
+            this,
+            cur,
+            MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
@@ -395,7 +401,10 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
+        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
+            this,
+            cur,
+            MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());

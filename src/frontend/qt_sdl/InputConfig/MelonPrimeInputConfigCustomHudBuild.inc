@@ -529,7 +529,10 @@
 
             connect(swatch, &QPushButton::clicked, this, [this, sbR, sbG, sbB, updateSwatch]() {
                 QColor init(sbR->value(), sbG->value(), sbB->value());
-                QColor c = QColorDialog::getColor(init, this, MelonPrime::UiText::Tr("Pick Color"));
+                QColor c = MelonPrime::ColorDialogPrefs::getColor(
+                    this,
+                    init,
+                    MelonPrime::UiText::Tr("Pick Color"));
                 if (c.isValid()) {
                     sbR->setValue(c.red());
                     sbG->setValue(c.green());
