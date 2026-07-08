@@ -1,7 +1,7 @@
 # MelonPrime SRP v3 — Completion Summary
 
 Concise developer-facing summary of the whole SRP v3 effort (Immediate Plan
-→ Phase 7-16 continuation → Phase A-D → Batch 1-5). The full blow-by-blow
+→ Phase 7-16 continuation → Phase A-D → Batch 1-6). The full blow-by-blow
 history, commit hashes, and per-phase CI run IDs live in
 `melonprime-srp-refactor-v3-progress.md`; this document is the "read this
 first" overview.
@@ -92,10 +92,13 @@ a fresh full-matrix CI run per the accelerated plan's CI Strategy — local
 build + the relevant `audit-*.ps1` scripts were sufficient.
 
 **Latest verified HEAD as of this summary:** `59c229f9` closed out
-Batches 1-6. A short follow-up cleanup pass (dead-code removal, a
-historical ordering re-check, and this self-containment polish) landed on
-top of that at `fa8e5825` — see `melonprime-srp-refactor-v3-progress.md`
-for the exact commit list.
+Batches 1-6. A follow-up cleanup pass in response to an external push
+audit (dead-code removal, a historical ordering re-check that turned out
+to be a non-issue, this self-containment polish, and two doc-only
+investigation notes — PatchLifecycleGateway Site D, aim reload outcome C)
+landed on top of that, ending at `e233f7f6` — see
+`melonprime-srp-refactor-v3-progress.md`'s "Post-Batch-6 Cleanup Response"
+section for the exact commit list.
 
 ## Manual smoke coverage (what's verified vs. still open)
 
