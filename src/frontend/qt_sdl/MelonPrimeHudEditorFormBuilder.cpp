@@ -9,9 +9,12 @@
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QSlider>
 #include <QSpinBox>
+#include <QtGlobal>
 
 namespace MelonPrime::HudEditorForm {
 
@@ -20,6 +23,8 @@ namespace {
 constexpr int kColorButtonWidth = 74;
 constexpr int kRadioOnWidth = 48;
 constexpr int kRadioOffWidth = 58;
+constexpr int kSliderValueWidth = 38;
+constexpr int kLineEditMinWidth = 78;
 
 } // namespace
 
@@ -28,7 +33,7 @@ WidgetFactoryContext MakeFactoryContext(
     QFormLayout& form,
     QList<QWidget*>& rows,
     Config::Table& cfg,
-    bool populating,
+    bool& populating,
     QObject& signalReceiver)
 {
     return WidgetFactoryContext{ parent, form, rows, cfg, populating, signalReceiver };
@@ -117,12 +122,12 @@ QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
 
     std::string k(key);
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver,
-        [&ctx, k](bool checked) {
+        [ctx, k](bool checked) {
             if (ctx.populating || !checked) return;
             SetBoolIfEditing(ctx.cfg, ctx.populating, k, true);
         });
     QObject::connect(off, &QRadioButton::toggled, &ctx.signalReceiver,
-        [&ctx, k](bool checked) {
+        [ctx, k](bool checked) {
             if (ctx.populating || !checked) return;
             SetBoolIfEditing(ctx.cfg, ctx.populating, k, false);
         });
@@ -146,7 +151,7 @@ QComboBox* AddComboBoxRow(WidgetFactoryContext& ctx,
     cb->setCurrentIndex(ctx.cfg.GetInt(key));
     std::string k(key);
     QObject::connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        &ctx.signalReceiver, [&ctx, k](int idx) {
+        &ctx.signalReceiver, [ctx, k](int idx) {
             SetIntIfEditing(ctx.cfg, ctx.populating, k, idx);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *cb);
@@ -163,7 +168,7 @@ QSpinBox* AddSpinBoxRow(WidgetFactoryContext& ctx,
     sb->setValue(ctx.cfg.GetInt(key));
     std::string k(key);
     QObject::connect(sb, QOverload<int>::of(&QSpinBox::valueChanged),
-        &ctx.signalReceiver, [&ctx, k](int v) {
+        &ctx.signalReceiver, [ctx, k](int v) {
             SetIntIfEditing(ctx.cfg, ctx.populating, k, v);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *sb);
@@ -182,11 +187,58 @@ QDoubleSpinBox* AddDoubleSpinBoxRow(WidgetFactoryContext& ctx,
     sb->setValue(ctx.cfg.GetDouble(key));
     std::string k(key);
     QObject::connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-        &ctx.signalReceiver, [&ctx, k](double v) {
+        &ctx.signalReceiver, [ctx, k](double v) {
             SetDoubleIfEditing(ctx.cfg, ctx.populating, k, v);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *sb);
     return sb;
+}
+
+QSlider* AddOpacitySliderRow(WidgetFactoryContext& ctx,
+                             const QString& label, const char* key)
+{
+    auto* container = new QWidget(&ctx.parent);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(4);
+
+    auto* slider = new QSlider(Qt::Horizontal, container);
+    slider->setRange(0, 100);
+    const int initVal = qRound(ctx.cfg.GetDouble(key) * 100.0);
+    slider->setValue(initVal);
+
+    auto* lbl = new QLabel(QString::number(initVal) + QStringLiteral("%"), container);
+    lbl->setFixedWidth(kSliderValueWidth);
+    lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    hlay->addWidget(slider, 1);
+    hlay->addWidget(lbl, 0);
+
+    std::string k(key);
+    QObject::connect(slider, &QSlider::valueChanged, &ctx.signalReceiver,
+        [ctx, k, lbl](int v) {
+            lbl->setText(QString::number(v) + QStringLiteral("%"));
+            SetDoubleIfEditing(ctx.cfg, ctx.populating, k, v / 100.0);
+        });
+
+    ctx.form.addRow(UiText::Tr(label), container);
+    ctx.rows.append(container);
+    return slider;
+}
+
+QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
+                          const QString& label, const char* key)
+{
+    auto* le = new QLineEdit(&ctx.parent);
+    le->setMinimumWidth(kLineEditMinWidth);
+    le->setText(QString::fromStdString(ctx.cfg.GetString(key)));
+    std::string k(key);
+    QObject::connect(le, &QLineEdit::textChanged, &ctx.signalReceiver,
+        [ctx, k](const QString& text) {
+            SetStringIfEditing(ctx.cfg, ctx.populating, k, text.toStdString());
+        });
+    AppendLabeledRow(ctx.form, ctx.rows, label, *le);
+    return le;
 }
 
 } // namespace MelonPrime::HudEditorForm

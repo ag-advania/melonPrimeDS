@@ -18,7 +18,6 @@ namespace
 constexpr int kPanelWidth = 300;
 constexpr int kRadioOnWidth = 48;
 constexpr int kRadioOffWidth = 58;
-constexpr int kSliderValueWidth = 38;
 } // namespace
 
 // ─── Construction ───────────────────────────────────────────────────────────
@@ -146,47 +145,18 @@ QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString&
 
 QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label, const char* key)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(4);
-
-    auto* slider = new QSlider(Qt::Horizontal, container);
-    slider->setRange(0, 100);
-    int initVal = qRound(cfg().GetDouble(key) * 100.0);
-    slider->setValue(initVal);
-
-    auto* lbl = new QLabel(QString::number(initVal) + QStringLiteral("%"), container);
-    lbl->setFixedWidth(kSliderValueWidth);
-    lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    hlay->addWidget(slider, 1);
-    hlay->addWidget(lbl, 0);
-
-    std::string k(key);
-    connect(slider, &QSlider::valueChanged, this, [this, k, lbl](int v) {
-        lbl->setText(QString::number(v) + QStringLiteral("%"));
-        MelonPrime::HudEditorForm::SetDoubleIfEditing(cfg(), m_populating, k, v / 100.0);
-    });
-
-    m_form->addRow(MelonPrime::UiText::Tr(label), container);
-    m_rows.append(container);
-    return slider;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddOpacitySliderRow(ctx, label, key);
 }
 
 // ─── Factory: LineEdit ──────────────────────────────────────────────────────
 
 QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
-    auto* le = new QLineEdit(this);
-    le->setMinimumWidth(78);
-    le->setText(QString::fromStdString(cfg().GetString(key)));
-    std::string k(key);
-    connect(le, &QLineEdit::textChanged, this, [this, k](const QString& text) {
-        MelonPrime::HudEditorForm::SetStringIfEditing(cfg(), m_populating, k, text.toStdString());
-    });
-    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *le);
-    return le;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddLineEditRow(ctx, label, key);
 }
 
 // ─── Factory: Color Picker ──────────────────────────────────────────────────
