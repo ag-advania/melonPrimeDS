@@ -103,22 +103,34 @@ jobs:
       run: |
         set -eu
 
-        binary=/tmp/build/melonPrimeDS
         zip_path="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
 
-        if [ ! -f "$binary" ]; then
-          echo "Expected binary was not found: $binary"
-          echo "Executable candidates in /tmp/build:"
-          find /tmp/build -maxdepth 4 -type f -perm -111 -print || true
-          echo "All files named melon*:"
-          find /tmp/build -maxdepth 4 -type f -name 'melon*' -print || true
+        binary=""
+        for candidate in \
+          "$GITHUB_WORKSPACE/build/melonPrimeDS" \
+          "$GITHUB_WORKSPACE/build/melonDS" \
+          "/tmp/build/melonPrimeDS" \
+          "/tmp/build/melonDS"
+        do
+          if [ -f "$candidate" ]; then
+            binary="$candidate"
+            break
+          fi
+        done
+
+        if [ -z "$binary" ]; then
+          echo "Expected binary was not found."
+          echo "Files in workspace build:"
+          find "$GITHUB_WORKSPACE/build" -maxdepth 5 -type f -print 2>/dev/null || true
+          echo "Files in /tmp/build:"
+          find /tmp/build -maxdepth 5 -type f -print 2>/dev/null || true
+          echo "melon* candidates:"
+          find "$GITHUB_WORKSPACE/build" /tmp/build -maxdepth 5 -type f -name 'melon*' -print 2>/dev/null || true
           exit 1
         fi
 
-        if [ ! -x "$binary" ]; then
-          chmod +x "$binary" || true
-        fi
-
+        chmod +x "$binary" || true
+        echo "Packaging binary: $binary"
         zip -j "$zip_path" "$binary"
         ls -l "$zip_path"
 
@@ -168,7 +180,7 @@ jobs:
         artifacts=(bsd-*/*.zip)
 
         echo "Downloaded BSD artifact files:"
-        find . -maxdepth 3 -type f -name '*.zip' -print || true
+        find . -maxdepth 3 -type f -print || true
 
         if [ ${#artifacts[@]} -eq 0 ]; then
           echo "No BSD artifacts available to bundle"
