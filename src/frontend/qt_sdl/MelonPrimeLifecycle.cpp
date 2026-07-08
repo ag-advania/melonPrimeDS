@@ -1,6 +1,7 @@
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeRuntimeConfig.h"
+#include "MelonPrimePatchLifecycle.h"
 #include "EmuInstance.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
@@ -129,13 +130,8 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
-        {
-            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-            Patches_RestoreOnStop(ctx);
-        }
-        Patches_ResetAll();
-        ARM9Hook_ResetPatchState();
+        PatchLifecycle::ResetForEmuStart(
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
 #endif
 
         ReloadConfigFlags();
@@ -166,10 +162,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
-        // boot reset: state only, no RAM restore (emu memory is being re-initialized)
-        Patches_ResetAll();
-        ARM9Hook_ResetPatchState();
+        PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance);
 #endif
 
         InputReset();
@@ -198,13 +191,12 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
-        {
-            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-            Patches_RestoreOnStop(ctx);
-        }
-        Patches_ResetAll();
-        ARM9Hook_ResetPatchState();
+        PatchLifecycle::RestoreForEmuStop(
+            emuInstance->getNDS(),
+            emuInstance,
+            localCfg,
+            m_currentRom,
+            m_flags.test(StateFlags::BIT_ROM_DETECTED));
 #endif
     }
 
