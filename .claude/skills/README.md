@@ -24,6 +24,8 @@
 - `audit-platform-scatter-budget.ps1`: enforce the V4 macOS/Linux input-dispatch
   scatter ratchet (budget 22; excludes facade + localization) and macOS
   cursor-warp guard
+- `audit-color-dialog-prefs.ps1`: ensure `QColorDialog` usage stays in
+  `MelonPrimeColorDialogPrefs.cpp` (Custom HUD color pickers use the helper)
 - `apply-perf-baseline.py`: apply perf `.summary.txt` files to the V6/V5 baseline markdown tables
 - `compare-perf-repro.py`: compare two perf logs/summaries for V6 S24 p50/p99 reproducibility
 - `collect-perf-baseline.sh` / `.ps1`: run a developer build with `MELONPRIME_PERF=1`, tee the log, and write a summary for V6 Phase 0
