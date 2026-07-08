@@ -105,8 +105,7 @@ namespace MelonPrime {
     void MelonPrimeCore::Initialize()
     {
         ReloadConfigFlags();
-        RecalcAimSensitivityCache(localCfg);
-        ApplyAimAdjustSetting(localCfg);
+        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         SetupRawInput();
@@ -209,8 +208,7 @@ namespace MelonPrime {
         const bool newJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
         ApplyJoy2KeySupportAndQtFilter(newJoy2Key, oldJoy2Key != newJoy2Key);
 
-        RecalcAimSensitivityCache(localCfg);
-        ApplyAimAdjustSetting(localCfg);
+        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         if (m_rawFilter) {
@@ -241,8 +239,7 @@ namespace MelonPrime {
 
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
-        RecalcAimSensitivityCache(localCfg);
-        ApplyAimAdjustSetting(localCfg);
+        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         if (m_rawFilter) {

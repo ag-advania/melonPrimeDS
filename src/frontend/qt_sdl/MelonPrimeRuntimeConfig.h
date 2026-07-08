@@ -38,9 +38,16 @@ struct RuntimeConfigSnapshot {
     bool nativeWeaponSwitch = false;
 #endif
 
-    int screenSyncMode = 0;
+    int     screenSyncMode = 0;
+};
+
+struct AimConfigSnapshot {
+    float aimSensiFactor = 0.f;
+    float aimCombinedY = 0.f;
+    float aimAdjust = 0.f;
 };
 
 RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept;
+AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept;
 
 } // namespace MelonPrime

@@ -4,6 +4,7 @@
 #include "MelonPrimeDef.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace MelonPrime {
 
@@ -100,6 +101,18 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 
     s.screenSyncMode = NormalizeScreenSyncMode(cfg.GetInt(CfgKey::ScreenSyncMode));
 
+    return s;
+}
+
+AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
+{
+    AimConfigSnapshot s{};
+    const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
+    const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
+    s.aimSensiFactor = sens * 0.01f;
+    s.aimCombinedY = s.aimSensiFactor * yScale;
+    const double v = cfg.GetDouble(CfgKey::AimAdjust);
+    s.aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
     return s;
 }
 
