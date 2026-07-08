@@ -15,4 +15,10 @@ void ContainAimCursorIfNeeded(ScreenPanel& panel);
 // `closing` is already set), so it must still run.
 void ReleaseForClose(ScreenPanel& panel);
 
+// Confines the OS cursor to the bottom-screen widget rect (Windows only;
+// other platforms only set the arrow cursor). Called from
+// ScreenPanel::clipCursorToBottomScreen(), itself only reachable via
+// clipCursorToBottomScreenForPolicy() -> ScreenCursorPolicy::UpdateClipIfNeeded().
+void ConfineToBottomScreen(ScreenPanel& panel);
+
 } // namespace MelonPrime::ScreenCursorPolicy
