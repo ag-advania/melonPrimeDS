@@ -386,9 +386,54 @@ to the same `ci/phase11-16-verification` branch, fast-forwarded from
 All 4 platforms green at the Phase D commit. Phase A-D and the Phase 11-16
 continuation plan are now both fully CI-confirmed end to end.
 
-Sites A (match-end restore) and B (battle-runtime enter) remain
-un-extracted per the plan's recommended order — each needs its own commit
-and its own S6/S7 (plus S2/S3 for B) verification pass.
+## Batch 1: PatchLifecycleGateway Step 3, Sites A and B (2026-07-08)
+
+Per the accelerated follow-up plan: batch-oriented workflow (small isolated
+commits + local build/audit per commit, full CI at the batch boundary,
+manual smoke reserved for gameplay-sensitive batches).
+
+### Site A — match-end restore
+
+**Changed:** `MelonPrimePatchLifecycle.h/.cpp`, `MelonPrime.cpp` (commit `470b869e`)
+
+Added `PatchLifecycle::RestoreOnMatchEnd(nds, emu, cfg, rom, core)`,
+wrapping `Patches_RestoreOnLeave` + `ARM9Hook_SetMatchHooksActive(...
+false ...)`. `StateFlags::BIT_END_OF_GAME_PATCH_RESTORED` stays set in
+`RunFrameHook` per the design doc's rule (frame-state ownership, not
+patch-lifecycle ownership).
+
+### Site B — battle-runtime enter
+
+**Changed:** `MelonPrimePatchLifecycle.h/.cpp`, `MelonPrime.cpp` (commit `a56d06ad`)
+
+Added `PatchLifecycle::ApplyOnBattleRuntimeEnter(nds, emu, cfg, rom, core,
+nativeWeaponSwitchEnabled)`, wrapping the full three-call sequence
+(`Patches_Apply(PatchSite_BattleRuntime)` + `ARM9Hook_SetMatchHooksActive(...
+true ...)` + conditional `WeaponSwitchHook_IsSiteValid`) rather than the
+"patch/hook only" fallback — `WeaponSwitchHook_IsSiteValid` is a public
+static `MelonPrimeCore` method with no new ownership coupling when called
+from `PatchLifecycle.cpp`. `StateFlags::BIT_BATTLE_RUNTIME_MODE` stays set
+in `HandleBattleRuntimeEnter()`, which remains a single cold outlined
+function (not inlined into `RunFrameHook`, not split awkwardly across files).
+
+### Verification (per commit)
+
+- Clean macOS build after each commit
+- `audit-melonprime-srp-performance.ps1` passed after each commit
+- `git diff` review confirmed both extractions are pure call-site
+  substitutions — same calls, same order, same arguments
+- macOS launch/close smoke after Site B (no crash)
+
+### Full-matrix CI at HEAD `a56d06ad...` (Batch 1 boundary)
+
+_(run in progress at time of commit — see below for confirmed results)_
+
+Sites C and D remain untouched, matching the design doc:
+Site C (per-frame `OsdColor_ApplyOnce` re-apply) is an explicit non-goal;
+Site D (leave-in-game `ARM9Hook_SetMatchHooksActive(false)`) stays inline
+per the doc's "verify first" note (bundling it with Site A was flagged as
+possible but not required, and this batch did not do the S6/S7 pass that
+note calls for).
 
 Still deferred (do not touch without a dedicated plan):
 
@@ -396,5 +441,5 @@ Still deferred (do not touch without a dedicated plan):
 RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
 MelonPrimeCore hot state struct抽出 / Screen mouse router全面化 /
 PlatformInput raw ownership再設計
-PatchLifecycleGateway Step 3 Sites A and B (see step3_plan.md)
+PatchLifecycleGateway Step 3 Site D bundling (see step3_plan.md "verify first" note)
 ```
