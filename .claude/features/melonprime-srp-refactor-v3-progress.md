@@ -199,7 +199,9 @@ mixing of unrelated widget kinds or subsystems in one change.
 | 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | ✅ Done (`40a779f3`) |
 | 14 | ScreenCursorPolicy `ReleaseForClose` extraction | ✅ Done (`53e85be3`) |
 | 15 | PatchLifecycleGateway Step 3 (design doc only) | ✅ Done (`767f3947`) |
-| 16 | RuntimeConfig cleanup follow-up (naming/comments only) | Pending |
+| 16 | RuntimeConfig cleanup follow-up (naming/comments only) | ✅ Done (`0f302c3b`) |
+
+All Phase 11-16 continuation-plan phases complete.
 
 ## Phase 12: HUD FormBuilder Step 3
 
@@ -266,7 +268,52 @@ input reset), and proposes a Site-E-then-A-then-B implementation order for
 a future PR. Intentionally not implemented in this phase — RunFrameHook
 ordering changes need a dedicated review per the continuation plan.
 
-Next up: **Phase 16 — RuntimeConfig cleanup follow-up**.
+## Phase 16: RuntimeConfig cleanup follow-up
+
+**Changed:** `MelonPrimeRuntimeConfig.h`, `MelonPrimeLifecycle.cpp`,
+`MelonPrime.cpp`, `melonprime-srp-performance-contract.md`
+
+**Comments/docs only** (no logic, clamp, formula, or ROM-detect timing
+change — verified by diff before commit): documents the Load/Apply
+boundary between `Load*ConfigSnapshot` (pure) and
+`MelonPrimeCore::Apply*ConfigSnapshot` (side effects), and flags that the
+in-game aim-sensitivity hotkey path (`RecalcAimSensitivityCache`) is a
+separate pre-existing reload that bypasses `AimConfigSnapshot` — noted as
+out of scope rather than "fixed". Added the missing `AimConfigSnapshot` row
+to the SRP performance contract's boundary table.
+
+## Continuation Plan Status: Complete
+
+All 6 phases (11–16) of the post-Phase-10 continuation plan are done. Every
+phase built clean on macOS, passed `audit-melonprime-srp-performance.ps1`
+(plus `audit-color-dialog-prefs.ps1` / `audit-platform-scatter-budget.ps1`
+where relevant), and was committed + pushed individually.
+
+Notable finding along the way (Phase 12): fixed a dangling-reference /
+frozen-`populating`-snapshot bug in the Step 2 `WidgetFactoryContext`
+pattern (merged as part of Phase 7) before extending it further — see the
+Phase 12 entry above.
+
+Still deferred, unchanged from the original continuation plan:
+
+```text
+RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
+MelonPrimeCore hot state struct抽出 / Screen mouse router全面化 /
+PlatformInput raw ownership再設計
+```
+
+Phase 15's design doc (`melonprime_patch_lifecycle_gateway_step3_plan.md`)
+is the one item in this batch that is *plan only* — implementing
+PatchLifecycleGateway Step 3 (RunFrameHook patch/hook call-site extraction)
+is a follow-on task, not done here, per that doc's own recommended
+Site-E-then-A-then-B order and verification requirements.
+
+Remaining before this SRP v3 work can be considered fully merge-ready:
+BSD CI confirmation and the manual smoke checklist (MPH boot, aim,
+shoot/zoom, weapon switch, morph boost, Adventure WASD, focus loss/
+refocus, stop/reset, Custom HUD editor incl. the newly-extracted opacity/
+line-edit/color-picker/sub-color/overlay-row widgets, color picker custom
+colors) are both still unchecked in the Merge Checklist above.
 
 Still deferred (do not touch without a dedicated plan):
 
