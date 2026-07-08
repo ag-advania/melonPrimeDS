@@ -155,6 +155,20 @@ void Unclip(ScreenPanel& panel)
 #endif
 }
 
+void ReleaseForClose(ScreenPanel& panel)
+{
+    panel.setClipWantedForMelonPrime(false);
+#if defined(__APPLE__)
+    MacSetAimCursorCaptured(false);
+#endif
+#if defined(__linux__)
+    panel.resetAimMouseDelta();
+#endif
+#ifdef _WIN32
+    ClipCursor(nullptr);
+#endif
+}
+
 void UpdateClipIfNeeded(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
