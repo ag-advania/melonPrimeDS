@@ -73,4 +73,5 @@ Base: `highres_fonts_v3`
 - Hot path order: unchanged by design
 - SRP audit script: wired in Ubuntu/Windows CI (runs on PR to `master` or `ci/*`)
 - Post-audit cleanups (L1/L2/L3/L4): applied in `36bd9429`
-- CI fix (scatter facade + rg-free SRP audit + split audit steps): pending push
+- CI fix (scatter facade + rg-free SRP audit): pushed in `99a9ae95`
+- CI workflow audit step split: local commit pending manual push (OAuth workflow scope)
