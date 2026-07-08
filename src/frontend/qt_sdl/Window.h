@@ -214,6 +214,8 @@ private:
     void createScreenPanel();
 #ifdef MELONPRIME_DS
     void localizeMenuText();
+    void applyMenuLanguageSelection(int configValue);
+    void updateMenuLanguageActions();
 #endif
 
     bool lanWarning(bool host);
@@ -316,6 +318,10 @@ public:
     QAction* actMetroidDisableDoubleDamageMultiplier;
     QAction* actMetroidDamageNotifyPurple;
     QAction* actMetroidPowerUpPickupNoEffect;
+
+    QActionGroup* grpMenuLanguage = nullptr;
+    QAction* actMenuLanguageSystem = nullptr;
+    QAction* actMenuLanguageEnglish = nullptr;
 #endif
 
     QAction* actAbout;

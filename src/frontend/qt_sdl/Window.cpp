@@ -770,6 +770,36 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
                 &MainWindow::onChangeMetroidPowerUpPickupNoEffect);
         }
         /* } MelonPrimeDS */
+        {
+            QMenu* menu = menubar->addMenu("Language");
+            menu->menuAction()->setMenuRole(QAction::NoRole);
+
+            grpMenuLanguage = new QActionGroup(menu);
+            grpMenuLanguage->setExclusive(true);
+
+            actMenuLanguageSystem = menu->addAction("System language");
+            actMenuLanguageSystem->setCheckable(true);
+            actMenuLanguageSystem->setData(MelonPrime::UiText::kMenuLanguageSystemDefault);
+            actMenuLanguageSystem->setActionGroup(grpMenuLanguage);
+            actMenuLanguageSystem->setMenuRole(QAction::NoRole);
+
+            actMenuLanguageEnglish = menu->addAction("English");
+            actMenuLanguageEnglish->setCheckable(true);
+            actMenuLanguageEnglish->setData(static_cast<int>(MelonPrime::UiText::MenuLangId::English));
+            actMenuLanguageEnglish->setActionGroup(grpMenuLanguage);
+            actMenuLanguageEnglish->setMenuRole(QAction::NoRole);
+
+            connect(
+                grpMenuLanguage,
+                &QActionGroup::triggered,
+                this,
+                [this](QAction* action)
+                {
+                    if (!action)
+                        return;
+                    applyMenuLanguageSelection(action->data().toInt());
+                });
+        }
 #endif // MELONPRIME_DS
         {
             QMenu* menu = menubar->addMenu("Help");
@@ -936,6 +966,70 @@ MainWindow::~MainWindow()
 }
 
 #ifdef MELONPRIME_DS
+void MainWindow::applyMenuLanguageSelection(int configValue)
+{
+    const int normalized =
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(configValue);
+
+    localCfg.SetInt(MelonPrime::CfgKey::MenuLanguage, normalized);
+    MelonPrime::UiText::SetMenuLanguageSelection(normalized);
+
+    if (emuInstance)
+    {
+        emuInstance->doOnAllWindows([normalized](MainWindow* win)
+        {
+            if (!win)
+                return;
+
+            win->localCfg.SetInt(MelonPrime::CfgKey::MenuLanguage, normalized);
+
+            if (win->hasMenu)
+                win->localizeMenuText();
+        });
+    }
+    else
+    {
+        localizeMenuText();
+    }
+
+    Config::Save();
+}
+
+void MainWindow::updateMenuLanguageActions()
+{
+    if (!grpMenuLanguage || !actMenuLanguageSystem || !actMenuLanguageEnglish)
+        return;
+
+    const int selection =
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+
+    bool englishSelected = false;
+    if (selection >= static_cast<int>(MelonPrime::UiText::MenuLangId::First)
+        && selection < static_cast<int>(MelonPrime::UiText::MenuLangId::Count))
+    {
+        englishSelected =
+            MelonPrime::UiText::IsEnglishMenuLanguage(
+                static_cast<MelonPrime::UiText::MenuLangId>(selection));
+    }
+
+    grpMenuLanguage->setExclusive(false);
+    actMenuLanguageSystem->setChecked(
+        selection == MelonPrime::UiText::kMenuLanguageSystemDefault);
+    actMenuLanguageEnglish->setChecked(englishSelected);
+    grpMenuLanguage->setExclusive(true);
+
+    actMenuLanguageSystem->setText(
+        QStringLiteral("%1 (%2)")
+            .arg(
+                MelonPrime::UiText::Tr(QStringLiteral("System language")),
+                MelonPrime::UiText::MenuLanguageNativeLabel()));
+
+    actMenuLanguageEnglish->setText(
+        MelonPrime::UiText::MenuLanguageDisplayName(
+            MelonPrime::UiText::MenuLangId::English));
+}
+
 void MainWindow::localizeMenuText()
 {
     if (!hasMenu)
@@ -945,6 +1039,8 @@ void MainWindow::localizeMenuText()
         MelonPrime::UiText::NormalizeMenuLanguageConfig(
             localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
     MelonPrime::UiText::LocalizeMenuBar(menuBar());
+    updateMenuLanguageActions();
+
     if (panel)
         panel->reloadNoRomSplashLocalization();
 }
