@@ -75,6 +75,18 @@ QSlider* AddOpacitySliderRow(WidgetFactoryContext& ctx,
 QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
                           const QString& label, const char* key);
 
+QPushButton* AddColorPickerRow(WidgetFactoryContext& ctx,
+                               const QString& label,
+                               const char* keyR, const char* keyG, const char* keyB);
+
+void AddSubColorRow(WidgetFactoryContext& ctx,
+                    const QString& label, const char* overallKey,
+                    const char* keyR, const char* keyG, const char* keyB);
+
+void AddColorOverlayRow(WidgetFactoryContext& ctx,
+                        const QString& label, const char* enableKey,
+                        const char* keyR, const char* keyG, const char* keyB);
+
 [[nodiscard]] WidgetFactoryContext MakeFactoryContext(
     QWidget& parent,
     QFormLayout& form,
