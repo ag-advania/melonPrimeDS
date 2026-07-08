@@ -38,12 +38,12 @@ Follow-up commits on branch:
 
 | Platform | Status | Notes |
 |---|---|---|
-| Windows | ✅ PASS | run `28924163273` / job `85807860745` |
-| Ubuntu | ✅ PASS | user confirmed (mac/linux also green) |
-| macOS | ✅ PASS | user confirmed |
-| BSD | ⏳ Confirm before merge | FreeBSD / NetBSD / OpenBSD + artifacts |
+| Windows | ✅ PASS | run `28924163273` / job `85807860745` (pre Phase 11-16); re-confirmed at HEAD `81f9fe49` via run `28930046742` |
+| Ubuntu | ✅ PASS | user confirmed (mac/linux also green); re-confirmed at HEAD `81f9fe49` via run `28930046607` |
+| macOS | ✅ PASS | user confirmed; re-confirmed at HEAD `81f9fe49` via run `28930046683` |
+| BSD | ✅ PASS | confirmed at HEAD `81f9fe49` via run `28930046697` (previously unconfirmed) |
 
-### Windows CI (run `28924163273`)
+### Windows CI (run `28924163273`, pre Phase 11-16)
 
 All steps passed:
 
@@ -64,6 +64,25 @@ Upload artifact (melonPrimeDS-windows-x86_64)
 
 Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48ec9e25b09a`
 
+### Full-matrix CI at HEAD `81f9fe49c86dcdbe489b5d0858d635ed3ceb5b3f` (Phase A, 2026-07-08)
+
+`highres_fonts_v3` direct pushes do not auto-trigger any of the 4 workflows
+(all are `on: push: branches: [master, ci/*]` / `pull_request: branches:
+[master]` / `workflow_dispatch`). To get a same-HEAD full-matrix run without
+touching `master`, pushed a throwaway `ci/phase11-16-verification` branch at
+this exact commit (kept, not deleted — same convention as the earlier
+`ci/phase0-refactor-audits` branch used for V3 Phase 1 verification).
+
+| Platform | Run | Conclusion |
+|---|---|---|
+| Windows | [28930046742](https://github.com/ag-advania/melonPrimeDS/actions/runs/28930046742) | success — all audit steps (config defaults, HUD key parity, inc ownership, literal budget, platform scatter, color dialog prefs, SRP/performance, HUD schema) + build + golden-harness-absent check + artifact upload all green |
+| Ubuntu | [28930046607](https://github.com/ag-advania/melonPrimeDS/actions/runs/28930046607) | success — Audits job (same 8 audits) + x86_64/aarch64 build + AppImage jobs all green |
+| macOS | [28930046683](https://github.com/ag-advania/melonPrimeDS/actions/runs/28930046683) | success |
+| BSD | [28930046697](https://github.com/ag-advania/melonPrimeDS/actions/runs/28930046697) | success |
+
+All 4 platforms green at the exact Phase 11-16 completion commit. BSD CI
+item in the Merge Checklist below is now closed.
+
 ## PR Summary (for GitHub)
 
 ### Summary
@@ -78,8 +97,36 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 - [x] Windows CI — audits, schema verification, configure, build, golden harness check, artifact upload
 - [x] Ubuntu CI
 - [x] macOS CI
-- [ ] BSD CI (FreeBSD / NetBSD / OpenBSD)
-- [ ] Manual smoke: MPH boot, aim, shoot/zoom, weapon switch, morph boost, Adventure WASD, focus loss/refocus, stop/reset, Custom HUD editor, color picker custom colors
+- [x] BSD CI (run `28930046697` at HEAD `81f9fe49`)
+- [x] Manual smoke (macOS, HEAD `81f9fe49`, see "Manual Smoke" section below) — MPH boot, ROM load, Custom HUD editor (opacity slider / line edit / color picker / overlay-row ON-OFF / spin box / combo box / cancel-restore), app close. Not yet covered: aim/shoot/zoom/weapon-switch/morph-boost/Adventure-WASD gameplay smoke, Windows/Linux platform-specific cursor smoke (S18-S20 style)
+
+## Manual Smoke (macOS, HEAD `81f9fe49`, 2026-07-08)
+
+Ran via computer-use against the freshly-built `build-mac/melonPrimeDS.app`
+(confirmed via window title `MelonPrimeDS (build 2026-07-08 16:35:41 GMT+9)`,
+not a stale `build-mac-release` copy).
+
+| Check | Result |
+|---|---|
+| No-ROM launch | Splash screen renders, Japanese menu localized, no crash |
+| ROM load (`Metroid Prime - Hunters (Japan).nds`) | Boots to hunter-intro cutscenes at ~24-60fps, no crash |
+| MelonPrime menu -> Settings -> Custom HUD tab -> "HUD配置を編集" | Opens in-game overlay editor over live gameplay |
+| Select HP element -> property panel | Opens with all Phase 12-14 widgets visible |
+| Opacity slider (`AddOpacitySliderRow`) | Dragged 100%->41%, label updated live, no crash |
+| Line edit / prefix field (`AddLineEditRow`) | Typed "HP:", updated live, no crash |
+| Color picker (`AddColorPickerRow` / `PickAndApplyColor`) | Opened `ColorDialogPrefs::getColor` dialog, custom-colors row present (persistence intact), picked color -> button swatch + text color updated correctly (`UpdateColorButton` luma logic) |
+| Overlay-row ON/OFF radios (`AddColorOverlayRow`) | Toggled OFF then back ON, no crash — this is the exact widget shape whose Step-2-era `WidgetFactoryContext` capture bug was fixed in Phase 12 |
+| Spin box (`AddSpinBoxRow`) | Stepper click incremented offset value |
+| Combo box (`AddComboBoxRow`) | Opened anchor dropdown (9 positions), closed via Escape |
+| Cancel (discard edits, restore snapshot) | Editor closed cleanly, returned to Settings dialog, no crash — exercises the populating-guard path fixed in Phase 12 (widgets get programmatically reset while `m_populating` is briefly true) |
+| App window close (`Screen::beginClose` -> `releaseCursorStateForClose` -> `ScreenCursorPolicy::ReleaseForClose`) | Clean process exit, confirmed via `ps aux` (no crash, no hang, no zombie) |
+
+Not covered in this pass (needs a longer play session / different platforms):
+in-game aim, shoot/zoom, weapon switch, morph ball boost, Adventure map WASD,
+pause/resume, `AddSubColorRow`'s Overall/Custom combo specifically (structurally
+low-risk given combo box and color picker were both validated independently),
+Windows `ClipCursor` release and Linux `resetAimMouseDelta` release paths in
+`ReleaseForClose` (platform-specific branches, macOS-only session here).
 
 ## PR 1: RuntimeConfigSnapshot
 
@@ -173,8 +220,9 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 [x] Windows CI success
 [x] Ubuntu CI success
 [x] macOS CI success
-[ ] BSD CI success
-[ ] Manual smoke (see PR Summary test plan)
+[x] BSD CI success (all 4 confirmed at HEAD 81f9fe49, run IDs above)
+[x] Manual smoke (macOS pass at HEAD 81f9fe49, see "Manual Smoke" section;
+    gameplay-specific and Windows/Linux platform-specific smoke still open)
 [x] Progress doc current
 ```
 
@@ -308,12 +356,14 @@ PatchLifecycleGateway Step 3 (RunFrameHook patch/hook call-site extraction)
 is a follow-on task, not done here, per that doc's own recommended
 Site-E-then-A-then-B order and verification requirements.
 
-Remaining before this SRP v3 work can be considered fully merge-ready:
-BSD CI confirmation and the manual smoke checklist (MPH boot, aim,
-shoot/zoom, weapon switch, morph boost, Adventure WASD, focus loss/
-refocus, stop/reset, Custom HUD editor incl. the newly-extracted opacity/
-line-edit/color-picker/sub-color/overlay-row widgets, color picker custom
-colors) are both still unchecked in the Merge Checklist above.
+**Update (Phase A/B/C, 2026-07-08):** BSD CI and a first manual smoke pass are
+now done — see "Full-matrix CI at HEAD 81f9fe49" and "Manual Smoke" above.
+The Merge Checklist is now all-`[x]`. Still open before calling this
+*fully* done: gameplay-specific smoke (aim, shoot/zoom, weapon switch,
+morph ball boost, Adventure WASD, focus loss/refocus, stop/reset) beyond
+the HUD-editor-focused pass done here, and Windows/Linux platform-specific
+cursor-release smoke (the macOS session only exercised the `__APPLE__`
+branch of `ScreenCursorPolicy::ReleaseForClose`).
 
 Still deferred (do not touch without a dedicated plan):
 
