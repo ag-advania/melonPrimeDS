@@ -198,7 +198,7 @@ mixing of unrelated widget kinds or subsystems in one change.
 | 12 | HUD Editor FormBuilder Step 3 (opacity slider, line edit) | ✅ Done (`31b3b993`) |
 | 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | ✅ Done (`40a779f3`) |
 | 14 | ScreenCursorPolicy `ReleaseForClose` extraction | ✅ Done (`53e85be3`) |
-| 15 | PatchLifecycleGateway Step 3 (design doc only) | Pending |
+| 15 | PatchLifecycleGateway Step 3 (design doc only) | ✅ Done (`767f3947`) |
 | 16 | RuntimeConfig cleanup follow-up (naming/comments only) | Pending |
 
 ## Phase 12: HUD FormBuilder Step 3
@@ -253,7 +253,20 @@ early-returns on `isClosingForMelonPrime()`, and this function is called
 from `beginClose()` *after* `closing` is already `true` — it must still
 run. No behavior change.
 
-Next up: **Phase 15 — PatchLifecycleGateway Step 3 design doc**.
+## Phase 15: PatchLifecycleGateway Step 3 (design doc only)
+
+**Added:** `.claude/features/melonprime_patch_lifecycle_gateway_step3_plan.md`
+
+**No code changes.** Maps the five `RunFrameHook`-adjacent patch/hook call
+sites still outside `MelonPrimePatchLifecycle` (match-end restore,
+battle-runtime enter, per-frame OSD reapply, leave-in-game hook deactivate,
+out-of-game per-frame patch), documents which are gateway candidates vs.
+explicit non-goals (OSD per-frame reapply, HUD-owned restore, transient
+input reset), and proposes a Site-E-then-A-then-B implementation order for
+a future PR. Intentionally not implemented in this phase — RunFrameHook
+ordering changes need a dedicated review per the continuation plan.
+
+Next up: **Phase 16 — RuntimeConfig cleanup follow-up**.
 
 Still deferred (do not touch without a dedicated plan):
 
