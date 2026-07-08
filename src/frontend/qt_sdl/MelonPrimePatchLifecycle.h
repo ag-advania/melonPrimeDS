@@ -91,5 +91,15 @@ void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
                                   const RomAddresses& rom,
                                   MelonPrimeCore* core);
 
+// ROM-detect cold path. Deactivates match ARM9 hooks after a ROM group is
+// detected and before ROM-detect OSD/aim-config reload work. This keeps
+// direct ARM9Hook_SetMatchHooksActive ownership in PatchLifecycle without
+// changing ROM detection state or address resolution.
+void DeactivateHooksForRomDetect(melonDS::NDS* nds,
+                                 EmuInstance* emu,
+                                 Config::Table& cfg,
+                                 const RomAddresses& rom,
+                                 MelonPrimeCore* core);
+
 } // namespace PatchLifecycle
 } // namespace MelonPrime
