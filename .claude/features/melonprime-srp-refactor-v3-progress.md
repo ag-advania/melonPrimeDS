@@ -342,18 +342,10 @@ frozen-`populating`-snapshot bug in the Step 2 `WidgetFactoryContext`
 pattern (merged as part of Phase 7) before extending it further — see the
 Phase 12 entry above.
 
-Still deferred, unchanged from the original continuation plan:
-
-```text
-RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
-MelonPrimeCore hot state struct抽出 / Screen mouse router全面化 /
-PlatformInput raw ownership再設計
-```
-
 Phase 15's design doc (`melonprime_patch_lifecycle_gateway_step3_plan.md`)
-is the one item in this batch that is *plan only* — implementing
+was the one item in this batch that shipped as *plan only* — implementing
 PatchLifecycleGateway Step 3 (RunFrameHook patch/hook call-site extraction)
-is a follow-on task, not done here, per that doc's own recommended
+was a follow-on task at the time, per that doc's own recommended
 Site-E-then-A-then-B order and verification requirements.
 
 **Update (Phase A/B/C, 2026-07-08):** BSD CI and a first manual smoke pass are
@@ -365,10 +357,30 @@ the HUD-editor-focused pass done here, and Windows/Linux platform-specific
 cursor-release smoke (the macOS session only exercised the `__APPLE__`
 branch of `ScreenCursorPolicy::ReleaseForClose`).
 
+## Phase D: PatchLifecycleGateway Step 3, Site E (2026-07-08)
+
+**Changed:** `MelonPrimePatchLifecycle.h/.cpp`, `MelonPrime.cpp`
+
+**Behavior:** Implemented the Site E candidate from
+`melonprime_patch_lifecycle_gateway_step3_plan.md` — added
+`PatchLifecycle::ApplyOutOfGameFrame(nds, emu, cfg, rom)`, a thin wrapper
+around `Patches_Apply(PatchSite_OutOfGameFrame, ctx)`, and routed
+`RunFrameHook`'s out-of-game per-frame patch call through it. Same
+`PatchCtx` construction, same registry entries (FixWifi /
+UseFirmwareLanguage / ExpandStageMatrix, still self-guarded), same
+frame-relative call position — no `RunFrameHook` reordering, no state-flag
+changes. Verified via `audit-melonprime-srp-performance.ps1` and a macOS
+launch/close smoke.
+
+Sites A (match-end restore) and B (battle-runtime enter) remain
+un-extracted per the plan's recommended order — each needs its own commit
+and its own S6/S7 (plus S2/S3 for B) verification pass.
+
 Still deferred (do not touch without a dedicated plan):
 
 ```text
 RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
 MelonPrimeCore hot state struct抽出 / Screen mouse router全面化 /
 PlatformInput raw ownership再設計
+PatchLifecycleGateway Step 3 Sites A and B (see step3_plan.md)
 ```
