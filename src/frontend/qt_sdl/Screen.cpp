@@ -239,52 +239,8 @@ void ScreenPanel::containAimCursorIfNeeded()
     MelonPrime::ScreenCursorPolicy::ContainAimCursorIfNeeded(*this);
 }
 
-#ifdef _WIN32
-namespace {
-
-inline RECT getVirtualScreenRectForBottomClip()
-{
-    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    return RECT{ vx, vy, vx + vw, vy + vh };
-}
-
-RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect)
-{
-    POINT tl{ widgetRect.left(), widgetRect.top() };
-    POINT br{ widgetRect.right() + 1, widgetRect.bottom() + 1 };
-    ClientToScreen(hwnd, &tl);
-    ClientToScreen(hwnd, &br);
-
-    RECT clip{ tl.x, tl.y, br.x, br.y };
-    const RECT vs = getVirtualScreenRectForBottomClip();
-
-    clip.left = std::clamp<LONG>(clip.left, vs.left, vs.right - 1);
-    clip.right = std::clamp<LONG>(clip.right, clip.left + 1, vs.right);
-    clip.top = std::clamp<LONG>(clip.top, vs.top, vs.bottom - 1);
-    clip.bottom = std::clamp<LONG>(clip.bottom, clip.top + 1, vs.bottom);
-
-    return clip;
-}
-
-} // namespace
-#endif
-
 void ScreenPanel::clipCursorToBottomScreen() {
-    if (closing || !qApp || qApp->closingDown())
-        return;
-    setCursor(Qt::ArrowCursor);
-#ifdef _WIN32
-    if (!isVisible() || !window() || !window()->isActiveWindow()) return;
-    auto bottomRect = getBottomScreenWidgetRect();
-    if (!bottomRect.has_value()) { unclip(); return; }
-    const HWND hwnd = reinterpret_cast<HWND>(winId());
-    RECT clip = computeWidgetClipRectSafe(hwnd, *bottomRect);
-    if (clip.left >= clip.right || clip.top >= clip.bottom) { unclip(); return; }
-    ClipCursor(&clip);
-#endif
+    MelonPrime::ScreenCursorPolicy::ConfineToBottomScreen(*this);
 }
 
 void ScreenPanel::clipCursorCenter1px() {
@@ -342,6 +298,11 @@ bool ScreenPanel::shouldConfineCursorToBottomScreenForPolicy() const
 void ScreenPanel::clipCursorToBottomScreenForPolicy()
 {
     clipCursorToBottomScreen();
+}
+
+std::optional<QRect> ScreenPanel::getBottomScreenWidgetRectForPolicy() const
+{
+    return getBottomScreenWidgetRect();
 }
 
 void ScreenPanel::setClipWantedForMelonPrime(bool value)

@@ -131,6 +131,7 @@ public:
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
     [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
     void clipCursorToBottomScreenForPolicy();
+    [[nodiscard]] std::optional<QRect> getBottomScreenWidgetRectForPolicy() const;
     [[nodiscard]] EmuInstance* emuInstanceForPolicy() const { return emuInstance; }
     void setClipWantedForMelonPrime(bool value);
     [[nodiscard]] bool getClipWantedForMelonPrime() const;

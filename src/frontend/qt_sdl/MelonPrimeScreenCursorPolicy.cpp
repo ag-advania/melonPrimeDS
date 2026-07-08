@@ -7,8 +7,10 @@
 
 #include <QApplication>
 #include <QCursor>
+#include <QRect>
 #include <Qt>
 
+#include <algorithm>
 #include <atomic>
 
 #ifdef _WIN32
@@ -63,6 +65,24 @@ inline RECT shrinkRectHeightToHalfCentered(RECT r)
     r.top = cy - quarter;
     r.bottom = cy + quarter;
     return r;
+}
+
+RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect)
+{
+    POINT tl{ widgetRect.left(), widgetRect.top() };
+    POINT br{ widgetRect.right() + 1, widgetRect.bottom() + 1 };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+
+    RECT clip{ tl.x, tl.y, br.x, br.y };
+    const RECT vs = getVirtualScreenRect();
+
+    clip.left = std::clamp<LONG>(clip.left, vs.left, vs.right - 1);
+    clip.right = std::clamp<LONG>(clip.right, clip.left + 1, vs.right);
+    clip.top = std::clamp<LONG>(clip.top, vs.top, vs.bottom - 1);
+    clip.bottom = std::clamp<LONG>(clip.bottom, clip.top + 1, vs.bottom);
+
+    return clip;
 }
 
 } // namespace
@@ -166,6 +186,22 @@ void ReleaseForClose(ScreenPanel& panel)
 #endif
 #ifdef _WIN32
     ClipCursor(nullptr);
+#endif
+}
+
+void ConfineToBottomScreen(ScreenPanel& panel)
+{
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
+        return;
+    panel.setCursor(Qt::ArrowCursor);
+#ifdef _WIN32
+    if (!panel.isActiveVisibleWindowForMelonPrime()) return;
+    const auto bottomRect = panel.getBottomScreenWidgetRectForPolicy();
+    if (!bottomRect.has_value()) { Unclip(panel); return; }
+    const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
+    RECT clip = computeWidgetClipRectSafe(hwnd, *bottomRect);
+    if (clip.left >= clip.right || clip.top >= clip.bottom) { Unclip(panel); return; }
+    ClipCursor(&clip);
 #endif
 }
 
