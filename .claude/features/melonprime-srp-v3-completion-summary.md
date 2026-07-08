@@ -76,11 +76,26 @@ deleted, matching the project's existing convention:
 | `ci/phase0-refactor-audits` | Pre-SRP-v3 V3 Phase 1 baseline | success (historical) |
 | `ci/phase11-16-verification` | Phase 11-16 continuation + Phase D (Site E) | success, all 4 platforms, both HEADs tested |
 | `ci/phase-d-sites-a-b-verification` | Batch 1 (PatchLifecycleGateway Sites A/B) | success, all 4 platforms |
-| `ci/batch5-screencursorpolicy-verification` | Batch 5 (`ConfineToBottomScreen`) | see `melonprime-srp-refactor-v3-progress.md` for final result |
+| `ci/batch5-screencursorpolicy-verification` | Batch 5 (`ConfineToBottomScreen`) | success, all 4 platforms |
+
+Batch 5 final run IDs at HEAD `0e91db0d` — Windows
+[28940048680](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048680)
+(all audit steps including `Audit platform scatter budget`, the key check
+for this platform-`#ifdef`-touching change, + build all green), Ubuntu
+[28940048728](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048728),
+macOS [28940048822](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048822),
+BSD [28940048796](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048796)
+— all success.
 
 Doc-only / comment-only batches (Batch 2, Batch 3, Batch 4) did not require
 a fresh full-matrix CI run per the accelerated plan's CI Strategy — local
 build + the relevant `audit-*.ps1` scripts were sufficient.
+
+**Latest verified HEAD as of this summary:** `59c229f9` closed out
+Batches 1-6. A short follow-up cleanup pass (dead-code removal, a
+historical ordering re-check, and this self-containment polish) landed on
+top of that at `fa8e5825` — see `melonprime-srp-refactor-v3-progress.md`
+for the exact commit list.
 
 ## Manual smoke coverage (what's verified vs. still open)
 
