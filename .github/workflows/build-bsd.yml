@@ -105,27 +105,16 @@ jobs:
 
         zip_path="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
 
-        binary=""
-        for candidate in \
-          "$GITHUB_WORKSPACE/build/melonPrimeDS" \
-          "$GITHUB_WORKSPACE/build/melonDS" \
-          "/tmp/build/melonPrimeDS" \
-          "/tmp/build/melonDS"
-        do
-          if [ -f "$candidate" ]; then
-            binary="$candidate"
-            break
-          fi
-        done
+        binary="$(
+          find "$GITHUB_WORKSPACE/build" /tmp/build \
+            -type f \( -name 'melonPrimeDS' -o -name 'melonDS' \) \
+            -print 2>/dev/null | head -n 1 || true
+        )"
 
         if [ -z "$binary" ]; then
           echo "Expected binary was not found."
-          echo "Files in workspace build:"
-          find "$GITHUB_WORKSPACE/build" -maxdepth 5 -type f -print 2>/dev/null || true
-          echo "Files in /tmp/build:"
-          find /tmp/build -maxdepth 5 -type f -print 2>/dev/null || true
-          echo "melon* candidates:"
-          find "$GITHUB_WORKSPACE/build" /tmp/build -maxdepth 5 -type f -name 'melon*' -print 2>/dev/null || true
+          echo "All candidate files:"
+          find "$GITHUB_WORKSPACE/build" /tmp/build -maxdepth 8 -type f -print 2>/dev/null || true
           exit 1
         fi
 
