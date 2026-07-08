@@ -586,14 +586,20 @@ Implemented Site D as `PatchLifecycle::DeactivateHooksOnLeaveInGame(...)`:
 
 Commit: `6fd63a6e` ("Route Site D hook deactivation through PatchLifecycle").
 
-Full CI: pending — branch `ci/patchlifecycle-site-d-verification` to be
-pushed after this doc commit; will update this entry with run IDs once
-complete.
+**Full-matrix CI at HEAD `3f58e572` (`ci/patchlifecycle-site-d-verification`):**
 
-Note: `MelonPrimeGameRomDetect.cpp` still has one direct
-`ARM9Hook_SetMatchHooksActive(... false ...)` call (in ROM detection,
-unrelated to the `RunFrameHook` leave-in-game Site D block). It was left
-untouched — out of this task's allowed-files scope
-(`MelonPrimePatchLifecycle.h/.cpp`, `MelonPrime.cpp` only). `PatchLifecycle`
-now owns 3 of the 4 non-declaration `ARM9Hook_SetMatchHooksActive` call
-sites in the codebase, not all 4.
+| Platform | Run | Conclusion |
+|---|---|---|
+| Windows | [28980208806](https://github.com/ag-advania/melonPrimeDS/actions/runs/28980208806) | success |
+| Ubuntu | [28980208824](https://github.com/ag-advania/melonPrimeDS/actions/runs/28980208824) | success |
+| macOS | [28980208815](https://github.com/ag-advania/melonPrimeDS/actions/runs/28980208815) | success |
+| BSD | [28980208884](https://github.com/ag-advania/melonPrimeDS/actions/runs/28980208884) | success |
+
+All 4 platforms green. Site D hook-only extraction is fully CI-confirmed.
+
+Follow-up: ROM-detect hook deactivation was also routed through
+`PatchLifecycle` as `DeactivateHooksForRomDetect` (commit `572f085e`,
+"Route ROM-detect hook deactivation through PatchLifecycle").
+`PatchLifecycle` now owns the direct `ARM9Hook_SetMatchHooksActive` call
+sites in `qt_sdl`; no direct call remains outside
+`MelonPrimePatchLifecycle.cpp`.
