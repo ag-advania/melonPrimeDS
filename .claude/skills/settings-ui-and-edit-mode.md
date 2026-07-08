@@ -127,7 +127,12 @@ This enables data-driven save/restore/snapshot/TOML-export without manual per-wi
 Widget `objectName`s are derived from config keys (`.` -> `_`), ensuring TOML auto-discovery (`findChildren<T*>()` in `MelonPrimeInputConfigCustomHudCode.inc`) works automatically.
 
 ### Color picker pattern
-In the in-game edit mode, color pickers use `QColorDialog` triggered by clicking the Color swatch in the element properties panel or the crosshair panel.
+Custom HUD color pickers call `MelonPrime::ColorDialogPrefs::getColor()` (see
+[custom-hud-color-dialog-prefs.md](../features/custom-hud-color-dialog-prefs.md)).
+The helper persists `QColorDialog` custom color slots to global config
+(`MelonPrime.ColorDialog.CustomColors`); call sites only write HUD `*ColorR/G/B`
+keys. In-game edit mode triggers pickers from the element properties panel,
+crosshair panel, or the floating `MelonPrimeHudConfigOnScreenEdit` panel.
 
 ### Preview system
 The settings dialog's Custom HUD tab features live preview widgets for each major HUD section except text scale. Preview widgets (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `RadarPreviewWidget`) read live from config and refresh whenever widget values change. All previews are tracked in `m_hudPreviews` for efficient bulk refresh.
