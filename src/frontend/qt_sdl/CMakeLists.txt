@@ -95,6 +95,9 @@ set(SOURCES_QT_SDL
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
     MelonPrimeRuntimeConfig.cpp
+    MelonPrimeScreenCursorPolicy.cpp
+    MelonPrimeHudEditorFormBuilder.cpp
+    MelonPrimePatchLifecycle.cpp
     MelonPrimeLocalization.cpp
     MelonPrimeLocalization/MelonPrimeLanguageRegistry.cpp
     MelonPrimeLocalization/MelonPrimeTranslationCatalog.cpp
