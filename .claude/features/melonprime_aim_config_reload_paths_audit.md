@@ -98,7 +98,10 @@ This is the option that removes duplication without changing observable
 behavior — but it still touches hot-launch-adjacent code (`RecalcAimFixedPoint`
 call site count would not change, only how the two callers get their
 sensitivity values), so it needs its own build+audit+smoke pass, not a
-doc-only change.
+doc-only change. **See `melonprime_aim_reload_outcome_c_design_note.md`**
+for the worked-out shape and an explicit answer to the three tradeoff
+questions below — all three came back favorable, but implementation is
+still deferred pending its own verification pass.
 
 **No outcome is selected by this document.** B and C are not implemented
 here.
