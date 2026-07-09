@@ -82,6 +82,7 @@
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
+#include "MelonPrimeVideoBackend.h"
 #define MP_OPEN_MELONDS_DLG(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialog<Type>(parent)
 #define MP_OPEN_MELONDS_DLG_ONCE(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialogOnce<Type>(parent)
 #else
@@ -1100,8 +1101,20 @@ void MainWindow::createScreenPanel()
     panel = nullptr;
     if (oldpanel) delete oldpanel;
 
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 1 (melonprime-metal-backend-plan.md): route through the
+    // shared resolver instead of duplicating this expression. Behavior is
+    // unchanged for every valid config; an out-of-range `3D.Renderer` value
+    // now normalizes to Software (hasOGL=false) instead of vacuously
+    // requesting a GL context, consistent with the Phase 0 safety fix in
+    // EmuThread::updateRenderer().
+    hasOGL = MelonPrime::VideoBackend::IsOpenGLPresentation(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer")));
+#else
     hasOGL = globalCfg.GetBool("Screen.UseGL") ||
         (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
+#endif
 
     if (hasOGL)
     {
