@@ -225,11 +225,11 @@ private:
 
     bool useOpenGL;
 #ifdef MELONPRIME_DS
-    // Metal-plan Phase 3 (.claude/rules/melonprime-metal-backend-plan.md):
-    // tracked in lockstep with useOpenGL at every site that currently writes
-    // it. Can only be NativeQt/OpenGL until Phase 4 gives EmuThread a real
-    // Metal-aware resolution path -- useOpenGL remains the source of truth
-    // for existing GL-context call sites until then.
+    // Metal-plan Phases 3/4 (.claude/rules/melonprime-metal-backend-plan.md):
+    // useOpenGL remains the "actual GL context is live" flag for existing
+    // GL call sites; videoBackend additionally distinguishes NativeQt from
+    // Metal when no GL context exists, so the emu thread can avoid scheduling
+    // Qt repaint signals for presenter-driven backends.
     MelonPrime::VideoBackend::PresentationBackend videoBackend =
         MelonPrime::VideoBackend::PresentationBackend::NativeQt;
 #endif

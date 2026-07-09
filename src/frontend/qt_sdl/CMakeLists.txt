@@ -280,20 +280,27 @@ endif()
 if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
 
-    # Metal-plan Phase 2 (.claude/rules/melonprime-metal-backend-plan.md):
-    # feature probe only. No presenter/renderer sources exist yet; later
-    # phases add their target_sources() calls inside this same guard.
+    # Metal-plan Phases 2 and 4 (.claude/rules/melonprime-metal-backend-plan.md):
+    # feature probe + CAMetalLayer presenter. No renderer3D_Metal / GPU3D
+    # sources exist yet; later phases add their target_sources() calls
+    # inside this same guard.
     find_library(METAL_LIB Metal)
     if (NOT METAL_LIB)
         message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
     endif()
-    target_link_libraries(melonDS PRIVATE ${METAL_LIB})
+    find_library(QUARTZCORE_LIB_METAL QuartzCore)
+    if (NOT QUARTZCORE_LIB_METAL)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the QuartzCore framework")
+    endif()
+    target_link_libraries(melonDS PRIVATE ${METAL_LIB} ${QUARTZCORE_LIB_METAL})
 
     target_sources(melonDS PRIVATE
         MelonPrimeMetalFeatureCheck.mm
+        MelonPrimeScreenMetal.mm
     )
     set_source_files_properties(
         MelonPrimeMetalFeatureCheck.mm
+        MelonPrimeScreenMetal.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
     )
 endif()

@@ -49,6 +49,19 @@ namespace MelonPrime::VideoBackend {
     // PresentationBackend directly instead of going through this bridge.
     PresentationBackend FromLegacyOpenGLFlag(bool useOpenGL);
 
+#if defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 4 bootstrap only: there is no persisted config key or
+    // UI for selecting the Metal presenter yet (that is Phase 9, once
+    // Phase 7 gives 3D.Renderer a real renderer3D_Metal value to route
+    // through like every other backend). Until then, the presenter can only
+    // be selected for local testing via the MELONPRIME_FORCE_METAL_PRESENTER
+    // environment variable ("1" to force it). Never read outside a
+    // MELONPRIME_ENABLE_METAL build; never persisted; never exposed in any
+    // UI. Delete this function (and its call site in
+    // ResolvePresentationBackend) once Phase 9 lands.
+    bool ShouldForceMetalPresenterFromEnv();
+#endif
+
 } // namespace MelonPrime::VideoBackend
 
 #endif // MELONPRIME_DS

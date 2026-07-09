@@ -117,20 +117,22 @@ void EmuThread::run()
     mainScreenPos[2] = 0;
     autoScreenSizing = 0;
 
-    if (emuInstance->usesOpenGL())
+#ifdef MELONPRIME_DS
+    videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+    useOpenGL = MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend);
+#else
+    useOpenGL = emuInstance->usesOpenGL();
+#endif
+    if (useOpenGL)
     {
         emuInstance->initOpenGL(0);
-        useOpenGL = true;
         videoRenderer = globalCfg.GetInt("3D.Renderer");
     }
     else
     {
-        useOpenGL = false;
         videoRenderer = 0;
     }
-#ifdef MELONPRIME_DS
-    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
-#endif
 
     videoSettingsDirty = true;
 
@@ -323,6 +325,15 @@ void EmuThread::run()
         // update render settings if needed
         if (videoSettingsDirty)
         {
+#ifdef MELONPRIME_DS
+            if (!useOpenGL)
+            {
+                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                    globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+                if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
+                    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
+            }
+#endif
             emuInstance->renderLock.lock();
             if (useOpenGL)
             {
@@ -437,7 +448,12 @@ void EmuThread::run()
 #endif // MELONCAP
 
         winUpdateCount++;
+#ifdef MELONPRIME_DS
+        if (winUpdateCount >= winUpdateFreq &&
+            videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt)
+#else
         if (winUpdateCount >= winUpdateFreq && !useOpenGL)
+#endif
         {
             emit windowUpdate();
             winUpdateCount = 0;
@@ -917,7 +933,11 @@ void EmuThread::handleMessages()
             {
                 useOpenGL = false;
 #ifdef MELONPRIME_DS
-                videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
+                auto& cfg = emuInstance->getGlobalConfig();
+                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                    cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+                if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
+                    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
 #endif
             }
             break;

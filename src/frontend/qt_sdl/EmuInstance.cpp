@@ -436,10 +436,9 @@ bool EmuInstance::usesOpenGL()
     // config value doesn't request a GL context it won't actually construct
     // as compute, and so a future non-OpenGL backend isn't mistaken for
     // requiring one. See melonprime-metal-backend-plan.md Phase 0.
-    const int requested = globalCfg.GetInt("3D.Renderer");
-    const int normalized = MelonPrime::VideoBackend::NormalizeRendererForPlatform(requested);
-    return globalCfg.GetBool("Screen.UseGL") ||
-           MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalized);
+    return MelonPrime::VideoBackend::IsOpenGLPresentation(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer")));
 #else
     return globalCfg.GetBool("Screen.UseGL") ||
            (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
