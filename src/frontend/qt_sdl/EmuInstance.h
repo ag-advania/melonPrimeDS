@@ -115,6 +115,9 @@ enum
     renderer3D_OpenGL,
     renderer3D_OpenGLCompute,
 #endif
+#if defined(MELONPRIME_ENABLE_METAL)
+    renderer3D_Metal,
+#endif
     renderer3D_Max,
 };
 

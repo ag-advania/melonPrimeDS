@@ -579,7 +579,50 @@ Metal output enum value in core.
 
 ---
 
-## 4. Remaining phases (Phase 7 onward)
+## 3f. Phase 7 completion — renderer shell + gated enum
+
+Phase 7 adds the first Metal renderer identity without shipping a real Metal GPU3D implementation.
+The new `renderer3D_Metal` enum value is compiled only when `MELONPRIME_ENABLE_METAL` is active, and
+`EmuThread::updateRenderer()` can now construct a `melonDS::MetalRenderer` shell for that value.
+
+The shell is intentionally non-functional: `MetalRenderer::Init()` logs that 2D/3D rendering is not
+implemented yet and returns `false`, letting the existing `GPU::SetRenderer()` failure path fall back
+to Software instead of crashing. `MetalRenderer::GetOutput()` currently returns `None`, and the
+presenter therefore still relies on CPU BGRA output from Software for the Phase 4/5 Metal presenter.
+
+Bootstrap selection remains developer-only:
+
+- `MELONPRIME_FORCE_METAL_RENDERER=1` requests `renderer3D_Metal` in Metal-enabled builds.
+- `MELONPRIME_FORCE_METAL_PRESENTER=1` still forces the CAMetalLayer presenter while normalizing
+  non-Metal hardware renderers back to Software because no GL context exists in that path.
+- No user-facing settings button was added; `High2` remains OpenGL-compute-only and remains disabled
+  on macOS.
+
+### 3f.1 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean; `GPU_Metal.cpp` is included only under
+  `MELONPRIME_METAL_ACTIVE`.
+- `cmake --build build-mac --parallel 4` — clean; default build has no Metal renderer strings or
+  force-env strings.
+- Runtime smoke with
+  `MELONPRIME_FORCE_METAL_RENDERER=1 MELONPRIME_FORCE_METAL_PRESENTER=1`: process stayed alive on
+  Intel Iris Plus 655 and logged Metal probe, CAMetalLayer presenter initialization, first draw, and
+  first UI overlay. No-ROM startup does not enter `EmuThread::updateRenderer()`, so the shell's
+  fallback log was not runtime-exercised without a ROM.
+- Metal-enabled binary symbol/string check confirms `melonDS::MetalRenderer` and
+  `MELONPRIME_FORCE_METAL_RENDERER` are present only in `build-mac-metal-test`.
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1`,
+  `audit-metroid-literal-budget.ps1 -Budget 1`,
+  `audit-platform-scatter-budget.ps1 -Budget 22`, `audit-color-dialog-prefs.ps1`,
+  `audit-melonprime-srp-performance.ps1`, and `generate-hud-prop-schema.py` + generated-file diff
+  all pass. The SRP audit's two `Screen.cpp` manual-review lines are pre-existing raw-aim items,
+  unchanged by this phase.
+- **Not verified:** Apple Silicon. **Not verified:** ROM gameplay visual parity or a real Metal GPU3D
+  draw path.
+
+---
+
+## 4. Remaining phases (Phase 8 onward)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -589,7 +632,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 7 | `MetalRenderer`/`MetalRenderer2D`/`MetalRenderer3D` shell + `renderer3D_Metal` enum value | Phase 6; must not add the enum value until the shell can fail gracefully (log + fallback) instead of crashing |
 | 8 | Port `GLRenderer3D` (not the compute renderer) to Metal, correctness-first | Phase 7 stable on Intel; parity-tested against existing OpenGL/software output on this machine. Apple Silicon parity is a separate gate. |
 | 9 | Separate macOS "Metal" preset/button in MelonPrime Settings (`High2` stays OpenGL-compute-only and stays disabled on macOS) | Phase 8 stable on Intel **and** confirmed on Apple Silicon before exposing to users — this is the phase where "Intel-only verified" is no longer good enough, since it changes what a shipped build offers |
 | 10 | Optional Metal compute-style renderer (stretch) | Phase 9 stable; separate GLSL→MSL barrier-semantics audit (`glMemoryBarrier` does not map 1:1 to any single Metal call) |
@@ -632,4 +674,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 4 — `ScreenPanelMetal` presenter | Done (Intel runtime smoke) | 2026-07-09 | `CAMetalLayer` presenter compiled only under `MELONPRIME_METAL_ACTIVE`; env-only bootstrap `MELONPRIME_FORCE_METAL_PRESENTER=1`; CPU BGRA framebuffer upload/present path runtime-verified on Intel Iris Plus 655; default binary has no Metal strings; OSD/HUD/splash and Apple Silicon still pending |
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
-| 7–10 | Not started | — | See §4. Phases 7-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
+| 8–10 | Not started | — | See §4. Phase 8 is achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
