@@ -118,11 +118,11 @@ namespace {
 #endif
     }
 
-#ifdef __APPLE__
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     // macOS OpenGL does not support the compute renderer path used by the
     // High2 preset (Screen.cpp / GPU3D_Compute), so the preset button is
     // disabled to avoid selecting a renderer that can crash on this platform.
-    // See melonprime-video-quality-macos.md for background.
+    // See melonprime_macos_compute_renderer_restriction.md for background.
     void DisableMacComputeVideoQualityButton(Ui::MelonPrimeInputConfig* ui)
     {
         if (!ui || !ui->metroidSetVideoQualityToHigh2)
@@ -144,7 +144,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 {
     ui->setupUi(this);
 
-#ifdef __APPLE__
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     DisableMacComputeVideoQualityButton(ui);
 #endif
 
@@ -164,7 +164,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
-#ifdef __APPLE__
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     DisableMacComputeVideoQualityButton(ui);
 #endif
     ConfigureScreenSyncControlsForPlatform(
@@ -1065,7 +1065,7 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh_clicked()
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
 {
-#ifdef __APPLE__
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     // Defense in depth: the button is disabled on macOS, but guard the slot
     // itself in case it is ever invoked directly (auto-connect, future
     // callers, etc). macOS OpenGL does not support the compute renderer.

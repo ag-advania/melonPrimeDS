@@ -28,8 +28,7 @@ void ResetForBoot(melonDS::NDS* nds,
 void RestoreForEmuStop(melonDS::NDS* nds,
                        EmuInstance* emu,
                        Config::Table& cfg,
-                       const RomAddresses& rom,
-                       bool romDetected);
+                       const RomAddresses& rom);
 
 void ReapplyForConfigReload(melonDS::NDS* nds,
                             EmuInstance* emu,
