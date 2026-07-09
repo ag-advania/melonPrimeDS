@@ -41,6 +41,7 @@ public:
     void SetThreaded(bool threaded) noexcept;
     [[nodiscard]] bool IsThreaded() const noexcept;
     void SetScaleFactor(int scale) noexcept;
+    void SetBetterPolygons(bool betterPolygons) noexcept;
 
     void RenderFrame() override;
     void FinishRendering() override;
@@ -62,6 +63,7 @@ private:
     SoftRenderer3D Delegate;
     std::unique_ptr<MetalState> State;
     int ScaleFactor = 1;
+    bool BetterPolygons = false;
 
     bool CreateDeviceObjects();
     bool BuildClearPipeline();
@@ -82,8 +84,8 @@ private:
     // visible polygons into ColorTarget/AttrTarget/DepthStencilTarget every
     // frame. This is a real, GPU-executed draw -- not a placeholder -- and
     // its native ColorTarget is read back through GetLine(), but it is not yet
-    // a complete GLRenderer3D mirror. Shadow masks, clear bitmap edge cases,
-    // edge marking, fog, and hires composition remain tracked in
+    // a complete GLRenderer3D mirror. Exact visual parity, hires composition,
+    // and later full-GPU composition work remain tracked in
     // GPU3D_Metal.mm and the Metal backend plan.
     void RenderNativeOpaquePolygons();
 };
