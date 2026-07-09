@@ -494,6 +494,7 @@ struct OpaqueVertexOut
     float fz;                 // perspective-correct-interpolated W-buffer depth
     int texLayer [[flat]];    // 0xFFFF sentinel = no texture
     int blendMode [[flat]];   // (polyAttr >> 4) & 0x3
+    uint polygonAttr [[flat]];
 };
 
 static inline OpaqueVertexOut BuildOpaqueVertex(
@@ -544,6 +545,7 @@ static inline OpaqueVertexOut BuildOpaqueVertex(
     out.fz = zndc;
     out.texLayer = int(w5 & 0xFFFFu);
     out.blendMode = int((w4 >> 4) & 0x3u);
+    out.polygonAttr = w4;
     return out;
 }
 
@@ -632,7 +634,17 @@ fragment OpaqueFragmentOut mp3d_opaque_fs_z(
 
     OpaqueFragmentOut out;
     out.color = col;
-    out.attr = float4(0.0, 0.0, 0.0, 1.0);
+    if ((in.polygonAttr & (1u << 31)) != 0u)
+    {
+        out.attr = float4(0.0, 0.0, 0.0, 1.0);
+    }
+    else
+    {
+        out.attr = float4(float((in.polygonAttr >> 24) & 0x3Fu) / 63.0,
+                          0.0,
+                          float((in.polygonAttr >> 15) & 0x1u),
+                          1.0);
+    }
     return out;
 }
 
@@ -655,7 +667,17 @@ fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
 
     OpaqueFragmentOutW out;
     out.color = col;
-    out.attr = float4(0.0, 0.0, 0.0, 1.0);
+    if ((in.polygonAttr & (1u << 31)) != 0u)
+    {
+        out.attr = float4(0.0, 0.0, 0.0, 1.0);
+    }
+    else
+    {
+        out.attr = float4(float((in.polygonAttr >> 24) & 0x3Fu) / 63.0,
+                          0.0,
+                          float((in.polygonAttr >> 15) & 0x1u),
+                          1.0);
+    }
     out.depth = in.fz;
     return out;
 }
@@ -1230,7 +1252,9 @@ bool MetalRenderer3D::ClearNativeTarget()
     pass.colorAttachments[1].texture = State->AttrTarget;
     pass.colorAttachments[1].loadAction = MTLLoadActionClear;
     pass.colorAttachments[1].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[1].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+    const double clearPolyID = static_cast<double>((GPU3D.RenderClearAttr1 >> 24) & 0x3F) / 63.0;
+    const double clearFogFlag = static_cast<double>((GPU3D.RenderClearAttr1 >> 15) & 0x1);
+    pass.colorAttachments[1].clearColor = MTLClearColorMake(clearPolyID, 0.0, clearFogFlag, 1.0);
 
     pass.depthAttachment.texture = State->DepthStencilTarget;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
@@ -1436,21 +1460,16 @@ struct OpaqueDrawGroup
 // per non-empty group.
 //
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
-// Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource
-// for texturing-specific gaps: no toon/highlight color substitution, no
-// VRAM-display-capture-as-texture. TexRepeat wrap/mirror IS implemented,
-// see TexRepeatAddressModeIndex() and OpaqueDrawGroupKey::TexRepeat):
-//   - translucent polygons, shadow masks/shadows, line-type polygons
-//   - the depth-func-equal attribute bit (bit14) -- always MTLCompareFunctionLess
+// Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource):
+//   - shadow masks/shadows, line-type polygons, VRAM-display-capture-as-texture
 //   - "BetterPolygons" alternate triangulation
-//   - edge marking, fog, and the final composite pass
-//   - final 2D/3D composition through GetLine()/the presenter
+//   - clear bitmap, edge marking, fog, and the final GL-style post-pass
 //
 // ScaleFactor controls the Metal render-target size. DS screen-space
 // coordinates remain native 256x192 and are mapped to NDC, so rasterization
 // covers the full scaled render target. Full GL parity is still incomplete
-// because translucent polygons, edge/fog/final composite, and 2D/3D
-// composition correctness are not finished.
+// because shadow masks, clear bitmap, edge/fog/final post-processing, and
+// hires 2D/3D composition are not finished.
 void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||
@@ -1511,7 +1530,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         consideredPolygons++;
 
         const uint32_t alpha = (static_cast<uint32_t>(poly->Attr) >> 16) & 0x1Fu;
-        const uint32_t blendModeBits = static_cast<uint32_t>(poly->Attr) & 0x30u; // bits 4-5
 
         // Texture resolution: same entry point GLRenderer3D::BuildPolygons()
         // uses (Texcache<>::GetTexture()), called unconditionally per
@@ -1558,9 +1576,15 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
             vertexWords.push_back(x | (y << 16));
             vertexWords.push_back(z | (w << 16));
+            uint32_t shaderAttr =
+                (static_cast<uint32_t>(poly->Attr) & ((0x3Fu << 24) | (1u << 15) | 0x30u)) |
+                (zshift << 16);
+            if (poly->Translucent)
+                shaderAttr |= (1u << 31);
+
             vertexWords.push_back(r | (g << 8) | (b << 16) | (alpha << 24));
             vertexWords.push_back(texS | (texT << 16));
-            vertexWords.push_back(blendModeBits | (zshift << 16));
+            vertexWords.push_back(shaderAttr);
             vertexWords.push_back(texLayerWord);
             vertexWords.push_back(texDimsWord);
         }
