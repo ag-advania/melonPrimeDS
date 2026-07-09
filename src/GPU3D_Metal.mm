@@ -464,15 +464,10 @@ fragment ClearFragmentOut mp3d_clear_fs()
 // is decoded by the shared Texcache<> template (GPU3D_Texcache.h, the same
 // code GLRenderer3D uses) into a common RGB6A5-packed-as-4-raw-bytes
 // representation before it ever reaches this shader, so there is no
-// per-format branching here -- only modulate ((blendmode&1)==0) and decal
-// ((blendmode&1)==1) blending are implemented. The toon/highlight color
-// substitution GL performs for blendmode==2 (which needs the per-frame
-// toon-color-table/DispCnt uniforms, not yet plumbed to this pass) is
-// intentionally skipped: a blendmode==2 polygon still selects the correct
-// modulate/decal path (2&1==0, same as blendmode 0) but uses its raw
-// (non-toon-substituted) vertex color, which is visibly wrong for toon-
-// shaded content specifically -- a narrower, explicitly documented gap
-// than "no texturing at all". Texture wrapping/mirroring (TexRepeat bits)
+// per-format branching here -- modulate/decal and the blendmode==2
+// toon/highlight color substitution use the per-frame RenderDispCnt and
+// toon table passed through OpaqueRenderConfig. Texture wrapping/mirroring
+// (TexRepeat bits)
 // is implemented at the sampler-state level (BuildOpaqueRenderPipelines()
 // builds one MTLSamplerState per (S,T) address-mode combination,
 // RenderNativeOpaquePolygons() selects the one matching each draw group's
@@ -486,6 +481,9 @@ using namespace metal;
 struct OpaqueRenderConfig
 {
     float2 screenSize;
+    uint dispCnt;
+    uint _pad;
+    float4 toonTable[32];
 };
 
 struct OpaqueVertexOut
@@ -568,24 +566,47 @@ vertex OpaqueVertexOut mp3d_opaque_vs_w(
 static inline float4 OpaqueFinalColor(
     OpaqueVertexOut in [[stage_in]],
     texture2d_array<uint> tex,
-    sampler smp)
+    sampler smp,
+    constant OpaqueRenderConfig& config)
 {
     float4 vcol = in.color;
-    if (in.texLayer == 0xFFFF)
-        return vcol;
-
-    uint4 raw = tex.sample(smp, in.texcoord, uint(in.texLayer));
-    float4 tcol = float4(raw) / float4(63.0, 63.0, 63.0, 31.0);
-
-    if ((in.blendMode & 1) != 0)
+    float4 toon = config.toonTable[uint(clamp(vcol.r * 31.0, 0.0, 31.0))];
+    bool toonOrHighlight = in.blendMode == 2;
+    bool highlight = toonOrHighlight && ((config.dispCnt & (1u << 1)) != 0u);
+    if (toonOrHighlight)
     {
-        // decal
-        float3 rgb = (tcol.rgb * tcol.a) + (vcol.rgb * (1.0 - tcol.a));
-        return float4(rgb, vcol.a);
+        if (highlight)
+            vcol.gb = vcol.rr;
+        else
+            vcol.rgb = toon.rgb;
     }
-    // modulate (also the fallback path for blendmode 2/"toon or highlight" --
-    // see the scope note above kMetal3DOpaqueShaderSource)
-    return vcol * tcol;
+
+    float4 outColor;
+    if (in.texLayer == 0xFFFF)
+    {
+        outColor = vcol;
+    }
+    else
+    {
+        uint4 raw = tex.sample(smp, in.texcoord, uint(in.texLayer));
+        float4 tcol = float4(raw) / float4(63.0, 63.0, 63.0, 31.0);
+
+        if ((in.blendMode & 1) != 0)
+        {
+            // decal
+            float3 rgb = (tcol.rgb * tcol.a) + (vcol.rgb * (1.0 - tcol.a));
+            outColor = float4(rgb, vcol.a);
+        }
+        else
+        {
+            // modulate
+            outColor = vcol * tcol;
+        }
+    }
+
+    if (highlight)
+        outColor.rgb = min(outColor.rgb + toon.rgb, float3(1.0));
+    return outColor;
 }
 
 struct OpaqueFragmentOut
@@ -602,9 +623,10 @@ struct OpaqueFragmentOut
 fragment OpaqueFragmentOut mp3d_opaque_fs_z(
     OpaqueVertexOut in [[stage_in]],
     texture2d_array<uint> tex [[texture(0)]],
-    sampler smp [[sampler(0)]])
+    sampler smp [[sampler(0)]],
+    constant OpaqueRenderConfig& config [[buffer(1)]])
 {
-    float4 col = OpaqueFinalColor(in, tex, smp);
+    float4 col = OpaqueFinalColor(in, tex, smp, config);
     if (col.a < (0.5 / 31.0))
         discard_fragment();
 
@@ -624,9 +646,10 @@ struct OpaqueFragmentOutW
 fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
     OpaqueVertexOut in [[stage_in]],
     texture2d_array<uint> tex [[texture(0)]],
-    sampler smp [[sampler(0)]])
+    sampler smp [[sampler(0)]],
+    constant OpaqueRenderConfig& config [[buffer(1)]])
 {
-    float4 col = OpaqueFinalColor(in, tex, smp);
+    float4 col = OpaqueFinalColor(in, tex, smp, config);
     if (col.a < (0.5 / 31.0))
         discard_fragment();
 
@@ -1620,7 +1643,24 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
     // Always the native 256x192 DS coordinate space -- FinalPosition is used
     // unconditionally above regardless of ScaleFactor (see the scope note).
-    struct { float screenSize[2]; } config = { { 256.0f, 192.0f } };
+    struct OpaqueRenderConfigCpu
+    {
+        float screenSize[2];
+        uint32_t dispCnt;
+        uint32_t pad;
+        float toonTable[32][4];
+    } config = {};
+    config.screenSize[0] = 256.0f;
+    config.screenSize[1] = 192.0f;
+    config.dispCnt = GPU3D.RenderDispCnt;
+    for (int i = 0; i < 32; i++)
+    {
+        const u16 color = GPU3D.RenderToonTable[i];
+        config.toonTable[i][0] = static_cast<float>(color & 0x1F) / 31.0f;
+        config.toonTable[i][1] = static_cast<float>((color >> 5) & 0x1F) / 31.0f;
+        config.toonTable[i][2] = static_cast<float>((color >> 10) & 0x1F) / 31.0f;
+        config.toonTable[i][3] = 1.0f;
+    }
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = State->ColorTarget;
@@ -1646,6 +1686,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
     [encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
     [encoder setVertexBytes:&config length:sizeof(config) atIndex:1];
+    [encoder setFragmentBytes:&config length:sizeof(config) atIndex:1];
     [encoder setViewport:(MTLViewport){0.0, 0.0,
         static_cast<double>(State->ColorTarget.width),
         static_cast<double>(State->ColorTarget.height),
