@@ -460,11 +460,9 @@ void ScreenPanelMetal::drawScreen()
         {
             auto nds = emuInstance->getNDS();
 
-            void* topBuf = nullptr;
-            void* bottomBuf = nullptr;
-            const bool hasCpuBuffers = nds->GPU.GetFramebuffers(&topBuf, &bottomBuf);
-            hasCpuBuffersForFrame = hasCpuBuffers;
-            bottomCpuBufForFrame = bottomBuf;
+            const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
+            hasCpuBuffersForFrame = (output.Kind == melonDS::RendererOutputKind::CpuBgra);
+            bottomCpuBufForFrame = output.Bottom;
 
             // Phase 4 scope is CPU-buffer presentation only (design doc: "no
             // renderer3D_Metal yet"). A hardware (GL-texture) renderer output
@@ -473,15 +471,15 @@ void ScreenPanelMetal::drawScreen()
             // force-selected (see MelonPrimeVideoBackend.cpp), so this should
             // never actually be false here; skip the frame defensively rather
             // than dereference topBuf as a GLuint*.
-            if (hasCpuBuffers)
+            if (hasCpuBuffersForFrame)
             {
                 [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
-                                      withBytes:topBuf
+                                      withBytes:output.Top
                                     bytesPerRow:256 * 4];
                 [m->screenTex[1] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
-                                      withBytes:bottomBuf
+                                      withBytes:output.Bottom
                                     bytesPerRow:256 * 4];
 
                 [encoder setRenderPipelineState:m->pipeline];

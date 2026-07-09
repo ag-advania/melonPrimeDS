@@ -510,7 +510,76 @@ over the Metal-presented screens with `source=One`, `dest=OneMinusSourceAlpha`.
 
 ---
 
-## 4. Remaining phases (Phase 6 onward)
+## 3e. Phase 6 — `RendererOutput` abstraction (implemented, 2026-07-09)
+
+Design doc §12 scope. The old `GPU::GetFramebuffers(void**, void**) -> bool`
+contract is preserved for upstream compatibility, but frontend presenters no
+longer need to infer "CPU vs GL texture" from a boolean plus loosely-typed
+`void*` payload. New core types in [GPU.h](../../src/GPU.h):
+
+```cpp
+enum class RendererOutputKind {
+    CpuBgra,
+    OpenGLTextureArray,
+#if defined(MELONPRIME_ENABLE_METAL)
+    MetalTexture,
+#endif
+    None,
+};
+
+struct RendererOutput {
+    RendererOutputKind Kind;
+    void* Top;
+    void* Bottom;
+};
+```
+
+`Renderer::GetOutput()` defaults to wrapping the legacy virtual
+`GetFramebuffers()` result: CPU renderers become `CpuBgra`; the existing GL
+renderer's texture-array payload becomes `OpenGLTextureArray`. Future Metal
+renderers can override `GetOutput()` and return `MetalTexture` explicitly.
+`GPU::GetRendererOutput()` exposes the typed wrapper to frontend presenters.
+
+Important kill-switch detail: `RendererOutputKind::MetalTexture` and
+`RendererOutput::MetalTexture()` only exist when `MELONPRIME_ENABLE_METAL` is
+defined. `CMakeLists.txt` now propagates that define to `core` only inside
+`MELONPRIME_METAL_ACTIVE`, so the default/force-disabled build still has no
+Metal output enum value in core.
+
+### 3e.1 Call sites migrated
+
+- `ScreenPanelNative::drawScreen()` now accepts only `CpuBgra`.
+- `ScreenPanelGL::drawScreen()` branches explicitly on `CpuBgra` vs
+  `OpenGLTextureArray` instead of using `GetFramebuffers()`'s bool result.
+- `ScreenPanelMetal::drawScreen()` accepts only `CpuBgra` for the current Phase
+  4/5 CPU presenter, making future `MetalTexture` output impossible to
+  accidentally reinterpret as CPU bytes.
+
+### 3e.2 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean after CMake
+  reconfiguration; core was rebuilt with `MELONPRIME_ENABLE_METAL=1`.
+- `cmake --build build-mac --parallel 4` — clean after CMake reconfiguration;
+  default core built without the Metal output enum value (only pre-existing
+  `sprintf` and HUD `EditPropType::Color` warnings).
+- Runtime smoke with `MELONPRIME_FORCE_METAL_PRESENTER=1`: process stayed alive
+  and logged Metal presenter first draw + first UI overlay, confirming the Metal
+  presenter still receives CPU BGRA output via `RendererOutput`.
+- Default binary string check: no `metal presenter`, `metal probe`,
+  `MelonPrimeScreenMetal`, or `MELONPRIME_FORCE_METAL` strings in
+  `build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`.
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1`,
+  `audit-metroid-literal-budget.ps1 -Budget 1`,
+  `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1`, and
+  `generate-hud-prop-schema.py` + generated-file diff all pass. The SRP audit's
+  two `Screen.cpp` manual-review lines are pre-existing raw-aim items, unchanged
+  by this phase.
+- **Not verified:** Apple Silicon. **Not verified:** ROM gameplay visual parity.
+
+---
+
+## 4. Remaining phases (Phase 7 onward)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -520,7 +589,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 6 | `RendererOutput` abstraction (explicit CPU/GL/Metal output kind) | Phase 4 (needed before any Metal-texture renderer output can exist) |
 | 7 | `MetalRenderer`/`MetalRenderer2D`/`MetalRenderer3D` shell + `renderer3D_Metal` enum value | Phase 6; must not add the enum value until the shell can fail gracefully (log + fallback) instead of crashing |
 | 8 | Port `GLRenderer3D` (not the compute renderer) to Metal, correctness-first | Phase 7 stable on Intel; parity-tested against existing OpenGL/software output on this machine. Apple Silicon parity is a separate gate. |
 | 9 | Separate macOS "Metal" preset/button in MelonPrime Settings (`High2` stays OpenGL-compute-only and stays disabled on macOS) | Phase 8 stable on Intel **and** confirmed on Apple Silicon before exposing to users — this is the phase where "Intel-only verified" is no longer good enough, since it changes what a shipped build offers |
@@ -563,4 +631,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 3 — EmuThread backend tracking | Done (partial by design) | 2026-07-09 | New `videoBackend` member tracked at all 4 write sites; the 5 read sites (context-current gating, repaint signal, VSync branch) deliberately left on `useOpenGL` until Phase 4 needs 3-way branching; both `build-mac` and `build-mac-metal-test` rebuild clean, launch smoke tests pass, all PS1 audits green |
 | 4 — `ScreenPanelMetal` presenter | Done (Intel runtime smoke) | 2026-07-09 | `CAMetalLayer` presenter compiled only under `MELONPRIME_METAL_ACTIVE`; env-only bootstrap `MELONPRIME_FORCE_METAL_PRESENTER=1`; CPU BGRA framebuffer upload/present path runtime-verified on Intel Iris Plus 655; default binary has no Metal strings; OSD/HUD/splash and Apple Silicon still pending |
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
-| 6–10 | Not started | — | See §4. Phases 6-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
+| 7–10 | Not started | — | See §4. Phases 7-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
