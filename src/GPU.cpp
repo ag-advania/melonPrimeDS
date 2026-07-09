@@ -349,6 +349,11 @@ bool GPU::GetFramebuffers(void** top, void** bottom)
     return Rend->GetFramebuffers(top, bottom);
 }
 
+RendererOutput GPU::GetRendererOutput()
+{
+    return Rend->GetOutput();
+}
+
 
 u8 GPU::Read8(u32 addr)
 {

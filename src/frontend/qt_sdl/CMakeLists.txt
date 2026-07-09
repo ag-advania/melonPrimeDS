@@ -279,11 +279,12 @@ endif()
 
 if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
+    target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)
 
-    # Metal-plan Phases 2 and 4 (.claude/rules/melonprime-metal-backend-plan.md):
-    # feature probe + CAMetalLayer presenter. No renderer3D_Metal / GPU3D
-    # sources exist yet; later phases add their target_sources() calls
-    # inside this same guard.
+    # Metal-plan Phases 2/4/6 (.claude/rules/melonprime-metal-backend-plan.md):
+    # feature probe + CAMetalLayer presenter + gated core RendererOutput Metal
+    # kind. No renderer3D_Metal / GPU3D sources exist yet; later phases add
+    # their target_sources() calls inside this same guard.
     find_library(METAL_LIB Metal)
     if (NOT METAL_LIB)
         message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
