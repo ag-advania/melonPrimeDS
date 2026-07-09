@@ -17,6 +17,7 @@
 */
 
 #include <QFileDialog>
+#include <QRadioButton>
 #include <QtGlobal>
 
 #include "types.h"
@@ -30,6 +31,10 @@
 
 #ifdef MELONPRIME_DS
 #include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeLocalization.h"
+#if defined(MELONPRIME_ENABLE_METAL)
+#include "MelonPrimeMetalFeatureCheck.h"
+#endif
 #endif // MELONPRIME_DS
 
 
@@ -59,12 +64,27 @@ void VideoSettingsDialog::setEnabled()
     auto& cfg = emuInstance->getGlobalConfig();
     int renderer = cfg.GetInt("3D.Renderer");
 
-    bool softwareRenderer = renderer == renderer3D_Software;
+    const bool softwareRenderer = renderer == renderer3D_Software;
+    const bool openGLRenderer = renderer == renderer3D_OpenGL;
+    const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
     ui->cbGLDisplay->setEnabled(softwareRenderer);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
+    // visible 3D output is still produced by its internal SoftRenderer3D
+    // delegate (see GPU3D_Metal.mm / GPU_Metal.cpp and
+    // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
+    // "Software.Threaded" genuinely affects Metal's performance today.
+    // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
+    // all yet, so they stay OpenGL/Compute-only below rather than being
+    // exposed as if they already work for Metal.
+    const bool metalRenderer = renderer == renderer3D_Metal;
+    ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
+#else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
-    ui->cbxGLResolution->setEnabled(!softwareRenderer);
-    ui->cbBetterPolygons->setEnabled(renderer == renderer3D_OpenGL);
-    ui->cbxComputeHiResCoords->setEnabled(renderer == renderer3D_OpenGLCompute);
+#endif
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer);
+    ui->cbBetterPolygons->setEnabled(openGLRenderer);
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -88,6 +108,15 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
     grp3DRenderer->addButton(ui->rb3DOpenGL,   renderer3D_OpenGL);
     grp3DRenderer->addButton(ui->rb3DCompute,  renderer3D_OpenGLCompute);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    rb3DMetal = new QRadioButton(ui->groupBox);
+    rb3DMetal->setObjectName(QStringLiteral("rb3DMetal"));
+    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal (Experimental)"));
+    rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Experimental native Metal renderer for testing on macOS. Not the same as the OpenGL Compute renderer. Visual parity and performance are not final.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
+    grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
+#endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #else
@@ -115,6 +144,23 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
 #ifdef __APPLE__
     ui->rb3DCompute->setEnabled(false);
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 9 (tester UI exposure): visible only on Metal-capable
+    // builds; enabled only once the runtime feature probe
+    // (MelonPrimeMetalFeatureCheck.h) confirms this Mac/GPU/driver can
+    // actually construct a Metal device + pipeline. High2 is left
+    // untouched -- it stays OpenGL Compute only, see
+    // melonprime_macos_compute_renderer_restriction.md. Label/tooltip must
+    // stay honest about "experimental"; see
+    // .claude/rules/plan/metal_tester_ui_perf_audit_and_execution_instructions_v2.md.
+    const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
+    const QString metalTooltip = metalSupported
+        ? QStringLiteral("Experimental native Metal renderer for testing. Not the same as High2 / OpenGL Compute. Visual parity and performance are not final.")
+        : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
+    rb3DMetal->setEnabled(metalSupported);
+    rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
