@@ -76,6 +76,15 @@ bool MetalDiagEnabled()
     return enabled;
 }
 
+bool MetalDiagSolidNative3DEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_DIAG_SOLID_NATIVE3D");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 double MetalPerfElapsedMs(MetalPerfClock::time_point start, MetalPerfClock::time_point end)
 {
     return std::chrono::duration<double, std::milli>(end - start).count();
@@ -691,7 +700,10 @@ void MetalRenderer3D::RenderFrame()
     {
         ClearNativeTarget();
         const auto nativeStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
-        RenderNativeOpaquePolygons();
+        if (MetalDiagSolidNative3DEnabled())
+            DrawSolidNative3DDiagnostic();
+        else
+            RenderNativeOpaquePolygons();
         if (perfEnabled)
             perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
     }
@@ -1057,6 +1069,82 @@ bool MetalRenderer3D::ClearNativeTarget()
     if (MetalPerfEnabled())
         MetalPerfAddWait(waitStart, MetalPerfClock::now());
     return commandBuffer.status == MTLCommandBufferStatusCompleted;
+}
+
+bool MetalRenderer3D::DrawSolidNative3DDiagnostic()
+{
+    if (!State || !State->CommandQueue || !State->ColorTarget || !State->AttrTarget || !State->DepthStencilTarget)
+        return false;
+
+    MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = State->ColorTarget;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.85, 0.35, 1.0);
+
+    pass.colorAttachments[1].texture = State->AttrTarget;
+    pass.colorAttachments[1].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[1].storeAction = MTLStoreActionStore;
+    pass.colorAttachments[1].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+
+    pass.depthAttachment.texture = State->DepthStencilTarget;
+    pass.depthAttachment.loadAction = MTLLoadActionClear;
+    pass.depthAttachment.storeAction = MTLStoreActionStore;
+    pass.depthAttachment.clearDepth = 1.0;
+
+    pass.stencilAttachment.texture = State->DepthStencilTarget;
+    pass.stencilAttachment.loadAction = MTLLoadActionClear;
+    pass.stencilAttachment.storeAction = MTLStoreActionStore;
+    pass.stencilAttachment.clearStencil = 0xFF;
+
+    id<MTLCommandBuffer> commandBuffer = [State->CommandQueue commandBuffer];
+    if (!commandBuffer)
+        return false;
+
+    id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+    if (!encoder)
+        return false;
+    [encoder setViewport:(MTLViewport){0.0, 0.0,
+        static_cast<double>(State->ColorTarget.width),
+        static_cast<double>(State->ColorTarget.height),
+        0.0, 1.0}];
+    [encoder endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+        return false;
+
+    State->LastDiagnostics = {};
+    if (MetalDiagEnabled())
+    {
+        const MetalTextureReadbackSummary summary =
+            ReadbackBGRA8Texture(State->CommandQueue, State->ColorTarget, 0);
+        State->LastDiagnostics.NonzeroPixels = summary.NonzeroPixels;
+        State->LastDiagnostics.Checksum = summary.Checksum;
+        State->LastDiagnostics.FirstNonzeroX = summary.FirstNonzeroX;
+        State->LastDiagnostics.FirstNonzeroY = summary.FirstNonzeroY;
+        for (int c = 0; c < 4; c++)
+            State->LastDiagnostics.FirstNonzeroBGRA[c] = summary.FirstNonzeroBGRA[c];
+    }
+    else
+    {
+        State->LastDiagnostics.NonzeroPixels =
+            static_cast<uint64_t>(State->ColorTarget.width) * static_cast<uint64_t>(State->ColorTarget.height);
+    }
+
+    static uint64_t solidFrames = 0;
+    solidFrames++;
+    if (solidFrames <= 3 || (solidFrames % 60) == 0)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal 3d diag: solid native3D frame=%llu nonzero=%llu target=%zux%zu\n",
+            static_cast<unsigned long long>(solidFrames),
+            static_cast<unsigned long long>(State->LastDiagnostics.NonzeroPixels),
+            static_cast<size_t>(State->ColorTarget.width),
+            static_cast<size_t>(State->ColorTarget.height));
+    }
+
+    return true;
 }
 
 namespace {

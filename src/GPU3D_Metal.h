@@ -68,6 +68,7 @@ private:
     bool BuildOpaqueRenderPipelines();
     bool ResizeTargets();
     bool ClearNativeTarget();
+    bool DrawSolidNative3DDiagnostic();
 
     // Phase 8 "port order" steps 2-4 (melonprime-metal-backend-plan.md,
     // design doc S14): uploads GPU3D::RenderPolygonRAM into native Metal

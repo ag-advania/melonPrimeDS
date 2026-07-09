@@ -1034,3 +1034,14 @@ Metal can become the Compute Renderer replacement on macOS, but only if it behav
 - If Engine A needs native 3D but no native target exists, the affected layer is cleared red.
 - If Engine A needs native 3D but the native texture belongs to the wrong Metal device, the affected layer is cleared blue.
 - Verified `cmake --build build-mac-metal-test --parallel 4`; default `cmake --build build-mac --parallel 4` reported no work to do.
+
+### 2026-07-10 JST — Phase D complete
+
+- Added `MELONPRIME_METAL_DIAG_FINAL_LAYERS=1`.
+  - The final composer bypasses normal source routing and writes synthetic checker sources through the normal final-pass pipeline.
+  - Layer 0 is red/green checker; layer 1 is blue/yellow checker.
+  - Logs one-shot activation: `[MelonPrime] metal final diag: final-layer checker override active layer0=red/green layer1=blue/yellow`.
+- Added `MELONPRIME_METAL_DIAG_SOLID_NATIVE3D=1`.
+  - `MetalRenderer3D` clears the native 3D ColorTarget to a fixed green diagnostic color and skips real polygon submission for that frame.
+  - Logs rate-limited activation/readback summary: `[MelonPrime] metal 3d diag: solid native3D frame=<n> nonzero=<n> target=<w>x<h>`.
+- Verified `cmake --build build-mac-metal-test --parallel 4`; default `cmake --build build-mac --parallel 4` reported no work to do.
