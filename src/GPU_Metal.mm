@@ -102,6 +102,15 @@ bool MetalDiagFinalLayersEnabled()
     return enabled;
 }
 
+bool MetalNative3DVisibleEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_NATIVE_3D_VISIBLE");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 double ElapsedMs(MetalClock::time_point start, MetalClock::time_point end)
 {
     return std::chrono::duration<double, std::milli>(end - start).count();
@@ -337,6 +346,10 @@ struct MetalRenderer::MetalFinalState
     bool LoggedSoftwareFallbackError = false;
     uint64_t LastRoutingSignature = ~uint64_t { 0 };
     bool LoggedFinalLayerDiagnostic = false;
+    bool LoggedNativeVisibleDisabled = false;
+    bool LoggedUnsupportedRouteCpuFallback = false;
+    bool LoggedNative3DMissingCpuFallback = false;
+    bool LoggedNative3DDeviceMismatchCpuFallback = false;
 };
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
@@ -541,6 +554,7 @@ bool MetalRenderer::EnsureFinalOutputForDevice(void* preferredDevice)
     state.Scale = scale;
     state.FrontBuffer = 0;
     state.HasCompletedFrame = false;
+    state.FrameSerial = 0;
     state.CompletedFrameSerial = 0;
 
     std::fprintf(stderr,
@@ -609,6 +623,9 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
     const NSUInteger finalHeight = finalTex.height;
     const uint64_t frameSerial = ++state.FrameSerial;
     const uint64_t routeSig = RoutingSignature(routing);
+    const bool routeDiagnostics = MetalDiagEnabled() || MetalNative3DVisibleEnabled();
+    const bool finalLayerDiagnostic = MetalDiagFinalLayersEnabled();
+    const bool native3DVisible = MetalNative3DVisibleEnabled();
 
     if (frameSerial <= 3 || (frameSerial % 600) == 0)
     {
@@ -621,7 +638,7 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
             static_cast<size_t>(finalWidth),
             static_cast<size_t>(finalHeight));
     }
-    if (routeSig != state.LastRoutingSignature)
+    if (routeDiagnostics && routeSig != state.LastRoutingSignature)
     {
         state.LastRoutingSignature = routeSig;
         std::fprintf(stderr,
@@ -640,13 +657,19 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
             routing.UnsupportedRoute ? 1u : 0u,
             routing.UnsupportedReason);
     }
-    const bool finalLayerDiagnostic = MetalDiagFinalLayersEnabled();
     if (finalLayerDiagnostic && !state.LoggedFinalLayerDiagnostic)
     {
         state.LoggedFinalLayerDiagnostic = true;
         std::fprintf(stderr,
             "[MelonPrime] metal final diag: final-layer checker override active "
             "layer0=red/green layer1=blue/yellow\n");
+    }
+    if (!native3DVisible && routing.EngineAUses3D && hasCpuScreens && !state.LoggedNativeVisibleDisabled)
+    {
+        state.LoggedNativeVisibleDisabled = true;
+        std::fprintf(stderr,
+            "[MelonPrime] metal final route: native 3D visibility is disabled; using completed CPU-composited screens "
+            "(set MELONPRIME_METAL_NATIVE_3D_VISIBLE=1 for bring-up)\n");
     }
 
     for (int layer = 0; layer < 2; layer++)
@@ -662,23 +685,80 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
             source = state.CpuScreenTex[layer];
             sampler = state.NearestSampler;
         }
-        else if (routing.UnsupportedRoute && layer == routing.Native3DLayer)
+        else if (native3DVisible && routing.UnsupportedRoute && layer == routing.Native3DLayer)
         {
-            // Magenta: final-composer route is known unsupported. Do not
-            // hide it with CPU-complete Software output.
-            clearColor = MTLClearColorMake(1.0, 0.0, 1.0, 1.0);
+            if (MetalDiagEnabled())
+            {
+                clearColor = MTLClearColorMake(1.0, 0.0, 1.0, 1.0);
+            }
+            else if (hasCpuScreens)
+            {
+                if (!state.LoggedUnsupportedRouteCpuFallback)
+                {
+                    state.LoggedUnsupportedRouteCpuFallback = true;
+                    std::fprintf(stderr,
+                        "[MelonPrime] metal final route: unsupported native route (%s); using CPU-composited layer\n",
+                        routing.UnsupportedReason);
+                }
+                void* cpuLayer = (layer == 0) ? topCpu : bottomCpu;
+                [state.CpuScreenTex[layer] replaceRegion:MTLRegionMake2D(0, 0, kScreenW, kScreenH)
+                                          mipmapLevel:0
+                                            withBytes:cpuLayer
+                                          bytesPerRow:kScreenW * 4];
+                uploadBytes += static_cast<uint64_t>(kScreenW) * kScreenH * 4;
+                source = state.CpuScreenTex[layer];
+                sampler = state.NearestSampler;
+            }
         }
-        else if (routing.EngineAUses3D && layer == routing.Native3DLayer)
+        else if (native3DVisible && routing.EngineAUses3D && layer == routing.Native3DLayer)
         {
             if (native3DMissing)
             {
-                // Red: Engine A needs native 3D, but no native target exists.
-                clearColor = MTLClearColorMake(1.0, 0.0, 0.0, 1.0);
+                if (MetalDiagEnabled())
+                {
+                    clearColor = MTLClearColorMake(1.0, 0.0, 0.0, 1.0);
+                }
+                else if (hasCpuScreens)
+                {
+                    if (!state.LoggedNative3DMissingCpuFallback)
+                    {
+                        state.LoggedNative3DMissingCpuFallback = true;
+                        std::fprintf(stderr,
+                            "[MelonPrime] metal final route: native 3D target missing; using CPU-composited layer\n");
+                    }
+                    void* cpuLayer = (layer == 0) ? topCpu : bottomCpu;
+                    [state.CpuScreenTex[layer] replaceRegion:MTLRegionMake2D(0, 0, kScreenW, kScreenH)
+                                              mipmapLevel:0
+                                                withBytes:cpuLayer
+                                              bytesPerRow:kScreenW * 4];
+                    uploadBytes += static_cast<uint64_t>(kScreenW) * kScreenH * 4;
+                    source = state.CpuScreenTex[layer];
+                    sampler = state.NearestSampler;
+                }
             }
             else if (native3DDeviceMismatch)
             {
-                // Blue: native target exists but belongs to a different device.
-                clearColor = MTLClearColorMake(0.0, 0.0, 1.0, 1.0);
+                if (MetalDiagEnabled())
+                {
+                    clearColor = MTLClearColorMake(0.0, 0.0, 1.0, 1.0);
+                }
+                else if (hasCpuScreens)
+                {
+                    if (!state.LoggedNative3DDeviceMismatchCpuFallback)
+                    {
+                        state.LoggedNative3DDeviceMismatchCpuFallback = true;
+                        std::fprintf(stderr,
+                            "[MelonPrime] metal final route: native 3D target device mismatch; using CPU-composited layer\n");
+                    }
+                    void* cpuLayer = (layer == 0) ? topCpu : bottomCpu;
+                    [state.CpuScreenTex[layer] replaceRegion:MTLRegionMake2D(0, 0, kScreenW, kScreenH)
+                                              mipmapLevel:0
+                                                withBytes:cpuLayer
+                                              bytesPerRow:kScreenW * 4];
+                    uploadBytes += static_cast<uint64_t>(kScreenW) * kScreenH * 4;
+                    source = state.CpuScreenTex[layer];
+                    sampler = state.NearestSampler;
+                }
             }
             else
             {
@@ -737,7 +817,7 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
         static uint64_t diagFrames = 0;
         diagFrames++;
         const bool usedNative3D =
-            !finalLayerDiagnostic && routing.EngineAUses3D && native3D && !native3DDeviceMismatch;
+            !finalLayerDiagnostic && native3DVisible && routing.EngineAUses3D && native3D && !native3DDeviceMismatch;
         const bool nativeVisibleButFinalBlack =
             usedNative3D && nativeDiag.NonzeroPixels > 0 &&
             ((native3DLayer == 0 && layer0.Valid && layer0.NonzeroPixels == 0) ||
@@ -769,10 +849,12 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
     {
         state.LoggedFirstFinalFrame = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal renderer: final pass visible3DSource=nativeMetal 2DSource=temporaryCpuUpload "
-            "completeCpuFrameFallback=false softwareFallback=0 visibleSource=MetalFinalTexture scale=%d "
+            "[MelonPrime] metal renderer: final pass visible3DSource=%s 2DSource=temporaryCpuUpload "
+            "completeCpuFrameFallback=%s softwareFallback=0 visibleSource=MetalFinalTexture scale=%d "
             "target=%zux%zu native3dMs=reported-by-renderer3D finalPassMs=%.3f "
             "presentMs=reported-by-presenter uploadBytes=%llu\n",
+            native3DVisible ? "nativeMetal" : "cpuCompositedFrame",
+            native3DVisible ? "false" : "true",
             state.Scale,
             static_cast<size_t>(finalWidth),
             static_cast<size_t>(finalHeight),

@@ -2,6 +2,11 @@
 
 **Created:** 2026-07-09
 **Branch:** `highres_fonts_v3`
+**2026-07-10 update:** user-reported flicker + black-3D were audited and root-caused; the fix and the
+remaining Phase 8/9 work are now driven by the dedicated phased plan
+[plan/metal_flicker_black3d_full_fix_phased_plan.md](plan/metal_flicker_black3d_full_fix_phased_plan.md)
+(clear-pass depth bug, final-composer routing removal, GetLine integration, GLRenderer-mirror hires).
+Read that plan first; this file remains the phase-tracked history.
 **Status:** In progress, executing all phases in order per explicit user direction (2026-07-09):
 commit + push after each phase, progress recorded here. This session's sandbox turned out to be a
 **real Intel Mac** (`Intel Iris Plus Graphics 655`, Metal 3, macOS 15.7.7 — see §5) with a display,
@@ -18,6 +23,19 @@ this repo's planning conventions (see
 [melonprime-full-refactor-plan-v7.md](melonprime-full-refactor-plan-v7.md) for the format this
 follows). Read the source document before starting any phase in §3 below — the summaries here are
 not a substitute for its code sketches.
+
+**2026-07-10 Phase 0 flicker/black-3D stopgap:** implemented from
+[plan/metal_flicker_black3d_full_fix_phased_plan.md](plan/metal_flicker_black3d_full_fix_phased_plan.md).
+Metal 3D target clearing now relies on Metal load-action clears only, preserving depth=1.0 instead
+of drawing the clear triangle that overwrote depth to 0.0. The final Metal output no longer exposes
+raw native 3D in normal mode; it uploads the completed CPU-composited screens to both layers while
+native 3D continues running for diagnostics. Raw native visibility is now gated by
+`MELONPRIME_METAL_NATIVE_3D_VISIBLE=1`, diagnostic route/color behavior stays behind diagnostic
+env flags, and the presenter skips active frames with no available source before acquiring a
+drawable. Verified by `tools/macos/build_metal_test.command`, `cmake --build build-mac --parallel 4`,
+default-binary strings check, and the standard config/inc/literal/scatter audits. Real MPH ROM
+smoke and `MELONPRIME_METAL_DIAG=1` runtime logs were not run in this workspace because no `.nds`
+ROM is present.
 
 ---
 
