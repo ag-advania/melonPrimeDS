@@ -375,6 +375,7 @@ struct MetalRenderer3D::MetalState
     id<MTLDepthStencilState> TranslucentDepthLessNoWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessEqualNoWrite = nil;
     id<MTLLibrary> FinalPassShaderLibrary = nil;
+    id<MTLRenderPipelineState> EdgePipeline = nil;
     id<MTLRenderPipelineState> FogColorPipeline = nil;
     id<MTLRenderPipelineState> FogAlphaPipeline = nil;
     // 3x3 matrix of [S mode][T mode], each axis independently one of
@@ -671,7 +672,7 @@ fragment OpaqueFragmentOut mp3d_opaque_fs_z(
     else
     {
         out.attr = float4(float((in.polygonAttr >> 24) & 0x3Fu) / 63.0,
-                          0.0,
+                          ((config.dispCnt & (1u << 5)) != 0u) ? 1.0 : 0.0,
                           float((in.polygonAttr >> 15) & 0x1u),
                           1.0);
     }
@@ -704,7 +705,7 @@ fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
     else
     {
         out.attr = float4(float((in.polygonAttr >> 24) & 0x3Fu) / 63.0,
-                          0.0,
+                          ((config.dispCnt & (1u << 5)) != 0u) ? 1.0 : 0.0,
                           float((in.polygonAttr >> 15) & 0x1u),
                           1.0);
     }
@@ -735,18 +736,65 @@ vertex FinalVertexOut mp3d_final_vs(uint vertexID [[vertex_id]])
     return out;
 }
 
-struct FogConfig
+struct FinalPassConfig
 {
+    uint dispCnt;
     uint fogOffset;
     uint fogShift;
-    uint _pad0;
-    uint _pad1;
+    uint _pad;
+    float4 edgeColors[8];
     float4 fogDensity[34];
 };
 
+static inline int2 ClampCoord(int2 coord)
+{
+    return int2(clamp(coord.x, 0, 255), clamp(coord.y, 0, 191));
+}
+
+static inline bool EdgeNeighborIsGood(
+    texture2d<float> attrTex,
+    depth2d<float> depthTex,
+    int2 coord,
+    int refPolyID,
+    float refDepth)
+{
+    int2 clamped = ClampCoord(coord);
+    uint2 ucoord = uint2(clamped);
+    float4 attr = attrTex.read(ucoord);
+    int polyID = int(attr.r * 63.0);
+    float depth = depthTex.read(ucoord);
+    return polyID != refPolyID && refDepth < depth;
+}
+
+fragment float4 mp3d_edge_fs(
+    FinalVertexOut in [[stage_in]],
+    constant FinalPassConfig& config [[buffer(0)]],
+    depth2d<float> depthTex [[texture(0)]],
+    texture2d<float> attrTex [[texture(1)]])
+{
+    int2 coord = int2(in.position.xy);
+    uint2 ucoord = uint2(coord);
+    float4 attr = attrTex.read(ucoord);
+    if (attr.g == 0.0)
+        return float4(0.0);
+
+    float depth = depthTex.read(ucoord);
+    int polyID = int(attr.r * 63.0);
+    if (EdgeNeighborIsGood(attrTex, depthTex, coord + int2(0, -1), polyID, depth) ||
+        EdgeNeighborIsGood(attrTex, depthTex, coord + int2(0,  1), polyID, depth) ||
+        EdgeNeighborIsGood(attrTex, depthTex, coord + int2(-1, 0), polyID, depth) ||
+        EdgeNeighborIsGood(attrTex, depthTex, coord + int2( 1, 0), polyID, depth))
+    {
+        float4 color = config.edgeColors[uint(polyID >> 3)];
+        color.a = ((config.dispCnt & (1u << 4)) != 0u) ? 0.5 : 1.0;
+        return color;
+    }
+    return float4(0.0);
+}
+
 fragment float4 mp3d_fog_fs(
     FinalVertexOut in [[stage_in]],
-    constant FogConfig& config [[buffer(0)]],
+    constant FinalPassConfig& config [[buffer(0)]],
     depth2d<float> depthTex [[texture(0)]],
     texture2d<float> attrTex [[texture(1)]])
 {
@@ -1303,10 +1351,32 @@ bool MetalRenderer3D::BuildFinalPassPipelines()
     }
 
     id<MTLFunction> vertex = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_final_vs"];
+    id<MTLFunction> edgeFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_edge_fs"];
     id<MTLFunction> fogFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_fog_fs"];
-    if (!vertex || !fogFragment)
+    if (!vertex || !edgeFragment || !fogFragment)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: final-pass shader entry point missing\n");
+        return false;
+    }
+
+    MTLRenderPipelineDescriptor* edgeDesc = [[MTLRenderPipelineDescriptor alloc] init];
+    edgeDesc.label = @"MelonPrime Metal 3D Edge Pipeline";
+    edgeDesc.vertexFunction = vertex;
+    edgeDesc.fragmentFunction = edgeFragment;
+    edgeDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    edgeDesc.colorAttachments[0].blendingEnabled = YES;
+    edgeDesc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+    edgeDesc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    edgeDesc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+    edgeDesc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorZero;
+    edgeDesc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOne;
+    edgeDesc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+    NSError* edgePipelineError = nil;
+    State->EdgePipeline = [State->Device newRenderPipelineStateWithDescriptor:edgeDesc error:&edgePipelineError];
+    if (!State->EdgePipeline)
+    {
+        const char* message = edgePipelineError ? [[edgePipelineError localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create edge pipeline: %s\n", message);
         return false;
     }
 
@@ -1346,7 +1416,7 @@ bool MetalRenderer3D::BuildFinalPassPipelines()
 
     State->FogColorPipeline = createFogPipeline(@"MelonPrime Metal 3D Fog Color Pipeline", true);
     State->FogAlphaPipeline = createFogPipeline(@"MelonPrime Metal 3D Fog Alpha Pipeline", false);
-    return State->FogColorPipeline && State->FogAlphaPipeline;
+    return State->EdgePipeline && State->FogColorPipeline && State->FogAlphaPipeline;
 }
 
 bool MetalRenderer3D::CreateClearBitmapTextures()
@@ -1568,22 +1638,32 @@ bool MetalRenderer3D::ClearNativeTarget()
 
 bool MetalRenderer3D::RenderFinalPostPass()
 {
-    if (!(GPU3D.RenderDispCnt & (1u << 7)))
+    if (!(GPU3D.RenderDispCnt & ((1u << 5) | (1u << 7))))
         return true;
     if (!State || !State->CommandQueue || !State->ColorTarget || !State->DepthStencilTarget ||
-        !State->AttrTarget || !State->FogColorPipeline || !State->FogAlphaPipeline)
+        !State->AttrTarget || !State->EdgePipeline || !State->FogColorPipeline || !State->FogAlphaPipeline)
         return false;
 
-    struct FogConfigCpu
+    struct FinalPassConfigCpu
     {
+        uint32_t dispCnt;
         uint32_t fogOffset;
         uint32_t fogShift;
-        uint32_t pad0;
-        uint32_t pad1;
+        uint32_t pad;
+        float edgeColors[8][4];
         float fogDensity[34][4];
     } config = {};
+    config.dispCnt = GPU3D.RenderDispCnt;
     config.fogOffset = GPU3D.RenderFogOffset;
     config.fogShift = GPU3D.RenderFogShift;
+    for (int i = 0; i < 8; i++)
+    {
+        const u16 color = GPU3D.RenderEdgeTable[i];
+        config.edgeColors[i][0] = static_cast<float>(color & 0x1F) / 31.0f;
+        config.edgeColors[i][1] = static_cast<float>((color >> 5) & 0x1F) / 31.0f;
+        config.edgeColors[i][2] = static_cast<float>((color >> 10) & 0x1F) / 31.0f;
+        config.edgeColors[i][3] = 1.0f;
+    }
     for (int i = 0; i < 34; i++)
         config.fogDensity[i][0] = static_cast<float>(GPU3D.RenderFogDensityTable[i]) / 127.0f;
 
@@ -1600,18 +1680,28 @@ bool MetalRenderer3D::RenderFinalPostPass()
     if (!encoder)
         return false;
 
-    const bool alphaOnlyFog = (GPU3D.RenderDispCnt & (1u << 6)) != 0;
-    [encoder setRenderPipelineState:(alphaOnlyFog ? State->FogAlphaPipeline : State->FogColorPipeline)];
     [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
     [encoder setFragmentTexture:State->DepthStencilTarget atIndex:0];
     [encoder setFragmentTexture:State->AttrTarget atIndex:1];
 
-    const u32 fogColor = GPU3D.RenderFogColor;
-    [encoder setBlendColorRed:static_cast<float>(fogColor & 0x1F) / 31.0f
-                        green:static_cast<float>((fogColor >> 5) & 0x1F) / 31.0f
-                         blue:static_cast<float>((fogColor >> 10) & 0x1F) / 31.0f
-                        alpha:static_cast<float>((fogColor >> 16) & 0x1F) / 31.0f];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    if (GPU3D.RenderDispCnt & (1u << 5))
+    {
+        [encoder setRenderPipelineState:State->EdgePipeline];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+
+    if (GPU3D.RenderDispCnt & (1u << 7))
+    {
+        const bool alphaOnlyFog = (GPU3D.RenderDispCnt & (1u << 6)) != 0;
+        [encoder setRenderPipelineState:(alphaOnlyFog ? State->FogAlphaPipeline : State->FogColorPipeline)];
+
+        const u32 fogColor = GPU3D.RenderFogColor;
+        [encoder setBlendColorRed:static_cast<float>(fogColor & 0x1F) / 31.0f
+                            green:static_cast<float>((fogColor >> 5) & 0x1F) / 31.0f
+                             blue:static_cast<float>((fogColor >> 10) & 0x1F) / 31.0f
+                            alpha:static_cast<float>((fogColor >> 16) & 0x1F) / 31.0f];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
     [encoder endEncoding];
 
     [commandBuffer commit];
