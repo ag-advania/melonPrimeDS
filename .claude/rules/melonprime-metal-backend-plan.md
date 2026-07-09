@@ -74,6 +74,13 @@ translucent path, but stencil/polyID rules for same-ID overwrite suppression and
 open. Verified by the Metal test build, default build, default-binary strings check, and standard
 audits; ROM A/B diff remains pending.
 
+**2026-07-10 Phase 3 partial parity (3-3 stencil slice):** opaque Metal polygons now replace
+stencil with their polyID, while translucent polygons use a `0x40|polyID` not-equal stencil test
+and replace on pass. This moves the native pass toward GL's same-translucent-ID overwrite
+suppression. Shadow-specific stencil passes and the remaining clear/fog/edge/toon work are still
+open. Verified by the Metal test build, default build, default-binary strings check, and standard
+audits.
+
 ---
 
 ## 0. Goal and constraints
