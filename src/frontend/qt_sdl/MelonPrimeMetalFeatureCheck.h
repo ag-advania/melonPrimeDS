@@ -22,6 +22,12 @@ struct FeatureInfo
 {
     bool hasDevice = false;
     bool supportsRequiredBaseline = false;
+    // Phase 8 texturing (GPU3D_Metal.mm TexcacheMetalLoader / the opaque
+    // textured pass): MTLTextureType2DArray + MTLPixelFormatRGBA8Uint
+    // allocation, upload, and texture2d_array<uint> sampling through a
+    // nearest sampler, verified end-to-end (not just pipeline creation).
+    // Folded into supportsRequiredBaseline once this is also required.
+    bool supportsTextureArraySampling = false;
     bool isLowPower = false;
     bool isRemovable = false;
     bool hasUnifiedMemory = false;
