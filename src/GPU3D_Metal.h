@@ -50,14 +50,15 @@ private:
     bool ResizeTargets();
     bool ClearNativeTarget();
 
-    // Phase 8 "port order" step 2/3 (melonprime-metal-backend-plan.md,
+    // Phase 8 "port order" steps 2-4 (melonprime-metal-backend-plan.md,
     // design doc S14): uploads GPU3D::RenderPolygonRAM into native Metal
-    // buffers and rasterizes opaque, untextured (vertex-color only)
-    // polygons into ColorTarget/AttrTarget/DepthStencilTarget every frame.
-    // This is a real, GPU-executed draw -- not a placeholder -- but its
-    // output is not yet wired to GetLine()/display (still Delegate-backed),
-    // and it does not yet implement texturing, translucency, shadow masks,
-    // edge marking, or fog. See GPU3D_Metal.mm for the itemized scope.
+    // buffers, resolves textures via the shared Texcache<> template (same
+    // decode logic GLRenderer3D uses, GPU3D_Texcache.h), and rasterizes
+    // opaque polygons into ColorTarget/AttrTarget/DepthStencilTarget every
+    // frame. This is a real, GPU-executed draw -- not a placeholder -- but
+    // its output is not yet wired to GetLine()/display (still
+    // Delegate-backed), and it does not yet implement translucency, shadow
+    // masks, edge marking, or fog. See GPU3D_Metal.mm for the itemized scope.
     void RenderNativeOpaquePolygons();
 };
 
