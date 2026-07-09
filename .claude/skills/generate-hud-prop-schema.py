@@ -1001,10 +1001,10 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
         "addOutlineGroup", "addOutlineGroupSection", "addBuiltins",
         "addOffsetRows", "addLineEdit", "addAlign3Combo", "addOpacitySlider",
         "addSpinBox", "addDoubleSpinBox", "addCheckBox", "addColorPicker",
-        "addComboBox", "addGaugePositionRows",
+        "addComboBox", "addGaugePositionRows", "addSubColor", "addColorOverlayRow",
         "RowOutline", "RowBuiltins", "RowOffset", "RowLineEdit", "RowAlign3",
         "RowOpacity", "RowSpin", "RowDoubleSpin", "RowBool", "RowColor",
-        "RowCombo", "RowGaugePosition",
+        "RowCombo", "RowGaugePosition", "RowSubColor", "RowColorOverlay",
     }
     for name, args in function_calls(text, call_names):
         origin = f"side:{name}"
@@ -1039,6 +1039,19 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", literal_label(args[0]), "CheckBox", origin=origin)
         elif name in ("addColorPicker", "RowColor") and len(args) >= 4:
             add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", literal_label(args[0]), "ColorPicker", origin)
+        elif name in ("addSubColor", "RowSubColor") and len(args) >= 5:
+            # addSubColor/RowSubColor(label, overallKey, keyR, keyG, keyB): an
+            # Overall-toggle bool plus an RGB triple, mirroring the runtime
+            # parser's ReadOptionalSubColor handling below.
+            label = literal_label(args[0])
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", f"{label} Overall".strip(), "SubColor", origin=origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key), dialog_key_from_expr(args[4], ident_to_key)], "side", label, "SubColor", origin)
+        elif name in ("addColorOverlayRow", "RowColorOverlay") and len(args) >= 5:
+            # addColorOverlayRow/RowColorOverlay(label, enableKey, keyR, keyG, keyB):
+            # an enable bool plus an RGB triple (per-weapon icon tint rows).
+            label = literal_label(args[0])
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", f"{label} Enable".strip(), "ColorOverlay", origin=origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key), dialog_key_from_expr(args[4], ident_to_key)], "side", label, "ColorOverlay", origin)
         elif name in ("addComboBox", "RowCombo") and len(args) >= 2:
             # Item lists appear either as {QStringLiteral("X"), ...} (addComboBox
             # call sites) or {"X", ...} (RowCombo row-table entries); both are

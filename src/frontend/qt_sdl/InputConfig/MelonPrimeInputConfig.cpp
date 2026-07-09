@@ -4,7 +4,6 @@
 */
 
 #include <QGroupBox>
-#include <QGroupBox>
 #include <QLabel>
 #include <QGridLayout>
 #include <QTabWidget>
