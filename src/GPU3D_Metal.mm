@@ -421,6 +421,28 @@ static inline int TexRepeatAddressModeIndex(uint32_t texRepeat, int repeatBit, i
     return ((texRepeat >> mirrorBit) & 1u) ? 2 : 1; // mirror-repeat : repeat
 }
 
+static bool TextureUsesDisplayCapture(u32 texParam, const int captureInfo[16])
+{
+    const u32 textype = (texParam >> 26) & 0x7u;
+    const u32 texwidth = TextureWidth(texParam);
+    if (textype != 7 || (texwidth != 128 && texwidth != 256))
+        return false;
+
+    const u32 texheight = TextureHeight(texParam);
+    const u32 texaddr = texParam & 0xFFFFu;
+    u32 startaddr = texaddr << 3;
+    u32 endaddr = startaddr + (texheight * texwidth * 2);
+    startaddr >>= 15;
+    endaddr = (endaddr + 0x7FFFu) >> 15;
+
+    for (u32 block = startaddr; block < endaddr && block < 16; block++)
+    {
+        if (captureInfo[block] != -1)
+            return true;
+    }
+    return false;
+}
+
 static constexpr const char* kMetal3DShaderSource = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -493,9 +515,10 @@ fragment ClearFragmentOut mp3d_clear_fs(
 //   word4 = (polyAttr & 0x30, blend mode bits 4-5) | (zshift << 16)
 //   word5 = texlayer index from Texcache<>::GetTexture() (0-63), or the
 //           0xFFFF sentinel meaning "no texture" (see RenderNativeOpaquePolygons());
-//           GL's variant also ORs a 0xFFFF0000 tag for VRAM-display-capture-
-//           as-texture addressing in the upper 16 bits -- this pass does not
-//           support that DS feature, so only the low 16 bits are ever meaningful
+//           unlike GL's GPU-rendered capture-output arrays, this SoftRenderer-
+//           derived Metal path sees display captures after DoCapture() writes
+//           them into emulated VRAM, so Texcache<> handles capture-backed
+//           direct-color textures through the normal layer index
 //   word6 = texwidth | (texheight << 16)        -- for texcoord normalization
 //
 // The position/depth math mirrors 3DRenderVS.glsl exactly, with one
@@ -2119,7 +2142,6 @@ struct OpaqueDrawGroup
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
 // Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource):
 //   - special clear-alpha-zero shadow/background path
-//   - VRAM-display-capture-as-texture
 //   - "BetterPolygons" alternate triangulation
 //   - clear bitmap, edge marking, fog, and the final GL-style post-pass
 //
@@ -2171,7 +2193,10 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     static bool loggedFirstOpaquePass = false;
     u32 consideredPolygons = 0;
     u32 texturedPolygons = 0;
+    u32 captureTexturedPolygons = 0;
     u32 drawCount = 0;
+    int captureInfo[16];
+    GPU.GetCaptureInfo_Texture(captureInfo);
 
     for (u32 i = 0; i < numPolygons; i++)
     {
@@ -2201,6 +2226,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const u32 textype = (poly->TexParam >> 26) & 0x7u;
         if (!poly->IsShadowMask && textype != 0)
         {
+            const bool captureTexture = TextureUsesDisplayCapture(poly->TexParam, captureInfo);
             id<MTLTexture> handle = nil;
             u32 layer = 0;
             u32* unusedVariantHelper = nullptr;
@@ -2211,6 +2237,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                 texLayerWord = layer & 0xFFFFu;
                 texDimsWord = TextureWidth(poly->TexParam) | (TextureHeight(poly->TexParam) << 16);
                 texturedPolygons++;
+                if (captureTexture)
+                    captureTexturedPolygons++;
             }
         }
 
@@ -2318,8 +2346,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     {
         loggedFirstOpaquePass = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal renderer3D: first visible pass polygons=%u considered=%u textured=%u groups=%zu vertexWords=%zu\n",
-            numPolygons, consideredPolygons, texturedPolygons, groups.size(), vertexWords.size());
+            "[MelonPrime] metal renderer3D: first visible pass polygons=%u considered=%u textured=%u captureTextured=%u groups=%zu vertexWords=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, captureTexturedPolygons, groups.size(), vertexWords.size());
     }
     // The very first RenderFrame() is frequently a firmware boot/logo screen
     // built entirely from translucent fade polygons, which this pass filters
@@ -2332,8 +2360,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     {
         loggedFirstNonEmptyOpaquePass = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal renderer3D: first non-empty visible pass polygons=%u considered=%u textured=%u groups=%zu vertexWords=%zu\n",
-            numPolygons, consideredPolygons, texturedPolygons, groups.size(), vertexWords.size());
+            "[MelonPrime] metal renderer3D: first non-empty visible pass polygons=%u considered=%u textured=%u captureTextured=%u groups=%zu vertexWords=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, captureTexturedPolygons, groups.size(), vertexWords.size());
     }
 
     if (vertexWords.empty() || groups.empty())
