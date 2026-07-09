@@ -382,7 +382,7 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 | Phase | 内容 | 状態 | 日付 | メモ |
 |---|---|---|---|---|
 | 0 | 止血（黒3D デプス修正 / 診断色隔離 / ルーティング遮断 / present スキップ） | 完了（機械検証済み / ROMスモーク未実施） | 2026-07-10 | `ClearNativeTarget()` は render-pass clear のみに変更し、depth=1.0 を保持。通常表示は CPU 合成済み2層へ固定、native 3D 可視化は `MELONPRIME_METAL_NATIVE_3D_VISIBLE=1` に隔離。source 無し active frame は drawable 取得前に present をスキップ。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。ワークスペース内に MPH ROM が無く、`run_metal_test.command <rom>` と `MELONPRIME_METAL_DIAG=1` 実ROMログは未実施。 |
-| 1 | レイヤ所有権（WinIdChange / sublayer 検討 / スモーク） | 未着手 | — | |
+| 1 | レイヤ所有権（WinIdChange / sublayer 検討 / スモーク） | 完了（機械検証済み / 手動スモーク未実施） | 2026-07-10 | `ScreenPanelMetal::event()` で `WinIdChange` / `Show` / `WindowStateChange` を捕捉し、現在の Qt 管理 `NSView` へ既存 `CAMetalLayer` を再接続。`setupScreenLayout()` でも再適用し、drawable size を更新。直接 `view.layer` 方式を維持し、入力リスクの高い sublayer / child NSView 化は未採用。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。`MELONPRIME_METAL_DIAG_FINAL_LAYERS=1`、resize/fullscreen/別スクリーン/入力の手動スモークは ROM/GUI 操作が必要なため未実施。 |
 | 2 | GetLine 統合（正しい 2D/3D 合成、composer 削除、A/B ハーネス） | 未着手 | — | |
 | 3 | native 3D パリティ（clear plane / 半透明 / shadow / toon / fog / edge） | 未着手 | — | |
 | 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 未着手 | — | |

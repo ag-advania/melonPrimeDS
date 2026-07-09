@@ -42,9 +42,11 @@ public:
 
 protected:
     QPaintEngine* paintEngine() const override { return nullptr; }
+    bool event(QEvent* event) override;
 
 private:
     void setupScreenLayout() override;
+    bool attachLayerToCurrentViewGuiThread();
     void updateDrawableSizeGuiThread();
     qreal devicePixelRatioFromScreenLocal() const;
 

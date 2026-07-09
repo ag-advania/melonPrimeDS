@@ -15,6 +15,7 @@
 #include <cstring>
 
 #include <QGuiApplication>
+#include <QEvent>
 #include <QImage>
 #include <QPainter>
 #include <QScreen>
@@ -237,6 +238,7 @@ struct ScreenPanelMetal::Impl
     QImage uiOverlay;
     QImage bottomImage;
 
+    void* attachedView = nullptr; // weak NSView*, owned by Qt
     QMutex layoutMutex;
     int drawableW = 1;
     int drawableH = 1;
@@ -247,6 +249,7 @@ struct ScreenPanelMetal::Impl
     bool loggedFirstUiOverlay = false;
     bool loggedFirstNativeTextureOutput = false;
     bool loggedNativeTextureFallback = false;
+    bool loggedLayerReattach = false;
     uint64_t lastPresentedFrame = 0;
 };
 
@@ -308,25 +311,13 @@ bool ScreenPanelMetal::initMetal()
             return false;
         }
 
-        // Attach CAMetalLayer directly to this widget's own native NSView
-        // (winId() on macOS is the NSView* itself), matching how
-        // ScreenPanelGL::getWindowInfo() uses winId() for its
-        // NSOpenGLContext. No child NSView -- that risks stealing
-        // MelonPrime's mouse/focus event handling on the panel.
-        NSView* view = (__bridge NSView*)reinterpret_cast<void*>(static_cast<uintptr_t>(winId()));
-        if (!view)
-        {
-            fprintf(stderr, "[MelonPrime] metal presenter: winId() produced no NSView\n");
-            return false;
-        }
-        view.wantsLayer = YES;
-
         CAMetalLayer* layer = [CAMetalLayer layer];
         layer.device = m->device;
         layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
         layer.framebufferOnly = YES;
-        view.layer = layer;
         m->layer = layer;
+        if (!attachLayerToCurrentViewGuiThread())
+            return false;
 
         NSError* error = nil;
         NSMutableString* shaderSource = [NSMutableString stringWithString:kScreenShaderSource];
@@ -454,10 +445,57 @@ bool ScreenPanelMetal::initMetal()
     return m->resourcesReady;
 }
 
+bool ScreenPanelMetal::attachLayerToCurrentViewGuiThread()
+{
+    if (!m->layer)
+        return false;
+
+    // winId() on macOS is the NSView*. Qt can recreate it during fullscreen,
+    // screen moves, or other native-handle transitions, so reapply the
+    // CAMetalLayer whenever the widget reports WinIdChange/visibility changes.
+    NSView* view = (__bridge NSView*)reinterpret_cast<void*>(static_cast<uintptr_t>(winId()));
+    if (!view)
+    {
+        fprintf(stderr, "[MelonPrime] metal presenter: winId() produced no NSView\n");
+        return false;
+    }
+
+    view.wantsLayer = YES;
+    if (view.layer != m->layer)
+    {
+        view.layer = m->layer;
+        if (m->attachedView && !m->loggedLayerReattach)
+        {
+            m->loggedLayerReattach = true;
+            fprintf(stderr, "[MelonPrime] metal presenter: reattached CAMetalLayer after native view change\n");
+        }
+    }
+    m->attachedView = (__bridge void*)view;
+    return true;
+}
+
 void ScreenPanelMetal::setupScreenLayout()
 {
     ScreenPanel::setupScreenLayout();
+    attachLayerToCurrentViewGuiThread();
     updateDrawableSizeGuiThread();
+}
+
+bool ScreenPanelMetal::event(QEvent* event)
+{
+    const bool handled = ScreenPanel::event(event);
+    switch (event->type())
+    {
+    case QEvent::WinIdChange:
+    case QEvent::Show:
+    case QEvent::WindowStateChange:
+        attachLayerToCurrentViewGuiThread();
+        updateDrawableSizeGuiThread();
+        break;
+    default:
+        break;
+    }
+    return handled;
 }
 
 void ScreenPanelMetal::updateDrawableSizeGuiThread()
