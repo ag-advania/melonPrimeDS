@@ -368,16 +368,22 @@ struct MetalRenderer3D::MetalState
     id<MTLRenderPipelineState> OpaqueRenderPipelineW = nil;       // DS W-buffered polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineZ = nil;  // blended depth-buffer polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineW = nil;  // blended W-buffer polygons
+    id<MTLRenderPipelineState> ShadowMaskRenderPipelineZ = nil;   // stencil-only shadow mask, Z-buffer
+    id<MTLRenderPipelineState> ShadowMaskRenderPipelineW = nil;   // stencil-only shadow mask, W-buffer
     id<MTLDepthStencilState> OpaqueDepthLessWrite = nil;
     id<MTLDepthStencilState> OpaqueDepthLessEqualWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessEqualWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessNoWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessEqualNoWrite = nil;
+    id<MTLDepthStencilState> ShadowMaskDepthLessNoWrite = nil;
+    id<MTLDepthStencilState> ShadowMaskDepthLessEqualNoWrite = nil;
     id<MTLLibrary> FinalPassShaderLibrary = nil;
     id<MTLRenderPipelineState> EdgePipeline = nil;
+    id<MTLRenderPipelineState> ShadowBitClearPipeline = nil;
     id<MTLRenderPipelineState> FogColorPipeline = nil;
     id<MTLRenderPipelineState> FogAlphaPipeline = nil;
+    id<MTLDepthStencilState> ShadowBitClearDepthStencil = nil;
     // 3x3 matrix of [S mode][T mode], each axis independently one of
     // {clamp, repeat, mirror-repeat} -- matches the DS TexRepeat bits via
     // TexRepeatAddressModeIndex() (see below). Built once in
@@ -712,6 +718,22 @@ fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
     out.depth = in.fz;
     return out;
 }
+
+fragment void mp3d_shadow_mask_fs_z(OpaqueVertexOut in [[stage_in]])
+{
+}
+
+struct ShadowMaskFragmentOutW
+{
+    float depth [[depth(any)]];
+};
+
+fragment ShadowMaskFragmentOutW mp3d_shadow_mask_fs_w(OpaqueVertexOut in [[stage_in]])
+{
+    ShadowMaskFragmentOutW out;
+    out.depth = in.fz;
+    return out;
+}
 )";
 
 static constexpr const char* kMetal3DFinalPassShaderSource = R"(
@@ -734,6 +756,10 @@ vertex FinalVertexOut mp3d_final_vs(uint vertexID [[vertex_id]])
     FinalVertexOut out;
     out.position = float4(positions[vertexID], 0.0, 1.0);
     return out;
+}
+
+fragment void mp3d_stencil_clear_fs(FinalVertexOut in [[stage_in]])
+{
 }
 
 struct FinalPassConfig
@@ -1233,7 +1259,9 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     id<MTLFunction> vsW = [State->OpaqueShaderLibrary newFunctionWithName:@"mp3d_opaque_vs_w"];
     id<MTLFunction> fsZ = [State->OpaqueShaderLibrary newFunctionWithName:@"mp3d_opaque_fs_z"];
     id<MTLFunction> fsW = [State->OpaqueShaderLibrary newFunctionWithName:@"mp3d_opaque_fs_w"];
-    if (!vsZ || !vsW || !fsZ || !fsW)
+    id<MTLFunction> shadowMaskFsZ = [State->OpaqueShaderLibrary newFunctionWithName:@"mp3d_shadow_mask_fs_z"];
+    id<MTLFunction> shadowMaskFsW = [State->OpaqueShaderLibrary newFunctionWithName:@"mp3d_shadow_mask_fs_w"];
+    if (!vsZ || !vsW || !fsZ || !fsW || !shadowMaskFsZ || !shadowMaskFsW)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: opaque shader entry point missing\n");
         return false;
@@ -1289,6 +1317,36 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     if (!State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW)
         return false;
 
+    auto createShadowMaskPipeline = [&](NSString* label, id<MTLFunction> vertex, id<MTLFunction> fragment) -> id<MTLRenderPipelineState> {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.label = label;
+        desc.vertexFunction = vertex;
+        desc.fragmentFunction = fragment;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].writeMask = MTLColorWriteMaskNone;
+        desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.colorAttachments[1].writeMask = MTLColorWriteMaskNone;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+        desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+
+        NSError* pipelineError = nil;
+        id<MTLRenderPipelineState> pipeline =
+            [State->Device newRenderPipelineStateWithDescriptor:desc error:&pipelineError];
+        if (!pipeline)
+        {
+            const char* message = pipelineError ? [[pipelineError localizedDescription] UTF8String] : "unknown error";
+            std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create %s: %s\n",
+                [label UTF8String], message);
+        }
+        return pipeline;
+    };
+    State->ShadowMaskRenderPipelineZ =
+        createShadowMaskPipeline(@"MelonPrime Metal 3D Shadow Mask Pipeline (Z-buffer)", vsZ, shadowMaskFsZ);
+    State->ShadowMaskRenderPipelineW =
+        createShadowMaskPipeline(@"MelonPrime Metal 3D Shadow Mask Pipeline (W-buffer)", vsW, shadowMaskFsW);
+    if (!State->ShadowMaskRenderPipelineZ || !State->ShadowMaskRenderPipelineW)
+        return false;
+
     auto createStencilDepthState = [&](MTLCompareFunction depthCompare, BOOL depthWrite, bool translucent)
         -> id<MTLDepthStencilState> {
         MTLDepthStencilDescriptor* dsDesc = [[MTLDepthStencilDescriptor alloc] init];
@@ -1327,9 +1385,30 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
         createStencilDepthState(MTLCompareFunctionLess, NO, true);
     State->TranslucentDepthLessEqualNoWrite =
         createStencilDepthState(MTLCompareFunctionLessEqual, NO, true);
+    auto createShadowMaskDepthState = [&](MTLCompareFunction depthCompare) -> id<MTLDepthStencilState> {
+        MTLDepthStencilDescriptor* dsDesc = [[MTLDepthStencilDescriptor alloc] init];
+        dsDesc.depthCompareFunction = depthCompare;
+        dsDesc.depthWriteEnabled = NO;
+
+        MTLStencilDescriptor* stencil = [[MTLStencilDescriptor alloc] init];
+        stencil.stencilCompareFunction = MTLCompareFunctionAlways;
+        stencil.stencilFailureOperation = MTLStencilOperationKeep;
+        stencil.depthFailureOperation = MTLStencilOperationReplace;
+        stencil.depthStencilPassOperation = MTLStencilOperationKeep;
+        stencil.readMask = 0x80;
+        stencil.writeMask = 0x80;
+        dsDesc.frontFaceStencil = stencil;
+        dsDesc.backFaceStencil = stencil;
+        return [State->Device newDepthStencilStateWithDescriptor:dsDesc];
+    };
+    State->ShadowMaskDepthLessNoWrite =
+        createShadowMaskDepthState(MTLCompareFunctionLess);
+    State->ShadowMaskDepthLessEqualNoWrite =
+        createShadowMaskDepthState(MTLCompareFunctionLessEqual);
     if (!State->OpaqueDepthLessWrite || !State->OpaqueDepthLessEqualWrite ||
         !State->TranslucentDepthLessWrite || !State->TranslucentDepthLessEqualWrite ||
-        !State->TranslucentDepthLessNoWrite || !State->TranslucentDepthLessEqualNoWrite)
+        !State->TranslucentDepthLessNoWrite || !State->TranslucentDepthLessEqualNoWrite ||
+        !State->ShadowMaskDepthLessNoWrite || !State->ShadowMaskDepthLessEqualNoWrite)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create depth/stencil state variants\n");
         return false;
@@ -1351,11 +1430,51 @@ bool MetalRenderer3D::BuildFinalPassPipelines()
     }
 
     id<MTLFunction> vertex = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_final_vs"];
+    id<MTLFunction> stencilClearFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_stencil_clear_fs"];
     id<MTLFunction> edgeFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_edge_fs"];
     id<MTLFunction> fogFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_fog_fs"];
-    if (!vertex || !edgeFragment || !fogFragment)
+    if (!vertex || !stencilClearFragment || !edgeFragment || !fogFragment)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: final-pass shader entry point missing\n");
+        return false;
+    }
+
+    MTLRenderPipelineDescriptor* shadowClearDesc = [[MTLRenderPipelineDescriptor alloc] init];
+    shadowClearDesc.label = @"MelonPrime Metal 3D Shadow Bit Clear Pipeline";
+    shadowClearDesc.vertexFunction = vertex;
+    shadowClearDesc.fragmentFunction = stencilClearFragment;
+    shadowClearDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    shadowClearDesc.colorAttachments[0].writeMask = MTLColorWriteMaskNone;
+    shadowClearDesc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA8Unorm;
+    shadowClearDesc.colorAttachments[1].writeMask = MTLColorWriteMaskNone;
+    shadowClearDesc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    shadowClearDesc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    NSError* shadowClearPipelineError = nil;
+    State->ShadowBitClearPipeline =
+        [State->Device newRenderPipelineStateWithDescriptor:shadowClearDesc error:&shadowClearPipelineError];
+    if (!State->ShadowBitClearPipeline)
+    {
+        const char* message = shadowClearPipelineError ? [[shadowClearPipelineError localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create shadow bit clear pipeline: %s\n", message);
+        return false;
+    }
+
+    MTLDepthStencilDescriptor* shadowClearDS = [[MTLDepthStencilDescriptor alloc] init];
+    shadowClearDS.depthCompareFunction = MTLCompareFunctionAlways;
+    shadowClearDS.depthWriteEnabled = NO;
+    MTLStencilDescriptor* shadowClearStencil = [[MTLStencilDescriptor alloc] init];
+    shadowClearStencil.stencilCompareFunction = MTLCompareFunctionAlways;
+    shadowClearStencil.stencilFailureOperation = MTLStencilOperationKeep;
+    shadowClearStencil.depthFailureOperation = MTLStencilOperationKeep;
+    shadowClearStencil.depthStencilPassOperation = MTLStencilOperationReplace;
+    shadowClearStencil.readMask = 0x80;
+    shadowClearStencil.writeMask = 0x80;
+    shadowClearDS.frontFaceStencil = shadowClearStencil;
+    shadowClearDS.backFaceStencil = shadowClearStencil;
+    State->ShadowBitClearDepthStencil = [State->Device newDepthStencilStateWithDescriptor:shadowClearDS];
+    if (!State->ShadowBitClearDepthStencil)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create shadow bit clear depth/stencil state\n");
         return false;
     }
 
@@ -1859,6 +1978,7 @@ struct OpaqueDrawGroupKey
     bool DepthEqual;
     bool DepthWrite;
     bool Line;
+    bool ShadowMask;
 
     bool operator==(const OpaqueDrawGroupKey& other) const noexcept
     {
@@ -1866,7 +1986,7 @@ struct OpaqueDrawGroupKey
                TexRepeat == other.TexRepeat && PolyID == other.PolyID &&
                Translucent == other.Translucent &&
                DepthEqual == other.DepthEqual && DepthWrite == other.DepthWrite &&
-               Line == other.Line;
+               Line == other.Line && ShadowMask == other.ShadowMask;
     }
 };
 
@@ -1905,9 +2025,12 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     if (!State || !State->Device || !State->CommandQueue ||
         !State->OpaqueRenderPipelineZ || !State->OpaqueRenderPipelineW ||
         !State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW ||
+        !State->ShadowMaskRenderPipelineZ || !State->ShadowMaskRenderPipelineW ||
         !State->OpaqueDepthLessWrite || !State->OpaqueDepthLessEqualWrite ||
         !State->TranslucentDepthLessWrite || !State->TranslucentDepthLessEqualWrite ||
         !State->TranslucentDepthLessNoWrite || !State->TranslucentDepthLessEqualNoWrite ||
+        !State->ShadowMaskDepthLessNoWrite || !State->ShadowMaskDepthLessEqualNoWrite ||
+        !State->ShadowBitClearPipeline || !State->ShadowBitClearDepthStencil ||
         !State->OpaqueTextureSamplers[0][0] || !State->DummyTexture || !State->Texcache ||
         !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
     {
@@ -1943,7 +2066,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         if (!poly)
             continue;
         if (poly->Type != 0 && poly->Type != 1) continue;
-        if (poly->IsShadowMask || poly->IsShadow) continue;
+        if (poly->IsShadow) continue;
         if (poly->Degenerate)         continue;
         if (poly->NumVertices < 3)    continue;
 
@@ -1964,7 +2087,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         uint32_t texLayerWord = 0xFFFFu; // sentinel: no texture
         uint32_t texDimsWord = 0;
         const u32 textype = (poly->TexParam >> 26) & 0x7u;
-        if (textype != 0)
+        if (!poly->IsShadowMask && textype != 0)
         {
             id<MTLTexture> handle = nil;
             u32 layer = 0;
@@ -2019,6 +2142,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const bool depthWrite = !translucent || ((poly->Attr & (1u << 11)) != 0);
         const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
         const bool line = poly->Type == 1;
+        const bool shadowMask = poly->IsShadowMask;
         const OpaqueDrawGroupKey key {
             poly->WBuffer,
             (__bridge const void*)texture,
@@ -2027,7 +2151,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             translucent,
             depthEqual,
             depthWrite,
-            line
+            line,
+            shadowMask
         };
         if (groups.empty() || !(groups.back().Key == key))
         {
@@ -2168,6 +2293,23 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         static_cast<double>(State->ColorTarget.height),
         0.0, 1.0}];
 
+    bool hasShadowMaskGroups = false;
+    for (const auto& group : groups)
+    {
+        if (group.Key.ShadowMask && !group.Indices.empty())
+        {
+            hasShadowMaskGroups = true;
+            break;
+        }
+    }
+    if (hasShadowMaskGroups && State->ShadowBitClearPipeline && State->ShadowBitClearDepthStencil)
+    {
+        [encoder setRenderPipelineState:State->ShadowBitClearPipeline];
+        [encoder setDepthStencilState:State->ShadowBitClearDepthStencil];
+        [encoder setStencilReferenceValue:0x00];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+
     for (auto& group : groups)
     {
         if (group.Indices.empty())
@@ -2191,13 +2333,20 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const int tIdx = TexRepeatAddressModeIndex(group.Key.TexRepeat, 1, 3);
 
         id<MTLRenderPipelineState> pipeline = nil;
-        if (group.Key.Translucent)
+        if (group.Key.ShadowMask)
+            pipeline = group.Key.WBuffer ? State->ShadowMaskRenderPipelineW : State->ShadowMaskRenderPipelineZ;
+        else if (group.Key.Translucent)
             pipeline = group.Key.WBuffer ? State->TranslucentRenderPipelineW : State->TranslucentRenderPipelineZ;
         else
             pipeline = group.Key.WBuffer ? State->OpaqueRenderPipelineW : State->OpaqueRenderPipelineZ;
 
         id<MTLDepthStencilState> depthState = nil;
-        if (group.Key.Translucent)
+        if (group.Key.ShadowMask)
+        {
+            depthState = group.Key.DepthEqual ? State->ShadowMaskDepthLessEqualNoWrite
+                                              : State->ShadowMaskDepthLessNoWrite;
+        }
+        else if (group.Key.Translucent)
         {
             if (group.Key.DepthEqual)
                 depthState = group.Key.DepthWrite ? State->TranslucentDepthLessEqualWrite
@@ -2214,8 +2363,11 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
         [encoder setRenderPipelineState:pipeline];
         [encoder setDepthStencilState:depthState];
-        [encoder setStencilReferenceValue:(group.Key.Translucent ? (0x40u | group.Key.PolyID)
-                                                                  : group.Key.PolyID)];
+        if (group.Key.ShadowMask)
+            [encoder setStencilReferenceValue:0x80];
+        else
+            [encoder setStencilReferenceValue:(group.Key.Translucent ? (0x40u | group.Key.PolyID)
+                                                                      : group.Key.PolyID)];
         [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
         [encoder setFragmentSamplerState:State->OpaqueTextureSamplers[sIdx][tIdx] atIndex:0];
         [encoder drawIndexedPrimitives:(group.Key.Line ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle)
