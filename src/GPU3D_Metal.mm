@@ -224,7 +224,7 @@ bool MetalRenderer3D::ResizeTargets()
                                                        mipmapped:NO];
     colorDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     colorDesc.storageMode = MTLStorageModePrivate;
-    State->ColorTarget = [State->Device newTextureWithDescriptor:colorDesc];
+    id<MTLTexture> newColorTarget = [State->Device newTextureWithDescriptor:colorDesc];
 
     MTLTextureDescriptor* depthDesc =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float_Stencil8
@@ -233,7 +233,7 @@ bool MetalRenderer3D::ResizeTargets()
                                                        mipmapped:NO];
     depthDesc.usage = MTLTextureUsageRenderTarget;
     depthDesc.storageMode = MTLStorageModePrivate;
-    State->DepthStencilTarget = [State->Device newTextureWithDescriptor:depthDesc];
+    id<MTLTexture> newDepthStencilTarget = [State->Device newTextureWithDescriptor:depthDesc];
 
     MTLTextureDescriptor* attrDesc =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
@@ -242,19 +242,33 @@ bool MetalRenderer3D::ResizeTargets()
                                                        mipmapped:NO];
     attrDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     attrDesc.storageMode = MTLStorageModePrivate;
-    State->AttrTarget = [State->Device newTextureWithDescriptor:attrDesc];
+    id<MTLTexture> newAttrTarget = [State->Device newTextureWithDescriptor:attrDesc];
 
-    if (!State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
+    if (!newColorTarget || !newDepthStencilTarget || !newAttrTarget)
     {
+        // Commit nothing on partial failure: keep whatever targets (if any)
+        // were already valid rather than leaving State with a mix of new
+        // and stale textures of mismatched sizes.
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to allocate render targets\n");
         return false;
     }
+
+    State->ColorTarget = newColorTarget;
+    State->DepthStencilTarget = newDepthStencilTarget;
+    State->AttrTarget = newAttrTarget;
 
     return ClearNativeTarget();
 }
 
 bool MetalRenderer3D::ClearNativeTarget()
 {
+    if (!State || !State->CommandQueue || !State->ClearPipeline || !State->ClearDepthStencil ||
+        !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: ClearNativeTarget called before resources are ready\n");
+        return false;
+    }
+
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = State->ColorTarget;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
