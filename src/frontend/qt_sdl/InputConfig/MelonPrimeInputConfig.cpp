@@ -63,6 +63,9 @@
 #include "../Window.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+#include "../MelonPrimeMetalFeatureCheck.h"
+#endif
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -145,6 +148,26 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
 #ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     DisableMacComputeVideoQualityButton(ui);
+#endif
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+    metroidSetVideoQualityToMetal = new QPushButton(ui->sectionVideo);
+    metroidSetVideoQualityToMetal->setObjectName(QStringLiteral("metroidSetVideoQualityToMetal"));
+    metroidSetVideoQualityToMetal->setText(MelonPrime::UiText::Tr("Video quality: Metal Test"));
+    metroidSetVideoQualityToMetal->setToolTip(MelonPrime::UiText::Tr(
+        "Experimental native Metal renderer for macOS testing. Not High2/OpenGL Compute. Some 3D effects and performance work are still incomplete."));
+    ui->videoButtonsLayout->insertWidget(3, metroidSetVideoQualityToMetal);
+    connect(
+        metroidSetVideoQualityToMetal,
+        &QPushButton::clicked,
+        this,
+        &MelonPrimeInputConfig::on_metroidSetVideoQualityToMetal_clicked);
+
+    const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
+    metroidSetVideoQualityToMetal->setEnabled(metalSupported);
+    if (!metalSupported)
+        metroidSetVideoQualityToMetal->setToolTip(MelonPrime::UiText::Tr(
+            QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason)));
 #endif
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
@@ -1080,6 +1103,23 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
     cfg.SetBool("3D.GL.BetterPolygons", true);
 #endif
 }
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+void MelonPrimeInputConfig::on_metroidSetVideoQualityToMetal_clicked()
+{
+    if (!MelonPrime::Metal::SupportsRequiredBaseline())
+        return;
+
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("Screen.UseGL", false);
+    cfg.SetBool("Screen.VSync", false);
+    cfg.SetInt("Screen.VSyncInterval", 1);
+    cfg.SetInt("3D.Renderer", renderer3D_Metal);
+    cfg.SetBool("3D.Soft.Threaded", true);
+    cfg.SetInt("3D.GL.ScaleFactor", 4);
+    cfg.SetBool("3D.GL.BetterPolygons", false);
+}
+#endif
 
 void MelonPrimeInputConfig::on_cbMetroidEnableSnapTap_stateChanged(int state)
 {
