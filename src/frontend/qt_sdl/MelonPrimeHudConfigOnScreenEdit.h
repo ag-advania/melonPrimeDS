@@ -17,6 +17,8 @@
 
 class EmuInstance;
 
+namespace MelonPrime { namespace HudEditorSidePanel { struct Row; } }
+
 class MelonPrimeHudConfigOnScreenEdit : public QWidget
 {
 public:
@@ -76,6 +78,12 @@ private:
     void addOutlineGroupSection(const QString& sectionLabel,
                                 const char* enableKey, const char* colorR, const char* colorG, const char* colorB,
                                 const char* opacityKey, const char* thicknessKey);
+
+    // Generic dispatcher for the data-table row representation of a
+    // populate*() body (V7 Phase 2). Walks `rows` in order and calls the
+    // matching add*() factory method above per row. See
+    // MelonPrimeHudEditorSidePanelRows.inc for the row table definitions.
+    void populateFromRowTable(const MelonPrime::HudEditorSidePanel::Row* rows, int count);
 
     // Per-element populate functions
     void populateHP();
