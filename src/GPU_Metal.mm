@@ -221,6 +221,54 @@ int EngineAOutputLayer(const GPU& gpu)
     return gpu.ScreenSwap ? 0 : 1;
 }
 
+struct MetalFinalRouting
+{
+    u32 DispCntA = 0;
+    u32 DispCntB = 0;
+    u32 DispModeA = 0;
+    u32 DispModeB = 0;
+    bool ScreensEnabled = false;
+    bool ScreenSwap = false;
+    bool EngineA3DBitsSet = false;
+    bool EngineAUses3D = false;
+    bool UnsupportedRoute = false;
+    const char* UnsupportedReason = "none";
+    int Native3DLayer = 1;
+};
+
+MetalFinalRouting AnalyzeFinalRouting(const GPU& gpu)
+{
+    MetalFinalRouting route;
+    route.DispCntA = gpu.GPU2D_A.DispCnt;
+    route.DispCntB = gpu.GPU2D_B.DispCnt;
+    route.DispModeA = (route.DispCntA >> 16) & 0x3;
+    route.DispModeB = (route.DispCntB >> 16) & 0x3;
+    route.ScreensEnabled = gpu.ScreensEnabled;
+    route.ScreenSwap = gpu.ScreenSwap;
+    route.EngineA3DBitsSet = (route.DispCntA & (1u << 3)) && (route.DispCntA & (1u << 8));
+    route.EngineAUses3D = EngineAUses3D(gpu);
+    route.Native3DLayer = EngineAOutputLayer(gpu);
+
+    if (route.ScreensEnabled && route.EngineA3DBitsSet && !route.EngineAUses3D)
+    {
+        route.UnsupportedRoute = true;
+        route.UnsupportedReason = "engineA_3d_bits_outside_supported_display_mode";
+    }
+
+    return route;
+}
+
+uint64_t RoutingSignature(const MetalFinalRouting& route)
+{
+    uint64_t sig = route.DispCntA;
+    sig = (sig << 32) ^ route.DispCntB;
+    sig ^= static_cast<uint64_t>(route.ScreenSwap ? 1u : 0u) << 1;
+    sig ^= static_cast<uint64_t>(route.ScreensEnabled ? 1u : 0u) << 2;
+    sig ^= static_cast<uint64_t>(route.EngineAUses3D ? 1u : 0u) << 3;
+    sig ^= static_cast<uint64_t>(route.UnsupportedRoute ? 1u : 0u) << 4;
+    return sig;
+}
+
 } // namespace
 
 struct MetalRenderer::MetalFinalState
@@ -241,6 +289,7 @@ struct MetalRenderer::MetalFinalState
     bool HasCompletedFrame = false;
     bool LoggedFirstFinalFrame = false;
     bool LoggedSoftwareFallbackError = false;
+    uint64_t LastRoutingSignature = ~uint64_t { 0 };
 };
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
@@ -488,9 +537,9 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
         return false;
 
     MetalFinalState& state = *FinalState;
-    const bool engineAUses3D = EngineAUses3D(GPU);
-    if (engineAUses3D && (!native3D || native3D.device != state.Device))
-        return false;
+    const MetalFinalRouting routing = AnalyzeFinalRouting(GPU);
+    const bool native3DMissing = routing.EngineAUses3D && !native3D;
+    const bool native3DDeviceMismatch = routing.EngineAUses3D && native3D && native3D.device != state.Device;
 
     void* topCpu = nullptr;
     void* bottomCpu = nullptr;
@@ -508,10 +557,11 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
     if (!commandBuffer)
         return false;
 
-    const int native3DLayer = EngineAOutputLayer(GPU);
+    const int native3DLayer = routing.Native3DLayer;
     const NSUInteger finalWidth = finalTex.width;
     const NSUInteger finalHeight = finalTex.height;
     const uint64_t frameSerial = ++state.FrameSerial;
+    const uint64_t routeSig = RoutingSignature(routing);
 
     if (frameSerial <= 3 || (frameSerial % 600) == 0)
     {
@@ -524,16 +574,55 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
             static_cast<size_t>(finalWidth),
             static_cast<size_t>(finalHeight));
     }
+    if (routeSig != state.LastRoutingSignature)
+    {
+        state.LastRoutingSignature = routeSig;
+        std::fprintf(stderr,
+            "[MelonPrime] metal final route: dispA=0x%08x modeA=%u dispB=0x%08x modeB=%u "
+            "screenSwap=%u screensEnabled=%u engineA3DBits=%u engineAUses3D=%u "
+            "native3DLayer=%d supportedSubset=normal2d_plus_engineA_bg0_3d unsupported=%u reason=%s\n",
+            routing.DispCntA,
+            routing.DispModeA,
+            routing.DispCntB,
+            routing.DispModeB,
+            routing.ScreenSwap ? 1u : 0u,
+            routing.ScreensEnabled ? 1u : 0u,
+            routing.EngineA3DBitsSet ? 1u : 0u,
+            routing.EngineAUses3D ? 1u : 0u,
+            routing.Native3DLayer,
+            routing.UnsupportedRoute ? 1u : 0u,
+            routing.UnsupportedReason);
+    }
 
     for (int layer = 0; layer < 2; layer++)
     {
         id<MTLTexture> source = nil;
         id<MTLSamplerState> sampler = state.NearestSampler;
+        MTLClearColor clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
 
-        if (engineAUses3D && layer == native3DLayer)
+        if (routing.UnsupportedRoute && layer == routing.Native3DLayer)
         {
-            source = native3D;
-            sampler = state.LinearSampler;
+            // Magenta: final-composer route is known unsupported. Do not
+            // hide it with CPU-complete Software output.
+            clearColor = MTLClearColorMake(1.0, 0.0, 1.0, 1.0);
+        }
+        else if (routing.EngineAUses3D && layer == routing.Native3DLayer)
+        {
+            if (native3DMissing)
+            {
+                // Red: Engine A needs native 3D, but no native target exists.
+                clearColor = MTLClearColorMake(1.0, 0.0, 0.0, 1.0);
+            }
+            else if (native3DDeviceMismatch)
+            {
+                // Blue: native target exists but belongs to a different device.
+                clearColor = MTLClearColorMake(0.0, 0.0, 1.0, 1.0);
+            }
+            else
+            {
+                source = native3D;
+                sampler = state.LinearSampler;
+            }
         }
         else if (hasCpuScreens)
         {
@@ -552,7 +641,7 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
         pass.colorAttachments[0].slice = static_cast<NSUInteger>(layer);
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-        pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+        pass.colorAttachments[0].clearColor = clearColor;
 
         id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
         if (!encoder)
@@ -585,7 +674,7 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
 
         static uint64_t diagFrames = 0;
         diagFrames++;
-        const bool usedNative3D = engineAUses3D && native3D;
+        const bool usedNative3D = routing.EngineAUses3D && native3D && !native3DDeviceMismatch;
         const bool nativeVisibleButFinalBlack =
             usedNative3D && nativeDiag.NonzeroPixels > 0 &&
             ((native3DLayer == 0 && layer0.Valid && layer0.NonzeroPixels == 0) ||
