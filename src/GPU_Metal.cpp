@@ -12,24 +12,15 @@ namespace melonDS
 {
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
-    : Renderer(nds.GPU)
+    : SoftRenderer(nds)
 {
 }
 
 bool MetalRenderer::Init()
 {
     std::fprintf(stderr,
-        "[MelonPrime] metal renderer: shell is present but 2D/3D rendering is not implemented yet; falling back to Software\n");
-    return false;
-}
-
-bool MetalRenderer::GetFramebuffers(void** top, void** bottom)
-{
-    if (top)
-        *top = nullptr;
-    if (bottom)
-        *bottom = nullptr;
-    return false;
+        "[MelonPrime] metal renderer: using Software 2D/3D output with Metal presentation; native Metal GPU3D port pending\n");
+    return SoftRenderer::Init();
 }
 
 } // namespace melonDS
