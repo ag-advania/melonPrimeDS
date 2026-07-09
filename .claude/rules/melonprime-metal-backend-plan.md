@@ -1194,22 +1194,27 @@ Implementation points:
 - The new radio button is labelled `Metal (Experimental)`, is registered as `renderer3D_Metal`, and
   is runtime-gated by `MelonPrime::Metal::SupportsRequiredBaseline()`. If the probe fails, the
   button is disabled and its tooltip uses `CachedFeatureInfo().unavailableReason`.
-- OpenGL-only controls remain OpenGL-only: resolution is enabled only for OpenGL/OpenGL Compute,
-  improved polygon splitting only for OpenGL, and high-resolution coordinates only for OpenGL
-  Compute. The Software-threaded checkbox stays enabled for Metal while the current Metal path still
-  uses the `SoftRenderer3D` delegate.
+- OpenGL-only controls remain OpenGL-only: improved polygon splitting stays OpenGL-only, and
+  high-resolution coordinates stay OpenGL Compute-only. The internal-resolution combo is shared by
+  OpenGL/OpenGL Compute and experimental Metal during the tester phase, using the existing
+  `3D.GL.ScaleFactor` hardware-renderer scale key until Metal is stable enough to justify separate
+  defaults/migration. The Software-threaded checkbox stays enabled for Metal while the current Metal
+  path still uses the `SoftRenderer3D` delegate.
 - MelonPrime VIDEO QUALITY creates a dynamic `Video quality: Metal Test` button only in
   Metal-enabled macOS builds. It sets `Screen.UseGL=false`, disables VSync, selects
-  `renderer3D_Metal`, keeps `High2` untouched, and uses an honest tooltip: experimental native Metal,
-  not High2/OpenGL Compute, with effects/performance still incomplete.
+  `renderer3D_Metal`, sets the shared internal scale to 4x by default, keeps `High2` untouched, and
+  uses an honest tooltip: experimental native Metal, not High2/OpenGL Compute, with effects/performance
+  still incomplete. Testers can change the internal resolution afterward in standard Video Settings
+  while Metal is selected.
 - `MELONPRIME_METAL_PERF=1` enables low-noise aggregate logging every 600 `MetalRenderer3D` frames:
   average total frame time, native opaque-pass time, texcache time, upload bytes, draw groups, draw
   calls, command-buffer wait time, polygon counts, and whether the CPU/software delegate is still
-  active.
+  active. Logs also include the current Metal scale and target size (for example `scale=4
+  target=1024x768`) so 1x/2x/4x tester runs can be compared honestly.
 - `tools/macos/build_metal_test.command` builds `build-mac-metal-test` with
   `MELONPRIME_ENABLE_METAL=ON`; `tools/macos/run_metal_test.command` launches the built app with
-  `MELONPRIME_METAL_PERF=1` by default but intentionally does **not** force Metal renderer/presenter
-  env vars, so testers exercise the new UI selection path.
+  `MELONPRIME_METAL_PERF=1` by default and clears inherited force-Metal renderer/presenter env vars
+  unless `MELONPRIME_ALLOW_FORCE_METAL=1` is set, so testers exercise the new UI selection path.
 
 Performance stance remains unchanged: Metal is expected to become the macOS-friendly high-performance
 path, but current results must be measured. Do not claim it is faster than Software/OpenGL/High2, and
@@ -1271,5 +1276,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
 | 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9, a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D` resource hardening, and probe strengthening. §3j added port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization). §3k added step 4 (texturing) by reusing the shared `Texcache<>` template (same DS-format decode as `GLRenderer3D`) via a new `TexcacheMetalLoader`, with modulate/decal blend modes matching `3DRenderFS.glsl`. §3l strengthened the feature probe to verify real `MTLTextureType2DArray`/`RGBA8Uint`/`texture2d_array<uint>` sampling end-to-end, not just pipeline creation. **§3m closed the Priority-2 integration gate**: real MPH ROMs became available this session, and one-shot proof-of-integration logging confirmed the entire pipeline (`RenderFrame()` → `RenderNativeOpaquePolygons()` → `Texcache<>::GetTexture()`/`TexcacheMetalLoader`) actually runs against real `GPU3D::RenderPolygonRAM`/VRAM state from a real booting ROM (firmware boot through the game's own boot sequence, WIFI init, license-file load, clean save flush) for 70s and 113s across two runs, with sensible real data (`considered=6` polygons and a `256x64/64-layer` texture array matching the template's own layer-budget formula exactly), no crash. Output is still not wired to `GetLine()`/display (per Priority 3, deliberately unchanged), so this is integration/stability verification, not visual parity. Both §3j/§3k's shader/pipeline logic were also independently verified via standalone Metal harnesses (position math, both depth paths, discard, modulate/decal blend, untextured sentinel — all matched hand-computed expectations exactly). Builds/audits green on both trees throughout every increment; default binary still has zero Metal strings. §3n closed Priority 4: `TexRepeat` wrap/mirror/clamp is now implemented via a 3x3 sampler-state matrix keyed into `OpaqueDrawGroupKey`, matching `GLRenderer3D::SetupPolygonTexture()`'s address-mode derivation exactly; re-verified against the same real ROM with no regression. Translucency, shadow masks, line polygons, depth-func-equal, `BetterPolygons`, hi-res scale, toon/highlight substitution, edge marking, fog, final composite, `GetLine()`/display integration, visual parity, and Apple Silicon all remain open -- Phase 8 is genuinely multi-session work |
-| 9 — tester UI exposure / perf workflow | In progress | 2026-07-09 | See §3o. Exposes `Metal (Experimental)` and `Video quality: Metal Test` only in Metal-enabled macOS builds, adds `MELONPRIME_METAL_PERF=1` aggregate logging, and adds macOS `.command` helpers. This is tester-only, not public stability; Apple Silicon and Phase 8 visual parity remain open |
+| 9 — tester UI exposure / perf workflow | In progress | 2026-07-09 | See §3o. Exposes `Metal (Experimental)` and `Video quality: Metal Test` only in Metal-enabled macOS builds, enables the internal-resolution combo for experimental Metal via the existing `3D.GL.ScaleFactor` key, adds `MELONPRIME_METAL_PERF=1` aggregate logging with scale/target fields, and adds macOS `.command` helpers that test the UI path by default. This is tester-only, not public stability; Apple Silicon and Phase 8 visual parity remain open |
 | 10 | Not started | — | See §4. Phase 10 remains stretch work after Phase 9 stabilizes; no Metal compute-style renderer has been started |

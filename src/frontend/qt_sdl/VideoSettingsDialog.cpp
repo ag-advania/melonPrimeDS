@@ -67,6 +67,11 @@ void VideoSettingsDialog::setEnabled()
     const bool softwareRenderer = renderer == renderer3D_Software;
     const bool openGLRenderer = renderer == renderer3D_OpenGL;
     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    const bool metalRenderer = renderer == renderer3D_Metal;
+#else
+    const bool metalRenderer = false;
+#endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
@@ -77,12 +82,11 @@ void VideoSettingsDialog::setEnabled()
     // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
     // all yet, so they stay OpenGL/Compute-only below rather than being
     // exposed as if they already work for Metal.
-    const bool metalRenderer = renderer == renderer3D_Metal;
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
     ui->cbBetterPolygons->setEnabled(openGLRenderer);
     ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
 }
@@ -172,6 +176,13 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Tester-phase shortcut: Metal intentionally reuses 3D.GL.ScaleFactor
+    // as the shared hardware-renderer internal scale. Rename/split only after
+    // Metal becomes stable enough to need separate defaults/migration.
+    ui->cbxGLResolution->setToolTip(MelonPrime::UiText::Tr(
+        "Internal 3D render scale. Used by OpenGL/OpenGL Compute and experimental Metal. Metal scale support is still under test."));
+#endif
     ui->cbxGLResolution->setCurrentIndex(oldGLScale-1);
 
     ui->cbBetterPolygons->setChecked(oldGLBetterPolygons != 0);

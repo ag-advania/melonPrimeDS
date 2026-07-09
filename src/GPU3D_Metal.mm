@@ -32,6 +32,9 @@ struct MetalPerfFrame
     uint32_t Draws = 0;
     uint32_t ConsideredPolygons = 0;
     uint32_t TexturedPolygons = 0;
+    uint32_t Scale = 1;
+    uint32_t TargetWidth = 0;
+    uint32_t TargetHeight = 0;
     bool CpuRendererFallback = false;
 };
 
@@ -47,6 +50,9 @@ struct MetalPerfAccumulator
     uint64_t Draws = 0;
     uint64_t ConsideredPolygons = 0;
     uint64_t TexturedPolygons = 0;
+    uint32_t LastScale = 1;
+    uint32_t LastTargetWidth = 0;
+    uint32_t LastTargetHeight = 0;
     uint32_t CpuRendererFallbackFrames = 0;
 };
 
@@ -88,6 +94,9 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
     acc.Draws += frame.Draws;
     acc.ConsideredPolygons += frame.ConsideredPolygons;
     acc.TexturedPolygons += frame.TexturedPolygons;
+    acc.LastScale = frame.Scale;
+    acc.LastTargetWidth = frame.TargetWidth;
+    acc.LastTargetHeight = frame.TargetHeight;
     if (frame.CpuRendererFallback)
         acc.CpuRendererFallbackFrames++;
 
@@ -97,10 +106,13 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
 
     const double frames = static_cast<double>(acc.Frames);
     std::fprintf(stderr,
-        "[MelonPrime] metal perf: frames=%u avgFrameMs=%.3f avg3dMs=%.3f avgTexcacheMs=%.3f "
+        "[MelonPrime] metal perf: frames=%u scale=%u target=%ux%u avgFrameMs=%.3f avg3dMs=%.3f avgTexcacheMs=%.3f "
         "avgUploadBytes=%.0f avgGroups=%.2f avgDraws=%.2f avgWaitMs=%.3f "
         "avgConsideredPolys=%.2f avgTexturedPolys=%.2f cpuRendererFallback=%u/%u\n",
         acc.Frames,
+        acc.LastScale,
+        acc.LastTargetWidth,
+        acc.LastTargetHeight,
         acc.FrameMs / frames,
         acc.Native3DMs / frames,
         acc.TexcacheMs / frames,
@@ -114,6 +126,27 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
         acc.Frames);
 
     acc = {};
+}
+
+void MetalPerfLogTargetResize(int scale, NSUInteger width, NSUInteger height)
+{
+    if (!MetalPerfEnabled())
+        return;
+
+    static int lastScale = 0;
+    static NSUInteger lastWidth = 0;
+    static NSUInteger lastHeight = 0;
+    if (scale == lastScale && width == lastWidth && height == lastHeight)
+        return;
+
+    lastScale = scale;
+    lastWidth = width;
+    lastHeight = height;
+    std::fprintf(stderr,
+        "[MelonPrime] metal renderer3D: target scale=%d size=%zux%zu\n",
+        scale,
+        static_cast<size_t>(width),
+        static_cast<size_t>(height));
 }
 
 } // namespace
@@ -538,7 +571,15 @@ void MetalRenderer3D::RenderFrame()
     const bool perfEnabled = MetalPerfEnabled();
     const auto frameStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
     if (perfEnabled)
+    {
+        perfFrame.Scale = static_cast<uint32_t>(ScaleFactor);
+        if (State && State->ColorTarget)
+        {
+            perfFrame.TargetWidth = static_cast<uint32_t>(State->ColorTarget.width);
+            perfFrame.TargetHeight = static_cast<uint32_t>(State->ColorTarget.height);
+        }
         gCurrentMetalPerfFrame = &perfFrame;
+    }
 
     // metal_phase8_execution_instructions.md Priority 2: one-shot proof the
     // integrated frame loop (a real ROM running through EmuThread ->
@@ -853,6 +894,7 @@ bool MetalRenderer3D::ResizeTargets()
     State->ColorTarget = newColorTarget;
     State->DepthStencilTarget = newDepthStencilTarget;
     State->AttrTarget = newAttrTarget;
+    MetalPerfLogTargetResize(ScaleFactor, width, height);
 
     return ClearNativeTarget();
 }
@@ -970,11 +1012,13 @@ struct OpaqueDrawGroup
 //   - translucent polygons, shadow masks/shadows, line-type polygons
 //   - the depth-func-equal attribute bit (bit14) -- always MTLCompareFunctionLess
 //   - "BetterPolygons" alternate triangulation
-//   - hi-res scale factor (always renders at native 256x192 regardless of
-//     ScaleFactor; ResizeTargets() may allocate a larger target, but this
-//     pass only ever fills its native-resolution corner)
 //   - edge marking, fog, and the final composite pass
 //   - feeding this output to GetLine()/the presenter at all
+//
+// ScaleFactor controls render-target size. DS screen-space coordinates remain
+// native 256x192 and are mapped to NDC, so rasterization covers the full scaled
+// render target. Pixel-level visual parity is still pending because final Metal
+// output is not yet displayed.
 void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||

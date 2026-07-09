@@ -17,8 +17,15 @@ export MELONPRIME_METAL_PERF="${MELONPRIME_METAL_PERF:-1}"
 
 # Do not force Metal by default. The tester should select
 # "Metal (Experimental)" / "Video quality: Metal Test" from the UI.
+if [[ "${MELONPRIME_ALLOW_FORCE_METAL:-0}" != "1" ]]; then
+  unset MELONPRIME_FORCE_METAL_RENDERER
+  unset MELONPRIME_FORCE_METAL_PRESENTER
+fi
+
 # Developers can still opt in manually:
-# export MELONPRIME_FORCE_METAL_RENDERER=1
-# export MELONPRIME_FORCE_METAL_PRESENTER=1
+# MELONPRIME_ALLOW_FORCE_METAL=1 \
+# MELONPRIME_FORCE_METAL_RENDERER=1 \
+# MELONPRIME_FORCE_METAL_PRESENTER=1 \
+# tools/macos/run_metal_test.command /path/to/rom.nds
 
 exec "$APP" "$@"
