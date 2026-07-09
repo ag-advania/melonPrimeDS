@@ -349,6 +349,11 @@ struct MetalRenderer3D::MetalState
     id<MTLLibrary> ShaderLibrary = nil;
     id<MTLRenderPipelineState> ClearPipeline = nil;
     id<MTLDepthStencilState> ClearDepthStencil = nil;
+    id<MTLTexture> ClearBitmapColor = nil;
+    id<MTLTexture> ClearBitmapDepth = nil;
+    std::array<u32, 256 * 256> ClearBitmapColorData {};
+    std::array<u32, 256 * 256> ClearBitmapDepthData {};
+    u8 ClearBitmapDirty = 0x3;
     id<MTLTexture> ColorTarget = nil;
     id<MTLTexture> DepthStencilTarget = nil;
     id<MTLTexture> AttrTarget = nil;
@@ -403,6 +408,7 @@ using namespace metal;
 struct ClearVertexOut
 {
     float4 position [[position]];
+    float2 texcoord;
 };
 
 vertex ClearVertexOut mp3d_clear_vs(uint vertexID [[vertex_id]])
@@ -415,20 +421,41 @@ vertex ClearVertexOut mp3d_clear_vs(uint vertexID [[vertex_id]])
 
     ClearVertexOut out;
     out.position = float4(positions[vertexID], 0.0, 1.0);
+    out.texcoord = (positions[vertexID] + 1.0) * float2(0.5, 0.375);
     return out;
 }
+
+struct ClearBitmapConfig
+{
+    float2 offset;
+    uint opaquePolyID;
+    uint _pad;
+};
 
 struct ClearFragmentOut
 {
     float4 color [[color(0)]];
     float4 attr [[color(1)]];
+    float depth [[depth(any)]];
 };
 
-fragment ClearFragmentOut mp3d_clear_fs()
+fragment ClearFragmentOut mp3d_clear_fs(
+    ClearVertexOut in [[stage_in]],
+    constant ClearBitmapConfig& config [[buffer(0)]],
+    texture2d<uint> colorTex [[texture(0)]],
+    texture2d<uint> depthTex [[texture(1)]])
 {
+    uint2 coord = uint2(fract(in.texcoord + config.offset) * float2(256.0, 256.0));
+    uint4 color = colorTex.read(coord);
+    uint depth = depthTex.read(coord).r;
+
     ClearFragmentOut out;
-    out.color = float4(0.0, 0.0, 0.0, 1.0);
-    out.attr = float4(0.0, 0.0, 0.0, 0.0);
+    out.color = float4(color) / float4(63.0, 63.0, 63.0, 31.0);
+    out.attr = float4(float(config.opaquePolyID) / 63.0,
+                      0.0,
+                      float(depth >> 24),
+                      1.0);
+    out.depth = float(depth & 0xFFFFFFu) / 16777216.0;
     return out;
 }
 )";
@@ -782,6 +809,14 @@ void MetalRenderer3D::RenderFrame()
     // 2D compositor via GetLine().
     if (State && State->Device)
     {
+        u8 clearBitmapDirty = 0;
+        const auto texcacheStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
+        if (State->Texcache)
+            State->Texcache->Update(clearBitmapDirty);
+        if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+            gCurrentMetalPerfFrame->TexcacheMs += MetalPerfElapsedMs(texcacheStart, MetalPerfClock::now());
+        UpdateClearBitmapTextures(clearBitmapDirty);
+
         ClearNativeTarget();
         const auto nativeStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
         if (MetalDiagSolidNative3DEnabled())
@@ -936,6 +971,9 @@ bool MetalRenderer3D::CreateDeviceObjects()
     }
 
     if (!BuildClearPipeline())
+        return false;
+
+    if (!CreateClearBitmapTextures())
         return false;
 
     if (!BuildOpaqueRenderPipelines())
@@ -1171,6 +1209,87 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     return true;
 }
 
+bool MetalRenderer3D::CreateClearBitmapTextures()
+{
+    if (!State || !State->Device)
+        return false;
+
+    MTLTextureDescriptor* colorDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                           width:256
+                                                          height:256
+                                                       mipmapped:NO];
+    colorDesc.usage = MTLTextureUsageShaderRead;
+    colorDesc.storageMode = MTLStorageModeShared;
+    State->ClearBitmapColor = [State->Device newTextureWithDescriptor:colorDesc];
+
+    MTLTextureDescriptor* depthDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Uint
+                                                           width:256
+                                                          height:256
+                                                       mipmapped:NO];
+    depthDesc.usage = MTLTextureUsageShaderRead;
+    depthDesc.storageMode = MTLStorageModeShared;
+    State->ClearBitmapDepth = [State->Device newTextureWithDescriptor:depthDesc];
+
+    if (!State->ClearBitmapColor || !State->ClearBitmapDepth)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create clear bitmap textures\n");
+        return false;
+    }
+
+    State->ClearBitmapDirty = 0x3;
+    return true;
+}
+
+bool MetalRenderer3D::UpdateClearBitmapTextures(u8 clrBitmapDirty)
+{
+    if (!State || !State->ClearBitmapColor || !State->ClearBitmapDepth)
+        return false;
+
+    State->ClearBitmapDirty |= clrBitmapDirty;
+    if (!(GPU3D.RenderDispCnt & (1u << 14)))
+        return true;
+
+    const MTLRegion region = MTLRegionMake2D(0, 0, 256, 256);
+    if (State->ClearBitmapDirty & (1u << 0))
+    {
+        const u16* vram = reinterpret_cast<const u16*>(&GPU.VRAMFlat_Texture[0x40000]);
+        for (size_t i = 0; i < State->ClearBitmapColorData.size(); i++)
+        {
+            const u16 color = vram[i];
+            u32 r = (color << 1) & 0x3E; if (r) r++;
+            u32 g = (color >> 4) & 0x3E; if (g) g++;
+            u32 b = (color >> 9) & 0x3E; if (b) b++;
+            u32 a = (color & 0x8000) ? 31 : 0;
+            State->ClearBitmapColorData[i] = r | (g << 8) | (b << 16) | (a << 24);
+        }
+        [State->ClearBitmapColor replaceRegion:region
+                                    mipmapLevel:0
+                                      withBytes:State->ClearBitmapColorData.data()
+                                    bytesPerRow:256 * sizeof(u32)];
+    }
+
+    if (State->ClearBitmapDirty & (1u << 1))
+    {
+        const u16* vram = reinterpret_cast<const u16*>(&GPU.VRAMFlat_Texture[0x60000]);
+        for (size_t i = 0; i < State->ClearBitmapDepthData.size(); i++)
+        {
+            const u16 value = vram[i];
+            const u32 depth = ((value & 0x7FFF) * 0x200) + 0x1FF;
+            const u32 fog = (value & 0x8000) << 9;
+            State->ClearBitmapDepthData[i] = depth | fog;
+        }
+        [State->ClearBitmapDepth replaceRegion:region
+                                    mipmapLevel:0
+                                      withBytes:State->ClearBitmapDepthData.data()
+                                    bytesPerRow:256 * sizeof(u32)];
+    }
+
+    State->ClearBitmapDirty = 0;
+    return true;
+}
+
 bool MetalRenderer3D::ResizeTargets()
 {
     const NSUInteger width = 256;
@@ -1221,6 +1340,7 @@ bool MetalRenderer3D::ResizeTargets()
     State->NativeLineReady = false;
     MetalPerfLogTargetResize(ScaleFactor, width, height);
 
+    UpdateClearBitmapTextures(0);
     return State->NativeReadbackBuffer && ClearNativeTarget();
 }
 
@@ -1274,6 +1394,28 @@ bool MetalRenderer3D::ClearNativeTarget()
     id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
     if (!encoder)
         return false;
+
+    if ((GPU3D.RenderDispCnt & (1u << 14)) &&
+        State->ClearPipeline && State->ClearDepthStencil &&
+        State->ClearBitmapColor && State->ClearBitmapDepth)
+    {
+        struct ClearBitmapConfigCpu
+        {
+            float offset[2];
+            uint32_t opaquePolyID;
+            uint32_t pad;
+        } config = {};
+        config.offset[0] = static_cast<float>((GPU3D.RenderClearAttr2 >> 16) & 0xFF) / 256.0f;
+        config.offset[1] = static_cast<float>((GPU3D.RenderClearAttr2 >> 24) & 0xFF) / 256.0f;
+        config.opaquePolyID = (GPU3D.RenderClearAttr1 >> 24) & 0x3F;
+
+        [encoder setRenderPipelineState:State->ClearPipeline];
+        [encoder setDepthStencilState:State->ClearDepthStencil];
+        [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
+        [encoder setFragmentTexture:State->ClearBitmapColor atIndex:0];
+        [encoder setFragmentTexture:State->ClearBitmapDepth atIndex:1];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
 
     [encoder endEncoding];
     [commandBuffer commit];
@@ -1484,12 +1626,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         return;
     }
     State->LastDiagnostics = {};
-
-    u8 unusedClearBitmapDirty = 0;
-    const auto texcacheStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
-    State->Texcache->Update(unusedClearBitmapDirty);
-    if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
-        gCurrentMetalPerfFrame->TexcacheMs += MetalPerfElapsedMs(texcacheStart, MetalPerfClock::now());
 
     const u32 numPolygons = GPU3D.RenderNumPolygons;
     if (numPolygons == 0)
