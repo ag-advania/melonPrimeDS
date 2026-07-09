@@ -322,7 +322,60 @@ Also verified:
 
 ---
 
-## 4. Remaining phases (Phase 3 onward — not yet implemented)
+## 3b. Phase 3 — EmuThread backend tracking (implemented, 2026-07-09, deliberately partial)
+
+Design doc §9 scope, deliberately narrowed. `EmuThread::useOpenGL` (a bool) turned out to have
+only **4 write sites** (`run()` startup, `msg_InitGL`, `msg_DeInitGL`) and **5 read sites**
+(context-current gating around lines 317/324/470, the repaint-signal gate at line 437, and the
+`videoSettingsDirty` VSync branch). Since `PresentationBackend::Metal` cannot exist as a
+reachable value yet (no `ScreenPanelMetal`, no way to select it), none of the 5 *read* sites can
+currently observe a third state — rewriting them now would be speculative, so **only the 4 write
+sites were touched**, adding a new `videoBackend` member tracked in lockstep with `useOpenGL`.
+The 5 read sites are explicitly deferred to Phase 4, which is the phase that actually needs them
+to branch three ways.
+
+```cpp
+// EmuThread.h, added inside #ifdef MELONPRIME_DS
+MelonPrime::VideoBackend::PresentationBackend videoBackend =
+    MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+```
+
+```cpp
+// MelonPrimeVideoBackend.h/.cpp, added
+PresentationBackend FromLegacyOpenGLFlag(bool useOpenGL); // OpenGL or NativeQt only
+```
+
+Each of the 4 `useOpenGL = ...;` assignments in [EmuThread.cpp](../../src/frontend/qt_sdl/EmuThread.cpp)
+gained a companion `videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);`
+right after it, guarded by `#ifdef MELONPRIME_DS`. The `msg_DeInitGL` case's single-line
+`if (msg.param.value<int>() == 0) useOpenGL = false;` was reshaped into a braced block (still the
+exact same runtime behavior) so the companion line shares the same condition without re-evaluating
+`msg.param.value<int>()` a second time.
+
+`#include "MelonPrimeVideoBackend.h"` was added to `EmuThread.h` itself (inside the existing
+`#ifdef MELONPRIME_DS` forward-declare block), following the precedent already set by `Screen.h`
+including `MelonPrimeHudConfigOnScreenEdit.h` under `#ifdef MELONPRIME_CUSTOM_HUD` — pulling a
+fork-owned header into an upstream header, properly guarded, is an accepted pattern in this repo.
+
+### Verification (2026-07-09, Intel Mac)
+
+- `cmake --build build-mac --parallel 4` — clean (the `EmuThread.h` include change cascaded into a
+  wider-than-usual rebuild, as expected for a widely-included header; zero new warnings beyond the
+  one pre-existing, unrelated `EditPropType::Color` switch warning).
+- Launch/quit smoke test on `build-mac` (default, Metal disabled) — no crash; `strings` shows zero
+  Metal symbols in the binary.
+- Rebuilt and re-ran `build-mac-metal-test` (`MELONPRIME_ENABLE_METAL=ON`) — compiles clean with
+  the 3-value enum now actually in scope for that config, feature probe still logs correctly.
+- `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files), `audit-metroid-literal-budget.ps1
+  -Budget 1`, `audit-platform-scatter-budget.ps1 -Budget 22` (unaffected — `EmuThread.h`/`.cpp` use
+  `MELONPRIME_DS`, not `__APPLE__`/`__linux__`, so this ratchet doesn't see them at all),
+  `audit-melonprime-srp-performance.ps1` — all PASS.
+- **Not verified:** the 5 read sites' eventual 3-way branching (that's Phase 4's job, not this
+  phase's). **Not verified:** Apple Silicon.
+
+---
+
+## 4. Remaining phases (Phase 4 onward — not yet implemented)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -332,7 +385,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 3 | `EmuThread` `ActiveVideoBackend` lifecycle split | Phase 2 |
 | 4 | `ScreenPanelMetal` presenter (`CAMetalLayer`, CPU-BGRA-only, no `renderer3D_Metal` yet) | Phase 3. Intel-side resize/fullscreen/HiDPI/input-regression testing is achievable this session (real display + real GPU); Apple Silicon confirmation is a separate, later gate before this is considered portable |
 | 5 | OSD + Custom HUD presenter parity on Metal | Phase 4 stable on Intel (Apple Silicon parity separately gated) |
 | 6 | `RendererOutput` abstraction (explicit CPU/GL/Metal output kind) | Phase 4 (needed before any Metal-texture renderer output can exist) |
@@ -375,4 +427,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 0 — renderer safety hardening | Done | 2026-07-09 | `MelonPrimeVideoBackend.h/.cpp`; wired into `EmuThread::updateRenderer()`'s existing `.inc` hook and `EmuInstance::usesOpenGL()`; local build + PS1 audits green; manual stale-TOML runtime check and Windows/Linux CI not performed this session |
 | 1 — presentation backend split | Done | 2026-07-09 | `PresentationBackend` enum + `ResolvePresentationBackend()`/`IsOpenGLPresentation()`; single call site in `createScreenPanel()`; local build + launch smoke test + all PS1 audits green (scatter budget exempt-marker applied); interactive Settings panel-swap regression not verified |
 | 2 — Metal feature probe | Done | 2026-07-09 | `MelonPrimeMetalFeatureCheck.h/.mm`; **runtime-verified on real Intel Metal 3 hardware** (device query + command queue + real shader compile + BGRA8Unorm pipeline state all succeeded); default tree unaffected, scatter budget exempt-marker applied; Apple Silicon still unconfirmed |
-| 3–10 | Not started | — | See §4. Phases 3-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 3 — EmuThread backend tracking | Done (partial by design) | 2026-07-09 | New `videoBackend` member tracked at all 4 write sites; the 5 read sites (context-current gating, repaint signal, VSync branch) deliberately left on `useOpenGL` until Phase 4 needs 3-way branching; both `build-mac` and `build-mac-metal-test` rebuild clean, launch smoke tests pass, all PS1 audits green |
+| 4–10 | Not started | — | See §4. Phases 4-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |

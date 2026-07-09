@@ -56,6 +56,11 @@ bool IsOpenGLPresentation(PresentationBackend backend)
     return backend == PresentationBackend::OpenGL;
 }
 
+PresentationBackend FromLegacyOpenGLFlag(bool useOpenGL)
+{
+    return useOpenGL ? PresentationBackend::OpenGL : PresentationBackend::NativeQt;
+}
+
 } // namespace MelonPrime::VideoBackend
 
 #endif // MELONPRIME_DS

@@ -42,6 +42,13 @@ namespace MelonPrime::VideoBackend {
 
     bool IsOpenGLPresentation(PresentationBackend backend);
 
+    // Metal-plan Phase 3: bridges EmuThread's legacy 2-state `useOpenGL` bool
+    // into the enum at the sites that still only compute a bool. Can only
+    // ever return NativeQt or OpenGL (a bool cannot represent Metal) --
+    // callers that need to actually select Metal must resolve
+    // PresentationBackend directly instead of going through this bridge.
+    PresentationBackend FromLegacyOpenGLFlag(bool useOpenGL);
+
 } // namespace MelonPrime::VideoBackend
 
 #endif // MELONPRIME_DS
