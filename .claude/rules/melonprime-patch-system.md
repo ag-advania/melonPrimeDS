@@ -88,7 +88,7 @@ the `PatchLifecycle` call — the gateway functions own patch/ARM9-hook lifecycl
 frame-state flags. `RunFrameHook`'s **Site D** (the generic `!isInGame` leave-in-game cleanup,
 which calls `ARM9Hook_SetMatchHooksActive(false)` without `Patches_RestoreOnLeave`) is still a
 direct inline call, not a `PatchLifecycle` wrapper — see
-[../features/melonprime_patch_lifecycle_gateway_step3_plan.md](../features/melonprime_patch_lifecycle_gateway_step3_plan.md)
+[../features/completed/melonprime_patch_lifecycle_gateway_step3_plan.md](../features/completed/melonprime_patch_lifecycle_gateway_step3_plan.md)
 for why that one is deliberately left as-is for now.
 
 **Statics:** module `s_applied` state is per-process; melonDS multi-instance runs as separate

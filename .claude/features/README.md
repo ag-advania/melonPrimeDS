@@ -16,3 +16,4 @@ Keep each feature note small and practical:
 - [Custom HUD color dialog preferences](custom-hud-color-dialog-prefs.md)
 - [Morph ball boost](morph-ball-boost.md)
 - [SF reticle effects reference](sf-reticle-effects-reference.md)
+- [Completed feature notes](completed/README.md) — finished SRP v3 design/progress documents
