@@ -279,9 +279,23 @@ endif()
 
 if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
-    # No Metal sources/frameworks exist yet (see
-    # .claude/rules/melonprime-metal-backend-plan.md); later phases add their
-    # target_sources()/find_library() calls inside this same guard.
+
+    # Metal-plan Phase 2 (.claude/rules/melonprime-metal-backend-plan.md):
+    # feature probe only. No presenter/renderer sources exist yet; later
+    # phases add their target_sources() calls inside this same guard.
+    find_library(METAL_LIB Metal)
+    if (NOT METAL_LIB)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
+    endif()
+    target_link_libraries(melonDS PRIVATE ${METAL_LIB})
+
+    target_sources(melonDS PRIVATE
+        MelonPrimeMetalFeatureCheck.mm
+    )
+    set_source_files_properties(
+        MelonPrimeMetalFeatureCheck.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
 endif()
 
 add_subdirectory("../../net"

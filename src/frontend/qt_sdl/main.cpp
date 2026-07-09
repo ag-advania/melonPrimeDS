@@ -55,6 +55,9 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+#include "MelonPrimeMetalFeatureCheck.h"
+#endif
 
 #include "Config.h"
 
@@ -353,6 +356,13 @@ int main(int argc, char** argv)
     printf("melonDS " MELONDS_VERSION "\n");
 #endif
     printf(MELONDS_URL "\n");
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 2 (.claude/rules/melonprime-metal-backend-plan.md):
+    // startup diagnostic only. No presenter/renderer reads this yet -- Phase
+    // 4+ is what actually gates on SupportsRequiredBaseline().
+    MelonPrime::Metal::LogFeatureInfoOnce();
+#endif
 
     // easter egg - not worth checking other cases for something so dumb
     if (argc != 0 && (!strcasecmp(argv[0], "derpDS") || !strcasecmp(argv[0], "./derpDS")))
