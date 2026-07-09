@@ -20,6 +20,7 @@ public:
 
     bool Configure(void* preferredDevice, int scale) noexcept;
     void Reset() noexcept;
+    bool UploadRawVRAMInputs() noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;

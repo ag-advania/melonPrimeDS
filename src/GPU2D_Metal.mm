@@ -345,6 +345,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     state.SpriteScanlineConfigBuffer = newSpriteScanlineConfig;
     state.CompositorConfigBuffer = newCompositorConfig;
     state.Scale = ScaleFactor;
+    if (!UploadRawVRAMInputs())
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to upload initial raw VRAM inputs for engine %u\n", GPU2D.Num);
+        return false;
+    }
 
     if (!state.LoggedFirstAllocation)
     {
@@ -357,6 +362,48 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
             static_cast<size_t>(height),
             kBGLayerCount);
     }
+
+    return true;
+}
+
+bool MetalRenderer2D::UploadRawVRAMInputs() noexcept
+{
+    if (!State || !State->VRAMTexBG || !State->VRAMTexOBJ)
+        return false;
+
+    uint8_t* bgVRAM = nullptr;
+    uint32_t bgMask = 0;
+    GPU2D.GetBGVRAM(bgVRAM, bgMask);
+    if (!bgVRAM)
+        return false;
+
+    const NSUInteger bgHeight = State->VRAMTexBG.height;
+    const NSUInteger bgBytesPerRow = State->VRAMTexBG.width;
+    const size_t bgBytes = static_cast<size_t>(bgBytesPerRow) * static_cast<size_t>(bgHeight);
+    if (bgBytes != static_cast<size_t>(bgMask) + 1u)
+        return false;
+
+    [State->VRAMTexBG replaceRegion:MTLRegionMake2D(0, 0, State->VRAMTexBG.width, bgHeight)
+                        mipmapLevel:0
+                          withBytes:bgVRAM
+                        bytesPerRow:bgBytesPerRow];
+
+    uint8_t* objVRAM = nullptr;
+    uint32_t objMask = 0;
+    GPU2D.GetOBJVRAM(objVRAM, objMask);
+    if (!objVRAM)
+        return false;
+
+    const NSUInteger objHeight = State->VRAMTexOBJ.height;
+    const NSUInteger objBytesPerRow = State->VRAMTexOBJ.width;
+    const size_t objBytes = static_cast<size_t>(objBytesPerRow) * static_cast<size_t>(objHeight);
+    if (objBytes != static_cast<size_t>(objMask) + 1u)
+        return false;
+
+    [State->VRAMTexOBJ replaceRegion:MTLRegionMake2D(0, 0, State->VRAMTexOBJ.width, objHeight)
+                         mipmapLevel:0
+                           withBytes:objVRAM
+                         bytesPerRow:objBytesPerRow];
 
     return true;
 }
