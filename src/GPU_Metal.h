@@ -22,6 +22,7 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    void VBlank() override;
     RendererOutput GetOutput() override;
 
 private:
@@ -32,6 +33,7 @@ private:
 
     bool EnsureFinalOutput();
     bool EnsureFinalOutputForDevice(void* preferredDevice);
+    bool ComposeFinalOutputForCompletedFrame();
     RendererOutput GetSoftwareFallbackOutput();
 };
 

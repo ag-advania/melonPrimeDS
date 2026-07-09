@@ -45,21 +45,22 @@ struct RendererOutput
     RendererOutputKind Kind = RendererOutputKind::None;
     void* Top = nullptr;
     void* Bottom = nullptr;
+    u64 FrameSerial = 0;
 
     static RendererOutput CpuBgra(void* top, void* bottom) noexcept
     {
-        return { RendererOutputKind::CpuBgra, top, bottom };
+        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
     }
 
     static RendererOutput OpenGLTextureArray(void* texture) noexcept
     {
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr };
+        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0 };
     }
 
 #if defined(MELONPRIME_ENABLE_METAL)
-    static RendererOutput MetalTexture(void* texture) noexcept
+    static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
     {
-        return { RendererOutputKind::MetalTexture, texture, nullptr };
+        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
     }
 #endif
 };
