@@ -20,6 +20,7 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    RendererOutput GetOutput() override;
 };
 
 } // namespace melonDS

@@ -33,6 +33,10 @@ public:
     void RestartFrame() override;
 
     u32* GetLine(int line) override;
+    void* GetColorTargetTexture() const noexcept;
+    int GetTargetWidth() const noexcept;
+    int GetTargetHeight() const noexcept;
+    int GetScaleFactor() const noexcept;
 
     void SetupRenderThread();
     void EnableRenderThread();
@@ -55,10 +59,12 @@ private:
     // buffers, resolves textures via the shared Texcache<> template (same
     // decode logic GLRenderer3D uses, GPU3D_Texcache.h), and rasterizes
     // opaque polygons into ColorTarget/AttrTarget/DepthStencilTarget every
-    // frame. This is a real, GPU-executed draw -- not a placeholder -- but
-    // its output is not yet wired to GetLine()/display (still
-    // Delegate-backed), and it does not yet implement translucency, shadow
-    // masks, edge marking, or fog. See GPU3D_Metal.mm for the itemized scope.
+    // frame. This is a real, GPU-executed draw -- not a placeholder -- and
+    // its native ColorTarget is exposed for presenter bring-up, but it is not
+    // yet a complete composited screen. GetLine()/the visible base frame are
+    // still Delegate-backed, and Metal does not yet implement translucency,
+    // shadow masks, edge marking, or fog. See GPU3D_Metal.mm for the
+    // itemized scope.
     void RenderNativeOpaquePolygons();
 };
 

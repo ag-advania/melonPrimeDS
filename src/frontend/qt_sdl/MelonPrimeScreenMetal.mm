@@ -177,6 +177,8 @@ struct ScreenPanelMetal::Impl
     bool resourcesReady = false;
     bool loggedFirstDraw = false;
     bool loggedFirstUiOverlay = false;
+    bool loggedFirstNativeTextureOutput = false;
+    bool loggedNativeTextureFallback = false;
 };
 
 ScreenPanelMetal::ScreenPanelMetal(QWidget* parent)
@@ -454,34 +456,80 @@ void ScreenPanelMetal::drawScreen()
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
         bool hasCpuBuffersForFrame = false;
+        void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
+        id<MTLTexture> nativeMetalTextureForFrame = nil;
 
         if (emuThread->emuIsActive())
         {
             auto nds = emuInstance->getNDS();
 
             const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
-            hasCpuBuffersForFrame = (output.Kind == melonDS::RendererOutputKind::CpuBgra);
-            bottomCpuBufForFrame = output.Bottom;
+            const bool metalRendererSelected =
+                emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Metal;
 
-            // Phase 4 scope is CPU-buffer presentation only (design doc: "no
-            // renderer3D_Metal yet"). A hardware (GL-texture) renderer output
-            // has no meaning to this presenter -- NormalizeRendererForPlatform
-            // already forces Software while the Metal presenter is
-            // force-selected (see MelonPrimeVideoBackend.cpp), so this should
-            // never actually be false here; skip the frame defensively rather
-            // than dereference topBuf as a GLuint*.
-            if (hasCpuBuffersForFrame)
+            if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {
+                nativeMetalTextureForFrame = (__bridge id<MTLTexture>)output.Top;
+                if (nativeMetalTextureForFrame && nativeMetalTextureForFrame.device != m->device)
+                {
+                    if (!m->loggedNativeTextureFallback)
+                    {
+                        m->loggedNativeTextureFallback = true;
+                        fprintf(stderr,
+                                "[MelonPrime] metal presenter: native Metal texture belongs to a different device; falling back to CPU BGRA\n");
+                    }
+                    nativeMetalTextureForFrame = nil;
+                }
+
+                if (nativeMetalTextureForFrame && !m->loggedFirstNativeTextureOutput)
+                {
+                    m->loggedFirstNativeTextureOutput = true;
+                    fprintf(stderr,
+                            "[MelonPrime] metal presenter: first native Metal texture output size=%zux%zu\n",
+                            static_cast<size_t>(nativeMetalTextureForFrame.width),
+                            static_cast<size_t>(nativeMetalTextureForFrame.height));
+                }
+
+                // The native Metal target is not a complete composited top
+                // screen yet: it is the experimental native 3D opaque target.
+                // Keep the software delegate's CPU buffers as the visible
+                // base frame so the top screen never disappears while the
+                // native target path is still being brought up.
+                hasCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame);
+            }
+            else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
+            {
+                hasCpuBuffersForFrame = true;
+                topCpuBufForFrame = output.Top;
+                bottomCpuBufForFrame = output.Bottom;
+                if (metalRendererSelected && !m->loggedNativeTextureFallback)
+                {
+                    m->loggedNativeTextureFallback = true;
+                    fprintf(stderr,
+                            "[MelonPrime] metal presenter: Metal renderer returned no native texture; falling back to CPU BGRA\n");
+                }
+            }
+
+            if (hasCpuBuffersForFrame && topCpuBufForFrame && bottomCpuBufForFrame)
+            {
+                hasCpuBuffersForFrame = true;
                 [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
-                                      withBytes:output.Top
+                                      withBytes:topCpuBufForFrame
                                     bytesPerRow:256 * 4];
                 [m->screenTex[1] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
-                                      withBytes:output.Bottom
+                                      withBytes:bottomCpuBufForFrame
                                     bytesPerRow:256 * 4];
+            }
+            else
+            {
+                hasCpuBuffersForFrame = false;
+            }
 
+            if (nativeMetalTextureForFrame || hasCpuBuffersForFrame)
+            {
                 [encoder setRenderPipelineState:m->pipeline];
                 [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
                 id<MTLSamplerState> sampler = filter ? m->linearSampler : m->nearestSampler;
@@ -497,7 +545,13 @@ void ScreenPanelMetal::drawScreen()
                         uniforms.m[c] = screenMatrix[i][c];
 
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
-                    [encoder setFragmentTexture:m->screenTex[screenKind[i]] atIndex:0];
+                    id<MTLTexture> sourceTexture = hasCpuBuffersForFrame ? m->screenTex[screenKind[i]] : nil;
+                    if (!sourceTexture && nativeMetalTextureForFrame && screenKind[i] == 0)
+                        sourceTexture = nativeMetalTextureForFrame;
+                    if (!sourceTexture)
+                        continue;
+
+                    [encoder setFragmentTexture:sourceTexture atIndex:0];
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                                  vertexStart:(screenKind[i] == 0 ? 0 : 6)
                                  vertexCount:6];

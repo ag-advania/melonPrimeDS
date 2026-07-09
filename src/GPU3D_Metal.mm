@@ -596,12 +596,12 @@ void MetalRenderer3D::RenderFrame()
     Delegate.RenderFrame();
     perfFrame.CpuRendererFallback = true;
 
-    // Native Metal "shadow" pass: real GPU geometry submission every frame,
-    // executed alongside (not instead of) the software delegate. Its output
-    // is not yet consumed by GetLine()/the presenter -- see the scope note
-    // on RenderNativeOpaquePolygons() -- so this cannot regress what is
-    // displayed even if something here is wrong; it exists to build and
-    // exercise the native draw path ahead of GetLine() integration.
+    // Native Metal bring-up pass: real GPU geometry submission every frame,
+    // executed alongside (not instead of) the software delegate. Its
+    // ColorTarget is exposed through RendererOutput for presenter bring-up,
+    // but it is not yet a complete composited top screen; the visible base
+    // frame remains Delegate-backed until final 2D/3D composition parity is
+    // implemented.
     if (State && State->Device)
     {
         ClearNativeTarget();
@@ -632,6 +632,26 @@ void MetalRenderer3D::RestartFrame()
 u32* MetalRenderer3D::GetLine(int line)
 {
     return Delegate.GetLine(line);
+}
+
+void* MetalRenderer3D::GetColorTargetTexture() const noexcept
+{
+    return State ? (__bridge void*)State->ColorTarget : nullptr;
+}
+
+int MetalRenderer3D::GetTargetWidth() const noexcept
+{
+    return State && State->ColorTarget ? static_cast<int>(State->ColorTarget.width) : 0;
+}
+
+int MetalRenderer3D::GetTargetHeight() const noexcept
+{
+    return State && State->ColorTarget ? static_cast<int>(State->ColorTarget.height) : 0;
+}
+
+int MetalRenderer3D::GetScaleFactor() const noexcept
+{
+    return ScaleFactor;
 }
 
 void MetalRenderer3D::SetupRenderThread()
@@ -1013,12 +1033,13 @@ struct OpaqueDrawGroup
 //   - the depth-func-equal attribute bit (bit14) -- always MTLCompareFunctionLess
 //   - "BetterPolygons" alternate triangulation
 //   - edge marking, fog, and the final composite pass
-//   - feeding this output to GetLine()/the presenter at all
+//   - final 2D/3D composition through GetLine()/the presenter
 //
-// ScaleFactor controls render-target size. DS screen-space coordinates remain
-// native 256x192 and are mapped to NDC, so rasterization covers the full scaled
-// render target. Pixel-level visual parity is still pending because final Metal
-// output is not yet displayed.
+// ScaleFactor controls the Metal render-target size. DS screen-space
+// coordinates remain native 256x192 and are mapped to NDC, so rasterization
+// covers the full scaled render target. Full GL parity is still incomplete
+// because translucent polygons, edge/fog/final composite, and 2D/3D
+// composition correctness are not finished.
 void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||

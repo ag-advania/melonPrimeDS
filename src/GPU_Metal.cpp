@@ -49,6 +49,18 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     rend3d->SetScaleFactor(settings.ScaleFactor);
 }
 
+RendererOutput MetalRenderer::GetOutput()
+{
+    auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
+    if (rend3d)
+    {
+        if (void* tex = rend3d->GetColorTargetTexture())
+            return RendererOutput::MetalTexture(tex);
+    }
+
+    return SoftRenderer::GetOutput();
+}
+
 } // namespace melonDS
 
 #endif // MELONPRIME_ENABLE_METAL
