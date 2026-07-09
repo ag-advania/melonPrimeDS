@@ -375,7 +375,83 @@ fork-owned header into an upstream header, properly guarded, is an accepted patt
 
 ---
 
-## 4. Remaining phases (Phase 4 onward — not yet implemented)
+## 3c. Phase 4 — `ScreenPanelMetal` presenter (implemented and *runtime-verified on Intel*, 2026-07-09)
+
+Design doc §10 scope, with the deliberate Phase 4 limitation intact: this is a
+**presentation-only** `CAMetalLayer` path for the existing CPU BGRA framebuffers.
+It does not add `renderer3D_Metal`, does not port any `GPU3D` renderer, and does
+not redirect `High2`. While the Metal presenter is force-selected, requested
+hardware 3D renderers are normalized to Software so `EmuThread::updateRenderer()`
+never tries to construct a GL renderer for a window that has no GL surface.
+
+### 3c.1 New files
+
+- [MelonPrimeScreenMetal.h](../../src/frontend/qt_sdl/MelonPrimeScreenMetal.h)
+- [MelonPrimeScreenMetal.mm](../../src/frontend/qt_sdl/MelonPrimeScreenMetal.mm)
+
+`ScreenPanelMetal` subclasses `ScreenPanel`, attaches a `CAMetalLayer` directly
+to the widget's native `NSView`, compiles a small Metal vertex/fragment pipeline
+that mirrors the existing screen quad transform math, uploads the top/bottom
+CPU framebuffers into two persistent `BGRA8Unorm` textures, and presents from
+`drawScreen()` on the emu thread (matching the existing GL presenter call path).
+Drawable size and scale are updated on GUI-thread layout changes and shared with
+the emu thread through a small mutex-protected state block.
+
+Phase 4 intentionally does **not** draw the no-ROM splash, OSD, or Custom HUD on
+Metal yet. It calls `osdUpdate()` so OSD item bookkeeping does not leak, but
+actual OSD/HUD/splash parity is Phase 5.
+
+### 3c.2 Selection and lifecycle wiring
+
+- `CMakeLists.txt`: when `MELONPRIME_METAL_ACTIVE` is true, links QuartzCore in
+  addition to Metal, compiles `MelonPrimeScreenMetal.mm`, and applies `-fobjc-arc`
+  to both Metal `.mm` files. The default/force-disabled build still sees no
+  Metal presenter source or QuartzCore link.
+- `MelonPrimeVideoBackend.h/.cpp`: adds the temporary developer bootstrap
+  `MELONPRIME_FORCE_METAL_PRESENTER=1`. There is still no persisted config key
+  and no UI; Phase 9 owns user exposure. The same resolver is now used by
+  `EmuInstance::usesOpenGL()`, so `Screen.UseGL=true` cannot accidentally request
+  a GL context when the env-forced Metal presenter owns presentation.
+- `Window.cpp`: `MainWindow::createScreenPanel()` constructs `ScreenPanelMetal`
+  when the resolver returns `PresentationBackend::Metal`, falling back to the
+  existing GL/NativeQt path if `initMetal()` fails.
+- `EmuThread.cpp`: Phase 3's `videoBackend` member now actually distinguishes
+  `NativeQt` from `Metal` when no GL context is live. Existing GL context calls
+  still key off `useOpenGL`; only the repaint-signal path now checks for
+  `NativeQt` specifically, so Metal presents from `drawScreen()` instead of also
+  scheduling Qt paint updates.
+
+### 3c.3 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean after adding the
+  presenter and QuartzCore link.
+- `cmake --build build-mac --parallel 4` — default Metal-disabled build remains
+  clean (only pre-existing `sprintf` and HUD `EditPropType::Color` warnings).
+- Default binary string check: no `metal presenter`, `metal probe`,
+  `MelonPrimeScreenMetal`, or `MELONPRIME_FORCE_METAL` strings in
+  `build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`.
+- Runtime smoke with `MELONPRIME_FORCE_METAL_PRESENTER=1` on this session's real
+  Intel Iris Plus 655 / Metal 3 machine: process stayed alive for 6 seconds and
+  logged:
+
+```text
+[MelonPrime] metal probe: device='Intel(R) Iris(TM) Plus Graphics 655' lowPower=1 removable=0 unifiedMemory=1 recommendedMaxWorkingSetSize=1610612736
+[MelonPrime] metal presenter: initialized drawable=512x768 scale=2.00
+```
+
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1`,
+  `audit-metroid-literal-budget.ps1 -Budget 1`,
+  `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1`, and
+  `generate-hud-prop-schema.py` + generated-file diff all pass. The SRP audit's
+  two `Screen.cpp` manual-review lines are pre-existing raw-aim items, unchanged
+  by this phase.
+- **Not verified:** Apple Silicon. **Not verified:** ROM gameplay visual parity,
+  resize/fullscreen/manual HiDPI inspection, or Phase 5 OSD/HUD/splash parity.
+
+---
+
+## 4. Remaining phases (Phase 5 onward)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -385,7 +461,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 4 | `ScreenPanelMetal` presenter (`CAMetalLayer`, CPU-BGRA-only, no `renderer3D_Metal` yet) | Phase 3. Intel-side resize/fullscreen/HiDPI/input-regression testing is achievable this session (real display + real GPU); Apple Silicon confirmation is a separate, later gate before this is considered portable |
 | 5 | OSD + Custom HUD presenter parity on Metal | Phase 4 stable on Intel (Apple Silicon parity separately gated) |
 | 6 | `RendererOutput` abstraction (explicit CPU/GL/Metal output kind) | Phase 4 (needed before any Metal-texture renderer output can exist) |
 | 7 | `MetalRenderer`/`MetalRenderer2D`/`MetalRenderer3D` shell + `renderer3D_Metal` enum value | Phase 6; must not add the enum value until the shell can fail gracefully (log + fallback) instead of crashing |
@@ -428,4 +503,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 1 — presentation backend split | Done | 2026-07-09 | `PresentationBackend` enum + `ResolvePresentationBackend()`/`IsOpenGLPresentation()`; single call site in `createScreenPanel()`; local build + launch smoke test + all PS1 audits green (scatter budget exempt-marker applied); interactive Settings panel-swap regression not verified |
 | 2 — Metal feature probe | Done | 2026-07-09 | `MelonPrimeMetalFeatureCheck.h/.mm`; **runtime-verified on real Intel Metal 3 hardware** (device query + command queue + real shader compile + BGRA8Unorm pipeline state all succeeded); default tree unaffected, scatter budget exempt-marker applied; Apple Silicon still unconfirmed |
 | 3 — EmuThread backend tracking | Done (partial by design) | 2026-07-09 | New `videoBackend` member tracked at all 4 write sites; the 5 read sites (context-current gating, repaint signal, VSync branch) deliberately left on `useOpenGL` until Phase 4 needs 3-way branching; both `build-mac` and `build-mac-metal-test` rebuild clean, launch smoke tests pass, all PS1 audits green |
-| 4–10 | Not started | — | See §4. Phases 4-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 4 — `ScreenPanelMetal` presenter | Done (Intel runtime smoke) | 2026-07-09 | `CAMetalLayer` presenter compiled only under `MELONPRIME_METAL_ACTIVE`; env-only bootstrap `MELONPRIME_FORCE_METAL_PRESENTER=1`; CPU BGRA framebuffer upload/present path runtime-verified on Intel Iris Plus 655; default binary has no Metal strings; OSD/HUD/splash and Apple Silicon still pending |
+| 5–10 | Not started | — | See §4. Phases 5-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |

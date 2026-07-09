@@ -3,10 +3,37 @@
 #include "MelonPrimeVideoBackend.h"
 #include "EmuInstance.h" // renderer3D_* enum
 
+#if defined(MELONPRIME_ENABLE_METAL)
+#include <cstdlib>
+#endif
+
 namespace MelonPrime::VideoBackend {
+
+#if defined(MELONPRIME_ENABLE_METAL)
+bool ShouldForceMetalPresenterFromEnv()
+{
+    const char* env = std::getenv("MELONPRIME_FORCE_METAL_PRESENTER");
+    return env != nullptr && env[0] == '1';
+}
+#endif
 
 int NormalizeRendererForPlatform(int requested)
 {
+#if defined(MELONPRIME_ENABLE_METAL)
+    // Phase 4 bootstrap: while the Metal presenter is force-selected there is
+    // no GL context for a hardware 3D renderer to render into (no
+    // renderer3D_Metal exists yet -- that's Phase 7). Force Software rather
+    // than let EmuThread::updateRenderer() try to construct a GLRenderer
+    // against a window that never created a GL surface. Phase 7 must add a
+    // `requested != renderer3D_Metal` exception here once that value exists,
+    // or a Metal 3D renderer selection would get forced back to Software too.
+    if (ShouldForceMetalPresenterFromEnv() &&
+        requested != renderer3D_Software)
+    {
+        return renderer3D_Software;
+    }
+#endif
+
 #if defined(__APPLE__) && defined(OGLRENDERER_ENABLED) // scatter-budget-exempt: renderer-selection normalization, not input dispatch
     // macOS OpenGL cannot run the compute-shader renderer path (see
     // melonprime_macos_compute_renderer_restriction.md and
@@ -45,6 +72,16 @@ bool RendererRequiresOpenGLContext(int renderer)
 
 PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRenderer)
 {
+#if defined(MELONPRIME_ENABLE_METAL)
+    // Phase 4 bootstrap (see ShouldForceMetalPresenterFromEnv()). Checked
+    // before the GL branch so both MainWindow::createScreenPanel() and
+    // EmuInstance::usesOpenGL() agree Metal owns presentation -- the latter
+    // then correctly reports false (IsOpenGLPresentation(Metal) == false),
+    // so EmuThread never requests a GL context for a Metal-presented window.
+    if (ShouldForceMetalPresenterFromEnv())
+        return PresentationBackend::Metal;
+#endif
+
     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
         return PresentationBackend::OpenGL;
