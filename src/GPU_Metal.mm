@@ -164,6 +164,9 @@ struct MetalRenderer::MetalFinalState
     id<MTLTexture> CpuScreenTex[2] = { nil, nil };
     int Scale = 0;
     int FrontBuffer = 0;
+    uint64_t FrameSerial = 0;
+    uint64_t CompletedFrameSerial = 0;
+    bool HasCompletedFrame = false;
     bool LoggedFirstFinalFrame = false;
     bool LoggedSoftwareFallbackError = false;
 };
@@ -369,6 +372,8 @@ bool MetalRenderer::EnsureFinalOutputForDevice(void* preferredDevice)
     state.CpuScreenTex[1] = newCpu[1];
     state.Scale = scale;
     state.FrontBuffer = 0;
+    state.HasCompletedFrame = false;
+    state.CompletedFrameSerial = 0;
 
     std::fprintf(stderr,
         "[MelonPrime] metal renderer: final output scale=%d size=%zux%zu layers=2\n",
@@ -393,21 +398,27 @@ RendererOutput MetalRenderer::GetSoftwareFallbackOutput()
     return {};
 }
 
-RendererOutput MetalRenderer::GetOutput()
+void MetalRenderer::VBlank()
+{
+    SoftRenderer::VBlank();
+    ComposeFinalOutputForCompletedFrame();
+}
+
+bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
 {
     auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
     if (!rend3d)
-        return GetSoftwareFallbackOutput();
+        return false;
 
     id<MTLTexture> native3D = (__bridge id<MTLTexture>)rend3d->GetColorTargetTexture();
     void* preferredDevice = native3D ? (__bridge void*)native3D.device : nullptr;
     if (!EnsureFinalOutputForDevice(preferredDevice))
-        return GetSoftwareFallbackOutput();
+        return false;
 
     MetalFinalState& state = *FinalState;
     const bool engineAUses3D = EngineAUses3D(GPU);
     if (engineAUses3D && (!native3D || native3D.device != state.Device))
-        return GetSoftwareFallbackOutput();
+        return false;
 
     void* topCpu = nullptr;
     void* bottomCpu = nullptr;
@@ -416,18 +427,31 @@ RendererOutput MetalRenderer::GetOutput()
     const int nextBackBuffer = state.FrontBuffer ^ 1;
     id<MTLTexture> finalTex = state.FinalOutputTex[nextBackBuffer];
     if (!finalTex)
-        return GetSoftwareFallbackOutput();
+        return false;
 
     const auto start = MetalClock::now();
     uint64_t uploadBytes = 0;
 
     id<MTLCommandBuffer> commandBuffer = [state.Queue commandBuffer];
     if (!commandBuffer)
-        return GetSoftwareFallbackOutput();
+        return false;
 
     const int native3DLayer = EngineAOutputLayer(GPU);
     const NSUInteger finalWidth = finalTex.width;
     const NSUInteger finalHeight = finalTex.height;
+    const uint64_t frameSerial = ++state.FrameSerial;
+
+    if (frameSerial <= 3 || (frameSerial % 600) == 0)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal frame: compose frame=%llu back=%d front=%d scale=%d target=%zux%zu\n",
+            static_cast<unsigned long long>(frameSerial),
+            nextBackBuffer,
+            state.FrontBuffer,
+            state.Scale,
+            static_cast<size_t>(finalWidth),
+            static_cast<size_t>(finalHeight));
+    }
 
     for (int layer = 0; layer < 2; layer++)
     {
@@ -476,8 +500,12 @@ RendererOutput MetalRenderer::GetOutput()
 
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+        return false;
 
     state.FrontBuffer = nextBackBuffer;
+    state.CompletedFrameSerial = frameSerial;
+    state.HasCompletedFrame = true;
 
     if (!state.LoggedFirstFinalFrame)
     {
@@ -496,7 +524,17 @@ RendererOutput MetalRenderer::GetOutput()
 
     SubmitFinalPassPerf(state.Scale, finalWidth, finalHeight, ElapsedMs(start, MetalClock::now()), uploadBytes, false);
 
-    return RendererOutput::MetalTexture((__bridge void*)state.FinalOutputTex[state.FrontBuffer]);
+    return commandBuffer.status == MTLCommandBufferStatusCompleted;
+}
+
+RendererOutput MetalRenderer::GetOutput()
+{
+    if (!FinalState || !FinalState->HasCompletedFrame || !FinalState->FinalOutputTex[FinalState->FrontBuffer])
+        return GetSoftwareFallbackOutput();
+
+    return RendererOutput::MetalTexture(
+        (__bridge void*)FinalState->FinalOutputTex[FinalState->FrontBuffer],
+        FinalState->CompletedFrameSerial);
 }
 
 } // namespace melonDS

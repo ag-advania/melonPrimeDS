@@ -251,6 +251,7 @@ struct ScreenPanelMetal::Impl
     bool loggedFirstUiOverlay = false;
     bool loggedFirstNativeTextureOutput = false;
     bool loggedNativeTextureFallback = false;
+    uint64_t lastPresentedFrame = 0;
 };
 
 ScreenPanelMetal::ScreenPanelMetal(QWidget* parent)
@@ -566,6 +567,18 @@ void ScreenPanelMetal::drawScreen()
                             static_cast<size_t>(finalMetalTextureForFrame.width),
                             static_cast<size_t>(finalMetalTextureForFrame.height),
                             static_cast<size_t>(finalMetalTextureForFrame.arrayLength));
+                }
+                if (finalMetalTextureForFrame && output.FrameSerial != 0 &&
+                    output.FrameSerial != m->lastPresentedFrame)
+                {
+                    m->lastPresentedFrame = output.FrameSerial;
+                    if (output.FrameSerial <= 3 || (output.FrameSerial % 600) == 0)
+                    {
+                        fprintf(stderr,
+                                "[MelonPrime] metal frame: present frame=%llu front texture=%p\n",
+                                static_cast<unsigned long long>(output.FrameSerial),
+                                (__bridge void*)finalMetalTextureForFrame);
+                    }
                 }
 
                 hasHudCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame) &&
