@@ -30,7 +30,8 @@ Matches game active-match gates (`flowState == 0` = live match, including START 
    match; ignores stale post-match flow left over from the previous round).
 2. After latch: read only `battleFlowState` until `flow != 0`.
 3. On first end-of-game frame: `Patches_RestoreOnLeave()` and
-   `ARM9Hook_SetMatchHooksActive(false)` once, set `BIT_END_OF_GAME_PATCH_RESTORED`.
+   `ARM9Hook_SetMatchHooksActive(false)` once (via `PatchLifecycle::RestoreOnMatchEnd()`,
+   PatchLifecycleGateway Step 3 Site A), set `BIT_END_OF_GAME_PATCH_RESTORED`.
 
 Menu frames skip all mode/flow reads. During a match after latch: one `flowState` read per frame. Before latch (lobby,
 `INIT` set): one `currentMode` read per frame; `battleFlowState` is skipped until
@@ -52,6 +53,8 @@ Battle-runtime patches and hooks wait for `HandleBattleRuntimeEnter()`.
 ## `HandleBattleRuntimeEnter()` (battle patches + match hooks)
 
 On first `mode==0x0E && flow==0` after join (same latch as `BIT_BATTLE_RUNTIME_MODE`):
+
+Via `PatchLifecycle::ApplyOnBattleRuntimeEnter()` (PatchLifecycleGateway Step 3 Site B):
 
 - `Patches_Apply(PatchSite_BattleRuntime)` — OsdColor, LowHpWarning, InstantAimFollow,
   ShowHeadshotOnline, ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier,

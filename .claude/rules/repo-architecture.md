@@ -294,6 +294,28 @@ The Phase 0-8 structural refactor finished on 2026-06-11. Current ownership poin
   exposes the translation API only.
 - Historical implementation notes live under `.claude/rules/notes/`, not in `src/frontend/qt_sdl/`.
 
+## SRP v3 Unit Ownership (2026-07)
+
+The SRP v3 refactor (Immediate Plan through Batch 1-6; see
+[melonprime-srp-performance-contract.md](melonprime-srp-performance-contract.md) for the binding
+contract) split several previously-tangled responsibilities into dedicated units. These are the
+current owners — do not fold their responsibilities back into `MelonPrimeCore` or `Screen.cpp`:
+
+| Area | Owner | Owns |
+|---|---|---|
+| Runtime config load | `MelonPrimeRuntimeConfig.h/.cpp` | `RuntimeConfigSnapshot` / `AimConfigSnapshot`: pure `Load*ConfigSnapshot(Config::Table&)` read+clamp. `MelonPrimeCore::Apply*ConfigSnapshot(...)` is the only place that writes the result into core state |
+| Input projection | `MelonPrimeInputProjection.h` (header-only) | Hotkey → down/press bit projection; `FORCE_INLINE`, zero new abstraction cost — this is a hot-path file |
+| Screen cursor policy | `MelonPrimeScreenCursorPolicy.h/.cpp` | Cursor clip/warp/capture/confinement: `ClipCenter1px`, `Unclip`, `UpdateClipIfNeeded`, `ContainAimCursorIfNeeded`, `ReleaseForClose`, `ConfineToBottomScreen`. `Screen.cpp` must not `#include` MelonPrime patch or ARM9 hook internals — see the SRP contract's "Screen.cpp dependency rule" |
+| HUD editor widget factories | `MelonPrimeHudEditorFormBuilder.h/.cpp` | Every property-panel widget factory (checkbox/combo/spin/double-spin/opacity-slider/line-edit/color-picker/sub-color/color-overlay-row), all `WidgetFactoryContext`-based. `MelonPrimeHudConfigOnScreenEdit.cpp` is a thin delegate over this plus (as of V7 Phase 2) the row-table dispatcher in [MelonPrimeHudEditorSidePanelRows.inc](../../src/frontend/qt_sdl/MelonPrimeHudEditorSidePanelRows.inc) |
+| Patch/ARM9-hook lifecycle | `MelonPrimePatchLifecycle.h/.cpp` | `ResetForEmuStart` / `ResetForBoot` / `RestoreForEmuStop` / `ReapplyForConfigReload` / `ApplyOutOfGameFrame` (Site E) / `RestoreOnMatchEnd` (Site A) / `ApplyOnBattleRuntimeEnter` (Site B) / `DeactivateHooksOnLeaveInGame` (Site D) / `DeactivateHooksForRomDetect`. Owns every direct `ARM9Hook_SetMatchHooksActive` call site in `qt_sdl` |
+| `QColorDialog` usage | `MelonPrimeColorDialogPrefs.cpp` | The only file allowed to call `QColorDialog` directly (enforced by `audit-color-dialog-prefs.ps1`); HUD editor code calls `ColorDialogPrefs::getColor()` |
+
+Deliberately **not** split (see the SRP contract's "Never mix" list and the completion summary's
+"Deferred" table for the reasoning): `RunFrameHook`'s 19-step order, PatchLifecycleGateway Site C
+(per-frame `OsdColor_ApplyOnce`, an explicit non-goal), ARM9 hook context, HUD render unity split,
+`MelonPrimeCore` hot state struct extraction, `Screen.cpp` mouse event routing, and
+`MelonPrimePlatformInput.h`'s raw-filter ownership model.
+
 ## Active Branch: `highres_fonts_v3`
 Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions

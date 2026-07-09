@@ -10,12 +10,16 @@
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
+#include "MelonPrimeRuntimeConfig.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
 #if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 #include "MelonPrimePatch.h"
+#endif
+#ifdef MELONPRIME_DS
+#include "MelonPrimePatchLifecycle.h"
 #endif
 
 #include <cmath>
@@ -143,17 +147,32 @@ namespace MelonPrime {
 #endif
     }
 
-    void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
-        const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
-        const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
-        m_aimSensiFactor = sens * 0.01f;
-        m_aimCombinedY = m_aimSensiFactor * yScale;
+    // Only place that writes an AimConfigSnapshot into MelonPrimeCore.
+    // Side effect: RecalcAimFixedPoint() rebuilds the Q-format aim scale/
+    // adjust/snap-threshold fields from the new sensitivity/adjust values
+    // and resets the sub-pixel aim residuals (P-17) since they were
+    // accumulated under the previous scale. See the Load/Apply boundary
+    // comment in MelonPrimeRuntimeConfig.h.
+    void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
+    {
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
+        m_aimAdjust = s.aimAdjust;
         RecalcAimFixedPoint();
     }
 
-    void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
-        const double v = cfg.GetDouble(CfgKey::AimAdjust);
-        m_aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
+    // Called from Initialize(), ApplyConfigReload(), and ROM detect — see
+    // MelonPrimeRuntimeConfig.h for why this is a separate reload path from
+    // ReloadConfigFlags()/RuntimeConfigSnapshot.
+    void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
+    {
+        ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
+    }
+
+    void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
+        const AimSensitivitySnapshot s = LoadAimSensitivitySnapshot(cfg);
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
         RecalcAimFixedPoint();
     }
 
@@ -329,11 +348,12 @@ namespace MelonPrime {
                 } else {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
                     if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
-                        melonDS::NDS* const nds = emuInstance->getNDS();
-                        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
-                        Patches_RestoreOnLeave(ctx);
-                        ARM9Hook_SetMatchHooksActive(
-                            nds, localCfg, m_currentRom.romGroupIndex, this, false, emuInstance);
+                        // PatchLifecycle Step 3 / Site A — see
+                        // melonprime_patch_lifecycle_gateway_step3_plan.md.
+                        // The RESTORED flag write stays here (frame-state
+                        // ownership), not in PatchLifecycle.
+                        PatchLifecycle::RestoreOnMatchEnd(
+                            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
                         m_flags.set(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                     }
                 }
@@ -342,7 +362,11 @@ namespace MelonPrime {
 
             if (LIKELY(isInGame)) {
                 if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
-                    // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
+                    // PatchLifecycle Site C — explicit non-goal (pattern B: the game
+                    // overwrites the RAM this patch owns, so it must be re-applied
+                    // every in-game frame). Bypasses the registry/gateway on purpose;
+                    // see melonprime-srp-performance-contract.md's "Never mix" list
+                    // and melonprime-srp-v3-completion-summary.md's Deferred table.
                     OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 }
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -365,13 +389,12 @@ namespace MelonPrime {
                 m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                 m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
 #ifdef MELONPRIME_DS
-                ARM9Hook_SetMatchHooksActive(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex,
-                    this,
-                    false,
-                    emuInstance);
+                // PatchLifecycle Step 3 / Site D — hook deactivation only.
+                // Flag clears and the transient-input / HUD / weapon-switch
+                // cleanup stay in RunFrameHook because they are frame-state /
+                // per-subsystem ownership.
+                PatchLifecycle::DeactivateHooksOnLeaveInGame(
+                    emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
@@ -396,12 +419,12 @@ namespace MelonPrime {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
 #ifdef MELONPRIME_DS
-                    {
-                        // Per-frame menu site (cold path): a tight masked loop
-                        // over the registry; matching entries self-guard.
-                        const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-                        Patches_Apply(PatchSite_OutOfGameFrame, ctx);
-                    }
+                    // Per-frame menu site (cold path): a tight masked loop
+                    // over the registry; matching entries self-guard.
+                    // PatchLifecycle Step 3 / Site E — see
+                    // melonprime_patch_lifecycle_gateway_step3_plan.md.
+                    PatchLifecycle::ApplyOutOfGameFrame(
+                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
 #endif
                     // Out-of-game screens (e.g. the Adventure planet/region map)
                     // still accept WASD movement so the player can navigate.
@@ -597,13 +620,11 @@ namespace MelonPrime {
     {
         m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
 #ifdef MELONPRIME_DS
-        melonDS::NDS* const nds = emuInstance->getNDS();
-        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
-        Patches_Apply(PatchSite_BattleRuntime, ctx);
-        ARM9Hook_SetMatchHooksActive(
-            nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
-        if (m_enableNativeWeaponSwitch)
-            (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
+        // PatchLifecycle Step 3 / Site B — see
+        // melonprime_patch_lifecycle_gateway_step3_plan.md.
+        PatchLifecycle::ApplyOnBattleRuntimeEnter(
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this,
+            m_enableNativeWeaponSwitch);
 #endif
     }
 

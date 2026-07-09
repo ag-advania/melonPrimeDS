@@ -1,24 +1,18 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudConfigOnScreenEdit.h"
-#include "MelonPrimeColorDialogPrefs.h"
+#include "MelonPrimeHudEditorFormBuilder.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 #include "EmuInstance.h"
 #include <QApplication>
 #include <QFont>
-#include <QHBoxLayout>
 #include <QFrame>
-#include <QRadioButton>
 
 namespace
 {
 constexpr int kPanelWidth = 300;
-constexpr int kRadioOnWidth = 48;
-constexpr int kRadioOffWidth = 58;
-constexpr int kColorButtonWidth = 74;
-constexpr int kSliderValueWidth = 38;
 } // namespace
 
 // ─── Construction ───────────────────────────────────────────────────────────
@@ -110,197 +104,63 @@ void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 
 QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(6);
-
-    auto* rowLabel = new QLabel(MelonPrime::UiText::Tr(label), container);
-    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    auto* on = new QRadioButton(QStringLiteral("ON"), container);
-    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
-    on->setMinimumWidth(kRadioOnWidth);
-    off->setMinimumWidth(kRadioOffWidth);
-    on->setCursor(Qt::PointingHandCursor);
-    off->setCursor(Qt::PointingHandCursor);
-
-    const bool enabled = cfg().GetBool(key);
-    on->setChecked(enabled);
-    off->setChecked(!enabled);
-
-    std::string k(key);
-    connect(on, &QRadioButton::toggled, this, [this, k](bool checked) {
-        if (m_populating || !checked) return;
-        cfg().SetBool(k, true);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    connect(off, &QRadioButton::toggled, this, [this, k](bool checked) {
-        if (m_populating || !checked) return;
-        cfg().SetBool(k, false);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-
-    hlay->addWidget(rowLabel, 1);
-    hlay->addWidget(on, 0);
-    hlay->addWidget(off, 0);
-
-    m_form->addRow(container);
-    m_rows.append(container);
-    return container;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddBoolRadioRow(ctx, label, key);
 }
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
 
 QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
-    auto* cb = new QComboBox(this);
-    cb->setMinimumWidth(78);
-    cb->addItems(MelonPrime::UiText::TrList(items));
-    cb->setCurrentIndex(cfg().GetInt(key));
-    std::string k(key);
-    connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, k](int idx) {
-        if (m_populating) return;
-        cfg().SetInt(k, idx);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    m_form->addRow(MelonPrime::UiText::Tr(label), cb);
-    m_rows.append(cb);
-    return cb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddComboBoxRow(ctx, label, key, items);
 }
 
 // ─── Factory: SpinBox ───────────────────────────────────────────────────────
 
 QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
-    auto* sb = new QSpinBox(this);
-    sb->setMinimumWidth(64);
-    sb->setRange(min, max);
-    sb->setValue(cfg().GetInt(key));
-    std::string k(key);
-    connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, k](int v) {
-        if (m_populating) return;
-        cfg().SetInt(k, v);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
-    m_rows.append(sb);
-    return sb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddSpinBoxRow(ctx, label, key, min, max);
 }
 
 // ─── Factory: DoubleSpinBox ─────────────────────────────────────────────────
 
 QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
-    auto* sb = new QDoubleSpinBox(this);
-    sb->setMinimumWidth(64);
-    sb->setRange(min, max);
-    sb->setSingleStep(step);
-    sb->setDecimals(2);
-    sb->setValue(cfg().GetDouble(key));
-    std::string k(key);
-    connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, k](double v) {
-        if (m_populating) return;
-        cfg().SetDouble(k, v);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
-    m_rows.append(sb);
-    return sb;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddDoubleSpinBoxRow(ctx, label, key, min, max, step);
 }
 
 // ─── Factory: OpacitySlider ─────────────────────────────────────────────────
 
 QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label, const char* key)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(4);
-
-    auto* slider = new QSlider(Qt::Horizontal, container);
-    slider->setRange(0, 100);
-    int initVal = qRound(cfg().GetDouble(key) * 100.0);
-    slider->setValue(initVal);
-
-    auto* lbl = new QLabel(QString::number(initVal) + QStringLiteral("%"), container);
-    lbl->setFixedWidth(kSliderValueWidth);
-    lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    hlay->addWidget(slider, 1);
-    hlay->addWidget(lbl, 0);
-
-    std::string k(key);
-    connect(slider, &QSlider::valueChanged, this, [this, k, lbl](int v) {
-        lbl->setText(QString::number(v) + QStringLiteral("%"));
-        if (m_populating) return;
-        cfg().SetDouble(k, v / 100.0);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-
-    m_form->addRow(MelonPrime::UiText::Tr(label), container);
-    m_rows.append(container);
-    return slider;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddOpacitySliderRow(ctx, label, key);
 }
 
 // ─── Factory: LineEdit ──────────────────────────────────────────────────────
 
 QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
-    auto* le = new QLineEdit(this);
-    le->setMinimumWidth(78);
-    le->setText(QString::fromStdString(cfg().GetString(key)));
-    std::string k(key);
-    connect(le, &QLineEdit::textChanged, this, [this, k](const QString& text) {
-        if (m_populating) return;
-        cfg().SetString(k, text.toStdString());
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    m_form->addRow(MelonPrime::UiText::Tr(label), le);
-    m_rows.append(le);
-    return le;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddLineEditRow(ctx, label, key);
 }
 
 // ─── Factory: Color Picker ──────────────────────────────────────────────────
 
-static void updateColorButton(QPushButton* btn, int r, int g, int b)
-{
-    const QColor color(r, g, b);
-    const int luma = (color.red() * 299 + color.green() * 587 + color.blue() * 114) / 1000;
-    const QString textColor = (luma >= 128) ? QStringLiteral("#000") : QStringLiteral("#fff");
-    const QString colorName = color.name();
-    btn->setMinimumWidth(kColorButtonWidth);
-    btn->setStyleSheet(QStringLiteral(
-        "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
-        "min-width: %3px; min-height: 16px; padding: 1px 4px;")
-        .arg(textColor, colorName)
-        .arg(kColorButtonWidth));
-    btn->setText(colorName);
-}
-
 QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
-    auto* btn = new QPushButton(this);
-    int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
-    std::string kR(keyR), kG(keyG), kB(keyB);
-    connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
-        QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
-            this,
-            cur,
-            MelonPrime::UiText::Tr("Pick Color"));
-        if (picked.isValid()) {
-            cfg().SetInt(kR, picked.red());
-            cfg().SetInt(kG, picked.green());
-            cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
-        }
-    });
-    m_form->addRow(MelonPrime::UiText::Tr(label), btn);
-    m_rows.append(btn);
-    return btn;
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    return MelonPrime::HudEditorForm::AddColorPickerRow(ctx, label, keyR, keyG, keyB);
 }
 
 // ─── Factory: Sub-Color (with "Overall" toggle) ─────────────────────────────
@@ -308,114 +168,18 @@ QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& labe
 void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const char* overallKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(2);
-
-    auto* combo = new QComboBox(container);
-    combo->addItem(MelonPrime::UiText::Tr("Overall"));
-    combo->addItem(MelonPrime::UiText::Tr("Custom"));
-    bool isOverall = cfg().GetBool(overallKey);
-    combo->setCurrentIndex(isOverall ? 0 : 1);
-
-    auto* btn = new QPushButton(container);
-    int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
-    btn->setEnabled(!isOverall);
-
-    hlay->addWidget(combo, 1);
-    hlay->addWidget(btn, 0);
-
-    std::string kOver(overallKey), kR(keyR), kG(keyG), kB(keyB);
-    connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, btn, kOver](int idx) {
-        if (m_populating) return;
-        cfg().SetBool(kOver, idx == 0);
-        btn->setEnabled(idx != 0);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
-        QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
-            this,
-            cur,
-            MelonPrime::UiText::Tr("Pick Color"));
-        if (picked.isValid()) {
-            cfg().SetInt(kR, picked.red());
-            cfg().SetInt(kG, picked.green());
-            cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
-        }
-    });
-
-    m_form->addRow(MelonPrime::UiText::Tr(label), container);
-    m_rows.append(container);
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    MelonPrime::HudEditorForm::AddSubColorRow(ctx, label, overallKey, keyR, keyG, keyB);
 }
 
 void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     const QString& label, const char* enableKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
-    auto* container = new QWidget(this);
-    auto* hlay = new QHBoxLayout(container);
-    hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(4);
-
-    auto* rowLabel = new QLabel(MelonPrime::UiText::Tr(label), container);
-    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    auto* on = new QRadioButton(QStringLiteral("ON"), container);
-    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
-    on->setMinimumWidth(kRadioOnWidth);
-    off->setMinimumWidth(kRadioOffWidth);
-    on->setCursor(Qt::PointingHandCursor);
-    off->setCursor(Qt::PointingHandCursor);
-
-    const bool enabled = cfg().GetBool(enableKey);
-    on->setChecked(enabled);
-    off->setChecked(!enabled);
-
-    auto* btn = new QPushButton(container);
-    int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
-    btn->setEnabled(enabled);
-
-    hlay->addWidget(rowLabel, 1);
-    hlay->addWidget(on, 0);
-    hlay->addWidget(off, 0);
-    hlay->addWidget(btn, 1);
-
-    std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
-    connect(on, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
-        if (m_populating || !checked) return;
-        cfg().SetBool(kE, true);
-        btn->setEnabled(true);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    connect(off, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
-        if (m_populating || !checked) return;
-        cfg().SetBool(kE, false);
-        btn->setEnabled(false);
-        MelonPrime::CustomHud_InvalidateConfigCache();
-    });
-    connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
-        QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = MelonPrime::ColorDialogPrefs::getColor(
-            this,
-            cur,
-            MelonPrime::UiText::Tr("Pick Color"));
-        if (picked.isValid()) {
-            cfg().SetInt(kR, picked.red());
-            cfg().SetInt(kG, picked.green());
-            cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
-        }
-    });
-
-    m_form->addRow(container);
-    m_rows.append(container);
+    auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
+        *this, *m_form, m_rows, cfg(), m_populating, *this);
+    MelonPrime::HudEditorForm::AddColorOverlayRow(ctx, label, enableKey, keyR, keyG, keyB);
 }
 
 // ─── Separator ──────────────────────────────────────────────────────────────
@@ -526,6 +290,69 @@ void MelonPrimeHudConfigOnScreenEdit::addSectionHeader(const QString& label)
     m_rows.append(hdr);
 }
 
+#include "MelonPrimeHudEditorSidePanelRows.inc"
+
+// ─── Row-table dispatcher (V7 Phase 2) ──────────────────────────────────────
+
+void MelonPrimeHudConfigOnScreenEdit::populateFromRowTable(
+    const MelonPrime::HudEditorSidePanel::Row* rows, int count)
+{
+    using MelonPrime::HudEditorSidePanel::RowKind;
+    for (int i = 0; i < count; ++i) {
+        const auto& r = rows[i];
+        switch (r.kind) {
+        case RowKind::Bool:
+            addCheckBox(r.label, r.key1);
+            break;
+        case RowKind::Combo:
+            addComboBox(r.label, r.key1, r.items);
+            break;
+        case RowKind::Spin:
+            addSpinBox(r.label, r.key1, r.iMin, r.iMax);
+            break;
+        case RowKind::DoubleSpin:
+            addDoubleSpinBox(r.label, r.key1, r.dMin, r.dMax, r.dStep);
+            break;
+        case RowKind::Opacity:
+            addOpacitySlider(r.label, r.key1);
+            break;
+        case RowKind::LineEdit:
+            addLineEdit(r.label, r.key1);
+            break;
+        case RowKind::Color:
+            addColorPicker(r.label, r.key1, r.key2, r.key3);
+            break;
+        case RowKind::SubColor:
+            addSubColor(r.label, r.key1, r.key2, r.key3, r.key4);
+            break;
+        case RowKind::ColorOverlay:
+            addColorOverlayRow(r.label, r.key1, r.key2, r.key3, r.key4);
+            break;
+        case RowKind::Separator:
+            addSeparator();
+            break;
+        case RowKind::SectionHeader:
+            addSectionHeader(r.label);
+            break;
+        case RowKind::Builtins:
+            addBuiltins(r.key1, r.key2, r.key3, r.key4, r.key5);
+            break;
+        case RowKind::OffsetRows:
+            addOffsetRows(r.key1, r.key2, r.iMin, r.iMax, r.label, r.label2);
+            break;
+        case RowKind::Align3:
+            addAlign3Combo(r.label, r.key1);
+            break;
+        case RowKind::OutlineGroup:
+            addOutlineGroupSection(r.label, r.key1, r.key2, r.key3, r.key4, r.key5, r.key6);
+            break;
+        case RowKind::GaugePosition:
+            addGaugePositionRows(r.key1, r.key2, r.key3, r.key4, r.key5, r.key6, r.key7, r.key8, r.key9);
+            break;
+        }
+    }
+}
+
 // ─── Main populate dispatch ─────────────────────────────────────────────────
 
 static const char* kElementNames[] = {
@@ -574,71 +401,25 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
 
 void MelonPrimeHudConfigOnScreenEdit::populateHP()
 {
-    addBuiltins(nullptr,
-        MP_HUD_PROP_KEY_HudHpTextColorR, MP_HUD_PROP_KEY_HudHpTextColorG, MP_HUD_PROP_KEY_HudHpTextColorB,
-        MP_HUD_PROP_KEY_HudHpAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudHpX, MP_HUD_PROP_KEY_HudHpY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudHpPrefix);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudHpAlign);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudHpOpacity);
-    addOutlineGroupSection(QStringLiteral("HP Outline"), MP_OUTLINE_KEYS(HudHp));
+    populateFromRowTable(kRowsHP, MP_SIDE_ROW_COUNT(kRowsHP));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudHpGauge,
-        MP_HUD_PROP_KEY_HudHpGaugeColorR, MP_HUD_PROP_KEY_HudHpGaugeColorG, MP_HUD_PROP_KEY_HudHpGaugeColorB,
-        MP_HUD_PROP_KEY_HudHpGaugePosAnchor);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudHpGaugeOpacity);
-    addComboBox(QStringLiteral("Orientation"), MP_HUD_PROP_KEY_HudHpGaugeOrientation,
-        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
-    addComboBox(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudHpGaugeAlign,
-        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
-    addSpinBox(QStringLiteral("Length"), MP_HUD_PROP_KEY_HudHpGaugeLength, 1, 192);
-    addSpinBox(QStringLiteral("Width"), MP_HUD_PROP_KEY_HudHpGaugeWidth, 1, 20);
-    addGaugePositionRows(MP_HUD_PROP_KEY_HudHpGaugePosMode,
-        MP_HUD_PROP_KEY_HudHpGaugeAnchor, MP_HUD_PROP_KEY_HudHpGaugeOffsetX, MP_HUD_PROP_KEY_HudHpGaugeOffsetY,
-        MP_HUD_PROP_KEY_HudHpGaugePosX, MP_HUD_PROP_KEY_HudHpGaugePosY,
-        MP_HUD_PROP_KEY_HudHpTextAnchor, MP_HUD_PROP_KEY_HudHpTextOffsetX, MP_HUD_PROP_KEY_HudHpTextOffsetY);
-    addOutlineGroupSection(QStringLiteral("HP Gauge Outline"), MP_OUTLINE_KEYS(HudHpGauge));
+    populateFromRowTable(kRowsHPGauge, MP_SIDE_ROW_COUNT(kRowsHPGauge));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
 {
-    addBuiltins(nullptr,
-        MP_HUD_PROP_KEY_HudAmmoTextColorR, MP_HUD_PROP_KEY_HudAmmoTextColorG, MP_HUD_PROP_KEY_HudAmmoTextColorB,
-        MP_HUD_PROP_KEY_HudWeaponAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudWeaponX, MP_HUD_PROP_KEY_HudWeaponY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudAmmoPrefix);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudAmmoAlign);
-    addComboBox(QStringLiteral("Layout"), MP_HUD_PROP_KEY_HudWeaponLayout,
-        {QStringLiteral("Standard"), QStringLiteral("Alternative")});
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWeaponOpacity);
-    addOutlineGroupSection(QStringLiteral("Ammo Outline"), MP_OUTLINE_KEYS(HudWeapon));
+    populateFromRowTable(kRowsWeaponAmmo, MP_SIDE_ROW_COUNT(kRowsWeaponAmmo));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudWeaponIconShow,
-        nullptr, nullptr, nullptr,
-        MP_HUD_PROP_KEY_HudWeaponIconPosAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudWeaponIconPosX, MP_HUD_PROP_KEY_HudWeaponIconPosY, -256, 256,
-        QStringLiteral("Pos X"), QStringLiteral("Pos Y"));
-    addComboBox(QStringLiteral("Mode"), MP_HUD_PROP_KEY_HudWeaponIconMode,
-        {QStringLiteral("Relative"), QStringLiteral("Independent")});
-    addSpinBox(QStringLiteral("Height"), MP_HUD_PROP_KEY_HudWeaponIconHeight, 4, 64);
-    addOffsetRows(MP_HUD_PROP_KEY_HudWeaponIconOffsetX, MP_HUD_PROP_KEY_HudWeaponIconOffsetY, -128, 128,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addAlign3Combo(QStringLiteral("Align X"), MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
-    addComboBox(QStringLiteral("Align Y"), MP_HUD_PROP_KEY_HudWeaponIconAnchorY,
-        {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWpnIconOpacity);
-    addOutlineGroupSection(QStringLiteral("Weapon Icon Outline"), MP_OUTLINE_KEYS(HudWeaponIcon));
-    addSeparator();
-    addSectionHeader(QStringLiteral("Weapon Icon Color Overlay"));
-    // Per-weapon icon tint (enable + color per weapon).
+    populateFromRowTable(kRowsWpnIcon, MP_SIDE_ROW_COUNT(kRowsWpnIcon));
+    // Per-weapon icon tint (enable + color per weapon). Bespoke: driven by a
+    // fixed 9-entry array walked in a loop, kept out of the row table per
+    // MelonPrimeHudEditorSidePanelRows.inc's header comment.
     // Keys reference MelonPrimeHudPropSchema.inc macros so a typo fails to compile.
     struct WeaponTintRow { const char* label; const char* enableKey; const char* rKey; const char* gKey; const char* bKey; };
     static const WeaponTintRow kWeaponTints[9] = {
@@ -658,139 +439,37 @@ void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
 
 void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudAmmoGauge,
-        MP_HUD_PROP_KEY_HudAmmoGaugeColorR, MP_HUD_PROP_KEY_HudAmmoGaugeColorG, MP_HUD_PROP_KEY_HudAmmoGaugeColorB,
-        MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudAmmoGaugeOpacity);
-    addComboBox(QStringLiteral("Orientation"), MP_HUD_PROP_KEY_HudAmmoGaugeOrientation,
-        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
-    addComboBox(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudAmmoGaugeAlign,
-        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
-    addSpinBox(QStringLiteral("Length"), MP_HUD_PROP_KEY_HudAmmoGaugeLength, 1, 192);
-    addSpinBox(QStringLiteral("Width"), MP_HUD_PROP_KEY_HudAmmoGaugeWidth, 1, 20);
-    addGaugePositionRows(MP_HUD_PROP_KEY_HudAmmoGaugePosMode,
-        MP_HUD_PROP_KEY_HudAmmoGaugeAnchor, MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX, MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY,
-        MP_HUD_PROP_KEY_HudAmmoGaugePosX, MP_HUD_PROP_KEY_HudAmmoGaugePosY,
-        MP_HUD_PROP_KEY_HudAmmoTextAnchor, MP_HUD_PROP_KEY_HudAmmoTextOffsetX, MP_HUD_PROP_KEY_HudAmmoTextOffsetY);
-    addOutlineGroupSection(QStringLiteral("Ammo Gauge Outline"), MP_OUTLINE_KEYS(HudAmmoGauge));
+    populateFromRowTable(kRowsAmmoGauge, MP_SIDE_ROW_COUNT(kRowsAmmoGauge));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudMatchStatusShow,
-        MP_HUD_PROP_KEY_HudMatchStatusColorR, MP_HUD_PROP_KEY_HudMatchStatusColorG, MP_HUD_PROP_KEY_HudMatchStatusColorB,
-        MP_HUD_PROP_KEY_HudMatchStatusAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudMatchStatusX, MP_HUD_PROP_KEY_HudMatchStatusY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudMatchStatusOpacity);
-    addComboBox(QStringLiteral("Label Pos"), MP_HUD_PROP_KEY_HudMatchStatusLabelPos,
-        {QStringLiteral("Above"), QStringLiteral("Below"), QStringLiteral("Left"), QStringLiteral("Right"), QStringLiteral("Center")});
-    addOffsetRows(MP_HUD_PROP_KEY_HudMatchStatusLabelOfsX, MP_HUD_PROP_KEY_HudMatchStatusLabelOfsY, -128, 128,
-        QStringLiteral("Label Ofs X"), QStringLiteral("Label Ofs Y"));
-    addSeparator();
-    addSectionHeader(QStringLiteral("Score Labels"));
-    addLineEdit(QStringLiteral("Battle"), MP_HUD_PROP_KEY_HudMatchStatusLabelPoints);
-    addLineEdit(QStringLiteral("Bounty"), MP_HUD_PROP_KEY_HudMatchStatusLabelOctoliths);
-    addLineEdit(QStringLiteral("Survival"), MP_HUD_PROP_KEY_HudMatchStatusLabelLives);
-    addLineEdit(QStringLiteral("Defender"), MP_HUD_PROP_KEY_HudMatchStatusLabelRingTime);
-    addLineEdit(QStringLiteral("Prime"), MP_HUD_PROP_KEY_HudMatchStatusLabelPrimeTime);
-    addSeparator();
-    addSectionHeader(QStringLiteral("Score Colors"));
-    addSubColor(QStringLiteral("Label"),
-        MP_HUD_PROP_KEY_HudMatchStatusLabelColorOverall,
-        MP_HUD_PROP_KEY_HudMatchStatusLabelColorR,
-        MP_HUD_PROP_KEY_HudMatchStatusLabelColorG,
-        MP_HUD_PROP_KEY_HudMatchStatusLabelColorB);
-    addSubColor(QStringLiteral("Value"),
-        MP_HUD_PROP_KEY_HudMatchStatusValueColorOverall,
-        MP_HUD_PROP_KEY_HudMatchStatusValueColorR,
-        MP_HUD_PROP_KEY_HudMatchStatusValueColorG,
-        MP_HUD_PROP_KEY_HudMatchStatusValueColorB);
-    addSubColor(QStringLiteral("Slash"),
-        MP_HUD_PROP_KEY_HudMatchStatusSepColorOverall,
-        MP_HUD_PROP_KEY_HudMatchStatusSepColorR,
-        MP_HUD_PROP_KEY_HudMatchStatusSepColorG,
-        MP_HUD_PROP_KEY_HudMatchStatusSepColorB);
-    addSubColor(QStringLiteral("Goal"),
-        MP_HUD_PROP_KEY_HudMatchStatusGoalColorOverall,
-        MP_HUD_PROP_KEY_HudMatchStatusGoalColorR,
-        MP_HUD_PROP_KEY_HudMatchStatusGoalColorG,
-        MP_HUD_PROP_KEY_HudMatchStatusGoalColorB);
-    addOutlineGroupSection(QStringLiteral("Score Outline"), MP_OUTLINE_KEYS(HudMatchStatus));
+    populateFromRowTable(kRowsMatchStatus, MP_SIDE_ROW_COUNT(kRowsMatchStatus));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRank()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudRankShow,
-        MP_HUD_PROP_KEY_HudRankColorR, MP_HUD_PROP_KEY_HudRankColorG, MP_HUD_PROP_KEY_HudRankColorB,
-        MP_HUD_PROP_KEY_HudRankAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudRankX, MP_HUD_PROP_KEY_HudRankY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudRankPrefix);
-    addCheckBox(QStringLiteral("Ordinal"), MP_HUD_PROP_KEY_HudRankShowOrdinal);
-    addLineEdit(QStringLiteral("Suffix"), MP_HUD_PROP_KEY_HudRankSuffix);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudRankAlign);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudRankOpacity);
-    addOutlineGroupSection(QStringLiteral("Rank Outline"), MP_OUTLINE_KEYS(HudRank));
+    populateFromRowTable(kRowsRank, MP_SIDE_ROW_COUNT(kRowsRank));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudTimeLeftShow,
-        MP_HUD_PROP_KEY_HudTimeLeftColorR, MP_HUD_PROP_KEY_HudTimeLeftColorG, MP_HUD_PROP_KEY_HudTimeLeftColorB,
-        MP_HUD_PROP_KEY_HudTimeLeftAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudTimeLeftX, MP_HUD_PROP_KEY_HudTimeLeftY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudTimeLeftOpacity);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudTimeLeftAlign);
-    addOutlineGroupSection(QStringLiteral("Time Left Outline"), MP_OUTLINE_KEYS(HudTimeLeft));
+    populateFromRowTable(kRowsTimeLeft, MP_SIDE_ROW_COUNT(kRowsTimeLeft));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudTimeLimitShow,
-        MP_HUD_PROP_KEY_HudTimeLimitColorR, MP_HUD_PROP_KEY_HudTimeLimitColorG, MP_HUD_PROP_KEY_HudTimeLimitColorB,
-        MP_HUD_PROP_KEY_HudTimeLimitAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudTimeLimitX, MP_HUD_PROP_KEY_HudTimeLimitY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudTimeLimitOpacity);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudTimeLimitAlign);
-    addOutlineGroupSection(QStringLiteral("Time Limit Outline"), MP_OUTLINE_KEYS(HudTimeLimit));
+    populateFromRowTable(kRowsTimeLimit, MP_SIDE_ROW_COUNT(kRowsTimeLimit));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudBombLeftShow,
-        MP_HUD_PROP_KEY_HudBombLeftColorR, MP_HUD_PROP_KEY_HudBombLeftColorG, MP_HUD_PROP_KEY_HudBombLeftColorB,
-        MP_HUD_PROP_KEY_HudBombLeftAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudBombLeftX, MP_HUD_PROP_KEY_HudBombLeftY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addCheckBox(QStringLiteral("Show Number"), MP_HUD_PROP_KEY_HudBombLeftTextShow);
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudBombLeftAlign);
-    addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudBombLeftPrefix);
-    addLineEdit(QStringLiteral("Suffix"), MP_HUD_PROP_KEY_HudBombLeftSuffix);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudBombLeftOpacity);
-    addOutlineGroupSection(QStringLiteral("Bomb Left Outline"), MP_OUTLINE_KEYS(HudBombLeft));
+    populateFromRowTable(kRowsBombLeft, MP_SIDE_ROW_COUNT(kRowsBombLeft));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudBombLeftIconShow,
-        MP_HUD_PROP_KEY_HudBombLeftIconColorR, MP_HUD_PROP_KEY_HudBombLeftIconColorG, MP_HUD_PROP_KEY_HudBombLeftIconColorB,
-        MP_HUD_PROP_KEY_HudBombLeftIconPosAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudBombLeftIconPosX, MP_HUD_PROP_KEY_HudBombLeftIconPosY, -256, 256,
-        QStringLiteral("Pos X"), QStringLiteral("Pos Y"));
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudBombIconOpacity);
-    addCheckBox(QStringLiteral("Color Overlay"), MP_HUD_PROP_KEY_HudBombLeftIconColorOverlay);
-    addComboBox(QStringLiteral("Mode"), MP_HUD_PROP_KEY_HudBombLeftIconMode,
-        {QStringLiteral("Relative"), QStringLiteral("Independent")});
-    addSpinBox(QStringLiteral("Height"), MP_HUD_PROP_KEY_HudBombIconHeight, 4, 64);
-    addOffsetRows(MP_HUD_PROP_KEY_HudBombLeftIconOfsX, MP_HUD_PROP_KEY_HudBombLeftIconOfsY, -128, 128,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addAlign3Combo(QStringLiteral("Align X"), MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
-    addComboBox(QStringLiteral("Align Y"), MP_HUD_PROP_KEY_HudBombLeftIconAnchorY,
-        {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
-    addOutlineGroupSection(QStringLiteral("Bomb Icon Outline"), MP_OUTLINE_KEYS(HudBombIcon));
+    populateFromRowTable(kRowsBombIcon, MP_SIDE_ROW_COUNT(kRowsBombIcon));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
@@ -800,134 +479,19 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     m_currentElem = -2; // -2 = crosshair (not a regular element)
     m_title->setText(MelonPrime::UiText::Tr("Crosshair"));
 
-    addColorPicker(QStringLiteral("Color"),
-        MP_HUD_PROP_KEY_CrosshairColorR,
-        MP_HUD_PROP_KEY_CrosshairColorG,
-        MP_HUD_PROP_KEY_CrosshairColorB);
-    addSpinBox(QStringLiteral("Scale %"), MP_HUD_PROP_KEY_CrosshairScale, 100, 800);
-    addCheckBox(QStringLiteral("Outline"), MP_HUD_PROP_KEY_CrosshairOutline);
-    addOpacitySlider(QStringLiteral("Outline Opacity"), MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
-    addSpinBox(QStringLiteral("Outline Thick."), MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10);
-    addCheckBox(QStringLiteral("Center Dot"), MP_HUD_PROP_KEY_CrosshairCenterDot);
-    addOpacitySlider(QStringLiteral("Dot Opacity"), MP_HUD_PROP_KEY_CrosshairDotOpacity);
-    addSpinBox(QStringLiteral("Dot Thick."), MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10);
-    addComboBox(QStringLiteral("Dot Shape"), MP_HUD_PROP_KEY_CrosshairDotShape,
-        {QStringLiteral("Square"), QStringLiteral("Circle")});
-    addCheckBox(QStringLiteral("Custom Dot Color"), MP_HUD_PROP_KEY_CrosshairDotCustomColor);
-    addColorPicker(QStringLiteral("Dot Color"),
-        MP_HUD_PROP_KEY_CrosshairDotColorR,
-        MP_HUD_PROP_KEY_CrosshairDotColorG,
-        MP_HUD_PROP_KEY_CrosshairDotColorB);
-    addCheckBox(QStringLiteral("T-Style"), MP_HUD_PROP_KEY_CrosshairTStyle);
-
-    addSeparator();
-    addSectionHeader(QStringLiteral("Zoom Crosshair"));
-    addCheckBox(QStringLiteral("Zoom Stage"), MP_HUD_PROP_KEY_CrosshairZoomStageEnable);
-    addSpinBox(QStringLiteral("Zoom Base Scale %"), MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200);
-    addSpinBox(QStringLiteral("Zoom Base Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100);
-    addCheckBox(QStringLiteral("Zoom Scope"), MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
-    addSpinBox(QStringLiteral("Scope Radius"), MP_HUD_PROP_KEY_CrosshairZoomScopeRadius, 4, 1024);
-    addSpinBox(QStringLiteral("Scope Gap"), MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64);
-    addSpinBox(QStringLiteral("Scope Thick."), MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12);
-    addCheckBox(QStringLiteral("Scope Center Dot"), MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
-    addComboBox(QStringLiteral("Scope Dot Shape"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape,
-        {QStringLiteral("Square"), QStringLiteral("Circle")});
-    addSpinBox(QStringLiteral("Scope Dot Size"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32);
-    addSpinBox(QStringLiteral("Scope Dot Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100);
-    addCheckBox(QStringLiteral("Custom Scope Dot Color"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor);
-    addColorPicker(QStringLiteral("Scope Dot Color"),
-        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR,
-        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG,
-        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB);
-    addSpinBox(QStringLiteral("Scope Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100);
-    addCheckBox(QStringLiteral("Zoom Transition"), MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
-    addComboBox(QStringLiteral("Transition Style"), MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle,
-        {QStringLiteral("Fade"), QStringLiteral("Staged"), QStringLiteral("Glitch"),
-         QStringLiteral("Glitch2"), QStringLiteral("Snap"), QStringLiteral("Digital"),
-         QStringLiteral("Pulse Wave"), QStringLiteral("Magic Circle"), QStringLiteral("SF Movie"),
-         QStringLiteral("Tactical Lock"), QStringLiteral("Sniper Optics"),
-         QStringLiteral("Drone LIDAR"), QStringLiteral("Beam Charge")});
-    addSpinBox(QStringLiteral("Transition Speed %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400);
-    addCheckBox(QStringLiteral("Pulse Ring"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable);
-    addSpinBox(QStringLiteral("Pulse Strength %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100);
-
-    addSeparator();
-    // Inner Lines
-    addSectionHeader(QStringLiteral("Inner Lines"));
-    addCheckBox(QStringLiteral("Show"), MP_HUD_PROP_KEY_CrosshairInnerShow);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_CrosshairInnerOpacity);
-    addSpinBox(QStringLiteral("Length X"), MP_HUD_PROP_KEY_CrosshairInnerLengthX, 0, 64);
-    addSpinBox(QStringLiteral("Length Y"), MP_HUD_PROP_KEY_CrosshairInnerLengthY, 0, 64);
-    addCheckBox(QStringLiteral("Link XY"), MP_HUD_PROP_KEY_CrosshairInnerLinkXY);
-    addSpinBox(QStringLiteral("Thickness"), MP_HUD_PROP_KEY_CrosshairInnerThickness, 1, 10);
-    addSpinBox(QStringLiteral("Offset"), MP_HUD_PROP_KEY_CrosshairInnerOffset, 0, 64);
-
-    addSeparator();
-    // Outer Lines
-    addSectionHeader(QStringLiteral("Outer Lines"));
-    addCheckBox(QStringLiteral("Show"), MP_HUD_PROP_KEY_CrosshairOuterShow);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_CrosshairOuterOpacity);
-    addSpinBox(QStringLiteral("Length X"), MP_HUD_PROP_KEY_CrosshairOuterLengthX, 0, 64);
-    addSpinBox(QStringLiteral("Length Y"), MP_HUD_PROP_KEY_CrosshairOuterLengthY, 0, 64);
-    addCheckBox(QStringLiteral("Link XY"), MP_HUD_PROP_KEY_CrosshairOuterLinkXY);
-    addSpinBox(QStringLiteral("Thickness"), MP_HUD_PROP_KEY_CrosshairOuterThickness, 1, 10);
-    addSpinBox(QStringLiteral("Offset"), MP_HUD_PROP_KEY_CrosshairOuterOffset, 0, 64);
+    populateFromRowTable(kRowsCrosshair, MP_SIDE_ROW_COUNT(kRowsCrosshair));
 
     m_populating = false;
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
 {
-    addBuiltins(MP_HUD_PROP_KEY_HudWeaponInventoryShow,
-        MP_HUD_PROP_KEY_HudWeaponInventoryColorR,
-        MP_HUD_PROP_KEY_HudWeaponInventoryColorG,
-        MP_HUD_PROP_KEY_HudWeaponInventoryColorB,
-        MP_HUD_PROP_KEY_HudWeaponInventoryAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_HudWeaponInventoryX, MP_HUD_PROP_KEY_HudWeaponInventoryY, -256, 256,
-        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
-    addComboBox(QStringLiteral("Orientation"), MP_HUD_PROP_KEY_HudWeaponInventoryOrientation,
-        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
-    addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudWeaponInventoryAlign);
-    addSpinBox(QStringLiteral("Icon Height"), MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight, 4, 48);
-    addSpinBox(QStringLiteral("Spacing"), MP_HUD_PROP_KEY_HudWeaponInventorySpacing, 0, 32);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWeaponInventoryOpacity);
-    addOpacitySlider(QStringLiteral("Not Owned Opacity"), MP_HUD_PROP_KEY_HudWeaponInventoryNotOwnedOpacity);
-    addOutlineGroupSection(QStringLiteral("Weapon Inventory Outline"), MP_OUTLINE_KEYS(HudWeaponInventory));
-    addOutlineGroupSection(QStringLiteral("Weapon Inventory Icon Outline"), MP_OUTLINE_KEYS(HudWeaponInventoryIcon));
-    addSeparator();
-    addSectionHeader(QStringLiteral("Weapon Inventory Highlight"));
-    addCheckBox(QStringLiteral("Highlight Current Weapon"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightEnable);
-    addColorPicker(QStringLiteral("Highlight Color"),
-        MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorR,
-        MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorG,
-        MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorB);
-    addOpacitySlider(QStringLiteral("Highlight Opacity"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightOpacity);
-    addDoubleSpinBox(QStringLiteral("Highlight Thickness"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightThickness, 0.1, 8.0, 0.25);
-    addSpinBox(QStringLiteral("Highlight Padding"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightPadding, 0, 16);
-    addSpinBox(QStringLiteral("Highlight Corner Radius"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightCornerRadius, 0, 16);
-    addSpinBox(QStringLiteral("Highlight Offset Left"),   MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetLeft,   -16, 32);
-    addSpinBox(QStringLiteral("Highlight Offset Right"),  MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetRight,  -16, 32);
-    addSpinBox(QStringLiteral("Highlight Offset Top"),    MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetTop,    -16, 32);
-    addSpinBox(QStringLiteral("Highlight Offset Bottom"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetBottom, -16, 32);
+    populateFromRowTable(kRowsWeaponInventory, MP_SIDE_ROW_COUNT(kRowsWeaponInventory));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRadar()
 {
-    addBuiltins(MP_HUD_PROP_KEY_BtmOverlayEnable,
-        nullptr, nullptr, nullptr,
-        MP_HUD_PROP_KEY_BtmOverlayAnchor);
-    addOffsetRows(MP_HUD_PROP_KEY_BtmOverlayDstX, MP_HUD_PROP_KEY_BtmOverlayDstY, -256, 256,
-        QStringLiteral("Dst X"), QStringLiteral("Dst Y"));
-    addSpinBox(QStringLiteral("Dst Size"), MP_HUD_PROP_KEY_BtmOverlayDstSize, 16, 128);
-    addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_BtmOverlayOpacity);
-    addSpinBox(QStringLiteral("Src Radius"), MP_HUD_PROP_KEY_BtmOverlaySrcRadius, 10, 120);
-    addColorPicker(QStringLiteral("Radar Color"),
-        MP_HUD_PROP_KEY_BtmOverlayRadarColorR,
-        MP_HUD_PROP_KEY_BtmOverlayRadarColorG,
-        MP_HUD_PROP_KEY_BtmOverlayRadarColorB);
-    addCheckBox(QStringLiteral("Use Hunter Color"), MP_HUD_PROP_KEY_BtmOverlayRadarColorUseHunter);
-    addOutlineGroupSection(QStringLiteral("Radar Outline"), MP_OUTLINE_KEYS(BtmOverlay));
-    addOutlineGroupSection(QStringLiteral("Frame Outline"), MP_OUTLINE_KEYS(BtmOverlayFrame));
+    populateFromRowTable(kRowsRadar, MP_SIDE_ROW_COUNT(kRowsRadar));
 }
 
 #endif // MELONPRIME_CUSTOM_HUD

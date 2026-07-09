@@ -4,7 +4,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #ifdef MELONPRIME_DS
-#include "MelonPrimeArm9Hook.h"
+#include "MelonPrimePatchLifecycle.h"
 #endif
 
 #include <array>
@@ -133,13 +133,8 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
-        ARM9Hook_SetMatchHooksActive(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex,
-            this,
-            false,
-            emuInstance);
+        PatchLifecycle::DeactivateHooksForRomDetect(
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
 
         char message[256];
@@ -152,8 +147,7 @@ namespace MelonPrime {
         }
         emuInstance->osdAddMessage(0, message);
 
-        RecalcAimSensitivityCache(localCfg);
-        ApplyAimAdjustSetting(localCfg);
+        ReloadAimConfigFromTable(localCfg);
     }
 
 } // namespace MelonPrime

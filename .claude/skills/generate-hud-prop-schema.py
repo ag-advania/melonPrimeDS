@@ -31,6 +31,10 @@ DIALOG_PROPS_INC = QT_SDL / "InputConfig/MelonPrimeInputConfigHudDialogProps.inc
 EDIT_DEFS = QT_SDL / "MelonPrimeHudConfigOnScreenDefs.inc"
 EDIT_PROPS_INC = QT_SDL / "MelonPrimeHudConfigOnScreenEditProps.inc"
 SIDE_PANEL_CPP = QT_SDL / "MelonPrimeHudConfigOnScreenEdit.cpp"
+# V7 Phase 2: the side panel's per-element populate*() bodies became row
+# tables in this file (RowBuiltins/RowOffset/... factory calls), so it must
+# be scanned alongside SIDE_PANEL_CPP for side-surface coverage.
+SIDE_PANEL_ROWS_INC = QT_SDL / "MelonPrimeHudEditorSidePanelRows.inc"
 RUNTIME_INC = QT_SDL / "MelonPrimeHudRenderConfig.inc"
 SCHEMA_OUT = QT_SDL / "MelonPrimeHudPropSchema.inc"
 REPORT_OUT = ROOT / ".claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md"
@@ -986,12 +990,21 @@ def parse_edit_descriptors(
 
 
 def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], ident_to_key: dict[str, str]) -> None:
-    text = strip_comments(read(SIDE_PANEL_CPP))
+    # V7 Phase 2 moved the per-element populate*() bodies from hand-written
+    # addXxx(...) call sequences in SIDE_PANEL_CPP into row tables (RowXxx(...)
+    # factory calls) in SIDE_PANEL_ROWS_INC. Both files are scanned together;
+    # the Row* names below are argument-for-argument equivalent to their old
+    # addXxx counterparts (verified 1:1 by a call-sequence diff at the time of
+    # that refactor), so they share the same parsing branches.
+    text = strip_comments(read(SIDE_PANEL_CPP)) + "\n" + strip_comments(read(SIDE_PANEL_ROWS_INC))
     call_names = {
         "addOutlineGroup", "addOutlineGroupSection", "addBuiltins",
         "addOffsetRows", "addLineEdit", "addAlign3Combo", "addOpacitySlider",
         "addSpinBox", "addDoubleSpinBox", "addCheckBox", "addColorPicker",
-        "addComboBox", "addGaugePositionRows",
+        "addComboBox", "addGaugePositionRows", "addSubColor", "addColorOverlayRow",
+        "RowOutline", "RowBuiltins", "RowOffset", "RowLineEdit", "RowAlign3",
+        "RowOpacity", "RowSpin", "RowDoubleSpin", "RowBool", "RowColor",
+        "RowCombo", "RowGaugePosition", "RowSubColor", "RowColorOverlay",
     }
     for name, args in function_calls(text, call_names):
         origin = f"side:{name}"
@@ -1000,37 +1013,53 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
             m = re.search(r"MP_OUTLINE_KEYS\(\s*(\w+)\s*\)", args[0])
             if m:
                 add_outline_group(props, extra_refs, m.group(1), "side", origin)
-        elif name == "addOutlineGroupSection" and len(args) >= 2:
-            # Call sites are addOutlineGroupSection(Label, MP_OUTLINE_KEYS(Prefix)).
+        elif name in ("addOutlineGroupSection", "RowOutline") and len(args) >= 2:
+            # Call sites are addOutlineGroupSection/RowOutline(Label, MP_OUTLINE_KEYS(Prefix)).
             m = re.search(r"MP_OUTLINE_KEYS\(\s*(\w+)\s*\)", args[1])
             if m:
                 add_outline_group(props, extra_refs, m.group(1), "side", origin)
-        elif name == "addBuiltins" and len(args) >= 5:
+        elif name in ("addBuiltins", "RowBuiltins") and len(args) >= 5:
             add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Bool", "Show", "Builtins", origin=origin)
             add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", "Color", "Builtins", origin)
             add_meta(props, extra_refs, dialog_key_from_expr(args[4], ident_to_key), "side", "Int", "Anchor", "Builtins", 0, 8, 1, origin)
-        elif name == "addOffsetRows" and len(args) >= 4:
+        elif name in ("addOffsetRows", "RowOffset") and len(args) >= 4:
             add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Int", "Offset X", "OffsetRows", args[2], args[3], 1, origin)
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", "Offset Y", "OffsetRows", args[2], args[3], 1, origin)
-        elif name == "addLineEdit" and len(args) >= 2:
+        elif name in ("addLineEdit", "RowLineEdit") and len(args) >= 2:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "String", literal_label(args[0]), "LineEdit", origin=origin)
-        elif name == "addAlign3Combo" and len(args) >= 2:
+        elif name in ("addAlign3Combo", "RowAlign3") and len(args) >= 2:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "Align3", 0, 2, 1, origin)
-        elif name == "addOpacitySlider" and len(args) >= 2:
+        elif name in ("addOpacitySlider", "RowOpacity") and len(args) >= 2:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Double", literal_label(args[0]), "OpacitySlider", 0, 100, 5, origin)
-        elif name == "addSpinBox" and len(args) >= 4:
+        elif name in ("addSpinBox", "RowSpin") and len(args) >= 4:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "SpinBox", args[2], args[3], 1, origin)
-        elif name == "addDoubleSpinBox" and len(args) >= 5:
+        elif name in ("addDoubleSpinBox", "RowDoubleSpin") and len(args) >= 5:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Double", literal_label(args[0]), "DoubleSpinBox", args[2], args[3], args[4], origin)
-        elif name == "addCheckBox" and len(args) >= 2:
+        elif name in ("addCheckBox", "RowBool") and len(args) >= 2:
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", literal_label(args[0]), "CheckBox", origin=origin)
-        elif name == "addColorPicker" and len(args) >= 4:
+        elif name in ("addColorPicker", "RowColor") and len(args) >= 4:
             add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", literal_label(args[0]), "ColorPicker", origin)
-        elif name == "addComboBox" and len(args) >= 2:
-            items = re.findall(r'QStringLiteral\("', args[2]) if len(args) >= 3 else []
+        elif name in ("addSubColor", "RowSubColor") and len(args) >= 5:
+            # addSubColor/RowSubColor(label, overallKey, keyR, keyG, keyB): an
+            # Overall-toggle bool plus an RGB triple, mirroring the runtime
+            # parser's ReadOptionalSubColor handling below.
+            label = literal_label(args[0])
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", f"{label} Overall".strip(), "SubColor", origin=origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key), dialog_key_from_expr(args[4], ident_to_key)], "side", label, "SubColor", origin)
+        elif name in ("addColorOverlayRow", "RowColorOverlay") and len(args) >= 5:
+            # addColorOverlayRow/RowColorOverlay(label, enableKey, keyR, keyG, keyB):
+            # an enable bool plus an RGB triple (per-weapon icon tint rows).
+            label = literal_label(args[0])
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", f"{label} Enable".strip(), "ColorOverlay", origin=origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key), dialog_key_from_expr(args[4], ident_to_key)], "side", label, "ColorOverlay", origin)
+        elif name in ("addComboBox", "RowCombo") and len(args) >= 2:
+            # Item lists appear either as {QStringLiteral("X"), ...} (addComboBox
+            # call sites) or {"X", ...} (RowCombo row-table entries); both are
+            # counted by matching quoted string literals regardless of wrapper.
+            items = re.findall(r'"[^"]*"', args[2]) if len(args) >= 3 else []
             max_value = len(items) - 1 if items else None
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "ComboBox", 0 if items else None, max_value, 1 if items else None, origin)
-        elif name == "addGaugePositionRows" and len(args) >= 9:
+        elif name in ("addGaugePositionRows", "RowGaugePosition") and len(args) >= 9:
             add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Int", "Position Mode", "GaugePositionRows", 0, 2, 1, origin)
             add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", "Gauge Side", "GaugePositionRows", 0, 4, 1, origin)
             add_meta(props, extra_refs, dialog_key_from_expr(args[2], ident_to_key), "side", "Int", "Offset X", "GaugePositionRows", -128, 128, 1, origin)

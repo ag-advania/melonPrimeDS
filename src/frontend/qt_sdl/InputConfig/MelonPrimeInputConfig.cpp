@@ -4,7 +4,6 @@
 */
 
 #include <QGroupBox>
-#include <QGroupBox>
 #include <QLabel>
 #include <QGridLayout>
 #include <QTabWidget>
@@ -118,6 +117,23 @@ namespace {
 #endif
     }
 
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
+    // macOS OpenGL does not support the compute renderer path used by the
+    // High2 preset (Screen.cpp / GPU3D_Compute), so the preset button is
+    // disabled to avoid selecting a renderer that can crash on this platform.
+    // See melonprime_macos_compute_renderer_restriction.md for background.
+    void DisableMacComputeVideoQualityButton(Ui::MelonPrimeInputConfig* ui)
+    {
+        if (!ui || !ui->metroidSetVideoQualityToHigh2)
+            return;
+
+        ui->metroidSetVideoQualityToHigh2->setEnabled(false);
+        ui->metroidSetVideoQualityToHigh2->setToolTip(
+            MelonPrime::UiText::Tr(
+                "High2 / Compute render is unavailable on macOS because macOS OpenGL does not support the required compute renderer path."));
+    }
+#endif
+
 }
 
 MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) :
@@ -126,6 +142,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     emuInstance(emu)
 {
     ui->setupUi(this);
+
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
+    DisableMacComputeVideoQualityButton(ui);
+#endif
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
     Config::Table keycfg = instcfg.GetTable("Keyboard");
@@ -143,6 +163,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
+    DisableMacComputeVideoQualityButton(ui);
+#endif
     ConfigureScreenSyncControlsForPlatform(
         ui->comboMetroidScreenSyncMode,
         ui->labelMetroidScreenSyncDesc);
@@ -1041,6 +1064,12 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh_clicked()
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
 {
+#ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
+    // Defense in depth: the button is disabled on macOS, but guard the slot
+    // itself in case it is ever invoked directly (auto-connect, future
+    // callers, etc). macOS OpenGL does not support the compute renderer.
+    return;
+#else
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.UseGL", true);
     cfg.SetBool("Screen.VSync", false);
@@ -1049,6 +1078,7 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
     cfg.SetBool("3D.Soft.Threaded", true);
     cfg.SetInt("3D.GL.ScaleFactor", 4);
     cfg.SetBool("3D.GL.BetterPolygons", true);
+#endif
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableSnapTap_stateChanged(int state)

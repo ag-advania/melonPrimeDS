@@ -66,15 +66,30 @@ NoPickingUpSpecificItems; ConfigReload = InstantAimFollow..NoPickingUp (only whi
 `BIT_BATTLE_RUNTIME_MODE`); OutOfGameFrame = FixWifi, UseFirmwareLanguage, ExpandStageMatrix.
 
 **Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`
-(InGameAspectRatio only); `HandleBattleRuntimeEnter` (first `mode==0x0E && flow==0`) →
-`Patches_Apply(PatchSite_BattleRuntime)` + match hooks; `ApplyConfigReload` (when
-`BIT_BATTLE_RUNTIME_MODE`, after `ARM9Hook_SetMatchHooksActive`) →
-`Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
-`Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end poll** (`flow!=0` after latch) →
-`Patches_RestoreOnLeave` (not on generic `!isInGame`; see
+directly (InGameAspectRatio only); `HandleBattleRuntimeEnter` (first `mode==0x0E && flow==0`) →
+`PatchLifecycle::ApplyOnBattleRuntimeEnter(...)`, which wraps
+`Patches_Apply(PatchSite_BattleRuntime)` + `ARM9Hook_SetMatchHooksActive(true)` + the conditional
+`WeaponSwitchHook_IsSiteValid` call (PatchLifecycleGateway Step 3 Site B); `ApplyConfigReload`
+(when `BIT_BATTLE_RUNTIME_MODE`) → `PatchLifecycle::ReapplyForConfigReload(...)`, which wraps
+`ARM9Hook_SetMatchHooksActive(true)` + `Patches_Apply(PatchSite_ConfigReload)` (Step 2);
+`RunFrameHook` `!isInGame && focused` → `PatchLifecycle::ApplyOutOfGameFrame(...)`, wrapping
+`Patches_Apply(PatchSite_OutOfGameFrame)` (Step 3 Site E); **match-end poll** (`flow!=0` after
+latch) → `PatchLifecycle::RestoreOnMatchEnd(...)`, wrapping `Patches_RestoreOnLeave` +
+`ARM9Hook_SetMatchHooksActive(false)` (Step 3 Site A; not on generic `!isInGame` — see
 [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)); `OnEmuStart` /
-`OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`; `ResetRuntimeStateForBoot` →
-`Patches_ResetAll` only (boot reset: state only, no RAM restore).
+`OnEmuStop` → `PatchLifecycle::ResetForEmuStart` / `RestoreForEmuStop`, wrapping
+`Patches_RestoreOnStop` + `Patches_ResetAll` (Step 1); `ResetRuntimeStateForBoot` →
+`PatchLifecycle::ResetForBoot`, wrapping `Patches_ResetAll` only (boot reset: state only, no
+RAM restore).
+
+In every case, `RunFrameHook`'s own frame-state flag writes
+(`BIT_END_OF_GAME_PATCH_RESTORED`, `BIT_BATTLE_RUNTIME_MODE`) stay in `MelonPrime.cpp` next to
+the `PatchLifecycle` call — the gateway functions own patch/ARM9-hook lifecycle only, never
+frame-state flags. `RunFrameHook`'s **Site D** (the generic `!isInGame` leave-in-game cleanup,
+which calls `ARM9Hook_SetMatchHooksActive(false)` without `Patches_RestoreOnLeave`) is still a
+direct inline call, not a `PatchLifecycle` wrapper — see
+[../features/completed/melonprime_patch_lifecycle_gateway_step3_plan.md](../features/completed/melonprime_patch_lifecycle_gateway_step3_plan.md)
+for why that one is deliberately left as-is for now.
 
 **Statics:** module `s_applied` state is per-process; melonDS multi-instance runs as separate
 processes, so the per-process singleton assumption holds.

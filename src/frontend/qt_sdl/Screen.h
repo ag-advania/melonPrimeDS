@@ -123,6 +123,19 @@ public:
     void reloadNoRomSplashLocalization();
     void containAimCursorIfNeeded();
 
+    // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
+    [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
+    [[nodiscard]] bool isActiveVisibleWindowForMelonPrime() const;
+    [[nodiscard]] MelonPrime::MelonPrimeCore* melonPrimeCoreForPolicy() const;
+    [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
+    [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
+    [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
+    void clipCursorToBottomScreenForPolicy();
+    [[nodiscard]] std::optional<QRect> getBottomScreenWidgetRectForPolicy() const;
+    [[nodiscard]] EmuInstance* emuInstanceForPolicy() const { return emuInstance; }
+    void setClipWantedForMelonPrime(bool value);
+    [[nodiscard]] bool getClipWantedForMelonPrime() const;
+
 public slots:
     void clipCursorCenter1px();
     void unclip();

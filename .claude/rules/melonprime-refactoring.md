@@ -1751,12 +1751,17 @@ Measured on 2026-07-04, branch `highres_fonts_v3`, local macOS build trees
 - Phase 4 manual S2/S6/S7/S8 ROM smoke remains user-dependent.
 - The V6 plan stays in `.claude/rules/` rather than `completed/` until those
   gates are closed.
+- V7 Phase 4 (2026-07-09) hit the same Windows-baseline gate and was formally
+  skipped rather than proceeding unmeasured; see
+  [melonprime-full-refactor-plan-v7.md](melonprime-full-refactor-plan-v7.md) §4/§6.
+  The gate remains open across both plans until a Windows `MELONPRIME_PERF=1`
+  soak (with matching OSD-on conditions) is captured.
 Follow-on investigation notes remain in
 [notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md).
 
 ---
 
-## 25. Round 10 (V5) — Measured performance pass (2026-07-04)
+## 26. Round 10 (V5) — Measured performance pass (2026-07-04)
 
 **Central theme:** Non-Windows hot-path waste removal + frame-time measurement
 infrastructure. Windows do-not-touch paths (P-11..P-47, aim math, RunFrameHook
@@ -1766,7 +1771,7 @@ structure) were not modified.
 document should cite `MELONPRIME_PERF=1` numbers when available. Estimated cycle
 tables remain historical context for Rounds 1–9.
 
-### 25.1 Status list
+### 26.1 Status list
 
 | ID | Category | Status | Target | Effect (expected / pending ROM) |
 |---|---|---|---|---|
@@ -1780,15 +1785,65 @@ tables remain historical context for Rounds 1–9.
 | V5-4b | HUD CPU | ⏸ | element render cache | Deferred — QPainter dominance not confirmed by ROM perf log |
 | V5-6 | Stretch | ❌ Closed | W7/OsdColor edge, RAM budget, GCMouse queue | No ROM baseline; no change |
 
-### 25.2 Commits (branch `highres_fonts_v3`)
+### 26.2 Commits (branch `highres_fonts_v3`)
 
 - `9ff53250` Phase 0 perf probe
 - `314513b3` Phase 1 audit table
 - `d8313ea0` Phase 2 input hot path
 - `59a5ca4c` Phase 3 pacing margin
 
-### 25.3 Remaining manual verification
+### 26.3 Remaining manual verification
 
 - S18/S19/S20 smoke (mac/Linux aim lifecycle)
 - S21 frame-time before/after with `MELONPRIME_PERF=1` + ROM soak
 - Fill Phase 0 baseline table in completed V5 plan after measurement
+
+---
+
+## 27. Structural Refactor V7 / SRP v3 Integration 2026-07
+
+### 27.1 Central theme
+
+V7 (`melonprime-full-refactor-plan-v7.md`) is a small "finishing" plan, not a large
+structural rewrite: by the time it started (2026-07-09), V1–V6 plus the separately-tracked
+SRP v3 refactor (Immediate Plan through Batch 1-6, see
+[melonprime-srp-performance-contract.md](melonprime-srp-performance-contract.md) and
+[repo-architecture.md](repo-architecture.md)'s "SRP v3 Unit Ownership" section) had already
+closed the major structural debt. V7's own audit (§1 of its plan doc) reviewed the SRP v3
+diff and approved it in full. What remained were: one last SRP hole in the HUD editor side
+panel, small dead-code/API items, doc drift, and a Windows-measurement gate inherited from V6.
+
+### 27.2 Integrated results
+
+| Area | Result |
+|---|---|
+| HUD editor side panel (V7-W1) | New `MelonPrimeHudEditorSidePanelRows.inc` replaces all 14 side-panel elements' hand-written `populate*()` factory-call sequences with row-table data + one generic dispatcher (`populateFromRowTable`). Verified call-for-call equivalent to the pre-refactor code (178 calls, 14 elements, zero divergence) via a Python call-sequence diff. Closes the V2 Phase 2d "Option A: deferred" item now that `HudEditorFormBuilder` normalizes every row to one factory call. |
+| Schema generator fix | The side-panel refactor would have silently broken `generate-hud-prop-schema.py`'s `parse_side_panel()`, which only scanned `MelonPrimeHudConfigOnScreenEdit.cpp` for `addXxx(...)` call sites. Fixed by scanning the new `.inc` too and treating `RowXxx(...)` names as equivalent to their old `addXxx(...)` counterparts; combo-item counting was loosened to accept plain string literals as well as `QStringLiteral(...)`-wrapped ones. Regenerated schema is byte-identical to the pre-fix committed version. |
+| Platform-scatter-budget regression | A macOS compute-renderer (High2 preset) UI gate added 4 new `#ifdef __APPLE__` markers to `InputConfig.cpp`, pushing the scatter count from 22 to 26. Fixed with a narrow, self-documenting `scatter-budget-exempt:` inline-comment marker mechanism in the audit script, rather than raising the ratchet -- the new markers are a UI/renderer-preset gate, not input dispatch, matching the ratchet's stated scope. |
+| Small cleanup | Removed `PatchLifecycle::RestoreForEmuStop`'s unused `romDetected` parameter; documented why `PlatformInput_WarpCursor`'s `QCursor::setPos` fallback must never be reached from Windows; fixed a stale doc-filename reference; archived 14 one-shot i18n audit scripts (`.claude/skills/archive/i18n/`) that depended on uncommitted review-queue data or were superseded by standing gates. |
+| Doc promotion | `melonprime-srp-performance-contract.md` moved from `.claude/features/` to `.claude/rules/` (it is a binding, CI-enforced contract, not a feature design doc). `repo-architecture.md` gained a "SRP v3 Unit Ownership" table. `MelonPrime.h` gained an orientation banner and public-state heading (comment-only, no member-layout change). `RunFrameHook`'s previously-unlabeled Site C (`OsdColor_ApplyOnce`) now cross-references the SRP contract and completion summary alongside the already-complete Site A/B/D/E labels. |
+| Windows measurement gate | Same gate V6 left open (`MELONPRIME_PERF=1` baseline). V7 Phase 4 formally skipped rather than proceeding unmeasured, per the plan's own explicit fallback; recorded as "deferred, not rejected" pending a Windows soak. |
+
+### 27.3 Final metrics snapshot
+
+Measured 2026-07-09, branch `highres_fonts_v3`, local macOS build tree `build-mac`.
+
+| Metric | Value |
+|---|---:|
+| `MelonPrimeHudConfigOnScreenEdit.cpp` | 697 → 497 lines |
+| New `MelonPrimeHudEditorSidePanelRows.inc` | 14 element row tables, 16 row-factory helpers |
+| Platform scatter budget | 22/22 (post-fix; regression was 26/22) |
+| Non-canonical `"Metroid.*"` literal budget | 1/1 (unchanged) |
+| `.inc` ownership | PASS (56 fragments, +1 from V6's 52) |
+| Side-panel call-sequence verification | 178/178 calls match, 14/14 elements, 0 divergence |
+
+### 27.4 Remaining caution points
+
+- Manual GUI smoke of the side-panel refactor (S9/S13 — visually comparing the HUD editor
+  panel before/after) needs a ROM and real interaction; deferred to V7 Phase 6.
+- The Windows `MELONPRIME_PERF=1` baseline gate (V6 §"Remaining Gates", V7 §4) is still open.
+  Do not implement V7-W3's performance candidates (`OutOfGameFrame` site view, `OsdColor` Site C
+  edge/epoch, `getScreenWidgetRect` cache, RAM read budget, HUD element cache) without it.
+- The `scatter-budget-exempt:` marker mechanism introduced in V7 Phase 1 is intentionally narrow
+  (per-line, requires a reason after the colon). Do not use it to silence a marker that is
+  actually part of input/cursor dispatch — that would defeat the ratchet's purpose.
