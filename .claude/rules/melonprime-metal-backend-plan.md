@@ -809,6 +809,111 @@ render pipeline, not that the device can actually *allocate* a texture in that c
 - **Not verified:** Apple Silicon. **Not verified:** ROM gameplay (still no ROM available in this
   session — confirmed again this session via `find` for `*.nds`, none found).
 
+## 3j. Phase 8 continuation — real opaque-polygon vertex upload + rasterization, hardware-verified independent of a ROM
+
+Design doc S14's suggested port order lists ten sub-steps for the regular (non-compute) 3D
+renderer; step 1 (clear pass) landed in §3g/3h. This section covers steps 2-3
+("vertex/index upload" then "opaque polygons"): `MetalRenderer3D` now builds real vertex and
+index buffers from `GPU3D::RenderPolygonRAM` every frame and issues genuine `drawIndexedPrimitives`
+calls into `ColorTarget`/`AttrTarget`/`DepthStencilTarget`, for opaque, untextured (vertex-color
+only), non-shadow, non-line polygons.
+
+**Scope, stated precisely (see the itemized comment above `RenderNativeOpaquePolygons()` in
+`GPU3D_Metal.mm` for the canonical list):** implemented -- packed vertex-word layout and fan
+triangulation matching `GLRenderer3D::SetupVertex()`/`BuildPolygons()` exactly
+(`GPU3D_OpenGL.cpp`), two full pipeline variants (Z-buffer via rasterizer depth, W-buffer via
+explicit `[[depth(any)]]` fragment output, replicating `3DRenderVS.glsl`/`3DRenderFS.glsl`'s
+depth math translated for Metal's `[0,1]` NDC-z convention instead of GL's `[-1,1]` + separate
+depth-range remap), opaque-alpha discard threshold. **Not implemented:** texturing (the texture
+cache, `GPU3D_TexcacheOpenGL.h`, is a large separate subsystem -- every polygon here renders with
+vertex color only, visibly wrong for most real DS 3D content), translucent polygons, shadow
+masks/shadows, line-type polygons, the depth-func-equal attribute bit, `BetterPolygons`
+triangulation, hi-res scale factor (always native 256x192), edge marking, fog, the final composite
+pass, and -- critically -- feeding this output to `GetLine()`/the presenter at all. This is a real,
+GPU-executed "shadow" pass that cannot regress what a user sees, because nothing downstream reads
+its output yet.
+
+### 3j.1 Hardware verification independent of the ROM constraint
+
+Every prior Phase 8 commit could only state "not runtime-exercised without a ROM" for its 3D
+renderer code, because `MetalRenderer3D::Init()` is reachable only through
+`EmuThread::updateRenderer()`, which only runs once `emuStatus == emuStatus_Running`, which
+requires a ROM. That constraint still holds for the *integrated* code path. But the embedded MSL
+shader source itself (`kMetal3DOpaqueShaderSource`) is a self-contained unit that can be compiled
+and exercised independent of the full app, so this session built a standalone Objective-C++
+harness (`clang++ -framework Metal -framework Foundation`, not part of the repo, scratchpad-only)
+that:
+
+1. Extracts the exact shader source string from `GPU3D_Metal.mm` and compiles it via
+   `newLibraryWithSource:` on this session's real Intel Iris Plus 655 -- confirming actual MSL
+   syntax correctness, not just "the surrounding Objective-C++ builds."
+2. Resolves all 4 entry points (`mp3d_opaque_vs_z/_w`, `mp3d_opaque_fs_z/_w`) and creates both
+   pipeline states against the exact attachment shape used in production
+   (`BGRA8Unorm`/`RGBA8Unorm`/`Depth32Float_Stencil8`).
+3. A separate compute-shader harness ran the position/depth math standalone and dumped the
+   resulting clip-space values for hand-verification against the formula derivation (confirmed
+   exact match, e.g. vertex at screen `(0,0)` with near-1.0 W produced clip-space `(-0.99998,
+   -0.99998, 0.0, 0.99998)` as expected).
+4. A full render-pass test uploaded synthetic vertex/index buffers using the identical packed
+   7-word-per-vertex layout `RenderNativeOpaquePolygons()` produces, drew a triangle through
+   **both** the Z-buffer and W-buffer pipeline variants, and read back individual pixels via
+   `getBytes:fromRegion:` to confirm the triangle rasterized in the geometrically correct location
+   (inside-triangle sample point came back the expected solid color; outside-triangle sample point
+   stayed the clear color) for both depth-path variants independently.
+5. A fourth run with alpha deliberately set below the opaque threshold (10/31 instead of 31/31)
+   confirmed `discard_fragment()` fires correctly (the pixel that would otherwise be inside the
+   triangle stayed the clear color).
+
+One real debugging detour during this: the first few draw-based checks appeared to fail (sample
+point stayed clear-colored) even after independently confirming the vertex math was correct via
+the compute-shader dump. Root cause was the test harness's own sample-point choice, not the
+shader: the synthetic triangle's hypotenuse passes exactly through the diagonal `x==y`, and the
+originally-chosen sample point `(10,10)` sat exactly on that boundary (a test-harness bug, not a
+production one). Re-picking a sample point unambiguously inside the triangle's interior resolved
+it and confirmed correct rasterization on the first correctly-posed attempt for both depth-path
+variants. This is called out explicitly because it is exactly the kind of self-inflicted false
+negative that would be easy to misreport as "the shader is broken" without isolating the actual
+variable -- the minimal full-screen-triangle control case (matching the existing Phase 4
+CAMetalLayer presenter's own clear-pass shader shape) passed on the very first try throughout,
+which is what motivated bisecting the difference down to the sample-point geometry rather than
+the shader logic.
+
+This is meaningfully stronger verification than "compiles and doesn't crash" for a program in this
+Metal-plan document, though it is still **not** the same as running the integrated code path
+against a real ROM -- it validates the shader logic and packing format in isolation, not
+`RenderNativeOpaquePolygons()`'s CPU-side polygon-list traversal against actual `GPU3D` state, nor
+anything about how this interacts with the rest of `MetalRenderer3D`'s lifecycle (`Reset()`,
+`SetScaleFactor()`, savestate hooks) under real emulation.
+
+### 3j.2 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean, no new warnings.
+- `cmake --build build-mac --parallel 4` — clean, no new warnings (default tree unaffected, as
+  `GPU3D_Metal.mm` is not part of it).
+- Standalone Metal harness (see §3j.1): shader compiles, both pipelines create, position math
+  matches hand-derivation exactly, both Z-buffer and W-buffer draws rasterize correctly, opaque-
+  alpha discard fires correctly. Run on this session's real Intel Iris Plus 655 (Metal 3).
+- Runtime smoke, Metal-enabled binary with
+  `MELONPRIME_FORCE_METAL_RENDERER=1 MELONPRIME_FORCE_METAL_PRESENTER=1`: process stayed alive 5s,
+  logged probe/presenter/first-draw/first-UI-overlay exactly as before (no-ROM startup still never
+  reaches `MetalRenderer3D::Init()`, so this smoke confirms no regression to the presenter path,
+  not the new opaque-polygon code).
+- Runtime smoke, default binary: launched and quit cleanly, normal OpenGL context path unchanged.
+- Default binary string check: still zero Metal strings (`metal renderer3d`, `opaque pipeline`,
+  `opaque_vs`/`opaque_fs`, `MetalRenderer3D` all absent); Metal-enabled binary confirmed to contain
+  all 4 new shader entry-point names and both pipeline labels.
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files),
+  `audit-metroid-literal-budget.ps1 -Budget 1`, `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1` — all pass, unaffected
+  (this code is pure core-library C++/Objective-C++, no `qt_sdl` platform markers touched).
+  `generate-hud-prop-schema.py` regeneration diff is empty.
+- **Not verified:** Apple Silicon. **Not verified:** the integrated code path
+  (`RenderNativeOpaquePolygons()` traversing real `GPU3D::RenderPolygonRAM` state from an actual
+  running ROM) — only the shader/pipeline logic in isolation, per §3j.1. **Not implemented:**
+  everything listed in the "Not implemented" paragraph above (texturing chief among them) --
+  Phase 8 remains genuinely multi-session work; this is one honest increment along design doc
+  S14's suggested order, not a claim of parity with `GLRenderer3D`.
+
 ---
 
 ## 4. Remaining phases / gates (Phase 8 onward)
@@ -864,5 +969,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
-| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass (same day) closed the `EmuThread` renderer-routing bug that would have blocked Phase 9 (`videoRenderer` was silently forced to Software whenever `useOpenGL` was false, regardless of what was actually requested), a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D::ResizeTargets()`/`ClearNativeTarget()` partial-failure/null-guard hardening, and a feature-probe strengthening to match the exact Phase 8 pipeline shape (2 color attachments + combined depth/stencil, including an actual texture allocation check). Builds/audits/no-ROM smoke green on both trees. Native replacement for `GLRenderer3D` polygon/texture/fog/edge/final-pass paths and ROM parity remain open |
+| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9 (`videoRenderer` was silently forced to Software whenever `useOpenGL` was false, regardless of what was actually requested), a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D::ResizeTargets()`/`ClearNativeTarget()` partial-failure/null-guard hardening, and a feature-probe strengthening to match the exact Phase 8 pipeline shape. §3j added the design doc's suggested port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization): real per-frame vertex/index buffer upload from `GPU3D::RenderPolygonRAM` matching `GLRenderer3D`'s packing exactly, two full pipeline variants (Z-buffer/W-buffer depth paths), opaque-alpha discard -- verified correct via a standalone Metal harness independent of the ROM constraint (shader compiles, both pipelines create, position math matches hand-derivation, both depth paths rasterize correctly, discard threshold fires correctly). Builds/audits/no-ROM smoke green on both trees; default binary still has zero Metal strings. Texturing (by far the largest remaining piece), translucency, shadow masks, edge marking, fog, final composite, `GetLine()`/display integration, and ROM parity all remain open -- Phase 8 is genuinely multi-session work |
 | 9–10 | Not started | — | See §4. Apple Silicon confirmation (required before Phase 9 ships to users) is not available in this session; Phase 8 native `GLRenderer3D` replacement remains incomplete |
