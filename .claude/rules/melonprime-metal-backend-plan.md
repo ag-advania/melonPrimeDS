@@ -1568,6 +1568,12 @@ scale-aware BGRA8 render-target/shader-read output texture per engine. `MetalRen
 those mirrors from the native 3D Metal device and current `ScaleFactor`, so later BG text, affine,
 OBJ, window, blend, and compositor passes have a stable owner and target to grow into.
 
+The next scaffold slice added GL-style OBJ render targets to each mirror: a 2-layer RGBA8
+`OBJLayerTex` equivalent for normal/window sprite output and a Depth32 `OBJDepthTex` equivalent for
+sprite priority/depth ordering. These targets resize with the same `ScaleFactor` as the final 2D
+output and remain private render-target/shader-read Metal textures until the actual sprite passes
+are ported.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a

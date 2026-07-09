@@ -22,6 +22,8 @@ public:
     void Reset() noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
+    [[nodiscard]] void* GetOBJLayerTexture() const noexcept;
+    [[nodiscard]] void* GetOBJDepthTexture() const noexcept;
     [[nodiscard]] int GetScaleFactor() const noexcept;
     [[nodiscard]] int GetTargetWidth() const noexcept;
     [[nodiscard]] int GetTargetHeight() const noexcept;
