@@ -1858,13 +1858,15 @@ struct OpaqueDrawGroupKey
     bool Translucent;
     bool DepthEqual;
     bool DepthWrite;
+    bool Line;
 
     bool operator==(const OpaqueDrawGroupKey& other) const noexcept
     {
         return WBuffer == other.WBuffer && TexturePtr == other.TexturePtr &&
                TexRepeat == other.TexRepeat && PolyID == other.PolyID &&
                Translucent == other.Translucent &&
-               DepthEqual == other.DepthEqual && DepthWrite == other.DepthWrite;
+               DepthEqual == other.DepthEqual && DepthWrite == other.DepthWrite &&
+               Line == other.Line;
     }
 };
 
@@ -1889,7 +1891,7 @@ struct OpaqueDrawGroup
 //
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
 // Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource):
-//   - shadow masks/shadows, line-type polygons, VRAM-display-capture-as-texture
+//   - shadow masks/shadows, VRAM-display-capture-as-texture
 //   - "BetterPolygons" alternate triangulation
 //   - clear bitmap, edge marking, fog, and the final GL-style post-pass
 //
@@ -1940,7 +1942,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const Polygon* poly = GPU3D.RenderPolygonRAM[i];
         if (!poly)
             continue;
-        if (poly->Type != 0)          continue; // line polygons: not ported yet
+        if (poly->Type != 0 && poly->Type != 1) continue;
         if (poly->IsShadowMask || poly->IsShadow) continue;
         if (poly->Degenerate)         continue;
         if (poly->NumVertices < 3)    continue;
@@ -2016,6 +2018,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const bool depthEqual = (poly->Attr & (1u << 14)) != 0;
         const bool depthWrite = !translucent || ((poly->Attr & (1u << 11)) != 0);
         const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
+        const bool line = poly->Type == 1;
         const OpaqueDrawGroupKey key {
             poly->WBuffer,
             (__bridge const void*)texture,
@@ -2023,7 +2026,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             polyID,
             translucent,
             depthEqual,
-            depthWrite
+            depthWrite,
+            line
         };
         if (groups.empty() || !(groups.back().Key == key))
         {
@@ -2033,11 +2037,37 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             groups.push_back(std::move(newGroup));
         }
         OpaqueDrawGroup& group = groups.back();
-        for (u32 t = 2; t < poly->NumVertices; t++)
+        if (line)
         {
-            group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
-            group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
-            group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
+            u32 selected[2] = {};
+            u32 selectedCount = 0;
+            u32 lastX = 0;
+            u32 lastY = 0;
+            for (u32 v = 0; v < poly->NumVertices && selectedCount < 2; v++)
+            {
+                const Vertex* vtx = poly->Vertices[v];
+                const u32 x = static_cast<uint32_t>(vtx->FinalPosition[0]);
+                const u32 y = static_cast<uint32_t>(vtx->FinalPosition[1]);
+                if (selectedCount > 0 && lastX == x && lastY == y)
+                    continue;
+                lastX = x;
+                lastY = y;
+                selected[selectedCount++] = v;
+            }
+            if (selectedCount == 2)
+            {
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase + selected[0]));
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase + selected[1]));
+            }
+        }
+        else
+        {
+            for (u32 t = 2; t < poly->NumVertices; t++)
+            {
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
+            }
         }
     }
 
@@ -2188,7 +2218,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                                                                   : group.Key.PolyID)];
         [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
         [encoder setFragmentSamplerState:State->OpaqueTextureSamplers[sIdx][tIdx] atIndex:0];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+        [encoder drawIndexedPrimitives:(group.Key.Line ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle)
                              indexCount:group.Indices.size()
                               indexType:MTLIndexTypeUInt16
                             indexBuffer:indexBuffer
