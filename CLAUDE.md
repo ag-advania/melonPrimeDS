@@ -14,6 +14,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-full-refactor-plan-v7.md](.claude/rules/melonprime-full-refactor-plan-v7.md)
 - [.claude/rules/melonprime-full-refactor-plan-v6.md](.claude/rules/melonprime-full-refactor-plan-v6.md)
 - [.claude/rules/completed/melonprime-full-refactor-plan-v5.md](.claude/rules/completed/melonprime-full-refactor-plan-v5.md)
+- [.claude/rules/melonprime-metal-backend-plan.md](.claude/rules/melonprime-metal-backend-plan.md)
 - [.claude/rules/melonprime-performance.md](.claude/rules/melonprime-performance.md)
 - [.claude/rules/melonprime-gameplay-runtime.md](.claude/rules/melonprime-gameplay-runtime.md)
 - [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)

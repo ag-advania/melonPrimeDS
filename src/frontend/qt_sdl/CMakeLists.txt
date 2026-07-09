@@ -95,6 +95,7 @@ set(SOURCES_QT_SDL
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
     MelonPrimeRuntimeConfig.cpp
+    MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormBuilder.cpp
     MelonPrimePatchLifecycle.cpp
@@ -130,6 +131,28 @@ set(SOURCES_QT_SDL
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
+
+# --- MelonPrime experimental Metal backend master kill switch ---------------
+# See .claude/rules/melonprime-metal-backend-plan.md. Metal support does not
+# exist yet (no .mm sources, no frameworks linked, no renderer enum value);
+# these options only reserve the on/off contract so later phases can be
+# force-disabled with a single flag instead of a source edit.
+option(MELONPRIME_ENABLE_METAL
+    "Enable experimental MelonPrime native Metal presenter/backend on macOS (not yet implemented)"
+    OFF)
+option(MELONPRIME_FORCE_DISABLE_METAL
+    "Force-disable all MelonPrime Metal code, even if MELONPRIME_ENABLE_METAL is ON"
+    OFF)
+
+set(MELONPRIME_METAL_ACTIVE OFF)
+if (MELONPRIME_FORCE_DISABLE_METAL)
+    set(MELONPRIME_METAL_ACTIVE OFF)
+elseif (MELONPRIME_ENABLE_METAL)
+    if (NOT APPLE)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL is only supported on Apple platforms")
+    endif()
+    set(MELONPRIME_METAL_ACTIVE ON)
+endif()
 
 if (USE_QT6)
     find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
@@ -252,6 +275,13 @@ target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+endif()
+
+if (MELONPRIME_METAL_ACTIVE)
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
+    # No Metal sources/frameworks exist yet (see
+    # .claude/rules/melonprime-metal-backend-plan.md); later phases add their
+    # target_sources()/find_library() calls inside this same guard.
 endif()
 
 add_subdirectory("../../net"
