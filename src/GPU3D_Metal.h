@@ -45,6 +45,7 @@ private:
     int ScaleFactor = 1;
 
     bool CreateDeviceObjects();
+    bool BuildClearPipeline();
     bool ResizeTargets();
     bool ClearNativeTarget();
 };

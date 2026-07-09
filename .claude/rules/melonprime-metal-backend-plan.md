@@ -680,6 +680,13 @@ native targets. `SetScaleFactor()` resizes the Metal targets; `RenderFrame()`/`G
 delegate to Software until the shader, texture-cache, depth/stencil, fog/edge, and final-pass paths
 are ported from `GLRenderer3D`.
 
+The next follow-up adds the first MSL shader/pipeline scaffold inside `MetalRenderer3D`: a runtime
+compiled clear shader library (`mp3d_clear_vs`/`mp3d_clear_fs`), `MTLRenderPipelineState`, and
+`MTLDepthStencilState`. The native clear pass now binds that pipeline and issues a full-screen
+triangle draw into the Metal color/attribute/depth-stencil targets, rather than relying only on
+render-pass load actions. This is still not the DS polygon renderer, but it establishes the
+`GLRenderer3D::BuildRenderShader()`/pipeline-state equivalent that later draw paths can extend.
+
 ### 3h.1 Verification (2026-07-09, real Intel Mac)
 
 - `cmake --build build-mac-metal-test --parallel 4` — clean after reconfiguration; core compiled
@@ -687,7 +694,9 @@ are ported from `GLRenderer3D`.
 - `cmake --build build-mac --parallel 4` — clean after reconfiguration; default build still
   excludes `GPU3D_Metal.mm`.
 - Metal-enabled binary symbol/string check confirms `melonDS::MetalRenderer3D` and its
-  initialization strings exist only in `build-mac-metal-test`; default binary still has no `metal
+  initialization strings exist only in `build-mac-metal-test`; the follow-up also confirms the MSL
+  clear shader entry points and "MelonPrime Metal 3D Clear Pipeline" label exist only in the
+  Metal-enabled binary. The default binary still has no `metal
   presenter`, `metal probe`, `metal renderer`, `MetalRenderer3D`, `GPU3D_Metal`,
   `MelonPrimeScreenMetal`, or `MELONPRIME_FORCE_METAL` strings.
 - Runtime smoke with
@@ -760,5 +769,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
-| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-up added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets and a clear pass, installed in `Rend3D` with a Software raster delegate. Builds/audits/no-ROM smoke green; native replacement for `GLRenderer3D` draw/shader/texture paths and ROM parity remain open |
+| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. Builds/audits/no-ROM smoke green; native replacement for `GLRenderer3D` polygon/texture/fog/edge/final-pass paths and ROM parity remain open |
 | 9–10 | Not started | — | See §4. Apple Silicon confirmation (required before Phase 9 ships to users) is not available in this session; Phase 8 native `GLRenderer3D` replacement remains incomplete |
