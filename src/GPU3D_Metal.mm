@@ -368,6 +368,8 @@ struct MetalRenderer3D::MetalState
     id<MTLRenderPipelineState> OpaqueRenderPipelineW = nil;       // DS W-buffered polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineZ = nil;  // blended depth-buffer polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineW = nil;  // blended W-buffer polygons
+    id<MTLRenderPipelineState> TranslucentFogRenderPipelineZ = nil; // blended Z polygons that clear attr fog bit
+    id<MTLRenderPipelineState> TranslucentFogRenderPipelineW = nil; // blended W polygons that clear attr fog bit
     id<MTLRenderPipelineState> ShadowMaskRenderPipelineZ = nil;   // stencil-only shadow mask, Z-buffer
     id<MTLRenderPipelineState> ShadowMaskRenderPipelineW = nil;   // stencil-only shadow mask, W-buffer
     id<MTLRenderPipelineState> ShadowStencilRenderPipelineZ = nil; // alpha-tested shadow stencil prepass, Z-buffer
@@ -1304,13 +1306,16 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
         return false;
     }
 
-    auto createPipeline = [&](NSString* label, id<MTLFunction> vertex, id<MTLFunction> fragment, bool blended) -> id<MTLRenderPipelineState> {
+    auto createPipeline = [&](NSString* label, id<MTLFunction> vertex, id<MTLFunction> fragment,
+                              bool blended, MTLColorWriteMask attrWriteMask = MTLColorWriteMaskAll)
+        -> id<MTLRenderPipelineState> {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.label = label;
         desc.vertexFunction = vertex;
         desc.fragmentFunction = fragment;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.colorAttachments[1].writeMask = attrWriteMask;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         if (blended)
@@ -1348,10 +1353,19 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     }
 
     State->TranslucentRenderPipelineZ =
-        createPipeline(@"MelonPrime Metal 3D Translucent Pipeline (Z-buffer)", vsZ, fsZ, true);
+        createPipeline(@"MelonPrime Metal 3D Translucent Pipeline (Z-buffer)", vsZ, fsZ, true,
+            MTLColorWriteMaskNone);
     State->TranslucentRenderPipelineW =
-        createPipeline(@"MelonPrime Metal 3D Translucent Pipeline (W-buffer)", vsW, fsW, true);
-    if (!State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW)
+        createPipeline(@"MelonPrime Metal 3D Translucent Pipeline (W-buffer)", vsW, fsW, true,
+            MTLColorWriteMaskNone);
+    State->TranslucentFogRenderPipelineZ =
+        createPipeline(@"MelonPrime Metal 3D Translucent Fog-Attr Pipeline (Z-buffer)", vsZ, fsZ, true,
+            MTLColorWriteMaskBlue);
+    State->TranslucentFogRenderPipelineW =
+        createPipeline(@"MelonPrime Metal 3D Translucent Fog-Attr Pipeline (W-buffer)", vsW, fsW, true,
+            MTLColorWriteMaskBlue);
+    if (!State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW ||
+        !State->TranslucentFogRenderPipelineZ || !State->TranslucentFogRenderPipelineW)
         return false;
 
     auto createShadowMaskPipeline = [&](NSString* label, id<MTLFunction> vertex, id<MTLFunction> fragment) -> id<MTLRenderPipelineState> {
@@ -2070,6 +2084,7 @@ struct OpaqueDrawGroupKey
     bool Line;
     bool ShadowMask;
     bool Shadow;
+    bool AttrFogWrite;
 
     bool operator==(const OpaqueDrawGroupKey& other) const noexcept
     {
@@ -2078,7 +2093,7 @@ struct OpaqueDrawGroupKey
                Translucent == other.Translucent &&
                DepthEqual == other.DepthEqual && DepthWrite == other.DepthWrite &&
                Line == other.Line && ShadowMask == other.ShadowMask &&
-               Shadow == other.Shadow;
+               Shadow == other.Shadow && AttrFogWrite == other.AttrFogWrite;
     }
 };
 
@@ -2118,6 +2133,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     if (!State || !State->Device || !State->CommandQueue ||
         !State->OpaqueRenderPipelineZ || !State->OpaqueRenderPipelineW ||
         !State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW ||
+        !State->TranslucentFogRenderPipelineZ || !State->TranslucentFogRenderPipelineW ||
         !State->ShadowMaskRenderPipelineZ || !State->ShadowMaskRenderPipelineW ||
         !State->ShadowStencilRenderPipelineZ || !State->ShadowStencilRenderPipelineW ||
         !State->OpaqueDepthLessWrite || !State->OpaqueDepthLessEqualWrite ||
@@ -2240,6 +2256,9 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
         const bool line = poly->Type == 1;
         const bool shadowMask = poly->IsShadowMask;
+        const bool attrFogWrite =
+            translucent && ((GPU3D.RenderDispCnt & (1u << 7)) != 0) &&
+            ((poly->Attr & (1u << 15)) == 0);
         const OpaqueDrawGroupKey key {
             poly->WBuffer,
             (__bridge const void*)texture,
@@ -2250,7 +2269,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             depthWrite,
             line,
             shadowMask,
-            shadow
+            shadow,
+            attrFogWrite
         };
         if (groups.empty() || shadow || !(groups.back().Key == key))
         {
@@ -2459,8 +2479,14 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                 drawDepthState = group.Key.DepthWrite ? State->ShadowPolygonDrawDepthLessWrite
                                                        : State->ShadowPolygonDrawDepthLessNoWrite;
 
-            [encoder setRenderPipelineState:(group.Key.WBuffer ? State->TranslucentRenderPipelineW
-                                                               : State->TranslucentRenderPipelineZ)];
+            id<MTLRenderPipelineState> shadowDrawPipeline = nil;
+            if (group.Key.AttrFogWrite)
+                shadowDrawPipeline = group.Key.WBuffer ? State->TranslucentFogRenderPipelineW
+                                                       : State->TranslucentFogRenderPipelineZ;
+            else
+                shadowDrawPipeline = group.Key.WBuffer ? State->TranslucentRenderPipelineW
+                                                       : State->TranslucentRenderPipelineZ;
+            [encoder setRenderPipelineState:shadowDrawPipeline];
             [encoder setDepthStencilState:drawDepthState];
             [encoder setStencilReferenceValue:(0xC0u | group.Key.PolyID)];
             [encoder drawIndexedPrimitives:(group.Key.Line ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle)
@@ -2478,7 +2504,12 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         if (group.Key.ShadowMask)
             pipeline = group.Key.WBuffer ? State->ShadowMaskRenderPipelineW : State->ShadowMaskRenderPipelineZ;
         else if (group.Key.Translucent)
-            pipeline = group.Key.WBuffer ? State->TranslucentRenderPipelineW : State->TranslucentRenderPipelineZ;
+        {
+            if (group.Key.AttrFogWrite)
+                pipeline = group.Key.WBuffer ? State->TranslucentFogRenderPipelineW : State->TranslucentFogRenderPipelineZ;
+            else
+                pipeline = group.Key.WBuffer ? State->TranslucentRenderPipelineW : State->TranslucentRenderPipelineZ;
+        }
         else
             pipeline = group.Key.WBuffer ? State->OpaqueRenderPipelineW : State->OpaqueRenderPipelineZ;
 
