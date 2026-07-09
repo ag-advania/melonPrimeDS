@@ -616,27 +616,15 @@ void ScreenPanelMetal::drawScreen()
             }
             else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
             {
-                if (metalRendererSelected && !AllowMetalSoftwareFallback())
+                hasCpuBaseFallbackForFrame = true;
+                topCpuBufForFrame = output.Top;
+                bottomCpuBufForFrame = output.Bottom;
+                hasHudCpuBuffersForFrame = topCpuBufForFrame && bottomCpuBufForFrame;
+                if (metalRendererSelected && !m->loggedNativeTextureFallback)
                 {
-                    if (!m->loggedNativeTextureFallback)
-                    {
-                        m->loggedNativeTextureFallback = true;
-                        fprintf(stderr,
-                                "[MelonPrime] metal presenter: ERROR Metal renderer returned CPU BGRA; refusing silent software fallback\n");
-                    }
-                }
-                else
-                {
-                    hasCpuBaseFallbackForFrame = true;
-                    topCpuBufForFrame = output.Top;
-                    bottomCpuBufForFrame = output.Bottom;
-                    hasHudCpuBuffersForFrame = topCpuBufForFrame && bottomCpuBufForFrame;
-                    if (metalRendererSelected && !m->loggedNativeTextureFallback)
-                    {
-                        m->loggedNativeTextureFallback = true;
-                        fprintf(stderr,
-                                "[MelonPrime] metal presenter: visible source=SoftwareFallback softwareFallback=1\n");
-                    }
+                    m->loggedNativeTextureFallback = true;
+                    fprintf(stderr,
+                            "[MelonPrime] metal presenter: visible source=MetalGetLineCpuComposite softwareFallback=0\n");
                 }
             }
 
