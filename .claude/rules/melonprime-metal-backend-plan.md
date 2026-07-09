@@ -1560,6 +1560,27 @@ BetterPolygons enabled, because no `.nds` ROM is present in this workspace.
 
 ---
 
+## 3n.12 Phase 4 start — non-visible MetalRenderer2D output scaffold
+
+Phase 4 has started with the smallest safe `GLRenderer2D` mirror foundation: a new
+`GPU2D_Metal.{h,mm}` owns Engine A/B `MetalRenderer2D` mirror objects and allocates one
+scale-aware BGRA8 render-target/shader-read output texture per engine. `MetalRenderer` configures
+those mirrors from the native 3D Metal device and current `ScaleFactor`, so later BG text, affine,
+OBJ, window, blend, and compositor passes have a stable owner and target to grow into.
+
+This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
+renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
+`RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
+temporary "Metal 3D hires + CPU 2D upscale" hybrid while building the real GLRenderer mirror behind
+the current correct output path.
+
+**Verified (2026-07-10, local Intel Mac):** `tools/macos/build_metal_test.command`,
+`cmake --build build-mac --parallel 4`, default-binary Metal strings check, `git diff --check`, and
+the standard config/inc/literal/scatter audits all pass. **Not verified:** visible hires output,
+because BG/OBJ/final Metal 2D drawing is intentionally not wired yet.
+
+---
+
 ## 3o. Tester UI exposure + perf logging workflow
 
 Following
