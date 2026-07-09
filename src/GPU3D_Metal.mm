@@ -363,10 +363,12 @@ struct MetalRenderer3D::MetalState
     id<MTLRenderPipelineState> OpaqueRenderPipelineW = nil;       // DS W-buffered polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineZ = nil;  // blended depth-buffer polygons
     id<MTLRenderPipelineState> TranslucentRenderPipelineW = nil;  // blended W-buffer polygons
-    id<MTLDepthStencilState> DepthLessWrite = nil;
-    id<MTLDepthStencilState> DepthLessEqualWrite = nil;
-    id<MTLDepthStencilState> DepthLessNoWrite = nil;
-    id<MTLDepthStencilState> DepthLessEqualNoWrite = nil;
+    id<MTLDepthStencilState> OpaqueDepthLessWrite = nil;
+    id<MTLDepthStencilState> OpaqueDepthLessEqualWrite = nil;
+    id<MTLDepthStencilState> TranslucentDepthLessWrite = nil;
+    id<MTLDepthStencilState> TranslucentDepthLessEqualWrite = nil;
+    id<MTLDepthStencilState> TranslucentDepthLessNoWrite = nil;
+    id<MTLDepthStencilState> TranslucentDepthLessEqualNoWrite = nil;
     // 3x3 matrix of [S mode][T mode], each axis independently one of
     // {clamp, repeat, mirror-repeat} -- matches the DS TexRepeat bits via
     // TexRepeatAddressModeIndex() (see below). Built once in
@@ -1075,18 +1077,47 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     if (!State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW)
         return false;
 
-    auto createDepthState = [&](MTLCompareFunction compare, BOOL write) -> id<MTLDepthStencilState> {
+    auto createStencilDepthState = [&](MTLCompareFunction depthCompare, BOOL depthWrite, bool translucent)
+        -> id<MTLDepthStencilState> {
         MTLDepthStencilDescriptor* dsDesc = [[MTLDepthStencilDescriptor alloc] init];
-        dsDesc.depthCompareFunction = compare;
-        dsDesc.depthWriteEnabled = write;
+        dsDesc.depthCompareFunction = depthCompare;
+        dsDesc.depthWriteEnabled = depthWrite;
+
+        MTLStencilDescriptor* stencil = [[MTLStencilDescriptor alloc] init];
+        stencil.stencilFailureOperation = MTLStencilOperationKeep;
+        stencil.depthFailureOperation = MTLStencilOperationKeep;
+        stencil.depthStencilPassOperation = MTLStencilOperationReplace;
+        if (translucent)
+        {
+            stencil.stencilCompareFunction = MTLCompareFunctionNotEqual;
+            stencil.readMask = 0x7F;
+            stencil.writeMask = 0x7F;
+        }
+        else
+        {
+            stencil.stencilCompareFunction = MTLCompareFunctionAlways;
+            stencil.readMask = 0xFF;
+            stencil.writeMask = 0xFF;
+        }
+        dsDesc.frontFaceStencil = stencil;
+        dsDesc.backFaceStencil = stencil;
         return [State->Device newDepthStencilStateWithDescriptor:dsDesc];
     };
-    State->DepthLessWrite = createDepthState(MTLCompareFunctionLess, YES);
-    State->DepthLessEqualWrite = createDepthState(MTLCompareFunctionLessEqual, YES);
-    State->DepthLessNoWrite = createDepthState(MTLCompareFunctionLess, NO);
-    State->DepthLessEqualNoWrite = createDepthState(MTLCompareFunctionLessEqual, NO);
-    if (!State->DepthLessWrite || !State->DepthLessEqualWrite ||
-        !State->DepthLessNoWrite || !State->DepthLessEqualNoWrite)
+    State->OpaqueDepthLessWrite =
+        createStencilDepthState(MTLCompareFunctionLess, YES, false);
+    State->OpaqueDepthLessEqualWrite =
+        createStencilDepthState(MTLCompareFunctionLessEqual, YES, false);
+    State->TranslucentDepthLessWrite =
+        createStencilDepthState(MTLCompareFunctionLess, YES, true);
+    State->TranslucentDepthLessEqualWrite =
+        createStencilDepthState(MTLCompareFunctionLessEqual, YES, true);
+    State->TranslucentDepthLessNoWrite =
+        createStencilDepthState(MTLCompareFunctionLess, NO, true);
+    State->TranslucentDepthLessEqualNoWrite =
+        createStencilDepthState(MTLCompareFunctionLessEqual, NO, true);
+    if (!State->OpaqueDepthLessWrite || !State->OpaqueDepthLessEqualWrite ||
+        !State->TranslucentDepthLessWrite || !State->TranslucentDepthLessEqualWrite ||
+        !State->TranslucentDepthLessNoWrite || !State->TranslucentDepthLessEqualNoWrite)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create depth/stencil state variants\n");
         return false;
@@ -1348,6 +1379,7 @@ struct OpaqueDrawGroupKey
     // the untextured group into multiple identical draw calls for no
     // reason.
     uint32_t TexRepeat;
+    uint32_t PolyID;
     bool Translucent;
     bool DepthEqual;
     bool DepthWrite;
@@ -1355,7 +1387,8 @@ struct OpaqueDrawGroupKey
     bool operator==(const OpaqueDrawGroupKey& other) const noexcept
     {
         return WBuffer == other.WBuffer && TexturePtr == other.TexturePtr &&
-               TexRepeat == other.TexRepeat && Translucent == other.Translucent &&
+               TexRepeat == other.TexRepeat && PolyID == other.PolyID &&
+               Translucent == other.Translucent &&
                DepthEqual == other.DepthEqual && DepthWrite == other.DepthWrite;
     }
 };
@@ -1400,8 +1433,9 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     if (!State || !State->Device || !State->CommandQueue ||
         !State->OpaqueRenderPipelineZ || !State->OpaqueRenderPipelineW ||
         !State->TranslucentRenderPipelineZ || !State->TranslucentRenderPipelineW ||
-        !State->DepthLessWrite || !State->DepthLessEqualWrite ||
-        !State->DepthLessNoWrite || !State->DepthLessEqualNoWrite ||
+        !State->OpaqueDepthLessWrite || !State->OpaqueDepthLessEqualWrite ||
+        !State->TranslucentDepthLessWrite || !State->TranslucentDepthLessEqualWrite ||
+        !State->TranslucentDepthLessNoWrite || !State->TranslucentDepthLessEqualNoWrite ||
         !State->OpaqueTextureSamplers[0][0] || !State->DummyTexture || !State->Texcache ||
         !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
     {
@@ -1512,10 +1546,12 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const bool translucent = poly->Translucent;
         const bool depthEqual = (poly->Attr & (1u << 14)) != 0;
         const bool depthWrite = !translucent || ((poly->Attr & (1u << 11)) != 0);
+        const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
         const OpaqueDrawGroupKey key {
             poly->WBuffer,
             (__bridge const void*)texture,
             texRepeatForKey,
+            polyID,
             translucent,
             depthEqual,
             depthWrite
@@ -1644,13 +1680,25 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             pipeline = group.Key.WBuffer ? State->OpaqueRenderPipelineW : State->OpaqueRenderPipelineZ;
 
         id<MTLDepthStencilState> depthState = nil;
-        if (group.Key.DepthEqual)
-            depthState = group.Key.DepthWrite ? State->DepthLessEqualWrite : State->DepthLessEqualNoWrite;
+        if (group.Key.Translucent)
+        {
+            if (group.Key.DepthEqual)
+                depthState = group.Key.DepthWrite ? State->TranslucentDepthLessEqualWrite
+                                                  : State->TranslucentDepthLessEqualNoWrite;
+            else
+                depthState = group.Key.DepthWrite ? State->TranslucentDepthLessWrite
+                                                  : State->TranslucentDepthLessNoWrite;
+        }
         else
-            depthState = group.Key.DepthWrite ? State->DepthLessWrite : State->DepthLessNoWrite;
+        {
+            depthState = group.Key.DepthEqual ? State->OpaqueDepthLessEqualWrite
+                                              : State->OpaqueDepthLessWrite;
+        }
 
         [encoder setRenderPipelineState:pipeline];
         [encoder setDepthStencilState:depthState];
+        [encoder setStencilReferenceValue:(group.Key.Translucent ? (0x40u | group.Key.PolyID)
+                                                                  : group.Key.PolyID)];
         [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
         [encoder setFragmentSamplerState:State->OpaqueTextureSamplers[sIdx][tIdx] atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
