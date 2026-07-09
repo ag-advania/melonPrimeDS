@@ -7,13 +7,116 @@
 #include "GPU3D_Metal.h"
 #include "GPU3D_Texcache.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <unordered_map>
 #include <vector>
 
 namespace melonDS
 {
+
+namespace {
+
+using MetalPerfClock = std::chrono::steady_clock;
+
+struct MetalPerfFrame
+{
+    double FrameMs = 0.0;
+    double Native3DMs = 0.0;
+    double TexcacheMs = 0.0;
+    double WaitMs = 0.0;
+    uint64_t UploadBytes = 0;
+    uint32_t Groups = 0;
+    uint32_t Draws = 0;
+    uint32_t ConsideredPolygons = 0;
+    uint32_t TexturedPolygons = 0;
+    bool CpuRendererFallback = false;
+};
+
+struct MetalPerfAccumulator
+{
+    uint32_t Frames = 0;
+    double FrameMs = 0.0;
+    double Native3DMs = 0.0;
+    double TexcacheMs = 0.0;
+    double WaitMs = 0.0;
+    uint64_t UploadBytes = 0;
+    uint64_t Groups = 0;
+    uint64_t Draws = 0;
+    uint64_t ConsideredPolygons = 0;
+    uint64_t TexturedPolygons = 0;
+    uint32_t CpuRendererFallbackFrames = 0;
+};
+
+MetalPerfFrame* gCurrentMetalPerfFrame = nullptr;
+
+bool MetalPerfEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_PERF");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
+double MetalPerfElapsedMs(MetalPerfClock::time_point start, MetalPerfClock::time_point end)
+{
+    return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+void MetalPerfAddWait(MetalPerfClock::time_point start, MetalPerfClock::time_point end)
+{
+    if (gCurrentMetalPerfFrame)
+        gCurrentMetalPerfFrame->WaitMs += MetalPerfElapsedMs(start, end);
+}
+
+void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
+{
+    if (!MetalPerfEnabled())
+        return;
+
+    static MetalPerfAccumulator acc;
+    acc.Frames++;
+    acc.FrameMs += frame.FrameMs;
+    acc.Native3DMs += frame.Native3DMs;
+    acc.TexcacheMs += frame.TexcacheMs;
+    acc.WaitMs += frame.WaitMs;
+    acc.UploadBytes += frame.UploadBytes;
+    acc.Groups += frame.Groups;
+    acc.Draws += frame.Draws;
+    acc.ConsideredPolygons += frame.ConsideredPolygons;
+    acc.TexturedPolygons += frame.TexturedPolygons;
+    if (frame.CpuRendererFallback)
+        acc.CpuRendererFallbackFrames++;
+
+    constexpr uint32_t kReportFrames = 600;
+    if (acc.Frames < kReportFrames)
+        return;
+
+    const double frames = static_cast<double>(acc.Frames);
+    std::fprintf(stderr,
+        "[MelonPrime] metal perf: frames=%u avgFrameMs=%.3f avg3dMs=%.3f avgTexcacheMs=%.3f "
+        "avgUploadBytes=%.0f avgGroups=%.2f avgDraws=%.2f avgWaitMs=%.3f "
+        "avgConsideredPolys=%.2f avgTexturedPolys=%.2f cpuRendererFallback=%u/%u\n",
+        acc.Frames,
+        acc.FrameMs / frames,
+        acc.Native3DMs / frames,
+        acc.TexcacheMs / frames,
+        static_cast<double>(acc.UploadBytes) / frames,
+        static_cast<double>(acc.Groups) / frames,
+        static_cast<double>(acc.Draws) / frames,
+        acc.WaitMs / frames,
+        static_cast<double>(acc.ConsideredPolygons) / frames,
+        static_cast<double>(acc.TexturedPolygons) / frames,
+        acc.CpuRendererFallbackFrames,
+        acc.Frames);
+
+    acc = {};
+}
+
+} // namespace
 
 // Phase 8 texturing (design doc S14 step 4). This loader is the Metal
 // equivalent of TexcacheOpenGLLoader (GPU3D_TexcacheOpenGL.h/.cpp): the
@@ -430,6 +533,13 @@ void MetalRenderer3D::SetScaleFactor(int scale) noexcept
 
 void MetalRenderer3D::RenderFrame()
 {
+    MetalPerfFrame perfFrame;
+    MetalPerfFrame* previousPerfFrame = gCurrentMetalPerfFrame;
+    const bool perfEnabled = MetalPerfEnabled();
+    const auto frameStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
+    if (perfEnabled)
+        gCurrentMetalPerfFrame = &perfFrame;
+
     // metal_phase8_execution_instructions.md Priority 2: one-shot proof the
     // integrated frame loop (a real ROM running through EmuThread ->
     // updateRenderer() -> GPU3D::RenderFrame()) actually reaches this native
@@ -443,6 +553,7 @@ void MetalRenderer3D::RenderFrame()
     }
 
     Delegate.RenderFrame();
+    perfFrame.CpuRendererFallback = true;
 
     // Native Metal "shadow" pass: real GPU geometry submission every frame,
     // executed alongside (not instead of) the software delegate. Its output
@@ -453,7 +564,17 @@ void MetalRenderer3D::RenderFrame()
     if (State && State->Device)
     {
         ClearNativeTarget();
+        const auto nativeStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
         RenderNativeOpaquePolygons();
+        if (perfEnabled)
+            perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
+    }
+
+    if (perfEnabled)
+    {
+        perfFrame.FrameMs = MetalPerfElapsedMs(frameStart, MetalPerfClock::now());
+        gCurrentMetalPerfFrame = previousPerfFrame;
+        MetalPerfSubmitFrame(perfFrame);
     }
 }
 
@@ -779,7 +900,10 @@ bool MetalRenderer3D::ClearNativeTarget()
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [encoder endEncoding];
     [commandBuffer commit];
+    const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
     [commandBuffer waitUntilCompleted];
+    if (MetalPerfEnabled())
+        MetalPerfAddWait(waitStart, MetalPerfClock::now());
     return commandBuffer.status == MTLCommandBufferStatusCompleted;
 }
 
@@ -862,7 +986,10 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     }
 
     u8 unusedClearBitmapDirty = 0;
+    const auto texcacheStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
     State->Texcache->Update(unusedClearBitmapDirty);
+    if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+        gCurrentMetalPerfFrame->TexcacheMs += MetalPerfElapsedMs(texcacheStart, MetalPerfClock::now());
 
     const u32 numPolygons = GPU3D.RenderNumPolygons;
     if (numPolygons == 0)
@@ -993,7 +1120,15 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     }
 
     if (vertexWords.empty() || groups.empty())
+    {
+        if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+        {
+            gCurrentMetalPerfFrame->ConsideredPolygons += consideredPolygons;
+            gCurrentMetalPerfFrame->TexturedPolygons += texturedPolygons;
+            gCurrentMetalPerfFrame->Groups += static_cast<uint32_t>(groups.size());
+        }
         return;
+    }
 
     id<MTLBuffer> vertexBuffer =
         [State->Device newBufferWithBytes:vertexWords.data()
@@ -1001,6 +1136,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                                    options:MTLResourceStorageModeShared];
     if (!vertexBuffer)
         return;
+    if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+        gCurrentMetalPerfFrame->UploadBytes += vertexWords.size() * sizeof(uint32_t);
 
     // Always the native 256x192 DS coordinate space -- FinalPosition is used
     // unconditionally above regardless of ScaleFactor (see the scope note).
@@ -1044,6 +1181,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                                        options:MTLResourceStorageModeShared];
         if (!indexBuffer)
             continue;
+        if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+            gCurrentMetalPerfFrame->UploadBytes += group.Indices.size() * sizeof(uint16_t);
 
         // Priority 4: select the sampler matching this group's DS TexRepeat
         // bits (repeat-S=bit0, repeat-T=bit1, mirror-S=bit2, mirror-T=bit3),
@@ -1062,11 +1201,23 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                               indexType:MTLIndexTypeUInt16
                             indexBuffer:indexBuffer
                       indexBufferOffset:0];
+        if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+            gCurrentMetalPerfFrame->Draws++;
     }
 
     [encoder endEncoding];
     [commandBuffer commit];
+    const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
     [commandBuffer waitUntilCompleted];
+    if (MetalPerfEnabled())
+        MetalPerfAddWait(waitStart, MetalPerfClock::now());
+
+    if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
+    {
+        gCurrentMetalPerfFrame->ConsideredPolygons += consideredPolygons;
+        gCurrentMetalPerfFrame->TexturedPolygons += texturedPolygons;
+        gCurrentMetalPerfFrame->Groups += static_cast<uint32_t>(groups.size());
+    }
 }
 
 } // namespace melonDS
