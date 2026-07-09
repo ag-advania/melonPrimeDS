@@ -250,7 +250,79 @@ rather than silently claimed as "zero behavior change."
 
 ---
 
-## 4. Remaining phases (Phase 2 onward — not yet implemented)
+## 3a. Phase 2 — Metal feature probe (implemented and *runtime-verified*, 2026-07-09)
+
+Design doc §8 scope. New files
+[MelonPrimeMetalFeatureCheck.h](../../src/frontend/qt_sdl/MelonPrimeMetalFeatureCheck.h) /
+[.mm](../../src/frontend/qt_sdl/MelonPrimeMetalFeatureCheck.mm), compiled only inside
+`if (MELONPRIME_METAL_ACTIVE)` in CMakeLists.txt (own `find_library(METAL_LIB Metal)` +
+`-fobjc-arc`, matching the existing `MelonPrimeRawInputMacFilter.mm` ARC convention).
+
+```cpp
+namespace MelonPrime::Metal {
+    struct FeatureInfo { bool hasDevice; bool supportsRequiredBaseline; bool isLowPower;
+        bool isRemovable; bool hasUnifiedMemory; uint64_t recommendedMaxWorkingSetSize;
+        std::string deviceName; std::string unavailableReason; };
+    const FeatureInfo& CachedFeatureInfo();  // std::call_once probe + cache
+    bool IsRuntimeAvailable();               // hasDevice
+    bool SupportsRequiredBaseline();         // the gate Phase 4+ must check
+    void LogFeatureInfoOnce();               // stderr, matches the mac-input log convention
+}
+```
+
+`ProbeFeatureInfo()` does exactly what the design doc's baseline check requires and nothing more:
+`MTLCreateSystemDefaultDevice()` → `newCommandQueue` → compile a trivial passthrough vertex/
+fragment `MTLLibrary` from an inline source string → `newRenderPipelineStateWithDescriptor`
+targeting `MTLPixelFormatBGRA8Unorm` (the format the presenter will use). No Apple-GPU-family
+checks, no `MTLArgumentBuffersTier2`, no `hasUnifiedMemory` requirement — Intel must pass this.
+
+A single startup call site was added, gated the same way:
+[main.cpp](../../src/frontend/qt_sdl/main.cpp), right after the version banner print:
+`MelonPrime::Metal::LogFeatureInfoOnce();`. This exists purely as a Phase 2 diagnostic (nothing
+gates renderer/presenter creation on it yet — that starts at Phase 4); it is harmless dead-ish
+code once Phase 4 adds a real caller of `SupportsRequiredBaseline()`.
+
+### Runtime verification (2026-07-09, real hardware — not just a compile check)
+
+Built a separate tree, `build-mac-metal-test`, configured with `-DMELONPRIME_ENABLE_METAL=ON
+-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` (the shipped default tree, `build-mac`, stays
+Metal-disabled). Launched the resulting binary and captured stderr:
+
+```text
+[MelonPrime] metal probe: device='Intel(R) Iris(TM) Plus Graphics 655' lowPower=1 removable=0 unifiedMemory=1 recommendedMaxWorkingSetSize=1610612736
+```
+
+This is a genuine, real end-to-end pass on this session's Intel Iris Plus 655 (Metal 3): device
+query succeeded, command queue created, an actual Metal shader source string compiled through
+`MTLCompiler`, both functions resolved, and a `BGRA8Unorm` render pipeline state constructed —
+i.e. `supportsRequiredBaseline == true` on this machine, not merely "the code compiles."
+`hasUnifiedMemory=1` is correct/expected here even though this GPU has dedicated VRAM listed in
+`system_profiler` — Metal reports Intel integrated GPUs as unified-memory on macOS, unlike
+discrete GPUs; this was **not** treated as a bug in the probe.
+
+Also verified:
+- Default (`build-mac`, Metal disabled) tree rebuilds clean after the shared `main.cpp` edit —
+  `ninja: no work to do` for the unrelated ObjC guard, only `main.cpp` needed recompiling and did
+  so with zero new warnings; `strings` on the binary shows zero `metal probe` / feature-check
+  symbols/strings.
+- `audit-platform-scatter-budget.ps1 -Budget 22`: two new `MelonPrime*.h`-glob-matched `__APPLE__`
+  guards (`.h`'s opening `#if`; its closing `#endif` comment also originally repeated the
+  `__APPLE__` token as plain text and got counted as a *second* hit by the same regex — fixed by
+  rewording the comment rather than adding a second exempt marker) pushed the count to 24, then
+  23 after the first exempt marker. Applied the same `scatter-budget-exempt:` marker used in
+  Phase 1 to the header's `#if` line and reworded the endif comment; back to 22/22. (`.mm` files
+  are not scanned by this ratchet at all — only `MelonPrime*.cpp`/`MelonPrime*.h` — so
+  `MelonPrimeMetalFeatureCheck.mm`'s own `__APPLE__` mentions never counted.)
+- `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files), `audit-metroid-literal-budget.ps1
+  -Budget 1`, `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1` — all PASS
+  (the two Screen.cpp "requires manual platform-guard review" lines from the SRP audit are
+  pre-existing known items, unrelated to this phase).
+- **Not verified:** Apple Silicon. This exact probe should behave identically there (no
+  Apple-GPU-family-only checks were used), but that is an expectation, not a confirmed result.
+
+---
+
+## 4. Remaining phases (Phase 3 onward — not yet implemented)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -260,7 +332,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 2 | Metal feature probe (`MelonPrimeMetalFeatureCheck.mm`, `MTLDevice` baseline check) | Nothing — this session has real Intel Metal 3 hardware to compile-test and run the probe against. Apple Silicon confirmation still needed before treating the probe's results as portable. |
 | 3 | `EmuThread` `ActiveVideoBackend` lifecycle split | Phase 2 |
 | 4 | `ScreenPanelMetal` presenter (`CAMetalLayer`, CPU-BGRA-only, no `renderer3D_Metal` yet) | Phase 3. Intel-side resize/fullscreen/HiDPI/input-regression testing is achievable this session (real display + real GPU); Apple Silicon confirmation is a separate, later gate before this is considered portable |
 | 5 | OSD + Custom HUD presenter parity on Metal | Phase 4 stable on Intel (Apple Silicon parity separately gated) |
@@ -303,4 +374,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | Kill switch scaffolding | Done | 2026-07-09 | CMake options + `MELONPRIME_METAL_ACTIVE` resolution; verified default/force-disable/enable all configure+build clean; no Metal symbols/strings in default binary |
 | 0 — renderer safety hardening | Done | 2026-07-09 | `MelonPrimeVideoBackend.h/.cpp`; wired into `EmuThread::updateRenderer()`'s existing `.inc` hook and `EmuInstance::usesOpenGL()`; local build + PS1 audits green; manual stale-TOML runtime check and Windows/Linux CI not performed this session |
 | 1 — presentation backend split | Done | 2026-07-09 | `PresentationBackend` enum + `ResolvePresentationBackend()`/`IsOpenGLPresentation()`; single call site in `createScreenPanel()`; local build + launch smoke test + all PS1 audits green (scatter budget exempt-marker applied); interactive Settings panel-swap regression not verified |
-| 2–10 | Not started | — | See §4. Phases 2-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 2 — Metal feature probe | Done | 2026-07-09 | `MelonPrimeMetalFeatureCheck.h/.mm`; **runtime-verified on real Intel Metal 3 hardware** (device query + command queue + real shader compile + BGRA8Unorm pipeline state all succeeded); default tree unaffected, scatter budget exempt-marker applied; Apple Silicon still unconfirmed |
+| 3–10 | Not started | — | See §4. Phases 3-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
