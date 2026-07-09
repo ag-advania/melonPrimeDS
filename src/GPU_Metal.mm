@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
+#include <vector>
 
 #include "GPU3D_Metal.h"
 #include "NDS.h"
@@ -87,6 +88,15 @@ bool MetalDiagEnabled()
 {
     static const bool enabled = []() {
         const char* env = std::getenv("MELONPRIME_METAL_DIAG");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
+bool MetalDiagFinalLayersEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_DIAG_FINAL_LAYERS");
         return env && env[0] == '1';
     }();
     return enabled;
@@ -206,6 +216,42 @@ MetalTextureReadbackSummary ReadbackBGRA8Texture(id<MTLCommandQueue> queue, id<M
     return summary;
 }
 
+uint32_t BGRA8(uint8_t b, uint8_t g, uint8_t r, uint8_t a)
+{
+    return static_cast<uint32_t>(b) |
+           (static_cast<uint32_t>(g) << 8) |
+           (static_cast<uint32_t>(r) << 16) |
+           (static_cast<uint32_t>(a) << 24);
+}
+
+void UploadFinalLayerDiagnosticSource(id<MTLTexture> texture, int layer)
+{
+    if (!texture)
+        return;
+
+    static std::vector<uint32_t> layerPixels[2];
+    std::vector<uint32_t>& pixels = layerPixels[layer & 1];
+    if (pixels.empty())
+    {
+        pixels.resize(static_cast<size_t>(kScreenW) * static_cast<size_t>(kScreenH));
+        const uint32_t a = (layer == 0) ? BGRA8(0, 0, 255, 255) : BGRA8(255, 0, 0, 255);
+        const uint32_t b = (layer == 0) ? BGRA8(0, 255, 0, 255) : BGRA8(0, 255, 255, 255);
+        for (int y = 0; y < kScreenH; y++)
+        {
+            for (int x = 0; x < kScreenW; x++)
+            {
+                const bool checker = ((x / 16) ^ (y / 16)) & 1;
+                pixels[static_cast<size_t>(y) * kScreenW + x] = checker ? b : a;
+            }
+        }
+    }
+
+    [texture replaceRegion:MTLRegionMake2D(0, 0, kScreenW, kScreenH)
+               mipmapLevel:0
+                 withBytes:pixels.data()
+               bytesPerRow:kScreenW * 4];
+}
+
 bool EngineAUses3D(const GPU& gpu)
 {
     const u32 dispCnt = gpu.GPU2D_A.DispCnt;
@@ -290,6 +336,7 @@ struct MetalRenderer::MetalFinalState
     bool LoggedFirstFinalFrame = false;
     bool LoggedSoftwareFallbackError = false;
     uint64_t LastRoutingSignature = ~uint64_t { 0 };
+    bool LoggedFinalLayerDiagnostic = false;
 };
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
@@ -593,6 +640,14 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
             routing.UnsupportedRoute ? 1u : 0u,
             routing.UnsupportedReason);
     }
+    const bool finalLayerDiagnostic = MetalDiagFinalLayersEnabled();
+    if (finalLayerDiagnostic && !state.LoggedFinalLayerDiagnostic)
+    {
+        state.LoggedFinalLayerDiagnostic = true;
+        std::fprintf(stderr,
+            "[MelonPrime] metal final diag: final-layer checker override active "
+            "layer0=red/green layer1=blue/yellow\n");
+    }
 
     for (int layer = 0; layer < 2; layer++)
     {
@@ -600,7 +655,14 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
         id<MTLSamplerState> sampler = state.NearestSampler;
         MTLClearColor clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
 
-        if (routing.UnsupportedRoute && layer == routing.Native3DLayer)
+        if (finalLayerDiagnostic)
+        {
+            UploadFinalLayerDiagnosticSource(state.CpuScreenTex[layer], layer);
+            uploadBytes += static_cast<uint64_t>(kScreenW) * kScreenH * 4;
+            source = state.CpuScreenTex[layer];
+            sampler = state.NearestSampler;
+        }
+        else if (routing.UnsupportedRoute && layer == routing.Native3DLayer)
         {
             // Magenta: final-composer route is known unsupported. Do not
             // hide it with CPU-complete Software output.
@@ -674,7 +736,8 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
 
         static uint64_t diagFrames = 0;
         diagFrames++;
-        const bool usedNative3D = routing.EngineAUses3D && native3D && !native3DDeviceMismatch;
+        const bool usedNative3D =
+            !finalLayerDiagnostic && routing.EngineAUses3D && native3D && !native3DDeviceMismatch;
         const bool nativeVisibleButFinalBlack =
             usedNative3D && nativeDiag.NonzeroPixels > 0 &&
             ((native3DLayer == 0 && layer0.Valid && layer0.NonzeroPixels == 0) ||
