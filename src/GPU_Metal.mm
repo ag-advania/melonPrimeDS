@@ -364,8 +364,8 @@ MetalRenderer::~MetalRenderer() = default;
 bool MetalRenderer::Init()
 {
     std::fprintf(stderr,
-        "[MelonPrime] metal renderer: initializing native Metal 3D plus final two-screen output path\n");
-    return Rend3D->Init() && EnsureFinalOutput();
+        "[MelonPrime] metal renderer: initializing native Metal 3D GetLine integration path\n");
+    return Rend3D->Init();
 }
 
 void MetalRenderer::PreSavestate()
@@ -393,7 +393,6 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
 
     rend3d->SetThreaded(settings.Threaded);
     rend3d->SetScaleFactor(scale);
-    EnsureFinalOutput();
 }
 
 bool MetalRenderer::EnsureFinalOutput()
@@ -583,7 +582,6 @@ RendererOutput MetalRenderer::GetSoftwareFallbackOutput()
 void MetalRenderer::VBlank()
 {
     SoftRenderer::VBlank();
-    ComposeFinalOutputForCompletedFrame();
 }
 
 bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
@@ -869,12 +867,7 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
 
 RendererOutput MetalRenderer::GetOutput()
 {
-    if (!FinalState || !FinalState->HasCompletedFrame || !FinalState->FinalOutputTex[FinalState->FrontBuffer])
-        return GetSoftwareFallbackOutput();
-
-    return RendererOutput::MetalTexture(
-        (__bridge void*)FinalState->FinalOutputTex[FinalState->FrontBuffer],
-        FinalState->CompletedFrameSerial);
+    return SoftRenderer::GetOutput();
 }
 
 } // namespace melonDS

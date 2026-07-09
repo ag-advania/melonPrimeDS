@@ -45,6 +45,18 @@ unless checker-mode/manual smoke proves direct hosting still flickers. Verified 
 build, default build, default-binary strings check, and the standard audits. Checker-mode,
 fullscreen/resize/screen-move, and input smoke still need manual GUI/ROM validation.
 
+**2026-07-10 Phase 2 GetLine integration:** normal Metal visibility now flows through the existing
+soft 2D compositor instead of the temporary whole-layer final texture route. `MetalRenderer3D`
+renders native 3D at 256x192, reads BGRA8 back into the `SoftRenderer3D::GetLine()` 6-bit RGB +
+alpha format, applies `RenderXPos` scrolling, and returns those scanlines to `GPU2D_Soft`.
+Software 3D delegate rendering is disabled in normal native mode and is used only for
+`MELONPRIME_METAL_GETLINE_SOURCE=soft` or `MELONPRIME_METAL_GETLINE_DIFF=1`. `MetalRenderer::VBlank()`
+no longer composes a Metal final texture, and `GetOutput()` returns the CPU BGRA frame produced by
+the normal soft final-screen path with Metal 3D already integrated. The presenter treats that as
+`MetalGetLineCpuComposite`, not as software fallback. Verified by the Metal test build, default
+build, default-binary strings check, and standard audits. Runtime A/B diff, MPH HUD-inclusive
+visual checks, and perf logs still need a ROM.
+
 ---
 
 ## 0. Goal and constraints

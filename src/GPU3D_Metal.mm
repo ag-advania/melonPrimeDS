@@ -8,9 +8,11 @@
 #include "GPU3D_Texcache.h"
 
 #include <chrono>
+#include <array>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -80,6 +82,24 @@ bool MetalDiagSolidNative3DEnabled()
 {
     static const bool enabled = []() {
         const char* env = std::getenv("MELONPRIME_METAL_DIAG_SOLID_NATIVE3D");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
+bool MetalUseNativeGetLine()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_GETLINE_SOURCE");
+        return !(env && std::strcmp(env, "soft") == 0);
+    }();
+    return enabled;
+}
+
+bool MetalGetLineDiffEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_GETLINE_DIFF");
         return env && env[0] == '1';
     }();
     return enabled;
@@ -332,6 +352,10 @@ struct MetalRenderer3D::MetalState
     id<MTLTexture> ColorTarget = nil;
     id<MTLTexture> DepthStencilTarget = nil;
     id<MTLTexture> AttrTarget = nil;
+    id<MTLBuffer> NativeReadbackBuffer = nil;
+    std::array<u32, 256 * 192> NativeLineBuffer {};
+    u32 NativeScrolledLine[256] = {};
+    bool NativeLineReady = false;
 
     // Phase 8 opaque-polygon pass (see RenderNativeOpaquePolygons()).
     id<MTLLibrary> OpaqueShaderLibrary = nil;
@@ -621,24 +645,31 @@ bool MetalRenderer3D::Init()
     if (!CreateDeviceObjects())
         return false;
 
-    Delegate.Reset();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.Reset();
     std::fprintf(stderr,
-        "[MelonPrime] metal renderer3D: native Metal device/queue/targets initialized; software raster delegate still active\n");
+        "[MelonPrime] metal renderer3D: native Metal device/queue/targets initialized; getLineSource=%s diff=%u\n",
+        MetalUseNativeGetLine() ? "native" : "soft",
+        MetalGetLineDiffEnabled() ? 1u : 0u);
     return true;
 }
 
 void MetalRenderer3D::Reset()
 {
-    Delegate.Reset();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.Reset();
     if (State && State->Texcache)
         State->Texcache->Reset();
+    if (State)
+        State->NativeLineReady = false;
     if (State && State->Device)
         ClearNativeTarget();
 }
 
 void MetalRenderer3D::SetThreaded(bool threaded) noexcept
 {
-    Delegate.SetThreaded(threaded);
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.SetThreaded(threaded);
 }
 
 bool MetalRenderer3D::IsThreaded() const noexcept
@@ -687,15 +718,16 @@ void MetalRenderer3D::RenderFrame()
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: first integrated RenderFrame\n");
     }
 
-    Delegate.RenderFrame();
-    perfFrame.CpuRendererFallback = true;
+    const bool needsSoftwareDelegate = !MetalUseNativeGetLine() || MetalGetLineDiffEnabled();
+    if (needsSoftwareDelegate)
+    {
+        Delegate.RenderFrame();
+        perfFrame.CpuRendererFallback = true;
+    }
 
-    // Native Metal bring-up pass: real GPU geometry submission every frame,
-    // executed alongside (not instead of) the software delegate. Its
-    // ColorTarget is exposed through RendererOutput for presenter bring-up,
-    // but it is not yet a complete composited top screen; the visible base
-    // frame remains Delegate-backed until final 2D/3D composition parity is
-    // implemented.
+    // Native Metal 3D submission every frame. The 1x ColorTarget is read back
+    // into SoftRenderer3D's scanline format and consumed by the existing soft
+    // 2D compositor via GetLine().
     if (State && State->Device)
     {
         ClearNativeTarget();
@@ -704,6 +736,7 @@ void MetalRenderer3D::RenderFrame()
             DrawSolidNative3DDiagnostic();
         else
             RenderNativeOpaquePolygons();
+        ReadbackNativeColorTargetToLineBuffer();
         if (perfEnabled)
             perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
     }
@@ -718,17 +751,83 @@ void MetalRenderer3D::RenderFrame()
 
 void MetalRenderer3D::FinishRendering()
 {
-    Delegate.FinishRendering();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.FinishRendering();
 }
 
 void MetalRenderer3D::RestartFrame()
 {
-    Delegate.RestartFrame();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.RestartFrame();
 }
 
 u32* MetalRenderer3D::GetLine(int line)
 {
-    return Delegate.GetLine(line);
+    const bool useNative = MetalUseNativeGetLine();
+    u32* softLine = nullptr;
+    if (!useNative || MetalGetLineDiffEnabled())
+        softLine = Delegate.GetLine(line);
+
+    if (!useNative)
+        return softLine;
+
+    if (!State || !State->NativeLineReady || GPU3D.AbortFrame)
+    {
+        static u32 zeroLine[256] = {};
+        return zeroLine;
+    }
+
+    u32* rawline = &State->NativeLineBuffer[static_cast<size_t>(line) * 256u];
+
+    if (MetalGetLineDiffEnabled() && softLine)
+    {
+        static uint64_t diffPixels = 0;
+        static uint64_t totalPixels = 0;
+        for (int x = 0; x < 256; x++)
+        {
+            if (rawline[x] != softLine[x])
+                diffPixels++;
+        }
+        totalPixels += 256;
+        if (line == 191)
+        {
+            static uint64_t frames = 0;
+            frames++;
+            if (frames <= 3 || (frames % 60) == 0)
+            {
+                std::fprintf(stderr,
+                    "[MelonPrime] metal getline diff: frames=%llu diffPixels=%llu totalPixels=%llu\n",
+                    static_cast<unsigned long long>(frames),
+                    static_cast<unsigned long long>(diffPixels),
+                    static_cast<unsigned long long>(totalPixels));
+            }
+            diffPixels = 0;
+            totalPixels = 0;
+        }
+    }
+
+    const u16 xpos = GPU3D.RenderXPos;
+    if (xpos == 0)
+        return rawline;
+
+    if (xpos & 0x100)
+    {
+        int i = 0, j = xpos;
+        for (; j < 512; i++, j++)
+            State->NativeScrolledLine[i] = 0;
+        for (j = 0; i < 256; i++, j++)
+            State->NativeScrolledLine[i] = rawline[j];
+    }
+    else
+    {
+        int i = 0, j = xpos;
+        for (; j < 256; i++, j++)
+            State->NativeScrolledLine[i] = rawline[j];
+        for (; i < 256; i++)
+            State->NativeScrolledLine[i] = 0;
+    }
+
+    return State->NativeScrolledLine;
 }
 
 void* MetalRenderer3D::GetColorTargetTexture() const noexcept
@@ -758,12 +857,14 @@ Metal3DDiagnostics MetalRenderer3D::GetLastDiagnostics() const noexcept
 
 void MetalRenderer3D::SetupRenderThread()
 {
-    Delegate.SetupRenderThread();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.SetupRenderThread();
 }
 
 void MetalRenderer3D::EnableRenderThread()
 {
-    Delegate.EnableRenderThread();
+    if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+        Delegate.EnableRenderThread();
 }
 
 bool MetalRenderer3D::CreateDeviceObjects()
@@ -974,8 +1075,8 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
 
 bool MetalRenderer3D::ResizeTargets()
 {
-    const NSUInteger width = static_cast<NSUInteger>(256 * ScaleFactor);
-    const NSUInteger height = static_cast<NSUInteger>(192 * ScaleFactor);
+    const NSUInteger width = 256;
+    const NSUInteger height = 192;
 
     MTLTextureDescriptor* colorDesc =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
@@ -1016,9 +1117,13 @@ bool MetalRenderer3D::ResizeTargets()
     State->ColorTarget = newColorTarget;
     State->DepthStencilTarget = newDepthStencilTarget;
     State->AttrTarget = newAttrTarget;
+    State->NativeReadbackBuffer =
+        [State->Device newBufferWithLength:width * height * 4
+                                   options:MTLResourceStorageModeShared];
+    State->NativeLineReady = false;
     MetalPerfLogTargetResize(ScaleFactor, width, height);
 
-    return ClearNativeTarget();
+    return State->NativeReadbackBuffer && ClearNativeTarget();
 }
 
 bool MetalRenderer3D::ClearNativeTarget()
@@ -1034,7 +1139,17 @@ bool MetalRenderer3D::ClearNativeTarget()
     pass.colorAttachments[0].texture = State->ColorTarget;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+    auto expand5To6 = [](u32 value) -> double {
+        u32 expanded = (value << 1) & 0x3E;
+        if (expanded)
+            expanded++;
+        return static_cast<double>(expanded) / 63.0;
+    };
+    const double clearR = expand5To6(GPU3D.RenderClearAttr1 & 0x1F);
+    const double clearG = expand5To6((GPU3D.RenderClearAttr1 >> 5) & 0x1F);
+    const double clearB = expand5To6((GPU3D.RenderClearAttr1 >> 10) & 0x1F);
+    const double clearA = static_cast<double>((GPU3D.RenderClearAttr1 >> 16) & 0x1F) / 31.0;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(clearR, clearG, clearB, clearA);
 
     pass.colorAttachments[1].texture = State->AttrTarget;
     pass.colorAttachments[1].loadAction = MTLLoadActionClear;
@@ -1066,6 +1181,55 @@ bool MetalRenderer3D::ClearNativeTarget()
     if (MetalPerfEnabled())
         MetalPerfAddWait(waitStart, MetalPerfClock::now());
     return commandBuffer.status == MTLCommandBufferStatusCompleted;
+}
+
+bool MetalRenderer3D::ReadbackNativeColorTargetToLineBuffer()
+{
+    if (!State || !State->CommandQueue || !State->ColorTarget || !State->NativeReadbackBuffer)
+        return false;
+
+    id<MTLCommandBuffer> commandBuffer = [State->CommandQueue commandBuffer];
+    if (!commandBuffer)
+        return false;
+
+    id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+    if (!blit)
+        return false;
+
+    [blit copyFromTexture:State->ColorTarget
+              sourceSlice:0
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(256, 192, 1)
+                 toBuffer:State->NativeReadbackBuffer
+        destinationOffset:0
+   destinationBytesPerRow:256 * 4
+ destinationBytesPerImage:256 * 192 * 4];
+    [blit endEncoding];
+    [commandBuffer commit];
+    const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
+    [commandBuffer waitUntilCompleted];
+    if (MetalPerfEnabled())
+        MetalPerfAddWait(waitStart, MetalPerfClock::now());
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+        return false;
+
+    const uint8_t* pixels = static_cast<const uint8_t*>([State->NativeReadbackBuffer contents]);
+    for (int y = 0; y < 192; y++)
+    {
+        for (int x = 0; x < 256; x++)
+        {
+            const uint8_t* px = pixels + ((y * 256 + x) * 4);
+            const u32 b = (static_cast<u32>(px[0]) * 63u + 127u) / 255u;
+            const u32 g = (static_cast<u32>(px[1]) * 63u + 127u) / 255u;
+            const u32 r = (static_cast<u32>(px[2]) * 63u + 127u) / 255u;
+            const u32 a = (static_cast<u32>(px[3]) * 31u + 127u) / 255u;
+            State->NativeLineBuffer[static_cast<size_t>(y) * 256u + x] =
+                r | (g << 8) | (b << 16) | (a << 24);
+        }
+    }
+    State->NativeLineReady = true;
+    return true;
 }
 
 bool MetalRenderer3D::DrawSolidNative3DDiagnostic()
