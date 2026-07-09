@@ -66,6 +66,14 @@ translucency, shadow, toon/highlight, fog, and edge marking remain open Phase 3 
 the Metal test build and default build; standard audits and ROM A/B diff should be rerun after the
 next Phase 3 parity slice.
 
+**2026-07-10 Phase 3 partial parity (3-3 first slice):** Metal fragment output now preserves
+polygon alpha instead of forcing alpha to 1.0. Non-shadow translucent triangle polygons are included
+in the native pass, with separate blended render pipelines for Z/W-buffer variants and depth states
+covering less vs. less-equal plus write vs. no-write. This is a parity step toward GL's
+translucent path, but stencil/polyID rules for same-ID overwrite suppression and shadows are still
+open. Verified by the Metal test build, default build, default-binary strings check, and standard
+audits; ROM A/B diff remains pending.
+
 ---
 
 ## 0. Goal and constraints
