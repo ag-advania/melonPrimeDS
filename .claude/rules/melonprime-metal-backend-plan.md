@@ -1051,6 +1051,100 @@ logs `textureArraySampling=1` on this session's Intel Iris Plus 655; default bin
 strings; all audits green. **Not applicable:** ROM/Apple Silicon (probe-only change, no renderer
 behavior touched).
 
+## 3m. Phase 8 continuation — first integrated ROM verification (Priority 2 closed)
+
+Every verification claim before this point in the plan (§3d-§3l) was explicit that no ROM was
+available in this session, so the integrated code path (a real ROM driving `EmuThread` ->
+`updateRenderer()` -> `GPU3D::RenderFrame()` -> `MetalRenderer3D::RenderFrame()` ->
+`RenderNativeOpaquePolygons()` -> `Texcache<>::GetTexture()`/`TexcacheMetalLoader`) had never
+actually run -- only the shader/pipeline logic in isolation, via standalone harnesses. Real MPH ROM
+files became available partway through this session
+(`/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).nds` and others), closing
+[plan/metal_phase8_execution_instructions.md](plan/metal_phase8_execution_instructions.md)'s
+Priority 2 gate.
+
+**One-shot integration-proof logging added** (`GPU3D_Metal.mm`, `MetalRenderer::Init()` and
+`MetalRenderer3D::Init()` already had logs from earlier phases):
+
+- `MetalRenderer3D::RenderFrame()`: `first integrated RenderFrame`.
+- `RenderNativeOpaquePolygons()`: `first opaque pass polygons=<n> considered=<n> textured=<n>
+  groups=<n>` (fires on the very first call, whatever it contains), plus a second one-shot
+  `first non-empty opaque pass ...` that only fires once `considered>0`, since the very first
+  `RenderFrame()` call is typically a firmware boot/logo screen built from translucent fade
+  polygons this pass filters out entirely -- `considered=0` there is expected, not a bug, and a
+  single log line could not distinguish "filtered as designed" from "nothing is working".
+- `TexcacheMetalLoader::GenerateTexture()`/`UploadTexture()`: one-shot logs with real
+  width/height/layer counts.
+
+**Result, launching the Metal-forced test build with the real ROM** (`MELONPRIME_FORCE_METAL_RENDERER=1
+MELONPRIME_FORCE_METAL_PRESENTER=1`, `--` positional arg = the `.nds` path, auto-boots per
+`CLI.cpp`'s `--boot auto` default):
+
+```text
+[MelonPrime] metal renderer3D: native Metal device/queue/targets initialized; software raster delegate still active
+[MelonPrime] metal renderer3D: first integrated RenderFrame
+... (firmware boot: cart insert, secure area decrypt, "Game is now booting") ...
+[MelonPrime] metal renderer3D: first opaque pass polygons=165 considered=0 textured=0 groups=0
+[MelonPrime] metal texcache: first texture array allocation width=256 height=64 layers=64
+[MelonPrime] metal texcache: first texture upload width=256 height=64 layer=63
+```
+
+A second run (same ROM, longer soak) reached a frame with real opaque content:
+
+```text
+[MelonPrime] metal renderer3D: first non-empty opaque pass polygons=88 considered=6 textured=0 groups=1
+```
+
+Both runs progressed well past firmware boot into the game's own boot sequence (secure-area
+decryption, `Game is now booting`, WIFI hardware init sequence, the game's `.ml1` license-data file
+opened, and a clean `SaveManager: Wrote 262144 bytes` flush + graceful process exit on quit) --
+i.e. this is not a splash-screen-only test, the DS is actually executing the cartridge's own code
+with the native Metal pass running every single frame alongside it. Process ran for 70s and 113s in
+the two runs respectively (`ps` confirmed steady CPU usage throughout, no crash, no Objective-C
+exception, no `SIGABRT`/`SIGSEGV` in the log) before being sent `SIGTERM` and exiting cleanly.
+
+**What this confirms:** the entire pipeline this session built --
+`TexcacheMetalLoader`/`Texcache<>::GetTexture()`/`RenderNativeOpaquePolygons()`'s polygon
+traversal, filtering, and per-(WBuffer,texture) grouping -- runs correctly against real
+`GPU3D::RenderPolygonRAM`/VRAM state from an actual booting ROM, continuously, without crashing.
+The `256x64/64 layers` texture-array allocation is a real, sensible size (matches the
+`Texcache<>` template's own layer-budget formula, `min(8MB/(width*height*4), 64)` = exactly 64 for
+256x64), not a placeholder or degenerate value.
+
+**What this does NOT confirm** (per the execution instructions' own distinction between
+standalone-harness and integrated-ROM verification, §4.3): visual parity (output is still not wired
+to `GetLine()`/display, so nothing about this run's on-screen pixels were Metal-rendered -- the
+window showed the normal OpenGL/Software path throughout, per Priority 3's explicit "do not connect
+final display output yet" instruction, which was already true before this and remains unchanged);
+whether the frame with `textured=0` reflects that specific scene genuinely having no textured
+opaque polygons, or a smaller subset than a full title/gameplay scene would have (both samples came
+from early boot, not a stable title-screen or gameplay frame); Apple Silicon (still unavailable in
+this session); and correctness of texture *content* against real VRAM data (the earlier standalone
+harnesses proved the shader math is correct for synthetic texel data -- this run proves the same
+code path doesn't crash against real VRAM, but did not independently verify the decoded texel
+*values* are correct, since that would require reading GPU-side memory back out and comparing
+against an independent reference decoder, which is future work, likely only tractable once output
+is wired to display and can be visually compared against the Software renderer for the same frame).
+
+### 3m.1 Verification (2026-07-09, real Intel Mac, real ROM)
+
+- `cmake --build build-mac-metal-test --parallel 4` / `cmake --build build-mac --parallel 4` — both
+  clean, no new warnings.
+- Integrated ROM run (see above): two independent launches, 70s and 113s respectively, both
+  progressed through firmware boot into the game's own boot sequence, both produced the expected
+  one-shot log sequence, neither crashed, both exited cleanly via `SIGTERM` with a clean save
+  flush.
+- Default binary string check: still zero new strings (`first integrated RenderFrame`, `first
+  opaque pass`, `first non-empty opaque pass`, `first texture array allocation`, `first texture
+  upload` all absent).
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files),
+  `audit-metroid-literal-budget.ps1 -Budget 1`, `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1` — all pass.
+- **Not verified:** Apple Silicon; visual/pixel-level output parity (not wired to display yet);
+  texture content correctness against real VRAM (only crash-safety and dimension sanity, not texel
+  values). **Not implemented:** everything already listed in §3j/§3k/§4's remaining-work lists --
+  this closes an integration-verification gate, not a feature gap.
+
 ---
 
 ## 4. Remaining phases / gates (Phase 8 onward)
@@ -1106,5 +1200,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
-| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9, a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D` resource hardening, and probe strengthening. §3j added port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization: packed vertex layout matching `GLRenderer3D` exactly, Z-buffer/W-buffer pipeline variants, opaque-alpha discard). §3k added step 4 (texturing): discovered the DS texture-format decode logic already lives entirely in the backend-agnostic `Texcache<>` template (`GPU3D_Texcache.h`, already compiled into `core` unconditionally) with only a 3-method GL-specific loader on top, so a `TexcacheMetalLoader` (Metal texture-array equivalent) reuses that whole pipeline instead of needing a from-scratch decoder. Real per-polygon texture resolution, `(WBuffer, texture)` draw-call grouping, and modulate/decal blend modes are implemented and match `3DRenderFS.glsl`'s `FinalColor()`; toon/highlight color substitution, `TexRepeat` wrap/mirror modes, and VRAM-display-capture-as-texture are explicitly not. Both §3j and §3k's shader/pipeline logic were independently verified correct via standalone Metal harnesses (position math, both depth paths, opaque-alpha discard, modulate blend, decal blend, and the untextured sentinel path all matched hand-computed expectations exactly) on this session's real Intel Iris Plus 655, since no ROM is available to exercise the integrated code path. Builds/audits/no-ROM smoke green on both trees throughout; default binary still has zero Metal strings. Translucency, shadow masks, line polygons, depth-func-equal, `BetterPolygons`, hi-res scale, edge marking, fog, final composite, `GetLine()`/display integration, and ROM parity all remain open -- Phase 8 is genuinely multi-session work |
+| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9, a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D` resource hardening, and probe strengthening. §3j added port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization). §3k added step 4 (texturing) by reusing the shared `Texcache<>` template (same DS-format decode as `GLRenderer3D`) via a new `TexcacheMetalLoader`, with modulate/decal blend modes matching `3DRenderFS.glsl`. §3l strengthened the feature probe to verify real `MTLTextureType2DArray`/`RGBA8Uint`/`texture2d_array<uint>` sampling end-to-end, not just pipeline creation. **§3m closed the Priority-2 integration gate**: real MPH ROMs became available this session, and one-shot proof-of-integration logging confirmed the entire pipeline (`RenderFrame()` → `RenderNativeOpaquePolygons()` → `Texcache<>::GetTexture()`/`TexcacheMetalLoader`) actually runs against real `GPU3D::RenderPolygonRAM`/VRAM state from a real booting ROM (firmware boot through the game's own boot sequence, WIFI init, license-file load, clean save flush) for 70s and 113s across two runs, with sensible real data (`considered=6` polygons and a `256x64/64-layer` texture array matching the template's own layer-budget formula exactly), no crash. Output is still not wired to `GetLine()`/display (per Priority 3, deliberately unchanged), so this is integration/stability verification, not visual parity. Both §3j/§3k's shader/pipeline logic were also independently verified via standalone Metal harnesses (position math, both depth paths, discard, modulate/decal blend, untextured sentinel — all matched hand-computed expectations exactly). Builds/audits green on both trees throughout every increment; default binary still has zero Metal strings. Translucency, shadow masks, line polygons, depth-func-equal, `BetterPolygons`, hi-res scale, `TexRepeat` wrap/mirror, toon/highlight substitution, edge marking, fog, final composite, `GetLine()`/display integration, visual parity, and Apple Silicon all remain open -- Phase 8 is genuinely multi-session work |
 | 9–10 | Not started | — | See §4. Apple Silicon confirmation (required before Phase 9 ships to users) is not available in this session; Phase 8 native `GLRenderer3D` replacement remains incomplete |

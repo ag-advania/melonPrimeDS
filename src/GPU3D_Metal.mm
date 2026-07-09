@@ -35,6 +35,19 @@ public:
 
     id<MTLTexture> GenerateTexture(u32 width, u32 height, u32 layers)
     {
+        // metal_phase8_execution_instructions.md Priority 2: one-shot proof
+        // that an integrated ROM run actually reaches native texture-array
+        // allocation (as distinct from the standalone-harness verification
+        // in §3k.1, which only ever allocated a synthetic array directly).
+        static bool loggedFirst = false;
+        if (!loggedFirst)
+        {
+            loggedFirst = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal texcache: first texture array allocation width=%u height=%u layers=%u\n",
+                width, height, layers);
+        }
+
         MTLTextureDescriptor* desc =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
                                                                width:width
@@ -51,6 +64,15 @@ public:
     {
         if (!handle)
             return;
+
+        static bool loggedFirst = false;
+        if (!loggedFirst)
+        {
+            loggedFirst = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal texcache: first texture upload width=%u height=%u layer=%u\n",
+                width, height, layer);
+        }
 
         [handle replaceRegion:MTLRegionMake2D(0, 0, width, height)
                    mipmapLevel:0
@@ -384,6 +406,18 @@ void MetalRenderer3D::SetScaleFactor(int scale) noexcept
 
 void MetalRenderer3D::RenderFrame()
 {
+    // metal_phase8_execution_instructions.md Priority 2: one-shot proof the
+    // integrated frame loop (a real ROM running through EmuThread ->
+    // updateRenderer() -> GPU3D::RenderFrame()) actually reaches this native
+    // path, as distinct from the standalone-harness verification in §3j/3k
+    // (which only ever exercised the shader/pipeline logic in isolation).
+    static bool loggedFirstRenderFrame = false;
+    if (!loggedFirstRenderFrame)
+    {
+        loggedFirstRenderFrame = true;
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: first integrated RenderFrame\n");
+    }
+
     Delegate.RenderFrame();
 
     // Native Metal "shadow" pass: real GPU geometry submission every frame,
@@ -789,6 +823,14 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     // this is a defensive guard, not an expected limitation in practice.
     constexpr size_t kMaxVertices = 0xFFFFu;
 
+    // metal_phase8_execution_instructions.md Priority 2: one-shot proof that
+    // this path is actually traversing real GPU3D::RenderPolygonRAM state
+    // from an integrated ROM run, with counts to sanity-check against what
+    // the scene should contain -- not just "it didn't crash".
+    static bool loggedFirstOpaquePass = false;
+    u32 consideredPolygons = 0;
+    u32 texturedPolygons = 0;
+
     for (u32 i = 0; i < numPolygons; i++)
     {
         const Polygon* poly = GPU3D.RenderPolygonRAM[i];
@@ -803,6 +845,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const size_t vertexBase = vertexWords.size() / 7;
         if (vertexBase + poly->NumVertices > kMaxVertices)
             break;
+
+        consideredPolygons++;
 
         const uint32_t alpha = (static_cast<uint32_t>(poly->Attr) >> 16) & 0x1Fu;
         const uint32_t blendModeBits = static_cast<uint32_t>(poly->Attr) & 0x30u; // bits 4-5
@@ -827,6 +871,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                 texture = handle;
                 texLayerWord = layer & 0xFFFFu;
                 texDimsWord = TextureWidth(poly->TexParam) | (TextureHeight(poly->TexParam) << 16);
+                texturedPolygons++;
             }
         }
 
@@ -868,6 +913,28 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
             group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
         }
+    }
+
+    if (!loggedFirstOpaquePass)
+    {
+        loggedFirstOpaquePass = true;
+        std::fprintf(stderr,
+            "[MelonPrime] metal renderer3D: first opaque pass polygons=%u considered=%u textured=%u groups=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, groups.size());
+    }
+    // The very first RenderFrame() is frequently a firmware boot/logo screen
+    // built entirely from translucent fade polygons, which this pass filters
+    // out -- "considered=0" there is expected, not a bug. Log again the
+    // first time a frame actually has opaque geometry to render, so the
+    // integrated-ROM verification has a second, more representative data
+    // point once the game's own content (title screen, gameplay) is reached.
+    static bool loggedFirstNonEmptyOpaquePass = false;
+    if (!loggedFirstNonEmptyOpaquePass && consideredPolygons > 0)
+    {
+        loggedFirstNonEmptyOpaquePass = true;
+        std::fprintf(stderr,
+            "[MelonPrime] metal renderer3D: first non-empty opaque pass polygons=%u considered=%u textured=%u groups=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, groups.size());
     }
 
     if (vertexWords.empty() || groups.empty())
