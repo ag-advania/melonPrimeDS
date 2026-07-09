@@ -25,6 +25,12 @@ public:
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;
     [[nodiscard]] void* GetOBJDepthTexture() const noexcept;
     [[nodiscard]] void* GetBGLayerTexture(int index) const noexcept;
+    [[nodiscard]] void* GetBGVRAMTexture() const noexcept;
+    [[nodiscard]] void* GetOBJVRAMTexture() const noexcept;
+    [[nodiscard]] void* GetBGPaletteTexture() const noexcept;
+    [[nodiscard]] void* GetOBJPaletteTexture() const noexcept;
+    [[nodiscard]] void* GetMosaicTexture() const noexcept;
+    [[nodiscard]] void* GetSpriteTexture() const noexcept;
     [[nodiscard]] int GetScaleFactor() const noexcept;
     [[nodiscard]] int GetTargetWidth() const noexcept;
     [[nodiscard]] int GetTargetHeight() const noexcept;

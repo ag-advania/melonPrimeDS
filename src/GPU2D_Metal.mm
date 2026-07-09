@@ -27,6 +27,12 @@ struct MetalRenderer2D::Metal2DState
     id<MTLTexture> OBJLayerTex = nil;
     id<MTLTexture> OBJDepthTex = nil;
     id<MTLTexture> AllBGLayerTex[kBGLayerCount] = {};
+    id<MTLTexture> VRAMTexBG = nil;
+    id<MTLTexture> VRAMTexOBJ = nil;
+    id<MTLTexture> PalTexBG = nil;
+    id<MTLTexture> PalTexOBJ = nil;
+    id<MTLTexture> MosaicTex = nil;
+    id<MTLTexture> SpriteTex = nil;
     int Scale = 0;
     bool LoggedFirstAllocation = false;
 };
@@ -53,6 +59,12 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         state.OBJDepthTex = nil;
         for (id<MTLTexture>& texture : state.AllBGLayerTex)
             texture = nil;
+        state.VRAMTexBG = nil;
+        state.VRAMTexOBJ = nil;
+        state.PalTexBG = nil;
+        state.PalTexOBJ = nil;
+        state.MosaicTex = nil;
+        state.SpriteTex = nil;
         state.Scale = 0;
         state.Device = preferredMetalDevice;
     }
@@ -69,7 +81,9 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
 
     ScaleFactor = std::max(1, scale);
     if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
-        state.AllBGLayerTex[0] && state.Scale == ScaleFactor)
+        state.AllBGLayerTex[0] && state.VRAMTexBG && state.VRAMTexOBJ &&
+        state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
+        state.Scale == ScaleFactor)
     {
         return true;
     }
@@ -106,6 +120,60 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     objDepthDesc.storageMode = MTLStorageModePrivate;
     id<MTLTexture> newOBJDepth = [state.Device newTextureWithDescriptor:objDepthDesc];
 
+    MTLTextureDescriptor* bgVRAMDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Uint
+                                                           width:1024
+                                                          height:(GPU2D.Num == 0) ? 512 : 128
+                                                       mipmapped:NO];
+    bgVRAMDesc.usage = MTLTextureUsageShaderRead;
+    bgVRAMDesc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> newVRAMBG = [state.Device newTextureWithDescriptor:bgVRAMDesc];
+
+    MTLTextureDescriptor* objVRAMDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Uint
+                                                           width:1024
+                                                          height:(GPU2D.Num == 0) ? 256 : 128
+                                                       mipmapped:NO];
+    objVRAMDesc.usage = MTLTextureUsageShaderRead;
+    objVRAMDesc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> newVRAMOBJ = [state.Device newTextureWithDescriptor:objVRAMDesc];
+
+    MTLTextureDescriptor* bgPalDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Uint
+                                                           width:256
+                                                          height:1 + (4 * 16)
+                                                       mipmapped:NO];
+    bgPalDesc.usage = MTLTextureUsageShaderRead;
+    bgPalDesc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> newPalBG = [state.Device newTextureWithDescriptor:bgPalDesc];
+
+    MTLTextureDescriptor* objPalDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Uint
+                                                           width:256
+                                                          height:1 + 16
+                                                       mipmapped:NO];
+    objPalDesc.usage = MTLTextureUsageShaderRead;
+    objPalDesc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> newPalOBJ = [state.Device newTextureWithDescriptor:objPalDesc];
+
+    MTLTextureDescriptor* mosaicDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Sint
+                                                           width:256
+                                                          height:16
+                                                       mipmapped:NO];
+    mosaicDesc.usage = MTLTextureUsageShaderRead;
+    mosaicDesc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> newMosaic = [state.Device newTextureWithDescriptor:mosaicDesc];
+
+    MTLTextureDescriptor* spriteDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                           width:1024
+                                                          height:512
+                                                       mipmapped:NO];
+    spriteDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    spriteDesc.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> newSprite = [state.Device newTextureWithDescriptor:spriteDesc];
+
     id<MTLTexture> newBGLayers[kBGLayerCount] = {};
     const uint16_t bgSizes[8][3] = {
         {128, 128, 2},
@@ -138,17 +206,39 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     for (id<MTLTexture> texture : newBGLayers)
         bgLayersReady = bgLayersReady && texture;
 
-    if (!newOutput || !newOBJLayer || !newOBJDepth || !bgLayersReady)
+    if (!newOutput || !newOBJLayer || !newOBJDepth || !newVRAMBG || !newVRAMOBJ ||
+        !newPalBG || !newPalOBJ || !newMosaic || !newSprite || !bgLayersReady)
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
     }
+
+    int8_t mosaicPixels[256 * 16] = {};
+    for (int m = 0; m < 16; m++)
+    {
+        int mosx = 0;
+        for (int x = 0; x < 256; x++)
+        {
+            mosaicPixels[(m * 256) + x] = static_cast<int8_t>(mosx);
+            mosx = (mosx == m) ? 0 : (mosx + 1);
+        }
+    }
+    [newMosaic replaceRegion:MTLRegionMake2D(0, 0, 256, 16)
+                 mipmapLevel:0
+                   withBytes:mosaicPixels
+                 bytesPerRow:256];
 
     state.OutputTex = newOutput;
     state.OBJLayerTex = newOBJLayer;
     state.OBJDepthTex = newOBJDepth;
     for (int i = 0; i < kBGLayerCount; i++)
         state.AllBGLayerTex[i] = newBGLayers[i];
+    state.VRAMTexBG = newVRAMBG;
+    state.VRAMTexOBJ = newVRAMOBJ;
+    state.PalTexBG = newPalBG;
+    state.PalTexOBJ = newPalOBJ;
+    state.MosaicTex = newMosaic;
+    state.SpriteTex = newSprite;
     state.Scale = ScaleFactor;
 
     if (!state.LoggedFirstAllocation)
@@ -176,6 +266,12 @@ void MetalRenderer2D::Reset() noexcept
     State->OBJDepthTex = nil;
     for (id<MTLTexture>& texture : State->AllBGLayerTex)
         texture = nil;
+    State->VRAMTexBG = nil;
+    State->VRAMTexOBJ = nil;
+    State->PalTexBG = nil;
+    State->PalTexOBJ = nil;
+    State->MosaicTex = nil;
+    State->SpriteTex = nil;
     State->Scale = 0;
 }
 
@@ -205,6 +301,48 @@ void* MetalRenderer2D::GetBGLayerTexture(int index) const noexcept
     if (!State || index < 0 || index >= kBGLayerCount || !State->AllBGLayerTex[index])
         return nullptr;
     return (__bridge void*)State->AllBGLayerTex[index];
+}
+
+void* MetalRenderer2D::GetBGVRAMTexture() const noexcept
+{
+    if (!State || !State->VRAMTexBG)
+        return nullptr;
+    return (__bridge void*)State->VRAMTexBG;
+}
+
+void* MetalRenderer2D::GetOBJVRAMTexture() const noexcept
+{
+    if (!State || !State->VRAMTexOBJ)
+        return nullptr;
+    return (__bridge void*)State->VRAMTexOBJ;
+}
+
+void* MetalRenderer2D::GetBGPaletteTexture() const noexcept
+{
+    if (!State || !State->PalTexBG)
+        return nullptr;
+    return (__bridge void*)State->PalTexBG;
+}
+
+void* MetalRenderer2D::GetOBJPaletteTexture() const noexcept
+{
+    if (!State || !State->PalTexOBJ)
+        return nullptr;
+    return (__bridge void*)State->PalTexOBJ;
+}
+
+void* MetalRenderer2D::GetMosaicTexture() const noexcept
+{
+    if (!State || !State->MosaicTex)
+        return nullptr;
+    return (__bridge void*)State->MosaicTex;
+}
+
+void* MetalRenderer2D::GetSpriteTexture() const noexcept
+{
+    if (!State || !State->SpriteTex)
+        return nullptr;
+    return (__bridge void*)State->SpriteTex;
 }
 
 int MetalRenderer2D::GetScaleFactor() const noexcept

@@ -1580,6 +1580,13 @@ RGBA8 render-target/shader-read textures. Later BG text, affine, extended/bitmap
 passes can therefore keep the same `BGBaseIndex`/active-layer indexing model instead of inventing a
 different Metal-only layout.
 
+The input-texture scaffold now covers the remaining GLRenderer2D texture sources needed by the
+first real 2D shader ports: raw BG/OBJ VRAM textures (`R8Uint`, 1024-wide with the same Engine A/B
+heights as GL), BG/OBJ palette textures (`R16Uint`, preserving raw 1555 values for Metal shader
+decode), the 256x16 signed mosaic lookup texture initialized with the same table as GL, and the
+1024x512 sprite prerender texture. These are still resource ownership only; upload dirty tracking
+and shader consumption remain the next 4a steps.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
