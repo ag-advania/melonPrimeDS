@@ -128,6 +128,9 @@ void EmuThread::run()
         useOpenGL = false;
         videoRenderer = 0;
     }
+#ifdef MELONPRIME_DS
+    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
+#endif
 
     videoSettingsDirty = true;
 
@@ -903,11 +906,20 @@ void EmuThread::handleMessages()
         case msg_InitGL:
             emuInstance->initOpenGL(msg.param.value<int>());
             useOpenGL = true;
+#ifdef MELONPRIME_DS
+            videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
+#endif
             break;
 
         case msg_DeInitGL:
             emuInstance->deinitOpenGL(msg.param.value<int>());
-            if (msg.param.value<int>() == 0) useOpenGL = false;
+            if (msg.param.value<int>() == 0)
+            {
+                useOpenGL = false;
+#ifdef MELONPRIME_DS
+                videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
+#endif
+            }
             break;
 
         case msg_BorrowGL:
