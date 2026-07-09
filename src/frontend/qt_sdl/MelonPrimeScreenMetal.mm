@@ -8,7 +8,11 @@
 #import <AppKit/NSWindow.h>
 
 #include <cmath>
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <QGuiApplication>
 #include <QImage>
@@ -78,7 +82,7 @@ NSString* const kScreenShaderSource =
      "};\n"
      "struct VOut {\n"
      "    float4 position [[position]];\n"
-     "    float2 texcoord;\n"
+     "    float3 texcoord;\n"
      "};\n"
      "struct ScreenUniforms {\n"
      "    float m[6];\n"
@@ -93,13 +97,13 @@ NSString* const kScreenShaderSource =
      "    p.y *= -1.0;\n"
      "    VOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
-     "    out.texcoord = in.texcoord.xy;\n"
+     "    out.texcoord = in.texcoord;\n"
      "    return out;\n"
      "}\n"
      "fragment float4 mp_screen_fs(VOut in [[stage_in]],\n"
-     "                             texture2d<float> tex [[texture(0)]],\n"
+     "                             texture2d_array<float> tex [[texture(0)]],\n"
      "                             sampler samp [[sampler(0)]]) {\n"
-     "    float4 c = tex.sample(samp, in.texcoord);\n"
+     "    float4 c = tex.sample(samp, in.texcoord.xy, uint(in.texcoord.z + 0.5));\n"
      "    return float4(c.rgb, 1.0);\n"
      "}\n";
 
@@ -140,6 +144,74 @@ struct ScreenUniforms
     float screenSize[2];
 };
 static_assert(sizeof(ScreenUniforms) == 32, "must match the MSL ScreenUniforms layout exactly");
+
+bool AllowMetalSoftwareFallback()
+{
+    static const bool allow = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_ALLOW_SOFTWARE_FALLBACK");
+        return env && env[0] == '1';
+    }();
+    return allow;
+}
+
+using PresenterClock = std::chrono::steady_clock;
+
+bool MetalPresenterPerfEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_PERF");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
+double PresenterElapsedMs(PresenterClock::time_point start, PresenterClock::time_point end)
+{
+    return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+struct PresenterPerfAccumulator
+{
+    uint32_t Frames = 0;
+    double PresentMs = 0.0;
+    uint32_t LastScale = 1;
+    uint32_t LastTargetWidth = 0;
+    uint32_t LastTargetHeight = 0;
+    uint32_t SoftwareFallbackFrames = 0;
+};
+
+void SubmitPresenterPerf(int scale, NSUInteger width, NSUInteger height, double presentMs, bool softwareFallback)
+{
+    if (!MetalPresenterPerfEnabled())
+        return;
+
+    static PresenterPerfAccumulator acc;
+    acc.Frames++;
+    acc.PresentMs += presentMs;
+    acc.LastScale = static_cast<uint32_t>(scale);
+    acc.LastTargetWidth = static_cast<uint32_t>(width);
+    acc.LastTargetHeight = static_cast<uint32_t>(height);
+    if (softwareFallback)
+        acc.SoftwareFallbackFrames++;
+
+    constexpr uint32_t kReportFrames = 600;
+    if (acc.Frames < kReportFrames)
+        return;
+
+    const double frames = static_cast<double>(acc.Frames);
+    std::fprintf(stderr,
+        "[MelonPrime] metal presenter: perf frames=%u presentMs=%.3f "
+        "softwareFallback=%u visibleSource=%s scale=%u target=%ux%u\n",
+        acc.Frames,
+        acc.PresentMs / frames,
+        acc.SoftwareFallbackFrames,
+        acc.SoftwareFallbackFrames ? "SoftwareFallback" : "MetalFinalTexture",
+        acc.LastScale,
+        acc.LastTargetWidth,
+        acc.LastTargetHeight);
+
+    acc = {};
+}
 
 struct UiUniforms
 {
@@ -355,19 +427,19 @@ bool ScreenPanelMetal::initMetal()
         linearDesc.magFilter = MTLSamplerMinMagFilterLinear;
         m->linearSampler = [m->device newSamplerStateWithDescriptor:linearDesc];
 
-        // Two persistent 256x192 BGRA8 textures (top/bottom), matching the
-        // format ScreenPanelGL's GL_TEXTURE_2D_ARRAY uses. This GPU reports
-        // hasUnifiedMemory=true (see MelonPrimeMetalFeatureCheck.mm probe
-        // output), so Shared storage is correct here, not just convenient.
+        // Developer-only software fallback texture. Normal Metal mode binds
+        // the renderer-owned final texture array instead.
         MTLTextureDescriptor* texDesc =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                                                 width:256
                                                                height:192
                                                             mipmapped:NO];
+        texDesc.textureType = MTLTextureType2DArray;
+        texDesc.arrayLength = 2;
         texDesc.usage = MTLTextureUsageShaderRead;
         texDesc.storageMode = MTLStorageModeShared;
         m->screenTex[0] = [m->device newTextureWithDescriptor:texDesc];
-        m->screenTex[1] = [m->device newTextureWithDescriptor:texDesc];
+        m->screenTex[1] = m->screenTex[0];
 
         m->resourcesReady = (m->pipeline != nil && m->uiPipeline != nil &&
                               m->vertexBuffer != nil && m->uiVertexBuffer != nil &&
@@ -434,6 +506,8 @@ void ScreenPanelMetal::drawScreen()
         if (!layer || w <= 0 || h <= 0)
             return;
 
+        const auto presentStart = PresenterClock::now();
+
         if (!m->loggedFirstDraw)
         {
             m->loggedFirstDraw = true;
@@ -455,10 +529,11 @@ void ScreenPanelMetal::drawScreen()
         id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
-        bool hasCpuBuffersForFrame = false;
+        bool hasCpuBaseFallbackForFrame = false;
+        bool hasHudCpuBuffersForFrame = false;
         void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
-        id<MTLTexture> nativeMetalTextureForFrame = nil;
+        id<MTLTexture> finalMetalTextureForFrame = nil;
 
         if (emuThread->emuIsActive())
         {
@@ -470,70 +545,86 @@ void ScreenPanelMetal::drawScreen()
 
             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {
-                nativeMetalTextureForFrame = (__bridge id<MTLTexture>)output.Top;
-                if (nativeMetalTextureForFrame && nativeMetalTextureForFrame.device != m->device)
+                finalMetalTextureForFrame = (__bridge id<MTLTexture>)output.Top;
+                if (finalMetalTextureForFrame && finalMetalTextureForFrame.device != m->device)
                 {
                     if (!m->loggedNativeTextureFallback)
                     {
                         m->loggedNativeTextureFallback = true;
                         fprintf(stderr,
-                                "[MelonPrime] metal presenter: native Metal texture belongs to a different device; falling back to CPU BGRA\n");
+                                "[MelonPrime] metal presenter: native Metal final texture belongs to a different device; refusing silent CPU BGRA fallback\n");
                     }
-                    nativeMetalTextureForFrame = nil;
+                    finalMetalTextureForFrame = nil;
                 }
 
-                if (nativeMetalTextureForFrame && !m->loggedFirstNativeTextureOutput)
+                if (finalMetalTextureForFrame && !m->loggedFirstNativeTextureOutput)
                 {
                     m->loggedFirstNativeTextureOutput = true;
                     fprintf(stderr,
-                            "[MelonPrime] metal presenter: first native Metal texture output size=%zux%zu\n",
-                            static_cast<size_t>(nativeMetalTextureForFrame.width),
-                            static_cast<size_t>(nativeMetalTextureForFrame.height));
+                            "[MelonPrime] metal presenter: visible source=MetalFinalTexture scale=%zu size=%zux%zu screens=%zu softwareFallback=0\n",
+                            static_cast<size_t>(std::max<NSUInteger>(1, finalMetalTextureForFrame.width / 256)),
+                            static_cast<size_t>(finalMetalTextureForFrame.width),
+                            static_cast<size_t>(finalMetalTextureForFrame.height),
+                            static_cast<size_t>(finalMetalTextureForFrame.arrayLength));
                 }
 
-                // The native Metal target is not a complete composited top
-                // screen yet: it is the experimental native 3D opaque target.
-                // Keep the software delegate's CPU buffers as the visible
-                // base frame so the top screen never disappears while the
-                // native target path is still being brought up.
-                hasCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame);
+                hasHudCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame) &&
+                                           topCpuBufForFrame && bottomCpuBufForFrame;
             }
             else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
             {
-                hasCpuBuffersForFrame = true;
-                topCpuBufForFrame = output.Top;
-                bottomCpuBufForFrame = output.Bottom;
-                if (metalRendererSelected && !m->loggedNativeTextureFallback)
+                if (metalRendererSelected && !AllowMetalSoftwareFallback())
                 {
-                    m->loggedNativeTextureFallback = true;
-                    fprintf(stderr,
-                            "[MelonPrime] metal presenter: Metal renderer returned no native texture; falling back to CPU BGRA\n");
+                    if (!m->loggedNativeTextureFallback)
+                    {
+                        m->loggedNativeTextureFallback = true;
+                        fprintf(stderr,
+                                "[MelonPrime] metal presenter: ERROR Metal renderer returned CPU BGRA; refusing silent software fallback\n");
+                    }
+                }
+                else
+                {
+                    hasCpuBaseFallbackForFrame = true;
+                    topCpuBufForFrame = output.Top;
+                    bottomCpuBufForFrame = output.Bottom;
+                    hasHudCpuBuffersForFrame = topCpuBufForFrame && bottomCpuBufForFrame;
+                    if (metalRendererSelected && !m->loggedNativeTextureFallback)
+                    {
+                        m->loggedNativeTextureFallback = true;
+                        fprintf(stderr,
+                                "[MelonPrime] metal presenter: visible source=SoftwareFallback softwareFallback=1\n");
+                    }
                 }
             }
 
-            if (hasCpuBuffersForFrame && topCpuBufForFrame && bottomCpuBufForFrame)
+            if (hasCpuBaseFallbackForFrame && topCpuBufForFrame && bottomCpuBufForFrame)
             {
-                hasCpuBuffersForFrame = true;
                 [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
+                                          slice:0
                                       withBytes:topCpuBufForFrame
-                                    bytesPerRow:256 * 4];
-                [m->screenTex[1] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
+                                    bytesPerRow:256 * 4
+                                  bytesPerImage:256 * 192 * 4];
+                [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
                                     mipmapLevel:0
+                                          slice:1
                                       withBytes:bottomCpuBufForFrame
-                                    bytesPerRow:256 * 4];
+                                    bytesPerRow:256 * 4
+                                  bytesPerImage:256 * 192 * 4];
             }
             else
             {
-                hasCpuBuffersForFrame = false;
+                hasCpuBaseFallbackForFrame = false;
             }
 
-            if (nativeMetalTextureForFrame || hasCpuBuffersForFrame)
+            if (finalMetalTextureForFrame || hasCpuBaseFallbackForFrame)
             {
                 [encoder setRenderPipelineState:m->pipeline];
                 [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
                 id<MTLSamplerState> sampler = filter ? m->linearSampler : m->nearestSampler;
                 [encoder setFragmentSamplerState:sampler atIndex:0];
+                id<MTLTexture> sourceTexture = finalMetalTextureForFrame ? finalMetalTextureForFrame : m->screenTex[0];
+                [encoder setFragmentTexture:sourceTexture atIndex:0];
 
                 ScreenUniforms uniforms{};
                 uniforms.screenSize[0] = static_cast<float>(w) / static_cast<float>(scale);
@@ -545,13 +636,9 @@ void ScreenPanelMetal::drawScreen()
                         uniforms.m[c] = screenMatrix[i][c];
 
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
-                    id<MTLTexture> sourceTexture = hasCpuBuffersForFrame ? m->screenTex[screenKind[i]] : nil;
-                    if (!sourceTexture && nativeMetalTextureForFrame && screenKind[i] == 0)
-                        sourceTexture = nativeMetalTextureForFrame;
                     if (!sourceTexture)
                         continue;
 
-                    [encoder setFragmentTexture:sourceTexture atIndex:0];
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                                  vertexStart:(screenKind[i] == 0 ? 0 : 6)
                                  vertexCount:6];
@@ -593,7 +680,7 @@ void ScreenPanelMetal::drawScreen()
                     if (m->bottomImage.width() != 256 || m->bottomImage.height() != 192)
                         m->bottomImage = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
 
-                    if (hasCpuBuffersForFrame && bottomCpuBufForFrame)
+                    if (hasHudCpuBuffersForFrame && bottomCpuBufForFrame)
                         std::memcpy(m->bottomImage.bits(), bottomCpuBufForFrame, 256 * 192 * 4);
 
                     if (overlayFont.family().isEmpty())
@@ -606,7 +693,7 @@ void ScreenPanelMetal::drawScreen()
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
                         &overlayPainter, nullptr,
-                        &m->uiOverlay, hasCpuBuffersForFrame ? &m->bottomImage : nullptr,
+                        &m->uiOverlay, hasHudCpuBuffersForFrame ? &m->bottomImage : nullptr,
                         mp->IsInGame(),
                         m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                         m_hudScale,
@@ -699,6 +786,17 @@ void ScreenPanelMetal::drawScreen()
         [encoder endEncoding];
         [cmdBuffer presentDrawable:drawable];
         [cmdBuffer commit];
+
+        if (emuThread->emuIsActive() && (finalMetalTextureForFrame || hasCpuBaseFallbackForFrame))
+        {
+            const bool softwareFallback = !finalMetalTextureForFrame && hasCpuBaseFallbackForFrame;
+            const NSUInteger sourceW = finalMetalTextureForFrame ? finalMetalTextureForFrame.width : 256;
+            const NSUInteger sourceH = finalMetalTextureForFrame ? finalMetalTextureForFrame.height : 192;
+            const int sourceScale = static_cast<int>(std::max<NSUInteger>(1, sourceW / 256));
+            SubmitPresenterPerf(sourceScale, sourceW, sourceH,
+                PresenterElapsedMs(presentStart, PresenterClock::now()),
+                softwareFallback);
+        }
     }
 }
 

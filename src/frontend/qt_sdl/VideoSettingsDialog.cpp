@@ -76,7 +76,7 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
     // visible 3D output is still produced by its internal SoftRenderer3D
-    // delegate (see GPU3D_Metal.mm / GPU_Metal.cpp and
+    // delegate (see GPU3D_Metal.mm / GPU_Metal.mm and
     // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
     // "Software.Threaded" genuinely affects Metal's performance today.
     // BetterPolygons/HiresCoordinates are not consumed by the Metal path at

@@ -7,6 +7,8 @@
 
 #include "GPU_Soft.h"
 
+#include <memory>
+
 namespace melonDS
 {
 
@@ -14,13 +16,23 @@ class MetalRenderer : public SoftRenderer
 {
 public:
     explicit MetalRenderer(melonDS::NDS& nds) noexcept;
-    ~MetalRenderer() override = default;
+    ~MetalRenderer() override;
 
     bool Init() override;
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
     RendererOutput GetOutput() override;
+
+private:
+    struct MetalFinalState;
+
+    std::unique_ptr<MetalFinalState> FinalState;
+    int ScaleFactor = 1;
+
+    bool EnsureFinalOutput();
+    bool EnsureFinalOutputForDevice(void* preferredDevice);
+    RendererOutput GetSoftwareFallbackOutput();
 };
 
 } // namespace melonDS
