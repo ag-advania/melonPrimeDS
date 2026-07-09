@@ -914,6 +914,126 @@ anything about how this interacts with the rest of `MetalRenderer3D`'s lifecycle
   Phase 8 remains genuinely multi-session work; this is one honest increment along design doc
   S14's suggested order, not a claim of parity with `GLRenderer3D`.
 
+## 3k. Phase 8 continuation — texturing via the shared Texcache<> template
+
+§3j deliberately deferred texturing as "the largest remaining piece," on the assumption (matching
+the design doc's own framing) that a DS texture-format decoder is a large separate subsystem. On
+closer reading of `GPU3D_TexcacheOpenGL.h` (29 lines) that assumption turned out to be wrong in a
+way that made this session's texturing increment much more tractable than expected: **all** DS
+texture format decoding (direct color, 4x4-compressed, A3I5/A5I3, 2/4/8-bit paletted) lives in the
+backend-agnostic `Texcache<TexLoaderT, TexHandleT>` template (`GPU3D_Texcache.h`/`.cpp`, already
+unconditionally compiled into `core` regardless of `OGLRENDERER_ENABLED`). The GL backend's own
+loader (`TexcacheOpenGLLoader`) is only 3 methods -- `GenerateTexture`/`UploadTexture`/
+`DeleteTexture` -- because the template does 100% of the hard work and hands the loader
+already-decoded RGB6A5-packed-as-4-raw-bytes texel data. This meant Metal texturing did not need a
+from-scratch DS format decoder at all: a `TexcacheMetalLoader` with the same 3-method shape, backed
+by `id<MTLTexture>` (`MTLTextureType2DArray`, `MTLPixelFormatRGBA8Uint`) instead of `GLuint`, reuses
+the entire existing decode pipeline by instantiating `Texcache<TexcacheMetalLoader, id<MTLTexture>>`
+directly.
+
+**What changed:**
+
+- `TexcacheMetalLoader` (new, in `GPU3D_Metal.mm`): `GenerateTexture` allocates an `MTLTextureType2DArray`
+  in `MTLPixelFormatRGBA8Uint`/`MTLStorageModeShared`; `UploadTexture` calls `replaceRegion:...slice:...`
+  per layer; `DeleteTexture` is a no-op (ARC releases the strong `id<MTLTexture>` refs the `Texcache<>`
+  template's own `TexArrays`/`FreeTextures` vectors hold when cleared/erased -- there is no explicit
+  destroy call in the Metal API, unlike `glDeleteTextures`).
+- `MetalState` gained a `std::unique_ptr<TexcacheMetal>` (constructed once `Device` exists, in
+  `CreateDeviceObjects()`, via `std::make_unique<TexcacheMetal>(GPU, TexcacheMetalLoader(State->Device))`),
+  an `OpaqueTextureSampler` (nearest, clamp-to-edge -- see the wrap-mode gap below), and a 1x1
+  `DummyTexture` (Metal requires a texture argument to be bound at draw time even when the shader's
+  runtime branch never samples it, so untextured draws still need something valid in that slot).
+  `Reset()` now also calls `Texcache->Reset()`.
+- The opaque vertex/fragment shaders (`kMetal3DOpaqueShaderSource`) gained real `texcoord`
+  (sign-extended 4-bit-fixed DS units, normalized by texture width/height exactly like
+  `3DRenderVS.glsl`), `texLayer` (flat, `0xFFFF` sentinel = no texture), and `blendMode` (flat,
+  polygon attribute bits 4-5) varyings, plus a shared `OpaqueFinalColor()` helper mirroring
+  `3DRenderFS.glsl::FinalColor()`'s modulate/decal branch. Every DS texture format arrives at the
+  shader as the same `texture2d_array<uint>` regardless of source format, since `Texcache<>` already
+  normalized it -- there is no per-format branching in the shader, matching GL.
+- `RenderNativeOpaquePolygons()` now calls `Texcache->Update()` once per frame (VRAM-dirty
+  invalidation, same entry point `GLRenderer3D::RenderFrame()` uses), resolves each textured
+  polygon's texture+layer via `Texcache->GetTexture(poly->TexParam, poly->TexPalette, ...)` (the
+  same call `GLRenderer3D::BuildPolygons()` makes), and groups polygons by `(WBuffer, texture
+  identity)` -- an unordered accumulation rather than GL's adjacency-based `RenderPolygonBatch()`,
+  since `RenderPolygonRAM` order is not guaranteed to already cluster same-texture polygons, and an
+  unordered grouping is simpler to get right than replicating GL's contiguous-run scan. This mirrors
+  `SetupPolygon()`'s `RenderKey`, which GL's own `RenderPolygonBatch()` additionally gates on
+  `TexID` equality (confirmed by reading `GPU3D_OpenGL.cpp:835`) -- i.e. this is the same grouping
+  granularity GL itself uses, just computed differently.
+
+**Explicitly not implemented (see the scope comment above `kMetal3DOpaqueShaderSource` and above
+`RenderNativeOpaquePolygons()` in `GPU3D_Metal.mm` for the canonical, most-detailed list):**
+toon/highlight color substitution for blendmode 2 (needs the per-frame toon-color-table/`DispCnt`
+uniforms, not yet plumbed to this pass -- a blendmode-2 polygon still selects the geometrically
+correct modulate/decal branch, just with its raw, non-toon-substituted vertex color, which is wrong
+specifically for toon-shaded/cel-shaded content); `TexRepeat` wrap/mirror modes (every sample uses
+clamp-to-edge regardless of the polygon's repeat/mirror flags, confirmed by reading
+`GLRenderer3D::SetupPolygonTexture()`'s `GL_REPEAT`/`GL_MIRRORED_REPEAT`/`GL_CLAMP_TO_EDGE`
+derivation from the 4-bit `TexRepeat` value -- wrong for textures that rely on tiling/scrolling, fine
+for the common non-tiling case); VRAM-display-capture-as-texture (a niche feature where a
+direct-color texture happens to alias a live capture region -- `GLRenderer3D::BuildPolygons()` has a
+`capblock`/`captureinfo` special case for this that samples the frame being captured directly rather
+than re-decoding VRAM; this pass has no equivalent, so it will simply decode whatever is currently
+in VRAM through the generic path instead).
+
+### 3k.1 Hardware verification independent of the ROM constraint (continuing §3j.1's approach)
+
+The same standalone-harness technique from §3j.1 was extended to the texturing path specifically,
+since (as established there) no ROM is available to exercise `RenderNativeOpaquePolygons()`'s real
+per-polygon texture resolution through the actual frame loop:
+
+1. Re-extracted the current (texturing-inclusive) shader source and confirmed it still compiles via
+   `newLibraryWithSource:` and both pipeline variants still create with the extended vertex-output
+   struct (adds `texcoord`/`texLayer`/`blendMode`).
+2. Built a synthetic 2x2 `RGBA8Uint` texture array (1 layer) with a known texel value
+   (R=32/63, G=63/63, B=0/63, A=31/31, i.e. deliberately not white/black so a math error would be
+   visible), sampled it through the exact `mp3d_opaque_vs_z`/`mp3d_opaque_fs_z` pair with a nearest,
+   clamp-to-edge sampler bound at index 0, and confirmed the rendered pixel exactly matched the hand-
+   computed modulate-blend expectation (`vcol(white) * tcol` where `tcol = texel/(63,63,63,31)`):
+   rendered `BGRA = (0, 255, 130, 255)` against a computed expectation of `(0, 255, ~129, 255)`.
+3. Re-ran with `blendMode` bits set to decal (1) and a half-alpha texel (16/31) plus a distinct
+   (red) vertex color specifically chosen so modulate and decal diverge, confirming the decal
+   formula `tcol.rgb*tcol.a + vcol.rgb*(1-tcol.a)` matched exactly: rendered `BGRA = (0, 132, 190,
+   255)` against a computed expectation of the same values.
+4. Re-ran with `texLayer` set to the `0xFFFF` "no texture" sentinel (with a real texture still
+   bound in the argument table, matching what `RenderNativeOpaquePolygons()` does for the "no
+   texture" group via `DummyTexture`) and confirmed the output was exactly the untouched white
+   vertex color, proving the sentinel branch correctly ignores whatever is bound when a polygon
+   has no texture.
+
+All three cases passed on the first attempt once written correctly (no repeat of §3j.1's sample-
+point debugging detour), because each test's expected value was computed independently by hand
+*before* running, from the same formulas documented in the shader's own scope comment, rather than
+inferred after the fact from whatever the shader happened to produce.
+
+### 3k.2 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean, no new warnings, including
+  instantiating `Texcache<TexcacheMetalLoader, id<MTLTexture>>` (an ARC-managed object pointer as an
+  STL/`unordered_map` template parameter) without issue.
+- `cmake --build build-mac --parallel 4` — clean, no new warnings, default tree unaffected
+  (`GPU3D_Texcache.h`/`.cpp` were already compiled into `core` unconditionally before this change;
+  only `GPU3D_Metal.mm`, which is not part of the default tree, now includes it).
+- Standalone Metal harness (§3k.1): shader compiles with texturing, modulate blend verified exact,
+  decal blend verified exact, untextured-sentinel-with-texture-bound verified exact. All on this
+  session's real Intel Iris Plus 655.
+- Runtime smoke, Metal-enabled and default binaries: both stayed alive / launched-and-quit cleanly,
+  logs unchanged from §3j.2 (no-ROM startup still never reaches the new texturing code path).
+- Default binary string check: still zero Metal strings (`TexcacheMetal`, `mp3d_opaque`,
+  `MetalRenderer3D` all absent); Metal-enabled binary confirmed to contain `TexcacheMetalLoader`
+  and `OpaqueFinalColor` symbols.
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files),
+  `audit-metroid-literal-budget.ps1 -Budget 1`, `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1` — all pass, unaffected.
+  `generate-hud-prop-schema.py` regeneration diff is empty.
+- **Not verified:** Apple Silicon. **Not verified:** the integrated code path against a real ROM
+  (only the shader/pipeline/blend logic in isolation, per §3k.1). **Not implemented:** everything
+  in the "Explicitly not implemented" list above, plus everything §3j already deferred
+  (translucent polygons, shadow masks, line polygons, depth-func-equal, `BetterPolygons`, hi-res
+  scale, edge marking, fog, final composite, `GetLine()`/display integration). Phase 8 remains
+  genuinely multi-session work.
+
 ---
 
 ## 4. Remaining phases / gates (Phase 8 onward)
@@ -969,5 +1089,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
-| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9 (`videoRenderer` was silently forced to Software whenever `useOpenGL` was false, regardless of what was actually requested), a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D::ResizeTargets()`/`ClearNativeTarget()` partial-failure/null-guard hardening, and a feature-probe strengthening to match the exact Phase 8 pipeline shape. §3j added the design doc's suggested port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization): real per-frame vertex/index buffer upload from `GPU3D::RenderPolygonRAM` matching `GLRenderer3D`'s packing exactly, two full pipeline variants (Z-buffer/W-buffer depth paths), opaque-alpha discard -- verified correct via a standalone Metal harness independent of the ROM constraint (shader compiles, both pipelines create, position math matches hand-derivation, both depth paths rasterize correctly, discard threshold fires correctly). Builds/audits/no-ROM smoke green on both trees; default binary still has zero Metal strings. Texturing (by far the largest remaining piece), translucency, shadow masks, edge marking, fog, final composite, `GetLine()`/display integration, and ROM parity all remain open -- Phase 8 is genuinely multi-session work |
+| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass closed the `EmuThread` renderer-routing bug that would have blocked Phase 9, a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D` resource hardening, and probe strengthening. §3j added port-order steps 2-3 (vertex/index upload, opaque-polygon rasterization: packed vertex layout matching `GLRenderer3D` exactly, Z-buffer/W-buffer pipeline variants, opaque-alpha discard). §3k added step 4 (texturing): discovered the DS texture-format decode logic already lives entirely in the backend-agnostic `Texcache<>` template (`GPU3D_Texcache.h`, already compiled into `core` unconditionally) with only a 3-method GL-specific loader on top, so a `TexcacheMetalLoader` (Metal texture-array equivalent) reuses that whole pipeline instead of needing a from-scratch decoder. Real per-polygon texture resolution, `(WBuffer, texture)` draw-call grouping, and modulate/decal blend modes are implemented and match `3DRenderFS.glsl`'s `FinalColor()`; toon/highlight color substitution, `TexRepeat` wrap/mirror modes, and VRAM-display-capture-as-texture are explicitly not. Both §3j and §3k's shader/pipeline logic were independently verified correct via standalone Metal harnesses (position math, both depth paths, opaque-alpha discard, modulate blend, decal blend, and the untextured sentinel path all matched hand-computed expectations exactly) on this session's real Intel Iris Plus 655, since no ROM is available to exercise the integrated code path. Builds/audits/no-ROM smoke green on both trees throughout; default binary still has zero Metal strings. Translucency, shadow masks, line polygons, depth-func-equal, `BetterPolygons`, hi-res scale, edge marking, fog, final composite, `GetLine()`/display integration, and ROM parity all remain open -- Phase 8 is genuinely multi-session work |
 | 9–10 | Not started | — | See §4. Apple Silicon confirmation (required before Phase 9 ships to users) is not available in this session; Phase 8 native `GLRenderer3D` replacement remains incomplete |

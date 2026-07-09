@@ -5,13 +5,73 @@
 #import <Metal/Metal.h>
 
 #include "GPU3D_Metal.h"
+#include "GPU3D_Texcache.h"
 
 #include <cstdio>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace melonDS
 {
+
+// Phase 8 texturing (design doc S14 step 4). This loader is the Metal
+// equivalent of TexcacheOpenGLLoader (GPU3D_TexcacheOpenGL.h/.cpp): the
+// Texcache<> template (GPU3D_Texcache.h) owns 100% of the DS texture
+// format decode logic (direct color, 4x4-compressed, A3I5/A5I3/A5I3,
+// 2/4/8-bit paletted -- ConvertBitmapTexture/ConvertCompressedTexture/
+// ConvertAXIYTexture/ConvertNColorsTexture, all backend-agnostic C++
+// already compiled into `core` unconditionally) and only calls out to
+// this loader's 3 methods for actual GPU resource management. Decoded
+// texels arrive as RGB6A5 packed into 4 raw bytes/texel (outputFmt_RGB6A5
+// -- see GPU3D_Texcache.h), matching exactly what TexcacheOpenGLLoader
+// uploads as GL_RGBA8UI; the Metal equivalent is MTLPixelFormatRGBA8Uint,
+// sampled in the shader as texture2d_array<uint> and normalized by
+// /255,255,255,31 (5-bit alpha, not 8) to match 3DRenderFS.glsl.
+class TexcacheMetalLoader
+{
+public:
+    explicit TexcacheMetalLoader(id<MTLDevice> device) noexcept : Device(device) {}
+
+    id<MTLTexture> GenerateTexture(u32 width, u32 height, u32 layers)
+    {
+        MTLTextureDescriptor* desc =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
+        desc.textureType = MTLTextureType2DArray;
+        desc.arrayLength = layers;
+        desc.usage = MTLTextureUsageShaderRead;
+        desc.storageMode = MTLStorageModeShared;
+        return [Device newTextureWithDescriptor:desc];
+    }
+
+    void UploadTexture(id<MTLTexture> handle, u32 width, u32 height, u32 layer, void* data)
+    {
+        if (!handle)
+            return;
+
+        [handle replaceRegion:MTLRegionMake2D(0, 0, width, height)
+                   mipmapLevel:0
+                         slice:layer
+                     withBytes:data
+                   bytesPerRow:width * 4
+                 bytesPerImage:width * height * 4];
+    }
+
+    void DeleteTexture(id<MTLTexture> /*handle*/)
+    {
+        // ARC releases the strong id<MTLTexture> ref held by Texcache<>'s
+        // own TexArrays<>/FreeTextures<> vectors when they are cleared/
+        // erased; there is no explicit destroy call in the Metal API.
+    }
+
+private:
+    id<MTLDevice> Device = nil;
+};
+
+using TexcacheMetal = Texcache<TexcacheMetalLoader, id<MTLTexture>>;
 
 struct MetalRenderer3D::MetalState
 {
@@ -29,6 +89,9 @@ struct MetalRenderer3D::MetalState
     id<MTLRenderPipelineState> OpaqueRenderPipelineZ = nil; // standard depth-buffer polygons
     id<MTLRenderPipelineState> OpaqueRenderPipelineW = nil; // DS W-buffered polygons
     id<MTLDepthStencilState> OpaqueDepthState = nil;        // shared by both variants
+    id<MTLSamplerState> OpaqueTextureSampler = nil;         // nearest, clamp-to-edge (see scope note)
+    id<MTLTexture> DummyTexture = nil;                      // bound for untextured draws (static arg slot)
+    std::unique_ptr<TexcacheMetal> Texcache;                // constructed once Device exists
 };
 
 static constexpr const char* kMetal3DShaderSource = R"(
@@ -68,19 +131,23 @@ fragment ClearFragmentOut mp3d_clear_fs()
 }
 )";
 
-// Opaque-polygon pass (Phase 8 port-order step 3, design doc S14). Vertex
-// data is "pulled" from a raw packed uint buffer rather than bound via a
-// MTLVertexDescriptor -- 7 words per vertex, matching the exact CPU-side
-// packing GLRenderer3D::SetupVertex() writes (GPU3D_OpenGL.cpp) so the
-// interpretation below can be checked word-for-word against that reference
-// implementation:
+// Opaque-polygon pass (Phase 8 port-order steps 3-4, design doc S14).
+// Vertex data is "pulled" from a raw packed uint buffer rather than bound
+// via a MTLVertexDescriptor -- 7 words per vertex, matching the exact
+// CPU-side packing GLRenderer3D::SetupVertex() writes (GPU3D_OpenGL.cpp)
+// so the interpretation below can be checked word-for-word against that
+// reference implementation:
 //   word0 = x | (y << 16)                      -- screen-space position (native res)
 //   word1 = z | (w << 16)                       -- 16-bit shifted Z, 16-bit W
 //   word2 = (r>>1) | (g>>1)<<8 | (b>>1)<<16 | alpha<<24
-//   word3 = texcoord (unused -- texture cache not ported yet)
-//   word4 = zshift << 16                        -- vtxattr bits unused here
-//   word5 = texlayer (unused)
-//   word6 = tex width|height (unused)
+//   word3 = texcoord.s (s16) | texcoord.t (s16) << 16  -- raw 4-bit-fixed DS texcoords
+//   word4 = (polyAttr & 0x30, blend mode bits 4-5) | (zshift << 16)
+//   word5 = texlayer index from Texcache<>::GetTexture() (0-63), or the
+//           0xFFFF sentinel meaning "no texture" (see RenderNativeOpaquePolygons());
+//           GL's variant also ORs a 0xFFFF0000 tag for VRAM-display-capture-
+//           as-texture addressing in the upper 16 bits -- this pass does not
+//           support that DS feature, so only the low 16 bits are ever meaningful
+//   word6 = texwidth | (texheight << 16)        -- for texcoord normalization
 //
 // The position/depth math mirrors 3DRenderVS.glsl exactly, with one
 // necessary change: GL's NDC z range is [-1,1] and a separate depth-range
@@ -90,6 +157,22 @@ fragment ClearFragmentOut mp3d_clear_fs()
 // becomes (z<<zshift)/16777216.0 (Metal), which is exactly the same value
 // GL's own W-buffer path already computes for `fZ` (3DRenderVS.glsl line
 // 36), since (X/8388608 - 1 + 1)/2 == X/16777216.
+//
+// Texturing mirrors 3DRenderFS.glsl's FinalColor(): every DS texture format
+// is decoded by the shared Texcache<> template (GPU3D_Texcache.h, the same
+// code GLRenderer3D uses) into a common RGB6A5-packed-as-4-raw-bytes
+// representation before it ever reaches this shader, so there is no
+// per-format branching here -- only modulate ((blendmode&1)==0) and decal
+// ((blendmode&1)==1) blending are implemented. The toon/highlight color
+// substitution GL performs for blendmode==2 (which needs the per-frame
+// toon-color-table/DispCnt uniforms, not yet plumbed to this pass) is
+// intentionally skipped: a blendmode==2 polygon still selects the correct
+// modulate/decal path (2&1==0, same as blendmode 0) but uses its raw
+// (non-toon-substituted) vertex color, which is visibly wrong for toon-
+// shaded content specifically -- a narrower, explicitly documented gap
+// than "no texturing at all". Texture wrapping/mirroring (TexRepeat bits)
+// is also not implemented: every sample uses clamp-to-edge regardless of
+// the polygon's repeat/mirror flags (see BuildOpaqueRenderPipelines()).
 static constexpr const char* kMetal3DOpaqueShaderSource = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -103,7 +186,10 @@ struct OpaqueVertexOut
 {
     float4 position [[position]];
     float4 color;
-    float fz; // perspective-correct-interpolated W-buffer depth (see mp3d_opaque_fs_w)
+    float2 texcoord;
+    float fz;                 // perspective-correct-interpolated W-buffer depth
+    int texLayer [[flat]];    // 0xFFFF sentinel = no texture
+    int blendMode [[flat]];   // (polyAttr >> 4) & 0x3
 };
 
 static inline OpaqueVertexOut BuildOpaqueVertex(
@@ -116,7 +202,10 @@ static inline OpaqueVertexOut BuildOpaqueVertex(
     uint w0 = words[base + 0];
     uint w1 = words[base + 1];
     uint w2 = words[base + 2];
+    uint w3 = words[base + 3];
     uint w4 = words[base + 4];
+    uint w5 = words[base + 5];
+    uint w6 = words[base + 6];
 
     uint x = w0 & 0xFFFFu;
     uint y = (w0 >> 16) & 0xFFFFu;
@@ -136,10 +225,21 @@ static inline OpaqueVertexOut BuildOpaqueVertex(
     float b = float((w2 >> 16) & 0xFFu);
     float a = float((w2 >> 24) & 0xFFu);
 
+    // DS texcoords are signed 4-bit-fixed (s16 raw units); sign-extend
+    // each packed 16-bit half before converting to the fixed-point value.
+    short rawS = short(w3 & 0xFFFFu);
+    short rawT = short((w3 >> 16) & 0xFFFFu);
+    uint texWidth = w6 & 0xFFFFu;
+    uint texHeight = (w6 >> 16) & 0xFFFFu;
+    float2 texFactor = 1.0 / (16.0 * float2(float(max(texWidth, 1u)), float(max(texHeight, 1u))));
+
     OpaqueVertexOut out;
     out.position = pos;
     out.color = float4(r, g, b, a) / float4(255.0, 255.0, 255.0, 31.0);
+    out.texcoord = float2(float(rawS), float(rawT)) * texFactor;
     out.fz = zndc;
+    out.texLayer = int(w5 & 0xFFFFu);
+    out.blendMode = int((w4 >> 4) & 0x3u);
     return out;
 }
 
@@ -159,6 +259,29 @@ vertex OpaqueVertexOut mp3d_opaque_vs_w(
     return BuildOpaqueVertex(vid, words, config, true);
 }
 
+static inline float4 OpaqueFinalColor(
+    OpaqueVertexOut in [[stage_in]],
+    texture2d_array<uint> tex,
+    sampler smp)
+{
+    float4 vcol = in.color;
+    if (in.texLayer == 0xFFFF)
+        return vcol;
+
+    uint4 raw = tex.sample(smp, in.texcoord, uint(in.texLayer));
+    float4 tcol = float4(raw) / float4(63.0, 63.0, 63.0, 31.0);
+
+    if ((in.blendMode & 1) != 0)
+    {
+        // decal
+        float3 rgb = (tcol.rgb * tcol.a) + (vcol.rgb * (1.0 - tcol.a));
+        return float4(rgb, vcol.a);
+    }
+    // modulate (also the fallback path for blendmode 2/"toon or highlight" --
+    // see the scope note above kMetal3DOpaqueShaderSource)
+    return vcol * tcol;
+}
+
 struct OpaqueFragmentOut
 {
     float4 color [[color(0)]];
@@ -169,13 +292,17 @@ struct OpaqueFragmentOut
 // polygon alpha < 31/31 with the "need opaque" attribute bit as translucent
 // -- that bit is not carried by this pass yet, so this uses GL's simpler
 // unconditional opaque threshold, discarding anything not fully solid).
-fragment OpaqueFragmentOut mp3d_opaque_fs_z(OpaqueVertexOut in [[stage_in]])
+fragment OpaqueFragmentOut mp3d_opaque_fs_z(
+    OpaqueVertexOut in [[stage_in]],
+    texture2d_array<uint> tex [[texture(0)]],
+    sampler smp [[sampler(0)]])
 {
-    if (in.color.a < (30.5 / 31.0))
+    float4 col = OpaqueFinalColor(in, tex, smp);
+    if (col.a < (30.5 / 31.0))
         discard_fragment();
 
     OpaqueFragmentOut out;
-    out.color = float4(in.color.rgb, 1.0);
+    out.color = float4(col.rgb, 1.0);
     out.attr = float4(0.0, 0.0, 0.0, 1.0);
     return out;
 }
@@ -187,13 +314,17 @@ struct OpaqueFragmentOutW
     float depth [[depth(any)]];
 };
 
-fragment OpaqueFragmentOutW mp3d_opaque_fs_w(OpaqueVertexOut in [[stage_in]])
+fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
+    OpaqueVertexOut in [[stage_in]],
+    texture2d_array<uint> tex [[texture(0)]],
+    sampler smp [[sampler(0)]])
 {
-    if (in.color.a < (30.5 / 31.0))
+    float4 col = OpaqueFinalColor(in, tex, smp);
+    if (col.a < (30.5 / 31.0))
         discard_fragment();
 
     OpaqueFragmentOutW out;
-    out.color = float4(in.color.rgb, 1.0);
+    out.color = float4(col.rgb, 1.0);
     out.attr = float4(0.0, 0.0, 0.0, 1.0);
     out.depth = in.fz;
     return out;
@@ -223,6 +354,8 @@ bool MetalRenderer3D::Init()
 void MetalRenderer3D::Reset()
 {
     Delegate.Reset();
+    if (State && State->Texcache)
+        State->Texcache->Reset();
     if (State && State->Device)
         ClearNativeTarget();
 }
@@ -312,6 +445,42 @@ bool MetalRenderer3D::CreateDeviceObjects()
 
     if (!BuildOpaqueRenderPipelines())
         return false;
+
+    MTLSamplerDescriptor* samplerDesc = [[MTLSamplerDescriptor alloc] init];
+    samplerDesc.minFilter = MTLSamplerMinMagFilterNearest;
+    samplerDesc.magFilter = MTLSamplerMinMagFilterNearest;
+    // Scope note (see kMetal3DOpaqueShaderSource): clamp-to-edge always,
+    // regardless of the polygon's TexRepeat wrap/mirror flags.
+    samplerDesc.sAddressMode = MTLSamplerAddressModeClampToEdge;
+    samplerDesc.tAddressMode = MTLSamplerAddressModeClampToEdge;
+    State->OpaqueTextureSampler = [State->Device newSamplerStateWithDescriptor:samplerDesc];
+    if (!State->OpaqueTextureSampler)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create opaque texture sampler\n");
+        return false;
+    }
+
+    // A texture argument is bound statically per-draw in Metal even when
+    // the shader's runtime branch never samples it (untextured polygons) --
+    // this 1x1 array texture satisfies that requirement without needing a
+    // separate untextured pipeline/shader variant.
+    MTLTextureDescriptor* dummyDesc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                           width:1
+                                                          height:1
+                                                       mipmapped:NO];
+    dummyDesc.textureType = MTLTextureType2DArray;
+    dummyDesc.arrayLength = 1;
+    dummyDesc.usage = MTLTextureUsageShaderRead;
+    dummyDesc.storageMode = MTLStorageModeShared;
+    State->DummyTexture = [State->Device newTextureWithDescriptor:dummyDesc];
+    if (!State->DummyTexture)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create dummy texture\n");
+        return false;
+    }
+
+    State->Texcache = std::make_unique<TexcacheMetal>(GPU, TexcacheMetalLoader(State->Device));
 
     return ResizeTargets();
 }
@@ -537,18 +706,55 @@ bool MetalRenderer3D::ClearNativeTarget()
     return commandBuffer.status == MTLCommandBufferStatusCompleted;
 }
 
-// Phase 8 port-order step 2/3 (design doc S14: "vertex/index upload" then
-// "opaque polygons"). Builds a packed vertex buffer plus two index buffers
-// (Z-buffer group, W-buffer group) from GPU3D::RenderPolygonRAM every
-// frame, matching GLRenderer3D::BuildPolygons()/SetupVertex()'s data
+namespace {
+
+// Groups polygons by (WBuffer, texture identity) so each unique combination
+// draws in a single drawIndexedPrimitives call -- mirrors GLRenderer3D's
+// RenderPolygonBatch()/RenderKey grouping (which also splits on TexID), but
+// as an unordered accumulation instead of requiring adjacency in submission
+// order, since GPU3D::RenderPolygonRAM order is not guaranteed to already
+// cluster same-texture polygons together the way this needs.
+struct OpaqueDrawGroupKey
+{
+    bool WBuffer;
+    const void* TexturePtr; // nullptr = untextured; otherwise (__bridge) id<MTLTexture>
+
+    bool operator==(const OpaqueDrawGroupKey& other) const noexcept
+    {
+        return WBuffer == other.WBuffer && TexturePtr == other.TexturePtr;
+    }
+};
+
+struct OpaqueDrawGroupKeyHash
+{
+    size_t operator()(const OpaqueDrawGroupKey& key) const noexcept
+    {
+        return std::hash<const void*>()(key.TexturePtr) ^ (key.WBuffer ? 0x9e3779b9u : 0u);
+    }
+};
+
+struct OpaqueDrawGroup
+{
+    id<MTLTexture> Texture = nil; // nil = untextured
+    std::vector<uint16_t> Indices;
+};
+
+} // namespace
+
+// Phase 8 port-order steps 2-4 (design doc S14: "vertex/index upload",
+// "opaque polygons", texturing). Builds a packed vertex buffer plus one
+// index buffer per (WBuffer, texture) group from GPU3D::RenderPolygonRAM
+// every frame, matching GLRenderer3D::BuildPolygons()/SetupVertex()'s data
 // layout and !BetterPolygons fan triangulation exactly (GPU3D_OpenGL.cpp),
-// then issues one drawIndexedPrimitives per non-empty group.
+// resolves textures through the shared Texcache<> template (GPU3D_Texcache.h
+// -- the same DS-format-decode logic GLRenderer3D uses, just with a Metal
+// resource loader instead of a GL one), then issues one drawIndexedPrimitives
+// per non-empty group.
 //
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
-// Phase 8 remainder):
-//   - texturing (the texture cache -- GPU3D_TexcacheOpenGL.h -- is a large
-//     separate subsystem; every polygon here renders with its vertex color
-//     only, which is visibly wrong for the majority of real DS 3D content)
+// Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource
+// for texturing-specific gaps: no toon/highlight color substitution, no
+// TexRepeat wrap/mirror modes, no VRAM-display-capture-as-texture):
 //   - translucent polygons, shadow masks/shadows, line-type polygons
 //   - the depth-func-equal attribute bit (bit14) -- always MTLCompareFunctionLess
 //   - "BetterPolygons" alternate triangulation
@@ -561,19 +767,22 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||
         !State->OpaqueRenderPipelineZ || !State->OpaqueRenderPipelineW || !State->OpaqueDepthState ||
+        !State->OpaqueTextureSampler || !State->DummyTexture || !State->Texcache ||
         !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
     {
         return;
     }
+
+    u8 unusedClearBitmapDirty = 0;
+    State->Texcache->Update(unusedClearBitmapDirty);
 
     const u32 numPolygons = GPU3D.RenderNumPolygons;
     if (numPolygons == 0)
         return;
 
     std::vector<uint32_t> vertexWords;
-    std::vector<uint16_t> indicesZ;
-    std::vector<uint16_t> indicesW;
     vertexWords.reserve(static_cast<size_t>(numPolygons) * 4 * 7);
+    std::unordered_map<OpaqueDrawGroupKey, OpaqueDrawGroup, OpaqueDrawGroupKeyHash> groups;
 
     // u16 indices cap the addressable vertex count at 65535; GPU3D::VertexRAM
     // itself is sized 6144*2, so a real frame cannot come close to this --
@@ -596,6 +805,30 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             break;
 
         const uint32_t alpha = (static_cast<uint32_t>(poly->Attr) >> 16) & 0x1Fu;
+        const uint32_t blendModeBits = static_cast<uint32_t>(poly->Attr) & 0x30u; // bits 4-5
+
+        // Texture resolution: same entry point GLRenderer3D::BuildPolygons()
+        // uses (Texcache<>::GetTexture()), called unconditionally per
+        // textured polygon here rather than only on texparam/texpal change --
+        // GetTexture() is a cache lookup either way, so this trades GL's
+        // micro-optimization for simpler, still-correct code.
+        id<MTLTexture> texture = nil;
+        uint32_t texLayerWord = 0xFFFFu; // sentinel: no texture
+        uint32_t texDimsWord = 0;
+        const u32 textype = (poly->TexParam >> 26) & 0x7u;
+        if (textype != 0)
+        {
+            id<MTLTexture> handle = nil;
+            u32 layer = 0;
+            u32* unusedVariantHelper = nullptr;
+            State->Texcache->GetTexture(poly->TexParam, poly->TexPalette, handle, layer, unusedVariantHelper);
+            if (handle)
+            {
+                texture = handle;
+                texLayerWord = layer & 0xFFFFu;
+                texDimsWord = TextureWidth(poly->TexParam) | (TextureHeight(poly->TexParam) << 16);
+            }
+        }
 
         for (u32 v = 0; v < poly->NumVertices; v++)
         {
@@ -613,25 +846,31 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             const uint32_t g = static_cast<uint32_t>(vtx->FinalColor[1] >> 1) & 0xFFu;
             const uint32_t b = static_cast<uint32_t>(vtx->FinalColor[2] >> 1) & 0xFFu;
 
+            const uint32_t texS = static_cast<uint16_t>(vtx->TexCoords[0]);
+            const uint32_t texT = static_cast<uint16_t>(vtx->TexCoords[1]);
+
             vertexWords.push_back(x | (y << 16));
             vertexWords.push_back(z | (w << 16));
             vertexWords.push_back(r | (g << 8) | (b << 16) | (alpha << 24));
-            vertexWords.push_back(0); // texcoord -- unused (no texture cache yet)
-            vertexWords.push_back(zshift << 16); // vtxattr bits unused here
-            vertexWords.push_back(0); // texlayer -- unused
-            vertexWords.push_back(0); // tex width|height -- unused
+            vertexWords.push_back(texS | (texT << 16));
+            vertexWords.push_back(blendModeBits | (zshift << 16));
+            vertexWords.push_back(texLayerWord);
+            vertexWords.push_back(texDimsWord);
         }
 
-        std::vector<uint16_t>& indices = poly->WBuffer ? indicesW : indicesZ;
+        const OpaqueDrawGroupKey key { poly->WBuffer, (__bridge const void*)texture };
+        OpaqueDrawGroup& group = groups[key];
+        if (!group.Texture)
+            group.Texture = texture;
         for (u32 t = 2; t < poly->NumVertices; t++)
         {
-            indices.push_back(static_cast<uint16_t>(vertexBase + 0));
-            indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
-            indices.push_back(static_cast<uint16_t>(vertexBase + t));
+            group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
+            group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
+            group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
         }
     }
 
-    if (vertexWords.empty() || (indicesZ.empty() && indicesW.empty()))
+    if (vertexWords.empty() || groups.empty())
         return;
 
     id<MTLBuffer> vertexBuffer =
@@ -640,26 +879,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                                    options:MTLResourceStorageModeShared];
     if (!vertexBuffer)
         return;
-
-    id<MTLBuffer> indexBufferZ = nil;
-    if (!indicesZ.empty())
-    {
-        indexBufferZ = [State->Device newBufferWithBytes:indicesZ.data()
-                                                    length:indicesZ.size() * sizeof(uint16_t)
-                                                   options:MTLResourceStorageModeShared];
-        if (!indexBufferZ)
-            return;
-    }
-
-    id<MTLBuffer> indexBufferW = nil;
-    if (!indicesW.empty())
-    {
-        indexBufferW = [State->Device newBufferWithBytes:indicesW.data()
-                                                    length:indicesW.size() * sizeof(uint16_t)
-                                                   options:MTLResourceStorageModeShared];
-        if (!indexBufferW)
-            return;
-    }
 
     // Always the native 256x192 DS coordinate space -- FinalPosition is used
     // unconditionally above regardless of ScaleFactor (see the scope note).
@@ -690,23 +909,28 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     [encoder setDepthStencilState:State->OpaqueDepthState];
     [encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
     [encoder setVertexBytes:&config length:sizeof(config) atIndex:1];
+    [encoder setFragmentSamplerState:State->OpaqueTextureSampler atIndex:0];
 
-    if (indexBufferZ)
+    for (auto& entry : groups)
     {
-        [encoder setRenderPipelineState:State->OpaqueRenderPipelineZ];
+        const OpaqueDrawGroup& group = entry.second;
+        if (group.Indices.empty())
+            continue;
+
+        id<MTLBuffer> indexBuffer =
+            [State->Device newBufferWithBytes:group.Indices.data()
+                                        length:group.Indices.size() * sizeof(uint16_t)
+                                       options:MTLResourceStorageModeShared];
+        if (!indexBuffer)
+            continue;
+
+        [encoder setRenderPipelineState:entry.first.WBuffer ? State->OpaqueRenderPipelineW
+                                                              : State->OpaqueRenderPipelineZ];
+        [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                             indexCount:indicesZ.size()
+                             indexCount:group.Indices.size()
                               indexType:MTLIndexTypeUInt16
-                            indexBuffer:indexBufferZ
-                      indexBufferOffset:0];
-    }
-    if (indexBufferW)
-    {
-        [encoder setRenderPipelineState:State->OpaqueRenderPipelineW];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                             indexCount:indicesW.size()
-                              indexType:MTLIndexTypeUInt16
-                            indexBuffer:indexBufferW
+                            indexBuffer:indexBuffer
                       indexBufferOffset:0];
     }
 
