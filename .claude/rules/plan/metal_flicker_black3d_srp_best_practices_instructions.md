@@ -1023,3 +1023,14 @@ Metal can become the Compute Renderer replacement on macOS, but only if it behav
 - Presenter diagnostics now include final texture type, layer count, screenKind, and numScreens, and log an error if the renderer output is not a 2-layer texture array.
 - Added an explicit viewport to `MetalRenderer3D::RenderNativeOpaquePolygons()`.
 - Verified `cmake --build build-mac-metal-test --parallel 4`; default `cmake --build build-mac --parallel 4` reported no work to do.
+
+### 2026-07-10 JST — Phase C complete
+
+- Added final-composer routing analysis for DispCnt A/B, display modes, ScreenSwap, ScreensEnabled, Engine A 3D bits, Engine A native-3D use, and the chosen native-3D output layer.
+- Added route-change logging:
+  - `[MelonPrime] metal final route: dispA=<hex> modeA=<n> dispB=<hex> modeB=<n> screenSwap=<0|1> screensEnabled=<0|1> engineA3DBits=<0|1> engineAUses3D=<0|1> native3DLayer=<0|1> supportedSubset=normal2d_plus_engineA_bg0_3d unsupported=<0|1> reason=<text>`
+- Short-term supported subset is explicitly documented in the log as `normal2d_plus_engineA_bg0_3d`.
+- If Engine A advertises 3D bits outside that supported subset, the affected layer is cleared magenta instead of silently using CPU-complete output.
+- If Engine A needs native 3D but no native target exists, the affected layer is cleared red.
+- If Engine A needs native 3D but the native texture belongs to the wrong Metal device, the affected layer is cleared blue.
+- Verified `cmake --build build-mac-metal-test --parallel 4`; default `cmake --build build-mac --parallel 4` reported no work to do.
