@@ -2,7 +2,10 @@
 
 **作成日:** 2026-07-04
 **対象ブランチ:** `highres_fonts_v3`（HEAD `efbe6b82` 時点で実測）
-**ステータス:** Phase 0 macOS・Linux VM 基準値取得済み / Windows ソーク待ち（2026-07-04）
+**ステータス:** Phase 0 macOS・Linux VM 基準値取得済み / Windows ソーク待ち（2026-07-04）。
+[V7](melonprime-full-refactor-plan-v7.md) Phase 4（2026-07-09）も同じ Windows 基準値ゲートに
+到達し、計測なしでの実装を避けて正式にスキップ（「未計測のため見送り」）を選択した。両計画とも
+この単一のゲート（Windows `MELONPRIME_PERF=1` ソーク、OSD ON 条件を含む）待ちで揃っている。
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) /
 [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) /
