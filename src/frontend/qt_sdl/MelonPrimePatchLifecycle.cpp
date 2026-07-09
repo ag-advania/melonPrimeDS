@@ -82,12 +82,10 @@ void ResetForBoot(melonDS::NDS* nds,
 void RestoreForEmuStop(melonDS::NDS* nds,
                        EmuInstance* emu,
                        Config::Table& cfg,
-                       const RomAddresses& rom,
-                       bool romDetected)
+                       const RomAddresses& rom)
 {
-    // Historical OnEmuStop behavior: DS patch restore runs unconditionally.
-    // romDetected is reserved for a future guard; do not gate restore here yet.
-    (void)romDetected;
+    // Historical OnEmuStop behavior: DS patch restore runs unconditionally,
+    // regardless of whether a ROM was ever detected this session.
     ARM9Hook_Uninstall(nds, emu);
     RestoreStopPatches(nds, emu, cfg, rom);
     ResetPatchAndHookBookkeeping();

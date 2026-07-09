@@ -201,8 +201,7 @@ namespace MelonPrime {
             emuInstance->getNDS(),
             emuInstance,
             localCfg,
-            m_currentRom,
-            m_flags.test(StateFlags::BIT_ROM_DETECTED));
+            m_currentRom);
 #endif
     }
 

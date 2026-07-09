@@ -12,11 +12,19 @@
 #   - excludes MelonPrimeLocalization/ (menu-language locale detection; not
 #     raw-input / cursor-warp dispatch — new __APPLE__ there must not consume
 #     the input scatter budget or force Q_OS_* workarounds)
+#   - excludes individual lines carrying an inline "scatter-budget-exempt:"
+#     comment, for narrowly-scoped non-input platform gates that live in a
+#     file which also legitimately participates in input dispatch (so a
+#     whole-file exclusion would hide future real regressions there). The
+#     exemption is per-line, self-documenting at the call site, and requires
+#     a reason after the colon. First user (V7 Phase 1, 2026-07-09):
+#     InputConfig.cpp's macOS compute-renderer (High2 preset) UI gate.
 # Windows Raw Input sites are not part of this budget.
 #
 # Raising the budget above 22 is a regression unless input dispatch truly
-# gained new platform branches. Non-input platform hooks belong outside scope
-# or in the facade, not in alternate macros that evade the ratchet.
+# gained new platform branches. Non-input platform hooks belong outside scope,
+# in the facade, or behind a scatter-budget-exempt marker with a reason -- not
+# in alternate macros that evade the ratchet silently.
 
 param(
     [int]$Budget = 22,
@@ -31,6 +39,7 @@ $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 
 $markerRegex = [regex]'__APPLE__|__linux__'
 $scatterExcludePathRegex = [regex]'(^|/)MelonPrimeLocalization/'
+$lineExemptRegex = [regex]'scatter-budget-exempt:\s*\S'
 $platformFacadeFiles = @(
     'MelonPrimePlatformInput.h',
     'MelonPrimeScreenCursorPolicy.cpp',
@@ -131,11 +140,25 @@ $total = 0
 $macCursorHits = @()
 
 $allMelonPrimeSources = Get-ChildItem -Path $qtSdl -Recurse -File -Include 'MelonPrime*.cpp','MelonPrime*.h'
+$lineExemptRows = @()
 foreach ($file in $allMelonPrimeSources) {
     $rel = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName) -replace '\\', '/'
     $count = 0
+    $exemptCount = 0
     foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
-        $count += $markerRegex.Matches($line).Count
+        $lineMatches = $markerRegex.Matches($line).Count
+        if ($lineMatches -le 0) { continue }
+        if ($lineExemptRegex.IsMatch($line)) {
+            $exemptCount += $lineMatches
+        } else {
+            $count += $lineMatches
+        }
+    }
+    if ($exemptCount -gt 0) {
+        $lineExemptRows += [pscustomobject]@{
+            File = $rel
+            Count = $exemptCount
+        }
     }
     if ($count -le 0) { continue }
 
@@ -166,6 +189,7 @@ if ($Json) {
         Count = $total
         MarkerRegex = $markerRegex.ToString()
         ExcludedFiles = @($excludedRows)
+        LineExempt = @($lineExemptRows)
         Files = $rows
         MacQCursorSetPosHits = @($macCursorHits)
     } | ConvertTo-Json -Depth 4
@@ -175,6 +199,10 @@ if ($Json) {
     if ($excludedRows.Count -gt 0) {
         Write-Host "Excluded from scatter budget (facade / localization):"
         $excludedRows | Select-Object -First $MaxList | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
+    }
+    if ($lineExemptRows.Count -gt 0) {
+        Write-Host "Excluded from scatter budget (line-marker scatter-budget-exempt):"
+        $lineExemptRows | Select-Object -First $MaxList | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
     }
     if ($macCursorHits.Count -gt 0) {
         Write-Host "macOS QCursor::setPos call(s) found in Apple-reachable code:"

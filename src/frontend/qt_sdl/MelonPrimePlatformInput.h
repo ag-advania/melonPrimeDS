@@ -339,6 +339,16 @@ inline void PlatformInput_ResetPanelAfterWarp(AimPanel* panel)
 
 #endif // !defined(_WIN32)
 
+// NOTE: this function compiles on Windows too (it is not gated by the
+// !defined(_WIN32) block above), so its #else fallback (QCursor::setPos) is
+// reachable there. On Windows the correct cursor-confinement mechanism is
+// ClipCursor, not a per-call warp -- see MelonPrimeScreenCursorPolicy.cpp,
+// the canonical owner of Windows clip/warp/release. No current call site
+// reaches this function on Windows (all callers of the aim-containment warp
+// path are __APPLE__-gated). If a future Windows caller is added here,
+// treat it as a regression: it would silently bypass the ClipCursor
+// discipline documented in melonprime-aim-input.md, and needs review before
+// landing, not a quiet QCursor::setPos fallback.
 inline void PlatformInput_WarpCursor(int x, int y)
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

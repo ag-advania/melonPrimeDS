@@ -32,7 +32,7 @@ melonprime-i18n-phase9-native-review-packs.zip
 ## Audit
 
 ```bash
-python3 .claude/skills/audit-melonprime-i18n-phase10.py
+python3 .claude/skills/archive/i18n/audit-melonprime-i18n-phase10.py  # historical; needs uncommitted i18n_quality_phase10/ data, see archive/i18n/README.md
 python3 .claude/skills/audit-melonprime-localization.py
 cmake --build build-mac --parallel 4
 ```
