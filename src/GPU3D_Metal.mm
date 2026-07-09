@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace melonDS
@@ -1159,7 +1159,8 @@ bool MetalRenderer3D::ClearNativeTarget()
     pass.depthAttachment.texture = State->DepthStencilTarget;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionStore;
-    pass.depthAttachment.clearDepth = 1.0;
+    const u32 clearZ = ((GPU3D.RenderClearAttr2 & 0x7FFF) * 0x200) + 0x1FF;
+    pass.depthAttachment.clearDepth = static_cast<double>(clearZ) / 16777215.0;
 
     pass.stencilAttachment.texture = State->DepthStencilTarget;
     pass.stencilAttachment.loadAction = MTLLoadActionClear;
@@ -1310,12 +1311,9 @@ bool MetalRenderer3D::DrawSolidNative3DDiagnostic()
 
 namespace {
 
-// Groups polygons by (WBuffer, texture identity) so each unique combination
-// draws in a single drawIndexedPrimitives call -- mirrors GLRenderer3D's
-// RenderPolygonBatch()/RenderKey grouping (which also splits on TexID), but
-// as an unordered accumulation instead of requiring adjacency in submission
-// order, since GPU3D::RenderPolygonRAM order is not guaranteed to already
-// cluster same-texture polygons together the way this needs.
+// Groups adjacent polygons by (WBuffer, texture identity, TexRepeat), matching
+// GLRenderer3D's RenderPolygonBatch()/RenderKey run model. Keeping adjacency
+// instead of coalescing the whole frame preserves RenderPolygonRAM order.
 struct OpaqueDrawGroupKey
 {
     bool WBuffer;
@@ -1336,17 +1334,9 @@ struct OpaqueDrawGroupKey
     }
 };
 
-struct OpaqueDrawGroupKeyHash
-{
-    size_t operator()(const OpaqueDrawGroupKey& key) const noexcept
-    {
-        return std::hash<const void*>()(key.TexturePtr) ^ (key.WBuffer ? 0x9e3779b9u : 0u) ^
-               (key.TexRepeat * 0x85ebca6bu);
-    }
-};
-
 struct OpaqueDrawGroup
 {
+    OpaqueDrawGroupKey Key {};
     id<MTLTexture> Texture = nil; // nil = untextured
     std::vector<uint16_t> Indices;
 };
@@ -1355,7 +1345,7 @@ struct OpaqueDrawGroup
 
 // Phase 8 port-order steps 2-4 (design doc S14: "vertex/index upload",
 // "opaque polygons", texturing). Builds a packed vertex buffer plus one
-// index buffer per (WBuffer, texture) group from GPU3D::RenderPolygonRAM
+// index buffer per adjacent (WBuffer, texture, TexRepeat) group from GPU3D::RenderPolygonRAM
 // every frame, matching GLRenderer3D::BuildPolygons()/SetupVertex()'s data
 // layout and !BetterPolygons fan triangulation exactly (GPU3D_OpenGL.cpp),
 // resolves textures through the shared Texcache<> template (GPU3D_Texcache.h
@@ -1402,7 +1392,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
     std::vector<uint32_t> vertexWords;
     vertexWords.reserve(static_cast<size_t>(numPolygons) * 4 * 7);
-    std::unordered_map<OpaqueDrawGroupKey, OpaqueDrawGroup, OpaqueDrawGroupKeyHash> groups;
+    std::vector<OpaqueDrawGroup> groups;
 
     // u16 indices cap the addressable vertex count at 65535; GPU3D::VertexRAM
     // itself is sized 6144*2, so a real frame cannot come close to this --
@@ -1491,9 +1481,14 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
         const uint32_t texRepeatForKey = texture ? ((static_cast<uint32_t>(poly->TexParam) >> 16) & 0xFu) : 0u;
         const OpaqueDrawGroupKey key { poly->WBuffer, (__bridge const void*)texture, texRepeatForKey };
-        OpaqueDrawGroup& group = groups[key];
-        if (!group.Texture)
-            group.Texture = texture;
+        if (groups.empty() || !(groups.back().Key == key))
+        {
+            OpaqueDrawGroup newGroup;
+            newGroup.Key = key;
+            newGroup.Texture = texture;
+            groups.push_back(std::move(newGroup));
+        }
+        OpaqueDrawGroup& group = groups.back();
         for (u32 t = 2; t < poly->NumVertices; t++)
         {
             group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
@@ -1582,9 +1577,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         static_cast<double>(State->ColorTarget.height),
         0.0, 1.0}];
 
-    for (auto& entry : groups)
+    for (auto& group : groups)
     {
-        const OpaqueDrawGroup& group = entry.second;
         if (group.Indices.empty())
             continue;
 
@@ -1602,11 +1596,11 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         // exactly like GLRenderer3D::SetupPolygonTexture(). Untextured
         // groups always carry TexRepeat=0 (clamp/clamp), which is never
         // sampled anyway.
-        const int sIdx = TexRepeatAddressModeIndex(entry.first.TexRepeat, 0, 2);
-        const int tIdx = TexRepeatAddressModeIndex(entry.first.TexRepeat, 1, 3);
+        const int sIdx = TexRepeatAddressModeIndex(group.Key.TexRepeat, 0, 2);
+        const int tIdx = TexRepeatAddressModeIndex(group.Key.TexRepeat, 1, 3);
 
-        [encoder setRenderPipelineState:entry.first.WBuffer ? State->OpaqueRenderPipelineW
-                                                              : State->OpaqueRenderPipelineZ];
+        [encoder setRenderPipelineState:group.Key.WBuffer ? State->OpaqueRenderPipelineW
+                                                           : State->OpaqueRenderPipelineZ];
         [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
         [encoder setFragmentSamplerState:State->OpaqueTextureSamplers[sIdx][tIdx] atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
