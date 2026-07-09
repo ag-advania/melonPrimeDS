@@ -32,13 +32,9 @@
 namespace {
 
 // Byte-identical to the vertex data ScreenPanelGL uploads for kScreenVS/FS
-// (Screen.cpp, screenVertexBuffer): position.xy in DS pixel space, then a
-// texcoord whose .z picks the array layer there -- kept here as an unused
-// 3rd float so this data (and the 5-float stride) matches 1:1 rather than
-// diverging into a second hand-maintained copy. Vertices [0,6) sample the
-// "top" texture unit, [6,12) the "bottom" one (selected by which texture is
-// bound, not by texcoord.z, since this presenter uses two textures instead
-// of a texture array).
+// (Screen.cpp, screenVertexBuffer): position.xy in DS pixel space, then the
+// texture-array coordinate consumed by mp_screen_fs. Vertices [0,6) sample
+// layer 0, and vertices [6,12) sample layer 1.
 constexpr float kScreenVertices[] = {
     0.f,   0.f,    0.f, 0.f, 0.f,
     0.f,   192.f,  0.f, 1.f, 0.f,
@@ -516,20 +512,6 @@ void ScreenPanelMetal::drawScreen()
                     w, h, static_cast<double>(scale), emuThread->emuIsActive() ? 1 : 0);
         }
 
-        id<CAMetalDrawable> drawable = [layer nextDrawable];
-        if (!drawable)
-            return;
-
-        MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
-        passDesc.colorAttachments[0].texture = drawable.texture;
-        passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
-        passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
-
-        id<MTLCommandBuffer> cmdBuffer = [m->queue commandBuffer];
-        id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
-        [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
-
         bool hasCpuBaseFallbackForFrame = false;
         bool hasHudCpuBuffersForFrame = false;
         void* topCpuBufForFrame = nullptr;
@@ -620,6 +602,26 @@ void ScreenPanelMetal::drawScreen()
                 }
             }
 
+            if (!finalMetalTextureForFrame && !hasCpuBaseFallbackForFrame)
+                return;
+        }
+
+        id<CAMetalDrawable> drawable = [layer nextDrawable];
+        if (!drawable)
+            return;
+
+        MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+        passDesc.colorAttachments[0].texture = drawable.texture;
+        passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+        passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+        id<MTLCommandBuffer> cmdBuffer = [m->queue commandBuffer];
+        id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
+        [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
+
+        if (emuThread->emuIsActive())
+        {
             if (hasCpuBaseFallbackForFrame && topCpuBufForFrame && bottomCpuBufForFrame)
             {
                 [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)

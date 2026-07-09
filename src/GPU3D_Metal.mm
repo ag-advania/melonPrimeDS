@@ -1023,7 +1023,7 @@ bool MetalRenderer3D::ResizeTargets()
 
 bool MetalRenderer3D::ClearNativeTarget()
 {
-    if (!State || !State->CommandQueue || !State->ClearPipeline || !State->ClearDepthStencil ||
+    if (!State || !State->CommandQueue ||
         !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: ClearNativeTarget called before resources are ready\n");
@@ -1059,9 +1059,6 @@ bool MetalRenderer3D::ClearNativeTarget()
     if (!encoder)
         return false;
 
-    [encoder setRenderPipelineState:State->ClearPipeline];
-    [encoder setDepthStencilState:State->ClearDepthStencil];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [encoder endEncoding];
     [commandBuffer commit];
     const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
