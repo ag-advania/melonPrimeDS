@@ -66,10 +66,12 @@ private:
     bool CreateDeviceObjects();
     bool BuildClearPipeline();
     bool BuildOpaqueRenderPipelines();
+    bool BuildFinalPassPipelines();
     bool ResizeTargets();
     bool ClearNativeTarget();
     bool CreateClearBitmapTextures();
     bool UpdateClearBitmapTextures(u8 clrBitmapDirty);
+    bool RenderFinalPostPass();
     bool DrawSolidNative3DDiagnostic();
     bool ReadbackNativeColorTargetToLineBuffer();
 

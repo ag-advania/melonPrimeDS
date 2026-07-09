@@ -374,6 +374,9 @@ struct MetalRenderer3D::MetalState
     id<MTLDepthStencilState> TranslucentDepthLessEqualWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessNoWrite = nil;
     id<MTLDepthStencilState> TranslucentDepthLessEqualNoWrite = nil;
+    id<MTLLibrary> FinalPassShaderLibrary = nil;
+    id<MTLRenderPipelineState> FogColorPipeline = nil;
+    id<MTLRenderPipelineState> FogAlphaPipeline = nil;
     // 3x3 matrix of [S mode][T mode], each axis independently one of
     // {clamp, repeat, mirror-repeat} -- matches the DS TexRepeat bits via
     // TexRepeatAddressModeIndex() (see below). Built once in
@@ -710,6 +713,80 @@ fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
 }
 )";
 
+static constexpr const char* kMetal3DFinalPassShaderSource = R"(
+#include <metal_stdlib>
+using namespace metal;
+
+struct FinalVertexOut
+{
+    float4 position [[position]];
+};
+
+vertex FinalVertexOut mp3d_final_vs(uint vertexID [[vertex_id]])
+{
+    constexpr float2 positions[3] = {
+        float2(-1.0, -1.0),
+        float2( 3.0, -1.0),
+        float2(-1.0,  3.0),
+    };
+
+    FinalVertexOut out;
+    out.position = float4(positions[vertexID], 0.0, 1.0);
+    return out;
+}
+
+struct FogConfig
+{
+    uint fogOffset;
+    uint fogShift;
+    uint _pad0;
+    uint _pad1;
+    float4 fogDensity[34];
+};
+
+fragment float4 mp3d_fog_fs(
+    FinalVertexOut in [[stage_in]],
+    constant FogConfig& config [[buffer(0)]],
+    depth2d<float> depthTex [[texture(0)]],
+    texture2d<float> attrTex [[texture(1)]])
+{
+    uint2 coord = uint2(in.position.xy);
+    float4 attr = attrTex.read(coord);
+    if (attr.b == 0.0)
+        return float4(0.0);
+
+    float depth = depthTex.read(coord);
+    uint idepth = uint(depth * 16777216.0);
+    uint densityID;
+    uint densityFrac;
+    if (idepth < config.fogOffset)
+    {
+        densityID = 0;
+        densityFrac = 0;
+    }
+    else
+    {
+        uint udepth = idepth - config.fogOffset;
+        udepth = (udepth >> 2) << config.fogShift;
+        densityID = udepth >> 17;
+        if (densityID >= 32)
+        {
+            densityID = 32;
+            densityFrac = 0;
+        }
+        else
+        {
+            densityFrac = udepth & 0x1FFFFu;
+        }
+    }
+
+    float density = mix(config.fogDensity[densityID].x,
+                        config.fogDensity[densityID + 1].x,
+                        float(densityFrac) / 131072.0);
+    return float4(density);
+}
+)";
+
 MetalRenderer3D::MetalRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept
     : Renderer3D(gpu3D),
       Delegate(gpu3D, parent),
@@ -823,6 +900,7 @@ void MetalRenderer3D::RenderFrame()
             DrawSolidNative3DDiagnostic();
         else
             RenderNativeOpaquePolygons();
+        RenderFinalPostPass();
         ReadbackNativeColorTargetToLineBuffer();
         if (perfEnabled)
             perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
@@ -977,6 +1055,9 @@ bool MetalRenderer3D::CreateDeviceObjects()
         return false;
 
     if (!BuildOpaqueRenderPipelines())
+        return false;
+
+    if (!BuildFinalPassPipelines())
         return false;
 
     // Priority 4 (metal_phase8_execution_instructions.md): one sampler per
@@ -1209,6 +1290,65 @@ bool MetalRenderer3D::BuildOpaqueRenderPipelines()
     return true;
 }
 
+bool MetalRenderer3D::BuildFinalPassPipelines()
+{
+    NSError* error = nil;
+    NSString* source = [[NSString alloc] initWithUTF8String:kMetal3DFinalPassShaderSource];
+    State->FinalPassShaderLibrary = [State->Device newLibraryWithSource:source options:nil error:&error];
+    if (!State->FinalPassShaderLibrary)
+    {
+        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to compile final-pass shaders: %s\n", message);
+        return false;
+    }
+
+    id<MTLFunction> vertex = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_final_vs"];
+    id<MTLFunction> fogFragment = [State->FinalPassShaderLibrary newFunctionWithName:@"mp3d_fog_fs"];
+    if (!vertex || !fogFragment)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal renderer3D: final-pass shader entry point missing\n");
+        return false;
+    }
+
+    auto createFogPipeline = [&](NSString* label, bool colorFog) -> id<MTLRenderPipelineState> {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.label = label;
+        desc.vertexFunction = vertex;
+        desc.fragmentFunction = fogFragment;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        if (colorFog)
+        {
+            desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorBlendColor;
+            desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        }
+        else
+        {
+            desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorZero;
+            desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOne;
+        }
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorBlendAlpha;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+
+        NSError* pipelineError = nil;
+        id<MTLRenderPipelineState> pipeline =
+            [State->Device newRenderPipelineStateWithDescriptor:desc error:&pipelineError];
+        if (!pipeline)
+        {
+            const char* message = pipelineError ? [[pipelineError localizedDescription] UTF8String] : "unknown error";
+            std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create %s: %s\n",
+                [label UTF8String], message);
+        }
+        return pipeline;
+    };
+
+    State->FogColorPipeline = createFogPipeline(@"MelonPrime Metal 3D Fog Color Pipeline", true);
+    State->FogAlphaPipeline = createFogPipeline(@"MelonPrime Metal 3D Fog Alpha Pipeline", false);
+    return State->FogColorPipeline && State->FogAlphaPipeline;
+}
+
 bool MetalRenderer3D::CreateClearBitmapTextures()
 {
     if (!State || !State->Device)
@@ -1309,7 +1449,7 @@ bool MetalRenderer3D::ResizeTargets()
                                                            width:width
                                                           height:height
                                                        mipmapped:NO];
-    depthDesc.usage = MTLTextureUsageRenderTarget;
+    depthDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     depthDesc.storageMode = MTLStorageModePrivate;
     id<MTLTexture> newDepthStencilTarget = [State->Device newTextureWithDescriptor:depthDesc];
 
@@ -1418,6 +1558,62 @@ bool MetalRenderer3D::ClearNativeTarget()
     }
 
     [encoder endEncoding];
+    [commandBuffer commit];
+    const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
+    [commandBuffer waitUntilCompleted];
+    if (MetalPerfEnabled())
+        MetalPerfAddWait(waitStart, MetalPerfClock::now());
+    return commandBuffer.status == MTLCommandBufferStatusCompleted;
+}
+
+bool MetalRenderer3D::RenderFinalPostPass()
+{
+    if (!(GPU3D.RenderDispCnt & (1u << 7)))
+        return true;
+    if (!State || !State->CommandQueue || !State->ColorTarget || !State->DepthStencilTarget ||
+        !State->AttrTarget || !State->FogColorPipeline || !State->FogAlphaPipeline)
+        return false;
+
+    struct FogConfigCpu
+    {
+        uint32_t fogOffset;
+        uint32_t fogShift;
+        uint32_t pad0;
+        uint32_t pad1;
+        float fogDensity[34][4];
+    } config = {};
+    config.fogOffset = GPU3D.RenderFogOffset;
+    config.fogShift = GPU3D.RenderFogShift;
+    for (int i = 0; i < 34; i++)
+        config.fogDensity[i][0] = static_cast<float>(GPU3D.RenderFogDensityTable[i]) / 127.0f;
+
+    MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = State->ColorTarget;
+    pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLCommandBuffer> commandBuffer = [State->CommandQueue commandBuffer];
+    if (!commandBuffer)
+        return false;
+
+    id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+    if (!encoder)
+        return false;
+
+    const bool alphaOnlyFog = (GPU3D.RenderDispCnt & (1u << 6)) != 0;
+    [encoder setRenderPipelineState:(alphaOnlyFog ? State->FogAlphaPipeline : State->FogColorPipeline)];
+    [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
+    [encoder setFragmentTexture:State->DepthStencilTarget atIndex:0];
+    [encoder setFragmentTexture:State->AttrTarget atIndex:1];
+
+    const u32 fogColor = GPU3D.RenderFogColor;
+    [encoder setBlendColorRed:static_cast<float>(fogColor & 0x1F) / 31.0f
+                        green:static_cast<float>((fogColor >> 5) & 0x1F) / 31.0f
+                         blue:static_cast<float>((fogColor >> 10) & 0x1F) / 31.0f
+                        alpha:static_cast<float>((fogColor >> 16) & 0x1F) / 31.0f];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [encoder endEncoding];
+
     [commandBuffer commit];
     const auto waitStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
     [commandBuffer waitUntilCompleted];
