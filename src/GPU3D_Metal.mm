@@ -978,6 +978,11 @@ void MetalRenderer3D::SetScaleFactor(int scale) noexcept
         ResizeTargets();
 }
 
+void MetalRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
+{
+    BetterPolygons = betterPolygons;
+}
+
 void MetalRenderer3D::RenderFrame()
 {
     MetalPerfFrame perfFrame;
@@ -2133,7 +2138,8 @@ struct OpaqueDrawGroup
 // "opaque polygons", texturing). Builds a packed vertex buffer plus one
 // index buffer per adjacent (WBuffer, texture, TexRepeat) group from GPU3D::RenderPolygonRAM
 // every frame, matching GLRenderer3D::BuildPolygons()/SetupVertex()'s data
-// layout and !BetterPolygons fan triangulation exactly (GPU3D_OpenGL.cpp),
+// layout, regular fan triangulation, and BetterPolygons center-fan splitting
+// (GPU3D_OpenGL.cpp),
 // resolves textures through the shared Texcache<> template (GPU3D_Texcache.h
 // -- the same DS-format-decode logic GLRenderer3D uses, just with a Metal
 // resource loader instead of a GL one), then issues one drawIndexedPrimitives
@@ -2142,14 +2148,12 @@ struct OpaqueDrawGroup
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
 // Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource):
 //   - special clear-alpha-zero shadow/background path
-//   - "BetterPolygons" alternate triangulation
 //   - clear bitmap, edge marking, fog, and the final GL-style post-pass
 //
 // ScaleFactor controls the Metal render-target size. DS screen-space
 // coordinates remain native 256x192 and are mapped to NDC, so rasterization
 // covers the full scaled render target. Full GL parity is still incomplete
-// because exact shadow visuals, display-capture textures, BetterPolygons, and
-// hires 2D/3D composition are not finished.
+// because exact shadow visuals and hires 2D/3D composition are not finished.
 void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||
@@ -2208,12 +2212,21 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         if (poly->NumVertices < 3)    continue;
 
         const size_t vertexBase = vertexWords.size() / 7;
-        if (vertexBase + poly->NumVertices > kMaxVertices)
+        const bool useBetterPolygon = BetterPolygons && poly->Type != 1 && poly->NumVertices > 3;
+        const size_t verticesToAdd = static_cast<size_t>(poly->NumVertices) + (useBetterPolygon ? 1u : 0u);
+        if (vertexBase + verticesToAdd > kMaxVertices)
             break;
 
         consideredPolygons++;
 
         const uint32_t alpha = (static_cast<uint32_t>(poly->Attr) >> 16) & 0x1Fu;
+        const bool shadow = poly->IsShadow;
+        const bool translucent = poly->Translucent || shadow;
+        const bool depthEqual = (poly->Attr & (1u << 14)) != 0;
+        const bool depthWrite = !translucent || ((poly->Attr & (1u << 11)) != 0);
+        const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
+        const bool line = poly->Type == 1;
+        const bool shadowMask = poly->IsShadowMask;
 
         // Texture resolution: same entry point GLRenderer3D::BuildPolygons()
         // uses (Texcache<>::GetTexture()), called unconditionally per
@@ -2242,48 +2255,94 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             }
         }
 
-        for (u32 v = 0; v < poly->NumVertices; v++)
-        {
-            const Vertex* vtx = poly->Vertices[v];
-
-            uint32_t z = static_cast<uint32_t>(poly->FinalZ[v]);
-            const uint32_t w = static_cast<uint32_t>(poly->FinalW[v]);
+        const uint32_t shaderAttrBase =
+            static_cast<uint32_t>(poly->Attr) & ((0x3Fu << 24) | (1u << 15) | 0x30u);
+        auto pushPackedVertex = [&](uint32_t x, uint32_t y, uint32_t zFull, uint32_t w,
+                                    uint32_t r, uint32_t g, uint32_t b,
+                                    uint32_t texS, uint32_t texT) {
+            uint32_t z = zFull;
             uint32_t zshift = 0;
             while (z > 0xFFFFu) { z >>= 1; zshift++; }
 
-            const uint32_t x = static_cast<uint32_t>(vtx->FinalPosition[0]) & 0xFFFFu;
-            const uint32_t y = static_cast<uint32_t>(vtx->FinalPosition[1]) & 0xFFFFu;
-
-            const uint32_t r = static_cast<uint32_t>(vtx->FinalColor[0] >> 1) & 0xFFu;
-            const uint32_t g = static_cast<uint32_t>(vtx->FinalColor[1] >> 1) & 0xFFu;
-            const uint32_t b = static_cast<uint32_t>(vtx->FinalColor[2] >> 1) & 0xFFu;
-
-            const uint32_t texS = static_cast<uint16_t>(vtx->TexCoords[0]);
-            const uint32_t texT = static_cast<uint16_t>(vtx->TexCoords[1]);
-
-            vertexWords.push_back(x | (y << 16));
+            vertexWords.push_back((x & 0xFFFFu) | ((y & 0xFFFFu) << 16));
             vertexWords.push_back(z | (w << 16));
-            uint32_t shaderAttr =
-                (static_cast<uint32_t>(poly->Attr) & ((0x3Fu << 24) | (1u << 15) | 0x30u)) |
-                (zshift << 16);
-            if (poly->Translucent || poly->IsShadow)
+            uint32_t shaderAttr = shaderAttrBase | (zshift << 16);
+            if (translucent)
                 shaderAttr |= (1u << 31);
 
-            vertexWords.push_back(r | (g << 8) | (b << 16) | (alpha << 24));
+            vertexWords.push_back((r & 0xFFu) | ((g & 0xFFu) << 8) |
+                                  ((b & 0xFFu) << 16) | (alpha << 24));
             vertexWords.push_back(texS | (texT << 16));
             vertexWords.push_back(shaderAttr);
             vertexWords.push_back(texLayerWord);
             vertexWords.push_back(texDimsWord);
+        };
+        auto pushOriginalVertex = [&](u32 v) {
+            const Vertex* vtx = poly->Vertices[v];
+            pushPackedVertex(static_cast<uint32_t>(vtx->FinalPosition[0]),
+                             static_cast<uint32_t>(vtx->FinalPosition[1]),
+                             static_cast<uint32_t>(poly->FinalZ[v]),
+                             static_cast<uint32_t>(poly->FinalW[v]),
+                             static_cast<uint32_t>(vtx->FinalColor[0] >> 1),
+                             static_cast<uint32_t>(vtx->FinalColor[1] >> 1),
+                             static_cast<uint32_t>(vtx->FinalColor[2] >> 1),
+                             static_cast<uint16_t>(vtx->TexCoords[0]),
+                             static_cast<uint16_t>(vtx->TexCoords[1]));
+        };
+
+        if (useBetterPolygon)
+        {
+            uint32_t cX = 0;
+            uint32_t cY = 0;
+            float cZ = 0.0f;
+            float cW = 0.0f;
+            float cR = 0.0f;
+            float cG = 0.0f;
+            float cB = 0.0f;
+            float cS = 0.0f;
+            float cT = 0.0f;
+
+            for (u32 v = 0; v < poly->NumVertices; v++)
+            {
+                const Vertex* vtx = poly->Vertices[v];
+                cX += static_cast<uint32_t>(vtx->HiresPosition[0]);
+                cY += static_cast<uint32_t>(vtx->HiresPosition[1]);
+
+                const float fw = static_cast<float>(poly->FinalW[v]) * static_cast<float>(poly->NumVertices);
+                cW += 1.0f / fw;
+                if (poly->WBuffer) cZ += static_cast<float>(poly->FinalZ[v]) / fw;
+                else               cZ += static_cast<float>(poly->FinalZ[v]);
+                cR += static_cast<float>(vtx->FinalColor[0] >> 1) / fw;
+                cG += static_cast<float>(vtx->FinalColor[1] >> 1) / fw;
+                cB += static_cast<float>(vtx->FinalColor[2] >> 1) / fw;
+                cS += static_cast<float>(vtx->TexCoords[0]) / fw;
+                cT += static_cast<float>(vtx->TexCoords[1]) / fw;
+            }
+
+            cX = (cX / poly->NumVertices) >> 4;
+            cY = (cY / poly->NumVertices) >> 4;
+            cW = 1.0f / cW;
+            if (poly->WBuffer) cZ *= cW;
+            else               cZ /= static_cast<float>(poly->NumVertices);
+            cR *= cW;
+            cG *= cW;
+            cB *= cW;
+            cS *= cW;
+            cT *= cW;
+
+            pushPackedVertex(cX, cY, static_cast<uint32_t>(cZ), static_cast<uint32_t>(cW),
+                             static_cast<uint32_t>(cR), static_cast<uint32_t>(cG),
+                             static_cast<uint32_t>(cB),
+                             static_cast<uint16_t>(static_cast<int32_t>(cS)),
+                             static_cast<uint16_t>(static_cast<int32_t>(cT)));
+        }
+
+        for (u32 v = 0; v < poly->NumVertices; v++)
+        {
+            pushOriginalVertex(v);
         }
 
         const uint32_t texRepeatForKey = texture ? ((static_cast<uint32_t>(poly->TexParam) >> 16) & 0xFu) : 0u;
-        const bool shadow = poly->IsShadow;
-        const bool translucent = poly->Translucent || shadow;
-        const bool depthEqual = (poly->Attr & (1u << 14)) != 0;
-        const bool depthWrite = !translucent || ((poly->Attr & (1u << 11)) != 0);
-        const uint32_t polyID = (static_cast<uint32_t>(poly->Attr) >> 24) & 0x3Fu;
-        const bool line = poly->Type == 1;
-        const bool shadowMask = poly->IsShadowMask;
         const bool attrFogWrite =
             translucent && ((GPU3D.RenderDispCnt & (1u << 7)) != 0) &&
             ((poly->Attr & (1u << 15)) == 0);
@@ -2333,11 +2392,27 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         }
         else
         {
-            for (u32 t = 2; t < poly->NumVertices; t++)
+            if (useBetterPolygon)
             {
-                group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
-                group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
-                group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
+                const size_t originalBase = vertexBase + 1;
+                for (u32 t = 1; t < poly->NumVertices; t++)
+                {
+                    group.Indices.push_back(static_cast<uint16_t>(vertexBase));
+                    group.Indices.push_back(static_cast<uint16_t>(originalBase + t - 1));
+                    group.Indices.push_back(static_cast<uint16_t>(originalBase + t));
+                }
+                group.Indices.push_back(static_cast<uint16_t>(vertexBase));
+                group.Indices.push_back(static_cast<uint16_t>(originalBase + poly->NumVertices - 1));
+                group.Indices.push_back(static_cast<uint16_t>(originalBase));
+            }
+            else
+            {
+                for (u32 t = 2; t < poly->NumVertices; t++)
+                {
+                    group.Indices.push_back(static_cast<uint16_t>(vertexBase + 0));
+                    group.Indices.push_back(static_cast<uint16_t>(vertexBase + t - 1));
+                    group.Indices.push_back(static_cast<uint16_t>(vertexBase + t));
+                }
             }
         }
     }

@@ -393,6 +393,7 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
 
     rend3d->SetThreaded(settings.Threaded);
     rend3d->SetScaleFactor(scale);
+    rend3d->SetBetterPolygons(settings.BetterPolygons);
 }
 
 bool MetalRenderer::EnsureFinalOutput()
