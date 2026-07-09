@@ -1010,3 +1010,16 @@ Metal can become the Compute Renderer replacement on macOS, but only if it behav
   - `[MelonPrime] metal frame: compose frame=<n> back=<b> front=<f> scale=<s> target=<w>x<h>`
   - `[MelonPrime] metal frame: present frame=<n> front texture=<ptr>`
 - Verified with `cmake --build build-mac-metal-test --parallel 4` on the local Intel Mac Metal-enabled build. Only pre-existing warnings were observed.
+- Follow-up guard fix after review: `RendererOutput` frame serial metadata and the Metal output enum are now guarded by `MELONPRIME_DS && MELONPRIME_ENABLE_METAL`, so the default/non-Metal core shape stays upstream-compatible. Verified both `build-mac-metal-test` and `build-mac`, then pushed as `2fe71e20`.
+
+### 2026-07-10 JST — Phase B complete
+
+- Added `MELONPRIME_METAL_DIAG=1` readback probes for native 3D and final two-layer output.
+- `MetalRenderer3D` now exposes `Metal3DDiagnostics GetLastDiagnostics() const noexcept`.
+- Native 3D diagnostics report non-black pixel count, first non-black XY/BGRA, checksum, considered/textured polygon counts, group count, and draw count:
+  - `[MelonPrime] metal 3d diag: nonzero=<n> first=(<x>,<y>) firstBGRA=<b,g,r,a> checksum=<hex> considered=<n> textured=<n> groups=<n> draws=<n> valid=<0|1>`
+- Final texture diagnostics report layer 0/1 non-black counts/checksums plus native-3D layer routing:
+  - `[MelonPrime] metal final diag: layer0.nonzero=<n> layer1.nonzero=<n> layer0.checksum=<hex> layer1.checksum=<hex> native3DLayer=<0|1> usedNative3D=<0|1> native3D.nonzero=<n> valid=<0|1>/<0|1>`
+- Presenter diagnostics now include final texture type, layer count, screenKind, and numScreens, and log an error if the renderer output is not a 2-layer texture array.
+- Added an explicit viewport to `MetalRenderer3D::RenderNativeOpaquePolygons()`.
+- Verified `cmake --build build-mac-metal-test --parallel 4`; default `cmake --build build-mac --parallel 4` reported no work to do.

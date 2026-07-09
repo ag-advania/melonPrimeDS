@@ -67,6 +67,15 @@ bool MetalPerfEnabled()
     return enabled;
 }
 
+bool MetalDiagEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_DIAG");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 double MetalPerfElapsedMs(MetalPerfClock::time_point start, MetalPerfClock::time_point end)
 {
     return std::chrono::duration<double, std::milli>(end - start).count();
@@ -145,6 +154,81 @@ void MetalPerfLogTargetResize(int scale, NSUInteger width, NSUInteger height)
         scale,
         static_cast<size_t>(width),
         static_cast<size_t>(height));
+}
+
+struct MetalTextureReadbackSummary
+{
+    uint64_t NonzeroPixels = 0;
+    uint64_t Checksum = 1469598103934665603ull;
+    int FirstNonzeroX = -1;
+    int FirstNonzeroY = -1;
+    uint8_t FirstNonzeroBGRA[4] = {};
+    bool Valid = false;
+};
+
+MetalTextureReadbackSummary ReadbackBGRA8Texture(id<MTLCommandQueue> queue, id<MTLTexture> texture, NSUInteger slice)
+{
+    MetalTextureReadbackSummary summary;
+    if (!queue || !texture)
+        return summary;
+
+    const NSUInteger width = texture.width;
+    const NSUInteger height = texture.height;
+    const NSUInteger bytesPerRow = width * 4;
+    id<MTLDevice> device = texture.device;
+    id<MTLBuffer> buffer = [device newBufferWithLength:bytesPerRow * height
+                                               options:MTLResourceStorageModeShared];
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    if (!buffer || !commandBuffer)
+        return summary;
+
+    id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+    if (!blit)
+        return summary;
+
+    [blit copyFromTexture:texture
+              sourceSlice:slice
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(width, height, 1)
+                 toBuffer:buffer
+        destinationOffset:0
+   destinationBytesPerRow:bytesPerRow
+ destinationBytesPerImage:bytesPerRow * height];
+    [blit endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+        return summary;
+
+    const uint8_t* pixels = static_cast<const uint8_t*>([buffer contents]);
+    constexpr uint64_t kFnvPrime = 1099511628211ull;
+    for (NSUInteger y = 0; y < height; y++)
+    {
+        const uint8_t* row = pixels + y * bytesPerRow;
+        for (NSUInteger x = 0; x < width; x++)
+        {
+            const uint8_t* px = row + x * 4;
+            for (int c = 0; c < 4; c++)
+            {
+                summary.Checksum ^= px[c];
+                summary.Checksum *= kFnvPrime;
+            }
+            if (px[0] || px[1] || px[2])
+            {
+                summary.NonzeroPixels++;
+                if (summary.FirstNonzeroX < 0)
+                {
+                    summary.FirstNonzeroX = static_cast<int>(x);
+                    summary.FirstNonzeroY = static_cast<int>(y);
+                    for (int c = 0; c < 4; c++)
+                        summary.FirstNonzeroBGRA[c] = px[c];
+                }
+            }
+        }
+    }
+    summary.Valid = true;
+    return summary;
 }
 
 } // namespace
@@ -255,6 +339,8 @@ struct MetalRenderer3D::MetalState
     id<MTLSamplerState> OpaqueTextureSamplers[3][3] = {};
     id<MTLTexture> DummyTexture = nil; // bound for untextured draws (static arg slot)
     std::unique_ptr<TexcacheMetal> Texcache; // constructed once Device exists
+    Metal3DDiagnostics LastDiagnostics;
+    bool LoggedNativeZeroAfterDraw = false;
 };
 
 // Maps one axis of the DS TexRepeat 4-bit field to an index into
@@ -653,6 +739,11 @@ int MetalRenderer3D::GetScaleFactor() const noexcept
     return ScaleFactor;
 }
 
+Metal3DDiagnostics MetalRenderer3D::GetLastDiagnostics() const noexcept
+{
+    return State ? State->LastDiagnostics : Metal3DDiagnostics {};
+}
+
 void MetalRenderer3D::SetupRenderThread()
 {
     Delegate.SetupRenderThread();
@@ -1048,6 +1139,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     {
         return;
     }
+    State->LastDiagnostics = {};
 
     u8 unusedClearBitmapDirty = 0;
     const auto texcacheStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
@@ -1075,6 +1167,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     static bool loggedFirstOpaquePass = false;
     u32 consideredPolygons = 0;
     u32 texturedPolygons = 0;
+    u32 drawCount = 0;
 
     for (u32 i = 0; i < numPolygons; i++)
     {
@@ -1184,6 +1277,10 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 
     if (vertexWords.empty() || groups.empty())
     {
+        State->LastDiagnostics.ConsideredPolygons = consideredPolygons;
+        State->LastDiagnostics.TexturedPolygons = texturedPolygons;
+        State->LastDiagnostics.Groups = static_cast<uint32_t>(groups.size());
+        State->LastDiagnostics.Draws = 0;
         if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
         {
             gCurrentMetalPerfFrame->ConsideredPolygons += consideredPolygons;
@@ -1231,6 +1328,10 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     [encoder setDepthStencilState:State->OpaqueDepthState];
     [encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
     [encoder setVertexBytes:&config length:sizeof(config) atIndex:1];
+    [encoder setViewport:(MTLViewport){0.0, 0.0,
+        static_cast<double>(State->ColorTarget.width),
+        static_cast<double>(State->ColorTarget.height),
+        0.0, 1.0}];
 
     for (auto& entry : groups)
     {
@@ -1264,6 +1365,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                               indexType:MTLIndexTypeUInt16
                             indexBuffer:indexBuffer
                       indexBufferOffset:0];
+        drawCount++;
         if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
             gCurrentMetalPerfFrame->Draws++;
     }
@@ -1280,6 +1382,48 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         gCurrentMetalPerfFrame->ConsideredPolygons += consideredPolygons;
         gCurrentMetalPerfFrame->TexturedPolygons += texturedPolygons;
         gCurrentMetalPerfFrame->Groups += static_cast<uint32_t>(groups.size());
+    }
+
+    if (MetalDiagEnabled())
+    {
+        const MetalTextureReadbackSummary summary =
+            ReadbackBGRA8Texture(State->CommandQueue, State->ColorTarget, 0);
+        State->LastDiagnostics.NonzeroPixels = summary.NonzeroPixels;
+        State->LastDiagnostics.Checksum = summary.Checksum;
+        State->LastDiagnostics.FirstNonzeroX = summary.FirstNonzeroX;
+        State->LastDiagnostics.FirstNonzeroY = summary.FirstNonzeroY;
+        for (int c = 0; c < 4; c++)
+            State->LastDiagnostics.FirstNonzeroBGRA[c] = summary.FirstNonzeroBGRA[c];
+        State->LastDiagnostics.ConsideredPolygons = consideredPolygons;
+        State->LastDiagnostics.TexturedPolygons = texturedPolygons;
+        State->LastDiagnostics.Groups = static_cast<uint32_t>(groups.size());
+        State->LastDiagnostics.Draws = drawCount;
+
+        static uint64_t diagFrames = 0;
+        diagFrames++;
+        const bool zeroAfterDraw = drawCount > 0 && summary.Valid && summary.NonzeroPixels == 0;
+        if (diagFrames <= 3 || (diagFrames % 60) == 0 || (zeroAfterDraw && !State->LoggedNativeZeroAfterDraw))
+        {
+            if (zeroAfterDraw)
+                State->LoggedNativeZeroAfterDraw = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal 3d diag: nonzero=%llu first=(%d,%d) "
+                "firstBGRA=%02x,%02x,%02x,%02x checksum=0x%016llx "
+                "considered=%u textured=%u groups=%zu draws=%u valid=%u\n",
+                static_cast<unsigned long long>(summary.NonzeroPixels),
+                summary.FirstNonzeroX,
+                summary.FirstNonzeroY,
+                summary.FirstNonzeroBGRA[0],
+                summary.FirstNonzeroBGRA[1],
+                summary.FirstNonzeroBGRA[2],
+                summary.FirstNonzeroBGRA[3],
+                static_cast<unsigned long long>(summary.Checksum),
+                consideredPolygons,
+                texturedPolygons,
+                groups.size(),
+                drawCount,
+                summary.Valid ? 1u : 0u);
+        }
     }
 }
 

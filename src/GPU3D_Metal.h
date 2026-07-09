@@ -5,6 +5,7 @@
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
+#include <cstdint>
 #include <memory>
 
 #include "GPU3D.h"
@@ -14,6 +15,19 @@ namespace melonDS
 {
 
 class SoftRenderer;
+
+struct Metal3DDiagnostics
+{
+    uint64_t NonzeroPixels = 0;
+    uint64_t Checksum = 0;
+    int FirstNonzeroX = -1;
+    int FirstNonzeroY = -1;
+    uint8_t FirstNonzeroBGRA[4] = {};
+    uint32_t ConsideredPolygons = 0;
+    uint32_t TexturedPolygons = 0;
+    uint32_t Groups = 0;
+    uint32_t Draws = 0;
+};
 
 class MetalRenderer3D final : public Renderer3D
 {
@@ -37,6 +51,7 @@ public:
     int GetTargetWidth() const noexcept;
     int GetTargetHeight() const noexcept;
     int GetScaleFactor() const noexcept;
+    Metal3DDiagnostics GetLastDiagnostics() const noexcept;
 
     void SetupRenderThread();
     void EnableRenderThread();

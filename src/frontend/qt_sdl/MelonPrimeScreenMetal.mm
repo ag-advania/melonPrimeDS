@@ -562,11 +562,21 @@ void ScreenPanelMetal::drawScreen()
                 {
                     m->loggedFirstNativeTextureOutput = true;
                     fprintf(stderr,
-                            "[MelonPrime] metal presenter: visible source=MetalFinalTexture scale=%zu size=%zux%zu screens=%zu softwareFallback=0\n",
-                            static_cast<size_t>(std::max<NSUInteger>(1, finalMetalTextureForFrame.width / 256)),
+                            "[MelonPrime] metal presenter: source texture type=%lu layers=%zu size=%zux%zu screenKind=%d,%d numScreens=%d visibleSource=MetalFinalTexture scale=%zu softwareFallback=0\n",
+                            static_cast<unsigned long>(finalMetalTextureForFrame.textureType),
+                            static_cast<size_t>(finalMetalTextureForFrame.arrayLength),
                             static_cast<size_t>(finalMetalTextureForFrame.width),
                             static_cast<size_t>(finalMetalTextureForFrame.height),
-                            static_cast<size_t>(finalMetalTextureForFrame.arrayLength));
+                            numScreens > 0 ? screenKind[0] : -1,
+                            numScreens > 1 ? screenKind[1] : -1,
+                            numScreens,
+                            static_cast<size_t>(std::max<NSUInteger>(1, finalMetalTextureForFrame.width / 256)));
+                    if (finalMetalTextureForFrame.textureType != MTLTextureType2DArray ||
+                        finalMetalTextureForFrame.arrayLength < 2)
+                    {
+                        fprintf(stderr,
+                                "[MelonPrime] metal presenter: ERROR Metal final texture is not a 2-layer texture array\n");
+                    }
                 }
                 if (finalMetalTextureForFrame && output.FrameSerial != 0 &&
                     output.FrameSerial != m->lastPresentedFrame)
