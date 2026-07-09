@@ -11,6 +11,8 @@
 #include <cstdio>
 
 #include <QGuiApplication>
+#include <QImage>
+#include <QPainter>
 #include <QScreen>
 #include <QWindow>
 
@@ -18,6 +20,8 @@
 #include "GPU.h"
 #include "EmuInstance.h"
 #include "EmuThread.h"
+#include "MelonPrime.h"
+#include "MelonPrimeHudRender.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"
 
@@ -46,6 +50,20 @@ constexpr float kScreenVertices[] = {
     256.f, 192.f,  1.f, 1.f, 1.f,
     256.f, 0.f,    1.f, 0.f, 1.f,
 };
+
+constexpr float kUiVertices[] = {
+    0.f, 0.f, 0.f, 0.f,
+    0.f, 1.f, 0.f, 1.f,
+    1.f, 1.f, 1.f, 1.f,
+    0.f, 0.f, 0.f, 0.f,
+    1.f, 1.f, 1.f, 1.f,
+    1.f, 0.f, 1.f, 0.f,
+};
+
+// Keep these in sync with Screen.cpp's local constants. They are intentionally
+// duplicated here rather than exposed from Screen.cpp just for this presenter.
+constexpr int kMetalOSDMargin = 6;
+constexpr int kMetalLogoWidth = 192;
 
 // Mirrors kScreenVS/kScreenFS (main_shaders.h) 1:1: same affine-then-NDC
 // math, same Y flip, so screenMatrix[i] (already computed by
@@ -85,12 +103,50 @@ NSString* const kScreenShaderSource =
      "    return float4(c.rgb, 1.0);\n"
      "}\n";
 
+NSString* const kUiShaderSource =
+    @"#include <metal_stdlib>\n"
+     "using namespace metal;\n"
+     "struct UiVertexIn {\n"
+     "    float2 position [[attribute(0)]];\n"
+     "    float2 texcoord [[attribute(1)]];\n"
+     "};\n"
+     "struct UiVOut {\n"
+     "    float4 position [[position]];\n"
+     "    float2 texcoord;\n"
+     "};\n"
+     "struct UiUniforms {\n"
+     "    float4 rect;\n"
+     "    float2 screenSize;\n"
+     "};\n"
+     "vertex UiVOut mp_ui_vs(UiVertexIn in [[stage_in]],\n"
+     "                        constant UiUniforms& u [[buffer(1)]]) {\n"
+     "    float2 p = u.rect.xy + in.position * u.rect.zw;\n"
+     "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
+     "    p.y *= -1.0;\n"
+     "    UiVOut out;\n"
+     "    out.position = float4(p, 0.0, 1.0);\n"
+     "    out.texcoord = in.texcoord;\n"
+     "    return out;\n"
+     "}\n"
+     "fragment float4 mp_ui_fs(UiVOut in [[stage_in]],\n"
+     "                         texture2d<float> tex [[texture(0)]],\n"
+     "                         sampler samp [[sampler(0)]]) {\n"
+     "    return tex.sample(samp, in.texcoord);\n"
+     "}\n";
+
 struct ScreenUniforms
 {
     float m[6];
     float screenSize[2];
 };
 static_assert(sizeof(ScreenUniforms) == 32, "must match the MSL ScreenUniforms layout exactly");
+
+struct UiUniforms
+{
+    float rect[4];
+    float screenSize[2];
+};
+static_assert(sizeof(UiUniforms) == 24, "must match the MSL UiUniforms layout exactly");
 
 } // namespace
 
@@ -100,10 +156,18 @@ struct ScreenPanelMetal::Impl
     id<MTLCommandQueue> queue = nil;
     CAMetalLayer* layer = nil;
     id<MTLRenderPipelineState> pipeline = nil;
+    id<MTLRenderPipelineState> uiPipeline = nil;
     id<MTLSamplerState> nearestSampler = nil;
     id<MTLSamplerState> linearSampler = nil;
     id<MTLBuffer> vertexBuffer = nil;
+    id<MTLBuffer> uiVertexBuffer = nil;
     id<MTLTexture> screenTex[2] = { nil, nil }; // [0]=top, [1]=bottom
+    id<MTLTexture> uiTex = nil;
+    int uiTexW = 0;
+    int uiTexH = 0;
+
+    QImage uiOverlay;
+    QImage bottomImage;
 
     QMutex layoutMutex;
     int drawableW = 1;
@@ -111,6 +175,8 @@ struct ScreenPanelMetal::Impl
     qreal scale = 1.0;
 
     bool resourcesReady = false;
+    bool loggedFirstDraw = false;
+    bool loggedFirstUiOverlay = false;
 };
 
 ScreenPanelMetal::ScreenPanelMetal(QWidget* parent)
@@ -192,7 +258,9 @@ bool ScreenPanelMetal::initMetal()
         m->layer = layer;
 
         NSError* error = nil;
-        id<MTLLibrary> library = [m->device newLibraryWithSource:kScreenShaderSource options:nil error:&error];
+        NSMutableString* shaderSource = [NSMutableString stringWithString:kScreenShaderSource];
+        [shaderSource appendString:kUiShaderSource];
+        id<MTLLibrary> library = [m->device newLibraryWithSource:shaderSource options:nil error:&error];
         if (!library)
         {
             fprintf(stderr, "[MelonPrime] metal presenter: screen shader compile failed\n");
@@ -230,8 +298,49 @@ bool ScreenPanelMetal::initMetal()
             return false;
         }
 
+        id<MTLFunction> uiVertexFn = [library newFunctionWithName:@"mp_ui_vs"];
+        id<MTLFunction> uiFragmentFn = [library newFunctionWithName:@"mp_ui_fs"];
+        if (!uiVertexFn || !uiFragmentFn)
+        {
+            fprintf(stderr, "[MelonPrime] metal presenter: UI shader functions missing after compile\n");
+            return false;
+        }
+
+        MTLVertexDescriptor* uiVertexDesc = [MTLVertexDescriptor vertexDescriptor];
+        uiVertexDesc.attributes[0].format = MTLVertexFormatFloat2;
+        uiVertexDesc.attributes[0].offset = 0;
+        uiVertexDesc.attributes[0].bufferIndex = 0;
+        uiVertexDesc.attributes[1].format = MTLVertexFormatFloat2;
+        uiVertexDesc.attributes[1].offset = 2 * sizeof(float);
+        uiVertexDesc.attributes[1].bufferIndex = 0;
+        uiVertexDesc.layouts[0].stride = 4 * sizeof(float);
+        uiVertexDesc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
+
+        MTLRenderPipelineDescriptor* uiPipelineDesc = [[MTLRenderPipelineDescriptor alloc] init];
+        uiPipelineDesc.vertexFunction = uiVertexFn;
+        uiPipelineDesc.fragmentFunction = uiFragmentFn;
+        uiPipelineDesc.vertexDescriptor = uiVertexDesc;
+        uiPipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        uiPipelineDesc.colorAttachments[0].blendingEnabled = YES;
+        uiPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
+        uiPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        uiPipelineDesc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        uiPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        uiPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        uiPipelineDesc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+
+        m->uiPipeline = [m->device newRenderPipelineStateWithDescriptor:uiPipelineDesc error:&error];
+        if (!m->uiPipeline)
+        {
+            fprintf(stderr, "[MelonPrime] metal presenter: UI pipeline state creation failed\n");
+            return false;
+        }
+
         m->vertexBuffer = [m->device newBufferWithBytes:kScreenVertices
                                                    length:sizeof(kScreenVertices)
+                                                  options:MTLResourceStorageModeShared];
+        m->uiVertexBuffer = [m->device newBufferWithBytes:kUiVertices
+                                                   length:sizeof(kUiVertices)
                                                   options:MTLResourceStorageModeShared];
 
         MTLSamplerDescriptor* nearestDesc = [[MTLSamplerDescriptor alloc] init];
@@ -258,7 +367,8 @@ bool ScreenPanelMetal::initMetal()
         m->screenTex[0] = [m->device newTextureWithDescriptor:texDesc];
         m->screenTex[1] = [m->device newTextureWithDescriptor:texDesc];
 
-        m->resourcesReady = (m->pipeline != nil && m->vertexBuffer != nil &&
+        m->resourcesReady = (m->pipeline != nil && m->uiPipeline != nil &&
+                              m->vertexBuffer != nil && m->uiVertexBuffer != nil &&
                               m->screenTex[0] != nil && m->screenTex[1] != nil &&
                               m->nearestSampler != nil && m->linearSampler != nil);
     }
@@ -322,6 +432,13 @@ void ScreenPanelMetal::drawScreen()
         if (!layer || w <= 0 || h <= 0)
             return;
 
+        if (!m->loggedFirstDraw)
+        {
+            m->loggedFirstDraw = true;
+            fprintf(stderr, "[MelonPrime] metal presenter: first draw drawable=%dx%d scale=%.2f active=%d\n",
+                    w, h, static_cast<double>(scale), emuThread->emuIsActive() ? 1 : 0);
+        }
+
         id<CAMetalDrawable> drawable = [layer nextDrawable];
         if (!drawable)
             return;
@@ -336,6 +453,9 @@ void ScreenPanelMetal::drawScreen()
         id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
+        bool hasCpuBuffersForFrame = false;
+        void* bottomCpuBufForFrame = nullptr;
+
         if (emuThread->emuIsActive())
         {
             auto nds = emuInstance->getNDS();
@@ -343,6 +463,8 @@ void ScreenPanelMetal::drawScreen()
             void* topBuf = nullptr;
             void* bottomBuf = nullptr;
             const bool hasCpuBuffers = nds->GPU.GetFramebuffers(&topBuf, &bottomBuf);
+            hasCpuBuffersForFrame = hasCpuBuffers;
+            bottomCpuBufForFrame = bottomBuf;
 
             // Phase 4 scope is CPU-buffer presentation only (design doc: "no
             // renderer3D_Metal yet"). A hardware (GL-texture) renderer output
@@ -385,10 +507,142 @@ void ScreenPanelMetal::drawScreen()
             }
         }
 
-        // OSD/HUD/splash are not drawn by this presenter yet (Metal-plan
-        // Phase 5); still run osdUpdate() so item expiry/rendered-flag
-        // bookkeeping doesn't leak while this presenter is active.
         osdUpdate();
+
+        const int logicalW = std::max(1, static_cast<int>(std::ceil(static_cast<double>(w) / static_cast<double>(scale))));
+        const int logicalH = std::max(1, static_cast<int>(std::ceil(static_cast<double>(h) / static_cast<double>(scale))));
+        bool overlayHasContent = false;
+
+        if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
+            m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
+        m->uiOverlay.fill(Qt::transparent);
+
+        QPainter overlayPainter(&m->uiOverlay);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        if (emuThread->emuIsActive())
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            const bool editMode = MelonPrime::CustomHud_IsEditMode();
+            if (mp && mp->IsRomDetected() && (mp->IsInGame() || editMode))
+            {
+                auto& instcfg = emuInstance->getLocalConfig();
+                const bool hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
+                const bool hudVisible = hudEnabled || editMode;
+                if (!hudVisible)
+                {
+                    MelonPrime::CustomHud_EnsurePatchRestored(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
+                        mp->IsInGame());
+                }
+                else
+                {
+                    if (m->bottomImage.width() != 256 || m->bottomImage.height() != 192)
+                        m->bottomImage = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
+
+                    if (hasCpuBuffersForFrame && bottomCpuBufForFrame)
+                        std::memcpy(m->bottomImage.bits(), bottomCpuBufForFrame, 256 * 192 * 4);
+
+                    if (overlayFont.family().isEmpty())
+                        overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
+                    overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
+                    overlayPainter.setFont(overlayFont);
+
+                    const QRect dirty = MelonPrime::CustomHud_Render(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetAddrHot(),
+                        mp->GetPlayerPosition(),
+                        &overlayPainter, nullptr,
+                        &m->uiOverlay, hasCpuBuffersForFrame ? &m->bottomImage : nullptr,
+                        mp->IsInGame(),
+                        m_hudTopMatrixValid ? m_topStretchX : 1.0f,
+                        m_hudScale,
+                        (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
+                        (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
+                    overlayHasContent = overlayHasContent || !dirty.isEmpty();
+                }
+            }
+        }
+#endif
+
+        if (!emuThread->emuIsActive())
+        {
+            osdMutex.lock();
+            overlayPainter.drawPixmap(QRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth)), splashLogo);
+            for (int i = 0; i < 3; i++)
+                overlayPainter.drawImage(splashPos[i], splashText[i].bitmap);
+            osdMutex.unlock();
+            overlayHasContent = true;
+        }
+
+#ifdef MELONPRIME_DS
+        if (osdEnabled && !osdItems.empty())
+#else
+        if (osdEnabled)
+#endif
+        {
+            osdMutex.lock();
+            uint32_t y = kMetalOSDMargin;
+            for (auto it = osdItems.begin(); it != osdItems.end(); )
+            {
+                OSDItem& item = *it;
+                overlayPainter.drawImage(kMetalOSDMargin, y, item.bitmap);
+                y += item.bitmap.height();
+                it++;
+            }
+            osdMutex.unlock();
+            overlayHasContent = true;
+        }
+
+        overlayPainter.end();
+
+        if (overlayHasContent)
+        {
+            if (!m->loggedFirstUiOverlay)
+            {
+                m->loggedFirstUiOverlay = true;
+                fprintf(stderr, "[MelonPrime] metal presenter: first UI overlay %dx%d active=%d\n",
+                        logicalW, logicalH, emuThread->emuIsActive() ? 1 : 0);
+            }
+
+            if (m->uiTexW != logicalW || m->uiTexH != logicalH || !m->uiTex)
+            {
+                MTLTextureDescriptor* uiDesc =
+                    [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                        width:logicalW
+                                                                       height:logicalH
+                                                                    mipmapped:NO];
+                uiDesc.usage = MTLTextureUsageShaderRead;
+                uiDesc.storageMode = MTLStorageModeShared;
+                m->uiTex = [m->device newTextureWithDescriptor:uiDesc];
+                m->uiTexW = logicalW;
+                m->uiTexH = logicalH;
+            }
+
+            if (m->uiTex)
+            {
+                [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
+                             mipmapLevel:0
+                               withBytes:m->uiOverlay.constBits()
+                             bytesPerRow:m->uiOverlay.bytesPerLine()];
+
+                UiUniforms uiUniforms{};
+                uiUniforms.rect[0] = 0.0f;
+                uiUniforms.rect[1] = 0.0f;
+                uiUniforms.rect[2] = static_cast<float>(logicalW);
+                uiUniforms.rect[3] = static_cast<float>(logicalH);
+                uiUniforms.screenSize[0] = static_cast<float>(logicalW);
+                uiUniforms.screenSize[1] = static_cast<float>(logicalH);
+
+                [encoder setRenderPipelineState:m->uiPipeline];
+                [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
+                [encoder setVertexBytes:&uiUniforms length:sizeof(uiUniforms) atIndex:1];
+                [encoder setFragmentTexture:m->uiTex atIndex:0];
+                [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
+                [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+            }
+        }
 
         [encoder endEncoding];
         [cmdBuffer presentDrawable:drawable];
