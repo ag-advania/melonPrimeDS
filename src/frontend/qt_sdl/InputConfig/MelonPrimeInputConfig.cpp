@@ -155,7 +155,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     metroidSetVideoQualityToMetal->setObjectName(QStringLiteral("metroidSetVideoQualityToMetal"));
     metroidSetVideoQualityToMetal->setText(MelonPrime::UiText::Tr("Video quality: Metal Test"));
     metroidSetVideoQualityToMetal->setToolTip(MelonPrime::UiText::Tr(
-        "Experimental native Metal renderer for macOS testing. Not High2/OpenGL Compute. Some 3D effects and performance work are still incomplete."));
+        "Experimental native Metal renderer for macOS testing. Not High2/OpenGL Compute. Sets 4x internal scale by default; you can change internal resolution in Video Settings while Metal is selected. Some 3D effects and performance work are still incomplete."));
     ui->videoButtonsLayout->insertWidget(3, metroidSetVideoQualityToMetal);
     connect(
         metroidSetVideoQualityToMetal,
