@@ -83,6 +83,15 @@ bool MetalPerfEnabled()
     return enabled;
 }
 
+bool MetalDiagEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_DIAG");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 double ElapsedMs(MetalClock::time_point start, MetalClock::time_point end)
 {
     return std::chrono::duration<double, std::milli>(end - start).count();
@@ -132,6 +141,69 @@ void SubmitFinalPassPerf(int scale, NSUInteger width, NSUInteger height, double 
         acc.LastTargetHeight);
 
     acc = {};
+}
+
+struct MetalTextureReadbackSummary
+{
+    uint64_t NonzeroPixels = 0;
+    uint64_t Checksum = 1469598103934665603ull;
+    bool Valid = false;
+};
+
+MetalTextureReadbackSummary ReadbackBGRA8Texture(id<MTLCommandQueue> queue, id<MTLTexture> texture, NSUInteger slice)
+{
+    MetalTextureReadbackSummary summary;
+    if (!queue || !texture)
+        return summary;
+
+    const NSUInteger width = texture.width;
+    const NSUInteger height = texture.height;
+    const NSUInteger bytesPerRow = width * 4;
+    id<MTLDevice> device = texture.device;
+    id<MTLBuffer> buffer = [device newBufferWithLength:bytesPerRow * height
+                                               options:MTLResourceStorageModeShared];
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    if (!buffer || !commandBuffer)
+        return summary;
+
+    id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+    if (!blit)
+        return summary;
+
+    [blit copyFromTexture:texture
+              sourceSlice:slice
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(width, height, 1)
+                 toBuffer:buffer
+        destinationOffset:0
+   destinationBytesPerRow:bytesPerRow
+ destinationBytesPerImage:bytesPerRow * height];
+    [blit endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+        return summary;
+
+    const uint8_t* pixels = static_cast<const uint8_t*>([buffer contents]);
+    constexpr uint64_t kFnvPrime = 1099511628211ull;
+    for (NSUInteger y = 0; y < height; y++)
+    {
+        const uint8_t* row = pixels + y * bytesPerRow;
+        for (NSUInteger x = 0; x < width; x++)
+        {
+            const uint8_t* px = row + x * 4;
+            for (int c = 0; c < 4; c++)
+            {
+                summary.Checksum ^= px[c];
+                summary.Checksum *= kFnvPrime;
+            }
+            if (px[0] || px[1] || px[2])
+                summary.NonzeroPixels++;
+        }
+    }
+    summary.Valid = true;
+    return summary;
 }
 
 bool EngineAUses3D(const GPU& gpu)
@@ -502,6 +574,40 @@ bool MetalRenderer::ComposeFinalOutputForCompletedFrame()
     [commandBuffer waitUntilCompleted];
     if (commandBuffer.status != MTLCommandBufferStatusCompleted)
         return false;
+
+    if (MetalDiagEnabled())
+    {
+        const MetalTextureReadbackSummary layer0 =
+            ReadbackBGRA8Texture(state.Queue, finalTex, 0);
+        const MetalTextureReadbackSummary layer1 =
+            ReadbackBGRA8Texture(state.Queue, finalTex, 1);
+        const Metal3DDiagnostics nativeDiag = rend3d->GetLastDiagnostics();
+
+        static uint64_t diagFrames = 0;
+        diagFrames++;
+        const bool usedNative3D = engineAUses3D && native3D;
+        const bool nativeVisibleButFinalBlack =
+            usedNative3D && nativeDiag.NonzeroPixels > 0 &&
+            ((native3DLayer == 0 && layer0.Valid && layer0.NonzeroPixels == 0) ||
+             (native3DLayer == 1 && layer1.Valid && layer1.NonzeroPixels == 0));
+
+        if (diagFrames <= 3 || (diagFrames % 60) == 0 || nativeVisibleButFinalBlack)
+        {
+            std::fprintf(stderr,
+                "[MelonPrime] metal final diag: layer0.nonzero=%llu layer1.nonzero=%llu "
+                "layer0.checksum=0x%016llx layer1.checksum=0x%016llx "
+                "native3DLayer=%d usedNative3D=%u native3D.nonzero=%llu valid=%u/%u\n",
+                static_cast<unsigned long long>(layer0.NonzeroPixels),
+                static_cast<unsigned long long>(layer1.NonzeroPixels),
+                static_cast<unsigned long long>(layer0.Checksum),
+                static_cast<unsigned long long>(layer1.Checksum),
+                native3DLayer,
+                usedNative3D ? 1u : 0u,
+                static_cast<unsigned long long>(nativeDiag.NonzeroPixels),
+                layer0.Valid ? 1u : 0u,
+                layer1.Valid ? 1u : 0u);
+        }
+    }
 
     state.FrontBuffer = nextBackBuffer;
     state.CompletedFrameSerial = frameSerial;
