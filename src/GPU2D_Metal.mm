@@ -18,6 +18,81 @@ namespace
 constexpr int kScreenW = 256;
 constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
+
+struct LayerConfigCpu
+{
+    uint32_t vramMask = 0;
+    uint32_t pad0[3] = {};
+    struct BGConfig
+    {
+        uint32_t size[2] = {};
+        uint32_t type = 0;
+        uint32_t palOffset = 0;
+        uint32_t tileOffset = 0;
+        uint32_t mapOffset = 0;
+        uint32_t clamp = 0;
+        uint32_t pad0[1] = {};
+    } bgConfig[4];
+};
+
+struct SpriteConfigCpu
+{
+    uint32_t vramMask = 0;
+    uint32_t pad0[3] = {};
+    int32_t rotscale[32][4] = {};
+    struct OAMConfig
+    {
+        int32_t position[2] = {};
+        int32_t flip[2] = {};
+        int32_t size[2] = {};
+        int32_t boundSize[2] = {};
+        uint32_t objMode = 0;
+        uint32_t type = 0;
+        uint32_t palOffset = 0;
+        uint32_t tileOffset = 0;
+        uint32_t tileStride = 0;
+        uint32_t rotscale = 0;
+        uint32_t bgPrio = 0;
+        uint32_t mosaic = 0;
+    } oam[128];
+};
+
+struct ScanlineConfigCpu
+{
+    struct Scanline
+    {
+        int32_t bgOffset[4][4] = {};
+        int32_t bgRotscale[2][4] = {};
+        uint32_t backColor = 0;
+        uint32_t winRegs = 0;
+        uint32_t winMask = 0;
+        uint32_t pad0[1] = {};
+        int32_t winPos[4] = {};
+        uint32_t bgMosaicEnable[4] = {};
+        int32_t mosaicSize[4] = {};
+    } scanline[192];
+};
+
+struct SpriteScanlineConfigCpu
+{
+    int32_t mosaicLine[192] = {};
+};
+
+struct CompositorConfigCpu
+{
+    uint32_t bgPrio[4] = {};
+    uint32_t enableOBJ = 0;
+    uint32_t enable3D = 0;
+    uint32_t blendCnt = 0;
+    uint32_t blendEffect = 0;
+    uint32_t blendCoef[4] = {};
+};
+
+static_assert((sizeof(LayerConfigCpu) & 15) == 0);
+static_assert((sizeof(SpriteConfigCpu) & 15) == 0);
+static_assert((sizeof(ScanlineConfigCpu) & 15) == 0);
+static_assert((sizeof(SpriteScanlineConfigCpu) & 15) == 0);
+static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
 }
 
 struct MetalRenderer2D::Metal2DState
@@ -33,6 +108,11 @@ struct MetalRenderer2D::Metal2DState
     id<MTLTexture> PalTexOBJ = nil;
     id<MTLTexture> MosaicTex = nil;
     id<MTLTexture> SpriteTex = nil;
+    id<MTLBuffer> LayerConfigBuffer = nil;
+    id<MTLBuffer> SpriteConfigBuffer = nil;
+    id<MTLBuffer> ScanlineConfigBuffer = nil;
+    id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
+    id<MTLBuffer> CompositorConfigBuffer = nil;
     int Scale = 0;
     bool LoggedFirstAllocation = false;
 };
@@ -65,6 +145,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         state.PalTexOBJ = nil;
         state.MosaicTex = nil;
         state.SpriteTex = nil;
+        state.LayerConfigBuffer = nil;
+        state.SpriteConfigBuffer = nil;
+        state.ScanlineConfigBuffer = nil;
+        state.SpriteScanlineConfigBuffer = nil;
+        state.CompositorConfigBuffer = nil;
         state.Scale = 0;
         state.Device = preferredMetalDevice;
     }
@@ -83,6 +168,8 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
         state.AllBGLayerTex[0] && state.VRAMTexBG && state.VRAMTexOBJ &&
         state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
+        state.LayerConfigBuffer && state.SpriteConfigBuffer && state.ScanlineConfigBuffer &&
+        state.SpriteScanlineConfigBuffer && state.CompositorConfigBuffer &&
         state.Scale == ScaleFactor)
     {
         return true;
@@ -174,6 +261,17 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     spriteDesc.storageMode = MTLStorageModePrivate;
     id<MTLTexture> newSprite = [state.Device newTextureWithDescriptor:spriteDesc];
 
+    id<MTLBuffer> newLayerConfig =
+        [state.Device newBufferWithLength:sizeof(LayerConfigCpu) options:MTLResourceStorageModeShared];
+    id<MTLBuffer> newSpriteConfig =
+        [state.Device newBufferWithLength:sizeof(SpriteConfigCpu) options:MTLResourceStorageModeShared];
+    id<MTLBuffer> newScanlineConfig =
+        [state.Device newBufferWithLength:sizeof(ScanlineConfigCpu) options:MTLResourceStorageModeShared];
+    id<MTLBuffer> newSpriteScanlineConfig =
+        [state.Device newBufferWithLength:sizeof(SpriteScanlineConfigCpu) options:MTLResourceStorageModeShared];
+    id<MTLBuffer> newCompositorConfig =
+        [state.Device newBufferWithLength:sizeof(CompositorConfigCpu) options:MTLResourceStorageModeShared];
+
     id<MTLTexture> newBGLayers[kBGLayerCount] = {};
     const uint16_t bgSizes[8][3] = {
         {128, 128, 2},
@@ -207,7 +305,9 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         bgLayersReady = bgLayersReady && texture;
 
     if (!newOutput || !newOBJLayer || !newOBJDepth || !newVRAMBG || !newVRAMOBJ ||
-        !newPalBG || !newPalOBJ || !newMosaic || !newSprite || !bgLayersReady)
+        !newPalBG || !newPalOBJ || !newMosaic || !newSprite ||
+        !newLayerConfig || !newSpriteConfig || !newScanlineConfig ||
+        !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady)
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
@@ -239,13 +339,18 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     state.PalTexOBJ = newPalOBJ;
     state.MosaicTex = newMosaic;
     state.SpriteTex = newSprite;
+    state.LayerConfigBuffer = newLayerConfig;
+    state.SpriteConfigBuffer = newSpriteConfig;
+    state.ScanlineConfigBuffer = newScanlineConfig;
+    state.SpriteScanlineConfigBuffer = newSpriteScanlineConfig;
+    state.CompositorConfigBuffer = newCompositorConfig;
     state.Scale = ScaleFactor;
 
     if (!state.LoggedFirstAllocation)
     {
         state.LoggedFirstAllocation = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal 2d: scaffold targets engine=%u scale=%d size=%zux%zu bgLayers=%d objLayers=2 visible=0\n",
+            "[MelonPrime] metal 2d: scaffold targets engine=%u scale=%d size=%zux%zu bgLayers=%d objLayers=2 configBuffers=5 visible=0\n",
             GPU2D.Num,
             state.Scale,
             static_cast<size_t>(width),
@@ -272,6 +377,11 @@ void MetalRenderer2D::Reset() noexcept
     State->PalTexOBJ = nil;
     State->MosaicTex = nil;
     State->SpriteTex = nil;
+    State->LayerConfigBuffer = nil;
+    State->SpriteConfigBuffer = nil;
+    State->ScanlineConfigBuffer = nil;
+    State->SpriteScanlineConfigBuffer = nil;
+    State->CompositorConfigBuffer = nil;
     State->Scale = 0;
 }
 

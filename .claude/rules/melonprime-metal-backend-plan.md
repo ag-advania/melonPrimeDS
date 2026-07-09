@@ -1587,6 +1587,11 @@ decode), the 256x16 signed mosaic lookup texture initialized with the same table
 1024x512 sprite prerender texture. These are still resource ownership only; upload dirty tracking
 and shader consumption remain the next 4a steps.
 
+The config-buffer scaffold adds shared Metal buffers corresponding to GLRenderer2D's UBO groups:
+layer config, sprite config, per-scanline config, sprite per-scanline mosaic config, and compositor
+config. The CPU struct layouts are kept 16-byte aligned so later MSL argument structs can consume
+the same state updates without changing the phase's resource ownership boundary.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
