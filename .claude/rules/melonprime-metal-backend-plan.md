@@ -451,7 +451,66 @@ actual OSD/HUD/splash parity is Phase 5.
 
 ---
 
-## 4. Remaining phases (Phase 5 onward)
+## 3d. Phase 5 — Metal OSD + Custom HUD overlay parity (implemented and *runtime-smoked on Intel*, 2026-07-09)
+
+Design doc §11 scope. `ScreenPanelMetal` now has a second premultiplied-alpha
+UI pipeline for the overlays that the Phase 4 presenter intentionally skipped:
+no-ROM splash, OSD messages, and MelonPrime Custom HUD. This stays within the
+Phase 4/5 CPU-presenter model: the UI is rendered with existing Qt/QPainter HUD
+code into a full logical-window `QImage`, uploaded as `BGRA8Unorm`, and blended
+over the Metal-presented screens with `source=One`, `dest=OneMinusSourceAlpha`.
+
+### 3d.1 Implementation notes
+
+- Reuses `ScreenPanel::osdUpdate()` and `ScreenPanel::osdRenderItem()` for OSD
+  and no-ROM text bitmap generation.
+- Draws the no-ROM splash logo/text and live OSD messages into the Metal UI
+  overlay instead of relying on Qt paint events.
+- Calls `MelonPrime::CustomHud_Render()` directly for the Metal presenter,
+  including the QPainter radar-frame/bottom-screen crop path used by the
+  software presenter. The bottom DS framebuffer fetched for normal screen
+  presentation is reused for the radar crop, avoiding a second
+  `GPU.GetFramebuffers()` call.
+- Leaves the GL-specific radar shader path alone. Metal's first-cut HUD parity
+  follows the existing software/QPainter semantics; a later optimization can
+  add a Metal-native radar shader if profiling proves this overlay upload is a
+  bottleneck.
+- Adds one-time presenter diagnostics for first draw and first UI overlay, so
+  env-forced Metal sessions can confirm that the overlay path is actually
+  executing even before ROM gameplay testing is available.
+
+### 3d.2 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean after adding the UI
+  pipeline and QPainter overlay upload path.
+- `cmake --build build-mac --parallel 4` — default Metal-disabled build remains
+  clean (only pre-existing `sprintf` and HUD `EditPropType::Color` warnings).
+- Default binary string check: no `metal presenter`, `metal probe`,
+  `MelonPrimeScreenMetal`, or `MELONPRIME_FORCE_METAL` strings in
+  `build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`.
+- Runtime smoke with `MELONPRIME_FORCE_METAL_PRESENTER=1`: process stayed alive
+  and logged the Metal presenter plus Phase 5 overlay path:
+
+```text
+[MelonPrime] metal presenter: initialized drawable=512x768 scale=2.00
+[MelonPrime] metal presenter: first draw drawable=1678x1638 scale=2.00 active=0
+[MelonPrime] metal presenter: first UI overlay 839x819 active=0
+```
+
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1`,
+  `audit-metroid-literal-budget.ps1 -Budget 1`,
+  `audit-platform-scatter-budget.ps1 -Budget 22`,
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1`, and
+  `generate-hud-prop-schema.py` + generated-file diff all pass. The SRP audit's
+  two `Screen.cpp` manual-review lines are pre-existing raw-aim items, unchanged
+  by this phase.
+- **Not verified:** Apple Silicon. **Not verified:** ROM gameplay visual parity
+  for Custom HUD, live OSD messages, radar overlay, resize/fullscreen/manual
+  HiDPI inspection.
+
+---
+
+## 4. Remaining phases (Phase 6 onward)
 
 Carried over from the source design document, trimmed to phase titles + the acceptance gate that
 blocks starting each one. Do not begin implementing any of these without the stated gate
@@ -461,7 +520,6 @@ for the per-phase code sketches, class skeletons, and acceptance-gate detail.
 
 | Phase | Title | Blocked on |
 |---|---|---|
-| 5 | OSD + Custom HUD presenter parity on Metal | Phase 4 stable on Intel (Apple Silicon parity separately gated) |
 | 6 | `RendererOutput` abstraction (explicit CPU/GL/Metal output kind) | Phase 4 (needed before any Metal-texture renderer output can exist) |
 | 7 | `MetalRenderer`/`MetalRenderer2D`/`MetalRenderer3D` shell + `renderer3D_Metal` enum value | Phase 6; must not add the enum value until the shell can fail gracefully (log + fallback) instead of crashing |
 | 8 | Port `GLRenderer3D` (not the compute renderer) to Metal, correctness-first | Phase 7 stable on Intel; parity-tested against existing OpenGL/software output on this machine. Apple Silicon parity is a separate gate. |
@@ -504,4 +562,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 2 — Metal feature probe | Done | 2026-07-09 | `MelonPrimeMetalFeatureCheck.h/.mm`; **runtime-verified on real Intel Metal 3 hardware** (device query + command queue + real shader compile + BGRA8Unorm pipeline state all succeeded); default tree unaffected, scatter budget exempt-marker applied; Apple Silicon still unconfirmed |
 | 3 — EmuThread backend tracking | Done (partial by design) | 2026-07-09 | New `videoBackend` member tracked at all 4 write sites; the 5 read sites (context-current gating, repaint signal, VSync branch) deliberately left on `useOpenGL` until Phase 4 needs 3-way branching; both `build-mac` and `build-mac-metal-test` rebuild clean, launch smoke tests pass, all PS1 audits green |
 | 4 — `ScreenPanelMetal` presenter | Done (Intel runtime smoke) | 2026-07-09 | `CAMetalLayer` presenter compiled only under `MELONPRIME_METAL_ACTIVE`; env-only bootstrap `MELONPRIME_FORCE_METAL_PRESENTER=1`; CPU BGRA framebuffer upload/present path runtime-verified on Intel Iris Plus 655; default binary has no Metal strings; OSD/HUD/splash and Apple Silicon still pending |
-| 5–10 | Not started | — | See §4. Phases 5-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
+| 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
+| 6–10 | Not started | — | See §4. Phases 6-8 are achievable on this session's real Intel hardware; Apple Silicon confirmation (required before Phase 9 ships to users) is not |
