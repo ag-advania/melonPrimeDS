@@ -68,6 +68,8 @@ private:
     bool BuildOpaqueRenderPipelines();
     bool ResizeTargets();
     bool ClearNativeTarget();
+    bool CreateClearBitmapTextures();
+    bool UpdateClearBitmapTextures(u8 clrBitmapDirty);
     bool DrawSolidNative3DDiagnostic();
     bool ReadbackNativeColorTargetToLineBuffer();
 
@@ -75,13 +77,12 @@ private:
     // design doc S14): uploads GPU3D::RenderPolygonRAM into native Metal
     // buffers, resolves textures via the shared Texcache<> template (same
     // decode logic GLRenderer3D uses, GPU3D_Texcache.h), and rasterizes
-    // opaque polygons into ColorTarget/AttrTarget/DepthStencilTarget every
+    // visible polygons into ColorTarget/AttrTarget/DepthStencilTarget every
     // frame. This is a real, GPU-executed draw -- not a placeholder -- and
-    // its native ColorTarget is exposed for presenter bring-up, but it is not
-    // yet a complete composited screen. GetLine()/the visible base frame are
-    // still Delegate-backed, and Metal does not yet implement translucency,
-    // shadow masks, edge marking, or fog. See GPU3D_Metal.mm for the
-    // itemized scope.
+    // its native ColorTarget is read back through GetLine(), but it is not yet
+    // a complete GLRenderer3D mirror. Shadow masks, clear bitmap edge cases,
+    // edge marking, fog, and hires composition remain tracked in
+    // GPU3D_Metal.mm and the Metal backend plan.
     void RenderNativeOpaquePolygons();
 };
 
