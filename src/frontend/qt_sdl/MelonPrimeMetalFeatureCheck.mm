@@ -38,10 +38,15 @@ FeatureInfo ProbeFeatureInfo()
             return info;
         }
 
-        // Minimal render pipeline smoke test targeting the format the
-        // presenter will use (BGRA8Unorm). This proves pipeline state
-        // *creation* succeeds on this device/OS combination; it is never
-        // used for actual drawing.
+        // Render pipeline smoke test matching the exact attachment shape
+        // MetalRenderer3D::BuildClearPipeline() uses (GPU3D_Metal.mm):
+        // color0=BGRA8Unorm (presenter format), color1=RGBA8Unorm (attribute
+        // target), depth/stencil=Depth32Float_Stencil8 (combined format).
+        // This used to probe only a single BGRA8 color attachment, which
+        // could report "baseline supported" on a device/driver combination
+        // that then failed inside the real Phase 8 pipeline creation --
+        // SupportsRequiredBaseline() is documented as the gate every later
+        // phase must check, so it needs to actually predict that outcome.
         NSError* error = nil;
         NSString* shaderSource =
             @"#include <metal_stdlib>\n"
@@ -51,8 +56,9 @@ FeatureInfo ProbeFeatureInfo()
              "    float2 pos[3] = { float2(-1,-1), float2(3,-1), float2(-1,3) };\n"
              "    VOut out; out.position = float4(pos[vid], 0, 1); return out;\n"
              "}\n"
-             "fragment float4 mp_probe_fs(VOut in [[stage_in]]) {\n"
-             "    return float4(0, 0, 0, 0);\n"
+             "struct FOut { float4 color [[color(0)]]; float4 attr [[color(1)]]; };\n"
+             "fragment FOut mp_probe_fs() {\n"
+             "    FOut out; out.color = float4(0, 0, 0, 0); out.attr = float4(0, 0, 0, 0); return out;\n"
              "}\n";
 
         id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
@@ -74,12 +80,45 @@ FeatureInfo ProbeFeatureInfo()
         desc.vertexFunction = vertexFn;
         desc.fragmentFunction = fragmentFn;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+        desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
 
         id<MTLRenderPipelineState> pipeline =
             [device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!pipeline)
         {
             info.unavailableReason = "render pipeline state creation failed";
+            return info;
+        }
+
+        MTLDepthStencilDescriptor* dsDesc = [[MTLDepthStencilDescriptor alloc] init];
+        dsDesc.depthCompareFunction = MTLCompareFunctionAlways;
+        dsDesc.depthWriteEnabled = YES;
+        id<MTLDepthStencilState> depthStencilState =
+            [device newDepthStencilStateWithDescriptor:dsDesc];
+        if (!depthStencilState)
+        {
+            info.unavailableReason = "depth/stencil state creation failed";
+            return info;
+        }
+
+        // Pipeline *descriptor* validation only proves the format
+        // combination is legal for a render pipeline; actually allocating a
+        // private-storage texture in the combined depth/stencil format
+        // catches drivers where the format is legal to declare but not to
+        // allocate. 1x1 so the probe stays cheap.
+        MTLTextureDescriptor* depthTexDesc =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float_Stencil8
+                                                               width:1
+                                                              height:1
+                                                           mipmapped:NO];
+        depthTexDesc.usage = MTLTextureUsageRenderTarget;
+        depthTexDesc.storageMode = MTLStorageModePrivate;
+        id<MTLTexture> depthProbeTexture = [device newTextureWithDescriptor:depthTexDesc];
+        if (!depthProbeTexture)
+        {
+            info.unavailableReason = "Depth32Float_Stencil8 texture allocation failed";
             return info;
         }
 

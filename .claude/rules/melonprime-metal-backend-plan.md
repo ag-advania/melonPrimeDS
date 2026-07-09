@@ -714,6 +714,101 @@ render-pass load actions. This is still not the DS polygon renderer, but it esta
   complete:** native Metal replacement for `GLRenderer3D`'s draw/shader/texture/depth-stencil
   implementation.
 
+## 3i. Phase 8 audit fixes — renderer routing bug, dialog crash guard, resource hardening, probe strengthening
+
+An external audit of `ea36e23c`/`92c9f752` (recorded verbatim in the session that produced this
+commit) found one real correctness bug and several defense-in-depth gaps that had to be closed
+before Phase 9 could safely build on top of the scaffold. All five items below were fixed and
+verified together.
+
+**1. `EmuThread` renderer routing bug (the audit's top-priority finding).** Both
+`EmuThread::run()` and the `videoSettingsDirty` handling block computed `videoRenderer` as
+`globalCfg.GetInt("3D.Renderer")` only when `useOpenGL` was true, and hardcoded `videoRenderer = 0`
+(Software) otherwise. `useOpenGL` reflects whether the *presentation* backend needs a live OpenGL
+context — it has nothing to do with which 3D renderer identity the user actually requested. Since
+`PresentationBackend::Metal` (Phase 4) correctly resolves `useOpenGL == false` (Metal doesn't need
+GL), a real (non-env-forced) `renderer3D_Metal` selection would have been silently discarded and
+replaced with Software the moment Phase 9 gave users a way to pick it without going through the
+`MELONPRIME_FORCE_METAL_RENDERER` bootstrap env var (which works today only because it overrides
+`NormalizeRendererForPlatform`'s return value unconditionally, independent of the input). Fixed in
+both call sites: `videoRenderer` is now always `MelonPrime::VideoBackend::NormalizeRendererForPlatform(...)`
+of the requested config value; `useOpenGL`/context creation is decided separately by
+`ResolvePresentationBackend`. The `videoSettingsDirty` block additionally has to account for
+"no live GL context *this iteration*" (`useOpenGL` there only flips via the `msg_InitGL`/
+`msg_DeInitGL` message handlers, not by this block) — so when `!useOpenGL`, the requested renderer
+is clamped to Software *only if* `RendererRequiresOpenGLContext()` says it actually needs a
+context; Metal (or Software) pass through unmodified. The non-`MELONPRIME_DS` (`#else`) paths in
+both call sites are untouched, byte-identical to the pre-fix code.
+
+**2. `VideoSettingsDialog` crash risk.** `grp3DRenderer->button(oldRenderer)->setChecked(true)` in
+the constructor dereferences whatever `QButtonGroup::button()` returns for the saved
+`3D.Renderer` config value — but only 3 radio buttons are registered (Software/OpenGL/Compute).
+Metal doesn't have a button yet (Phase 9), so a config value of `renderer3D_Metal` (or any
+unrecognized int, even in a non-Metal build, e.g. a stray value left over from a build with a
+different renderer set compiled in) makes `button()` return `nullptr`, and the unconditional
+`->setChecked(true)` call would crash. Fixed with a null check under `#ifdef MELONPRIME_DS`
+(`#else` keeps the original one-liner byte-identical); `oldRenderer` itself is left untouched so
+Cancel still restores the original value exactly, it just doesn't get displayed as checked.
+`VideoSettingsDialog::UsesGL()` had the parallel problem: `renderer != renderer3D_Software` treats
+Metal as "needs GL", which would wrongly enable this dialog's VSync-via-GL controls and treat any
+change while a Metal renderer is configured as needing a GL context reinit. Routed through
+`MelonPrime::VideoBackend::IsOpenGLPresentation(ResolvePresentationBackend(...))` instead
+(`#else` keeps the original expression byte-identical).
+
+**3. `MetalRenderer3D::ResizeTargets()` partial-failure safety.** Previously assigned each new
+texture directly to `State->ColorTarget`/`DepthStencilTarget`/`AttrTarget` as it was created; if
+(for example) the third allocation failed, `State` was left holding two new-size textures and one
+stale old-size (or null) one. Now builds all three into local `id<MTLTexture>` variables first and
+only commits them to `State` once all three succeeded — a failure leaves whatever was already in
+`State` completely untouched instead of a mixed/inconsistent set.
+
+**4. `MetalRenderer3D::ClearNativeTarget()` null guards.** Previously checked only that
+`commandBuffer`/`encoder` creation succeeded; it read `State->ColorTarget` etc. unconditionally
+before that, so a call before `CreateDeviceObjects()`/`ResizeTargets()` finished (or after a
+`ResizeTargets()` failure this method didn't police itself) could dereference a null texture. Now
+checks `State`, `CommandQueue`, `ClearPipeline`, `ClearDepthStencil`, and all three targets are
+non-null up front and logs + returns `false` instead.
+
+**5. Feature probe strengthened to match the actual Phase 8 pipeline shape.** The Phase 2 probe
+(`MelonPrimeMetalFeatureCheck.mm`) only ever built a single-BGRA8-attachment pipeline, so
+`SupportsRequiredBaseline()` could report success on a device/driver combination that then failed
+inside `MetalRenderer3D::BuildClearPipeline()`'s actual shape (`color0=BGRA8Unorm`,
+`color1=RGBA8Unorm`, `depth/stencil=Depth32Float_Stencil8`). The probe's shader and pipeline
+descriptor now match that exact shape, and it additionally builds a real
+`MTLDepthStencilState` and allocates a 1×1 private-storage `Depth32Float_Stencil8` texture — the
+pipeline-descriptor check alone only proves the format combination is *legal to declare* for a
+render pipeline, not that the device can actually *allocate* a texture in that combined format.
+
+### 3i.1 Verification (2026-07-09, real Intel Mac)
+
+- `cmake --build build-mac-metal-test --parallel 4` — clean, no new warnings.
+- `cmake --build build-mac --parallel 4` — clean, no new warnings (only the two pre-existing
+  unrelated warnings: `EmuInstance.cpp` `sprintf` deprecation, HUD `EditPropType::Color` switch).
+- Runtime smoke, Metal-enabled binary with
+  `MELONPRIME_FORCE_METAL_RENDERER=1 MELONPRIME_FORCE_METAL_PRESENTER=1`: process stayed alive 5s
+  on Intel Iris Plus 655 and logged the strengthened probe succeeding plus presenter init/first
+  draw/first UI overlay, confirming the fixes did not regress the existing forced-Metal path:
+
+```text
+[MelonPrime] metal probe: device='Intel(R) Iris(TM) Plus Graphics 655' lowPower=1 removable=0 unifiedMemory=1 recommendedMaxWorkingSetSize=1610612736
+[MelonPrime] metal presenter: initialized drawable=512x768 scale=2.00
+[MelonPrime] metal presenter: first draw drawable=512x768 scale=2.00 active=0
+[MelonPrime] metal presenter: first UI overlay 256x384 active=0
+```
+
+- Runtime smoke, default (Metal-disabled) binary: launched and quit cleanly; log shows the normal
+  OpenGL context path (`Created a OpenGL context`, `GL_RENDERER: Intel(R) Iris(TM) Plus Graphics
+  655`), confirming the `EmuThread` routing fix did not change default-build behavior.
+- Default binary string check: still no `metal presenter`, `metal probe`, `metal renderer`,
+  `MelonPrimeScreenMetal`, or `MELONPRIME_FORCE_METAL` strings.
+- Audits: `audit-config-defaults.ps1`, `check-inc-ownership.ps1` (56 files),
+  `audit-metroid-literal-budget.ps1 -Budget 1`, `audit-platform-scatter-budget.ps1 -Budget 22`
+  (unaffected — these fixes use `MELONPRIME_DS`, not `__APPLE__`/`__linux__` markers),
+  `audit-color-dialog-prefs.ps1`, `audit-melonprime-srp-performance.ps1` — all pass, same as
+  before this fix set. `generate-hud-prop-schema.py` regeneration diff is empty.
+- **Not verified:** Apple Silicon. **Not verified:** ROM gameplay (still no ROM available in this
+  session — confirmed again this session via `find` for `*.nds`, none found).
+
 ---
 
 ## 4. Remaining phases / gates (Phase 8 onward)
@@ -769,5 +864,5 @@ point — that gate stays open regardless of how far Phases 2-10 progress here.
 | 5 — OSD + Custom HUD presenter parity | Done (Intel no-ROM overlay smoke) | 2026-07-09 | Added Metal UI alpha pipeline and QPainter full-window overlay upload for no-ROM splash, OSD, and Custom HUD/radar via existing software HUD code; forced-Metal run logs first draw + first UI overlay; ROM gameplay visual parity and Apple Silicon still pending |
 | 6 — `RendererOutput` abstraction | Done | 2026-07-09 | Added typed CPU/OpenGL/Metal output wrapper around legacy `GetFramebuffers()`; frontend presenters now branch by explicit output kind; Metal kind is compile-gated out of default core; both build trees and audits green |
 | 7 — `MetalRenderer` shell + enum | Done | 2026-07-09 | Added compile-gated `renderer3D_Metal`, developer-only `MELONPRIME_FORCE_METAL_RENDERER=1`, and a failing-safe `MetalRenderer` shell whose `Init()` returns false for Software fallback; Metal-enabled/default builds and audits green; no-ROM smoke verifies presenter path but not shell runtime fallback |
-| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. Builds/audits/no-ROM smoke green; native replacement for `GLRenderer3D` polygon/texture/fog/edge/final-pass paths and ROM parity remain open |
+| 8 — Metal renderer native port | In progress | 2026-07-09 | Baseline commit made `MetalRenderer` produce correct CPU BGRA through the Metal presenter; follow-ups added `MetalRenderer3D` with real Metal device/queue/color/depth-stencil/attribute targets, plus runtime-compiled MSL clear shader and `MTLRenderPipelineState`/`MTLDepthStencilState` used by a full-screen triangle clear pass. Installed in `Rend3D` with a Software raster delegate. §3i audit-fix pass (same day) closed the `EmuThread` renderer-routing bug that would have blocked Phase 9 (`videoRenderer` was silently forced to Software whenever `useOpenGL` was false, regardless of what was actually requested), a `VideoSettingsDialog` null-deref crash risk + `UsesGL()` GL-context misclassification, `MetalRenderer3D::ResizeTargets()`/`ClearNativeTarget()` partial-failure/null-guard hardening, and a feature-probe strengthening to match the exact Phase 8 pipeline shape (2 color attachments + combined depth/stencil, including an actual texture allocation check). Builds/audits/no-ROM smoke green on both trees. Native replacement for `GLRenderer3D` polygon/texture/fog/edge/final-pass paths and ROM parity remain open |
 | 9–10 | Not started | — | See §4. Apple Silicon confirmation (required before Phase 9 ships to users) is not available in this session; Phase 8 native `GLRenderer3D` replacement remains incomplete |

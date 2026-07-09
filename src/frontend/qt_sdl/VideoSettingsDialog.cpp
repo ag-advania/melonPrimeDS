@@ -28,11 +28,28 @@
 #include "VideoSettingsDialog.h"
 #include "ui_VideoSettingsDialog.h"
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeVideoBackend.h"
+#endif // MELONPRIME_DS
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
     auto& cfg = emuInstance->getGlobalConfig();
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 8/9 prep: "does the current selection need a GL
+    // context" is no longer the same question as "is the renderer
+    // Software" once a non-GL, non-Software backend (Metal) exists. A
+    // plain `renderer != Software` check would treat Metal as needing GL,
+    // which would wrongly enable this dialog's VSync-via-GL controls and
+    // request a GL context reinit on a config value this dialog has no UI
+    // for yet (see the button-group null-check below).
+    return MelonPrime::VideoBackend::IsOpenGLPresentation(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer")));
+#else
     return cfg.GetBool("Screen.UseGL") || (cfg.GetInt("3D.Renderer") != renderer3D_Software);
+#endif // MELONPRIME_DS
 }
 
 VideoSettingsDialog* VideoSettingsDialog::currentDlg = nullptr;
@@ -76,7 +93,21 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #else
     connect(grp3DRenderer, SIGNAL(idClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #endif
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 8/9 prep: `oldRenderer` can hold a value this dialog
+    // has no radio button for -- either `renderer3D_Metal` itself (no
+    // `rb3DMetal` here; Metal exposure is MelonPrime's own settings dialog,
+    // Phase 9), or any other stray/out-of-range int left over from a
+    // rebuild with a different renderer set compiled in. QButtonGroup::
+    // button() returns nullptr for an unregistered id; calling
+    // setChecked() on that would crash. Leave nothing checked in that case
+    // rather than guessing -- `oldRenderer` itself is left untouched so
+    // Cancel still restores the original value exactly.
+    if (QAbstractButton* rendererButton = grp3DRenderer->button(oldRenderer))
+        rendererButton->setChecked(true);
+#else
     grp3DRenderer->button(oldRenderer)->setChecked(true);
+#endif // MELONPRIME_DS
 
 #ifndef OGLRENDERER_ENABLED
     ui->rb3DOpenGL->setEnabled(false);
