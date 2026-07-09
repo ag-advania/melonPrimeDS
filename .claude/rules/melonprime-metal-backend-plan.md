@@ -57,6 +57,15 @@ the normal soft final-screen path with Metal 3D already integrated. The presente
 build, default-binary strings check, and standard audits. Runtime A/B diff, MPH HUD-inclusive
 visual checks, and perf logs still need a ROM.
 
+**2026-07-10 Phase 3 partial parity (3-1/3-2):** plain clear depth now uses the DS clear-plane
+depth from `RenderClearAttr2` instead of always clearing Metal depth to 1.0. Opaque polygon
+submission now preserves `RenderPolygonRAM` order by batching only adjacent runs with the same
+W-buffer / texture / TexRepeat key, matching the GL renderer's `RenderPolygonBatch` responsibility
+instead of unordered whole-frame coalescing. Clear bitmap, clear polyID/fog attributes,
+translucency, shadow, toon/highlight, fog, and edge marking remain open Phase 3 work. Verified by
+the Metal test build and default build; standard audits and ROM A/B diff should be rerun after the
+next Phase 3 parity slice.
+
 ---
 
 ## 0. Goal and constraints
