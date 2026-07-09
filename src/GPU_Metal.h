@@ -1,4 +1,4 @@
-// MelonPrimeDS - experimental Metal renderer shell (Metal-plan Phase 7)
+// MelonPrimeDS - experimental Metal renderer (Metal-plan Phase 8)
 
 #ifndef GPU_METAL_H
 #define GPU_METAL_H
@@ -17,6 +17,9 @@ public:
     ~MetalRenderer() override = default;
 
     bool Init() override;
+    void PreSavestate() override;
+    void PostSavestate() override;
+    void SetRenderSettings(RendererSettings& settings) override;
 };
 
 } // namespace melonDS

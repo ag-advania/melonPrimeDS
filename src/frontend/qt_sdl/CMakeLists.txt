@@ -133,12 +133,11 @@ option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
 # --- MelonPrime experimental Metal backend master kill switch ---------------
-# See .claude/rules/melonprime-metal-backend-plan.md. Metal support does not
-# exist yet (no .mm sources, no frameworks linked, no renderer enum value);
-# these options only reserve the on/off contract so later phases can be
+# See .claude/rules/melonprime-metal-backend-plan.md. Metal support remains
+# experimental and must stay behind this on/off contract so every phase can be
 # force-disabled with a single flag instead of a source edit.
 option(MELONPRIME_ENABLE_METAL
-    "Enable experimental MelonPrime native Metal presenter/backend on macOS (not yet implemented)"
+    "Enable experimental MelonPrime native Metal presenter/backend on macOS"
     OFF)
 option(MELONPRIME_FORCE_DISABLE_METAL
     "Force-disable all MelonPrime Metal code, even if MELONPRIME_ENABLE_METAL is ON"
@@ -282,12 +281,14 @@ if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)
     target_sources(core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
     )
 
-    # Metal-plan Phases 2/4/6/7 (.claude/rules/melonprime-metal-backend-plan.md):
+    # Metal-plan Phases 2/4/6/7/8 (.claude/rules/melonprime-metal-backend-plan.md):
     # feature probe + CAMetalLayer presenter + gated core RendererOutput Metal
-    # kind + renderer shell. No real Metal GPU3D sources exist yet; later
-    # phases add their target_sources() calls inside this same guard.
+    # kind + renderer shell + native Metal 3D resource scaffold. The scaffold
+    # still delegates rasterization to Software until the GLRenderer3D port
+    # replaces those calls in follow-up Phase 8 work.
     find_library(METAL_LIB Metal)
     if (NOT METAL_LIB)
         message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
@@ -303,6 +304,7 @@ if (MELONPRIME_METAL_ACTIVE)
         MelonPrimeScreenMetal.mm
     )
     set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
         MelonPrimeMetalFeatureCheck.mm
         MelonPrimeScreenMetal.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
