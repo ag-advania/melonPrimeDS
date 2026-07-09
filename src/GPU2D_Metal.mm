@@ -7,6 +7,7 @@
 #include "GPU2D_Metal.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 
 namespace melonDS
@@ -16,6 +17,7 @@ namespace
 {
 constexpr int kScreenW = 256;
 constexpr int kScreenH = 192;
+constexpr int kBGLayerCount = 22;
 }
 
 struct MetalRenderer2D::Metal2DState
@@ -24,6 +26,7 @@ struct MetalRenderer2D::Metal2DState
     id<MTLTexture> OutputTex = nil;
     id<MTLTexture> OBJLayerTex = nil;
     id<MTLTexture> OBJDepthTex = nil;
+    id<MTLTexture> AllBGLayerTex[kBGLayerCount] = {};
     int Scale = 0;
     bool LoggedFirstAllocation = false;
 };
@@ -46,6 +49,10 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     if (preferredMetalDevice && state.Device && state.Device != preferredMetalDevice)
     {
         state.OutputTex = nil;
+        state.OBJLayerTex = nil;
+        state.OBJDepthTex = nil;
+        for (id<MTLTexture>& texture : state.AllBGLayerTex)
+            texture = nil;
         state.Scale = 0;
         state.Device = preferredMetalDevice;
     }
@@ -61,8 +68,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     }
 
     ScaleFactor = std::max(1, scale);
-    if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex && state.Scale == ScaleFactor)
+    if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
+        state.AllBGLayerTex[0] && state.Scale == ScaleFactor)
+    {
         return true;
+    }
 
     const NSUInteger width = static_cast<NSUInteger>(kScreenW * ScaleFactor);
     const NSUInteger height = static_cast<NSUInteger>(kScreenH * ScaleFactor);
@@ -96,7 +106,39 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     objDepthDesc.storageMode = MTLStorageModePrivate;
     id<MTLTexture> newOBJDepth = [state.Device newTextureWithDescriptor:objDepthDesc];
 
-    if (!newOutput || !newOBJLayer || !newOBJDepth)
+    id<MTLTexture> newBGLayers[kBGLayerCount] = {};
+    const uint16_t bgSizes[8][3] = {
+        {128, 128, 2},
+        {256, 256, 4},
+        {256, 512, 4},
+        {512, 256, 4},
+        {512, 512, 4},
+        {512, 1024, 1},
+        {1024, 512, 1},
+        {1024, 1024, 2},
+    };
+
+    int bgLayer = 0;
+    for (const auto& size : bgSizes)
+    {
+        for (int variant = 0; variant < size[2]; variant++)
+        {
+            MTLTextureDescriptor* bgDesc =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                    width:size[0]
+                                                                   height:size[1]
+                                                                mipmapped:NO];
+            bgDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            bgDesc.storageMode = MTLStorageModePrivate;
+            newBGLayers[bgLayer++] = [state.Device newTextureWithDescriptor:bgDesc];
+        }
+    }
+
+    bool bgLayersReady = bgLayer == kBGLayerCount;
+    for (id<MTLTexture> texture : newBGLayers)
+        bgLayersReady = bgLayersReady && texture;
+
+    if (!newOutput || !newOBJLayer || !newOBJDepth || !bgLayersReady)
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
@@ -105,17 +147,20 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     state.OutputTex = newOutput;
     state.OBJLayerTex = newOBJLayer;
     state.OBJDepthTex = newOBJDepth;
+    for (int i = 0; i < kBGLayerCount; i++)
+        state.AllBGLayerTex[i] = newBGLayers[i];
     state.Scale = ScaleFactor;
 
     if (!state.LoggedFirstAllocation)
     {
         state.LoggedFirstAllocation = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal 2d: scaffold targets engine=%u scale=%d size=%zux%zu objLayers=2 visible=0\n",
+            "[MelonPrime] metal 2d: scaffold targets engine=%u scale=%d size=%zux%zu bgLayers=%d objLayers=2 visible=0\n",
             GPU2D.Num,
             state.Scale,
             static_cast<size_t>(width),
-            static_cast<size_t>(height));
+            static_cast<size_t>(height),
+            kBGLayerCount);
     }
 
     return true;
@@ -129,6 +174,8 @@ void MetalRenderer2D::Reset() noexcept
     State->OutputTex = nil;
     State->OBJLayerTex = nil;
     State->OBJDepthTex = nil;
+    for (id<MTLTexture>& texture : State->AllBGLayerTex)
+        texture = nil;
     State->Scale = 0;
 }
 
@@ -151,6 +198,13 @@ void* MetalRenderer2D::GetOBJDepthTexture() const noexcept
     if (!State || !State->OBJDepthTex)
         return nullptr;
     return (__bridge void*)State->OBJDepthTex;
+}
+
+void* MetalRenderer2D::GetBGLayerTexture(int index) const noexcept
+{
+    if (!State || index < 0 || index >= kBGLayerCount || !State->AllBGLayerTex[index])
+        return nullptr;
+    return (__bridge void*)State->AllBGLayerTex[index];
 }
 
 int MetalRenderer2D::GetScaleFactor() const noexcept

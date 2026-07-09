@@ -1574,6 +1574,12 @@ sprite priority/depth ordering. These targets resize with the same `ScaleFactor`
 output and remain private render-target/shader-read Metal textures until the actual sprite passes
 are ported.
 
+The BG scaffold now also mirrors GL's `AllBGLayerTex[22]` allocation shape: the same eight BG
+size/classes (128x128 through 1024x1024, with the same variant counts) are allocated as private
+RGBA8 render-target/shader-read textures. Later BG text, affine, extended/bitmap, and large-bitmap
+passes can therefore keep the same `BGBaseIndex`/active-layer indexing model instead of inventing a
+different Metal-only layout.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
