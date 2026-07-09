@@ -111,10 +111,30 @@ struct MetalRenderer3D::MetalState
     id<MTLRenderPipelineState> OpaqueRenderPipelineZ = nil; // standard depth-buffer polygons
     id<MTLRenderPipelineState> OpaqueRenderPipelineW = nil; // DS W-buffered polygons
     id<MTLDepthStencilState> OpaqueDepthState = nil;        // shared by both variants
-    id<MTLSamplerState> OpaqueTextureSampler = nil;         // nearest, clamp-to-edge (see scope note)
-    id<MTLTexture> DummyTexture = nil;                      // bound for untextured draws (static arg slot)
-    std::unique_ptr<TexcacheMetal> Texcache;                // constructed once Device exists
+    // 3x3 matrix of [S mode][T mode], each axis independently one of
+    // {clamp, repeat, mirror-repeat} -- matches the DS TexRepeat bits via
+    // TexRepeatAddressModeIndex() (see below). Built once in
+    // BuildOpaqueTextureSamplers(), indexed per draw group in
+    // RenderNativeOpaquePolygons() since different polygons batched into
+    // different groups can have different wrap modes (see
+    // OpaqueDrawGroupKey::TexRepeat).
+    id<MTLSamplerState> OpaqueTextureSamplers[3][3] = {};
+    id<MTLTexture> DummyTexture = nil; // bound for untextured draws (static arg slot)
+    std::unique_ptr<TexcacheMetal> Texcache; // constructed once Device exists
 };
+
+// Maps one axis of the DS TexRepeat 4-bit field to an index into
+// MetalState::OpaqueTextureSamplers, matching
+// GLRenderer3D::SetupPolygonTexture()'s GL_REPEAT/GL_MIRRORED_REPEAT/
+// GL_CLAMP_TO_EDGE derivation (GPU3D_OpenGL.cpp) exactly: index 0 = clamp
+// (repeat bit clear), 1 = repeat (repeat bit set, mirror bit clear),
+// 2 = mirror-repeat (both bits set).
+static inline int TexRepeatAddressModeIndex(uint32_t texRepeat, int repeatBit, int mirrorBit)
+{
+    if (!((texRepeat >> repeatBit) & 1u))
+        return 0; // clamp
+    return ((texRepeat >> mirrorBit) & 1u) ? 2 : 1; // mirror-repeat : repeat
+}
 
 static constexpr const char* kMetal3DShaderSource = R"(
 #include <metal_stdlib>
@@ -193,8 +213,12 @@ fragment ClearFragmentOut mp3d_clear_fs()
 // (non-toon-substituted) vertex color, which is visibly wrong for toon-
 // shaded content specifically -- a narrower, explicitly documented gap
 // than "no texturing at all". Texture wrapping/mirroring (TexRepeat bits)
-// is also not implemented: every sample uses clamp-to-edge regardless of
-// the polygon's repeat/mirror flags (see BuildOpaqueRenderPipelines()).
+// is implemented at the sampler-state level (BuildOpaqueRenderPipelines()
+// builds one MTLSamplerState per (S,T) address-mode combination,
+// RenderNativeOpaquePolygons() selects the one matching each draw group's
+// TexRepeat bits -- see TexRepeatAddressModeIndex()), matching
+// GLRenderer3D::SetupPolygonTexture()'s GL_REPEAT/GL_MIRRORED_REPEAT/
+// GL_CLAMP_TO_EDGE derivation.
 static constexpr const char* kMetal3DOpaqueShaderSource = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -480,18 +504,37 @@ bool MetalRenderer3D::CreateDeviceObjects()
     if (!BuildOpaqueRenderPipelines())
         return false;
 
-    MTLSamplerDescriptor* samplerDesc = [[MTLSamplerDescriptor alloc] init];
-    samplerDesc.minFilter = MTLSamplerMinMagFilterNearest;
-    samplerDesc.magFilter = MTLSamplerMinMagFilterNearest;
-    // Scope note (see kMetal3DOpaqueShaderSource): clamp-to-edge always,
-    // regardless of the polygon's TexRepeat wrap/mirror flags.
-    samplerDesc.sAddressMode = MTLSamplerAddressModeClampToEdge;
-    samplerDesc.tAddressMode = MTLSamplerAddressModeClampToEdge;
-    State->OpaqueTextureSampler = [State->Device newSamplerStateWithDescriptor:samplerDesc];
-    if (!State->OpaqueTextureSampler)
+    // Priority 4 (metal_phase8_execution_instructions.md): one sampler per
+    // (S mode, T mode) combination, matching GLRenderer3D::
+    // SetupPolygonTexture()'s GL_REPEAT/GL_MIRRORED_REPEAT/GL_CLAMP_TO_EDGE
+    // derivation from the DS TexRepeat bits exactly (see
+    // TexRepeatAddressModeIndex() above). This used to be a single
+    // always-clamp sampler; every real DS TexRepeat combination is now
+    // represented.
+    static constexpr MTLSamplerAddressMode kAddressModesByIndex[3] = {
+        MTLSamplerAddressModeClampToEdge,
+        MTLSamplerAddressModeRepeat,
+        MTLSamplerAddressModeMirrorRepeat,
+    };
+    for (int sIdx = 0; sIdx < 3; sIdx++)
     {
-        std::fprintf(stderr, "[MelonPrime] metal renderer3D: failed to create opaque texture sampler\n");
-        return false;
+        for (int tIdx = 0; tIdx < 3; tIdx++)
+        {
+            MTLSamplerDescriptor* samplerDesc = [[MTLSamplerDescriptor alloc] init];
+            samplerDesc.minFilter = MTLSamplerMinMagFilterNearest;
+            samplerDesc.magFilter = MTLSamplerMinMagFilterNearest;
+            samplerDesc.sAddressMode = kAddressModesByIndex[sIdx];
+            samplerDesc.tAddressMode = kAddressModesByIndex[tIdx];
+            State->OpaqueTextureSamplers[sIdx][tIdx] =
+                [State->Device newSamplerStateWithDescriptor:samplerDesc];
+            if (!State->OpaqueTextureSamplers[sIdx][tIdx])
+            {
+                std::fprintf(stderr,
+                    "[MelonPrime] metal renderer3D: failed to create opaque texture sampler (s=%d t=%d)\n",
+                    sIdx, tIdx);
+                return false;
+            }
+        }
     }
 
     // A texture argument is bound statically per-draw in Metal even when
@@ -752,10 +795,19 @@ struct OpaqueDrawGroupKey
 {
     bool WBuffer;
     const void* TexturePtr; // nullptr = untextured; otherwise (__bridge) id<MTLTexture>
+    // DS TexRepeat 4-bit field (repeat-S, repeat-T, mirror-S, mirror-T),
+    // matching GLRenderer3D::RenderPolygonBatch()'s own TexRepeat-gated
+    // grouping (GPU3D_OpenGL.cpp:836). Untextured polygons always use 0
+    // here regardless of their raw TexRepeat bits, since no sampling
+    // happens for them -- letting the wrap mode vary would only fragment
+    // the untextured group into multiple identical draw calls for no
+    // reason.
+    uint32_t TexRepeat;
 
     bool operator==(const OpaqueDrawGroupKey& other) const noexcept
     {
-        return WBuffer == other.WBuffer && TexturePtr == other.TexturePtr;
+        return WBuffer == other.WBuffer && TexturePtr == other.TexturePtr &&
+               TexRepeat == other.TexRepeat;
     }
 };
 
@@ -763,7 +815,8 @@ struct OpaqueDrawGroupKeyHash
 {
     size_t operator()(const OpaqueDrawGroupKey& key) const noexcept
     {
-        return std::hash<const void*>()(key.TexturePtr) ^ (key.WBuffer ? 0x9e3779b9u : 0u);
+        return std::hash<const void*>()(key.TexturePtr) ^ (key.WBuffer ? 0x9e3779b9u : 0u) ^
+               (key.TexRepeat * 0x85ebca6bu);
     }
 };
 
@@ -788,7 +841,8 @@ struct OpaqueDrawGroup
 // Explicitly NOT implemented yet (tracked in melonprime-metal-backend-plan.md
 // Phase 8 remainder; see also the scope note above kMetal3DOpaqueShaderSource
 // for texturing-specific gaps: no toon/highlight color substitution, no
-// TexRepeat wrap/mirror modes, no VRAM-display-capture-as-texture):
+// VRAM-display-capture-as-texture. TexRepeat wrap/mirror IS implemented,
+// see TexRepeatAddressModeIndex() and OpaqueDrawGroupKey::TexRepeat):
 //   - translucent polygons, shadow masks/shadows, line-type polygons
 //   - the depth-func-equal attribute bit (bit14) -- always MTLCompareFunctionLess
 //   - "BetterPolygons" alternate triangulation
@@ -801,7 +855,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
 {
     if (!State || !State->Device || !State->CommandQueue ||
         !State->OpaqueRenderPipelineZ || !State->OpaqueRenderPipelineW || !State->OpaqueDepthState ||
-        !State->OpaqueTextureSampler || !State->DummyTexture || !State->Texcache ||
+        !State->OpaqueTextureSamplers[0][0] || !State->DummyTexture || !State->Texcache ||
         !State->ColorTarget || !State->DepthStencilTarget || !State->AttrTarget)
     {
         return;
@@ -903,7 +957,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             vertexWords.push_back(texDimsWord);
         }
 
-        const OpaqueDrawGroupKey key { poly->WBuffer, (__bridge const void*)texture };
+        const uint32_t texRepeatForKey = texture ? ((static_cast<uint32_t>(poly->TexParam) >> 16) & 0xFu) : 0u;
+        const OpaqueDrawGroupKey key { poly->WBuffer, (__bridge const void*)texture, texRepeatForKey };
         OpaqueDrawGroup& group = groups[key];
         if (!group.Texture)
             group.Texture = texture;
@@ -976,7 +1031,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     [encoder setDepthStencilState:State->OpaqueDepthState];
     [encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
     [encoder setVertexBytes:&config length:sizeof(config) atIndex:1];
-    [encoder setFragmentSamplerState:State->OpaqueTextureSampler atIndex:0];
 
     for (auto& entry : groups)
     {
@@ -991,9 +1045,18 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         if (!indexBuffer)
             continue;
 
+        // Priority 4: select the sampler matching this group's DS TexRepeat
+        // bits (repeat-S=bit0, repeat-T=bit1, mirror-S=bit2, mirror-T=bit3),
+        // exactly like GLRenderer3D::SetupPolygonTexture(). Untextured
+        // groups always carry TexRepeat=0 (clamp/clamp), which is never
+        // sampled anyway.
+        const int sIdx = TexRepeatAddressModeIndex(entry.first.TexRepeat, 0, 2);
+        const int tIdx = TexRepeatAddressModeIndex(entry.first.TexRepeat, 1, 3);
+
         [encoder setRenderPipelineState:entry.first.WBuffer ? State->OpaqueRenderPipelineW
                                                               : State->OpaqueRenderPipelineZ];
         [encoder setFragmentTexture:(group.Texture ? group.Texture : State->DummyTexture) atIndex:0];
+        [encoder setFragmentSamplerState:State->OpaqueTextureSamplers[sIdx][tIdx] atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                              indexCount:group.Indices.size()
                               indexType:MTLIndexTypeUInt16
