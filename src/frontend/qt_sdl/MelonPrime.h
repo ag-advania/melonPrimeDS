@@ -164,6 +164,23 @@ namespace MelonPrime {
     };
 #endif
 
+    // =========================================================================
+    // MelonPrimeCore
+    //
+    // Public surface: lifecycle control (Initialize/RunFrameHook/OnEmu*),
+    // ARM9 instruction-hook module contracts (MELONPRIME_DS), narrow
+    // accessors, and a handful of directly-mutated public runtime flags
+    // (isCursorMode/isFocused/etc. -- read/written by Screen.cpp,
+    // InputConfig, and EmuThread).
+    //
+    // Private surface: cache-optimized member layout (see the banner at
+    // "Cache-optimized member layout" below), inline hot-path helpers, and
+    // the RunFrameHook call graph (hot methods, then COLD_FUNCTION-outlined
+    // rare-path handlers). Member declaration order and cache-line grouping
+    // are load-bearing (do-not-touch list, melonprime-refactoring.md V1
+    // section 2.1) -- add new members at the end of their cache tier, never
+    // reorder existing ones.
+    // =========================================================================
     class MelonPrimeCore
     {
     public:
@@ -305,6 +322,8 @@ namespace MelonPrime {
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
 #endif
 
+        // --- Public runtime state (read/written directly by Screen.cpp,
+        //     InputConfig, and EmuThread; not behind an accessor) ---
         bool isCursorMode = true;
         std::atomic_bool isFocused{ false };
         bool isClipWanted = false;

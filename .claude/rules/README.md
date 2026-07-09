@@ -15,6 +15,7 @@
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)
 - [MelonPrime Patch System](melonprime-patch-system.md)
+- [MelonPrime SRP / Performance Contract](melonprime-srp-performance-contract.md)
 - [MelonPrime Developer Only Section](melonprime-developer-only-section.md)
 - [MelonPrime Localization Refactor Plan](melonprime-localization-refactor-plan.md)
 - [MelonPrime Localization Refactor Audit](melonprime-localization-refactor-audit.md)

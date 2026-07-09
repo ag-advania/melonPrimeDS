@@ -139,7 +139,7 @@ Windows `ClipCursor` release and Linux `resetAimMouseDelta` release paths in
 ## PR 2: SRP/Performance Audit
 
 **Added:**
-- `.claude/features/melonprime-srp-performance-contract.md`
+- `.claude/rules/melonprime-srp-performance-contract.md`
 - `.claude/skills/audit-melonprime-srp-performance.ps1`
 
 **Changed:** `.github/workflows/build-ubuntu.yml`, `build-windows.yml` (audit wiring + step split)

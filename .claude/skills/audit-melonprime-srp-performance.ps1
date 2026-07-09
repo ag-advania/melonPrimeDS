@@ -1,7 +1,7 @@
 # audit-melonprime-srp-performance.ps1
 #
 # Enforces MelonPrime SRP/performance contract checks for the v3 immediate plan.
-# See .claude/features/melonprime-srp-performance-contract.md
+# See .claude/rules/melonprime-srp-performance-contract.md
 
 $ErrorActionPreference = "Stop"
 

@@ -362,7 +362,11 @@ namespace MelonPrime {
 
             if (LIKELY(isInGame)) {
                 if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
-                    // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
+                    // PatchLifecycle Site C — explicit non-goal (pattern B: the game
+                    // overwrites the RAM this patch owns, so it must be re-applied
+                    // every in-game frame). Bypasses the registry/gateway on purpose;
+                    // see melonprime-srp-performance-contract.md's "Never mix" list
+                    // and melonprime-srp-v3-completion-summary.md's Deferred table.
                     OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 }
 #ifdef MELONPRIME_CUSTOM_HUD
