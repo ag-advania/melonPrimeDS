@@ -1034,6 +1034,23 @@ inferred after the fact from whatever the shader happened to produce.
   scale, edge marking, fog, final composite, `GetLine()`/display integration). Phase 8 remains
   genuinely multi-session work.
 
+## 3l. Phase 8 continuation — feature probe strengthened for texturing
+
+Following [plan/metal_phase8_execution_instructions.md](plan/metal_phase8_execution_instructions.md)
+Priority 1: the Phase 2 feature probe (`MelonPrimeMetalFeatureCheck.mm`) previously only validated
+the clear-pipeline attachment shape (§3i.4), which never exercised `MTLTextureType2DArray` +
+`MTLPixelFormatRGBA8Uint` allocation or `texture2d_array<uint>` sampling -- exactly what
+`TexcacheMetalLoader` and the opaque textured pass (§3k) actually depend on. The probe now allocates
+a 2x2 array texture, uploads a known non-white/non-black RGB6A5 texel pattern, samples it in a real
+draw through a nearest/clamp sampler, and verifies the read-back pixel matches -- a full round trip,
+not just pipeline descriptor validation, added as `FeatureInfo::supportsTextureArraySampling`
+(folded into `supportsRequiredBaseline`).
+
+**Verified (2026-07-09, real Intel Mac):** both trees build clean; forced-Metal no-ROM smoke now
+logs `textureArraySampling=1` on this session's Intel Iris Plus 655; default binary has zero new
+strings; all audits green. **Not applicable:** ROM/Apple Silicon (probe-only change, no renderer
+behavior touched).
+
 ---
 
 ## 4. Remaining phases / gates (Phase 8 onward)
