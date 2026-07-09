@@ -37,6 +37,14 @@ default-binary strings check, and the standard config/inc/literal/scatter audits
 smoke and `MELONPRIME_METAL_DIAG=1` runtime logs were not run in this workspace because no `.nds`
 ROM is present.
 
+**2026-07-10 Phase 1 layer lifecycle hardening:** `ScreenPanelMetal` now handles Qt native view
+recreation by reattaching the existing `CAMetalLayer` to the current `NSView` on `WinIdChange`,
+`Show`, and `WindowStateChange`, and also during layout recalculation before drawable-size updates.
+The direct layer-hosting model is unchanged; sublayer/child-NSView alternatives remain deferred
+unless checker-mode/manual smoke proves direct hosting still flickers. Verified by the Metal test
+build, default build, default-binary strings check, and the standard audits. Checker-mode,
+fullscreen/resize/screen-move, and input smoke still need manual GUI/ROM validation.
+
 ---
 
 ## 0. Goal and constraints
