@@ -45,6 +45,9 @@
 #include "DSi_I2C.h"
 #include "GPU_Soft.h"
 #include "GPU_OpenGL.h"
+#if defined(MELONPRIME_ENABLE_METAL)
+#include "GPU_Metal.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -1251,6 +1254,11 @@ void EmuThread::updateRenderer()
         case renderer3D_OpenGLCompute:
             nds->SetRenderer(std::make_unique<GLRenderer>(*nds, true));
             break;
+#if defined(MELONPRIME_ENABLE_METAL)
+        case renderer3D_Metal:
+            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds));
+            break;
+#endif
         default: __builtin_unreachable();
         }
     }

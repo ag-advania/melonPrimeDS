@@ -60,6 +60,7 @@ namespace MelonPrime::VideoBackend {
     // UI. Delete this function (and its call site in
     // ResolvePresentationBackend) once Phase 9 lands.
     bool ShouldForceMetalPresenterFromEnv();
+    bool ShouldForceMetalRendererFromEnv();
 #endif
 
 } // namespace MelonPrime::VideoBackend

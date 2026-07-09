@@ -10,7 +10,7 @@
 - [MelonPrime Full Refactor Plan V7 (Phase 0-6, active)](melonprime-full-refactor-plan-v7.md)
 - [MelonPrime Full Refactor Plan V6 (Phase 0-7, gates pending — remaining gates absorbed into V7 Phase 0/4/6)](melonprime-full-refactor-plan-v6.md)
 - [MelonPrime Full Refactor Plan V5 (completed)](completed/melonprime-full-refactor-plan-v5.md)
-- [MelonPrime Metal Backend Plan (Phases 0-6 done on Intel Mac, Phases 7-10 pending)](melonprime-metal-backend-plan.md)
+- [MelonPrime Metal Backend Plan (Phases 0-7 done on Intel Mac, Phases 8-10 pending)](melonprime-metal-backend-plan.md)
 - [MelonPrime Performance Rules](melonprime-performance.md)
 - [MelonPrime Gameplay Runtime (No CustomHud)](melonprime-gameplay-runtime.md)
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)

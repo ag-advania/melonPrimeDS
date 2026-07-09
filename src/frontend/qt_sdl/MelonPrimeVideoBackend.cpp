@@ -15,20 +15,29 @@ bool ShouldForceMetalPresenterFromEnv()
     const char* env = std::getenv("MELONPRIME_FORCE_METAL_PRESENTER");
     return env != nullptr && env[0] == '1';
 }
+
+bool ShouldForceMetalRendererFromEnv()
+{
+    const char* env = std::getenv("MELONPRIME_FORCE_METAL_RENDERER");
+    return env != nullptr && env[0] == '1';
+}
 #endif
 
 int NormalizeRendererForPlatform(int requested)
 {
 #if defined(MELONPRIME_ENABLE_METAL)
+    if (ShouldForceMetalRendererFromEnv())
+        return renderer3D_Metal;
+
     // Phase 4 bootstrap: while the Metal presenter is force-selected there is
     // no GL context for a hardware 3D renderer to render into (no
-    // renderer3D_Metal exists yet -- that's Phase 7). Force Software rather
-    // than let EmuThread::updateRenderer() try to construct a GLRenderer
-    // against a window that never created a GL surface. Phase 7 must add a
-    // `requested != renderer3D_Metal` exception here once that value exists,
-    // or a Metal 3D renderer selection would get forced back to Software too.
+    // working Metal 3D renderer exists yet -- Phase 7 only adds a shell).
+    // Force non-Metal hardware renderers back to Software rather than let
+    // EmuThread::updateRenderer() try to construct a GLRenderer against a
+    // window that never created a GL surface.
     if (ShouldForceMetalPresenterFromEnv() &&
-        requested != renderer3D_Software)
+        requested != renderer3D_Software &&
+        requested != renderer3D_Metal)
     {
         return renderer3D_Software;
     }
@@ -55,6 +64,10 @@ int NormalizeRendererForPlatform(int requested)
     case renderer3D_OpenGLCompute:
         return requested;
 #endif
+#if defined(MELONPRIME_ENABLE_METAL)
+    case renderer3D_Metal:
+        return requested;
+#endif
     default:
         return renderer3D_Software;
     }
@@ -73,7 +86,8 @@ bool RendererRequiresOpenGLContext(int renderer)
 PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRenderer)
 {
 #if defined(MELONPRIME_ENABLE_METAL)
-    // Phase 4 bootstrap (see ShouldForceMetalPresenterFromEnv()). Checked
+    // Phase 4/7 bootstrap (see ShouldForceMetalPresenterFromEnv() and
+    // ShouldForceMetalRendererFromEnv()). Checked
     // before the GL branch so both MainWindow::createScreenPanel() and
     // EmuInstance::usesOpenGL() agree Metal owns presentation -- the latter
     // then correctly reports false (IsOpenGLPresentation(Metal) == false),
@@ -83,6 +97,10 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #endif
 
     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
+#if defined(MELONPRIME_ENABLE_METAL)
+    if (normalized == renderer3D_Metal)
+        return PresentationBackend::Metal;
+#endif
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
         return PresentationBackend::OpenGL;
     return PresentationBackend::NativeQt;
