@@ -1592,6 +1592,11 @@ layer config, sprite config, per-scanline config, sprite per-scanline mosaic con
 config. The CPU struct layouts are kept 16-byte aligned so later MSL argument structs can consume
 the same state updates without changing the phase's resource ownership boundary.
 
+The first data-transfer hook uploads raw BG/OBJ flat VRAM into the new `R8Uint` textures from the
+public `GPU2D.GetBGVRAM()` / `GetOBJVRAM()` APIs. It currently performs a full upload when the
+scaffold is configured; dirty-range incremental uploads and palette uploads remain follow-up work
+because the palette path needs either `Renderer2D` ownership of `GPU` or an explicit parent handoff.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
