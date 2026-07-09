@@ -53,7 +53,7 @@ struct MetalPerfAccumulator
     uint32_t LastScale = 1;
     uint32_t LastTargetWidth = 0;
     uint32_t LastTargetHeight = 0;
-    uint32_t CpuRendererFallbackFrames = 0;
+    uint32_t SoftwareDelegateFrames = 0;
 };
 
 MetalPerfFrame* gCurrentMetalPerfFrame = nullptr;
@@ -98,7 +98,7 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
     acc.LastTargetWidth = frame.TargetWidth;
     acc.LastTargetHeight = frame.TargetHeight;
     if (frame.CpuRendererFallback)
-        acc.CpuRendererFallbackFrames++;
+        acc.SoftwareDelegateFrames++;
 
     constexpr uint32_t kReportFrames = 600;
     if (acc.Frames < kReportFrames)
@@ -106,9 +106,10 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
 
     const double frames = static_cast<double>(acc.Frames);
     std::fprintf(stderr,
-        "[MelonPrime] metal perf: frames=%u scale=%u target=%ux%u avgFrameMs=%.3f avg3dMs=%.3f avgTexcacheMs=%.3f "
-        "avgUploadBytes=%.0f avgGroups=%.2f avgDraws=%.2f avgWaitMs=%.3f "
-        "avgConsideredPolys=%.2f avgTexturedPolys=%.2f cpuRendererFallback=%u/%u\n",
+        "[MelonPrime] metal renderer3D: perf frames=%u scale=%u target=%ux%u "
+        "avgFrameMs=%.3f native3dMs=%.3f avgTexcacheMs=%.3f "
+        "uploadBytes=%.0f avgGroups=%.2f avgDraws=%.2f avgWaitMs=%.3f "
+        "avgConsideredPolys=%.2f avgTexturedPolys=%.2f softwareDelegate=%u/%u\n",
         acc.Frames,
         acc.LastScale,
         acc.LastTargetWidth,
@@ -122,7 +123,7 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
         acc.WaitMs / frames,
         static_cast<double>(acc.ConsideredPolygons) / frames,
         static_cast<double>(acc.TexturedPolygons) / frames,
-        acc.CpuRendererFallbackFrames,
+        acc.SoftwareDelegateFrames,
         acc.Frames);
 
     acc = {};
@@ -130,9 +131,6 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
 
 void MetalPerfLogTargetResize(int scale, NSUInteger width, NSUInteger height)
 {
-    if (!MetalPerfEnabled())
-        return;
-
     static int lastScale = 0;
     static NSUInteger lastWidth = 0;
     static NSUInteger lastHeight = 0;
@@ -143,7 +141,7 @@ void MetalPerfLogTargetResize(int scale, NSUInteger width, NSUInteger height)
     lastWidth = width;
     lastHeight = height;
     std::fprintf(stderr,
-        "[MelonPrime] metal renderer3D: target scale=%d size=%zux%zu\n",
+        "[MelonPrime] metal renderer3D: native 3D source scale=%d size=%zux%zu\n",
         scale,
         static_cast<size_t>(width),
         static_cast<size_t>(height));
@@ -470,17 +468,18 @@ struct OpaqueFragmentOut
     float4 attr [[color(1)]];
 };
 
-// Matches 3DRenderFS.glsl's opaque branch: fully-opaque-only (DS treats
-// polygon alpha < 31/31 with the "need opaque" attribute bit as translucent
-// -- that bit is not carried by this pass yet, so this uses GL's simpler
-// unconditional opaque threshold, discarding anything not fully solid).
+// Bring-up visible geometry pass: this is still not DS translucent/shadow
+// parity, but it deliberately draws non-shadow triangle polygons even when
+// their alpha is below the fully-opaque threshold. Otherwise games whose
+// visible scene is mostly translucent-class geometry look like a black native
+// 3D target, which is useless for validating the Metal path.
 fragment OpaqueFragmentOut mp3d_opaque_fs_z(
     OpaqueVertexOut in [[stage_in]],
     texture2d_array<uint> tex [[texture(0)]],
     sampler smp [[sampler(0)]])
 {
     float4 col = OpaqueFinalColor(in, tex, smp);
-    if (col.a < (30.5 / 31.0))
+    if (col.a < (0.5 / 31.0))
         discard_fragment();
 
     OpaqueFragmentOut out;
@@ -502,7 +501,7 @@ fragment OpaqueFragmentOutW mp3d_opaque_fs_w(
     sampler smp [[sampler(0)]])
 {
     float4 col = OpaqueFinalColor(in, tex, smp);
-    if (col.a < (30.5 / 31.0))
+    if (col.a < (0.5 / 31.0))
         discard_fragment();
 
     OpaqueFragmentOutW out;
@@ -1083,7 +1082,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         if (!poly)
             continue;
         if (poly->Type != 0)          continue; // line polygons: not ported yet
-        if (poly->Translucent)        continue; // opaque pass only
         if (poly->IsShadowMask || poly->IsShadow) continue;
         if (poly->Degenerate)         continue;
         if (poly->NumVertices < 3)    continue;
@@ -1166,8 +1164,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     {
         loggedFirstOpaquePass = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal renderer3D: first opaque pass polygons=%u considered=%u textured=%u groups=%zu\n",
-            numPolygons, consideredPolygons, texturedPolygons, groups.size());
+            "[MelonPrime] metal renderer3D: first visible pass polygons=%u considered=%u textured=%u groups=%zu vertexWords=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, groups.size(), vertexWords.size());
     }
     // The very first RenderFrame() is frequently a firmware boot/logo screen
     // built entirely from translucent fade polygons, which this pass filters
@@ -1180,8 +1178,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     {
         loggedFirstNonEmptyOpaquePass = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal renderer3D: first non-empty opaque pass polygons=%u considered=%u textured=%u groups=%zu\n",
-            numPolygons, consideredPolygons, texturedPolygons, groups.size());
+            "[MelonPrime] metal renderer3D: first non-empty visible pass polygons=%u considered=%u textured=%u groups=%zu vertexWords=%zu\n",
+            numPolygons, consideredPolygons, texturedPolygons, groups.size(), vertexWords.size());
     }
 
     if (vertexWords.empty() || groups.empty())
