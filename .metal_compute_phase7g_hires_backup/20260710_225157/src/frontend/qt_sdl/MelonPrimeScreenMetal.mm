@@ -1,5 +1,4 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal build-gate, not input dispatch
-// MELONPRIME_METAL_HIRES_PRESENT_FILTER_V2
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -745,19 +744,9 @@ void ScreenPanelMetal::drawScreen()
             {
                 [encoder setRenderPipelineState:m->pipeline];
                 [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
-                id<MTLTexture> sourceTexture =
-                    finalMetalTextureForFrame ? finalMetalTextureForFrame : m->screenTex[0];
-                const bool highResolutionSource =
-                    finalMetalTextureForFrame &&
-                    finalMetalTextureForFrame.width > 256 &&
-                    finalMetalTextureForFrame.height > 192;
-                // A scaled Metal final texture is a supersampled source. Use
-                // linear downsampling even when the user disables ordinary
-                // 1x screen filtering; nearest downsampling can make 2x/3x/4x
-                // appear indistinguishable from native resolution.
-                id<MTLSamplerState> sampler =
-                    (filter || highResolutionSource) ? m->linearSampler : m->nearestSampler;
+                id<MTLSamplerState> sampler = filter ? m->linearSampler : m->nearestSampler;
                 [encoder setFragmentSamplerState:sampler atIndex:0];
+                id<MTLTexture> sourceTexture = finalMetalTextureForFrame ? finalMetalTextureForFrame : m->screenTex[0];
                 [encoder setFragmentTexture:sourceTexture atIndex:0];
 
                 ScreenUniforms uniforms{};

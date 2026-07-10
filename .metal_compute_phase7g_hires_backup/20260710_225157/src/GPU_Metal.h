@@ -36,8 +36,6 @@ private:
     std::unique_ptr<MetalRenderer2D> Metal2D_A;
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
     int ScaleFactor = 1;
-    bool ComputeRendererSelected = false;
-    // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
     std::unique_ptr<MetalOutputState> OutputState;
 
     void ConfigureMetal2DMirror(void* preferredDevice);

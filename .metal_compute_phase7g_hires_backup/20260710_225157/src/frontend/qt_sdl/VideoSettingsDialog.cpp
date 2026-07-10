@@ -336,11 +336,15 @@ void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)
     cfg.SetInt("3D.GL.ScaleFactor", idx+1);
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // MELONPRIME_METAL_COMPUTE_LIVE_SCALE_V2
-    // Do not reconstruct Metal Compute at the temporary default 1x scale.
-    // updateVideoSettings() below applies RendererSettings to the existing
-    // renderer, which resizes the raster target, compute buffers and final
-    // Metal output as one live settings update.
+    // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
+    // Recreate the compute wrapper when its scale changes. This guarantees
+    // that the raster-reference target, compute tile buffers and visible Metal
+    // output texture are all created from the same requested scale.
+    if (cfg.GetInt("3D.Renderer") == renderer3D_MetalCompute &&
+        emuInstance && emuInstance->getEmuThread())
+    {
+        emuInstance->getEmuThread()->updateVideoRenderer();
+    }
 #endif
 
     setVsyncControlEnable(UsesGL());
