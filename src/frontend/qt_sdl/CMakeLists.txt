@@ -132,15 +132,22 @@ set(SOURCES_QT_SDL
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
-# --- MelonPrime experimental Metal backend master kill switch ---------------
-# See .claude/rules/melonprime-metal-backend-plan.md. Metal support remains
-# experimental and must stay behind this on/off contract so every phase can be
-# force-disabled with a single flag instead of a source edit.
+# --- MelonPrime native Metal backend build switch ----------------------------
+# MELONPRIME_METAL_DEFAULT_ON_MAC_V1
+# Native Metal is part of normal macOS builds. Both disable paths below are
+# hard build gates: when inactive, Metal sources, compile definitions and
+# Metal/QuartzCore framework links are all excluded by MELONPRIME_METAL_ACTIVE.
+set(_MELONPRIME_ENABLE_METAL_DEFAULT OFF)
+if (APPLE)
+    set(_MELONPRIME_ENABLE_METAL_DEFAULT ON)
+endif()
 option(MELONPRIME_ENABLE_METAL
-    "Enable experimental MelonPrime native Metal presenter/backend on macOS"
-    OFF)
+    "Build MelonPrime native Metal renderers on macOS"
+    ${_MELONPRIME_ENABLE_METAL_DEFAULT})
+unset(_MELONPRIME_ENABLE_METAL_DEFAULT)
+
 option(MELONPRIME_FORCE_DISABLE_METAL
-    "Force-disable all MelonPrime Metal code, even if MELONPRIME_ENABLE_METAL is ON"
+    "Completely exclude all MelonPrime Metal code and framework links"
     OFF)
 
 set(MELONPRIME_METAL_ACTIVE OFF)
@@ -286,11 +293,9 @@ if (MELONPRIME_METAL_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_MetalCompute.mm
     )
 
-    # Metal-plan Phases 2/4/6/7/8 (.claude/rules/melonprime-metal-backend-plan.md):
-    # feature probe + CAMetalLayer presenter + gated core RendererOutput Metal
-    # kind + renderer shell + native Metal 3D resource scaffold. The scaffold
-    # still delegates rasterization to Software until the GLRenderer3D port
-    # replaces those calls in follow-up Phase 8 work.
+    # Native Metal presenter, raster renderer and Metal Compute renderer.
+    # Every Metal-specific source/definition/framework remains inside this
+    # MELONPRIME_METAL_ACTIVE gate so either disable option is a complete kill.
     find_library(METAL_LIB Metal)
     if (NOT METAL_LIB)
         message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
