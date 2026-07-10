@@ -1625,6 +1625,12 @@ quad vertex buffer for the future `PrerenderLayer()` equivalent. The fragment sh
 transparent placeholder; this commit verifies Metal resource ownership and pipeline creation before
 the BG text/affine/bitmap decode logic is ported.
 
+The BG prerender pass scaffold now creates a Metal command queue for the 2D mirror and issues an
+initial non-visible render pass to every configured BG target whose layer type is below the GL
+capture/3D special cases. The pass currently clears and draws the transparent placeholder shader;
+its purpose is to prove the target/pipeline/viewport submission path before replacing the fragment
+body with the GL `2DLayerPreFS` decode logic.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
