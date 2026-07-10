@@ -1639,6 +1639,13 @@ transparency before writing into the configured BG target. Affine, extended/bitm
 bitmap parity, scanline scroll/rotation application, OBJ/window/blend, and final `RenderScreen`
 composition remain later Phase 4 work.
 
+The BG shader scaffold now also covers the other non-capture GL `2DLayerPreFS` decode cases:
+affine 256-color tiles, extended 256-color tiles, 256-color bitmap, and direct-color bitmap. These
+paths reuse the same LayerConfig-derived addresses and raw VRAM/palette textures as the text slice,
+including flip handling for extended tiles, color 0 transparency for indexed formats, and direct
+color alpha. Capture-backed bitmap types 7/8, scanline scroll/rotation application, OBJ/window/
+blend, and final `RenderScreen` composition remain later Phase 4 work.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
