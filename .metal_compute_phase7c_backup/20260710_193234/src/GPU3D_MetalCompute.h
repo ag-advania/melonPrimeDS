@@ -1,4 +1,4 @@
-// MelonPrimeDS - Metal compute renderer hidden no-texture raster probe and raster-reference bridge
+// MelonPrimeDS - Metal compute renderer span/bin foundation and raster-reference bridge
 
 #ifndef GPU3D_METAL_COMPUTE_H
 #define GPU3D_METAL_COMPUTE_H
@@ -14,10 +14,10 @@ namespace melonDS
 
 class SoftRenderer;
 
-// Phase 7C. The renderer executes real-frame span preparation, Metal
-// InterpSpans/BinCombined, work sorting, and a bounded hidden no-texture
-// Rasterise probe. Visible output remains the validated MetalRenderer3D
-// reference until the complete tile/depth/blend/final-pass chain reaches parity.
+// Phase 7B. The renderer owns the final Renderer3D slot and now executes the
+// real-frame CPU span preparation plus Metal InterpSpans/BinCombined mirror.
+// Visible output remains the validated MetalRenderer3D reference until the
+// Rasterise/DepthBlend/FinalPass kernels are complete and pixel-diff validated.
 class MetalComputeRenderer3D final : public Renderer3D
 {
 public:
@@ -61,7 +61,6 @@ private:
     bool RunFoundationSelfTest();
     bool ConfigureSpanBinResources(int scale);
     bool RunSpanBinSelfTest();
-    bool RunRasterProbeSelfTest();
     bool SubmitRealFrameSpanBin();
 };
 
