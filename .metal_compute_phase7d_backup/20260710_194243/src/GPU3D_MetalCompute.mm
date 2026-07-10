@@ -1,5 +1,5 @@
-// MelonPrimeDS - Metal compute renderer no-texture tile-memory stage (Phase 7D)
-// MELONPRIME_METAL_COMPUTE_TILE_MEMORY_V4
+// MelonPrimeDS - Metal compute renderer hidden no-texture raster probe (Phase 7C)
+// MELONPRIME_METAL_COMPUTE_RASTER_PROBE_V3
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -31,8 +31,7 @@ constexpr uint32_t kBinStride = 2048 / 32;
 constexpr uint32_t kCoarseBinStride = kBinStride / 32;
 constexpr uint32_t kCoarseTileCountX = 8;
 constexpr uint32_t kFrameSlotCount = 3;
-constexpr size_t kTileMemoryBudgetBytes = 192u * 1024u * 1024u;
-constexpr uint32_t kTileSummaryWords = 8;
+constexpr uint32_t kRasterProbeMaxWorkItems = 8192;
 
 constexpr uint32_t kVariantWorkCountStart = 0;
 constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
@@ -67,12 +66,8 @@ struct SpanBinConfig
     uint32_t BinStride;
     uint32_t CoarseBinStride;
     uint32_t PolygonGroups;
-    uint32_t AlphaRef;
-    uint32_t DispCnt;
-    uint32_t TileWorkCapacity;
-    uint32_t Reserved;
 };
-static_assert(sizeof(SpanBinConfig) == 80, "MSL SpanBinConfig layout mismatch");
+static_assert(sizeof(SpanBinConfig) == 64, "MSL SpanBinConfig layout mismatch");
 
 struct SpanSetupY
 {
@@ -150,19 +145,18 @@ struct VariantMeta
 };
 static_assert(sizeof(VariantMeta) == 16, "MSL VariantMeta layout mismatch");
 
-struct TileRasterSummary
+struct RasterProbeSummary
 {
-    uint32_t RasterisedWorkItems;
-    uint32_t SkippedTextured;
-    uint32_t SkippedShadow;
-    uint32_t SkippedCapacity;
     uint32_t CoveredPixels;
     uint32_t ColorHash;
     uint32_t DepthMin;
     uint32_t DepthMax;
+    uint32_t PolygonIndex;
+    uint32_t TilePosition;
+    uint32_t Flags;
+    uint32_t Reserved;
 };
-static_assert(sizeof(TileRasterSummary) == kTileSummaryWords * sizeof(uint32_t),
-              "MSL tile summary layout mismatch");
+static_assert(sizeof(RasterProbeSummary) == 32, "MSL RasterProbeSummary layout mismatch");
 
 struct VariantKey
 {
@@ -221,10 +215,6 @@ struct SpanBinConfig
     uint binStride;
     uint coarseBinStride;
     uint polygonGroups;
-    uint alphaRef;
-    uint dispCnt;
-    uint tileWorkCapacity;
-    uint reserved;
 };
 
 struct SpanSetupY
@@ -291,14 +281,17 @@ struct VariantMeta
     uint Reserved1;
 };
 
-constant uint TileSummaryRasterised = 0u;
-constant uint TileSummarySkippedTextured = 1u;
-constant uint TileSummarySkippedShadow = 2u;
-constant uint TileSummarySkippedCapacity = 3u;
-constant uint TileSummaryCoveredPixels = 4u;
-constant uint TileSummaryColorHash = 5u;
-constant uint TileSummaryDepthMin = 6u;
-constant uint TileSummaryDepthMax = 7u;
+struct RasterProbeSummary
+{
+    uint CoveredPixels;
+    uint ColorHash;
+    uint DepthMin;
+    uint DepthMax;
+    uint PolygonIndex;
+    uint TilePosition;
+    uint Flags;
+    uint Reserved;
+};
 
 
 kernel void mp_compute_sort_work_polygons(
@@ -643,91 +636,75 @@ kernel void mp_compute_bin_combined(
     }
 }
 
-kernel void mp_compute_clear_tile_summary(
-    device atomic_uint* summary [[buffer(0)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid >= 8u)
-        return;
-    const uint value = gid == TileSummaryDepthMin ? 0xFFFFFFFFu : 0u;
-    atomic_store_explicit(&summary[gid], value, memory_order_relaxed);
-}
-
-kernel void mp_compute_rasterise_no_texture_tiles(
+kernel void mp_compute_rasterise_no_texture_probe(
     device atomic_uint* header [[buffer(0)]],
     device const RenderPolygon* polygons [[buffer(1)]],
     device const SpanSetupX* xSpans [[buffer(2)]],
     device const uint2* workDescs [[buffer(3)]],
     device const VariantMeta* variants [[buffer(4)]],
-    device uint* colorTiles [[buffer(5)]],
-    device uint* depthTiles [[buffer(6)]],
-    device uint* attrTiles [[buffer(7)]],
-    device atomic_uint* summary [[buffer(8)]],
-    constant SpanBinConfig& config [[buffer(9)]],
+    device RasterProbeSummary* summaries [[buffer(5)]],
+    constant SpanBinConfig& config [[buffer(6)]],
+    constant uint& probeLimit [[buffer(7)]],
     uint gid [[thread_position_in_grid]])
 {
+    RasterProbeSummary summary = {};
+    summary.DepthMin = 0xFFFFFFFFu;
+
     const uint rawWorkCount = atomic_load_explicit(
         &header[VariantWorkCountStart + 3u], memory_order_relaxed);
-    const uint workCount = min(rawWorkCount, config.maxWorkTiles);
+    const uint workCount = min(min(rawWorkCount, config.maxWorkTiles), probeLimit);
     if (gid >= workCount)
         return;
 
     const uint2 work = workDescs[config.maxWorkTiles + gid];
     const uint polygonIndex = work.y & 0x7FFu;
-    const uint originalWorkIndex = work.y >> 11u;
-    if (originalWorkIndex >= config.tileWorkCapacity)
+    summary.PolygonIndex = polygonIndex;
+    summary.TilePosition = work.x;
+
+    if (polygonIndex >= config.numPolygons || config.numVariants == 0u)
     {
-        atomic_fetch_add_explicit(&summary[TileSummarySkippedCapacity], 1u, memory_order_relaxed);
+        summary.Flags = 1u << 3u;
+        summaries[gid] = summary;
         return;
     }
-    if (polygonIndex >= config.numPolygons || config.numVariants == 0u)
-        return;
 
     const RenderPolygon polygon = polygons[polygonIndex];
     const uint variantIndex = min(polygon.Variant, config.numVariants - 1u);
     const VariantMeta variant = variants[variantIndex];
     if (variant.Textured != 0u)
     {
-        atomic_fetch_add_explicit(&summary[TileSummarySkippedTextured], 1u, memory_order_relaxed);
+        summary.Flags = 1u << 1u;
+        summaries[gid] = summary;
         return;
     }
     if (variant.BlendMode == 4u)
     {
-        atomic_fetch_add_explicit(&summary[TileSummarySkippedShadow], 1u, memory_order_relaxed);
+        summary.Flags = 1u << 2u;
+        summaries[gid] = summary;
         return;
-    }
-
-    const uint tileArea = config.tileSize * config.tileSize;
-    const uint tileBase = originalWorkIndex * tileArea;
-    for (uint pixel = 0u; pixel < tileArea; pixel++)
-    {
-        colorTiles[tileBase + pixel] = 0u;
-        depthTiles[tileBase + pixel] = 0u;
-        attrTiles[tileBase + pixel] = 0u;
     }
 
     const uint tileX = work.x & 0xFFFFu;
     const uint tileY = work.x >> 16u;
+    uint hash = 2166136261u;
     uint covered = 0u;
-    uint colorHash = 2166136261u;
     uint depthMin = 0xFFFFFFFFu;
     uint depthMax = 0u;
-    const uint polyAlpha = (polygon.Attr >> 16u) & 0x1Fu;
-    const bool wireframe = polyAlpha == 0u;
 
     for (uint localY = 0u; localY < config.tileSize; localY++)
     {
         const uint pixelY = tileY + localY;
-        if (pixelY >= config.screenHeight || int(pixelY) < polygon.YTop || int(pixelY) >= polygon.YBot)
+        if (pixelY < uint(max(polygon.YTop, 0)) || pixelY >= uint(max(polygon.YBot, 0)) ||
+            pixelY >= config.screenHeight)
             continue;
 
         const int spanOffsetSigned = int(pixelY) - polygon.YTop;
-        if (spanOffsetSigned < 0 || polygon.FirstXSpan + uint(spanOffsetSigned) >= config.numSetupIndices)
+        if (spanOffsetSigned < 0 ||
+            polygon.FirstXSpan + uint(spanOffsetSigned) >= config.numSetupIndices)
             continue;
-
         const SpanSetupX span = xSpans[polygon.FirstXSpan + uint(spanOffsetSigned)];
-        const int insideStart = min(span.X0 + max(span.EdgeLenL, 0), span.X1);
-        const int insideEnd = min(span.X1 - max(span.EdgeLenR, 0), span.X1);
+        const int insideStart = span.X0 + max(span.EdgeLenL, 0);
+        const int insideEnd = span.X1 - max(span.EdgeLenR, 0);
         const int spanWidth = max(span.X1 - span.X0, 1);
 
         for (uint localX = 0u; localX < config.tileSize; localX++)
@@ -739,66 +716,46 @@ kernel void mp_compute_rasterise_no_texture_tiles(
             if (x < span.X0 || x >= span.X1)
                 continue;
 
-            const bool insideLeft = x < insideStart;
-            const bool insideRight = x >= insideEnd;
-            const bool insideBody = !insideLeft && !insideRight;
-            bool fill = (insideLeft && (span.Flags & XSpanSetup_FillLeft) != 0u) ||
-                        (insideRight && (span.Flags & XSpanSetup_FillRight) != 0u) ||
-                        (insideBody && (span.Flags & XSpanSetup_FillInside) != 0u);
-            if (wireframe && insideBody && int(pixelY) != polygon.YTop && int(pixelY) != polygon.YBot - 1)
-                fill = false;
+            bool fill = false;
+            if (x >= insideStart && x < insideEnd)
+                fill = (span.Flags & XSpanSetup_FillInside) != 0u;
+            else if (x < insideStart)
+                fill = (span.Flags & XSpanSetup_FillLeft) != 0u;
+            else
+                fill = (span.Flags & XSpanSetup_FillRight) != 0u;
             if (!fill)
                 continue;
 
-            uint attr = 0u;
-            if (int(pixelY) == polygon.YTop)
-                attr |= 0x4u;
-            else if (int(pixelY) == polygon.YBot - 1)
-                attr |= 0x8u;
-            if (insideLeft)
-                attr |= 0x1u | (31u << 8u);
-            else if (insideRight)
-                attr |= 0x2u | (31u << 8u);
-
             const uint factor = min(uint(max(x - span.X0, 0)) * 256u / uint(spanWidth), 256u);
             const uint inverse = 256u - factor;
-            const int vr = (span.ColorR0 * int(inverse) + span.ColorR1 * int(factor)) >> 8;
-            const int vg = (span.ColorG0 * int(inverse) + span.ColorG1 * int(factor)) >> 8;
-            const int vb = (span.ColorB0 * int(inverse) + span.ColorB1 * int(factor)) >> 8;
-            const uint r = min(uint(max(vr >> 3, 0)), 63u);
-            const uint g = min(uint(max(vg >> 3, 0)), 63u);
-            const uint b = min(uint(max(vb >> 3, 0)), 63u);
-            const uint a = polyAlpha == 0u ? 31u : polyAlpha;
-            if (a <= config.alphaRef)
-                continue;
+            const uint r = uint(max((span.ColorR0 * int(inverse) + span.ColorR1 * int(factor)) >> 8, 0));
+            const uint g = uint(max((span.ColorG0 * int(inverse) + span.ColorG1 * int(factor)) >> 8, 0));
+            const uint b = uint(max((span.ColorB0 * int(inverse) + span.ColorB1 * int(factor)) >> 8, 0));
+            uint a = (polygon.Attr >> 16u) & 0x1Fu;
+            if (a == 0u)
+                a = 31u;
+            const uint packedColor = min(r, 63u) | (min(g, 63u) << 8u) |
+                (min(b, 63u) << 16u) | (a << 24u);
 
             const uint z0 = uint(max(span.Z0, 0));
             const uint z1 = uint(max(span.Z1, 0));
             const uint depth = z0 <= z1
                 ? z0 + (((z1 - z0) * factor) >> 8u)
                 : z1 + (((z0 - z1) * inverse) >> 8u);
-            const uint color = r | (g << 8u) | (b << 16u) | (a << 24u);
-            const uint tilePixel = tileBase + localY * config.tileSize + localX;
-            colorTiles[tilePixel] = color;
-            depthTiles[tilePixel] = depth;
-            attrTiles[tilePixel] = attr;
-
-            covered++;
             depthMin = min(depthMin, depth);
             depthMax = max(depthMax, depth);
-            colorHash ^= color + pixelX * 0x9E3779B9u + pixelY * 0x85EBCA6Bu;
-            colorHash *= 16777619u;
+            hash ^= packedColor + (pixelX * 0x9E3779B9u) + (pixelY * 0x85EBCA6Bu);
+            hash *= 16777619u;
+            covered++;
         }
     }
 
-    atomic_fetch_add_explicit(&summary[TileSummaryRasterised], 1u, memory_order_relaxed);
-    atomic_fetch_add_explicit(&summary[TileSummaryCoveredPixels], covered, memory_order_relaxed);
-    atomic_fetch_xor_explicit(&summary[TileSummaryColorHash], colorHash, memory_order_relaxed);
-    if (covered != 0u)
-    {
-        atomic_fetch_min_explicit(&summary[TileSummaryDepthMin], depthMin, memory_order_relaxed);
-        atomic_fetch_max_explicit(&summary[TileSummaryDepthMax], depthMax, memory_order_relaxed);
-    }
+    summary.CoveredPixels = covered;
+    summary.ColorHash = hash;
+    summary.DepthMin = covered != 0u ? depthMin : 0u;
+    summary.DepthMax = covered != 0u ? depthMax : 0u;
+    summary.Flags = 1u;
+    summaries[gid] = summary;
 }
 )MSL";
 
@@ -1044,6 +1001,7 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> WorkOffsets = nil;
         id<MTLBuffer> WorkDescs = nil;
         id<MTLBuffer> VariantMetaBuffer = nil;
+        id<MTLBuffer> RasterProbeSummaries = nil;
         id<MTLCommandBuffer> LastCommand = nil;
         std::atomic<bool> InFlight { false };
         std::atomic<uint64_t> Generation { 0 };
@@ -1059,13 +1017,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> SortWorkPolygonsPipeline = nil;
     id<MTLComputePipelineState> InterpSpansPipeline = nil;
     id<MTLComputePipelineState> BinCombinedPipeline = nil;
-    id<MTLComputePipelineState> ClearTileSummaryPipeline = nil;
-    id<MTLComputePipelineState> RasteriseNoTextureTilesPipeline = nil;
-
-    id<MTLBuffer> ColorTiles = nil;
-    id<MTLBuffer> DepthTiles = nil;
-    id<MTLBuffer> AttrTiles = nil;
-    id<MTLBuffer> TileSummary = nil;
+    id<MTLComputePipelineState> RasteriseNoTextureProbePipeline = nil;
 
     std::array<FrameSlot, kFrameSlotCount> Slots;
     std::vector<SpanSetupY> YSpanData;
@@ -1086,18 +1038,15 @@ struct MetalComputeRenderer3D::MetalComputeState
     uint32_t TileLines = 24;
     uint32_t MaxWorkTiles = 32 * 24 * 16;
     uint32_t MaxSetupIndices = 64 * 2048;
-    uint32_t TileWorkCapacity = 0;
     bool HiresCoordinates = false;
     bool Ready = false;
     bool SpanBinReady = false;
-    bool TileRasterReady = false;
+    bool RasterProbeReady = false;
     bool LoggedOverflow = false;
 
     std::atomic<uint64_t> SubmittedFrames { 0 };
     std::atomic<uint64_t> CompletedFrames { 0 };
     std::atomic<uint64_t> SkippedBusyFrames { 0 };
-    std::atomic<uint64_t> SkippedTileBusyFrames { 0 };
-    std::atomic<bool> TileMemoryInFlight { false };
 };
 
 MetalComputeRenderer3D::MetalComputeRenderer3D(
@@ -1136,14 +1085,14 @@ bool MetalComputeRenderer3D::Init()
         return false;
     if (!RunSpanBinSelfTest())
         return false;
-    if (!RunNoTextureTileSelfTest())
+    if (!RunRasterProbeSelfTest())
         return false;
 
     State->Ready = true;
     State->SpanBinReady = true;
-    State->TileRasterReady = true;
+    State->RasterProbeReady = true;
     std::fprintf(stderr,
-        "[MelonPrime] metal compute tile memory: Phase 7D ready; visible output remains Metal raster reference\n");
+        "[MelonPrime] metal compute raster probe: Phase 7C ready; visible output remains Metal raster reference\n");
     return true;
 }
 
@@ -1196,16 +1145,13 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device, State->Library, @"mp_compute_interp_spans_geometry");
     State->BinCombinedPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_bin_combined");
-    State->ClearTileSummaryPipeline = BuildComputePipeline(
-        State->Device, State->Library, @"mp_compute_clear_tile_summary");
-    State->RasteriseNoTextureTilesPipeline = BuildComputePipeline(
-        State->Device, State->Library, @"mp_compute_rasterise_no_texture_tiles");
+    State->RasteriseNoTextureProbePipeline = BuildComputePipeline(
+        State->Device, State->Library, @"mp_compute_rasterise_no_texture_probe");
 
     if (!State->ClearIndirectPipeline || !State->ClearCoarseMaskPipeline ||
         !State->CalcOffsetsPipeline || !State->SortWorkPipeline ||
         !State->SortWorkPolygonsPipeline || !State->InterpSpansPipeline ||
-        !State->BinCombinedPipeline || !State->ClearTileSummaryPipeline ||
-        !State->RasteriseNoTextureTilesPipeline)
+        !State->BinCombinedPipeline || !State->RasteriseNoTextureProbePipeline)
     {
         return false;
     }
@@ -1218,13 +1164,12 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->SortWorkPolygonsPipeline.maxTotalThreadsPerThreadgroup,
         State->InterpSpansPipeline.maxTotalThreadsPerThreadgroup,
         State->BinCombinedPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearTileSummaryPipeline.maxTotalThreadsPerThreadgroup,
-        State->RasteriseNoTextureTilesPipeline.maxTotalThreadsPerThreadgroup,
+        State->RasteriseNoTextureProbePipeline.maxTotalThreadsPerThreadgroup,
     });
-    if (minMaxThreads < 64)
+    if (minMaxThreads < 48)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute: device supports only %zu threads per group; 64 required\n",
+            "[MelonPrime] metal compute: device supports only %zu threads per group; 48 required\n",
             static_cast<size_t>(minMaxThreads));
         return false;
     }
@@ -1283,6 +1228,7 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     const size_t workOffsetBytes = fineBytes;
     const size_t workDescBytes = static_cast<size_t>(State->MaxWorkTiles) * 2u * sizeof(WorkDesc);
     const size_t variantMetaBytes = static_cast<size_t>(kMaxVariants) * sizeof(VariantMeta);
+    const size_t rasterProbeBytes = static_cast<size_t>(kRasterProbeMaxWorkItems) * sizeof(RasterProbeSummary);
 
     for (auto& slot : State->Slots)
     {
@@ -1296,10 +1242,12 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.WorkOffsets = [State->Device newBufferWithLength:workOffsetBytes options:MTLResourceStorageModeShared];
         slot.WorkDescs = [State->Device newBufferWithLength:workDescBytes options:MTLResourceStorageModeShared];
         slot.VariantMetaBuffer = [State->Device newBufferWithLength:variantMetaBytes options:MTLResourceStorageModeShared];
+        slot.RasterProbeSummaries = [State->Device newBufferWithLength:rasterProbeBytes options:MTLResourceStorageModeShared];
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
             !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
-            !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer)
+            !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
+            !slot.RasterProbeSummaries)
         {
             std::fprintf(stderr,
                 "[MelonPrime] metal compute span/bin: buffer allocation failed scale=%d\n",
@@ -1308,47 +1256,8 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         }
     }
 
-    const size_t tileArea = static_cast<size_t>(State->TileSize) * State->TileSize;
-    const size_t bytesPerWork = tileArea * sizeof(uint32_t) * 3u;
-    uint32_t tileCapacity = State->MaxWorkTiles;
-    if (bytesPerWork != 0)
-    {
-        const size_t budgetCapacity = std::max<size_t>(1, kTileMemoryBudgetBytes / bytesPerWork);
-        tileCapacity = static_cast<uint32_t>(std::min<size_t>(tileCapacity, budgetCapacity));
-    }
-
-    State->ColorTiles = nil;
-    State->DepthTiles = nil;
-    State->AttrTiles = nil;
-    while (tileCapacity > 0)
-    {
-        const size_t tileBytes = static_cast<size_t>(tileCapacity) * tileArea * sizeof(uint32_t);
-        State->ColorTiles = [State->Device newBufferWithLength:tileBytes options:MTLResourceStorageModePrivate];
-        State->DepthTiles = [State->Device newBufferWithLength:tileBytes options:MTLResourceStorageModePrivate];
-        State->AttrTiles = [State->Device newBufferWithLength:tileBytes options:MTLResourceStorageModePrivate];
-        if (State->ColorTiles && State->DepthTiles && State->AttrTiles)
-            break;
-        State->ColorTiles = nil;
-        State->DepthTiles = nil;
-        State->AttrTiles = nil;
-        tileCapacity >>= 1u;
-    }
-    State->TileSummary = [State->Device newBufferWithLength:kTileSummaryWords * sizeof(uint32_t)
-                                                    options:MTLResourceStorageModeShared];
-    if (tileCapacity == 0 || !State->ColorTiles || !State->DepthTiles ||
-        !State->AttrTiles || !State->TileSummary)
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute tile memory: allocation failed scale=%d maxWorkTiles=%u\n",
-            scale, State->MaxWorkTiles);
-        return false;
-    }
-    State->TileWorkCapacity = tileCapacity;
-    State->TileMemoryInFlight.store(false, std::memory_order_release);
-
-    const size_t allocatedTileBytes = static_cast<size_t>(tileCapacity) * tileArea * sizeof(uint32_t) * 3u;
     std::fprintf(stderr,
-        "[MelonPrime] metal compute span/bin: configured scale=%d screen=%ux%u tile=%u grid=%ux%u maxWorkTiles=%u maxXSpans=%u tileCapacity=%u tileMemoryMiB=%.1f fullCoverage=%u slots=%u\n",
+        "[MelonPrime] metal compute span/bin: configured scale=%d screen=%ux%u tile=%u grid=%ux%u maxWorkTiles=%u maxXSpans=%u rasterProbeCap=%u slots=%u\n",
         scale,
         State->ScreenWidth,
         State->ScreenHeight,
@@ -1357,9 +1266,7 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         State->TileLines,
         State->MaxWorkTiles,
         State->MaxSetupIndices,
-        State->TileWorkCapacity,
-        static_cast<double>(allocatedTileBytes) / (1024.0 * 1024.0),
-        State->TileWorkCapacity == State->MaxWorkTiles ? 1u : 0u,
+        kRasterProbeMaxWorkItems,
         kFrameSlotCount);
     return true;
 }
@@ -1527,8 +1434,7 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         1, 1, setupCount,
         64, 32, 8, 8, 4,
         8, 4, 64, 32,
-        maxWorkTiles, kBinStride, kCoarseBinStride, 1,
-        0, 0, maxWorkTiles, 0
+        maxWorkTiles, kBinStride, kCoarseBinStride, 1
     };
     const FoundationConfig foundationConfig { 1, maxWorkTiles, tileCount, kRasteriseChunkSize };
 
@@ -1659,19 +1565,17 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
     return true;
 }
 
-bool MetalComputeRenderer3D::RunNoTextureTileSelfTest()
+bool MetalComputeRenderer3D::RunRasterProbeSelfTest()
 {
-    if (!State || !State->Device || !State->Queue ||
-        !State->ClearTileSummaryPipeline || !State->RasteriseNoTextureTilesPipeline)
+    if (!State || !State->Device || !State->Queue || !State->RasteriseNoTextureProbePipeline)
         return false;
 
-    constexpr uint32_t maxWorkTiles = 1;
+    constexpr uint32_t maxWorkTiles = 4;
+    constexpr uint32_t probeLimit = 1;
     constexpr uint32_t lineCount = 8;
-    constexpr uint32_t tileArea = 64;
     const SpanBinConfig spanConfig {
         1, 1, lineCount, 8, 8, 8, 1, 1,
         8, 1, 64, 8, maxWorkTiles, kBinStride, kCoarseBinStride, 1,
-        0, 0, maxWorkTiles, 0,
     };
 
     id<MTLBuffer> header = [State->Device newBufferWithLength:kBinHeaderWords * sizeof(uint32_t)
@@ -1684,16 +1588,9 @@ bool MetalComputeRenderer3D::RunNoTextureTileSelfTest()
                                                        options:MTLResourceStorageModeShared];
     id<MTLBuffer> variants = [State->Device newBufferWithLength:sizeof(VariantMeta)
                                                            options:MTLResourceStorageModeShared];
-    id<MTLBuffer> colors = [State->Device newBufferWithLength:tileArea * sizeof(uint32_t)
-                                                         options:MTLResourceStorageModeShared];
-    id<MTLBuffer> depths = [State->Device newBufferWithLength:tileArea * sizeof(uint32_t)
-                                                         options:MTLResourceStorageModeShared];
-    id<MTLBuffer> attrs = [State->Device newBufferWithLength:tileArea * sizeof(uint32_t)
-                                                        options:MTLResourceStorageModeShared];
-    id<MTLBuffer> summary = [State->Device newBufferWithLength:sizeof(TileRasterSummary)
-                                                          options:MTLResourceStorageModeShared];
-    if (!header || !polygons || !xSpans || !work || !variants ||
-        !colors || !depths || !attrs || !summary)
+    id<MTLBuffer> summaries = [State->Device newBufferWithLength:sizeof(RasterProbeSummary)
+                                                            options:MTLResourceStorageModeShared];
+    if (!header || !polygons || !xSpans || !work || !variants || !summaries)
         return false;
 
     std::memset([header contents], 0, header.length);
@@ -1701,10 +1598,7 @@ bool MetalComputeRenderer3D::RunNoTextureTileSelfTest()
     std::memset([xSpans contents], 0, xSpans.length);
     std::memset([work contents], 0, work.length);
     std::memset([variants contents], 0, variants.length);
-    std::memset([colors contents], 0xA5, colors.length);
-    std::memset([depths contents], 0xA5, depths.length);
-    std::memset([attrs contents], 0xA5, attrs.length);
-    std::memset([summary contents], 0, summary.length);
+    std::memset([summaries contents], 0, summaries.length);
 
     auto* headerWords = static_cast<uint32_t*>([header contents]);
     headerWords[3] = 1;
@@ -1720,9 +1614,9 @@ bool MetalComputeRenderer3D::RunNoTextureTileSelfTest()
         lines[y].EdgeLenR = 0;
         lines[y].Flags = (1u << 1u) | (1u << 2u) | (1u << 3u);
         lines[y].Z0 = lines[y].Z1 = 0x123456;
-        lines[y].ColorR0 = lines[y].ColorR1 = 63 << 3;
-        lines[y].ColorG0 = lines[y].ColorG1 = 31 << 3;
-        lines[y].ColorB0 = lines[y].ColorB1 = 15 << 3;
+        lines[y].ColorR0 = lines[y].ColorR1 = 63;
+        lines[y].ColorG0 = lines[y].ColorG1 = 31;
+        lines[y].ColorB0 = lines[y].ColorB1 = 15;
     }
     auto* workDescs = static_cast<WorkDesc*>([work contents]);
     workDescs[maxWorkTiles] = { 0, 0 };
@@ -1730,55 +1624,37 @@ bool MetalComputeRenderer3D::RunNoTextureTileSelfTest()
     variant[0] = { 0, 0, 0, 0 };
 
     id<MTLCommandBuffer> command = [State->Queue commandBuffer];
-    {
-        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-        [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
-        [encoder setBuffer:summary offset:0 atIndex:0];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-        [encoder endEncoding];
-    }
-    {
-        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-        [encoder setComputePipelineState:State->RasteriseNoTextureTilesPipeline];
-        [encoder setBuffer:header offset:0 atIndex:0];
-        [encoder setBuffer:polygons offset:0 atIndex:1];
-        [encoder setBuffer:xSpans offset:0 atIndex:2];
-        [encoder setBuffer:work offset:0 atIndex:3];
-        [encoder setBuffer:variants offset:0 atIndex:4];
-        [encoder setBuffer:colors offset:0 atIndex:5];
-        [encoder setBuffer:depths offset:0 atIndex:6];
-        [encoder setBuffer:attrs offset:0 atIndex:7];
-        [encoder setBuffer:summary offset:0 atIndex:8];
-        [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-        [encoder endEncoding];
-    }
-    if (!CompleteCommandBuffer(command, "no-texture tile-memory self-test"))
+    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+    [encoder setComputePipelineState:State->RasteriseNoTextureProbePipeline];
+    [encoder setBuffer:header offset:0 atIndex:0];
+    [encoder setBuffer:polygons offset:0 atIndex:1];
+    [encoder setBuffer:xSpans offset:0 atIndex:2];
+    [encoder setBuffer:work offset:0 atIndex:3];
+    [encoder setBuffer:variants offset:0 atIndex:4];
+    [encoder setBuffer:summaries offset:0 atIndex:5];
+    [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:6];
+    [encoder setBytes:&probeLimit length:sizeof(probeLimit) atIndex:7];
+    [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+             threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    [encoder endEncoding];
+    if (!CompleteCommandBuffer(command, "no-texture raster probe self-test"))
         return false;
 
-    const auto* result = static_cast<const TileRasterSummary*>([summary contents]);
-    const auto* outColor = static_cast<const uint32_t*>([colors contents]);
-    const auto* outDepth = static_cast<const uint32_t*>([depths contents]);
-    const auto* outAttr = static_cast<const uint32_t*>([attrs contents]);
-    const uint32_t expectedColor = 63u | (31u << 8u) | (15u << 16u) | (31u << 24u);
-    if (result->RasterisedWorkItems != 1 || result->CoveredPixels != 64 ||
-        result->DepthMin != 0x123456 || result->DepthMax != 0x123456 ||
-        result->ColorHash == 0 || outColor[0] != expectedColor ||
-        outDepth[0] != 0x123456 || (outAttr[0] & 0x4u) == 0)
+    const auto* result = static_cast<const RasterProbeSummary*>([summaries contents]);
+    if (result[0].CoveredPixels != 64 || result[0].DepthMin != 0x123456 ||
+        result[0].DepthMax != 0x123456 || result[0].ColorHash == 0 ||
+        (result[0].Flags & 1u) == 0)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute tile memory: self-test mismatch work=%u covered=%u hash=0x%08x depth=%08x..%08x color=%08x attr=%08x\n",
-            result->RasterisedWorkItems, result->CoveredPixels, result->ColorHash,
-            result->DepthMin, result->DepthMax, outColor[0], outAttr[0]);
+            "[MelonPrime] metal compute raster probe: self-test mismatch covered=%u hash=0x%08x depth=%08x..%08x flags=0x%x\n",
+            result[0].CoveredPixels, result[0].ColorHash,
+            result[0].DepthMin, result[0].DepthMax, result[0].Flags);
         return false;
     }
 
     std::fprintf(stderr,
-        "[MelonPrime] metal compute tile memory: self-test PASS work=%u covered=%u color=%08x depth=%08x attr=%08x\n",
-        result->RasterisedWorkItems, result->CoveredPixels,
-        outColor[0], outDepth[0], outAttr[0]);
+        "[MelonPrime] metal compute raster probe: self-test PASS covered=%u hash=0x%08x depth=%08x\n",
+        result[0].CoveredPixels, result[0].ColorHash, result[0].DepthMin);
     return true;
 }
 
@@ -1788,7 +1664,6 @@ void MetalComputeRenderer3D::Reset()
     if (!State)
         return;
     State->LoggedOverflow = false;
-    State->SkippedTileBusyFrames.store(0, std::memory_order_relaxed);
 }
 
 void MetalComputeRenderer3D::SetThreaded(bool threaded) noexcept
@@ -2067,6 +1942,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     State->VariantMetaData.data(),
                     static_cast<size_t>(kMaxVariants) * sizeof(VariantMeta));
         std::memset([slot->Header contents], 0, slot->Header.length);
+        std::memset([slot->RasterProbeSummaries contents], 0, slot->RasterProbeSummaries.length);
 
         const uint32_t variantCount = static_cast<uint32_t>(State->VariantData.size());
         const uint32_t polygonGroups = DispatchGroups(polygonCount, 32);
@@ -2097,31 +1973,15 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             kBinStride,
             kCoarseBinStride,
             polygonGroups,
-            GPU3D.RenderAlphaRef,
-            GPU3D.RenderDispCnt,
-            State->TileWorkCapacity,
-            0,
         };
-
-        bool submitTileRaster = false;
-        if (State->TileRasterReady && polygonGroups > 0 && numSetupIndices > 0)
-        {
-            bool expected = false;
-            submitTileRaster = State->TileMemoryInFlight.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel, std::memory_order_relaxed);
-            if (!submitTileRaster)
-                State->SkippedTileBusyFrames.fetch_add(1, std::memory_order_relaxed);
-        }
 
         id<MTLCommandBuffer> command = [State->Queue commandBuffer];
         if (!command)
         {
-            if (submitTileRaster)
-                State->TileMemoryInFlight.store(false, std::memory_order_release);
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 7D Tile Memory";
+        command.label = @"MelonPrime Metal Compute Span/Bin Mirror";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2191,33 +2051,22 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                      threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
             [encoder endEncoding];
         }
-        if (submitTileRaster)
+        if (polygonGroups > 0 && numSetupIndices > 0 && State->RasterProbeReady)
         {
-            {
-                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
-                [encoder setBuffer:State->TileSummary offset:0 atIndex:0];
-                [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-                [encoder endEncoding];
-            }
-            {
-                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                [encoder setComputePipelineState:State->RasteriseNoTextureTilesPipeline];
-                [encoder setBuffer:slot->Header offset:0 atIndex:0];
-                [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
-                [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
-                [encoder setBuffer:slot->WorkDescs offset:0 atIndex:3];
-                [encoder setBuffer:slot->VariantMetaBuffer offset:0 atIndex:4];
-                [encoder setBuffer:State->ColorTiles offset:0 atIndex:5];
-                [encoder setBuffer:State->DepthTiles offset:0 atIndex:6];
-                [encoder setBuffer:State->AttrTiles offset:0 atIndex:7];
-                [encoder setBuffer:State->TileSummary offset:0 atIndex:8];
-                [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
-                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(State->MaxWorkTiles, 64), 1, 1)
-                         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-                [encoder endEncoding];
-            }
+            const uint32_t probeLimit = kRasterProbeMaxWorkItems;
+            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+            [encoder setComputePipelineState:State->RasteriseNoTextureProbePipeline];
+            [encoder setBuffer:slot->Header offset:0 atIndex:0];
+            [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
+            [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
+            [encoder setBuffer:slot->WorkDescs offset:0 atIndex:3];
+            [encoder setBuffer:slot->VariantMetaBuffer offset:0 atIndex:4];
+            [encoder setBuffer:slot->RasterProbeSummaries offset:0 atIndex:5];
+            [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:6];
+            [encoder setBytes:&probeLimit length:sizeof(probeLimit) atIndex:7];
+            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(probeLimit, 64), 1, 1)
+                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+            [encoder endEncoding];
         }
 
         const uint64_t serial = State->SubmittedFrames.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -2225,8 +2074,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         const uint32_t submittedScale = State->ScaleFactor;
         const bool submittedHiresCoordinates = State->HiresCoordinates;
         id<MTLBuffer> completedHeader = slot->Header;
-        id<MTLBuffer> completedTileSummary = State->TileSummary;
-        const bool completedTileRaster = submitTileRaster;
+        id<MTLBuffer> completedRasterSummaries = slot->RasterProbeSummaries;
         MetalComputeState* state = State.get();
         slot->LastCommand = command;
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
@@ -2237,12 +2085,27 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 const uint32_t clampedWorkTiles = std::min(rawWorkTiles, state->MaxWorkTiles);
                 const uint64_t completedCount =
                     state->CompletedFrames.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (completedTileRaster && (completedCount <= 3 || (completedCount % 600) == 0))
+                if (completedCount <= 3 || (completedCount % 600) == 0)
                 {
-                    const auto* tile = static_cast<const TileRasterSummary*>([completedTileSummary contents]);
-                    const uint32_t depthMin = tile->DepthMin == 0xFFFFFFFFu ? 0u : tile->DepthMin;
+                    const uint32_t probeItems = std::min(clampedWorkTiles, kRasterProbeMaxWorkItems);
+                    const auto* summaries = static_cast<const RasterProbeSummary*>([completedRasterSummaries contents]);
+                    uint64_t coveredPixels = 0;
+                    uint32_t rasterHash = 0;
+                    uint32_t rasterisedItems = 0;
+                    uint32_t skippedTextured = 0;
+                    for (uint32_t item = 0; item < probeItems; item++)
+                    {
+                        if (summaries[item].Flags & 1u)
+                        {
+                            rasterisedItems++;
+                            coveredPixels += summaries[item].CoveredPixels;
+                            rasterHash ^= summaries[item].ColorHash + item * 0x9E3779B9u;
+                        }
+                        if (summaries[item].Flags & (1u << 1u))
+                            skippedTextured++;
+                    }
                     std::fprintf(stderr,
-                        "[MelonPrime] metal compute tile memory: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u rasterised=%u skippedTextured=%u skippedShadow=%u skippedCapacity=%u coveredPixels=%u hash=0x%08x depth=%08x..%08x tileCapacity=%u skippedTileBusy=%llu skippedSpanBusy=%llu hiresCoords=%u\n",
+                        "[MelonPrime] metal compute raster probe: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u probed=%u rasterised=%u skippedTextured=%u coveredPixels=%llu hash=0x%08x skippedBusy=%llu hiresCoords=%u\n",
                         static_cast<unsigned long long>(serial),
                         slotIndex,
                         submittedScale,
@@ -2250,16 +2113,11 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                         numSetupIndices,
                         variantCount,
                         clampedWorkTiles,
-                        tile->RasterisedWorkItems,
-                        tile->SkippedTextured,
-                        tile->SkippedShadow,
-                        tile->SkippedCapacity,
-                        tile->CoveredPixels,
-                        tile->ColorHash,
-                        depthMin,
-                        tile->DepthMax,
-                        state->TileWorkCapacity,
-                        static_cast<unsigned long long>(state->SkippedTileBusyFrames.load(std::memory_order_relaxed)),
+                        probeItems,
+                        rasterisedItems,
+                        skippedTextured,
+                        static_cast<unsigned long long>(coveredPixels),
+                        rasterHash,
                         static_cast<unsigned long long>(state->SkippedBusyFrames.load(std::memory_order_relaxed)),
                         submittedHiresCoordinates ? 1u : 0u);
                 }
@@ -2273,8 +2131,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     "[MelonPrime] metal compute span/bin: frame=%llu GPU failure: %s\n",
                     static_cast<unsigned long long>(serial), message);
             }
-            if (completedTileRaster)
-                state->TileMemoryInFlight.store(false, std::memory_order_release);
             if (slot->Generation.load(std::memory_order_acquire) == generation)
                 slot->InFlight.store(false, std::memory_order_release);
         }];
@@ -2291,9 +2147,8 @@ void MetalComputeRenderer3D::RenderFrame()
         if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
             SubmitRealFrameSpanBin();
 
-        // Phase 7D now produces canonical no-texture Color/Depth/Attr tiles.
-        // Until texture variants + DepthBlend + FinalPass achieve pixel parity,
-        // the validated Metal raster renderer remains the visible source.
+        // Until Rasterise + DepthBlend + FinalPass achieve pixel parity, the
+        // already validated Metal raster renderer remains the visible source.
         RasterReference.RenderFrame();
     }
 }
@@ -2360,7 +2215,7 @@ void MetalComputeRenderer3D::EnableRenderThread()
 
 bool MetalComputeRenderer3D::FoundationReady() const noexcept
 {
-    return State && State->Ready && State->SpanBinReady && State->TileRasterReady;
+    return State && State->Ready && State->SpanBinReady && State->RasterProbeReady;
 }
 
 } // namespace melonDS
