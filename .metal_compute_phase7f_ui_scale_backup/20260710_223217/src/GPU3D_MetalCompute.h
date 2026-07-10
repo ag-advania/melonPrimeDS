@@ -1,9 +1,7 @@
-// MelonPrimeDS - Metal compute renderer texture-variant contract stage and raster-reference bridge
+// MelonPrimeDS - Metal compute renderer no-texture DepthBlend stage and raster-reference bridge
 
 #ifndef GPU3D_METAL_COMPUTE_H
 #define GPU3D_METAL_COMPUTE_H
-
-// MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -16,7 +14,7 @@ namespace melonDS
 
 class SoftRenderer;
 
-// Phase 7F. The renderer executes real-frame span preparation, Metal
+// Phase 7E. The renderer executes real-frame span preparation, Metal
 // InterpSpans/BinCombined, work sorting, and writes no-texture polygons into
 // the canonical per-work-item Color/Depth/Attr tile memories consumed by the
 // non-visible DepthBlend pass. Visible output remains the validated MetalRenderer3D
