@@ -1,0 +1,644 @@
+--- a/src/GPU_Metal.h
++++ b/src/GPU_Metal.h
+@@ -4,6 +4,8 @@
+ #define GPU_METAL_H
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
++
++// MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+ 
+ #include "GPU_Soft.h"
+ 
+@@ -25,14 +27,20 @@
+     void PostSavestate() override;
+     void SetRenderSettings(RendererSettings& settings) override;
+     void VBlank() override;
++    void SwapBuffers() override;
+     RendererOutput GetOutput() override;
+ 
+ private:
++    struct MetalOutputState;
++
+     std::unique_ptr<MetalRenderer2D> Metal2D_A;
+     std::unique_ptr<MetalRenderer2D> Metal2D_B;
+     int ScaleFactor = 1;
++    std::unique_ptr<MetalOutputState> OutputState;
+ 
+     void ConfigureMetal2DMirror(void* preferredDevice);
++    bool ConfigureMetalVisibleOutput(void* preferredDevice);
++    void ComposeMetalVisibleOutput();
+ };
+ 
+ } // namespace melonDS
+--- a/src/GPU_Metal.mm
++++ b/src/GPU_Metal.mm
+@@ -2,14 +2,19 @@
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
+ 
++// MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
++
+ #import <Metal/Metal.h>
+ 
+ #include "GPU_Metal.h"
+ 
+ #include <algorithm>
++#include <condition_variable>
++#include <cstdint>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <mutex>
+ 
+ #include "GPU2D_Metal.h"
+ #include "GPU3D_Metal.h"
+@@ -40,6 +45,24 @@
+     return nullptr;
+ }
+ 
++void* Metal3DNativeResolveTarget(Renderer3D* renderer) noexcept
++{
++    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
++        return compute->GetNativeResolveTexture();
++    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
++        return raster->GetNativeResolveTexture();
++    return nullptr;
++}
++
++void* Metal3DCommandQueue(Renderer3D* renderer) noexcept
++{
++    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
++        return compute->GetCommandQueue();
++    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
++        return raster->GetCommandQueue();
++    return nullptr;
++}
++
+ void* Metal3DPreferredDevice(Renderer3D* renderer) noexcept
+ {
+     id<MTLTexture> texture = (__bridge id<MTLTexture>)Metal3DColorTarget(renderer);
+@@ -91,7 +114,123 @@
+     }
+ }
+ 
++
++
++static constexpr const char* kMetalVisibleOutputShaderSource = R"(
++#include <metal_stdlib>
++using namespace metal;
++
++struct VisibleOutputVertex
++{
++    float4 position [[position]];
++};
++
++vertex VisibleOutputVertex mp_visible_output_vs(uint vertexID [[vertex_id]])
++{
++    constexpr float2 positions[3] = {
++        float2(-1.0, -1.0),
++        float2( 3.0, -1.0),
++        float2(-1.0,  3.0),
++    };
++    VisibleOutputVertex out;
++    out.position = float4(positions[vertexID], 0.0, 1.0);
++    return out;
++}
++
++struct VisibleOutputConfig
++{
++    uint2 outputSize;
++    uint scale;
++    uint outputLayer;
++    uint engineALayer;
++    uint useHighResolution3D;
++    uint2 _pad;
++};
++
++fragment float4 mp_visible_output_fs(
++    VisibleOutputVertex in [[stage_in]],
++    constant VisibleOutputConfig& config [[buffer(0)]],
++    texture2d_array<float, access::read> cpuComposite [[texture(0)]],
++    texture2d<float, access::read> highResolution3D [[texture(1)]],
++    texture2d<float, access::read> nativeResolution3D [[texture(2)]])
++{
++    uint2 outputCoord = min(uint2(in.position.xy), config.outputSize - uint2(1u, 1u));
++    uint divisor = max(config.scale, 1u);
++    uint2 nativeCoord = min(outputCoord / divisor, uint2(255u, 191u));
++    float4 base = cpuComposite.read(nativeCoord, config.outputLayer);
++
++    if (config.useHighResolution3D == 0u || config.scale <= 1u ||
++        config.outputLayer != config.engineALayer)
++    {
++        return float4(base.rgb, 1.0);
++    }
++
++    uint2 highCoord = min(outputCoord,
++        uint2(highResolution3D.get_width() - 1u, highResolution3D.get_height() - 1u));
++    float4 high3D = highResolution3D.read(highCoord);
++    float4 low3D = nativeResolution3D.read(nativeCoord);
++
++    // CPU 2D already contains the native 3D layer. Recover the background
++    // underneath that native sample, then composite the full-resolution 3D
++    // sample over it. This keeps DS BG/OBJ/window/HUD output intact while the
++    // geometry and texture edges come from the scaled Metal render target.
++    float lowAlpha = clamp(low3D.a, 0.0, 1.0);
++    float highAlpha = clamp(high3D.a, 0.0, 1.0);
++    float3 background = base.rgb;
++    if (lowAlpha < (254.0 / 255.0))
++    {
++        float denominator = max(1.0 - lowAlpha, 1.0 / 255.0);
++        background = clamp((base.rgb - low3D.rgb * lowAlpha) / denominator, 0.0, 1.0);
++    }
++
++    float3 result = mix(background, high3D.rgb, highAlpha);
++    return float4(clamp(result, 0.0, 1.0), 1.0);
++}
++)";
++
+ } // namespace
++
++
++struct MetalRenderer::MetalOutputState
++{
++    static constexpr int SlotCount = 3;
++
++    struct Slot
++    {
++        id<MTLTexture> CpuComposite = nil;
++        id<MTLTexture> FinalTexture = nil;
++        bool InFlight = false;
++        uint64_t Serial = 0;
++        uint64_t Generation = 0;
++    };
++
++    id<MTLDevice> Device = nil;
++    id<MTLCommandQueue> Queue = nil;
++    id<MTLLibrary> Library = nil;
++    id<MTLRenderPipelineState> Pipeline = nil;
++    Slot Slots[SlotCount];
++
++    std::mutex Mutex;
++    std::condition_variable Completion;
++    int InFlightCount = 0;
++    int NextSlot = 0;
++    int PublishedSlot = -1;
++    uint64_t PublishedSerial = 0;
++    uint64_t NextSerial = 1;
++    uint64_t Generation = 1;
++    int Scale = 0;
++    NSUInteger Width = 0;
++    NSUInteger Height = 0;
++    bool Ready = false;
++    bool LoggedVisibleOutput = false;
++    bool LoggedNoFreeSlot = false;
++
++    ~MetalOutputState()
++    {
++        std::unique_lock<std::mutex> lock(Mutex);
++        Completion.wait(lock, [this]() { return InFlightCount == 0; });
++    }
++};
+ 
+ MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
+     : SoftRenderer(nds)
+@@ -120,7 +259,13 @@
+     if (!Rend3D->Init())
+         return false;
+ 
+-    ConfigureMetal2DMirror(Metal3DPreferredDevice(Rend3D.get()));
++    void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
++    ConfigureMetal2DMirror(preferredDevice);
++    if (!ConfigureMetalVisibleOutput(preferredDevice))
++    {
++        std::fprintf(stderr,
++            "[MelonPrime] metal visible output: initialization failed; CPU output remains available\n");
++    }
+     return true;
+ }
+ 
+@@ -143,7 +288,9 @@
+ 
+     ConfigureMetal3DRenderer(
+         Rend3D.get(), settings.Threaded, scale, settings.BetterPolygons);
+-    ConfigureMetal2DMirror(Metal3DPreferredDevice(Rend3D.get()));
++    void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
++    ConfigureMetal2DMirror(preferredDevice);
++    ConfigureMetalVisibleOutput(preferredDevice);
+ }
+ 
+ void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
+@@ -157,13 +304,322 @@
+     }
+ }
+ 
++
++bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
++{
++    @autoreleasepool
++    {
++        id<MTLDevice> device = (__bridge id<MTLDevice>)preferredDevice;
++        id<MTLCommandQueue> rendererQueue =
++            (__bridge id<MTLCommandQueue>)Metal3DCommandQueue(Rend3D.get());
++        if (!device || !rendererQueue || rendererQueue.device != device)
++            return false;
++
++        if (!OutputState || OutputState->Device != device ||
++            OutputState->Queue != rendererQueue)
++        {
++            OutputState = std::make_unique<MetalOutputState>();
++            OutputState->Device = device;
++            // Use the renderer's queue. Output composition then sits between
++            // completed frame N and 3D writes for frame N+1 without a CPU wait
++            // or a cross-queue resource race.
++            OutputState->Queue = rendererQueue;
++
++            NSError* error = nil;
++            NSString* source = [[NSString alloc] initWithUTF8String:kMetalVisibleOutputShaderSource];
++            OutputState->Library = [device newLibraryWithSource:source options:nil error:&error];
++            if (!OutputState->Library)
++            {
++                const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
++                std::fprintf(stderr,
++                    "[MelonPrime] metal visible output: shader compile failed: %s\n", message);
++                return false;
++            }
++
++            id<MTLFunction> vertex =
++                [OutputState->Library newFunctionWithName:@"mp_visible_output_vs"];
++            id<MTLFunction> fragment =
++                [OutputState->Library newFunctionWithName:@"mp_visible_output_fs"];
++            if (!vertex || !fragment)
++                return false;
++
++            MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
++            desc.label = @"MelonPrime Metal Visible HiRes Output Pipeline";
++            desc.vertexFunction = vertex;
++            desc.fragmentFunction = fragment;
++            desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
++            OutputState->Pipeline =
++                [device newRenderPipelineStateWithDescriptor:desc error:&error];
++            if (!OutputState->Pipeline)
++            {
++                const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
++                std::fprintf(stderr,
++                    "[MelonPrime] metal visible output: pipeline creation failed: %s\n", message);
++                return false;
++            }
++        }
++
++        id<MTLTexture> high3D =
++            (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
++        if (!high3D || high3D.device != OutputState->Device)
++            return false;
++
++        const NSUInteger width = high3D.width;
++        const NSUInteger height = high3D.height;
++        const int scale = std::max(1, static_cast<int>(width / 256u));
++
++        std::lock_guard<std::mutex> lock(OutputState->Mutex);
++        if (OutputState->Ready && OutputState->Scale == scale &&
++            OutputState->Width == width && OutputState->Height == height)
++        {
++            return true;
++        }
++
++        OutputState->Generation++;
++        OutputState->PublishedSlot = -1;
++        OutputState->PublishedSerial = 0;
++        OutputState->Scale = scale;
++        OutputState->Width = width;
++        OutputState->Height = height;
++        OutputState->Ready = false;
++
++        for (int i = 0; i < MetalOutputState::SlotCount; i++)
++        {
++            MTLTextureDescriptor* cpuDesc =
++                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
++                                                                   width:256
++                                                                  height:192
++                                                               mipmapped:NO];
++            cpuDesc.textureType = MTLTextureType2DArray;
++            cpuDesc.arrayLength = 2;
++            cpuDesc.usage = MTLTextureUsageShaderRead;
++            cpuDesc.storageMode = MTLStorageModeShared;
++
++            MTLTextureDescriptor* finalDesc =
++                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
++                                                                   width:width
++                                                                  height:height
++                                                               mipmapped:NO];
++            finalDesc.textureType = MTLTextureType2DArray;
++            finalDesc.arrayLength = 2;
++            finalDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
++            finalDesc.storageMode = MTLStorageModePrivate;
++
++            OutputState->Slots[i].CpuComposite =
++                [OutputState->Device newTextureWithDescriptor:cpuDesc];
++            OutputState->Slots[i].FinalTexture =
++                [OutputState->Device newTextureWithDescriptor:finalDesc];
++            if (!OutputState->Slots[i].CpuComposite || !OutputState->Slots[i].FinalTexture)
++            {
++                std::fprintf(stderr,
++                    "[MelonPrime] metal visible output: texture allocation failed scale=%d size=%zux%zu\n",
++                    scale, static_cast<size_t>(width), static_cast<size_t>(height));
++                return false;
++            }
++        }
++
++        OutputState->Ready = true;
++        OutputState->LoggedVisibleOutput = false;
++        OutputState->LoggedNoFreeSlot = false;
++        std::fprintf(stderr,
++            "[MelonPrime] metal visible output: configured scale=%d textureArray=%zux%zux2\n",
++            scale, static_cast<size_t>(width), static_cast<size_t>(height));
++        return true;
++    }
++}
++
++void MetalRenderer::ComposeMetalVisibleOutput()
++{
++    @autoreleasepool
++    {
++        if (!OutputState || !OutputState->Ready)
++            return;
++
++        void* top = nullptr;
++        void* bottom = nullptr;
++        if (!SoftRenderer::GetFramebuffers(&top, &bottom) || !top || !bottom)
++            return;
++
++        id<MTLTexture> high3D =
++            (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
++        id<MTLTexture> low3D =
++            (__bridge id<MTLTexture>)Metal3DNativeResolveTarget(Rend3D.get());
++        if (!high3D || !low3D || high3D.device != OutputState->Device ||
++            low3D.device != OutputState->Device)
++        {
++            return;
++        }
++
++        struct VisibleOutputConfigCpu
++        {
++            uint32_t outputSize[2];
++            uint32_t scale;
++            uint32_t outputLayer;
++            uint32_t engineALayer;
++            uint32_t useHighResolution3D;
++            uint32_t pad[2];
++        };
++        static_assert(sizeof(VisibleOutputConfigCpu) == 32,
++            "VisibleOutputConfigCpu must match MSL layout");
++
++        std::unique_lock<std::mutex> lock(OutputState->Mutex);
++        int slotIndex = -1;
++        for (int attempt = 0; attempt < MetalOutputState::SlotCount; attempt++)
++        {
++            const int candidate =
++                (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
++            if (!OutputState->Slots[candidate].InFlight)
++            {
++                slotIndex = candidate;
++                break;
++            }
++        }
++        if (slotIndex < 0)
++        {
++            if (!OutputState->LoggedNoFreeSlot)
++            {
++                OutputState->LoggedNoFreeSlot = true;
++                std::fprintf(stderr,
++                    "[MelonPrime] metal visible output: all output slots busy; retaining previous frame\n");
++            }
++            return;
++        }
++
++        MetalOutputState::Slot& slot = OutputState->Slots[slotIndex];
++        OutputState->NextSlot = (slotIndex + 1) % MetalOutputState::SlotCount;
++        OutputState->LoggedNoFreeSlot = false;
++
++        const MTLRegion nativeRegion = MTLRegionMake2D(0, 0, 256, 192);
++        [slot.CpuComposite replaceRegion:nativeRegion
++                             mipmapLevel:0
++                                   slice:0
++                               withBytes:top
++                             bytesPerRow:256 * 4
++                           bytesPerImage:256 * 192 * 4];
++        [slot.CpuComposite replaceRegion:nativeRegion
++                             mipmapLevel:0
++                                   slice:1
++                               withBytes:bottom
++                             bytesPerRow:256 * 4
++                           bytesPerImage:256 * 192 * 4];
++
++        id<MTLCommandBuffer> commandBuffer = [OutputState->Queue commandBuffer];
++        if (!commandBuffer)
++            return;
++        commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
++
++        const uint32_t engineALayer = GPU.ScreenSwap ? 0u : 1u;
++        const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
++        const uint32_t useHighResolution3D =
++            (GPU.ScreensEnabled && displayModeA == 1u &&
++             (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u) ? 1u : 0u;
++
++        for (uint32_t layer = 0; layer < 2; layer++)
++        {
++            MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
++            pass.colorAttachments[0].texture = slot.FinalTexture;
++            pass.colorAttachments[0].slice = layer;
++            pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
++            pass.colorAttachments[0].storeAction = MTLStoreActionStore;
++
++            id<MTLRenderCommandEncoder> encoder =
++                [commandBuffer renderCommandEncoderWithDescriptor:pass];
++            if (!encoder)
++                return;
++
++            VisibleOutputConfigCpu config = {};
++            config.outputSize[0] = static_cast<uint32_t>(OutputState->Width);
++            config.outputSize[1] = static_cast<uint32_t>(OutputState->Height);
++            config.scale = static_cast<uint32_t>(OutputState->Scale);
++            config.outputLayer = layer;
++            config.engineALayer = engineALayer;
++            config.useHighResolution3D = useHighResolution3D;
++
++            [encoder setRenderPipelineState:OutputState->Pipeline];
++            [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
++            [encoder setFragmentTexture:slot.CpuComposite atIndex:0];
++            [encoder setFragmentTexture:high3D atIndex:1];
++            [encoder setFragmentTexture:low3D atIndex:2];
++            [encoder setViewport:(MTLViewport){
++                0.0, 0.0,
++                static_cast<double>(OutputState->Width),
++                static_cast<double>(OutputState->Height),
++                0.0, 1.0 }];
++            [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
++            [encoder endEncoding];
++        }
++
++        const uint64_t generation = OutputState->Generation;
++        const uint64_t serial = OutputState->NextSerial++;
++        slot.InFlight = true;
++        slot.Generation = generation;
++        slot.Serial = serial;
++        OutputState->InFlightCount++;
++        MetalOutputState* state = OutputState.get();
++
++        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
++            std::lock_guard<std::mutex> completionLock(state->Mutex);
++            MetalOutputState::Slot& completedSlot = state->Slots[slotIndex];
++            if (completed.status == MTLCommandBufferStatusCompleted &&
++                generation == state->Generation &&
++                completedSlot.Generation == generation && completedSlot.Serial == serial)
++            {
++                state->PublishedSlot = slotIndex;
++                state->PublishedSerial = serial;
++            }
++            else if (completed.status == MTLCommandBufferStatusError)
++            {
++                const char* message = completed.error
++                    ? [[completed.error localizedDescription] UTF8String]
++                    : "unknown Metal output error";
++                std::fprintf(stderr,
++                    "[MelonPrime] metal visible output: command failed: %s\n", message);
++            }
++            completedSlot.InFlight = false;
++            state->InFlightCount--;
++            state->Completion.notify_all();
++        }];
++
++        [commandBuffer commit];
++
++        if (!OutputState->LoggedVisibleOutput)
++        {
++            OutputState->LoggedVisibleOutput = true;
++            std::fprintf(stderr,
++                "[MelonPrime] metal visible output: first compose scale=%d size=%zux%zu engineALayer=%u high3D=%u\n",
++                OutputState->Scale,
++                static_cast<size_t>(OutputState->Width),
++                static_cast<size_t>(OutputState->Height),
++                engineALayer, useHighResolution3D);
++        }
++    }
++}
++
+ void MetalRenderer::VBlank()
+ {
+     SoftRenderer::VBlank();
+ }
+ 
++void MetalRenderer::SwapBuffers()
++{
++    Renderer::SwapBuffers();
++    ComposeMetalVisibleOutput();
++}
++
+ RendererOutput MetalRenderer::GetOutput()
+ {
++    if (OutputState)
++    {
++        std::lock_guard<std::mutex> lock(OutputState->Mutex);
++        if (OutputState->Ready && OutputState->PublishedSlot >= 0)
++        {
++            const int slotIndex = OutputState->PublishedSlot;
++            id<MTLTexture> texture = OutputState->Slots[slotIndex].FinalTexture;
++            if (texture)
++                return RendererOutput::MetalTexture(
++                    (__bridge void*)texture, OutputState->PublishedSerial);
++        }
++    }
+     return SoftRenderer::GetOutput();
+ }
+ 
+--- a/src/GPU3D_Metal.h
++++ b/src/GPU3D_Metal.h
+@@ -49,6 +49,8 @@
+ 
+     u32* GetLine(int line) override;
+     void* GetColorTargetTexture() const noexcept;
++    void* GetNativeResolveTexture() const noexcept;
++    void* GetCommandQueue() const noexcept;
+     int GetTargetWidth() const noexcept;
+     int GetTargetHeight() const noexcept;
+     int GetScaleFactor() const noexcept;
+--- a/src/GPU3D_Metal.mm
++++ b/src/GPU3D_Metal.mm
+@@ -3,6 +3,7 @@
+ #if defined(MELONPRIME_ENABLE_METAL)
+ 
+ // MELONPRIME_METAL_STABILITY_SCALE_PERF_V1
++// MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+ 
+ #import <Metal/Metal.h>
+ 
+@@ -1105,6 +1106,16 @@
+     return State ? (__bridge void*)State->ColorTarget : nullptr;
+ }
+ 
++void* MetalRenderer3D::GetNativeResolveTexture() const noexcept
++{
++    return State ? (__bridge void*)State->NativeResolveTarget : nullptr;
++}
++
++void* MetalRenderer3D::GetCommandQueue() const noexcept
++{
++    return State ? (__bridge void*)State->CommandQueue : nullptr;
++}
++
+ int MetalRenderer3D::GetTargetWidth() const noexcept
+ {
+     return State && State->ColorTarget ? static_cast<int>(State->ColorTarget.width) : 0;
+--- a/src/GPU3D_MetalCompute.h
++++ b/src/GPU3D_MetalCompute.h
+@@ -39,6 +39,8 @@
+     u32* GetLine(int line) override;
+ 
+     void* GetColorTargetTexture() const noexcept;
++    void* GetNativeResolveTexture() const noexcept;
++    void* GetCommandQueue() const noexcept;
+     int GetTargetWidth() const noexcept;
+     int GetTargetHeight() const noexcept;
+     int GetScaleFactor() const noexcept;
+--- a/src/GPU3D_MetalCompute.mm
++++ b/src/GPU3D_MetalCompute.mm
+@@ -562,6 +562,16 @@
+     return RasterReference.GetColorTargetTexture();
+ }
+ 
++void* MetalComputeRenderer3D::GetNativeResolveTexture() const noexcept
++{
++    return RasterReference.GetNativeResolveTexture();
++}
++
++void* MetalComputeRenderer3D::GetCommandQueue() const noexcept
++{
++    return RasterReference.GetCommandQueue();
++}
++
+ int MetalComputeRenderer3D::GetTargetWidth() const noexcept
+ {
+     return RasterReference.GetTargetWidth();
+--- a/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
++++ b/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
+@@ -530,7 +530,7 @@
+ | 1 | レイヤ所有権（WinIdChange / sublayer 検討 / スモーク） | 完了（機械検証済み / 手動スモーク未実施） | 2026-07-10 | `ScreenPanelMetal::event()` で `WinIdChange` / `Show` / `WindowStateChange` を捕捉し、現在の Qt 管理 `NSView` へ既存 `CAMetalLayer` を再接続。`setupScreenLayout()` でも再適用し、drawable size を更新。直接 `view.layer` 方式を維持し、入力リスクの高い sublayer / child NSView 化は未採用。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。`MELONPRIME_METAL_DIAG_FINAL_LAYERS=1`、resize/fullscreen/別スクリーン/入力の手動スモークは ROM/GUI 操作が必要なため未実施。 |
+ | 2 | GetLine 統合（正しい 2D/3D 合成、composer 削除、A/B ハーネス） | 完了（機械検証済み / ROM視覚検証未実施） | 2026-07-10 | Metal 3D target を native 256x192 に固定し、BGRA8 readback を soft 3D の 6-bit RGB + alpha ライン形式へ変換して `MetalRenderer3D::GetLine()` から返す経路へ切替。通常時は software 3D delegate を走らせず、`MELONPRIME_METAL_GETLINE_SOURCE=soft` または `MELONPRIME_METAL_GETLINE_DIFF=1` の時だけ delegate を使用。`MetalRenderer::VBlank()` は final composer を呼ばず、`GetOutput()` は `SoftRenderer::GetOutput()` の CPU BGRA（Metal 3D を soft 2D 合成済み）を返す。presenter は Metal renderer の CPU BGRA を `MetalGetLineCpuComposite` として通常ソース扱い。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。A/B diff 実ROMログ、HUD込み視覚一致、perf 実測は ROM 不在のため未実施。 |
+ | 3 | native 3D パリティ（clear plane / 半透明 / shadow / toon / fog / edge） | 進行中（3-1/3-3/3-4/3-5/3-6/3-7 実装項目は機械検証済み / ROM視覚検証未実施） | 2026-07-10 | 3-1 部分: plain clear plane の color/alpha/depth と attr target polyID/fog flag を `RenderClearAttr1/2` 由来に合わせ、`RenderDispCnt` bit14 の clear bitmap も VRAM texture slot 2/3 から Metal texture へ upload して fullscreen clear pass で color/attr/depth を書くようにした。3-2: opaque pass の `unordered_map` 全体 coalesce を廃止し、GL の `RenderPolygonBatch` と同じ隣接 key run（WBuffer / texture / TexRepeat）で提出順を保持。3-3 部分: fragment alpha を保持し、半透明 non-shadow polygon を描画対象に含め、blended pipeline と depth less/less-equal + write/no-write state variants を追加。opaque は stencil に polyID を書き、translucent は `0x40|polyID` reference の not-equal/replace で同一 translucent ID の再描画抑止に寄せた。translucent attr target は通常時に既存 attr を保持し、fog 有効かつ polygon attr bit15 が未設定の時だけ blue channel write mask の pipeline で fog flag を clear するようにして GL の `glColorMaski(1, false, false, transfog, false)` に寄せた。3-4 部分: shadow mask polygon を color write 無しの Z/W stencil-only pipeline で通し、mask 提出前に stencil bit7 だけを clear、depth-fail 時に bit7 を set する foundation を追加した。actual shadow polygon は GL と同じく単独 group で texture/alpha discard 付きの stencil-only prepass を行い、bit7 が残った領域だけ blended visible draw で描画して `0x40|polyID` を stencil 下位に書く二段 pass を追加した。clear-alpha-zero 背景向けの特殊 shadow 経路と ROM A/B visual parity は未完。3-5 部分: `RenderDispCnt` と toon table を Metal 3D shader uniform に追加し、GL の `3DRenderFS.glsl` と同じ `blendmode==2` toon/highlight color substitution を実装。3-6 fog+edge 部分: depth/attr target を読む fullscreen fog pass と edge pass を追加。3-7 line 部分: `Polygon::Type==1` を GL と同じく最初の重複しない2頂点で `MTLPrimitiveTypeLine` 描画するようにした。VRAM display-capture texture は SoftRenderer-derived Metal 経路では `DoCapture()` が emulated VRAM に書いた内容を `Texcache<>` が通常 direct-color texture として読むため、capture-backed texture を明示検出して `captureTextured` 診断に出すようにした。BetterPolygons は renderer setting を `MetalRenderer3D` へ渡し、4頂点以上では GL と同じ center vertex + center-fan splitting を使うようにした。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / `git diff --check` PASS。ROM A/B diff、clear-alpha-zero shadow 特殊経路、`captureTextured>0` 実ログは ROM 不在のため未実施。 |
+-| 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 進行中（4a BG decode / SpriteConfig scaffold は機械検証済み） | 2026-07-10 | `GPU2D_Metal.{h,mm}` を追加し、Metal 有効ビルドだけで Engine A/B 用の非可視 `MetalRenderer2D` ミラーを初期化する足場を作成。`MetalRenderer2D` は `Renderer2D` 派生に寄せ、現時点では scanline/sprite/vblank は no-op のまま、`OutputTex2D` 相当の BGRA8 render-target/ shader-read texture、GL の `OBJLayerTex`/`OBJDepthTex` 相当の 2-layer RGBA8 OBJ layer target と Depth32 target、GL の `AllBGLayerTex[22]` 相当の BG 種別/サイズ別 RGBA8 render-target 群、GL の raw BG/OBJ VRAM texture、BG/OBJ palette texture、mosaic lookup、sprite prerender texture 相当に加え、GLRenderer2D の UBO 群相当の Layer/Sprite/Scanline/SpriteScanline/Compositor shared config buffer も確保するようにした。raw BG/OBJ VRAM texture は `GPU2D.GetBGVRAM()` / `GetOBJVRAM()` の flat buffer から full upload し、BG/OBJ palette texture も main palette + extended palette から full upload する初期入口を追加。GL の `UpdateLayerConfig()` 相当として BG layer type/size/palette offset/VRAM range/capture-backed bitmap 判定を Metal CPU config へ反映し、LayerConfig buffer へ転送する入口を追加。GL の `UpdateOAM()` 相当として current OAM から rotscale table、visible sprite bounds、tile mapping、palette offset、mosaic、capture-backed bitmap sprite 判定を SpriteConfig buffer へ転送する非可視 mirror を追加（OAMDirty は消費しない）。GL の `UpdateScanlineConfig()` 相当として BG offset/rotscale/mosaic/window/backdrop の per-line config を ScanlineConfig buffer へ転送する入口も追加（非可視 scaffold のため未呼び出し）。GL の `UpdateCompositorConfig()` 相当として BG priority/OBJ enable/3D enable/blend config を CompositorConfig buffer へ転送する入口を追加。BG prerender 用の MSL library / RGBA8 pipeline / quad vertex buffer と非可視 render pass scaffold を追加し、placeholder fragment から BG text 16/256-color tile、affine 256-color tile、extended 256-color tile、256-color bitmap、direct-color bitmap の初期 decode shader へ差し替えた。fragment は LayerConfig buffer、layer index、raw BG VRAM texture、BG palette texture を bind し、map/tile/bitmap fetch、flip、palette row、color 0 transparency、direct-color alpha を処理して configured BG target へ描く。OBJ/window/blend/final `RenderScreen`、capture-backed BG type 7/8 parity、sprite prerender shader は未実装。Phase 4e の制約どおり `Rend2D_A/B` は soft のまま維持し、可視出力は Phase 2/3 の CPU 合成 `GetOutput()` を継続。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / runtime MSL pipeline harness / `git diff --check` PASS。 |
++| 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 進行中（visible 3D hires output接続済み / native 2D完全移植は継続） | 2026-07-10 | CPU 2D合成結果を基底に、scaled Metal 3DをEngine Aへ再構成して2-layer texture arrayとして直接present。内部解像度設定が最終表示へ反映される。OBJ/window/captureを含む完全native Metal 2Dは継続実装項目。 |
+ | 2.5 | 上下反転一括修正（R1 レイヤ鏡像 + R2 3D 行順 + D1 composer 掃除） | 完了（実ROM表示確認済み） | 2026-07-10 | R1/R2/D1を一括適用し、ユーザー環境の実ROMで上下反転が解消したことを確認。`verticalReverseCandidate`の数値ログ、resize/fullscreen/別画面の長時間スモークは継続確認項目。 |
+ | 5 | 同期・性能（wait除去 / ring / presenter dirty-rect / D2 / D3） | 進行中（3D中間wait 3箇所削除・index upload統合・autorelease安定化） | 2026-07-10 | 通常3DフレームのGPU同期をreadback 1回へ縮約。per-group index bufferをframe buffer 1本へ統合。完全なwaitゼロはPhase 4 GPU compose後に実施。 |
+ | 6 | 検証・公開ゲート（Apple Silicon / validation / kill-switch / 文書） | 未着手 | — | |
+@@ -544,3 +544,12 @@
+ - groupごとのindex buffer生成を廃止し、1フレーム1本のshared index bufferへ統合。
+ - `ScaleFactor`に応じて3D targetを`256*scale x 192*scale`で確保し、native GetLine用に256x192へlinear resolve。
+ - 現CPU 2D compositor経路では最終出力は256x192だが、3D内部描画は設定倍率で実行され、supersampling結果が反映される。真のhires最終出力はPhase 4dの`MetalTexture`復帰で完成させる。
++
++
++### 2026-07-10 Metal visible internal-resolution output
++
++- `MetalRenderer::SwapBuffers()`で完成済みCPU top/bottom framebufferをnative 2-layer textureへupload。
++- scaled `ColorTarget`と256x192 `NativeResolveTarget`からEngine Aの背景を再構成し、高解像度3DをBG/OBJ/window/HUD上へ再合成。
++- 2Dのみの画面はnearest拡大を維持し、3D画面のみ設定倍率のgeometry/texture edgeを保持。
++- triple-buffered `MTLTextureType2DArray`を非同期生成し、完了済みslotだけを`RendererOutput::MetalTexture`でpresenterへ公開。追加の通常経路`waitUntilCompleted`は導入しない。
++- presenter既存の2-layer Metal texture経路を使用するため、3x時の可視sourceは`768x576x2`となる。

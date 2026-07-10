@@ -39,8 +39,6 @@ public:
     u32* GetLine(int line) override;
 
     void* GetColorTargetTexture() const noexcept;
-    void* GetNativeResolveTexture() const noexcept;
-    void* GetCommandQueue() const noexcept;
     int GetTargetWidth() const noexcept;
     int GetTargetHeight() const noexcept;
     int GetScaleFactor() const noexcept;

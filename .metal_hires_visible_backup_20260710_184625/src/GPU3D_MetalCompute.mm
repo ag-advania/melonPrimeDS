@@ -562,16 +562,6 @@ void* MetalComputeRenderer3D::GetColorTargetTexture() const noexcept
     return RasterReference.GetColorTargetTexture();
 }
 
-void* MetalComputeRenderer3D::GetNativeResolveTexture() const noexcept
-{
-    return RasterReference.GetNativeResolveTexture();
-}
-
-void* MetalComputeRenderer3D::GetCommandQueue() const noexcept
-{
-    return RasterReference.GetCommandQueue();
-}
-
 int MetalComputeRenderer3D::GetTargetWidth() const noexcept
 {
     return RasterReference.GetTargetWidth();
