@@ -66,11 +66,12 @@ constexpr float kUiVertices[] = {
 constexpr int kMetalOSDMargin = 6;
 constexpr int kMetalLogoWidth = 192;
 
-// Match ScreenPanelGL's screen-space-to-clip transform. Qt's QNSView is
-// flipped and AppKit propagates that state to a replacement backing layer via
-// CAMetalLayer.geometryFlipped. The shared matrix math remains identical to
-// kScreenVS/kScreenFS; yFlipSign compensates only the host-layer orientation
-// (+1 for a geometry-flipped layer, -1 for the normal Metal convention).
+// Match ScreenPanelGL's screen-space-to-clip transform. The shared
+// screenMatrix[] values are frontend pixel-space transforms; the presenter
+// shader must preserve the same physical top/bottom screen placement as
+// kScreenVS/kScreenFS. Source-specific upside-down textures must be fixed at
+// their source/readback/final-pass boundary, not by changing the global
+// presenter transform.
 NSString* const kScreenShaderSource =
     @"#include <metal_stdlib>\n"
      "using namespace metal;\n"
@@ -85,8 +86,6 @@ NSString* const kScreenShaderSource =
      "struct ScreenUniforms {\n"
      "    float m[6];\n"
      "    float2 screenSize;\n"
-     "    float yFlipSign;\n"
-     "    float _pad;\n"
      "};\n"
      "vertex VOut mp_screen_vs(VertexIn in [[stage_in]],\n"
      "                         constant ScreenUniforms& u [[buffer(1)]]) {\n"
@@ -94,7 +93,7 @@ NSString* const kScreenShaderSource =
      "        u.m[0] * in.position.x + u.m[2] * in.position.y + u.m[4],\n"
      "        u.m[1] * in.position.x + u.m[3] * in.position.y + u.m[5]);\n"
      "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
-     "    p.y *= u.yFlipSign;\n"
+     "    p.y *= -1.0;\n"
      "    VOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
      "    out.texcoord = in.texcoord;\n"
@@ -121,14 +120,12 @@ NSString* const kUiShaderSource =
      "struct UiUniforms {\n"
      "    float4 rect;\n"
      "    float2 screenSize;\n"
-     "    float yFlipSign;\n"
-     "    float _pad;\n"
      "};\n"
      "vertex UiVOut mp_ui_vs(UiVertexIn in [[stage_in]],\n"
      "                        constant UiUniforms& u [[buffer(1)]]) {\n"
      "    float2 p = u.rect.xy + in.position * u.rect.zw;\n"
      "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
-     "    p.y *= u.yFlipSign;\n"
+     "    p.y *= -1.0;\n"
      "    UiVOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
      "    out.texcoord = in.texcoord;\n"
@@ -144,10 +141,8 @@ struct ScreenUniforms
 {
     float m[6];
     float screenSize[2];
-    float yFlipSign;
-    float pad;
 };
-static_assert(sizeof(ScreenUniforms) == 40, "must match the MSL ScreenUniforms layout exactly");
+static_assert(sizeof(ScreenUniforms) == 32, "must match the MSL ScreenUniforms layout exactly");
 
 bool AllowMetalSoftwareFallback()
 {
@@ -230,10 +225,8 @@ struct UiUniforms
 {
     float rect[4];
     float screenSize[2];
-    float yFlipSign;
-    float pad;
 };
-static_assert(sizeof(UiUniforms) == 32, "must match the MSL UiUniforms layout exactly");
+static_assert(sizeof(UiUniforms) == 24, "must match the MSL UiUniforms layout exactly");
 
 } // namespace
 
@@ -261,10 +254,8 @@ struct ScreenPanelMetal::Impl
     int drawableW = 1;
     int drawableH = 1;
     qreal scale = 1.0;
-    float presenterYFlipSign = -1.0f;
 
     bool resourcesReady = false;
-    bool loggedLayerOrientation = false;
     bool loggedFirstDraw = false;
     bool loggedFirstUiOverlay = false;
     bool loggedFirstNativeTextureOutput = false;
@@ -491,28 +482,6 @@ bool ScreenPanelMetal::attachLayerToCurrentViewGuiThread()
             fprintf(stderr, "[MelonPrime] metal presenter: reattached CAMetalLayer after native view change\n");
         }
     }
-
-    const bool viewFlipped = [view isFlipped];
-    const bool geometryFlipped = [m->layer isGeometryFlipped];
-    const bool contentsFlipped = [m->layer contentsAreFlipped];
-    const float yFlipSign = geometryFlipped ? 1.0f : -1.0f;
-
-    m->layoutMutex.lock();
-    m->presenterYFlipSign = yFlipSign;
-    m->layoutMutex.unlock();
-
-    if (!m->loggedLayerOrientation)
-    {
-        m->loggedLayerOrientation = true;
-        std::fprintf(stderr,
-            "[MelonPrime] metal presenter orientation: view.isFlipped=%d "
-            "layer.geometryFlipped=%d layer.contentsAreFlipped=%d yFlipSign=%.1f\n",
-            viewFlipped ? 1 : 0,
-            geometryFlipped ? 1 : 0,
-            contentsFlipped ? 1 : 0,
-            static_cast<double>(yFlipSign));
-    }
-
     m->attachedView = (__bridge void*)view;
     return true;
 }
@@ -579,7 +548,6 @@ void ScreenPanelMetal::drawScreen()
         const int w = m->drawableW;
         const int h = m->drawableH;
         const qreal scale = m->scale;
-        const float yFlipSign = m->presenterYFlipSign;
         m->layoutMutex.unlock();
 
         if (!layer || w <= 0 || h <= 0)
@@ -749,7 +717,6 @@ void ScreenPanelMetal::drawScreen()
                 ScreenUniforms uniforms{};
                 uniforms.screenSize[0] = static_cast<float>(w) / static_cast<float>(scale);
                 uniforms.screenSize[1] = static_cast<float>(h) / static_cast<float>(scale);
-                uniforms.yFlipSign = yFlipSign;
 
                 for (int i = 0; i < numScreens; i++)
                 {
@@ -894,7 +861,6 @@ void ScreenPanelMetal::drawScreen()
                 uiUniforms.rect[3] = static_cast<float>(logicalH);
                 uiUniforms.screenSize[0] = static_cast<float>(logicalW);
                 uiUniforms.screenSize[1] = static_cast<float>(logicalH);
-                uiUniforms.yFlipSign = yFlipSign;
 
                 [encoder setRenderPipelineState:m->uiPipeline];
                 [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];

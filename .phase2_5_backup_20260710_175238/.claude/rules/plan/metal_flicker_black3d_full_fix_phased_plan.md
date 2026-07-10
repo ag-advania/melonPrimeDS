@@ -456,14 +456,13 @@ Apple Silicon 実機で同一検証、kill-switch/監査 green。**これが gre
 ## 4. 実行順序と検証コマンド
 
 ```text
-0 (完了) → 1 (完了) → 2 (完了) → 2.5 (実装済み・実機検証待ち) → 3 (本丸B: パリティ)
+0 (完了) → 1 (完了) → 2 (完了) → 2.5 (上下反転・今すぐ最優先) → 3 (本丸B: パリティ)
 → 4 (hires) → 5 (性能) → 6 (ゲート) → 7 (Metal Compute = 最終ゴール)
 ```
 
-- **Phase 2.5 のコード実装は完了**。R1 は `CAMetalLayer.geometryFlipped` を attach ごとに読み、
-  presenter の `yFlipSign` uniform で screen/UI を同時補正。R2 は `BuildOpaqueVertex()` で Y を反転し、
-  native target の row 0 を DS y=0 に統一した。次の判定は no-ROM スプラッシュ、実 ROM、
-  `verticalReverseCandidate=0`、resize/fullscreen 往復による実機検証。
+- **現時点の最優先は Phase 2.5**（上下反転はユーザー可視の正しさバグ。Phase 3/4 の続きより先に
+  R1+R2 を一括投入する）。Phase 2.5 完了までは ROM 視覚検証（Phase 2/3 の DoD 残件）も判定不能
+  （全部逆さまの画面では diff 目視ができない）。
 - Phase 2 完了で「Metal 3D が正規合成で可視」、Phase 4 完了で「hires の正式 Metal レンダラ」、
   **Phase 7 完了で「macOS の compute レンダラ = 本計画のゴール」**。
 - Phase 5 は Phase 2 以降いつでも部分先行可（ただし wait 除去は正しさ確定後の原則を守る）。
@@ -482,22 +481,22 @@ MELONPRIME_METAL_DIAG=1 tools/macos/run_metal_test.command /path/to/mph.nds 2>&1
 MELONPRIME_METAL_DIAG_SOLID_NATIVE3D=1 ...  # native 3D 経路の単色表示
 MELONPRIME_METAL_GETLINE_SOURCE=soft ...    # GetLine ソースを soft に切替（A/B）
 MELONPRIME_METAL_GETLINE_DIFF=1 ...         # soft/native 同時実行 per-pixel diff（verticalReverseCandidate 含む）
-# Phase 2.5-5: MELONPRIME_METAL_DIAG_FINAL_LAYERS / MELONPRIME_METAL_NATIVE_3D_VISIBLE と
-# dead final composer は削除済み。以後は GetLine diff と presenter orientation ログを使用する。
+# 注意(2026-07-10 #2 監査): MELONPRIME_METAL_DIAG_FINAL_LAYERS / MELONPRIME_METAL_NATIVE_3D_VISIBLE は
+# dead composer 内でのみ参照され現在は不活性。Phase 2.5-5 でコードごと削除する。
 
 # デフォルトバイナリ痕跡検査
 strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
   grep -E "metal presenter|metal probe|metal renderer|MELONPRIME_FORCE_METAL|MELONPRIME_METAL_" ; echo "expect: no output"
 ```
 
-決定ログの読み方（Phase 2.5 以降）:
+決定ログの読み方（Phase 0-6 / 1-1 当時の表 — チェッカーモード行は Phase 2.5-5 の削除後は歴史記録）:
 
 | 観測 | 判定 |
 |---|---|
-| `metal presenter orientation:` で `geometryFlipped=1 yFlipSign=1.0` | Qt flipped NSView のレイヤ鏡像を presenter uniform が補正 |
-| `MELONPRIME_METAL_GETLINE_DIFF=1` で `verticalReverseCandidate=0` | native 3D と soft 3D の上下方向が一致 |
-| 修正後 `metal 3d diag: nonzero=0` のまま（draws>0） | 別のデプス/座標バグが残存 → solid-diag で切り分け |
-| resize/fullscreen 後に orientation ログ値と表示が不一致 | attach/event 経路または AppKit レイヤ更新タイミングを再監査 |
+| `metal final route:` が点滅中に毎フレーム連打 | フリッカー = B1（ルーティング交番）で確定 |
+| 修正後 `metal 3d diag: nonzero=0` のまま（draws>0） | 0-1 以外のデプス/座標バグが残存 → solid-diag で切り分け |
+| チェッカーモードでも点滅 | フリッカー = B2（レイヤ所有権）→ Phase 1-3 実施 |
+| `usedNative3D=1` かつ `layerN.nonzero=0` | compose/合成側の欠陥（Phase 2 以降の経路で再発した場合の検知） |
 
 ---
 
@@ -529,7 +528,7 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 | 2 | GetLine 統合（正しい 2D/3D 合成、composer 削除、A/B ハーネス） | 完了（機械検証済み / ROM視覚検証未実施） | 2026-07-10 | Metal 3D target を native 256x192 に固定し、BGRA8 readback を soft 3D の 6-bit RGB + alpha ライン形式へ変換して `MetalRenderer3D::GetLine()` から返す経路へ切替。通常時は software 3D delegate を走らせず、`MELONPRIME_METAL_GETLINE_SOURCE=soft` または `MELONPRIME_METAL_GETLINE_DIFF=1` の時だけ delegate を使用。`MetalRenderer::VBlank()` は final composer を呼ばず、`GetOutput()` は `SoftRenderer::GetOutput()` の CPU BGRA（Metal 3D を soft 2D 合成済み）を返す。presenter は Metal renderer の CPU BGRA を `MetalGetLineCpuComposite` として通常ソース扱い。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。A/B diff 実ROMログ、HUD込み視覚一致、perf 実測は ROM 不在のため未実施。 |
 | 3 | native 3D パリティ（clear plane / 半透明 / shadow / toon / fog / edge） | 進行中（3-1/3-3/3-4/3-5/3-6/3-7 実装項目は機械検証済み / ROM視覚検証未実施） | 2026-07-10 | 3-1 部分: plain clear plane の color/alpha/depth と attr target polyID/fog flag を `RenderClearAttr1/2` 由来に合わせ、`RenderDispCnt` bit14 の clear bitmap も VRAM texture slot 2/3 から Metal texture へ upload して fullscreen clear pass で color/attr/depth を書くようにした。3-2: opaque pass の `unordered_map` 全体 coalesce を廃止し、GL の `RenderPolygonBatch` と同じ隣接 key run（WBuffer / texture / TexRepeat）で提出順を保持。3-3 部分: fragment alpha を保持し、半透明 non-shadow polygon を描画対象に含め、blended pipeline と depth less/less-equal + write/no-write state variants を追加。opaque は stencil に polyID を書き、translucent は `0x40|polyID` reference の not-equal/replace で同一 translucent ID の再描画抑止に寄せた。translucent attr target は通常時に既存 attr を保持し、fog 有効かつ polygon attr bit15 が未設定の時だけ blue channel write mask の pipeline で fog flag を clear するようにして GL の `glColorMaski(1, false, false, transfog, false)` に寄せた。3-4 部分: shadow mask polygon を color write 無しの Z/W stencil-only pipeline で通し、mask 提出前に stencil bit7 だけを clear、depth-fail 時に bit7 を set する foundation を追加した。actual shadow polygon は GL と同じく単独 group で texture/alpha discard 付きの stencil-only prepass を行い、bit7 が残った領域だけ blended visible draw で描画して `0x40|polyID` を stencil 下位に書く二段 pass を追加した。clear-alpha-zero 背景向けの特殊 shadow 経路と ROM A/B visual parity は未完。3-5 部分: `RenderDispCnt` と toon table を Metal 3D shader uniform に追加し、GL の `3DRenderFS.glsl` と同じ `blendmode==2` toon/highlight color substitution を実装。3-6 fog+edge 部分: depth/attr target を読む fullscreen fog pass と edge pass を追加。3-7 line 部分: `Polygon::Type==1` を GL と同じく最初の重複しない2頂点で `MTLPrimitiveTypeLine` 描画するようにした。VRAM display-capture texture は SoftRenderer-derived Metal 経路では `DoCapture()` が emulated VRAM に書いた内容を `Texcache<>` が通常 direct-color texture として読むため、capture-backed texture を明示検出して `captureTextured` 診断に出すようにした。BetterPolygons は renderer setting を `MetalRenderer3D` へ渡し、4頂点以上では GL と同じ center vertex + center-fan splitting を使うようにした。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / `git diff --check` PASS。ROM A/B diff、clear-alpha-zero shadow 特殊経路、`captureTextured>0` 実ログは ROM 不在のため未実施。 |
 | 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 進行中（4a BG decode / SpriteConfig scaffold は機械検証済み） | 2026-07-10 | `GPU2D_Metal.{h,mm}` を追加し、Metal 有効ビルドだけで Engine A/B 用の非可視 `MetalRenderer2D` ミラーを初期化する足場を作成。`MetalRenderer2D` は `Renderer2D` 派生に寄せ、現時点では scanline/sprite/vblank は no-op のまま、`OutputTex2D` 相当の BGRA8 render-target/ shader-read texture、GL の `OBJLayerTex`/`OBJDepthTex` 相当の 2-layer RGBA8 OBJ layer target と Depth32 target、GL の `AllBGLayerTex[22]` 相当の BG 種別/サイズ別 RGBA8 render-target 群、GL の raw BG/OBJ VRAM texture、BG/OBJ palette texture、mosaic lookup、sprite prerender texture 相当に加え、GLRenderer2D の UBO 群相当の Layer/Sprite/Scanline/SpriteScanline/Compositor shared config buffer も確保するようにした。raw BG/OBJ VRAM texture は `GPU2D.GetBGVRAM()` / `GetOBJVRAM()` の flat buffer から full upload し、BG/OBJ palette texture も main palette + extended palette から full upload する初期入口を追加。GL の `UpdateLayerConfig()` 相当として BG layer type/size/palette offset/VRAM range/capture-backed bitmap 判定を Metal CPU config へ反映し、LayerConfig buffer へ転送する入口を追加。GL の `UpdateOAM()` 相当として current OAM から rotscale table、visible sprite bounds、tile mapping、palette offset、mosaic、capture-backed bitmap sprite 判定を SpriteConfig buffer へ転送する非可視 mirror を追加（OAMDirty は消費しない）。GL の `UpdateScanlineConfig()` 相当として BG offset/rotscale/mosaic/window/backdrop の per-line config を ScanlineConfig buffer へ転送する入口も追加（非可視 scaffold のため未呼び出し）。GL の `UpdateCompositorConfig()` 相当として BG priority/OBJ enable/3D enable/blend config を CompositorConfig buffer へ転送する入口を追加。BG prerender 用の MSL library / RGBA8 pipeline / quad vertex buffer と非可視 render pass scaffold を追加し、placeholder fragment から BG text 16/256-color tile、affine 256-color tile、extended 256-color tile、256-color bitmap、direct-color bitmap の初期 decode shader へ差し替えた。fragment は LayerConfig buffer、layer index、raw BG VRAM texture、BG palette texture を bind し、map/tile/bitmap fetch、flip、palette row、color 0 transparency、direct-color alpha を処理して configured BG target へ描く。OBJ/window/blend/final `RenderScreen`、capture-backed BG type 7/8 parity、sprite prerender shader は未実装。Phase 4e の制約どおり `Rend2D_A/B` は soft のまま維持し、可視出力は Phase 2/3 の CPU 合成 `GetOutput()` を継続。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / runtime MSL pipeline harness / `git diff --check` PASS。 |
-| 2.5 | 上下反転一括修正（R1 レイヤ鏡像 + R2 3D 行順 + D1 composer 掃除） | 実装済み（機械/実ROM検証待ち） | 2026-07-10 | R1: attach 時に `view.isFlipped` / `layer.geometryFlipped` / `contentsAreFlipped` を one-shot 出力し、`ScreenUniforms` / `UiUniforms` の `yFlipSign` で screen と UI を同時補正。R2: `BuildOpaqueVertex()` で `pos.y = -pos.y` を適用し native target の row 0 を DS y=0 に統一。D1: dead final composer、routing heuristic、final shader/state、`MELONPRIME_METAL_NATIVE_3D_VISIBLE` / `MELONPRIME_METAL_DIAG_FINAL_LAYERS` を削除。no-ROM スプラッシュ、実ROM、`verticalReverseCandidate=0`、resize/fullscreen/別画面スモークは未実施。 |
+| 2.5 | 上下反転一括修正（R1 レイヤ鏡像 + R2 3D 行順 + D1 composer 掃除） | **未着手・最優先**（§1R 監査 2026-07-10 #2 で新設） | — | 根本原因確定済み: R1 = Qt flipped NSView 上の CAMetalLayer `geometryFlipped`（コードに参照ゼロ）、R2 = GL(bottom-left) vs Metal(top-left) の NDC→行順差で native target が行逆格納 + readback 直コピー。R1+R2 一括投入・no-ROM スプラッシュと `verticalReverseCandidate` で層別検証 |
 | 5 | 同期・性能（wait 除去 / ring / presenter dirty-rect / D2 wait増加 / D3 RenderFrameIdentical スキップ） | 未着手 | — | 2026-07-10 #2 監査時点の実測: `waitUntilCompleted` = GPU3D 6 / GPU2D 1 / GPU_Metal 2 |
 | 6 | 検証・公開ゲート（Apple Silicon / validation / kill-switch / 文書） | 未着手 | — | |
 | 7 | **Metal Compute Shader レンダラ（最終ゴール）**: GPU3D_Compute 移植 + Fix D/E 引き継ぎ + HiRes Coordinates | 未着手（Phase 4 完了が前提） | — | ユーザー指示 2026-07-10 で optional stretch から正式ゴールへ昇格 |

@@ -590,11 +590,6 @@ static inline OpaqueVertexOut BuildOpaqueVertex(
 
     float4 pos;
     pos.xy = ((float2(float(x), float(y)) * 2.0) / config.screenSize) - 1.0;
-    // GL framebuffers map NDC y=-1 to row 0, while Metal textures map
-    // it to the last row. Flip here so DS y=0 lands in Metal row 0
-    // and agrees with the clear-bitmap/fog/edge full-screen passes.
-    // Winding reverses, but this renderer does not enable face culling.
-    pos.y = -pos.y;
     float zndc = float(z << zshift) / 16777216.0;
     pos.z = wbuffer ? 0.0 : zndc;
     pos.w = float(w) / 65536.0;
