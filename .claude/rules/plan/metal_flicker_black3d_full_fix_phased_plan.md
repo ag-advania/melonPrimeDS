@@ -427,6 +427,8 @@ perf 数値の記録、10 分ソークでフレームタイム分散悪化なし
 
 ### Phase 7: Metal Compute Shader レンダラ（3–6週 / **最終ゴール** / Phase 4 完了が前提）
 
+**実行文書:** [metal_compute_shader_phase7_execution.md](metal_compute_shader_phase7_execution.md)
+
 **位置づけ（ユーザー指示 2026-07-10）:** 他 OS の High2 プリセットが使う `ComputeRenderer3D`
 （compute-shader ラスタライザ）の macOS 版が本計画の最終成果物。外部設計書 §16/§Phase 10 の
 「optional stretch」をここで正式ゴールに昇格する。**`High2` の名称・意味は不変**（backend-plan の
@@ -456,13 +458,14 @@ Apple Silicon 実機で同一検証、kill-switch/監査 green。**これが gre
 ## 4. 実行順序と検証コマンド
 
 ```text
-0 (完了) → 1 (完了) → 2 (完了) → 2.5 (上下反転・今すぐ最優先) → 3 (本丸B: パリティ)
+0 (完了) → 1 (完了) → 2 (完了) → 2.5 (実装済み・実機検証待ち) → 3 (本丸B: パリティ)
 → 4 (hires) → 5 (性能) → 6 (ゲート) → 7 (Metal Compute = 最終ゴール)
 ```
 
-- **現時点の最優先は Phase 2.5**（上下反転はユーザー可視の正しさバグ。Phase 3/4 の続きより先に
-  R1+R2 を一括投入する）。Phase 2.5 完了までは ROM 視覚検証（Phase 2/3 の DoD 残件）も判定不能
-  （全部逆さまの画面では diff 目視ができない）。
+- **Phase 2.5 のコード実装は完了**。R1 は `CAMetalLayer.geometryFlipped` を attach ごとに読み、
+  presenter の `yFlipSign` uniform で screen/UI を同時補正。R2 は `BuildOpaqueVertex()` で Y を反転し、
+  native target の row 0 を DS y=0 に統一した。次の判定は no-ROM スプラッシュ、実 ROM、
+  `verticalReverseCandidate=0`、resize/fullscreen 往復による実機検証。
 - Phase 2 完了で「Metal 3D が正規合成で可視」、Phase 4 完了で「hires の正式 Metal レンダラ」、
   **Phase 7 完了で「macOS の compute レンダラ = 本計画のゴール」**。
 - Phase 5 は Phase 2 以降いつでも部分先行可（ただし wait 除去は正しさ確定後の原則を守る）。
@@ -481,22 +484,22 @@ MELONPRIME_METAL_DIAG=1 tools/macos/run_metal_test.command /path/to/mph.nds 2>&1
 MELONPRIME_METAL_DIAG_SOLID_NATIVE3D=1 ...  # native 3D 経路の単色表示
 MELONPRIME_METAL_GETLINE_SOURCE=soft ...    # GetLine ソースを soft に切替（A/B）
 MELONPRIME_METAL_GETLINE_DIFF=1 ...         # soft/native 同時実行 per-pixel diff（verticalReverseCandidate 含む）
-# 注意(2026-07-10 #2 監査): MELONPRIME_METAL_DIAG_FINAL_LAYERS / MELONPRIME_METAL_NATIVE_3D_VISIBLE は
-# dead composer 内でのみ参照され現在は不活性。Phase 2.5-5 でコードごと削除する。
+# Phase 2.5-5: MELONPRIME_METAL_DIAG_FINAL_LAYERS / MELONPRIME_METAL_NATIVE_3D_VISIBLE と
+# dead final composer は削除済み。以後は GetLine diff と presenter orientation ログを使用する。
 
 # デフォルトバイナリ痕跡検査
 strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
   grep -E "metal presenter|metal probe|metal renderer|MELONPRIME_FORCE_METAL|MELONPRIME_METAL_" ; echo "expect: no output"
 ```
 
-決定ログの読み方（Phase 0-6 / 1-1 当時の表 — チェッカーモード行は Phase 2.5-5 の削除後は歴史記録）:
+決定ログの読み方（Phase 2.5 以降）:
 
 | 観測 | 判定 |
 |---|---|
-| `metal final route:` が点滅中に毎フレーム連打 | フリッカー = B1（ルーティング交番）で確定 |
-| 修正後 `metal 3d diag: nonzero=0` のまま（draws>0） | 0-1 以外のデプス/座標バグが残存 → solid-diag で切り分け |
-| チェッカーモードでも点滅 | フリッカー = B2（レイヤ所有権）→ Phase 1-3 実施 |
-| `usedNative3D=1` かつ `layerN.nonzero=0` | compose/合成側の欠陥（Phase 2 以降の経路で再発した場合の検知） |
+| `metal presenter orientation:` で `geometryFlipped=1 yFlipSign=1.0` | Qt flipped NSView のレイヤ鏡像を presenter uniform が補正 |
+| `MELONPRIME_METAL_GETLINE_DIFF=1` で `verticalReverseCandidate=0` | native 3D と soft 3D の上下方向が一致 |
+| 修正後 `metal 3d diag: nonzero=0` のまま（draws>0） | 別のデプス/座標バグが残存 → solid-diag で切り分け |
+| resize/fullscreen 後に orientation ログ値と表示が不一致 | attach/event 経路または AppKit レイヤ更新タイミングを再監査 |
 
 ---
 
@@ -527,8 +530,66 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 | 1 | レイヤ所有権（WinIdChange / sublayer 検討 / スモーク） | 完了（機械検証済み / 手動スモーク未実施） | 2026-07-10 | `ScreenPanelMetal::event()` で `WinIdChange` / `Show` / `WindowStateChange` を捕捉し、現在の Qt 管理 `NSView` へ既存 `CAMetalLayer` を再接続。`setupScreenLayout()` でも再適用し、drawable size を更新。直接 `view.layer` 方式を維持し、入力リスクの高い sublayer / child NSView 化は未採用。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。`MELONPRIME_METAL_DIAG_FINAL_LAYERS=1`、resize/fullscreen/別スクリーン/入力の手動スモークは ROM/GUI 操作が必要なため未実施。 |
 | 2 | GetLine 統合（正しい 2D/3D 合成、composer 削除、A/B ハーネス） | 完了（機械検証済み / ROM視覚検証未実施） | 2026-07-10 | Metal 3D target を native 256x192 に固定し、BGRA8 readback を soft 3D の 6-bit RGB + alpha ライン形式へ変換して `MetalRenderer3D::GetLine()` から返す経路へ切替。通常時は software 3D delegate を走らせず、`MELONPRIME_METAL_GETLINE_SOURCE=soft` または `MELONPRIME_METAL_GETLINE_DIFF=1` の時だけ delegate を使用。`MetalRenderer::VBlank()` は final composer を呼ばず、`GetOutput()` は `SoftRenderer::GetOutput()` の CPU BGRA（Metal 3D を soft 2D 合成済み）を返す。presenter は Metal renderer の CPU BGRA を `MetalGetLineCpuComposite` として通常ソース扱い。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 PASS。A/B diff 実ROMログ、HUD込み視覚一致、perf 実測は ROM 不在のため未実施。 |
 | 3 | native 3D パリティ（clear plane / 半透明 / shadow / toon / fog / edge） | 進行中（3-1/3-3/3-4/3-5/3-6/3-7 実装項目は機械検証済み / ROM視覚検証未実施） | 2026-07-10 | 3-1 部分: plain clear plane の color/alpha/depth と attr target polyID/fog flag を `RenderClearAttr1/2` 由来に合わせ、`RenderDispCnt` bit14 の clear bitmap も VRAM texture slot 2/3 から Metal texture へ upload して fullscreen clear pass で color/attr/depth を書くようにした。3-2: opaque pass の `unordered_map` 全体 coalesce を廃止し、GL の `RenderPolygonBatch` と同じ隣接 key run（WBuffer / texture / TexRepeat）で提出順を保持。3-3 部分: fragment alpha を保持し、半透明 non-shadow polygon を描画対象に含め、blended pipeline と depth less/less-equal + write/no-write state variants を追加。opaque は stencil に polyID を書き、translucent は `0x40|polyID` reference の not-equal/replace で同一 translucent ID の再描画抑止に寄せた。translucent attr target は通常時に既存 attr を保持し、fog 有効かつ polygon attr bit15 が未設定の時だけ blue channel write mask の pipeline で fog flag を clear するようにして GL の `glColorMaski(1, false, false, transfog, false)` に寄せた。3-4 部分: shadow mask polygon を color write 無しの Z/W stencil-only pipeline で通し、mask 提出前に stencil bit7 だけを clear、depth-fail 時に bit7 を set する foundation を追加した。actual shadow polygon は GL と同じく単独 group で texture/alpha discard 付きの stencil-only prepass を行い、bit7 が残った領域だけ blended visible draw で描画して `0x40|polyID` を stencil 下位に書く二段 pass を追加した。clear-alpha-zero 背景向けの特殊 shadow 経路と ROM A/B visual parity は未完。3-5 部分: `RenderDispCnt` と toon table を Metal 3D shader uniform に追加し、GL の `3DRenderFS.glsl` と同じ `blendmode==2` toon/highlight color substitution を実装。3-6 fog+edge 部分: depth/attr target を読む fullscreen fog pass と edge pass を追加。3-7 line 部分: `Polygon::Type==1` を GL と同じく最初の重複しない2頂点で `MTLPrimitiveTypeLine` 描画するようにした。VRAM display-capture texture は SoftRenderer-derived Metal 経路では `DoCapture()` が emulated VRAM に書いた内容を `Texcache<>` が通常 direct-color texture として読むため、capture-backed texture を明示検出して `captureTextured` 診断に出すようにした。BetterPolygons は renderer setting を `MetalRenderer3D` へ渡し、4頂点以上では GL と同じ center vertex + center-fan splitting を使うようにした。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / `git diff --check` PASS。ROM A/B diff、clear-alpha-zero shadow 特殊経路、`captureTextured>0` 実ログは ROM 不在のため未実施。 |
-| 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 進行中（4a BG decode / SpriteConfig scaffold は機械検証済み） | 2026-07-10 | `GPU2D_Metal.{h,mm}` を追加し、Metal 有効ビルドだけで Engine A/B 用の非可視 `MetalRenderer2D` ミラーを初期化する足場を作成。`MetalRenderer2D` は `Renderer2D` 派生に寄せ、現時点では scanline/sprite/vblank は no-op のまま、`OutputTex2D` 相当の BGRA8 render-target/ shader-read texture、GL の `OBJLayerTex`/`OBJDepthTex` 相当の 2-layer RGBA8 OBJ layer target と Depth32 target、GL の `AllBGLayerTex[22]` 相当の BG 種別/サイズ別 RGBA8 render-target 群、GL の raw BG/OBJ VRAM texture、BG/OBJ palette texture、mosaic lookup、sprite prerender texture 相当に加え、GLRenderer2D の UBO 群相当の Layer/Sprite/Scanline/SpriteScanline/Compositor shared config buffer も確保するようにした。raw BG/OBJ VRAM texture は `GPU2D.GetBGVRAM()` / `GetOBJVRAM()` の flat buffer から full upload し、BG/OBJ palette texture も main palette + extended palette から full upload する初期入口を追加。GL の `UpdateLayerConfig()` 相当として BG layer type/size/palette offset/VRAM range/capture-backed bitmap 判定を Metal CPU config へ反映し、LayerConfig buffer へ転送する入口を追加。GL の `UpdateOAM()` 相当として current OAM から rotscale table、visible sprite bounds、tile mapping、palette offset、mosaic、capture-backed bitmap sprite 判定を SpriteConfig buffer へ転送する非可視 mirror を追加（OAMDirty は消費しない）。GL の `UpdateScanlineConfig()` 相当として BG offset/rotscale/mosaic/window/backdrop の per-line config を ScanlineConfig buffer へ転送する入口も追加（非可視 scaffold のため未呼び出し）。GL の `UpdateCompositorConfig()` 相当として BG priority/OBJ enable/3D enable/blend config を CompositorConfig buffer へ転送する入口を追加。BG prerender 用の MSL library / RGBA8 pipeline / quad vertex buffer と非可視 render pass scaffold を追加し、placeholder fragment から BG text 16/256-color tile、affine 256-color tile、extended 256-color tile、256-color bitmap、direct-color bitmap の初期 decode shader へ差し替えた。fragment は LayerConfig buffer、layer index、raw BG VRAM texture、BG palette texture を bind し、map/tile/bitmap fetch、flip、palette row、color 0 transparency、direct-color alpha を処理して configured BG target へ描く。OBJ/window/blend/final `RenderScreen`、capture-backed BG type 7/8 parity、sprite prerender shader は未実装。Phase 4e の制約どおり `Rend2D_A/B` は soft のまま維持し、可視出力は Phase 2/3 の CPU 合成 `GetOutput()` を継続。`build_metal_test.command` / `cmake --build build-mac --parallel 4` / default strings 検査 / config・inc・literal・scatter 監査 / runtime MSL pipeline harness / `git diff --check` PASS。 |
-| 2.5 | 上下反転一括修正（R1 レイヤ鏡像 + R2 3D 行順 + D1 composer 掃除） | **未着手・最優先**（§1R 監査 2026-07-10 #2 で新設） | — | 根本原因確定済み: R1 = Qt flipped NSView 上の CAMetalLayer `geometryFlipped`（コードに参照ゼロ）、R2 = GL(bottom-left) vs Metal(top-left) の NDC→行順差で native target が行逆格納 + readback 直コピー。R1+R2 一括投入・no-ROM スプラッシュと `verticalReverseCandidate` で層別検証 |
-| 5 | 同期・性能（wait 除去 / ring / presenter dirty-rect / D2 wait増加 / D3 RenderFrameIdentical スキップ） | 未着手 | — | 2026-07-10 #2 監査時点の実測: `waitUntilCompleted` = GPU3D 6 / GPU2D 1 / GPU_Metal 2 |
+| 4 | hires（MetalRenderer2D + RenderScreen + capture + MetalTexture 出力復帰） | 進行中（visible 3D hires output接続済み / native 2D完全移植は継続） | 2026-07-10 | CPU 2D合成結果を基底に、scaled Metal 3DをEngine Aへ再構成して2-layer texture arrayとして直接present。内部解像度設定が最終表示へ反映される。OBJ/window/captureを含む完全native Metal 2Dは継続実装項目。 |
+| 2.5 | 上下反転一括修正（R1 レイヤ鏡像 + R2 3D 行順 + D1 composer 掃除） | 完了（実ROM表示確認済み） | 2026-07-10 | R1/R2/D1を一括適用し、ユーザー環境の実ROMで上下反転が解消したことを確認。`verticalReverseCandidate`の数値ログ、resize/fullscreen/別画面の長時間スモークは継続確認項目。 |
+| 5 | 同期・性能（wait除去 / ring / presenter dirty-rect / D2 / D3） | 進行中（3D中間wait 3箇所削除・index upload統合・autorelease安定化） | 2026-07-10 | 通常3DフレームのGPU同期をreadback 1回へ縮約。per-group index bufferをframe buffer 1本へ統合。完全なwaitゼロはPhase 4 GPU compose後に実施。 |
 | 6 | 検証・公開ゲート（Apple Silicon / validation / kill-switch / 文書） | 未着手 | — | |
-| 7 | **Metal Compute Shader レンダラ（最終ゴール）**: GPU3D_Compute 移植 + Fix D/E 引き継ぎ + HiRes Coordinates | 未着手（Phase 4 完了が前提） | — | ユーザー指示 2026-07-10 で optional stretch から正式ゴールへ昇格 |
+| 7 | **Metal Compute Shader レンダラ（最終ゴール）**: GPU3D_Compute 移植 + Fix D/E 引き継ぎ + HiRes Coordinates | 進行中（7A/7B foundation実装・実機ビルド待ち） | 2026-07-10 | `TexcacheMetalLoader`を共有化し、`MetalComputeRenderer3D`の正式slot、`ClearIndirectWorkCount` / `ClearCoarseBinMask` / `CalcOffsets` / `SortWork`のMSL版、encoder境界によるglobal visibility、Fix Dのdispatch分割情報、Fix Eの`MaxWorkTiles` clamp、synthetic atomic/sort self-testを追加。可視出力は比較基準のMetal raster版を維持し、`MELONPRIME_METAL_COMPUTE_FOUNDATION=1`でのみfoundationを起動。 |
+
+
+### 2026-07-10 Metal stability / scale / performance slice
+
+- 3Dフレーム処理を`@autoreleasepool`で囲み、emu thread上のObjective-C一時オブジェクトを毎フレーム解放。
+- clear / polygon / fog-edgeの中間`waitUntilCompleted`を削除し、同一queue順序を利用してresolve/readbackの1回だけ待機。
+- groupごとのindex buffer生成を廃止し、1フレーム1本のshared index bufferへ統合。
+- `ScaleFactor`に応じて3D targetを`256*scale x 192*scale`で確保し、native GetLine用に256x192へlinear resolve。
+- 現CPU 2D compositor経路では最終出力は256x192だが、3D内部描画は設定倍率で実行され、supersampling結果が反映される。真のhires最終出力はPhase 4dの`MetalTexture`復帰で完成させる。
+
+
+### 2026-07-10 Metal visible internal-resolution output
+
+- `MetalRenderer::SwapBuffers()`で完成済みCPU top/bottom framebufferをnative 2-layer textureへupload。
+- scaled `ColorTarget`と256x192 `NativeResolveTarget`からEngine Aの背景を再構成し、高解像度3DをBG/OBJ/window/HUD上へ再合成。
+- 2Dのみの画面はnearest拡大を維持し、3D画面のみ設定倍率のgeometry/texture edgeを保持。
+- triple-buffered `MTLTextureType2DArray`を非同期生成し、完了済みslotだけを`RendererOutput::MetalTexture`でpresenterへ公開。追加の通常経路`waitUntilCompleted`は導入しない。
+- presenter既存の2-layer Metal texture経路を使用するため、3x時の可視sourceは`768x576x2`となる。
+<!-- MELONPRIME_METAL_COMPUTE_PHASE7B_STATUS -->
+- 2026-07-10 Phase 7B: real-frame CPU span setup + Metal InterpSpans geometry + BinCombined + CalcOffsets + SortWorkを非同期3-slot mirrorとして接続。可視出力はraster referenceを維持。
+
+<!-- MELONPRIME_METAL_COMPUTE_PHASE7E_UI -->
+## 2026-07-10 — Phase 7E / renderer UI
+
+- Video Settings exposes separate **Metal** and **Metal Compute Shader** renderer IDs.
+- Metal Compute selection no longer depends on `MELONPRIME_METAL_COMPUTE_FOUNDATION`.
+- Phase 7E consumes Phase 7D Color/Depth/Attr work-item tiles in a non-visible Metal DepthBlend pass.
+- Current DepthBlend scope: clear state, opaque depth selection, equal-depth handling, basic translucent blending, result Color/Depth/Attr buffers and asynchronous diagnostics.
+- Visible output intentionally remains `MetalRasterReference` until texture variants and FinalPass reach parity.
+- Known pre-match dark-transition composition issue remains deferred until the compute final-output cutover.
+
+<!-- MELONPRIME_METAL_COMPUTE_PHASE7G_HIRES -->
+## 2026-07-10 — Phase 7G high-resolution visible-output authority
+
+- Metal Compute internal-scale changes are applied live; the renderer is no longer reconstructed through a temporary default 1x state.
+- `3D.GL.ScaleFactor` is authoritative for the Metal raster target and final two-layer output texture.
+- The visible-output path rejects stale target dimensions and self-heals after a target resize.
+- High-resolution 3D selection uses frame-latched polygon activity as a fallback when live Engine-A DISPCNT has advanced before composition.
+- Scaled Metal final textures use linear downsampling so 2x/3x/4x supersampling is visible even when ordinary 1x screen filtering is disabled.
+- The compute renderer still uses the validated Metal raster result as its visible source while textured compute Rasterise remains under development.
+
+<!-- MELONPRIME_METAL_COMPUTE_PHASE7I_MSL_INIT_FIX -->
+## 2026-07-10 — Phase 7I MSL初期化修正
+
+- `BinPolygon`のMSLアドレス空間を`device const&`へ修正。
+- compute foundation失敗時はMetal raster可視出力のみで継続。
+- degraded modeではcompute readinessをfalseに固定。
+- renderer初期化失敗時のSoftware fallbackへエラーログを追加。
+
+<!-- MELONPRIME_METAL_COMPUTE_PHASE7J_RENDER_OPTIONS -->
+## 2026-07-10 — Phase 7J Metal描画オプション
+
+- Metal rasterに既存実装済みのBetterPolygons center-fan分割をVideo Settingsから有効化。
+- Metal rasterへ高解像度座標モードを実装。
+- scale > 1かつ設定ONの場合、`Vertex::HiresPosition`をtarget-pixel座標へ変換し、shaderのscreenSizeも同じ座標系へ変更。
+- Metal Computeではhidden compute mirrorとvisible `RasterReference`へ同じ高解像度座標設定を適用。
+- 1x時は高解像度座標設定による描画変更なし。
+- OpenGL ComputeではBetterPolygonsを引き続き無効化。

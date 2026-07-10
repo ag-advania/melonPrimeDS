@@ -37,7 +37,8 @@ int NormalizeRendererForPlatform(int requested)
     // window that never created a GL surface.
     if (ShouldForceMetalPresenterFromEnv() &&
         requested != renderer3D_Software &&
-        requested != renderer3D_Metal)
+        requested != renderer3D_Metal &&
+        requested != renderer3D_MetalCompute)
     {
         return renderer3D_Software;
     }
@@ -66,6 +67,7 @@ int NormalizeRendererForPlatform(int requested)
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
     case renderer3D_Metal:
+    case renderer3D_MetalCompute:
         return requested;
 #endif
     default:
@@ -98,7 +100,7 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 
     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
 #if defined(MELONPRIME_ENABLE_METAL)
-    if (normalized == renderer3D_Metal)
+    if (normalized == renderer3D_Metal || normalized == renderer3D_MetalCompute)
         return PresentationBackend::Metal;
 #endif
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))

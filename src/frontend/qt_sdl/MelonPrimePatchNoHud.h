@@ -29,8 +29,11 @@ namespace MelonPrime {
         NOHUD_SCORE_CAPTURE      = 9,  // mode=6 (Capture / octolith count)
         NOHUD_SCORE_DEFENDER     = 10, // mode=7 (Defender / hold time)
         NOHUD_SCORE_NODE         = 11, // mode=8 (Node / score)
-        NOHUD_BOMB               = 12, // bomb-count HUD (boost ball HUD untouched)
-        NOHUD_ELEMENT_COUNT      = 13,
+        NOHUD_BOMB               = 12, // bomb-count HUD (Boost HUD untouched)
+        NOHUD_BOOST              = 13, // Samus Morph Ball Boost icon + BOOST label
+        NOHUD_CLOAK              = 14, // Cloak icon + CLOAK label
+        NOHUD_DOUBLE_DAMAGE      = 15, // Double Damage icon + label
+        NOHUD_ELEMENT_COUNT      = 16,
     };
 
     inline constexpr uint16_t NOHUD_MASK_ALL =

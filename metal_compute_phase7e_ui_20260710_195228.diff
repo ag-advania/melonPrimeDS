@@ -1,0 +1,667 @@
+--- a/.claude/rules/plan/metal_compute_shader_phase7_execution.md
++++ b/.claude/rules/plan/metal_compute_shader_phase7_execution.md
+@@ -116,3 +116,14 @@
+ [MelonPrime] metal compute span/bin: self-test PASS ...
+ [MelonPrime] metal compute span/bin: frame=... polygons=... xSpans=... variants=... sortedWorkTiles=...
+ ```
++
++<!-- MELONPRIME_METAL_COMPUTE_PHASE7E_UI -->
++## 2026-07-10 — Phase 7E / renderer UI
++
++- Video Settings exposes separate **Metal** and **Metal Compute Shader** renderer IDs.
++- Metal Compute selection no longer depends on `MELONPRIME_METAL_COMPUTE_FOUNDATION`.
++- Phase 7E consumes Phase 7D Color/Depth/Attr work-item tiles in a non-visible Metal DepthBlend pass.
++- Current DepthBlend scope: clear state, opaque depth selection, equal-depth handling, basic translucent blending, result Color/Depth/Attr buffers and asynchronous diagnostics.
++- Visible output intentionally remains `MetalRasterReference` until texture variants and FinalPass reach parity.
++- Known pre-match dark-transition composition issue remains deferred until the compute final-output cutover.
++
+--- a/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
++++ b/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
+@@ -555,3 +555,14 @@
+ - presenter既存の2-layer Metal texture経路を使用するため、3x時の可視sourceは`768x576x2`となる。
+ <!-- MELONPRIME_METAL_COMPUTE_PHASE7B_STATUS -->
+ - 2026-07-10 Phase 7B: real-frame CPU span setup + Metal InterpSpans geometry + BinCombined + CalcOffsets + SortWorkを非同期3-slot mirrorとして接続。可視出力はraster referenceを維持。
++
++<!-- MELONPRIME_METAL_COMPUTE_PHASE7E_UI -->
++## 2026-07-10 — Phase 7E / renderer UI
++
++- Video Settings exposes separate **Metal** and **Metal Compute Shader** renderer IDs.
++- Metal Compute selection no longer depends on `MELONPRIME_METAL_COMPUTE_FOUNDATION`.
++- Phase 7E consumes Phase 7D Color/Depth/Attr work-item tiles in a non-visible Metal DepthBlend pass.
++- Current DepthBlend scope: clear state, opaque depth selection, equal-depth handling, basic translucent blending, result Color/Depth/Attr buffers and asynchronous diagnostics.
++- Visible output intentionally remains `MetalRasterReference` until texture variants and FinalPass reach parity.
++- Known pre-match dark-transition composition issue remains deferred until the compute final-output cutover.
++
+--- a/src/GPU3D_MetalCompute.h
++++ b/src/GPU3D_MetalCompute.h
+@@ -1,4 +1,4 @@
+-// MelonPrimeDS - Metal compute renderer no-texture tile-memory stage and raster-reference bridge
++// MelonPrimeDS - Metal compute renderer no-texture DepthBlend stage and raster-reference bridge
+ 
+ #ifndef GPU3D_METAL_COMPUTE_H
+ #define GPU3D_METAL_COMPUTE_H
+@@ -14,10 +14,10 @@
+ 
+ class SoftRenderer;
+ 
+-// Phase 7D. The renderer executes real-frame span preparation, Metal
++// Phase 7E. The renderer executes real-frame span preparation, Metal
+ // InterpSpans/BinCombined, work sorting, and writes no-texture polygons into
+ // the canonical per-work-item Color/Depth/Attr tile memories consumed by the
+-// future DepthBlend pass. Visible output remains the validated MetalRenderer3D
++// non-visible DepthBlend pass. Visible output remains the validated MetalRenderer3D
+ // reference until the complete texture/depth/blend/final-pass chain reaches parity.
+ class MetalComputeRenderer3D final : public Renderer3D
+ {
+--- a/src/GPU3D_MetalCompute.mm
++++ b/src/GPU3D_MetalCompute.mm
+@@ -1,5 +1,6 @@
+-// MelonPrimeDS - Metal compute renderer no-texture tile-memory stage (Phase 7D)
++// MelonPrimeDS - Metal compute renderer no-texture DepthBlend stage (Phase 7E)
+ // MELONPRIME_METAL_COMPUTE_TILE_MEMORY_V4
++// MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
+ 
+@@ -33,6 +34,7 @@
+ constexpr uint32_t kFrameSlotCount = 3;
+ constexpr size_t kTileMemoryBudgetBytes = 192u * 1024u * 1024u;
+ constexpr uint32_t kTileSummaryWords = 8;
++constexpr uint32_t kDepthBlendSummaryWords = 8;
+ 
+ constexpr uint32_t kVariantWorkCountStart = 0;
+ constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
+@@ -164,6 +166,37 @@
+ static_assert(sizeof(TileRasterSummary) == kTileSummaryWords * sizeof(uint32_t),
+               "MSL tile summary layout mismatch");
+ 
++struct DepthBlendConfig
++{
++    uint32_t ScreenWidth;
++    uint32_t ScreenHeight;
++    uint32_t TileSize;
++    uint32_t TilesPerLine;
++    uint32_t BinStride;
++    uint32_t PolygonGroups;
++    uint32_t MaxWorkTiles;
++    uint32_t TileWorkCapacity;
++    uint32_t ClearColor;
++    uint32_t ClearDepth;
++    uint32_t ClearAttr;
++    uint32_t DispCnt;
++};
++static_assert(sizeof(DepthBlendConfig) == 48, "MSL DepthBlendConfig layout mismatch");
++
++struct DepthBlendSummary
++{
++    uint32_t Pixels;
++    uint32_t LayersTested;
++    uint32_t LayersAccepted;
++    uint32_t TranslucentLayers;
++    uint32_t ColorHash;
++    uint32_t DepthMin;
++    uint32_t DepthMax;
++    uint32_t Reserved;
++};
++static_assert(sizeof(DepthBlendSummary) == kDepthBlendSummaryWords * sizeof(uint32_t),
++              "MSL DepthBlendSummary layout mismatch");
++
+ struct VariantKey
+ {
+     uint32_t TexParam = 0;
+@@ -800,6 +833,150 @@
+         atomic_fetch_max_explicit(&summary[TileSummaryDepthMax], depthMax, memory_order_relaxed);
+     }
+ }
++
++constant uint DepthBlendSummaryPixels = 0u;
++constant uint DepthBlendSummaryLayersTested = 1u;
++constant uint DepthBlendSummaryLayersAccepted = 2u;
++constant uint DepthBlendSummaryTranslucent = 3u;
++constant uint DepthBlendSummaryColorHash = 4u;
++constant uint DepthBlendSummaryDepthMin = 5u;
++constant uint DepthBlendSummaryDepthMax = 6u;
++
++struct DepthBlendConfig
++{
++    uint ScreenWidth;
++    uint ScreenHeight;
++    uint TileSize;
++    uint TilesPerLine;
++    uint BinStride;
++    uint PolygonGroups;
++    uint MaxWorkTiles;
++    uint TileWorkCapacity;
++    uint ClearColor;
++    uint ClearDepth;
++    uint ClearAttr;
++    uint DispCnt;
++};
++
++kernel void mp_compute_clear_depth_blend_summary(
++    device atomic_uint* summary [[buffer(0)]],
++    uint gid [[thread_position_in_grid]])
++{
++    if (gid >= 8u)
++        return;
++    atomic_store_explicit(&summary[gid],
++        gid == DepthBlendSummaryDepthMin ? 0xFFFFFFFFu : 0u,
++        memory_order_relaxed);
++}
++
++kernel void mp_compute_depth_blend_no_texture(
++    device const uint* fineMask [[buffer(0)]],
++    device const uint* workOffsets [[buffer(1)]],
++    device const RenderPolygon* polygons [[buffer(2)]],
++    device const uint* colorTiles [[buffer(3)]],
++    device const uint* depthTiles [[buffer(4)]],
++    device const uint* attrTiles [[buffer(5)]],
++    device uint* resultColor [[buffer(6)]],
++    device uint* resultDepth [[buffer(7)]],
++    device uint* resultAttr [[buffer(8)]],
++    device atomic_uint* summary [[buffer(9)]],
++    constant DepthBlendConfig& config [[buffer(10)]],
++    uint gid [[thread_position_in_grid]])
++{
++    const uint pixelCount = config.ScreenWidth * config.ScreenHeight;
++    if (gid >= pixelCount)
++        return;
++
++    const uint x = gid % config.ScreenWidth;
++    const uint y = gid / config.ScreenWidth;
++    const uint tileX = x / config.TileSize;
++    const uint tileY = y / config.TileSize;
++    const uint linearTile = tileX + tileY * config.TilesPerLine;
++    const uint tileInner = (y % config.TileSize) * config.TileSize + (x % config.TileSize);
++    const uint tileArea = config.TileSize * config.TileSize;
++
++    uint color = config.ClearColor;
++    uint depth = config.ClearDepth;
++    uint attr = config.ClearAttr;
++    uint layersTested = 0u;
++    uint layersAccepted = 0u;
++    uint translucentLayers = 0u;
++
++    for (uint groupIdx = 0u; groupIdx < config.PolygonGroups; groupIdx++)
++    {
++        const uint maskIndex = linearTile * config.BinStride + groupIdx;
++        uint mask = fineMask[maskIndex];
++        if (mask == 0u)
++            continue;
++
++        const uint workBase = workOffsets[maskIndex];
++        uint ordinal = 0u;
++        while (mask != 0u)
++        {
++            const uint bit = ctz(mask);
++            mask &= ~(1u << bit);
++            const uint workIndex = workBase + ordinal++;
++            if (workIndex >= min(config.MaxWorkTiles, config.TileWorkCapacity))
++                continue;
++
++            const uint polygonIndex = groupIdx * 32u + bit;
++            const RenderPolygon polygon = polygons[polygonIndex];
++            const uint tilePixel = workIndex * tileArea + tileInner;
++            const uint tileColor = colorTiles[tilePixel];
++            if (tileColor == 0u)
++                continue;
++
++            layersTested++;
++            const uint tileDepth = depthTiles[tilePixel];
++            const uint tileAttr = attrTiles[tilePixel];
++            const bool equalDepth = (polygon.Attr & (1u << 14u)) != 0u;
++            const uint depthDiff = tileDepth > depth ? tileDepth - depth : depth - tileDepth;
++            const bool depthPass = equalDepth ? depthDiff <= 0x200u : tileDepth < depth;
++            if (!depthPass)
++                continue;
++
++            const uint sourceAlpha = (tileColor >> 24u) & 0x1Fu;
++            if (sourceAlpha < 31u)
++            {
++                const uint alpha = sourceAlpha + 1u;
++                const uint srcRB = tileColor & 0x003F003Fu;
++                const uint srcG = tileColor & 0x00003F00u;
++                const uint dstRB = color & 0x003F003Fu;
++                const uint dstG = color & 0x00003F00u;
++                const uint blendedRB = ((srcRB * alpha) + (dstRB * (32u - alpha))) >> 5u;
++                const uint blendedG = ((srcG * alpha) + (dstG * (32u - alpha))) >> 5u;
++                color = (blendedRB & 0x003F003Fu) |
++                        (blendedG & 0x00003F00u) |
++                        max(color & 0x1F000000u, tileColor & 0x1F000000u);
++                translucentLayers++;
++                if ((polygon.Attr & (1u << 11u)) != 0u)
++                    depth = tileDepth;
++            }
++            else
++            {
++                color = tileColor;
++                depth = tileDepth;
++            }
++
++            attr = (tileAttr & 0x0000FFFFu) | (polygon.Attr & 0x3F008000u);
++            layersAccepted++;
++        }
++    }
++
++    resultColor[gid] = color;
++    resultDepth[gid] = depth;
++    resultAttr[gid] = attr;
++
++    atomic_fetch_add_explicit(&summary[DepthBlendSummaryPixels], 1u, memory_order_relaxed);
++    atomic_fetch_add_explicit(&summary[DepthBlendSummaryLayersTested], layersTested, memory_order_relaxed);
++    atomic_fetch_add_explicit(&summary[DepthBlendSummaryLayersAccepted], layersAccepted, memory_order_relaxed);
++    atomic_fetch_add_explicit(&summary[DepthBlendSummaryTranslucent], translucentLayers, memory_order_relaxed);
++    atomic_fetch_xor_explicit(&summary[DepthBlendSummaryColorHash],
++        color + gid * 0x9E3779B9u, memory_order_relaxed);
++    atomic_fetch_min_explicit(&summary[DepthBlendSummaryDepthMin], depth, memory_order_relaxed);
++    atomic_fetch_max_explicit(&summary[DepthBlendSummaryDepthMax], depth, memory_order_relaxed);
++}
++
+ )MSL";
+ 
+ id<MTLComputePipelineState> BuildComputePipeline(
+@@ -1061,11 +1238,17 @@
+     id<MTLComputePipelineState> BinCombinedPipeline = nil;
+     id<MTLComputePipelineState> ClearTileSummaryPipeline = nil;
+     id<MTLComputePipelineState> RasteriseNoTextureTilesPipeline = nil;
++    id<MTLComputePipelineState> ClearDepthBlendSummaryPipeline = nil;
++    id<MTLComputePipelineState> DepthBlendNoTexturePipeline = nil;
+ 
+     id<MTLBuffer> ColorTiles = nil;
+     id<MTLBuffer> DepthTiles = nil;
+     id<MTLBuffer> AttrTiles = nil;
+     id<MTLBuffer> TileSummary = nil;
++    id<MTLBuffer> DepthBlendColor = nil;
++    id<MTLBuffer> DepthBlendDepth = nil;
++    id<MTLBuffer> DepthBlendAttr = nil;
++    id<MTLBuffer> DepthBlendSummaryBuffer = nil;
+ 
+     std::array<FrameSlot, kFrameSlotCount> Slots;
+     std::vector<SpanSetupY> YSpanData;
+@@ -1091,6 +1274,7 @@
+     bool Ready = false;
+     bool SpanBinReady = false;
+     bool TileRasterReady = false;
++    bool DepthBlendReady = false;
+     bool LoggedOverflow = false;
+ 
+     std::atomic<uint64_t> SubmittedFrames { 0 };
+@@ -1142,8 +1326,9 @@
+     State->Ready = true;
+     State->SpanBinReady = true;
+     State->TileRasterReady = true;
++    State->DepthBlendReady = true;
+     std::fprintf(stderr,
+-        "[MelonPrime] metal compute tile memory: Phase 7D ready; visible output remains Metal raster reference\n");
++        "[MelonPrime] metal compute depth blend: Phase 7E ready; visible output remains Metal raster reference\n");
+     return true;
+ }
+ 
+@@ -1200,12 +1385,18 @@
+         State->Device, State->Library, @"mp_compute_clear_tile_summary");
+     State->RasteriseNoTextureTilesPipeline = BuildComputePipeline(
+         State->Device, State->Library, @"mp_compute_rasterise_no_texture_tiles");
++    State->ClearDepthBlendSummaryPipeline = BuildComputePipeline(
++        State->Device, State->Library, @"mp_compute_clear_depth_blend_summary");
++    State->DepthBlendNoTexturePipeline = BuildComputePipeline(
++        State->Device, State->Library, @"mp_compute_depth_blend_no_texture");
+ 
+     if (!State->ClearIndirectPipeline || !State->ClearCoarseMaskPipeline ||
+         !State->CalcOffsetsPipeline || !State->SortWorkPipeline ||
+         !State->SortWorkPolygonsPipeline || !State->InterpSpansPipeline ||
+         !State->BinCombinedPipeline || !State->ClearTileSummaryPipeline ||
+-        !State->RasteriseNoTextureTilesPipeline)
++        !State->RasteriseNoTextureTilesPipeline ||
++        !State->ClearDepthBlendSummaryPipeline ||
++        !State->DepthBlendNoTexturePipeline)
+     {
+         return false;
+     }
+@@ -1220,6 +1411,8 @@
+         State->BinCombinedPipeline.maxTotalThreadsPerThreadgroup,
+         State->ClearTileSummaryPipeline.maxTotalThreadsPerThreadgroup,
+         State->RasteriseNoTextureTilesPipeline.maxTotalThreadsPerThreadgroup,
++        State->ClearDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
++        State->DepthBlendNoTexturePipeline.maxTotalThreadsPerThreadgroup,
+     });
+     if (minMaxThreads < 64)
+     {
+@@ -1335,8 +1528,21 @@
+     }
+     State->TileSummary = [State->Device newBufferWithLength:kTileSummaryWords * sizeof(uint32_t)
+                                                     options:MTLResourceStorageModeShared];
++    const size_t screenPixelBytes =
++        static_cast<size_t>(State->ScreenWidth) * State->ScreenHeight * sizeof(uint32_t);
++    State->DepthBlendColor =
++        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
++    State->DepthBlendDepth =
++        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
++    State->DepthBlendAttr =
++        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
++    State->DepthBlendSummaryBuffer =
++        [State->Device newBufferWithLength:kDepthBlendSummaryWords * sizeof(uint32_t)
++                                   options:MTLResourceStorageModeShared];
+     if (tileCapacity == 0 || !State->ColorTiles || !State->DepthTiles ||
+-        !State->AttrTiles || !State->TileSummary)
++        !State->AttrTiles || !State->TileSummary ||
++        !State->DepthBlendColor || !State->DepthBlendDepth ||
++        !State->DepthBlendAttr || !State->DepthBlendSummaryBuffer)
+     {
+         std::fprintf(stderr,
+             "[MelonPrime] metal compute tile memory: allocation failed scale=%d maxWorkTiles=%u\n",
+@@ -2103,6 +2309,29 @@
+             0,
+         };
+ 
++        uint32_t clearR = (GPU3D.RenderClearAttr1 << 1) & 0x3Eu;
++        if (clearR) clearR++;
++        uint32_t clearG = (GPU3D.RenderClearAttr1 >> 4) & 0x3Eu;
++        if (clearG) clearG++;
++        uint32_t clearB = (GPU3D.RenderClearAttr1 >> 9) & 0x3Eu;
++        if (clearB) clearB++;
++        const uint32_t clearA = (GPU3D.RenderClearAttr1 >> 16) & 0x1Fu;
++        const DepthBlendConfig depthBlendConfig {
++            State->ScreenWidth,
++            State->ScreenHeight,
++            State->TileSize,
++            State->TilesPerLine,
++            kBinStride,
++            polygonGroups,
++            State->MaxWorkTiles,
++            State->TileWorkCapacity,
++            clearR | (clearG << 8u) | (clearB << 16u) | (clearA << 24u),
++            ((GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu,
++            GPU3D.RenderClearAttr1 & 0x3F008000u,
++            GPU3D.RenderDispCnt,
++        };
++
++
+         bool submitTileRaster = false;
+         if (State->TileRasterReady && polygonGroups > 0 && numSetupIndices > 0)
+         {
+@@ -2112,6 +2341,7 @@
+             if (!submitTileRaster)
+                 State->SkippedTileBusyFrames.fetch_add(1, std::memory_order_relaxed);
+         }
++        const bool submitDepthBlend = submitTileRaster && State->DepthBlendReady;
+ 
+         id<MTLCommandBuffer> command = [State->Queue commandBuffer];
+         if (!command)
+@@ -2121,7 +2351,7 @@
+             slot->InFlight.store(false, std::memory_order_release);
+             return false;
+         }
+-        command.label = @"MelonPrime Metal Compute Phase 7D Tile Memory";
++        command.label = @"MelonPrime Metal Compute Phase 7E DepthBlend";
+ 
+         {
+             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+@@ -2218,6 +2448,36 @@
+                          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                 [encoder endEncoding];
+             }
++            if (submitDepthBlend)
++            {
++                {
++                    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
++                    [encoder setComputePipelineState:State->ClearDepthBlendSummaryPipeline];
++                    [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:0];
++                    [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
++                             threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
++                    [encoder endEncoding];
++                }
++                {
++                    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
++                    [encoder setComputePipelineState:State->DepthBlendNoTexturePipeline];
++                    [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
++                    [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
++                    [encoder setBuffer:slot->Polygons offset:0 atIndex:2];
++                    [encoder setBuffer:State->ColorTiles offset:0 atIndex:3];
++                    [encoder setBuffer:State->DepthTiles offset:0 atIndex:4];
++                    [encoder setBuffer:State->AttrTiles offset:0 atIndex:5];
++                    [encoder setBuffer:State->DepthBlendColor offset:0 atIndex:6];
++                    [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:7];
++                    [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:8];
++                    [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:9];
++                    [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:10];
++                    const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
++                    [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
++                             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
++                    [encoder endEncoding];
++                }
++            }
+         }
+ 
+         const uint64_t serial = State->SubmittedFrames.fetch_add(1, std::memory_order_relaxed) + 1;
+@@ -2226,7 +2486,9 @@
+         const bool submittedHiresCoordinates = State->HiresCoordinates;
+         id<MTLBuffer> completedHeader = slot->Header;
+         id<MTLBuffer> completedTileSummary = State->TileSummary;
++        id<MTLBuffer> completedDepthBlendSummary = State->DepthBlendSummaryBuffer;
+         const bool completedTileRaster = submitTileRaster;
++        const bool completedDepthBlend = submitDepthBlend;
+         MetalComputeState* state = State.get();
+         slot->LastCommand = command;
+         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+@@ -2263,6 +2525,24 @@
+                         static_cast<unsigned long long>(state->SkippedBusyFrames.load(std::memory_order_relaxed)),
+                         submittedHiresCoordinates ? 1u : 0u);
+                 }
++                if (completedDepthBlend && (completedCount <= 3 || (completedCount % 600) == 0))
++                {
++                    const auto* blend =
++                        static_cast<const DepthBlendSummary*>([completedDepthBlendSummary contents]);
++                    const uint32_t blendDepthMin =
++                        blend->DepthMin == 0xFFFFFFFFu ? 0u : blend->DepthMin;
++                    std::fprintf(stderr,
++                        "[MelonPrime] metal compute depth blend: frame=%llu pixels=%u layersTested=%u layersAccepted=%u translucent=%u hash=0x%08x depth=%08x..%08x visibleSource=MetalRasterReference\n",
++                        static_cast<unsigned long long>(serial),
++                        blend->Pixels,
++                        blend->LayersTested,
++                        blend->LayersAccepted,
++                        blend->TranslucentLayers,
++                        blend->ColorHash,
++                        blendDepthMin,
++                        blend->DepthMax);
++                }
++
+             }
+             else
+             {
+@@ -2291,8 +2571,9 @@
+         if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
+             SubmitRealFrameSpanBin();
+ 
+-        // Phase 7D now produces canonical no-texture Color/Depth/Attr tiles.
+-        // Until texture variants + DepthBlend + FinalPass achieve pixel parity,
++        // Phase 7E consumes canonical no-texture Color/Depth/Attr tiles
++        // through a non-visible DepthBlend result pass. Until texture variants
++        // and FinalPass achieve pixel parity,
+         // the validated Metal raster renderer remains the visible source.
+         RasterReference.RenderFrame();
+     }
+@@ -2360,7 +2641,8 @@
+ 
+ bool MetalComputeRenderer3D::FoundationReady() const noexcept
+ {
+-    return State && State->Ready && State->SpanBinReady && State->TileRasterReady;
++    return State && State->Ready && State->SpanBinReady &&
++           State->TileRasterReady && State->DepthBlendReady;
+ }
+ 
+ } // namespace melonDS
+--- a/src/GPU_Metal.h
++++ b/src/GPU_Metal.h
+@@ -19,7 +19,7 @@
+ class MetalRenderer : public SoftRenderer
+ {
+ public:
+-    explicit MetalRenderer(melonDS::NDS& nds) noexcept;
++    explicit MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer = false) noexcept;
+     ~MetalRenderer() override;
+ 
+     bool Init() override;
+--- a/src/GPU_Metal.mm
++++ b/src/GPU_Metal.mm
+@@ -234,16 +234,18 @@
+     }
+ };
+ 
+-MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
++MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
+     : SoftRenderer(nds)
+ {
+     Metal2D_A = std::make_unique<MetalRenderer2D>(GPU.GPU2D_A);
+     Metal2D_B = std::make_unique<MetalRenderer2D>(GPU.GPU2D_B);
+ 
+-    if (MetalComputeFoundationEnabled())
++    if (useComputeRenderer || MetalComputeFoundationEnabled())
+     {
+         std::fprintf(stderr,
+-            "[MelonPrime] metal compute foundation: selected developer foundation mode\n");
++            useComputeRenderer
++                ? "[MelonPrime] metal compute: selected from Video Settings\n"
++                : "[MelonPrime] metal compute foundation: selected developer foundation mode\n");
+         Rend3D = std::make_unique<MetalComputeRenderer3D>(GPU.GPU3D, *this);
+     }
+     else
+--- a/src/frontend/qt_sdl/EmuInstance.h
++++ b/src/frontend/qt_sdl/EmuInstance.h
+@@ -117,7 +117,9 @@
+ #endif
+ #if defined(MELONPRIME_ENABLE_METAL)
+     renderer3D_Metal,
++    renderer3D_MetalCompute,
+ #endif
++    // MELONPRIME_METAL_COMPUTE_UI_V1
+     renderer3D_Max,
+ };
+ 
+--- a/src/frontend/qt_sdl/EmuThread.cpp
++++ b/src/frontend/qt_sdl/EmuThread.cpp
+@@ -1293,7 +1293,10 @@
+             break;
+ #if defined(MELONPRIME_ENABLE_METAL)
+         case renderer3D_Metal:
+-            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds));
++            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, false));
++            break;
++        case renderer3D_MetalCompute:
++            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
+             break;
+ #endif
+         default: __builtin_unreachable();
+--- a/src/frontend/qt_sdl/MelonPrimeScreenMetal.mm
++++ b/src/frontend/qt_sdl/MelonPrimeScreenMetal.mm
+@@ -605,8 +605,11 @@
+             auto nds = emuInstance->getNDS();
+ 
+             const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
++            const int selectedRenderer =
++                emuInstance->getGlobalConfig().GetInt("3D.Renderer");
+             const bool metalRendererSelected =
+-                emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Metal;
++                selectedRenderer == renderer3D_Metal ||
++                selectedRenderer == renderer3D_MetalCompute;
+ 
+             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
+             {
+--- a/src/frontend/qt_sdl/MelonPrimeVideoBackend.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeVideoBackend.cpp
+@@ -37,7 +37,8 @@
+     // window that never created a GL surface.
+     if (ShouldForceMetalPresenterFromEnv() &&
+         requested != renderer3D_Software &&
+-        requested != renderer3D_Metal)
++        requested != renderer3D_Metal &&
++        requested != renderer3D_MetalCompute)
+     {
+         return renderer3D_Software;
+     }
+@@ -66,6 +67,7 @@
+ #endif
+ #if defined(MELONPRIME_ENABLE_METAL)
+     case renderer3D_Metal:
++    case renderer3D_MetalCompute:
+         return requested;
+ #endif
+     default:
+@@ -98,7 +100,7 @@
+ 
+     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
+ #if defined(MELONPRIME_ENABLE_METAL)
+-    if (normalized == renderer3D_Metal)
++    if (normalized == renderer3D_Metal || normalized == renderer3D_MetalCompute)
+         return PresentationBackend::Metal;
+ #endif
+     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
+--- a/src/frontend/qt_sdl/VideoSettingsDialog.cpp
++++ b/src/frontend/qt_sdl/VideoSettingsDialog.cpp
+@@ -68,8 +68,12 @@
+     const bool openGLRenderer = renderer == renderer3D_OpenGL;
+     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
+ #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+-    const bool metalRenderer = renderer == renderer3D_Metal;
+-#else
++    const bool metalRasterRenderer = renderer == renderer3D_Metal;
++    const bool metalComputeRenderer = renderer == renderer3D_MetalCompute;
++    const bool metalRenderer = metalRasterRenderer || metalComputeRenderer;
++#else
++    const bool metalRasterRenderer = false;
++    const bool metalComputeRenderer = false;
+     const bool metalRenderer = false;
+ #endif
+     ui->cbGLDisplay->setEnabled(softwareRenderer);
+@@ -88,7 +92,7 @@
+ #endif
+     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+     ui->cbBetterPolygons->setEnabled(openGLRenderer);
+-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
++    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalComputeRenderer);
+ }
+ 
+ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
+@@ -115,11 +119,19 @@
+ #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+     rb3DMetal = new QRadioButton(ui->groupBox);
+     rb3DMetal->setObjectName(QStringLiteral("rb3DMetal"));
+-    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal (Experimental)"));
++    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal"));
+     rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
+-        "<html><head/><body><p>Experimental native Metal renderer for testing on macOS. Not the same as the OpenGL Compute renderer. Visual parity and performance are not final.</p></body></html>"));
++        "<html><head/><body><p>Native Metal raster renderer for macOS.</p></body></html>"));
+     ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
+     grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
++
++    rb3DMetalCompute = new QRadioButton(ui->groupBox);
++    rb3DMetalCompute->setObjectName(QStringLiteral("rb3DMetalCompute"));
++    rb3DMetalCompute->setText(MelonPrime::UiText::Tr("Metal Compute Shader"));
++    rb3DMetalCompute->setWhatsThis(MelonPrime::UiText::Tr(
++        "<html><head/><body><p>Experimental native Metal compute-shader renderer. The validated Metal raster renderer remains the visible fallback until compute rendering reaches full parity.</p></body></html>"));
++    ui->gridLayout_2->addWidget(rb3DMetalCompute, 4, 1, 1, 1);
++    grp3DRenderer->addButton(rb3DMetalCompute, renderer3D_MetalCompute);
+ #endif
+ #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
+@@ -165,6 +177,11 @@
+         : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
+     rb3DMetal->setEnabled(metalSupported);
+     rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
++    rb3DMetalCompute->setEnabled(metalSupported);
++    rb3DMetalCompute->setToolTip(MelonPrime::UiText::Tr(
++        metalSupported
++            ? QStringLiteral("Experimental Metal compute-shader renderer. Compute stages run natively while the validated Metal raster output remains the safe visible source.")
++            : metalTooltip));
+ #endif
+ 
+     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
+--- a/src/frontend/qt_sdl/VideoSettingsDialog.h
++++ b/src/frontend/qt_sdl/VideoSettingsDialog.h
+@@ -81,6 +81,7 @@
+     QButtonGroup* grp3DRenderer;
+ #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+     QRadioButton* rb3DMetal = nullptr;
++    QRadioButton* rb3DMetalCompute = nullptr;
+ #endif
+ 
+     int oldRenderer;

@@ -222,7 +222,7 @@ struct CachedHudConfig {
     float hpGaugeOpacity, wpnIconOpacity, ammoGaugeOpacity;
     float bombIconOpacity, timeLeftOpacity, timeLimitOpacity;
     // DisableDefaultHud: bitmask of NoHudElement bits the user wants hidden.
-    // Cached once per epoch so the hot path doesn't issue 12 GetBool per frame.
+    // Cached once per epoch so the hot path doesn't issue per-element GetBool calls every frame.
     uint16_t noHudMask;
     bool hiResText;  // HudFontMode != 0: rasterise glyphs at output resolution (hi-DPI text)
     bool valid;
@@ -1072,6 +1072,9 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
         if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreDefender))     m |= (1u << NOHUD_SCORE_DEFENDER);
         if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreNode))         m |= (1u << NOHUD_SCORE_NODE);
         if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Bomb))              m |= (1u << NOHUD_BOMB);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Boost))             m |= (1u << NOHUD_BOOST);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Cloak))             m |= (1u << NOHUD_CLOAK);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_DoubleDamage))      m |= (1u << NOHUD_DOUBLE_DAMAGE);
         c.noHudMask = m;
     }
     RecomputeAnchorPositions(topStretchX);

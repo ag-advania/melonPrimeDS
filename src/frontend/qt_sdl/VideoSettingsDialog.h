@@ -79,8 +79,10 @@ private:
     EmuInstance* emuInstance;
 
     QButtonGroup* grp3DRenderer;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_DYNAMIC_LAYOUT_V3
     QRadioButton* rb3DMetal = nullptr;
+    QRadioButton* rb3DMetalCompute = nullptr;
 #endif
 
     int oldRenderer;

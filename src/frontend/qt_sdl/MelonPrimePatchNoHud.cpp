@@ -25,7 +25,10 @@ namespace MelonPrime {
 //     9 NOHUD_SCORE_CAPTURE       (mode 6)
 //    10 NOHUD_SCORE_DEFENDER      (mode 7)
 //    11 NOHUD_SCORE_NODE          (mode 8)
-//    12 NOHUD_BOMB                (bomb count HUD; boost ball HUD untouched)
+//    12 NOHUD_BOMB                (bomb count HUD; Boost HUD untouched)
+//    13 NOHUD_BOOST               (Samus Morph Ball Boost icon + BOOST label; bomb HUD untouched)
+//    14 NOHUD_CLOAK               (Cloak icon + CLOAK label; gameplay effect untouched)
+//    15 NOHUD_DOUBLE_DAMAGE       (Double Damage icon + label; timer/multiplier untouched)
 //
 //  Outer index matches RomGroup enum: JP1.0=0, JP1.1=1, US1.0=2, US1.1=3,
 //                                     EU1.0=4, EU1.1=5, KR1.0=6.
@@ -51,7 +54,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC84u, 0xE1A00000u, 0xEB0002E8u},   // Score: Capture
       {0x0202FB58u, 0xE1A00000u, 0xEB000333u},   // Score: Defender
       {0x02031818u, 0xE1A00000u, 0xEBFFFC03u},   // Score: Node
-      {0x0203B2C4u, 0xEA000030u, 0x0A000030u} }, // Bomb
+      {0x0203B2C4u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B398u, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039F48u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x0203A158u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     // JP1.1 (identical to JP1.0)
     { {0x0202F934u, 0xE3C3300Eu, 0xE383300Eu},
       {0x0202F944u, 0xE1A00000u, 0xEB002AB7u},
@@ -65,8 +71,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC84u, 0xE1A00000u, 0xEB0002E8u},
       {0x0202FB58u, 0xE1A00000u, 0xEB000333u},
       {0x02031818u, 0xE1A00000u, 0xEBFFFC03u},
-      {0x0203B2C4u, 0xEA000030u, 0x0A000030u} },
-    // US1.0
+      {0x0203B2C4u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B398u, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039F48u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x0203A158u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     { {0x0202F91Cu, 0xE3C3300Eu, 0xE383300Eu},
       {0x0202F92Cu, 0xE1A00000u, 0xEB002A7Fu},
       {0x0202F930u, 0xE1A00000u, 0xEB002A41u},
@@ -79,8 +87,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC6Cu, 0xE1A00000u, 0xEB0002E8u},
       {0x0202FB40u, 0xE1A00000u, 0xEB000333u},
       {0x02031700u, 0xE1A00000u, 0xEBFFFC43u},
-      {0x0203B1D8u, 0xEA000030u, 0x0A000030u} },
-    // US1.1
+      {0x0203B1D8u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B2ACu, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039E40u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x0203A054u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     { {0x0202F8ECu, 0xE3C3300Eu, 0xE383300Eu},
       {0x0202F8FCu, 0xE1A00000u, 0xEB002A5Cu},
       {0x0202F900u, 0xE1A00000u, 0xEB002A1Eu},
@@ -93,8 +103,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC38u, 0xE1A00000u, 0xEB0002E8u},
       {0x0202FB0Cu, 0xE1A00000u, 0xEB000333u},
       {0x020316B4u, 0xE1A00000u, 0xEBFFFC49u},
-      {0x0203B110u, 0xEA000030u, 0x0A000030u} },
-    // EU1.0
+      {0x0203B110u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B1E4u, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039D94u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x02039FA4u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     { {0x0202F8E4u, 0xE3C3300Eu, 0xE383300Eu},
       {0x0202F8F4u, 0xE1A00000u, 0xEB002A5Cu},
       {0x0202F8F8u, 0xE1A00000u, 0xEB002A1Eu},
@@ -107,8 +119,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC30u, 0xE1A00000u, 0xEB0002E8u},
       {0x0202FB04u, 0xE1A00000u, 0xEB000333u},
       {0x020316ACu, 0xE1A00000u, 0xEBFFFC49u},
-      {0x0203B108u, 0xEA000030u, 0x0A000030u} },
-    // EU1.1 (identical to US1.1)
+      {0x0203B108u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B1DCu, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039D8Cu, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x02039F9Cu, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     { {0x0202F8ECu, 0xE3C3300Eu, 0xE383300Eu},
       {0x0202F8FCu, 0xE1A00000u, 0xEB002A5Cu},
       {0x0202F900u, 0xE1A00000u, 0xEB002A1Eu},
@@ -121,8 +135,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x0202FC38u, 0xE1A00000u, 0xEB0002E8u},
       {0x0202FB0Cu, 0xE1A00000u, 0xEB000333u},
       {0x020316B4u, 0xE1A00000u, 0xEBFFFC49u},
-      {0x0203B110u, 0xEA000030u, 0x0A000030u} },
-    // KR1.0
+      {0x0203B110u, 0xEA000030u, 0x0A000030u},   // Bomb
+      {0x0203B1E4u, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x02039D94u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x02039FA4u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
     { {0x02034898u, 0xE3C3300Eu, 0xE383300Eu},
       {0x020348A8u, 0xE1A00000u, 0xEBFFD87Fu},
       {0x020348ACu, 0xE1A00000u, 0xEBFFD8E7u},
@@ -135,7 +151,10 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x02034148u, 0xE1A00000u, 0xEBFFFD88u},
       {0x020343C8u, 0xE1A00000u, 0xEBFFFCE8u},
       {0x0203288Cu, 0xE1A00000u, 0xEB0003B7u},
-      {0x02029D40u, 0xEA000031u, 0x0A000031u} },
+      {0x02029D40u, 0xEA000031u, 0x0A000031u},   // Bomb
+      {0x02029E18u, 0xE3B00000u, 0xE1B00FA0u},   // Boost
+      {0x0202AF14u, 0xE3B00000u, 0xE1B00FA0u},   // Cloak
+      {0x0202AD38u, 0xE3A00000u, 0xE1D00BB0u} }, // Double Damage
 };
 
 // hudToggle (`020DB090` family): low 5 bits mirror into main DISPCNT bits

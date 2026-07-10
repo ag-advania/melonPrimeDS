@@ -5,6 +5,8 @@
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
+// MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+
 #include "GPU_Soft.h"
 
 #include <memory>
@@ -17,7 +19,7 @@ class MetalRenderer2D;
 class MetalRenderer : public SoftRenderer
 {
 public:
-    explicit MetalRenderer(melonDS::NDS& nds) noexcept;
+    explicit MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer = false) noexcept;
     ~MetalRenderer() override;
 
     bool Init() override;
@@ -25,21 +27,22 @@ public:
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
     void VBlank() override;
+    void SwapBuffers() override;
     RendererOutput GetOutput() override;
 
 private:
-    struct MetalFinalState;
+    struct MetalOutputState;
 
-    std::unique_ptr<MetalFinalState> FinalState;
     std::unique_ptr<MetalRenderer2D> Metal2D_A;
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
     int ScaleFactor = 1;
+    bool ComputeRendererSelected = false;
+    // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
+    std::unique_ptr<MetalOutputState> OutputState;
 
     void ConfigureMetal2DMirror(void* preferredDevice);
-    bool EnsureFinalOutput();
-    bool EnsureFinalOutputForDevice(void* preferredDevice);
-    bool ComposeFinalOutputForCompletedFrame();
-    RendererOutput GetSoftwareFallbackOutput();
+    bool ConfigureMetalVisibleOutput(void* preferredDevice);
+    void ComposeMetalVisibleOutput();
 };
 
 } // namespace melonDS

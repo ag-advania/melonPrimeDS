@@ -41,7 +41,14 @@ public:
     void SetThreaded(bool threaded) noexcept;
     [[nodiscard]] bool IsThreaded() const noexcept;
     void SetScaleFactor(int scale) noexcept;
+    [[nodiscard]] bool ForceScaleFactor(int scale) noexcept;
+    void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
+
+    [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
+    [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
+    [[nodiscard]] int GetLastFrameRenderedScale() const noexcept;
+    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
 
     void RenderFrame() override;
     void FinishRendering() override;
@@ -49,6 +56,8 @@ public:
 
     u32* GetLine(int line) override;
     void* GetColorTargetTexture() const noexcept;
+    void* GetNativeResolveTexture() const noexcept;
+    void* GetCommandQueue() const noexcept;
     int GetTargetWidth() const noexcept;
     int GetTargetHeight() const noexcept;
     int GetScaleFactor() const noexcept;
@@ -63,7 +72,9 @@ private:
     SoftRenderer3D Delegate;
     std::unique_ptr<MetalState> State;
     int ScaleFactor = 1;
+    bool HiresCoordinates = false;
     bool BetterPolygons = false;
+    // MELONPRIME_METAL_RENDER_OPTIONS_V1
 
     bool CreateDeviceObjects();
     bool BuildClearPipeline();

@@ -327,6 +327,11 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
         }
         else
         {
+#ifdef MELONPRIME_DS
+            // MELONPRIME_RENDERER_INIT_FALLBACK_LOG_V1
+            Platform::Log(Platform::LogLevel::Error,
+                "Renderer init failed; falling back to software renderer\n");
+#endif
             // TODO: report error to platform
         }
     }

@@ -25,6 +25,8 @@
 #include "Config.h"
 #include "GPU.h"
 #include "main.h"
+#include "EmuInstance.h"
+#include "EmuThread.h"
 
 #include "VideoSettingsDialog.h"
 #include "ui_VideoSettingsDialog.h"
@@ -67,33 +69,41 @@ void VideoSettingsDialog::setEnabled()
     const bool softwareRenderer = renderer == renderer3D_Software;
     const bool openGLRenderer = renderer == renderer3D_OpenGL;
     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    const bool metalRenderer = renderer == renderer3D_Metal;
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    const bool metalRasterRenderer = renderer == renderer3D_Metal;
+    const bool metalComputeRenderer = renderer == renderer3D_MetalCompute;
+    const bool metalRenderer = metalRasterRenderer || metalComputeRenderer;
 #else
+    const bool metalRasterRenderer = false;
+    const bool metalComputeRenderer = false;
     const bool metalRenderer = false;
 #endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
-    // visible 3D output is still produced by its internal SoftRenderer3D
-    // delegate (see GPU3D_Metal.mm / GPU_Metal.mm and
-    // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
-    // "Software.Threaded" genuinely affects Metal's performance today.
-    // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
-    // all yet, so they stay OpenGL/Compute-only below rather than being
-    // exposed as if they already work for Metal.
-    ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
+    // This controls the Software renderer worker thread. Native Metal and
+    // Metal Compute submit on the emulation/render thread.
+    ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
-    ui->cbBetterPolygons->setEnabled(openGLRenderer);
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
+
+    // MELONPRIME_METAL_RENDER_OPTIONS_V1
+    // BetterPolygons is implemented by classic OpenGL and both visible Metal
+    // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+
+    // OpenGL Compute uses this directly. Metal and Metal Compute now forward
+    // it to the visible Metal raster path; Metal Compute also keeps its hidden
+    // compute mirror in the same coordinate mode.
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
 {
     ui->setupUi(this);
+    // MELONPRIME_METAL_COMPUTE_UI_LAYOUT_V2: rows 4/5 are reserved for native Metal renderers.
     setAttribute(Qt::WA_DeleteOnClose);
 
     emuInstance = ((MainWindow*)parent)->getEmuInstance();
@@ -112,14 +122,40 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
     grp3DRenderer->addButton(ui->rb3DOpenGL,   renderer3D_OpenGL);
     grp3DRenderer->addButton(ui->rb3DCompute,  renderer3D_OpenGLCompute);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_DYNAMIC_LAYOUT_V3
+    // Keep the .ui file platform-neutral. Only a MelonPrime macOS Metal build
+    // moves the existing controls and inserts the two native Metal choices.
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+
     rb3DMetal = new QRadioButton(ui->groupBox);
     rb3DMetal->setObjectName(QStringLiteral("rb3DMetal"));
-    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal (Experimental)"));
+    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal"));
     rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Experimental native Metal renderer for testing on macOS. Not the same as the OpenGL Compute renderer. Visual parity and performance are not final.</p></body></html>"));
-    ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
+        "<html><head/><body><p>Native Metal raster renderer for macOS.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DMetal, 4, 0, 1, 2);
     grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
+
+    rb3DMetalCompute = new QRadioButton(ui->groupBox);
+    rb3DMetalCompute->setObjectName(QStringLiteral("rb3DMetalCompute"));
+    rb3DMetalCompute->setText(MelonPrime::UiText::Tr("Metal Compute Shader"));
+    rb3DMetalCompute->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Experimental native Metal compute-shader renderer. The validated Metal raster renderer remains the visible fallback until compute rendering reaches full parity.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DMetalCompute, 5, 0, 1, 2);
+    grp3DRenderer->addButton(rb3DMetalCompute, renderer3D_MetalCompute);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, 6, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, 7, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, 8, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, 9, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, 9, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -150,7 +186,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->rb3DCompute->setEnabled(false);
 #endif
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // Metal-plan Phase 9 (tester UI exposure): visible only on Metal-capable
     // builds; enabled only once the runtime feature probe
     // (MelonPrimeMetalFeatureCheck.h) confirms this Mac/GPU/driver can
@@ -165,6 +201,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
     rb3DMetal->setEnabled(metalSupported);
     rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
+    rb3DMetalCompute->setEnabled(metalSupported);
+    rb3DMetalCompute->setToolTip(MelonPrime::UiText::Tr(
+        metalSupported
+            ? QStringLiteral("Experimental Metal compute-shader renderer. Compute stages run natively while the validated Metal raster output remains the safe visible source.")
+            : metalTooltip));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -176,7 +217,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // Tester-phase shortcut: Metal intentionally reuses 3D.GL.ScaleFactor
     // as the shared hardware-renderer internal scale. Rename/split only after
     // Metal becomes stable enough to need separate defaults/migration.
@@ -296,6 +337,14 @@ void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetInt("3D.GL.ScaleFactor", idx+1);
+
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_COMPUTE_LIVE_SCALE_V2
+    // Do not reconstruct Metal Compute at the temporary default 1x scale.
+    // updateVideoSettings() below applies RendererSettings to the existing
+    // renderer, which resizes the raster target, compute buffers and final
+    // Metal output as one live settings update.
+#endif
 
     setVsyncControlEnable(UsesGL());
 
