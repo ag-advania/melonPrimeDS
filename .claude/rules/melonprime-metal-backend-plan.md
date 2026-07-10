@@ -1631,6 +1631,14 @@ capture/3D special cases. The pass currently clears and draws the transparent pl
 its purpose is to prove the target/pipeline/viewport submission path before replacing the fragment
 body with the GL `2DLayerPreFS` decode logic.
 
+The first real BG shader slice replaces that transparent placeholder with a non-visible text BG
+decode scaffold for 16-color and 256-color tiled backgrounds. The fragment now consumes the shared
+LayerConfig buffer, the current layer index, raw BG VRAM, and the BG palette texture, then performs
+screen map lookup, tile fetch, horizontal/vertical tile flip, palette row selection, and color 0
+transparency before writing into the configured BG target. Affine, extended/bitmap, capture-backed
+bitmap parity, scanline scroll/rotation application, OBJ/window/blend, and final `RenderScreen`
+composition remain later Phase 4 work.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
@@ -1639,8 +1647,9 @@ the current correct output path.
 
 **Verified (2026-07-10, local Intel Mac):** `tools/macos/build_metal_test.command`,
 `cmake --build build-mac --parallel 4`, default-binary Metal strings check, `git diff --check`, and
-the standard config/inc/literal/scatter audits all pass. **Not verified:** visible hires output,
-because BG/OBJ/final Metal 2D drawing is intentionally not wired yet.
+the standard config/inc/literal/scatter audits all pass. The text BG shader string also compiles via
+a temporary Metal runtime library/pipeline harness. **Not verified:** visible hires output, because
+BG/OBJ/final Metal 2D drawing is intentionally not wired yet.
 
 ---
 
