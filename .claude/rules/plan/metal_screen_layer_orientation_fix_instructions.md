@@ -432,3 +432,12 @@ Status: implemented.
 - Verified with `git diff --check`.
 - Verified with `tools/macos/build_metal_test.command`.
 - Verified with `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"` (`ninja: no work to do` for the default build tree).
+
+### 2026-07-10 JST Phase 4 — available diagnostics / row-order assessment
+
+Status: completed with ROM-limited runtime coverage.
+
+- Checked the workspace for `.nds` / `.srl` files; none are present, so the required checker-layer visual run cannot be completed in this environment.
+- Confirmed the Metal test binary contains the new diagnostics: `metal presenter placement`, `metal 3d orientation`, and `verticalReverseCandidate`.
+- Confirmed the presenter still uses the existing `vertexStart:(screenKind[i] == 0 ? 0 : 6)` mapping; no blind layer inversion was made.
+- Result: there is not enough runtime evidence in this workspace to apply a 3D row-order inversion. Per the plan, the next code change must wait for checker/diff evidence instead of guessing.
