@@ -1,0 +1,30 @@
+--- a/src/GPU3D_MetalCompute.h
++++ b/src/GPU3D_MetalCompute.h
+@@ -39,6 +39,8 @@
+     u32* GetLine(int line) override;
+ 
+     void* GetColorTargetTexture() const noexcept;
++    void* GetNativeResolveTexture() const noexcept;
++    void* GetCommandQueue() const noexcept;
+     int GetTargetWidth() const noexcept;
+     int GetTargetHeight() const noexcept;
+     int GetScaleFactor() const noexcept;
+--- a/src/GPU3D_MetalCompute.mm
++++ b/src/GPU3D_MetalCompute.mm
+@@ -1852,6 +1852,16 @@
+     return RasterReference.GetColorTargetTexture();
+ }
+ 
++void* MetalComputeRenderer3D::GetNativeResolveTexture() const noexcept
++{
++    return RasterReference.GetNativeResolveTexture();
++}
++
++void* MetalComputeRenderer3D::GetCommandQueue() const noexcept
++{
++    return RasterReference.GetCommandQueue();
++}
++
+ int MetalComputeRenderer3D::GetTargetWidth() const noexcept
+ {
+     return RasterReference.GetTargetWidth();

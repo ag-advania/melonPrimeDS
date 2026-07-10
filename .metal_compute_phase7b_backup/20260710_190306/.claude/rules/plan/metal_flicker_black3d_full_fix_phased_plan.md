@@ -553,5 +553,3 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 - 2Dのみの画面はnearest拡大を維持し、3D画面のみ設定倍率のgeometry/texture edgeを保持。
 - triple-buffered `MTLTextureType2DArray`を非同期生成し、完了済みslotだけを`RendererOutput::MetalTexture`でpresenterへ公開。追加の通常経路`waitUntilCompleted`は導入しない。
 - presenter既存の2-layer Metal texture経路を使用するため、3x時の可視sourceは`768x576x2`となる。
-<!-- MELONPRIME_METAL_COMPUTE_PHASE7B_STATUS -->
-- 2026-07-10 Phase 7B: real-frame CPU span setup + Metal InterpSpans geometry + BinCombined + CalcOffsets + SortWorkを非同期3-slot mirrorとして接続。可視出力はraster referenceを維持。
