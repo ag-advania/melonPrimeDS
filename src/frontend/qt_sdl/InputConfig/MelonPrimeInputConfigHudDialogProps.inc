@@ -14,6 +14,7 @@ static const HudWidgetProp kSecDisableDefaultHud[] = {
     { "Hide HP", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_HP, 0, 0, 0, nullptr, nullptr },
     { "Hide Crosshair", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair, 0, 0, 0, nullptr, nullptr },
     { "Hide Bomb (Boost Ball kept)", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_Bomb, 0, 0, 0, nullptr, nullptr },
+    { "Hide Boost (Bomb HUD kept)", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_Boost, 0, 0, 0, nullptr, nullptr },
     { "— Score Row (per mode) —", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
     { "Hide Score: Battle", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle, 0, 0, 0, nullptr, nullptr },
     { "Hide Score: Survival", HWType::Bool, MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival, 0, 0, 0, nullptr, nullptr },

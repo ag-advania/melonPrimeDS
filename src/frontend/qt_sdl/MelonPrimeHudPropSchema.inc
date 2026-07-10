@@ -458,6 +458,7 @@
 #define MP_HUD_PROP_KEY_DisableDefaultHud_HP "Metroid.Visual.DisableDefaultHud.HP"
 #define MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair "Metroid.Visual.DisableDefaultHud.Crosshair"
 #define MP_HUD_PROP_KEY_DisableDefaultHud_Bomb "Metroid.Visual.DisableDefaultHud.Bomb"
+#define MP_HUD_PROP_KEY_DisableDefaultHud_Boost "Metroid.Visual.DisableDefaultHud.Boost"
 #define MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle "Metroid.Visual.DisableDefaultHud.ScoreBattle"
 #define MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival "Metroid.Visual.DisableDefaultHud.ScoreSurvival"
 #define MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter "Metroid.Visual.DisableDefaultHud.ScorePrimeHunter"
@@ -1035,6 +1036,7 @@
 #define MP_HUD_PROP_ROW_DisableDefaultHud_HP(X) X(DisableDefaultHud_HP, MP_HUD_PROP_KEY_DisableDefaultHud_HP, Bool, true, 0, 0, 0, "Hide HP", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_DisableDefaultHud_Crosshair(X) X(DisableDefaultHud_Crosshair, MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair, Bool, true, 0, 0, 0, "Hide Crosshair", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_DisableDefaultHud_Bomb(X) X(DisableDefaultHud_Bomb, MP_HUD_PROP_KEY_DisableDefaultHud_Bomb, Bool, true, 0, 0, 0, "Hide Bomb (Boost Ball kept)", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_DisableDefaultHud_Boost(X) X(DisableDefaultHud_Boost, MP_HUD_PROP_KEY_DisableDefaultHud_Boost, Bool, true, 0, 0, 0, "Hide Boost (Bomb HUD kept)", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_DisableDefaultHud_ScoreBattle(X) X(DisableDefaultHud_ScoreBattle, MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle, Bool, true, 0, 0, 0, "Hide Score: Battle", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_DisableDefaultHud_ScoreSurvival(X) X(DisableDefaultHud_ScoreSurvival, MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival, Bool, true, 0, 0, 0, "Hide Score: Survival", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_DisableDefaultHud_ScorePrimeHunter(X) X(DisableDefaultHud_ScorePrimeHunter, MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter, Bool, true, 0, 0, 0, "Hide Score: Prime Hunter", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1613,6 +1615,7 @@
     MP_HUD_PROP_ROW_DisableDefaultHud_HP(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_Crosshair(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_Bomb(X) \
+    MP_HUD_PROP_ROW_DisableDefaultHud_Boost(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScoreBattle(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScoreSurvival(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScorePrimeHunter(X) \
@@ -2198,6 +2201,7 @@
     MP_HUD_PROP_ROW_DisableDefaultHud_HP(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_Crosshair(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_Bomb(X) \
+    MP_HUD_PROP_ROW_DisableDefaultHud_Boost(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScoreBattle(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScoreSurvival(X) \
     MP_HUD_PROP_ROW_DisableDefaultHud_ScorePrimeHunter(X) \
