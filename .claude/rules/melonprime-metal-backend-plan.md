@@ -1646,6 +1646,13 @@ including flip handling for extended tiles, color 0 transparency for indexed for
 color alpha. Capture-backed bitmap types 7/8, scanline scroll/rotation application, OBJ/window/
 blend, and final `RenderScreen` composition remain later Phase 4 work.
 
+The sprite config scaffold now mirrors GLRenderer2D's `UpdateOAM()` into the Metal
+SpriteConfig buffer without consuming `GPU.OAMDirty` or changing the visible renderer path. It
+copies the OBJ rotscale table, filters sprites against the requested y range, resolves bounds,
+flip/rotscale mode, OBJ mode, priority, mosaic use, tile mapping, palette offset, and
+capture-backed bitmap sprite type. The actual sprite prerender shaders and OBJ layer composition
+are still pending.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
