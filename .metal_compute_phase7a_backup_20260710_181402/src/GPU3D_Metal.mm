@@ -5,7 +5,7 @@
 #import <Metal/Metal.h>
 
 #include "GPU3D_Metal.h"
-#include "GPU3D_TexcacheMetal.h"
+#include "GPU3D_Texcache.h"
 
 #include <chrono>
 #include <array>
@@ -262,6 +262,85 @@ MetalTextureReadbackSummary ReadbackBGRA8Texture(id<MTLCommandQueue> queue, id<M
 
 } // namespace
 
+// Phase 8 texturing (design doc S14 step 4). This loader is the Metal
+// equivalent of TexcacheOpenGLLoader (GPU3D_TexcacheOpenGL.h/.cpp): the
+// Texcache<> template (GPU3D_Texcache.h) owns 100% of the DS texture
+// format decode logic (direct color, 4x4-compressed, A3I5/A5I3/A5I3,
+// 2/4/8-bit paletted -- ConvertBitmapTexture/ConvertCompressedTexture/
+// ConvertAXIYTexture/ConvertNColorsTexture, all backend-agnostic C++
+// already compiled into `core` unconditionally) and only calls out to
+// this loader's 3 methods for actual GPU resource management. Decoded
+// texels arrive as RGB6A5 packed into 4 raw bytes/texel (outputFmt_RGB6A5
+// -- see GPU3D_Texcache.h), matching exactly what TexcacheOpenGLLoader
+// uploads as GL_RGBA8UI; the Metal equivalent is MTLPixelFormatRGBA8Uint,
+// sampled in the shader as texture2d_array<uint> and normalized by
+// /255,255,255,31 (5-bit alpha, not 8) to match 3DRenderFS.glsl.
+class TexcacheMetalLoader
+{
+public:
+    explicit TexcacheMetalLoader(id<MTLDevice> device) noexcept : Device(device) {}
+
+    id<MTLTexture> GenerateTexture(u32 width, u32 height, u32 layers)
+    {
+        // metal_phase8_execution_instructions.md Priority 2: one-shot proof
+        // that an integrated ROM run actually reaches native texture-array
+        // allocation (as distinct from the standalone-harness verification
+        // in §3k.1, which only ever allocated a synthetic array directly).
+        static bool loggedFirst = false;
+        if (!loggedFirst)
+        {
+            loggedFirst = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal texcache: first texture array allocation width=%u height=%u layers=%u\n",
+                width, height, layers);
+        }
+
+        MTLTextureDescriptor* desc =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
+        desc.textureType = MTLTextureType2DArray;
+        desc.arrayLength = layers;
+        desc.usage = MTLTextureUsageShaderRead;
+        desc.storageMode = MTLStorageModeShared;
+        return [Device newTextureWithDescriptor:desc];
+    }
+
+    void UploadTexture(id<MTLTexture> handle, u32 width, u32 height, u32 layer, void* data)
+    {
+        if (!handle)
+            return;
+
+        static bool loggedFirst = false;
+        if (!loggedFirst)
+        {
+            loggedFirst = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal texcache: first texture upload width=%u height=%u layer=%u\n",
+                width, height, layer);
+        }
+
+        [handle replaceRegion:MTLRegionMake2D(0, 0, width, height)
+                   mipmapLevel:0
+                         slice:layer
+                     withBytes:data
+                   bytesPerRow:width * 4
+                 bytesPerImage:width * height * 4];
+    }
+
+    void DeleteTexture(id<MTLTexture> /*handle*/)
+    {
+        // ARC releases the strong id<MTLTexture> ref held by Texcache<>'s
+        // own TexArrays<>/FreeTextures<> vectors when they are cleared/
+        // erased; there is no explicit destroy call in the Metal API.
+    }
+
+private:
+    id<MTLDevice> Device = nil;
+};
+
+using TexcacheMetal = Texcache<TexcacheMetalLoader, id<MTLTexture>>;
 
 struct MetalRenderer3D::MetalState
 {
