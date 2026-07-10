@@ -146,6 +146,7 @@ static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
 struct MetalRenderer2D::Metal2DState
 {
     id<MTLDevice> Device = nil;
+    id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> LayerLibrary = nil;
     id<MTLRenderPipelineState> LayerPipeline = nil;
     id<MTLBuffer> LayerVertexBuffer = nil;
@@ -234,6 +235,50 @@ bool MetalRenderer2D::BuildLayerPipeline() noexcept
     return true;
 }
 
+bool MetalRenderer2D::PrerenderConfiguredLayers() noexcept
+{
+    if (!State || !State->Queue || !State->LayerPipeline || !State->LayerVertexBuffer)
+        return false;
+
+    Metal2DState& state = *State;
+    id<MTLCommandBuffer> commandBuffer = [state.Queue commandBuffer];
+    if (!commandBuffer)
+        return false;
+
+    for (int layer = 0; layer < 4; layer++)
+    {
+        const auto& cfg = state.LayerConfig.bgConfig[layer];
+        id<MTLTexture> target = state.BGLayerTex[layer];
+        if (!target || cfg.type >= 6 || cfg.size[0] == 0 || cfg.size[1] == 0)
+            continue;
+
+        MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture = target;
+        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+
+        id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+        if (!encoder)
+            return false;
+
+        [encoder setRenderPipelineState:state.LayerPipeline];
+        [encoder setVertexBuffer:state.LayerVertexBuffer offset:0 atIndex:0];
+        [encoder setViewport:(MTLViewport){0.0,
+                                           0.0,
+                                           static_cast<double>(cfg.size[0]),
+                                           static_cast<double>(cfg.size[1]),
+                                           0.0,
+                                           1.0}];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+        [encoder endEncoding];
+    }
+
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    return commandBuffer.status == MTLCommandBufferStatusCompleted;
+}
+
 bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
 {
     if (!State)
@@ -266,6 +311,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         state.CompositorConfigBuffer = nil;
         state.Scale = 0;
         state.Device = preferredMetalDevice;
+        state.Queue = nil;
     }
 
     if (!state.Device)
@@ -277,9 +323,18 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
             return false;
         }
     }
+    if (!state.Queue)
+    {
+        state.Queue = [state.Device newCommandQueue];
+        if (!state.Queue)
+        {
+            std::fprintf(stderr, "[MelonPrime] metal 2d: failed to create command queue\n");
+            return false;
+        }
+    }
 
     ScaleFactor = std::max(1, scale);
-    if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
+    if (state.Queue && state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
         state.LayerLibrary && state.LayerPipeline && state.LayerVertexBuffer &&
         state.AllBGLayerTex[0] && state.VRAMTexBG && state.VRAMTexOBJ &&
         state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
@@ -481,6 +536,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     if (!RefreshCompositorConfig())
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to refresh initial compositor config for engine %u\n", GPU2D.Num);
+        return false;
+    }
+    if (!PrerenderConfiguredLayers())
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to prerender initial BG layer scaffold for engine %u\n", GPU2D.Num);
         return false;
     }
 
@@ -1034,6 +1094,7 @@ void MetalRenderer2D::Reset() noexcept
     if (!State)
         return;
 
+    State->Queue = nil;
     State->LayerLibrary = nil;
     State->LayerPipeline = nil;
     State->LayerVertexBuffer = nil;
