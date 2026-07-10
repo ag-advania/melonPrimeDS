@@ -410,3 +410,14 @@ Status: implemented.
 - Replaced the broad Metal-NDC comment with the source-boundary rule from this plan: physical presenter placement stays global/GL-compatible; upside-down source textures must be fixed at readback/final-pass/source sampling boundaries.
 - Verified with `tools/macos/build_metal_test.command`.
 - Verified with `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"`.
+
+### 2026-07-10 JST Phase 2 — presenter placement diagnostic
+
+Status: implemented.
+
+- Added a local `MELONPRIME_METAL_DIAG=1` gate in `ScreenPanelMetal` for presenter-only diagnostics.
+- Added one-shot placement logging after a valid renderer output is available and before drawable acquisition/draw.
+- The log records `numScreens`, `screenKind[0..1]`, and both frontend `screenMatrix[]` affine transforms so checker-layer results can be tied to physical top/bottom placement without guessing or changing `screenKind` semantics.
+- Verified with `git diff --check`.
+- Verified with `tools/macos/build_metal_test.command`.
+- Verified with `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"` (`ninja: no work to do` for the default build tree).
