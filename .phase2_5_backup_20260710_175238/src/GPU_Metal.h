@@ -28,11 +28,18 @@ public:
     RendererOutput GetOutput() override;
 
 private:
+    struct MetalFinalState;
+
+    std::unique_ptr<MetalFinalState> FinalState;
     std::unique_ptr<MetalRenderer2D> Metal2D_A;
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
     int ScaleFactor = 1;
 
     void ConfigureMetal2DMirror(void* preferredDevice);
+    bool EnsureFinalOutput();
+    bool EnsureFinalOutputForDevice(void* preferredDevice);
+    bool ComposeFinalOutputForCompletedFrame();
+    RendererOutput GetSoftwareFallbackOutput();
 };
 
 } // namespace melonDS
