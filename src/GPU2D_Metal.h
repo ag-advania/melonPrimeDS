@@ -28,6 +28,7 @@ public:
     bool Configure(void* preferredDevice, int scale) noexcept;
     bool UploadRawVRAMInputs() noexcept;
     bool UploadPaletteInputs() noexcept;
+    bool RefreshLayerConfig() noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;

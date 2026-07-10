@@ -1603,6 +1603,12 @@ but the class now has the same protected `GPU` access boundary as the real GL/So
 Using that boundary, the scaffold performs an initial full BG/OBJ palette upload from main palette
 RAM plus BG/OBJ extended palettes into the `R16Uint` palette textures.
 
+The layer-config scaffold now mirrors GLRenderer2D's `UpdateLayerConfig()` decisions into Metal CPU
+state and the shared LayerConfig buffer: BG mode -> layer type mapping, text/affine/extended/large
+sizes, palette offsets, clamp flags, active BG render-target selection from the 22-texture pool,
+VRAM range tracking, and display-capture-backed direct-color bitmap detection. No BG prerender draw
+is issued yet; this only prepares the exact config data that the first BG MSL pass will consume.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
