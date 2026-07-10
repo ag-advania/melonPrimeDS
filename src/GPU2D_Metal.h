@@ -30,6 +30,7 @@ public:
     bool UploadPaletteInputs() noexcept;
     bool RefreshLayerConfig() noexcept;
     bool RefreshScanlineConfig(int line) noexcept;
+    bool RefreshCompositorConfig() noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;

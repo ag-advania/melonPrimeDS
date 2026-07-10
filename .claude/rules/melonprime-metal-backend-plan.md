@@ -1615,6 +1615,11 @@ ScanlineConfig buffer. This function is intentionally not called by the current 
 because it mutates the GPU2D window-active latch exactly like GL's scanline path and must only run
 once Metal 2D owns scanline progression.
 
+The compositor-config scaffold now mirrors GLRenderer2D's final per-engine layer priorities, OBJ
+enable, BG0 3D enable, blend mode, and EVA/EVB/EVY coefficients into the shared CompositorConfig
+buffer. Unlike the scanline refresh, this does not mutate GPU2D latch state, so Configure performs
+an initial refresh for the non-visible mirror.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
