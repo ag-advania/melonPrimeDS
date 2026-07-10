@@ -3,7 +3,6 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 
 // MELONPRIME_METAL_STABILITY_SCALE_PERF_V1
-// MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 
 #import <Metal/Metal.h>
 
@@ -1104,16 +1103,6 @@ u32* MetalRenderer3D::GetLine(int line)
 void* MetalRenderer3D::GetColorTargetTexture() const noexcept
 {
     return State ? (__bridge void*)State->ColorTarget : nullptr;
-}
-
-void* MetalRenderer3D::GetNativeResolveTexture() const noexcept
-{
-    return State ? (__bridge void*)State->NativeResolveTarget : nullptr;
-}
-
-void* MetalRenderer3D::GetCommandQueue() const noexcept
-{
-    return State ? (__bridge void*)State->CommandQueue : nullptr;
 }
 
 int MetalRenderer3D::GetTargetWidth() const noexcept
