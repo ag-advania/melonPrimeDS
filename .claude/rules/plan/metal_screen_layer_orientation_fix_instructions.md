@@ -441,3 +441,11 @@ Status: completed with ROM-limited runtime coverage.
 - Confirmed the Metal test binary contains the new diagnostics: `metal presenter placement`, `metal 3d orientation`, and `verticalReverseCandidate`.
 - Confirmed the presenter still uses the existing `vertexStart:(screenKind[i] == 0 ? 0 : 6)` mapping; no blind layer inversion was made.
 - Result: there is not enough runtime evidence in this workspace to apply a 3D row-order inversion. Per the plan, the next code change must wait for checker/diff evidence instead of guessing.
+
+### 2026-07-10 JST Phase 5 — isolated 3D-source fix decision
+
+Status: completed as no-code-change.
+
+- No 3D-source row-order or final-pass sampling inversion was applied because Phase 4 did not produce ROM/runtime evidence of a vertical source reversal.
+- This preserves the required separation: global presenter placement remains GL-compatible, layer routing remains byte-compatible with `ScreenPanelGL`, and any future 3D-only orientation fix must be driven by `MELONPRIME_METAL_DIAG=1` / `MELONPRIME_METAL_GETLINE_DIFF=1` output.
+- The next valid trigger for code change is a checker/diff result showing `verticalReverseCandidate=1` or an equivalent native-final-pass sampling mismatch isolated to the 3D source.
