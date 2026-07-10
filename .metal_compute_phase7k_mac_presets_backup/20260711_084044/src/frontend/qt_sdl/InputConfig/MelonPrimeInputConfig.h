@@ -106,9 +106,8 @@ private slots:
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();
-#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
     void on_metroidSetVideoQualityToMetal_clicked();
-    void on_metroidSetVideoQualityToMetalCompute_clicked();
 #endif
 
     void on_cbMetroidEnableSnapTap_stateChanged(int state);
@@ -126,11 +125,8 @@ private slots:
 private:
     Ui::MelonPrimeInputConfig* ui;
     EmuInstance* emuInstance;
-#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
     QPushButton* metroidSetVideoQualityToMetal = nullptr;
-    QPushButton* metroidSetVideoQualityToMetalCompute = nullptr;
-    void refreshMacMetalPresetText();
-    // MELONPRIME_MAC_METAL_PRESETS_V2
 #endif
 
     // Enable only the spinboxes relevant to the selected Low HP Warning mode.

@@ -57222,5 +57222,4 @@ constexpr Translation kTranslations[] = {
             {MenuLangId::Lithuanian, "Slėpti dvigubos žalos HUD"},
         }
     },
-#include "MelonPrimeLocalizationMetalVideoPresets.inc"
 };
