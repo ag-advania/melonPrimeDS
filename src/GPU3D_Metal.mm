@@ -1085,11 +1085,16 @@ u32* MetalRenderer3D::GetLine(int line)
     if (MetalGetLineDiffEnabled() && softLine)
     {
         static uint64_t diffPixels = 0;
+        static uint64_t reverseDiffPixels = 0;
         static uint64_t totalPixels = 0;
+        const u32* reverseRawLine =
+            &State->NativeLineBuffer[static_cast<size_t>(191 - line) * 256u];
         for (int x = 0; x < 256; x++)
         {
             if (rawline[x] != softLine[x])
                 diffPixels++;
+            if (reverseRawLine[x] != softLine[x])
+                reverseDiffPixels++;
         }
         totalPixels += 256;
         if (line == 191)
@@ -1098,13 +1103,20 @@ u32* MetalRenderer3D::GetLine(int line)
             frames++;
             if (frames <= 3 || (frames % 60) == 0)
             {
+                const bool verticalReverseCandidate =
+                    reverseDiffPixels < diffPixels && reverseDiffPixels < (totalPixels / 4);
                 std::fprintf(stderr,
-                    "[MelonPrime] metal getline diff: frames=%llu diffPixels=%llu totalPixels=%llu\n",
+                    "[MelonPrime] metal getline diff: frames=%llu diffPixels=%llu "
+                    "verticalReverseDiffPixels=%llu totalPixels=%llu "
+                    "verticalReverseCandidate=%u\n",
                     static_cast<unsigned long long>(frames),
                     static_cast<unsigned long long>(diffPixels),
-                    static_cast<unsigned long long>(totalPixels));
+                    static_cast<unsigned long long>(reverseDiffPixels),
+                    static_cast<unsigned long long>(totalPixels),
+                    verticalReverseCandidate ? 1u : 0u);
             }
             diffPixels = 0;
+            reverseDiffPixels = 0;
             totalPixels = 0;
         }
     }
@@ -2009,6 +2021,32 @@ bool MetalRenderer3D::ReadbackNativeColorTargetToLineBuffer()
         }
     }
     State->NativeLineReady = true;
+    if (MetalDiagEnabled())
+    {
+        uint32_t topRowNonzero = 0;
+        uint32_t bottomRowNonzero = 0;
+        const u32* topRow = State->NativeLineBuffer.data();
+        const u32* bottomRow = &State->NativeLineBuffer[191u * 256u];
+        for (int x = 0; x < 256; x++)
+        {
+            if (topRow[x] & 0x00FFFFFFu)
+                topRowNonzero++;
+            if (bottomRow[x] & 0x00FFFFFFu)
+                bottomRowNonzero++;
+        }
+
+        static uint64_t orientationFrames = 0;
+        orientationFrames++;
+        if (orientationFrames <= 3 || (orientationFrames % 60) == 0)
+        {
+            std::fprintf(stderr,
+                "[MelonPrime] metal 3d orientation: frame=%llu "
+                "topRowNonzero=%u bottomRowNonzero=%u source=native/readback/getline\n",
+                static_cast<unsigned long long>(orientationFrames),
+                topRowNonzero,
+                bottomRowNonzero);
+        }
+    }
     return true;
 }
 
