@@ -6,7 +6,11 @@
 remaining Phase 8/9 work are now driven by the dedicated phased plan
 [plan/metal_flicker_black3d_full_fix_phased_plan.md](plan/metal_flicker_black3d_full_fix_phased_plan.md)
 (clear-pass depth bug, final-composer routing removal, GetLine integration, GLRenderer-mirror hires).
-Read that plan first; this file remains the phase-tracked history.
+Read that plan first; this file remains the phase-tracked history. Its 2026-07-10 #2 audit also
+root-caused the reported both-screens vertical flip (CAMetalLayer `geometryFlipped` on Qt's flipped
+NSView + native 3D target row order vs GL's bottom-left origin — fix as that plan's Phase 2.5), and
+per user direction the **Metal compute-shader renderer is promoted from §4's "Phase 10 stretch" to
+the formal end goal** (that plan's Phase 7, prerequisite: GLRenderer-mirror Phase 4).
 **Status:** In progress, executing all phases in order per explicit user direction (2026-07-09):
 commit + push after each phase, progress recorded here. This session's sandbox turned out to be a
 **real Intel Mac** (`Intel Iris Plus Graphics 655`, Metal 3, macOS 15.7.7 — see §5) with a display,
