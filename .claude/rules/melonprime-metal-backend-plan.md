@@ -1620,6 +1620,11 @@ enable, BG0 3D enable, blend mode, and EVA/EVB/EVY coefficients into the shared 
 buffer. Unlike the scanline refresh, this does not mutate GPU2D latch state, so Configure performs
 an initial refresh for the non-visible mirror.
 
+The first BG prerender pipeline scaffold now compiles an MSL library, RGBA8 render pipeline, and
+quad vertex buffer for the future `PrerenderLayer()` equivalent. The fragment shader is still a
+transparent placeholder; this commit verifies Metal resource ownership and pipeline creation before
+the BG text/affine/bitmap decode logic is ported.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
