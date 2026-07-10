@@ -2,7 +2,6 @@
 // MELONPRIME_METAL_COMPUTE_TILE_MEMORY_V4
 // MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
 // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
-// MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
 // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -2110,15 +2109,7 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
     if (State)
         State->RequestedScaleFactor = static_cast<uint32_t>(scale);
 
-    // Metal Compute is the only path with a nested visible raster renderer.
-    // Verify and force the physical target, not only the cached scale integer.
-    if (!RasterReference.ForceScaleFactor(scale))
-    {
-        if (State)
-            State->SpanBinReady = false;
-        return;
-    }
-
+    RasterReference.SetScaleFactor(scale);
     if (!State || !State->Device)
         return;
 
@@ -2129,7 +2120,7 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
         RasterReference.GetTargetHeight() != expectedHeight)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute scale sync: forced mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
+            "[MelonPrime] metal compute scale sync: runtime mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
             scale, RasterReference.GetScaleFactor(),
             RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
             expectedWidth, expectedHeight);
@@ -2151,7 +2142,7 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
     }
 
     std::fprintf(stderr,
-        "[MelonPrime] metal compute scale sync: applied forced scale=%d target=%dx%d compute=%ux%u\n",
+        "[MelonPrime] metal compute scale sync: applied scale=%d target=%dx%d compute=%ux%u\n",
         scale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
         State->ScreenWidth, State->ScreenHeight);
 }
@@ -2742,22 +2733,14 @@ void MetalComputeRenderer3D::RenderFrame()
 {
     @autoreleasepool
     {
-        const int requestedScale = State
-            ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
-            : 1;
-        if (RasterReference.GetScaleFactor() != requestedScale ||
-            RasterReference.GetTargetWidth() != 256 * requestedScale ||
-            RasterReference.GetTargetHeight() != 192 * requestedScale)
-        {
-            RasterReference.ForceScaleFactor(requestedScale);
-        }
-
-        // Visible output has priority. Latch and render the validated Metal
-        // raster frame before preparing/submitting the non-visible compute mirror.
-        RasterReference.RenderFrame();
-
         if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
             SubmitRealFrameSpanBin();
+
+        // Phase 7F validates the real-frame texture-variant contract in
+        // addition to the non-visible no-texture DepthBlend path. Until textured
+        // Rasterise and FinalPass achieve pixel parity,
+        // the validated Metal raster renderer remains the visible source.
+        RasterReference.RenderFrame();
     }
 }
 
@@ -2804,21 +2787,6 @@ int MetalComputeRenderer3D::GetTargetHeight() const noexcept
 int MetalComputeRenderer3D::GetScaleFactor() const noexcept
 {
     return RasterReference.GetScaleFactor();
-}
-
-bool MetalComputeRenderer3D::LastFrameUsesHighResolution3D() const noexcept
-{
-    return RasterReference.LastFrameUsesHighResolution3D();
-}
-
-uint32_t MetalComputeRenderer3D::GetLastFrameEngineALayer() const noexcept
-{
-    return RasterReference.GetLastFrameEngineALayer();
-}
-
-int MetalComputeRenderer3D::GetLastFrameRenderedScale() const noexcept
-{
-    return RasterReference.GetLastFrameRenderedScale();
 }
 
 Metal3DDiagnostics MetalComputeRenderer3D::GetLastDiagnostics() const noexcept

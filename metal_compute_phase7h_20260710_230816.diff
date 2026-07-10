@@ -1,0 +1,346 @@
+--- a/src/GPU3D_Metal.h
++++ b/src/GPU3D_Metal.h
+@@ -41,7 +41,13 @@
+     void SetThreaded(bool threaded) noexcept;
+     [[nodiscard]] bool IsThreaded() const noexcept;
+     void SetScaleFactor(int scale) noexcept;
++    [[nodiscard]] bool ForceScaleFactor(int scale) noexcept;
+     void SetBetterPolygons(bool betterPolygons) noexcept;
++
++    [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
++    [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
++    [[nodiscard]] int GetLastFrameRenderedScale() const noexcept;
++    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
+ 
+     void RenderFrame() override;
+     void FinishRendering() override;
+--- a/src/GPU3D_Metal.mm
++++ b/src/GPU3D_Metal.mm
+@@ -333,6 +333,11 @@
+     std::unique_ptr<TexcacheMetal> Texcache; // constructed once Device exists
+     Metal3DDiagnostics LastDiagnostics;
+     bool LoggedNativeZeroAfterDraw = false;
++
++    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
++    bool LastFrameUseHiRes3D = false;
++    uint32_t LastFrameEngineALayer = 1;
++    int LastFrameRenderedScale = 1;
+ };
+ 
+ // Maps one axis of the DS TexRepeat 4-bit field to an index into
+@@ -907,12 +912,15 @@
+ 
+ void MetalRenderer3D::SetThreaded(bool threaded) noexcept
+ {
++    // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
+     if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
+         Delegate.SetThreaded(threaded);
+ }
+ 
+ bool MetalRenderer3D::IsThreaded() const noexcept
+ {
++    if (MetalUseNativeGetLine() && !MetalGetLineDiffEnabled())
++        return false;
+     return Delegate.IsThreaded();
+ }
+ 
+@@ -931,6 +939,32 @@
+         ResizeTargets();
+ }
+ 
++bool MetalRenderer3D::ForceScaleFactor(int scale) noexcept
++{
++    scale = std::max(1, scale);
++    ScaleFactor = scale;
++    if (!State || !State->Device)
++        return true;
++
++    const int expectedWidth = 256 * scale;
++    const int expectedHeight = 192 * scale;
++    if (State->ColorTarget &&
++        static_cast<int>(State->ColorTarget.width) == expectedWidth &&
++        static_cast<int>(State->ColorTarget.height) == expectedHeight)
++    {
++        return true;
++    }
++
++    std::fprintf(stderr,
++        "[MelonPrime] metal renderer3D: forcing target scale=%d expected=%dx%d actual=%zux%zu\n",
++        scale,
++        expectedWidth,
++        expectedHeight,
++        State->ColorTarget ? static_cast<size_t>(State->ColorTarget.width) : 0u,
++        State->ColorTarget ? static_cast<size_t>(State->ColorTarget.height) : 0u);
++    return ResizeTargets();
++}
++
+ void MetalRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
+ {
+     BetterPolygons = betterPolygons;
+@@ -940,6 +974,22 @@
+ {
+     @autoreleasepool
+     {
++        if (State)
++        {
++            const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
++            const bool engineA3DEnabled =
++                (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
++            State->LastFrameEngineALayer = GPU.ScreenSwap ? 0u : 1u;
++            State->LastFrameRenderedScale = std::max(1, ScaleFactor);
++            State->LastFrameUseHiRes3D =
++                State->LastFrameRenderedScale > 1 &&
++                GPU.ScreensEnabled &&
++                displayModeA == 1u &&
++                engineA3DEnabled &&
++                GPU3D.RenderNumPolygons > 0 &&
++                !GPU3D.AbortFrame;
++        }
++
+         MetalPerfFrame perfFrame;
+         MetalPerfFrame* previousPerfFrame = gCurrentMetalPerfFrame;
+         const bool perfEnabled = MetalPerfEnabled();
+@@ -1129,6 +1179,21 @@
+ int MetalRenderer3D::GetScaleFactor() const noexcept
+ {
+     return ScaleFactor;
++}
++
++bool MetalRenderer3D::LastFrameUsesHighResolution3D() const noexcept
++{
++    return State && State->LastFrameUseHiRes3D;
++}
++
++uint32_t MetalRenderer3D::GetLastFrameEngineALayer() const noexcept
++{
++    return State ? State->LastFrameEngineALayer : 1u;
++}
++
++int MetalRenderer3D::GetLastFrameRenderedScale() const noexcept
++{
++    return State ? State->LastFrameRenderedScale : std::max(1, ScaleFactor);
+ }
+ 
+ Metal3DDiagnostics MetalRenderer3D::GetLastDiagnostics() const noexcept
+--- a/src/GPU3D_MetalCompute.h
++++ b/src/GPU3D_MetalCompute.h
+@@ -47,6 +47,10 @@
+     int GetTargetWidth() const noexcept;
+     int GetTargetHeight() const noexcept;
+     int GetScaleFactor() const noexcept;
++    [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
++    [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
++    [[nodiscard]] int GetLastFrameRenderedScale() const noexcept;
++    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
+     Metal3DDiagnostics GetLastDiagnostics() const noexcept;
+ 
+     void SetupRenderThread();
+--- a/src/GPU3D_MetalCompute.mm
++++ b/src/GPU3D_MetalCompute.mm
+@@ -2,6 +2,7 @@
+ // MELONPRIME_METAL_COMPUTE_TILE_MEMORY_V4
+ // MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
+ // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
++// MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
+ // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
+@@ -2109,7 +2110,15 @@
+     if (State)
+         State->RequestedScaleFactor = static_cast<uint32_t>(scale);
+ 
+-    RasterReference.SetScaleFactor(scale);
++    // Metal Compute is the only path with a nested visible raster renderer.
++    // Verify and force the physical target, not only the cached scale integer.
++    if (!RasterReference.ForceScaleFactor(scale))
++    {
++        if (State)
++            State->SpanBinReady = false;
++        return;
++    }
++
+     if (!State || !State->Device)
+         return;
+ 
+@@ -2120,7 +2129,7 @@
+         RasterReference.GetTargetHeight() != expectedHeight)
+     {
+         std::fprintf(stderr,
+-            "[MelonPrime] metal compute scale sync: runtime mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
++            "[MelonPrime] metal compute scale sync: forced mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
+             scale, RasterReference.GetScaleFactor(),
+             RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
+             expectedWidth, expectedHeight);
+@@ -2142,7 +2151,7 @@
+     }
+ 
+     std::fprintf(stderr,
+-        "[MelonPrime] metal compute scale sync: applied scale=%d target=%dx%d compute=%ux%u\n",
++        "[MelonPrime] metal compute scale sync: applied forced scale=%d target=%dx%d compute=%ux%u\n",
+         scale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
+         State->ScreenWidth, State->ScreenHeight);
+ }
+@@ -2733,14 +2742,22 @@
+ {
+     @autoreleasepool
+     {
++        const int requestedScale = State
++            ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
++            : 1;
++        if (RasterReference.GetScaleFactor() != requestedScale ||
++            RasterReference.GetTargetWidth() != 256 * requestedScale ||
++            RasterReference.GetTargetHeight() != 192 * requestedScale)
++        {
++            RasterReference.ForceScaleFactor(requestedScale);
++        }
++
++        // Visible output has priority. Latch and render the validated Metal
++        // raster frame before preparing/submitting the non-visible compute mirror.
++        RasterReference.RenderFrame();
++
+         if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
+             SubmitRealFrameSpanBin();
+-
+-        // Phase 7F validates the real-frame texture-variant contract in
+-        // addition to the non-visible no-texture DepthBlend path. Until textured
+-        // Rasterise and FinalPass achieve pixel parity,
+-        // the validated Metal raster renderer remains the visible source.
+-        RasterReference.RenderFrame();
+     }
+ }
+ 
+@@ -2787,6 +2804,21 @@
+ int MetalComputeRenderer3D::GetScaleFactor() const noexcept
+ {
+     return RasterReference.GetScaleFactor();
++}
++
++bool MetalComputeRenderer3D::LastFrameUsesHighResolution3D() const noexcept
++{
++    return RasterReference.LastFrameUsesHighResolution3D();
++}
++
++uint32_t MetalComputeRenderer3D::GetLastFrameEngineALayer() const noexcept
++{
++    return RasterReference.GetLastFrameEngineALayer();
++}
++
++int MetalComputeRenderer3D::GetLastFrameRenderedScale() const noexcept
++{
++    return RasterReference.GetLastFrameRenderedScale();
+ }
+ 
+ Metal3DDiagnostics MetalComputeRenderer3D::GetLastDiagnostics() const noexcept
+--- a/src/GPU_Metal.mm
++++ b/src/GPU_Metal.mm
+@@ -4,6 +4,7 @@
+ 
+ // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+ // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
++// MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
+ 
+ #import <Metal/Metal.h>
+ 
+@@ -68,6 +69,33 @@
+ {
+     id<MTLTexture> texture = (__bridge id<MTLTexture>)Metal3DColorTarget(renderer);
+     return texture ? (__bridge void*)texture.device : nullptr;
++}
++
++bool Metal3DLastFrameUsesHighResolution3D(Renderer3D* renderer) noexcept
++{
++    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
++        return compute->LastFrameUsesHighResolution3D();
++    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
++        return raster->LastFrameUsesHighResolution3D();
++    return false;
++}
++
++uint32_t Metal3DLastFrameEngineALayer(Renderer3D* renderer) noexcept
++{
++    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
++        return compute->GetLastFrameEngineALayer();
++    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
++        return raster->GetLastFrameEngineALayer();
++    return 1u;
++}
++
++int Metal3DLastFrameRenderedScale(Renderer3D* renderer) noexcept
++{
++    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
++        return compute->GetLastFrameRenderedScale();
++    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
++        return raster->GetLastFrameRenderedScale();
++    return 1;
+ }
+ 
+ bool Metal3DIsThreaded(Renderer3D* renderer) noexcept
+@@ -577,19 +605,17 @@
+             return;
+         commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
+ 
+-        const uint32_t engineALayer = GPU.ScreenSwap ? 0u : 1u;
+-        const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+-        const bool engineA3DEnabled =
+-            (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
+-        const bool rendered3DGeometry = GPU.GPU3D.RenderNumPolygons > 0;
+-        // The live 2D DISPCNT can move to the next frame before SwapBuffers()
+-        // composes the previous one. RenderNumPolygons is the latched 3D-frame
+-        // signal, so use it as a safe fallback instead of silently publishing
+-        // only the native CPU composite at scales above 1x.
++        // Consume the state captured by the renderer that produced high3D.
++        // Metal Compute adds a non-visible stage, so live GPU registers may
++        // already describe a different frame by the time composition runs.
++        const uint32_t engineALayer =
++            Metal3DLastFrameEngineALayer(Rend3D.get());
++        const int renderedScale =
++            Metal3DLastFrameRenderedScale(Rend3D.get());
+         const uint32_t useHighResolution3D =
+-            (OutputState->Scale > 1 && GPU.ScreensEnabled &&
+-             displayModeA == 1u &&
+-             (engineA3DEnabled || rendered3DGeometry)) ? 1u : 0u;
++            (OutputState->Scale > 1 &&
++             renderedScale == OutputState->Scale &&
++             Metal3DLastFrameUsesHighResolution3D(Rend3D.get())) ? 1u : 0u;
+ 
+         for (uint32_t layer = 0; layer < 2; layer++)
+         {
+@@ -663,13 +689,13 @@
+         {
+             OutputState->LoggedVisibleOutput = true;
+             std::fprintf(stderr,
+-                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d size=%zux%zu engineALayer=%u high3D=%u polygons=%u\n",
++                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d renderedScale=%d size=%zux%zu engineALayer=%u high3D=%u\n",
+                 ComputeRendererSelected ? "MetalCompute" : "Metal",
+                 OutputState->Scale,
++                renderedScale,
+                 static_cast<size_t>(OutputState->Width),
+                 static_cast<size_t>(OutputState->Height),
+-                engineALayer, useHighResolution3D,
+-                GPU.GPU3D.RenderNumPolygons);
++                engineALayer, useHighResolution3D);
+         }
+     }
+ }
+--- a/src/frontend/qt_sdl/VideoSettingsDialog.cpp
++++ b/src/frontend/qt_sdl/VideoSettingsDialog.cpp
+@@ -80,15 +80,10 @@
+ #endif
+     ui->cbGLDisplay->setEnabled(softwareRenderer);
+ #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+-    // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
+-    // visible 3D output is still produced by its internal SoftRenderer3D
+-    // delegate (see GPU3D_Metal.mm / GPU_Metal.mm and
+-    // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
+-    // "Software.Threaded" genuinely affects Metal's performance today.
+-    // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
+-    // all yet, so they stay OpenGL/Compute-only below rather than being
+-    // exposed as if they already work for Metal.
+-    ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
++    // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
++    // This controls the Software renderer worker thread. Native Metal and
++    // Metal Compute submit on the emulation/render thread.
++    ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
+ #else
+     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
+ #endif
