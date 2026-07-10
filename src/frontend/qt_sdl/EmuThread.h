@@ -37,6 +37,7 @@
 #ifdef MELONPRIME_DS
 // Forward declaration
 namespace MelonPrime { class MelonPrimeCore; }
+#include "MelonPrimeVideoBackend.h"
 #endif
 
 namespace melonDS
@@ -223,6 +224,15 @@ private:
     double perfCountsSec;
 
     bool useOpenGL;
+#ifdef MELONPRIME_DS
+    // Metal-plan Phases 3/4 (.claude/rules/melonprime-metal-backend-plan.md):
+    // useOpenGL remains the "actual GL context is live" flag for existing
+    // GL call sites; videoBackend additionally distinguishes NativeQt from
+    // Metal when no GL context exists, so the emu thread can avoid scheduling
+    // Qt repaint signals for presenter-driven backends.
+    MelonPrime::VideoBackend::PresentationBackend videoBackend =
+        MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+#endif
     int videoRenderer;
     bool videoSettingsDirty;
 };

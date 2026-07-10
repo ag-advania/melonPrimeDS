@@ -50,10 +50,12 @@ on all platforms; `High2` remains fully available on Windows/Linux.
   the analogous pattern in input code).
 - `VideoSettingsDialog.cpp` — already had the equivalent restriction for its
   own compute-renderer radio button; not part of this change.
-- No normalization of an already-saved `3D.Renderer = renderer3D_OpenGLCompute`
-  config value on macOS. If a user's TOML predates this restriction (e.g.
-  copied from a Windows profile), the preset button simply cannot select the
-  compute renderer going forward, but an existing stored value is left as-is.
-  If this needs closing, do it as a config-normalization change (e.g. near
-  renderer creation / `onUpdateVideoSettings`) in a separate commit — it's a
-  broader behavior change than a UI gate.
+- ~~No normalization of an already-saved `3D.Renderer = renderer3D_OpenGLCompute`
+  config value on macOS...~~ **Closed 2026-07-09** by
+  [melonprime-metal-backend-plan.md](melonprime-metal-backend-plan.md) Phase 0
+  (`MelonPrimeVideoBackend::NormalizeRendererForPlatform()`, wired into
+  `EmuThread::updateRenderer()`'s existing `.inc` hook and
+  `EmuInstance::usesOpenGL()`). A stale/imported/hand-edited
+  `3D.Renderer=renderer3D_OpenGLCompute` value on macOS now normalizes to
+  regular OpenGL before it ever reaches `nds->SetRenderer(...)`, instead of
+  only being blocked at the UI-selection level described above.

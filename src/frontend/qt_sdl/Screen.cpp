@@ -1252,8 +1252,11 @@ void ScreenPanelNative::drawScreen()
     auto nds = emuInstance->getNDS();
     assert(nds != nullptr);
 
+    const RendererOutput output = nds->GPU.GetRendererOutput();
     bufferLock.lock();
-    hasBuffers = nds->GPU.GetFramebuffers(&topBuffer, &bottomBuffer);
+    hasBuffers = (output.Kind == RendererOutputKind::CpuBgra);
+    topBuffer = hasBuffers ? output.Top : nullptr;
+    bottomBuffer = hasBuffers ? output.Bottom : nullptr;
     bufferLock.unlock();
 }
 
@@ -1610,8 +1613,8 @@ void ScreenPanelGL::drawScreen()
         glUseProgram(screenShaderProgram);
         glUniform2f(screenShaderScreenSizeULoc, w / factor, h / factor);
 
-        void* topbuf; void* bottombuf;
-        bool hasCPUBuffers = nds->GPU.GetFramebuffers(&topbuf, &bottombuf);
+        const RendererOutput output = nds->GPU.GetRendererOutput();
+        const bool hasCPUBuffers = (output.Kind == RendererOutputKind::CpuBgra);
         GLuint activeScreenTexture = screenTexture; // track which texture has the screen data
         if (hasCPUBuffers)
         {
@@ -1622,17 +1625,22 @@ void ScreenPanelGL::drawScreen()
             glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
 
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, 256, 192, 1, GL_BGRA,
-                GL_UNSIGNED_BYTE, topbuf);
+                GL_UNSIGNED_BYTE, output.Top);
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, 256, 192, 1, GL_BGRA,
-                GL_UNSIGNED_BYTE, bottombuf);
+                GL_UNSIGNED_BYTE, output.Bottom);
         }
-        else
+        else if (output.Kind == RendererOutputKind::OpenGLTextureArray)
         {
-            GLuint texid = *(GLuint*)topbuf;
+            GLuint texid = *(GLuint*)output.Top;
             activeScreenTexture = texid; // GPU renderer's texture has the screen data
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, texid);
+        }
+        else
+        {
+            glContext->SwapBuffers();
+            return;
         }
 
         screenSettingsLock.lock();

@@ -51,6 +51,7 @@
 #include "NDSCart/CartSD.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
+#include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeHudPropSchema.inc"
 
 namespace {
@@ -429,8 +430,19 @@ void EmuInstance::emuStop(StopReason reason)
 
 bool EmuInstance::usesOpenGL()
 {
+#ifdef MELONPRIME_DS
+    // Route through the same platform-normalization used by
+    // EmuThread::updateRenderer() so a stale/imported macOS compute-renderer
+    // config value doesn't request a GL context it won't actually construct
+    // as compute, and so a future non-OpenGL backend isn't mistaken for
+    // requiring one. See melonprime-metal-backend-plan.md Phase 0.
+    return MelonPrime::VideoBackend::IsOpenGLPresentation(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer")));
+#else
     return globalCfg.GetBool("Screen.UseGL") ||
            (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
+#endif
 }
 
 void EmuInstance::initOpenGL(int win)

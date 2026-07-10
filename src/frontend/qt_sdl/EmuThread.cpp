@@ -45,6 +45,9 @@
 #include "DSi_I2C.h"
 #include "GPU_Soft.h"
 #include "GPU_OpenGL.h"
+#if defined(MELONPRIME_ENABLE_METAL)
+#include "GPU_Metal.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -117,17 +120,38 @@ void EmuThread::run()
     mainScreenPos[2] = 0;
     autoScreenSizing = 0;
 
-    if (emuInstance->usesOpenGL())
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 8 fix: `videoRenderer` must reflect the *requested*
+    // renderer (normalized for the current platform/backend), not be forced
+    // to Software whenever `useOpenGL` is false. Before this fix, a renderer
+    // that does not need an OpenGL context (Metal, or Software itself) was
+    // silently discarded here and replaced with 0 (Software) -- harmless for
+    // Software, but it meant a real `renderer3D_Metal` selection could never
+    // reach EmuThread::updateRenderer() through the normal (non-env-forced)
+    // path once Phase 9 UI exists. `useOpenGL` stays purely "does the current
+    // presentation backend need a GL context" -- it must not gate which 3D
+    // renderer identity is requested.
+    {
+        const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+        videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(requestedRenderer);
+        videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
+        useOpenGL = MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend);
+    }
+    if (useOpenGL)
+        emuInstance->initOpenGL(0);
+#else
+    useOpenGL = emuInstance->usesOpenGL();
+    if (useOpenGL)
     {
         emuInstance->initOpenGL(0);
-        useOpenGL = true;
         videoRenderer = globalCfg.GetInt("3D.Renderer");
     }
     else
     {
-        useOpenGL = false;
         videoRenderer = 0;
     }
+#endif
 
     videoSettingsDirty = true;
 
@@ -320,22 +344,52 @@ void EmuThread::run()
         // update render settings if needed
         if (videoSettingsDirty)
         {
+#ifdef MELONPRIME_DS
+            if (!useOpenGL)
+            {
+                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                    globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+                if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
+                    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
+            }
+#endif
             emuInstance->renderLock.lock();
             if (useOpenGL)
             {
 #ifdef MELONPRIME_DS
                 emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
+                videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+                    globalCfg.GetInt("3D.Renderer"));
 #else
                 emuInstance->setVSyncGL(true);
-#endif
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
+#endif
             }
 #ifdef OGLRENDERER_ENABLED
             else
+            {
+#ifdef MELONPRIME_DS
+                // Metal-plan Phase 8 fix: no live GL context this iteration
+                // (`useOpenGL` only flips via msg_InitGL/msg_DeInitGL, not
+                // here). Before this fix, `videoRenderer` was unconditionally
+                // forced to 0 whenever `!useOpenGL`, silently discarding a
+                // renderer that doesn't need a GL context at all (Metal, once
+                // Phase 9 UI exists) instead of only clamping renderers that
+                // actually require one.
+                const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+                    globalCfg.GetInt("3D.Renderer"));
+                videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
+                    ? renderer3D_Software
+                    : normalizedRenderer;
+#else
+                videoRenderer = 0;
 #endif
+            }
+#else
             {
                 videoRenderer = 0;
             }
+#endif
 
             updateRenderer();
 
@@ -434,7 +488,12 @@ void EmuThread::run()
 #endif // MELONCAP
 
         winUpdateCount++;
+#ifdef MELONPRIME_DS
+        if (winUpdateCount >= winUpdateFreq &&
+            videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt)
+#else
         if (winUpdateCount >= winUpdateFreq && !useOpenGL)
+#endif
         {
             emit windowUpdate();
             winUpdateCount = 0;
@@ -903,11 +962,24 @@ void EmuThread::handleMessages()
         case msg_InitGL:
             emuInstance->initOpenGL(msg.param.value<int>());
             useOpenGL = true;
+#ifdef MELONPRIME_DS
+            videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(useOpenGL);
+#endif
             break;
 
         case msg_DeInitGL:
             emuInstance->deinitOpenGL(msg.param.value<int>());
-            if (msg.param.value<int>() == 0) useOpenGL = false;
+            if (msg.param.value<int>() == 0)
+            {
+                useOpenGL = false;
+#ifdef MELONPRIME_DS
+                auto& cfg = emuInstance->getGlobalConfig();
+                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                    cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+                if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
+                    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
+#endif
+            }
             break;
 
         case msg_BorrowGL:
@@ -1219,6 +1291,11 @@ void EmuThread::updateRenderer()
         case renderer3D_OpenGLCompute:
             nds->SetRenderer(std::make_unique<GLRenderer>(*nds, true));
             break;
+#if defined(MELONPRIME_ENABLE_METAL)
+        case renderer3D_Metal:
+            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds));
+            break;
+#endif
         default: __builtin_unreachable();
         }
     }

@@ -95,6 +95,7 @@ set(SOURCES_QT_SDL
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
     MelonPrimeRuntimeConfig.cpp
+    MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormBuilder.cpp
     MelonPrimePatchLifecycle.cpp
@@ -130,6 +131,27 @@ set(SOURCES_QT_SDL
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
+
+# --- MelonPrime experimental Metal backend master kill switch ---------------
+# See .claude/rules/melonprime-metal-backend-plan.md. Metal support remains
+# experimental and must stay behind this on/off contract so every phase can be
+# force-disabled with a single flag instead of a source edit.
+option(MELONPRIME_ENABLE_METAL
+    "Enable experimental MelonPrime native Metal presenter/backend on macOS"
+    OFF)
+option(MELONPRIME_FORCE_DISABLE_METAL
+    "Force-disable all MelonPrime Metal code, even if MELONPRIME_ENABLE_METAL is ON"
+    OFF)
+
+set(MELONPRIME_METAL_ACTIVE OFF)
+if (MELONPRIME_FORCE_DISABLE_METAL)
+    set(MELONPRIME_METAL_ACTIVE OFF)
+elseif (MELONPRIME_ENABLE_METAL)
+    if (NOT APPLE)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL is only supported on Apple platforms")
+    endif()
+    set(MELONPRIME_METAL_ACTIVE ON)
+endif()
 
 if (USE_QT6)
     find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
@@ -252,6 +274,44 @@ target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+endif()
+
+if (MELONPRIME_METAL_ACTIVE)
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
+    target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)
+    target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
+    )
+
+    # Metal-plan Phases 2/4/6/7/8 (.claude/rules/melonprime-metal-backend-plan.md):
+    # feature probe + CAMetalLayer presenter + gated core RendererOutput Metal
+    # kind + renderer shell + native Metal 3D resource scaffold. The scaffold
+    # still delegates rasterization to Software until the GLRenderer3D port
+    # replaces those calls in follow-up Phase 8 work.
+    find_library(METAL_LIB Metal)
+    if (NOT METAL_LIB)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the Metal framework")
+    endif()
+    find_library(QUARTZCORE_LIB_METAL QuartzCore)
+    if (NOT QUARTZCORE_LIB_METAL)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_METAL requires the QuartzCore framework")
+    endif()
+    target_link_libraries(melonDS PRIVATE ${METAL_LIB} ${QUARTZCORE_LIB_METAL})
+
+    target_sources(melonDS PRIVATE
+        MelonPrimeMetalFeatureCheck.mm
+        MelonPrimeScreenMetal.mm
+    )
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
+        MelonPrimeMetalFeatureCheck.mm
+        MelonPrimeScreenMetal.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
 endif()
 
 add_subdirectory("../../net"

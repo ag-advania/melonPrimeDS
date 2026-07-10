@@ -17,6 +17,7 @@
 */
 
 #include <QFileDialog>
+#include <QRadioButton>
 #include <QtGlobal>
 
 #include "types.h"
@@ -28,11 +29,32 @@
 #include "VideoSettingsDialog.h"
 #include "ui_VideoSettingsDialog.h"
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeLocalization.h"
+#if defined(MELONPRIME_ENABLE_METAL)
+#include "MelonPrimeMetalFeatureCheck.h"
+#endif
+#endif // MELONPRIME_DS
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
     auto& cfg = emuInstance->getGlobalConfig();
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 8/9 prep: "does the current selection need a GL
+    // context" is no longer the same question as "is the renderer
+    // Software" once a non-GL, non-Software backend (Metal) exists. A
+    // plain `renderer != Software` check would treat Metal as needing GL,
+    // which would wrongly enable this dialog's VSync-via-GL controls and
+    // request a GL context reinit on a config value this dialog has no UI
+    // for yet (see the button-group null-check below).
+    return MelonPrime::VideoBackend::IsOpenGLPresentation(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer")));
+#else
     return cfg.GetBool("Screen.UseGL") || (cfg.GetInt("3D.Renderer") != renderer3D_Software);
+#endif // MELONPRIME_DS
 }
 
 VideoSettingsDialog* VideoSettingsDialog::currentDlg = nullptr;
@@ -42,12 +64,31 @@ void VideoSettingsDialog::setEnabled()
     auto& cfg = emuInstance->getGlobalConfig();
     int renderer = cfg.GetInt("3D.Renderer");
 
-    bool softwareRenderer = renderer == renderer3D_Software;
+    const bool softwareRenderer = renderer == renderer3D_Software;
+    const bool openGLRenderer = renderer == renderer3D_OpenGL;
+    const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    const bool metalRenderer = renderer == renderer3D_Metal;
+#else
+    const bool metalRenderer = false;
+#endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
+    // visible 3D output is still produced by its internal SoftRenderer3D
+    // delegate (see GPU3D_Metal.mm / GPU_Metal.mm and
+    // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
+    // "Software.Threaded" genuinely affects Metal's performance today.
+    // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
+    // all yet, so they stay OpenGL/Compute-only below rather than being
+    // exposed as if they already work for Metal.
+    ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
+#else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
-    ui->cbxGLResolution->setEnabled(!softwareRenderer);
-    ui->cbBetterPolygons->setEnabled(renderer == renderer3D_OpenGL);
-    ui->cbxComputeHiResCoords->setEnabled(renderer == renderer3D_OpenGLCompute);
+#endif
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+    ui->cbBetterPolygons->setEnabled(openGLRenderer);
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -71,12 +112,35 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
     grp3DRenderer->addButton(ui->rb3DOpenGL,   renderer3D_OpenGL);
     grp3DRenderer->addButton(ui->rb3DCompute,  renderer3D_OpenGLCompute);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    rb3DMetal = new QRadioButton(ui->groupBox);
+    rb3DMetal->setObjectName(QStringLiteral("rb3DMetal"));
+    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal (Experimental)"));
+    rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Experimental native Metal renderer for testing on macOS. Not the same as the OpenGL Compute renderer. Visual parity and performance are not final.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
+    grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
+#endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #else
     connect(grp3DRenderer, SIGNAL(idClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #endif
+#ifdef MELONPRIME_DS
+    // Metal-plan Phase 8/9 prep: `oldRenderer` can hold a value this dialog
+    // has no radio button for -- either `renderer3D_Metal` itself (no
+    // `rb3DMetal` here; Metal exposure is MelonPrime's own settings dialog,
+    // Phase 9), or any other stray/out-of-range int left over from a
+    // rebuild with a different renderer set compiled in. QButtonGroup::
+    // button() returns nullptr for an unregistered id; calling
+    // setChecked() on that would crash. Leave nothing checked in that case
+    // rather than guessing -- `oldRenderer` itself is left untouched so
+    // Cancel still restores the original value exactly.
+    if (QAbstractButton* rendererButton = grp3DRenderer->button(oldRenderer))
+        rendererButton->setChecked(true);
+#else
     grp3DRenderer->button(oldRenderer)->setChecked(true);
+#endif // MELONPRIME_DS
 
 #ifndef OGLRENDERER_ENABLED
     ui->rb3DOpenGL->setEnabled(false);
@@ -84,6 +148,23 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
 #ifdef __APPLE__
     ui->rb3DCompute->setEnabled(false);
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Metal-plan Phase 9 (tester UI exposure): visible only on Metal-capable
+    // builds; enabled only once the runtime feature probe
+    // (MelonPrimeMetalFeatureCheck.h) confirms this Mac/GPU/driver can
+    // actually construct a Metal device + pipeline. High2 is left
+    // untouched -- it stays OpenGL Compute only, see
+    // melonprime_macos_compute_renderer_restriction.md. Label/tooltip must
+    // stay honest about "experimental"; see
+    // .claude/rules/plan/metal_tester_ui_perf_audit_and_execution_instructions_v2.md.
+    const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
+    const QString metalTooltip = metalSupported
+        ? QStringLiteral("Experimental native Metal renderer for testing. Not the same as High2 / OpenGL Compute. Visual parity and performance are not final.")
+        : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
+    rb3DMetal->setEnabled(metalSupported);
+    rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -95,6 +176,13 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    // Tester-phase shortcut: Metal intentionally reuses 3D.GL.ScaleFactor
+    // as the shared hardware-renderer internal scale. Rename/split only after
+    // Metal becomes stable enough to need separate defaults/migration.
+    ui->cbxGLResolution->setToolTip(MelonPrime::UiText::Tr(
+        "Internal 3D render scale. Used by OpenGL/OpenGL Compute and experimental Metal. Metal scale support is still under test."));
+#endif
     ui->cbxGLResolution->setCurrentIndex(oldGLScale-1);
 
     ui->cbBetterPolygons->setChecked(oldGLBetterPolygons != 0);

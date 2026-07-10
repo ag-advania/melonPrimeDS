@@ -25,6 +25,7 @@
 namespace Ui { class VideoSettingsDialog; }
 class VideoSettingsDialog;
 class EmuInstance;
+class QRadioButton;
 
 class VideoSettingsDialog : public QDialog
 {
@@ -78,6 +79,9 @@ private:
     EmuInstance* emuInstance;
 
     QButtonGroup* grp3DRenderer;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    QRadioButton* rb3DMetal = nullptr;
+#endif
 
     int oldRenderer;
     int oldGLDisplay;
@@ -90,4 +94,3 @@ private:
 };
 
 #endif // VIDEOSETTINGSDIALOG_H
-

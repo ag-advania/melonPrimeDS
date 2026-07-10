@@ -30,6 +30,51 @@ namespace melonDS
 class GPU3D;
 class ARMJIT;
 
+enum class RendererOutputKind
+{
+    CpuBgra,
+    OpenGLTextureArray,
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    MetalTexture,
+#endif
+    None,
+};
+
+struct RendererOutput
+{
+    RendererOutputKind Kind = RendererOutputKind::None;
+    void* Top = nullptr;
+    void* Bottom = nullptr;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    u64 FrameSerial = 0;
+#endif
+
+    static RendererOutput CpuBgra(void* top, void* bottom) noexcept
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
+#else
+        return { RendererOutputKind::CpuBgra, top, bottom };
+#endif
+    }
+
+    static RendererOutput OpenGLTextureArray(void* texture) noexcept
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0 };
+#else
+        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr };
+#endif
+    }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+    static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
+    {
+        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+    }
+#endif
+};
+
 static constexpr u32 VRAMDirtyGranularity = 512;
 class GPU;
 
@@ -73,6 +118,7 @@ public:
     // false -> this renderer doesn't use RAM framebuffers
     //          - values are renderer-specific (ie. OpenGL texture handle)
     bool GetFramebuffers(void** top, void** bottom);
+    RendererOutput GetRendererOutput();
 
     u8* GetUniqueBankPtr(u32 mask, u32 offset) noexcept;
     const u8* GetUniqueBankPtr(u32 mask, u32 offset) const noexcept;
@@ -860,6 +906,16 @@ public:
     // a renderer may render to RAM buffers, or to something else (ie. OpenGL)
     // if the renderer uses RAM buffers, they should be 32-bit BGRA, 256x192 for each screen
     virtual bool GetFramebuffers(void** top, void** bottom) = 0;
+    virtual RendererOutput GetOutput()
+    {
+        void* top = nullptr;
+        void* bottom = nullptr;
+        if (GetFramebuffers(&top, &bottom))
+            return RendererOutput::CpuBgra(top, bottom);
+        if (top)
+            return RendererOutput::OpenGLTextureArray(top);
+        return {};
+    }
     virtual void SwapBuffers() { BackBuffer ^= 1; }
 
     virtual bool NeedsShaderCompile() { return false; }
