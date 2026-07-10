@@ -421,3 +421,14 @@ Status: implemented.
 - Verified with `git diff --check`.
 - Verified with `tools/macos/build_metal_test.command`.
 - Verified with `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"` (`ninja: no work to do` for the default build tree).
+
+### 2026-07-10 JST Phase 3 — Metal 3D source orientation diagnostic
+
+Status: implemented.
+
+- Added a `MELONPRIME_METAL_DIAG=1` diagnostic after native Metal color-target readback into `NativeLineBuffer`.
+- The diagnostic reports `topRowNonzero` and `bottomRowNonzero` from the GetLine-bound line buffer with `source=native/readback/getline`, keeping the signal at the 3D source boundary instead of the global presenter.
+- Extended `MELONPRIME_METAL_GETLINE_DIFF=1` to also compare each software line against the vertically reversed native line and report `verticalReverseDiffPixels` plus a `verticalReverseCandidate` flag.
+- Verified with `git diff --check`.
+- Verified with `tools/macos/build_metal_test.command`.
+- Verified with `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"` (`ninja: no work to do` for the default build tree).
