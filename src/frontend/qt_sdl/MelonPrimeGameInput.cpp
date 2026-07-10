@@ -328,6 +328,18 @@ namespace MelonPrime {
         return (value < 0) ? -limit : limit;
     }
 
+    // Convert signed fixed-point to an integer by truncating toward zero.
+    // A signed arithmetic right shift rounds negative values toward -infinity:
+    // e.g. -1 >> 12 == -1. That turns any tiny negative residual into a real
+    // -1 aim step and is the source of accumulator-only post-stop drift.
+    [[nodiscard]] static FORCE_INLINE int64_t AimFixedToIntTowardZero(
+        const int64_t value, const int fractionalBits) noexcept
+    {
+        return value >= 0
+            ? (value >> fractionalBits)
+            : -((-value) >> fractionalBits);
+    }
+
     // =========================================================================
     // ApplyAim - branchless deadzone/snap helper for the legacy aim path.
     //
@@ -352,7 +364,7 @@ namespace MelonPrime {
         const int64_t isDeadzone = (absRaw - adjT) >> 63;
         const int64_t isSnap     = (absRaw - snapT) >> 63;
         const int64_t snapVal    = (1LL ^ sign) - sign;
-        const int64_t normVal    = raw >> kFracBits;
+        const int64_t normVal    = AimFixedToIntTowardZero(raw, kFracBits);
         return static_cast<int16_t>(
             (~isDeadzone & isSnap & snapVal) |
             (~isSnap     & normVal)
@@ -456,7 +468,9 @@ namespace MelonPrime {
 #endif
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
-            const bool hasDelta = (deltaX | deltaY) != 0;
+            const bool hasDeltaX = deltaX != 0;
+            const bool hasDeltaY = deltaY != 0;
+            const bool hasDelta = hasDeltaX || hasDeltaY;
             int64_t resX = m_aimResidualX;
             int64_t resY = m_aimResidualY;
             if (UNLIKELY(m_enableZoomAimScale) && (hasDelta || ((resX | resY) != 0))) {
@@ -465,25 +479,24 @@ namespace MelonPrime {
                 resY = m_aimResidualY;
             }
 
-            // P-44: Skip IMUL + clamp when mouse is completely at rest.
-            // With 8kHz mouse this is rarely zero, but at standard poll rates
-            // or when idling, it saves 2 IMUL (~6 cyc) + 2 clamp (~4 cyc).
-            // The direct path's (outX|outY)==0 exit handles the "no output" case,
-            // but skipping accumulation avoids touching the residual accumulators.
-            if (LIKELY(hasDelta)) {
-                // P-17: Accumulate into residual (Q14 fixed-point).
-                resX += static_cast<int64_t>(deltaX) * m_aimEffectiveFixedScaleX;
-                resY += static_cast<int64_t>(deltaY) * m_aimEffectiveFixedScaleY;
-
-                // P-29a: Clamp only when residual escapes the normal range.
-                resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
-                resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
-            } else if ((resX | resY) == 0) {
-                // No delta AND no residual → nothing to output. Skip everything.
-                // Note: not LIKELY — with accumulator enabled, residuals persist after
-                //       mouse stops, so zero-residual is not the dominant case here.
+            // A residual is fractional carry, not autonomous movement. Once the
+            // physical mouse stops, do not drain that carry into later frames. Keep
+            // it for the next real delta so sub-pixel accumulation still works.
+            if (UNLIKELY(!hasDelta)) {
+                if (!m_enableAimAccumulator) {
+                    m_aimResidualX = 0;
+                    m_aimResidualY = 0;
+                }
                 return;
             }
+
+            // P-17: Accumulate into residual (Q14 fixed-point).
+            resX += static_cast<int64_t>(deltaX) * m_aimEffectiveFixedScaleX;
+            resY += static_cast<int64_t>(deltaY) * m_aimEffectiveFixedScaleY;
+
+            // P-29a: Clamp only when residual escapes the normal range.
+            resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
+            resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
 
             if (m_disableMphAimSmoothing) {
                 // =========================================================
@@ -497,22 +510,30 @@ namespace MelonPrime {
                 // (delta=0 → residual unchanged → output 0).
                 // DS-side deadzone is also bypassed by the ASM patch.
                 // =========================================================
-                const int16_t outX = static_cast<int16_t>(resX >> AIM_DIRECT_BITS);
-                const int16_t outY = static_cast<int16_t>(resY >> AIM_DIRECT_BITS);
+                // Only an axis with a fresh raw delta may emit output. This keeps
+                // an old residual from the other axis from turning a straight move
+                // into a diagonal move. Conversion truncates toward zero so a tiny
+                // negative fraction does not become an unwanted -1 step.
+                const int16_t outX = hasDeltaX
+                    ? static_cast<int16_t>(AimFixedToIntTowardZero(resX, AIM_DIRECT_BITS))
+                    : 0;
+                const int16_t outY = hasDeltaY
+                    ? static_cast<int16_t>(AimFixedToIntTowardZero(resY, AIM_DIRECT_BITS))
+                    : 0;
 
-                // Subtract consumed integer portion; fractional remainder carries over.
-                resX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
-                resY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
+                // Subtract only the portion actually emitted on an active axis.
+                if (hasDeltaX)
+                    resX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
+                if (hasDeltaY)
+                    resY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
 
                 if ((outX | outY) == 0) {
-                    if (hasDelta) {
-                        m_aimResidualX = resX;
-                        m_aimResidualY = resY;
+                    m_aimResidualX = m_enableAimAccumulator ? resX : 0;
+                    m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
-                        if (warpCursorAfterAim)
-                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                    if (warpCursorAfterAim)
+                        PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
-                    }
                     return;
                 }
 
@@ -535,19 +556,20 @@ namespace MelonPrime {
                 // ampShift = 0 (DS handles amplification internally).
                 // =========================================================
 
-                // Early exit if both residuals are in deadzone.
+                // Ignore an inactive axis when checking the deadzone. Its stored
+                // fractional carry must not wake up merely because the other axis moved.
                 {
-                    const int64_t absResX = resX < 0 ? -resX : resX;
-                    const int64_t absResY = resY < 0 ? -resY : resY;
+                    const int64_t activeResX = hasDeltaX ? resX : 0;
+                    const int64_t activeResY = hasDeltaY ? resY : 0;
+                    const int64_t absResX = activeResX < 0 ? -activeResX : activeResX;
+                    const int64_t absResY = activeResY < 0 ? -activeResY : activeResY;
                     if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust) {
-                        if (hasDelta) {
-                            m_aimResidualX = resX;
-                            m_aimResidualY = resY;
+                        m_aimResidualX = m_enableAimAccumulator ? resX : 0;
+                        m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
-                            if (warpCursorAfterAim)
-                                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                        if (warpCursorAfterAim)
+                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
-                        }
                         return;
                     }
                 }
@@ -555,21 +577,21 @@ namespace MelonPrime {
                 const int64_t adjT  = m_aimFixedAdjust;
                 const int64_t snapT = m_aimFixedSnapThresh;
 
-                const int16_t outX = ApplyAim(resX, adjT, snapT);
-                const int16_t outY = ApplyAim(resY, adjT, snapT);
+                const int16_t outX = hasDeltaX ? ApplyAim(resX, adjT, snapT) : 0;
+                const int16_t outY = hasDeltaY ? ApplyAim(resY, adjT, snapT) : 0;
 
-                resX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
-                resY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
+                if (hasDeltaX)
+                    resX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
+                if (hasDeltaY)
+                    resY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
 
                 if ((outX | outY) == 0) {
-                    if (hasDelta) {
-                        m_aimResidualX = resX;
-                        m_aimResidualY = resY;
+                    m_aimResidualX = m_enableAimAccumulator ? resX : 0;
+                    m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
-                        if (warpCursorAfterAim)
-                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                    if (warpCursorAfterAim)
+                        PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
-                    }
                     return;
                 }
 

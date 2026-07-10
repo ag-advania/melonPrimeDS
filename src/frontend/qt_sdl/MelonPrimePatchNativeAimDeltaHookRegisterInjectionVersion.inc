@@ -288,29 +288,41 @@
                 if (UNLIKELY(m_enableZoomAimScale))
                     UpdateZoomAimEffectiveScale();
 
+                const bool hasLateX = lateX != 0;
+                const bool hasLateY = lateY != 0;
                 int64_t resX = m_aimResidualX + static_cast<int64_t>(lateX) * m_aimEffectiveFixedScaleX;
                 int64_t resY = m_aimResidualY + static_cast<int64_t>(lateY) * m_aimEffectiveFixedScaleY;
                 resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
                 resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
 
-                const int16_t lateOutX = static_cast<int16_t>(resX >> AIM_DIRECT_BITS);
-                const int16_t lateOutY = static_cast<int16_t>(resY >> AIM_DIRECT_BITS);
+                // Match the main accumulator path: truncate signed fixed-point
+                // toward zero and only emit on an axis that received fresh input.
+                const int16_t lateOutX = hasLateX
+                    ? static_cast<int16_t>(AimFixedToIntTowardZero(resX, AIM_DIRECT_BITS))
+                    : 0;
+                const int16_t lateOutY = hasLateY
+                    ? static_cast<int16_t>(AimFixedToIntTowardZero(resY, AIM_DIRECT_BITS))
+                    : 0;
 
                 if ((lateOutX | lateOutY) != 0)
                 {
-                    resX -= static_cast<int64_t>(lateOutX) << AIM_DIRECT_BITS;
-                    resY -= static_cast<int64_t>(lateOutY) << AIM_DIRECT_BITS;
+                    if (hasLateX)
+                        resX -= static_cast<int64_t>(lateOutX) << AIM_DIRECT_BITS;
+                    if (hasLateY)
+                        resY -= static_cast<int64_t>(lateOutY) << AIM_DIRECT_BITS;
 
                     outX += lateOutX;
                     outY += lateOutY;
 
-                    if (!m_enableAimAccumulator)
-                    {
-                        resX = 0;
-                        resY = 0;
-                    }
                 }
 
+                // The OFF setting must never carry a fractional remainder, even
+                // when the late delta was too small to produce an integer output.
+                if (!m_enableAimAccumulator)
+                {
+                    resX = 0;
+                    resY = 0;
+                }
                 m_aimResidualX = resX;
                 m_aimResidualY = resY;
             }
