@@ -98,7 +98,6 @@ void VideoSettingsDialog::setEnabled()
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
 {
     ui->setupUi(this);
-    // MELONPRIME_METAL_COMPUTE_UI_LAYOUT_V2: rows 4/5 are reserved for native Metal renderers.
     setAttribute(Qt::WA_DeleteOnClose);
 
     emuInstance = ((MainWindow*)parent)->getEmuInstance();
@@ -123,7 +122,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DMetal->setText(MelonPrime::UiText::Tr("Metal"));
     rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
         "<html><head/><body><p>Native Metal raster renderer for macOS.</p></body></html>"));
-    ui->gridLayout_2->addWidget(rb3DMetal, 4, 0, 1, 2);
+    ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
     grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
 
     rb3DMetalCompute = new QRadioButton(ui->groupBox);
@@ -131,7 +130,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DMetalCompute->setText(MelonPrime::UiText::Tr("Metal Compute Shader"));
     rb3DMetalCompute->setWhatsThis(MelonPrime::UiText::Tr(
         "<html><head/><body><p>Experimental native Metal compute-shader renderer. The validated Metal raster renderer remains the visible fallback until compute rendering reaches full parity.</p></body></html>"));
-    ui->gridLayout_2->addWidget(rb3DMetalCompute, 5, 0, 1, 2);
+    ui->gridLayout_2->addWidget(rb3DMetalCompute, 4, 1, 1, 1);
     grp3DRenderer->addButton(rb3DMetalCompute, renderer3D_MetalCompute);
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
