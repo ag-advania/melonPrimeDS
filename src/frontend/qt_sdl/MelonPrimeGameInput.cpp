@@ -435,14 +435,6 @@ namespace MelonPrime {
     {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
-
-        // Windows stale-input fix: aimX/aimY are persistent input-structure fields,
-        // not one-shot registers. If a zero-delta frame returns early without writing
-        // them, the previous non-zero X/Y pair can survive and keep the camera or
-        // Alt Form steering moving diagonally. Neutralize both axes first; a real
-        // mouse delta later in this function overwrites them for the current frame.
-        *m_ptrs.aimX = 0;
-        *m_ptrs.aimY = 0;
 #if !defined(_WIN32)
         const bool warpCursorAfterAim =
             PlatformInput_ShouldWarpCursorAfterAim(
