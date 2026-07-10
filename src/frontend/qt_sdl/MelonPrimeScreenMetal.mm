@@ -66,18 +66,12 @@ constexpr float kUiVertices[] = {
 constexpr int kMetalOSDMargin = 6;
 constexpr int kMetalLogoWidth = 192;
 
-// Mirrors kScreenVS/kScreenFS (main_shaders.h) affine transform math, but
-// deliberately DROPS the GL shader's trailing `fpos.y *= -1;`. That line
-// exists in the GL shader only to compensate for OpenGL's NDC Y-axis
-// pointing up (so window-pixel Y-down input has to be inverted to land in
-// GL's Y-up clip space). Metal's NDC Y-axis already points down -- the same
-// direction as the affine-transformed window-pixel-space input -- so the
-// unmodified `(p*2/screenSize)-1` mapping already places pixel row 0 (top)
-// at NDC y=-1 (Metal viewport top) with no extra negation. Copying GL's
-// negation here double-flips the image (confirmed both by re-deriving the
-// Metal viewport transform and by GPU3D_Metal.mm's independently verified
-// native vertex shader, which maps DS pixel space to clip space the same
-// way, with no extra negation).
+// Match ScreenPanelGL's screen-space-to-clip transform. The shared
+// screenMatrix[] values are frontend pixel-space transforms; the presenter
+// shader must preserve the same physical top/bottom screen placement as
+// kScreenVS/kScreenFS. Source-specific upside-down textures must be fixed at
+// their source/readback/final-pass boundary, not by changing the global
+// presenter transform.
 NSString* const kScreenShaderSource =
     @"#include <metal_stdlib>\n"
      "using namespace metal;\n"
@@ -99,6 +93,7 @@ NSString* const kScreenShaderSource =
      "        u.m[0] * in.position.x + u.m[2] * in.position.y + u.m[4],\n"
      "        u.m[1] * in.position.x + u.m[3] * in.position.y + u.m[5]);\n"
      "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
+     "    p.y *= -1.0;\n"
      "    VOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
      "    out.texcoord = in.texcoord;\n"
@@ -130,6 +125,7 @@ NSString* const kUiShaderSource =
      "                        constant UiUniforms& u [[buffer(1)]]) {\n"
      "    float2 p = u.rect.xy + in.position * u.rect.zw;\n"
      "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
+     "    p.y *= -1.0;\n"
      "    UiVOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
      "    out.texcoord = in.texcoord;\n"
