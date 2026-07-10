@@ -42,7 +42,6 @@ public:
     [[nodiscard]] bool IsThreaded() const noexcept;
     void SetScaleFactor(int scale) noexcept;
     [[nodiscard]] bool ForceScaleFactor(int scale) noexcept;
-    void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
 
     [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
@@ -72,9 +71,7 @@ private:
     SoftRenderer3D Delegate;
     std::unique_ptr<MetalState> State;
     int ScaleFactor = 1;
-    bool HiresCoordinates = false;
     bool BetterPolygons = false;
-    // MELONPRIME_METAL_RENDER_OPTIONS_V1
 
     bool CreateDeviceObjects();
     bool BuildClearPipeline();

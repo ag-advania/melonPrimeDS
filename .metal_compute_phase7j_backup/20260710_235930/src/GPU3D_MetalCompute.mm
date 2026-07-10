@@ -2181,10 +2181,6 @@ void MetalComputeRenderer3D::SetHighResolutionCoordinates(bool enabled) noexcept
 {
     if (State)
         State->HiresCoordinates = enabled;
-
-    // MELONPRIME_METAL_RENDER_OPTIONS_V1: the compute mirror and its currently visible Metal raster
-    // reference must use the same coordinate mode.
-    RasterReference.SetHighResolutionCoordinates(enabled);
 }
 
 void MetalComputeRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept

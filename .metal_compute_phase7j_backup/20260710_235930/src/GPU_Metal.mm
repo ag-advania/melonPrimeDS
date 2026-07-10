@@ -141,9 +141,7 @@ void ConfigureMetal3DRenderer(
     {
         raster->SetThreaded(threaded);
         raster->SetScaleFactor(scale);
-        raster->SetHighResolutionCoordinates(highResolutionCoordinates);
         raster->SetBetterPolygons(betterPolygons);
-        // MELONPRIME_METAL_RENDER_OPTIONS_V1
     }
 }
 

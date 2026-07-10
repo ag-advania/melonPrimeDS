@@ -4,7 +4,6 @@
 
 // MELONPRIME_METAL_STABILITY_SCALE_PERF_V1
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
-// MELONPRIME_METAL_RENDER_OPTIONS_V1
 
 #import <Metal/Metal.h>
 
@@ -964,11 +963,6 @@ bool MetalRenderer3D::ForceScaleFactor(int scale) noexcept
         State->ColorTarget ? static_cast<size_t>(State->ColorTarget.width) : 0u,
         State->ColorTarget ? static_cast<size_t>(State->ColorTarget.height) : 0u);
     return ResizeTargets();
-}
-
-void MetalRenderer3D::SetHighResolutionCoordinates(bool enabled) noexcept
-{
-    HiresCoordinates = enabled;
 }
 
 void MetalRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
@@ -2448,17 +2442,10 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
             vertexWords.push_back(texLayerWord);
             vertexWords.push_back(texDimsWord);
         };
-        const bool useHiresCoordinates = HiresCoordinates && ScaleFactor > 1;
         auto pushOriginalVertex = [&](u32 v) {
             const Vertex* vtx = poly->Vertices[v];
-            const int32_t x = useHiresCoordinates
-                ? (vtx->HiresPosition[0] * ScaleFactor) >> 4
-                : vtx->FinalPosition[0];
-            const int32_t y = useHiresCoordinates
-                ? (vtx->HiresPosition[1] * ScaleFactor) >> 4
-                : vtx->FinalPosition[1];
-            pushPackedVertex(static_cast<uint32_t>(x),
-                             static_cast<uint32_t>(y),
+            pushPackedVertex(static_cast<uint32_t>(vtx->FinalPosition[0]),
+                             static_cast<uint32_t>(vtx->FinalPosition[1]),
                              static_cast<uint32_t>(poly->FinalZ[v]),
                              static_cast<uint32_t>(poly->FinalW[v]),
                              static_cast<uint32_t>(vtx->FinalColor[0] >> 1),
@@ -2497,18 +2484,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
                 cT += static_cast<float>(vtx->TexCoords[1]) / fw;
             }
 
-            cX /= poly->NumVertices;
-            cY /= poly->NumVertices;
-            if (useHiresCoordinates)
-            {
-                cX = (cX * static_cast<uint32_t>(ScaleFactor)) >> 4;
-                cY = (cY * static_cast<uint32_t>(ScaleFactor)) >> 4;
-            }
-            else
-            {
-                cX >>= 4;
-                cY >>= 4;
-            }
+            cX = (cX / poly->NumVertices) >> 4;
+            cY = (cY / poly->NumVertices) >> 4;
             cW = 1.0f / cW;
             if (poly->WBuffer) cZ *= cW;
             else               cZ /= static_cast<float>(poly->NumVertices);
@@ -2671,10 +2648,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
         gCurrentMetalPerfFrame->UploadBytes += frameIndices.size() * sizeof(uint16_t);
 
-    // Normal mode preserves the native integer DS coordinate grid. With the
-    // explicit high-resolution-coordinate option enabled at scale > 1, packed
-    // vertices are expressed in target pixels using Vertex::HiresPosition
-    // (1/16-pixel source precision), so the shader uses the scaled screen size.
+    // Always the native 256x192 DS coordinate space -- FinalPosition is used
+    // unconditionally above regardless of ScaleFactor (see the scope note).
     struct OpaqueRenderConfigCpu
     {
         float screenSize[2];
@@ -2682,10 +2657,8 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         uint32_t pad;
         float toonTable[32][4];
     } config = {};
-    const float coordinateScale =
-        (HiresCoordinates && ScaleFactor > 1) ? static_cast<float>(ScaleFactor) : 1.0f;
-    config.screenSize[0] = 256.0f * coordinateScale;
-    config.screenSize[1] = 192.0f * coordinateScale;
+    config.screenSize[0] = 256.0f;
+    config.screenSize[1] = 192.0f;
     config.dispCnt = GPU3D.RenderDispCnt;
     for (int i = 0; i < 32; i++)
     {
