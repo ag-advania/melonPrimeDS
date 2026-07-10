@@ -29,6 +29,7 @@ public:
     bool UploadRawVRAMInputs() noexcept;
     bool UploadPaletteInputs() noexcept;
     bool RefreshLayerConfig() noexcept;
+    bool RefreshScanlineConfig(int line) noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;

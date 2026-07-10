@@ -731,6 +731,165 @@ bool MetalRenderer2D::RefreshLayerConfig() noexcept
     return true;
 }
 
+bool MetalRenderer2D::RefreshScanlineConfig(int line) noexcept
+{
+    if (!State || !State->ScanlineConfigBuffer || line < 0 || line >= 192)
+        return false;
+
+    Metal2DState& state = *State;
+    ScanlineConfigCpu::Scanline& scanline = reinterpret_cast<ScanlineConfigCpu*>([state.ScanlineConfigBuffer contents])->scanline[line];
+    scanline = {};
+
+    const uint32_t bgMode = GPU2D.DispCnt & 0x7;
+    const bool xMosaic = GPU2D.BGMosaicSize[0] > 0;
+
+    if (GPU2D.DispCnt & (1 << 3))
+    {
+        const int xPos = GPU.GPU3D.GetRenderXPos() & 0x1FF;
+        scanline.bgOffset[0][0] = xPos - ((xPos & 0x100) << 1);
+        scanline.bgOffset[0][1] = line;
+        scanline.bgMosaicEnable[0] = false;
+    }
+    else
+    {
+        scanline.bgOffset[0][0] = GPU2D.BGXPos[0];
+        if (GPU2D.BGCnt[0] & (1 << 6))
+        {
+            scanline.bgOffset[0][1] = GPU2D.BGYPos[0] + GPU2D.BGMosaicLine;
+            scanline.bgMosaicEnable[0] = xMosaic;
+        }
+        else
+        {
+            scanline.bgOffset[0][1] = GPU2D.BGYPos[0] + line;
+            scanline.bgMosaicEnable[0] = false;
+        }
+    }
+
+    scanline.bgOffset[1][0] = GPU2D.BGXPos[1];
+    if (GPU2D.BGCnt[1] & (1 << 6))
+    {
+        scanline.bgOffset[1][1] = GPU2D.BGYPos[1] + GPU2D.BGMosaicLine;
+        scanline.bgMosaicEnable[1] = xMosaic;
+    }
+    else
+    {
+        scanline.bgOffset[1][1] = GPU2D.BGYPos[1] + line;
+        scanline.bgMosaicEnable[1] = false;
+    }
+
+    if ((bgMode == 2) || (bgMode >= 4 && bgMode <= 6))
+    {
+        scanline.bgOffset[2][0] = GPU2D.BGXRefInternal[0];
+        scanline.bgOffset[2][1] = GPU2D.BGYRefInternal[0];
+        scanline.bgRotscale[0][0] = GPU2D.BGRotA[0];
+        scanline.bgRotscale[0][1] = GPU2D.BGRotB[0];
+        scanline.bgRotscale[0][2] = GPU2D.BGRotC[0];
+        scanline.bgRotscale[0][3] = GPU2D.BGRotD[0];
+    }
+    else
+    {
+        scanline.bgOffset[2][0] = GPU2D.BGXPos[2];
+        scanline.bgOffset[2][1] =
+            (GPU2D.BGCnt[2] & (1 << 6)) ? GPU2D.BGYPos[2] + GPU2D.BGMosaicLine : GPU2D.BGYPos[2] + line;
+    }
+    scanline.bgMosaicEnable[2] = (GPU2D.BGCnt[2] & (1 << 6)) ? xMosaic : false;
+
+    if (bgMode >= 1 && bgMode <= 5)
+    {
+        scanline.bgOffset[3][0] = GPU2D.BGXRefInternal[1];
+        scanline.bgOffset[3][1] = GPU2D.BGYRefInternal[1];
+        scanline.bgRotscale[1][0] = GPU2D.BGRotA[1];
+        scanline.bgRotscale[1][1] = GPU2D.BGRotB[1];
+        scanline.bgRotscale[1][2] = GPU2D.BGRotC[1];
+        scanline.bgRotscale[1][3] = GPU2D.BGRotD[1];
+    }
+    else
+    {
+        scanline.bgOffset[3][0] = GPU2D.BGXPos[3];
+        scanline.bgOffset[3][1] =
+            (GPU2D.BGCnt[3] & (1 << 6)) ? GPU2D.BGYPos[3] + GPU2D.BGMosaicLine : GPU2D.BGYPos[3] + line;
+    }
+    scanline.bgMosaicEnable[3] = (GPU2D.BGCnt[3] & (1 << 6)) ? xMosaic : false;
+
+    const uint16_t* palette = reinterpret_cast<const uint16_t*>(&GPU.Palette[GPU2D.Num ? 0x400 : 0]);
+    scanline.backColor = palette[0];
+
+    scanline.mosaicSize[0] = GPU2D.BGMosaicSize[0];
+    scanline.mosaicSize[1] = GPU2D.BGMosaicSize[1];
+    scanline.mosaicSize[2] = GPU2D.OBJMosaicSize[0];
+    scanline.mosaicSize[3] = GPU2D.OBJMosaicSize[1];
+
+    if (GPU2D.DispCnt & 0xE000)
+        scanline.winRegs = GPU2D.WinCnt[2];
+    else
+        scanline.winRegs = 0xFF;
+
+    scanline.winRegs |= (GPU2D.DispCnt & (1 << 15)) ? (GPU2D.WinCnt[3] << 8) : 0xFF00;
+    scanline.winRegs |= (GPU2D.DispCnt & (1 << 14)) ? (GPU2D.WinCnt[1] << 16) : 0xFF0000;
+    scanline.winRegs |= (GPU2D.DispCnt & (1 << 13)) ? (GPU2D.WinCnt[0] << 24) : 0xFF000000;
+    scanline.winMask = 0;
+
+    if ((GPU2D.DispCnt & (1 << 13)) && (GPU2D.Win0Active & 0x1))
+    {
+        const int x0 = GPU2D.Win0Coords[0];
+        const int x1 = GPU2D.Win0Coords[1];
+        if (x0 <= x1)
+        {
+            scanline.winPos[0] = x0;
+            scanline.winPos[1] = x1;
+            if (GPU2D.Win0Active == 0x3)
+                scanline.winMask |= (1 << 0);
+            scanline.winMask |= (1 << 1);
+            GPU2D.Win0Active &= ~0x2;
+        }
+        else
+        {
+            scanline.winPos[0] = x1;
+            scanline.winPos[1] = x0;
+            if (GPU2D.Win0Active == 0x3)
+                scanline.winMask |= (1 << 0);
+            scanline.winMask |= (1 << 2);
+            GPU2D.Win0Active |= 0x2;
+        }
+    }
+    else
+    {
+        scanline.winPos[0] = 256;
+        scanline.winPos[1] = 256;
+    }
+
+    if ((GPU2D.DispCnt & (1 << 14)) && (GPU2D.Win1Active & 0x1))
+    {
+        const int x0 = GPU2D.Win1Coords[0];
+        const int x1 = GPU2D.Win1Coords[1];
+        if (x0 <= x1)
+        {
+            scanline.winPos[2] = x0;
+            scanline.winPos[3] = x1;
+            if (GPU2D.Win1Active == 0x3)
+                scanline.winMask |= (1 << 3);
+            scanline.winMask |= (1 << 4);
+            GPU2D.Win1Active &= ~0x2;
+        }
+        else
+        {
+            scanline.winPos[2] = x1;
+            scanline.winPos[3] = x0;
+            if (GPU2D.Win1Active == 0x3)
+                scanline.winMask |= (1 << 3);
+            scanline.winMask |= (1 << 5);
+            GPU2D.Win1Active |= 0x2;
+        }
+    }
+    else
+    {
+        scanline.winPos[2] = 256;
+        scanline.winPos[3] = 256;
+    }
+
+    return true;
+}
+
 void MetalRenderer2D::Reset() noexcept
 {
     if (!State)

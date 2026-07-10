@@ -1609,6 +1609,12 @@ sizes, palette offsets, clamp flags, active BG render-target selection from the 
 VRAM range tracking, and display-capture-backed direct-color bitmap detection. No BG prerender draw
 is issued yet; this only prepares the exact config data that the first BG MSL pass will consume.
 
+The scanline-config scaffold now mirrors GLRenderer2D's per-line BG offsets, rotscale matrices,
+mosaic flags/sizes, backdrop color, and window register/mask/position packing into the shared
+ScanlineConfig buffer. This function is intentionally not called by the current visible path yet,
+because it mutates the GPU2D window-active latch exactly like GL's scanline path and must only run
+once Metal 2D owns scanline progression.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a
