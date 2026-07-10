@@ -98,14 +98,12 @@ void ConfigureMetal3DRenderer(
     Renderer3D* renderer,
     bool threaded,
     int scale,
-    bool highResolutionCoordinates,
     bool betterPolygons)
 {
     if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
     {
         compute->SetThreaded(threaded);
         compute->SetScaleFactor(scale);
-        compute->SetHighResolutionCoordinates(highResolutionCoordinates);
         compute->SetBetterPolygons(betterPolygons);
     }
     else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
@@ -289,8 +287,7 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     ScaleFactor = scale;
 
     ConfigureMetal3DRenderer(
-        Rend3D.get(), settings.Threaded, scale,
-        settings.HiresCoordinates, settings.BetterPolygons);
+        Rend3D.get(), settings.Threaded, scale, settings.BetterPolygons);
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
     ConfigureMetal2DMirror(preferredDevice);
     ConfigureMetalVisibleOutput(preferredDevice);

@@ -1,4 +1,4 @@
-// MelonPrimeDS - Metal compute renderer span/bin foundation and raster-reference bridge
+// MelonPrimeDS - Metal compute renderer foundation and raster-reference bridge
 
 #ifndef GPU3D_METAL_COMPUTE_H
 #define GPU3D_METAL_COMPUTE_H
@@ -14,10 +14,11 @@ namespace melonDS
 
 class SoftRenderer;
 
-// Phase 7B. The renderer owns the final Renderer3D slot and now executes the
-// real-frame CPU span preparation plus Metal InterpSpans/BinCombined mirror.
-// Visible output remains the validated MetalRenderer3D reference until the
-// Rasterise/DepthBlend/FinalPass kernels are complete and pixel-diff validated.
+// Phase 7A foundation. The class already occupies the final Renderer3D slot and
+// owns the future compute resources, while visible rendering remains delegated
+// to MetalRenderer3D until the Interp/Bin/Rasterise/DepthBlend/FinalPass kernels
+// are ported and validated. Selection is developer-only through
+// MELONPRIME_METAL_COMPUTE_FOUNDATION=1.
 class MetalComputeRenderer3D final : public Renderer3D
 {
 public:
@@ -30,7 +31,6 @@ public:
     void SetThreaded(bool threaded) noexcept;
     [[nodiscard]] bool IsThreaded() const noexcept;
     void SetScaleFactor(int scale) noexcept;
-    void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
 
     void RenderFrame() override;
@@ -59,9 +59,6 @@ private:
 
     bool CreateComputeFoundation();
     bool RunFoundationSelfTest();
-    bool ConfigureSpanBinResources(int scale);
-    bool RunSpanBinSelfTest();
-    bool SubmitRealFrameSpanBin();
 };
 
 } // namespace melonDS
