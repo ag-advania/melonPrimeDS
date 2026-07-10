@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -28,6 +29,43 @@ constexpr uint8_t kBGBaseIndex[4][4] = {
     {0, 4, 12, 16},
     {18, 19, 12, 16},
 };
+
+struct LayerVertex
+{
+    float position[2];
+    float texcoord[2];
+};
+
+constexpr LayerVertex kLayerQuad[] = {
+    {{0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{1.0f, 1.0f}, {1.0f, 1.0f}},
+    {{0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{1.0f, 0.0f}, {1.0f, 0.0f}},
+};
+
+NSString* const kMetal2DLayerShaderSource =
+    @"#include <metal_stdlib>\n"
+     "using namespace metal;\n"
+     "struct VertexIn {\n"
+     "    float2 position [[attribute(0)]];\n"
+     "    float2 texcoord [[attribute(1)]];\n"
+     "};\n"
+     "struct VOut {\n"
+     "    float4 position [[position]];\n"
+     "    float2 texcoord;\n"
+     "};\n"
+     "vertex VOut mp2d_layer_vs(VertexIn in [[stage_in]]) {\n"
+     "    VOut out;\n"
+     "    out.position = float4((in.position * 2.0) - 1.0, 0.0, 1.0);\n"
+     "    out.texcoord = in.texcoord;\n"
+     "    return out;\n"
+     "}\n"
+     "fragment float4 mp2d_layer_fs(VOut in [[stage_in]]) {\n"
+     "    (void)in;\n"
+     "    return float4(0.0, 0.0, 0.0, 0.0);\n"
+     "}\n";
 
 struct LayerConfigCpu
 {
@@ -108,6 +146,9 @@ static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
 struct MetalRenderer2D::Metal2DState
 {
     id<MTLDevice> Device = nil;
+    id<MTLLibrary> LayerLibrary = nil;
+    id<MTLRenderPipelineState> LayerPipeline = nil;
+    id<MTLBuffer> LayerVertexBuffer = nil;
     id<MTLTexture> OutputTex = nil;
     id<MTLTexture> OBJLayerTex = nil;
     id<MTLTexture> OBJDepthTex = nil;
@@ -139,6 +180,60 @@ MetalRenderer2D::MetalRenderer2D(melonDS::GPU2D& gpu2D) noexcept
 
 MetalRenderer2D::~MetalRenderer2D() = default;
 
+bool MetalRenderer2D::BuildLayerPipeline() noexcept
+{
+    if (!State || !State->Device)
+        return false;
+
+    Metal2DState& state = *State;
+    if (state.LayerLibrary && state.LayerPipeline && state.LayerVertexBuffer)
+        return true;
+
+    NSError* error = nil;
+    state.LayerLibrary = [state.Device newLibraryWithSource:kMetal2DLayerShaderSource options:nil error:&error];
+    if (!state.LayerLibrary)
+    {
+        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to compile layer shaders: %s\n", message);
+        return false;
+    }
+
+    MTLVertexDescriptor* vertexDesc = [[MTLVertexDescriptor alloc] init];
+    vertexDesc.attributes[0].format = MTLVertexFormatFloat2;
+    vertexDesc.attributes[0].offset = offsetof(LayerVertex, position);
+    vertexDesc.attributes[0].bufferIndex = 0;
+    vertexDesc.attributes[1].format = MTLVertexFormatFloat2;
+    vertexDesc.attributes[1].offset = offsetof(LayerVertex, texcoord);
+    vertexDesc.attributes[1].bufferIndex = 0;
+    vertexDesc.layouts[0].stride = sizeof(LayerVertex);
+    vertexDesc.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
+
+    MTLRenderPipelineDescriptor* pipelineDesc = [[MTLRenderPipelineDescriptor alloc] init];
+    pipelineDesc.vertexFunction = [state.LayerLibrary newFunctionWithName:@"mp2d_layer_vs"];
+    pipelineDesc.fragmentFunction = [state.LayerLibrary newFunctionWithName:@"mp2d_layer_fs"];
+    pipelineDesc.vertexDescriptor = vertexDesc;
+    pipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+    state.LayerPipeline = [state.Device newRenderPipelineStateWithDescriptor:pipelineDesc error:&error];
+    if (!state.LayerPipeline)
+    {
+        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to create layer pipeline: %s\n", message);
+        return false;
+    }
+
+    state.LayerVertexBuffer =
+        [state.Device newBufferWithBytes:kLayerQuad
+                                  length:sizeof(kLayerQuad)
+                                 options:MTLResourceStorageModeShared];
+    if (!state.LayerVertexBuffer)
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to create layer vertex buffer\n");
+        return false;
+    }
+
+    return true;
+}
+
 bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
 {
     if (!State)
@@ -149,6 +244,9 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     if (preferredMetalDevice && state.Device && state.Device != preferredMetalDevice)
     {
         state.OutputTex = nil;
+        state.LayerLibrary = nil;
+        state.LayerPipeline = nil;
+        state.LayerVertexBuffer = nil;
         state.OBJLayerTex = nil;
         state.OBJDepthTex = nil;
         for (id<MTLTexture>& texture : state.AllBGLayerTex)
@@ -182,6 +280,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
 
     ScaleFactor = std::max(1, scale);
     if (state.OutputTex && state.OBJLayerTex && state.OBJDepthTex &&
+        state.LayerLibrary && state.LayerPipeline && state.LayerVertexBuffer &&
         state.AllBGLayerTex[0] && state.VRAMTexBG && state.VRAMTexOBJ &&
         state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
         state.LayerConfigBuffer && state.SpriteConfigBuffer && state.ScanlineConfigBuffer &&
@@ -190,6 +289,9 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     {
         return true;
     }
+
+    if (!BuildLayerPipeline())
+        return false;
 
     const NSUInteger width = static_cast<NSUInteger>(kScreenW * ScaleFactor);
     const NSUInteger height = static_cast<NSUInteger>(kScreenH * ScaleFactor);
@@ -932,6 +1034,9 @@ void MetalRenderer2D::Reset() noexcept
     if (!State)
         return;
 
+    State->LayerLibrary = nil;
+    State->LayerPipeline = nil;
+    State->LayerVertexBuffer = nil;
     State->OutputTex = nil;
     State->OBJLayerTex = nil;
     State->OBJDepthTex = nil;

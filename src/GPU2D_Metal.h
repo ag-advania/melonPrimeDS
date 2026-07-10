@@ -49,6 +49,8 @@ public:
 private:
     struct Metal2DState;
 
+    bool BuildLayerPipeline() noexcept;
+
     std::unique_ptr<Metal2DState> State;
     int ScaleFactor = 1;
 };
