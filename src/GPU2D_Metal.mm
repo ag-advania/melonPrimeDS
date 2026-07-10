@@ -125,6 +125,7 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
     LayerConfigCpu LayerConfig;
+    CompositorConfigCpu CompositorConfig;
     uint32_t BGVRAMRange[4][4] = {};
     int Scale = 0;
     bool LoggedFirstAllocation = false;
@@ -373,6 +374,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     if (!RefreshLayerConfig())
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to refresh initial layer config for engine %u\n", GPU2D.Num);
+        return false;
+    }
+    if (!RefreshCompositorConfig())
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to refresh initial compositor config for engine %u\n", GPU2D.Num);
         return false;
     }
 
@@ -887,6 +893,37 @@ bool MetalRenderer2D::RefreshScanlineConfig(int line) noexcept
         scanline.winPos[3] = 256;
     }
 
+    return true;
+}
+
+bool MetalRenderer2D::RefreshCompositorConfig() noexcept
+{
+    if (!State || !State->CompositorConfigBuffer)
+        return false;
+
+    Metal2DState& state = *State;
+    state.CompositorConfig = {};
+    for (uint32_t& prio : state.CompositorConfig.bgPrio)
+        prio = 0xFFFFFFFFu;
+
+    for (int layer = 0; layer < 4; layer++)
+    {
+        if (!(GPU2D.LayerEnable & (1 << layer)))
+            continue;
+        state.CompositorConfig.bgPrio[layer] = GPU2D.BGCnt[layer] & 0x3;
+    }
+
+    state.CompositorConfig.enableOBJ = !!(GPU2D.LayerEnable & (1 << 4));
+    state.CompositorConfig.enable3D = !!(GPU2D.DispCnt & (1 << 3));
+    state.CompositorConfig.blendCnt = GPU2D.BlendCnt;
+    state.CompositorConfig.blendEffect = (GPU2D.BlendCnt >> 6) & 0x3;
+    state.CompositorConfig.blendCoef[0] = GPU2D.EVA;
+    state.CompositorConfig.blendCoef[1] = GPU2D.EVB;
+    state.CompositorConfig.blendCoef[2] = GPU2D.EVY;
+
+    std::memcpy([state.CompositorConfigBuffer contents],
+                &state.CompositorConfig,
+                sizeof(state.CompositorConfig));
     return true;
 }
 
