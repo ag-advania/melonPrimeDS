@@ -29,6 +29,7 @@ public:
     bool UploadRawVRAMInputs() noexcept;
     bool UploadPaletteInputs() noexcept;
     bool RefreshLayerConfig() noexcept;
+    bool RefreshSpriteConfig(int ystart, int yend) noexcept;
     bool RefreshScanlineConfig(int line) noexcept;
     bool RefreshCompositorConfig() noexcept;
 
