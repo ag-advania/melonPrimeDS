@@ -12,15 +12,22 @@
 namespace melonDS
 {
 
-class MetalRenderer2D final
+class MetalRenderer2D final : public Renderer2D
 {
 public:
     explicit MetalRenderer2D(melonDS::GPU2D& gpu2D) noexcept;
     ~MetalRenderer2D();
 
+    bool Init() override { return true; }
+    void Reset() noexcept override;
+    void DrawScanline(u32 line) override;
+    void DrawSprites(u32 line) override;
+    void VBlank() override {}
+    void VBlankEnd() override {}
+
     bool Configure(void* preferredDevice, int scale) noexcept;
-    void Reset() noexcept;
     bool UploadRawVRAMInputs() noexcept;
+    bool UploadPaletteInputs() noexcept;
 
     [[nodiscard]] void* GetOutputTexture() const noexcept;
     [[nodiscard]] void* GetOBJLayerTexture() const noexcept;
@@ -39,7 +46,6 @@ public:
 private:
     struct Metal2DState;
 
-    melonDS::GPU2D& GPU2D;
     std::unique_ptr<Metal2DState> State;
     int ScaleFactor = 1;
 };
