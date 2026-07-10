@@ -3,8 +3,6 @@
 // MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
 // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
 // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
-// MELONPRIME_METAL_COMPUTE_MSL_ADDRESS_SPACE_FIX_V1
-// MELONPRIME_METAL_COMPUTE_GRACEFUL_DEGRADATION_V1
 // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -593,7 +591,7 @@ kernel void mp_compute_interp_spans_geometry(
 }
 
 static inline bool BinPolygon(
-    device const RenderPolygon& polygon,
+    thread const RenderPolygon& polygon,
     int2 topLeft,
     int2 botRight,
     device const SpanSetupX* xSpans)
@@ -1397,33 +1395,16 @@ bool MetalComputeRenderer3D::Init()
             RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
         return false;
     }
-
-    auto continueWithRasterOnly = [this](const char* failedStage) -> bool {
-        if (State)
-        {
-            State->Ready = false;
-            State->SpanBinReady = false;
-            State->TileRasterReady = false;
-            State->DepthBlendReady = false;
-            State->TextureVariantReady = false;
-            State->TileMemoryInFlight.store(false, std::memory_order_release);
-        }
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute: foundation unavailable at %s; continuing with Metal raster visible source only\n",
-            failedStage);
-        return true;
-    };
-
     if (!CreateComputeFoundation())
-        return continueWithRasterOnly("CreateComputeFoundation");
+        return false;
     if (!ConfigureSpanBinResources(requestedScale))
-        return continueWithRasterOnly("ConfigureSpanBinResources");
+        return false;
     if (!RunFoundationSelfTest())
-        return continueWithRasterOnly("RunFoundationSelfTest");
+        return false;
     if (!RunSpanBinSelfTest())
-        return continueWithRasterOnly("RunSpanBinSelfTest");
+        return false;
     if (!RunNoTextureTileSelfTest())
-        return continueWithRasterOnly("RunNoTextureTileSelfTest");
+        return false;
 
     State->Ready = true;
     State->SpanBinReady = true;
@@ -2138,9 +2119,7 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
         return;
     }
 
-    // Raster-only degraded mode must keep scaling the visible target without
-    // accidentally re-enabling partially initialized compute resources.
-    if (!State || !State->Ready)
+    if (!State || !State->Device)
         return;
 
     const int expectedWidth = 256 * scale;

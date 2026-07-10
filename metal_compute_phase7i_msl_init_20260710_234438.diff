@@ -1,0 +1,129 @@
+--- a/.claude/rules/plan/metal_compute_internal_resolution_msl_fix_instructions.md
++++ b/.claude/rules/plan/metal_compute_internal_resolution_msl_fix_instructions.md
+@@ -238,3 +238,14 @@
+ - 進捗文書（`metal_compute_shader_phase7_execution.md` / flicker-plan Phase 7 行 /
+   backend-plan）の「7A/7B 実機ビルド待ち」を、本修正コミットで「実機 self-test
+   PASS 済み」に更新すること。
++
++<!-- MELONPRIME_METAL_COMPUTE_PHASE7I_MSL_INIT_FIX -->
++## 10. 実装ステータス
++
++Phase 7IでFix 1〜3を実装する。
++
++- `BinPolygon`を`device const RenderPolygon&`へ修正。
++- compute初期化失敗時はMetal raster可視出力のみで続行。
++- degraded modeではcompute readinessをfalseに維持。
++- `GPU::SetRenderer()`のSoftware fallbackをエラーログへ記録。
++- Phase 7G/7Hのcompose・scale・visible-output層は変更しない。
+--- a/.claude/rules/plan/metal_compute_shader_phase7_execution.md
++++ b/.claude/rules/plan/metal_compute_shader_phase7_execution.md
+@@ -136,3 +136,11 @@
+ - High-resolution 3D selection uses frame-latched polygon activity as a fallback when live Engine-A DISPCNT has advanced before composition.
+ - Scaled Metal final textures use linear downsampling so 2x/3x/4x supersampling is visible even when ordinary 1x screen filtering is disabled.
+ - The compute renderer still uses the validated Metal raster result as its visible source while textured compute Rasterise remains under development.
++
++<!-- MELONPRIME_METAL_COMPUTE_PHASE7I_MSL_INIT_FIX -->
++## 2026-07-10 — Phase 7I MSL初期化修正
++
++- `BinPolygon`のMSLアドレス空間を`device const&`へ修正。
++- compute foundation失敗時はMetal raster可視出力のみで継続。
++- degraded modeではcompute readinessをfalseに固定。
++- renderer初期化失敗時のSoftware fallbackへエラーログを追加。
+--- a/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
++++ b/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
+@@ -575,3 +575,11 @@
+ - High-resolution 3D selection uses frame-latched polygon activity as a fallback when live Engine-A DISPCNT has advanced before composition.
+ - Scaled Metal final textures use linear downsampling so 2x/3x/4x supersampling is visible even when ordinary 1x screen filtering is disabled.
+ - The compute renderer still uses the validated Metal raster result as its visible source while textured compute Rasterise remains under development.
++
++<!-- MELONPRIME_METAL_COMPUTE_PHASE7I_MSL_INIT_FIX -->
++## 2026-07-10 — Phase 7I MSL初期化修正
++
++- `BinPolygon`のMSLアドレス空間を`device const&`へ修正。
++- compute foundation失敗時はMetal raster可視出力のみで継続。
++- degraded modeではcompute readinessをfalseに固定。
++- renderer初期化失敗時のSoftware fallbackへエラーログを追加。
+--- a/src/GPU.cpp
++++ b/src/GPU.cpp
+@@ -327,6 +327,11 @@
+         }
+         else
+         {
++#ifdef MELONPRIME_DS
++            // MELONPRIME_RENDERER_INIT_FALLBACK_LOG_V1
++            Platform::Log(Platform::LogLevel::Error,
++                "Renderer init failed; falling back to software renderer\n");
++#endif
+             // TODO: report error to platform
+         }
+     }
+--- a/src/GPU3D_MetalCompute.mm
++++ b/src/GPU3D_MetalCompute.mm
+@@ -3,6 +3,8 @@
+ // MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
+ // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
+ // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
++// MELONPRIME_METAL_COMPUTE_MSL_ADDRESS_SPACE_FIX_V1
++// MELONPRIME_METAL_COMPUTE_GRACEFUL_DEGRADATION_V1
+ // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
+@@ -591,7 +593,7 @@
+ }
+ 
+ static inline bool BinPolygon(
+-    thread const RenderPolygon& polygon,
++    device const RenderPolygon& polygon,
+     int2 topLeft,
+     int2 botRight,
+     device const SpanSetupX* xSpans)
+@@ -1395,16 +1397,33 @@
+             RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
+         return false;
+     }
++
++    auto continueWithRasterOnly = [this](const char* failedStage) -> bool {
++        if (State)
++        {
++            State->Ready = false;
++            State->SpanBinReady = false;
++            State->TileRasterReady = false;
++            State->DepthBlendReady = false;
++            State->TextureVariantReady = false;
++            State->TileMemoryInFlight.store(false, std::memory_order_release);
++        }
++        std::fprintf(stderr,
++            "[MelonPrime] metal compute: foundation unavailable at %s; continuing with Metal raster visible source only\n",
++            failedStage);
++        return true;
++    };
++
+     if (!CreateComputeFoundation())
+-        return false;
++        return continueWithRasterOnly("CreateComputeFoundation");
+     if (!ConfigureSpanBinResources(requestedScale))
+-        return false;
++        return continueWithRasterOnly("ConfigureSpanBinResources");
+     if (!RunFoundationSelfTest())
+-        return false;
++        return continueWithRasterOnly("RunFoundationSelfTest");
+     if (!RunSpanBinSelfTest())
+-        return false;
++        return continueWithRasterOnly("RunSpanBinSelfTest");
+     if (!RunNoTextureTileSelfTest())
+-        return false;
++        return continueWithRasterOnly("RunNoTextureTileSelfTest");
+ 
+     State->Ready = true;
+     State->SpanBinReady = true;
+@@ -2119,7 +2138,9 @@
+         return;
+     }
+ 
+-    if (!State || !State->Device)
++    // Raster-only degraded mode must keep scaling the visible target without
++    // accidentally re-enabling partially initialized compute resources.
++    if (!State || !State->Ready)
+         return;
+ 
+     const int expectedWidth = 256 * scale;
