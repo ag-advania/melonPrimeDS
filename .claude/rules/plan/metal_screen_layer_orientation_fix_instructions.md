@@ -449,3 +449,13 @@ Status: completed as no-code-change.
 - No 3D-source row-order or final-pass sampling inversion was applied because Phase 4 did not produce ROM/runtime evidence of a vertical source reversal.
 - This preserves the required separation: global presenter placement remains GL-compatible, layer routing remains byte-compatible with `ScreenPanelGL`, and any future 3D-only orientation fix must be driven by `MELONPRIME_METAL_DIAG=1` / `MELONPRIME_METAL_GETLINE_DIFF=1` output.
 - The next valid trigger for code change is a checker/diff result showing `verticalReverseCandidate=1` or an equivalent native-final-pass sampling mismatch isolated to the 3D source.
+
+### 2026-07-10 JST Phase 6 — final verification / handoff
+
+Status: completed with ROM-limited runtime coverage.
+
+- Pushed phase commits through `97f1bb2a` on `highres_fonts_v3`: presenter transform restore, presenter placement diagnostic, 3D orientation diagnostics, diagnostic-limit record, and 3D-source fix decision.
+- Final `tools/macos/build_metal_test.command` completed successfully (`ninja: no work to do` after prior successful Metal compile/link).
+- Final `cmake --build build-mac --parallel "$(sysctl -n hw.ncpu)"` completed successfully (`ninja: no work to do`).
+- Verified the built Metal test binary contains the presenter placement, 3D orientation, and vertical-reverse diff diagnostic strings.
+- Full visual acceptance still requires a ROM run with `MELONPRIME_METAL_DIAG=1 MELONPRIME_METAL_DIAG_FINAL_LAYERS=1` and, if needed, `MELONPRIME_METAL_GETLINE_DIFF=1`; no ROM exists in this workspace.
