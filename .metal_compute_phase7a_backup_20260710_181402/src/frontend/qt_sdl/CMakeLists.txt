@@ -283,7 +283,6 @@ if (MELONPRIME_METAL_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_MetalCompute.mm
     )
 
     # Metal-plan Phases 2/4/6/7/8 (.claude/rules/melonprime-metal-backend-plan.md):
@@ -309,7 +308,6 @@ if (MELONPRIME_METAL_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_MetalCompute.mm
         MelonPrimeMetalFeatureCheck.mm
         MelonPrimeScreenMetal.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc"

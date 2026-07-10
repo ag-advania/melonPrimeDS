@@ -8,20 +8,107 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "GPU2D_Metal.h"
 #include "GPU3D_Metal.h"
+#include "GPU3D_MetalCompute.h"
 #include "NDS.h"
 
 namespace melonDS
 {
+
+namespace
+{
+
+bool MetalComputeFoundationEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_FOUNDATION");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+void* Metal3DColorTarget(Renderer3D* renderer) noexcept
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+        return compute->GetColorTargetTexture();
+    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+        return raster->GetColorTargetTexture();
+    return nullptr;
+}
+
+void* Metal3DPreferredDevice(Renderer3D* renderer) noexcept
+{
+    id<MTLTexture> texture = (__bridge id<MTLTexture>)Metal3DColorTarget(renderer);
+    return texture ? (__bridge void*)texture.device : nullptr;
+}
+
+bool Metal3DIsThreaded(Renderer3D* renderer) noexcept
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+        return compute->IsThreaded();
+    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+        return raster->IsThreaded();
+    return false;
+}
+
+void Metal3DSetupRenderThread(Renderer3D* renderer)
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+        compute->SetupRenderThread();
+    else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+        raster->SetupRenderThread();
+}
+
+void Metal3DEnableRenderThread(Renderer3D* renderer)
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+        compute->EnableRenderThread();
+    else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+        raster->EnableRenderThread();
+}
+
+void ConfigureMetal3DRenderer(
+    Renderer3D* renderer,
+    bool threaded,
+    int scale,
+    bool betterPolygons)
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+    {
+        compute->SetThreaded(threaded);
+        compute->SetScaleFactor(scale);
+        compute->SetBetterPolygons(betterPolygons);
+    }
+    else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+    {
+        raster->SetThreaded(threaded);
+        raster->SetScaleFactor(scale);
+        raster->SetBetterPolygons(betterPolygons);
+    }
+}
+
+} // namespace
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
     : SoftRenderer(nds)
 {
     Metal2D_A = std::make_unique<MetalRenderer2D>(GPU.GPU2D_A);
     Metal2D_B = std::make_unique<MetalRenderer2D>(GPU.GPU2D_B);
-    Rend3D = std::make_unique<MetalRenderer3D>(GPU.GPU3D, *this);
+
+    if (MetalComputeFoundationEnabled())
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute foundation: selected developer foundation mode\n");
+        Rend3D = std::make_unique<MetalComputeRenderer3D>(GPU.GPU3D, *this);
+    }
+    else
+    {
+        Rend3D = std::make_unique<MetalRenderer3D>(GPU.GPU3D, *this);
+    }
 }
 
 MetalRenderer::~MetalRenderer() = default;
@@ -33,47 +120,30 @@ bool MetalRenderer::Init()
     if (!Rend3D->Init())
         return false;
 
-    auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
-    void* preferredDevice = nullptr;
-    if (rend3d)
-    {
-        id<MTLTexture> native3D = (__bridge id<MTLTexture>)rend3d->GetColorTargetTexture();
-        preferredDevice = native3D ? (__bridge void*)native3D.device : nullptr;
-    }
-    ConfigureMetal2DMirror(preferredDevice);
+    ConfigureMetal2DMirror(Metal3DPreferredDevice(Rend3D.get()));
     return true;
 }
 
 void MetalRenderer::PreSavestate()
 {
-    auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
-    if (rend3d && rend3d->IsThreaded())
-        rend3d->SetupRenderThread();
+    if (Metal3DIsThreaded(Rend3D.get()))
+        Metal3DSetupRenderThread(Rend3D.get());
 }
 
 void MetalRenderer::PostSavestate()
 {
-    auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
-    if (rend3d && rend3d->IsThreaded())
-        rend3d->EnableRenderThread();
+    if (Metal3DIsThreaded(Rend3D.get()))
+        Metal3DEnableRenderThread(Rend3D.get());
 }
 
 void MetalRenderer::SetRenderSettings(RendererSettings& settings)
 {
-    auto* rend3d = dynamic_cast<MetalRenderer3D*>(Rend3D.get());
-    if (!rend3d)
-        return;
-
     const int scale = std::max(1, settings.ScaleFactor);
     ScaleFactor = scale;
 
-    rend3d->SetThreaded(settings.Threaded);
-    rend3d->SetScaleFactor(scale);
-    rend3d->SetBetterPolygons(settings.BetterPolygons);
-
-    id<MTLTexture> native3D = (__bridge id<MTLTexture>)rend3d->GetColorTargetTexture();
-    void* preferredDevice = native3D ? (__bridge void*)native3D.device : nullptr;
-    ConfigureMetal2DMirror(preferredDevice);
+    ConfigureMetal3DRenderer(
+        Rend3D.get(), settings.Threaded, scale, settings.BetterPolygons);
+    ConfigureMetal2DMirror(Metal3DPreferredDevice(Rend3D.get()));
 }
 
 void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
