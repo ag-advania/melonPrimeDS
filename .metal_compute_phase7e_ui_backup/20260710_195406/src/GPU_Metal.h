@@ -19,7 +19,7 @@ class MetalRenderer2D;
 class MetalRenderer : public SoftRenderer
 {
 public:
-    explicit MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer = false) noexcept;
+    explicit MetalRenderer(melonDS::NDS& nds) noexcept;
     ~MetalRenderer() override;
 
     bool Init() override;

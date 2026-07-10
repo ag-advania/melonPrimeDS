@@ -1293,10 +1293,7 @@ void EmuThread::updateRenderer()
             break;
 #if defined(MELONPRIME_ENABLE_METAL)
         case renderer3D_Metal:
-            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, false));
-            break;
-        case renderer3D_MetalCompute:
-            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
+            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds));
             break;
 #endif
         default: __builtin_unreachable();

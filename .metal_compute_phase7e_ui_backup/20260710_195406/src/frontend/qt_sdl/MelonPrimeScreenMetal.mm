@@ -605,11 +605,8 @@ void ScreenPanelMetal::drawScreen()
             auto nds = emuInstance->getNDS();
 
             const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
-            const int selectedRenderer =
-                emuInstance->getGlobalConfig().GetInt("3D.Renderer");
             const bool metalRendererSelected =
-                selectedRenderer == renderer3D_Metal ||
-                selectedRenderer == renderer3D_MetalCompute;
+                emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Metal;
 
             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {

@@ -555,13 +555,3 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 - presenter既存の2-layer Metal texture経路を使用するため、3x時の可視sourceは`768x576x2`となる。
 <!-- MELONPRIME_METAL_COMPUTE_PHASE7B_STATUS -->
 - 2026-07-10 Phase 7B: real-frame CPU span setup + Metal InterpSpans geometry + BinCombined + CalcOffsets + SortWorkを非同期3-slot mirrorとして接続。可視出力はraster referenceを維持。
-
-<!-- MELONPRIME_METAL_COMPUTE_PHASE7E_UI -->
-## 2026-07-10 — Phase 7E / renderer UI
-
-- Video Settings exposes separate **Metal** and **Metal Compute Shader** renderer IDs.
-- Metal Compute selection no longer depends on `MELONPRIME_METAL_COMPUTE_FOUNDATION`.
-- Phase 7E consumes Phase 7D Color/Depth/Attr work-item tiles in a non-visible Metal DepthBlend pass.
-- Current DepthBlend scope: clear state, opaque depth selection, equal-depth handling, basic translucent blending, result Color/Depth/Attr buffers and asynchronous diagnostics.
-- Visible output intentionally remains `MetalRasterReference` until texture variants and FinalPass reach parity.
-- Known pre-match dark-transition composition issue remains deferred until the compute final-output cutover.
