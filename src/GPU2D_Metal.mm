@@ -56,14 +56,79 @@ NSString* const kMetal2DLayerShaderSource =
      "    float4 position [[position]];\n"
      "    float2 texcoord;\n"
      "};\n"
+     "struct BGConfig {\n"
+     "    uint2 size;\n"
+     "    uint type;\n"
+     "    uint palOffset;\n"
+     "    uint tileOffset;\n"
+     "    uint mapOffset;\n"
+     "    uint clamp;\n"
+     "    uint pad0;\n"
+     "};\n"
+     "struct LayerConfig {\n"
+     "    uint vramMask;\n"
+     "    uint3 pad0;\n"
+     "    BGConfig bgConfig[4];\n"
+     "};\n"
      "vertex VOut mp2d_layer_vs(VertexIn in [[stage_in]]) {\n"
      "    VOut out;\n"
      "    out.position = float4((in.position * 2.0) - 1.0, 0.0, 1.0);\n"
      "    out.texcoord = in.texcoord;\n"
      "    return out;\n"
      "}\n"
-     "fragment float4 mp2d_layer_fs(VOut in [[stage_in]]) {\n"
-     "    (void)in;\n"
+     "uint vramRead8(texture2d<uint> vram, constant LayerConfig& config, uint addr) {\n"
+     "    return vram.read(uint2(addr & 0x3ffu, (addr >> 10) & config.vramMask)).r;\n"
+     "}\n"
+     "uint vramRead16(texture2d<uint> vram, constant LayerConfig& config, uint addr) {\n"
+     "    uint lo = vramRead8(vram, config, addr);\n"
+     "    uint hi = vramRead8(vram, config, addr + 1u);\n"
+     "    return lo | (hi << 8);\n"
+     "}\n"
+     "float4 paletteRead(texture2d<uint> palette, uint row, uint id, bool transparent) {\n"
+     "    uint raw = palette.read(uint2(id & 0xffu, row)).r;\n"
+     "    float3 rgb = float3(float(raw & 0x1fu), float((raw >> 5) & 0x1fu), float((raw >> 10) & 0x1fu)) / 31.0;\n"
+     "    return float4(rgb, transparent ? 0.0 : 1.0);\n"
+     "}\n"
+     "float4 bgText16(uint layer, uint2 coord, constant LayerConfig& config, texture2d<uint> vram, texture2d<uint> palette) {\n"
+     "    constant BGConfig& bg = config.bgConfig[layer];\n"
+     "    uint mapOffset = bg.mapOffset + (((coord.x >> 3) & 0x1fu) << 1) + (((coord.y >> 3) & 0x1fu) << 6);\n"
+     "    if (bg.size.y == 512u) {\n"
+     "        if (bg.size.x == 512u) mapOffset += (((coord.x >> 8) & 0x1u) << 11) + (((coord.y >> 8) & 0x1u) << 12);\n"
+     "        else mapOffset += (((coord.y >> 8) & 0x1u) << 11);\n"
+     "    } else if (bg.size.x == 512u) mapOffset += (((coord.x >> 8) & 0x1u) << 11);\n"
+     "    uint mapVal = vramRead16(vram, config, mapOffset);\n"
+     "    uint tileOffset = (bg.tileOffset << 1) + ((mapVal & 0x3ffu) << 6);\n"
+     "    tileOffset += ((mapVal & (1u << 10)) != 0u) ? (7u - (coord.x & 0x7u)) : (coord.x & 0x7u);\n"
+     "    tileOffset += ((mapVal & (1u << 11)) != 0u) ? ((7u - (coord.y & 0x7u)) << 3) : ((coord.y & 0x7u) << 3);\n"
+     "    uint col = vramRead8(vram, config, tileOffset >> 1);\n"
+     "    col = ((tileOffset & 0x1u) != 0u) ? (col >> 4) : (col & 0xfu);\n"
+     "    col += (mapVal >> 12) << 4;\n"
+     "    return paletteRead(palette, bg.palOffset, col, (col & 0xfu) == 0u);\n"
+     "}\n"
+     "float4 bgText256(uint layer, uint2 coord, constant LayerConfig& config, texture2d<uint> vram, texture2d<uint> palette) {\n"
+     "    constant BGConfig& bg = config.bgConfig[layer];\n"
+     "    uint mapOffset = bg.mapOffset + (((coord.x >> 3) & 0x1fu) << 1) + (((coord.y >> 3) & 0x1fu) << 6);\n"
+     "    if (bg.size.y == 512u) {\n"
+     "        if (bg.size.x == 512u) mapOffset += (((coord.x >> 8) & 0x1u) << 11) + (((coord.y >> 8) & 0x1u) << 12);\n"
+     "        else mapOffset += (((coord.y >> 8) & 0x1u) << 11);\n"
+     "    } else if (bg.size.x == 512u) mapOffset += (((coord.x >> 8) & 0x1u) << 11);\n"
+     "    uint mapVal = vramRead16(vram, config, mapOffset);\n"
+     "    uint tileOffset = bg.tileOffset + ((mapVal & 0x3ffu) << 6);\n"
+     "    tileOffset += ((mapVal & (1u << 10)) != 0u) ? (7u - (coord.x & 0x7u)) : (coord.x & 0x7u);\n"
+     "    tileOffset += ((mapVal & (1u << 11)) != 0u) ? ((7u - (coord.y & 0x7u)) << 3) : ((coord.y & 0x7u) << 3);\n"
+     "    uint col = vramRead8(vram, config, tileOffset);\n"
+     "    uint pal = (bg.palOffset != 0u) ? (mapVal >> 12) : 0u;\n"
+     "    return paletteRead(palette, bg.palOffset + pal, col, col == 0u);\n"
+     "}\n"
+     "fragment float4 mp2d_layer_fs(VOut in [[stage_in]],\n"
+     "                              constant LayerConfig& config [[buffer(0)]],\n"
+     "                              constant uint& curBG [[buffer(1)]],\n"
+     "                              texture2d<uint> vram [[texture(0)]],\n"
+     "                              texture2d<uint> palette [[texture(1)]]) {\n"
+     "    constant BGConfig& bg = config.bgConfig[curBG];\n"
+     "    uint2 coord = uint2(in.texcoord * float2(bg.size));\n"
+     "    if (bg.type == 0u) return bgText16(curBG, coord, config, vram, palette);\n"
+     "    if (bg.type == 1u) return bgText256(curBG, coord, config, vram, palette);\n"
      "    return float4(0.0, 0.0, 0.0, 0.0);\n"
      "}\n";
 
@@ -264,6 +329,11 @@ bool MetalRenderer2D::PrerenderConfiguredLayers() noexcept
 
         [encoder setRenderPipelineState:state.LayerPipeline];
         [encoder setVertexBuffer:state.LayerVertexBuffer offset:0 atIndex:0];
+        [encoder setFragmentBuffer:state.LayerConfigBuffer offset:0 atIndex:0];
+        uint32_t layerIndex = static_cast<uint32_t>(layer);
+        [encoder setFragmentBytes:&layerIndex length:sizeof(layerIndex) atIndex:1];
+        [encoder setFragmentTexture:state.VRAMTexBG atIndex:0];
+        [encoder setFragmentTexture:state.PalTexBG atIndex:1];
         [encoder setViewport:(MTLViewport){0.0,
                                            0.0,
                                            static_cast<double>(cfg.size[0]),
@@ -660,6 +730,7 @@ bool MetalRenderer2D::RefreshLayerConfig() noexcept
 
     Metal2DState& state = *State;
     state.LayerConfig = {};
+    state.LayerConfig.vramMask = static_cast<uint32_t>(state.VRAMTexBG ? (state.VRAMTexBG.height - 1) : 0);
     for (auto& range : state.BGVRAMRange)
     {
         for (uint32_t& entry : range)
