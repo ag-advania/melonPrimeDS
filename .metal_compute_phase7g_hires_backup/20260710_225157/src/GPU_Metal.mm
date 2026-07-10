@@ -3,7 +3,6 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
-// MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
 
 #import <Metal/Metal.h>
 
@@ -238,7 +237,6 @@ struct MetalRenderer::MetalOutputState
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
     : SoftRenderer(nds)
 {
-    ComputeRendererSelected = useComputeRenderer;
     Metal2D_A = std::make_unique<MetalRenderer2D>(GPU.GPU2D_A);
     Metal2D_B = std::make_unique<MetalRenderer2D>(GPU.GPU2D_B);
 
@@ -295,36 +293,6 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     ConfigureMetal3DRenderer(
         Rend3D.get(), settings.Threaded, scale,
         settings.HiresCoordinates, settings.BetterPolygons);
-
-    // The compute wrapper keeps the validated Metal raster renderer as the
-    // visible source. Treat the requested setting as authoritative and verify
-    // the actual raster target before creating the final two-screen texture.
-    id<MTLTexture> high3D =
-        (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
-    const NSUInteger expectedWidth = static_cast<NSUInteger>(256 * scale);
-    const NSUInteger expectedHeight = static_cast<NSUInteger>(192 * scale);
-    if (high3D && (high3D.width != expectedWidth || high3D.height != expectedHeight))
-    {
-        // One retry closes ordering gaps between renderer initialization and
-        // the first settings update without recreating the whole renderer.
-        ConfigureMetal3DRenderer(
-            Rend3D.get(), settings.Threaded, scale,
-            settings.HiresCoordinates, settings.BetterPolygons);
-        high3D = (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
-    }
-
-    if (!high3D || high3D.width != expectedWidth || high3D.height != expectedHeight)
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal hires: target mismatch renderer=%s requested=%dx actual=%zux%zu expected=%zux%zu\n",
-            ComputeRendererSelected ? "MetalCompute" : "Metal",
-            scale,
-            high3D ? static_cast<size_t>(high3D.width) : 0u,
-            high3D ? static_cast<size_t>(high3D.height) : 0u,
-            static_cast<size_t>(expectedWidth),
-            static_cast<size_t>(expectedHeight));
-    }
-
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
     ConfigureMetal2DMirror(preferredDevice);
     ConfigureMetalVisibleOutput(preferredDevice);
@@ -401,24 +369,9 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         if (!high3D || high3D.device != OutputState->Device)
             return false;
 
-        // Do not derive the requested scale from a stale 1x target. The UI/config
-        // setting is authoritative; the target must match it before the output
-        // state is allowed to publish a Metal texture.
-        const int scale = std::max(1, ScaleFactor);
-        const NSUInteger width = static_cast<NSUInteger>(256 * scale);
-        const NSUInteger height = static_cast<NSUInteger>(192 * scale);
-        if (high3D.width != width || high3D.height != height)
-        {
-            std::fprintf(stderr,
-                "[MelonPrime] metal visible output: refusing stale target renderer=%s requestedScale=%d actual=%zux%zu expected=%zux%zu\n",
-                ComputeRendererSelected ? "MetalCompute" : "Metal",
-                scale,
-                static_cast<size_t>(high3D.width),
-                static_cast<size_t>(high3D.height),
-                static_cast<size_t>(width),
-                static_cast<size_t>(height));
-            return false;
-        }
+        const NSUInteger width = high3D.width;
+        const NSUInteger height = high3D.height;
+        const int scale = std::max(1, static_cast<int>(width / 256u));
 
         std::lock_guard<std::mutex> lock(OutputState->Mutex);
         if (OutputState->Ready && OutputState->Scale == scale &&
@@ -502,23 +455,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             return;
         }
 
-        const NSUInteger expectedWidth =
-            static_cast<NSUInteger>(256 * std::max(1, ScaleFactor));
-        const NSUInteger expectedHeight =
-            static_cast<NSUInteger>(192 * std::max(1, ScaleFactor));
-        if (high3D.width != expectedWidth || high3D.height != expectedHeight ||
-            OutputState->Width != expectedWidth ||
-            OutputState->Height != expectedHeight ||
-            OutputState->Scale != std::max(1, ScaleFactor))
-        {
-            // Self-heal if the target was resized after the previous output
-            // configuration. This path is reached before taking OutputState's
-            // composition lock.
-            void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
-            if (!ConfigureMetalVisibleOutput(preferredDevice))
-                return;
-        }
-
         struct VisibleOutputConfigCpu
         {
             uint32_t outputSize[2];
@@ -579,17 +515,9 @@ void MetalRenderer::ComposeMetalVisibleOutput()
 
         const uint32_t engineALayer = GPU.ScreenSwap ? 0u : 1u;
         const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
-        const bool engineA3DEnabled =
-            (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
-        const bool rendered3DGeometry = GPU.GPU3D.RenderNumPolygons > 0;
-        // The live 2D DISPCNT can move to the next frame before SwapBuffers()
-        // composes the previous one. RenderNumPolygons is the latched 3D-frame
-        // signal, so use it as a safe fallback instead of silently publishing
-        // only the native CPU composite at scales above 1x.
         const uint32_t useHighResolution3D =
-            (OutputState->Scale > 1 && GPU.ScreensEnabled &&
-             displayModeA == 1u &&
-             (engineA3DEnabled || rendered3DGeometry)) ? 1u : 0u;
+            (GPU.ScreensEnabled && displayModeA == 1u &&
+             (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u) ? 1u : 0u;
 
         for (uint32_t layer = 0; layer < 2; layer++)
         {
@@ -663,13 +591,11 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         {
             OutputState->LoggedVisibleOutput = true;
             std::fprintf(stderr,
-                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d size=%zux%zu engineALayer=%u high3D=%u polygons=%u\n",
-                ComputeRendererSelected ? "MetalCompute" : "Metal",
+                "[MelonPrime] metal visible output: first compose scale=%d size=%zux%zu engineALayer=%u high3D=%u\n",
                 OutputState->Scale,
                 static_cast<size_t>(OutputState->Width),
                 static_cast<size_t>(OutputState->Height),
-                engineALayer, useHighResolution3D,
-                GPU.GPU3D.RenderNumPolygons);
+                engineALayer, useHighResolution3D);
         }
     }
 }
