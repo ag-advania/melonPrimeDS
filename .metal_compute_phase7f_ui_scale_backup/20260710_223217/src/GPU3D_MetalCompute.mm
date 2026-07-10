@@ -1,8 +1,6 @@
-// MelonPrimeDS - Metal compute renderer texture-variant contract stage (Phase 7F)
+// MelonPrimeDS - Metal compute renderer no-texture DepthBlend stage (Phase 7E)
 // MELONPRIME_METAL_COMPUTE_TILE_MEMORY_V4
 // MELONPRIME_METAL_COMPUTE_DEPTH_BLEND_V5
-// MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
-// MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -37,7 +35,6 @@ constexpr uint32_t kFrameSlotCount = 3;
 constexpr size_t kTileMemoryBudgetBytes = 192u * 1024u * 1024u;
 constexpr uint32_t kTileSummaryWords = 8;
 constexpr uint32_t kDepthBlendSummaryWords = 8;
-constexpr uint32_t kTextureVariantSummaryWords = 16;
 
 constexpr uint32_t kVariantWorkCountStart = 0;
 constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
@@ -150,22 +147,10 @@ struct VariantMeta
 {
     uint32_t Textured;
     uint32_t BlendMode;
-    uint32_t TexParam;
-    uint32_t TexPalette;
+    uint32_t Reserved0;
+    uint32_t Reserved1;
 };
 static_assert(sizeof(VariantMeta) == 16, "MSL VariantMeta layout mismatch");
-
-struct TextureVariantSummary
-{
-    uint32_t Total;
-    uint32_t Textured;
-    uint32_t Untextured;
-    uint32_t Reserved;
-    uint32_t Formats[8];
-    uint32_t BlendModes[4];
-};
-static_assert(sizeof(TextureVariantSummary) == kTextureVariantSummaryWords * sizeof(uint32_t),
-              "MSL TextureVariantSummary layout mismatch");
 
 struct TileRasterSummary
 {
@@ -335,54 +320,9 @@ struct VariantMeta
 {
     uint Textured;
     uint BlendMode;
-    uint TexParam;
-    uint TexPalette;
+    uint Reserved0;
+    uint Reserved1;
 };
-
-
-constant uint TextureVariantSummaryWords = 16u;
-constant uint TextureSummaryTotal = 0u;
-constant uint TextureSummaryTextured = 1u;
-constant uint TextureSummaryUntextured = 2u;
-constant uint TextureSummaryReserved = 3u;
-constant uint TextureSummaryFormatBase = 4u;
-constant uint TextureSummaryBlendBase = 12u;
-
-kernel void mp_compute_clear_texture_variant_summary(
-    device atomic_uint* summary [[buffer(0)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid < TextureVariantSummaryWords)
-        atomic_store_explicit(&summary[gid], 0u, memory_order_relaxed);
-}
-
-kernel void mp_compute_classify_texture_variants(
-    device const VariantMeta* variants [[buffer(0)]],
-    device atomic_uint* summary [[buffer(1)]],
-    constant uint& variantCount [[buffer(2)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid >= variantCount)
-        return;
-
-    const VariantMeta meta = variants[gid];
-    atomic_fetch_add_explicit(&summary[TextureSummaryTotal], 1u, memory_order_relaxed);
-    if (meta.Textured != 0u)
-    {
-        atomic_fetch_add_explicit(&summary[TextureSummaryTextured], 1u, memory_order_relaxed);
-        const uint format = min((meta.TexParam >> 26u) & 0x7u, 7u);
-        atomic_fetch_add_explicit(
-            &summary[TextureSummaryFormatBase + format], 1u, memory_order_relaxed);
-    }
-    else
-    {
-        atomic_fetch_add_explicit(&summary[TextureSummaryUntextured], 1u, memory_order_relaxed);
-    }
-
-    const uint blend = min(meta.BlendMode, 3u);
-    atomic_fetch_add_explicit(
-        &summary[TextureSummaryBlendBase + blend], 1u, memory_order_relaxed);
-}
 
 constant uint TileSummaryRasterised = 0u;
 constant uint TileSummarySkippedTextured = 1u;
@@ -1281,7 +1221,6 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> WorkOffsets = nil;
         id<MTLBuffer> WorkDescs = nil;
         id<MTLBuffer> VariantMetaBuffer = nil;
-        id<MTLBuffer> TextureVariantSummaryBuffer = nil;
         id<MTLCommandBuffer> LastCommand = nil;
         std::atomic<bool> InFlight { false };
         std::atomic<uint64_t> Generation { 0 };
@@ -1301,8 +1240,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> RasteriseNoTextureTilesPipeline = nil;
     id<MTLComputePipelineState> ClearDepthBlendSummaryPipeline = nil;
     id<MTLComputePipelineState> DepthBlendNoTexturePipeline = nil;
-    id<MTLComputePipelineState> ClearTextureVariantSummaryPipeline = nil;
-    id<MTLComputePipelineState> ClassifyTextureVariantsPipeline = nil;
 
     id<MTLBuffer> ColorTiles = nil;
     id<MTLBuffer> DepthTiles = nil;
@@ -1320,7 +1257,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     std::vector<VariantKey> VariantData;
     std::vector<VariantMeta> VariantMetaData;
 
-    uint32_t RequestedScaleFactor = 1;
     uint32_t ScaleFactor = 1;
     uint32_t ScreenWidth = 256;
     uint32_t ScreenHeight = 192;
@@ -1339,7 +1275,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     bool SpanBinReady = false;
     bool TileRasterReady = false;
     bool DepthBlendReady = false;
-    bool TextureVariantReady = false;
     bool LoggedOverflow = false;
 
     std::atomic<uint64_t> SubmittedFrames { 0 };
@@ -1375,28 +1310,11 @@ MetalComputeRenderer3D::~MetalComputeRenderer3D()
 
 bool MetalComputeRenderer3D::Init()
 {
-    const int requestedScale = State
-        ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
-        : 1;
-    RasterReference.SetScaleFactor(requestedScale);
     if (!RasterReference.Init())
         return false;
-    // Re-assert after device/targets exist. This closes the pre-init settings
-    // ordering gap and makes the visible fallback target deterministic.
-    RasterReference.SetScaleFactor(requestedScale);
-    if (RasterReference.GetScaleFactor() != requestedScale ||
-        RasterReference.GetTargetWidth() != 256 * requestedScale ||
-        RasterReference.GetTargetHeight() != 192 * requestedScale)
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute scale sync: init mismatch requested=%d actualScale=%d target=%dx%d\n",
-            requestedScale, RasterReference.GetScaleFactor(),
-            RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
-        return false;
-    }
     if (!CreateComputeFoundation())
         return false;
-    if (!ConfigureSpanBinResources(requestedScale))
+    if (!ConfigureSpanBinResources(std::max(1, RasterReference.GetScaleFactor())))
         return false;
     if (!RunFoundationSelfTest())
         return false;
@@ -1409,10 +1327,8 @@ bool MetalComputeRenderer3D::Init()
     State->SpanBinReady = true;
     State->TileRasterReady = true;
     State->DepthBlendReady = true;
-    State->TextureVariantReady = true;
     std::fprintf(stderr,
-        "[MelonPrime] metal compute texture variants: Phase 7F ready scale=%d target=%dx%d; visible output remains Metal raster reference\n",
-        requestedScale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
+        "[MelonPrime] metal compute depth blend: Phase 7E ready; visible output remains Metal raster reference\n");
     return true;
 }
 
@@ -1473,10 +1389,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device, State->Library, @"mp_compute_clear_depth_blend_summary");
     State->DepthBlendNoTexturePipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_depth_blend_no_texture");
-    State->ClearTextureVariantSummaryPipeline = BuildComputePipeline(
-        State->Device, State->Library, @"mp_compute_clear_texture_variant_summary");
-    State->ClassifyTextureVariantsPipeline = BuildComputePipeline(
-        State->Device, State->Library, @"mp_compute_classify_texture_variants");
 
     if (!State->ClearIndirectPipeline || !State->ClearCoarseMaskPipeline ||
         !State->CalcOffsetsPipeline || !State->SortWorkPipeline ||
@@ -1484,9 +1396,7 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->BinCombinedPipeline || !State->ClearTileSummaryPipeline ||
         !State->RasteriseNoTextureTilesPipeline ||
         !State->ClearDepthBlendSummaryPipeline ||
-        !State->DepthBlendNoTexturePipeline ||
-        !State->ClearTextureVariantSummaryPipeline ||
-        !State->ClassifyTextureVariantsPipeline)
+        !State->DepthBlendNoTexturePipeline)
     {
         return false;
     }
@@ -1503,8 +1413,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->RasteriseNoTextureTilesPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->DepthBlendNoTexturePipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearTextureVariantSummaryPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClassifyTextureVariantsPipeline.maxTotalThreadsPerThreadgroup,
     });
     if (minMaxThreads < 64)
     {
@@ -1581,14 +1489,10 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.WorkOffsets = [State->Device newBufferWithLength:workOffsetBytes options:MTLResourceStorageModeShared];
         slot.WorkDescs = [State->Device newBufferWithLength:workDescBytes options:MTLResourceStorageModeShared];
         slot.VariantMetaBuffer = [State->Device newBufferWithLength:variantMetaBytes options:MTLResourceStorageModeShared];
-        slot.TextureVariantSummaryBuffer =
-            [State->Device newBufferWithLength:kTextureVariantSummaryWords * sizeof(uint32_t)
-                                       options:MTLResourceStorageModeShared];
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
             !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
-            !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
-            !slot.TextureVariantSummaryBuffer)
+            !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer)
         {
             std::fprintf(stderr,
                 "[MelonPrime] metal compute span/bin: buffer allocation failed scale=%d\n",
@@ -2106,45 +2010,12 @@ bool MetalComputeRenderer3D::IsThreaded() const noexcept
 void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
 {
     scale = std::max(1, scale);
-    if (State)
-        State->RequestedScaleFactor = static_cast<uint32_t>(scale);
-
     RasterReference.SetScaleFactor(scale);
-    if (!State || !State->Device)
-        return;
-
-    const int expectedWidth = 256 * scale;
-    const int expectedHeight = 192 * scale;
-    if (RasterReference.GetScaleFactor() != scale ||
-        RasterReference.GetTargetWidth() != expectedWidth ||
-        RasterReference.GetTargetHeight() != expectedHeight)
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute scale sync: runtime mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
-            scale, RasterReference.GetScaleFactor(),
-            RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
-            expectedWidth, expectedHeight);
-        State->SpanBinReady = false;
-        return;
-    }
-
-    if (static_cast<uint32_t>(scale) != State->ScaleFactor)
+    if (State && State->Device && static_cast<uint32_t>(scale) != State->ScaleFactor)
     {
         if (!ConfigureSpanBinResources(scale))
-        {
             State->SpanBinReady = false;
-            return;
-        }
-        State->SpanBinReady = true;
-        State->TileRasterReady = true;
-        State->DepthBlendReady = true;
-        State->TextureVariantReady = true;
     }
-
-    std::fprintf(stderr,
-        "[MelonPrime] metal compute scale sync: applied scale=%d target=%dx%d compute=%ux%u\n",
-        scale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
-        State->ScreenWidth, State->ScreenHeight);
 }
 
 void MetalComputeRenderer3D::SetHighResolutionCoordinates(bool enabled) noexcept
@@ -2225,9 +2096,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             variantIndex = static_cast<uint32_t>(variantIt - State->VariantData.begin());
         }
         outputPolygon.Variant = variantIndex;
-        State->VariantMetaData[variantIndex] = {
-            key.Textured, key.BlendMode, key.TexParam, key.TexPalette
-        };
+        State->VariantMetaData[variantIndex] = { key.Textured, key.BlendMode, 0, 0 };
 
         const uint32_t nverts = polygon->NumVertices;
         uint32_t vtop = polygon->VTop;
@@ -2502,24 +2371,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                      threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
             [encoder endEncoding];
         }
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->ClearTextureVariantSummaryPipeline];
-            [encoder setBuffer:slot->TextureVariantSummaryBuffer offset:0 atIndex:0];
-            [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-            [encoder endEncoding];
-        }
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->ClassifyTextureVariantsPipeline];
-            [encoder setBuffer:slot->VariantMetaBuffer offset:0 atIndex:0];
-            [encoder setBuffer:slot->TextureVariantSummaryBuffer offset:0 atIndex:1];
-            [encoder setBytes:&variantCount length:sizeof(variantCount) atIndex:2];
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(variantCount, 32), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-            [encoder endEncoding];
-        }
         if (numSetupIndices > 0)
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2636,7 +2487,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         id<MTLBuffer> completedHeader = slot->Header;
         id<MTLBuffer> completedTileSummary = State->TileSummary;
         id<MTLBuffer> completedDepthBlendSummary = State->DepthBlendSummaryBuffer;
-        id<MTLBuffer> completedTextureVariantSummary = slot->TextureVariantSummaryBuffer;
         const bool completedTileRaster = submitTileRaster;
         const bool completedDepthBlend = submitDepthBlend;
         MetalComputeState* state = State.get();
@@ -2692,21 +2542,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                         blendDepthMin,
                         blend->DepthMax);
                 }
-                if (completedCount <= 3 || (completedCount % 600) == 0)
-                {
-                    const auto* texture = static_cast<const TextureVariantSummary*>(
-                        [completedTextureVariantSummary contents]);
-                    std::fprintf(stderr,
-                        "[MelonPrime] metal compute texture variants: frame=%llu scale=%u total=%u textured=%u untextured=%u formats=[%u,%u,%u,%u,%u,%u,%u,%u] blend=[%u,%u,%u,%u]\n",
-                        static_cast<unsigned long long>(serial), submittedScale,
-                        texture->Total, texture->Textured, texture->Untextured,
-                        texture->Formats[0], texture->Formats[1],
-                        texture->Formats[2], texture->Formats[3],
-                        texture->Formats[4], texture->Formats[5],
-                        texture->Formats[6], texture->Formats[7],
-                        texture->BlendModes[0], texture->BlendModes[1],
-                        texture->BlendModes[2], texture->BlendModes[3]);
-                }
 
             }
             else
@@ -2736,9 +2571,9 @@ void MetalComputeRenderer3D::RenderFrame()
         if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
             SubmitRealFrameSpanBin();
 
-        // Phase 7F validates the real-frame texture-variant contract in
-        // addition to the non-visible no-texture DepthBlend path. Until textured
-        // Rasterise and FinalPass achieve pixel parity,
+        // Phase 7E consumes canonical no-texture Color/Depth/Attr tiles
+        // through a non-visible DepthBlend result pass. Until texture variants
+        // and FinalPass achieve pixel parity,
         // the validated Metal raster renderer remains the visible source.
         RasterReference.RenderFrame();
     }
@@ -2807,8 +2642,7 @@ void MetalComputeRenderer3D::EnableRenderThread()
 bool MetalComputeRenderer3D::FoundationReady() const noexcept
 {
     return State && State->Ready && State->SpanBinReady &&
-           State->TileRasterReady && State->DepthBlendReady &&
-           State->TextureVariantReady;
+           State->TileRasterReady && State->DepthBlendReady;
 }
 
 } // namespace melonDS
