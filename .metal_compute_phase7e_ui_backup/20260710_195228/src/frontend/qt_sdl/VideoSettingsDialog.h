@@ -81,7 +81,6 @@ private:
     QButtonGroup* grp3DRenderer;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     QRadioButton* rb3DMetal = nullptr;
-    QRadioButton* rb3DMetalCompute = nullptr;
 #endif
 
     int oldRenderer;

@@ -116,13 +116,3 @@ variant単位でMetal raster版とのpixel diffを縮小する。
 [MelonPrime] metal compute span/bin: self-test PASS ...
 [MelonPrime] metal compute span/bin: frame=... polygons=... xSpans=... variants=... sortedWorkTiles=...
 ```
-
-<!-- MELONPRIME_METAL_COMPUTE_PHASE7E_UI -->
-## 2026-07-10 — Phase 7E / renderer UI
-
-- Video Settings exposes separate **Metal** and **Metal Compute Shader** renderer IDs.
-- Metal Compute selection no longer depends on `MELONPRIME_METAL_COMPUTE_FOUNDATION`.
-- Phase 7E consumes Phase 7D Color/Depth/Attr work-item tiles in a non-visible Metal DepthBlend pass.
-- Current DepthBlend scope: clear state, opaque depth selection, equal-depth handling, basic translucent blending, result Color/Depth/Attr buffers and asynchronous diagnostics.
-- Visible output intentionally remains `MetalRasterReference` until texture variants and FinalPass reach parity.
-- Known pre-match dark-transition composition issue remains deferred until the compute final-output cutover.

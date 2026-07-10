@@ -68,12 +68,8 @@ void VideoSettingsDialog::setEnabled()
     const bool openGLRenderer = renderer == renderer3D_OpenGL;
     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    const bool metalRasterRenderer = renderer == renderer3D_Metal;
-    const bool metalComputeRenderer = renderer == renderer3D_MetalCompute;
-    const bool metalRenderer = metalRasterRenderer || metalComputeRenderer;
+    const bool metalRenderer = renderer == renderer3D_Metal;
 #else
-    const bool metalRasterRenderer = false;
-    const bool metalComputeRenderer = false;
     const bool metalRenderer = false;
 #endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
@@ -92,7 +88,7 @@ void VideoSettingsDialog::setEnabled()
 #endif
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
     ui->cbBetterPolygons->setEnabled(openGLRenderer);
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalComputeRenderer);
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -119,19 +115,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     rb3DMetal = new QRadioButton(ui->groupBox);
     rb3DMetal->setObjectName(QStringLiteral("rb3DMetal"));
-    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal"));
+    rb3DMetal->setText(MelonPrime::UiText::Tr("Metal (Experimental)"));
     rb3DMetal->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Native Metal raster renderer for macOS.</p></body></html>"));
+        "<html><head/><body><p>Experimental native Metal renderer for testing on macOS. Not the same as the OpenGL Compute renderer. Visual parity and performance are not final.</p></body></html>"));
     ui->gridLayout_2->addWidget(rb3DMetal, 3, 1, 1, 1);
     grp3DRenderer->addButton(rb3DMetal, renderer3D_Metal);
-
-    rb3DMetalCompute = new QRadioButton(ui->groupBox);
-    rb3DMetalCompute->setObjectName(QStringLiteral("rb3DMetalCompute"));
-    rb3DMetalCompute->setText(MelonPrime::UiText::Tr("Metal Compute Shader"));
-    rb3DMetalCompute->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Experimental native Metal compute-shader renderer. The validated Metal raster renderer remains the visible fallback until compute rendering reaches full parity.</p></body></html>"));
-    ui->gridLayout_2->addWidget(rb3DMetalCompute, 4, 1, 1, 1);
-    grp3DRenderer->addButton(rb3DMetalCompute, renderer3D_MetalCompute);
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -177,11 +165,6 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
     rb3DMetal->setEnabled(metalSupported);
     rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
-    rb3DMetalCompute->setEnabled(metalSupported);
-    rb3DMetalCompute->setToolTip(MelonPrime::UiText::Tr(
-        metalSupported
-            ? QStringLiteral("Experimental Metal compute-shader renderer. Compute stages run natively while the validated Metal raster output remains the safe visible source.")
-            : metalTooltip));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);

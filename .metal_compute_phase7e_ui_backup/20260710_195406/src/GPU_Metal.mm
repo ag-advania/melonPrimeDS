@@ -234,18 +234,16 @@ struct MetalRenderer::MetalOutputState
     }
 };
 
-MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
+MetalRenderer::MetalRenderer(melonDS::NDS& nds) noexcept
     : SoftRenderer(nds)
 {
     Metal2D_A = std::make_unique<MetalRenderer2D>(GPU.GPU2D_A);
     Metal2D_B = std::make_unique<MetalRenderer2D>(GPU.GPU2D_B);
 
-    if (useComputeRenderer || MetalComputeFoundationEnabled())
+    if (MetalComputeFoundationEnabled())
     {
         std::fprintf(stderr,
-            useComputeRenderer
-                ? "[MelonPrime] metal compute: selected from Video Settings\n"
-                : "[MelonPrime] metal compute foundation: selected developer foundation mode\n");
+            "[MelonPrime] metal compute foundation: selected developer foundation mode\n");
         Rend3D = std::make_unique<MetalComputeRenderer3D>(GPU.GPU3D, *this);
     }
     else
