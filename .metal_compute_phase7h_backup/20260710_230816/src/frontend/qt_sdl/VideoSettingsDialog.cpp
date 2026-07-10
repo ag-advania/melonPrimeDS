@@ -80,10 +80,15 @@ void VideoSettingsDialog::setEnabled()
 #endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
-    // This controls the Software renderer worker thread. Native Metal and
-    // Metal Compute submit on the emulation/render thread.
-    ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
+    // Metal-plan Phase 9 (tester UI exposure): MetalRenderer3D's actual
+    // visible 3D output is still produced by its internal SoftRenderer3D
+    // delegate (see GPU3D_Metal.mm / GPU_Metal.mm and
+    // .claude/rules/melonprime-metal-backend-plan.md Phase 8), so
+    // "Software.Threaded" genuinely affects Metal's performance today.
+    // BetterPolygons/HiresCoordinates are not consumed by the Metal path at
+    // all yet, so they stay OpenGL/Compute-only below rather than being
+    // exposed as if they already work for Metal.
+    ui->cbSoftwareThreaded->setEnabled(softwareRenderer || metalRenderer);
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif

@@ -41,13 +41,7 @@ public:
     void SetThreaded(bool threaded) noexcept;
     [[nodiscard]] bool IsThreaded() const noexcept;
     void SetScaleFactor(int scale) noexcept;
-    [[nodiscard]] bool ForceScaleFactor(int scale) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
-
-    [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
-    [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
-    [[nodiscard]] int GetLastFrameRenderedScale() const noexcept;
-    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
 
     void RenderFrame() override;
     void FinishRendering() override;

@@ -4,7 +4,6 @@
 
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
-// MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
 
 #import <Metal/Metal.h>
 
@@ -69,33 +68,6 @@ void* Metal3DPreferredDevice(Renderer3D* renderer) noexcept
 {
     id<MTLTexture> texture = (__bridge id<MTLTexture>)Metal3DColorTarget(renderer);
     return texture ? (__bridge void*)texture.device : nullptr;
-}
-
-bool Metal3DLastFrameUsesHighResolution3D(Renderer3D* renderer) noexcept
-{
-    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
-        return compute->LastFrameUsesHighResolution3D();
-    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
-        return raster->LastFrameUsesHighResolution3D();
-    return false;
-}
-
-uint32_t Metal3DLastFrameEngineALayer(Renderer3D* renderer) noexcept
-{
-    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
-        return compute->GetLastFrameEngineALayer();
-    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
-        return raster->GetLastFrameEngineALayer();
-    return 1u;
-}
-
-int Metal3DLastFrameRenderedScale(Renderer3D* renderer) noexcept
-{
-    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
-        return compute->GetLastFrameRenderedScale();
-    if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
-        return raster->GetLastFrameRenderedScale();
-    return 1;
 }
 
 bool Metal3DIsThreaded(Renderer3D* renderer) noexcept
@@ -605,17 +577,19 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             return;
         commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
 
-        // Consume the state captured by the renderer that produced high3D.
-        // Metal Compute adds a non-visible stage, so live GPU registers may
-        // already describe a different frame by the time composition runs.
-        const uint32_t engineALayer =
-            Metal3DLastFrameEngineALayer(Rend3D.get());
-        const int renderedScale =
-            Metal3DLastFrameRenderedScale(Rend3D.get());
+        const uint32_t engineALayer = GPU.ScreenSwap ? 0u : 1u;
+        const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+        const bool engineA3DEnabled =
+            (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
+        const bool rendered3DGeometry = GPU.GPU3D.RenderNumPolygons > 0;
+        // The live 2D DISPCNT can move to the next frame before SwapBuffers()
+        // composes the previous one. RenderNumPolygons is the latched 3D-frame
+        // signal, so use it as a safe fallback instead of silently publishing
+        // only the native CPU composite at scales above 1x.
         const uint32_t useHighResolution3D =
-            (OutputState->Scale > 1 &&
-             renderedScale == OutputState->Scale &&
-             Metal3DLastFrameUsesHighResolution3D(Rend3D.get())) ? 1u : 0u;
+            (OutputState->Scale > 1 && GPU.ScreensEnabled &&
+             displayModeA == 1u &&
+             (engineA3DEnabled || rendered3DGeometry)) ? 1u : 0u;
 
         for (uint32_t layer = 0; layer < 2; layer++)
         {
@@ -689,13 +663,13 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         {
             OutputState->LoggedVisibleOutput = true;
             std::fprintf(stderr,
-                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d renderedScale=%d size=%zux%zu engineALayer=%u high3D=%u\n",
+                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d size=%zux%zu engineALayer=%u high3D=%u polygons=%u\n",
                 ComputeRendererSelected ? "MetalCompute" : "Metal",
                 OutputState->Scale,
-                renderedScale,
                 static_cast<size_t>(OutputState->Width),
                 static_cast<size_t>(OutputState->Height),
-                engineALayer, useHighResolution3D);
+                engineALayer, useHighResolution3D,
+                GPU.GPU3D.RenderNumPolygons);
         }
     }
 }

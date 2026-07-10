@@ -47,10 +47,6 @@ public:
     int GetTargetWidth() const noexcept;
     int GetTargetHeight() const noexcept;
     int GetScaleFactor() const noexcept;
-    [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
-    [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
-    [[nodiscard]] int GetLastFrameRenderedScale() const noexcept;
-    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
     Metal3DDiagnostics GetLastDiagnostics() const noexcept;
 
     void SetupRenderThread();

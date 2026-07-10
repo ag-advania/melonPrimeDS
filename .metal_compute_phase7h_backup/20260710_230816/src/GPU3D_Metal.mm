@@ -333,11 +333,6 @@ struct MetalRenderer3D::MetalState
     std::unique_ptr<TexcacheMetal> Texcache; // constructed once Device exists
     Metal3DDiagnostics LastDiagnostics;
     bool LoggedNativeZeroAfterDraw = false;
-
-    // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
-    bool LastFrameUseHiRes3D = false;
-    uint32_t LastFrameEngineALayer = 1;
-    int LastFrameRenderedScale = 1;
 };
 
 // Maps one axis of the DS TexRepeat 4-bit field to an index into
@@ -912,15 +907,12 @@ void MetalRenderer3D::Reset()
 
 void MetalRenderer3D::SetThreaded(bool threaded) noexcept
 {
-    // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
     if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())
         Delegate.SetThreaded(threaded);
 }
 
 bool MetalRenderer3D::IsThreaded() const noexcept
 {
-    if (MetalUseNativeGetLine() && !MetalGetLineDiffEnabled())
-        return false;
     return Delegate.IsThreaded();
 }
 
@@ -939,32 +931,6 @@ void MetalRenderer3D::SetScaleFactor(int scale) noexcept
         ResizeTargets();
 }
 
-bool MetalRenderer3D::ForceScaleFactor(int scale) noexcept
-{
-    scale = std::max(1, scale);
-    ScaleFactor = scale;
-    if (!State || !State->Device)
-        return true;
-
-    const int expectedWidth = 256 * scale;
-    const int expectedHeight = 192 * scale;
-    if (State->ColorTarget &&
-        static_cast<int>(State->ColorTarget.width) == expectedWidth &&
-        static_cast<int>(State->ColorTarget.height) == expectedHeight)
-    {
-        return true;
-    }
-
-    std::fprintf(stderr,
-        "[MelonPrime] metal renderer3D: forcing target scale=%d expected=%dx%d actual=%zux%zu\n",
-        scale,
-        expectedWidth,
-        expectedHeight,
-        State->ColorTarget ? static_cast<size_t>(State->ColorTarget.width) : 0u,
-        State->ColorTarget ? static_cast<size_t>(State->ColorTarget.height) : 0u);
-    return ResizeTargets();
-}
-
 void MetalRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
 {
     BetterPolygons = betterPolygons;
@@ -974,22 +940,6 @@ void MetalRenderer3D::RenderFrame()
 {
     @autoreleasepool
     {
-        if (State)
-        {
-            const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
-            const bool engineA3DEnabled =
-                (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
-            State->LastFrameEngineALayer = GPU.ScreenSwap ? 0u : 1u;
-            State->LastFrameRenderedScale = std::max(1, ScaleFactor);
-            State->LastFrameUseHiRes3D =
-                State->LastFrameRenderedScale > 1 &&
-                GPU.ScreensEnabled &&
-                displayModeA == 1u &&
-                engineA3DEnabled &&
-                GPU3D.RenderNumPolygons > 0 &&
-                !GPU3D.AbortFrame;
-        }
-
         MetalPerfFrame perfFrame;
         MetalPerfFrame* previousPerfFrame = gCurrentMetalPerfFrame;
         const bool perfEnabled = MetalPerfEnabled();
@@ -1179,21 +1129,6 @@ int MetalRenderer3D::GetTargetHeight() const noexcept
 int MetalRenderer3D::GetScaleFactor() const noexcept
 {
     return ScaleFactor;
-}
-
-bool MetalRenderer3D::LastFrameUsesHighResolution3D() const noexcept
-{
-    return State && State->LastFrameUseHiRes3D;
-}
-
-uint32_t MetalRenderer3D::GetLastFrameEngineALayer() const noexcept
-{
-    return State ? State->LastFrameEngineALayer : 1u;
-}
-
-int MetalRenderer3D::GetLastFrameRenderedScale() const noexcept
-{
-    return State ? State->LastFrameRenderedScale : std::max(1, ScaleFactor);
 }
 
 Metal3DDiagnostics MetalRenderer3D::GetLastDiagnostics() const noexcept
