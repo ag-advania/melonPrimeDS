@@ -22,6 +22,13 @@ constexpr int kScreenW = 256;
 constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
 
+constexpr uint8_t kBGBaseIndex[4][4] = {
+    {2, 10, 6, 14},
+    {0, 4, 16, 20},
+    {0, 4, 12, 16},
+    {18, 19, 12, 16},
+};
+
 struct LayerConfigCpu
 {
     uint32_t vramMask = 0;
@@ -105,6 +112,7 @@ struct MetalRenderer2D::Metal2DState
     id<MTLTexture> OBJLayerTex = nil;
     id<MTLTexture> OBJDepthTex = nil;
     id<MTLTexture> AllBGLayerTex[kBGLayerCount] = {};
+    id<MTLTexture> BGLayerTex[4] = {};
     id<MTLTexture> VRAMTexBG = nil;
     id<MTLTexture> VRAMTexOBJ = nil;
     id<MTLTexture> PalTexBG = nil;
@@ -116,6 +124,8 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> ScanlineConfigBuffer = nil;
     id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
+    LayerConfigCpu LayerConfig;
+    uint32_t BGVRAMRange[4][4] = {};
     int Scale = 0;
     bool LoggedFirstAllocation = false;
 };
@@ -141,6 +151,8 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         state.OBJLayerTex = nil;
         state.OBJDepthTex = nil;
         for (id<MTLTexture>& texture : state.AllBGLayerTex)
+            texture = nil;
+        for (id<MTLTexture>& texture : state.BGLayerTex)
             texture = nil;
         state.VRAMTexBG = nil;
         state.VRAMTexOBJ = nil;
@@ -358,6 +370,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to upload initial palette inputs for engine %u\n", GPU2D.Num);
         return false;
     }
+    if (!RefreshLayerConfig())
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to refresh initial layer config for engine %u\n", GPU2D.Num);
+        return false;
+    }
 
     if (!state.LoggedFirstAllocation)
     {
@@ -468,6 +485,252 @@ bool MetalRenderer2D::UploadPaletteInputs() noexcept
     return true;
 }
 
+bool MetalRenderer2D::RefreshLayerConfig() noexcept
+{
+    if (!State || !State->LayerConfigBuffer)
+        return false;
+
+    Metal2DState& state = *State;
+    state.LayerConfig = {};
+    for (auto& range : state.BGVRAMRange)
+    {
+        for (uint32_t& entry : range)
+            entry = 0xFFFFFFFFu;
+    }
+    for (id<MTLTexture>& texture : state.BGLayerTex)
+        texture = nil;
+
+    int captureMask = GPU2D.Num ? 0x7 : 0x1F;
+    int captureInfo[32] = {};
+    GPU2D.GetCaptureInfo_BG(captureInfo);
+
+    uint32_t tileBase = 0;
+    uint32_t mapBase = 0;
+    if (!GPU2D.Num)
+    {
+        tileBase = ((GPU2D.DispCnt >> 24) & 0x7) << 16;
+        mapBase = ((GPU2D.DispCnt >> 27) & 0x7) << 16;
+    }
+
+    int layerType[4] = {1, 1, 0, 0};
+    switch (GPU2D.DispCnt & 0x7)
+    {
+    case 0: layerType[2] = 1; layerType[3] = 1; break;
+    case 1: layerType[2] = 1; layerType[3] = 2; break;
+    case 2: layerType[2] = 2; layerType[3] = 2; break;
+    case 3: layerType[2] = 1; layerType[3] = 3; break;
+    case 4: layerType[2] = 2; layerType[3] = 3; break;
+    case 5: layerType[2] = 3; layerType[3] = 3; break;
+    case 6:
+        layerType[0] = 0;
+        layerType[1] = 0;
+        layerType[2] = 4;
+        layerType[3] = 0;
+        break;
+    case 7:
+        layerType[2] = 0;
+        layerType[3] = 0;
+        break;
+    }
+
+    for (int layer = 0; layer < 4; layer++)
+    {
+        const int type = layerType[layer];
+        if (!type)
+            continue;
+
+        const uint16_t bgCnt = GPU2D.BGCnt[layer];
+        auto& cfg = state.LayerConfig.bgConfig[layer];
+
+        cfg.tileOffset = tileBase + (((bgCnt >> 2) & 0xF) << 14);
+        cfg.mapOffset = mapBase + (((bgCnt >> 8) & 0x1F) << 11);
+        cfg.palOffset = 0;
+
+        state.BGVRAMRange[layer][0] = cfg.tileOffset;
+        state.BGVRAMRange[layer][2] = cfg.mapOffset;
+
+        if ((layer == 0) && (GPU2D.DispCnt & (1 << 3)))
+        {
+            cfg.size[0] = 256;
+            cfg.size[1] = 192;
+            cfg.type = 6;
+            cfg.clamp = 1;
+            continue;
+        }
+
+        if (type == 1)
+        {
+            uint32_t tileSize = 0;
+            uint32_t mapSize = 0;
+            switch (bgCnt >> 14)
+            {
+            case 0: cfg.size[0] = 256; cfg.size[1] = 256; mapSize = 0x800; break;
+            case 1: cfg.size[0] = 512; cfg.size[1] = 256; mapSize = 0x1000; break;
+            case 2: cfg.size[0] = 256; cfg.size[1] = 512; mapSize = 0x1000; break;
+            case 3: cfg.size[0] = 512; cfg.size[1] = 512; mapSize = 0x2000; break;
+            }
+
+            if (bgCnt & (1 << 7))
+            {
+                cfg.type = 1;
+                if (GPU2D.DispCnt & (1 << 30))
+                {
+                    int palOff = layer;
+                    if ((layer < 2) && (bgCnt & (1 << 13)))
+                        palOff += 2;
+                    cfg.palOffset = 1 + (16 * palOff);
+                }
+                tileSize = 0x10000;
+            }
+            else
+            {
+                cfg.type = 0;
+                tileSize = 0x8000;
+            }
+
+            cfg.clamp = 0;
+            const int target = kBGBaseIndex[0][bgCnt >> 14] + layer;
+            state.BGLayerTex[layer] = state.AllBGLayerTex[target];
+            state.BGVRAMRange[layer][1] = tileSize;
+            state.BGVRAMRange[layer][3] = mapSize;
+        }
+        else if (type == 2)
+        {
+            uint32_t mapSize = 0;
+            switch (bgCnt >> 14)
+            {
+            case 0: cfg.size[0] = 128; cfg.size[1] = 128; mapSize = 0x100; break;
+            case 1: cfg.size[0] = 256; cfg.size[1] = 256; mapSize = 0x400; break;
+            case 2: cfg.size[0] = 512; cfg.size[1] = 512; mapSize = 0x1000; break;
+            case 3: cfg.size[0] = 1024; cfg.size[1] = 1024; mapSize = 0x4000; break;
+            }
+
+            cfg.type = 2;
+            cfg.clamp = !(bgCnt & (1 << 13));
+            const int target = kBGBaseIndex[1][bgCnt >> 14] + layer - 2;
+            state.BGLayerTex[layer] = state.AllBGLayerTex[target];
+            state.BGVRAMRange[layer][1] = 0x4000;
+            state.BGVRAMRange[layer][3] = mapSize;
+        }
+        else if (type == 3)
+        {
+            if (bgCnt & (1 << 7))
+            {
+                uint32_t mapSize = 0;
+                switch (bgCnt >> 14)
+                {
+                case 0: cfg.size[0] = 128; cfg.size[1] = 128; mapSize = 0x4000; break;
+                case 1: cfg.size[0] = 256; cfg.size[1] = 256; mapSize = 0x10000; break;
+                case 2: cfg.size[0] = 512; cfg.size[1] = 256; mapSize = 0x20000; break;
+                case 3: cfg.size[0] = 512; cfg.size[1] = 512; mapSize = 0x40000; break;
+                }
+
+                uint32_t tileOffset = 0;
+                uint32_t mapOffset = ((bgCnt >> 8) & 0x1F) << 14;
+                state.BGVRAMRange[layer][0] = 0xFFFFFFFFu;
+                state.BGVRAMRange[layer][1] = 0xFFFFFFFFu;
+                state.BGVRAMRange[layer][2] = mapOffset;
+                state.BGVRAMRange[layer][3] = mapSize;
+
+                if (bgCnt & (1 << 2))
+                {
+                    mapSize <<= 1;
+                    int capBlock = -1;
+                    if ((cfg.size[0] == 128) || (cfg.size[0] == 256))
+                    {
+                        uint32_t startAddr = mapOffset;
+                        uint32_t endAddr = startAddr + mapSize;
+                        startAddr >>= 14;
+                        endAddr = (endAddr + 0x3FFF) >> 14;
+                        for (uint32_t block = startAddr; block < endAddr; block++)
+                        {
+                            const int captured = captureInfo[block & captureMask];
+                            if (captured != -1)
+                                capBlock = captured;
+                        }
+                    }
+
+                    if (capBlock != -1)
+                    {
+                        if (cfg.size[0] == 128)
+                        {
+                            cfg.type = 7;
+                            tileOffset = capBlock;
+                            mapOffset = (mapOffset >> 8) & 0x7F;
+                        }
+                        else
+                        {
+                            cfg.type = 8;
+                            tileOffset = capBlock >> 2;
+                            mapOffset = (mapOffset >> 9) & 0xFF;
+                        }
+                    }
+                    else
+                        cfg.type = 5;
+                }
+                else
+                    cfg.type = 4;
+
+                cfg.tileOffset = tileOffset;
+                cfg.mapOffset = mapOffset;
+                const int target = kBGBaseIndex[2][bgCnt >> 14] + layer - 2;
+                state.BGLayerTex[layer] = state.AllBGLayerTex[target];
+            }
+            else
+            {
+                uint32_t mapSize = 0;
+                switch (bgCnt >> 14)
+                {
+                case 0: cfg.size[0] = 128; cfg.size[1] = 128; mapSize = 0x200; break;
+                case 1: cfg.size[0] = 256; cfg.size[1] = 256; mapSize = 0x800; break;
+                case 2: cfg.size[0] = 512; cfg.size[1] = 512; mapSize = 0x2000; break;
+                case 3: cfg.size[0] = 1024; cfg.size[1] = 1024; mapSize = 0x8000; break;
+                }
+
+                cfg.type = 3;
+                if (GPU2D.DispCnt & (1 << 30))
+                {
+                    int palOff = layer;
+                    if ((layer < 2) && (bgCnt & (1 << 13)))
+                        palOff += 2;
+                    cfg.palOffset = 1 + (16 * palOff);
+                }
+
+                const int target = kBGBaseIndex[1][bgCnt >> 14] + layer - 2;
+                state.BGLayerTex[layer] = state.AllBGLayerTex[target];
+                state.BGVRAMRange[layer][1] = 0x10000;
+                state.BGVRAMRange[layer][3] = mapSize;
+            }
+
+            cfg.clamp = !(bgCnt & (1 << 13));
+        }
+        else
+        {
+            uint32_t mapSize = 0;
+            switch (bgCnt >> 14)
+            {
+            case 0: cfg.size[0] = 512; cfg.size[1] = 1024; mapSize = 0x80000; break;
+            case 1: cfg.size[0] = 1024; cfg.size[1] = 512; mapSize = 0x80000; break;
+            case 2: cfg.size[0] = 512; cfg.size[1] = 256; mapSize = 0x20000; break;
+            case 3: cfg.size[0] = 512; cfg.size[1] = 512; mapSize = 0x40000; break;
+            }
+
+            cfg.type = 4;
+            cfg.tileOffset = 0;
+            cfg.mapOffset = 0;
+            cfg.clamp = !(bgCnt & (1 << 13));
+            const int target = kBGBaseIndex[3][bgCnt >> 14];
+            state.BGLayerTex[layer] = state.AllBGLayerTex[target];
+            state.BGVRAMRange[layer][0] = 0xFFFFFFFFu;
+            state.BGVRAMRange[layer][1] = 0xFFFFFFFFu;
+            state.BGVRAMRange[layer][3] = mapSize;
+        }
+    }
+
+    std::memcpy([state.LayerConfigBuffer contents], &state.LayerConfig, sizeof(state.LayerConfig));
+    return true;
+}
+
 void MetalRenderer2D::Reset() noexcept
 {
     if (!State)
@@ -477,6 +740,8 @@ void MetalRenderer2D::Reset() noexcept
     State->OBJLayerTex = nil;
     State->OBJDepthTex = nil;
     for (id<MTLTexture>& texture : State->AllBGLayerTex)
+        texture = nil;
+    for (id<MTLTexture>& texture : State->BGLayerTex)
         texture = nil;
     State->VRAMTexBG = nil;
     State->VRAMTexOBJ = nil;
