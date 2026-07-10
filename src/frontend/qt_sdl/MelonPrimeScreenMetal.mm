@@ -153,6 +153,15 @@ bool AllowMetalSoftwareFallback()
     return allow;
 }
 
+bool MetalDiagEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_DIAG");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 using PresenterClock = std::chrono::steady_clock;
 
 bool MetalPresenterPerfEnabled()
@@ -252,6 +261,7 @@ struct ScreenPanelMetal::Impl
     bool loggedFirstNativeTextureOutput = false;
     bool loggedNativeTextureFallback = false;
     bool loggedLayerReattach = false;
+    bool loggedScreenPlacementDiag = false;
     uint64_t lastPresentedFrame = 0;
 };
 
@@ -632,6 +642,31 @@ void ScreenPanelMetal::drawScreen()
 
             if (!finalMetalTextureForFrame && !hasCpuBaseFallbackForFrame)
                 return;
+
+            if (MetalDiagEnabled() && !m->loggedScreenPlacementDiag)
+            {
+                m->loggedScreenPlacementDiag = true;
+                fprintf(stderr,
+                        "[MelonPrime] metal presenter placement: numScreens=%d "
+                        "screenKind0=%d screenKind1=%d "
+                        "matrix0=[%.1f %.1f %.1f %.1f %.1f %.1f] "
+                        "matrix1=[%.1f %.1f %.1f %.1f %.1f %.1f]\n",
+                        numScreens,
+                        numScreens > 0 ? screenKind[0] : -1,
+                        numScreens > 1 ? screenKind[1] : -1,
+                        numScreens > 0 ? screenMatrix[0][0] : 0.0f,
+                        numScreens > 0 ? screenMatrix[0][1] : 0.0f,
+                        numScreens > 0 ? screenMatrix[0][2] : 0.0f,
+                        numScreens > 0 ? screenMatrix[0][3] : 0.0f,
+                        numScreens > 0 ? screenMatrix[0][4] : 0.0f,
+                        numScreens > 0 ? screenMatrix[0][5] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][0] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][1] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][2] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][3] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][4] : 0.0f,
+                        numScreens > 1 ? screenMatrix[1][5] : 0.0f);
+            }
         }
 
         id<CAMetalDrawable> drawable = [layer nextDrawable];
