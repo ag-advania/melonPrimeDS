@@ -1597,6 +1597,12 @@ public `GPU2D.GetBGVRAM()` / `GetOBJVRAM()` APIs. It currently performs a full u
 scaffold is configured; dirty-range incremental uploads and palette uploads remain follow-up work
 because the palette path needs either `Renderer2D` ownership of `GPU` or an explicit parent handoff.
 
+`MetalRenderer2D` now derives from `Renderer2D` even though it is still not installed as the visible
+`Rend2D_A/B`. The virtual scanline/sprite/vblank hooks are no-ops while Phase 4a remains non-visible,
+but the class now has the same protected `GPU` access boundary as the real GL/Soft 2D renderers.
+Using that boundary, the scaffold performs an initial full BG/OBJ palette upload from main palette
+RAM plus BG/OBJ extended palettes into the `R16Uint` palette textures.
+
 This is deliberately **not** a visible hires path yet. `Rend2D_A/B` remain the existing soft
 renderers, `GetOutput()` still returns the Phase 2/3 CPU-composited frame, and no
 `RendererOutput::MetalTexture` switch is re-enabled. That preserves the Phase 4e rule against a

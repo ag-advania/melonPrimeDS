@@ -4,11 +4,14 @@
 
 #import <Metal/Metal.h>
 
+#include "GPU.h"
 #include "GPU2D_Metal.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace melonDS
 {
@@ -118,7 +121,7 @@ struct MetalRenderer2D::Metal2DState
 };
 
 MetalRenderer2D::MetalRenderer2D(melonDS::GPU2D& gpu2D) noexcept
-    : GPU2D(gpu2D),
+    : Renderer2D(gpu2D),
       State(std::make_unique<Metal2DState>())
 {
 }
@@ -350,6 +353,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to upload initial raw VRAM inputs for engine %u\n", GPU2D.Num);
         return false;
     }
+    if (!UploadPaletteInputs())
+    {
+        std::fprintf(stderr, "[MelonPrime] metal 2d: failed to upload initial palette inputs for engine %u\n", GPU2D.Num);
+        return false;
+    }
 
     if (!state.LoggedFirstAllocation)
     {
@@ -364,6 +372,16 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
     }
 
     return true;
+}
+
+void MetalRenderer2D::DrawScanline(u32 line)
+{
+    (void)line;
+}
+
+void MetalRenderer2D::DrawSprites(u32 line)
+{
+    (void)line;
 }
 
 bool MetalRenderer2D::UploadRawVRAMInputs() noexcept
@@ -404,6 +422,48 @@ bool MetalRenderer2D::UploadRawVRAMInputs() noexcept
                          mipmapLevel:0
                            withBytes:objVRAM
                          bytesPerRow:objBytesPerRow];
+
+    return true;
+}
+
+bool MetalRenderer2D::UploadPaletteInputs() noexcept
+{
+    if (!State || !State->PalTexBG || !State->PalTexOBJ)
+        return false;
+
+    std::array<uint16_t, 256 * (1 + (4 * 16))> bgPalette = {};
+    std::memcpy(bgPalette.data(), &GPU.Palette[GPU2D.Num ? 0x400 : 0], 256 * sizeof(uint16_t));
+    for (int slot = 0; slot < 4; slot++)
+    {
+        for (int pal = 0; pal < 16; pal++)
+        {
+            uint16_t* extPal = GPU2D.GetBGExtPal(slot, pal);
+            if (extPal)
+            {
+                std::memcpy(&bgPalette[(1 + ((slot * 16) + pal)) * 256],
+                            extPal,
+                            256 * sizeof(uint16_t));
+            }
+        }
+    }
+    [State->PalTexBG replaceRegion:MTLRegionMake2D(0, 0, 256, 1 + (4 * 16))
+                        mipmapLevel:0
+                          withBytes:bgPalette.data()
+                        bytesPerRow:256 * sizeof(uint16_t)];
+
+    std::array<uint16_t, 256 * (1 + 16)> objPalette = {};
+    std::memcpy(objPalette.data(), &GPU.Palette[GPU2D.Num ? 0x600 : 0x200], 256 * sizeof(uint16_t));
+    uint16_t* objExtPal = GPU2D.GetOBJExtPal();
+    if (objExtPal)
+    {
+        std::memcpy(&objPalette[256],
+                    objExtPal,
+                    256 * 16 * sizeof(uint16_t));
+    }
+    [State->PalTexOBJ replaceRegion:MTLRegionMake2D(0, 0, 256, 1 + 16)
+                         mipmapLevel:0
+                           withBytes:objPalette.data()
+                         bytesPerRow:256 * sizeof(uint16_t)];
 
     return true;
 }
