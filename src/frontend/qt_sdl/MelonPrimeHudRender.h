@@ -95,6 +95,7 @@ namespace MelonPrime {
     // spawn window. No-op unless the helmet hide patch is currently applied;
     // start/death/pause frames are left untouched so native UI stays intact.
     void CustomHud_ClampHelmetLayersPreFrame(
+        CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         const RomAddresses& rom,
         uint8_t playerPosition);
@@ -102,6 +103,7 @@ namespace MelonPrime {
     // Ensure the no-HUD patch is reverted when custom HUD is disabled.
     // Call every frame from Screen.cpp even when the HUD overlay is not rendered.
     void CustomHud_EnsurePatchRestored(
+        CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         Config::Table& localCfg,
         const RomAddresses& rom,
@@ -121,7 +123,7 @@ namespace MelonPrime {
     uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig);
 
     // Cache battle settings at match join (call from HandleGameJoinInit).
-    void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
+    void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, uint8_t* ram, const RomAddresses& rom);
 
     // =========================================================================
     //  DrawBottomScreenOverlay
@@ -149,10 +151,11 @@ namespace MelonPrime {
     void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::Table& cfg);
 
     // Returns true while the HUD layout editor is active.
-    bool CustomHud_IsEditMode();
+    bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig);
 
     // Update the coordinate context used by mouse handlers (call each render).
-    void CustomHud_UpdateEditContext(float originX, float originY,
+    void CustomHud_UpdateEditContext(CustomHudConfigState& hudConfig,
+                                     float originX, float originY,
                                      float hudScale, float topStretchX);
 
     // Forward mouse events from the screen panel to the layout editor.
@@ -163,10 +166,10 @@ namespace MelonPrime {
 
     // Register a callback invoked whenever the selected element changes in edit mode.
     // Pass nullptr to clear. The int argument is the element index (-1 = none).
-    void CustomHud_SetEditSelectionCallback(std::function<void(int)> cb);
+    void CustomHud_SetEditSelectionCallback(CustomHudConfigState& hudConfig, std::function<void(int)> cb);
 
     // Returns the currently selected element index (-1 = none).
-    int  CustomHud_GetSelectedElement();
+    int  CustomHud_GetSelectedElement(const CustomHudConfigState& hudConfig);
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     // Developer-only CLI hook: render deterministic HUD cases and write hashes.

@@ -195,7 +195,7 @@ static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     const bool hudVisible = hudEnabled || editMode;
     if (!hudVisible) {
         MelonPrime::CustomHud_EnsurePatchRestored(
-            emuInstance, instcfg,
+            mp->HudConfigState(), emuInstance, instcfg,
             mp->GetCurrentRom(), mp->GetPlayerPosition(),
             mp->IsInGame());
     }

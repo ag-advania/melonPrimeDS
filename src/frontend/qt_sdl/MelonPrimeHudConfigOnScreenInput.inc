@@ -49,24 +49,26 @@ void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::
     NotifySelectionChanged(-1);
 }
 
-bool CustomHud_IsEditMode()
+bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig)
 {
-    return s_editMode;
+    return hudConfig.editMode;
 }
 
-void CustomHud_SetEditSelectionCallback(std::function<void(int)> cb)
+void CustomHud_SetEditSelectionCallback(CustomHudConfigState& hudConfig, std::function<void(int)> cb)
 {
-    s_editSelectionCb = std::move(cb);
+    hudConfig.editSelectionCb = std::move(cb);
 }
 
-int CustomHud_GetSelectedElement()
+int CustomHud_GetSelectedElement(const CustomHudConfigState& hudConfig)
 {
-    return s_editSelected;
+    return hudConfig.editSelected;
 }
 
-void CustomHud_UpdateEditContext(float originX, float originY,
-                                  float hudScale, float topStretchX)
+void CustomHud_UpdateEditContext(CustomHudConfigState& hudConfig,
+                                 float originX, float originY,
+                                 float hudScale, float topStretchX)
 {
+    const ScopedHudConfigState active(hudConfig);
     s_editOriginX     = originX;
     s_editOriginY     = originY;
     s_editHudScale    = hudScale;

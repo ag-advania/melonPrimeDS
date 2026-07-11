@@ -2,9 +2,10 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
+#define s_hudPrevDirtyS m_hudPrevDirty
 {
     auto* mp = emuThread->GetMelonPrimeCore();
-    const bool editMode = MelonPrime::CustomHud_IsEditMode();
+    const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
     if (MelonPrimeHud_CanRenderForCore(mp, editMode))
     {
         auto& instcfg = emuInstance->getLocalConfig();
@@ -25,7 +26,6 @@
             const int topOutH = std::max(1, fullH);
 
             // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
-            static QRect s_hudPrevDirtyS;
             MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyS);
 
             // Per-frame painter (must end before reading image)
@@ -47,3 +47,5 @@
     }
 }
 #endif
+
+#undef s_hudPrevDirtyS

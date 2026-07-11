@@ -13,23 +13,6 @@
 #include "MelonPrimeHudConfigOnScreenDefs.inc"
 
 // ── Edit mode static state ──────────────────────────────────────────────────
-static EmuInstance*     s_editEmu           = nullptr;
-static int              s_editSelected      = -1;
-static int              s_editHovered       = -1;
-static bool             s_dragging          = false;
-static bool             s_anchorPickerOpen  = false;  // expanded 3×3 anchor grid visible
-static QPointF      s_dragStartDS;
-static int          s_dragStartOfsX   = 0;
-static int          s_dragStartOfsY   = 0;
-static bool         s_resizingLength  = false;
-static bool         s_resizingWidth   = false;
-static int          s_resizeStartVal  = 0;
-static QPointF      s_resizeStartDS;
-static std::map<std::string, int> s_editSnapshot;
-static std::set<std::string>      s_editSnapshotBools;
-static std::map<std::string, double>      s_editSnapshotDoubles;
-static std::map<std::string, std::string> s_editSnapshotStrings;
-static std::function<void(int)>           s_editSelectionCb;
 
 static void NotifySelectionChanged(int idx)
 {
@@ -37,8 +20,6 @@ static void NotifySelectionChanged(int idx)
 }
 
 // Context updated by render pass and mouse handlers
-static float        s_editOriginX     = 0.0f;
-static float        s_editOriginY     = 0.0f;
 
 // Save/Cancel/Reset button rects in DS-space
 static const QRectF kEditSaveRect  (10.0f,  1.0f, 74.0f, 12.0f);
@@ -111,7 +92,6 @@ static constexpr float kPropPanelW  = kPropLabelW + kPropCtrlW + 4.0f;
 static constexpr float kAnchorGridCellW = (kPropPanelW - 4.0f) / 3.0f;
 static constexpr float kAnchorGridCellH = 9.0f;
 static constexpr float kAnchorGridH = kAnchorGridCellH * 3 + 4.0f;
-static int s_editPropScroll = 0;
 static constexpr int kPropMaxVisible = 8;
 static constexpr bool kShowDsEditPropsPanel = false;
 

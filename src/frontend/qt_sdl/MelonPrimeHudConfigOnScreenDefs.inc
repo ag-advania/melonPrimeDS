@@ -68,17 +68,10 @@ static QString EditEnumLabel(const char* items, int val) {
 #include "MelonPrimeHudConfigOnScreenEditProps.inc"
 
 // Crosshair panel state
-static bool s_crosshairPanelOpen  = false;
-static bool s_zoomSectionOpen     = false;
-static bool s_innerSectionOpen    = false;
-static bool s_outerSectionOpen    = false;
-static int  s_crosshairPanelScroll = 0;
 
 // Text-scale slider drag state
-static bool s_textScaleDragging = false;
 
 // Auto-scale global cap slider drag state
-static bool s_autoScaleCapDragging = false;
 
 static int CountCrosshairRows() {
     return 1 + kCrosshairNormalCount + 3; // color + normal props + Zoom/Inner/Outer headers
