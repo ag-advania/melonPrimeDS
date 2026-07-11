@@ -1,0 +1,25 @@
+{
+  "operation": "apply",
+  "state_before": "NOT_APPLIED",
+  "state_after": "APPLIED",
+  "snapshot": "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS\\.linux_mouse_input_hardening_backup\\20260711_133746",
+  "diff": "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS\\linux_mouse_input_hardening_20260711_133746.diff",
+  "files": {
+    "src\\frontend\\qt_sdl\\MelonPrimeWaylandPointerLock.cpp": {
+      "before_sha256": "7b377a6b20a9432a9034c80f2286dd2862c5795339216223c543a03249ab3565",
+      "after_sha256": "eed8c2341e2ad596e2c28f50c0b6201e9c2c1f96d81aced7f5a3f86f8bf976b4"
+    },
+    "src\\frontend\\qt_sdl\\MelonPrimeRawInputLinuxFilter.cpp": {
+      "before_sha256": "8f0647e57cdf58fd21327699b79a378ae79db5aab71c769c597d3ea507858ee6",
+      "after_sha256": "1a8d0ceffa5436c9d88ab53d23f73b6ab36ca76ebf694d14bcba16294fad935d"
+    },
+    "src\\frontend\\qt_sdl\\MelonPrimeScreenCursorPolicy.cpp": {
+      "before_sha256": "0fff76a9673191f1e4159ab514a9a1d473e7005686892a2d7b0b8e7570dc6a7f",
+      "after_sha256": "f4eb53b73aff6ed8ac7f2f32a001eaa6b6a302637956112935ff780a95e670af"
+    },
+    "src\\frontend\\qt_sdl\\Screen.cpp": {
+      "before_sha256": "84076cd50ac3823502b43464f0f0347e8a8f5517902738daa0e7252a17f6609c",
+      "after_sha256": "6380ff42ee327eb8d625a8654281394dc0281871bd0fe855635249f193490b9d"
+    }
+  }
+}

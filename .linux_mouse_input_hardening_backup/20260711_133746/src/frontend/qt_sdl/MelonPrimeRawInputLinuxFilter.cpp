@@ -64,15 +64,6 @@ struct LinuxRawInputFilter::Impl
         return (mask[bit / 8] & (1 << (bit % 8))) != 0;
     }
 
-    // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2
-    static int32_t TakeIntegralDelta(double& residual, double delta)
-    {
-        residual += delta;
-        const double integral = std::trunc(residual);
-        residual -= integral;
-        return static_cast<int32_t>(integral);
-    }
-
     // Per-source-device axis info. Filter-thread-only (no locking needed).
     //
     // Absolute pointing devices — most importantly VirtualBox's integrated
@@ -93,8 +84,6 @@ struct LinuxRawInputFilter::Impl
         // sensitivity matches relative mice (~17x too fast otherwise —
         // observed as an instant pitch slam on game join).
         double scale[2] = { 1.0, 1.0 };
-        // Preserve sub-pixel motion across XI_RawMotion events.
-        double residual[2] = { 0.0, 0.0 };
     };
     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
     std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
@@ -141,8 +130,6 @@ struct LinuxRawInputFilter::Impl
             for (auto& kv : axisStates) {
                 kv.second.hasLast[0] = false;
                 kv.second.hasLast[1] = false;
-                kv.second.residual[0] = 0.0;
-                kv.second.residual[1] = 0.0;
             }
         }
 
@@ -188,8 +175,6 @@ struct LinuxRawInputFilter::Impl
                     // pitch on game join).
                     if (diffPx > -300.0 && diffPx < 300.0)
                         d[axis] = diffPx;
-                    else
-                        st.residual[axis] = 0.0;
                 }
                 st.last[axis] = value;
                 st.hasLast[axis] = true;
@@ -198,8 +183,8 @@ struct LinuxRawInputFilter::Impl
             }
         }
 
-        const int32_t dx = TakeIntegralDelta(st.residual[0], d[0]);
-        const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
+        const int32_t dx = static_cast<int32_t>(std::llround(d[0]));
+        const int32_t dy = static_cast<int32_t>(std::llround(d[1]));
 
         if ((dx | dy) != 0) {
             if (MelonPrimeInputDebug()
