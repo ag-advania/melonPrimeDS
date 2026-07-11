@@ -11,6 +11,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeRuntimeConfig.h"
+#include "MelonPrimeInstanceDiagnostics.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -51,6 +52,7 @@ namespace MelonPrime {
         , globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "constructed");
     }
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -260,6 +262,9 @@ namespace MelonPrime {
         }
         else if (next != cur) {
             localCfg.SetInt(CfgKey::AimSens, next);
+            InstanceDiagnostics::CheckGuiThread(
+                emuInstance,
+                "Config::Save(AimSensitivity hotkey)");
             Config::Save();
             RecalcAimSensitivityCache(localCfg);
             emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);

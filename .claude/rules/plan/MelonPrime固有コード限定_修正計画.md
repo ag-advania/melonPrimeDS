@@ -887,6 +887,17 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 0: 検証基盤
 
+進捗: **完了 (2026-07-11)**
+
+- developer buildへinstance ID／core address付きlifecycle logを追加
+- GUI thread／EmuThread ownership checkを追加
+- `MELONPRIME_STRICT_THREAD_ASSERTS=1`でthread違反をassertion化可能
+- process-global mutable state監査を
+  `.claude/skills/audit-melonprime-instance-state.ps1`へ固定
+- A/B再現手順と保存すべき証跡を
+  `src/frontend/qt_sdl/tests/melonprime-multi-instance-repro.md`へ固定
+- sanitizer optionは既存のtop-level `include(Sanitizers)`を継続利用
+
 コード挙動を変える前に追加する。
 
 - multi-instance test harness
