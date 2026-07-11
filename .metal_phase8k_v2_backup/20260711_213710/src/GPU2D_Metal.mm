@@ -3,7 +3,6 @@
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
-// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -47,13 +46,20 @@ bool MetalSegmented2DShadowEnabled()
 
 bool MetalSegmented2DVisibleEnabled()
 {
-    return true;
+    static const bool enabled =
+        MetalEnvironmentFlagEnabled(
+            "MELONPRIME_METAL_SEGMENTED_2D_VISIBLE");
+    return enabled;
 }
 
 bool MetalSegmented2DSnapshotEnabled()
 {
-    // Direct renderer state: no diagnostic environment switch.
-    return true;
+    static const bool enabled =
+        MetalEnvironmentFlagEnabled(
+            "MELONPRIME_METAL_SEGMENTED_2D_CAPTURE") ||
+        MetalSegmented2DShadowEnabled() ||
+        MetalSegmented2DVisibleEnabled();
+    return enabled;
 }
 
 constexpr size_t MetalAlignConstantStride(size_t size)

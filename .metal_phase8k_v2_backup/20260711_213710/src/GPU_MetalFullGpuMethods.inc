@@ -3,7 +3,6 @@
 // MELONPRIME_METAL_MIXED_3D_2D_OPENGL_PARITY_GUARD_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
-// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_SEGMENTED_GPU_DIFF_V1
 
 namespace
@@ -51,12 +50,25 @@ uint32_t MetalSegmented2DDiffTolerance()
 
 bool MetalSegmented2DVisibleRequested()
 {
-    return true;
+    static const bool enabled = []() {
+        const char* value =
+            std::getenv(
+                "MELONPRIME_METAL_SEGMENTED_2D_VISIBLE");
+        return value && value[0] == '1';
+    }();
+    return enabled;
 }
 
 bool MetalAllowExperimentalMixed3D2DGpuPath()
 {
-    return true;
+    static const bool legacyEnabled = []() {
+        const char* value =
+            std::getenv(
+                "MELONPRIME_METAL_EXPERIMENTAL_MIXED_3D_2D");
+        return value && value[0] == '1';
+    }();
+    return legacyEnabled ||
+        MetalSegmented2DVisibleRequested();
 }
 
 bool MetalEngineAUsesMixed3DAnd2DOverlay(const GPU& gpu)
@@ -278,6 +290,39 @@ void MetalRenderer::Start3DRendering()
 
     if (!GPU.CaptureEnable)
         FullGpuState->BlockedByCaptureFeedback = false;
+
+    const bool mixed3D2D =
+        MetalEngineAUsesMixed3DAnd2DOverlay(GPU);
+    const bool mixedOverride =
+        MetalAllowExperimentalMixed3D2DGpuPath();
+
+    if (mixed3D2D && !mixedOverride &&
+        !FullGpuState->LoggedMixed3D2DFallback)
+    {
+        FullGpuState->LoggedMixed3D2DFallback = true;
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal OpenGL parity guard: "
+            "mixed 3D+2D overlay detected; using Software 2D compositor "
+            "while keeping the selected Metal 3D renderer "
+            "(layerEnable=0x%02x dispCnt=0x%08x). "
+            "Set MELONPRIME_METAL_EXPERIMENTAL_MIXED_3D_2D=1 "
+            "only for diagnostics.\n",
+            static_cast<unsigned>(GPU.GPU2D_A.LayerEnable),
+            static_cast<unsigned>(GPU.GPU2D_A.DispCnt));
+    }
+    else if (mixed3D2D && mixedOverride &&
+             !FullGpuState->LoggedMixed3D2DOverride)
+    {
+        FullGpuState->LoggedMixed3D2DOverride = true;
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal OpenGL parity guard: "
+            "experimental mixed 3D+2D GPU compositor forced "
+            "(layerEnable=0x%02x dispCnt=0x%08x).\n",
+            static_cast<unsigned>(GPU.GPU2D_A.LayerEnable),
+            static_cast<unsigned>(GPU.GPU2D_A.DispCnt));
+    }
 
     FullGpuState->FrameActive =
         !FullGpuState->BlockedByCaptureFeedback &&
