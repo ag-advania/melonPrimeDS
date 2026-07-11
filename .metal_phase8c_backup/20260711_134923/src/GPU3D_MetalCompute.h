@@ -4,7 +4,6 @@
 #define GPU3D_METAL_COMPUTE_H
 
 // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
-// MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -37,9 +36,6 @@ public:
     void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
     void SetCpuReadbackRequired(bool required) noexcept;
-    void SetCaptureTextures(
-        void* capture128Texture,
-        void* capture256Texture) noexcept;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 
     void RenderFrame() override;
@@ -75,7 +71,6 @@ private:
     bool ConfigureSpanBinResources(int scale);
     bool RunSpanBinSelfTest();
     bool RunNoTextureTileSelfTest();
-    bool RunTextureVariantTileSelfTest();
     bool SubmitRealFrameSpanBin();
 };
 
