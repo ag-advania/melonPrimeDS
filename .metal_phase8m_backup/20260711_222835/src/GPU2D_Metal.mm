@@ -4,7 +4,6 @@
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
-// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -20,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace melonDS
 {
@@ -439,9 +439,16 @@ struct MetalRenderer2D::Metal2DState
     size_t SpriteSnapshotStride = 0;
     int LayerSnapshotLastLine = -1;
     int SpriteSnapshotLastLine = -1;
+    uint64_t SnapshotFrameCount = 0;
     bool SnapshotBuffersReady = false;
     bool SegmentedRenderReady = false;
     bool LoggedSnapshotAllocation = false;
+    bool LoggedSegmentedRender = false;
+    bool LoggedSegmentedFailure = false;
+    uint64_t SegmentedRenderFrames = 0;
+    uint64_t SegmentedRenderSegments = 0;
+    uint64_t SegmentedRenderSpriteDraws = 0;
+    uint64_t SegmentedRenderBgDraws = 0;
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
@@ -1900,6 +1907,12 @@ void MetalRenderer2D::Reset() noexcept
     State->SpriteSnapshotLastLine = -1;
     State->SnapshotBuffersReady = false;
     State->SegmentedRenderReady = false;
+    State->LoggedSegmentedRender = false;
+    State->LoggedSegmentedFailure = false;
+    State->SegmentedRenderFrames = 0;
+    State->SegmentedRenderSegments = 0;
+    State->SegmentedRenderSpriteDraws = 0;
+    State->SegmentedRenderBgDraws = 0;
     State->SpriteSnapshotStride = 0;
     State->Scale = 0;
 }

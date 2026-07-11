@@ -6,7 +6,6 @@
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
-// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -255,12 +254,6 @@ struct Metal2DSegmentRange
     int End = 0;
 };
 
-struct Metal2DSegmentList
-{
-    std::array<Metal2DSegmentRange, kScreenH> Items {};
-    uint32_t Count = 0;
-};
-
 template <typename StateT>
 uint64_t MetalCombinedSegmentHash(
     const StateT& state,
@@ -275,13 +268,12 @@ uint64_t MetalCombinedSegmentHash(
 }
 
 template <typename StateT>
-Metal2DSegmentList MetalBuild2DSegments(
+std::vector<Metal2DSegmentRange> MetalBuild2DSegments(
     const StateT& state)
 {
-    Metal2DSegmentList segments;
+    std::vector<Metal2DSegmentRange> segments;
     int start = 0;
-    uint64_t previous =
-        MetalCombinedSegmentHash(state, 0);
+    uint64_t previous = MetalCombinedSegmentHash(state, 0);
 
     for (int line = 1; line < kScreenH; line++)
     {
@@ -290,14 +282,12 @@ Metal2DSegmentList MetalBuild2DSegments(
         if (current == previous)
             continue;
 
-        segments.Items[segments.Count++] =
-            {start, line};
+        segments.push_back({start, line});
         start = line;
         previous = current;
     }
 
-    segments.Items[segments.Count++] =
-        {start, kScreenH};
+    segments.push_back({start, kScreenH});
     return segments;
 }
 
@@ -447,19 +437,15 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         [State->SpriteScanlineConfigBuffer contents],
         sizeof(SpriteScanlineConfigCpu));
 
-    const Metal2DSegmentList segments =
+    const std::vector<Metal2DSegmentRange> segments =
         MetalBuild2DSegments(*State);
-    if (segments.Count == 0)
+    if (segments.empty())
         return false;
 
     if (!allowCaptureTextures)
     {
-        for (uint32_t segmentIndex = 0;
-         segmentIndex < segments.Count;
-         segmentIndex++)
-    {
-        const Metal2DSegmentRange& segment =
-            segments.Items[segmentIndex];
+        for (const Metal2DSegmentRange& segment : segments)
+        {
             const int line = segment.Start;
             const auto* spriteConfig =
                 reinterpret_cast<const SpriteConfigCpu*>(
@@ -547,12 +533,8 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     std::array<uint8_t, kBGLayerCount>
         bgTargetValid {};
 
-    for (uint32_t segmentIndex = 0;
-         segmentIndex < segments.Count;
-         segmentIndex++)
+    for (const Metal2DSegmentRange& segment : segments)
     {
-        const Metal2DSegmentRange& segment =
-            segments.Items[segmentIndex];
         const int line = segment.Start;
         const LayerConfigCpu& layerConfig =
             layerFrame->line[line];
