@@ -15,10 +15,20 @@ namespace MelonPrime::VideoBackend {
     // from that same out-of-range clamp).
     int NormalizeRendererForPlatform(int requested);
 
+    // Applies developer-only environment bootstrap overrides without writing
+    // them to Config. This is separated so requested/normalized/actual logs
+    // retain the effective requested identity.
+    int ResolveRequestedRenderer(int configuredRenderer);
+
+    bool RendererIsAvailableInBuild(int renderer);
+
     // Whether the given (already-normalized) `3D.Renderer` value needs an
     // OpenGL context/surface to run. Kept distinct from "is not Software" so a
     // future non-OpenGL backend cannot be mistaken for requiring a GL context.
     bool RendererRequiresOpenGLContext(int renderer);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    bool RendererRequiresVulkanContext(int renderer);
+#endif
 
     // Which Qt-visible presentation backend a window should use. Metal-plan
     // Phase 1 (melonprime-metal-backend-plan.md): a seam that both
@@ -33,6 +43,9 @@ namespace MelonPrime::VideoBackend {
 #if defined(MELONPRIME_ENABLE_METAL)
         Metal,
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        Vulkan,
+#endif
     };
 
     // `useGLConfig` / `requestedRenderer` are the raw `Screen.UseGL` /
@@ -41,6 +54,11 @@ namespace MelonPrime::VideoBackend {
     PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRenderer);
 
     bool IsOpenGLPresentation(PresentationBackend backend);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    bool IsVulkanPresentation(PresentationBackend backend);
+#endif
+    const char* PresentationBackendName(PresentationBackend backend);
+    const char* RendererName(int renderer);
 
     // Metal-plan Phase 3: bridges EmuThread's legacy 2-state `useOpenGL` bool
     // into the enum at the sites that still only compute a bool. Can only
@@ -61,6 +79,12 @@ namespace MelonPrime::VideoBackend {
     // ResolvePresentationBackend) once Phase 9 lands.
     bool ShouldForceMetalPresenterFromEnv();
     bool ShouldForceMetalRendererFromEnv();
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    bool ShouldForceVulkanPresenterFromEnv();
+    bool ShouldForceVulkanRendererFromEnv();
+    bool ShouldForceVulkanComputeRendererFromEnv();
 #endif
 
 } // namespace MelonPrime::VideoBackend

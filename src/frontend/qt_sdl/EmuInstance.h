@@ -112,15 +112,20 @@ enum
 {
     renderer3D_Software = 0,
 #ifdef OGLRENDERER_ENABLED
-    renderer3D_OpenGL,
-    renderer3D_OpenGLCompute,
+    renderer3D_OpenGL = 1,
+    renderer3D_OpenGLCompute = 2,
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
-    renderer3D_Metal,
-    renderer3D_MetalCompute,
+    renderer3D_Metal = 3,
+    renderer3D_MetalCompute = 4,
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    renderer3D_Vulkan = 5,
+    renderer3D_VulkanCompute = 6,
 #endif
     // MELONPRIME_METAL_COMPUTE_UI_V1
-    renderer3D_Max,
+    // Persisted IDs 0..6 never move when a compile-gated backend is absent.
+    renderer3D_Max = 7,
 };
 
 bool isRightModKey(QKeyEvent* event);
