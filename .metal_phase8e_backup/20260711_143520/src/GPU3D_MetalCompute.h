@@ -6,11 +6,9 @@
 // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
-// MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
-#include <cstdint>
 #include <memory>
 
 #include "GPU3D_Metal.h"
@@ -66,9 +64,6 @@ public:
     void EnableRenderThread();
 
     [[nodiscard]] bool FoundationReady() const noexcept;
-    void* GetComputeFinalTexture() const noexcept;
-    [[nodiscard]] uint64_t GetComputeFinalSerial() const noexcept;
-    [[nodiscard]] bool ComputeFinalReady() const noexcept;
 
 private:
     struct MetalComputeState;
@@ -83,7 +78,6 @@ private:
     bool RunNoTextureTileSelfTest();
     bool RunTextureVariantTileSelfTest();
     bool RunCompleteDepthBlendSelfTest();
-    bool RunFinalPassSelfTest();
     bool SubmitRealFrameSpanBin();
 };
 
