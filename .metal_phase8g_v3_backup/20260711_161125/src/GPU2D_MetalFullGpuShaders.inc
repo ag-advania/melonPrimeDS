@@ -2,7 +2,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
-// MELONPRIME_METAL_2D_SCANLINE_COORD_PARITY_V1
 static constexpr const char* kMetal2DFullGpuShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
@@ -431,26 +430,10 @@ static inline float4 mp_calculate_bg(
 
     if (layer == 0u && bg.type == 6u)
     {
-        // OpenGL applies the latched 3D BG offset and uses transparent
-        // border outside the native 256x192 source. The previous Metal path
-        // bypassed the offset and clamped out-of-range pixels to the edge.
-        const float2 bgPosition =
-            float2(scan.bgOffset[layer].xy) + coord;
-        if (bgPosition.x < 0.0 || bgPosition.y < 0.0 ||
-            bgPosition.x >= 256.0 || bgPosition.y >= 192.0)
-        {
-            return float4(0.0);
-        }
-
-        const float2 textureScale = float2(
-            float(max(high3D.get_width(), 1u)) / 256.0,
-            float(max(high3D.get_height(), 1u)) / 192.0);
-        const uint2 sampleCoord = uint2(
-            floor(bgPosition * textureScale));
-        const uint2 maxCoord = uint2(
+        uint2 maxCoord = uint2(
             max(high3D.get_width(), 1u) - 1u,
             max(high3D.get_height(), 1u) - 1u);
-        return high3D.read(min(sampleCoord, maxCoord));
+        return high3D.read(min(outputCoord, maxCoord));
     }
 
     int2 offset = scan.bgOffset[layer].xy;
@@ -509,25 +492,13 @@ fragment float4 mp2d_composite_fs(
     texture2d_array<float> capture256 [[texture(8)]],
     sampler repeatSampler [[sampler(0)]])
 {
-    const uint safeScale = max(scale, 1u);
-    const float safeScaleF = float(safeScale);
-    const uint2 outputCoord = uint2(in.position.xy);
-
-    // Match OpenGL 2DCompositorVS/FS exactly. ScanlineConfig already stores
-    // BGYPos + line (or the affine internal reference for that line), so the
-    // fragment must pass only the within-scanline Y fraction to BG sampling.
-    // The old code passed nativeCoord.y again, producing BGYPos+line+line.
-    const float2 nativeTexcoord =
-        in.position.xy / safeScaleF;
-    int2 nativeCoord = int2(floor(nativeTexcoord));
+    uint safeScale = max(scale, 1u);
+    uint2 outputCoord = uint2(in.position.xy);
+    int2 nativeCoord = int2(outputCoord / safeScale);
     nativeCoord.x = clamp(nativeCoord.x, 0, 255);
     nativeCoord.y = clamp(nativeCoord.y, 0, 191);
-    const uint line = uint(nativeCoord.y);
-    constant ScanlineState& scan =
-        scanlineConfig.scanline[line];
-    const float2 bgSampleCoord = float2(
-        nativeTexcoord.x,
-        fract(nativeTexcoord.y));
+    uint line = uint(nativeCoord.y);
+    constant ScanlineState& scan = scanlineConfig.scanline[line];
 
     int mosaicX = 0;
     if (scan.mosaicSize.x > 0)
@@ -536,11 +507,12 @@ fragment float4 mp2d_composite_fs(
         mosaicX = mosaicTexture.read(uint2(uint(nativeCoord.x), uint(mx))).r;
     }
 
+    float2 nativePosition = float2(nativeCoord);
     float4 layers[6];
     for (uint i = 0u; i < 4u; i++)
     {
         layers[i] = mp_calculate_bg(
-            i, bgSampleCoord, outputCoord, line,
+            i, nativePosition, outputCoord, line,
             layerConfig, scanlineConfig,
             bg0, bg1, bg2, bg3, high3D,
             capture128, capture256,
