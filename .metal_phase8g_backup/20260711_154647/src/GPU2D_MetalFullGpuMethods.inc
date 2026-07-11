@@ -1,7 +1,6 @@
 // Included near the end of GPU2D_Metal.mm.
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
-// MELONPRIME_METAL_2D_HUD_PARITY_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -349,29 +348,6 @@ bool MetalRenderer2D::RenderFullGpuFrame(
         !RefreshCompositorConfig())
     {
         return false;
-    }
-
-    if (!State->LoggedHudParity &&
-        GPU2D.Num == 0 &&
-        (GPU2D.DispCnt & (1u << 3)))
-    {
-        State->LoggedHudParity = true;
-        std::fprintf(
-            stderr,
-            "[MelonPrime] metal 2d HUD parity: engine=%u "
-            "layerEnable=0x%02x sprites=%d "
-            "bgUpload=%zu objUpload=%zu "
-            "bgPalUpload=%zu objPalUpload=%zu "
-            "totalBG=%llu totalOBJ=%llu\n",
-            GPU2D.Num,
-            static_cast<unsigned>(GPU2D.LayerEnable),
-            State->NumSprites,
-            State->LastBGUploadBytes,
-            State->LastOBJUploadBytes,
-            State->LastBGPaletteUploadBytes,
-            State->LastOBJPaletteUploadBytes,
-            static_cast<unsigned long long>(State->TotalBGUploadBytes),
-            static_cast<unsigned long long>(State->TotalOBJUploadBytes));
     }
 
     // Same-frame feedback from a destination capture into a BG/OBJ layer
