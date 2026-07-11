@@ -156,33 +156,20 @@ void ClipCenter1px(ScreenPanel& panel)
         return;
 
     if (PlatformInput_IsXcb()) {
-        // MELONPRIME_LINUX_RAW_GRAB_RELEASE_FIX_V1
-        // QWidget::grabMouse() is only needed by the Qt position-difference
-        // fallback. XI_RawMotion is collected on a separate X connection; an
-        // active Qt/X11 pointer grab can prevent that collector from receiving
-        // further raw events.
-        if (ui.rawAimActive) {
-            QWidget* const grabber = QWidget::mouseGrabber();
-            if (grabber == &panel)
-                panel.releaseMouse();
-            else if (grabber != nullptr) {
-                // Never interfere with a modal/menu grab.
-                panel.setCursor(Qt::ArrowCursor);
-                return;
-            }
-        } else {
-            QWidget* const grabber = QWidget::mouseGrabber();
-            if (grabber == nullptr)
-                panel.grabMouse(QCursor(Qt::BlankCursor));
+        QWidget* const grabber = QWidget::mouseGrabber();
+        if (grabber == nullptr)
+            panel.grabMouse(QCursor(Qt::BlankCursor));
 
-            // Never steal a modal/menu grab. The request remains set and a later
-            // activation/click event will retry capture.
-            if (QWidget::mouseGrabber() != &panel) {
-                panel.setCursor(Qt::ArrowCursor);
-                return;
-            }
+        // Never steal a modal/menu grab. The request remains set and a later
+        // activation/click event will retry capture.
+        if (QWidget::mouseGrabber() != &panel) {
+            panel.setCursor(Qt::ArrowCursor);
+            return;
         }
 
+        // Raw motion owns aim deltas when available; the grab only owns cursor
+        // routing/visibility. Keeping both active avoids a transition hole when
+        // XInput2 starts delivering after the Qt fallback has already begun.
         const QPoint c = panel.mapToGlobal(panel.rect().center());
         PlatformInput_WarpCursor(c.x(), c.y());
     }
