@@ -7,6 +7,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeArm9Hook.h"
+#include "MelonPrimeInstanceDiagnostics.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -27,10 +28,14 @@ namespace MelonPrime {
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     MelonPrimeCore::~MelonPrimeCore()
     {
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
         PlatformInput_ReleaseRawFilter(m_platformRawFilter);
     }
 #else
-    MelonPrimeCore::~MelonPrimeCore() = default;
+    MelonPrimeCore::~MelonPrimeCore()
+    {
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
+    }
 #endif
 
     // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
@@ -124,6 +129,8 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStart()
     {
+        InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStart");
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-start");
         m_flags.packed = 0;
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
@@ -180,6 +187,8 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStop()
     {
+        InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
         // Intentional historical asymmetry: stop clears transform/fire
         // transients but leaves aim residuals and overlay-held state alone.
