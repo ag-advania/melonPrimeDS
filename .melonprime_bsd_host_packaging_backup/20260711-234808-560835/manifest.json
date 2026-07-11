@@ -1,0 +1,12 @@
+{
+  "patch_id": "bsd_host_packaging_fix_v1",
+  "patch_version": 1,
+  "purpose": "before_apply",
+  "created_at": "2026-07-11T23:48:08.562700",
+  "files": [
+    {
+      "relative_path": ".github/workflows/build-bsd.yml",
+      "sha256": "e103043c1c891e456f44df4b05d582c0e683cd6f1f9235541818dc77a412e994"
+    }
+  ]
+}

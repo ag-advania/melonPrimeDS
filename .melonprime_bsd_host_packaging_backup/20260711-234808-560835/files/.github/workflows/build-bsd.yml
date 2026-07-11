@@ -100,31 +100,26 @@ jobs:
         cp -RP /tmp/build $GITHUB_WORKSPACE/
 
     - name: Compress binary
-      # MELONPRIME_BSD_HOST_PACKAGING_V1
-      # The BSD build directory is copied to the NFS-backed workspace above.
-      # Package it on the Ubuntu runner host instead of inside the BSD VM.
-      shell: bash
       run: |
-        set -euo pipefail
+        set -eu
 
-        build_dir="$GITHUB_WORKSPACE/build"
         zip_path="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
 
         binary="$(
-          find "$build_dir" \
+          find "$GITHUB_WORKSPACE/build" /tmp/build \
             -type f \( -name 'melonPrimeDS' -o -name 'melonDS' \) \
             -print 2>/dev/null | head -n 1 || true
         )"
 
         if [ -z "$binary" ]; then
-          echo "Expected binary was not found in the copied BSD build directory."
+          echo "Expected binary was not found."
           echo "All candidate files:"
-          find "$build_dir" -maxdepth 8 -type f -print 2>/dev/null || true
+          find "$GITHUB_WORKSPACE/build" /tmp/build -maxdepth 8 -type f -print 2>/dev/null || true
           exit 1
         fi
 
         chmod +x "$binary" || true
-        echo "Packaging binary on runner host: $binary"
+        echo "Packaging binary: $binary"
         zip -j "$zip_path" "$binary"
         ls -l "$zip_path"
 
