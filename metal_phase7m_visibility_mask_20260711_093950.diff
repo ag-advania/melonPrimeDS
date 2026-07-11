@@ -1,0 +1,395 @@
+--- a/.claude/rules/plan/metal_compute_shader_phase7_execution.md
++++ b/.claude/rules/plan/metal_compute_shader_phase7_execution.md
+@@ -164,3 +164,15 @@
+ - Engine A/BのMaster Brightnessをnative/high-resolution 3Dへ適用してから高解像度3Dを差し替える。
+ - 試合開始時の暗転で3Dだけ明るく残る／背景復元が破綻する問題を修正。
+ - MetalとMetal Compute Shaderの共通visible-output経路へ適用。
++
++<!-- MELONPRIME_METAL_PHASE7M_VISIBILITY_MASK -->
++## 2026-07-11 — Phase 7M per-pixel 3D visibility mask
++
++- 1xが正常で2x以上だけ壊れることからhigh-resolution 3D replacementを根本原因として確定。
++- SoftRenderer2Dの最終layer selectionから各画面・各ピクセルの安全な3D差し替えモードを生成。
++- mode 0: 2D BG／OBJ／window／capture／effectが3Dを覆うためCPU pixelを維持。
++- mode 1: 3Dが直接最前面なのでhigh-resolution sampleへ直接置換。
++- mode 2: native 3Dが第2layerへalpha blendされるためbackground復元後に再合成。
++- maskはScreenSwapとframebuffer double bufferingへ追従。
++- Master Brightnessが有効なscanlineはmaskを0にして暗転をCPU compositeのまま表示。
++- Metal／Metal Compute Shader共通のvisible-output shaderがmaskを参照。
+--- a/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
++++ b/.claude/rules/plan/metal_flicker_black3d_full_fix_phased_plan.md
+@@ -603,3 +603,15 @@
+ - Engine A/BのMaster Brightnessをnative/high-resolution 3Dへ適用してから高解像度3Dを差し替える。
+ - 試合開始時の暗転で3Dだけ明るく残る／背景復元が破綻する問題を修正。
+ - MetalとMetal Compute Shaderの共通visible-output経路へ適用。
++
++<!-- MELONPRIME_METAL_PHASE7M_VISIBILITY_MASK -->
++## 2026-07-11 — Phase 7M per-pixel 3D visibility mask
++
++- 1xが正常で2x以上だけ壊れることからhigh-resolution 3D replacementを根本原因として確定。
++- SoftRenderer2Dの最終layer selectionから各画面・各ピクセルの安全な3D差し替えモードを生成。
++- mode 0: 2D BG／OBJ／window／capture／effectが3Dを覆うためCPU pixelを維持。
++- mode 1: 3Dが直接最前面なのでhigh-resolution sampleへ直接置換。
++- mode 2: native 3Dが第2layerへalpha blendされるためbackground復元後に再合成。
++- maskはScreenSwapとframebuffer double bufferingへ追従。
++- Master Brightnessが有効なscanlineはmaskを0にして暗転をCPU compositeのまま表示。
++- Metal／Metal Compute Shader共通のvisible-output shaderがmaskを参照。
+--- a/src/GPU2D_Soft.cpp
++++ b/src/GPU2D_Soft.cpp
+@@ -117,6 +117,10 @@
+ void SoftRenderer2D::DrawScanline(u32 line)
+ {
+     u32* dst = Parent.Output2D[GPU2D.Num];
++
++    // MELONPRIME_METAL_3D_VISIBILITY_MASK_V1
++    if (GPU2D.Num == 0)
++        memset(Parent.Output3DReplaceMode, 0, sizeof(Parent.Output3DReplaceMode));
+ 
+     if (!GPU2D.Enabled)
+     {
+@@ -352,6 +356,35 @@
+     {
+         u32 val1 = BGOBJLine[i];
+         u32 val2 = BGOBJLine[256+i];
++
++        if (GPU2D.Num == 0)
++        {
++            u8 replaceMode = 0;
++            const u32 flag1 = val1 >> 24;
++            if (flag1 & 0x40)
++            {
++                const u32 flag2 = val2 >> 24;
++                u32 target2;
++                if      (flag2 & 0x80) target2 = 0x1000;
++                else if (flag2 & 0x40) target2 = 0x0100;
++                else                  target2 = flag2 << 8;
++
++                const u32 blendCnt = GPU2D.BlendCnt;
++                if (blendCnt & target2)
++                {
++                    replaceMode = 2;
++                }
++                else
++                {
++                    u32 effect = 0;
++                    if ((blendCnt & 0x01) && (WindowMask[i] & 0x20))
++                        effect = (blendCnt >> 6) & 0x3;
++                    if (effect != 2 && effect != 3)
++                        replaceMode = 1;
++                }
++            }
++            Parent.Output3DReplaceMode[i] = replaceMode;
++        }
+ 
+         dst[i] = ColorComposite(i, val1, val2);
+     }
+--- a/src/GPU_Metal.mm
++++ b/src/GPU_Metal.mm
+@@ -5,6 +5,7 @@
+ // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+ // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
+ // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
++// MELONPRIME_METAL_3D_VISIBILITY_MASK_V1
+ // MELONPRIME_METAL_OUTPUT_LEASE_V1
+ // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
+ 
+@@ -199,18 +200,23 @@
+     constant VisibleOutputConfig& config [[buffer(0)]],
+     texture2d_array<float, access::read> cpuComposite [[texture(0)]],
+     texture2d<float, access::read> highResolution3D [[texture(1)]],
+-    texture2d<float, access::read> nativeResolution3D [[texture(2)]])
++    texture2d<float, access::read> nativeResolution3D [[texture(2)]],
++    texture2d_array<uint, access::read> replacementMask [[texture(3)]])
+ {
+     uint2 outputCoord = min(uint2(in.position.xy), config.outputSize - uint2(1u, 1u));
+     uint divisor = max(config.scale, 1u);
+     uint2 nativeCoord = min(outputCoord / divisor, uint2(255u, 191u));
+     float4 base = cpuComposite.read(nativeCoord, config.outputLayer);
+ 
+-    if (config.useHighResolution3D == 0u || config.scale <= 1u ||
+-        config.outputLayer != config.engineALayer)
++    if (config.useHighResolution3D == 0u || config.scale <= 1u)
+     {
+         return float4(base.rgb, 1.0);
+     }
++
++    uint replacementMode =
++        replacementMask.read(nativeCoord, config.outputLayer).r;
++    if (replacementMode == 0u)
++        return float4(base.rgb, 1.0);
+ 
+     uint2 highCoord = min(outputCoord,
+         uint2(highResolution3D.get_width() - 1u, highResolution3D.get_height() - 1u));
+@@ -226,6 +232,11 @@
+     high3D.rgb = mp_apply_master_brightness(high3D.rgb, brightness);
+     low3D.rgb = mp_apply_master_brightness(low3D.rgb, brightness);
+ 
++    if (replacementMode == 1u)
++        return float4(clamp(high3D.rgb, 0.0, 1.0), 1.0);
++
++    // replacementMode == 2 means the CPU compositor alpha-blended native 3D
++    // over its second layer.
+     // CPU 2D already contains the native 3D layer. Recover the background
+     // underneath that native sample, then composite the full-resolution 3D
+     // sample over it. This keeps DS BG/OBJ/window/HUD output intact while the
+@@ -254,6 +265,7 @@
+     struct Slot
+     {
+         id<MTLTexture> CpuComposite = nil;
++        id<MTLTexture> ReplacementMask = nil;
+         id<MTLTexture> FinalTexture = nil;
+         bool InFlight = false;
+         int PresenterRefs = 0;
+@@ -516,6 +528,16 @@
+             cpuDesc.usage = MTLTextureUsageShaderRead;
+             cpuDesc.storageMode = MTLStorageModeShared;
+ 
++            MTLTextureDescriptor* maskDesc =
++                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Uint
++                                                                   width:256
++                                                                  height:192
++                                                               mipmapped:NO];
++            maskDesc.textureType = MTLTextureType2DArray;
++            maskDesc.arrayLength = 2;
++            maskDesc.usage = MTLTextureUsageShaderRead;
++            maskDesc.storageMode = MTLStorageModeShared;
++
+             MTLTextureDescriptor* finalDesc =
+                 [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                    width:width
+@@ -528,9 +550,13 @@
+ 
+             OutputState->Slots[i].CpuComposite =
+                 [OutputState->Device newTextureWithDescriptor:cpuDesc];
++            OutputState->Slots[i].ReplacementMask =
++                [OutputState->Device newTextureWithDescriptor:maskDesc];
+             OutputState->Slots[i].FinalTexture =
+                 [OutputState->Device newTextureWithDescriptor:finalDesc];
+-            if (!OutputState->Slots[i].CpuComposite || !OutputState->Slots[i].FinalTexture)
++            if (!OutputState->Slots[i].CpuComposite ||
++                !OutputState->Slots[i].ReplacementMask ||
++                !OutputState->Slots[i].FinalTexture)
+             {
+                 std::fprintf(stderr,
+                     "[MelonPrime] metal visible output: texture allocation failed scale=%d size=%zux%zu\n",
+@@ -558,8 +584,16 @@
+ 
+         void* top = nullptr;
+         void* bottom = nullptr;
++        void* topReplaceMode = nullptr;
++        void* bottomReplaceMode = nullptr;
+         if (!SoftRenderer::GetFramebuffers(&top, &bottom) || !top || !bottom)
+             return;
++        if (!SoftRenderer::Get3DReplacementMasks(
++                &topReplaceMode, &bottomReplaceMode) ||
++            !topReplaceMode || !bottomReplaceMode)
++        {
++            return;
++        }
+ 
+         id<MTLTexture> high3D =
+             (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
+@@ -642,6 +676,18 @@
+                                withBytes:bottom
+                              bytesPerRow:256 * 4
+                            bytesPerImage:256 * 192 * 4];
++        [slot.ReplacementMask replaceRegion:nativeRegion
++                                mipmapLevel:0
++                                      slice:0
++                                  withBytes:topReplaceMode
++                                bytesPerRow:256
++                              bytesPerImage:256 * 192];
++        [slot.ReplacementMask replaceRegion:nativeRegion
++                                mipmapLevel:0
++                                      slice:1
++                                  withBytes:bottomReplaceMode
++                                bytesPerRow:256
++                              bytesPerImage:256 * 192];
+ 
+         id<MTLCommandBuffer> commandBuffer = [OutputState->Queue commandBuffer];
+         if (!commandBuffer)
+@@ -688,6 +734,7 @@
+             [encoder setFragmentTexture:slot.CpuComposite atIndex:0];
+             [encoder setFragmentTexture:high3D atIndex:1];
+             [encoder setFragmentTexture:low3D atIndex:2];
++            [encoder setFragmentTexture:slot.ReplacementMask atIndex:3];
+             [encoder setViewport:(MTLViewport){
+                 0.0, 0.0,
+                 static_cast<double>(OutputState->Width),
+--- a/src/GPU_Soft.cpp
++++ b/src/GPU_Soft.cpp
+@@ -31,6 +31,13 @@
+     Framebuffer[0][1] = new u32[len];
+     Framebuffer[1][0] = new u32[len];
+     Framebuffer[1][1] = new u32[len];
++
++    // MELONPRIME_METAL_3D_VISIBILITY_MASK_V1
++    Framebuffer3DReplaceMode[0][0] = new u8[len];
++    Framebuffer3DReplaceMode[0][1] = new u8[len];
++    Framebuffer3DReplaceMode[1][0] = new u8[len];
++    Framebuffer3DReplaceMode[1][1] = new u8[len];
++    memset(Output3DReplaceMode, 0, sizeof(Output3DReplaceMode));
+     BackBuffer = 0;
+ 
+     Rend2D_A = std::make_unique<SoftRenderer2D>(GPU.GPU2D_A, *this);
+@@ -44,6 +51,10 @@
+     delete[] Framebuffer[0][1];
+     delete[] Framebuffer[1][0];
+     delete[] Framebuffer[1][1];
++    delete[] Framebuffer3DReplaceMode[0][0];
++    delete[] Framebuffer3DReplaceMode[0][1];
++    delete[] Framebuffer3DReplaceMode[1][0];
++    delete[] Framebuffer3DReplaceMode[1][1];
+ }
+ 
+ void SoftRenderer::Reset()
+@@ -53,6 +64,11 @@
+     memset(Framebuffer[0][1], 0, len);
+     memset(Framebuffer[1][0], 0, len);
+     memset(Framebuffer[1][1], 0, len);
++    memset(Framebuffer3DReplaceMode[0][0], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[0][1], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[1][0], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[1][1], 0, 256 * 192);
++    memset(Output3DReplaceMode, 0, sizeof(Output3DReplaceMode));
+ 
+     Rend2D_A->Reset();
+     Rend2D_B->Reset();
+@@ -67,6 +83,11 @@
+     memset(Framebuffer[0][1], 0, len);
+     memset(Framebuffer[1][0], 0, len);
+     memset(Framebuffer[1][1], 0, len);
++    memset(Framebuffer3DReplaceMode[0][0], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[0][1], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[1][0], 0, 256 * 192);
++    memset(Framebuffer3DReplaceMode[1][1], 0, 256 * 192);
++    memset(Output3DReplaceMode, 0, sizeof(Output3DReplaceMode));
+ }
+ 
+ 
+@@ -95,16 +116,21 @@
+ void SoftRenderer::DrawScanline(u32 line)
+ {
+     u32 *dstA, *dstB;
++    u8 *replaceModeA, *replaceModeB;
+     u32 dstoffset = 256 * line;
+     if (GPU.ScreenSwap)
+     {
+         dstA = &Framebuffer[BackBuffer][0][dstoffset];
+         dstB = &Framebuffer[BackBuffer][1][dstoffset];
++        replaceModeA = &Framebuffer3DReplaceMode[BackBuffer][0][dstoffset];
++        replaceModeB = &Framebuffer3DReplaceMode[BackBuffer][1][dstoffset];
+     }
+     else
+     {
+         dstA = &Framebuffer[BackBuffer][1][dstoffset];
+         dstB = &Framebuffer[BackBuffer][0][dstoffset];
++        replaceModeA = &Framebuffer3DReplaceMode[BackBuffer][1][dstoffset];
++        replaceModeB = &Framebuffer3DReplaceMode[BackBuffer][0][dstoffset];
+     }
+ 
+     // the position used for drawing operations is based on VCOUNT
+@@ -119,8 +145,8 @@
+         Rend2D_B->DrawScanline(line);
+ 
+         // draw the final screen output
+-        DrawScanlineA(line, dstA);
+-        DrawScanlineB(line, dstB);
++        DrawScanlineA(line, dstA, replaceModeA);
++        DrawScanlineB(line, dstB, replaceModeB);
+ 
+         // perform display capture if enabled
+         if (GPU.CaptureEnable)
+@@ -137,6 +163,8 @@
+         {
+             dstA[i] = 0x3F3F3F;
+             dstB[i] = 0x3F3F3F;
++            replaceModeA[i] = 0;
++            replaceModeB[i] = 0;
+         }
+     }
+ 
+@@ -153,6 +181,8 @@
+         {
+             dstA[i] = 0xFF000000;
+             dstB[i] = 0xFF000000;
++            replaceModeA[i] = 0;
++            replaceModeB[i] = 0;
+         }
+     }
+ }
+@@ -163,8 +193,9 @@
+     Rend2D_B->DrawSprites(line);
+ }
+ 
+-void SoftRenderer::DrawScanlineA(u32 line, u32* dst)
+-{
++void SoftRenderer::DrawScanlineA(u32 line, u32* dst, u8* replaceModeDst)
++{
++    memset(replaceModeDst, 0, 256);
+     u32 dispcnt = GPU.GPU2D_A.DispCnt;
+     switch ((dispcnt >> 16) & 0x3)
+     {
+@@ -179,6 +210,9 @@
+         {
+             for (int i = 0; i < 256; i+=2)
+                 *(u64*)&dst[i] = *(u64*)&Output2D[0][i];
++
++            if ((GPU.MasterBrightnessA >> 14) == 0)
++                memcpy(replaceModeDst, Output3DReplaceMode, 256);
+         }
+         break;
+ 
+@@ -226,8 +260,9 @@
+     ApplyMasterBrightness(GPU.MasterBrightnessA, dst);
+ }
+ 
+-void SoftRenderer::DrawScanlineB(u32 line, u32* dst)
+-{
++void SoftRenderer::DrawScanlineB(u32 line, u32* dst, u8* replaceModeDst)
++{
++    memset(replaceModeDst, 0, 256);
+     u32 dispcnt = GPU.GPU2D_B.DispCnt;
+     switch ((dispcnt >> 16) & 0x1)
+     {
+@@ -452,4 +487,12 @@
+     return true;
+ }
+ 
+-}
++bool SoftRenderer::Get3DReplacementMasks(void** top, void** bottom)
++{
++    int frontbuf = BackBuffer ^ 1;
++    *top = Framebuffer3DReplaceMode[frontbuf][0];
++    *bottom = Framebuffer3DReplaceMode[frontbuf][1];
++    return true;
++}
++
++}
+--- a/src/GPU_Soft.h
++++ b/src/GPU_Soft.h
+@@ -50,18 +50,22 @@
+     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
+ 
+     bool GetFramebuffers(void** top, void** bottom) override;
++    bool Get3DReplacementMasks(void** top, void** bottom);
+ 
+ private:
++    // MELONPRIME_METAL_3D_VISIBILITY_MASK_V1
+     friend class SoftRenderer2D;
+     friend class SoftRenderer3D;
+ 
+     u32* Framebuffer[2][2];
++    u8* Framebuffer3DReplaceMode[2][2];
+ 
+     u32* Output3D;
+     alignas(8) u32 Output2D[2][256];
++    alignas(8) u8 Output3DReplaceMode[256];
+ 
+-    void DrawScanlineA(u32 line, u32* dst);
+-    void DrawScanlineB(u32 line, u32* dst);
++    void DrawScanlineA(u32 line, u32* dst, u8* replaceModeDst);
++    void DrawScanlineB(u32 line, u32* dst, u8* replaceModeDst);
+ 
+     void DoCapture(u32 line);
+ 
