@@ -18,6 +18,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "Config.h"
 #include "MelonPrimeCompilerHints.h"  // Centralised macros (was inline here)
 #include "MelonPrimePlatformInput.h"
+#include "MelonPrimeInputSubscription.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeZoomState.h"
@@ -55,6 +56,7 @@ namespace MelonPrime {
 
 #ifdef _WIN32
     class RawInputWinFilter;
+    struct RawInputSubscription;
 #endif
 
     enum InputCacheBit : uint64_t {
@@ -591,8 +593,8 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
+        RawInputSubscription* m_rawInputSubscription = nullptr;
         void* m_cachedHwnd = nullptr;
-        bool  m_isNativeFilterInstalled = false;  // Replaced static local for thread safety
 #endif
 
         struct AimData {
@@ -656,6 +658,8 @@ namespace MelonPrime {
         // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
         uint8_t m_platformRawAimWasActive = 0;
 #endif
+
+        MelonPrimeInputSubscription m_inputSubscription{};
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
 #ifdef MELONPRIME_DS

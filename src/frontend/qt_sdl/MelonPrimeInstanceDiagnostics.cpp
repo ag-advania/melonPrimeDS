@@ -54,6 +54,19 @@ void LogOwnedStates(
         << " hud=" << hud;
 }
 
+void LogInputSubscription(
+    EmuInstance* emu,
+    const void* subscription,
+    unsigned long long generation,
+    bool active) noexcept
+{
+    qInfo().nospace()
+        << "[MelonPrime][instance=" << InstanceId(emu)
+        << "][input-subscription=" << subscription
+        << "] generation=" << generation
+        << " active-owner=" << (active ? 1 : 0);
+}
+
 bool CheckGuiThread(EmuInstance* emu, const char* operation) noexcept
 {
     const QCoreApplication* app = QCoreApplication::instance();

@@ -2,6 +2,7 @@
 #define MELONPRIME_PLATFORM_INPUT_H
 
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeInputSubscription.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -107,21 +108,24 @@ inline bool PlatformInput_IsGcMouseAimActive(const PlatformRawFilter* filter)
 #endif
 
 inline void PlatformInput_FetchRawMouseDelta(PlatformRawFilter* filter,
+                                             MelonPrimeInputSubscription& subscription,
                                              int32_t& outDx,
                                              int32_t& outDy)
 {
-    filter->fetchMouseDelta(outDx, outDy);
+    filter->fetchMouseDelta(subscription, outDx, outDy);
 }
 
-inline void PlatformInput_ResetRawFilter(PlatformRawFilter* filter)
+inline void PlatformInput_ResetRawFilter(
+    PlatformRawFilter* filter, MelonPrimeInputSubscription& subscription)
 {
     if (filter)
-        filter->resetAll();
+        filter->resetAll(subscription);
 }
 
 // Single resolution point for aim delta ownership (V5 Phase 2).
 inline AimInputSource PlatformInput_ResolveAimSource(
     PlatformRawFilter* filter,
+    MelonPrimeInputSubscription& subscription,
     bool hasPanel,
     bool& outHaveMouseDelta,
     int32_t& outDx,
@@ -130,17 +134,19 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     outHaveMouseDelta = false;
     outDx = 0;
     outDy = 0;
+    if (!PlatformInputOwnerService::IsOwner(subscription))
+        return AimInputSource::None;
 
 #if defined(__APPLE__)
     if (PlatformInput_IsRawAimActive(filter)) {
-        PlatformInput_FetchRawMouseDelta(filter, outDx, outDy);
+        PlatformInput_FetchRawMouseDelta(filter, subscription, outDx, outDy);
         outHaveMouseDelta = true;
         return AimInputSource::MacRaw;
     }
     return AimInputSource::QCursorFallback;
 #else
     if (PlatformInput_IsRawAimActive(filter)) {
-        PlatformInput_FetchRawMouseDelta(filter, outDx, outDy);
+        PlatformInput_FetchRawMouseDelta(filter, subscription, outDx, outDy);
         outHaveMouseDelta = true;
         return AimInputSource::LinuxRaw;
     }
@@ -183,6 +189,7 @@ inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
 template<typename AimPanel>
 inline void PlatformInput_UpdateMouseDeltaMacLinux(
     PlatformRawFilter* filter,
+    MelonPrimeInputSubscription& subscription,
     AimPanel* panel,
     uint8_t& platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -193,7 +200,7 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
 {
     const bool hasPanel = (panel != nullptr);
     const AimInputSource aimSrc = PlatformInput_ResolveAimSource(
-        filter, hasPanel, haveMouseDelta, mouseX, mouseY);
+        filter, subscription, hasPanel, haveMouseDelta, mouseX, mouseY);
 
 #if defined(__linux__)
     const bool rawActive = (aimSrc == AimInputSource::LinuxRaw);
@@ -208,11 +215,9 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
         static const bool s_inputDbg =
             std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
         if (s_inputDbg) {
-            static int32_t s_sumX = 0, s_sumY = 0;
-            static int s_frames = 0;
-            s_sumX += mouseX;
-            s_sumY += mouseY;
-            if (++s_frames >= 60) {
+            subscription.debugSumX += mouseX;
+            subscription.debugSumY += mouseY;
+            if (++subscription.debugFrames >= 60) {
                 const char* srcName = "qcur";
                 if (aimSrc == AimInputSource::LinuxRaw)
                     srcName = "raw";
@@ -222,18 +227,20 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
                     "[MelonPrime] linux aim: src=%s have=%d sum60=(%d,%d) "
                     "rawAvail=%d rawMotion=%d panel=%d\n",
                     srcName,
-                    haveMouseDelta ? 1 : 0, s_sumX, s_sumY,
+                    haveMouseDelta ? 1 : 0,
+                    static_cast<int>(subscription.debugSumX),
+                    static_cast<int>(subscription.debugSumY),
                     PlatformInput_IsRawAvailable(filter) ? 1 : 0,
                     PlatformInput_IsRawAimActive(filter) ? 1 : 0,
                     panel ? 1 : 0);
-                s_sumX = s_sumY = 0;
-                s_frames = 0;
+                subscription.debugSumX = subscription.debugSumY = 0;
+                subscription.debugFrames = 0;
             }
         }
     }
 #endif
 
-    if (!haveMouseDelta) {
+    if (aimSrc != AimInputSource::None && !haveMouseDelta) {
 #if defined(__linux__)
         if (!panel)
 #endif
@@ -250,9 +257,10 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
 template<typename AimPanel>
 inline void PlatformInput_ResetAfterLayoutWarpMacLinux(
     PlatformRawFilter* filter,
+    MelonPrimeInputSubscription& subscription,
     AimPanel* panel)
 {
-    PlatformInput_ResetRawFilter(filter);
+    PlatformInput_ResetRawFilter(filter, subscription);
 #if defined(__linux__)
     if (panel)
         panel->resetAimMouseDelta();
@@ -280,6 +288,7 @@ inline bool PlatformInput_ShouldWarpCursorAfterAim(
 template<typename AimPanel>
 inline void PlatformInput_UpdateMouseDelta(
     void* filterOpaque,
+    MelonPrimeInputSubscription& subscription,
     AimPanel* panel,
     uint8_t* platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -293,6 +302,7 @@ inline void PlatformInput_UpdateMouseDelta(
         platformRawAimWasActive ? *platformRawAimWasActive : 0;
     PlatformInput_UpdateMouseDeltaMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque),
+        subscription,
         panel,
         localWasActive,
         haveMouseDelta,
@@ -317,13 +327,15 @@ inline void PlatformInput_UpdateMouseDelta(
 template<typename AimPanel>
 inline void PlatformInput_ResetAfterLayoutWarp(
     void* filterOpaque,
+    MelonPrimeInputSubscription& subscription,
     AimPanel* panel)
 {
 #if defined(__APPLE__) || defined(__linux__)
     PlatformInput_ResetAfterLayoutWarpMacLinux(
-        static_cast<PlatformRawFilter*>(filterOpaque), panel);
+        static_cast<PlatformRawFilter*>(filterOpaque), subscription, panel);
 #else
     (void)filterOpaque;
+    (void)subscription;
     (void)panel;
 #endif
 }

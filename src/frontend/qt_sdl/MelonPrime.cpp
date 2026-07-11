@@ -25,7 +25,6 @@
 
 #include <cmath>
 #include <algorithm>
-#include <QCoreApplication>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
@@ -52,6 +51,8 @@ namespace MelonPrime {
         , globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
+        m_inputSubscription.Initialize(
+            static_cast<uint64_t>(emuInstance->getInstanceID()));
 #ifdef MELONPRIME_CUSTOM_HUD
         m_hudConfigState = CustomHud_CreateConfigState();
 #endif
@@ -97,57 +98,42 @@ namespace MelonPrime {
         if (auto* mw = emuInstance->getMainWindow()) {
             m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
         }
-        m_rawFilter.reset(
-            RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
+        m_rawFilter.reset(RawInputWinFilter::Acquire());
+        m_rawInputSubscription = m_rawFilter->Subscribe(
+            &m_inputSubscription,
+            m_flags.test(StateFlags::BIT_JOY2KEY),
+            static_cast<HWND>(m_cachedHwnd));
 
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-        BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
+        BindMetroidHotkeysFromConfig(
+            m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
 #endif
     }
 
     // =========================================================================
     // REFACTORED: ApplyJoy2KeySupportAndQtFilter
     //
-    // Changed: `static bool s_isInstalled` -> member `m_isNativeFilterInstalled`.
-    //
-    // The static local was shared across all MelonPrimeCore instances.
-    // While currently only one instance exists, this was a latent bug:
-    //   - Multiple instances would corrupt each other's filter install state
-    //   - Not resilient to future multi-instance support
-    //   - Static locals in member functions are a code smell
-    //
-    // Member variable is initialised to false in the header, reset in OnEmuStart.
+    // Qt native-filter installation is coordinated by the process-wide input
+    // service according to the active subscription's Joy2Key request.
     // =========================================================================
     void MelonPrimeCore::ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset)
     {
 #ifdef _WIN32
         if (!m_rawFilter) return;
-        QCoreApplication* app = QCoreApplication::instance();
-        if (!app) return;
-
         if (auto* mw = emuInstance->getMainWindow()) {
             m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
         }
 
-        m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
+        m_rawFilter->setRawInputTarget(
+            m_rawInputSubscription, static_cast<HWND>(m_cachedHwnd));
         m_flags.assign(StateFlags::BIT_JOY2KEY, enable);
 
-        m_rawFilter->setJoy2KeySupport(enable);
-
-        if (enable != m_isNativeFilterInstalled) {
-            if (enable) {
-                app->installNativeEventFilter(m_rawFilter.get());
-            }
-            else {
-                app->removeNativeEventFilter(m_rawFilter.get());
-            }
-            m_isNativeFilterInstalled = enable;
-        }
-
+        m_rawFilter->setJoy2KeySupport(m_rawInputSubscription, enable);
+        m_rawFilter->setQtFilterRequested(m_rawInputSubscription, enable);
         if (doReset) {
             // P-9 / resetAll: combined reset keeps the same semantics with one fence.
-            m_rawFilter->resetAll();
-            m_rawFilter->resetHotkeyEdges();
+            m_rawFilter->resetAll(m_rawInputSubscription);
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
     }
@@ -226,7 +212,7 @@ namespace MelonPrime {
     {
 #ifdef _WIN32
         if (m_rawFilter) {
-            m_rawFilter->DeferredDrain();
+            m_rawFilter->DeferredDrain(m_rawInputSubscription);
         }
 #endif
     }
@@ -482,12 +468,13 @@ namespace MelonPrime {
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
                     // (one fence instead of two)
                     if (m_rawFilter) {
-                        m_rawFilter->resetAll();
+                        m_rawFilter->resetAll(m_rawInputSubscription);
                     }
 #elif defined(__APPLE__) || defined(__linux__)
                     // Drop raw deltas accumulated while unfocused so refocus
                     // cannot produce an aim jump (same intent as FIX-3).
-                    PlatformInput_ResetRawFilter(m_platformRawFilter);
+                    PlatformInput_ResetRawFilter(
+                        m_platformRawFilter, m_inputSubscription);
 #endif
 #ifdef MELONPRIME_DS
                     m_weaponSwitchPending.Clear();
@@ -653,7 +640,8 @@ namespace MelonPrime {
             hasCenter = true;
 
 #if defined(__APPLE__) || defined(__linux__)
-            PlatformInput_ResetRawFilter(m_platformRawFilter);
+            PlatformInput_ResetRawFilter(
+                m_platformRawFilter, m_inputSubscription);
 #endif
         }
 #endif

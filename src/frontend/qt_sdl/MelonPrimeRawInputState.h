@@ -83,6 +83,7 @@ namespace MelonPrime {
         void clearStuckPostFrame() noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
+        void syncPhysicalState() noexcept;
 
     private:
         // =================================================================
@@ -190,17 +191,17 @@ namespace MelonPrime {
         // Static Tables
         // =================================================================
         struct BtnLutEntry { uint8_t downBits; uint8_t upBits; };
-        static std::array<BtnLutEntry, 1024> s_btnLut;
+        static std::array<BtnLutEntry, 1024> s_btnLut; // process-service: immutable after call_once
 
         struct VkRemapEntry { uint8_t normal; uint8_t extended; };
-        static std::array<VkRemapEntry, 256> s_vkRemap;
+        static std::array<VkRemapEntry, 256> s_vkRemap; // process-service: immutable after call_once
 
-        static std::array<uint16_t, 512> s_makeCodeLut;
+        static std::array<uint16_t, 512> s_makeCodeLut; // process-service: immutable after call_once
 
-        static uint16_t s_scancodeLShift;
-        static uint16_t s_scancodeRShift;
-        static std::once_flag s_initFlag;
-        static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer;
+        static uint16_t s_scancodeLShift; // process-service: immutable after call_once
+        static uint16_t s_scancodeRShift; // process-service: immutable after call_once
+        static std::once_flag s_initFlag; // process-service: table initialization
+        static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer; // process-service: immutable API pointer
 
         // =================================================================
         // Inline Helpers

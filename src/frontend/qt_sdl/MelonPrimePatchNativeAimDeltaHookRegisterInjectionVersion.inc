@@ -281,7 +281,7 @@
             int lateX = 0;
             int lateY = 0;
             if (m_rawFilter)
-                m_rawFilter->LateLatchMouseDelta(lateX, lateY);
+                m_rawFilter->LateLatchMouseDelta(m_rawInputSubscription, lateX, lateY);
 
             if ((lateX | lateY) != 0)
             {

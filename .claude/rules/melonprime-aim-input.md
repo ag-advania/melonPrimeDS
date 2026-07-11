@@ -4,12 +4,15 @@ This document tracks the MelonPrime path from input capture to frame input state
 
 Platform scope: the sections below describe the Windows Raw Input path first. On macOS (added
 2026-07), `MelonPrimeRawInputMacFilter.{h,mm}` provides RawInput-equivalent aim deltas via
-GCMouse first, then IOHIDManager as a fallback (unaccelerated HID X/Y counts, fetch-and-clear at
-frame snapshot). GCMouse is primary because it does not need the Input Monitoring TCC permission;
+GCMouse first, then IOHIDManager as a fallback (unaccelerated HID X/Y counts in a process-wide
+monotonic collector, read through a per-instance subscription cursor). GCMouse is primary because
+it does not need the Input Monitoring TCC permission;
 IOHID is only opened after a short grace period when no GCMouse backend appears. On Linux/X11,
 `MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent through XInput2 `XI_RawMotion`.
-The macOS/Linux call sites go through `MelonPrimePlatformInput.h`; Windows Raw Input remains on
-the original `RawInputWinFilter` / `InputState` path and is not wrapped by that facade.
+The macOS/Linux call sites go through `MelonPrimePlatformInput.h`. All platforms share
+`PlatformInputOwnerService` owner semantics and an instance-owned
+`MelonPrimeInputSubscription`; Windows keeps its native collector in `RawInputWinFilter` and
+allocates one `InputState` per subscription.
 
 Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance::onMousePress`,
 `emuInstance->hotkeyMask`) on non-Windows platforms. They are intentionally not captured by the
@@ -165,10 +168,13 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 ## 8. RawInput Layer Notes (Windows)
 
 - `RawInputWinFilter`:
+  - Collects OS events once and registers one per-instance subscription
+  - Changes the raw-input target and Qt native filter only when active ownership changes
   - Uses Qt target when Joy2Key is ON, hidden window when OFF
   - Splits `PollAndSnapshot` and `DeferredDrain`
   - Handles `WM_INPUT` in `HiddenWndProc` to avoid loss
 - `InputState`:
+  - Is owned per subscription, so bindings, edges, and delta cursors cannot cross instances
   - Uses `processRawInputBatched()` for batched reads
   - Prebuilds hotkey masks via `setHotkeyVks()`
   - `snapshotInputFrameNoEdges()` preserves outer `m_hkPrev` state

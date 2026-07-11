@@ -9,6 +9,7 @@
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeZoomStatus.h"
+#include "MelonPrimeInstanceDiagnostics.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,12 @@ namespace MelonPrime {
     template <bool kReentrant>
     FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(const bool focused)
     {
+        const bool captureEligible = focused
+            && m_cachedPanel != nullptr
+            && !isCursorMode
+            && isClipWanted;
+        const bool wasInputOwner =
+            m_inputSubscription.activeOwner.load(std::memory_order_acquire);
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
 
@@ -66,16 +73,29 @@ namespace MelonPrime {
         // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
         if (rawFilter) {
+            rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
             if constexpr (kReentrant)
-                rawFilter->PollAndSnapshotNoEdges(hk, m_input.mouseX, m_input.mouseY);
+                rawFilter->PollAndSnapshotNoEdges(m_rawInputSubscription, hk, m_input.mouseX, m_input.mouseY);
             else {
-                rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+                rawFilter->PollAndSnapshot(m_rawInputSubscription, hk, m_input.mouseX, m_input.mouseY);
                 // P-47: Kernel buffer just drained; no FrameAdvance has occurred yet.
                 // LateLatch skips processRawInputBatched on frames with no FrameAdvance.
                 m_didFrameAdvanceSinceSnapshot = false;
             }
         }
 #endif
+
+#if !defined(_WIN32)
+        PlatformInputOwnerService::Update(m_inputSubscription, captureEligible);
+#endif
+        const bool isInputOwner =
+            m_inputSubscription.activeOwner.load(std::memory_order_acquire);
+        if (wasInputOwner != isInputOwner) {
+            InstanceDiagnostics::LogInputSubscription(
+                emuInstance, &m_inputSubscription,
+                static_cast<unsigned long long>(m_inputSubscription.generation),
+                isInputOwner);
+        }
 
         if (!focused) {
             m_input.down = 0;
@@ -123,6 +143,7 @@ namespace MelonPrime {
         bool haveMouseDelta = false;
         PlatformInput_UpdateMouseDelta(
             MELONPRIME_RAW_FILTER_PTR(this),
+            m_inputSubscription,
             m_cachedPanel,
             MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(this),
             haveMouseDelta,
@@ -306,14 +327,14 @@ namespace MelonPrime {
         if (m_isLayoutChangePending) {
             m_isLayoutChangePending = false;
 #ifdef _WIN32
-            if (m_rawFilter) m_rawFilter->discardDeltas();
+            if (m_rawFilter) m_rawFilter->discardDeltas(m_rawInputSubscription);
 #else
             const QPoint center = GetAdjustedCenter();
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
             PlatformInput_WarpCursor(center.x(), center.y());
             PlatformInput_ResetAfterLayoutWarp(
-                MELONPRIME_RAW_FILTER_PTR(this), m_cachedPanel);
+                MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription, m_cachedPanel);
 #endif
         }
     }
