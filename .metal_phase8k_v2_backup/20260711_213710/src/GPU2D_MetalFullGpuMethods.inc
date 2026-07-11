@@ -4,7 +4,6 @@
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
-// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -146,6 +145,81 @@ void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
 
 void MetalRenderer2D::MaybeReportSegmentSnapshotFrame() noexcept
 {
+    if (!State || !State->SnapshotBuffersReady)
+        return;
+
+    for (int line = 0; line < kScreenH; line++)
+    {
+        if (!State->LayerSnapshotValid[line] ||
+            !State->SpriteSnapshotValid[line])
+        {
+            return;
+        }
+    }
+
+    uint32_t layerSegments = 1;
+    uint32_t spriteSegments = 1;
+    uint32_t combinedSegments = 1;
+    uint32_t maxSprites = State->SpriteSnapshotCount[0];
+    uint64_t spriteTotal = State->SpriteSnapshotCount[0];
+
+    auto combinedHash = [&](int line) {
+        uint64_t hash = State->LayerSnapshotHash[line];
+        hash ^= State->SpriteSnapshotHash[line] +
+            0x9E3779B97F4A7C15ull + (hash << 6u) + (hash >> 2u);
+        return hash;
+    };
+
+    uint64_t previousCombined = combinedHash(0);
+    for (int line = 1; line < kScreenH; line++)
+    {
+        if (State->LayerSnapshotHash[line] !=
+            State->LayerSnapshotHash[line - 1])
+        {
+            layerSegments++;
+        }
+        if (State->SpriteSnapshotHash[line] !=
+            State->SpriteSnapshotHash[line - 1])
+        {
+            spriteSegments++;
+        }
+
+        const uint64_t currentCombined = combinedHash(line);
+        if (currentCombined != previousCombined)
+        {
+            combinedSegments++;
+            previousCombined = currentCombined;
+        }
+
+        maxSprites = std::max(
+            maxSprites,
+            State->SpriteSnapshotCount[line]);
+        spriteTotal += State->SpriteSnapshotCount[line];
+    }
+
+    State->SnapshotFrameCount++;
+    if (State->SnapshotFrameCount == 1 ||
+        (State->SnapshotFrameCount % 600u) == 0u)
+    {
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal segmented 2d snapshot: "
+            "engine=%u frame=%llu lines=%d "
+            "layerSegments=%u spriteSegments=%u combinedSegments=%u "
+            "avgSprites=%.2f maxSprites=%u "
+            "gpuReady=%u visiblePath=ownership-gated-software-2d\\n",
+            GPU2D.Num,
+            static_cast<unsigned long long>(
+                State->SnapshotFrameCount),
+            kScreenH,
+            layerSegments,
+            spriteSegments,
+            combinedSegments,
+            static_cast<double>(spriteTotal) /
+                static_cast<double>(kScreenH),
+            maxSprites,
+            SegmentedSnapshotReady() ? 1u : 0u);
+    }
 }
 
 void MetalRenderer2D::CaptureScanlineState(int line) noexcept
@@ -175,6 +249,7 @@ void MetalRenderer2D::CaptureScanlineState(int line) noexcept
         }
     }
 
+    MaybeReportSegmentSnapshotFrame();
 }
 
 void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
@@ -231,6 +306,7 @@ void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
         State->SpriteSnapshotLastLine = line;
     }
 
+    MaybeReportSegmentSnapshotFrame();
 }
 
 bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept
@@ -442,11 +518,16 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
             }
         }
     }
+
+    const bool visibleSegmentedPath =
+        MetalSegmented2DVisibleEnabled();
     id<MTLCommandBuffer> command =
         [State->Queue commandBuffer];
     if (!command)
         return false;
-    command.label = @"MelonPrime Metal Phase 8K Segmented 2D";
+    command.label = visibleSegmentedPath
+        ? @"MelonPrime Metal Phase 8J Segmented 2D Visible"
+        : @"MelonPrime Metal Phase 8J Segmented 2D Shadow";
 
     {
         MTLRenderPassDescriptor* pass =
@@ -505,6 +586,8 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
 
     const uint32_t scale =
         static_cast<uint32_t>(std::max(1, State->Scale));
+    uint64_t bgDraws = 0;
+    uint64_t spriteDraws = 0;
 
     for (const Metal2DSegmentRange& segment : segments)
     {
@@ -578,6 +661,7 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                         vertexStart:0
                         vertexCount:6];
             [encoder endEncoding];
+            bgDraws++;
         }
 
         const NSUInteger scissorY =
@@ -657,6 +741,7 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                             vertexCount:6
                           instanceCount:numSprites * 2u];
                 [encoder endEncoding];
+                spriteDraws++;
                 return true;
             };
 
@@ -743,6 +828,34 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     }
 
     [command commit];
+
+    State->SegmentedRenderFrames++;
+    State->SegmentedRenderSegments += segments.size();
+    State->SegmentedRenderBgDraws += bgDraws;
+    State->SegmentedRenderSpriteDraws += spriteDraws;
+
+    if (!State->LoggedSegmentedRender ||
+        (State->SegmentedRenderFrames % 600u) == 0u)
+    {
+        State->LoggedSegmentedRender = true;
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal segmented 2d render: "
+            "engine=%u frame=%llu segments=%zu "
+            "bgDraws=%llu spriteDraws=%llu "
+            "scale=%u visible=%u shadow=%u "
+            "resourceModel=frame-final\n",
+            GPU2D.Num,
+            static_cast<unsigned long long>(
+                State->SegmentedRenderFrames),
+            segments.size(),
+            static_cast<unsigned long long>(bgDraws),
+            static_cast<unsigned long long>(spriteDraws),
+            scale,
+            visibleSegmentedPath ? 1u : 0u,
+            visibleSegmentedPath ? 0u : 1u);
+    }
+
     return true;
 }
 
