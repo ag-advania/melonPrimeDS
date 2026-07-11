@@ -19,6 +19,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimeCompilerHints.h"  // Centralised macros (was inline here)
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeInputSubscription.h"
+#include "MelonPrimeThreadBridge.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeZoomState.h"
@@ -356,11 +357,11 @@ namespace MelonPrime {
         }
 #endif
 
-        // --- Public runtime state (read/written directly by Screen.cpp,
-        //     InputConfig, and EmuThread; not behind an accessor) ---
+        [[nodiscard]] MelonPrimeThreadBridge& ThreadBridge() noexcept { return m_threadBridge; }
+        [[nodiscard]] const MelonPrimeThreadBridge& ThreadBridge() const noexcept { return m_threadBridge; }
+
+        // EmuThread-owned runtime state. GUI consumers use ThreadBridge().
         bool isCursorMode = true;
-        std::atomic_bool isFocused{ false };
-        bool isClipWanted = false;
         bool isStylusMode = false;
         bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
         bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
@@ -389,7 +390,6 @@ namespace MelonPrime {
 
         // --- Hot Scalars + Core Pointers (R/W every frame) ---
         EmuInstance* emuInstance;
-        ScreenPanel* m_cachedPanel = nullptr;  // P-3: cached to avoid 3-level pointer chase
         Config::Table& localCfg;
         Config::Table& globalCfg;
 
@@ -660,6 +660,8 @@ namespace MelonPrime {
 #endif
 
         MelonPrimeInputSubscription m_inputSubscription{};
+        MelonPrimeThreadBridge m_threadBridge{};
+        uint64_t m_layoutGenerationSeen = 0;
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
 #ifdef MELONPRIME_DS
@@ -769,6 +771,7 @@ namespace MelonPrime {
         void QueueWeaponSwitchRequest(uint8_t weaponId) noexcept;
 #endif
         void ShowCursor(bool show);
+        void PublishUiSnapshot() noexcept;
         void FrameAdvanceTwice();
         FORCE_INLINE void FrameAdvanceOnce() { m_didFrameAdvanceSinceSnapshot = true; (this->*m_fnAdvance)(); }
         void FrameAdvanceDefault();

@@ -19,7 +19,7 @@ void CustomHud_EnterEditMode(CustomHudConfigState& hudConfig, EmuInstance* emu, 
     NotifySelectionChanged(-1);
 
     if (auto* core = emu->getEmuThread()->GetMelonPrimeCore())
-        core->isCursorMode = true;
+        core->ThreadBridge().RequestCursorModeFromGui(true);
 }
 
 void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::Table& cfg)

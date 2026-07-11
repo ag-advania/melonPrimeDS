@@ -175,9 +175,7 @@ namespace MelonPrime {
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
 
-        // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
-        if (auto* mw = emuInstance->getMainWindow())
-            m_cachedPanel = mw->panel;
+        m_layoutGenerationSeen = 0;
     }
 
     void MelonPrimeCore::ResetRuntimeStateForBoot()

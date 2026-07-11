@@ -95,9 +95,8 @@ namespace MelonPrime {
 #ifdef _WIN32
         if (m_rawFilter) return;
 
-        if (auto* mw = emuInstance->getMainWindow()) {
-            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
-        }
+        m_cachedHwnd = reinterpret_cast<void*>(
+            m_threadBridge.WindowHandleForEmu());
         m_rawFilter.reset(RawInputWinFilter::Acquire());
         m_rawInputSubscription = m_rawFilter->Subscribe(
             &m_inputSubscription,
@@ -120,9 +119,8 @@ namespace MelonPrime {
     {
 #ifdef _WIN32
         if (!m_rawFilter) return;
-        if (auto* mw = emuInstance->getMainWindow()) {
-            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
-        }
+        m_cachedHwnd = reinterpret_cast<void*>(
+            m_threadBridge.WindowHandleForEmu());
 
         m_rawFilter->setRawInputTarget(
             m_rawInputSubscription, static_cast<HWND>(m_cachedHwnd));
@@ -193,9 +191,7 @@ namespace MelonPrime {
     // P-3: Moved from header -- requires complete EmuInstance type
     void MelonPrimeCore::NotifyLayoutChange()
     {
-        m_isLayoutChangePending = true;
-        if (auto* mw = emuInstance->getMainWindow())
-            m_cachedPanel = mw->panel;
+        m_threadBridge.NotifyLayoutChangeFromGui();
     }
 
     // =========================================================================
@@ -215,6 +211,20 @@ namespace MelonPrime {
             m_rawFilter->DeferredDrain(m_rawInputSubscription);
         }
 #endif
+    }
+
+    void MelonPrimeCore::PublishUiSnapshot() noexcept
+    {
+        const bool rawAimActive = PlatformInput_IsRuntimeRawAimActive(
+            MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription);
+        m_threadBridge.PublishRuntimeFromEmu(
+            isCursorMode,
+            isStylusMode,
+            m_flags.test(StateFlags::BIT_IN_GAME),
+            m_flags.test(StateFlags::BIT_ROM_DETECTED),
+            isFastForward,
+            rawAimActive,
+            screenSyncMode);
     }
 
     void MelonPrimeCore::NotifyConfigChanged()
@@ -267,7 +277,7 @@ namespace MelonPrime {
         if (UNLIKELY(m_isRunningHook)) {
             // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
             // Use the lean updater: no press-map scan, no wheel fetch.
-            const bool focused = isFocused.load(std::memory_order_acquire);
+            const bool focused = m_threadBridge.FocusedForEmu();
             UpdateInputStateReentrant(focused);
             ProcessMoveAndButtonsFastFromReset();
             ApplyBipedFireInput();
@@ -297,7 +307,7 @@ namespace MelonPrime {
         // have changed, forcing a reload from memory. isFocused is written by
         // the GUI thread, so load once and use that value consistently for this
         // frame's input snapshot and focus transition.
-        const bool focused = isFocused.load(std::memory_order_acquire);
+        const bool focused = m_threadBridge.FocusedForEmu();
 
         // Poll moved into UpdateInputState via PollAndSnapshot
         UpdateInputState(focused);
@@ -506,6 +516,7 @@ namespace MelonPrime {
             }
         }
 #endif
+        PublishUiSnapshot();
         m_isRunningHook = false;
     }
 
@@ -626,49 +637,18 @@ namespace MelonPrime {
 
     void MelonPrimeCore::ShowCursor(bool show)
     {
-        auto* panel = emuInstance->getMainWindow()->panel;
-        if (!panel) return;
-
-#if !defined(_WIN32)
-        QPoint center;
-        bool hasCenter = false;
-
         if (!show) {
-            center = GetAdjustedCenter();
-            m_aimData.centerX = center.x();
-            m_aimData.centerY = center.y();
-            hasCenter = true;
-
 #if defined(__APPLE__) || defined(__linux__)
             PlatformInput_ResetRawFilter(
                 m_platformRawFilter, m_inputSubscription);
 #endif
         }
-#endif
-
-        QMetaObject::invokeMethod(panel,
-#if !defined(_WIN32)
-            [panel, show, center, hasCenter]() {
-#else
-            [panel, show]() {
-#endif
-                panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
-                if (show) panel->unclip();
-                else {
-                    panel->clipCursorCenter1px();
-#if !defined(_WIN32)
-                    if (hasCenter) {
-#if defined(__linux__)
-                        // Drop the fallback's prev-position baseline first so
-                        // this warp is never counted as motion.
-                        panel->resetAimMouseDelta();
-#endif
-                        PlatformInput_WarpCursor(center.x(), center.y());
-                    }
-#endif
-                }
-            },
-            Qt::ConnectionType::QueuedConnection);
+        const uint32_t request = show
+            ? MelonPrimeThreadBridge::GuiRequestShowCursor
+            : (MelonPrimeThreadBridge::GuiRequestHideCursor
+               | MelonPrimeThreadBridge::GuiRequestRecenter
+               | MelonPrimeThreadBridge::GuiRequestRefreshCapture);
+        m_threadBridge.RequestGuiFromEmu(request);
     }
 
     void MelonPrimeCore::FrameAdvanceCustom() { m_frameAdvanceFunc(); }
@@ -698,10 +678,10 @@ namespace MelonPrime {
 
     QPoint MelonPrimeCore::GetAdjustedCenter()
     {
-        auto* panel = emuInstance->getMainWindow()->panel;
-        if (!panel) return QPoint(0, 0);
-        const QRect r = panel->geometry();
-        return panel->mapToGlobal(QPoint(r.width() / 2, r.height() / 2));
+        int x = 0;
+        int y = 0;
+        m_threadBridge.ReadCenterForEmu(x, y);
+        return QPoint(x, y);
     }
 
 } // namespace MelonPrime

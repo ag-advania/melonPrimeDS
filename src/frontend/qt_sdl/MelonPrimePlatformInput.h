@@ -143,7 +143,11 @@ inline AimInputSource PlatformInput_ResolveAimSource(
         outHaveMouseDelta = true;
         return AimInputSource::MacRaw;
     }
-    return AimInputSource::QCursorFallback;
+    if (hasPanel) {
+        outHaveMouseDelta = true;
+        return AimInputSource::PanelDelta;
+    }
+    return AimInputSource::None;
 #else
     if (PlatformInput_IsRawAimActive(filter)) {
         PlatformInput_FetchRawMouseDelta(filter, subscription, outDx, outDy);
@@ -154,7 +158,7 @@ inline AimInputSource PlatformInput_ResolveAimSource(
         outHaveMouseDelta = true;
         return AimInputSource::PanelDelta;
     }
-    return AimInputSource::QCursorFallback;
+    return AimInputSource::None;
 #endif
 }
 
@@ -240,16 +244,8 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
     }
 #endif
 
-    if (aimSrc != AimInputSource::None && !haveMouseDelta) {
-#if defined(__linux__)
-        if (!panel)
-#endif
-        {
-            const QPoint currentPos = QCursor::pos();
-            mouseX = currentPos.x() - centerX;
-            mouseY = currentPos.y() - centerY;
-        }
-    }
+    (void)centerX;
+    (void)centerY;
 
     PlatformInput_CountPerfAimSource(aimSrc);
 }
@@ -268,6 +264,19 @@ inline void PlatformInput_ResetAfterLayoutWarpMacLinux(
 }
 
 #endif // defined(__APPLE__) || defined(__linux__)
+
+inline bool PlatformInput_IsRuntimeRawAimActive(
+    const void* filterOpaque,
+    const MelonPrimeInputSubscription& subscription)
+{
+#if defined(__APPLE__) || defined(__linux__)
+    return PlatformInput_IsRawAimActive(
+        static_cast<const PlatformRawFilter*>(filterOpaque));
+#else
+    (void)filterOpaque;
+    return subscription.activeOwner.load(std::memory_order_acquire);
+#endif
+}
 
 #if !defined(_WIN32)
 inline bool PlatformInput_ShouldWarpCursorAfterAim(
@@ -316,11 +325,12 @@ inline void PlatformInput_UpdateMouseDelta(
     (void)filterOpaque;
     (void)platformRawAimWasActive;
     (void)panel;
-    if (!haveMouseDelta) {
-        const QPoint currentPos = QCursor::pos();
-        mouseX = currentPos.x() - centerX;
-        mouseY = currentPos.y() - centerY;
-    }
+    (void)subscription;
+    (void)haveMouseDelta;
+    (void)mouseX;
+    (void)mouseY;
+    (void)centerX;
+    (void)centerY;
 #endif
 }
 

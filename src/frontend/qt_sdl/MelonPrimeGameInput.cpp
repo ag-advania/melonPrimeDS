@@ -60,10 +60,24 @@ namespace MelonPrime {
     template <bool kReentrant>
     FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(const bool focused)
     {
+        const int requestedCursorMode =
+            m_threadBridge.ConsumeCursorModeForEmu();
+        if (requestedCursorMode >= 0) {
+            isCursorMode = requestedCursorMode != 0;
+            SetAimBlockBranchless(AIMBLK_CURSOR_MODE, isCursorMode);
+        }
+        const uint64_t layoutGeneration =
+            m_threadBridge.LayoutGenerationForEmu();
+        if (layoutGeneration != m_layoutGenerationSeen) {
+            m_layoutGenerationSeen = layoutGeneration;
+            m_isLayoutChangePending = true;
+            m_threadBridge.ReadCenterForEmu(
+                m_aimData.centerX, m_aimData.centerY);
+        }
         const bool captureEligible = focused
-            && m_cachedPanel != nullptr
+            && m_threadBridge.PanelAvailableForEmu()
             && !isCursorMode
-            && isClipWanted;
+            && m_threadBridge.CaptureWantedForEmu();
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
 #ifdef _WIN32
@@ -73,6 +87,9 @@ namespace MelonPrime {
         // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
         if (rawFilter) {
+            rawFilter->setRawInputTarget(
+                m_rawInputSubscription,
+                reinterpret_cast<HWND>(m_threadBridge.WindowHandleForEmu()));
             rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
             if constexpr (kReentrant)
                 rawFilter->PollAndSnapshotNoEdges(m_rawInputSubscription, hk, m_input.mouseX, m_input.mouseY);
@@ -144,7 +161,7 @@ namespace MelonPrime {
         PlatformInput_UpdateMouseDelta(
             MELONPRIME_RAW_FILTER_PTR(this),
             m_inputSubscription,
-            m_cachedPanel,
+            &m_threadBridge,
             MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(this),
             haveMouseDelta,
             m_input.mouseX,
@@ -154,7 +171,7 @@ namespace MelonPrime {
 #endif
 
         if constexpr (!kReentrant)
-            m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
+            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu();
         else
             m_input.wheelDelta = 0;
     }
@@ -332,9 +349,10 @@ namespace MelonPrime {
             const QPoint center = GetAdjustedCenter();
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
-            PlatformInput_WarpCursor(center.x(), center.y());
+            m_threadBridge.RequestGuiFromEmu(
+                MelonPrimeThreadBridge::GuiRequestRecenter);
             PlatformInput_ResetAfterLayoutWarp(
-                MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription, m_cachedPanel);
+                MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription, &m_threadBridge);
 #endif
         }
     }
@@ -482,8 +500,9 @@ namespace MelonPrime {
 
         if (LIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED))) {
 #if defined(__APPLE__)
-            if (isClipWanted && m_cachedPanel)
-                m_cachedPanel->containAimCursorIfNeeded();
+            if (m_threadBridge.CaptureWantedForEmu())
+                m_threadBridge.RequestGuiFromEmu(
+                    MelonPrimeThreadBridge::GuiRequestRecenter);
 #endif
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
@@ -551,7 +570,8 @@ namespace MelonPrime {
                     m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
                     if (warpCursorAfterAim)
-                        PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                        m_threadBridge.RequestGuiFromEmu(
+                            MelonPrimeThreadBridge::GuiRequestRecenter);
 #endif
                     return;
                 }
@@ -587,7 +607,8 @@ namespace MelonPrime {
                         m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
                         if (warpCursorAfterAim)
-                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                            m_threadBridge.RequestGuiFromEmu(
+                                MelonPrimeThreadBridge::GuiRequestRecenter);
 #endif
                         return;
                     }
@@ -609,7 +630,8 @@ namespace MelonPrime {
                     m_aimResidualY = m_enableAimAccumulator ? resY : 0;
 #if !defined(_WIN32)
                     if (warpCursorAfterAim)
-                        PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                        m_threadBridge.RequestGuiFromEmu(
+                            MelonPrimeThreadBridge::GuiRequestRecenter);
 #endif
                     return;
                 }
@@ -629,7 +651,8 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
             if (warpCursorAfterAim)
-                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+                m_threadBridge.RequestGuiFromEmu(
+                    MelonPrimeThreadBridge::GuiRequestRecenter);
 #endif
             return;
         }
@@ -638,8 +661,9 @@ namespace MelonPrime {
         const QPoint center = GetAdjustedCenter();
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
-        PlatformInput_WarpCursor(center.x(), center.y());
-        PlatformInput_ResetPanelAfterWarp(m_cachedPanel);
+        m_threadBridge.RequestGuiFromEmu(
+            MelonPrimeThreadBridge::GuiRequestRecenter);
+        PlatformInput_ResetPanelAfterWarp(&m_threadBridge);
 #endif
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;

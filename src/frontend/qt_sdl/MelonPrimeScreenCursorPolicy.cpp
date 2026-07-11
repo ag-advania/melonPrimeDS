@@ -129,8 +129,10 @@ void ClipCenter1px(ScreenPanel& panel)
     panel.setClipWantedForMelonPrime(true);
 
     const auto* core = panel.melonPrimeCoreForPolicy();
+    const auto ui = core ? core->ThreadBridge().ReadForGui()
+                         : MelonPrimeUiSnapshot{};
     if (!panel.isActiveVisibleWindowForMelonPrime()
-        || (core && !core->isFocused.load(std::memory_order_acquire)))
+        || (core && !ui.focused))
     {
         panel.setCursor(Qt::ArrowCursor);
         Suspend(panel);
@@ -247,7 +249,9 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     auto* thread = emu ? emu->getEmuThread() : nullptr;
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
-    if (core && !core->isFocused.load(std::memory_order_acquire)) {
+    const auto ui = core ? core->ThreadBridge().ReadForGui()
+                         : MelonPrimeUiSnapshot{};
+    if (core && !ui.focused) {
         // Temporary focus loss must not erase the persistent capture request.
         Suspend(panel);
         return;

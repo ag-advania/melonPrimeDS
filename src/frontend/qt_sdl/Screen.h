@@ -102,30 +102,12 @@ public:
     std::optional<QRect> getTopScreenWidgetRect() const;
 #endif
 
-    int getDelta() {
-        // Store and reset in one operation for optimal performance
-        int currentDelta = wheelDelta;
-        wheelDelta = 0;
-        return currentDelta;
-    }
-
-    void getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy) {
-        outDx = aimMouseDeltaX.exchange(0, std::memory_order_acquire);
-        outDy = aimMouseDeltaY.exchange(0, std::memory_order_acquire);
-    }
-
-    void resetAimMouseDelta() {
-        aimMouseDeltaX.store(0, std::memory_order_release);
-        aimMouseDeltaY.store(0, std::memory_order_release);
-#if defined(__linux__)
-        // Also drop the prev-position baseline so an external cursor jump
-        // (layout change, explicit warp) is never counted as motion.
-        aimLastGlobalValid.store(false, std::memory_order_release);
-#endif
-    }
+    void getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy);
+    void resetAimMouseDelta();
 
     void reloadNoRomSplashLocalization();
     void containAimCursorIfNeeded();
+    void syncMelonPrimeThreadBridge();
 
     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
@@ -151,11 +133,7 @@ public:
     {
         return false;
     }
-    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept
-    {
-        aimMouseDeltaX.fetch_add(dx, std::memory_order_relaxed);
-        aimMouseDeltaY.fetch_add(dy, std::memory_order_relaxed);
-    }
+    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept;
 #endif
 
 public slots:
@@ -219,10 +197,7 @@ protected:
     };
 
 #ifdef MELONPRIME_DS
-    int wheelDelta = 0;
-    std::atomic<std::int32_t> aimMouseDeltaX{ 0 };
-    std::atomic<std::int32_t> aimMouseDeltaY{ 0 };
-#if defined(__linux__)
+#if !defined(_WIN32)
     // Previous-position differencing baseline for the Qt fallback aim path.
     // aimLastGlobal is GUI-thread-only; the validity flag is atomic because
     // the emu thread invalidates it via resetAimMouseDelta().
