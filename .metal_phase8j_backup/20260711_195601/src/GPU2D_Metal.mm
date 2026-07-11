@@ -2,7 +2,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -18,7 +17,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <vector>
 
 namespace melonDS
 {
@@ -30,35 +28,13 @@ constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
 
 
-bool MetalEnvironmentFlagEnabled(const char* name)
-{
-    const char* value = std::getenv(name);
-    return value && value[0] == '1';
-}
-
-bool MetalSegmented2DShadowEnabled()
-{
-    static const bool enabled =
-        MetalEnvironmentFlagEnabled(
-            "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
-    return enabled;
-}
-
-bool MetalSegmented2DVisibleEnabled()
-{
-    static const bool enabled =
-        MetalEnvironmentFlagEnabled(
-            "MELONPRIME_METAL_SEGMENTED_2D_VISIBLE");
-    return enabled;
-}
-
 bool MetalSegmented2DSnapshotEnabled()
 {
-    static const bool enabled =
-        MetalEnvironmentFlagEnabled(
-            "MELONPRIME_METAL_SEGMENTED_2D_CAPTURE") ||
-        MetalSegmented2DShadowEnabled() ||
-        MetalSegmented2DVisibleEnabled();
+    static const bool enabled = []() {
+        const char* value =
+            std::getenv("MELONPRIME_METAL_SEGMENTED_2D_CAPTURE");
+        return value && value[0] == '1';
+    }();
     return enabled;
 }
 
@@ -447,14 +423,7 @@ struct MetalRenderer2D::Metal2DState
     int SpriteSnapshotLastLine = -1;
     uint64_t SnapshotFrameCount = 0;
     bool SnapshotBuffersReady = false;
-    bool SegmentedRenderReady = false;
     bool LoggedSnapshotAllocation = false;
-    bool LoggedSegmentedRender = false;
-    bool LoggedSegmentedFailure = false;
-    uint64_t SegmentedRenderFrames = 0;
-    uint64_t SegmentedRenderSegments = 0;
-    uint64_t SegmentedRenderSpriteDraws = 0;
-    uint64_t SegmentedRenderBgDraws = 0;
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
@@ -887,12 +856,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         newLayerScanlineSnapshot &&
         newSpriteScanlineSnapshot &&
         newSpriteScanlineMeta;
-    state.SegmentedRenderReady =
-        state.SnapshotBuffersReady &&
-        state.FullGpuReady &&
-        state.OutputTex &&
-        state.OBJLayerTex &&
-        state.OBJDepthTex;
     state.LayerSnapshotValid.fill(0);
     state.SpriteSnapshotValid.fill(0);
     state.LayerSnapshotLastLine = -1;
@@ -1428,33 +1391,7 @@ bool MetalRenderer2D::RefreshLayerConfig() noexcept
         }
     }
 
-    // Store the selected pre-render target index in the otherwise-unused
-    // BGConfig padding word. A segment can restore the exact texture binding
-    // without reconstructing the original BGCnt register.
-    for (int layer = 0; layer < 4; layer++)
-    {
-        state.LayerConfig.bgConfig[layer].pad0[0] = 0;
-        if (!state.BGLayerTex[layer])
-            continue;
-
-        for (uint32_t index = 0;
-             index < static_cast<uint32_t>(kBGLayerCount);
-             index++)
-        {
-            if (state.BGLayerTex[layer] ==
-                state.AllBGLayerTex[index])
-            {
-                state.LayerConfig.bgConfig[layer].pad0[0] =
-                    index + 1u;
-                break;
-            }
-        }
-    }
-
-    std::memcpy(
-        [state.LayerConfigBuffer contents],
-        &state.LayerConfig,
-        sizeof(state.LayerConfig));
+    std::memcpy([state.LayerConfigBuffer contents], &state.LayerConfig, sizeof(state.LayerConfig));
     return true;
 }
 
@@ -1912,13 +1849,6 @@ void MetalRenderer2D::Reset() noexcept
     State->LayerSnapshotLastLine = -1;
     State->SpriteSnapshotLastLine = -1;
     State->SnapshotBuffersReady = false;
-    State->SegmentedRenderReady = false;
-    State->LoggedSegmentedRender = false;
-    State->LoggedSegmentedFailure = false;
-    State->SegmentedRenderFrames = 0;
-    State->SegmentedRenderSegments = 0;
-    State->SegmentedRenderSpriteDraws = 0;
-    State->SegmentedRenderBgDraws = 0;
     State->SpriteSnapshotStride = 0;
     State->Scale = 0;
 }
