@@ -29,12 +29,8 @@ public:
         GuiRequestNone = 0,
         GuiRequestRecenter = 1u << 0,
         GuiRequestRefreshCapture = 1u << 1,
-        // Kept for source compatibility with in-flight Phase 4 work. Cursor
-        // presentation is reconciled from m_cursorVisibleDesired instead of
-        // deciding precedence between these edge bits.
         GuiRequestShowCursor = 1u << 2,
         GuiRequestHideCursor = 1u << 3,
-        GuiRequestReconcileCursor = 1u << 4,
     };
 
     void SetFocusedFromGui(bool value) noexcept
@@ -161,37 +157,6 @@ public:
     {
         m_guiRequests.fetch_or(requests, std::memory_order_release);
     }
-
-    // MELONPRIME_CURSOR_AUTHORITATIVE_STATE_V1
-    // Cursor visibility is a level-triggered desired state, not two competing
-    // show/hide edges. Publishing the desired value before the request bit
-    // gives the GUI consumer one authoritative answer even when transitions
-    // coalesce between two paint/draw passes.
-    void RequestCursorVisibilityFromEmu(
-        bool visible,
-        uint32_t additionalRequests = GuiRequestNone) noexcept
-    {
-        m_cursorVisibleDesired.store(visible, std::memory_order_release);
-        m_guiRequests.fetch_or(
-            GuiRequestReconcileCursor | additionalRequests,
-            std::memory_order_release);
-    }
-
-    // A new ROM/session supersedes every cursor request from the old one.
-    // Replace, rather than OR, pending requests so a stale hide/recenter cannot
-    // be replayed after the new session has returned to menu cursor mode.
-    void ResetCursorPresentationFromEmu() noexcept
-    {
-        m_cursorVisibleDesired.store(true, std::memory_order_release);
-        (void)m_guiRequests.exchange(
-            GuiRequestReconcileCursor, std::memory_order_acq_rel);
-    }
-
-    [[nodiscard]] bool CursorVisibleDesiredForGui() const noexcept
-    {
-        return m_cursorVisibleDesired.load(std::memory_order_acquire);
-    }
-
     uint32_t TakeGuiRequestsFromGui() noexcept
     {
         return m_guiRequests.exchange(0, std::memory_order_acq_rel);
@@ -210,7 +175,6 @@ private:
     std::atomic<int32_t> m_panelAimX{0};
     std::atomic<int32_t> m_panelAimY{0};
     std::atomic<uint32_t> m_runtimeBits{1u};
-    std::atomic_bool m_cursorVisibleDesired{true};
     std::atomic<uint32_t> m_guiRequests{0};
 };
 

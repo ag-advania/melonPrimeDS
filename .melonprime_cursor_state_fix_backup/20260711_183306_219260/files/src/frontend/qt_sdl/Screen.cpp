@@ -136,27 +136,17 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
     bridge.PublishWindowHandleFromGui(static_cast<uintptr_t>(winId()));
 
     const uint32_t requests = bridge.TakeGuiRequestsFromGui();
-    const uint32_t cursorRequests =
-        MelonPrime::MelonPrimeThreadBridge::GuiRequestReconcileCursor
-        | MelonPrime::MelonPrimeThreadBridge::GuiRequestShowCursor
-        | MelonPrime::MelonPrimeThreadBridge::GuiRequestHideCursor
-        | MelonPrime::MelonPrimeThreadBridge::GuiRequestRefreshCapture;
-    const bool cursorVisible = bridge.CursorVisibleDesiredForGui();
-
-    // MELONPRIME_CURSOR_AUTHORITATIVE_STATE_V1
-    // Show and hide may be requested between the same two GUI passes. Never
-    // resolve that race by bit priority: apply the latest desired state.
-    if (requests & cursorRequests) {
-        if (cursorVisible) {
-            setCursor(Qt::ArrowCursor);
-            MelonPrime::ScreenCursorPolicy::Unclip(*this);
-        } else {
-            MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
-        }
+    if (requests & MelonPrime::MelonPrimeThreadBridge::GuiRequestShowCursor) {
+        setCursor(Qt::ArrowCursor);
+        MelonPrime::ScreenCursorPolicy::Unclip(*this);
+        return;
+    }
+    if (requests & (MelonPrime::MelonPrimeThreadBridge::GuiRequestHideCursor
+                    | MelonPrime::MelonPrimeThreadBridge::GuiRequestRefreshCapture)) {
+        MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
     }
 #if !defined(_WIN32)
-    if (!cursorVisible
-        && (requests & MelonPrime::MelonPrimeThreadBridge::GuiRequestRecenter)) {
+    if (requests & MelonPrime::MelonPrimeThreadBridge::GuiRequestRecenter) {
         resetAimMouseDelta();
         MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
     }
