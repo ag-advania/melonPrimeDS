@@ -1,0 +1,179 @@
+--- a/src/frontend/qt_sdl/MelonPrimeWaylandPointerLock.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeWaylandPointerLock.cpp
+@@ -121,7 +121,6 @@
+             self.pointer = wl_seat_get_pointer(seatObject);
+             if (self.pointer)
+                 wl_pointer_add_listener(self.pointer, &PointerListener, &self);
+-            return;
+         }
+ 
+         if (!hasPointer && self.pointer)
+@@ -137,8 +136,15 @@
+                 wl_pointer_destroy(self.pointer);
+             }
+             self.pointer = nullptr;
+-            self.supported = false;
+-        }
++        }
++
++        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
++        // A seat can lose and later regain pointer capability after hotplug.
++        self.supported =
++            self.seat
++            && self.pointer
++            && self.relativeManager
++            && self.pointerConstraints;
+     }
+ 
+     static void SeatName(void*, wl_seat*, const char*) {}
+@@ -450,7 +456,12 @@
+ {
+ }
+ 
+-WaylandPointerLock::~WaylandPointerLock() = default;
++WaylandPointerLock::~WaylandPointerLock()
++{
++    // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2
++    if (m_impl)
++        m_impl->Shutdown();
++}
+ 
+ bool WaylandPointerLock::setLocked(
+     void* displayHandle,
+--- a/src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp
+@@ -62,6 +62,15 @@
+     static bool TestBit(const unsigned char* mask, int bit)
+     {
+         return (mask[bit / 8] & (1 << (bit % 8))) != 0;
++    }
++
++    // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2
++    static int32_t TakeIntegralDelta(double& residual, double delta)
++    {
++        residual += delta;
++        const double integral = std::trunc(residual);
++        residual -= integral;
++        return static_cast<int32_t>(integral);
+     }
+ 
+     // Per-source-device axis info. Filter-thread-only (no locking needed).
+@@ -84,6 +93,8 @@
+         // sensitivity matches relative mice (~17x too fast otherwise —
+         // observed as an instant pitch slam on game join).
+         double scale[2] = { 1.0, 1.0 };
++        // Preserve sub-pixel motion across XI_RawMotion events.
++        double residual[2] = { 0.0, 0.0 };
+     };
+     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
+     std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
+@@ -130,6 +141,8 @@
+             for (auto& kv : axisStates) {
+                 kv.second.hasLast[0] = false;
+                 kv.second.hasLast[1] = false;
++                kv.second.residual[0] = 0.0;
++                kv.second.residual[1] = 0.0;
+             }
+         }
+ 
+@@ -175,6 +188,8 @@
+                     // pitch on game join).
+                     if (diffPx > -300.0 && diffPx < 300.0)
+                         d[axis] = diffPx;
++                    else
++                        st.residual[axis] = 0.0;
+                 }
+                 st.last[axis] = value;
+                 st.hasLast[axis] = true;
+@@ -183,8 +198,8 @@
+             }
+         }
+ 
+-        const int32_t dx = static_cast<int32_t>(std::llround(d[0]));
+-        const int32_t dy = static_cast<int32_t>(std::llround(d[1]));
++        const int32_t dx = TakeIntegralDelta(st.residual[0], d[0]);
++        const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
+ 
+         if ((dx | dy) != 0) {
+             if (MelonPrimeInputDebug()
+--- a/src/frontend/qt_sdl/MelonPrimeScreenCursorPolicy.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeScreenCursorPolicy.cpp
+@@ -143,7 +143,18 @@
+ 
+     if (panel.isActiveVisibleWindowForMelonPrime()) {
+         const auto* core = panel.melonPrimeCoreForPolicy();
+-        if (!core || !core->IsPlatformRawAimActive()) {
++        const bool rawActive = core && core->IsPlatformRawAimActive();
++
++        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
++        // Keep receiving Qt fallback motion across native child-window edges.
++        if (PlatformInput_IsXcb()) {
++            if (!rawActive && QWidget::mouseGrabber() == nullptr)
++                panel.grabMouse();
++            else if (rawActive && QWidget::mouseGrabber() == &panel)
++                panel.releaseMouse();
++        }
++
++        if (!rawActive) {
+             const QPoint c = panel.mapToGlobal(panel.rect().center());
+             PlatformInput_WarpCursor(c.x(), c.y());
+         }
+@@ -174,6 +185,8 @@
+ #endif
+ #if defined(__linux__)
+     panel.setWaylandPointerLockForMelonPrime(false);
++    if (QWidget::mouseGrabber() == &panel)
++        panel.releaseMouse();
+     panel.resetAimMouseDelta();
+ #endif
+ #ifdef _WIN32
+@@ -189,6 +202,8 @@
+ #endif
+ #if defined(__linux__)
+     panel.setWaylandPointerLockForMelonPrime(false);
++    if (QWidget::mouseGrabber() == &panel)
++        panel.releaseMouse();
+     panel.resetAimMouseDelta();
+ #endif
+ #ifdef _WIN32
+@@ -203,6 +218,8 @@
+     panel.setCursor(Qt::ArrowCursor);
+ #if defined(__linux__)
+     panel.setWaylandPointerLockForMelonPrime(false);
++    if (QWidget::mouseGrabber() == &panel)
++        panel.releaseMouse();
+ #endif
+ #ifdef _WIN32
+     if (!panel.isActiveVisibleWindowForMelonPrime()) return;
+--- a/src/frontend/qt_sdl/Screen.cpp
++++ b/src/frontend/qt_sdl/Screen.cpp
+@@ -710,16 +710,25 @@
+         const QPoint center = mapToGlobal(rect().center());
+ #if QT_VERSION_MAJOR == 6
+         const QPoint global = event->globalPosition().toPoint();
++        const QPoint local = event->position().toPoint();
+ #else
+         const QPoint global = event->globalPos();
+-#endif
+-        const int offX = global.x() - center.x();
+-        const int offY = global.y() - center.y();
+-        const bool strayed = offX > 96 || offX < -96 || offY > 96 || offY < -96;
++        const QPoint local = event->pos();
++#endif
++        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
++        // The previous 96px threshold matched half the height of a 256x192
++        // single-screen panel, allowing the pointer to leave before recentering.
++        const QRect safeRect = rect().adjusted(16, 16, -16, -16);
++        const bool strayed = !safeRect.contains(local);
+ 
+         if (core->IsPlatformRawAimActive()) {
+             // Platform raw owns aim deltas (warp-immune). Threshold containment only.
+             aimLastGlobalValid.store(false, std::memory_order_release);
++            if (MelonPrime::PlatformInput_IsXcb()
++                && QWidget::mouseGrabber() == this)
++            {
++                releaseMouse();
++            }
+             if (strayed)
+                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
+             return;

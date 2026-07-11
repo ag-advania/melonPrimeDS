@@ -143,18 +143,7 @@ void ClipCenter1px(ScreenPanel& panel)
 
     if (panel.isActiveVisibleWindowForMelonPrime()) {
         const auto* core = panel.melonPrimeCoreForPolicy();
-        const bool rawActive = core && core->IsPlatformRawAimActive();
-
-        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
-        // Keep receiving Qt fallback motion across native child-window edges.
-        if (PlatformInput_IsXcb()) {
-            if (!rawActive && QWidget::mouseGrabber() == nullptr)
-                panel.grabMouse();
-            else if (rawActive && QWidget::mouseGrabber() == &panel)
-                panel.releaseMouse();
-        }
-
-        if (!rawActive) {
+        if (!core || !core->IsPlatformRawAimActive()) {
             const QPoint c = panel.mapToGlobal(panel.rect().center());
             PlatformInput_WarpCursor(c.x(), c.y());
         }
@@ -185,8 +174,6 @@ void Unclip(ScreenPanel& panel)
 #endif
 #if defined(__linux__)
     panel.setWaylandPointerLockForMelonPrime(false);
-    if (QWidget::mouseGrabber() == &panel)
-        panel.releaseMouse();
     panel.resetAimMouseDelta();
 #endif
 #ifdef _WIN32
@@ -202,8 +189,6 @@ void ReleaseForClose(ScreenPanel& panel)
 #endif
 #if defined(__linux__)
     panel.setWaylandPointerLockForMelonPrime(false);
-    if (QWidget::mouseGrabber() == &panel)
-        panel.releaseMouse();
     panel.resetAimMouseDelta();
 #endif
 #ifdef _WIN32
@@ -218,8 +203,6 @@ void ConfineToBottomScreen(ScreenPanel& panel)
     panel.setCursor(Qt::ArrowCursor);
 #if defined(__linux__)
     panel.setWaylandPointerLockForMelonPrime(false);
-    if (QWidget::mouseGrabber() == &panel)
-        panel.releaseMouse();
 #endif
 #ifdef _WIN32
     if (!panel.isActiveVisibleWindowForMelonPrime()) return;
