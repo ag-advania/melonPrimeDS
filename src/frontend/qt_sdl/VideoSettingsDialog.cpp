@@ -187,17 +187,12 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #endif
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // Metal-plan Phase 9 (tester UI exposure): visible only on Metal-capable
-    // builds; enabled only once the runtime feature probe
-    // (MelonPrimeMetalFeatureCheck.h) confirms this Mac/GPU/driver can
-    // actually construct a Metal device + pipeline. High2 is left
-    // untouched -- it stays OpenGL Compute only, see
-    // melonprime_macos_compute_renderer_restriction.md. Label/tooltip must
-    // stay honest about "experimental"; see
-    // .claude/rules/plan/metal_tester_ui_perf_audit_and_execution_instructions_v2.md.
+    // Native Metal is exposed in normal macOS builds. Keep the runtime
+    // feature probe so an unsupported Mac receives a disabled choice with the
+    // precise device/pipeline failure reason.
     const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
     const QString metalTooltip = metalSupported
-        ? QStringLiteral("Experimental native Metal renderer for testing. Not the same as High2 / OpenGL Compute. Visual parity and performance are not final.")
+        ? QStringLiteral("Native Metal renderer for macOS. Supports internal resolution scaling, improved polygon splitting, and high-resolution coordinates.")
         : QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
     rb3DMetal->setEnabled(metalSupported);
     rb3DMetal->setToolTip(MelonPrime::UiText::Tr(metalTooltip));
@@ -218,11 +213,10 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // Tester-phase shortcut: Metal intentionally reuses 3D.GL.ScaleFactor
-    // as the shared hardware-renderer internal scale. Rename/split only after
-    // Metal becomes stable enough to need separate defaults/migration.
+    // Metal and Metal Compute intentionally share the existing hardware
+    // renderer scale setting with OpenGL and OpenGL Compute.
     ui->cbxGLResolution->setToolTip(MelonPrime::UiText::Tr(
-        "Internal 3D render scale. Used by OpenGL/OpenGL Compute and experimental Metal. Metal scale support is still under test."));
+        "Internal 3D render scale. Used by OpenGL, OpenGL Compute, Metal, and Metal Compute Shader."));
 #endif
     ui->cbxGLResolution->setCurrentIndex(oldGLScale-1);
 

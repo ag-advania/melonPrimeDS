@@ -35,6 +35,8 @@ public:
     void SetScaleFactor(int scale) noexcept;
     void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
+    void SetCpuReadbackRequired(bool required) noexcept;
+    // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 
     void RenderFrame() override;
     void FinishRendering() override;

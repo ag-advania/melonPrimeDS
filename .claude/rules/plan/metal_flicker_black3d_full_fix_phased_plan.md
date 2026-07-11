@@ -593,3 +593,61 @@ strings build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS | \
 - Metal Computeではhidden compute mirrorとvisible `RasterReference`へ同じ高解像度座標設定を適用。
 - 1x時は高解像度座標設定による描画変更なし。
 - OpenGL ComputeではBetterPolygonsを引き続き無効化。
+
+<!-- MELONPRIME_METAL_PHASE7L_FRAME_HANDOFF_FADE -->
+## 2026-07-11 — Phase 7L Metal frame handoff / fade fix
+
+- 最終2画面textureへpresenter leaseを追加し、別queueの画面描画完了までring slotを再利用しない。
+- メニュー／マップなど前後フレーム差が大きい場面で上下画面が混ざるcross-queue read/writeを修正。
+- scale変更時は新規leaseを停止し、producer/presenter完了後にring textureを再確保。
+- Engine A/BのMaster Brightnessをnative/high-resolution 3Dへ適用してから高解像度3Dを差し替える。
+- 試合開始時の暗転で3Dだけ明るく残る／背景復元が破綻する問題を修正。
+- MetalとMetal Compute Shaderの共通visible-output経路へ適用。
+
+<!-- MELONPRIME_METAL_PHASE7M_VISIBILITY_MASK -->
+## 2026-07-11 — Phase 7M per-pixel 3D visibility mask
+
+- 1xが正常で2x以上だけ壊れることからhigh-resolution 3D replacementを根本原因として確定。
+- SoftRenderer2Dの最終layer selectionから各画面・各ピクセルの安全な3D差し替えモードを生成。
+- mode 0: 2D BG／OBJ／window／capture／effectが3Dを覆うためCPU pixelを維持。
+- mode 1: 3Dが直接最前面なのでhigh-resolution sampleへ直接置換。
+- mode 2: native 3Dが第2layerへalpha blendされるためbackground復元後に再合成。
+- maskはScreenSwapとframebuffer double bufferingへ追従。
+- Master Brightnessが有効なscanlineはmaskを0にして暗転をCPU compositeのまま表示。
+- Metal／Metal Compute Shader共通のvisible-output shaderがmaskを参照。
+
+<!-- MELONPRIME_METAL_PHASE7N_FRAME_SNAPSHOT -->
+## 2026-07-11 — Phase 7N current-frame 3D snapshot
+
+- 効果がなかったPhase 7M visibility maskを完全撤回。
+- `GPU_Soft.h/.cpp`と`GPU2D_Soft.cpp`をmelonDS本来の実装へ復元。
+- Metal専用コード以外へ追加した変更をゼロに戻す。
+- DSはVCount 215で次フレーム3Dを描画し始めるため、FinishFrame時のlive Metal targetはCPU framebufferより1フレーム先だった。
+- VCount 192の`Finish3DRendering()`でcurrent-frame high/native 3Dを専用textureへblit snapshot。
+- FinishFrameではlive targetではなくsnapshotと完成済みCPU framebufferを合成。
+- ScreenSwap、high-resolution gate、rendered scale、Master Brightnessもsnapshot時点で固定。
+- Metal／Metal Compute Shader共通のMetal専用経路のみを変更。
+
+<!-- MELONPRIME_METAL_PHASE7O_PRESENT_RATE_CONTROL -->
+## 2026-07-11 — Phase 7O Metal presentation rate control
+
+- Fast Forward Toggle／HoldとFrame Limit Toggleの入力・`curFPS`／`doLimitFPS`更新自体は正常。
+- Metal presenterの`CAMetalLayer`が既定のdisplay-syncを維持し、Screen.VSync OFFでも別の約60Hz上限を作っていた。
+- Metal layer生成時は`displaySyncEnabled=NO`から開始。
+- 通常時は`Screen.VSync`設定へ追従。
+- Fast Forward Toggle／HoldまたはSlow Motion中はdisplay syncを強制OFFし、終了時に設定値へ復帰。
+- layer propertyはGUI threadへqueued invocationして更新。
+- 変更対象はmacOS Metal専用の`MelonPrimeScreenMetal.mm`だけ。melonDS共有rendererは変更しない。
+
+<!-- MELONPRIME_METAL_PHASE7P_HIGH_PERFORMANCE -->
+## 2026-07-11 — Phase 7P Metal high-performance path
+
+- OpenGL ClassicとMetalの無制限FPS差を、GPU待機、readback、CPU変換、buffer allocation、非可視compute mirrorへ分解。
+- OpenGLと同じ`RenderFrameIdentical` fast pathをMetalへ追加。
+- unchanged frameではMetal描画、native resolve、GPU→CPU readback、CPU色変換をすべて省略。
+- native BGRA8→RGB6A5変換を256-entry LUTへ変更し、1フレーム約20万回の整数除算を除去。
+- vertex/index用`MTLBuffer`を毎フレーム生成せず、容量拡張式のpersistent shared bufferへ変更。
+- 隣接polygonの同一TexParam/TexPaletteではTexcache lookupを再利用。
+- Metal Computeのcompute foundationは現在非可視mirrorであるため、productionでは既定OFF。
+- `MELONPRIME_METAL_COMPUTE_MIRROR=1`で従来のdeveloper compute mirrorを再有効化可能。
+- 変更は`GPU3D_Metal.mm`と`GPU3D_MetalCompute.mm`だけ。melonDS共有SoftRendererは変更しない。

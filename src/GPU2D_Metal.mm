@@ -1,4 +1,5 @@
 // MelonPrimeDS - experimental Metal 2D renderer scaffold (Metal-plan Phase 4)
+// MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -170,6 +171,8 @@ NSString* const kMetal2DLayerShaderSource =
      "    return float4(0.0, 0.0, 0.0, 0.0);\n"
      "}\n";
 
+#include "GPU2D_MetalFullGpuShaders.inc"
+
 struct LayerConfigCpu
 {
     uint32_t vramMask = 0;
@@ -253,6 +256,14 @@ struct MetalRenderer2D::Metal2DState
     id<MTLLibrary> LayerLibrary = nil;
     id<MTLRenderPipelineState> LayerPipeline = nil;
     id<MTLBuffer> LayerVertexBuffer = nil;
+    id<MTLLibrary> FullGpuLibrary = nil;
+    id<MTLRenderPipelineState> SpritePipeline = nil;
+    id<MTLRenderPipelineState> SpriteMosaicFlagsPipeline = nil;
+    id<MTLRenderPipelineState> SpriteWindowPipeline = nil;
+    id<MTLRenderPipelineState> CompositorPipeline = nil;
+    id<MTLDepthStencilState> SpriteDepthState = nil;
+    id<MTLSamplerState> RepeatSampler = nil;
+    id<MTLTexture> DummyColorTexture = nil;
     id<MTLTexture> OutputTex = nil;
     id<MTLTexture> OBJLayerTex = nil;
     id<MTLTexture> OBJDepthTex = nil;
@@ -276,6 +287,7 @@ struct MetalRenderer2D::Metal2DState
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
     int Scale = 0;
+    bool FullGpuReady = false;
     bool LoggedFirstAllocation = false;
 };
 
@@ -385,24 +397,44 @@ bool MetalRenderer2D::PrerenderConfiguredLayers() noexcept
         [encoder endEncoding];
     }
 
+    // All Metal 2D work uses the 3D renderer's command queue. Queue
+    // ordering replaces the old CPU wait and keeps the frame GPU-resident.
     [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
-    return commandBuffer.status == MTLCommandBufferStatusCompleted;
+    return true;
 }
 
-bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
+bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int scale) noexcept
 {
     if (!State)
         return false;
 
     Metal2DState& state = *State;
-    id<MTLDevice> preferredMetalDevice = preferredDevice ? (__bridge id<MTLDevice>)preferredDevice : nil;
+    id<MTLDevice> preferredMetalDevice =
+        preferredDevice ? (__bridge id<MTLDevice>)preferredDevice : nil;
+    id<MTLCommandQueue> preferredMetalQueue =
+        preferredQueue ? (__bridge id<MTLCommandQueue>)preferredQueue : nil;
+    if (preferredMetalQueue && preferredMetalDevice &&
+        preferredMetalQueue.device != preferredMetalDevice)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal 2d: preferred queue/device mismatch\n");
+        return false;
+    }
     if (preferredMetalDevice && state.Device && state.Device != preferredMetalDevice)
     {
         state.OutputTex = nil;
         state.LayerLibrary = nil;
         state.LayerPipeline = nil;
         state.LayerVertexBuffer = nil;
+        state.FullGpuLibrary = nil;
+        state.SpritePipeline = nil;
+        state.SpriteMosaicFlagsPipeline = nil;
+        state.SpriteWindowPipeline = nil;
+        state.CompositorPipeline = nil;
+        state.SpriteDepthState = nil;
+        state.RepeatSampler = nil;
+        state.DummyColorTexture = nil;
+        state.FullGpuReady = false;
         state.OBJLayerTex = nil;
         state.OBJDepthTex = nil;
         for (id<MTLTexture>& texture : state.AllBGLayerTex)
@@ -434,7 +466,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
             return false;
         }
     }
-    if (!state.Queue)
+    if (preferredMetalQueue)
+    {
+        state.Queue = preferredMetalQueue;
+    }
+    else if (!state.Queue)
     {
         state.Queue = [state.Device newCommandQueue];
         if (!state.Queue)
@@ -451,12 +487,14 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
         state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
         state.LayerConfigBuffer && state.SpriteConfigBuffer && state.ScanlineConfigBuffer &&
         state.SpriteScanlineConfigBuffer && state.CompositorConfigBuffer &&
-        state.Scale == ScaleFactor)
+        state.FullGpuReady && state.Scale == ScaleFactor)
     {
         return true;
     }
 
     if (!BuildLayerPipeline())
+        return false;
+    if (!BuildFullGpuPipelines())
         return false;
 
     const NSUInteger width = static_cast<NSUInteger>(kScreenW * ScaleFactor);
@@ -677,12 +715,12 @@ bool MetalRenderer2D::Configure(void* preferredDevice, int scale) noexcept
 
 void MetalRenderer2D::DrawScanline(u32 line)
 {
-    (void)line;
+    CaptureScanlineState(static_cast<int>(line));
 }
 
 void MetalRenderer2D::DrawSprites(u32 line)
 {
-    (void)line;
+    CaptureSpriteScanlineState(static_cast<int>(line));
 }
 
 bool MetalRenderer2D::UploadRawVRAMInputs() noexcept
@@ -1408,6 +1446,15 @@ void MetalRenderer2D::Reset() noexcept
     State->LayerLibrary = nil;
     State->LayerPipeline = nil;
     State->LayerVertexBuffer = nil;
+    State->FullGpuLibrary = nil;
+    State->SpritePipeline = nil;
+    State->SpriteMosaicFlagsPipeline = nil;
+    State->SpriteWindowPipeline = nil;
+    State->CompositorPipeline = nil;
+    State->SpriteDepthState = nil;
+    State->RepeatSampler = nil;
+    State->DummyColorTexture = nil;
+    State->FullGpuReady = false;
     State->OutputTex = nil;
     State->OBJLayerTex = nil;
     State->OBJDepthTex = nil;
@@ -1513,6 +1560,8 @@ int MetalRenderer2D::GetTargetHeight() const noexcept
 {
     return State && State->OutputTex ? static_cast<int>(State->OutputTex.height) : 0;
 }
+
+#include "GPU2D_MetalFullGpuMethods.inc"
 
 } // namespace melonDS
 

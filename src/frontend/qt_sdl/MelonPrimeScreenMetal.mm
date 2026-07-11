@@ -1,5 +1,7 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal build-gate, not input dispatch
 // MELONPRIME_METAL_HIRES_PRESENT_FILTER_V2
+// MELONPRIME_METAL_OUTPUT_LEASE_V1
+// MELONPRIME_METAL_PRESENT_RATE_CONTROL_V1
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -18,6 +20,7 @@
 #include <QGuiApplication>
 #include <QEvent>
 #include <QImage>
+#include <QMetaObject>
 #include <QPainter>
 #include <QScreen>
 #include <QWindow>
@@ -273,6 +276,10 @@ struct ScreenPanelMetal::Impl
     bool loggedLayerReattach = false;
     bool loggedScreenPlacementDiag = false;
     uint64_t lastPresentedFrame = 0;
+
+    // Accessed under layoutMutex. CAMetalLayer itself is updated only through
+    // a queued GUI-thread invocation.
+    bool displaySyncRequested = false;
 };
 
 ScreenPanelMetal::ScreenPanelMetal(QWidget* parent)
@@ -337,6 +344,16 @@ bool ScreenPanelMetal::initMetal()
         layer.device = m->device;
         layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
         layer.framebufferOnly = YES;
+
+        // CAMetalLayer defaults to display-synchronised presentation. That
+        // silently imposed a second ~60Hz limiter even when melonDS's own
+        // frame limiter and Screen.VSync were disabled. Start unsynchronised;
+        // drawScreen() below enables it only when the configured VSync policy
+        // actually requests it.
+        if ([layer respondsToSelector:@selector(setDisplaySyncEnabled:)])
+            layer.displaySyncEnabled = NO;
+        layer.presentsWithTransaction = NO;
+        m->displaySyncRequested = false;
         m->layer = layer;
         if (!attachLayerToCurrentViewGuiThread())
             return false;
@@ -573,6 +590,52 @@ void ScreenPanelMetal::drawScreen()
 
     auto emuThread = emuInstance->getEmuThread();
 
+    // Mirror the OpenGL speed-control policy for the native Metal presenter.
+    // The emulator's own limiter remains authoritative. CAMetalLayer VSync is
+    // used only when Screen.VSync is enabled and no temporary speed override
+    // is active. Fast Forward Toggle/Hold and Slow Motion therefore remove the
+    // display-refresh cap immediately and restore the user's VSync setting
+    // when released.
+    const bool speedOverride =
+        emuThread->emuIsActive() &&
+        (emuInstance->inputHotkeyDown(HK_FastForward) ||
+         emuInstance->fastForwardToggled ||
+         emuInstance->inputHotkeyDown(HK_SlowMo) ||
+         emuInstance->slowmoToggled);
+    const bool configuredVSync =
+        emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    const bool desiredDisplaySync = configuredVSync && !speedOverride;
+
+    bool queueDisplaySyncChange = false;
+    m->layoutMutex.lock();
+    if (m->displaySyncRequested != desiredDisplaySync)
+    {
+        m->displaySyncRequested = desiredDisplaySync;
+        queueDisplaySyncChange = true;
+    }
+    m->layoutMutex.unlock();
+
+    if (queueDisplaySyncChange)
+    {
+        QMetaObject::invokeMethod(
+            this,
+            [this, desiredDisplaySync, configuredVSync, speedOverride]() {
+                if (!m || !m->layer)
+                    return;
+                if ([m->layer respondsToSelector:@selector(setDisplaySyncEnabled:)])
+                    m->layer.displaySyncEnabled = desiredDisplaySync ? YES : NO;
+                std::fprintf(
+                    stderr,
+                    "[MelonPrime] metal presenter: displaySync=%d configuredVSync=%d "
+                    "speedOverride=%d limitFPS=%d\n",
+                    desiredDisplaySync ? 1 : 0,
+                    configuredVSync ? 1 : 0,
+                    speedOverride ? 1 : 0,
+                    emuInstance->doLimitFPS ? 1 : 0);
+            },
+            Qt::QueuedConnection);
+    }
+
     @autoreleasepool
     {
         m->layoutMutex.lock();
@@ -600,12 +663,14 @@ void ScreenPanelMetal::drawScreen()
         void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
         id<MTLTexture> finalMetalTextureForFrame = nil;
+        melonDS::RendererOutputLease rendererOutputLease;
 
         if (emuThread->emuIsActive())
         {
             auto nds = emuInstance->getNDS();
 
-            const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
+            rendererOutputLease = nds->GPU.AcquireRendererOutputLease();
+            const melonDS::RendererOutput& output = rendererOutputLease.Output;
             const int selectedRenderer =
                 emuInstance->getGlobalConfig().GetInt("3D.Renderer");
             const bool metalRendererSelected =
@@ -716,7 +781,12 @@ void ScreenPanelMetal::drawScreen()
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         id<MTLCommandBuffer> cmdBuffer = [m->queue commandBuffer];
-        id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
+        if (!cmdBuffer)
+            return;
+        id<MTLRenderCommandEncoder> encoder =
+            [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
+        if (!encoder)
+            return;
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
         if (emuThread->emuIsActive())
@@ -920,6 +990,20 @@ void ScreenPanelMetal::drawScreen()
         }
 
         [encoder endEncoding];
+
+        // Keep the producer ring slot immutable until this separate presenter
+        // queue has finished sampling the texture for both DS screens.
+        if (rendererOutputLease.Context && rendererOutputLease.ReleaseFn)
+        {
+            void* leaseContext = rendererOutputLease.Context;
+            void (*leaseRelease)(void*) = rendererOutputLease.ReleaseFn;
+            rendererOutputLease.Context = nullptr;
+            rendererOutputLease.ReleaseFn = nullptr;
+            [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer>) {
+                leaseRelease(leaseContext);
+            }];
+        }
+
         [cmdBuffer presentDrawable:drawable];
         [cmdBuffer commit];
 

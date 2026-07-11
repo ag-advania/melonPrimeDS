@@ -25,7 +25,17 @@ public:
     void VBlank() override {}
     void VBlankEnd() override {}
 
-    bool Configure(void* preferredDevice, int scale) noexcept;
+    bool Configure(void* preferredDevice, void* preferredQueue, int scale) noexcept;
+    void CaptureScanlineState(int line) noexcept;
+    void CaptureSpriteScanlineState(int line) noexcept;
+    bool RenderFullGpuFrame(
+        void* high3DTexture,
+        void* capture128Texture,
+        void* capture256Texture,
+        bool allowCaptureTextures) noexcept;
+    [[nodiscard]] bool FullGpuReady() const noexcept;
+    // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+    // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
     bool UploadRawVRAMInputs() noexcept;
     bool UploadPaletteInputs() noexcept;
     bool RefreshLayerConfig() noexcept;
@@ -51,7 +61,16 @@ private:
     struct Metal2DState;
 
     bool BuildLayerPipeline() noexcept;
+    bool BuildFullGpuPipelines() noexcept;
     bool PrerenderConfiguredLayers() noexcept;
+    bool EncodeFullGpuSprites(
+        void* capture128Texture,
+        void* capture256Texture) noexcept;
+    bool EncodeFullGpuCompositor(
+        void* high3DTexture,
+        void* capture128Texture,
+        void* capture256Texture) noexcept;
+    [[nodiscard]] bool FrameUsesCaptureTextures() const noexcept;
 
     std::unique_ptr<Metal2DState> State;
     int ScaleFactor = 1;

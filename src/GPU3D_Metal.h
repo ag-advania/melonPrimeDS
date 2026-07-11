@@ -44,6 +44,8 @@ public:
     [[nodiscard]] bool ForceScaleFactor(int scale) noexcept;
     void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
+    void SetCpuReadbackRequired(bool required) noexcept;
+    // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 
     [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
     [[nodiscard]] uint32_t GetLastFrameEngineALayer() const noexcept;
@@ -74,6 +76,7 @@ private:
     int ScaleFactor = 1;
     bool HiresCoordinates = false;
     bool BetterPolygons = false;
+    bool CpuReadbackRequired = true;
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
 
     bool CreateDeviceObjects();

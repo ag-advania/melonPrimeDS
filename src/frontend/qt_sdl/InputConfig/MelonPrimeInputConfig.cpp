@@ -63,7 +63,7 @@
 #include "../Window.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
-#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 #include "../MelonPrimeMetalFeatureCheck.h"
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -150,12 +150,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     DisableMacComputeVideoQualityButton(ui);
 #endif
 
-#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
     metroidSetVideoQualityToMetal = new QPushButton(ui->sectionVideo);
     metroidSetVideoQualityToMetal->setObjectName(QStringLiteral("metroidSetVideoQualityToMetal"));
-    metroidSetVideoQualityToMetal->setText(MelonPrime::UiText::Tr("Video quality: Metal Test"));
-    metroidSetVideoQualityToMetal->setToolTip(MelonPrime::UiText::Tr(
-        "Experimental native Metal renderer for macOS testing. Not High2/OpenGL Compute. Sets 4x internal scale by default; you can change internal resolution in Video Settings while Metal is selected. Some 3D effects and performance work are still incomplete."));
+    metroidSetVideoQualityToMetal->setText(QStringLiteral("Video quality: High (Mac Metal)"));
     ui->videoButtonsLayout->insertWidget(3, metroidSetVideoQualityToMetal);
     connect(
         metroidSetVideoQualityToMetal,
@@ -163,11 +161,22 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         this,
         &MelonPrimeInputConfig::on_metroidSetVideoQualityToMetal_clicked);
 
+    metroidSetVideoQualityToMetalCompute = new QPushButton(ui->sectionVideo);
+    metroidSetVideoQualityToMetalCompute->setObjectName(
+        QStringLiteral("metroidSetVideoQualityToMetalCompute"));
+    metroidSetVideoQualityToMetalCompute->setText(
+        QStringLiteral("Video quality: High (Mac Metal Compute Shader)"));
+    ui->videoButtonsLayout->insertWidget(4, metroidSetVideoQualityToMetalCompute);
+    connect(
+        metroidSetVideoQualityToMetalCompute,
+        &QPushButton::clicked,
+        this,
+        &MelonPrimeInputConfig::on_metroidSetVideoQualityToMetalCompute_clicked);
+
     const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
     metroidSetVideoQualityToMetal->setEnabled(metalSupported);
-    if (!metalSupported)
-        metroidSetVideoQualityToMetal->setToolTip(MelonPrime::UiText::Tr(
-            QString::fromStdString(MelonPrime::Metal::CachedFeatureInfo().unavailableReason)));
+    metroidSetVideoQualityToMetalCompute->setEnabled(metalSupported);
+    // MELONPRIME_MAC_METAL_PRESETS_V2
 #endif
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
@@ -186,6 +195,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
+    refreshMacMetalPresetText();
+#endif
 #ifdef __APPLE__ // scatter-budget-exempt: video-quality preset UI gate, not input dispatch
     DisableMacComputeVideoQualityButton(ui);
 #endif
@@ -201,6 +213,54 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     m_applyPreviewEnabled = true;
 }
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
+void MelonPrimeInputConfig::refreshMacMetalPresetText()
+{
+    if (!metroidSetVideoQualityToMetal || !metroidSetVideoQualityToMetalCompute)
+        return;
+
+    metroidSetVideoQualityToMetal->setText(
+        MelonPrime::UiText::Tr("Video quality: High (Mac Metal)"));
+    metroidSetVideoQualityToMetalCompute->setText(
+        MelonPrime::UiText::Tr("Video quality: High (Mac Metal Compute Shader)"));
+
+    const bool metalSupported = MelonPrime::Metal::SupportsRequiredBaseline();
+    metroidSetVideoQualityToMetal->setEnabled(metalSupported);
+    metroidSetVideoQualityToMetalCompute->setEnabled(metalSupported);
+
+    if (!metalSupported)
+    {
+        const QString reason = QString::fromStdString(
+            MelonPrime::Metal::CachedFeatureInfo().unavailableReason);
+        metroidSetVideoQualityToMetal->setToolTip(reason);
+        metroidSetVideoQualityToMetalCompute->setToolTip(reason);
+        return;
+    }
+
+    const QString internalResolution =
+        MelonPrime::UiText::Tr("Internal resolution:");
+    const QString betterPolygons =
+        MelonPrime::UiText::Tr("Improved polygon splitting");
+    const QString hiresCoordinates =
+        MelonPrime::UiText::Tr("Use high resolution coordinates");
+    const QString enabled = MelonPrime::UiText::Tr("ON");
+
+    const auto makeTooltip = [&](const QString& rendererName) {
+        return QStringLiteral("%1\n%2 4x\n%3: %5\n%4: %5")
+            .arg(rendererName)
+            .arg(internalResolution)
+            .arg(betterPolygons)
+            .arg(hiresCoordinates)
+            .arg(enabled);
+    };
+
+    metroidSetVideoQualityToMetal->setToolTip(
+        makeTooltip(QStringLiteral("Metal")));
+    metroidSetVideoQualityToMetalCompute->setToolTip(
+        makeTooltip(QStringLiteral("Metal Compute Shader")));
+}
+#endif
 
 void MelonPrimeInputConfig::installWheelScrollGuards()
 {
@@ -319,6 +379,9 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
             MelonPrime::UiText::SetMenuLanguageSelection(
                 m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
+            refreshMacMetalPresetText();
+#endif
             if (InputConfigDialog::currentDlg)
                 MelonPrime::UiText::LocalizeMelonDsDialog(InputConfigDialog::currentDlg);
             if (auto* mw = qobject_cast<MainWindow*>(window()); mw && mw->panel)
@@ -1104,7 +1167,7 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
 #endif
 }
 
-#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal tester UI build-gate, not input dispatch
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToMetal_clicked()
 {
     if (!MelonPrime::Metal::SupportsRequiredBaseline())
@@ -1117,7 +1180,24 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToMetal_clicked()
     cfg.SetInt("3D.Renderer", renderer3D_Metal);
     cfg.SetBool("3D.Soft.Threaded", true);
     cfg.SetInt("3D.GL.ScaleFactor", 4);
-    cfg.SetBool("3D.GL.BetterPolygons", false);
+    cfg.SetBool("3D.GL.BetterPolygons", true);
+    cfg.SetBool("3D.GL.HiresCoordinates", true);
+}
+
+void MelonPrimeInputConfig::on_metroidSetVideoQualityToMetalCompute_clicked()
+{
+    if (!MelonPrime::Metal::SupportsRequiredBaseline())
+        return;
+
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("Screen.UseGL", false);
+    cfg.SetBool("Screen.VSync", false);
+    cfg.SetInt("Screen.VSyncInterval", 1);
+    cfg.SetInt("3D.Renderer", renderer3D_MetalCompute);
+    cfg.SetBool("3D.Soft.Threaded", true);
+    cfg.SetInt("3D.GL.ScaleFactor", 4);
+    cfg.SetBool("3D.GL.BetterPolygons", true);
+    cfg.SetBool("3D.GL.HiresCoordinates", true);
 }
 #endif
 

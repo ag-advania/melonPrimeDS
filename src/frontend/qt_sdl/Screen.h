@@ -24,6 +24,7 @@
 #include <map>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include <QWidget>
 #include <QImage>
@@ -48,6 +49,9 @@ class EmuInstance;
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
 class MelonPrimeCore;
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+class WaylandPointerLock; // MELONPRIME_WAYLAND_POINTER_LOCK_V1
+#endif
 }
 #endif
 
@@ -135,6 +139,24 @@ public:
     [[nodiscard]] EmuInstance* emuInstanceForPolicy() const { return emuInstance; }
     void setClipWantedForMelonPrime(bool value);
     [[nodiscard]] bool getClipWantedForMelonPrime() const;
+#if defined(__linux__)
+    // Native Wayland implementations override these hooks. Other Linux
+    // backends retain the existing XInput2 / Qt fallback behavior.
+    virtual bool setWaylandPointerLockForMelonPrime(bool enabled)
+    {
+        (void)enabled;
+        return false;
+    }
+    [[nodiscard]] virtual bool isWaylandPointerLockActiveForMelonPrime() const
+    {
+        return false;
+    }
+    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept
+    {
+        aimMouseDeltaX.fetch_add(dx, std::memory_order_relaxed);
+        aimMouseDeltaY.fetch_add(dy, std::memory_order_relaxed);
+    }
+#endif
 
 public slots:
     void clipCursorCenter1px();
@@ -358,6 +380,10 @@ public:
     GL::Context* getContext() { return glContext.get(); }
 
     void transferLayout();
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    bool setWaylandPointerLockForMelonPrime(bool enabled) override;
+    [[nodiscard]] bool isWaylandPointerLockActiveForMelonPrime() const override;
+#endif
 protected:
 
     qreal devicePixelRatioFromScreen() const;
@@ -379,6 +405,9 @@ private:
 
     QMutex screenSettingsLock;
     WindowInfo windowInfo;
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
+#endif
 
     int lastScreenWidth = -1, lastScreenHeight = -1;
 

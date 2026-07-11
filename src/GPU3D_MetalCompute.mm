@@ -6,6 +6,8 @@
 // MELONPRIME_METAL_COMPUTE_MSL_ADDRESS_SPACE_FIX_V1
 // MELONPRIME_METAL_COMPUTE_GRACEFUL_DEGRADATION_V1
 // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
+// MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+// MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -18,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <thread>
@@ -41,6 +44,15 @@ constexpr size_t kTileMemoryBudgetBytes = 192u * 1024u * 1024u;
 constexpr uint32_t kTileSummaryWords = 8;
 constexpr uint32_t kDepthBlendSummaryWords = 8;
 constexpr uint32_t kTextureVariantSummaryWords = 16;
+
+bool MetalComputeMirrorEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_MIRROR");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
 
 constexpr uint32_t kVariantWorkCountStart = 0;
 constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
@@ -1398,6 +1410,30 @@ bool MetalComputeRenderer3D::Init()
         return false;
     }
 
+    // The current compute foundation is a non-visible validation mirror:
+    // all user-visible pixels still come from RasterReference. Running its
+    // span/bin/tile/depth chain every frame therefore consumes GPU time and up
+    // to the full tile-memory budget without improving the presented image.
+    // Production mode defaults to the high-performance raster path. Developers
+    // can opt back into the mirror with MELONPRIME_METAL_COMPUTE_MIRROR=1.
+    if (!MetalComputeMirrorEnabled())
+    {
+        if (State)
+        {
+            State->Ready = false;
+            State->SpanBinReady = false;
+            State->TileRasterReady = false;
+            State->DepthBlendReady = false;
+            State->TextureVariantReady = false;
+            State->TileMemoryInFlight.store(false, std::memory_order_release);
+        }
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute: non-visible compute mirror disabled "
+            "for high-performance mode; visibleSource=MetalRasterReference "
+            "(set MELONPRIME_METAL_COMPUTE_MIRROR=1 for developer diagnostics)\n");
+        return true;
+    }
+
     auto continueWithRasterOnly = [this](const char* failedStage) -> bool {
         if (State)
         {
@@ -2192,6 +2228,11 @@ void MetalComputeRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
     RasterReference.SetBetterPolygons(betterPolygons);
 }
 
+void MetalComputeRenderer3D::SetCpuReadbackRequired(bool required) noexcept
+{
+    RasterReference.SetCpuReadbackRequired(required);
+}
+
 bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
 {
     if (!State || !State->SpanBinReady || GPU3D.RenderNumPolygons == 0)
@@ -2774,7 +2815,15 @@ void MetalComputeRenderer3D::RenderFrame()
             RasterReference.GetTargetWidth() != 256 * requestedScale ||
             RasterReference.GetTargetHeight() != 192 * requestedScale)
         {
-            RasterReference.ForceScaleFactor(requestedScale);
+            if (!RasterReference.ForceScaleFactor(requestedScale))
+            {
+                std::fprintf(stderr,
+                    "[MelonPrime] metal compute: failed to resize "
+                    "RasterReference to scale=%d; retaining previous frame\n",
+                    requestedScale);
+                return;
+            }
+            // MELONPRIME_METAL_COMPUTE_FORCE_SCALE_CHECK_V1
         }
 
         // Visible output has priority. Latch and render the validated Metal

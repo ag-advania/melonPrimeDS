@@ -5,18 +5,25 @@
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
 // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
+// MELONPRIME_METAL_OUTPUT_LEASE_V1
+// MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
+// MELONPRIME_METAL_FRAME_SNAPSHOT_V1
+// MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+// MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 
 #import <Metal/Metal.h>
 
 #include "GPU_Metal.h"
 
 #include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <vector>
 
 #include "GPU2D_Metal.h"
 #include "GPU3D_Metal.h"
@@ -123,6 +130,14 @@ void Metal3DEnableRenderThread(Renderer3D* renderer)
         raster->EnableRenderThread();
 }
 
+void Metal3DSetCpuReadbackRequired(Renderer3D* renderer, bool required)
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+        compute->SetCpuReadbackRequired(required);
+    else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
+        raster->SetCpuReadbackRequired(required);
+}
+
 void ConfigureMetal3DRenderer(
     Renderer3D* renderer,
     bool threaded,
@@ -177,8 +192,20 @@ struct VisibleOutputConfig
     uint outputLayer;
     uint engineALayer;
     uint useHighResolution3D;
-    uint2 _pad;
+    uint masterBrightnessA;
+    uint masterBrightnessB;
 };
+
+static inline float3 mp_apply_master_brightness(float3 color, uint reg)
+{
+    uint mode = reg >> 14;
+    float factor = float(min(reg & 0x1Fu, 16u)) / 16.0;
+    if (mode == 1u)
+        return mix(color, float3(1.0), factor);
+    if (mode == 2u)
+        return color * (1.0 - factor);
+    return color;
+}
 
 fragment float4 mp_visible_output_fs(
     VisibleOutputVertex in [[stage_in]],
@@ -202,6 +229,15 @@ fragment float4 mp_visible_output_fs(
         uint2(highResolution3D.get_width() - 1u, highResolution3D.get_height() - 1u));
     float4 high3D = highResolution3D.read(highCoord);
     float4 low3D = nativeResolution3D.read(nativeCoord);
+
+    // The CPU composite already contains the per-engine Master Brightness.
+    // Apply the same affine transform to both 3D samples before replacing the
+    // native layer. This keeps fade-to-black/white frames in one color space.
+    uint brightness = (config.outputLayer == config.engineALayer)
+        ? config.masterBrightnessA
+        : config.masterBrightnessB;
+    high3D.rgb = mp_apply_master_brightness(high3D.rgb, brightness);
+    low3D.rgb = mp_apply_master_brightness(low3D.rgb, brightness);
 
     // CPU 2D already contains the native 3D layer. Recover the background
     // underneath that native sample, then composite the full-resolution 3D
@@ -233,6 +269,7 @@ struct MetalRenderer::MetalOutputState
         id<MTLTexture> CpuComposite = nil;
         id<MTLTexture> FinalTexture = nil;
         bool InFlight = false;
+        int PresenterRefs = 0;
         uint64_t Serial = 0;
         uint64_t Generation = 0;
     };
@@ -241,11 +278,19 @@ struct MetalRenderer::MetalOutputState
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
     id<MTLRenderPipelineState> Pipeline = nil;
+    id<MTLTexture> CapturedHigh3D = nil;
+    id<MTLTexture> CapturedLow3D = nil;
+    bool CapturedFrameReady = false;
+    int CapturedScale = 1;
+    uint32_t CapturedEngineALayer = 1;
+    uint32_t CapturedUseHighResolution3D = 0;
+    uint64_t CapturedSerial = 0;
     Slot Slots[SlotCount];
 
     std::mutex Mutex;
     std::condition_variable Completion;
     int InFlightCount = 0;
+    int PresenterRefCount = 0;
     int NextSlot = 0;
     int PublishedSlot = -1;
     uint64_t PublishedSerial = 0;
@@ -261,9 +306,14 @@ struct MetalRenderer::MetalOutputState
     ~MetalOutputState()
     {
         std::unique_lock<std::mutex> lock(Mutex);
-        Completion.wait(lock, [this]() { return InFlightCount == 0; });
+        Completion.wait(lock, [this]() {
+            return InFlightCount == 0 && PresenterRefCount == 0;
+        });
     }
 };
+
+#include "GPU_MetalFullGpuMethods.inc"
+#include "GPU_MetalCaptureMethods.inc"
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
     : SoftRenderer(nds)
@@ -301,6 +351,17 @@ bool MetalRenderer::Init()
     {
         std::fprintf(stderr,
             "[MelonPrime] metal visible output: initialization failed; CPU output remains available\n");
+    }
+    if (!InitializeMetalFullGpuOutput())
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal full-gpu: initialization failed; stable CPU compositor path remains active\n");
+    }
+    if (!ConfigureMetalCaptureState(preferredDevice))
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal display capture: initialization failed; "
+            "capture frames remain on the CPU path\n");
     }
     return true;
 }
@@ -358,12 +419,16 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
     ConfigureMetal2DMirror(preferredDevice);
     ConfigureMetalVisibleOutput(preferredDevice);
+    ConfigureMetalCaptureState(preferredDevice);
 }
 
 void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
 {
-    bool okA = !Metal2D_A || Metal2D_A->Configure(preferredDevice, ScaleFactor);
-    bool okB = !Metal2D_B || Metal2D_B->Configure(preferredDevice, ScaleFactor);
+    void* preferredQueue = Metal3DCommandQueue(Rend3D.get());
+    bool okA = !Metal2D_A ||
+        Metal2D_A->Configure(preferredDevice, preferredQueue, ScaleFactor);
+    bool okB = !Metal2D_B ||
+        Metal2D_B->Configure(preferredDevice, preferredQueue, ScaleFactor);
     if (!okA || !okB)
     {
         std::fprintf(stderr,
@@ -385,7 +450,7 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         if (!OutputState || OutputState->Device != device ||
             OutputState->Queue != rendererQueue)
         {
-            OutputState = std::make_unique<MetalOutputState>();
+            OutputState = std::make_shared<MetalOutputState>();
             OutputState->Device = device;
             // Use the renderer's queue. Output composition then sits between
             // completed frame N and 3D writes for frame N+1 without a CPU wait
@@ -450,23 +515,64 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(OutputState->Mutex);
+        std::unique_lock<std::mutex> lock(OutputState->Mutex);
         if (OutputState->Ready && OutputState->Scale == scale &&
             OutputState->Width == width && OutputState->Height == height)
         {
             return true;
         }
 
-        OutputState->Generation++;
+        // Stop new leases before replacing ring textures. Existing presenter
+        // command buffers release from their completion handlers.
+        OutputState->Ready = false;
         OutputState->PublishedSlot = -1;
         OutputState->PublishedSerial = 0;
+        OutputState->Generation++;
+        OutputState->Completion.wait(lock, [state = OutputState.get()]() {
+            return state->InFlightCount == 0 && state->PresenterRefCount == 0;
+        });
+
         OutputState->Scale = scale;
         OutputState->Width = width;
         OutputState->Height = height;
-        OutputState->Ready = false;
+        OutputState->CapturedFrameReady = false;
+
+        MTLTextureDescriptor* capturedHighDesc =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
+        capturedHighDesc.usage = MTLTextureUsageShaderRead;
+        capturedHighDesc.storageMode = MTLStorageModePrivate;
+
+        MTLTextureDescriptor* capturedLowDesc =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                               width:256
+                                                              height:192
+                                                           mipmapped:NO];
+        capturedLowDesc.usage = MTLTextureUsageShaderRead;
+        capturedLowDesc.storageMode = MTLStorageModePrivate;
+
+        OutputState->CapturedHigh3D =
+            [OutputState->Device newTextureWithDescriptor:capturedHighDesc];
+        OutputState->CapturedLow3D =
+            [OutputState->Device newTextureWithDescriptor:capturedLowDesc];
+        if (!OutputState->CapturedHigh3D || !OutputState->CapturedLow3D)
+        {
+            std::fprintf(stderr,
+                "[MelonPrime] metal visible output: frame snapshot allocation failed scale=%d\n",
+                scale);
+            return false;
+        }
 
         for (int i = 0; i < MetalOutputState::SlotCount; i++)
         {
+            MetalOutputState::Slot& outputSlot = OutputState->Slots[i];
+            outputSlot.InFlight = false;
+            outputSlot.PresenterRefs = 0;
+            outputSlot.Serial = 0;
+            outputSlot.Generation = OutputState->Generation;
+
             MTLTextureDescriptor* cpuDesc =
                 [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                                                    width:256
@@ -510,6 +616,108 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
     }
 }
 
+void MetalRenderer::Finish3DRendering()
+{
+    Renderer::Finish3DRendering();
+    if (!(FullGpuState && FullGpuState->FrameActive))
+        CaptureMetalVisible3DFrame();
+}
+
+void MetalRenderer::CaptureMetalVisible3DFrame()
+{
+    @autoreleasepool
+    {
+        std::shared_ptr<MetalOutputState> state = OutputState;
+        if (!state || !state->Ready)
+            return;
+
+        id<MTLTexture> liveHigh3D =
+            (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
+        id<MTLTexture> liveLow3D =
+            (__bridge id<MTLTexture>)Metal3DNativeResolveTarget(Rend3D.get());
+        if (!liveHigh3D || !liveLow3D ||
+            liveHigh3D.device != state->Device ||
+            liveLow3D.device != state->Device)
+        {
+            return;
+        }
+
+        const int renderedScale = Metal3DLastFrameRenderedScale(Rend3D.get());
+        const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+        const bool engineA3DEnabled = (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
+        const uint32_t useHighResolution3D =
+            (state->Scale > 1 &&
+             renderedScale == state->Scale &&
+             GPU.ScreensEnabled &&
+             displayModeA == 1u &&
+             engineA3DEnabled &&
+             GPU.GPU3D.RenderNumPolygons > 0 &&
+             !GPU.GPU3D.AbortFrame) ? 1u : 0u;
+
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        state->CapturedFrameReady = false;
+        state->CapturedScale = renderedScale;
+        state->CapturedEngineALayer = GPU.ScreenSwap ? 0u : 1u;
+        state->CapturedUseHighResolution3D = useHighResolution3D;
+        state->CapturedSerial++;
+
+        FrameMasterBrightnessA = GPU.MasterBrightnessA;
+        FrameMasterBrightnessB = GPU.MasterBrightnessB;
+
+        if (!useHighResolution3D)
+        {
+            state->CapturedFrameReady = true;
+            return;
+        }
+
+        if (!state->CapturedHigh3D || !state->CapturedLow3D ||
+            liveHigh3D.width != state->CapturedHigh3D.width ||
+            liveHigh3D.height != state->CapturedHigh3D.height ||
+            liveLow3D.width != state->CapturedLow3D.width ||
+            liveLow3D.height != state->CapturedLow3D.height)
+        {
+            return;
+        }
+
+        id<MTLCommandBuffer> commandBuffer = [state->Queue commandBuffer];
+        if (!commandBuffer)
+            return;
+        commandBuffer.label = @"MelonPrime Metal Current-Frame 3D Snapshot";
+
+        id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+        if (!blit)
+            return;
+
+        [blit copyFromTexture:liveHigh3D
+                 sourceSlice:0
+                 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(liveHigh3D.width, liveHigh3D.height, 1)
+                   toTexture:state->CapturedHigh3D
+            destinationSlice:0
+            destinationLevel:0
+           destinationOrigin:MTLOriginMake(0, 0, 0)];
+
+        [blit copyFromTexture:liveLow3D
+                 sourceSlice:0
+                 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(liveLow3D.width, liveLow3D.height, 1)
+                   toTexture:state->CapturedLow3D
+            destinationSlice:0
+            destinationLevel:0
+           destinationOrigin:MTLOriginMake(0, 0, 0)];
+
+        [blit endEncoding];
+        [commandBuffer commit];
+
+        // The copy is submitted on the renderer queue before VCount 215 starts
+        // rendering frame N+1 into the live targets. Queue ordering therefore
+        // preserves frame N without a CPU wait.
+        state->CapturedFrameReady = true;
+    }
+}
+
 void MetalRenderer::ComposeMetalVisibleOutput()
 {
     @autoreleasepool
@@ -522,21 +730,17 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         if (!SoftRenderer::GetFramebuffers(&top, &bottom) || !top || !bottom)
             return;
 
-        id<MTLTexture> high3D =
+        id<MTLTexture> liveHigh3D =
             (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
-        id<MTLTexture> low3D =
-            (__bridge id<MTLTexture>)Metal3DNativeResolveTarget(Rend3D.get());
-        if (!high3D || !low3D || high3D.device != OutputState->Device ||
-            low3D.device != OutputState->Device)
-        {
+        if (!liveHigh3D || liveHigh3D.device != OutputState->Device)
             return;
-        }
 
         const NSUInteger expectedWidth =
             static_cast<NSUInteger>(256 * std::max(1, ScaleFactor));
         const NSUInteger expectedHeight =
             static_cast<NSUInteger>(192 * std::max(1, ScaleFactor));
-        if (high3D.width != expectedWidth || high3D.height != expectedHeight ||
+        if (liveHigh3D.width != expectedWidth ||
+            liveHigh3D.height != expectedHeight ||
             OutputState->Width != expectedWidth ||
             OutputState->Height != expectedHeight ||
             OutputState->Scale != std::max(1, ScaleFactor))
@@ -556,18 +760,33 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             uint32_t outputLayer;
             uint32_t engineALayer;
             uint32_t useHighResolution3D;
-            uint32_t pad[2];
+            uint32_t masterBrightnessA;
+            uint32_t masterBrightnessB;
         };
         static_assert(sizeof(VisibleOutputConfigCpu) == 32,
             "VisibleOutputConfigCpu must match MSL layout");
 
         std::unique_lock<std::mutex> lock(OutputState->Mutex);
+        id<MTLTexture> high3D = OutputState->CapturedHigh3D;
+        id<MTLTexture> low3D = OutputState->CapturedLow3D;
+        const bool capturedFrameReady = OutputState->CapturedFrameReady;
+        const uint32_t engineALayer = OutputState->CapturedEngineALayer;
+        const int renderedScale = OutputState->CapturedScale;
+        const uint32_t useHighResolution3D =
+            (capturedFrameReady &&
+             OutputState->Scale > 1 &&
+             renderedScale == OutputState->Scale &&
+             OutputState->CapturedUseHighResolution3D) ? 1u : 0u;
+        if (!high3D || !low3D)
+            return;
+
         int slotIndex = -1;
         for (int attempt = 0; attempt < MetalOutputState::SlotCount; attempt++)
         {
             const int candidate =
                 (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
-            if (!OutputState->Slots[candidate].InFlight)
+            if (!OutputState->Slots[candidate].InFlight &&
+                OutputState->Slots[candidate].PresenterRefs == 0)
             {
                 slotIndex = candidate;
                 break;
@@ -607,18 +826,8 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             return;
         commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
 
-        // Consume the state captured by the renderer that produced high3D.
-        // Metal Compute adds a non-visible stage, so live GPU registers may
-        // already describe a different frame by the time composition runs.
-        const uint32_t engineALayer =
-            Metal3DLastFrameEngineALayer(Rend3D.get());
-        const int renderedScale =
-            Metal3DLastFrameRenderedScale(Rend3D.get());
-        const uint32_t useHighResolution3D =
-            (OutputState->Scale > 1 &&
-             renderedScale == OutputState->Scale &&
-             Metal3DLastFrameUsesHighResolution3D(Rend3D.get())) ? 1u : 0u;
-
+        // high3D/low3D and all associated frame state were captured at
+        // VCount 192, before VCount 215 begins rendering frame N+1.
         for (uint32_t layer = 0; layer < 2; layer++)
         {
             MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -639,6 +848,8 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             config.outputLayer = layer;
             config.engineALayer = engineALayer;
             config.useHighResolution3D = useHighResolution3D;
+            config.masterBrightnessA = FrameMasterBrightnessA;
+            config.masterBrightnessB = FrameMasterBrightnessB;
 
             [encoder setRenderPipelineState:OutputState->Pipeline];
             [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
@@ -704,13 +915,141 @@ void MetalRenderer::ComposeMetalVisibleOutput()
 
 void MetalRenderer::VBlank()
 {
+    if (FullGpuState && FullGpuState->FrameActive)
+    {
+        bool rendered = false;
+        if (FullGpuState->FrameValid &&
+            MetalCaptureFrameSupported())
+        {
+            void* high3D = Metal3DColorTarget(Rend3D.get());
+            void* capture128 = GetMetalCapture128Texture();
+            void* capture256 = GetMetalCapture256Texture();
+            const bool allowCaptureTextures =
+                !MetalCaptureFrameHadCapture();
+
+            rendered = Metal2D_A && Metal2D_B &&
+                capture128 && capture256 &&
+                Metal2D_A->RenderFullGpuFrame(
+                    high3D,
+                    capture128,
+                    capture256,
+                    allowCaptureTextures) &&
+                Metal2D_B->RenderFullGpuFrame(
+                    high3D,
+                    capture128,
+                    capture256,
+                    allowCaptureTextures);
+
+            if (rendered)
+            {
+                rendered = EncodeMetalDisplayCapture(
+                    Metal2D_A->GetOutputTexture(),
+                    high3D);
+            }
+        }
+
+        if (rendered)
+        {
+            FullGpuState->Completed = MetalFullGpuState::FullGpu;
+            FullGpuState->CompletedScreenSwap = FullGpuState->ScreenSwap;
+            FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
+            FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
+        }
+        else
+        {
+            FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
+            FullGpuState->BlockedByCaptureFeedback =
+                MetalCaptureFrameHadCapture();
+            if (!FullGpuState->LoggedRejected)
+            {
+                FullGpuState->LoggedRejected = true;
+                std::fprintf(stderr,
+                    "[MelonPrime] metal full-gpu: frame rejected; "
+                    "retaining previous frame and using CPU fallback while "
+                    "same-frame capture feedback remains active\n");
+            }
+        }
+        return;
+    }
+
     SoftRenderer::VBlank();
+    UploadCpuCompletedCaptures();
+    if (FullGpuState)
+        FullGpuState->Completed = MetalFullGpuState::CpuComposite;
 }
 
 void MetalRenderer::SwapBuffers()
 {
     Renderer::SwapBuffers();
-    ComposeMetalVisibleOutput();
+    if (FullGpuState && FullGpuState->Completed == MetalFullGpuState::FullGpu)
+        ComposeMetalFullGpuOutput();
+    else if (!FullGpuState || FullGpuState->Completed == MetalFullGpuState::CpuComposite)
+        ComposeMetalVisibleOutput();
+    if (FullGpuState)
+        FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
+}
+
+RendererOutputLease MetalRenderer::AcquireOutputLease()
+{
+    if (OutputState)
+    {
+        std::shared_ptr<MetalOutputState> state = OutputState;
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        if (state->Ready && state->PublishedSlot >= 0)
+        {
+            const int slotIndex = state->PublishedSlot;
+            MetalOutputState::Slot& slot = state->Slots[slotIndex];
+            id<MTLTexture> texture = slot.FinalTexture;
+            if (texture && !slot.InFlight &&
+                slot.Generation == state->Generation &&
+                slot.Serial == state->PublishedSerial)
+            {
+                slot.PresenterRefs++;
+                state->PresenterRefCount++;
+
+                struct LeaseContext
+                {
+                    std::shared_ptr<MetalOutputState> State;
+                    int SlotIndex;
+                    uint64_t Generation;
+                    uint64_t Serial;
+                };
+
+                LeaseContext* context = new LeaseContext{
+                    state, slotIndex, slot.Generation, slot.Serial };
+
+                auto release = +[](void* opaque) {
+                    std::unique_ptr<LeaseContext> lease(
+                        static_cast<LeaseContext*>(opaque));
+                    std::lock_guard<std::mutex> releaseLock(lease->State->Mutex);
+                    MetalOutputState::Slot& leasedSlot =
+                        lease->State->Slots[lease->SlotIndex];
+                    if (leasedSlot.PresenterRefs > 0 &&
+                        leasedSlot.Generation == lease->Generation &&
+                        leasedSlot.Serial == lease->Serial)
+                    {
+                        leasedSlot.PresenterRefs--;
+                        lease->State->PresenterRefCount--;
+                    }
+                    else
+                    {
+                        std::fprintf(stderr,
+                            "[MelonPrime] metal visible output: stale presenter lease serial=%llu\n",
+                            static_cast<unsigned long long>(lease->Serial));
+                    }
+                    lease->State->Completion.notify_all();
+                };
+
+                return RendererOutputLease(
+                    RendererOutput::MetalTexture(
+                        (__bridge void*)texture, slot.Serial),
+                    context,
+                    release);
+            }
+        }
+    }
+
+    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 
 RendererOutput MetalRenderer::GetOutput()
