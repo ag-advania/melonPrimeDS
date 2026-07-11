@@ -922,16 +922,9 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         const bool strayed = !safeRect.contains(local);
 
         if (ui.rawAimActive) {
-            // MELONPRIME_LINUX_RAW_GRAB_RELEASE_FIX_V1
-            // XI_RawMotion is collected on a separate X connection. Keeping
-            // QWidget's active X11 pointer grab can starve that collector, so raw
-            // mode must release the fallback-only grab before suppressing Qt deltas.
+            // Raw motion owns deltas, while the X11 grab continues to own
+            // pointer routing and hidden-cursor lifetime.
             aimLastGlobalValid.store(false, std::memory_order_release);
-            if (MelonPrime::PlatformInput_IsXcb()
-                && QWidget::mouseGrabber() == this)
-            {
-                releaseMouse();
-            }
             if (strayed)
                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;
