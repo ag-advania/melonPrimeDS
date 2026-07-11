@@ -205,10 +205,10 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
-#if defined(__APPLE__) || defined(__linux__)
-        // True when the platform raw filter owns aim deltas. ScreenPanel uses
-        // this for threshold containment warps (fallback uses Qt/panel path).
-        [[nodiscard]] bool IsPlatformRawAimActive() const;
+#if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
+    // True when the platform raw filter owns aim deltas. ScreenPanel uses
+    // this for threshold containment warps (fallback uses Qt/panel path).
+    [[nodiscard]] bool IsPlatformRawAimActive() const;
 #if defined(__APPLE__)
         // True when GCMouse (external mouse) owns raw aim. Internal trackpads
         // use IOHID and must not disassociate the OS cursor from motion.
@@ -616,10 +616,10 @@ namespace MelonPrime {
 #endif
         }
 
-#if defined(__APPLE__) || defined(__linux__)
-        // Non-Windows raw mouse input. Cold-section member per the
-        // MelonPrime.h layout rule; guarded so Windows layout is untouched.
-        // Owned via PlatformInput_AcquireRawFilter/ReleaseRawFilter.
+#if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
+    // Non-Windows raw mouse input. Cold-section member per the
+    // MelonPrime.h layout rule; guarded so Windows layout is untouched.
+    // Owned via PlatformInput_AcquireRawFilter/ReleaseRawFilter.
         PlatformRawFilter* m_platformRawFilter = nullptr;
         // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
         uint8_t m_platformRawAimWasActive = 0;
