@@ -26,8 +26,6 @@
 #include <QPainter>
 #include <QCursor>
 #include <QGuiApplication>
-#include <QMetaObject>
-#include <QThread>
 
 #include <QDateTime>
 #include <cstdlib>
@@ -178,30 +176,6 @@ void ScreenPanel::refreshClipForGameStateChange()
 {
     if (closing || !qApp || qApp->closingDown())
         return;
-
-    // MELONPRIME_CURSOR_GUI_THREAD_DISPATCH_V2
-    // drawScreen() is driven by EmuThread. QWidget cursor state, focus/window
-    // queries, layout changes and Win32 cursor presentation must be reconciled
-    // on the QObject's GUI thread. Coalesce to at most one queued callback.
-    if (QThread::currentThread() != thread()) {
-        bool expected = false;
-        if (m_melonPrimeGuiRefreshQueued.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel)) {
-            const bool queued = QMetaObject::invokeMethod(
-                this,
-                [this]() {
-                    m_melonPrimeGuiRefreshQueued.store(
-                        false, std::memory_order_release);
-                    refreshClipForGameStateChange();
-                },
-                Qt::QueuedConnection);
-            if (!queued) {
-                m_melonPrimeGuiRefreshQueued.store(
-                    false, std::memory_order_release);
-            }
-        }
-        return;
-    }
 
     syncMelonPrimeThreadBridge();
     auto* core = melonPrimeCore();

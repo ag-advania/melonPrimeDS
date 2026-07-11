@@ -1,0 +1,10 @@
+{
+  "src/frontend/qt_sdl/Screen.cpp": {
+    "exists": true,
+    "sha256": "5635a38a0a52c2f922e8e8f590b5e6579827f0dce627eb813bbce133958394d4"
+  },
+  "src/frontend/qt_sdl/Screen.h": {
+    "exists": true,
+    "sha256": "13ca744e5fd4a0b027c0fee4f427361c262e886efc391eb38e1de02a37ae6bae"
+  }
+}

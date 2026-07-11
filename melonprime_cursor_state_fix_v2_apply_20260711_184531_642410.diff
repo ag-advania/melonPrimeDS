@@ -1,0 +1,60 @@
+warning: in the working copy of 'src/frontend/qt_sdl/Screen.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/Screen.h', LF will be replaced by CRLF the next time Git touches it
+diff --git a/src/frontend/qt_sdl/Screen.cpp b/src/frontend/qt_sdl/Screen.cpp
+index 2d4dfc2f..da4238b9 100755
+--- a/src/frontend/qt_sdl/Screen.cpp
++++ b/src/frontend/qt_sdl/Screen.cpp
+@@ -26,6 +26,8 @@
+ #include <QPainter>
+ #include <QCursor>
+ #include <QGuiApplication>
++#include <QMetaObject>
++#include <QThread>
+ 
+ #include <QDateTime>
+ #include <cstdlib>
+@@ -177,6 +179,30 @@ void ScreenPanel::refreshClipForGameStateChange()
+     if (closing || !qApp || qApp->closingDown())
+         return;
+ 
++    // MELONPRIME_CURSOR_GUI_THREAD_DISPATCH_V2
++    // drawScreen() is driven by EmuThread. QWidget cursor state, focus/window
++    // queries, layout changes and Win32 cursor presentation must be reconciled
++    // on the QObject's GUI thread. Coalesce to at most one queued callback.
++    if (QThread::currentThread() != thread()) {
++        bool expected = false;
++        if (m_melonPrimeGuiRefreshQueued.compare_exchange_strong(
++                expected, true, std::memory_order_acq_rel)) {
++            const bool queued = QMetaObject::invokeMethod(
++                this,
++                [this]() {
++                    m_melonPrimeGuiRefreshQueued.store(
++                        false, std::memory_order_release);
++                    refreshClipForGameStateChange();
++                },
++                Qt::QueuedConnection);
++            if (!queued) {
++                m_melonPrimeGuiRefreshQueued.store(
++                    false, std::memory_order_release);
++            }
++        }
++        return;
++    }
++
+     syncMelonPrimeThreadBridge();
+     auto* core = melonPrimeCore();
+     const bool hasState = (core != nullptr);
+diff --git a/src/frontend/qt_sdl/Screen.h b/src/frontend/qt_sdl/Screen.h
+index 667d5984..401ad6b0 100755
+--- a/src/frontend/qt_sdl/Screen.h
++++ b/src/frontend/qt_sdl/Screen.h
+@@ -304,6 +304,9 @@ private:
+     bool m_hasLastClipInGameState = false;
+     bool m_lastClipFocusedState = false;
+     bool m_hasLastClipFocusedState = false;
++    // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
++    // coalesces repeated per-frame requests without touching QWidget off-thread.
++    std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
+     bool closing = false;
+ #endif
+ };
