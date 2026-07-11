@@ -8,10 +8,6 @@ It brings full mouse-and-keyboard FPS controls to the game, along with a customi
 
 **Please read the instructions carefully.**
 
-Support the original creator of melonPrimeDS, Makidoll:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
-
 ## You can buy a coffee for the current maintainer and updater, Zection, if you’d like:
 https://ko-fi.com/zection
 
