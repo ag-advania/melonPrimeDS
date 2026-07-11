@@ -11,6 +11,7 @@
 namespace MelonPrime {
 
     class RawInputWinFilter;
+    struct RawInputSubscription;
 
     // =========================================================================
     // SmallVkList: stack-allocated VK code container (max 4 entries).
@@ -41,11 +42,11 @@ namespace MelonPrime {
     SmallVkList MapQtKeyIntToVks(int qtKey);
 
     // Single hotkey bind
-    void BindOneHotkeyFromConfig(RawInputWinFilter* filter, int instance,
+    void BindOneHotkeyFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance,
         const std::string& hkPath, int hkId);
 
     // Batch bind all Metroid hotkeys
-    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, int instance);
+    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance);
 
 } // namespace MelonPrime
 #endif // _WIN32

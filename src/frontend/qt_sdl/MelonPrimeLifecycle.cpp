@@ -7,6 +7,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeArm9Hook.h"
+#include "MelonPrimeInstanceDiagnostics.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -24,14 +25,19 @@
 
 namespace MelonPrime {
 
-#if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     MelonPrimeCore::~MelonPrimeCore()
     {
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#ifdef _WIN32
+        if (m_rawFilter && m_rawInputSubscription) {
+            m_rawFilter->Unsubscribe(m_rawInputSubscription);
+            m_rawInputSubscription = nullptr;
+        }
+#elif MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
         PlatformInput_ReleaseRawFilter(m_platformRawFilter);
-    }
-#else
-    MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
+    }
 
     // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
     // Side effects beyond plain member assignment: clears
@@ -98,6 +104,9 @@ namespace MelonPrime {
 #endif
 
         screenSyncMode = s.screenSyncMode;
+
+        // Aim fields now share the same snapshot load/apply transaction.
+        ApplyAimConfigSnapshot(s.aimConfig);
     }
 
     void MelonPrimeCore::ReloadConfigFlags()
@@ -112,7 +121,6 @@ namespace MelonPrime {
     void MelonPrimeCore::Initialize()
     {
         ReloadConfigFlags();
-        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         SetupRawInput();
@@ -124,20 +132,41 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStart()
     {
+        InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStart");
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-start");
+        const void* hookState = nullptr;
+        const void* patchState = nullptr;
+        const void* hudState = nullptr;
+#ifdef MELONPRIME_DS
+        hookState = &m_arm9HookState;
+        patchState = &m_patchState;
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+        hudState = m_hudConfigState.get();
+#endif
+        InstanceDiagnostics::LogOwnedStates(
+            emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
+        // A restarted/reopened ROM begins in menu cursor mode. Supersede any
+        // hide/capture request left by the previous match before its next GUI pass.
+        isCursorMode = true;
+        m_threadBridge.ResetCursorPresentationFromEmu();
+#ifdef _WIN32
+        if (m_rawFilter)
+            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+#else
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#endif
+        m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
-#ifdef _WIN32
-        m_isNativeFilterInstalled = false;
-#endif
-
 #ifdef MELONPRIME_CUSTOM_HUD
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
         PatchLifecycle::ResetForEmuStart(
-            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
 
         ReloadConfigFlags();
@@ -152,23 +181,25 @@ namespace MelonPrime {
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
 
-        // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
-        if (auto* mw = emuInstance->getMainWindow())
-            m_cachedPanel = mw->panel;
+        m_layoutGenerationSeen = 0;
+        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::ResetRuntimeStateForBoot()
     {
         m_flags.packed = 0;
+        isCursorMode = true;
+        m_threadBridge.ResetCursorPresentationFromEmu();
+        m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
         m_aimBlockBits = 0;
 #ifdef MELONPRIME_CUSTOM_HUD
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance);
+        PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance, this);
 #endif
 
         InputReset();
@@ -176,11 +207,23 @@ namespace MelonPrime {
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
+        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::OnEmuStop()
     {
+        InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
+        isCursorMode = true;
+        m_threadBridge.ResetCursorPresentationFromEmu();
+#ifdef _WIN32
+        if (m_rawFilter)
+            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+#else
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#endif
+        m_zoomAimCanZoomCache = {};
         // Intentional historical asymmetry: stop clears transform/fire
         // transients but leaves aim residuals and overlay-held state alone.
         // OnEmuStart/boot perform broader resets; changing this stop-time
@@ -191,9 +234,9 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             CustomHud_EnsurePatchRestored(
-                emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+                *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
         }
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
@@ -201,8 +244,10 @@ namespace MelonPrime {
             emuInstance->getNDS(),
             emuInstance,
             localCfg,
-            m_currentRom);
+            m_currentRom,
+            this);
 #endif
+        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::OnEmuPause() {}
@@ -214,12 +259,11 @@ namespace MelonPrime {
         const bool newJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
         ApplyJoy2KeySupportAndQtFilter(newJoy2Key, oldJoy2Key != newJoy2Key);
 
-        ReloadAimConfigFromTable(localCfg);
-
 #ifdef _WIN32
         if (m_rawFilter) {
-            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
-            m_rawFilter->resetHotkeyEdges();
+            BindMetroidHotkeysFromConfig(
+                m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
 
@@ -245,13 +289,12 @@ namespace MelonPrime {
 
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
-        ReloadAimConfigFromTable(localCfg);
-
 #ifdef _WIN32
         if (m_rawFilter) {
             // Reload VK bindings from config, then re-sync edge state.
-            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
-            m_rawFilter->resetHotkeyEdges();
+            BindMetroidHotkeysFromConfig(
+                m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
 

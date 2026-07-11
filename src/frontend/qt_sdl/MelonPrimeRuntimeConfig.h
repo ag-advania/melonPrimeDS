@@ -21,6 +21,25 @@ namespace MelonPrime {
 // Keep this split when adding new runtime config fields: clamp/derive in the
 // snapshot struct's Load function, apply side effects in the Apply function.
 
+// AimSens/AimYScale derivation only (no AimAdjust). The raw values are
+// retained so the EmuThread hotkey can update sensitivity without reading or
+// writing Config::Table. AimAdjust remains structurally excluded.
+struct AimSensitivitySnapshot {
+    int aimSensitivity = 1;
+    float aimYScale = 1.0f;
+    float aimSensiFactor = 1.0f;
+    float aimCombinedY = 1.0f;
+};
+
+// Complete aim snapshot used by the normal config reload boundary.
+struct AimConfigSnapshot {
+    int aimSensitivity = 1;
+    float aimYScale = 1.0f;
+    float aimSensiFactor = 0.f;
+    float aimCombinedY = 0.f;
+    float aimAdjust = 0.f;
+};
+
 struct RuntimeConfigSnapshot {
     bool joy2Key = false;
     bool snapTap = false;
@@ -51,32 +70,12 @@ struct RuntimeConfigSnapshot {
     bool nativeWeaponSwitch = false;
 #endif
 
-    int     screenSyncMode = 0;
-};
+    int screenSyncMode = 0;
 
-// AimSens/AimYScale derivation only (no AimAdjust). Shared by
-// LoadAimConfigSnapshot (full aim config reload) and the in-game
-// sensitivity hotkey path (MelonPrimeCore::RecalcAimSensitivityCache).
-// The in-game sensitivity hotkey path uses AimSensitivitySnapshot and still
-// intentionally skips AimAdjust — a sensitivity hotkey should only touch
-// sensitivity. Since this struct has no aimAdjust field, that skip is now
-// structural rather than a convention the hotkey path has to remember.
-struct AimSensitivitySnapshot {
-    float aimSensiFactor = 1.0f;
-    float aimCombinedY = 1.0f;
-};
-
-// Aim sensitivity/adjust only. Loaded/applied via
-// MelonPrimeCore::ReloadAimConfigFromTable(cfg), called from Initialize(),
-// ApplyConfigReload(), and ROM detect. Separate from RuntimeConfigSnapshot
-// because it predates the wider snapshot (Phase 10 of the SRP refactor
-// scoped only the aim-sensitivity fields out of the ad-hoc reload code that
-// existed at the time). Includes AimAdjust and is used by the full aim
-// config reload path only.
-struct AimConfigSnapshot {
-    float aimSensiFactor = 0.f;
-    float aimCombinedY = 0.f;
-    float aimAdjust = 0.f;
+    // MELONPRIME_PHASE5_CONFIG_USAGE_V1
+    // Aim config now crosses the same Load/Apply snapshot boundary as the
+    // remaining runtime settings. No second Config::Table read is needed.
+    AimConfigSnapshot aimConfig{};
 };
 
 // Pure: reads `cfg`, clamps/derives values, applies developer-feature gating.

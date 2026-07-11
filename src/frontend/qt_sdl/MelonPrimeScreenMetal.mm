@@ -867,7 +867,11 @@ void ScreenPanelMetal::drawScreen()
         if (emuThread->emuIsActive())
         {
             auto* mp = emuThread->GetMelonPrimeCore();
-            const bool editMode = MelonPrime::CustomHud_IsEditMode();
+            // MELONPRIME_MAC_METAL_HUD_INSTANCE_STATE_FIX_V1
+            // HUD editor/render/patch state became per-MelonPrimeCore. Keep the
+            // Metal presenter on the same instance-owned state as the Qt/GL path.
+            const bool editMode =
+                mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
             if (mp && mp->IsRomDetected() && (mp->IsInGame() || editMode))
             {
                 auto& instcfg = emuInstance->getLocalConfig();
@@ -876,6 +880,7 @@ void ScreenPanelMetal::drawScreen()
                 if (!hudVisible)
                 {
                     MelonPrime::CustomHud_EnsurePatchRestored(
+                        mp->HudConfigState(),
                         emuInstance, instcfg,
                         mp->GetCurrentRom(), mp->GetPlayerPosition(),
                         mp->IsInGame());
@@ -894,6 +899,7 @@ void ScreenPanelMetal::drawScreen()
                     overlayPainter.setFont(overlayFont);
 
                     const QRect dirty = MelonPrime::CustomHud_Render(
+                        mp->HudConfigState(),
                         emuInstance, instcfg,
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),

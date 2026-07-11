@@ -1,9 +1,49 @@
 // Included after MetalOutputState is complete and before MetalRenderer's destructor.
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+// MELONPRIME_METAL_MIXED_3D_2D_OPENGL_PARITY_GUARD_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 
 namespace
 {
+bool MetalSegmented2DShadowRequested()
+{
+    static const bool enabled = []() {
+        const char* value =
+            std::getenv(
+                "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
+
+
+
+bool MetalSegmented2DVisibleRequested()
+{
+    return true;
+}
+
+bool MetalAllowExperimentalMixed3D2DGpuPath()
+{
+    return true;
+}
+
+bool MetalEngineAUsesMixed3DAnd2DOverlay(const GPU& gpu)
+{
+    const GPU2D& engine = gpu.GPU2D_A;
+    const bool uses3D = (engine.DispCnt & (1u << 3)) != 0u;
+
+    constexpr uint32_t kNon3DOverlayMask =
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4);
+    const bool uses2DOverlay =
+        (engine.LayerEnable & kNon3DOverlayMask) != 0u;
+
+    return uses3D && uses2DOverlay;
+}
+
 static constexpr const char* kMetalFullGpuOutputShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
@@ -87,6 +127,11 @@ struct MetalRenderer::MetalFullGpuState
     bool LoggedEnabled = false;
     bool LoggedRejected = false;
     bool LoggedCompose = false;
+    bool LoggedMixed3D2DFallback = false;
+    bool LoggedMixed3D2DOverride = false;
+    bool LoggedSegmentedShadow = false;
+    bool LoggedSegmentedShadowFailure = false;
+    bool LoggedSegmentedVisible = false;
     std::array<uint32_t, 192> ScreenSwap {};
     std::array<uint32_t, 192> BrightnessA {};
     std::array<uint32_t, 192> BrightnessB {};
@@ -167,9 +212,34 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (!GPU.ScreensEnabled)
         return false;
 
-    const uint32_t displayModeA = (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
-    const uint32_t displayModeB = (GPU.GPU2D_B.DispCnt >> 16) & 0x1u;
-    return displayModeA == 1u && displayModeB == 1u;
+    const uint32_t displayModeA =
+        (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+    const uint32_t displayModeB =
+        (GPU.GPU2D_B.DispCnt >> 16) & 0x1u;
+    if (displayModeA != 1u || displayModeB != 1u)
+        return false;
+
+    // OpenGL renders BG/OBJ and the final compositor in scanline segments.
+    // The current Metal full-GPU path rebuilds BG/OBJ once at VBlank from the
+    // last register/OAM state and applies it to all 192 lines. Mixed 3D+2D
+    // gameplay frames therefore cannot yet be considered OpenGL-equivalent.
+    //
+    // Keep the selected Metal 3D renderer, but route final DS 2D composition
+    // through the mature Software compositor until segmented Metal 2D is done.
+    if (MetalEngineAUsesMixed3DAnd2DOverlay(GPU))
+    {
+        if (!MetalAllowExperimentalMixed3D2DGpuPath())
+            return false;
+
+        if (MetalSegmented2DVisibleRequested() &&
+            (!Metal2D_A->SegmentedSnapshotReady() ||
+             !Metal2D_B->SegmentedSnapshotReady()))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void MetalRenderer::Start3DRendering()
@@ -216,6 +286,35 @@ void MetalRenderer::DrawScanline(u32 line)
         }
         return;
     }
+    if (line < 192 &&
+        MetalSegmented2DShadowRequested() &&
+        Metal2D_A && Metal2D_B &&
+        Metal2D_A->SegmentedSnapshotReady() &&
+        Metal2D_B->SegmentedSnapshotReady())
+    {
+        FullGpuState->ScreenSwap[line] =
+            GPU.ScreenSwap ? 1u : 0u;
+        FullGpuState->BrightnessA[line] =
+            GPU.MasterBrightnessA;
+        FullGpuState->BrightnessB[line] =
+            GPU.MasterBrightnessB;
+
+        const uint8_t win0A = GPU.GPU2D_A.Win0Active;
+        const uint8_t win1A = GPU.GPU2D_A.Win1Active;
+        const uint8_t win0B = GPU.GPU2D_B.Win0Active;
+        const uint8_t win1B = GPU.GPU2D_B.Win1Active;
+
+        Metal2D_A->CaptureScanlineState(
+            static_cast<int>(line));
+        Metal2D_B->CaptureScanlineState(
+            static_cast<int>(line));
+
+        GPU.GPU2D_A.Win0Active = win0A;
+        GPU.GPU2D_A.Win1Active = win1A;
+        GPU.GPU2D_B.Win0Active = win0B;
+        GPU.GPU2D_B.Win1Active = win1B;
+    }
+
     SoftRenderer::DrawScanline(line);
 }
 
@@ -230,6 +329,18 @@ void MetalRenderer::DrawSprites(u32 line)
         }
         return;
     }
+    if (line < 192 &&
+        MetalSegmented2DShadowRequested() &&
+        Metal2D_A && Metal2D_B &&
+        Metal2D_A->SegmentedSnapshotReady() &&
+        Metal2D_B->SegmentedSnapshotReady())
+    {
+        Metal2D_A->CaptureSpriteScanlineState(
+            static_cast<int>(line));
+        Metal2D_B->CaptureSpriteScanlineState(
+            static_cast<int>(line));
+    }
+
     SoftRenderer::DrawSprites(line);
 }
 

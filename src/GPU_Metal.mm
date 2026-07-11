@@ -8,8 +8,13 @@
 // MELONPRIME_METAL_OUTPUT_LEASE_V1
 // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
 // MELONPRIME_METAL_FRAME_SNAPSHOT_V1
+// MELONPRIME_METAL_VISIBLE_3D_OWNERSHIP_GATE_V1
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
+// MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 #import <Metal/Metal.h>
 
@@ -138,6 +143,19 @@ void Metal3DSetCpuReadbackRequired(Renderer3D* renderer, bool required)
         raster->SetCpuReadbackRequired(required);
 }
 
+void Metal3DSetCaptureTextures(
+    Renderer3D* renderer,
+    void* capture128Texture,
+    void* capture256Texture)
+{
+    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
+    {
+        compute->SetCaptureTextures(
+            capture128Texture,
+            capture256Texture);
+    }
+}
+
 void ConfigureMetal3DRenderer(
     Renderer3D* renderer,
     bool threaded,
@@ -207,6 +225,35 @@ static inline float3 mp_apply_master_brightness(float3 color, uint reg)
     return color;
 }
 
+// Reproduce the exact Metal readback -> DS 6-bit -> CPU master-brightness ->
+// BGRA8 expansion path. The final CPU composite can then be compared against
+// the native 3D sample in the same quantized color space.
+static inline float3 mp_cpu_native_3d_reference(
+    float3 color,
+    uint reg)
+{
+    uint3 color8 = uint3(
+        clamp(color, float3(0.0), float3(1.0)) * 255.0 + 0.5);
+    uint3 color6 =
+        (color8 * uint3(63u) + uint3(127u)) / uint3(255u);
+
+    uint mode = reg >> 14u;
+    uint factor = min(reg & 0x1Fu, 16u);
+    if (mode == 1u)
+    {
+        color6 +=
+            ((uint3(63u) - color6) * factor) >> 4u;
+    }
+    else if (mode == 2u)
+    {
+        color6 -=
+            ((color6 * factor + uint3(15u)) >> 4u);
+    }
+
+    uint3 expanded = (color6 << 2u) | (color6 >> 4u);
+    return float3(expanded) / 255.0;
+}
+
 fragment float4 mp_visible_output_fs(
     VisibleOutputVertex in [[stage_in]],
     constant VisibleOutputConfig& config [[buffer(0)]],
@@ -226,35 +273,61 @@ fragment float4 mp_visible_output_fs(
     }
 
     uint2 highCoord = min(outputCoord,
-        uint2(highResolution3D.get_width() - 1u, highResolution3D.get_height() - 1u));
+        uint2(highResolution3D.get_width() - 1u,
+              highResolution3D.get_height() - 1u));
     float4 high3D = highResolution3D.read(highCoord);
     float4 low3D = nativeResolution3D.read(nativeCoord);
 
-    // The CPU composite already contains the per-engine Master Brightness.
-    // Apply the same affine transform to both 3D samples before replacing the
-    // native layer. This keeps fade-to-black/white frames in one color space.
     uint brightness = (config.outputLayer == config.engineALayer)
         ? config.masterBrightnessA
         : config.masterBrightnessB;
-    high3D.rgb = mp_apply_master_brightness(high3D.rgb, brightness);
-    low3D.rgb = mp_apply_master_brightness(low3D.rgb, brightness);
-
-    // CPU 2D already contains the native 3D layer. Recover the background
-    // underneath that native sample, then composite the full-resolution 3D
-    // sample over it. This keeps DS BG/OBJ/window/HUD output intact while the
-    // geometry and texture edges come from the scaled Metal render target.
+    float3 brightHigh3D =
+        mp_apply_master_brightness(high3D.rgb, brightness);
     float lowAlpha = clamp(low3D.a, 0.0, 1.0);
     float highAlpha = clamp(high3D.a, 0.0, 1.0);
+
+    // Mode 1 is the normal ownership-gated path. Only replace a subpixel when:
+    //   1. native and high-resolution 3D are both fully opaque, and
+    //   2. the completed CPU screen pixel matches the exact native 3D color.
+    // A BG/OBJ HUD, reticle, window, blend or brightness effect changes the CPU
+    // result, so that pixel remains untouched. This prevents opaque 3D clear
+    // pixels from overwriting the already-correct Software 2D composite.
+    if (config.useHighResolution3D == 1u)
+    {
+        constexpr float opaqueThreshold = 30.5 / 31.0;
+        if (lowAlpha < opaqueThreshold || highAlpha < opaqueThreshold)
+            return float4(base.rgb, 1.0);
+
+        float3 expectedNative3D =
+            mp_cpu_native_3d_reference(low3D.rgb, brightness);
+        constexpr float ownershipTolerance = 2.0 / 255.0;
+        if (any(abs(base.rgb - expectedNative3D) >
+                float3(ownershipTolerance)))
+        {
+            return float4(base.rgb, 1.0);
+        }
+
+        return float4(clamp(brightHigh3D, 0.0, 1.0), 1.0);
+    }
+
+    // Mode 2 is retained only for A/B diagnostics. It reproduces the previous
+    // unconditional replacement behavior and may hide native 2D overlays.
+    low3D.rgb = mp_apply_master_brightness(low3D.rgb, brightness);
     float3 background = base.rgb;
     if (lowAlpha < (254.0 / 255.0))
     {
         float denominator = max(1.0 - lowAlpha, 1.0 / 255.0);
-        background = clamp((base.rgb - low3D.rgb * lowAlpha) / denominator, 0.0, 1.0);
+        background = clamp(
+            (base.rgb - low3D.rgb * lowAlpha) / denominator,
+            0.0,
+            1.0);
     }
 
-    float3 result = mix(background, high3D.rgb, highAlpha);
+    float3 result = mix(background, brightHigh3D, highAlpha);
     return float4(clamp(result, 0.0, 1.0), 1.0);
 }
+
+
 )";
 
 } // namespace
@@ -489,6 +562,7 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
                     "[MelonPrime] metal visible output: pipeline creation failed: %s\n", message);
                 return false;
             }
+
         }
 
         id<MTLTexture> high3D =
@@ -766,6 +840,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         static_assert(sizeof(VisibleOutputConfigCpu) == 32,
             "VisibleOutputConfigCpu must match MSL layout");
 
+
         std::unique_lock<std::mutex> lock(OutputState->Mutex);
         id<MTLTexture> high3D = OutputState->CapturedHigh3D;
         id<MTLTexture> low3D = OutputState->CapturedLow3D;
@@ -826,8 +901,26 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             return;
         commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
 
+
         // high3D/low3D and all associated frame state were captured at
         // VCount 192, before VCount 215 begins rendering frame N+1.
+        uint32_t replacementMode = useHighResolution3D;
+        if (useHighResolution3D)
+        {
+            const char* replacementEnv =
+                std::getenv("MELONPRIME_METAL_HIRES_REPLACEMENT");
+            if (replacementEnv &&
+                std::strcmp(replacementEnv, "off") == 0)
+            {
+                replacementMode = 0u;
+            }
+            else if (replacementEnv &&
+                     std::strcmp(replacementEnv, "force") == 0)
+            {
+                replacementMode = 2u;
+            }
+        }
+
         for (uint32_t layer = 0; layer < 2; layer++)
         {
             MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -847,7 +940,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             config.scale = static_cast<uint32_t>(OutputState->Scale);
             config.outputLayer = layer;
             config.engineALayer = engineALayer;
-            config.useHighResolution3D = useHighResolution3D;
+            config.useHighResolution3D = replacementMode;
             config.masterBrightnessA = FrameMasterBrightnessA;
             config.masterBrightnessB = FrameMasterBrightnessB;
 
@@ -864,6 +957,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
             [encoder endEncoding];
         }
+
 
         const uint64_t generation = OutputState->Generation;
         const uint64_t serial = OutputState->NextSerial++;
@@ -891,6 +985,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
                 std::fprintf(stderr,
                     "[MelonPrime] metal visible output: command failed: %s\n", message);
             }
+
             completedSlot.InFlight = false;
             state->InFlightCount--;
             state->Completion.notify_all();
@@ -902,13 +997,13 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         {
             OutputState->LoggedVisibleOutput = true;
             std::fprintf(stderr,
-                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d renderedScale=%d size=%zux%zu engineALayer=%u high3D=%u\n",
+                "[MelonPrime] metal visible output: first compose renderer=%s scale=%d renderedScale=%d size=%zux%zu engineALayer=%u replaceMode=%u (0=off 1=ownership 2=force)\n",
                 ComputeRendererSelected ? "MetalCompute" : "Metal",
                 OutputState->Scale,
                 renderedScale,
                 static_cast<size_t>(OutputState->Width),
                 static_cast<size_t>(OutputState->Height),
-                engineALayer, useHighResolution3D);
+                engineALayer, replacementMode);
         }
     }
 }
@@ -929,12 +1024,14 @@ void MetalRenderer::VBlank()
 
             rendered = Metal2D_A && Metal2D_B &&
                 capture128 && capture256 &&
-                Metal2D_A->RenderFullGpuFrame(
+                Metal2D_A->SegmentedFrameComplete() &&
+                Metal2D_B->SegmentedFrameComplete() &&
+                Metal2D_A->RenderSegmentedGpuFrame(
                     high3D,
                     capture128,
                     capture256,
                     allowCaptureTextures) &&
-                Metal2D_B->RenderFullGpuFrame(
+                Metal2D_B->RenderSegmentedGpuFrame(
                     high3D,
                     capture128,
                     capture256,
@@ -974,8 +1071,69 @@ void MetalRenderer::VBlank()
 
     SoftRenderer::VBlank();
     UploadCpuCompletedCaptures();
+
+
+    if (MetalSegmented2DShadowRequested() &&
+        Metal2D_A && Metal2D_B &&
+        Metal2D_A->SegmentedFrameComplete() &&
+        Metal2D_B->SegmentedFrameComplete())
+    {
+        void* high3D =
+            Metal3DColorTarget(Rend3D.get());
+        void* capture128 =
+            GetMetalCapture128Texture();
+        void* capture256 =
+            GetMetalCapture256Texture();
+
+        const bool shadowRendered =
+            high3D && capture128 && capture256 &&
+            Metal2D_A->RenderSegmentedGpuFrame(
+                high3D,
+                capture128,
+                capture256,
+                true) &&
+            Metal2D_B->RenderSegmentedGpuFrame(
+                high3D,
+                capture128,
+                capture256,
+                true);
+
+        if (FullGpuState)
+        {
+
+            if (shadowRendered &&
+                !FullGpuState->LoggedSegmentedShadow)
+            {
+                FullGpuState->LoggedSegmentedShadow = true;
+                std::fprintf(
+                    stderr,
+                    "[MelonPrime] metal segmented 2d shadow: "
+                    "GPU segment frame completed; "
+                    "visible output remains Phase 8H "
+                    "Software 2D ownership path\n");
+            }
+            else if (!shadowRendered &&
+                     !FullGpuState->
+                         LoggedSegmentedShadowFailure)
+            {
+                FullGpuState->
+                    LoggedSegmentedShadowFailure = true;
+                std::fprintf(
+                    stderr,
+                    "[MelonPrime] metal segmented 2d shadow: "
+                    "frame rejected; visible Software 2D "
+                    "output is unaffected\n");
+            }
+        }
+    }
+
     if (FullGpuState)
+    {
+        FullGpuState->CompletedScreenSwap = FullGpuState->ScreenSwap;
+        FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
+        FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
         FullGpuState->Completed = MetalFullGpuState::CpuComposite;
+    }
 }
 
 void MetalRenderer::SwapBuffers()

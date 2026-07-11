@@ -237,3 +237,147 @@ variant単位でMetal raster版とのpixel diffを縮小する。
 - CPUがcapture VRAMを読む、renderer変更、scale変更など実際にCPU coherenceが必要な場合だけ該当captureをRGBA5551へ同期readback。
 - 同一frameでcapture destinationをBG／OBJへfeedbackするscanline依存ケースは旧CPU経路へ安全にfallback。
 - `MetalComputeRenderer3D::RenderFrame()`は`ForceScaleFactor()`失敗を処理し、`[[nodiscard]]` warningを解消。
+
+<!-- MELONPRIME_METAL_PHASE8C_COMPUTE_TEXTURED_RASTER -->
+## 2026-07-11 — Phase 8C Metal Compute textured tile raster
+
+- Metal Compute tile rasterを全DS texture format（1〜7）へ拡張。
+- A3I5、2/4/8bpp palette、4x4 compressed、A5I3、direct RGB555をraw VRAMからMSLでdecode。
+- Clamp／Repeat／Mirror、Modulate／Decal／Toon／Highlightを実装。
+- Phase 8BのCapture128／Capture256 textureをCompute texture sourceへ接続。
+- texture VRAM、texture palette、toon tableはframe slotごとのbufferへsnapshotし、in-flight frameとの競合を防止。
+- ComputeとMetal raster／capture／2Dを同一MTLCommandQueueへ統合。
+- このPhaseではvisible sourceをMetal RasterReferenceのまま維持し、Compute結果を非可視検証する。
+- Shadow mask／shadow polygon、完全DepthBlend、FinalPass、visible cutoverは次Phase。
+
+<!-- MELONPRIME_METAL_PHASE8D_COMPLETE_DEPTH_BLEND -->
+## 2026-07-11 — Phase 8D Metal Compute complete DepthBlend
+
+- Shadow mask polygonをtile rasterへ通し、depth-only markerとして保持。
+- DSの2-layer color/depth/attr compositionをMetal Computeへ移植。
+- Shadow stencil、shadow polygon、translucent polygon-ID suppressionを実装。
+- equal-depth toleranceをZ-buffer/W-buffer別に実装。
+- translucent depth write、edge second layer、opaque layer shiftを実装。
+- clear bitmap color/depth/fog-bitをraw texture VRAM snapshotから処理。
+- DepthBlend result bufferを2 layersへ拡張。
+- visible sourceは引き続きMetal RasterReference。次PhaseでAA/Edge/Fog FinalPassを実装する。
+
+<!-- MELONPRIME_METAL_PHASE8E_FINAL_PASS -->
+## 2026-07-11 — Phase 8E Metal Compute final pass
+
+- Complete DepthBlendの2-layer color/depth/attrからGPU final BGRA8 textureを生成。
+- DISP3DCNT edge marking、fog、anti-aliasingをOpenGL Compute規則に合わせて実装。
+- EdgeTable 8色、FogDensityTable 34要素、FogColorをframe-slot bufferへsnapshot。
+- final textureを3-slot ringへ保持し、submitted/published serialを明示管理。
+- `MELONPRIME_METAL_COMPUTE_FINAL_DIFF=1`時はRasterReferenceとGPU上で比較し、CPU readbackなしで差分統計を出力。
+- visible sourceはPhase 8EではMetalRasterReferenceのまま。Phase 8FでCompute final textureへ切替予定。
+
+<!-- MELONPRIME_METAL_PHASE8F_VISIBLE_CUTOVER -->
+## 2026-07-11 — Phase 8F Metal Compute visible cutover
+
+- `MELONPRIME_METAL_COMPUTE_VISIBLE=1`かつGPU-resident 2D対象frameではCompute final textureを3D sourceとして公開。
+- 通常cutover時は`RasterReference.RenderFrame()`を停止。
+- verify modeではRasterReferenceも並行描画し、Phase 8EのGPU差分診断を維持。
+- CPU GetLineが必要なframe、compute slot/tile busy、scale不整合、GPU command failure時はRasterReferenceへ自動fallback。
+- polygon 0件のclear-only frameでもDepthBlend/FinalPassを実行。
+- identical frameでは前回Compute final textureを再利用。
+
+<!-- MELONPRIME_METAL_PHASE8G_HUD_PARITY -->
+## 2026-07-11 — Phase 8G Metal 2D HUD parity
+
+- Metal 2Dがstaleな`VRAMFlat_ABG/AOBJ/BBG/BOBJ`を直接uploadしていた問題を修正。
+- OpenGLと同じ`VRAMTrackingSet::DeriveState`と`MakeVRAMFlat_*Coherent`をMetalへ追加。
+- HUD BG、照準OBJ、武器表示、extended paletteをGPU textureへ同期。
+- 512-byte dirty trackingをMetal texture rowへまとめ、変更行だけupload。
+- palette／extended paletteもdirty時だけupload。
+- BG/OBJ enable、priority、BLDCNT、EVA/EVB/EVYをscanline単位でlatch。
+- VBlank時の単一compositor stateによって3Dだけ残る問題を防止。
+
+<!-- MELONPRIME_METAL_PHASE8G_V3_SCANLINE_COORD_PARITY -->
+## 2026-07-11 — Phase 8G v3 Metal 2D scanline-coordinate parity
+
+- Metal compositorが`ScanlineConfig.BGOffset.y`へnative scanlineを再加算していた問題を修正。
+- OpenGLの`fTexcoord.xy`契約に合わせ、BG Xはnative連続座標、BG Yはscanline内の小数部分だけを渡す。
+- Text BG、affine BG、bitmap BGのY座標二重加算を解消。
+- 3D BG0にも`RenderXPos`由来のoffsetを適用。
+- 3D BG0の範囲外sampleをedge clampではなく透明borderへ変更。
+- MetalとMetal Computeは共通のGPU2D Metal shaderを使用するため両方へ適用。
+
+<!-- MELONPRIME_METAL_PHASE8G_V4_OPENGL_PARITY_GUARD -->
+## 2026-07-11 — Phase 8G v4 OpenGL mixed 3D/2D parity guard
+
+- OpenGLはBG/OBJ VRAM、OAM、register stateをscanline区間ごとにflushして合成する。
+- 現行Metal full-GPU 2DはVBlank時の最終LayerConfig/SpriteConfigで全192行を再構成している。
+- Engine Aで3D BG0とBG1-3/OBJが同時に有効なframeは、Metal 3Dを維持したままSoftware 2D compositorへ自動fallback。
+- MetalとMetal Compute Shaderの両方に適用。
+- `MELONPRIME_METAL_EXPERIMENTAL_MIXED_3D_2D=1`で旧experimental GPU compositorを明示的に再有効化可能。
+
+<!-- MELONPRIME_METAL_PHASE8H_VISIBLE_OWNERSHIP_GATE -->
+## 2026-07-11 — Phase 8H visible-output 3D ownership gate
+
+- Software 2D composite後の高解像度3D全面置換を廃止。
+- CPU最終pixelがnative 3Dの量子化済み色と一致し、native/high-res双方がopaqueのpixelだけ高解像度3Dへ置換。
+- BG/OBJ HUD、照準、window、blend、brightnessが存在するpixelはCPU compositeを保持。
+- `MELONPRIME_METAL_HIRES_REPLACEMENT=off`で置換完全停止。
+- `MELONPRIME_METAL_HIRES_REPLACEMENT=force`で旧全面置換を比較用に再現。
+
+<!-- MELONPRIME_METAL_PHASE8I_SCANLINE_SNAPSHOT -->
+## 2026-07-11 — Phase 8I scanline state/OAM snapshot foundation
+
+- 8H ownership gateとSoftware 2D表示を維持し、可視経路は変更しない。
+- BG layer configを192走査線ごとにGPU-ready bufferへ保存。
+- OAM/rotscale/sprite configを各走査線の256-byte aligned slotへ保存。
+- sprite count、mosaic使用、FNV hashを各行で保存。
+- OpenGLの区間描画へ変換するため、連続する同一stateをlayer/sprite/combined segmentとして自動集約。
+- `MELONPRIME_METAL_SEGMENTED_2D_CAPTURE=1`で診断を有効化。
+- 次工程ではこのbufferをscissor付きMetal sprite/compositor passへ直接接続する。
+
+<!-- MELONPRIME_METAL_PHASE8J_SEGMENTED_SHADOW -->
+## 2026-07-11 — Phase 8J segmented Metal 2D shadow renderer
+
+- Phase 8Iの192-line BG/OAM snapshotを実際のMetal render encoderへ接続。
+- combined state hashから連続scanline segmentを生成。
+- segmentごとにBG prerender、OBJ mosaic/window/color pass、scissor compositorを実行。
+- default shadow modeではPhase 8H Software 2Dを可視出力として維持。
+- fallback中もwindow bookkeepingを保存・復元し、snapshot captureがSoftware 2Dへ副作用を与えない。
+- `MELONPRIME_METAL_SEGMENTED_2D_VISIBLE=1`で実験的なno-readback可視経路を有効化可能。
+- mid-frame VRAM versioningは未実装のため、shadowログは`resourceModel=frame-final`と明示。
+
+<!-- MELONPRIME_METAL_PHASE8K_SEGMENTED_GPU_DIFF -->
+## 2026-07-11 — Phase 8K segmented GPU diff
+
+- Phase 8J segmented engine A/B outputをPhase 8H ownership-gated final textureとGPU上で比較。
+- screen swap、Engine A/B master brightness、internal scaleを同一kernelで再現。
+- different pixel count、max channel delta、bounding box、worst scanlineを集計。
+- top/bottom各192行のmismatch histogramをGPU atomic bufferへ記録。
+- summaryのみcommand completion後に共有bufferから読み出し、画像本体のCPU readbackは追加しない。
+- fallback frameでもscreen swap／brightnessをscanline単位で保存。
+- 可視出力はPhase 8HのSoftware 2D ownership pathを維持。
+
+<!-- MELONPRIME_METAL_PHASE8K_DIRECT_SEGMENTED_CUTOVER_V2 -->
+## 2026-07-11 — Phase 8K direct segmented cutover v2
+
+- segmented snapshot bufferを通常renderer stateとして常時有効化。
+- mixed 3D+2D frameをsegmented Metal 2Dへ直接接続。
+- VBlankのfull-frame Metal 2D分岐を削除。
+- Software 2D後のshadow submitを削除。
+- snapshot全行統計、600-frame render統計、experimental visible判定を削除。
+- 診断compare kernelとautomatic fallbackは追加しない。
+
+<!-- MELONPRIME_METAL_PHASE8L_SEGMENTED_SUBMIT_OPT -->
+## 2026-07-11 — Phase 8L segmented submit optimization
+
+- per-Engine/per-frameのimmutable MTLBuffer allocationを3個から1個へ統合。
+- SpriteConfig、ScanlineConfig、SpriteScanlineConfigを256-byte aligned offsetで格納。
+- segment間で同一BG target/configを再利用し、OBJ/window-only変化時のBG全面再描画を省略。
+- scanline snapshot、OBJ pass、compositor ordering、VRAM/palette resource modelは変更しない。
+- compare、shadow、fallback、runtime diagnosticは追加しない。
+
+<!-- MELONPRIME_METAL_PHASE8M_HOT_PATH_CLEANUP -->
+## 2026-07-11 — Phase 8M hot-path cleanup
+
+- segment listを固定長std::arrayへ変更し、per-frame vector allocationを撤去。
+- Phase 8K GPU diff MSL kernel、pipeline、summary buffer、completion集計を完全撤去。
+- 旧snapshot/render diagnostic counterをMetal2DStateから削除。
+- Phase 8Lのsingle upload buffer、BG target cache、direct segmented可視経路は維持。
+- shadow、compare、automatic fallback、runtime diagnosticは追加しない。

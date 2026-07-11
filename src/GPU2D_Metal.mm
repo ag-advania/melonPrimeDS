@@ -1,5 +1,10 @@
 // MelonPrimeDS - experimental Metal 2D renderer scaffold (Metal-plan Phase 4)
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+// MELONPRIME_METAL_2D_HUD_PARITY_V1
+// MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -13,6 +18,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace melonDS
@@ -23,6 +29,50 @@ namespace
 constexpr int kScreenW = 256;
 constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
+
+
+bool MetalEnvironmentFlagEnabled(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value && value[0] == '1';
+}
+
+bool MetalSegmented2DShadowEnabled()
+{
+    static const bool enabled =
+        MetalEnvironmentFlagEnabled(
+            "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
+    return enabled;
+}
+
+bool MetalSegmented2DVisibleEnabled()
+{
+    return true;
+}
+
+bool MetalSegmented2DSnapshotEnabled()
+{
+    // Direct renderer state: no diagnostic environment switch.
+    return true;
+}
+
+constexpr size_t MetalAlignConstantStride(size_t size)
+{
+    return (size + 255u) & ~size_t(255u);
+}
+
+uint64_t MetalSnapshotHash(const void* data, size_t size)
+{
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    uint64_t hash = 1469598103934665603ull;
+    constexpr uint64_t prime = 1099511628211ull;
+    for (size_t i = 0; i < size; i++)
+    {
+        hash ^= bytes[i];
+        hash *= prime;
+    }
+    return hash;
+}
 
 constexpr uint8_t kBGBaseIndex[4][4] = {
     {2, 10, 6, 14},
@@ -224,12 +274,39 @@ struct ScanlineConfigCpu
         int32_t winPos[4] = {};
         uint32_t bgMosaicEnable[4] = {};
         int32_t mosaicSize[4] = {};
+
+        // Layer enables, priority and blending are latched per visible line.
+        // Sampling them once at VBlank can leave BG0/3D visible while hiding
+        // the game's BG/OBJ HUD layers.
+        uint32_t bgPrio[4] = {};
+        uint32_t enableOBJ = 0;
+        uint32_t enable3D = 0;
+        uint32_t blendCnt = 0;
+        uint32_t blendEffect = 0;
+        uint32_t blendCoef[4] = {};
     } scanline[192];
 };
 
 struct SpriteScanlineConfigCpu
 {
     int32_t mosaicLine[192] = {};
+};
+
+struct LayerScanlineSnapshotCpu
+{
+    LayerConfigCpu line[192] = {};
+};
+
+struct SpriteScanlineMetaCpu
+{
+    uint32_t numSprites = 0;
+    uint32_t useMosaic = 0;
+    uint64_t configHash = 0;
+};
+
+struct SpriteScanlineMetaFrameCpu
+{
+    SpriteScanlineMetaCpu line[192] = {};
 };
 
 struct CompositorConfigCpu
@@ -246,7 +323,74 @@ static_assert((sizeof(LayerConfigCpu) & 15) == 0);
 static_assert((sizeof(SpriteConfigCpu) & 15) == 0);
 static_assert((sizeof(ScanlineConfigCpu) & 15) == 0);
 static_assert((sizeof(SpriteScanlineConfigCpu) & 15) == 0);
+static_assert((sizeof(LayerScanlineSnapshotCpu) & 15) == 0);
+static_assert((sizeof(SpriteScanlineMetaFrameCpu) & 15) == 0);
 static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
+
+template <typename DirtyState>
+size_t UploadMetalDirtyRows(
+    id<MTLTexture> texture,
+    const uint8_t* source,
+    DirtyState& dirty,
+    bool forceFull)
+{
+    if (!texture || !source)
+        return 0;
+
+    static_assert(VRAMDirtyGranularity == 512);
+    const NSUInteger width = texture.width;
+    const NSUInteger height = texture.height;
+    if (width == 0 || height == 0 ||
+        (width % VRAMDirtyGranularity) != 0)
+    {
+        return 0;
+    }
+
+    const uint32_t dirtyUnitsPerRow =
+        static_cast<uint32_t>(width / VRAMDirtyGranularity);
+    size_t uploadedBytes = 0;
+    NSUInteger row = 0;
+
+    while (row < height)
+    {
+        const bool rowDirty =
+            forceFull ||
+            dirty.CheckRange(
+                static_cast<uint32_t>(row) * dirtyUnitsPerRow,
+                dirtyUnitsPerRow);
+        if (!rowDirty)
+        {
+            row++;
+            continue;
+        }
+
+        const NSUInteger startRow = row;
+        row++;
+        while (row < height)
+        {
+            const bool nextDirty =
+                forceFull ||
+                dirty.CheckRange(
+                    static_cast<uint32_t>(row) * dirtyUnitsPerRow,
+                    dirtyUnitsPerRow);
+            if (!nextDirty)
+                break;
+            row++;
+        }
+
+        const NSUInteger rowCount = row - startRow;
+        [texture replaceRegion:MTLRegionMake2D(
+                                   0, startRow, width, rowCount)
+                   mipmapLevel:0
+                     withBytes:source + (startRow * width)
+                   bytesPerRow:width];
+        uploadedBytes +=
+            static_cast<size_t>(width) *
+            static_cast<size_t>(rowCount);
+    }
+
+    return uploadedBytes;
+}
 }
 
 struct MetalRenderer2D::Metal2DState
@@ -279,15 +423,41 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> SpriteConfigBuffer = nil;
     id<MTLBuffer> ScanlineConfigBuffer = nil;
     id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
+    id<MTLBuffer> LayerScanlineSnapshotBuffer = nil;
+    id<MTLBuffer> SpriteScanlineSnapshotBuffer = nil;
+    id<MTLBuffer> SpriteScanlineMetaBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
     LayerConfigCpu LayerConfig;
     SpriteConfigCpu SpriteConfig;
     CompositorConfigCpu CompositorConfig;
+    std::array<uint64_t, kScreenH> LayerSnapshotHash {};
+    std::array<uint64_t, kScreenH> SpriteSnapshotHash {};
+    std::array<uint8_t, kScreenH> LayerSnapshotValid {};
+    std::array<uint8_t, kScreenH> SpriteSnapshotValid {};
+    std::array<uint32_t, kScreenH> SpriteSnapshotCount {};
+    std::array<uint8_t, kScreenH> SpriteSnapshotMosaic {};
+    size_t SpriteSnapshotStride = 0;
+    int LayerSnapshotLastLine = -1;
+    int SpriteSnapshotLastLine = -1;
+    bool SnapshotBuffersReady = false;
+    bool SegmentedRenderReady = false;
+    bool LoggedSnapshotAllocation = false;
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
     int Scale = 0;
     bool FullGpuReady = false;
+    bool BGUploadInitialized = false;
+    bool OBJUploadInitialized = false;
+    bool BGPaletteUploadInitialized = false;
+    bool OBJPaletteUploadInitialized = false;
+    bool LoggedHudParity = false;
+    size_t LastBGUploadBytes = 0;
+    size_t LastOBJUploadBytes = 0;
+    size_t LastBGPaletteUploadBytes = 0;
+    size_t LastOBJPaletteUploadBytes = 0;
+    uint64_t TotalBGUploadBytes = 0;
+    uint64_t TotalOBJUploadBytes = 0;
     bool LoggedFirstAllocation = false;
 };
 
@@ -435,6 +605,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         state.RepeatSampler = nil;
         state.DummyColorTexture = nil;
         state.FullGpuReady = false;
+        state.BGUploadInitialized = false;
+        state.OBJUploadInitialized = false;
+        state.BGPaletteUploadInitialized = false;
+        state.OBJPaletteUploadInitialized = false;
+        state.LoggedHudParity = false;
         state.OBJLayerTex = nil;
         state.OBJDepthTex = nil;
         for (id<MTLTexture>& texture : state.AllBGLayerTex)
@@ -594,6 +769,26 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     id<MTLBuffer> newCompositorConfig =
         [state.Device newBufferWithLength:sizeof(CompositorConfigCpu) options:MTLResourceStorageModeShared];
 
+    const bool snapshotRequested = MetalSegmented2DSnapshotEnabled();
+    const size_t spriteSnapshotStride =
+        MetalAlignConstantStride(sizeof(SpriteConfigCpu));
+    id<MTLBuffer> newLayerScanlineSnapshot = nil;
+    id<MTLBuffer> newSpriteScanlineSnapshot = nil;
+    id<MTLBuffer> newSpriteScanlineMeta = nil;
+    if (snapshotRequested)
+    {
+        newLayerScanlineSnapshot =
+            [state.Device newBufferWithLength:sizeof(LayerScanlineSnapshotCpu)
+                                      options:MTLResourceStorageModeShared];
+        newSpriteScanlineSnapshot =
+            [state.Device newBufferWithLength:
+                spriteSnapshotStride * static_cast<size_t>(kScreenH)
+                                      options:MTLResourceStorageModeShared];
+        newSpriteScanlineMeta =
+            [state.Device newBufferWithLength:sizeof(SpriteScanlineMetaFrameCpu)
+                                      options:MTLResourceStorageModeShared];
+    }
+
     id<MTLTexture> newBGLayers[kBGLayerCount] = {};
     const uint16_t bgSizes[8][3] = {
         {128, 128, 2},
@@ -629,7 +824,11 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     if (!newOutput || !newOBJLayer || !newOBJDepth || !newVRAMBG || !newVRAMOBJ ||
         !newPalBG || !newPalOBJ || !newMosaic || !newSprite ||
         !newLayerConfig || !newSpriteConfig || !newScanlineConfig ||
-        !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady)
+        !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady ||
+        (snapshotRequested &&
+         (!newLayerScanlineSnapshot ||
+          !newSpriteScanlineSnapshot ||
+          !newSpriteScanlineMeta)))
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
@@ -665,8 +864,32 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     state.SpriteConfigBuffer = newSpriteConfig;
     state.ScanlineConfigBuffer = newScanlineConfig;
     state.SpriteScanlineConfigBuffer = newSpriteScanlineConfig;
+    state.LayerScanlineSnapshotBuffer = newLayerScanlineSnapshot;
+    state.SpriteScanlineSnapshotBuffer = newSpriteScanlineSnapshot;
+    state.SpriteScanlineMetaBuffer = newSpriteScanlineMeta;
     state.CompositorConfigBuffer = newCompositorConfig;
+    state.SpriteSnapshotStride = spriteSnapshotStride;
+    state.SnapshotBuffersReady =
+        snapshotRequested &&
+        newLayerScanlineSnapshot &&
+        newSpriteScanlineSnapshot &&
+        newSpriteScanlineMeta;
+    state.SegmentedRenderReady =
+        state.SnapshotBuffersReady &&
+        state.FullGpuReady &&
+        state.OutputTex &&
+        state.OBJLayerTex &&
+        state.OBJDepthTex;
+    state.LayerSnapshotValid.fill(0);
+    state.SpriteSnapshotValid.fill(0);
+    state.LayerSnapshotLastLine = -1;
+    state.SpriteSnapshotLastLine = -1;
     state.Scale = ScaleFactor;
+    state.BGUploadInitialized = false;
+    state.OBJUploadInitialized = false;
+    state.BGPaletteUploadInitialized = false;
+    state.OBJPaletteUploadInitialized = false;
+    state.LoggedHudParity = false;
     if (!UploadRawVRAMInputs())
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to upload initial raw VRAM inputs for engine %u\n", GPU2D.Num);
@@ -696,6 +919,23 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to prerender initial BG layer scaffold for engine %u\n", GPU2D.Num);
         return false;
+    }
+
+    if (state.SnapshotBuffersReady &&
+        !state.LoggedSnapshotAllocation)
+    {
+        state.LoggedSnapshotAllocation = true;
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal segmented 2d snapshot: allocated "
+            "engine=%u layerBytes=%zu spriteBytes=%zu "
+            "spriteStride=%zu metaBytes=%zu visiblePath=unchanged\n",
+            GPU2D.Num,
+            sizeof(LayerScanlineSnapshotCpu),
+            state.SpriteSnapshotStride *
+                static_cast<size_t>(kScreenH),
+            state.SpriteSnapshotStride,
+            sizeof(SpriteScanlineMetaFrameCpu));
     }
 
     if (!state.LoggedFirstAllocation)
@@ -731,37 +971,77 @@ bool MetalRenderer2D::UploadRawVRAMInputs() noexcept
     uint8_t* bgVRAM = nullptr;
     uint32_t bgMask = 0;
     GPU2D.GetBGVRAM(bgVRAM, bgMask);
-    if (!bgVRAM)
+    if (!bgVRAM ||
+        (static_cast<size_t>(bgMask) + 1u) !=
+            static_cast<size_t>(State->VRAMTexBG.width) *
+            static_cast<size_t>(State->VRAMTexBG.height))
+    {
         return false;
-
-    const NSUInteger bgHeight = State->VRAMTexBG.height;
-    const NSUInteger bgBytesPerRow = State->VRAMTexBG.width;
-    const size_t bgBytes = static_cast<size_t>(bgBytesPerRow) * static_cast<size_t>(bgHeight);
-    if (bgBytes != static_cast<size_t>(bgMask) + 1u)
-        return false;
-
-    [State->VRAMTexBG replaceRegion:MTLRegionMake2D(0, 0, State->VRAMTexBG.width, bgHeight)
-                        mipmapLevel:0
-                          withBytes:bgVRAM
-                        bytesPerRow:bgBytesPerRow];
+    }
 
     uint8_t* objVRAM = nullptr;
     uint32_t objMask = 0;
     GPU2D.GetOBJVRAM(objVRAM, objMask);
-    if (!objVRAM)
+    if (!objVRAM ||
+        (static_cast<size_t>(objMask) + 1u) !=
+            static_cast<size_t>(State->VRAMTexOBJ.width) *
+            static_cast<size_t>(State->VRAMTexOBJ.height))
+    {
         return false;
+    }
 
-    const NSUInteger objHeight = State->VRAMTexOBJ.height;
-    const NSUInteger objBytesPerRow = State->VRAMTexOBJ.width;
-    const size_t objBytes = static_cast<size_t>(objBytesPerRow) * static_cast<size_t>(objHeight);
-    if (objBytes != static_cast<size_t>(objMask) + 1u)
-        return false;
+    State->LastBGUploadBytes = 0;
+    State->LastOBJUploadBytes = 0;
 
-    [State->VRAMTexOBJ replaceRegion:MTLRegionMake2D(0, 0, State->VRAMTexOBJ.width, objHeight)
-                         mipmapLevel:0
-                           withBytes:objVRAM
-                         bytesPerRow:objBytesPerRow];
+    if (GPU2D.Num == 0)
+    {
+        auto bgDirty =
+            GPU.VRAMDirty_ABG.DeriveState(
+                GPU.VRAMMap_ABG, GPU);
+        (void)GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
+        State->LastBGUploadBytes = UploadMetalDirtyRows(
+            State->VRAMTexBG,
+            bgVRAM,
+            bgDirty,
+            !State->BGUploadInitialized);
 
+        auto objDirty =
+            GPU.VRAMDirty_AOBJ.DeriveState(
+                GPU.VRAMMap_AOBJ, GPU);
+        (void)GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
+        State->LastOBJUploadBytes = UploadMetalDirtyRows(
+            State->VRAMTexOBJ,
+            objVRAM,
+            objDirty,
+            !State->OBJUploadInitialized);
+    }
+    else
+    {
+        auto bgDirty =
+            GPU.VRAMDirty_BBG.DeriveState(
+                GPU.VRAMMap_BBG, GPU);
+        (void)GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
+        State->LastBGUploadBytes = UploadMetalDirtyRows(
+            State->VRAMTexBG,
+            bgVRAM,
+            bgDirty,
+            !State->BGUploadInitialized);
+
+        auto objDirty =
+            GPU.VRAMDirty_BOBJ.DeriveState(
+                GPU.VRAMMap_BOBJ, GPU);
+        (void)GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
+        State->LastOBJUploadBytes = UploadMetalDirtyRows(
+            State->VRAMTexOBJ,
+            objVRAM,
+            objDirty,
+            !State->OBJUploadInitialized);
+    }
+
+    State->BGUploadInitialized = true;
+    State->OBJUploadInitialized = true;
+    State->TotalBGUploadBytes += State->LastBGUploadBytes;
+    State->TotalOBJUploadBytes += State->LastOBJUploadBytes;
     return true;
 }
 
@@ -770,40 +1050,125 @@ bool MetalRenderer2D::UploadPaletteInputs() noexcept
     if (!State || !State->PalTexBG || !State->PalTexOBJ)
         return false;
 
-    std::array<uint16_t, 256 * (1 + (4 * 16))> bgPalette = {};
-    std::memcpy(bgPalette.data(), &GPU.Palette[GPU2D.Num ? 0x400 : 0], 256 * sizeof(uint16_t));
-    for (int slot = 0; slot < 4; slot++)
+    bool bgExtChanged = false;
+    bool objExtChanged = false;
+
+    if (GPU2D.Num == 0)
     {
-        for (int pal = 0; pal < 16; pal++)
+        auto bgExtDirty =
+            GPU.VRAMDirty_ABGExtPal.DeriveState(
+                GPU.VRAMMap_ABGExtPal, GPU);
+        (void)GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtDirty);
+        bgExtChanged = bgExtDirty.CheckRange(0, 64);
+
+        auto objExtDirty =
+            GPU.VRAMDirty_AOBJExtPal.DeriveState(
+                &GPU.VRAMMap_AOBJExtPal, GPU);
+        (void)GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtDirty);
+        objExtChanged = objExtDirty.CheckRange(0, 16);
+    }
+    else
+    {
+        auto bgExtDirty =
+            GPU.VRAMDirty_BBGExtPal.DeriveState(
+                GPU.VRAMMap_BBGExtPal, GPU);
+        (void)GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtDirty);
+        bgExtChanged = bgExtDirty.CheckRange(0, 64);
+
+        auto objExtDirty =
+            GPU.VRAMDirty_BOBJExtPal.DeriveState(
+                &GPU.VRAMMap_BOBJExtPal, GPU);
+        (void)GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtDirty);
+        objExtChanged = objExtDirty.CheckRange(0, 16);
+    }
+
+    const uint32_t bgPaletteMask =
+        1u << (GPU2D.Num * 2u);
+    const uint32_t objPaletteMask =
+        2u << (GPU2D.Num * 2u);
+
+    const bool uploadBG =
+        !State->BGPaletteUploadInitialized ||
+        bgExtChanged ||
+        (GPU.PaletteDirty & bgPaletteMask) != 0;
+    const bool uploadOBJ =
+        !State->OBJPaletteUploadInitialized ||
+        objExtChanged ||
+        (GPU.PaletteDirty & objPaletteMask) != 0;
+
+    State->LastBGPaletteUploadBytes = 0;
+    State->LastOBJPaletteUploadBytes = 0;
+
+    if (uploadBG)
+    {
+        std::array<uint16_t, 256 * (1 + (4 * 16))>
+            bgPalette = {};
+        std::memcpy(
+            bgPalette.data(),
+            &GPU.Palette[GPU2D.Num ? 0x400 : 0],
+            256 * sizeof(uint16_t));
+
+        for (int slot = 0; slot < 4; slot++)
         {
-            uint16_t* extPal = GPU2D.GetBGExtPal(slot, pal);
-            if (extPal)
+            for (int pal = 0; pal < 16; pal++)
             {
-                std::memcpy(&bgPalette[(1 + ((slot * 16) + pal)) * 256],
-                            extPal,
-                            256 * sizeof(uint16_t));
+                uint16_t* extPal =
+                    GPU2D.GetBGExtPal(slot, pal);
+                if (extPal)
+                {
+                    std::memcpy(
+                        &bgPalette[
+                            (1 + ((slot * 16) + pal)) * 256],
+                        extPal,
+                        256 * sizeof(uint16_t));
+                }
             }
         }
-    }
-    [State->PalTexBG replaceRegion:MTLRegionMake2D(0, 0, 256, 1 + (4 * 16))
-                        mipmapLevel:0
-                          withBytes:bgPalette.data()
-                        bytesPerRow:256 * sizeof(uint16_t)];
 
-    std::array<uint16_t, 256 * (1 + 16)> objPalette = {};
-    std::memcpy(objPalette.data(), &GPU.Palette[GPU2D.Num ? 0x600 : 0x200], 256 * sizeof(uint16_t));
-    uint16_t* objExtPal = GPU2D.GetOBJExtPal();
-    if (objExtPal)
+        [State->PalTexBG replaceRegion:MTLRegionMake2D(
+                                          0, 0,
+                                          256, 1 + (4 * 16))
+                              mipmapLevel:0
+                                withBytes:bgPalette.data()
+                              bytesPerRow:
+                                  256 * sizeof(uint16_t)];
+        State->LastBGPaletteUploadBytes =
+            bgPalette.size() * sizeof(uint16_t);
+        State->BGPaletteUploadInitialized = true;
+    }
+
+    if (uploadOBJ)
     {
-        std::memcpy(&objPalette[256],
-                    objExtPal,
-                    256 * 16 * sizeof(uint16_t));
-    }
-    [State->PalTexOBJ replaceRegion:MTLRegionMake2D(0, 0, 256, 1 + 16)
-                         mipmapLevel:0
-                           withBytes:objPalette.data()
-                         bytesPerRow:256 * sizeof(uint16_t)];
+        std::array<uint16_t, 256 * (1 + 16)>
+            objPalette = {};
+        std::memcpy(
+            objPalette.data(),
+            &GPU.Palette[GPU2D.Num ? 0x600 : 0x200],
+            256 * sizeof(uint16_t));
 
+        uint16_t* objExtPal = GPU2D.GetOBJExtPal();
+        if (objExtPal)
+        {
+            std::memcpy(
+                &objPalette[256],
+                objExtPal,
+                256 * 16 * sizeof(uint16_t));
+        }
+
+        [State->PalTexOBJ replaceRegion:MTLRegionMake2D(
+                                           0, 0, 256, 1 + 16)
+                               mipmapLevel:0
+                                 withBytes:objPalette.data()
+                               bytesPerRow:
+                                   256 * sizeof(uint16_t)];
+        State->LastOBJPaletteUploadBytes =
+            objPalette.size() * sizeof(uint16_t);
+        State->OBJPaletteUploadInitialized = true;
+    }
+
+    GPU.PaletteDirty = static_cast<uint8_t>(
+        GPU.PaletteDirty &
+        ~(bgPaletteMask | objPaletteMask));
     return true;
 }
 
@@ -1050,7 +1415,33 @@ bool MetalRenderer2D::RefreshLayerConfig() noexcept
         }
     }
 
-    std::memcpy([state.LayerConfigBuffer contents], &state.LayerConfig, sizeof(state.LayerConfig));
+    // Store the selected pre-render target index in the otherwise-unused
+    // BGConfig padding word. A segment can restore the exact texture binding
+    // without reconstructing the original BGCnt register.
+    for (int layer = 0; layer < 4; layer++)
+    {
+        state.LayerConfig.bgConfig[layer].pad0[0] = 0;
+        if (!state.BGLayerTex[layer])
+            continue;
+
+        for (uint32_t index = 0;
+             index < static_cast<uint32_t>(kBGLayerCount);
+             index++)
+        {
+            if (state.BGLayerTex[layer] ==
+                state.AllBGLayerTex[index])
+            {
+                state.LayerConfig.bgConfig[layer].pad0[0] =
+                    index + 1u;
+                break;
+            }
+        }
+    }
+
+    std::memcpy(
+        [state.LayerConfigBuffer contents],
+        &state.LayerConfig,
+        sizeof(state.LayerConfig));
     return true;
 }
 
@@ -1403,6 +1794,28 @@ bool MetalRenderer2D::RefreshScanlineConfig(int line) noexcept
         scanline.winPos[3] = 256;
     }
 
+    for (uint32_t& priority : scanline.bgPrio)
+        priority = 0xFFFFFFFFu;
+    for (int layer = 0; layer < 4; layer++)
+    {
+        if (GPU2D.LayerEnable & (1u << layer))
+        {
+            scanline.bgPrio[layer] =
+                GPU2D.BGCnt[layer] & 0x3u;
+        }
+    }
+
+    scanline.enableOBJ =
+        (GPU2D.LayerEnable & (1u << 4)) ? 1u : 0u;
+    scanline.enable3D =
+        (GPU2D.DispCnt & (1u << 3)) ? 1u : 0u;
+    scanline.blendCnt = GPU2D.BlendCnt;
+    scanline.blendEffect =
+        (GPU2D.BlendCnt >> 6) & 0x3u;
+    scanline.blendCoef[0] = GPU2D.EVA;
+    scanline.blendCoef[1] = GPU2D.EVB;
+    scanline.blendCoef[2] = GPU2D.EVY;
+
     return true;
 }
 
@@ -1455,6 +1868,11 @@ void MetalRenderer2D::Reset() noexcept
     State->RepeatSampler = nil;
     State->DummyColorTexture = nil;
     State->FullGpuReady = false;
+    State->BGUploadInitialized = false;
+    State->OBJUploadInitialized = false;
+    State->BGPaletteUploadInitialized = false;
+    State->OBJPaletteUploadInitialized = false;
+    State->LoggedHudParity = false;
     State->OutputTex = nil;
     State->OBJLayerTex = nil;
     State->OBJDepthTex = nil;
@@ -1472,7 +1890,17 @@ void MetalRenderer2D::Reset() noexcept
     State->SpriteConfigBuffer = nil;
     State->ScanlineConfigBuffer = nil;
     State->SpriteScanlineConfigBuffer = nil;
+    State->LayerScanlineSnapshotBuffer = nil;
+    State->SpriteScanlineSnapshotBuffer = nil;
+    State->SpriteScanlineMetaBuffer = nil;
     State->CompositorConfigBuffer = nil;
+    State->LayerSnapshotValid.fill(0);
+    State->SpriteSnapshotValid.fill(0);
+    State->LayerSnapshotLastLine = -1;
+    State->SpriteSnapshotLastLine = -1;
+    State->SnapshotBuffersReady = false;
+    State->SegmentedRenderReady = false;
+    State->SpriteSnapshotStride = 0;
     State->Scale = 0;
 }
 

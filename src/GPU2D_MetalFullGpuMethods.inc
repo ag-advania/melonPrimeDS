@@ -1,6 +1,12 @@
 // Included near the end of GPU2D_Metal.mm.
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+// MELONPRIME_METAL_2D_HUD_PARITY_V1
+// MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+// MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
+// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -122,21 +128,695 @@ bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
     return state.FullGpuReady;
 }
 
+void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
+    int line) noexcept
+{
+    if (!State || line != 0)
+        return;
+
+    // DrawSprites(0) and DrawScanline(0) can arrive in either order. Reset only
+    // when at least one recorder still points at a line from the previous frame.
+    if (State->LayerSnapshotLastLine > 0 ||
+        State->SpriteSnapshotLastLine > 0)
+    {
+        State->LayerSnapshotValid.fill(0);
+        State->SpriteSnapshotValid.fill(0);
+        State->LayerSnapshotLastLine = -1;
+        State->SpriteSnapshotLastLine = -1;
+    }
+}
+
+void MetalRenderer2D::MaybeReportSegmentSnapshotFrame() noexcept
+{
+}
+
 void MetalRenderer2D::CaptureScanlineState(int line) noexcept
 {
     if (!State || line < 0 || line >= kScreenH)
         return;
+
+    BeginSegmentSnapshotFrameIfNeeded(line);
     RefreshScanlineConfig(line);
+
+    if (State->SnapshotBuffersReady)
+    {
+        // RefreshLayerConfig builds the same normalized BG contract currently
+        // consumed at VBlank. Store it per line instead of losing all but the
+        // final register state.
+        if (RefreshLayerConfig())
+        {
+            auto* frame = reinterpret_cast<LayerScanlineSnapshotCpu*>(
+                [State->LayerScanlineSnapshotBuffer contents]);
+            frame->line[line] = State->LayerConfig;
+            State->LayerSnapshotHash[line] =
+                MetalSnapshotHash(
+                    &frame->line[line],
+                    sizeof(LayerConfigCpu));
+            State->LayerSnapshotValid[line] = 1;
+            State->LayerSnapshotLastLine = line;
+        }
+    }
+
 }
 
 void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
 {
     if (!State || !State->SpriteScanlineConfigBuffer ||
         line < 0 || line >= kScreenH)
+    {
         return;
+    }
+
+    BeginSegmentSnapshotFrameIfNeeded(line);
+
     auto* config = reinterpret_cast<SpriteScanlineConfigCpu*>(
         [State->SpriteScanlineConfigBuffer contents]);
     config->mosaicLine[line] = GPU2D.OBJMosaicLine;
+
+    if (State->SnapshotBuffersReady &&
+        RefreshSpriteConfig(line, line + 1))
+    {
+        uint8_t* destination =
+            static_cast<uint8_t*>(
+                [State->SpriteScanlineSnapshotBuffer contents]) +
+            State->SpriteSnapshotStride *
+                static_cast<size_t>(line);
+        std::memcpy(
+            destination,
+            &State->SpriteConfig,
+            sizeof(SpriteConfigCpu));
+
+        auto* meta =
+            reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
+                [State->SpriteScanlineMetaBuffer contents]);
+        meta->line[line].numSprites =
+            static_cast<uint32_t>(State->NumSprites);
+        meta->line[line].useMosaic =
+            State->SpriteUseMosaic ? 1u : 0u;
+        meta->line[line].configHash =
+            MetalSnapshotHash(
+                destination,
+                sizeof(SpriteConfigCpu));
+
+        State->SpriteSnapshotHash[line] =
+            meta->line[line].configHash ^
+            (static_cast<uint64_t>(
+                meta->line[line].numSprites) << 32u) ^
+            static_cast<uint64_t>(
+                meta->line[line].useMosaic);
+        State->SpriteSnapshotCount[line] =
+            meta->line[line].numSprites;
+        State->SpriteSnapshotMosaic[line] =
+            static_cast<uint8_t>(
+                meta->line[line].useMosaic);
+        State->SpriteSnapshotValid[line] = 1;
+        State->SpriteSnapshotLastLine = line;
+    }
+
+}
+
+bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept
+{
+    return State &&
+        State->SnapshotBuffersReady &&
+        State->LayerScanlineSnapshotBuffer &&
+        State->SpriteScanlineSnapshotBuffer &&
+        State->SpriteScanlineMetaBuffer &&
+        State->SpriteSnapshotStride >=
+            sizeof(SpriteConfigCpu);
+}
+
+
+namespace
+{
+struct Metal2DSegmentRange
+{
+    int Start = 0;
+    int End = 0;
+};
+
+struct Metal2DSegmentList
+{
+    std::array<Metal2DSegmentRange, kScreenH> Items {};
+    uint32_t Count = 0;
+};
+
+template <typename StateT>
+uint64_t MetalCombinedSegmentHash(
+    const StateT& state,
+    int line)
+{
+    uint64_t hash = state.LayerSnapshotHash[line];
+    hash ^= state.SpriteSnapshotHash[line] +
+        0x9E3779B97F4A7C15ull +
+        (hash << 6u) +
+        (hash >> 2u);
+    return hash;
+}
+
+template <typename StateT>
+Metal2DSegmentList MetalBuild2DSegments(
+    const StateT& state)
+{
+    Metal2DSegmentList segments;
+    int start = 0;
+    uint64_t previous =
+        MetalCombinedSegmentHash(state, 0);
+
+    for (int line = 1; line < kScreenH; line++)
+    {
+        const uint64_t current =
+            MetalCombinedSegmentHash(state, line);
+        if (current == previous)
+            continue;
+
+        segments.Items[segments.Count++] =
+            {start, line};
+        start = line;
+        previous = current;
+    }
+
+    segments.Items[segments.Count++] =
+        {start, kScreenH};
+    return segments;
+}
+
+template <typename StateT>
+id<MTLTexture> MetalSnapshotLayerTexture(
+    StateT& state,
+    const LayerConfigCpu::BGConfig& config)
+{
+    if (config.pad0[0] == 0)
+        return nil;
+
+    const uint32_t index = config.pad0[0] - 1u;
+    if (index >= static_cast<uint32_t>(kBGLayerCount))
+        return nil;
+    return state.AllBGLayerTex[index];
+}
+
+bool MetalSnapshotUsesCaptureTextures(
+    const LayerConfigCpu& layerConfig,
+    const SpriteConfigCpu& spriteConfig,
+    uint32_t numSprites)
+{
+    for (const auto& bg : layerConfig.bgConfig)
+    {
+        if (bg.type >= 7u)
+            return true;
+    }
+
+    const uint32_t count = std::min(numSprites, 128u);
+    for (uint32_t index = 0; index < count; index++)
+    {
+        if (spriteConfig.oam[index].type >= 3u)
+            return true;
+    }
+    return false;
+}
+}
+
+bool MetalRenderer2D::SegmentedFrameComplete() const noexcept
+{
+    if (!SegmentedSnapshotReady())
+        return false;
+
+    for (int line = 0; line < kScreenH; line++)
+    {
+        if (!State->LayerSnapshotValid[line] ||
+            !State->SpriteSnapshotValid[line])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MetalRenderer2D::SegmentedRenderReady() const noexcept
+{
+    return State &&
+        State->SegmentedRenderReady &&
+        SegmentedFrameComplete() &&
+        State->LayerPipeline &&
+        State->LayerVertexBuffer &&
+        State->SpritePipeline &&
+        State->CompositorPipeline;
+}
+
+bool MetalRenderer2D::RenderSegmentedGpuFrame(
+    void* high3DTexture,
+    void* capture128Texture,
+    void* capture256Texture,
+    bool allowCaptureTextures) noexcept
+{
+    if (!SegmentedRenderReady())
+        return false;
+
+    id<MTLTexture> high3D =
+        (__bridge id<MTLTexture>)high3DTexture;
+    id<MTLTexture> capture128 =
+        (__bridge id<MTLTexture>)capture128Texture;
+    id<MTLTexture> capture256 =
+        (__bridge id<MTLTexture>)capture256Texture;
+    if (!high3D || !capture128 || !capture256 ||
+        high3D.device != State->Device ||
+        capture128.device != State->Device ||
+        capture256.device != State->Device)
+    {
+        return false;
+    }
+
+    if (!UploadRawVRAMInputs() ||
+        !UploadPaletteInputs() ||
+        !RefreshCompositorConfig())
+    {
+        return false;
+    }
+
+    auto* layerFrame =
+        reinterpret_cast<LayerScanlineSnapshotCpu*>(
+            [State->LayerScanlineSnapshotBuffer contents]);
+    auto* spriteMeta =
+        reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
+            [State->SpriteScanlineMetaBuffer contents]);
+    uint8_t* spriteBase =
+        static_cast<uint8_t*>(
+            [State->SpriteScanlineSnapshotBuffer contents]);
+
+    // One immutable allocation per Engine/frame instead of three
+    // independent MTLBuffer allocations. The command buffer retains this
+    // resource until GPU completion.
+    const NSUInteger spriteFrameLength =
+        State->SpriteSnapshotStride *
+        static_cast<NSUInteger>(kScreenH);
+    const NSUInteger spriteFrameOffset = 0;
+    const NSUInteger scanlineFrameOffset =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(spriteFrameLength));
+    const NSUInteger spriteScanlineFrameOffset =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(
+                scanlineFrameOffset +
+                sizeof(ScanlineConfigCpu)));
+    const NSUInteger frameUploadLength =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(
+                spriteScanlineFrameOffset +
+                sizeof(SpriteScanlineConfigCpu)));
+
+    id<MTLBuffer> frameUploadBuffer =
+        [State->Device
+            newBufferWithLength:frameUploadLength
+            options:MTLResourceStorageModeShared];
+    if (!frameUploadBuffer)
+        return false;
+
+    uint8_t* frameUploadBase =
+        static_cast<uint8_t*>(
+            [frameUploadBuffer contents]);
+    std::memcpy(
+        frameUploadBase + spriteFrameOffset,
+        spriteBase,
+        spriteFrameLength);
+    std::memcpy(
+        frameUploadBase + scanlineFrameOffset,
+        [State->ScanlineConfigBuffer contents],
+        sizeof(ScanlineConfigCpu));
+    std::memcpy(
+        frameUploadBase + spriteScanlineFrameOffset,
+        [State->SpriteScanlineConfigBuffer contents],
+        sizeof(SpriteScanlineConfigCpu));
+
+    const Metal2DSegmentList segments =
+        MetalBuild2DSegments(*State);
+    if (segments.Count == 0)
+        return false;
+
+    if (!allowCaptureTextures)
+    {
+        for (uint32_t segmentIndex = 0;
+         segmentIndex < segments.Count;
+         segmentIndex++)
+    {
+        const Metal2DSegmentRange& segment =
+            segments.Items[segmentIndex];
+            const int line = segment.Start;
+            const auto* spriteConfig =
+                reinterpret_cast<const SpriteConfigCpu*>(
+                    spriteBase +
+                    State->SpriteSnapshotStride *
+                        static_cast<size_t>(line));
+            if (MetalSnapshotUsesCaptureTextures(
+                    layerFrame->line[line],
+                    *spriteConfig,
+                    spriteMeta->line[line].numSprites))
+            {
+                return false;
+            }
+        }
+    }
+    id<MTLCommandBuffer> command =
+        [State->Queue commandBuffer];
+    if (!command)
+        return false;
+    command.label = @"MelonPrime Metal Phase 8K Segmented 2D";
+
+    {
+        MTLRenderPassDescriptor* pass =
+            [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture =
+            State->OutputTex;
+        pass.colorAttachments[0].loadAction =
+            MTLLoadActionClear;
+        pass.colorAttachments[0].storeAction =
+            MTLStoreActionStore;
+        pass.colorAttachments[0].clearColor =
+            MTLClearColorMake(0, 0, 0, 1);
+        id<MTLRenderCommandEncoder> encoder =
+            [command renderCommandEncoderWithDescriptor:pass];
+        if (!encoder)
+            return false;
+        [encoder endEncoding];
+    }
+
+    auto makeOBJPass = [&](MTLLoadAction loadAction) {
+        MTLRenderPassDescriptor* pass =
+            [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture =
+            State->OBJLayerTex;
+        pass.colorAttachments[0].slice = 0;
+        pass.colorAttachments[0].loadAction = loadAction;
+        pass.colorAttachments[0].storeAction =
+            MTLStoreActionStore;
+        pass.colorAttachments[0].clearColor =
+            MTLClearColorMake(0, 0, 0, 0);
+        pass.colorAttachments[1].texture =
+            State->OBJLayerTex;
+        pass.colorAttachments[1].slice = 1;
+        pass.colorAttachments[1].loadAction = loadAction;
+        pass.colorAttachments[1].storeAction =
+            MTLStoreActionStore;
+        pass.colorAttachments[1].clearColor =
+            MTLClearColorMake(0, 0, 0, 0);
+        pass.depthAttachment.texture =
+            State->OBJDepthTex;
+        pass.depthAttachment.loadAction = loadAction;
+        pass.depthAttachment.storeAction =
+            MTLStoreActionStore;
+        pass.depthAttachment.clearDepth = 1.0;
+        return pass;
+    };
+
+    {
+        id<MTLRenderCommandEncoder> encoder =
+            [command renderCommandEncoderWithDescriptor:
+                makeOBJPass(MTLLoadActionClear)];
+        if (!encoder)
+            return false;
+        [encoder endEncoding];
+    }
+
+    const uint32_t scale =
+        static_cast<uint32_t>(std::max(1, State->Scale));
+
+    // BG textures depend on the normalized layer config and the
+    // frame-final VRAM/palette uploads, not on OBJ/window-only segment
+    // changes. Reuse a target until another config overwrites it.
+    std::array<uint64_t, kBGLayerCount>
+        bgTargetSignature {};
+    std::array<uint8_t, kBGLayerCount>
+        bgTargetValid {};
+
+    for (uint32_t segmentIndex = 0;
+         segmentIndex < segments.Count;
+         segmentIndex++)
+    {
+        const Metal2DSegmentRange& segment =
+            segments.Items[segmentIndex];
+        const int line = segment.Start;
+        const LayerConfigCpu& layerConfig =
+            layerFrame->line[line];
+        const SpriteScanlineMetaCpu& meta =
+            spriteMeta->line[line];
+        const size_t spriteOffset =
+            State->SpriteSnapshotStride *
+            static_cast<size_t>(line);
+        id<MTLTexture> layerTextures[4] = {};
+
+        for (uint32_t layer = 0; layer < 4; layer++)
+        {
+            const auto& cfg =
+                layerConfig.bgConfig[layer];
+            id<MTLTexture> target =
+                MetalSnapshotLayerTexture(*State, cfg);
+            layerTextures[layer] = target;
+
+            if (!target || cfg.type >= 6u ||
+                cfg.size[0] == 0 ||
+                cfg.size[1] == 0)
+            {
+                continue;
+            }
+
+            const uint32_t targetIndex =
+                cfg.pad0[0] - 1u;
+            const uint64_t desiredSignature =
+                State->LayerSnapshotHash[line] ^
+                (0x9E3779B97F4A7C15ull *
+                 static_cast<uint64_t>(layer + 1u));
+            if (targetIndex <
+                    static_cast<uint32_t>(kBGLayerCount) &&
+                bgTargetValid[targetIndex] &&
+                bgTargetSignature[targetIndex] ==
+                    desiredSignature)
+            {
+                continue;
+            }
+
+            MTLRenderPassDescriptor* pass =
+                [MTLRenderPassDescriptor renderPassDescriptor];
+            pass.colorAttachments[0].texture = target;
+            pass.colorAttachments[0].loadAction =
+                MTLLoadActionClear;
+            pass.colorAttachments[0].storeAction =
+                MTLStoreActionStore;
+            pass.colorAttachments[0].clearColor =
+                MTLClearColorMake(0, 0, 0, 0);
+
+            id<MTLRenderCommandEncoder> encoder =
+                [command renderCommandEncoderWithDescriptor:pass];
+            if (!encoder)
+                return false;
+
+            [encoder setRenderPipelineState:
+                State->LayerPipeline];
+            [encoder setVertexBuffer:
+                State->LayerVertexBuffer
+                              offset:0
+                             atIndex:0];
+            [encoder setFragmentBytes:&layerConfig
+                                length:sizeof(layerConfig)
+                               atIndex:0];
+            [encoder setFragmentBytes:&layer
+                                length:sizeof(layer)
+                               atIndex:1];
+            [encoder setFragmentTexture:
+                State->VRAMTexBG
+                                  atIndex:0];
+            [encoder setFragmentTexture:
+                State->PalTexBG
+                                  atIndex:1];
+            [encoder setViewport:(MTLViewport){
+                0.0,
+                0.0,
+                static_cast<double>(cfg.size[0]),
+                static_cast<double>(cfg.size[1]),
+                0.0,
+                1.0 }];
+            [encoder drawPrimitives:
+                MTLPrimitiveTypeTriangle
+                        vertexStart:0
+                        vertexCount:6];
+            [encoder endEncoding];
+
+            if (targetIndex <
+                    static_cast<uint32_t>(kBGLayerCount))
+            {
+                bgTargetSignature[targetIndex] =
+                    desiredSignature;
+                bgTargetValid[targetIndex] = 1u;
+            }
+        }
+
+        const NSUInteger scissorY =
+            static_cast<NSUInteger>(segment.Start) * scale;
+        const NSUInteger scissorHeight =
+            static_cast<NSUInteger>(
+                segment.End - segment.Start) * scale;
+        const MTLScissorRect scissor = {
+            0,
+            scissorY,
+            State->OutputTex.width,
+            scissorHeight,
+        };
+
+        const uint32_t numSprites =
+            std::min(meta.numSprites, 128u);
+        if (numSprites > 0)
+        {
+            auto encodeSpritePass =
+                [&](id<MTLRenderPipelineState> pipeline,
+                    uint32_t passMode,
+                    bool depthWrite) -> bool {
+                id<MTLRenderCommandEncoder> encoder =
+                    [command renderCommandEncoderWithDescriptor:
+                        makeOBJPass(MTLLoadActionLoad)];
+                if (!encoder)
+                    return false;
+
+                [encoder setRenderPipelineState:pipeline];
+                if (depthWrite)
+                {
+                    [encoder setDepthStencilState:
+                        State->SpriteDepthState];
+                }
+                [encoder setVertexBuffer:
+                    frameUploadBuffer
+                                  offset:
+                                      spriteFrameOffset +
+                                      spriteOffset
+                                 atIndex:0];
+                [encoder setVertexBytes:&numSprites
+                                  length:sizeof(numSprites)
+                                 atIndex:1];
+                [encoder setFragmentBuffer:
+                    frameUploadBuffer
+                                    offset:
+                                        spriteFrameOffset +
+                                        spriteOffset
+                                   atIndex:0];
+                [encoder setFragmentBuffer:
+                    frameUploadBuffer
+                                    offset:
+                                        spriteScanlineFrameOffset
+                                   atIndex:1];
+                [encoder setFragmentBytes:&passMode
+                                    length:sizeof(passMode)
+                                   atIndex:2];
+                [encoder setFragmentTexture:
+                    State->VRAMTexOBJ
+                                      atIndex:0];
+                [encoder setFragmentTexture:
+                    State->PalTexOBJ
+                                      atIndex:1];
+                [encoder setFragmentTexture:capture128
+                                      atIndex:2];
+                [encoder setFragmentTexture:capture256
+                                      atIndex:3];
+                [encoder setFragmentSamplerState:
+                    State->RepeatSampler
+                                           atIndex:0];
+                [encoder setViewport:(MTLViewport){
+                    0.0,
+                    0.0,
+                    static_cast<double>(State->OutputTex.width),
+                    static_cast<double>(State->OutputTex.height),
+                    0.0,
+                    1.0 }];
+                [encoder setScissorRect:scissor];
+                [encoder drawPrimitives:
+                    MTLPrimitiveTypeTriangle
+                            vertexStart:0
+                            vertexCount:6
+                          instanceCount:numSprites * 2u];
+                [encoder endEncoding];
+                return true;
+            };
+
+            if (meta.useMosaic != 0u &&
+                !encodeSpritePass(
+                    State->SpriteMosaicFlagsPipeline,
+                    1u,
+                    false))
+                return false;
+            if (!encodeSpritePass(
+                    State->SpriteWindowPipeline,
+                    2u,
+                    false))
+                return false;
+            if (!encodeSpritePass(
+                    State->SpritePipeline,
+                    0u,
+                    true))
+                return false;
+        }
+
+        MTLRenderPassDescriptor* pass =
+            [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture =
+            State->OutputTex;
+        pass.colorAttachments[0].loadAction =
+            MTLLoadActionLoad;
+        pass.colorAttachments[0].storeAction =
+            MTLStoreActionStore;
+
+        id<MTLRenderCommandEncoder> encoder =
+            [command renderCommandEncoderWithDescriptor:pass];
+        if (!encoder)
+            return false;
+
+        [encoder setRenderPipelineState:
+            State->CompositorPipeline];
+        [encoder setFragmentBytes:&layerConfig
+                            length:sizeof(layerConfig)
+                           atIndex:0];
+        [encoder setFragmentBuffer:
+            frameUploadBuffer
+                            offset:scanlineFrameOffset
+                           atIndex:1];
+        [encoder setFragmentBytes:
+            &State->CompositorConfig
+                            length:sizeof(State->CompositorConfig)
+                           atIndex:2];
+        [encoder setFragmentBytes:&scale
+                            length:sizeof(scale)
+                           atIndex:3];
+
+        for (int layer = 0; layer < 4; layer++)
+        {
+            id<MTLTexture> texture =
+                layerTextures[layer]
+                    ? layerTextures[layer]
+                    : State->DummyColorTexture;
+            [encoder setFragmentTexture:texture
+                                atIndex:layer];
+        }
+        [encoder setFragmentTexture:high3D atIndex:4];
+        [encoder setFragmentTexture:
+            State->OBJLayerTex atIndex:5];
+        [encoder setFragmentTexture:
+            State->MosaicTex atIndex:6];
+        [encoder setFragmentTexture:capture128 atIndex:7];
+        [encoder setFragmentTexture:capture256 atIndex:8];
+        [encoder setFragmentSamplerState:
+            State->RepeatSampler atIndex:0];
+        [encoder setViewport:(MTLViewport){
+            0.0,
+            0.0,
+            static_cast<double>(State->OutputTex.width),
+            static_cast<double>(State->OutputTex.height),
+            0.0,
+            1.0 }];
+        [encoder setScissorRect:scissor];
+        [encoder drawPrimitives:
+            MTLPrimitiveTypeTriangle
+                    vertexStart:0
+                    vertexCount:3];
+        [encoder endEncoding];
+    }
+
+    [command commit];
+    return true;
 }
 
 bool MetalRenderer2D::FrameUsesCaptureTextures() const noexcept
@@ -348,6 +1028,29 @@ bool MetalRenderer2D::RenderFullGpuFrame(
         !RefreshCompositorConfig())
     {
         return false;
+    }
+
+    if (!State->LoggedHudParity &&
+        GPU2D.Num == 0 &&
+        (GPU2D.DispCnt & (1u << 3)))
+    {
+        State->LoggedHudParity = true;
+        std::fprintf(
+            stderr,
+            "[MelonPrime] metal 2d HUD parity: engine=%u "
+            "layerEnable=0x%02x sprites=%d "
+            "bgUpload=%zu objUpload=%zu "
+            "bgPalUpload=%zu objPalUpload=%zu "
+            "totalBG=%llu totalOBJ=%llu\n",
+            GPU2D.Num,
+            static_cast<unsigned>(GPU2D.LayerEnable),
+            State->NumSprites,
+            State->LastBGUploadBytes,
+            State->LastOBJUploadBytes,
+            State->LastBGPaletteUploadBytes,
+            State->LastOBJPaletteUploadBytes,
+            static_cast<unsigned long long>(State->TotalBGUploadBytes),
+            static_cast<unsigned long long>(State->TotalOBJUploadBytes));
     }
 
     // Same-frame feedback from a destination capture into a BG/OBJ layer

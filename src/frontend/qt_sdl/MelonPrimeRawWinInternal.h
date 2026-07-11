@@ -49,7 +49,7 @@ namespace MelonPrime {
         static void SetHighTimerResolution() noexcept;
 
     private:
-        static std::atomic<bool> s_resolved;
+        static std::atomic<bool> s_resolved; // process-service: immutable API resolution state
     };
 
 } // namespace MelonPrime

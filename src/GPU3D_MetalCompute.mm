@@ -8,6 +8,10 @@
 // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_HIGH_PERFORMANCE_V1
+// MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
+// MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
+// MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
+// MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -49,6 +53,34 @@ bool MetalComputeMirrorEnabled()
 {
     static const bool enabled = []() {
         const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_MIRROR");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
+
+bool MetalComputeFinalDiffEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_FINAL_DIFF");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
+
+bool MetalComputeVisibleEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_VISIBLE");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
+
+bool MetalComputeVisibleVerifyEnabled()
+{
+    static const bool enabled = []() {
+        const char* value =
+            std::getenv("MELONPRIME_METAL_COMPUTE_VISIBLE_VERIFY");
         return value && value[0] == '1';
     }();
     return enabled;
@@ -167,8 +199,12 @@ struct VariantMeta
     uint32_t BlendMode;
     uint32_t TexParam;
     uint32_t TexPalette;
+    uint32_t CaptureKind;
+    uint32_t CaptureLayer;
+    uint32_t CaptureYOffset;
+    uint32_t Reserved;
 };
-static_assert(sizeof(VariantMeta) == 16, "MSL VariantMeta layout mismatch");
+static_assert(sizeof(VariantMeta) == 32, "MSL VariantMeta layout mismatch");
 
 struct TextureVariantSummary
 {
@@ -185,8 +221,8 @@ static_assert(sizeof(TextureVariantSummary) == kTextureVariantSummaryWords * siz
 struct TileRasterSummary
 {
     uint32_t RasterisedWorkItems;
-    uint32_t SkippedTextured;
-    uint32_t SkippedShadow;
+    uint32_t TexturedWorkItems;
+    uint32_t ShadowMaskWorkItems;
     uint32_t SkippedCapacity;
     uint32_t CoveredPixels;
     uint32_t ColorHash;
@@ -233,13 +269,19 @@ struct VariantKey
     uint32_t TexPalette = 0;
     uint32_t BlendMode = 0;
     uint32_t Textured = 0;
+    uint32_t CaptureKind = 0;
+    uint32_t CaptureLayer = 0;
+    uint32_t CaptureYOffset = 0;
 
     bool operator==(const VariantKey& other) const noexcept
     {
         return TexParam == other.TexParam &&
                TexPalette == other.TexPalette &&
                BlendMode == other.BlendMode &&
-               Textured == other.Textured;
+               Textured == other.Textured &&
+               CaptureKind == other.CaptureKind &&
+               CaptureLayer == other.CaptureLayer &&
+               CaptureYOffset == other.CaptureYOffset;
     }
 };
 
@@ -352,6 +394,10 @@ struct VariantMeta
     uint BlendMode;
     uint TexParam;
     uint TexPalette;
+    uint CaptureKind;
+    uint CaptureLayer;
+    uint CaptureYOffset;
+    uint Reserved;
 };
 
 
@@ -1054,6 +1100,10 @@ kernel void mp_compute_depth_blend_no_texture(
 
 )MSL";
 
+#include "GPU3D_MetalComputeTexturedShaders.inc"
+#include "GPU3D_MetalComputeDepthBlendShaders.inc"
+#include "GPU3D_MetalComputeFinalPassShaders.inc"
+
 id<MTLComputePipelineState> BuildComputePipeline(
     id<MTLDevice> device,
     id<MTLLibrary> library,
@@ -1297,6 +1347,13 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> WorkDescs = nil;
         id<MTLBuffer> VariantMetaBuffer = nil;
         id<MTLBuffer> TextureVariantSummaryBuffer = nil;
+        id<MTLBuffer> TextureMemoryBuffer = nil;
+        id<MTLBuffer> TexturePaletteBuffer = nil;
+        id<MTLBuffer> ToonTableBuffer = nil;
+        id<MTLBuffer> FinalTablesBuffer = nil;
+        id<MTLBuffer> FinalPassSummaryBuffer = nil;
+        id<MTLBuffer> FinalDiffSummaryBuffer = nil;
+        id<MTLTexture> FinalTexture = nil;
         id<MTLCommandBuffer> LastCommand = nil;
         std::atomic<bool> InFlight { false };
         std::atomic<uint64_t> Generation { 0 };
@@ -1305,6 +1362,9 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLDevice> Device = nil;
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
+    id<MTLLibrary> TexturedLibrary = nil;
+    id<MTLLibrary> CompleteDepthBlendLibrary = nil;
+    id<MTLLibrary> FinalPassLibrary = nil;
     id<MTLComputePipelineState> ClearIndirectPipeline = nil;
     id<MTLComputePipelineState> ClearCoarseMaskPipeline = nil;
     id<MTLComputePipelineState> CalcOffsetsPipeline = nil;
@@ -1314,6 +1374,13 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> BinCombinedPipeline = nil;
     id<MTLComputePipelineState> ClearTileSummaryPipeline = nil;
     id<MTLComputePipelineState> RasteriseNoTextureTilesPipeline = nil;
+    id<MTLComputePipelineState> TextureRasterPipeline = nil;
+    id<MTLComputePipelineState> ClearCompleteDepthBlendSummaryPipeline = nil;
+    id<MTLComputePipelineState> CompleteDepthBlendPipeline = nil;
+    id<MTLComputePipelineState> ClearFinalPassSummaryPipeline = nil;
+    id<MTLComputePipelineState> FinalPassPipeline = nil;
+    id<MTLComputePipelineState> ClearFinalDiffSummaryPipeline = nil;
+    id<MTLComputePipelineState> FinalDiffPipeline = nil;
     id<MTLComputePipelineState> ClearDepthBlendSummaryPipeline = nil;
     id<MTLComputePipelineState> DepthBlendNoTexturePipeline = nil;
     id<MTLComputePipelineState> ClearTextureVariantSummaryPipeline = nil;
@@ -1327,6 +1394,10 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLBuffer> DepthBlendDepth = nil;
     id<MTLBuffer> DepthBlendAttr = nil;
     id<MTLBuffer> DepthBlendSummaryBuffer = nil;
+    id<MTLTexture> DummyCapture128Texture = nil;
+    id<MTLTexture> DummyCapture256Texture = nil;
+    id<MTLTexture> Capture128Texture = nil;
+    id<MTLTexture> Capture256Texture = nil;
 
     std::array<FrameSlot, kFrameSlotCount> Slots;
     std::vector<SpanSetupY> YSpanData;
@@ -1355,7 +1426,25 @@ struct MetalComputeRenderer3D::MetalComputeState
     bool TileRasterReady = false;
     bool DepthBlendReady = false;
     bool TextureVariantReady = false;
+    bool FinalPassReady = false;
+    bool CpuReadbackRequired = true;
+    bool LastFrameComputeVisible = false;
+    bool LastFrameComputeReused = false;
+    bool LastFrameUseHiRes3D = false;
+    bool VisibleCutoverDisabled = false;
+    bool LoggedVisibleCutover = false;
+    bool LoggedVisibleFallback = false;
+    uint32_t LastFrameEngineALayer = 1;
+    int LastFrameRenderedScale = 1;
+    std::atomic<bool> ComputeVisibleFault { false };
+    std::atomic<uint64_t> ComputeVisibleFrames { 0 };
+    std::atomic<uint64_t> ComputeVisibleReusedFrames { 0 };
+    std::atomic<uint64_t> ComputeVisibleFallbackFrames { 0 };
     bool LoggedOverflow = false;
+    std::atomic<int> SubmittedFinalSlot { -1 };
+    std::atomic<int> PublishedFinalSlot { -1 };
+    std::atomic<uint64_t> SubmittedFinalSerial { 0 };
+    std::atomic<uint64_t> PublishedFinalSerial { 0 };
 
     std::atomic<uint64_t> SubmittedFrames { 0 };
     std::atomic<uint64_t> CompletedFrames { 0 };
@@ -1363,6 +1452,10 @@ struct MetalComputeRenderer3D::MetalComputeState
     std::atomic<uint64_t> SkippedTileBusyFrames { 0 };
     std::atomic<bool> TileMemoryInFlight { false };
 };
+
+#include "GPU3D_MetalComputeTexturedMethods.inc"
+#include "GPU3D_MetalComputeDepthBlendMethods.inc"
+#include "GPU3D_MetalComputeFinalPassMethods.inc"
 
 MetalComputeRenderer3D::MetalComputeRenderer3D(
     melonDS::GPU3D& gpu3D,
@@ -1416,7 +1509,8 @@ bool MetalComputeRenderer3D::Init()
     // to the full tile-memory budget without improving the presented image.
     // Production mode defaults to the high-performance raster path. Developers
     // can opt back into the mirror with MELONPRIME_METAL_COMPUTE_MIRROR=1.
-    if (!MetalComputeMirrorEnabled())
+    const bool visibleCutoverRequested = MetalComputeVisibleEnabled();
+    if (!MetalComputeMirrorEnabled() && !visibleCutoverRequested)
     {
         if (State)
         {
@@ -1425,11 +1519,12 @@ bool MetalComputeRenderer3D::Init()
             State->TileRasterReady = false;
             State->DepthBlendReady = false;
             State->TextureVariantReady = false;
+            State->FinalPassReady = false;
             State->TileMemoryInFlight.store(false, std::memory_order_release);
         }
         std::fprintf(stderr,
             "[MelonPrime] metal compute: non-visible compute mirror disabled "
-            "for high-performance mode; visibleSource=MetalRasterReference "
+            "for high-performance mode; visibleCandidate=MetalCompute "
             "(set MELONPRIME_METAL_COMPUTE_MIRROR=1 for developer diagnostics)\n");
         return true;
     }
@@ -1442,6 +1537,7 @@ bool MetalComputeRenderer3D::Init()
             State->TileRasterReady = false;
             State->DepthBlendReady = false;
             State->TextureVariantReady = false;
+            State->FinalPassReady = false;
             State->TileMemoryInFlight.store(false, std::memory_order_release);
         }
         std::fprintf(stderr,
@@ -1460,15 +1556,27 @@ bool MetalComputeRenderer3D::Init()
         return continueWithRasterOnly("RunSpanBinSelfTest");
     if (!RunNoTextureTileSelfTest())
         return continueWithRasterOnly("RunNoTextureTileSelfTest");
+    if (!RunTextureVariantTileSelfTest())
+        return continueWithRasterOnly("RunTextureVariantTileSelfTest");
+    if (!RunCompleteDepthBlendSelfTest())
+        return continueWithRasterOnly("RunCompleteDepthBlendSelfTest");
+    if (!RunFinalPassSelfTest())
+        return continueWithRasterOnly("RunFinalPassSelfTest");
 
     State->Ready = true;
     State->SpanBinReady = true;
     State->TileRasterReady = true;
     State->DepthBlendReady = true;
     State->TextureVariantReady = true;
+    State->FinalPassReady = true;
     std::fprintf(stderr,
-        "[MelonPrime] metal compute texture variants: Phase 7F ready scale=%d target=%dx%d; visible output remains Metal raster reference\n",
-        requestedScale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
+        "[MelonPrime] metal compute: complete pipeline ready scale=%d "
+        "target=%dx%d visibleCutover=%u verification=%u\n",
+        requestedScale,
+        RasterReference.GetTargetWidth(),
+        RasterReference.GetTargetHeight(),
+        visibleCutoverRequested ? 1u : 0u,
+        MetalComputeVisibleVerifyEnabled() ? 1u : 0u);
     return true;
 }
 
@@ -1487,11 +1595,12 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         return false;
     }
 
-    State->Queue = [State->Device newCommandQueue];
-    if (!State->Queue)
+    State->Queue =
+        (__bridge id<MTLCommandQueue>)RasterReference.GetCommandQueue();
+    if (!State->Queue || State->Queue.device != State->Device)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute: newCommandQueue failed\n");
+            "[MelonPrime] metal compute: RasterReference command queue unavailable\n");
         return false;
     }
 
@@ -1503,6 +1612,53 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
         std::fprintf(stderr,
             "[MelonPrime] metal compute: MSL compile failed: %s\n",
+            message);
+        return false;
+    }
+
+    NSString* texturedSource =
+        [NSString stringWithUTF8String:kMetalComputeTexturedSource];
+    State->TexturedLibrary =
+        [State->Device newLibraryWithSource:texturedSource options:nil error:&error];
+    if (!State->TexturedLibrary)
+    {
+        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute textured raster: MSL compile failed: %s\n",
+            message);
+        return false;
+    }
+
+    NSString* completeDepthBlendSource =
+        [NSString stringWithUTF8String:kMetalComputeCompleteDepthBlendSource];
+    State->CompleteDepthBlendLibrary =
+        [State->Device
+            newLibraryWithSource:completeDepthBlendSource
+                         options:nil
+                           error:&error];
+    if (!State->CompleteDepthBlendLibrary)
+    {
+        const char* message = error
+            ? [[error localizedDescription] UTF8String]
+            : "unknown error";
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute complete depth blend: "
+            "MSL compile failed: %s\n",
+            message);
+        return false;
+    }
+
+    NSString* finalPassSource =
+        [NSString stringWithUTF8String:kMetalComputeFinalPassSource];
+    State->FinalPassLibrary = [State->Device
+        newLibraryWithSource:finalPassSource options:nil error:&error];
+    if (!State->FinalPassLibrary)
+    {
+        const char* message = error
+            ? [[error localizedDescription] UTF8String]
+            : "unknown error";
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute final pass: MSL compile failed: %s\n",
             message);
         return false;
     }
@@ -1525,6 +1681,30 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device, State->Library, @"mp_compute_clear_tile_summary");
     State->RasteriseNoTextureTilesPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_rasterise_no_texture_tiles");
+    State->TextureRasterPipeline = BuildComputePipeline(
+        State->Device,
+        State->TexturedLibrary,
+        @"mp_compute_rasterise_texture_variants");
+    State->ClearCompleteDepthBlendSummaryPipeline = BuildComputePipeline(
+        State->Device,
+        State->CompleteDepthBlendLibrary,
+        @"mp_compute_clear_complete_depth_blend_summary");
+    State->CompleteDepthBlendPipeline = BuildComputePipeline(
+        State->Device,
+        State->CompleteDepthBlendLibrary,
+        @"mp_compute_depth_blend_complete");
+    State->ClearFinalPassSummaryPipeline = BuildComputePipeline(
+        State->Device, State->FinalPassLibrary,
+        @"mp_compute_clear_final_pass_summary");
+    State->FinalPassPipeline = BuildComputePipeline(
+        State->Device, State->FinalPassLibrary,
+        @"mp_compute_final_pass");
+    State->ClearFinalDiffSummaryPipeline = BuildComputePipeline(
+        State->Device, State->FinalPassLibrary,
+        @"mp_compute_clear_final_diff_summary");
+    State->FinalDiffPipeline = BuildComputePipeline(
+        State->Device, State->FinalPassLibrary,
+        @"mp_compute_compare_final");
     State->ClearDepthBlendSummaryPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_depth_blend_summary");
     State->DepthBlendNoTexturePipeline = BuildComputePipeline(
@@ -1539,6 +1719,13 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->SortWorkPolygonsPipeline || !State->InterpSpansPipeline ||
         !State->BinCombinedPipeline || !State->ClearTileSummaryPipeline ||
         !State->RasteriseNoTextureTilesPipeline ||
+        !State->TextureRasterPipeline ||
+        !State->ClearCompleteDepthBlendSummaryPipeline ||
+        !State->CompleteDepthBlendPipeline ||
+        !State->ClearFinalPassSummaryPipeline ||
+        !State->FinalPassPipeline ||
+        !State->ClearFinalDiffSummaryPipeline ||
+        !State->FinalDiffPipeline ||
         !State->ClearDepthBlendSummaryPipeline ||
         !State->DepthBlendNoTexturePipeline ||
         !State->ClearTextureVariantSummaryPipeline ||
@@ -1557,6 +1744,13 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->BinCombinedPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearTileSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->RasteriseNoTextureTilesPipeline.maxTotalThreadsPerThreadgroup,
+        State->TextureRasterPipeline.maxTotalThreadsPerThreadgroup,
+        State->ClearCompleteDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
+        State->CompleteDepthBlendPipeline.maxTotalThreadsPerThreadgroup,
+        State->ClearFinalPassSummaryPipeline.maxTotalThreadsPerThreadgroup,
+        State->FinalPassPipeline.maxTotalThreadsPerThreadgroup,
+        State->ClearFinalDiffSummaryPipeline.maxTotalThreadsPerThreadgroup,
+        State->FinalDiffPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->DepthBlendNoTexturePipeline.maxTotalThreadsPerThreadgroup,
         State->ClearTextureVariantSummaryPipeline.maxTotalThreadsPerThreadgroup,
@@ -1567,6 +1761,43 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         std::fprintf(stderr,
             "[MelonPrime] metal compute: device supports only %zu threads per group; 64 required\n",
             static_cast<size_t>(minMaxThreads));
+        return false;
+    }
+
+    auto makeDummyCapture = [&](NSUInteger layers) -> id<MTLTexture> {
+        MTLTextureDescriptor* descriptor =
+            [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                             width:1
+                                            height:1
+                                         mipmapped:NO];
+        descriptor.textureType = MTLTextureType2DArray;
+        descriptor.arrayLength = layers;
+        descriptor.usage = MTLTextureUsageShaderRead;
+        descriptor.storageMode = MTLStorageModeShared;
+        id<MTLTexture> texture =
+            [State->Device newTextureWithDescriptor:descriptor];
+        const uint32_t zero = 0;
+        for (NSUInteger layer = 0; texture && layer < layers; layer++)
+        {
+            [texture replaceRegion:MTLRegionMake2D(0, 0, 1, 1)
+                       mipmapLevel:0
+                             slice:layer
+                         withBytes:&zero
+                       bytesPerRow:sizeof(zero)
+                     bytesPerImage:sizeof(zero)];
+        }
+        return texture;
+    };
+
+    State->DummyCapture128Texture = makeDummyCapture(16);
+    State->DummyCapture256Texture = makeDummyCapture(4);
+    State->Capture128Texture = State->DummyCapture128Texture;
+    State->Capture256Texture = State->DummyCapture256Texture;
+    if (!State->DummyCapture128Texture || !State->DummyCapture256Texture)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute textured raster: dummy capture allocation failed\n");
         return false;
     }
 
@@ -1640,11 +1871,41 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.TextureVariantSummaryBuffer =
             [State->Device newBufferWithLength:kTextureVariantSummaryWords * sizeof(uint32_t)
                                        options:MTLResourceStorageModeShared];
+        slot.TextureMemoryBuffer =
+            [State->Device newBufferWithLength:sizeof(GPU.VRAMFlat_Texture)
+                                       options:MTLResourceStorageModeShared];
+        slot.TexturePaletteBuffer =
+            [State->Device newBufferWithLength:sizeof(GPU.VRAMFlat_TexPal)
+                                       options:MTLResourceStorageModeShared];
+        slot.ToonTableBuffer =
+            [State->Device newBufferWithLength:32u * sizeof(uint32_t)
+                                       options:MTLResourceStorageModeShared];
+        slot.FinalTablesBuffer =
+            [State->Device newBufferWithLength:kFinalTableWords * sizeof(uint32_t)
+                                       options:MTLResourceStorageModeShared];
+        slot.FinalPassSummaryBuffer =
+            [State->Device newBufferWithLength:kFinalPassSummaryWords * sizeof(uint32_t)
+                                       options:MTLResourceStorageModeShared];
+        slot.FinalDiffSummaryBuffer =
+            [State->Device newBufferWithLength:kFinalDiffSummaryWords * sizeof(uint32_t)
+                                       options:MTLResourceStorageModeShared];
+        MTLTextureDescriptor* finalDescriptor =
+            [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                             width:State->ScreenWidth
+                                            height:State->ScreenHeight
+                                         mipmapped:NO];
+        finalDescriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+        finalDescriptor.storageMode = MTLStorageModePrivate;
+        slot.FinalTexture = [State->Device newTextureWithDescriptor:finalDescriptor];
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
             !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
             !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
-            !slot.TextureVariantSummaryBuffer)
+            !slot.TextureVariantSummaryBuffer || !slot.TextureMemoryBuffer ||
+            !slot.TexturePaletteBuffer || !slot.ToonTableBuffer ||
+            !slot.FinalTablesBuffer || !slot.FinalPassSummaryBuffer ||
+            !slot.FinalDiffSummaryBuffer || !slot.FinalTexture)
         {
             std::fprintf(stderr,
                 "[MelonPrime] metal compute span/bin: buffer allocation failed scale=%d\n",
@@ -1681,16 +1942,29 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     State->TileSummary = [State->Device newBufferWithLength:kTileSummaryWords * sizeof(uint32_t)
                                                     options:MTLResourceStorageModeShared];
     const size_t screenPixelBytes =
-        static_cast<size_t>(State->ScreenWidth) * State->ScreenHeight * sizeof(uint32_t);
+        static_cast<size_t>(State->ScreenWidth) *
+        State->ScreenHeight *
+        sizeof(uint32_t);
+    const size_t twoLayerPixelBytes =
+        screenPixelBytes * 2u;
     State->DepthBlendColor =
-        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
+        [State->Device
+            newBufferWithLength:twoLayerPixelBytes
+                        options:MTLResourceStorageModePrivate];
     State->DepthBlendDepth =
-        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
+        [State->Device
+            newBufferWithLength:twoLayerPixelBytes
+                        options:MTLResourceStorageModePrivate];
     State->DepthBlendAttr =
-        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
+        [State->Device
+            newBufferWithLength:twoLayerPixelBytes
+                        options:MTLResourceStorageModePrivate];
     State->DepthBlendSummaryBuffer =
-        [State->Device newBufferWithLength:kDepthBlendSummaryWords * sizeof(uint32_t)
-                                   options:MTLResourceStorageModeShared];
+        [State->Device
+            newBufferWithLength:
+                kCompleteDepthBlendSummaryWords *
+                sizeof(uint32_t)
+                        options:MTLResourceStorageModeShared];
     if (tileCapacity == 0 || !State->ColorTiles || !State->DepthTiles ||
         !State->AttrTiles || !State->TileSummary ||
         !State->DepthBlendColor || !State->DepthBlendDepth ||
@@ -1702,6 +1976,10 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         return false;
     }
     State->TileWorkCapacity = tileCapacity;
+    State->SubmittedFinalSlot.store(-1, std::memory_order_release);
+    State->PublishedFinalSlot.store(-1, std::memory_order_release);
+    State->SubmittedFinalSerial.store(0, std::memory_order_release);
+    State->PublishedFinalSerial.store(0, std::memory_order_release);
     State->TileMemoryInFlight.store(false, std::memory_order_release);
 
     const size_t allocatedTileBytes = static_cast<size_t>(tileCapacity) * tileArea * sizeof(uint32_t) * 3u;
@@ -2146,6 +2424,15 @@ void MetalComputeRenderer3D::Reset()
     if (!State)
         return;
     State->LoggedOverflow = false;
+    State->LastFrameComputeVisible = false;
+    State->LastFrameComputeReused = false;
+    State->VisibleCutoverDisabled = false;
+    State->LoggedVisibleCutover = false;
+    State->LoggedVisibleFallback = false;
+    State->ComputeVisibleFault.store(false, std::memory_order_release);
+    State->ComputeVisibleFrames.store(0, std::memory_order_relaxed);
+    State->ComputeVisibleReusedFrames.store(0, std::memory_order_relaxed);
+    State->ComputeVisibleFallbackFrames.store(0, std::memory_order_relaxed);
     State->SkippedTileBusyFrames.store(0, std::memory_order_relaxed);
 }
 
@@ -2170,7 +2457,11 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
     if (!RasterReference.ForceScaleFactor(scale))
     {
         if (State)
+        {
             State->SpanBinReady = false;
+            State->FinalPassReady = false;
+            State->LastFrameComputeVisible = false;
+        }
         return;
     }
 
@@ -2205,6 +2496,7 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
         State->TileRasterReady = true;
         State->DepthBlendReady = true;
         State->TextureVariantReady = true;
+        State->FinalPassReady = true;
     }
 
     std::fprintf(stderr,
@@ -2230,13 +2522,15 @@ void MetalComputeRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
 
 void MetalComputeRenderer3D::SetCpuReadbackRequired(bool required) noexcept
 {
+    if (State)
+        State->CpuReadbackRequired = required;
     RasterReference.SetCpuReadbackRequired(required);
 }
 
 bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
 {
-    if (!State || !State->SpanBinReady || GPU3D.RenderNumPolygons == 0)
-        return true;
+    if (!State || !State->SpanBinReady)
+        return false;
 
     const uint32_t polygonCount = std::min<uint32_t>(GPU3D.RenderNumPolygons, kMaxPolygons);
     uint32_t numYSpans = 0;
@@ -2245,6 +2539,8 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     std::fill(State->VariantMetaData.begin(), State->VariantMetaData.end(), VariantMeta {});
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1u << 0)) != 0;
+    int captureInfo[16] = {};
+    GPU.GetCaptureInfo_Texture(captureInfo);
     auto spanOverflow = [&]() -> bool {
         if (!State->LoggedOverflow)
         {
@@ -2274,11 +2570,53 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         outputPolygon.Attr = polygon->Attr;
 
         const uint32_t textype = (polygon->TexParam >> 26) & 0x7u;
+        uint32_t captureKind = 0;
+        uint32_t captureLayer = 0;
+        uint32_t captureYOffset = 0;
+        if (enableTextureMaps && textype == 7u)
+        {
+            const uint32_t textureWidth =
+                8u << ((polygon->TexParam >> 20u) & 0x7u);
+            const uint32_t textureHeight =
+                8u << ((polygon->TexParam >> 23u) & 0x7u);
+            if (textureWidth == 128u || textureWidth == 256u)
+            {
+                const uint32_t textureAddress =
+                    (polygon->TexParam & 0xFFFFu) << 3u;
+                const uint32_t endAddress =
+                    textureAddress + textureWidth * textureHeight * 2u;
+                const uint32_t firstBlock = textureAddress >> 15u;
+                const uint32_t lastBlock =
+                    (endAddress + 0x7FFFu) >> 15u;
+                int captureBlock = -1;
+                for (uint32_t block = firstBlock;
+                     block < lastBlock && block < 16u;
+                     block++)
+                {
+                    if (captureInfo[block] != -1)
+                        captureBlock = captureInfo[block];
+                }
+                if (captureBlock != -1)
+                {
+                    captureKind = textureWidth == 128u ? 1u : 2u;
+                    captureLayer = captureKind == 1u
+                        ? static_cast<uint32_t>(captureBlock)
+                        : static_cast<uint32_t>(captureBlock >> 2);
+                    captureYOffset = captureKind == 1u
+                        ? ((polygon->TexParam & 0xFFFFu) >> 5u) & 0x7Fu
+                        : ((polygon->TexParam & 0xFFFFu) >> 6u) & 0xFFu;
+                }
+            }
+        }
+
         const VariantKey key {
             polygon->TexParam,
             polygon->TexPalette,
             polygon->IsShadowMask ? 4u : ((polygon->Attr >> 4) & 0x3u),
             (enableTextureMaps && textype != 0) ? 1u : 0u,
+            captureKind,
+            captureLayer,
+            captureYOffset,
         };
 
         uint32_t variantIndex = 0;
@@ -2301,8 +2639,16 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         }
         outputPolygon.Variant = variantIndex;
         State->VariantMetaData[variantIndex] = {
-            key.Textured, key.BlendMode, key.TexParam, key.TexPalette
+            key.Textured,
+            key.BlendMode,
+            key.TexParam,
+            key.TexPalette,
+            key.CaptureKind,
+            key.CaptureLayer,
+            key.CaptureYOffset,
+            0,
         };
+        outputPolygon.TextureLayer = static_cast<float>(key.CaptureLayer);
 
         const uint32_t nverts = polygon->NumVertices;
         uint32_t vtop = polygon->VTop;
@@ -2478,6 +2824,22 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         std::memcpy([slot->VariantMetaBuffer contents],
                     State->VariantMetaData.data(),
                     static_cast<size_t>(kMaxVariants) * sizeof(VariantMeta));
+        std::memcpy([slot->TextureMemoryBuffer contents],
+                    GPU.VRAMFlat_Texture,
+                    sizeof(GPU.VRAMFlat_Texture));
+        std::memcpy([slot->TexturePaletteBuffer contents],
+                    GPU.VRAMFlat_TexPal,
+                    sizeof(GPU.VRAMFlat_TexPal));
+        auto* toonTable =
+            static_cast<uint32_t*>([slot->ToonTableBuffer contents]);
+        for (uint32_t index = 0; index < 32u; index++)
+        {
+            const uint32_t color = GPU3D.RenderToonTable[index];
+            uint32_t r = (color << 1u) & 0x3Eu; if (r) r++;
+            uint32_t g = (color >> 4u) & 0x3Eu; if (g) g++;
+            uint32_t b = (color >> 9u) & 0x3Eu; if (b) b++;
+            toonTable[index] = r | (g << 8u) | (b << 16u);
+        }
         std::memset([slot->Header contents], 0, slot->Header.length);
 
         const uint32_t variantCount = static_cast<uint32_t>(State->VariantData.size());
@@ -2512,7 +2874,10 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             GPU3D.RenderAlphaRef,
             GPU3D.RenderDispCnt,
             State->TileWorkCapacity,
-            0,
+            polygonCount > 0 && GPU3D.RenderPolygonRAM[0] &&
+                    GPU3D.RenderPolygonRAM[0]->WBuffer
+                ? 1u
+                : 0u,
         };
 
         uint32_t clearR = (GPU3D.RenderClearAttr1 << 1) & 0x3Eu;
@@ -2522,7 +2887,25 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         uint32_t clearB = (GPU3D.RenderClearAttr1 >> 9) & 0x3Eu;
         if (clearB) clearB++;
         const uint32_t clearA = (GPU3D.RenderClearAttr1 >> 16) & 0x1Fu;
-        const DepthBlendConfig depthBlendConfig {
+        auto* finalTables =
+            static_cast<uint32_t*>([slot->FinalTablesBuffer contents]);
+        for (uint32_t index = 0; index < 8u; index++)
+            finalTables[index] = ConvertRGB555ToRGB6(GPU3D.RenderEdgeTable[index]);
+        for (uint32_t index = 0; index < 34u; index++)
+            finalTables[8u + index] = GPU3D.RenderFogDensityTable[index];
+
+        const FinalPassConfig finalPassConfig {
+            State->ScreenWidth,
+            State->ScreenHeight,
+            GPU3D.RenderDispCnt,
+            ((GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu,
+            GPU3D.RenderClearAttr1 & 0x3F008000u,
+            GPU3D.RenderFogOffset,
+            GPU3D.RenderFogShift,
+            ConvertFogColorToRGB6A5(GPU3D.RenderFogColor),
+        };
+
+        const CompleteDepthBlendConfig depthBlendConfig {
             State->ScreenWidth,
             State->ScreenHeight,
             State->TileSize,
@@ -2531,33 +2914,68 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             polygonGroups,
             State->MaxWorkTiles,
             State->TileWorkCapacity,
-            clearR | (clearG << 8u) | (clearB << 16u) | (clearA << 24u),
-            ((GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu,
+            polygonCount,
+            clearR |
+                (clearG << 8u) |
+                (clearB << 16u) |
+                (clearA << 24u),
+            ((GPU3D.RenderClearAttr2 & 0x7FFFu) *
+                0x200u) +
+                0x1FFu,
             GPU3D.RenderClearAttr1 & 0x3F008000u,
             GPU3D.RenderDispCnt,
+            (GPU3D.RenderClearAttr2 >> 16u) & 0xFFu,
+            (GPU3D.RenderClearAttr2 >> 24u) & 0xFFu,
+            spanConfig.Reserved,
         };
 
 
-        bool submitTileRaster = false;
-        if (State->TileRasterReady && polygonGroups > 0 && numSetupIndices > 0)
+        bool ownsTileMemory = false;
+        if (State->DepthBlendReady && State->FinalPassReady)
         {
             bool expected = false;
-            submitTileRaster = State->TileMemoryInFlight.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel, std::memory_order_relaxed);
-            if (!submitTileRaster)
-                State->SkippedTileBusyFrames.fetch_add(1, std::memory_order_relaxed);
+            ownsTileMemory = State->TileMemoryInFlight.compare_exchange_strong(
+                expected, true,
+                std::memory_order_acq_rel,
+                std::memory_order_relaxed);
+            if (!ownsTileMemory)
+                State->SkippedTileBusyFrames.fetch_add(
+                    1, std::memory_order_relaxed);
         }
-        const bool submitDepthBlend = submitTileRaster && State->DepthBlendReady;
+
+        const bool submitTileRaster =
+            ownsTileMemory &&
+            State->TileRasterReady &&
+            polygonGroups > 0 &&
+            numSetupIndices > 0;
+        const bool submitDepthBlend =
+            ownsTileMemory && State->DepthBlendReady;
+        const bool submitFinalPass =
+            submitDepthBlend && State->FinalPassReady;
+
+        if (!ownsTileMemory)
+        {
+            slot->InFlight.store(false, std::memory_order_release);
+            return true;
+        }
+        id<MTLTexture> referenceFinal =
+            (__bridge id<MTLTexture>)RasterReference.GetColorTargetTexture();
+        const bool submitFinalDiff =
+            submitFinalPass && MetalComputeFinalDiffEnabled() &&
+            referenceFinal && referenceFinal.device == State->Device &&
+            referenceFinal.width == State->ScreenWidth &&
+            referenceFinal.height == State->ScreenHeight;
 
         id<MTLCommandBuffer> command = [State->Queue commandBuffer];
         if (!command)
         {
-            if (submitTileRaster)
-                State->TileMemoryInFlight.store(false, std::memory_order_release);
+            if (ownsTileMemory)
+                State->TileMemoryInFlight.store(
+                    false, std::memory_order_release);
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 7E DepthBlend";
+        command.label = @"MelonPrime Metal Compute Phase 8F Visible Cutover";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2645,11 +3063,13 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                      threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
             [encoder endEncoding];
         }
-        if (submitTileRaster)
+        if (ownsTileMemory)
         {
+            if (submitTileRaster)
             {
-                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
+                {
+                    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                    [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
                 [encoder setBuffer:State->TileSummary offset:0 atIndex:0];
                 [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
                          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
@@ -2657,7 +3077,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             }
             {
                 id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                [encoder setComputePipelineState:State->RasteriseNoTextureTilesPipeline];
+                [encoder setComputePipelineState:State->TextureRasterPipeline];
                 [encoder setBuffer:slot->Header offset:0 atIndex:0];
                 [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
                 [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
@@ -2668,23 +3088,36 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:State->AttrTiles offset:0 atIndex:7];
                 [encoder setBuffer:State->TileSummary offset:0 atIndex:8];
                 [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
+                [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:10];
+                [encoder setBuffer:slot->TexturePaletteBuffer offset:0 atIndex:11];
+                [encoder setBuffer:slot->ToonTableBuffer offset:0 atIndex:12];
+                [encoder setTexture:State->Capture128Texture atIndex:0];
+                [encoder setTexture:State->Capture256Texture atIndex:1];
                 [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(State->MaxWorkTiles, 64), 1, 1)
                          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-                [encoder endEncoding];
+                    [encoder endEncoding];
+                }
             }
             if (submitDepthBlend)
             {
                 {
                     id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                    [encoder setComputePipelineState:State->ClearDepthBlendSummaryPipeline];
-                    [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:0];
+                    [encoder
+                        setComputePipelineState:
+                            State->ClearCompleteDepthBlendSummaryPipeline];
+                    [encoder
+                        setBuffer:State->DepthBlendSummaryBuffer
+                           offset:0
+                          atIndex:0];
                     [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
                              threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
                     [encoder endEncoding];
                 }
                 {
                     id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                    [encoder setComputePipelineState:State->DepthBlendNoTexturePipeline];
+                    [encoder
+                        setComputePipelineState:
+                            State->CompleteDepthBlendPipeline];
                     [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
                     [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
                     [encoder setBuffer:slot->Polygons offset:0 atIndex:2];
@@ -2695,11 +3128,67 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:7];
                     [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:8];
                     [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:9];
-                    [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:10];
+                    [encoder
+                        setBytes:&depthBlendConfig
+                           length:sizeof(depthBlendConfig)
+                          atIndex:10];
+                    [encoder
+                        setBuffer:slot->TextureMemoryBuffer
+                           offset:0
+                          atIndex:11];
                     const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
                     [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
                              threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
                     [encoder endEncoding];
+                }
+                if (submitFinalPass)
+                {
+                    {
+                        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                        [encoder setComputePipelineState:State->ClearFinalPassSummaryPipeline];
+                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:0];
+                        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                        [encoder endEncoding];
+                    }
+                    {
+                        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                        [encoder setComputePipelineState:State->FinalPassPipeline];
+                        [encoder setBuffer:State->DepthBlendColor offset:0 atIndex:0];
+                        [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:1];
+                        [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:2];
+                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:3];
+                        [encoder setBuffer:slot->FinalTablesBuffer offset:0 atIndex:4];
+                        [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:5];
+                        [encoder setTexture:slot->FinalTexture atIndex:0];
+                        const uint32_t finalPixelCount = State->ScreenWidth * State->ScreenHeight;
+                        [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(finalPixelCount, 64), 1, 1)
+                                 threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                        [encoder endEncoding];
+                    }
+                    if (submitFinalDiff)
+                    {
+                        {
+                            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                            [encoder setComputePipelineState:State->ClearFinalDiffSummaryPipeline];
+                            [encoder setBuffer:slot->FinalDiffSummaryBuffer offset:0 atIndex:0];
+                            [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                            [encoder endEncoding];
+                        }
+                        {
+                            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                            [encoder setComputePipelineState:State->FinalDiffPipeline];
+                            [encoder setBuffer:slot->FinalDiffSummaryBuffer offset:0 atIndex:0];
+                            [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:1];
+                            [encoder setTexture:slot->FinalTexture atIndex:0];
+                            [encoder setTexture:referenceFinal atIndex:1];
+                            const uint32_t finalPixelCount = State->ScreenWidth * State->ScreenHeight;
+                            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(finalPixelCount, 64), 1, 1)
+                                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                            [encoder endEncoding];
+                        }
+                    }
                 }
             }
         }
@@ -2713,8 +3202,18 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         id<MTLBuffer> completedDepthBlendSummary = State->DepthBlendSummaryBuffer;
         id<MTLBuffer> completedTextureVariantSummary = slot->TextureVariantSummaryBuffer;
         const bool completedTileRaster = submitTileRaster;
+        const bool completedComputeSurface = ownsTileMemory;
         const bool completedDepthBlend = submitDepthBlend;
+        const bool completedFinalPass = submitFinalPass;
+        const bool completedFinalDiff = submitFinalDiff;
+        id<MTLBuffer> completedFinalSummary = slot->FinalPassSummaryBuffer;
+        id<MTLBuffer> completedFinalDiffSummary = slot->FinalDiffSummaryBuffer;
         MetalComputeState* state = State.get();
+        if (submitFinalPass)
+        {
+            State->SubmittedFinalSlot.store(slotIndex, std::memory_order_release);
+            State->SubmittedFinalSerial.store(serial, std::memory_order_release);
+        }
         slot->LastCommand = command;
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if (completed.status == MTLCommandBufferStatusCompleted)
@@ -2729,7 +3228,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     const auto* tile = static_cast<const TileRasterSummary*>([completedTileSummary contents]);
                     const uint32_t depthMin = tile->DepthMin == 0xFFFFFFFFu ? 0u : tile->DepthMin;
                     std::fprintf(stderr,
-                        "[MelonPrime] metal compute tile memory: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u rasterised=%u skippedTextured=%u skippedShadow=%u skippedCapacity=%u coveredPixels=%u hash=0x%08x depth=%08x..%08x tileCapacity=%u skippedTileBusy=%llu skippedSpanBusy=%llu hiresCoords=%u\n",
+                        "[MelonPrime] metal compute tile memory: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u rasterised=%u texturedWorkItems=%u shadowMaskWorkItems=%u skippedCapacity=%u coveredPixels=%u hash=0x%08x depth=%08x..%08x tileCapacity=%u skippedTileBusy=%llu skippedSpanBusy=%llu hiresCoords=%u\n",
                         static_cast<unsigned long long>(serial),
                         slotIndex,
                         submittedScale,
@@ -2738,8 +3237,8 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                         variantCount,
                         clampedWorkTiles,
                         tile->RasterisedWorkItems,
-                        tile->SkippedTextured,
-                        tile->SkippedShadow,
+                        tile->TexturedWorkItems,
+                        tile->ShadowMaskWorkItems,
                         tile->SkippedCapacity,
                         tile->CoveredPixels,
                         tile->ColorHash,
@@ -2753,19 +3252,70 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 if (completedDepthBlend && (completedCount <= 3 || (completedCount % 600) == 0))
                 {
                     const auto* blend =
-                        static_cast<const DepthBlendSummary*>([completedDepthBlendSummary contents]);
+                        static_cast<const CompleteDepthBlendSummary*>(
+                            [completedDepthBlendSummary contents]);
                     const uint32_t blendDepthMin =
-                        blend->DepthMin == 0xFFFFFFFFu ? 0u : blend->DepthMin;
+                        blend->DepthMin == 0xFFFFFFFFu
+                            ? 0u
+                            : blend->DepthMin;
                     std::fprintf(stderr,
-                        "[MelonPrime] metal compute depth blend: frame=%llu pixels=%u layersTested=%u layersAccepted=%u translucent=%u hash=0x%08x depth=%08x..%08x visibleSource=MetalRasterReference\n",
+                        "[MelonPrime] metal compute complete depth blend: "
+                        "frame=%llu pixels=%u tested=%u accepted=%u "
+                        "opaque=%u translucent=%u shadowMask=%u shadow=%u "
+                        "secondLayer=%u hash=0x%08x depth=%08x..%08x "
+                        "visibleCandidate=MetalCompute\n",
                         static_cast<unsigned long long>(serial),
                         blend->Pixels,
                         blend->LayersTested,
                         blend->LayersAccepted,
+                        blend->OpaqueLayers,
                         blend->TranslucentLayers,
+                        blend->ShadowMaskPixels,
+                        blend->ShadowPolygonPixels,
+                        blend->SecondLayerWrites,
                         blend->ColorHash,
                         blendDepthMin,
                         blend->DepthMax);
+                }
+                if (completedFinalPass)
+                {
+                    state->PublishedFinalSlot.store(slotIndex, std::memory_order_release);
+                    state->PublishedFinalSerial.store(serial, std::memory_order_release);
+                    if (completedCount <= 3 || (completedCount % 600) == 0)
+                    {
+                        const auto* final = static_cast<const FinalPassSummary*>(
+                            [completedFinalSummary contents]);
+                        std::fprintf(stderr,
+                            "[MelonPrime] metal compute final pass: frame=%llu "
+                            "pixels=%u edge=%u fogTop=%u fogSecond=%u aa=%u "
+                            "alpha=%u hash=0x%08x slot=%u "
+                            "visibleCandidate=MetalCompute\n",
+                            static_cast<unsigned long long>(serial),
+                            final->Pixels, final->EdgePixels,
+                            final->FogTopPixels, final->FogSecondPixels,
+                            final->AAPixels, final->NonzeroAlpha,
+                            final->ColorHash, slotIndex);
+                    }
+                }
+                if (completedFinalDiff &&
+                    (completedCount <= 3 || (completedCount % 600) == 0))
+                {
+                    const auto* diff = static_cast<const FinalDiffSummary*>(
+                        [completedFinalDiffSummary contents]);
+                    const double averageDelta = diff->Pixels
+                        ? static_cast<double>(diff->SumChannelDelta) /
+                          static_cast<double>(diff->Pixels * 4u)
+                        : 0.0;
+                    std::fprintf(stderr,
+                        "[MelonPrime] metal compute final diff: frame=%llu "
+                        "pixels=%u different=%u exact=%u maxDelta=%u "
+                        "avgDelta=%.3f computeHash=0x%08x referenceHash=0x%08x "
+                        "verticalFlipDifferent=%u\n",
+                        static_cast<unsigned long long>(serial),
+                        diff->Pixels, diff->DifferentPixels, diff->ExactPixels,
+                        diff->MaxChannelDelta, averageDelta,
+                        diff->ComputeHash, diff->ReferenceHash,
+                        diff->VerticalFlipDifferentPixels);
                 }
                 if (completedCount <= 3 || (completedCount % 600) == 0)
                 {
@@ -2789,12 +3339,16 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 const char* message = completed.error
                     ? [[completed.error localizedDescription] UTF8String]
                     : "unknown command-buffer failure";
+                state->ComputeVisibleFault.store(
+                    true, std::memory_order_release);
                 std::fprintf(stderr,
-                    "[MelonPrime] metal compute span/bin: frame=%llu GPU failure: %s\n",
+                    "[MelonPrime] metal compute span/bin: frame=%llu "
+                    "GPU failure: %s; visible cutover will fall back\n",
                     static_cast<unsigned long long>(serial), message);
             }
-            if (completedTileRaster)
-                state->TileMemoryInFlight.store(false, std::memory_order_release);
+            if (completedComputeSurface)
+                state->TileMemoryInFlight.store(
+                    false, std::memory_order_release);
             if (slot->Generation.load(std::memory_order_acquire) == generation)
                 slot->InFlight.store(false, std::memory_order_release);
         }];
@@ -2811,33 +3365,181 @@ void MetalComputeRenderer3D::RenderFrame()
         const int requestedScale = State
             ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
             : 1;
+
+        if (State)
+        {
+            State->LastFrameEngineALayer = GPU.ScreenSwap ? 0u : 1u;
+            State->LastFrameRenderedScale = requestedScale;
+            const uint32_t displayModeA =
+                (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+            const bool engineA3DEnabled =
+                (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
+            State->LastFrameUseHiRes3D =
+                requestedScale > 1 &&
+                GPU.ScreensEnabled &&
+                displayModeA == 1u &&
+                engineA3DEnabled &&
+                GPU3D.RenderNumPolygons > 0 &&
+                !GPU3D.AbortFrame;
+        }
+
         if (RasterReference.GetScaleFactor() != requestedScale ||
             RasterReference.GetTargetWidth() != 256 * requestedScale ||
             RasterReference.GetTargetHeight() != 192 * requestedScale)
         {
             if (!RasterReference.ForceScaleFactor(requestedScale))
             {
+                if (State)
+                    State->LastFrameComputeVisible = false;
                 std::fprintf(stderr,
                     "[MelonPrime] metal compute: failed to resize "
-                    "RasterReference to scale=%d; retaining previous frame\n",
+                    "RasterReference to scale=%d; using previous raster target\n",
                     requestedScale);
+                RasterReference.RenderFrame();
                 return;
             }
             // MELONPRIME_METAL_COMPUTE_FORCE_SCALE_CHECK_V1
         }
 
-        // Visible output has priority. Latch and render the validated Metal
-        // raster frame before preparing/submitting the non-visible compute mirror.
-        RasterReference.RenderFrame();
+        if (State &&
+            State->ComputeVisibleFault.exchange(
+                false, std::memory_order_acq_rel))
+        {
+            State->VisibleCutoverDisabled = true;
+            State->LastFrameComputeVisible = false;
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute visible: disabled after GPU "
+                "command failure; restart renderer to retry\n");
+        }
 
-        if (State && State->SpanBinReady && !GPU3D.RenderFrameIdentical)
-            SubmitRealFrameSpanBin();
+        const bool visibleRequested =
+            MetalComputeVisibleEnabled() &&
+            State &&
+            !State->VisibleCutoverDisabled;
+        const bool visibleEligible =
+            visibleRequested &&
+            State->Ready &&
+            State->SpanBinReady &&
+            State->TileRasterReady &&
+            State->DepthBlendReady &&
+            State->TextureVariantReady &&
+            State->FinalPassReady &&
+            !State->CpuReadbackRequired &&
+            !GPU3D.AbortFrame;
+        const bool verificationMode =
+            visibleEligible && MetalComputeVisibleVerifyEnabled();
+
+        if (!visibleEligible)
+        {
+            if (State)
+            {
+                State->LastFrameComputeVisible = false;
+                State->LastFrameComputeReused = false;
+                if (visibleRequested)
+                {
+                    State->ComputeVisibleFallbackFrames.fetch_add(
+                        1, std::memory_order_relaxed);
+                    if (!State->LoggedVisibleFallback)
+                    {
+                        State->LoggedVisibleFallback = true;
+                        std::fprintf(stderr,
+                            "[MelonPrime] metal compute visible: frame uses "
+                            "RasterReference fallback "
+                            "(cpuReadback=%u ready=%u abort=%u)\n",
+                            State->CpuReadbackRequired ? 1u : 0u,
+                            State->FinalPassReady ? 1u : 0u,
+                            GPU3D.AbortFrame ? 1u : 0u);
+                    }
+                }
+            }
+
+            RasterReference.RenderFrame();
+            if (State && State->SpanBinReady &&
+                MetalComputeMirrorEnabled() &&
+                !GPU3D.RenderFrameIdentical)
+            {
+                (void)SubmitRealFrameSpanBin();
+            }
+            return;
+        }
+
+        const bool previousFrameWasCompute =
+            State->LastFrameComputeVisible;
+        if (GPU3D.RenderFrameIdentical &&
+            previousFrameWasCompute &&
+            ComputeFinalReady())
+        {
+            State->LastFrameComputeVisible = true;
+            State->LastFrameComputeReused = true;
+            State->ComputeVisibleFrames.fetch_add(
+                1, std::memory_order_relaxed);
+            State->ComputeVisibleReusedFrames.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+
+        if (verificationMode)
+            RasterReference.RenderFrame();
+
+        const uint64_t serialBefore = GetComputeFinalSerial();
+        const bool submitted = SubmitRealFrameSpanBin();
+        const uint64_t serialAfter = GetComputeFinalSerial();
+        const bool finalSubmitted =
+            submitted &&
+            serialAfter > serialBefore &&
+            GetComputeFinalTexture() != nullptr;
+
+        if (finalSubmitted)
+        {
+            State->LastFrameComputeVisible = true;
+            State->LastFrameComputeReused = false;
+            State->ComputeVisibleFrames.fetch_add(
+                1, std::memory_order_relaxed);
+
+            if (!State->LoggedVisibleCutover)
+            {
+                State->LoggedVisibleCutover = true;
+                std::fprintf(stderr,
+                    "[MelonPrime] metal compute visible: CUTOVER active "
+                    "scale=%d size=%ux%u serial=%llu "
+                    "rasterReference=%s\n",
+                    requestedScale,
+                    State->ScreenWidth,
+                    State->ScreenHeight,
+                    static_cast<unsigned long long>(serialAfter),
+                    verificationMode ? "verification-only" : "stopped");
+            }
+            return;
+        }
+
+        State->LastFrameComputeVisible = false;
+        State->LastFrameComputeReused = false;
+        State->ComputeVisibleFallbackFrames.fetch_add(
+            1, std::memory_order_relaxed);
+
+        if (!State->LoggedVisibleFallback)
+        {
+            State->LoggedVisibleFallback = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute visible: no final slot submitted; "
+                "using RasterReference for this frame "
+                "(spanBusy=%llu tileBusy=%llu)\n",
+                static_cast<unsigned long long>(
+                    State->SkippedBusyFrames.load(
+                        std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    State->SkippedTileBusyFrames.load(
+                        std::memory_order_relaxed)));
+        }
+
+        RasterReference.RenderFrame();
     }
 }
 
 void MetalComputeRenderer3D::FinishRendering()
 {
-    RasterReference.FinishRendering();
+    if (!State || !State->LastFrameComputeVisible)
+        RasterReference.FinishRendering();
 }
 
 void MetalComputeRenderer3D::RestartFrame()
@@ -2852,6 +3554,11 @@ u32* MetalComputeRenderer3D::GetLine(int line)
 
 void* MetalComputeRenderer3D::GetColorTargetTexture() const noexcept
 {
+    if (State && State->LastFrameComputeVisible)
+    {
+        if (void* texture = GetComputeFinalTexture())
+            return texture;
+    }
     return RasterReference.GetColorTargetTexture();
 }
 
@@ -2867,32 +3574,44 @@ void* MetalComputeRenderer3D::GetCommandQueue() const noexcept
 
 int MetalComputeRenderer3D::GetTargetWidth() const noexcept
 {
-    return RasterReference.GetTargetWidth();
+    return State && State->Ready
+        ? static_cast<int>(State->ScreenWidth)
+        : RasterReference.GetTargetWidth();
 }
 
 int MetalComputeRenderer3D::GetTargetHeight() const noexcept
 {
-    return RasterReference.GetTargetHeight();
+    return State && State->Ready
+        ? static_cast<int>(State->ScreenHeight)
+        : RasterReference.GetTargetHeight();
 }
 
 int MetalComputeRenderer3D::GetScaleFactor() const noexcept
 {
-    return RasterReference.GetScaleFactor();
+    return State
+        ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
+        : RasterReference.GetScaleFactor();
 }
 
 bool MetalComputeRenderer3D::LastFrameUsesHighResolution3D() const noexcept
 {
-    return RasterReference.LastFrameUsesHighResolution3D();
+    return State
+        ? State->LastFrameUseHiRes3D
+        : RasterReference.LastFrameUsesHighResolution3D();
 }
 
 uint32_t MetalComputeRenderer3D::GetLastFrameEngineALayer() const noexcept
 {
-    return RasterReference.GetLastFrameEngineALayer();
+    return State
+        ? State->LastFrameEngineALayer
+        : RasterReference.GetLastFrameEngineALayer();
 }
 
 int MetalComputeRenderer3D::GetLastFrameRenderedScale() const noexcept
 {
-    return RasterReference.GetLastFrameRenderedScale();
+    return State
+        ? State->LastFrameRenderedScale
+        : RasterReference.GetLastFrameRenderedScale();
 }
 
 Metal3DDiagnostics MetalComputeRenderer3D::GetLastDiagnostics() const noexcept
@@ -2914,7 +3633,7 @@ bool MetalComputeRenderer3D::FoundationReady() const noexcept
 {
     return State && State->Ready && State->SpanBinReady &&
            State->TileRasterReady && State->DepthBlendReady &&
-           State->TextureVariantReady;
+           State->TextureVariantReady && State->FinalPassReady;
 }
 
 } // namespace melonDS

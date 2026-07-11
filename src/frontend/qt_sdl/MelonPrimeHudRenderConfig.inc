@@ -135,6 +135,7 @@ struct CrosshairHudConfig {
     int   cachedZoomScopeGapPx;
     QRect cachedZoomScopeBboxPx;
 };
+static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
 struct MatchStatusHudConfig {
     bool matchStatusShow;
     int matchStatusX, matchStatusY;                     // final
@@ -227,8 +228,264 @@ struct CachedHudConfig {
     bool hiResText;  // HudFontMode != 0: rasterise glyphs at output resolution (hi-DPI text)
     bool valid;
 };
-static CachedHudConfig s_cache = { .valid = false };
-static uint32_t s_cacheEpoch = 1;
+
+struct CustomHudConfigState {
+    CachedHudConfig cache = { .valid = false };
+    uint32_t cacheEpoch = 1;
+
+    QImage weaponIcons[9];
+    QImage weaponTintedIcons[9];
+    QColor weaponTintColors[9];
+    bool weaponTintValid[9] = {};
+    int weaponIconHeight = 0;
+    float weaponIconMaxAspect = 1.0f;
+    QImage bombIcons[4];
+    QImage bombTintedIcons[4];
+    QColor bombTintColor;
+    int bombIconHeight = 0;
+    bool bombTintCacheValid = false;
+    QImage weaponIconsOutline[9];
+    QImage bombIconsOutline[4];
+    QColor outlineWeaponColor;
+    int outlineWeaponExpandR = -1;
+    int outlineWeaponBaseIconH = -1;
+    QColor outlineBombColor;
+    int outlineBombExpandR = -1;
+    int outlineBombBaseIconH = -1;
+    QImage invIconsOutline[9];
+    QColor outlineInvColor;
+    int outlineInvExpandR = -1;
+    int outlineInvBaseIconH = -1;
+    QImage radarFrame;
+    QImage radarFrameTinted;
+    QColor radarFrameTintColor;
+    int radarFrameTargetH = 0;
+    QImage radarFrameOutline;
+    QColor radarFrameOutlineColor;
+    int radarFrameOutlineR = -1;
+    QColor effectiveRadarColor;
+    uint8_t effectiveRadarHunterID = 0xFF;
+    bool effectiveRadarUseHunter = false;
+    QImage chOutlineStamp;
+    QPoint chStampOrigin;
+    bool chStampValid = false;
+    QImage chScopeStamp;
+    QPoint chScopeStampOrigin;
+    bool chScopeStampValid = false;
+    float chDisplayZoom = 0.0f;
+    uint32_t chDisplayZoomFrame = 0xFFFFFFFFu;
+    uint32_t chAimFrame = 0xFFFFFFFFu;
+    float chAimDsCx = 0.0f;
+    float chAimDsCy = 0.0f;
+    ZoomStatus::ReticleVisibilityState chZoomReticleState;
+    bool chCrosshairDrawnLastFrame = false;
+    int chPrevPxCx = INT_MIN;
+    int chPrevPxCy = INT_MIN;
+    double chPrevGeomScale = 1.0;
+    double chPrevZoomT = 0.0;
+    double chPrevScopeT = 0.0;
+    QRect chDirtyThisFrame;
+    QRect drawnDirtyPx;
+    int textCacheGen = 0;
+    float textRenderScale = 1.0f;
+    QFont hiResFont;
+    QFontMetrics hiResFm{QFont{}};
+    QFontMetrics frameFm{QFont{}};
+    int frameFpx = 0;
+    QFont frameFont;
+    NoHudPatchState noHudPatch;
+
+    uint32_t chGlitchFxPhase = 0xC0FFEE01u;
+    uint32_t chCyberPhase = 0xC088E001u;
+    uint32_t chDigitalPhase = 0x12345678u;
+    uint32_t chTacticalPhase = 0xCA471CA1u;
+    uint32_t chLidarPhase = 0x11DA0001u;
+    uint32_t chGlitchPhase = 0xA341316Cu;
+
+    EmuInstance* editEmu = nullptr;
+    int editSelected = -1;
+    int editHovered = -1;
+    bool dragging = false;
+    bool anchorPickerOpen = false;
+    QPointF dragStartDS;
+    int dragStartOfsX = 0;
+    int dragStartOfsY = 0;
+    bool resizingLength = false;
+    bool resizingWidth = false;
+    int resizeStartVal = 0;
+    QPointF resizeStartDS;
+    std::map<std::string, int> editSnapshot;
+    std::set<std::string> editSnapshotBools;
+    std::map<std::string, double> editSnapshotDoubles;
+    std::map<std::string, std::string> editSnapshotStrings;
+    std::function<void(int)> editSelectionCb;
+    float editOriginX = 0.0f;
+    float editOriginY = 0.0f;
+    int editPropScroll = 0;
+    bool editMode = false;
+    QRectF editRects[14];
+    float editHudScale = 1.0f;
+    float editTopStretchX = 1.0f;
+    bool editPreviewMode = false;
+    RomAddresses editRomCopy{};
+    GameAddressesHot editAddrHotCopy{};
+    uint8_t editPlayerPosCopy = 0;
+    bool crosshairPanelOpen = false;
+    bool zoomSectionOpen = false;
+    bool innerSectionOpen = false;
+    bool outerSectionOpen = false;
+    int crosshairPanelScroll = 0;
+    bool textScaleDragging = false;
+    bool autoScaleCapDragging = false;
+    bool colorDialogOpen = false;
+    QRect radarSrcRect;
+    int radarSrcHunterID = -1;
+    int radarSrcRadius = -1;
+    int radarSrcBufW = -1;
+    int radarSrcBufH = -1;
+
+    std::shared_ptr<void> runtimeState;
+    std::shared_ptr<void> frameState;
+    std::shared_ptr<void> textCacheState;
+    std::shared_ptr<void> editorState;
+};
+
+static thread_local CustomHudConfigState* g_activeHudConfigState = nullptr;
+
+class ScopedHudConfigState {
+public:
+    explicit ScopedHudConfigState(CustomHudConfigState& state) noexcept
+        : previous(g_activeHudConfigState)
+    {
+        g_activeHudConfigState = &state;
+    }
+
+    ~ScopedHudConfigState() { g_activeHudConfigState = previous; }
+
+private:
+    CustomHudConfigState* previous;
+};
+
+static CustomHudConfigState& ActiveHudConfigState()
+{
+    Q_ASSERT(g_activeHudConfigState);
+    return *g_activeHudConfigState;
+}
+
+std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
+{
+    return std::make_shared<CustomHudConfigState>();
+}
+
+#define s_cache (ActiveHudConfigState().cache)
+#define s_cacheEpoch (ActiveHudConfigState().cacheEpoch)
+#define s_weaponIcons (ActiveHudConfigState().weaponIcons)
+#define s_weaponTintedIcons (ActiveHudConfigState().weaponTintedIcons)
+#define s_weaponTintColors (ActiveHudConfigState().weaponTintColors)
+#define s_weaponTintValid (ActiveHudConfigState().weaponTintValid)
+#define s_weaponIconHeight (ActiveHudConfigState().weaponIconHeight)
+#define s_weaponIconMaxAspect (ActiveHudConfigState().weaponIconMaxAspect)
+#define s_bombIcons (ActiveHudConfigState().bombIcons)
+#define s_bombTintedIcons (ActiveHudConfigState().bombTintedIcons)
+#define s_bombTintColor (ActiveHudConfigState().bombTintColor)
+#define s_bombIconHeight (ActiveHudConfigState().bombIconHeight)
+#define s_bombTintCacheValid (ActiveHudConfigState().bombTintCacheValid)
+#define s_weaponIconsOutline (ActiveHudConfigState().weaponIconsOutline)
+#define s_bombIconsOutline (ActiveHudConfigState().bombIconsOutline)
+#define s_outlineWeaponColor (ActiveHudConfigState().outlineWeaponColor)
+#define s_outlineWeaponExpandR (ActiveHudConfigState().outlineWeaponExpandR)
+#define s_outlineWeaponBaseIconH (ActiveHudConfigState().outlineWeaponBaseIconH)
+#define s_outlineBombColor (ActiveHudConfigState().outlineBombColor)
+#define s_outlineBombExpandR (ActiveHudConfigState().outlineBombExpandR)
+#define s_outlineBombBaseIconH (ActiveHudConfigState().outlineBombBaseIconH)
+#define s_invIconsOutline (ActiveHudConfigState().invIconsOutline)
+#define s_outlineInvColor (ActiveHudConfigState().outlineInvColor)
+#define s_outlineInvExpandR (ActiveHudConfigState().outlineInvExpandR)
+#define s_outlineInvBaseIconH (ActiveHudConfigState().outlineInvBaseIconH)
+#define s_radarFrame (ActiveHudConfigState().radarFrame)
+#define s_radarFrameTinted (ActiveHudConfigState().radarFrameTinted)
+#define s_radarFrameTintColor (ActiveHudConfigState().radarFrameTintColor)
+#define s_radarFrameTargetH (ActiveHudConfigState().radarFrameTargetH)
+#define s_radarFrameOutline (ActiveHudConfigState().radarFrameOutline)
+#define s_radarFrameOutlineColor (ActiveHudConfigState().radarFrameOutlineColor)
+#define s_radarFrameOutlineR (ActiveHudConfigState().radarFrameOutlineR)
+#define s_effectiveRadarColor (ActiveHudConfigState().effectiveRadarColor)
+#define s_effectiveRadarHunterID (ActiveHudConfigState().effectiveRadarHunterID)
+#define s_effectiveRadarUseHunter (ActiveHudConfigState().effectiveRadarUseHunter)
+#define s_chOutlineStamp (ActiveHudConfigState().chOutlineStamp)
+#define s_chStampOrigin (ActiveHudConfigState().chStampOrigin)
+#define s_chStampValid (ActiveHudConfigState().chStampValid)
+#define s_chScopeStamp (ActiveHudConfigState().chScopeStamp)
+#define s_chScopeStampOrigin (ActiveHudConfigState().chScopeStampOrigin)
+#define s_chScopeStampValid (ActiveHudConfigState().chScopeStampValid)
+#define s_chDisplayZoom (ActiveHudConfigState().chDisplayZoom)
+#define s_chDisplayZoomFrame (ActiveHudConfigState().chDisplayZoomFrame)
+#define s_chAimFrame (ActiveHudConfigState().chAimFrame)
+#define s_chAimDsCx (ActiveHudConfigState().chAimDsCx)
+#define s_chAimDsCy (ActiveHudConfigState().chAimDsCy)
+#define s_chZoomReticleState (ActiveHudConfigState().chZoomReticleState)
+#define s_chCrosshairDrawnLastFrame (ActiveHudConfigState().chCrosshairDrawnLastFrame)
+#define s_chPrevPxCx (ActiveHudConfigState().chPrevPxCx)
+#define s_chPrevPxCy (ActiveHudConfigState().chPrevPxCy)
+#define s_chPrevGeomScale (ActiveHudConfigState().chPrevGeomScale)
+#define s_chPrevZoomT (ActiveHudConfigState().chPrevZoomT)
+#define s_chPrevScopeT (ActiveHudConfigState().chPrevScopeT)
+#define s_chDirtyThisFrame (ActiveHudConfigState().chDirtyThisFrame)
+#define s_drawnDirtyPx (ActiveHudConfigState().drawnDirtyPx)
+#define s_textCacheGen (ActiveHudConfigState().textCacheGen)
+#define s_textRenderScale (ActiveHudConfigState().textRenderScale)
+#define s_hiResFont (ActiveHudConfigState().hiResFont)
+#define s_hiResFm (ActiveHudConfigState().hiResFm)
+#define s_frameFm (ActiveHudConfigState().frameFm)
+#define s_frameFpx (ActiveHudConfigState().frameFpx)
+#define s_frameFont (ActiveHudConfigState().frameFont)
+#define s_chGlitchFxPhase (ActiveHudConfigState().chGlitchFxPhase)
+#define s_chCyberPhase (ActiveHudConfigState().chCyberPhase)
+#define s_chDigitalPhase (ActiveHudConfigState().chDigitalPhase)
+#define s_chTacticalPhase (ActiveHudConfigState().chTacticalPhase)
+#define s_chLidarPhase (ActiveHudConfigState().chLidarPhase)
+#define s_chGlitchPhase (ActiveHudConfigState().chGlitchPhase)
+#define s_editEmu (ActiveHudConfigState().editEmu)
+#define s_editSelected (ActiveHudConfigState().editSelected)
+#define s_editHovered (ActiveHudConfigState().editHovered)
+#define s_dragging (ActiveHudConfigState().dragging)
+#define s_anchorPickerOpen (ActiveHudConfigState().anchorPickerOpen)
+#define s_dragStartDS (ActiveHudConfigState().dragStartDS)
+#define s_dragStartOfsX (ActiveHudConfigState().dragStartOfsX)
+#define s_dragStartOfsY (ActiveHudConfigState().dragStartOfsY)
+#define s_resizingLength (ActiveHudConfigState().resizingLength)
+#define s_resizingWidth (ActiveHudConfigState().resizingWidth)
+#define s_resizeStartVal (ActiveHudConfigState().resizeStartVal)
+#define s_resizeStartDS (ActiveHudConfigState().resizeStartDS)
+#define s_editSnapshot (ActiveHudConfigState().editSnapshot)
+#define s_editSnapshotBools (ActiveHudConfigState().editSnapshotBools)
+#define s_editSnapshotDoubles (ActiveHudConfigState().editSnapshotDoubles)
+#define s_editSnapshotStrings (ActiveHudConfigState().editSnapshotStrings)
+#define s_editSelectionCb (ActiveHudConfigState().editSelectionCb)
+#define s_editOriginX (ActiveHudConfigState().editOriginX)
+#define s_editOriginY (ActiveHudConfigState().editOriginY)
+#define s_editPropScroll (ActiveHudConfigState().editPropScroll)
+#define s_editMode (ActiveHudConfigState().editMode)
+#define s_editRects (ActiveHudConfigState().editRects)
+#define s_editHudScale (ActiveHudConfigState().editHudScale)
+#define s_editTopStretchX (ActiveHudConfigState().editTopStretchX)
+#define s_editPreviewMode (ActiveHudConfigState().editPreviewMode)
+#define s_editRomCopy (ActiveHudConfigState().editRomCopy)
+#define s_editAddrHotCopy (ActiveHudConfigState().editAddrHotCopy)
+#define s_editPlayerPosCopy (ActiveHudConfigState().editPlayerPosCopy)
+#define s_crosshairPanelOpen (ActiveHudConfigState().crosshairPanelOpen)
+#define s_zoomSectionOpen (ActiveHudConfigState().zoomSectionOpen)
+#define s_innerSectionOpen (ActiveHudConfigState().innerSectionOpen)
+#define s_outerSectionOpen (ActiveHudConfigState().outerSectionOpen)
+#define s_crosshairPanelScroll (ActiveHudConfigState().crosshairPanelScroll)
+#define s_textScaleDragging (ActiveHudConfigState().textScaleDragging)
+#define s_autoScaleCapDragging (ActiveHudConfigState().autoScaleCapDragging)
+#define s_colorDialogOpen (ActiveHudConfigState().colorDialogOpen)
+#define s_radarSrcRect (ActiveHudConfigState().radarSrcRect)
+#define s_radarSrcHunterID (ActiveHudConfigState().radarSrcHunterID)
+#define s_radarSrcRadius (ActiveHudConfigState().radarSrcRadius)
+#define s_radarSrcBufW (ActiveHudConfigState().radarSrcBufW)
+#define s_radarSrcBufH (ActiveHudConfigState().radarSrcBufH)
 
 static QRect ScaleRectAroundOrigin(const QRect& r, double scale)
 {
@@ -371,9 +628,6 @@ static void RebuildCrosshairZoomScopeCache(CrosshairHudConfig& crosshair)
 // P-9: Frame-level font metrics — set once in CustomHud_Render, shared by all draw sub-functions.
 // OPT-HUD-6: s_frameFont caches the QFont so draw functions never call p->font() per-frame.
 //   p->font() creates a CoW ref-increment even on cache-hit paths (~10–20 cyc × 6 callers).
-static QFontMetrics s_frameFm{QFont{}};
-static int s_frameFpx = 0;
-static QFont s_frameFont;
 
 // =========================================================================
 //  Selectable HUD font (default MPH / system font / font file)
@@ -384,7 +638,7 @@ static QFont s_frameFont;
 // Bundled MPH pixel font (:/mph-font). Loaded once; addApplicationFont is idempotent.
 static const QString& MphFontFamily()
 {
-    static QString s_mphFamily = []() -> QString {
+    static QString s_mphFamily = []() -> QString { // function-local immutable
         const int id = QFontDatabase::addApplicationFont(QStringLiteral(":/mph-font"));
         if (id >= 0) {
             const QStringList fams = QFontDatabase::applicationFontFamilies(id);
@@ -403,8 +657,8 @@ static const QString& MphFontFamily()
 // preview) and the screen render path, so the cache mutation must be serialized.
 static QString LoadAppFontFamilyCached(const QString& path)
 {
-    static QMutex s_mutex;
-    static QHash<QString, QString> s_fileFamilies;  // path -> family ("" = known-bad)
+    static QMutex s_mutex; // process-service: guards QFontDatabase registration cache
+    static QHash<QString, QString> s_fileFamilies; // process-service: path -> registered family
     QMutexLocker lock(&s_mutex);
 
     auto it = s_fileFamilies.find(path);

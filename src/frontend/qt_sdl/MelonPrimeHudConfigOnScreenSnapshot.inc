@@ -127,6 +127,12 @@ static void ResetEditToDefaults(Config::Table& cfg)
                 cfg.SetInt(pr.extra2, defaults.GetInt(pr.extra2));
                 cfg.SetInt(pr.extra3, defaults.GetInt(pr.extra3));
                 break;
+            case EditPropType::Color:
+                // Color descriptors store R in cfgKey, G in extra1 and B in extra2.
+                cfg.SetInt(pr.cfgKey, defaults.GetInt(pr.cfgKey));
+                cfg.SetInt(pr.extra1, defaults.GetInt(pr.extra1));
+                cfg.SetInt(pr.extra2, defaults.GetInt(pr.extra2));
+                break;
             }
         }
     }
@@ -139,6 +145,11 @@ static void ResetEditToDefaults(Config::Table& cfg)
             case EditPropType::Enum:
             case EditPropType::Int:    cfg.SetInt(pr.cfgKey,  defaults.GetInt(pr.cfgKey));       break;
             case EditPropType::Float:  cfg.SetDouble(pr.cfgKey, defaults.GetDouble(pr.cfgKey)); break;
+            case EditPropType::Color:
+                cfg.SetInt(pr.cfgKey, defaults.GetInt(pr.cfgKey));
+                cfg.SetInt(pr.extra1, defaults.GetInt(pr.extra1));
+                cfg.SetInt(pr.extra2, defaults.GetInt(pr.extra2));
+                break;
             default: break;
             }
         }

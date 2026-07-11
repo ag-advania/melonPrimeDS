@@ -3,11 +3,12 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 // HUD Layout Editor: intercept all mouse input while in edit mode.
-if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
+auto* hudCore = melonPrimeCore();
+if (UNLIKELY(hudCore && MelonPrime::CustomHud_IsEditMode(hudCore->HudConfigState()))) {
     Config::Table& instcfg = emuInstance->getLocalConfig();
-    MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
-    MelonPrime::CustomHud_EditMousePress(event->pos(), event->button(), instcfg);
-    if (!MelonPrime::CustomHud_IsEditMode() && InputConfigDialog::currentDlg)
+    MelonPrime::CustomHud_UpdateEditContext(hudCore->HudConfigState(), m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
+    MelonPrime::CustomHud_EditMousePress(hudCore->HudConfigState(), event->pos(), event->button(), instcfg);
+    if (!MelonPrime::CustomHud_IsEditMode(hudCore->HudConfigState()) && InputConfigDialog::currentDlg)
         InputConfigDialog::currentDlg->refreshAfterHudEditSave();
     return;
 }

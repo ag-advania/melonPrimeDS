@@ -17,8 +17,11 @@ constexpr int kPanelWidth = 300;
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
-MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu)
-    : QWidget(parent), m_emu(emu)
+MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(
+    QWidget* parent,
+    EmuInstance* emu,
+    MelonPrime::CustomHudConfigState& hudConfig)
+    : QWidget(parent), m_emu(emu), m_hudConfig(hudConfig)
 {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     setAutoFillBackground(true);
@@ -105,7 +108,7 @@ void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddBoolRadioRow(ctx, label, key);
 }
 
@@ -114,7 +117,7 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
 QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddComboBoxRow(ctx, label, key, items);
 }
 
@@ -123,7 +126,7 @@ QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, co
 QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddSpinBoxRow(ctx, label, key, min, max);
 }
 
@@ -132,7 +135,7 @@ QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, cons
 QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddDoubleSpinBoxRow(ctx, label, key, min, max, step);
 }
 
@@ -141,7 +144,7 @@ QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString&
 QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label, const char* key)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddOpacitySliderRow(ctx, label, key);
 }
 
@@ -150,7 +153,7 @@ QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label,
 QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddLineEditRow(ctx, label, key);
 }
 
@@ -159,7 +162,7 @@ QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, co
 QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     return MelonPrime::HudEditorForm::AddColorPickerRow(ctx, label, keyR, keyG, keyB);
 }
 
@@ -169,7 +172,7 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
     const char* keyR, const char* keyG, const char* keyB)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     MelonPrime::HudEditorForm::AddSubColorRow(ctx, label, overallKey, keyR, keyG, keyB);
 }
 
@@ -178,7 +181,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     const char* keyR, const char* keyG, const char* keyB)
 {
     auto ctx = MelonPrime::HudEditorForm::MakeFactoryContext(
-        *this, *m_form, m_rows, cfg(), m_populating, *this);
+        *this, *m_form, m_rows, cfg(), m_hudConfig, m_populating, *this);
     MelonPrime::HudEditorForm::AddColorOverlayRow(ctx, label, enableKey, keyR, keyG, keyB);
 }
 

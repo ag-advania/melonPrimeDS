@@ -14,52 +14,59 @@ namespace MelonPrime {
 
     class InputState;
     struct FrameHotkeyState;
+    struct RawInputSubscription;
+    struct MelonPrimeInputSubscription;
 
     class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
-        static RawInputWinFilter* Acquire(bool joy2KeySupport, void* windowHandle);
+        static RawInputWinFilter* Acquire();
         static void Release();
 
-        explicit RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
+        RawInputWinFilter();
         ~RawInputWinFilter();
+
+        RawInputSubscription* Subscribe(MelonPrimeInputSubscription* owner, bool joy2KeySupport, HWND windowHandle);
+        void Unsubscribe(RawInputSubscription* subscription);
+        bool UpdateOwner(RawInputSubscription* subscription, bool eligible);
 
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-        void setJoy2KeySupport(bool enable);
-        void setRawInputTarget(HWND hwnd);
+        void setJoy2KeySupport(RawInputSubscription* subscription, bool enable);
+        void setRawInputTarget(RawInputSubscription* subscription, HWND hwnd);
+        void setQtFilterRequested(RawInputSubscription* subscription, bool enable);
 
         // Merged Poll + snapshot in single call
-        void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+        void PollAndSnapshot(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
         // Re-entrant path: same as PollAndSnapshot but does not advance hkPrev.
-        void PollAndSnapshotNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+        void PollAndSnapshotNoEdges(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
-        void DeferredDrain() noexcept;
+        void DeferredDrain(RawInputSubscription* subscription) noexcept;
 
         // Late-latch: flush kernel buffer + fetch fresh delta just before aim write.
-        void LateLatchMouseDelta(int& accX, int& accY) noexcept;
+        void LateLatchMouseDelta(RawInputSubscription* subscription, int& accX, int& accY) noexcept;
 
-        void discardDeltas();
+        void discardDeltas(RawInputSubscription* subscription);
 
         // R2: Primary interface -- zero-allocation path from SmallVkList
-        void setHotkeyVks(int id, const UINT* vks, size_t count);
+        void setHotkeyVks(RawInputSubscription* subscription, int id, const UINT* vks, size_t count);
 
         // Compatibility overload (delegates to pointer+count)
-        void setHotkeyVks(int id, const std::vector<UINT>& vks);
+        void setHotkeyVks(RawInputSubscription* subscription, int id, const std::vector<UINT>& vks);
 
-        void pollHotkeys(FrameHotkeyState& out);
-        void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
-        void snapshotInputFrameNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
-        void resetAll();  // P-9: combined reset (single fence)
-        void resetHotkeyEdges();
-        void fetchMouseDelta(int& outX, int& outY);
+        void resetAll(RawInputSubscription* subscription);
+        void resetHotkeyEdges(RawInputSubscription* subscription);
+        void fetchMouseDelta(RawInputSubscription* subscription, int& outX, int& outY);
 
     private:
         void CreateHiddenWindow();
         void DestroyHiddenWindow();
         void RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
+        void ApplyOwnerRegistration(RawInputSubscription* subscription);
+        InputState* StateFor(RawInputSubscription* subscription) const noexcept;
+        InputState* ActiveState() const noexcept;
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         /// Drain pending WM_INPUT messages from the hidden window queue.
@@ -72,16 +79,20 @@ namespace MelonPrime {
         /// require GetRawInputBuffer before PeekMessage. See FIX-1.
         void drainMessagesOnly() noexcept;
 
-        static std::atomic<int>    s_refCount;
-        static RawInputWinFilter* s_instance;
-        static std::once_flag      s_initFlag;
+        static std::mutex          s_serviceMutex; // process-service: singleton lifecycle lock
+        static std::atomic<int>    s_refCount; // process-service: collector subscription count
+        static RawInputWinFilter* s_instance; // process-service: OS event collector
+        static std::once_flag      s_initFlag; // process-service: immutable API resolution
         static void InitializeApiFuncs();
 
-        std::unique_ptr<InputState> m_state;
+        std::vector<std::unique_ptr<RawInputSubscription>> m_subscriptions;
+        std::atomic<RawInputSubscription*> m_activeSubscription{nullptr};
+        std::recursive_mutex m_subscriptionMutex;
         HWND  m_hwndQtTarget;
         HWND  m_hHiddenWnd;
         bool  m_joy2KeySupport;
         bool  m_isRegistered;
+        bool  m_qtFilterInstalled = false;
     };
 
 } // namespace MelonPrime

@@ -15,6 +15,8 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "../MelonPrimeHudPropSchema.inc"
+#include "../MelonPrime.h"
+#include "../EmuThread.h"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -190,7 +192,10 @@ void MelonPrimeInputConfig::applyVisualPreview()
             instcfg.SetInt(key, combo->currentIndex());
     }
 
-    MelonPrime::CustomHud_InvalidateConfigCache();
+    if (auto* thread = emuInstance->getEmuThread()) {
+        if (auto* core = thread->GetMelonPrimeCore())
+            MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState());
+    }
 
     // Refresh preview widgets
     for (auto* pw : m_hudPreviews) {

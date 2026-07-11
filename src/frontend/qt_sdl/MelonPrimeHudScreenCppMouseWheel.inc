@@ -2,8 +2,9 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
-if (MelonPrime::CustomHud_IsEditMode()) {
+auto* hudCore = melonPrimeCore();
+if (hudCore && MelonPrime::CustomHud_IsEditMode(hudCore->HudConfigState())) {
     Config::Table& instcfg = emuInstance->getLocalConfig();
-    MelonPrime::CustomHud_EditMouseWheel(event->position(), event->angleDelta().y(), instcfg);
+    MelonPrime::CustomHud_EditMouseWheel(hudCore->HudConfigState(), event->position(), event->angleDelta().y(), instcfg);
 }
 #endif

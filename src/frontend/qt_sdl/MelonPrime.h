@@ -18,10 +18,14 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "Config.h"
 #include "MelonPrimeCompilerHints.h"  // Centralised macros (was inline here)
 #include "MelonPrimePlatformInput.h"
+#include "MelonPrimeInputSubscription.h"
+#include "MelonPrimeThreadBridge.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeZoomState.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
+#include "MelonPrimePatchState.h"
 #endif
 
 class EmuInstance;
@@ -29,12 +33,31 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
+#ifdef MELONPRIME_DS
+    struct MelonPrimeArm9HookState {
+        struct DispatchEntry {
+            uint32_t address = 0;
+            uint16_t mask = 0;
+        };
+
+        static constexpr uint32_t Capacity = 32;
+        std::array<DispatchEntry, Capacity> entries{};
+        uint32_t count = 0;
+        uint32_t lastAddress = 0;
+        uint16_t lastMask = 0;
+    };
+#endif
+
     struct RuntimeConfigSnapshot;
 
     struct AimConfigSnapshot;
+#ifdef MELONPRIME_CUSTOM_HUD
+    struct CustomHudConfigState;
+#endif
 
 #ifdef _WIN32
     class RawInputWinFilter;
+    struct RawInputSubscription;
 #endif
 
     enum InputCacheBit : uint64_t {
@@ -221,6 +244,14 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
+        [[nodiscard]] MelonPrimeArm9HookState& Arm9HookState() noexcept
+        {
+            return m_arm9HookState;
+        }
+        [[nodiscard]] MelonPrimePatchState& PatchState() noexcept
+        {
+            return m_patchState;
+        }
 
         // -----------------------------------------------------------------
         // ARM9 instruction-hook module contracts (Foo_GetAddresses /
@@ -320,13 +351,17 @@ namespace MelonPrime {
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
         [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
+        [[nodiscard]] CustomHudConfigState& HudConfigState() noexcept
+        {
+            return *m_hudConfigState;
+        }
 #endif
 
-        // --- Public runtime state (read/written directly by Screen.cpp,
-        //     InputConfig, and EmuThread; not behind an accessor) ---
+        [[nodiscard]] MelonPrimeThreadBridge& ThreadBridge() noexcept { return m_threadBridge; }
+        [[nodiscard]] const MelonPrimeThreadBridge& ThreadBridge() const noexcept { return m_threadBridge; }
+
+        // EmuThread-owned runtime state. GUI consumers use ThreadBridge().
         bool isCursorMode = true;
-        std::atomic_bool isFocused{ false };
-        bool isClipWanted = false;
         bool isStylusMode = false;
         bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
         bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
@@ -355,7 +390,6 @@ namespace MelonPrime {
 
         // --- Hot Scalars + Core Pointers (R/W every frame) ---
         EmuInstance* emuInstance;
-        ScreenPanel* m_cachedPanel = nullptr;  // P-3: cached to avoid 3-level pointer chase
         Config::Table& localCfg;
         Config::Table& globalCfg;
 
@@ -502,6 +536,10 @@ namespace MelonPrime {
         float    m_aimSensiFactor = 0.01f;
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
+        // Phase 5: EmuThread-owned raw aim config used by the sensitivity
+        // hotkey. Config::Table remains a cold reload/persistence boundary.
+        int      m_runtimeAimSensitivity = 1;
+        float    m_runtimeAimYScale = 1.0f;
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
@@ -559,8 +597,8 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
+        RawInputSubscription* m_rawInputSubscription = nullptr;
         void* m_cachedHwnd = nullptr;
-        bool  m_isNativeFilterInstalled = false;  // Replaced static local for thread safety
 #endif
 
         struct AimData {
@@ -623,6 +661,19 @@ namespace MelonPrime {
         PlatformRawFilter* m_platformRawFilter = nullptr;
         // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
         uint8_t m_platformRawAimWasActive = 0;
+#endif
+
+        MelonPrimeInputSubscription m_inputSubscription{};
+        MelonPrimeThreadBridge m_threadBridge{};
+        uint64_t m_layoutGenerationSeen = 0;
+
+        ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
+#ifdef MELONPRIME_DS
+        MelonPrimeArm9HookState m_arm9HookState{};
+        MelonPrimePatchState m_patchState{};
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+        std::shared_ptr<CustomHudConfigState> m_hudConfigState;
 #endif
 
         // =================================================================
@@ -711,7 +762,7 @@ namespace MelonPrime {
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
-        void RecalcAimSensitivityCache(Config::Table& cfg);
+        void ApplyRuntimeAimSensitivity(int sensitivity);
         void RecalcAimFixedPoint();
         void RecalcAimEffectiveFixedScale();
         void UpdateZoomAimEffectiveScale();
@@ -724,6 +775,7 @@ namespace MelonPrime {
         void QueueWeaponSwitchRequest(uint8_t weaponId) noexcept;
 #endif
         void ShowCursor(bool show);
+        void PublishUiSnapshot() noexcept;
         void FrameAdvanceTwice();
         FORCE_INLINE void FrameAdvanceOnce() { m_didFrameAdvanceSinceSnapshot = true; (this->*m_fnAdvance)(); }
         void FrameAdvanceDefault();

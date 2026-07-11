@@ -102,30 +102,14 @@ public:
     std::optional<QRect> getTopScreenWidgetRect() const;
 #endif
 
-    int getDelta() {
-        // Store and reset in one operation for optimal performance
-        int currentDelta = wheelDelta;
-        wheelDelta = 0;
-        return currentDelta;
-    }
-
-    void getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy) {
-        outDx = aimMouseDeltaX.exchange(0, std::memory_order_acquire);
-        outDy = aimMouseDeltaY.exchange(0, std::memory_order_acquire);
-    }
-
-    void resetAimMouseDelta() {
-        aimMouseDeltaX.store(0, std::memory_order_release);
-        aimMouseDeltaY.store(0, std::memory_order_release);
-#if defined(__linux__)
-        // Also drop the prev-position baseline so an external cursor jump
-        // (layout change, explicit warp) is never counted as motion.
-        aimLastGlobalValid.store(false, std::memory_order_release);
-#endif
-    }
+    void getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy);
+    void resetAimMouseDelta();
 
     void reloadNoRomSplashLocalization();
     void containAimCursorIfNeeded();
+    void syncMelonPrimeThreadBridge();
+    // Explicit settings-dialog save wins over any older debounced hotkey save.
+    void cancelMelonPrimeDeferredConfigSave();
 
     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
@@ -151,11 +135,7 @@ public:
     {
         return false;
     }
-    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept
-    {
-        aimMouseDeltaX.fetch_add(dx, std::memory_order_relaxed);
-        aimMouseDeltaY.fetch_add(dy, std::memory_order_relaxed);
-    }
+    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept;
 #endif
 
 public slots:
@@ -219,10 +199,7 @@ protected:
     };
 
 #ifdef MELONPRIME_DS
-    int wheelDelta = 0;
-    std::atomic<std::int32_t> aimMouseDeltaX{ 0 };
-    std::atomic<std::int32_t> aimMouseDeltaY{ 0 };
-#if defined(__linux__)
+#if !defined(_WIN32)
     // Previous-position differencing baseline for the Qt fallback aim path.
     // aimLastGlobal is GUI-thread-only; the validity flag is atomic because
     // the emu thread invalidates it via resetAimMouseDelta().
@@ -264,6 +241,10 @@ protected:
     int      m_radarSrcRadius = 46;
     float    m_radarAnchorDsX = 256.0f;
     float    m_radarAnchorDsY = 0.0f;
+    QRect    m_hudPrevDirty;
+    QRect    m_hudUploadedRect;
+    uint64_t m_hudUploadedHash = 0;
+    bool     m_hudUploadedValid = false;
 #endif
 
 #ifdef MELONPRIME_DS
@@ -317,6 +298,9 @@ private:
     void clipCursorToBottomScreen();
     void releaseCursorStateForClose();
     QRect aimContainmentLocalRect() const;
+    void processMelonPrimePersistRequests();
+    void scheduleMelonPrimeConfigSave();
+    void flushMelonPrimeConfigSave();
     void setClipWanted(bool value);
     bool getClipWanted() const;
     bool m_lastInGameTopScreenOnlyOverride = false;
@@ -325,6 +309,12 @@ private:
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;
     bool m_hasLastClipFocusedState = false;
+    // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
+    // coalesces repeated per-frame requests without touching QWidget off-thread.
+    std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
+    QTimer m_melonPrimeConfigSaveTimer;
+    bool m_melonPrimeConfigSavePending = false;
+    uint64_t m_melonPrimeLastPersistGeneration = 0;
     bool closing = false;
 #endif
 };

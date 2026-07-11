@@ -21,6 +21,8 @@
 #include <QFormLayout>
 #include <QCheckBox>
 #include "../MelonPrimeColorDialogPrefs.h"
+#include "../MelonPrime.h"
+#include "../EmuThread.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSlider>
@@ -1276,7 +1278,11 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 {
     applyVisualPreview();
 #ifdef MELONPRIME_CUSTOM_HUD
-    MelonPrime::CustomHud_EnterEditMode(emuInstance, emuInstance->getLocalConfig());
+    if (auto* thread = emuInstance->getEmuThread()) {
+        if (auto* core = thread->GetMelonPrimeCore())
+            MelonPrime::CustomHud_EnterEditMode(
+                core->HudConfigState(), emuInstance, emuInstance->getLocalConfig());
+    }
 #endif
     if (InputConfigDialog::currentDlg)
         InputConfigDialog::currentDlg->hide();
@@ -1297,7 +1303,10 @@ namespace {
 void MelonPrimeInputConfig::invalidateHudAndRefreshPreviews()
 {
 #ifdef MELONPRIME_CUSTOM_HUD
-    MelonPrime::CustomHud_InvalidateConfigCache();
+    if (auto* thread = emuInstance->getEmuThread()) {
+        if (auto* core = thread->GetMelonPrimeCore())
+            MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState());
+    }
 #endif
     for (auto* pw : m_hudPreviews) pw->update();
 }

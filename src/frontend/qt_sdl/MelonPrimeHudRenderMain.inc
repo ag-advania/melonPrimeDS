@@ -5,14 +5,6 @@
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
 static constexpr int kEditElemCount   = 14; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair
-static bool          s_editMode       = false;
-static QRectF        s_editRects[kEditElemCount];
-static float         s_editHudScale    = 1.0f;
-static float         s_editTopStretchX = 1.0f;
-static bool          s_editPreviewMode = false;
-static RomAddresses     s_editRomCopy       = {};
-static GameAddressesHot s_editAddrHotCopy   = {};
-static uint8_t          s_editPlayerPosCopy = 0;
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
@@ -20,6 +12,7 @@ static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX
 //  CustomHud_Render — main entry point
 // =========================================================================
 HOT_FUNCTION QRect CustomHud_Render(
+    CustomHudConfigState& hudConfig,
     EmuInstance* emu, Config::Table& localCfg,
     const RomAddresses& rom, const GameAddressesHot& addrHot,
     uint8_t playerPosition,
@@ -29,6 +22,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
+    const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
                                                        hudOriginXds, hudOriginYds);
 
@@ -88,7 +82,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     // clamp in RunFrameHook gates on the applied mask. Per-element patches NOP
     // individual ARM draw instructions, so the start menu / death / game-over
     // screens are unaffected by leaving them applied.
-    NoHudPatch_Sync(st.nds, st.romGroup, c.noHudMask);
+    NoHudPatch_Sync(ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, c.noHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
     if (ShouldHideForGameplayState(st.isStartPressed,
@@ -310,11 +304,6 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
         // divisions + 4 casts each visible-radar frame. The cache key covers all
         // inputs of the formula, so it is self-correcting (no external
         // invalidation needed on hunter swap / config change / resolution change).
-        static QRect s_radarSrcRect;
-        static int   s_radarSrcHunterID = -1;
-        static int   s_radarSrcRadius   = -1;
-        static int   s_radarSrcBufW     = -1;
-        static int   s_radarSrcBufH     = -1;
 
         if (hunterID != s_radarSrcHunterID || srcRadius != s_radarSrcRadius ||
             bufW != s_radarSrcBufW || bufH != s_radarSrcBufH) {

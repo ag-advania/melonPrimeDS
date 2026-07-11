@@ -114,9 +114,9 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         ? EvalColorRamp(c.hp.hpTextRamp, hp, maxHP, c.hp.hpTextColor)
         : c.hp.hpTextColor;
 
-    static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-    static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+    auto& s_hpTextCache = HudElementTextCaches().hpText;
+    auto& s_hpBitmapCache = HudElementTextCaches().hpBitmap;
+    auto& s_hpOutlineCache = HudElementTextCaches().hpOutline;
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
     // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
@@ -260,8 +260,8 @@ static void DrawWeaponInventory(QPainter* p,
     float curY = startY;
 
     // Per-slot text bitmap caches — persist across frames, invalidated by PrepareTextBitmapCached.
-    static TextBitmapCache s_invTextCache[9]    = {};
-    static TextBitmapCache s_invOutlineCache[9] = {};
+    auto& s_invTextCache = HudElementTextCaches().invText;
+    auto& s_invOutlineCache = HudElementTextCaches().invOutline;
 
     const QFontMetrics& fm      = s_frameFm;
     const int           fontPx  = s_frameFpx;
@@ -440,9 +440,9 @@ static void DrawWeaponAmmo(QPainter* p,
                            uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
                            const CachedHudConfig& c, float tds, float hudScale)
 {
-    static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-    static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+    auto& s_ammoTextCache = HudElementTextCaches().ammoText;
+    auto& s_ammoBitmapCache = HudElementTextCaches().ammoBitmap;
+    auto& s_ammoOutlineCache = HudElementTextCaches().ammoOutline;
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
     // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
@@ -816,7 +816,6 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     case 1: // Staged — opacity-only; pulse ring (if enabled) handled below
         break;
     case 2: { // Glitch — AniGlitchArtFX-style RGB break / slices / scan bars
-        static uint32_t s_chGlitchFxPhase = 0xC0FFEE01u;
         DrawFxGlitchArtOverlay(p, pxCx, pxCy, maxR, std::clamp(zoomT, 0.0, 1.0), midFx,
                                ch.chZoomScopeThickness, s_chGlitchFxPhase, 0);
         break;
@@ -824,7 +823,6 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     case 3: { // Glitch2 — scan-disturb overload + tactical brackets
         p->setRenderHint(QPainter::Antialiasing, false);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
-        static uint32_t s_chCyberPhase = 0xC088E001u;
         DrawFxGlitchArtOverlay(p, pxCx, pxCy, maxR, lockT, midFx,
                                ch.chZoomScopeThickness, s_chCyberPhase, 1);
         DrawFxScanDisturb(p, pxCx, pxCy, maxR, lockT, midFx * 0.9, ch.chColor, s_chCyberPhase);
@@ -846,7 +844,6 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     }
     case 5: { // Digital — pixel crush + block noise
         p->setRenderHint(QPainter::Antialiasing, false);
-        static uint32_t s_chDigitalPhase = 0x12345678u;
         s_chDigitalPhase = AdvanceCrosshairFxPhase(s_chDigitalPhase);
         const int blocks = 10 + static_cast<int>((s_chDigitalPhase >> 6) & 11u);
         p->setPen(Qt::NoPen);
@@ -948,7 +945,6 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     case 9: { // Tactical Lock
         p->setRenderHint(QPainter::Antialiasing, true);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
-        static uint32_t s_chTacticalPhase = 0xCA471CA1u;
         DrawFxTargetBoxAcquisition(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor,
                                    ch.chZoomScopeThickness, s_chTacticalPhase);
         DrawFxConvergingRings(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
@@ -982,7 +978,6 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     case 11: { // Drone LIDAR
         p->setRenderHint(QPainter::Antialiasing, false);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
-        static uint32_t s_chLidarPhase = 0x11DA0001u;
         DrawFxLidarCloud(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, s_chLidarPhase);
         DrawFxWireframeBox(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
         DrawFxMaterialGrid(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
@@ -1316,7 +1311,6 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     int glitchOy = 0;
     int scopeGlitchOx = 0;
     int scopeGlitchOy = 0;
-    static uint32_t s_chGlitchPhase = 0xA341316Cu;
     if (c.crosshair.chZoomTransitionEnable
         && (transitionFxStyle == 2 || transitionFxStyle == 3)) {
         const CrosshairGlitchJitter jitter =

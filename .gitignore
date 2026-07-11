@@ -39,3 +39,14 @@ vcpkg
 res/assets/weapons/old/Missile.svg
 res/assets/weapons/old/Missilev2.svg
 res/assets/weapons/old/Missilev3.svg
+# MelonPrimeDS local patch/recovery artifacts
+.melonprime_linux_input_patch_backup/
+.linux_mouse_input_hardening_backup/
+.linux_mouse_input_hardening_recovery_snapshot/
+.optional_wayland_build_backup/
+.wayland_mouse_lock_backup/
+.wayland_mouse_lock_recovery_snapshot/
+linux_mouse_input_hardening_*.diff
+optional_wayland_build_*.diff
+wayland_opengl_mouse_lock_*.diff
+melonprime_linux_cursor_best_practice_*.diff

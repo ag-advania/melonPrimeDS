@@ -20,35 +20,6 @@ static QImage loadSvgToHeight(const char* path, int h)
     return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
-static QImage s_weaponIcons[9];
-static QImage s_weaponTintedIcons[9];
-static QColor s_weaponTintColors[9];
-static bool   s_weaponTintValid[9] = {};
-static int    s_weaponIconHeight = 0;
-static float  s_weaponIconMaxAspect = 1.0f;
-
-// Bomb icon cache — 4 icons (index 0-3 = bombs remaining)
-static QImage s_bombIcons[4];
-static QImage s_bombTintedIcons[4];
-static QColor s_bombTintColor;
-static int    s_bombIconHeight = 0;
-static bool   s_bombTintCacheValid = false;
-
-// Outline icon caches — forward-declared here so EnsureBombIconsLoaded can invalidate
-static QImage s_weaponIconsOutline[9];
-static QImage s_bombIconsOutline[4];
-static QColor s_outlineWeaponColor;
-static int    s_outlineWeaponExpandR   = -1;
-static int    s_outlineWeaponBaseIconH = -1;
-static QColor s_outlineBombColor;
-static int    s_outlineBombExpandR     = -1;
-static int    s_outlineBombBaseIconH   = -1;
-// Weapon Inventory icon outline cache (separate from DrawWeaponAmmo's weapon outline)
-static QImage s_invIconsOutline[9];
-static QColor s_outlineInvColor;
-static int    s_outlineInvExpandR     = -1;
-static int    s_outlineInvBaseIconH   = -1;
-
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
     const int idx = (bombs >= 0 && bombs <= 3) ? bombs : 0;
@@ -238,15 +209,6 @@ static void EnsureBombOutlineIconsUpdated(const QColor& color, int expandR)
 //  The SVG viewBox is 76×76 matching the actual bottom screen radar art size.
 //  The frame is drawn proportionally: 76 / (srcRadius*2) * dstSize DS pixels.
 // =========================================================================
-static QImage s_radarFrame;
-static QImage s_radarFrameTinted;
-static QColor s_radarFrameTintColor;
-static int    s_radarFrameTargetH = 0;
-// Cached dilated outline of the frame (same technique as weapon icons)
-static QImage s_radarFrameOutline;
-static QColor s_radarFrameOutlineColor;
-static int    s_radarFrameOutlineR = -1;
-
 // P-13: Pre-computed hunter QColor table — avoids per-frame QColor construction
 //       from bit-shifting. Initialized once on first use.
 static const QColor& HunterFrameQColor(int idx)
@@ -265,13 +227,6 @@ static const QColor& HunterFrameQColor(int idx)
 
 // P-13: Cached effective radar color — avoids QColor construction + comparison
 //       every frame when hunter/config hasn't changed.
-static QColor  s_effectiveRadarColor;
-static uint8_t s_effectiveRadarHunterID = 0xFF;
-static bool    s_effectiveRadarUseHunter = false;
-
-// Bottom screen radar art size in pixels (= SVG viewBox width/height).
-static constexpr int kRadarArtSize = 76;
-
 static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
                                     const QColor& tintColor, const QColor& outlineColor,
                                     int outlineThickness)
@@ -325,13 +280,6 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
 //        with a single drawImage each frame.  Eliminates per-frame QPainter
 //        creation + all fillRect calls in DrawCrosshair.
 // =========================================================================
-static QImage s_chOutlineStamp;
-static QPoint s_chStampOrigin;   // offset from (pxCx, pxCy) to stamp top-left
-static bool   s_chStampValid = false;
-static QImage s_chScopeStamp;
-static QPoint s_chScopeStampOrigin; // added to (pxCx, pxCy) for drawImage top-left
-static bool   s_chScopeStampValid = false;
-
 // ── OPT-DR1 / OPT-DR2: Dirty-rect tracking ───────────────────────────────────
 // OPT-DR1: the crosshair moves every frame with the aim, so its prev∪curr pixel
 //          bbox is tracked separately and unioned into the frame dirty rect.
@@ -351,25 +299,6 @@ static bool   s_chScopeStampValid = false;
 
 // Crosshair position from the previous frame (pixel space, after resetTransform).
 // INT_MIN = not drawn yet / reset.
-static float s_chDisplayZoom = 0.0f;
-static uint32_t s_chDisplayZoomFrame = 0xFFFFFFFFu;
-static uint32_t s_chAimFrame = 0xFFFFFFFFu;
-static float s_chAimDsCx = 0.0f;
-static float s_chAimDsCy = 0.0f;
-static ZoomStatus::ReticleVisibilityState s_chZoomReticleState;
-static bool  s_chCrosshairDrawnLastFrame = false;
-static int   s_chPrevPxCx = INT_MIN;
-static int   s_chPrevPxCy = INT_MIN;
-static double s_chPrevGeomScale = 1.0;
-static double s_chPrevZoomT = 0.0;
-static double s_chPrevScopeT = 0.0;
-// Accumulated dirty rect for the crosshair in the current frame (prev ∪ curr pos).
-static QRect s_chDirtyThisFrame;
-
-// OPT-DR2: accumulated device-pixel bbox of every non-crosshair primitive drawn
-// this frame. Reset at the top of CustomHud_Render.
-static QRect s_drawnDirtyPx;
-
 // Union an already-device-space rect into the frame dirty accumulator (+1px AA pad).
 static inline void AccumDirtyDevPx(const QRectF& dev)
 {
@@ -420,18 +349,14 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
 // Text caches are keyed by string/color/pixel-size — NOT by font family. When the
 // selectable HUD font changes (HudFontMode/Family/File), EnsureHudFont() bumps this
 // generation so every cached glyph bitmap/measurement is treated as a miss and rebuilt.
-static int s_textCacheGen = 0;
 
 // Glyph render magnification (output px / native bitmap px). 1.0 = native bitmap upscaled at
 // draw time (MPH pixel font). >1.0 = re-rasterise the glyph at output resolution so system/file
 // fonts stay crisp after auto-scale/hudScale instead of being a blurry upscale.
 // Computed event-driven in RefreshCachedConfig (config change / resize only) — never per frame.
-static float s_textRenderScale = 1.0f;
 // Output-resolution font + metrics for the hi-DPI text path, rebuilt alongside s_textRenderScale
 // only when the font or render scale changes. Avoids constructing a QFont/QFontMetrics per glyph
 // cache-miss (e.g. ammo ticking during fire).
-static QFont s_hiResFont;
-static QFontMetrics s_hiResFm{QFont{}};
 
 struct TextMeasureCache {
     int  fontPixelSize;
@@ -456,6 +381,25 @@ struct TextBitmapCache {
     int    gen;      // s_textCacheGen at build time (font-family generation); last so
                      // existing positional aggregate initializers leave it 0.
 };
+
+struct HudElementTextCacheState {
+    TextMeasureCache hpText{};
+    TextBitmapCache hpBitmap{};
+    TextBitmapCache hpOutline{};
+    TextBitmapCache invText[9]{};
+    TextBitmapCache invOutline[9]{};
+    TextMeasureCache ammoText{};
+    TextBitmapCache ammoBitmap{};
+    TextBitmapCache ammoOutline{};
+};
+
+static HudElementTextCacheState& HudElementTextCaches()
+{
+    auto& slot = ActiveHudConfigState().textCacheState;
+    if (!slot)
+        slot = std::make_shared<HudElementTextCacheState>();
+    return *std::static_pointer_cast<HudElementTextCacheState>(slot);
+}
 
 // textDrawScale: visual scale applied when drawing (textScalePct/100). Returned
 // dimensions are in pre-hudScale DS space so gauge/alignment math stays correct.

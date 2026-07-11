@@ -151,8 +151,12 @@ static void HudGoldenFillRam(std::vector<melonDS::u8>& ram, const RomAddresses& 
     ram[hot.chosenHunter] = static_cast<uint8_t>(HunterId::Samus);
 }
 
-static uint64_t HudGoldenRenderCase(Config::Table& cfg, const HudGoldenCase& tc)
+static uint64_t HudGoldenRenderCase(
+    CustomHudConfigState& hudConfig,
+    Config::Table& cfg,
+    const HudGoldenCase& tc)
 {
+    const ScopedHudConfigState active(hudConfig);
     HudGoldenApplyCaseConfig(cfg, tc);
     CustomHud_InvalidateConfigCache();
 
@@ -211,11 +215,12 @@ int CustomHud_RunGoldenHarness(const QString& outputPath)
     };
 
     QString outText;
+    CustomHudConfigState hudConfig;
     QTextStream stream(&outText);
     stream << "# MelonPrime HUD golden hashes\n";
     stream << "# format: case fnv1a64\n";
     for (const HudGoldenCase& tc : cases) {
-        const uint64_t hash = HudGoldenRenderCase(cfg, tc);
+        const uint64_t hash = HudGoldenRenderCase(hudConfig, cfg, tc);
         stream << tc.name << " 0x" << Qt::hex << hash << Qt::dec << "\n";
     }
 

@@ -49,11 +49,14 @@
 
 namespace MelonPrime {
 
-// Asset, icon, radar-frame, text, and outline caches/helpers.
-#include "MelonPrimeHudRenderAssets.inc"
+// Bottom-screen radar art size in pixels (= SVG viewBox width/height).
+static constexpr int kRadarArtSize = 76;
 
 // Cached HUD config structs, loaders, scaling, and anchor recomputation.
 #include "MelonPrimeHudRenderConfig.inc"
+
+// Asset, icon, radar-frame, text, and outline caches/helpers.
+#include "MelonPrimeHudRenderAssets.inc"
 
 // Battle/match state, frame runtime helpers, hide rules, and NoHUD patching.
 #include "MelonPrimeHudRenderRuntime.inc"
@@ -72,6 +75,9 @@ namespace MelonPrime {
 
 // Developer-only golden hash harness.
 #include "MelonPrimeHudGoldenHarness.inc"
+
+#undef s_cacheEpoch
+#undef s_cache
 
 } // namespace MelonPrime
 

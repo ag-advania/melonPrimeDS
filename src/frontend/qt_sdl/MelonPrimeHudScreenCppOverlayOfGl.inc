@@ -2,10 +2,14 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
+#define s_hudPrevDirtyGL m_hudPrevDirty
+#define s_hudUploadedRectGL m_hudUploadedRect
+#define s_hudUploadedHashGL m_hudUploadedHash
+#define s_hudUploadedValidGL m_hudUploadedValid
         // --- Custom HUD Overlay (uses OSD shader for proper alpha blending) ---
         {
             auto* mp = emuThread->GetMelonPrimeCore();
-            const bool editMode = MelonPrime::CustomHud_IsEditMode();
+            const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
             if (MelonPrimeHud_CanRenderForCore(mp, editMode))
             {
                 auto& instcfg = emuInstance->getLocalConfig();
@@ -13,9 +17,10 @@
                 const float hudScale    = m_hudScale;
                 const float topStretchX = m_topStretchX;
 
-                MelonPrimeHud_RefreshHudEnabledIfNeeded(instcfg, m_hudCfgEpoch, m_hudEnabled);
-                MelonPrimeHud_RefreshOverlayFontIfNeeded(instcfg, m_hudFontEpoch, overlayFont);
+                MelonPrimeHud_RefreshHudEnabledIfNeeded(mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+                MelonPrimeHud_RefreshOverlayFontIfNeeded(mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
                 MelonPrimeHud_RefreshRadarConfigIfNeeded(
+                    mp->HudConfigState(),
                     instcfg, m_radarCfgEpoch,
                     m_radarEnable, m_radarAnchor,
                     m_radarDstX, m_radarDstY, m_radarDstSize,
@@ -32,13 +37,9 @@
                 const int topOutH = std::max(1, fullLogH);
 
                 // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
-                static QRect s_hudPrevDirtyGL;
                 // OPT-DR3: Track the last uploaded region + its content hash so a
                 // large but unchanged region (held zoom scope) can skip re-upload.
-                static QRect    s_hudUploadedRectGL;
-                static uint64_t s_hudUploadedHashGL  = 0;
-                static bool     s_hudUploadedValidGL = false;
-                MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyGL);
+                MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, m_hudPrevDirty);
 
                 // Per-frame painter (must end before GL upload reads image bits)
                 const QRect curDirty = MelonPrimeHud_RenderTopOverlay(
@@ -46,7 +47,7 @@
                     Overlay[0], overlayFont,
                     topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY);
-                const QRect uploadRect = s_hudPrevDirtyGL.united(curDirty);
+                const QRect uploadRect = m_hudPrevDirty.united(curDirty);
                 if (MelonPrimePerf::IsFrameActive() && !uploadRect.isEmpty())
                     MelonPrimePerf::AddHudDirtyArea(uploadRect.width() * uploadRect.height());
                 bool hudGlStateChanged = false;
@@ -226,3 +227,8 @@
             }
         }
 #endif
+
+#undef s_hudUploadedValidGL
+#undef s_hudUploadedHashGL
+#undef s_hudUploadedRectGL
+#undef s_hudPrevDirtyGL

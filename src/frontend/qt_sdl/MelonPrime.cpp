@@ -11,6 +11,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeRuntimeConfig.h"
+#include "MelonPrimeInstanceDiagnostics.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -24,7 +25,6 @@
 
 #include <cmath>
 #include <algorithm>
-#include <QCoreApplication>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
@@ -51,6 +51,12 @@ namespace MelonPrime {
         , globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
+        m_inputSubscription.Initialize(
+            static_cast<uint64_t>(emuInstance->getInstanceID()));
+#ifdef MELONPRIME_CUSTOM_HUD
+        m_hudConfigState = CustomHud_CreateConfigState();
+#endif
+        InstanceDiagnostics::LogLifecycle(emuInstance, this, "constructed");
     }
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -89,60 +95,43 @@ namespace MelonPrime {
 #ifdef _WIN32
         if (m_rawFilter) return;
 
-        if (auto* mw = emuInstance->getMainWindow()) {
-            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
-        }
-        m_rawFilter.reset(
-            RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
+        m_cachedHwnd = reinterpret_cast<void*>(
+            m_threadBridge.WindowHandleForEmu());
+        m_rawFilter.reset(RawInputWinFilter::Acquire());
+        m_rawInputSubscription = m_rawFilter->Subscribe(
+            &m_inputSubscription,
+            m_flags.test(StateFlags::BIT_JOY2KEY),
+            static_cast<HWND>(m_cachedHwnd));
 
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-        BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
+        BindMetroidHotkeysFromConfig(
+            m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
 #endif
     }
 
     // =========================================================================
     // REFACTORED: ApplyJoy2KeySupportAndQtFilter
     //
-    // Changed: `static bool s_isInstalled` -> member `m_isNativeFilterInstalled`.
-    //
-    // The static local was shared across all MelonPrimeCore instances.
-    // While currently only one instance exists, this was a latent bug:
-    //   - Multiple instances would corrupt each other's filter install state
-    //   - Not resilient to future multi-instance support
-    //   - Static locals in member functions are a code smell
-    //
-    // Member variable is initialised to false in the header, reset in OnEmuStart.
+    // Qt native-filter installation is coordinated by the process-wide input
+    // service according to the active subscription's Joy2Key request.
     // =========================================================================
     void MelonPrimeCore::ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset)
     {
 #ifdef _WIN32
         if (!m_rawFilter) return;
-        QCoreApplication* app = QCoreApplication::instance();
-        if (!app) return;
+        m_cachedHwnd = reinterpret_cast<void*>(
+            m_threadBridge.WindowHandleForEmu());
 
-        if (auto* mw = emuInstance->getMainWindow()) {
-            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
-        }
-
-        m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
+        m_rawFilter->setRawInputTarget(
+            m_rawInputSubscription, static_cast<HWND>(m_cachedHwnd));
         m_flags.assign(StateFlags::BIT_JOY2KEY, enable);
 
-        m_rawFilter->setJoy2KeySupport(enable);
-
-        if (enable != m_isNativeFilterInstalled) {
-            if (enable) {
-                app->installNativeEventFilter(m_rawFilter.get());
-            }
-            else {
-                app->removeNativeEventFilter(m_rawFilter.get());
-            }
-            m_isNativeFilterInstalled = enable;
-        }
-
+        m_rawFilter->setJoy2KeySupport(m_rawInputSubscription, enable);
+        m_rawFilter->setQtFilterRequested(m_rawInputSubscription, enable);
         if (doReset) {
             // P-9 / resetAll: combined reset keeps the same semantics with one fence.
-            m_rawFilter->resetAll();
-            m_rawFilter->resetHotkeyEdges();
+            m_rawFilter->resetAll(m_rawInputSubscription);
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
     }
@@ -155,24 +144,27 @@ namespace MelonPrime {
     // comment in MelonPrimeRuntimeConfig.h.
     void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
     {
+        m_runtimeAimSensitivity = s.aimSensitivity;
+        m_runtimeAimYScale = s.aimYScale;
         m_aimSensiFactor = s.aimSensiFactor;
         m_aimCombinedY = s.aimCombinedY;
         m_aimAdjust = s.aimAdjust;
         RecalcAimFixedPoint();
     }
 
-    // Called from Initialize(), ApplyConfigReload(), and ROM detect — see
-    // MelonPrimeRuntimeConfig.h for why this is a separate reload path from
-    // ReloadConfigFlags()/RuntimeConfigSnapshot.
+    // Compatibility cold-path entry point. Normal reloads now carry aim config
+    // inside RuntimeConfigSnapshot.
     void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
     {
         ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
     }
 
-    void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
-        const AimSensitivitySnapshot s = LoadAimSensitivitySnapshot(cfg);
-        m_aimSensiFactor = s.aimSensiFactor;
-        m_aimCombinedY = s.aimCombinedY;
+    void MelonPrimeCore::ApplyRuntimeAimSensitivity(int sensitivity)
+    {
+        m_runtimeAimSensitivity = std::max(1, sensitivity);
+        m_aimSensiFactor =
+            static_cast<float>(m_runtimeAimSensitivity) * 0.01f;
+        m_aimCombinedY = m_aimSensiFactor * m_runtimeAimYScale;
         RecalcAimFixedPoint();
     }
 
@@ -202,9 +194,7 @@ namespace MelonPrime {
     // P-3: Moved from header -- requires complete EmuInstance type
     void MelonPrimeCore::NotifyLayoutChange()
     {
-        m_isLayoutChangePending = true;
-        if (auto* mw = emuInstance->getMainWindow())
-            m_cachedPanel = mw->panel;
+        m_threadBridge.NotifyLayoutChangeFromGui();
     }
 
     // =========================================================================
@@ -221,9 +211,23 @@ namespace MelonPrime {
     {
 #ifdef _WIN32
         if (m_rawFilter) {
-            m_rawFilter->DeferredDrain();
+            m_rawFilter->DeferredDrain(m_rawInputSubscription);
         }
 #endif
+    }
+
+    void MelonPrimeCore::PublishUiSnapshot() noexcept
+    {
+        const bool rawAimActive = PlatformInput_IsRuntimeRawAimActive(
+            MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription);
+        m_threadBridge.PublishRuntimeFromEmu(
+            isCursorMode,
+            isStylusMode,
+            m_flags.test(StateFlags::BIT_IN_GAME),
+            m_flags.test(StateFlags::BIT_ROM_DETECTED),
+            isFastForward,
+            rawAimActive,
+            screenSyncMode);
     }
 
     void MelonPrimeCore::NotifyConfigChanged()
@@ -252,16 +256,17 @@ namespace MelonPrime {
         if (LIKELY(!released)) return;
 
         const int change = (released & kSensiUpBit) ? 1 : -1;
-        const int cur = localCfg.GetInt(CfgKey::AimSens);
+        const int cur = m_runtimeAimSensitivity;
         const int next = cur + change;
 
         if (next < 1) {
             emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
         }
         else if (next != cur) {
-            localCfg.SetInt(CfgKey::AimSens, next);
-            Config::Save();
-            RecalcAimSensitivityCache(localCfg);
+            // Runtime response is immediate; persistence is delegated to the
+            // GUI thread and debounced there.
+            ApplyRuntimeAimSensitivity(next);
+            m_threadBridge.RequestAimSensitivityPersistFromEmu(next);
             emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);
         }
     }
@@ -273,7 +278,7 @@ namespace MelonPrime {
         if (UNLIKELY(m_isRunningHook)) {
             // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
             // Use the lean updater: no press-map scan, no wheel fetch.
-            const bool focused = isFocused.load(std::memory_order_acquire);
+            const bool focused = m_threadBridge.FocusedForEmu();
             UpdateInputStateReentrant(focused);
             ProcessMoveAndButtonsFastFromReset();
             ApplyBipedFireInput();
@@ -303,7 +308,7 @@ namespace MelonPrime {
         // have changed, forcing a reload from memory. isFocused is written by
         // the GUI thread, so load once and use that value consistently for this
         // frame's input snapshot and focus transition.
-        const bool focused = isFocused.load(std::memory_order_acquire);
+        const bool focused = m_threadBridge.FocusedForEmu();
 
         // Poll moved into UpdateInputState via PollAndSnapshot
         UpdateInputState(focused);
@@ -367,7 +372,7 @@ namespace MelonPrime {
                     // every in-game frame). Bypasses the registry/gateway on purpose;
                     // see melonprime-srp-performance-contract.md's "Never mix" list
                     // and melonprime-srp-v3-completion-summary.md's Deferred table.
-                    OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                    OsdColor_ApplyOnce(m_patchState, emuInstance, localCfg, m_currentRom);
                 }
 #ifdef MELONPRIME_CUSTOM_HUD
                 // Before RunFrame: hold the helmet layers off across the spawn
@@ -375,7 +380,7 @@ namespace MelonPrime {
                 // during spawn states, so init writers can briefly restore the
                 // BG1-3 layers and flash the native visor for a frame.
                 CustomHud_ClampHelmetLayersPreFrame(
-                    emuInstance, m_currentRom, m_playerPosition);
+                    *m_hudConfigState, emuInstance, m_currentRom, m_playerPosition);
 #endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
@@ -401,7 +406,7 @@ namespace MelonPrime {
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
-                    emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+                    *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
@@ -424,7 +429,7 @@ namespace MelonPrime {
                     // PatchLifecycle Step 3 / Site E — see
                     // melonprime_patch_lifecycle_gateway_step3_plan.md.
                     PatchLifecycle::ApplyOutOfGameFrame(
-                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
+                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
                     // Out-of-game screens (e.g. the Adventure planet/region map)
                     // still accept WASD movement so the player can navigate.
@@ -474,12 +479,13 @@ namespace MelonPrime {
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
                     // (one fence instead of two)
                     if (m_rawFilter) {
-                        m_rawFilter->resetAll();
+                        m_rawFilter->resetAll(m_rawInputSubscription);
                     }
 #elif defined(__APPLE__) || defined(__linux__)
                     // Drop raw deltas accumulated while unfocused so refocus
                     // cannot produce an aim jump (same intent as FIX-3).
-                    PlatformInput_ResetRawFilter(m_platformRawFilter);
+                    PlatformInput_ResetRawFilter(
+                        m_platformRawFilter, m_inputSubscription);
 #endif
 #ifdef MELONPRIME_DS
                     m_weaponSwitchPending.Clear();
@@ -511,6 +517,7 @@ namespace MelonPrime {
             }
         }
 #endif
+        PublishUiSnapshot();
         m_isRunningHook = false;
     }
 
@@ -608,11 +615,12 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
-        Patches_Apply(PatchSite_GameJoin, PatchCtx{ nds, emuInstance, localCfg, m_currentRom });
+        Patches_Apply(PatchSite_GameJoin,
+                      PatchCtx{ nds, emuInstance, localCfg, m_currentRom, m_patchState });
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
-        CustomHud_OnMatchJoin(mainRAM, m_currentRom);
+        CustomHud_OnMatchJoin(*m_hudConfigState, mainRAM, m_currentRom);
 #endif
     }
 
@@ -630,48 +638,18 @@ namespace MelonPrime {
 
     void MelonPrimeCore::ShowCursor(bool show)
     {
-        auto* panel = emuInstance->getMainWindow()->panel;
-        if (!panel) return;
-
-#if !defined(_WIN32)
-        QPoint center;
-        bool hasCenter = false;
-
         if (!show) {
-            center = GetAdjustedCenter();
-            m_aimData.centerX = center.x();
-            m_aimData.centerY = center.y();
-            hasCenter = true;
-
 #if defined(__APPLE__) || defined(__linux__)
-            PlatformInput_ResetRawFilter(m_platformRawFilter);
+            PlatformInput_ResetRawFilter(
+                m_platformRawFilter, m_inputSubscription);
 #endif
         }
-#endif
-
-        QMetaObject::invokeMethod(panel,
-#if !defined(_WIN32)
-            [panel, show, center, hasCenter]() {
-#else
-            [panel, show]() {
-#endif
-                panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
-                if (show) panel->unclip();
-                else {
-                    panel->clipCursorCenter1px();
-#if !defined(_WIN32)
-                    if (hasCenter) {
-#if defined(__linux__)
-                        // Drop the fallback's prev-position baseline first so
-                        // this warp is never counted as motion.
-                        panel->resetAimMouseDelta();
-#endif
-                        PlatformInput_WarpCursor(center.x(), center.y());
-                    }
-#endif
-                }
-            },
-            Qt::ConnectionType::QueuedConnection);
+        const uint32_t additionalRequests = show
+            ? MelonPrimeThreadBridge::GuiRequestNone
+            : (MelonPrimeThreadBridge::GuiRequestRecenter
+               | MelonPrimeThreadBridge::GuiRequestRefreshCapture);
+        m_threadBridge.RequestCursorVisibilityFromEmu(
+            show, additionalRequests);
     }
 
     void MelonPrimeCore::FrameAdvanceCustom() { m_frameAdvanceFunc(); }
@@ -701,10 +679,10 @@ namespace MelonPrime {
 
     QPoint MelonPrimeCore::GetAdjustedCenter()
     {
-        auto* panel = emuInstance->getMainWindow()->panel;
-        if (!panel) return QPoint(0, 0);
-        const QRect r = panel->geometry();
-        return panel->mapToGlobal(QPoint(r.width() / 2, r.height() / 2));
+        int x = 0;
+        int y = 0;
+        m_threadBridge.ReadCenterForEmu(x, y);
+        return QPoint(x, y);
     }
 
 } // namespace MelonPrime

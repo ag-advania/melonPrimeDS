@@ -114,9 +114,11 @@ static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
     return h;
 }
 
-static bool MelonPrimeHud_RefreshHudEpoch(uint32_t& cachedEpoch)
+static bool MelonPrimeHud_RefreshHudEpoch(
+    const MelonPrime::CustomHudConfigState& hudConfig,
+    uint32_t& cachedEpoch)
 {
-    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
+    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch(hudConfig);
     if (epoch == cachedEpoch)
         return false;
 
@@ -125,28 +127,31 @@ static bool MelonPrimeHud_RefreshHudEpoch(uint32_t& cachedEpoch)
 }
 
 static void MelonPrimeHud_RefreshHudEnabledIfNeeded(
+    const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
     bool& hudEnabled)
 {
-    if (MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
+    if (MelonPrimeHud_RefreshHudEpoch(hudConfig, cachedEpoch))
         hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
 }
 
 // Rebuild overlayFont from the selectable HUD-font setting when the config epoch changes.
 // Cheap: only runs on a settings change (CustomHud_InvalidateConfigCache bumps the epoch).
 static void MelonPrimeHud_RefreshOverlayFontIfNeeded(
+    const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
     QFont& overlayFont)
 {
-    if (!MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
+    if (!MelonPrimeHud_RefreshHudEpoch(hudConfig, cachedEpoch))
         return;
     overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
     overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
 }
 
 static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
+    const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
     bool& radarEnable,
@@ -159,7 +164,7 @@ static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     float& radarAnchorDsX,
     float& radarAnchorDsY)
 {
-    if (!MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
+    if (!MelonPrimeHud_RefreshHudEpoch(hudConfig, cachedEpoch))
         return;
 
     radarEnable    = instcfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayEnable);
@@ -190,7 +195,7 @@ static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     const bool hudVisible = hudEnabled || editMode;
     if (!hudVisible) {
         MelonPrime::CustomHud_EnsurePatchRestored(
-            emuInstance, instcfg,
+            mp->HudConfigState(), emuInstance, instcfg,
             mp->GetCurrentRom(), mp->GetPlayerPosition(),
             mp->IsInGame());
     }
@@ -216,6 +221,7 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     topP.setFont(overlayFont);
     const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
     const QRect hudDirty = MelonPrime::CustomHud_Render(
+        mp->HudConfigState(),
         emuInstance, instcfg,
         mp->GetCurrentRom(), mp->GetAddrHot(),
         mp->GetPlayerPosition(),

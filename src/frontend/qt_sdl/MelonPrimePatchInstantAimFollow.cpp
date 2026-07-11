@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchInstantAimFollow.h"
 #include "MelonPrimePatchCommon.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 
@@ -72,11 +73,12 @@ static constexpr RomPatchSpan kPatchSpans[7] = {
     { &kPatchWords[6][0], 1 },
 };
 
-static StaticWordPatch s_patch(kPatchSpans);
+static const StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
 void InstantAimFollow_ApplyOnce(
+    MelonPrimePatchState& state,
     melonDS::NDS* nds,
     Config::Table& cfg,
     uint8_t romGroupIndex)
@@ -100,23 +102,24 @@ void InstantAimFollow_ApplyOnce(
 
     if (!shouldApply)
     {
-        s_patch.RestoreOnce(nds, romGroupIndex);
+        s_patch.RestoreOnce(state.instantAimFollow, nds, romGroupIndex);
         return;
     }
 
-    s_patch.ApplyOnce(nds, romGroupIndex);
+    s_patch.ApplyOnce(state.instantAimFollow, nds, romGroupIndex);
 }
 
 void InstantAimFollow_RestoreOnce(
+    MelonPrimePatchState& state,
     melonDS::NDS* nds,
     uint8_t romGroupIndex)
 {
-    s_patch.RestoreOnce(nds, romGroupIndex);
+    s_patch.RestoreOnce(state.instantAimFollow, nds, romGroupIndex);
 }
 
-void InstantAimFollow_ResetPatchState()
+void InstantAimFollow_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_patch.ResetState();
+    StaticWordPatch::ResetState(state.instantAimFollow);
 }
 
 } // namespace MelonPrime

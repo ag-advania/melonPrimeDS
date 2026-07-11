@@ -46,7 +46,10 @@ void ARM9Hook_SetMatchHooksActive(
     bool active,
     EmuInstance* osdEmu = nullptr);
 
-void ARM9Hook_Uninstall(melonDS::NDS* nds, EmuInstance* osdEmu = nullptr);
+void ARM9Hook_Uninstall(
+    melonDS::NDS* nds,
+    MelonPrimeCore* core,
+    EmuInstance* osdEmu = nullptr);
 
 // Calls ResetPatchState for every registered hook.
 void ARM9Hook_ResetPatchState();

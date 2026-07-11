@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <QMouseEvent>
 #include <QRect>
 
@@ -19,6 +20,9 @@ namespace MelonPrime {
 
     struct RomAddresses;
     struct GameAddressesHot;
+    struct CustomHudConfigState;
+
+    std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState();
 
     // =========================================================================
     //  CustomHud_Render
@@ -49,6 +53,7 @@ namespace MelonPrime {
     // Screen.cpp uses this to limit the GPU texture upload and overlay clear to the HUD region.
     // Returns an empty QRect if nothing was drawn.
     QRect CustomHud_Render(
+        CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         Config::Table& localCfg,
         const RomAddresses& rom,
@@ -90,6 +95,7 @@ namespace MelonPrime {
     // spawn window. No-op unless the helmet hide patch is currently applied;
     // start/death/pause frames are left untouched so native UI stays intact.
     void CustomHud_ClampHelmetLayersPreFrame(
+        CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         const RomAddresses& rom,
         uint8_t playerPosition);
@@ -97,6 +103,7 @@ namespace MelonPrime {
     // Ensure the no-HUD patch is reverted when custom HUD is disabled.
     // Call every frame from Screen.cpp even when the HUD overlay is not rendered.
     void CustomHud_EnsurePatchRestored(
+        CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         Config::Table& localCfg,
         const RomAddresses& rom,
@@ -105,18 +112,18 @@ namespace MelonPrime {
     );
 
     // Reset patch tracking state (call on emu stop/reset).
-    void CustomHud_ResetPatchState();
+    void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig);
 
     // Invalidate cached config (call when settings are saved).
-    void CustomHud_InvalidateConfigCache();
+    void CustomHud_InvalidateConfigCache(CustomHudConfigState& hudConfig);
 
     // Returns the current config cache generation counter.
     // Incremented every time the config cache is refreshed.
     // Screen.cpp uses this to skip re-reading config per-frame.
-    uint32_t CustomHud_GetCacheEpoch();
+    uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig);
 
     // Cache battle settings at match join (call from HandleGameJoinInit).
-    void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
+    void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, uint8_t* ram, const RomAddresses& rom);
 
     // =========================================================================
     //  DrawBottomScreenOverlay
@@ -138,30 +145,31 @@ namespace MelonPrime {
 
     // Enter interactive HUD layout editing mode. Frees the cursor and draws
     // draggable element boxes on the top screen. Call from the UI thread only.
-    void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg);
+    void CustomHud_EnterEditMode(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& cfg);
 
     // Commit (save=true) or discard (save=false) changes and leave edit mode.
-    void CustomHud_ExitEditMode(bool save, Config::Table& cfg);
+    void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::Table& cfg);
 
     // Returns true while the HUD layout editor is active.
-    bool CustomHud_IsEditMode();
+    bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig);
 
     // Update the coordinate context used by mouse handlers (call each render).
-    void CustomHud_UpdateEditContext(float originX, float originY,
+    void CustomHud_UpdateEditContext(CustomHudConfigState& hudConfig,
+                                     float originX, float originY,
                                      float hudScale, float topStretchX);
 
     // Forward mouse events from the screen panel to the layout editor.
-    void CustomHud_EditMousePress  (QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
-    void CustomHud_EditMouseMove   (QPointF pt, Config::Table& cfg);
-    void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
-    void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg);
+    void CustomHud_EditMousePress  (CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+    void CustomHud_EditMouseMove   (CustomHudConfigState& hudConfig, QPointF pt, Config::Table& cfg);
+    void CustomHud_EditMouseRelease(CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+    void CustomHud_EditMouseWheel(CustomHudConfigState& hudConfig, QPointF pt, int delta, Config::Table& cfg);
 
     // Register a callback invoked whenever the selected element changes in edit mode.
     // Pass nullptr to clear. The int argument is the element index (-1 = none).
-    void CustomHud_SetEditSelectionCallback(std::function<void(int)> cb);
+    void CustomHud_SetEditSelectionCallback(CustomHudConfigState& hudConfig, std::function<void(int)> cb);
 
     // Returns the currently selected element index (-1 = none).
-    int  CustomHud_GetSelectedElement();
+    int  CustomHud_GetSelectedElement(const CustomHudConfigState& hudConfig);
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     // Developer-only CLI hook: render deterministic HUD cases and write hashes.

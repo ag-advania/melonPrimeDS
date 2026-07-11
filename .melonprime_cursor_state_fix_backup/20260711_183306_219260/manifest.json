@@ -1,0 +1,18 @@
+{
+  "src/frontend/qt_sdl/MelonPrime.cpp": {
+    "exists": true,
+    "sha256": "7f3b4db71ec21e18013d31dc1fd1eb6685518668aa784bfe9a8b8a36207fcbc3"
+  },
+  "src/frontend/qt_sdl/MelonPrimeLifecycle.cpp": {
+    "exists": true,
+    "sha256": "347f5c428ad47a70c53b4ef3674ca148a09e6e493bbaccb2dc41fc5811131e46"
+  },
+  "src/frontend/qt_sdl/MelonPrimeThreadBridge.h": {
+    "exists": true,
+    "sha256": "a874abb613a0167a5b5ee9d6596c513edc750dc1dd82320b69d6f93fd6e264dc"
+  },
+  "src/frontend/qt_sdl/Screen.cpp": {
+    "exists": true,
+    "sha256": "f3bb9554b7edf58fd754863a44eaf9b09fb2011e4f9fe5eab8f13bfa47c2795c"
+  }
+}

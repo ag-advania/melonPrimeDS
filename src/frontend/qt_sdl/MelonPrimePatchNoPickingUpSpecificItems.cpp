@@ -1,6 +1,7 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 #include "NDS.h"
@@ -71,10 +72,6 @@ static constexpr PatchSet kPatchSets[7] = {
     { 0x02019CECu, 0x02019CF0u, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
     { 0x02018C20u, 0x02018C24u, { kKrWords[0], kKrWords[1], kKrWords[2] } },
 };
-
-static bool s_hasAppliedRomGroup = false;
-static uint8_t s_appliedRomGroupIndex = 0xFFu;
-static uint8_t s_appliedMask = 0;
 
 [[nodiscard]] static bool IsValidRomGroup(uint8_t romGroupIndex) noexcept
 {
@@ -159,20 +156,21 @@ static_assert(EntryAddress(kPatchSets[6], kPatchSets[6].words[2]) == 0x02018C7Cu
     return true;
 }
 
-static void ApplyMask(melonDS::NDS* nds, uint8_t romGroupIndex, uint8_t desiredMask)
+static void ApplyMask(MelonPrimePatchState& owner, melonDS::NDS* nds, uint8_t romGroupIndex, uint8_t desiredMask)
 {
+    auto& state = owner.noSpecificItemPickup;
     if (!nds || !IsValidRomGroup(romGroupIndex))
         return;
 
-    if (s_hasAppliedRomGroup && s_appliedRomGroupIndex != romGroupIndex)
-        NoPickingUpSpecificItems_RestoreOnce(nds, s_appliedRomGroupIndex);
+    if (state.hasAppliedRomGroup && state.appliedRomGroupIndex != romGroupIndex)
+        NoPickingUpSpecificItems_RestoreOnce(owner, nds, state.appliedRomGroupIndex);
 
     const auto& set = kPatchSets[romGroupIndex];
     if (!ValidateSwitchLayout(nds, set))
         return;
 
     uint8_t newAppliedMask =
-        (s_hasAppliedRomGroup && s_appliedRomGroupIndex == romGroupIndex) ? s_appliedMask : 0;
+        (state.hasAppliedRomGroup && state.appliedRomGroupIndex == romGroupIndex) ? state.appliedMask : 0;
     for (uint8_t i = 0; i < 3; ++i)
     {
         const uint8_t bit = static_cast<uint8_t>(1u << i);
@@ -186,38 +184,37 @@ static void ApplyMask(melonDS::NDS* nds, uint8_t romGroupIndex, uint8_t desiredM
             newAppliedMask &= static_cast<uint8_t>(~bit);
     }
 
-    s_hasAppliedRomGroup = newAppliedMask != 0;
-    s_appliedRomGroupIndex = s_hasAppliedRomGroup ? romGroupIndex : 0xFFu;
-    s_appliedMask = newAppliedMask;
+    state.hasAppliedRomGroup = newAppliedMask != 0;
+    state.appliedRomGroupIndex = state.hasAppliedRomGroup ? romGroupIndex : 0xFFu;
+    state.appliedMask = newAppliedMask;
 }
 
 } // namespace
 
-void NoPickingUpSpecificItems_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void NoPickingUpSpecificItems_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     const uint8_t desiredMask = DesiredMask(cfg);
     // Always run through ApplyMask, even when disabled. Patch state can be
     // reset independently of RAM contents, and this heals any stale entries.
-    ApplyMask(nds, romGroupIndex, desiredMask);
+    ApplyMask(state, nds, romGroupIndex, desiredMask);
 }
 
-void NoPickingUpSpecificItems_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+void NoPickingUpSpecificItems_RestoreOnce(MelonPrimePatchState& owner, melonDS::NDS* nds, uint8_t romGroupIndex)
 {
+    auto& state = owner.noSpecificItemPickup;
     if (!nds)
         return;
-    if (IsValidRomGroup(s_appliedRomGroupIndex))
-        romGroupIndex = s_appliedRomGroupIndex;
+    if (IsValidRomGroup(state.appliedRomGroupIndex))
+        romGroupIndex = state.appliedRomGroupIndex;
     if (!IsValidRomGroup(romGroupIndex))
         return;
 
-    ApplyMask(nds, romGroupIndex, 0);
+    ApplyMask(owner, nds, romGroupIndex, 0);
 }
 
-void NoPickingUpSpecificItems_ResetPatchState()
+void NoPickingUpSpecificItems_ResetPatchState(MelonPrimePatchState& owner)
 {
-    s_hasAppliedRomGroup = false;
-    s_appliedRomGroupIndex = 0xFFu;
-    s_appliedMask = 0;
+    owner.noSpecificItemPickup = {};
 }
 
 } // namespace MelonPrime

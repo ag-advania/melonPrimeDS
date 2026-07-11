@@ -36,10 +36,11 @@ WidgetFactoryContext MakeFactoryContext(
     QFormLayout& form,
     QList<QWidget*>& rows,
     Config::Table& cfg,
+    MelonPrime::CustomHudConfigState& hudConfig,
     bool& populating,
     QObject& signalReceiver)
 {
-    return WidgetFactoryContext{ parent, form, rows, cfg, populating, signalReceiver };
+    return WidgetFactoryContext{ parent, form, rows, cfg, hudConfig, populating, signalReceiver };
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -59,9 +60,9 @@ void UpdateColorButton(QPushButton& button, int r, int g, int b)
     button.setText(colorName);
 }
 
-void InvalidateHudConfigCache()
+void InvalidateHudConfigCache(MelonPrime::CustomHudConfigState& hudConfig)
 {
-    CustomHud_InvalidateConfigCache();
+    CustomHud_InvalidateConfigCache(hudConfig);
 }
 
 void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
@@ -73,36 +74,36 @@ void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
 
 // ─── Config write helpers (all no-op while `populating` is true) ───────────
 
-void SetBoolIfEditing(Config::Table& cfg, bool populating,
+void SetBoolIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                       const std::string& key, bool value)
 {
     if (populating) return;
     cfg.SetBool(key, value);
-    InvalidateHudConfigCache();
+    InvalidateHudConfigCache(hudConfig);
 }
 
-void SetIntIfEditing(Config::Table& cfg, bool populating,
+void SetIntIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                      const std::string& key, int value)
 {
     if (populating) return;
     cfg.SetInt(key, value);
-    InvalidateHudConfigCache();
+    InvalidateHudConfigCache(hudConfig);
 }
 
-void SetDoubleIfEditing(Config::Table& cfg, bool populating,
+void SetDoubleIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                         const std::string& key, double value)
 {
     if (populating) return;
     cfg.SetDouble(key, value);
-    InvalidateHudConfigCache();
+    InvalidateHudConfigCache(hudConfig);
 }
 
-void SetStringIfEditing(Config::Table& cfg, bool populating,
+void SetStringIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                         const std::string& key, const std::string& value)
 {
     if (populating) return;
     cfg.SetString(key, value);
-    InvalidateHudConfigCache();
+    InvalidateHudConfigCache(hudConfig);
 }
 
 // ─── Plain value-widget row factories ───────────────────────────────────────
@@ -133,12 +134,12 @@ QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver,
         [ctx, k](bool checked) {
             if (ctx.populating || !checked) return;
-            SetBoolIfEditing(ctx.cfg, ctx.populating, k, true);
+            SetBoolIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, true);
         });
     QObject::connect(off, &QRadioButton::toggled, &ctx.signalReceiver,
         [ctx, k](bool checked) {
             if (ctx.populating || !checked) return;
-            SetBoolIfEditing(ctx.cfg, ctx.populating, k, false);
+            SetBoolIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, false);
         });
 
     hlay->addWidget(rowLabel, 1);
@@ -161,7 +162,7 @@ QComboBox* AddComboBoxRow(WidgetFactoryContext& ctx,
     std::string k(key);
     QObject::connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged),
         &ctx.signalReceiver, [ctx, k](int idx) {
-            SetIntIfEditing(ctx.cfg, ctx.populating, k, idx);
+            SetIntIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, idx);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *cb);
     return cb;
@@ -178,7 +179,7 @@ QSpinBox* AddSpinBoxRow(WidgetFactoryContext& ctx,
     std::string k(key);
     QObject::connect(sb, QOverload<int>::of(&QSpinBox::valueChanged),
         &ctx.signalReceiver, [ctx, k](int v) {
-            SetIntIfEditing(ctx.cfg, ctx.populating, k, v);
+            SetIntIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, v);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *sb);
     return sb;
@@ -197,7 +198,7 @@ QDoubleSpinBox* AddDoubleSpinBoxRow(WidgetFactoryContext& ctx,
     std::string k(key);
     QObject::connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
         &ctx.signalReceiver, [ctx, k](double v) {
-            SetDoubleIfEditing(ctx.cfg, ctx.populating, k, v);
+            SetDoubleIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, v);
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *sb);
     return sb;
@@ -227,7 +228,7 @@ QSlider* AddOpacitySliderRow(WidgetFactoryContext& ctx,
     QObject::connect(slider, &QSlider::valueChanged, &ctx.signalReceiver,
         [ctx, k, lbl](int v) {
             lbl->setText(QString::number(v) + QStringLiteral("%"));
-            SetDoubleIfEditing(ctx.cfg, ctx.populating, k, v / 100.0);
+            SetDoubleIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, v / 100.0);
         });
 
     ctx.form.addRow(UiText::Tr(label), container);
@@ -244,7 +245,7 @@ QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
     std::string k(key);
     QObject::connect(le, &QLineEdit::textChanged, &ctx.signalReceiver,
         [ctx, k](const QString& text) {
-            SetStringIfEditing(ctx.cfg, ctx.populating, k, text.toStdString());
+            SetStringIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, text.toStdString());
         });
     AppendLabeledRow(ctx.form, ctx.rows, label, *le);
     return le;
@@ -267,7 +268,8 @@ namespace {
 // change ever triggers a color button click programmatically, this
 // function would need the same populating guard the other Set*IfEditing
 // helpers use.
-void PickAndApplyColor(QWidget& dialogParent, Config::Table& cfg, QPushButton& btn,
+void PickAndApplyColor(MelonPrime::CustomHudConfigState& hudConfig,
+                       QWidget& dialogParent, Config::Table& cfg, QPushButton& btn,
                        const std::string& keyR, const std::string& keyG, const std::string& keyB)
 {
     const QColor cur(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
@@ -279,7 +281,7 @@ void PickAndApplyColor(QWidget& dialogParent, Config::Table& cfg, QPushButton& b
     cfg.SetInt(keyG, picked.green());
     cfg.SetInt(keyB, picked.blue());
     UpdateColorButton(btn, picked.red(), picked.green(), picked.blue());
-    InvalidateHudConfigCache();
+    InvalidateHudConfigCache(hudConfig);
 }
 
 } // namespace
@@ -293,7 +295,7 @@ QPushButton* AddColorPickerRow(WidgetFactoryContext& ctx,
 
     std::string kR(keyR), kG(keyG), kB(keyB);
     QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
-        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+        PickAndApplyColor(ctx.hudConfig, ctx.parent, ctx.cfg, *btn, kR, kG, kB);
     });
 
     AppendLabeledRow(ctx.form, ctx.rows, label, *btn);
@@ -328,10 +330,10 @@ void AddSubColorRow(WidgetFactoryContext& ctx,
             if (ctx.populating) return;
             ctx.cfg.SetBool(kOver, idx == 0);
             btn->setEnabled(idx != 0);
-            InvalidateHudConfigCache();
+            InvalidateHudConfigCache(ctx.hudConfig);
         });
     QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
-        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+        PickAndApplyColor(ctx.hudConfig, ctx.parent, ctx.cfg, *btn, kR, kG, kB);
     });
 
     ctx.form.addRow(UiText::Tr(label), container);
@@ -375,16 +377,16 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
         if (ctx.populating || !checked) return;
         ctx.cfg.SetBool(kE, true);
         btn->setEnabled(true);
-        InvalidateHudConfigCache();
+        InvalidateHudConfigCache(ctx.hudConfig);
     });
     QObject::connect(off, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
         if (ctx.populating || !checked) return;
         ctx.cfg.SetBool(kE, false);
         btn->setEnabled(false);
-        InvalidateHudConfigCache();
+        InvalidateHudConfigCache(ctx.hudConfig);
     });
     QObject::connect(btn, &QPushButton::clicked, &ctx.signalReceiver, [ctx, btn, kR, kG, kB]() {
-        PickAndApplyColor(ctx.parent, ctx.cfg, *btn, kR, kG, kB);
+        PickAndApplyColor(ctx.hudConfig, ctx.parent, ctx.cfg, *btn, kR, kG, kB);
     });
 
     ctx.form.addRow(container);
