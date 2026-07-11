@@ -6,6 +6,13 @@
 **文書ステータス:** 実装前の正式設計・実行計画  
 **最終目標:** `Vulkan` と `Vulkan Compute Shader` の両方を、既存の `OpenGL` と `OpenGL Compute Shader` に並ぶ正式な描画バックエンドとして完成させる
 
+## 実装進捗
+
+| Phase | Status | Commit | Build verified | Runtime verified | Hardware / Validation | Unverified / Known limitation | Rollback |
+|---|---|---|---|---|---|---|---|
+| 0 — baseline | Implemented; evidence gate pending | `docs(vulkan): capture Vulkan backend baseline and acceptance matrix` | Windows configure / compile / link passed | HUD harness repeatable; ROM capture pending | Win11 / RTX 5070 Ti; repo audits passed | No scoped ROM; existing HUD golden drift recorded in `tests/vulkan/reference/phase0-verification.md` | Revert the Phase 0 commit |
+| 1〜16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
+
 ---
 
 # 0. この計画の位置付け

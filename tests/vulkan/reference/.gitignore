@@ -1,0 +1,4 @@
+captures/
+reports/
+manifest.local.json
+*.local.json
