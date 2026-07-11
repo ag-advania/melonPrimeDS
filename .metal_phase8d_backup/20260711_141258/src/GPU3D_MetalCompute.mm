@@ -9,7 +9,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
-// MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -192,7 +191,7 @@ struct TileRasterSummary
 {
     uint32_t RasterisedWorkItems;
     uint32_t TexturedWorkItems;
-    uint32_t ShadowMaskWorkItems;
+    uint32_t SkippedShadow;
     uint32_t SkippedCapacity;
     uint32_t CoveredPixels;
     uint32_t ColorHash;
@@ -1071,7 +1070,6 @@ kernel void mp_compute_depth_blend_no_texture(
 )MSL";
 
 #include "GPU3D_MetalComputeTexturedShaders.inc"
-#include "GPU3D_MetalComputeDepthBlendShaders.inc"
 
 id<MTLComputePipelineState> BuildComputePipeline(
     id<MTLDevice> device,
@@ -1328,7 +1326,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
     id<MTLLibrary> TexturedLibrary = nil;
-    id<MTLLibrary> CompleteDepthBlendLibrary = nil;
     id<MTLComputePipelineState> ClearIndirectPipeline = nil;
     id<MTLComputePipelineState> ClearCoarseMaskPipeline = nil;
     id<MTLComputePipelineState> CalcOffsetsPipeline = nil;
@@ -1339,8 +1336,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> ClearTileSummaryPipeline = nil;
     id<MTLComputePipelineState> RasteriseNoTextureTilesPipeline = nil;
     id<MTLComputePipelineState> TextureRasterPipeline = nil;
-    id<MTLComputePipelineState> ClearCompleteDepthBlendSummaryPipeline = nil;
-    id<MTLComputePipelineState> CompleteDepthBlendPipeline = nil;
     id<MTLComputePipelineState> ClearDepthBlendSummaryPipeline = nil;
     id<MTLComputePipelineState> DepthBlendNoTexturePipeline = nil;
     id<MTLComputePipelineState> ClearTextureVariantSummaryPipeline = nil;
@@ -1396,7 +1391,6 @@ struct MetalComputeRenderer3D::MetalComputeState
 };
 
 #include "GPU3D_MetalComputeTexturedMethods.inc"
-#include "GPU3D_MetalComputeDepthBlendMethods.inc"
 
 MetalComputeRenderer3D::MetalComputeRenderer3D(
     melonDS::GPU3D& gpu3D,
@@ -1496,8 +1490,6 @@ bool MetalComputeRenderer3D::Init()
         return continueWithRasterOnly("RunNoTextureTileSelfTest");
     if (!RunTextureVariantTileSelfTest())
         return continueWithRasterOnly("RunTextureVariantTileSelfTest");
-    if (!RunCompleteDepthBlendSelfTest())
-        return continueWithRasterOnly("RunCompleteDepthBlendSelfTest");
 
     State->Ready = true;
     State->SpanBinReady = true;
@@ -1559,25 +1551,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         return false;
     }
 
-    NSString* completeDepthBlendSource =
-        [NSString stringWithUTF8String:kMetalComputeCompleteDepthBlendSource];
-    State->CompleteDepthBlendLibrary =
-        [State->Device
-            newLibraryWithSource:completeDepthBlendSource
-                         options:nil
-                           error:&error];
-    if (!State->CompleteDepthBlendLibrary)
-    {
-        const char* message = error
-            ? [[error localizedDescription] UTF8String]
-            : "unknown error";
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute complete depth blend: "
-            "MSL compile failed: %s\n",
-            message);
-        return false;
-    }
-
     State->ClearIndirectPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_indirect");
     State->ClearCoarseMaskPipeline = BuildComputePipeline(
@@ -1600,14 +1573,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device,
         State->TexturedLibrary,
         @"mp_compute_rasterise_texture_variants");
-    State->ClearCompleteDepthBlendSummaryPipeline = BuildComputePipeline(
-        State->Device,
-        State->CompleteDepthBlendLibrary,
-        @"mp_compute_clear_complete_depth_blend_summary");
-    State->CompleteDepthBlendPipeline = BuildComputePipeline(
-        State->Device,
-        State->CompleteDepthBlendLibrary,
-        @"mp_compute_depth_blend_complete");
     State->ClearDepthBlendSummaryPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_depth_blend_summary");
     State->DepthBlendNoTexturePipeline = BuildComputePipeline(
@@ -1623,8 +1588,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->BinCombinedPipeline || !State->ClearTileSummaryPipeline ||
         !State->RasteriseNoTextureTilesPipeline ||
         !State->TextureRasterPipeline ||
-        !State->ClearCompleteDepthBlendSummaryPipeline ||
-        !State->CompleteDepthBlendPipeline ||
         !State->ClearDepthBlendSummaryPipeline ||
         !State->DepthBlendNoTexturePipeline ||
         !State->ClearTextureVariantSummaryPipeline ||
@@ -1644,8 +1607,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->ClearTileSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->RasteriseNoTextureTilesPipeline.maxTotalThreadsPerThreadgroup,
         State->TextureRasterPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearCompleteDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
-        State->CompleteDepthBlendPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->DepthBlendNoTexturePipeline.maxTotalThreadsPerThreadgroup,
         State->ClearTextureVariantSummaryPipeline.maxTotalThreadsPerThreadgroup,
@@ -1817,29 +1778,16 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     State->TileSummary = [State->Device newBufferWithLength:kTileSummaryWords * sizeof(uint32_t)
                                                     options:MTLResourceStorageModeShared];
     const size_t screenPixelBytes =
-        static_cast<size_t>(State->ScreenWidth) *
-        State->ScreenHeight *
-        sizeof(uint32_t);
-    const size_t twoLayerPixelBytes =
-        screenPixelBytes * 2u;
+        static_cast<size_t>(State->ScreenWidth) * State->ScreenHeight * sizeof(uint32_t);
     State->DepthBlendColor =
-        [State->Device
-            newBufferWithLength:twoLayerPixelBytes
-                        options:MTLResourceStorageModePrivate];
+        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
     State->DepthBlendDepth =
-        [State->Device
-            newBufferWithLength:twoLayerPixelBytes
-                        options:MTLResourceStorageModePrivate];
+        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
     State->DepthBlendAttr =
-        [State->Device
-            newBufferWithLength:twoLayerPixelBytes
-                        options:MTLResourceStorageModePrivate];
+        [State->Device newBufferWithLength:screenPixelBytes options:MTLResourceStorageModePrivate];
     State->DepthBlendSummaryBuffer =
-        [State->Device
-            newBufferWithLength:
-                kCompleteDepthBlendSummaryWords *
-                sizeof(uint32_t)
-                        options:MTLResourceStorageModeShared];
+        [State->Device newBufferWithLength:kDepthBlendSummaryWords * sizeof(uint32_t)
+                                   options:MTLResourceStorageModeShared];
     if (tileCapacity == 0 || !State->ColorTiles || !State->DepthTiles ||
         !State->AttrTiles || !State->TileSummary ||
         !State->DepthBlendColor || !State->DepthBlendDepth ||
@@ -2742,7 +2690,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         uint32_t clearB = (GPU3D.RenderClearAttr1 >> 9) & 0x3Eu;
         if (clearB) clearB++;
         const uint32_t clearA = (GPU3D.RenderClearAttr1 >> 16) & 0x1Fu;
-        const CompleteDepthBlendConfig depthBlendConfig {
+        const DepthBlendConfig depthBlendConfig {
             State->ScreenWidth,
             State->ScreenHeight,
             State->TileSize,
@@ -2751,19 +2699,10 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             polygonGroups,
             State->MaxWorkTiles,
             State->TileWorkCapacity,
-            polygonCount,
-            clearR |
-                (clearG << 8u) |
-                (clearB << 16u) |
-                (clearA << 24u),
-            ((GPU3D.RenderClearAttr2 & 0x7FFFu) *
-                0x200u) +
-                0x1FFu,
+            clearR | (clearG << 8u) | (clearB << 16u) | (clearA << 24u),
+            ((GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu,
             GPU3D.RenderClearAttr1 & 0x3F008000u,
             GPU3D.RenderDispCnt,
-            (GPU3D.RenderClearAttr2 >> 16u) & 0xFFu,
-            (GPU3D.RenderClearAttr2 >> 24u) & 0xFFu,
-            spanConfig.Reserved,
         };
 
 
@@ -2786,7 +2725,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 8D Complete DepthBlend";
+        command.label = @"MelonPrime Metal Compute Phase 7E DepthBlend";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2910,22 +2849,15 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             {
                 {
                     id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                    [encoder
-                        setComputePipelineState:
-                            State->ClearCompleteDepthBlendSummaryPipeline];
-                    [encoder
-                        setBuffer:State->DepthBlendSummaryBuffer
-                           offset:0
-                          atIndex:0];
+                    [encoder setComputePipelineState:State->ClearDepthBlendSummaryPipeline];
+                    [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:0];
                     [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
                              threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
                     [encoder endEncoding];
                 }
                 {
                     id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                    [encoder
-                        setComputePipelineState:
-                            State->CompleteDepthBlendPipeline];
+                    [encoder setComputePipelineState:State->DepthBlendNoTexturePipeline];
                     [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
                     [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
                     [encoder setBuffer:slot->Polygons offset:0 atIndex:2];
@@ -2936,14 +2868,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:7];
                     [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:8];
                     [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:9];
-                    [encoder
-                        setBytes:&depthBlendConfig
-                           length:sizeof(depthBlendConfig)
-                          atIndex:10];
-                    [encoder
-                        setBuffer:slot->TextureMemoryBuffer
-                           offset:0
-                          atIndex:11];
+                    [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:10];
                     const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
                     [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
                              threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
@@ -2977,7 +2902,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     const auto* tile = static_cast<const TileRasterSummary*>([completedTileSummary contents]);
                     const uint32_t depthMin = tile->DepthMin == 0xFFFFFFFFu ? 0u : tile->DepthMin;
                     std::fprintf(stderr,
-                        "[MelonPrime] metal compute tile memory: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u rasterised=%u texturedWorkItems=%u shadowMaskWorkItems=%u skippedCapacity=%u coveredPixels=%u hash=0x%08x depth=%08x..%08x tileCapacity=%u skippedTileBusy=%llu skippedSpanBusy=%llu hiresCoords=%u\n",
+                        "[MelonPrime] metal compute tile memory: frame=%llu slot=%u scale=%u polygons=%u xSpans=%u variants=%u sortedWorkTiles=%u rasterised=%u texturedWorkItems=%u skippedShadow=%u skippedCapacity=%u coveredPixels=%u hash=0x%08x depth=%08x..%08x tileCapacity=%u skippedTileBusy=%llu skippedSpanBusy=%llu hiresCoords=%u\n",
                         static_cast<unsigned long long>(serial),
                         slotIndex,
                         submittedScale,
@@ -2987,7 +2912,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                         clampedWorkTiles,
                         tile->RasterisedWorkItems,
                         tile->TexturedWorkItems,
-                        tile->ShadowMaskWorkItems,
+                        tile->SkippedShadow,
                         tile->SkippedCapacity,
                         tile->CoveredPixels,
                         tile->ColorHash,
@@ -3001,27 +2926,16 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 if (completedDepthBlend && (completedCount <= 3 || (completedCount % 600) == 0))
                 {
                     const auto* blend =
-                        static_cast<const CompleteDepthBlendSummary*>(
-                            [completedDepthBlendSummary contents]);
+                        static_cast<const DepthBlendSummary*>([completedDepthBlendSummary contents]);
                     const uint32_t blendDepthMin =
-                        blend->DepthMin == 0xFFFFFFFFu
-                            ? 0u
-                            : blend->DepthMin;
+                        blend->DepthMin == 0xFFFFFFFFu ? 0u : blend->DepthMin;
                     std::fprintf(stderr,
-                        "[MelonPrime] metal compute complete depth blend: "
-                        "frame=%llu pixels=%u tested=%u accepted=%u "
-                        "opaque=%u translucent=%u shadowMask=%u shadow=%u "
-                        "secondLayer=%u hash=0x%08x depth=%08x..%08x "
-                        "visibleSource=MetalRasterReference\n",
+                        "[MelonPrime] metal compute depth blend: frame=%llu pixels=%u layersTested=%u layersAccepted=%u translucent=%u hash=0x%08x depth=%08x..%08x visibleSource=MetalRasterReference\n",
                         static_cast<unsigned long long>(serial),
                         blend->Pixels,
                         blend->LayersTested,
                         blend->LayersAccepted,
-                        blend->OpaqueLayers,
                         blend->TranslucentLayers,
-                        blend->ShadowMaskPixels,
-                        blend->ShadowPolygonPixels,
-                        blend->SecondLayerWrites,
                         blend->ColorHash,
                         blendDepthMin,
                         blend->DepthMax);
