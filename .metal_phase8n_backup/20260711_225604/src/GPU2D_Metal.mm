@@ -5,7 +5,6 @@
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
-// MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -16,14 +15,11 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
-#include <utility>
 
 namespace melonDS
 {
@@ -331,62 +327,6 @@ static_assert((sizeof(LayerScanlineSnapshotCpu) & 15) == 0);
 static_assert((sizeof(SpriteScanlineMetaFrameCpu) & 15) == 0);
 static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
 
-
-struct MetalSegmentedUploadLayout
-{
-    NSUInteger SpriteFrameLength = 0;
-    NSUInteger SpriteFrameOffset = 0;
-    NSUInteger ScanlineFrameOffset = 0;
-    NSUInteger SpriteScanlineFrameOffset = 0;
-    NSUInteger FrameLength = 0;
-};
-
-MetalSegmentedUploadLayout MetalMakeSegmentedUploadLayout(
-    size_t spriteSnapshotStride) noexcept
-{
-    MetalSegmentedUploadLayout layout;
-    layout.SpriteFrameLength =
-        static_cast<NSUInteger>(spriteSnapshotStride) *
-        static_cast<NSUInteger>(kScreenH);
-    layout.SpriteFrameOffset = 0;
-    layout.ScanlineFrameOffset =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(layout.SpriteFrameLength));
-    layout.SpriteScanlineFrameOffset =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(
-                layout.ScanlineFrameOffset +
-                sizeof(ScanlineConfigCpu)));
-    layout.FrameLength =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(
-                layout.SpriteScanlineFrameOffset +
-                sizeof(SpriteScanlineConfigCpu)));
-    return layout;
-}
-
-struct MetalSegmentedUploadRing
-{
-    static constexpr uint32_t SlotCount = 6;
-
-    std::array<id<MTLBuffer>, SlotCount> Buffers {};
-    std::atomic<uint32_t> BusyMask {0};
-    std::atomic<uint32_t> NextSlot {0};
-    NSUInteger FrameLength = 0;
-
-    bool Ready() const noexcept
-    {
-        if (FrameLength == 0)
-            return false;
-        for (id<MTLBuffer> buffer : Buffers)
-        {
-            if (!buffer || buffer.length < FrameLength)
-                return false;
-        }
-        return true;
-    }
-};
-
 template <typename DirtyState>
 size_t UploadMetalDirtyRows(
     id<MTLTexture> texture,
@@ -487,7 +427,6 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> SpriteScanlineSnapshotBuffer = nil;
     id<MTLBuffer> SpriteScanlineMetaBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
-    std::shared_ptr<MetalSegmentedUploadRing> SegmentedUploadRing;
     LayerConfigCpu LayerConfig;
     SpriteConfigCpu SpriteConfig;
     CompositorConfigCpu CompositorConfig;
@@ -688,7 +627,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         state.ScanlineConfigBuffer = nil;
         state.SpriteScanlineConfigBuffer = nil;
         state.CompositorConfigBuffer = nil;
-        state.SegmentedUploadRing.reset();
         state.Scale = 0;
         state.Device = preferredMetalDevice;
         state.Queue = nil;
@@ -724,8 +662,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         state.PalTexBG && state.PalTexOBJ && state.MosaicTex && state.SpriteTex &&
         state.LayerConfigBuffer && state.SpriteConfigBuffer && state.ScanlineConfigBuffer &&
         state.SpriteScanlineConfigBuffer && state.CompositorConfigBuffer &&
-        state.SegmentedUploadRing &&
-        state.SegmentedUploadRing->Ready() &&
         state.FullGpuReady && state.Scale == ScaleFactor)
     {
         return true;
@@ -853,28 +789,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
                                       options:MTLResourceStorageModeShared];
     }
 
-    std::shared_ptr<MetalSegmentedUploadRing>
-        newSegmentedUploadRing;
-    if (snapshotRequested)
-    {
-        const MetalSegmentedUploadLayout uploadLayout =
-            MetalMakeSegmentedUploadLayout(
-                spriteSnapshotStride);
-        newSegmentedUploadRing =
-            std::make_shared<MetalSegmentedUploadRing>();
-        newSegmentedUploadRing->FrameLength =
-            uploadLayout.FrameLength;
-        for (id<MTLBuffer>& buffer :
-             newSegmentedUploadRing->Buffers)
-        {
-            buffer = [state.Device
-                newBufferWithLength:uploadLayout.FrameLength
-                            options:MTLResourceStorageModeShared];
-        }
-        if (!newSegmentedUploadRing->Ready())
-            newSegmentedUploadRing.reset();
-    }
-
     id<MTLTexture> newBGLayers[kBGLayerCount] = {};
     const uint16_t bgSizes[8][3] = {
         {128, 128, 2},
@@ -914,8 +828,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         (snapshotRequested &&
          (!newLayerScanlineSnapshot ||
           !newSpriteScanlineSnapshot ||
-          !newSpriteScanlineMeta ||
-          !newSegmentedUploadRing)))
+          !newSpriteScanlineMeta)))
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
@@ -955,8 +868,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     state.SpriteScanlineSnapshotBuffer = newSpriteScanlineSnapshot;
     state.SpriteScanlineMetaBuffer = newSpriteScanlineMeta;
     state.CompositorConfigBuffer = newCompositorConfig;
-    state.SegmentedUploadRing =
-        std::move(newSegmentedUploadRing);
     state.SpriteSnapshotStride = spriteSnapshotStride;
     state.SnapshotBuffersReady =
         snapshotRequested &&
@@ -965,8 +876,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         newSpriteScanlineMeta;
     state.SegmentedRenderReady =
         state.SnapshotBuffersReady &&
-        state.SegmentedUploadRing &&
-        state.SegmentedUploadRing->Ready() &&
         state.FullGpuReady &&
         state.OutputTex &&
         state.OBJLayerTex &&
