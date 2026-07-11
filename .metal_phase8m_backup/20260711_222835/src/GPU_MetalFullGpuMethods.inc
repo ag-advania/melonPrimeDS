@@ -4,7 +4,7 @@
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
-// MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
+// MELONPRIME_METAL_2D_SEGMENTED_GPU_DIFF_V1
 
 namespace
 {
@@ -19,7 +19,35 @@ bool MetalSegmented2DShadowRequested()
     return enabled;
 }
 
+bool MetalSegmented2DDiffRequested()
+{
+    static const bool enabled = []() {
+        const char* value =
+            std::getenv(
+                "MELONPRIME_METAL_SEGMENTED_2D_DIFF");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
 
+uint32_t MetalSegmented2DDiffTolerance()
+{
+    static const uint32_t tolerance = []() {
+        const char* value =
+            std::getenv(
+                "MELONPRIME_METAL_SEGMENTED_2D_DIFF_TOLERANCE");
+        if (!value || !value[0])
+            return 0u;
+        char* end = nullptr;
+        const unsigned long parsed =
+            std::strtoul(value, &end, 10);
+        if (end == value)
+            return 0u;
+        return static_cast<uint32_t>(
+            std::min<unsigned long>(parsed, 255ul));
+    }();
+    return tolerance;
+}
 
 bool MetalSegmented2DVisibleRequested()
 {
@@ -132,6 +160,7 @@ struct MetalRenderer::MetalFullGpuState
     bool LoggedSegmentedShadow = false;
     bool LoggedSegmentedShadowFailure = false;
     bool LoggedSegmentedVisible = false;
+    bool SegmentedShadowCompleted = false;
     std::array<uint32_t, 192> ScreenSwap {};
     std::array<uint32_t, 192> BrightnessA {};
     std::array<uint32_t, 192> BrightnessB {};
@@ -287,7 +316,8 @@ void MetalRenderer::DrawScanline(u32 line)
         return;
     }
     if (line < 192 &&
-        MetalSegmented2DShadowRequested() &&
+        (MetalSegmented2DShadowRequested() ||
+         MetalSegmented2DDiffRequested()) &&
         Metal2D_A && Metal2D_B &&
         Metal2D_A->SegmentedSnapshotReady() &&
         Metal2D_B->SegmentedSnapshotReady())
@@ -330,7 +360,8 @@ void MetalRenderer::DrawSprites(u32 line)
         return;
     }
     if (line < 192 &&
-        MetalSegmented2DShadowRequested() &&
+        (MetalSegmented2DShadowRequested() ||
+         MetalSegmented2DDiffRequested()) &&
         Metal2D_A && Metal2D_B &&
         Metal2D_A->SegmentedSnapshotReady() &&
         Metal2D_B->SegmentedSnapshotReady())
