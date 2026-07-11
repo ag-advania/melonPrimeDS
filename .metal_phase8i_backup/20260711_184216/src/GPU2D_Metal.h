@@ -28,8 +28,6 @@ public:
     bool Configure(void* preferredDevice, void* preferredQueue, int scale) noexcept;
     void CaptureScanlineState(int line) noexcept;
     void CaptureSpriteScanlineState(int line) noexcept;
-    [[nodiscard]] bool SegmentedSnapshotReady() const noexcept;
-    // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
     bool RenderFullGpuFrame(
         void* high3DTexture,
         void* capture128Texture,
@@ -73,8 +71,6 @@ private:
         void* capture128Texture,
         void* capture256Texture) noexcept;
     [[nodiscard]] bool FrameUsesCaptureTextures() const noexcept;
-    void BeginSegmentSnapshotFrameIfNeeded(int line) noexcept;
-    void MaybeReportSegmentSnapshotFrame() noexcept;
 
     std::unique_ptr<Metal2DState> State;
     int ScaleFactor = 1;

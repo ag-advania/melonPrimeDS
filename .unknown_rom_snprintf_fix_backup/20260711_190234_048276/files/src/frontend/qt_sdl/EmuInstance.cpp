@@ -2032,14 +2032,7 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
             break; // recognized Metroid Prime Hunters ROM
         default:
             char message[256];
-            // MELONPRIME_UNKNOWN_ROM_SNPRINTF_FIX_V1
-            snprintf(
-                message,
-                sizeof(message),
-                "Unknown ROM (GameCode: %.4s, Checksum: 0x%08X). "
-                "Please make sure to use a Metroid Prime Hunters ROM.",
-                mphHeader.GameCode,
-                MelonPrime::globalChecksum);
+            sprintf(message, "Unknown ROM (GameCode: %.4s, Checksum: 0x%08X). Please make sure to use a Metroid Prime Hunters ROM.", mphHeader.GameCode, MelonPrime::globalChecksum);
             osdAddMessage(0xFFA0A0, message);
             break;
         }
