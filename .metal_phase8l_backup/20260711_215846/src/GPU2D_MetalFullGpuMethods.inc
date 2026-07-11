@@ -5,7 +5,6 @@
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
-// MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -393,49 +392,31 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         static_cast<uint8_t*>(
             [State->SpriteScanlineSnapshotBuffer contents]);
 
-    // One immutable allocation per Engine/frame instead of three
-    // independent MTLBuffer allocations. The command buffer retains this
-    // resource until GPU completion.
+    // Snapshot the shared CPU-written buffers into command-owned resources.
+    // The next emulated frame may begin updating the 192 scanline slots before
+    // this GPU command completes; immutable per-submit buffers avoid that race.
     const NSUInteger spriteFrameLength =
         State->SpriteSnapshotStride *
         static_cast<NSUInteger>(kScreenH);
-    const NSUInteger spriteFrameOffset = 0;
-    const NSUInteger scanlineFrameOffset =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(spriteFrameLength));
-    const NSUInteger spriteScanlineFrameOffset =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(
-                scanlineFrameOffset +
-                sizeof(ScanlineConfigCpu)));
-    const NSUInteger frameUploadLength =
-        static_cast<NSUInteger>(
-            MetalAlignConstantStride(
-                spriteScanlineFrameOffset +
-                sizeof(SpriteScanlineConfigCpu)));
-
-    id<MTLBuffer> frameUploadBuffer =
-        [State->Device
-            newBufferWithLength:frameUploadLength
-            options:MTLResourceStorageModeShared];
-    if (!frameUploadBuffer)
+    id<MTLBuffer> spriteFrameBuffer =
+        [State->Device newBufferWithBytes:spriteBase
+                                  length:spriteFrameLength
+                                 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> scanlineFrameBuffer =
+        [State->Device newBufferWithBytes:
+            [State->ScanlineConfigBuffer contents]
+                                  length:sizeof(ScanlineConfigCpu)
+                                 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> spriteScanlineFrameBuffer =
+        [State->Device newBufferWithBytes:
+            [State->SpriteScanlineConfigBuffer contents]
+                                  length:sizeof(SpriteScanlineConfigCpu)
+                                 options:MTLResourceStorageModeShared];
+    if (!spriteFrameBuffer || !scanlineFrameBuffer ||
+        !spriteScanlineFrameBuffer)
+    {
         return false;
-
-    uint8_t* frameUploadBase =
-        static_cast<uint8_t*>(
-            [frameUploadBuffer contents]);
-    std::memcpy(
-        frameUploadBase + spriteFrameOffset,
-        spriteBase,
-        spriteFrameLength);
-    std::memcpy(
-        frameUploadBase + scanlineFrameOffset,
-        [State->ScanlineConfigBuffer contents],
-        sizeof(ScanlineConfigCpu));
-    std::memcpy(
-        frameUploadBase + spriteScanlineFrameOffset,
-        [State->SpriteScanlineConfigBuffer contents],
-        sizeof(SpriteScanlineConfigCpu));
+    }
 
     const std::vector<Metal2DSegmentRange> segments =
         MetalBuild2DSegments(*State);
@@ -525,14 +506,6 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     const uint32_t scale =
         static_cast<uint32_t>(std::max(1, State->Scale));
 
-    // BG textures depend on the normalized layer config and the
-    // frame-final VRAM/palette uploads, not on OBJ/window-only segment
-    // changes. Reuse a target until another config overwrites it.
-    std::array<uint64_t, kBGLayerCount>
-        bgTargetSignature {};
-    std::array<uint8_t, kBGLayerCount>
-        bgTargetValid {};
-
     for (const Metal2DSegmentRange& segment : segments)
     {
         const int line = segment.Start;
@@ -556,21 +529,6 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
             if (!target || cfg.type >= 6u ||
                 cfg.size[0] == 0 ||
                 cfg.size[1] == 0)
-            {
-                continue;
-            }
-
-            const uint32_t targetIndex =
-                cfg.pad0[0] - 1u;
-            const uint64_t desiredSignature =
-                State->LayerSnapshotHash[line] ^
-                (0x9E3779B97F4A7C15ull *
-                 static_cast<uint64_t>(layer + 1u));
-            if (targetIndex <
-                    static_cast<uint32_t>(kBGLayerCount) &&
-                bgTargetValid[targetIndex] &&
-                bgTargetSignature[targetIndex] ==
-                    desiredSignature)
             {
                 continue;
             }
@@ -620,14 +578,6 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                         vertexStart:0
                         vertexCount:6];
             [encoder endEncoding];
-
-            if (targetIndex <
-                    static_cast<uint32_t>(kBGLayerCount))
-            {
-                bgTargetSignature[targetIndex] =
-                    desiredSignature;
-                bgTargetValid[targetIndex] = 1u;
-            }
         }
 
         const NSUInteger scissorY =
@@ -663,24 +613,19 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                         State->SpriteDepthState];
                 }
                 [encoder setVertexBuffer:
-                    frameUploadBuffer
-                                  offset:
-                                      spriteFrameOffset +
-                                      spriteOffset
+                    spriteFrameBuffer
+                                  offset:spriteOffset
                                  atIndex:0];
                 [encoder setVertexBytes:&numSprites
                                   length:sizeof(numSprites)
                                  atIndex:1];
                 [encoder setFragmentBuffer:
-                    frameUploadBuffer
-                                    offset:
-                                        spriteFrameOffset +
-                                        spriteOffset
+                    spriteFrameBuffer
+                                    offset:spriteOffset
                                    atIndex:0];
                 [encoder setFragmentBuffer:
-                    frameUploadBuffer
-                                    offset:
-                                        spriteScanlineFrameOffset
+                    spriteScanlineFrameBuffer
+                                    offset:0
                                    atIndex:1];
                 [encoder setFragmentBytes:&passMode
                                     length:sizeof(passMode)
@@ -753,8 +698,8 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                             length:sizeof(layerConfig)
                            atIndex:0];
         [encoder setFragmentBuffer:
-            frameUploadBuffer
-                            offset:scanlineFrameOffset
+            scanlineFrameBuffer
+                            offset:0
                            atIndex:1];
         [encoder setFragmentBytes:
             &State->CompositorConfig
