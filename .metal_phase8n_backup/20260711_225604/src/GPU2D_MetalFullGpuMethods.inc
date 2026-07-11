@@ -7,7 +7,6 @@
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
-// MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -262,121 +261,6 @@ struct Metal2DSegmentList
     uint32_t Count = 0;
 };
 
-
-class MetalSegmentedUploadLease
-{
-public:
-    MetalSegmentedUploadLease() = default;
-
-    MetalSegmentedUploadLease(
-        std::shared_ptr<MetalSegmentedUploadRing> ring,
-        uint32_t slot) noexcept
-        : Ring(std::move(ring)), Slot(slot)
-    {
-    }
-
-    MetalSegmentedUploadLease(
-        const MetalSegmentedUploadLease&) = delete;
-    MetalSegmentedUploadLease& operator=(
-        const MetalSegmentedUploadLease&) = delete;
-
-    MetalSegmentedUploadLease(
-        MetalSegmentedUploadLease&& other) noexcept
-        : Ring(std::move(other.Ring)),
-          Slot(other.Slot),
-          Submitted(other.Submitted)
-    {
-        other.Submitted = true;
-    }
-
-    ~MetalSegmentedUploadLease()
-    {
-        ReleaseUnsubmitted();
-    }
-
-    explicit operator bool() const noexcept
-    {
-        return Ring &&
-            Slot < MetalSegmentedUploadRing::SlotCount &&
-            Ring->Buffers[Slot];
-    }
-
-    id<MTLBuffer> Buffer() const noexcept
-    {
-        return *this ? Ring->Buffers[Slot] : nil;
-    }
-
-    void AttachToCommandBuffer(
-        id<MTLCommandBuffer> command)
-    {
-        if (!Ring || Submitted || !command)
-            return;
-
-        std::shared_ptr<MetalSegmentedUploadRing> ring = Ring;
-        const uint32_t bit = 1u << Slot;
-        [command addCompletedHandler:^(id<MTLCommandBuffer>) {
-            ring->BusyMask.fetch_and(
-                ~bit,
-                std::memory_order_release);
-        }];
-        Submitted = true;
-    }
-
-private:
-    void ReleaseUnsubmitted() noexcept
-    {
-        if (!Ring || Submitted)
-            return;
-        Ring->BusyMask.fetch_and(
-            ~(1u << Slot),
-            std::memory_order_release);
-        Submitted = true;
-    }
-
-    std::shared_ptr<MetalSegmentedUploadRing> Ring;
-    uint32_t Slot = 0;
-    bool Submitted = false;
-};
-
-MetalSegmentedUploadLease MetalAcquireSegmentedUploadLease(
-    const std::shared_ptr<MetalSegmentedUploadRing>& ring,
-    NSUInteger requiredLength) noexcept
-{
-    if (!ring || !ring->Ready() ||
-        ring->FrameLength < requiredLength)
-    {
-        return {};
-    }
-
-    const uint32_t start =
-        ring->NextSlot.fetch_add(
-            1u,
-            std::memory_order_relaxed) %
-        MetalSegmentedUploadRing::SlotCount;
-
-    for (uint32_t offset = 0;
-         offset < MetalSegmentedUploadRing::SlotCount;
-         offset++)
-    {
-        const uint32_t slot =
-            (start + offset) %
-            MetalSegmentedUploadRing::SlotCount;
-        const uint32_t bit = 1u << slot;
-        const uint32_t previous =
-            ring->BusyMask.fetch_or(
-                bit,
-                std::memory_order_acq_rel);
-        if ((previous & bit) == 0u)
-        {
-            return MetalSegmentedUploadLease(
-                ring,
-                slot);
-        }
-    }
-
-    return {};
-}
-
 template <typename StateT>
 uint64_t MetalCombinedSegmentHash(
     const StateT& state,
@@ -519,6 +403,50 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         static_cast<uint8_t*>(
             [State->SpriteScanlineSnapshotBuffer contents]);
 
+    // One immutable allocation per Engine/frame instead of three
+    // independent MTLBuffer allocations. The command buffer retains this
+    // resource until GPU completion.
+    const NSUInteger spriteFrameLength =
+        State->SpriteSnapshotStride *
+        static_cast<NSUInteger>(kScreenH);
+    const NSUInteger spriteFrameOffset = 0;
+    const NSUInteger scanlineFrameOffset =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(spriteFrameLength));
+    const NSUInteger spriteScanlineFrameOffset =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(
+                scanlineFrameOffset +
+                sizeof(ScanlineConfigCpu)));
+    const NSUInteger frameUploadLength =
+        static_cast<NSUInteger>(
+            MetalAlignConstantStride(
+                spriteScanlineFrameOffset +
+                sizeof(SpriteScanlineConfigCpu)));
+
+    id<MTLBuffer> frameUploadBuffer =
+        [State->Device
+            newBufferWithLength:frameUploadLength
+            options:MTLResourceStorageModeShared];
+    if (!frameUploadBuffer)
+        return false;
+
+    uint8_t* frameUploadBase =
+        static_cast<uint8_t*>(
+            [frameUploadBuffer contents]);
+    std::memcpy(
+        frameUploadBase + spriteFrameOffset,
+        spriteBase,
+        spriteFrameLength);
+    std::memcpy(
+        frameUploadBase + scanlineFrameOffset,
+        [State->ScanlineConfigBuffer contents],
+        sizeof(ScanlineConfigCpu));
+    std::memcpy(
+        frameUploadBase + spriteScanlineFrameOffset,
+        [State->SpriteScanlineConfigBuffer contents],
+        sizeof(SpriteScanlineConfigCpu));
+
     const Metal2DSegmentList segments =
         MetalBuild2DSegments(*State);
     if (segments.Count == 0)
@@ -527,11 +455,11 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     if (!allowCaptureTextures)
     {
         for (uint32_t segmentIndex = 0;
-             segmentIndex < segments.Count;
-             segmentIndex++)
-        {
-            const Metal2DSegmentRange& segment =
-                segments.Items[segmentIndex];
+         segmentIndex < segments.Count;
+         segmentIndex++)
+    {
+        const Metal2DSegmentRange& segment =
+            segments.Items[segmentIndex];
             const int line = segment.Start;
             const auto* spriteConfig =
                 reinterpret_cast<const SpriteConfigCpu*>(
@@ -547,56 +475,11 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
             }
         }
     }
-
     id<MTLCommandBuffer> command =
         [State->Queue commandBuffer];
     if (!command)
         return false;
-    command.label =
-        @"MelonPrime Metal Phase 8N Segmented 2D";
-
-    const MetalSegmentedUploadLayout uploadLayout =
-        MetalMakeSegmentedUploadLayout(
-            State->SpriteSnapshotStride);
-    MetalSegmentedUploadLease uploadLease =
-        MetalAcquireSegmentedUploadLease(
-            State->SegmentedUploadRing,
-            uploadLayout.FrameLength);
-    if (!uploadLease)
-        return false;
-
-    id<MTLBuffer> frameUploadBuffer =
-        uploadLease.Buffer();
-    if (!frameUploadBuffer)
-        return false;
-
-    const NSUInteger spriteFrameLength =
-        uploadLayout.SpriteFrameLength;
-    const NSUInteger spriteFrameOffset =
-        uploadLayout.SpriteFrameOffset;
-    const NSUInteger scanlineFrameOffset =
-        uploadLayout.ScanlineFrameOffset;
-    const NSUInteger spriteScanlineFrameOffset =
-        uploadLayout.SpriteScanlineFrameOffset;
-
-    uint8_t* frameUploadBase =
-        static_cast<uint8_t*>(
-            [frameUploadBuffer contents]);
-    if (!frameUploadBase)
-        return false;
-
-    std::memcpy(
-        frameUploadBase + spriteFrameOffset,
-        spriteBase,
-        spriteFrameLength);
-    std::memcpy(
-        frameUploadBase + scanlineFrameOffset,
-        [State->ScanlineConfigBuffer contents],
-        sizeof(ScanlineConfigCpu));
-    std::memcpy(
-        frameUploadBase + spriteScanlineFrameOffset,
-        [State->SpriteScanlineConfigBuffer contents],
-        sizeof(SpriteScanlineConfigCpu));
+    command.label = @"MelonPrime Metal Phase 8K Segmented 2D";
 
     {
         MTLRenderPassDescriptor* pass =
@@ -932,7 +815,6 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         [encoder endEncoding];
     }
 
-    uploadLease.AttachToCommandBuffer(command);
     [command commit];
     return true;
 }
