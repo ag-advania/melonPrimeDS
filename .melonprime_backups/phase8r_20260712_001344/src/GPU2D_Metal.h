@@ -37,7 +37,7 @@ public:
         void* capture256Texture,
         bool allowCaptureTextures) noexcept;
     // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
-    // MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+    // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
     bool RenderFullGpuFrame(
         void* high3DTexture,
         void* capture128Texture,

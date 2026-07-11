@@ -11,9 +11,9 @@
 // MELONPRIME_METAL_VISIBLE_3D_OWNERSHIP_GATE_V1
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
-// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 #import <Metal/Metal.h>
@@ -1073,6 +1073,59 @@ void MetalRenderer::VBlank()
     UploadCpuCompletedCaptures();
 
 
+    if (MetalSegmented2DShadowRequested() &&
+        Metal2D_A && Metal2D_B &&
+        Metal2D_A->SegmentedFrameComplete() &&
+        Metal2D_B->SegmentedFrameComplete())
+    {
+        void* high3D =
+            Metal3DColorTarget(Rend3D.get());
+        void* capture128 =
+            GetMetalCapture128Texture();
+        void* capture256 =
+            GetMetalCapture256Texture();
+
+        const bool shadowRendered =
+            high3D && capture128 && capture256 &&
+            Metal2D_A->RenderSegmentedGpuFrame(
+                high3D,
+                capture128,
+                capture256,
+                true) &&
+            Metal2D_B->RenderSegmentedGpuFrame(
+                high3D,
+                capture128,
+                capture256,
+                true);
+
+        if (FullGpuState)
+        {
+
+            if (shadowRendered &&
+                !FullGpuState->LoggedSegmentedShadow)
+            {
+                FullGpuState->LoggedSegmentedShadow = true;
+                std::fprintf(
+                    stderr,
+                    "[MelonPrime] metal segmented 2d shadow: "
+                    "GPU segment frame completed; "
+                    "visible output remains Phase 8H "
+                    "Software 2D ownership path\n");
+            }
+            else if (!shadowRendered &&
+                     !FullGpuState->
+                         LoggedSegmentedShadowFailure)
+            {
+                FullGpuState->
+                    LoggedSegmentedShadowFailure = true;
+                std::fprintf(
+                    stderr,
+                    "[MelonPrime] metal segmented 2d shadow: "
+                    "frame rejected; visible Software 2D "
+                    "output is unaffected\n");
+            }
+        }
+    }
 
     if (FullGpuState)
     {

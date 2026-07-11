@@ -2,12 +2,12 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
 // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
 // MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
 // MELONPRIME_METAL_2D_CHANGE_DRIVEN_SPRITE_CACHE_V1
-// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -36,7 +37,19 @@ constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
 
 
+bool MetalEnvironmentFlagEnabled(const char* name)
+{
+    const char* value = std::getenv(name);
+    return value && value[0] == '1';
+}
 
+bool MetalSegmented2DShadowEnabled()
+{
+    static const bool enabled =
+        MetalEnvironmentFlagEnabled(
+            "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
+    return enabled;
+}
 
 bool MetalSegmented2DVisibleEnabled()
 {
