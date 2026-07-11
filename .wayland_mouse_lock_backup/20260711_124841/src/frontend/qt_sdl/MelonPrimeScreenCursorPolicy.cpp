@@ -136,11 +136,6 @@ void ClipCenter1px(ScreenPanel& panel)
         MacSetAimCursorCaptured(gcMouseActive);
     }
 #elif defined(__linux__)
-    // MELONPRIME_WAYLAND_POINTER_LOCK_V1: Wayland does not permit arbitrary global cursor warps.
-    // Request compositor-native relative motion and pointer locking first.
-    if (panel.setWaylandPointerLockForMelonPrime(true))
-        return;
-
     if (panel.isActiveVisibleWindowForMelonPrime()) {
         const auto* core = panel.melonPrimeCoreForPolicy();
         if (!core || !core->IsPlatformRawAimActive()) {
@@ -173,7 +168,6 @@ void Unclip(ScreenPanel& panel)
     MacSetAimCursorCaptured(false);
 #endif
 #if defined(__linux__)
-    panel.setWaylandPointerLockForMelonPrime(false);
     panel.resetAimMouseDelta();
 #endif
 #ifdef _WIN32
@@ -188,7 +182,6 @@ void ReleaseForClose(ScreenPanel& panel)
     MacSetAimCursorCaptured(false);
 #endif
 #if defined(__linux__)
-    panel.setWaylandPointerLockForMelonPrime(false);
     panel.resetAimMouseDelta();
 #endif
 #ifdef _WIN32
@@ -201,9 +194,6 @@ void ConfineToBottomScreen(ScreenPanel& panel)
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
     panel.setCursor(Qt::ArrowCursor);
-#if defined(__linux__)
-    panel.setWaylandPointerLockForMelonPrime(false);
-#endif
 #ifdef _WIN32
     if (!panel.isActiveVisibleWindowForMelonPrime()) return;
     const auto bottomRect = panel.getBottomScreenWidgetRectForPolicy();
