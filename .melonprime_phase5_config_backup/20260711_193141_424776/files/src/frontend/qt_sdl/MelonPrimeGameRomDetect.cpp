@@ -147,6 +147,8 @@ namespace MelonPrime {
             snprintf(message, sizeof(message), "MPH Rom Detected: %s", osdName);
         }
         emuInstance->osdAddMessage(0, message);
+
+        ReloadAimConfigFromTable(localCfg);
     }
 
 } // namespace MelonPrime

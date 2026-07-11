@@ -56,8 +56,6 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeScreenCursorPolicy.h"
-#include "MelonPrimeDef.h"
-#include "MelonPrimeInstanceDiagnostics.h"
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
 #include "MelonPrimeWaylandPointerLock.h" // MELONPRIME_WAYLAND_POINTER_LOCK_V1
 #endif
@@ -128,61 +126,6 @@ void ScreenPanel::addAimMouseDeltaForMelonPrime(
 }
 #endif
 
-// MELONPRIME_PHASE5_CONFIG_USAGE_V1
-void ScreenPanel::processMelonPrimePersistRequests()
-{
-    if (closing || !emuInstance || !mainWindow)
-        return;
-
-    // Only the primary panel owns persistence for this EmuInstance. Secondary
-    // windows must not race to consume the single-consumer mailbox.
-    if (emuInstance->getMainWindow() != mainWindow)
-        return;
-
-    auto* core = melonPrimeCore();
-    if (!core)
-        return;
-
-    MelonPrime::MelonPrimePersistRequest request;
-    if (!core->ThreadBridge().TakePersistRequestForGui(request))
-        return;
-    if (request.type !=
-            MelonPrime::MelonPrimePersistRequest::Type::AimSensitivity
-        || request.generation <= m_melonPrimeLastPersistGeneration)
-        return;
-
-    m_melonPrimeLastPersistGeneration = request.generation;
-    emuInstance->getLocalConfig().SetInt(
-        MelonPrime::CfgKey::AimSens,
-        std::max(1, request.value));
-    scheduleMelonPrimeConfigSave();
-}
-
-void ScreenPanel::scheduleMelonPrimeConfigSave()
-{
-    m_melonPrimeConfigSavePending = true;
-    m_melonPrimeConfigSaveTimer.start(750);
-}
-
-void ScreenPanel::flushMelonPrimeConfigSave()
-{
-    if (!m_melonPrimeConfigSavePending)
-        return;
-
-    m_melonPrimeConfigSaveTimer.stop();
-    m_melonPrimeConfigSavePending = false;
-    MelonPrime::InstanceDiagnostics::CheckGuiThread(
-        emuInstance,
-        "Config::Save(AimSensitivity debounce)");
-    Config::Save();
-}
-
-void ScreenPanel::cancelMelonPrimeDeferredConfigSave()
-{
-    m_melonPrimeConfigSaveTimer.stop();
-    m_melonPrimeConfigSavePending = false;
-}
-
 void ScreenPanel::syncMelonPrimeThreadBridge()
 {
     auto* core = melonPrimeCore();
@@ -193,7 +136,6 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
     const QPoint center = mapToGlobal(rect().center());
     bridge.PublishCenterFromGui(center.x(), center.y());
     bridge.PublishWindowHandleFromGui(static_cast<uintptr_t>(winId()));
-    processMelonPrimePersistRequests();
 
     const uint32_t requests = bridge.TakeGuiRequestsFromGui();
     const uint32_t cursorRequests =
@@ -422,8 +364,6 @@ void ScreenPanel::beginClose()
 {
     if (closing)
         return;
-    processMelonPrimePersistRequests();
-    flushMelonPrimeConfigSave();
     closing = true;
     if (auto* core = melonPrimeCore()) {
         core->ThreadBridge().SetFocusedFromGui(false);
@@ -501,15 +441,6 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     emuInstance = mainWindow->getEmuInstance();
 
-#ifdef MELONPRIME_DS
-    m_melonPrimeConfigSaveTimer.setSingleShot(true);
-    connect(
-        &m_melonPrimeConfigSaveTimer,
-        &QTimer::timeout,
-        this,
-        &ScreenPanel::flushMelonPrimeConfigSave);
-#endif
-
     mouseHide = false;
     mouseHideDelay = 0;
 
@@ -553,8 +484,6 @@ ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
     if (!closing) {
-        processMelonPrimePersistRequests();
-        flushMelonPrimeConfigSave();
         closing = true;
         releaseCursorStateForClose();
     }

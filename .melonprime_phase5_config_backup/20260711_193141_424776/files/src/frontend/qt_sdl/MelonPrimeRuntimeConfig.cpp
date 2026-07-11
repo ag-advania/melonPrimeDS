@@ -26,7 +26,6 @@ constexpr int64_t kAimOneFp = 1LL << 14;
 RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 {
     RuntimeConfigSnapshot s{};
-    s.aimConfig = LoadAimConfigSnapshot(cfg);
 
     s.joy2Key = cfg.GetBool(CfgKey::Joy2Key);
     s.snapTap = cfg.GetBool(CfgKey::SnapTap);
@@ -108,10 +107,10 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 AimSensitivitySnapshot LoadAimSensitivitySnapshot(Config::Table& cfg) noexcept
 {
     AimSensitivitySnapshot s{};
-    s.aimSensitivity = cfg.GetInt(CfgKey::AimSens);
-    s.aimYScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
-    s.aimSensiFactor = static_cast<float>(s.aimSensitivity) * 0.01f;
-    s.aimCombinedY = s.aimSensiFactor * s.aimYScale;
+    const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
+    const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
+    s.aimSensiFactor = sens * 0.01f;
+    s.aimCombinedY = s.aimSensiFactor * yScale;
     return s;
 }
 
@@ -119,8 +118,6 @@ AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
 {
     AimConfigSnapshot s{};
     const AimSensitivitySnapshot sens = LoadAimSensitivitySnapshot(cfg);
-    s.aimSensitivity = sens.aimSensitivity;
-    s.aimYScale = sens.aimYScale;
     s.aimSensiFactor = sens.aimSensiFactor;
     s.aimCombinedY = sens.aimCombinedY;
     const double v = cfg.GetDouble(CfgKey::AimAdjust);

@@ -144,27 +144,24 @@ namespace MelonPrime {
     // comment in MelonPrimeRuntimeConfig.h.
     void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
     {
-        m_runtimeAimSensitivity = s.aimSensitivity;
-        m_runtimeAimYScale = s.aimYScale;
         m_aimSensiFactor = s.aimSensiFactor;
         m_aimCombinedY = s.aimCombinedY;
         m_aimAdjust = s.aimAdjust;
         RecalcAimFixedPoint();
     }
 
-    // Compatibility cold-path entry point. Normal reloads now carry aim config
-    // inside RuntimeConfigSnapshot.
+    // Called from Initialize(), ApplyConfigReload(), and ROM detect — see
+    // MelonPrimeRuntimeConfig.h for why this is a separate reload path from
+    // ReloadConfigFlags()/RuntimeConfigSnapshot.
     void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
     {
         ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
     }
 
-    void MelonPrimeCore::ApplyRuntimeAimSensitivity(int sensitivity)
-    {
-        m_runtimeAimSensitivity = std::max(1, sensitivity);
-        m_aimSensiFactor =
-            static_cast<float>(m_runtimeAimSensitivity) * 0.01f;
-        m_aimCombinedY = m_aimSensiFactor * m_runtimeAimYScale;
+    void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
+        const AimSensitivitySnapshot s = LoadAimSensitivitySnapshot(cfg);
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
         RecalcAimFixedPoint();
     }
 
@@ -256,17 +253,19 @@ namespace MelonPrime {
         if (LIKELY(!released)) return;
 
         const int change = (released & kSensiUpBit) ? 1 : -1;
-        const int cur = m_runtimeAimSensitivity;
+        const int cur = localCfg.GetInt(CfgKey::AimSens);
         const int next = cur + change;
 
         if (next < 1) {
             emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
         }
         else if (next != cur) {
-            // Runtime response is immediate; persistence is delegated to the
-            // GUI thread and debounced there.
-            ApplyRuntimeAimSensitivity(next);
-            m_threadBridge.RequestAimSensitivityPersistFromEmu(next);
+            localCfg.SetInt(CfgKey::AimSens, next);
+            InstanceDiagnostics::CheckGuiThread(
+                emuInstance,
+                "Config::Save(AimSensitivity hotkey)");
+            Config::Save();
+            RecalcAimSensitivityCache(localCfg);
             emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);
         }
     }

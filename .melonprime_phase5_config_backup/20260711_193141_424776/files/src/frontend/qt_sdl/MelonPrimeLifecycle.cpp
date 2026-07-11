@@ -104,9 +104,6 @@ namespace MelonPrime {
 #endif
 
         screenSyncMode = s.screenSyncMode;
-
-        // Aim fields now share the same snapshot load/apply transaction.
-        ApplyAimConfigSnapshot(s.aimConfig);
     }
 
     void MelonPrimeCore::ReloadConfigFlags()
@@ -121,6 +118,7 @@ namespace MelonPrime {
     void MelonPrimeCore::Initialize()
     {
         ReloadConfigFlags();
+        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         SetupRawInput();
@@ -259,6 +257,8 @@ namespace MelonPrime {
         const bool newJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
         ApplyJoy2KeySupportAndQtFilter(newJoy2Key, oldJoy2Key != newJoy2Key);
 
+        ReloadAimConfigFromTable(localCfg);
+
 #ifdef _WIN32
         if (m_rawFilter) {
             BindMetroidHotkeysFromConfig(
@@ -288,6 +288,8 @@ namespace MelonPrime {
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
 
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+
+        ReloadAimConfigFromTable(localCfg);
 
 #ifdef _WIN32
         if (m_rawFilter) {

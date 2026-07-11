@@ -20,19 +20,6 @@ struct MelonPrimeUiSnapshot {
     int centerY = 0;
 };
 
-// EmuThread -> GUI persistence request. Only the latest hotkey value matters;
-// generation makes replacement/order explicit and supports stale-request checks.
-struct MelonPrimePersistRequest {
-    enum class Type : uint8_t {
-        None = 0,
-        AimSensitivity = 1,
-    };
-
-    Type type = Type::None;
-    int value = 0;
-    uint64_t generation = 0;
-};
-
 // Explicit GUI/EmuThread boundary for MelonPrime-only state. GUI producers
 // write command/input mailboxes; EmuThread publishes the runtime snapshot and
 // GUI request bits. No QWidget or platform GUI object crosses this boundary.
@@ -92,42 +79,6 @@ public:
     {
         m_panelAimX.store(0, std::memory_order_relaxed);
         m_panelAimY.store(0, std::memory_order_release);
-    }
-
-    // MELONPRIME_PHASE5_CONFIG_USAGE_V1
-    // Packed publication keeps value and generation in one atomic operation.
-    // Rapid hotkey presses intentionally coalesce to the latest value.
-    void RequestAimSensitivityPersistFromEmu(int value) noexcept
-    {
-        uint32_t generation =
-            m_persistGeneration.fetch_add(1, std::memory_order_relaxed) + 1u;
-        if (generation == 0) {
-            generation =
-                m_persistGeneration.fetch_add(1, std::memory_order_relaxed) + 1u;
-        }
-
-        const uint64_t packed =
-            (static_cast<uint64_t>(generation) << 32)
-            | static_cast<uint32_t>(value);
-        m_aimSensitivityPersist.store(packed, std::memory_order_release);
-    }
-
-    bool TakePersistRequestForGui(MelonPrimePersistRequest& out) noexcept
-    {
-        const uint64_t packed =
-            m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
-        if (packed == 0)
-            return false;
-
-        out.type = MelonPrimePersistRequest::Type::AimSensitivity;
-        out.value = static_cast<int32_t>(static_cast<uint32_t>(packed));
-        out.generation = static_cast<uint32_t>(packed >> 32);
-        return true;
-    }
-
-    void DiscardPersistRequestsFromGui() noexcept
-    {
-        (void)m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
     }
 
     [[nodiscard]] bool FocusedForEmu() const noexcept
@@ -261,8 +212,6 @@ private:
     std::atomic<uint32_t> m_runtimeBits{1u};
     std::atomic_bool m_cursorVisibleDesired{true};
     std::atomic<uint32_t> m_guiRequests{0};
-    std::atomic<uint32_t> m_persistGeneration{0};
-    std::atomic<uint64_t> m_aimSensitivityPersist{0};
 };
 
 } // namespace MelonPrime

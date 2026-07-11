@@ -108,8 +108,6 @@ public:
     void reloadNoRomSplashLocalization();
     void containAimCursorIfNeeded();
     void syncMelonPrimeThreadBridge();
-    // Explicit settings-dialog save wins over any older debounced hotkey save.
-    void cancelMelonPrimeDeferredConfigSave();
 
     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
@@ -298,9 +296,6 @@ private:
     void clipCursorToBottomScreen();
     void releaseCursorStateForClose();
     QRect aimContainmentLocalRect() const;
-    void processMelonPrimePersistRequests();
-    void scheduleMelonPrimeConfigSave();
-    void flushMelonPrimeConfigSave();
     void setClipWanted(bool value);
     bool getClipWanted() const;
     bool m_lastInGameTopScreenOnlyOverride = false;
@@ -312,9 +307,6 @@ private:
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.
     std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
-    QTimer m_melonPrimeConfigSaveTimer;
-    bool m_melonPrimeConfigSavePending = false;
-    uint64_t m_melonPrimeLastPersistGeneration = 0;
     bool closing = false;
 #endif
 };
