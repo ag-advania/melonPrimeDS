@@ -5,7 +5,6 @@
 // MELONPRIME_METAL_STABILITY_SCALE_PERF_V1
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 // MELONPRIME_METAL_RENDER_OPTIONS_V1
-// MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 
 #import <Metal/Metal.h>
 
@@ -108,61 +107,6 @@ bool MetalGetLineDiffEnabled()
         return env && env[0] == '1';
     }();
     return enabled;
-}
-
-const std::array<u8, 256>& Metal8To6Table()
-{
-    static const std::array<u8, 256> table = []() {
-        std::array<u8, 256> result {};
-        for (size_t i = 0; i < result.size(); i++)
-            result[i] = static_cast<u8>((i * 63u + 127u) / 255u);
-        return result;
-    }();
-    return table;
-}
-
-const std::array<u8, 256>& Metal8To5Table()
-{
-    static const std::array<u8, 256> table = []() {
-        std::array<u8, 256> result {};
-        for (size_t i = 0; i < result.size(); i++)
-            result[i] = static_cast<u8>((i * 31u + 127u) / 255u);
-        return result;
-    }();
-    return table;
-}
-
-bool EnsureMetalUploadBuffer(
-    id<MTLDevice> device,
-    id<MTLBuffer>& buffer,
-    NSUInteger& capacity,
-    NSUInteger requiredBytes,
-    const char* label)
-{
-    if (!device || requiredBytes == 0)
-        return requiredBytes == 0;
-    if (buffer && capacity >= requiredBytes)
-        return true;
-
-    NSUInteger newCapacity = capacity ? capacity * 2u : 64u * 1024u;
-    while (newCapacity < requiredBytes)
-        newCapacity *= 2u;
-
-    id<MTLBuffer> replacement =
-        [device newBufferWithLength:newCapacity options:MTLResourceStorageModeShared];
-    if (!replacement)
-        return false;
-
-    if (label)
-        replacement.label = [NSString stringWithUTF8String:label];
-
-    buffer = replacement;
-    capacity = newCapacity;
-    std::fprintf(stderr,
-        "[MelonPrime] metal renderer3D: persistent upload buffer resized label=%s bytes=%zu\n",
-        label ? label : "unnamed",
-        static_cast<size_t>(newCapacity));
-    return true;
 }
 
 double MetalPerfElapsedMs(MetalPerfClock::time_point start, MetalPerfClock::time_point end)
@@ -340,10 +284,6 @@ struct MetalRenderer3D::MetalState
     id<MTLTexture> AttrTarget = nil;
     id<MTLTexture> NativeResolveTarget = nil;
     id<MTLBuffer> NativeReadbackBuffer = nil;
-    id<MTLBuffer> VertexUploadBuffer = nil;
-    id<MTLBuffer> IndexUploadBuffer = nil;
-    NSUInteger VertexUploadCapacity = 0;
-    NSUInteger IndexUploadCapacity = 0;
     std::array<u32, 256 * 192> NativeLineBuffer {};
     u32 NativeScrolledLine[256] = {};
     bool NativeLineReady = false;
@@ -1097,48 +1037,22 @@ void MetalRenderer3D::RenderFrame()
         {
             u8 clearBitmapDirty = 0;
             const auto texcacheStart = MetalPerfEnabled() ? MetalPerfClock::now() : MetalPerfClock::time_point {};
-            const bool textureCacheChanged =
-                State->Texcache && State->Texcache->Update(clearBitmapDirty);
+            if (State->Texcache)
+                State->Texcache->Update(clearBitmapDirty);
             if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
                 gCurrentMetalPerfFrame->TexcacheMs += MetalPerfElapsedMs(texcacheStart, MetalPerfClock::now());
+            UpdateClearBitmapTextures(clearBitmapDirty);
 
-            // Match GLRenderer3D's identical-frame fast path. Reusing the
-            // completed native line buffer and high-resolution render target
-            // avoids all command encoding, GPU execution, synchronous readback,
-            // and CPU color conversion when neither geometry nor texture-backed
-            // inputs changed.
-            const bool reuseIdenticalFrame =
-                GPU3D.RenderFrameIdentical &&
-                !textureCacheChanged &&
-                clearBitmapDirty == 0 &&
-                State->NativeLineReady;
-
-            if (!reuseIdenticalFrame)
-            {
-                UpdateClearBitmapTextures(clearBitmapDirty);
-
-                ClearNativeTarget();
-                const auto nativeStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
-                if (MetalDiagSolidNative3DEnabled())
-                    DrawSolidNative3DDiagnostic();
-                else
-                    RenderNativeOpaquePolygons();
-                RenderFinalPostPass();
-                ReadbackNativeColorTargetToLineBuffer();
-                if (perfEnabled)
-                    perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
-            }
+            ClearNativeTarget();
+            const auto nativeStart = perfEnabled ? MetalPerfClock::now() : MetalPerfClock::time_point {};
+            if (MetalDiagSolidNative3DEnabled())
+                DrawSolidNative3DDiagnostic();
             else
-            {
-                static bool loggedIdenticalReuse = false;
-                if (!loggedIdenticalReuse)
-                {
-                    loggedIdenticalReuse = true;
-                    std::fprintf(stderr,
-                        "[MelonPrime] metal renderer3D: identical-frame reuse active; "
-                        "skipping render/readback for unchanged frames\n");
-                }
-            }
+                RenderNativeOpaquePolygons();
+            RenderFinalPostPass();
+            ReadbackNativeColorTargetToLineBuffer();
+            if (perfEnabled)
+                perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
         }
 
         if (perfEnabled)
@@ -2219,20 +2133,19 @@ bool MetalRenderer3D::ReadbackNativeColorTargetToLineBuffer()
             return false;
         }
 
-        const u32* pixels =
-            static_cast<const u32*>([State->NativeReadbackBuffer contents]);
-        const auto& to6 = Metal8To6Table();
-        const auto& to5 = Metal8To5Table();
-        constexpr size_t pixelCount = 256u * 192u;
-        for (size_t i = 0; i < pixelCount; i++)
+        const uint8_t* pixels = static_cast<const uint8_t*>([State->NativeReadbackBuffer contents]);
+        for (int y = 0; y < 192; y++)
         {
-            const u32 bgra = pixels[i];
-            const u32 b = to6[(bgra >> 0) & 0xFFu];
-            const u32 g = to6[(bgra >> 8) & 0xFFu];
-            const u32 r = to6[(bgra >> 16) & 0xFFu];
-            const u32 a = to5[(bgra >> 24) & 0xFFu];
-            State->NativeLineBuffer[i] =
-                r | (g << 8) | (b << 16) | (a << 24);
+            for (int x = 0; x < 256; x++)
+            {
+                const uint8_t* px = pixels + ((y * 256 + x) * 4);
+                const u32 b = (static_cast<u32>(px[0]) * 63u + 127u) / 255u;
+                const u32 g = (static_cast<u32>(px[1]) * 63u + 127u) / 255u;
+                const u32 r = (static_cast<u32>(px[2]) * 63u + 127u) / 255u;
+                const u32 a = (static_cast<u32>(px[3]) * 31u + 127u) / 255u;
+                State->NativeLineBuffer[static_cast<size_t>(y) * 256u + x] =
+                    r | (g << 8) | (b << 16) | (a << 24);
+            }
         }
         State->NativeLineReady = true;
 
@@ -2460,17 +2373,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     int captureInfo[16];
     GPU.GetCaptureInfo_Texture(captureInfo);
 
-    // GLRenderer3D resolves a texture only when TexParam/TexPalette changes.
-    // Keep the same adjacent-polygon cache here instead of repeating a
-    // Texcache lookup for every textured polygon.
-    bool cachedTextureValid = false;
-    u32 cachedTexParam = 0;
-    u32 cachedTexPalette = 0;
-    id<MTLTexture> cachedTexture = nil;
-    u32 cachedTexLayerWord = 0xFFFFu;
-    u32 cachedTexDimsWord = 0;
-    bool cachedCaptureTexture = false;
-
     for (u32 i = 0; i < numPolygons; i++)
     {
         const Polygon* poly = GPU3D.RenderPolygonRAM[i];
@@ -2508,37 +2410,18 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         const u32 textype = (poly->TexParam >> 26) & 0x7u;
         if (!poly->IsShadowMask && textype != 0)
         {
-            if (!cachedTextureValid ||
-                cachedTexParam != poly->TexParam ||
-                cachedTexPalette != poly->TexPalette)
+            const bool captureTexture = TextureUsesDisplayCapture(poly->TexParam, captureInfo);
+            id<MTLTexture> handle = nil;
+            u32 layer = 0;
+            u32* unusedVariantHelper = nullptr;
+            State->Texcache->GetTexture(poly->TexParam, poly->TexPalette, handle, layer, unusedVariantHelper);
+            if (handle)
             {
-                id<MTLTexture> handle = nil;
-                u32 layer = 0;
-                u32* unusedVariantHelper = nullptr;
-                State->Texcache->GetTexture(
-                    poly->TexParam, poly->TexPalette,
-                    handle, layer, unusedVariantHelper);
-
-                cachedTextureValid = true;
-                cachedTexParam = poly->TexParam;
-                cachedTexPalette = poly->TexPalette;
-                cachedTexture = handle;
-                cachedTexLayerWord = handle ? (layer & 0xFFFFu) : 0xFFFFu;
-                cachedTexDimsWord = handle
-                    ? (TextureWidth(poly->TexParam) |
-                       (TextureHeight(poly->TexParam) << 16))
-                    : 0u;
-                cachedCaptureTexture =
-                    TextureUsesDisplayCapture(poly->TexParam, captureInfo);
-            }
-
-            if (cachedTexture)
-            {
-                texture = cachedTexture;
-                texLayerWord = cachedTexLayerWord;
-                texDimsWord = cachedTexDimsWord;
+                texture = handle;
+                texLayerWord = layer & 0xFFFFu;
+                texDimsWord = TextureWidth(poly->TexParam) | (TextureHeight(poly->TexParam) << 16);
                 texturedPolygons++;
-                if (cachedCaptureTexture)
+                if (captureTexture)
                     captureTexturedPolygons++;
             }
         }
@@ -2759,24 +2642,14 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         return;
     }
 
-    const NSUInteger vertexBytes =
-        static_cast<NSUInteger>(vertexWords.size() * sizeof(uint32_t));
-    if (!EnsureMetalUploadBuffer(
-            State->Device,
-            State->VertexUploadBuffer,
-            State->VertexUploadCapacity,
-            vertexBytes,
-            "MelonPrime Metal 3D Vertex Upload"))
-    {
+    id<MTLBuffer> vertexBuffer =
+        [State->Device newBufferWithBytes:vertexWords.data()
+                                    length:vertexWords.size() * sizeof(uint32_t)
+                                   options:MTLResourceStorageModeShared];
+    if (!vertexBuffer)
         return;
-    }
-    std::memcpy(
-        [State->VertexUploadBuffer contents],
-        vertexWords.data(),
-        static_cast<size_t>(vertexBytes));
-    id<MTLBuffer> vertexBuffer = State->VertexUploadBuffer;
     if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
-        gCurrentMetalPerfFrame->UploadBytes += vertexBytes;
+        gCurrentMetalPerfFrame->UploadBytes += vertexWords.size() * sizeof(uint32_t);
 
     size_t totalIndexCount = 0;
     for (const auto& group : groups)
@@ -2788,24 +2661,15 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         group.IndexOffsetBytes = static_cast<NSUInteger>(frameIndices.size() * sizeof(uint16_t));
         frameIndices.insert(frameIndices.end(), group.Indices.begin(), group.Indices.end());
     }
-    const NSUInteger indexBytes =
-        static_cast<NSUInteger>(frameIndices.size() * sizeof(uint16_t));
-    if (!EnsureMetalUploadBuffer(
-            State->Device,
-            State->IndexUploadBuffer,
-            State->IndexUploadCapacity,
-            indexBytes,
-            "MelonPrime Metal 3D Index Upload"))
-    {
+    id<MTLBuffer> indexBuffer = frameIndices.empty()
+        ? nil
+        : [State->Device newBufferWithBytes:frameIndices.data()
+                                      length:frameIndices.size() * sizeof(uint16_t)
+                                     options:MTLResourceStorageModeShared];
+    if (!indexBuffer)
         return;
-    }
-    std::memcpy(
-        [State->IndexUploadBuffer contents],
-        frameIndices.data(),
-        static_cast<size_t>(indexBytes));
-    id<MTLBuffer> indexBuffer = State->IndexUploadBuffer;
     if (MetalPerfEnabled() && gCurrentMetalPerfFrame)
-        gCurrentMetalPerfFrame->UploadBytes += indexBytes;
+        gCurrentMetalPerfFrame->UploadBytes += frameIndices.size() * sizeof(uint16_t);
 
     // Normal mode preserves the native integer DS coordinate grid. With the
     // explicit high-resolution-coordinate option enabled at scale > 1, packed
