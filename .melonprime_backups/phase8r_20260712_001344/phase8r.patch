@@ -1,0 +1,249 @@
+--- a/.claude/rules/plan/metal_compute_shader_phase7_execution.md
++++ b/.claude/rules/plan/metal_compute_shader_phase7_execution.md
+@@ -421,3 +421,12 @@
+ - GPU command failure後はrenderer session中のCompute cutoverを無効化し、再起動までRasterReferenceを使用する。
+ - MELONPRIME_METAL_COMPUTE_VISIBLE=0またはMELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE=1で緊急比較用に可視cutoverを無効化できる。
+ - MIRROR、FINAL_DIFF、VISIBLE_VERIFYのdeveloper診断契約は維持する。
++
++<!-- MELONPRIME_METAL_PHASE8R_REMOVE_SEGMENTED_SHADOW -->
++## 2026-07-11 — Phase 8R remove obsolete segmented shadow path
++
++- direct segmented Metal 2Dがproduction可視経路になったため、旧MELONPRIME_METAL_SEGMENTED_2D_SHADOW診断経路を撤去。
++- CPU fallback時に行っていたEngine A/Bの重複scanline／OAM snapshot取得を削除。
++- Software VBlank後に可視化されないsegmented Engine A/B commandを追加submitしていたshadow renderを削除。
++- LoggedSegmentedShadow状態、環境変数helper、旧shadow marker／ログを削除。
++- production direct segmented path、capture feedback判定、Software fallback、Metal Compute fallbackは維持。
+--- a/src/GPU2D_Metal.h
++++ b/src/GPU2D_Metal.h
+@@ -37,7 +37,7 @@
+         void* capture256Texture,
+         bool allowCaptureTextures) noexcept;
+     // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+-    // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
++    // MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+     bool RenderFullGpuFrame(
+         void* high3DTexture,
+         void* capture128Texture,
+--- a/src/GPU2D_Metal.mm
++++ b/src/GPU2D_Metal.mm
+@@ -2,12 +2,12 @@
+ // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+ // MELONPRIME_METAL_2D_HUD_PARITY_V1
+ // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+ // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+ // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
+ // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
+ // MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
+ // MELONPRIME_METAL_2D_CHANGE_DRIVEN_SPRITE_CACHE_V1
++// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+ 
+ #if defined(MELONPRIME_ENABLE_METAL)
+ 
+@@ -22,7 +22,6 @@
+ #include <cstdint>
+ #include <cstddef>
+ #include <cstdio>
+-#include <cstdlib>
+ #include <cstring>
+ #include <memory>
+ #include <utility>
+@@ -37,19 +36,7 @@
+ constexpr int kBGLayerCount = 22;
+ 
+ 
+-bool MetalEnvironmentFlagEnabled(const char* name)
+-{
+-    const char* value = std::getenv(name);
+-    return value && value[0] == '1';
+-}
+-
+-bool MetalSegmented2DShadowEnabled()
+-{
+-    static const bool enabled =
+-        MetalEnvironmentFlagEnabled(
+-            "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
+-    return enabled;
+-}
++
+ 
+ bool MetalSegmented2DVisibleEnabled()
+ {
+--- a/src/GPU2D_MetalFullGpuMethods.inc
++++ b/src/GPU2D_MetalFullGpuMethods.inc
+@@ -3,13 +3,13 @@
+ // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+ // MELONPRIME_METAL_2D_HUD_PARITY_V1
+ // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
+-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+ // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+ // MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
+ // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
+ // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
+ // MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
+ // MELONPRIME_METAL_2D_CHANGE_DRIVEN_SPRITE_CACHE_V1
++// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+ 
+ bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
+ {
+--- a/src/GPU_Metal.mm
++++ b/src/GPU_Metal.mm
+@@ -11,9 +11,9 @@
+ // MELONPRIME_METAL_VISIBLE_3D_OWNERSHIP_GATE_V1
+ // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+ // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+ // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+ // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
++// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+ // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
+ 
+ #import <Metal/Metal.h>
+@@ -1073,59 +1073,6 @@
+     UploadCpuCompletedCaptures();
+ 
+ 
+-    if (MetalSegmented2DShadowRequested() &&
+-        Metal2D_A && Metal2D_B &&
+-        Metal2D_A->SegmentedFrameComplete() &&
+-        Metal2D_B->SegmentedFrameComplete())
+-    {
+-        void* high3D =
+-            Metal3DColorTarget(Rend3D.get());
+-        void* capture128 =
+-            GetMetalCapture128Texture();
+-        void* capture256 =
+-            GetMetalCapture256Texture();
+-
+-        const bool shadowRendered =
+-            high3D && capture128 && capture256 &&
+-            Metal2D_A->RenderSegmentedGpuFrame(
+-                high3D,
+-                capture128,
+-                capture256,
+-                true) &&
+-            Metal2D_B->RenderSegmentedGpuFrame(
+-                high3D,
+-                capture128,
+-                capture256,
+-                true);
+-
+-        if (FullGpuState)
+-        {
+-
+-            if (shadowRendered &&
+-                !FullGpuState->LoggedSegmentedShadow)
+-            {
+-                FullGpuState->LoggedSegmentedShadow = true;
+-                std::fprintf(
+-                    stderr,
+-                    "[MelonPrime] metal segmented 2d shadow: "
+-                    "GPU segment frame completed; "
+-                    "visible output remains Phase 8H "
+-                    "Software 2D ownership path\n");
+-            }
+-            else if (!shadowRendered &&
+-                     !FullGpuState->
+-                         LoggedSegmentedShadowFailure)
+-            {
+-                FullGpuState->
+-                    LoggedSegmentedShadowFailure = true;
+-                std::fprintf(
+-                    stderr,
+-                    "[MelonPrime] metal segmented 2d shadow: "
+-                    "frame rejected; visible Software 2D "
+-                    "output is unaffected\n");
+-            }
+-        }
+-    }
+ 
+     if (FullGpuState)
+     {
+--- a/src/GPU_MetalFullGpuMethods.inc
++++ b/src/GPU_MetalFullGpuMethods.inc
+@@ -2,22 +2,12 @@
+ // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+ // MELONPRIME_METAL_MIXED_3D_2D_OPENGL_PARITY_GUARD_V1
+ // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
+ // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
+ // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
++// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
+ 
+ namespace
+ {
+-bool MetalSegmented2DShadowRequested()
+-{
+-    static const bool enabled = []() {
+-        const char* value =
+-            std::getenv(
+-                "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
+-        return value && value[0] == '1';
+-    }();
+-    return enabled;
+-}
+ 
+ 
+ 
+@@ -129,8 +119,6 @@
+     bool LoggedCompose = false;
+     bool LoggedMixed3D2DFallback = false;
+     bool LoggedMixed3D2DOverride = false;
+-    bool LoggedSegmentedShadow = false;
+-    bool LoggedSegmentedShadowFailure = false;
+     bool LoggedSegmentedVisible = false;
+     std::array<uint32_t, 192> ScreenSwap {};
+     std::array<uint32_t, 192> BrightnessA {};
+@@ -286,34 +274,6 @@
+         }
+         return;
+     }
+-    if (line < 192 &&
+-        MetalSegmented2DShadowRequested() &&
+-        Metal2D_A && Metal2D_B &&
+-        Metal2D_A->SegmentedSnapshotReady() &&
+-        Metal2D_B->SegmentedSnapshotReady())
+-    {
+-        FullGpuState->ScreenSwap[line] =
+-            GPU.ScreenSwap ? 1u : 0u;
+-        FullGpuState->BrightnessA[line] =
+-            GPU.MasterBrightnessA;
+-        FullGpuState->BrightnessB[line] =
+-            GPU.MasterBrightnessB;
+-
+-        const uint8_t win0A = GPU.GPU2D_A.Win0Active;
+-        const uint8_t win1A = GPU.GPU2D_A.Win1Active;
+-        const uint8_t win0B = GPU.GPU2D_B.Win0Active;
+-        const uint8_t win1B = GPU.GPU2D_B.Win1Active;
+-
+-        Metal2D_A->CaptureScanlineState(
+-            static_cast<int>(line));
+-        Metal2D_B->CaptureScanlineState(
+-            static_cast<int>(line));
+-
+-        GPU.GPU2D_A.Win0Active = win0A;
+-        GPU.GPU2D_A.Win1Active = win1A;
+-        GPU.GPU2D_B.Win0Active = win0B;
+-        GPU.GPU2D_B.Win1Active = win1B;
+-    }
+ 
+     SoftRenderer::DrawScanline(line);
+ }
+@@ -328,17 +288,6 @@
+             Metal2D_B->CaptureSpriteScanlineState(static_cast<int>(line));
+         }
+         return;
+-    }
+-    if (line < 192 &&
+-        MetalSegmented2DShadowRequested() &&
+-        Metal2D_A && Metal2D_B &&
+-        Metal2D_A->SegmentedSnapshotReady() &&
+-        Metal2D_B->SegmentedSnapshotReady())
+-    {
+-        Metal2D_A->CaptureSpriteScanlineState(
+-            static_cast<int>(line));
+-        Metal2D_B->CaptureSpriteScanlineState(
+-            static_cast<int>(line));
+     }
+ 
+     SoftRenderer::DrawSprites(line);
