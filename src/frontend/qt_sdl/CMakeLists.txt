@@ -94,6 +94,7 @@ set(SOURCES_QT_SDL
 
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
+    MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp

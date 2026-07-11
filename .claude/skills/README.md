@@ -24,6 +24,9 @@
 - `audit-platform-scatter-budget.ps1`: enforce the V4 macOS/Linux input-dispatch
   scatter ratchet (budget 22; excludes facade + localization) and macOS
   cursor-warp guard
+- `audit-melonprime-instance-state.ps1`: inventory file-static mutable state in
+  MelonPrime-owned sources; `-List` prints symbols and `-Strict` checks the
+  current migration ratchet
 - `audit-color-dialog-prefs.ps1`: ensure `QColorDialog` usage stays in
   `MelonPrimeColorDialogPrefs.cpp` (Custom HUD color pickers use the helper)
 - `apply-perf-baseline.py`: apply perf `.summary.txt` files to the V6/V5 baseline markdown tables
