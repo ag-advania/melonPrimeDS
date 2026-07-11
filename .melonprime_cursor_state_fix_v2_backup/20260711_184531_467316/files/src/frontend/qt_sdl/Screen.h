@@ -304,9 +304,6 @@ private:
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;
     bool m_hasLastClipFocusedState = false;
-    // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
-    // coalesces repeated per-frame requests without touching QWidget off-thread.
-    std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
     bool closing = false;
 #endif
 };
