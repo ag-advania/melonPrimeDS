@@ -1,7 +1,6 @@
 // Included inside GPU2D_Metal.mm's anonymous namespace.
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
-// MELONPRIME_METAL_2D_HUD_PARITY_V1
 static constexpr const char* kMetal2DFullGpuShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
@@ -59,15 +58,6 @@ struct ScanlineState
     int4 winPos;
     uint4 bgMosaicEnable;
     int4 mosaicSize;
-
-    // Per-visible-line compositor state. Sampling only the VBlank value can
-    // keep BG0/3D alive while dropping the HUD BG/OBJ layers.
-    uint4 bgPrio;
-    uint enableOBJ;
-    uint enable3D;
-    uint blendCnt;
-    uint blendEffect;
-    uint4 blendCoef;
 };
 
 struct ScanlineConfig
@@ -554,7 +544,7 @@ fragment float4 mp2d_composite_fs(
     {
         for (int bg = 3; bg >= 0; bg--)
         {
-            if (int(scan.bgPrio[bg]) == priority &&
+            if (int(compositor.bgPrio[bg]) == priority &&
                 layers[bg].a > 0.0 &&
                 (windowSelect & (1u << uint(bg))) != 0u)
             {
@@ -562,11 +552,11 @@ fragment float4 mp2d_composite_fs(
                 mask2 = mask1 << 8;
                 color1 = int4(layers[bg] * 255.0) >> int4(2, 2, 2, 3);
                 mask1 = 1 << bg;
-                specialCase = bg == 0 && scan.enable3D != 0u;
+                specialCase = bg == 0 && compositor.enable3D != 0u;
             }
         }
 
-        if (scan.enableOBJ != 0u &&
+        if (compositor.enableOBJ != 0u &&
             objFlags.a == priority &&
             layers[4].a > 0.0 &&
             (windowSelect & (1u << 4u)) != 0u)
@@ -580,11 +570,11 @@ fragment float4 mp2d_composite_fs(
     }
 
     int effect = 0;
-    int eva = int(scan.blendCoef.x);
-    int evb = int(scan.blendCoef.y);
-    int evy = int(scan.blendCoef.z);
+    int eva = int(compositor.blendCoef.x);
+    int evb = int(compositor.blendCoef.y);
+    int evy = int(compositor.blendCoef.z);
 
-    if (specialCase && (int(scan.blendCnt) & mask2) != 0)
+    if (specialCase && (int(compositor.blendCnt) & mask2) != 0)
     {
         if (mask1 == (1 << 0))
         {
@@ -603,11 +593,11 @@ fragment float4 mp2d_composite_fs(
             evb = 16 - eva;
         }
     }
-    else if ((int(scan.blendCnt) & mask1) != 0 &&
+    else if ((int(compositor.blendCnt) & mask1) != 0 &&
              (windowSelect & (1u << 5u)) != 0u)
     {
-        effect = int(scan.blendEffect);
-        if (effect == 1 && (int(scan.blendCnt) & mask2) == 0)
+        effect = int(compositor.blendEffect);
+        if (effect == 1 && (int(compositor.blendCnt) & mask2) == 0)
             effect = 0;
     }
 
