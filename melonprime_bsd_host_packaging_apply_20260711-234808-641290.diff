@@ -1,0 +1,41 @@
+diff --git a/.github/workflows/build-bsd.yml b/.github/workflows/build-bsd.yml
+index a582c229..1636969c 100644
+--- a/.github/workflows/build-bsd.yml
++++ b/.github/workflows/build-bsd.yml
+@@ -100,26 +100,31 @@ jobs:
+         cp -RP /tmp/build $GITHUB_WORKSPACE/
+ 
+     - name: Compress binary
++      # MELONPRIME_BSD_HOST_PACKAGING_V1
++      # The BSD build directory is copied to the NFS-backed workspace above.
++      # Package it on the Ubuntu runner host instead of inside the BSD VM.
++      shell: bash
+       run: |
+-        set -eu
++        set -euo pipefail
+ 
++        build_dir="$GITHUB_WORKSPACE/build"
+         zip_path="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
+ 
+         binary="$(
+-          find "$GITHUB_WORKSPACE/build" /tmp/build \
++          find "$build_dir" \
+             -type f \( -name 'melonPrimeDS' -o -name 'melonDS' \) \
+             -print 2>/dev/null | head -n 1 || true
+         )"
+ 
+         if [ -z "$binary" ]; then
+-          echo "Expected binary was not found."
++          echo "Expected binary was not found in the copied BSD build directory."
+           echo "All candidate files:"
+-          find "$GITHUB_WORKSPACE/build" /tmp/build -maxdepth 8 -type f -print 2>/dev/null || true
++          find "$build_dir" -maxdepth 8 -type f -print 2>/dev/null || true
+           exit 1
+         fi
+ 
+         chmod +x "$binary" || true
+-        echo "Packaging binary: $binary"
++        echo "Packaging binary on runner host: $binary"
+         zip -j "$zip_path" "$binary"
+         ls -l "$zip_path"
+ 
