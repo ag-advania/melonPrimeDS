@@ -12,7 +12,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
-// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_SEGMENTED_GPU_DIFF_V1
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
@@ -1275,20 +1274,52 @@ void MetalRenderer::VBlank()
             const bool allowCaptureTextures =
                 !MetalCaptureFrameHadCapture();
 
-            rendered = Metal2D_A && Metal2D_B &&
-                capture128 && capture256 &&
+            const bool segmentedVisible =
+                MetalSegmented2DVisibleRequested() &&
+                Metal2D_A && Metal2D_B &&
                 Metal2D_A->SegmentedFrameComplete() &&
-                Metal2D_B->SegmentedFrameComplete() &&
-                Metal2D_A->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures) &&
-                Metal2D_B->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures);
+                Metal2D_B->SegmentedFrameComplete();
+
+            if (segmentedVisible)
+            {
+                rendered = capture128 && capture256 &&
+                    Metal2D_A->RenderSegmentedGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures) &&
+                    Metal2D_B->RenderSegmentedGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures);
+
+                if (rendered &&
+                    !FullGpuState->LoggedSegmentedVisible)
+                {
+                    FullGpuState->LoggedSegmentedVisible = true;
+                    std::fprintf(
+                        stderr,
+                        "[MelonPrime] metal segmented 2d: "
+                        "experimental visible path active; "
+                        "Software 2D readback disabled\n");
+                }
+            }
+            else
+            {
+                rendered = Metal2D_A && Metal2D_B &&
+                    capture128 && capture256 &&
+                    Metal2D_A->RenderFullGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures) &&
+                    Metal2D_B->RenderFullGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures);
+            }
 
             if (rendered)
             {
