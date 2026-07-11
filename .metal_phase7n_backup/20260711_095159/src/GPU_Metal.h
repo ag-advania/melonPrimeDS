@@ -26,7 +26,6 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
-    void Finish3DRendering() override;
     void VBlank() override;
     void SwapBuffers() override;
     RendererOutput GetOutput() override;
@@ -48,9 +47,7 @@ private:
 
     void ConfigureMetal2DMirror(void* preferredDevice);
     bool ConfigureMetalVisibleOutput(void* preferredDevice);
-    void CaptureMetalVisible3DFrame();
     void ComposeMetalVisibleOutput();
-    // MELONPRIME_METAL_FRAME_SNAPSHOT_V1
 };
 
 } // namespace melonDS
