@@ -113,7 +113,8 @@ namespace MelonPrime {
             // the window is ~40–100 ns → kernel buffer is empty.
             // Skipping processRawInputBatched saves ~500–2000 cyc/frame.
             if (m_rawFilter && m_didFrameAdvanceSinceSnapshot)
-                m_rawFilter->LateLatchMouseDelta(m_input.mouseX, m_input.mouseY);
+                m_rawFilter->LateLatchMouseDelta(
+                    m_rawInputSubscription, m_input.mouseX, m_input.mouseY);
 #endif
             ProcessAimInputMouse();
             // m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)

@@ -15,6 +15,7 @@
 #ifdef __APPLE__
 
 #include "MelonPrimeRawInputMacFilter.h"
+#include "MelonPrimeInputSubscription.h"
 
 #import <GameController/GameController.h>
 #include <IOKit/hid/IOHIDManager.h>
@@ -56,10 +57,8 @@ struct MacRawInputFilter::Impl
 {
     // Writers: GC handler queue or HID runloop thread (one backend active at
     // a time). Reader: emu thread (P-48a load-first delta, single consumer).
-    std::atomic<int32_t> accX{ 0 };
-    std::atomic<int32_t> accY{ 0 };
-    int32_t lastReadX = 0;
-    int32_t lastReadY = 0;
+    std::atomic<int64_t> accX{ 0 };
+    std::atomic<int64_t> accY{ 0 };
     // GC deltas are float; carry the fractional part so slow motions are not
     // truncated away. Touched only from the GC handler queue.
     float gcFracX = 0.0f;
@@ -322,14 +321,22 @@ bool MacRawInputFilter::isAvailable() const
     return m->available.load(std::memory_order_acquire);
 }
 
-void MacRawInputFilter::fetchMouseDelta(int32_t& outDx, int32_t& outDy)
+void MacRawInputFilter::fetchMouseDelta(
+    MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy)
 {
-    const int32_t curX = m->accX.load(std::memory_order_acquire);
-    const int32_t curY = m->accY.load(std::memory_order_acquire);
-    outDx = curX - m->lastReadX;
-    outDy = curY - m->lastReadY;
-    m->lastReadX = curX;
-    m->lastReadY = curY;
+    const int64_t curX = m->accX.load(std::memory_order_acquire);
+    const int64_t curY = m->accY.load(std::memory_order_acquire);
+    if (subscription.cursorNeedsSync) {
+        subscription.lastReadX = curX;
+        subscription.lastReadY = curY;
+        subscription.cursorNeedsSync = false;
+        outDx = outDy = 0;
+        return;
+    }
+    outDx = static_cast<int32_t>(curX - subscription.lastReadX);
+    outDy = static_cast<int32_t>(curY - subscription.lastReadY);
+    subscription.lastReadX = curX;
+    subscription.lastReadY = curY;
 }
 
 bool MacRawInputFilter::isGcMouseActive() const
@@ -337,12 +344,11 @@ bool MacRawInputFilter::isGcMouseActive() const
     return m->gcActive.load(std::memory_order_acquire);
 }
 
-void MacRawInputFilter::resetAll()
+void MacRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
 {
-    m->accX.store(0, std::memory_order_release);
-    m->accY.store(0, std::memory_order_release);
-    m->lastReadX = 0;
-    m->lastReadY = 0;
+    subscription.lastReadX = m->accX.load(std::memory_order_acquire);
+    subscription.lastReadY = m->accY.load(std::memory_order_acquire);
+    subscription.cursorNeedsSync = false;
 }
 
 // ---------------------------------------------------------------------------

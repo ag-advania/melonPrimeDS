@@ -726,5 +726,30 @@ namespace MelonPrime {
         m_hkPrev = scanBoundHotkeys(snap);
     }
 
+    void InputState::syncPhysicalState() noexcept {
+        uint64_t words[4] = {};
+        for (UINT vk = 7; vk < 256; ++vk) {
+            if (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)
+                words[vk >> 6] |= 1ULL << (vk & 63);
+        }
+        for (int i = 0; i < 4; ++i)
+            m_vkDown[i].store(words[i], std::memory_order_relaxed);
+
+        static constexpr UINT kMouseVks[5] = {
+            VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
+        };
+        uint8_t mouse = 0;
+        for (int i = 0; i < 5; ++i) {
+            if (GetAsyncKeyState(static_cast<int>(kMouseVks[i])) & 0x8000)
+                mouse |= static_cast<uint8_t>(1u << i);
+        }
+        m_mouseButtons.store(mouse, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
+        m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
+        m_mouseStuckCandidate = 0;
+        std::atomic_thread_fence(std::memory_order_release);
+        m_hkPrev = scanBoundHotkeys(takeSnapshot());
+    }
+
 } // namespace MelonPrime
 #endif

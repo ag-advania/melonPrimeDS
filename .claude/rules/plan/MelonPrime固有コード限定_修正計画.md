@@ -960,6 +960,18 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 3: Input service／subscription
 
+進捗: **完了 (2026-07-11)**
+
+- `PlatformInputOwnerService`とinstance-owned `MelonPrimeInputSubscription`を追加
+- process-wide OS collectorとper-instance delta cursor／focus generation／owner stateを分離
+- Windows Raw Inputへinstance別`InputState`を登録し、hotkey binding／edge stateを独立化
+- active ownerだけがwindow registration／Qt native filter／mouse deltaを利用するよう統一
+- owner切替時に旧stateを破棄し、新ownerのphysical key stateとmonotonic cursorを同期
+- macOS／Linux accumulatorを単調64-bit counter化し、fetch/resetをsubscription cursor基準へ変更
+- start／stop／focus／capture切替でownerを解放し、instance ID付きgeneration logを追加
+- Windows MinGW build、HUD golden、全CI auditを確認
+- mutable-state監査ratchetを35件から22件へ削減
+
 - process-global collector
 - per-instance consumer cursor
 - active owner

@@ -17,6 +17,8 @@
 
 namespace MelonPrime {
 
+struct MelonPrimeInputSubscription;
+
 // Recenter the OS cursor for the fallback (QCursor-delta) aim path and after
 // each consumed aim delta. Uses XWarpPointer on a thread-local Display so the
 // emu thread can warp without marshaling to Qt's GUI thread (same role as
@@ -38,8 +40,8 @@ public:
 
     bool isAvailable() const;
     bool hasReceivedMotion() const;
-    void fetchMouseDelta(int32_t& outDx, int32_t& outDy);
-    void resetAll();
+    void fetchMouseDelta(MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy);
+    void resetAll(MelonPrimeInputSubscription& subscription);
 
 private:
     LinuxRawInputFilter();

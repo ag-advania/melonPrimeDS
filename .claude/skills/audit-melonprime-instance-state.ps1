@@ -46,7 +46,7 @@ foreach ($group in $groups) {
 
 # Phase 0 captures the unsafe pre-refactor state. Later phases lower this
 # ratchet; adding another file-static mutable symbol is always a regression.
-$baseline = 35
+$baseline = 22
 if ($findings.Count -gt $baseline) {
     Write-Error "Mutable-state finding count increased: $($findings.Count) > baseline $baseline"
 }

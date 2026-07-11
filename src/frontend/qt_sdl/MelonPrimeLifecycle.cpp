@@ -25,18 +25,19 @@
 
 namespace MelonPrime {
 
-#if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     MelonPrimeCore::~MelonPrimeCore()
     {
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#ifdef _WIN32
+        if (m_rawFilter && m_rawInputSubscription) {
+            m_rawFilter->Unsubscribe(m_rawInputSubscription);
+            m_rawInputSubscription = nullptr;
+        }
+#elif MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
         PlatformInput_ReleaseRawFilter(m_platformRawFilter);
-    }
-#else
-    MelonPrimeCore::~MelonPrimeCore()
-    {
-        InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
-    }
 #endif
+    }
 
     // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
     // Side effects beyond plain member assignment: clears
@@ -144,13 +145,15 @@ namespace MelonPrime {
         InstanceDiagnostics::LogOwnedStates(
             emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
+#ifdef _WIN32
+        if (m_rawFilter)
+            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+#else
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#endif
         m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
-#ifdef _WIN32
-        m_isNativeFilterInstalled = false;
-#endif
-
 #ifdef MELONPRIME_CUSTOM_HUD
         CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
@@ -204,6 +207,12 @@ namespace MelonPrime {
         InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
+#ifdef _WIN32
+        if (m_rawFilter)
+            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+#else
+        PlatformInputOwnerService::Release(m_inputSubscription);
+#endif
         m_zoomAimCanZoomCache = {};
         // Intentional historical asymmetry: stop clears transform/fire
         // transients but leaves aim residuals and overlay-held state alone.
@@ -243,8 +252,9 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         if (m_rawFilter) {
-            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
-            m_rawFilter->resetHotkeyEdges();
+            BindMetroidHotkeysFromConfig(
+                m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
 
@@ -275,8 +285,9 @@ namespace MelonPrime {
 #ifdef _WIN32
         if (m_rawFilter) {
             // Reload VK bindings from config, then re-sync edge state.
-            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
-            m_rawFilter->resetHotkeyEdges();
+            BindMetroidHotkeysFromConfig(
+                m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
 

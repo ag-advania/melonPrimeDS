@@ -84,13 +84,13 @@ namespace MelonPrime {
     // temporary std::vector. Eliminates the last remaining heap allocation
     // in the hotkey binding path.
     // =========================================================================
-    void BindOneHotkeyFromConfig(RawInputWinFilter* filter, int instance,
+    void BindOneHotkeyFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance,
         const std::string& hkPath, int hkId) {
-        if (!filter) return;
+        if (!filter || !subscription) return;
         auto tbl = Config::GetLocalTable(instance);
         const int qt = tbl.GetInt(hkPath);
         SmallVkList vks = MapQtKeyIntToVks(qt);
-        filter->setHotkeyVks(hkId, vks.begin(), vks.size());
+        filter->setHotkeyVks(subscription, hkId, vks.begin(), vks.size());
     }
 
     // =========================================================================
@@ -102,9 +102,9 @@ namespace MelonPrime {
     //
     // Result: 0 heap allocations, 1 config table lookup (was 28 + 28 vectors).
     // =========================================================================
-    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, int instance)
+    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance)
     {
-        if (!filter || instance != 0) return;
+        if (!filter || !subscription) return;
 
         struct BindingDef {
             const char* configKey;
@@ -155,7 +155,7 @@ namespace MelonPrime {
             const int qt = tbl.GetInt(bind.configKey);
             SmallVkList vks = MapQtKeyIntToVks(qt);
             // R2: Direct pointer pass — no std::vector construction
-            filter->setHotkeyVks(bind.actionId, vks.begin(), vks.size());
+            filter->setHotkeyVks(subscription, bind.actionId, vks.begin(), vks.size());
         }
     }
 
