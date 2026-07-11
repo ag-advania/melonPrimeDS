@@ -1,5 +1,4 @@
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
-// MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // Standalone MSL library for the Phase 8C texture-capable tile raster stage.
 static constexpr const char* kMetalComputeTexturedSource = R"MSL(
 #include <metal_stdlib>
@@ -9,7 +8,7 @@ constant uint MPMaxVariants = 256u;
 constant uint MPVariantWorkCountStart = 0u;
 constant uint MPTileSummaryRasterised = 0u;
 constant uint MPTileSummaryTextured = 1u;
-constant uint MPTileSummaryShadowMask = 2u;
+constant uint MPTileSummarySkippedShadow = 2u;
 constant uint MPTileSummarySkippedCapacity = 3u;
 constant uint MPTileSummaryCoveredPixels = 4u;
 constant uint MPTileSummaryColorHash = 5u;
@@ -341,10 +340,12 @@ kernel void mp_compute_rasterise_texture_variants(
     const MPRenderPolygon polygon = polygons[polygonIndex];
     const uint variantIndex = min(polygon.Variant, config.numVariants - 1u);
     const MPVariantMeta variant = variants[variantIndex];
-    const bool shadowMask = variant.BlendMode == 4u;
-    if (shadowMask)
-        atomic_fetch_add_explicit(&summary[MPTileSummaryShadowMask], 1u, memory_order_relaxed);
-    else if (variant.Textured != 0u)
+    if (variant.BlendMode == 4u)
+    {
+        atomic_fetch_add_explicit(&summary[MPTileSummarySkippedShadow], 1u, memory_order_relaxed);
+        return;
+    }
+    if (variant.Textured != 0u)
         atomic_fetch_add_explicit(&summary[MPTileSummaryTextured], 1u, memory_order_relaxed);
 
     const uint tileArea = config.tileSize * config.tileSize;
@@ -408,28 +409,6 @@ kernel void mp_compute_rasterise_texture_variants(
             const uint perspectiveFactor = (span.Flags & MPXSpanLinear) != 0u
                 ? linearFactor : mp_perspective_factor(span, x);
             const uint depthFactor = config.wBuffer != 0u ? perspectiveFactor : linearFactor;
-            const uint z0 = uint(max(span.Z0, 0));
-            const uint z1 = uint(max(span.Z1, 0));
-            const uint depth = mp_interpolate_depth(z0, z1, depthFactor);
-            const uint tilePixel = tileBase + localY * config.tileSize + localX;
-
-            if (shadowMask)
-            {
-                // DS shadow-mask polygons contribute only coverage/depth. The
-                // complete depth-blend pass consumes 0xFFFFFFFF as the mask
-                // marker and maintains the two-layer stencil state.
-                const uint color = 0xFFFFFFFFu;
-                colorTiles[tilePixel] = color;
-                depthTiles[tilePixel] = depth;
-                attrTiles[tilePixel] = 0u;
-
-                covered++;
-                depthMin = min(depthMin, depth);
-                depthMax = max(depthMax, depth);
-                colorHash ^= color + pixelX * 0x9E3779B9u + pixelY * 0x85EBCA6Bu;
-                colorHash *= 16777619u;
-                continue;
-            }
 
             int vr = mp_interpolate(span.ColorR0, span.ColorR1, perspectiveFactor) >> 3;
             int vg = mp_interpolate(span.ColorG0, span.ColorG1, perspectiveFactor) >> 3;
@@ -487,8 +466,12 @@ kernel void mp_compute_rasterise_texture_variants(
             }
             if (a <= config.alphaRef) continue;
 
+            const uint z0 = uint(max(span.Z0, 0));
+            const uint z1 = uint(max(span.Z1, 0));
+            const uint depth = mp_interpolate_depth(z0, z1, depthFactor);
             const uint color = min(r, 63u) | (min(g, 63u) << 8u) |
                                (min(b, 63u) << 16u) | (min(a, 31u) << 24u);
+            const uint tilePixel = tileBase + localY * config.tileSize + localX;
             colorTiles[tilePixel] = color;
             depthTiles[tilePixel] = depth;
             attrTiles[tilePixel] = attr;

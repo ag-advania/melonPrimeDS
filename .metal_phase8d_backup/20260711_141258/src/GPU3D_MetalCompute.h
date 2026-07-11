@@ -5,7 +5,6 @@
 
 // MELONPRIME_METAL_COMPUTE_TEXTURE_VARIANTS_V6
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
-// MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -77,7 +76,6 @@ private:
     bool RunSpanBinSelfTest();
     bool RunNoTextureTileSelfTest();
     bool RunTextureVariantTileSelfTest();
-    bool RunCompleteDepthBlendSelfTest();
     bool SubmitRealFrameSpanBin();
 };
 
