@@ -12,8 +12,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
-// MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
-// MELONPRIME_METAL_2D_SEGMENTED_GPU_DIFF_V1
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 #import <Metal/Metal.h>
@@ -326,73 +324,6 @@ fragment float4 mp_visible_output_fs(
     float3 result = mix(background, brightHigh3D, highAlpha);
     return float4(clamp(result, 0.0, 1.0), 1.0);
 }
-
-struct SegmentedDiffConfig
-{
-    uint2 outputSize;
-    uint scale;
-    uint tolerance;
-    uint screenSwap[192];
-    uint brightnessA[192];
-    uint brightnessB[192];
-};
-
-static inline float3 mp_segmented_diff_brightness(float3 color, uint reg)
-{
-    uint mode = reg >> 14u;
-    float factor = float(min(reg & 0x1Fu, 16u)) / 16.0;
-    if (mode == 1u)
-        return mix(color, float3(1.0), factor);
-    if (mode == 2u)
-        return color * (1.0 - factor);
-    return color;
-}
-
-kernel void mp_segmented_2d_diff(
-    texture2d_array<float, access::read> reference [[texture(0)]],
-    texture2d<float, access::read> engineA [[texture(1)]],
-    texture2d<float, access::read> engineB [[texture(2)]],
-    constant SegmentedDiffConfig& config [[buffer(0)]],
-    device atomic_uint* summary [[buffer(1)]],
-    device atomic_uint* lineMismatch [[buffer(2)]],
-    uint3 gid [[thread_position_in_grid]])
-{
-    if (gid.x >= config.outputSize.x ||
-        gid.y >= config.outputSize.y || gid.z >= 2u)
-        return;
-
-    const uint scale = max(config.scale, 1u);
-    const uint line = min(gid.y / scale, 191u);
-    const bool swap = config.screenSwap[line] != 0u;
-    const bool selectA = gid.z == 0u ? swap : !swap;
-
-    float4 candidate =
-        selectA ? engineA.read(gid.xy) : engineB.read(gid.xy);
-    const uint brightness =
-        selectA ? config.brightnessA[line] : config.brightnessB[line];
-    candidate.rgb = mp_segmented_diff_brightness(candidate.rgb, brightness);
-
-    const float4 expected = reference.read(gid.xy, gid.z);
-    const uint3 candidate8 = uint3(
-        clamp(candidate.rgb, float3(0.0), float3(1.0)) * 255.0 + 0.5);
-    const uint3 expected8 = uint3(
-        clamp(expected.rgb, float3(0.0), float3(1.0)) * 255.0 + 0.5);
-    const uint3 delta3 =
-        max(candidate8, expected8) - min(candidate8, expected8);
-    const uint delta = max(delta3.x, max(delta3.y, delta3.z));
-    if (delta <= config.tolerance)
-        return;
-
-    atomic_fetch_add_explicit(&summary[0], 1u, memory_order_relaxed);
-    atomic_fetch_max_explicit(&summary[1], delta, memory_order_relaxed);
-    atomic_fetch_min_explicit(&summary[2], gid.x, memory_order_relaxed);
-    atomic_fetch_max_explicit(&summary[3], gid.x, memory_order_relaxed);
-    atomic_fetch_min_explicit(&summary[4], gid.y, memory_order_relaxed);
-    atomic_fetch_max_explicit(&summary[5], gid.y, memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &lineMismatch[gid.z * 192u + line], 1u, memory_order_relaxed);
-}
-
 )";
 
 } // namespace
@@ -416,7 +347,6 @@ struct MetalRenderer::MetalOutputState
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
     id<MTLRenderPipelineState> Pipeline = nil;
-    id<MTLComputePipelineState> SegmentedDiffPipeline = nil;
     id<MTLTexture> CapturedHigh3D = nil;
     id<MTLTexture> CapturedLow3D = nil;
     bool CapturedFrameReady = false;
@@ -441,11 +371,6 @@ struct MetalRenderer::MetalOutputState
     bool Ready = false;
     bool LoggedVisibleOutput = false;
     bool LoggedNoFreeSlot = false;
-    bool LoggedSegmentedDiff = false;
-    uint64_t SegmentedDiffFrames = 0;
-    uint64_t SegmentedDiffExactFrames = 0;
-    uint64_t SegmentedDiffConsecutiveExact = 0;
-    uint64_t SegmentedDiffMaxConsecutiveExact = 0;
 
     ~MetalOutputState()
     {
@@ -631,23 +556,6 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
                 const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
                 std::fprintf(stderr,
                     "[MelonPrime] metal visible output: pipeline creation failed: %s\n", message);
-                return false;
-            }
-
-            id<MTLFunction> diffFunction =
-                [OutputState->Library newFunctionWithName:@"mp_segmented_2d_diff"];
-            if (!diffFunction)
-                return false;
-            OutputState->SegmentedDiffPipeline =
-                [device newComputePipelineStateWithFunction:diffFunction error:&error];
-            if (!OutputState->SegmentedDiffPipeline)
-            {
-                const char* message = error
-                    ? [[error localizedDescription] UTF8String]
-                    : "unknown error";
-                std::fprintf(stderr,
-                    "[MelonPrime] metal segmented 2d diff: pipeline creation failed: %s\n",
-                    message);
                 return false;
             }
         }
@@ -927,18 +835,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         static_assert(sizeof(VisibleOutputConfigCpu) == 32,
             "VisibleOutputConfigCpu must match MSL layout");
 
-        struct SegmentedDiffConfigCpu
-        {
-            uint32_t outputSize[2];
-            uint32_t scale;
-            uint32_t tolerance;
-            uint32_t screenSwap[192];
-            uint32_t brightnessA[192];
-            uint32_t brightnessB[192];
-        };
-        static_assert(sizeof(SegmentedDiffConfigCpu) == 2320,
-            "SegmentedDiffConfigCpu must match MSL");
-
         std::unique_lock<std::mutex> lock(OutputState->Mutex);
         id<MTLTexture> high3D = OutputState->CapturedHigh3D;
         id<MTLTexture> low3D = OutputState->CapturedLow3D;
@@ -999,10 +895,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             return;
         commandBuffer.label = @"MelonPrime Metal Visible HiRes Output";
 
-        id<MTLBuffer> segmentedDiffSummary = nil;
-        id<MTLBuffer> segmentedDiffLines = nil;
-        bool segmentedDiffEncoded = false;
-
         // high3D/low3D and all associated frame state were captured at
         // VCount 192, before VCount 215 begins rendering frame N+1.
         uint32_t replacementMode = useHighResolution3D;
@@ -1059,89 +951,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             [encoder endEncoding];
         }
 
-        if (MetalSegmented2DDiffRequested() &&
-            FullGpuState && FullGpuState->SegmentedShadowCompleted &&
-            OutputState->SegmentedDiffPipeline && Metal2D_A && Metal2D_B)
-        {
-            id<MTLTexture> engineA =
-                (__bridge id<MTLTexture>)Metal2D_A->GetOutputTexture();
-            id<MTLTexture> engineB =
-                (__bridge id<MTLTexture>)Metal2D_B->GetOutputTexture();
-            const bool validInputs =
-                engineA && engineB &&
-                engineA.device == OutputState->Device &&
-                engineB.device == OutputState->Device &&
-                engineA.width == OutputState->Width &&
-                engineA.height == OutputState->Height &&
-                engineB.width == OutputState->Width &&
-                engineB.height == OutputState->Height;
-
-            if (validInputs)
-            {
-                constexpr NSUInteger summaryWords = 8;
-                constexpr NSUInteger lineWords = 384;
-                segmentedDiffSummary = [OutputState->Device
-                    newBufferWithLength:summaryWords * sizeof(uint32_t)
-                    options:MTLResourceStorageModeShared];
-                segmentedDiffLines = [OutputState->Device
-                    newBufferWithLength:lineWords * sizeof(uint32_t)
-                    options:MTLResourceStorageModeShared];
-
-                if (segmentedDiffSummary && segmentedDiffLines)
-                {
-                    uint32_t* summary = static_cast<uint32_t*>(
-                        [segmentedDiffSummary contents]);
-                    std::memset(summary, 0, summaryWords * sizeof(uint32_t));
-                    summary[2] = 0xFFFFFFFFu;
-                    summary[4] = 0xFFFFFFFFu;
-                    summary[6] = static_cast<uint32_t>(
-                        OutputState->Width * OutputState->Height * 2u);
-                    summary[7] = MetalSegmented2DDiffTolerance();
-                    std::memset([segmentedDiffLines contents], 0,
-                        lineWords * sizeof(uint32_t));
-
-                    SegmentedDiffConfigCpu config = {};
-                    config.outputSize[0] = static_cast<uint32_t>(OutputState->Width);
-                    config.outputSize[1] = static_cast<uint32_t>(OutputState->Height);
-                    config.scale = static_cast<uint32_t>(OutputState->Scale);
-                    config.tolerance = MetalSegmented2DDiffTolerance();
-                    std::memcpy(config.screenSwap,
-                        FullGpuState->CompletedScreenSwap.data(),
-                        sizeof(config.screenSwap));
-                    std::memcpy(config.brightnessA,
-                        FullGpuState->CompletedBrightnessA.data(),
-                        sizeof(config.brightnessA));
-                    std::memcpy(config.brightnessB,
-                        FullGpuState->CompletedBrightnessB.data(),
-                        sizeof(config.brightnessB));
-
-                    id<MTLComputeCommandEncoder> diff =
-                        [commandBuffer computeCommandEncoder];
-                    if (diff)
-                    {
-                        [diff setComputePipelineState:OutputState->SegmentedDiffPipeline];
-                        [diff setBytes:&config length:sizeof(config) atIndex:0];
-                        [diff setBuffer:segmentedDiffSummary offset:0 atIndex:1];
-                        [diff setBuffer:segmentedDiffLines offset:0 atIndex:2];
-                        [diff setTexture:slot.FinalTexture atIndex:0];
-                        [diff setTexture:engineA atIndex:1];
-                        [diff setTexture:engineB atIndex:2];
-                        const NSUInteger groupWidth = std::max<NSUInteger>(1,
-                            OutputState->SegmentedDiffPipeline.threadExecutionWidth);
-                        const NSUInteger groupHeight = std::max<NSUInteger>(1,
-                            OutputState->SegmentedDiffPipeline.maxTotalThreadsPerThreadgroup /
-                                groupWidth);
-                        [diff dispatchThreads:MTLSizeMake(
-                                OutputState->Width, OutputState->Height, 2)
-                            threadsPerThreadgroup:MTLSizeMake(
-                                groupWidth, groupHeight, 1)];
-                        [diff endEncoding];
-                        segmentedDiffEncoded = true;
-                    }
-                }
-            }
-        }
-
         const uint64_t generation = OutputState->Generation;
         const uint64_t serial = OutputState->NextSerial++;
         slot.InFlight = true;
@@ -1168,77 +977,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
                 std::fprintf(stderr,
                     "[MelonPrime] metal visible output: command failed: %s\n", message);
             }
-            if (segmentedDiffEncoded &&
-                completed.status == MTLCommandBufferStatusCompleted)
-            {
-                const uint32_t* summary = static_cast<const uint32_t*>(
-                    [segmentedDiffSummary contents]);
-                const uint32_t* lines = static_cast<const uint32_t*>(
-                    [segmentedDiffLines contents]);
-                const uint32_t different = summary[0];
-                const bool exact = different == 0;
-                state->SegmentedDiffFrames++;
-                if (exact)
-                {
-                    state->SegmentedDiffExactFrames++;
-                    state->SegmentedDiffConsecutiveExact++;
-                    state->SegmentedDiffMaxConsecutiveExact = std::max(
-                        state->SegmentedDiffMaxConsecutiveExact,
-                        state->SegmentedDiffConsecutiveExact);
-                }
-                else
-                {
-                    state->SegmentedDiffConsecutiveExact = 0;
-                }
-
-                uint32_t worstIndex = 0;
-                uint32_t worstPixels = 0;
-                for (uint32_t index = 0; index < 384u; index++)
-                {
-                    if (lines[index] > worstPixels)
-                    {
-                        worstPixels = lines[index];
-                        worstIndex = index;
-                    }
-                }
-
-                const bool report =
-                    !state->LoggedSegmentedDiff ||
-                    (state->SegmentedDiffFrames % 60u) == 0u ||
-                    (!exact && state->SegmentedDiffFrames <= 10u);
-                if (report)
-                {
-                    state->LoggedSegmentedDiff = true;
-                    if (exact)
-                    {
-                        std::fprintf(stderr,
-                            "[MelonPrime] metal segmented 2d diff: "
-                            "frame=%llu exact=1 different=0/%u "
-                            "tolerance=%u consecutiveExact=%llu "
-                            "maxConsecutiveExact=%llu\n",
-                            static_cast<unsigned long long>(state->SegmentedDiffFrames),
-                            summary[6], summary[7],
-                            static_cast<unsigned long long>(
-                                state->SegmentedDiffConsecutiveExact),
-                            static_cast<unsigned long long>(
-                                state->SegmentedDiffMaxConsecutiveExact));
-                    }
-                    else
-                    {
-                        std::fprintf(stderr,
-                            "[MelonPrime] metal segmented 2d diff: "
-                            "frame=%llu exact=0 different=%u/%u "
-                            "maxDelta=%u bbox=[%u,%u]-[%u,%u] "
-                            "worst=%s:%u linePixels=%u tolerance=%u\n",
-                            static_cast<unsigned long long>(state->SegmentedDiffFrames),
-                            different, summary[6], summary[1],
-                            summary[2], summary[4], summary[3], summary[5],
-                            worstIndex < 192u ? "top" : "bottom",
-                            worstIndex % 192u, worstPixels, summary[7]);
-                    }
-                }
-            }
-
             completedSlot.InFlight = false;
             state->InFlightCount--;
             state->Completion.notify_all();
@@ -1275,20 +1013,52 @@ void MetalRenderer::VBlank()
             const bool allowCaptureTextures =
                 !MetalCaptureFrameHadCapture();
 
-            rendered = Metal2D_A && Metal2D_B &&
-                capture128 && capture256 &&
+            const bool segmentedVisible =
+                MetalSegmented2DVisibleRequested() &&
+                Metal2D_A && Metal2D_B &&
                 Metal2D_A->SegmentedFrameComplete() &&
-                Metal2D_B->SegmentedFrameComplete() &&
-                Metal2D_A->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures) &&
-                Metal2D_B->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures);
+                Metal2D_B->SegmentedFrameComplete();
+
+            if (segmentedVisible)
+            {
+                rendered = capture128 && capture256 &&
+                    Metal2D_A->RenderSegmentedGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures) &&
+                    Metal2D_B->RenderSegmentedGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures);
+
+                if (rendered &&
+                    !FullGpuState->LoggedSegmentedVisible)
+                {
+                    FullGpuState->LoggedSegmentedVisible = true;
+                    std::fprintf(
+                        stderr,
+                        "[MelonPrime] metal segmented 2d: "
+                        "experimental visible path active; "
+                        "Software 2D readback disabled\n");
+                }
+            }
+            else
+            {
+                rendered = Metal2D_A && Metal2D_B &&
+                    capture128 && capture256 &&
+                    Metal2D_A->RenderFullGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures) &&
+                    Metal2D_B->RenderFullGpuFrame(
+                        high3D,
+                        capture128,
+                        capture256,
+                        allowCaptureTextures);
+            }
 
             if (rendered)
             {
@@ -1325,11 +1095,7 @@ void MetalRenderer::VBlank()
     SoftRenderer::VBlank();
     UploadCpuCompletedCaptures();
 
-    if (FullGpuState)
-        FullGpuState->SegmentedShadowCompleted = false;
-
-    if ((MetalSegmented2DShadowRequested() ||
-         MetalSegmented2DDiffRequested()) &&
+    if (MetalSegmented2DShadowRequested() &&
         Metal2D_A && Metal2D_B &&
         Metal2D_A->SegmentedFrameComplete() &&
         Metal2D_B->SegmentedFrameComplete())
@@ -1356,8 +1122,6 @@ void MetalRenderer::VBlank()
 
         if (FullGpuState)
         {
-            FullGpuState->SegmentedShadowCompleted = shadowRendered;
-
             if (shadowRendered &&
                 !FullGpuState->LoggedSegmentedShadow)
             {
@@ -1385,12 +1149,8 @@ void MetalRenderer::VBlank()
     }
 
     if (FullGpuState)
-    {
-        FullGpuState->CompletedScreenSwap = FullGpuState->ScreenSwap;
-        FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
-        FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
-        FullGpuState->Completed = MetalFullGpuState::CpuComposite;
-    }
+        FullGpuState->Completed =
+            MetalFullGpuState::CpuComposite;
 }
 
 void MetalRenderer::SwapBuffers()
