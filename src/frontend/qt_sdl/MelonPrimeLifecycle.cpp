@@ -215,7 +215,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             CustomHud_EnsurePatchRestored(
-                emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+                *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
         }
         CustomHud_ResetPatchState(*m_hudConfigState);
 #endif

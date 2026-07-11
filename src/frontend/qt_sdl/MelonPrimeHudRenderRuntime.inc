@@ -132,10 +132,26 @@ struct BattleMatchState {
     bool     isTimeMode;
     bool     valid;
 };
-static BattleMatchState s_battleState = { .valid = false };
 
-void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
+struct HudBattleOwnedState {
+    BattleMatchState battle = { .valid = false };
+    bool patchForceRestorePending = true;
+};
+
+static HudBattleOwnedState& HudBattleState()
 {
+    auto& slot = ActiveHudConfigState().runtimeState;
+    if (!slot)
+        slot = std::make_shared<HudBattleOwnedState>();
+    return *std::static_pointer_cast<HudBattleOwnedState>(slot);
+}
+
+#define s_battleState (HudBattleState().battle)
+#define s_hudPatchForceRestorePending (HudBattleState().patchForceRestorePending)
+
+void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, melonDS::u8* ram, const RomAddresses& rom)
+{
+    const ScopedHudConfigState active(hudConfig);
     auto& b = s_battleState;
     b.mode = Read8(ram, rom.battleMode);
     b.isTimeMode = false;
@@ -299,7 +315,34 @@ struct HudRuntimeFrameCache {
     int timeLimitMinutes = 0;
 };
 
-static HudRuntimeFrameCache s_hudRuntimeFrameCache;
+struct HudFrameOwnedState {
+    HudRuntimeFrameCache frame;
+    TextMeasureCache curText{}, sepText{}, goalText{};
+    TextBitmapCache curBitmap{}, sepBitmap{}, goalBitmap{}, labelBitmap{};
+    TextBitmapCache curOutline{}, sepOutline{}, goalOutline{}, labelOutline{};
+    MatchStatusStringCache matchString{};
+    TextBitmapCache bombBitmap{}, bombOutline{};
+    TextMeasureCache bombMeasure{};
+    RankStringCache rankString{};
+    TextBitmapCache rankBitmap{}, rankOutline{};
+    TextMeasureCache rankMeasure{};
+    TimeStringCache timeLeftString{};
+    TextBitmapCache timeLeftBitmap{}, timeLeftOutline{};
+    TextMeasureCache timeLeftMeasure{};
+    TimeStringCache timeLimitString{};
+    TextBitmapCache timeLimitBitmap{}, timeLimitOutline{};
+    TextMeasureCache timeLimitMeasure{};
+};
+
+static HudFrameOwnedState& HudFrameState()
+{
+    auto& slot = ActiveHudConfigState().frameState;
+    if (!slot)
+        slot = std::make_shared<HudFrameOwnedState>();
+    return *std::static_pointer_cast<HudFrameOwnedState>(slot);
+}
+
+#define s_hudRuntimeFrameCache (HudFrameState().frame)
 
 static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
                                                melonDS::u8* ram,
@@ -657,10 +700,18 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
                                 float overallOpacity = 1.0f, const HudOutlineConfig& ol = {false,QColor(),0.0f,1},
                                 float hudScale = 1.0f)
 {
-    static TextMeasureCache s_curTextCache = { 0, "", 0, 0, false }, s_sepTextCache = { 0, "", 0, 0, false }, s_goalTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-    static TextBitmapCache s_curOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-    static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
+    auto& s_curTextCache = HudFrameState().curText;
+    auto& s_sepTextCache = HudFrameState().sepText;
+    auto& s_goalTextCache = HudFrameState().goalText;
+    auto& s_curBitmapCache = HudFrameState().curBitmap;
+    auto& s_sepBitmapCache = HudFrameState().sepBitmap;
+    auto& s_goalBitmapCache = HudFrameState().goalBitmap;
+    auto& s_labelBitmapCache = HudFrameState().labelBitmap;
+    auto& s_curOlCache = HudFrameState().curOutline;
+    auto& s_sepOlCache = HudFrameState().sepOutline;
+    auto& s_goalOlCache = HudFrameState().goalOutline;
+    auto& s_labelOlCache = HudFrameState().labelOutline;
+    auto& s_matchStringCache = HudFrameState().matchString;
     UpdateMatchStatusStrings(s_matchStringCache, state);
     // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
     auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
@@ -749,9 +800,9 @@ static void DrawBombLeft(QPainter* p, uint8_t bombs,
 {
     if (!c.bombLeft.bombLeftShow) return;
     {
-        static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false };
+        auto& s_bombBitmapCache = HudFrameState().bombBitmap;
+        auto& s_bombOutlineCache = HudFrameState().bombOutline;
+        auto& s_bombMeasureCache = HudFrameState().bombMeasure;
         const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
         // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
         char buf[64];
@@ -816,10 +867,10 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
     const auto& hud = c.rankTime;
 
     if (hud.rankShow) {
-        static RankStringCache s_rankStringCache = { 0, 0, false, false, "" };
-        static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
+        auto& s_rankStringCache = HudFrameState().rankString;
+        auto& s_rankCache = HudFrameState().rankBitmap;
+        auto& s_rankOutlineCache = HudFrameState().rankOutline;
+        auto& s_rankMeasure = HudFrameState().rankMeasure;
 
         const uint8_t rankByte = st
             ? ReadHudRuntimeRankByte(rom, playerPos, *st)
@@ -834,10 +885,10 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
     }
 
     if (hud.timeLeftShow) {
-        static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" };
-        static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
+        auto& s_timeLeftStringCache = HudFrameState().timeLeftString;
+        auto& s_timeLeftCache = HudFrameState().timeLeftBitmap;
+        auto& s_timeLeftOutlineCache = HudFrameState().timeLeftOutline;
+        auto& s_timeLeftMeasure = HudFrameState().timeLeftMeasure;
 
         const int seconds = st
             ? ReadHudRuntimeTimeLeftSeconds(rom, *st)
@@ -850,10 +901,10 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
     }
 
     if (hud.timeLimitShow) {
-        static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" };
-        static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
-        static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
+        auto& s_timeLimitStringCache = HudFrameState().timeLimitString;
+        auto& s_timeLimitCache = HudFrameState().timeLimitBitmap;
+        auto& s_timeLimitOutlineCache = HudFrameState().timeLimitOutline;
+        auto& s_timeLimitMeasure = HudFrameState().timeLimitMeasure;
 
         const int goalMinutes = st
             ? ReadHudRuntimeTimeLimitMinutes(rom, *st)
@@ -919,7 +970,6 @@ bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom,
 // so any out-of-sync RAM state (savestate / persistent RAM / JIT corner
 // cases) is normalized exactly once. Reset to true when CustomHUD becomes
 // enabled or on emu start/stop, so a future disable triggers it again.
-static bool s_hudPatchForceRestorePending = true;
 
 static void CustomHud_MarkNoHudPatchDesired()
 {
@@ -930,26 +980,29 @@ static void CustomHud_RestoreNativeHudState(const RomAddresses& /*rom*/,
                                             const HudRuntimeState& st)
 {
     const bool needForceRestore = s_hudPatchForceRestorePending;
-    if (NoHudPatch_GetAppliedMask() == 0 && !needForceRestore)
+    auto& patch = ActiveHudConfigState().noHudPatch;
+    if (NoHudPatch_GetAppliedMask(patch) == 0 && !needForceRestore)
         return;
 
     if (needForceRestore) {
-        NoHudPatch_RestoreAll(st.nds, st.romGroup);
+        NoHudPatch_RestoreAll(patch, st.nds, st.romGroup);
         s_hudPatchForceRestorePending = false;
     } else {
-        NoHudPatch_Sync(st.nds, st.romGroup, 0);
+        NoHudPatch_Sync(patch, st.nds, st.romGroup, 0);
     }
 }
 
 void CustomHud_ClampHelmetLayersPreFrame(
+    CustomHudConfigState& hudConfig,
     EmuInstance* emu,
     const RomAddresses& rom,
     uint8_t playerPosition)
 {
+    const ScopedHudConfigState active(hudConfig);
     // Gate on the tracker, not the config: the helmet bit is only ever applied
     // by Render() while CustomHUD is enabled, and this avoids a per-frame toml
     // lookup on the hot path.
-    if (!(NoHudPatch_GetAppliedMask() & (1u << NOHUD_HELMET)))
+    if (!(NoHudPatch_GetAppliedMask(ActiveHudConfigState().noHudPatch) & (1u << NOHUD_HELMET)))
         return;
 
     HudRuntimeState st = {};
@@ -967,12 +1020,14 @@ void CustomHud_ClampHelmetLayersPreFrame(
 }
 
 void CustomHud_EnsurePatchRestored(
+    CustomHudConfigState& hudConfig,
     EmuInstance* emu,
     Config::Table& localCfg,
     const RomAddresses& rom,
     uint8_t playerPosition,
     bool isInGame)
 {
+    const ScopedHudConfigState active(hudConfig);
     if (isInGame && CustomHud_IsEnabled(localCfg)) {
         // HUD is enabled — Render() handles patches. Re-arm the force-restore
         // for the next disable event.
@@ -990,7 +1045,7 @@ void CustomHud_EnsurePatchRestored(
 void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
 {
     const ScopedHudConfigState active(hudConfig);
-    NoHudPatch_ResetState();
+    NoHudPatch_ResetState(ActiveHudConfigState().noHudPatch);
     s_cache.valid = false;
     s_battleState.valid = false;
     s_chPrevPxCx = INT_MIN;

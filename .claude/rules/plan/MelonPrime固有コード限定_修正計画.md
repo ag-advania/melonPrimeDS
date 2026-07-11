@@ -941,6 +941,16 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 2: HUD完全分離
 
+進捗: **完了 (2026-07-11)**
+
+- HUD config stateをinstance-owned containerへ拡張し、editor／dirty／crosshair transitionを集約
+- font／image／radar／text cacheとzoom reticle／battle frame stateをinstanceごとに分離
+- software／OpenGL overlay dirty・upload stateを`Screen` instanceへ移動
+- no-HUD patch bookkeepingを`NoHudPatchState`としてHUD stateへ所有させ、呼び出し境界で明示伝播
+- HUD render／editor entry pointへinstance state scopeを設定し、multi-instance間の参照を遮断
+- HUD golden harnessの既存hash一致、Windows MinGW build、全CI auditを確認
+- mutable-state監査ratchetを180件から35件へ削減（HUD runtimeは0件）
+
 - editor state
 - dirty state
 - crosshair transition

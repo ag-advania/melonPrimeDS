@@ -264,6 +264,10 @@ protected:
     int      m_radarSrcRadius = 46;
     float    m_radarAnchorDsX = 256.0f;
     float    m_radarAnchorDsY = 0.0f;
+    QRect    m_hudPrevDirty;
+    QRect    m_hudUploadedRect;
+    uint64_t m_hudUploadedHash = 0;
+    bool     m_hudUploadedValid = false;
 #endif
 
 #ifdef MELONPRIME_DS

@@ -9,6 +9,10 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
+    struct NoHudPatchState {
+        uint16_t appliedMask = 0;
+    };
+
     // Individual default-HUD elements that can be hidden via ARM9 patches.
     // Bit indices for the desiredMask passed to NoHudPatch_Sync.
     //
@@ -43,7 +47,7 @@ namespace MelonPrime {
     // Writes the patch value for set bits, the original value for clear
     // bits. Only writes addresses whose state actually changes since the
     // last sync, so steady-state cost is zero.
-    void NoHudPatch_Sync(melonDS::NDS* nds, uint8_t romGroup,
+    void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup,
                          uint16_t desiredMask);
 
     // Host-side helmet layer clamp. Clears hudToggle bits 0x0E and the
@@ -59,14 +63,14 @@ namespace MelonPrime {
     // Used when CustomHUD is disabled to guarantee a clean ARM9 state
     // even if the tracker is out of sync (savestate / persistent RAM /
     // JIT corner cases).
-    void NoHudPatch_RestoreAll(melonDS::NDS* nds, uint8_t romGroup);
+    void NoHudPatch_RestoreAll(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup);
 
     // Reset the internal tracker without touching ARM9 RAM. Called on
     // emu start/stop where the binary is reloaded fresh.
-    void NoHudPatch_ResetState();
+    void NoHudPatch_ResetState(NoHudPatchState& state);
 
     // Returns the currently-tracked applied mask.
-    uint16_t NoHudPatch_GetAppliedMask();
+    uint16_t NoHudPatch_GetAppliedMask(const NoHudPatchState& state);
 
 } // namespace MelonPrime
 

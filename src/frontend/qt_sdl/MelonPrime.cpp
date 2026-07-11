@@ -383,7 +383,7 @@ namespace MelonPrime {
                 // during spawn states, so init writers can briefly restore the
                 // BG1-3 layers and flash the native visor for a frame.
                 CustomHud_ClampHelmetLayersPreFrame(
-                    emuInstance, m_currentRom, m_playerPosition);
+                    *m_hudConfigState, emuInstance, m_currentRom, m_playerPosition);
 #endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
@@ -409,7 +409,7 @@ namespace MelonPrime {
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
-                    emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+                    *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
@@ -621,7 +621,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
-        CustomHud_OnMatchJoin(mainRAM, m_currentRom);
+        CustomHud_OnMatchJoin(*m_hudConfigState, mainRAM, m_currentRom);
 #endif
     }
 

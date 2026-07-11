@@ -185,22 +185,20 @@ void NoHudPatch_ClampHelmetLayers(melonDS::NDS* nds, uint8_t romGroup)
         nds->ARM9Write32(kDispcntMain, dispcnt & ~0x0E00u);
 }
 
-static uint16_t s_appliedMask = 0;
-
-void NoHudPatch_ResetState()
+void NoHudPatch_ResetState(NoHudPatchState& state)
 {
-    s_appliedMask = 0;
+    state = {};
 }
 
-uint16_t NoHudPatch_GetAppliedMask()
+uint16_t NoHudPatch_GetAppliedMask(const NoHudPatchState& state)
 {
-    return s_appliedMask;
+    return state.appliedMask;
 }
 
-void NoHudPatch_Sync(melonDS::NDS* nds, uint8_t romGroup, uint16_t desiredMask)
+void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup, uint16_t desiredMask)
 {
     desiredMask &= NOHUD_MASK_ALL;
-    const uint16_t diff = static_cast<uint16_t>(s_appliedMask ^ desiredMask);
+    const uint16_t diff = static_cast<uint16_t>(state.appliedMask ^ desiredMask);
     if (diff == 0) return;
 
     const auto& entries = kHudPatch[romGroup];
@@ -211,15 +209,15 @@ void NoHudPatch_Sync(melonDS::NDS* nds, uint8_t romGroup, uint16_t desiredMask)
         const bool wantApply = (desiredMask & bit) != 0;
         nds->ARM9Write32(e.addr, wantApply ? e.patchValue : e.restoreValue);
     }
-    s_appliedMask = desiredMask;
+    state.appliedMask = desiredMask;
 }
 
-void NoHudPatch_RestoreAll(melonDS::NDS* nds, uint8_t romGroup)
+void NoHudPatch_RestoreAll(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup)
 {
     const auto& entries = kHudPatch[romGroup];
     for (uint8_t i = 0; i < NOHUD_ELEMENT_COUNT; ++i)
         nds->ARM9Write32(entries[i].addr, entries[i].restoreValue);
-    s_appliedMask = 0;
+    state.appliedMask = 0;
 }
 
 } // namespace MelonPrime

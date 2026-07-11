@@ -376,7 +376,6 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
 }
 
 // ── Guard to prevent re-entrant QColorDialog ────────────────────────────────
-static bool s_colorDialogOpen = false;
 
 // ── DrawElemPropsPanel ──────────────────────────────────────────────────────
 // Draws the unified properties panel for the currently selected element.
