@@ -54,9 +54,6 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeScreenCursorPolicy.h"
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-#include "MelonPrimeWaylandPointerLock.h" // MELONPRIME_WAYLAND_POINTER_LOCK_V1
-#endif
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeHudPropSchema.inc"
 
@@ -81,12 +78,10 @@
 using namespace melonDS;
 
 #if !defined(_WIN32) && !defined(__APPLE__)
-// Qt's Wayland WId is not a wl_surface. Keep the platform native interface
-// available on every supported Qt version so the actual child surface can be
-// passed to EGL and the pointer-constraints protocol.
-#include <qpa/qplatformnativeinterface.h>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 using namespace QNativeInterface;
+#else
+#include <qpa/qplatformnativeinterface.h>
 #endif
 #endif
 
@@ -141,7 +136,7 @@ void ScreenPanel::refreshClipForGameStateChange()
     if (!topScreenOnlyStateUnchanged)
         setupScreenLayout();
 
-#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__APPLE__)
     if (!clipStateUnchanged)
         updateClipIfNeeded();
 #endif
@@ -474,7 +469,7 @@ void ScreenPanel::setupScreenLayout()
             core->NotifyLayoutChange();
         }
     }
-#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
 #endif
@@ -545,7 +540,7 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 {
     setupScreenLayout();
 #ifdef MELONPRIME_DS
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32)
     updateClipIfNeeded();
 #endif
 #endif
@@ -699,14 +694,6 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
             containAimCursorIfNeeded();
         return;
 #elif defined(__linux__)
-        // A compositor-native pointer lock supplies the PanelDelta accumulator
-        // directly. Ignore absolute QMouseEvent positions while it is active,
-        // otherwise the same physical motion could be counted twice.
-        if (isWaylandPointerLockActiveForMelonPrime()) {
-            aimLastGlobalValid.store(false, std::memory_order_release);
-            return;
-        }
-
         const QPoint center = mapToGlobal(rect().center());
 #if QT_VERSION_MAJOR == 6
         const QPoint global = event->globalPosition().toPoint();
@@ -1355,20 +1342,10 @@ ScreenPanelGL::ScreenPanelGL(QWidget * parent) : ScreenPanel(parent)
     setMinimumSize(screenGetMinSize());
 
     glInited = false;
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
-        [this](std::int32_t dx, std::int32_t dy) {
-            addAimMouseDeltaForMelonPrime(dx, dy);
-        });
-#endif
 }
 
 ScreenPanelGL::~ScreenPanelGL()
 {
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    if (waylandPointerLock)
-        waylandPointerLock->setLocked(nullptr, nullptr, false);
-#endif
 }
 
 bool ScreenPanelGL::createContext()
@@ -1570,37 +1547,6 @@ void ScreenPanelGL::releaseGL()
 
     glContext->DoneCurrent();
 }
-
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
-{
-    if (!waylandPointerLock)
-        return false;
-
-    if (!enabled)
-        return waylandPointerLock->setLocked(nullptr, nullptr, false);
-
-    if (QGuiApplication::platformName() != QStringLiteral("wayland"))
-        return false;
-
-    const std::optional<WindowInfo> info = getWindowInfo();
-    if (!info.has_value()
-        || info->type != WindowInfo::Type::Wayland
-        || !info->display_connection
-        || !info->window_handle)
-    {
-        return false;
-    }
-
-    return waylandPointerLock->setLocked(
-        info->display_connection, info->window_handle, true);
-}
-
-bool ScreenPanelGL::isWaylandPointerLockActiveForMelonPrime() const
-{
-    return waylandPointerLock && waylandPointerLock->isLockActive();
-}
-#endif
 
 void ScreenPanelGL::osdRenderItem(OSDItem * item)
 {
@@ -1906,15 +1852,8 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
     {
         wi.type = WindowInfo::Type::Wayland;
         const QWaylandApplication* wl = qApp->nativeInterface<QWaylandApplication>();
-        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-        QWindow* handle = windowHandle();
-        if (!wl || !pni || !handle)
-            return std::nullopt;
-
         wi.display_connection = wl->display();
-        wi.window_handle = pni->nativeResourceForWindow("surface", handle);
-        if (!wi.display_connection || !wi.window_handle)
-            return std::nullopt;
+        wi.window_handle = reinterpret_cast<void*>(winId());
     }
 #endif
 #else
@@ -2016,7 +1955,7 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)
 {
-#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
     QWidget::focusInEvent(event);
@@ -2036,14 +1975,14 @@ void ScreenPanel::focusOutEvent(QFocusEvent * event)
 
 void ScreenPanel::enterEvent(QEnterEvent * event)
 {
-#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
     QWidget::enterEvent(event);
 }
 
 void ScreenPanel::moveEvent(QMoveEvent * e) {
-#if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
 #include "MelonPrimeHudScreenCppEditPanelMove.inc"
