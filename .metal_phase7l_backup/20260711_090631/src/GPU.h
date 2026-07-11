@@ -75,68 +75,6 @@ struct RendererOutput
 #endif
 };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
-// Metal output is consumed by a command queue separate from the renderer
-// queue. Keep its ring slot immutable until that presenter command completes.
-struct RendererOutputLease
-{
-    RendererOutput Output;
-    void* Context = nullptr;
-    void (*ReleaseFn)(void*) = nullptr;
-
-    RendererOutputLease() = default;
-    RendererOutputLease(
-        RendererOutput output,
-        void* context,
-        void (*releaseFn)(void*)) noexcept
-        : Output(output), Context(context), ReleaseFn(releaseFn)
-    {
-    }
-
-    RendererOutputLease(const RendererOutputLease&) = delete;
-    RendererOutputLease& operator=(const RendererOutputLease&) = delete;
-
-    RendererOutputLease(RendererOutputLease&& other) noexcept
-        : Output(other.Output),
-          Context(other.Context),
-          ReleaseFn(other.ReleaseFn)
-    {
-        other.Context = nullptr;
-        other.ReleaseFn = nullptr;
-    }
-
-    RendererOutputLease& operator=(RendererOutputLease&& other) noexcept
-    {
-        if (this != &other)
-        {
-            ReleaseNow();
-            Output = other.Output;
-            Context = other.Context;
-            ReleaseFn = other.ReleaseFn;
-            other.Context = nullptr;
-            other.ReleaseFn = nullptr;
-        }
-        return *this;
-    }
-
-    ~RendererOutputLease()
-    {
-        ReleaseNow();
-    }
-
-    void ReleaseNow() noexcept
-    {
-        void* context = Context;
-        void (*releaseFn)(void*) = ReleaseFn;
-        Context = nullptr;
-        ReleaseFn = nullptr;
-        if (context && releaseFn)
-            releaseFn(context);
-    }
-};
-#endif
-
 static constexpr u32 VRAMDirtyGranularity = 512;
 class GPU;
 
@@ -181,9 +119,6 @@ public:
     //          - values are renderer-specific (ie. OpenGL texture handle)
     bool GetFramebuffers(void** top, void** bottom);
     RendererOutput GetRendererOutput();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    RendererOutputLease AcquireRendererOutputLease();
-#endif
 
     u8* GetUniqueBankPtr(u32 mask, u32 offset) noexcept;
     const u8* GetUniqueBankPtr(u32 mask, u32 offset) const noexcept;
@@ -981,12 +916,6 @@ public:
             return RendererOutput::OpenGLTextureArray(top);
         return {};
     }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    virtual RendererOutputLease AcquireOutputLease()
-    {
-        return RendererOutputLease(GetOutput(), nullptr, nullptr);
-    }
-#endif
     virtual void SwapBuffers() { BackBuffer ^= 1; }
 
     virtual bool NeedsShaderCompile() { return false; }
