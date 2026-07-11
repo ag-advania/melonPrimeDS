@@ -1,6 +1,7 @@
 // Included after MetalOutputState is complete and before MetalRenderer's destructor.
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+// MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 namespace
 {
@@ -188,6 +189,10 @@ void MetalRenderer::Start3DRendering()
     if (FullGpuState->FrameActive)
         BeginMetalCaptureFrame();
 
+    Metal3DSetCaptureTextures(
+        Rend3D.get(),
+        GetMetalCapture128Texture(),
+        GetMetalCapture256Texture());
     Metal3DSetCpuReadbackRequired(
         Rend3D.get(),
         !FullGpuState->FrameActive);

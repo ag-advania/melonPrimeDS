@@ -10,7 +10,6 @@
 // MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
-// MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -52,15 +51,6 @@ bool MetalComputeMirrorEnabled()
 {
     static const bool enabled = []() {
         const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_MIRROR");
-        return value && value[0] == '1';
-    }();
-    return enabled;
-}
-
-bool MetalComputeFinalDiffEnabled()
-{
-    static const bool enabled = []() {
-        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_FINAL_DIFF");
         return value && value[0] == '1';
     }();
     return enabled;
@@ -1082,7 +1072,6 @@ kernel void mp_compute_depth_blend_no_texture(
 
 #include "GPU3D_MetalComputeTexturedShaders.inc"
 #include "GPU3D_MetalComputeDepthBlendShaders.inc"
-#include "GPU3D_MetalComputeFinalPassShaders.inc"
 
 id<MTLComputePipelineState> BuildComputePipeline(
     id<MTLDevice> device,
@@ -1330,10 +1319,6 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> TextureMemoryBuffer = nil;
         id<MTLBuffer> TexturePaletteBuffer = nil;
         id<MTLBuffer> ToonTableBuffer = nil;
-        id<MTLBuffer> FinalTablesBuffer = nil;
-        id<MTLBuffer> FinalPassSummaryBuffer = nil;
-        id<MTLBuffer> FinalDiffSummaryBuffer = nil;
-        id<MTLTexture> FinalTexture = nil;
         id<MTLCommandBuffer> LastCommand = nil;
         std::atomic<bool> InFlight { false };
         std::atomic<uint64_t> Generation { 0 };
@@ -1344,7 +1329,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLLibrary> Library = nil;
     id<MTLLibrary> TexturedLibrary = nil;
     id<MTLLibrary> CompleteDepthBlendLibrary = nil;
-    id<MTLLibrary> FinalPassLibrary = nil;
     id<MTLComputePipelineState> ClearIndirectPipeline = nil;
     id<MTLComputePipelineState> ClearCoarseMaskPipeline = nil;
     id<MTLComputePipelineState> CalcOffsetsPipeline = nil;
@@ -1357,10 +1341,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> TextureRasterPipeline = nil;
     id<MTLComputePipelineState> ClearCompleteDepthBlendSummaryPipeline = nil;
     id<MTLComputePipelineState> CompleteDepthBlendPipeline = nil;
-    id<MTLComputePipelineState> ClearFinalPassSummaryPipeline = nil;
-    id<MTLComputePipelineState> FinalPassPipeline = nil;
-    id<MTLComputePipelineState> ClearFinalDiffSummaryPipeline = nil;
-    id<MTLComputePipelineState> FinalDiffPipeline = nil;
     id<MTLComputePipelineState> ClearDepthBlendSummaryPipeline = nil;
     id<MTLComputePipelineState> DepthBlendNoTexturePipeline = nil;
     id<MTLComputePipelineState> ClearTextureVariantSummaryPipeline = nil;
@@ -1406,12 +1386,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     bool TileRasterReady = false;
     bool DepthBlendReady = false;
     bool TextureVariantReady = false;
-    bool FinalPassReady = false;
     bool LoggedOverflow = false;
-    std::atomic<int> SubmittedFinalSlot { -1 };
-    std::atomic<int> PublishedFinalSlot { -1 };
-    std::atomic<uint64_t> SubmittedFinalSerial { 0 };
-    std::atomic<uint64_t> PublishedFinalSerial { 0 };
 
     std::atomic<uint64_t> SubmittedFrames { 0 };
     std::atomic<uint64_t> CompletedFrames { 0 };
@@ -1422,7 +1397,6 @@ struct MetalComputeRenderer3D::MetalComputeState
 
 #include "GPU3D_MetalComputeTexturedMethods.inc"
 #include "GPU3D_MetalComputeDepthBlendMethods.inc"
-#include "GPU3D_MetalComputeFinalPassMethods.inc"
 
 MetalComputeRenderer3D::MetalComputeRenderer3D(
     melonDS::GPU3D& gpu3D,
@@ -1485,7 +1459,6 @@ bool MetalComputeRenderer3D::Init()
             State->TileRasterReady = false;
             State->DepthBlendReady = false;
             State->TextureVariantReady = false;
-            State->FinalPassReady = false;
             State->TileMemoryInFlight.store(false, std::memory_order_release);
         }
         std::fprintf(stderr,
@@ -1503,7 +1476,6 @@ bool MetalComputeRenderer3D::Init()
             State->TileRasterReady = false;
             State->DepthBlendReady = false;
             State->TextureVariantReady = false;
-            State->FinalPassReady = false;
             State->TileMemoryInFlight.store(false, std::memory_order_release);
         }
         std::fprintf(stderr,
@@ -1526,15 +1498,12 @@ bool MetalComputeRenderer3D::Init()
         return continueWithRasterOnly("RunTextureVariantTileSelfTest");
     if (!RunCompleteDepthBlendSelfTest())
         return continueWithRasterOnly("RunCompleteDepthBlendSelfTest");
-    if (!RunFinalPassSelfTest())
-        return continueWithRasterOnly("RunFinalPassSelfTest");
 
     State->Ready = true;
     State->SpanBinReady = true;
     State->TileRasterReady = true;
     State->DepthBlendReady = true;
     State->TextureVariantReady = true;
-    State->FinalPassReady = true;
     std::fprintf(stderr,
         "[MelonPrime] metal compute texture variants: Phase 7F ready scale=%d target=%dx%d; visible output remains Metal raster reference\n",
         requestedScale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
@@ -1609,21 +1578,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         return false;
     }
 
-    NSString* finalPassSource =
-        [NSString stringWithUTF8String:kMetalComputeFinalPassSource];
-    State->FinalPassLibrary = [State->Device
-        newLibraryWithSource:finalPassSource options:nil error:&error];
-    if (!State->FinalPassLibrary)
-    {
-        const char* message = error
-            ? [[error localizedDescription] UTF8String]
-            : "unknown error";
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute final pass: MSL compile failed: %s\n",
-            message);
-        return false;
-    }
-
     State->ClearIndirectPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_indirect");
     State->ClearCoarseMaskPipeline = BuildComputePipeline(
@@ -1654,18 +1608,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device,
         State->CompleteDepthBlendLibrary,
         @"mp_compute_depth_blend_complete");
-    State->ClearFinalPassSummaryPipeline = BuildComputePipeline(
-        State->Device, State->FinalPassLibrary,
-        @"mp_compute_clear_final_pass_summary");
-    State->FinalPassPipeline = BuildComputePipeline(
-        State->Device, State->FinalPassLibrary,
-        @"mp_compute_final_pass");
-    State->ClearFinalDiffSummaryPipeline = BuildComputePipeline(
-        State->Device, State->FinalPassLibrary,
-        @"mp_compute_clear_final_diff_summary");
-    State->FinalDiffPipeline = BuildComputePipeline(
-        State->Device, State->FinalPassLibrary,
-        @"mp_compute_compare_final");
     State->ClearDepthBlendSummaryPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_depth_blend_summary");
     State->DepthBlendNoTexturePipeline = BuildComputePipeline(
@@ -1683,10 +1625,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->TextureRasterPipeline ||
         !State->ClearCompleteDepthBlendSummaryPipeline ||
         !State->CompleteDepthBlendPipeline ||
-        !State->ClearFinalPassSummaryPipeline ||
-        !State->FinalPassPipeline ||
-        !State->ClearFinalDiffSummaryPipeline ||
-        !State->FinalDiffPipeline ||
         !State->ClearDepthBlendSummaryPipeline ||
         !State->DepthBlendNoTexturePipeline ||
         !State->ClearTextureVariantSummaryPipeline ||
@@ -1708,10 +1646,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->TextureRasterPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearCompleteDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->CompleteDepthBlendPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearFinalPassSummaryPipeline.maxTotalThreadsPerThreadgroup,
-        State->FinalPassPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearFinalDiffSummaryPipeline.maxTotalThreadsPerThreadgroup,
-        State->FinalDiffPipeline.maxTotalThreadsPerThreadgroup,
         State->ClearDepthBlendSummaryPipeline.maxTotalThreadsPerThreadgroup,
         State->DepthBlendNoTexturePipeline.maxTotalThreadsPerThreadgroup,
         State->ClearTextureVariantSummaryPipeline.maxTotalThreadsPerThreadgroup,
@@ -1841,32 +1775,12 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.ToonTableBuffer =
             [State->Device newBufferWithLength:32u * sizeof(uint32_t)
                                        options:MTLResourceStorageModeShared];
-        slot.FinalTablesBuffer =
-            [State->Device newBufferWithLength:kFinalTableWords * sizeof(uint32_t)
-                                       options:MTLResourceStorageModeShared];
-        slot.FinalPassSummaryBuffer =
-            [State->Device newBufferWithLength:kFinalPassSummaryWords * sizeof(uint32_t)
-                                       options:MTLResourceStorageModeShared];
-        slot.FinalDiffSummaryBuffer =
-            [State->Device newBufferWithLength:kFinalDiffSummaryWords * sizeof(uint32_t)
-                                       options:MTLResourceStorageModeShared];
-        MTLTextureDescriptor* finalDescriptor =
-            [MTLTextureDescriptor
-                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                             width:State->ScreenWidth
-                                            height:State->ScreenHeight
-                                         mipmapped:NO];
-        finalDescriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-        finalDescriptor.storageMode = MTLStorageModePrivate;
-        slot.FinalTexture = [State->Device newTextureWithDescriptor:finalDescriptor];
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
             !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
             !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
             !slot.TextureVariantSummaryBuffer || !slot.TextureMemoryBuffer ||
-            !slot.TexturePaletteBuffer || !slot.ToonTableBuffer ||
-            !slot.FinalTablesBuffer || !slot.FinalPassSummaryBuffer ||
-            !slot.FinalDiffSummaryBuffer || !slot.FinalTexture)
+            !slot.TexturePaletteBuffer || !slot.ToonTableBuffer)
         {
             std::fprintf(stderr,
                 "[MelonPrime] metal compute span/bin: buffer allocation failed scale=%d\n",
@@ -1937,10 +1851,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         return false;
     }
     State->TileWorkCapacity = tileCapacity;
-    State->SubmittedFinalSlot.store(-1, std::memory_order_release);
-    State->PublishedFinalSlot.store(-1, std::memory_order_release);
-    State->SubmittedFinalSerial.store(0, std::memory_order_release);
-    State->PublishedFinalSerial.store(0, std::memory_order_release);
     State->TileMemoryInFlight.store(false, std::memory_order_release);
 
     const size_t allocatedTileBytes = static_cast<size_t>(tileCapacity) * tileArea * sizeof(uint32_t) * 3u;
@@ -2832,24 +2742,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         uint32_t clearB = (GPU3D.RenderClearAttr1 >> 9) & 0x3Eu;
         if (clearB) clearB++;
         const uint32_t clearA = (GPU3D.RenderClearAttr1 >> 16) & 0x1Fu;
-        auto* finalTables =
-            static_cast<uint32_t*>([slot->FinalTablesBuffer contents]);
-        for (uint32_t index = 0; index < 8u; index++)
-            finalTables[index] = ConvertRGB555ToRGB6(GPU3D.RenderEdgeTable[index]);
-        for (uint32_t index = 0; index < 34u; index++)
-            finalTables[8u + index] = GPU3D.RenderFogDensityTable[index];
-
-        const FinalPassConfig finalPassConfig {
-            State->ScreenWidth,
-            State->ScreenHeight,
-            GPU3D.RenderDispCnt,
-            ((GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu,
-            GPU3D.RenderClearAttr1 & 0x3F008000u,
-            GPU3D.RenderFogOffset,
-            GPU3D.RenderFogShift,
-            ConvertFogColorToRGB6A5(GPU3D.RenderFogColor),
-        };
-
         const CompleteDepthBlendConfig depthBlendConfig {
             State->ScreenWidth,
             State->ScreenHeight,
@@ -2885,14 +2777,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 State->SkippedTileBusyFrames.fetch_add(1, std::memory_order_relaxed);
         }
         const bool submitDepthBlend = submitTileRaster && State->DepthBlendReady;
-        const bool submitFinalPass = submitDepthBlend && State->FinalPassReady;
-        id<MTLTexture> referenceFinal =
-            (__bridge id<MTLTexture>)RasterReference.GetColorTargetTexture();
-        const bool submitFinalDiff =
-            submitFinalPass && MetalComputeFinalDiffEnabled() &&
-            referenceFinal && referenceFinal.device == State->Device &&
-            referenceFinal.width == State->ScreenWidth &&
-            referenceFinal.height == State->ScreenHeight;
 
         id<MTLCommandBuffer> command = [State->Queue commandBuffer];
         if (!command)
@@ -3065,55 +2949,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                              threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
                     [encoder endEncoding];
                 }
-                if (submitFinalPass)
-                {
-                    {
-                        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                        [encoder setComputePipelineState:State->ClearFinalPassSummaryPipeline];
-                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:0];
-                        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-                        [encoder endEncoding];
-                    }
-                    {
-                        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                        [encoder setComputePipelineState:State->FinalPassPipeline];
-                        [encoder setBuffer:State->DepthBlendColor offset:0 atIndex:0];
-                        [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:1];
-                        [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:2];
-                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:3];
-                        [encoder setBuffer:slot->FinalTablesBuffer offset:0 atIndex:4];
-                        [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:5];
-                        [encoder setTexture:slot->FinalTexture atIndex:0];
-                        const uint32_t finalPixelCount = State->ScreenWidth * State->ScreenHeight;
-                        [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(finalPixelCount, 64), 1, 1)
-                                 threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-                        [encoder endEncoding];
-                    }
-                    if (submitFinalDiff)
-                    {
-                        {
-                            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                            [encoder setComputePipelineState:State->ClearFinalDiffSummaryPipeline];
-                            [encoder setBuffer:slot->FinalDiffSummaryBuffer offset:0 atIndex:0];
-                            [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-                            [encoder endEncoding];
-                        }
-                        {
-                            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                            [encoder setComputePipelineState:State->FinalDiffPipeline];
-                            [encoder setBuffer:slot->FinalDiffSummaryBuffer offset:0 atIndex:0];
-                            [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:1];
-                            [encoder setTexture:slot->FinalTexture atIndex:0];
-                            [encoder setTexture:referenceFinal atIndex:1];
-                            const uint32_t finalPixelCount = State->ScreenWidth * State->ScreenHeight;
-                            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(finalPixelCount, 64), 1, 1)
-                                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-                            [encoder endEncoding];
-                        }
-                    }
-                }
             }
         }
 
@@ -3127,16 +2962,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         id<MTLBuffer> completedTextureVariantSummary = slot->TextureVariantSummaryBuffer;
         const bool completedTileRaster = submitTileRaster;
         const bool completedDepthBlend = submitDepthBlend;
-        const bool completedFinalPass = submitFinalPass;
-        const bool completedFinalDiff = submitFinalDiff;
-        id<MTLBuffer> completedFinalSummary = slot->FinalPassSummaryBuffer;
-        id<MTLBuffer> completedFinalDiffSummary = slot->FinalDiffSummaryBuffer;
         MetalComputeState* state = State.get();
-        if (submitFinalPass)
-        {
-            State->SubmittedFinalSlot.store(slotIndex, std::memory_order_release);
-            State->SubmittedFinalSerial.store(serial, std::memory_order_release);
-        }
         slot->LastCommand = command;
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if (completed.status == MTLCommandBufferStatusCompleted)
@@ -3199,46 +3025,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                         blend->ColorHash,
                         blendDepthMin,
                         blend->DepthMax);
-                }
-                if (completedFinalPass)
-                {
-                    state->PublishedFinalSlot.store(slotIndex, std::memory_order_release);
-                    state->PublishedFinalSerial.store(serial, std::memory_order_release);
-                    if (completedCount <= 3 || (completedCount % 600) == 0)
-                    {
-                        const auto* final = static_cast<const FinalPassSummary*>(
-                            [completedFinalSummary contents]);
-                        std::fprintf(stderr,
-                            "[MelonPrime] metal compute final pass: frame=%llu "
-                            "pixels=%u edge=%u fogTop=%u fogSecond=%u aa=%u "
-                            "alpha=%u hash=0x%08x slot=%u "
-                            "visibleSource=MetalRasterReference\n",
-                            static_cast<unsigned long long>(serial),
-                            final->Pixels, final->EdgePixels,
-                            final->FogTopPixels, final->FogSecondPixels,
-                            final->AAPixels, final->NonzeroAlpha,
-                            final->ColorHash, slotIndex);
-                    }
-                }
-                if (completedFinalDiff &&
-                    (completedCount <= 3 || (completedCount % 600) == 0))
-                {
-                    const auto* diff = static_cast<const FinalDiffSummary*>(
-                        [completedFinalDiffSummary contents]);
-                    const double averageDelta = diff->Pixels
-                        ? static_cast<double>(diff->SumChannelDelta) /
-                          static_cast<double>(diff->Pixels * 4u)
-                        : 0.0;
-                    std::fprintf(stderr,
-                        "[MelonPrime] metal compute final diff: frame=%llu "
-                        "pixels=%u different=%u exact=%u maxDelta=%u "
-                        "avgDelta=%.3f computeHash=0x%08x referenceHash=0x%08x "
-                        "verticalFlipDifferent=%u\n",
-                        static_cast<unsigned long long>(serial),
-                        diff->Pixels, diff->DifferentPixels, diff->ExactPixels,
-                        diff->MaxChannelDelta, averageDelta,
-                        diff->ComputeHash, diff->ReferenceHash,
-                        diff->VerticalFlipDifferentPixels);
                 }
                 if (completedCount <= 3 || (completedCount % 600) == 0)
                 {
