@@ -2,7 +2,6 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
-// MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -124,199 +123,21 @@ bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
     return state.FullGpuReady;
 }
 
-void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
-    int line) noexcept
-{
-    if (!State || line != 0)
-        return;
-
-    // DrawSprites(0) and DrawScanline(0) can arrive in either order. Reset only
-    // when at least one recorder still points at a line from the previous frame.
-    if (State->LayerSnapshotLastLine > 0 ||
-        State->SpriteSnapshotLastLine > 0)
-    {
-        State->LayerSnapshotValid.fill(0);
-        State->SpriteSnapshotValid.fill(0);
-        State->LayerSnapshotLastLine = -1;
-        State->SpriteSnapshotLastLine = -1;
-    }
-}
-
-void MetalRenderer2D::MaybeReportSegmentSnapshotFrame() noexcept
-{
-    if (!State || !State->SnapshotBuffersReady)
-        return;
-
-    for (int line = 0; line < kScreenH; line++)
-    {
-        if (!State->LayerSnapshotValid[line] ||
-            !State->SpriteSnapshotValid[line])
-        {
-            return;
-        }
-    }
-
-    uint32_t layerSegments = 1;
-    uint32_t spriteSegments = 1;
-    uint32_t combinedSegments = 1;
-    uint32_t maxSprites = State->SpriteSnapshotCount[0];
-    uint64_t spriteTotal = State->SpriteSnapshotCount[0];
-
-    auto combinedHash = [&](int line) {
-        uint64_t hash = State->LayerSnapshotHash[line];
-        hash ^= State->SpriteSnapshotHash[line] +
-            0x9E3779B97F4A7C15ull + (hash << 6u) + (hash >> 2u);
-        return hash;
-    };
-
-    uint64_t previousCombined = combinedHash(0);
-    for (int line = 1; line < kScreenH; line++)
-    {
-        if (State->LayerSnapshotHash[line] !=
-            State->LayerSnapshotHash[line - 1])
-        {
-            layerSegments++;
-        }
-        if (State->SpriteSnapshotHash[line] !=
-            State->SpriteSnapshotHash[line - 1])
-        {
-            spriteSegments++;
-        }
-
-        const uint64_t currentCombined = combinedHash(line);
-        if (currentCombined != previousCombined)
-        {
-            combinedSegments++;
-            previousCombined = currentCombined;
-        }
-
-        maxSprites = std::max(
-            maxSprites,
-            State->SpriteSnapshotCount[line]);
-        spriteTotal += State->SpriteSnapshotCount[line];
-    }
-
-    State->SnapshotFrameCount++;
-    if (State->SnapshotFrameCount == 1 ||
-        (State->SnapshotFrameCount % 600u) == 0u)
-    {
-        std::fprintf(
-            stderr,
-            "[MelonPrime] metal segmented 2d snapshot: "
-            "engine=%u frame=%llu lines=%d "
-            "layerSegments=%u spriteSegments=%u combinedSegments=%u "
-            "avgSprites=%.2f maxSprites=%u "
-            "gpuReady=%u visiblePath=ownership-gated-software-2d\\n",
-            GPU2D.Num,
-            static_cast<unsigned long long>(
-                State->SnapshotFrameCount),
-            kScreenH,
-            layerSegments,
-            spriteSegments,
-            combinedSegments,
-            static_cast<double>(spriteTotal) /
-                static_cast<double>(kScreenH),
-            maxSprites,
-            SegmentedSnapshotReady() ? 1u : 0u);
-    }
-}
-
 void MetalRenderer2D::CaptureScanlineState(int line) noexcept
 {
     if (!State || line < 0 || line >= kScreenH)
         return;
-
-    BeginSegmentSnapshotFrameIfNeeded(line);
     RefreshScanlineConfig(line);
-
-    if (State->SnapshotBuffersReady)
-    {
-        // RefreshLayerConfig builds the same normalized BG contract currently
-        // consumed at VBlank. Store it per line instead of losing all but the
-        // final register state.
-        if (RefreshLayerConfig())
-        {
-            auto* frame = reinterpret_cast<LayerScanlineSnapshotCpu*>(
-                [State->LayerScanlineSnapshotBuffer contents]);
-            frame->line[line] = State->LayerConfig;
-            State->LayerSnapshotHash[line] =
-                MetalSnapshotHash(
-                    &frame->line[line],
-                    sizeof(LayerConfigCpu));
-            State->LayerSnapshotValid[line] = 1;
-            State->LayerSnapshotLastLine = line;
-        }
-    }
-
-    MaybeReportSegmentSnapshotFrame();
 }
 
 void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
 {
     if (!State || !State->SpriteScanlineConfigBuffer ||
         line < 0 || line >= kScreenH)
-    {
         return;
-    }
-
-    BeginSegmentSnapshotFrameIfNeeded(line);
-
     auto* config = reinterpret_cast<SpriteScanlineConfigCpu*>(
         [State->SpriteScanlineConfigBuffer contents]);
     config->mosaicLine[line] = GPU2D.OBJMosaicLine;
-
-    if (State->SnapshotBuffersReady &&
-        RefreshSpriteConfig(line, line + 1))
-    {
-        uint8_t* destination =
-            static_cast<uint8_t*>(
-                [State->SpriteScanlineSnapshotBuffer contents]) +
-            State->SpriteSnapshotStride *
-                static_cast<size_t>(line);
-        std::memcpy(
-            destination,
-            &State->SpriteConfig,
-            sizeof(SpriteConfigCpu));
-
-        auto* meta =
-            reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
-                [State->SpriteScanlineMetaBuffer contents]);
-        meta->line[line].numSprites =
-            static_cast<uint32_t>(State->NumSprites);
-        meta->line[line].useMosaic =
-            State->SpriteUseMosaic ? 1u : 0u;
-        meta->line[line].configHash =
-            MetalSnapshotHash(
-                destination,
-                sizeof(SpriteConfigCpu));
-
-        State->SpriteSnapshotHash[line] =
-            meta->line[line].configHash ^
-            (static_cast<uint64_t>(
-                meta->line[line].numSprites) << 32u) ^
-            static_cast<uint64_t>(
-                meta->line[line].useMosaic);
-        State->SpriteSnapshotCount[line] =
-            meta->line[line].numSprites;
-        State->SpriteSnapshotMosaic[line] =
-            static_cast<uint8_t>(
-                meta->line[line].useMosaic);
-        State->SpriteSnapshotValid[line] = 1;
-        State->SpriteSnapshotLastLine = line;
-    }
-
-    MaybeReportSegmentSnapshotFrame();
-}
-
-bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept
-{
-    return State &&
-        State->SnapshotBuffersReady &&
-        State->LayerScanlineSnapshotBuffer &&
-        State->SpriteScanlineSnapshotBuffer &&
-        State->SpriteScanlineMetaBuffer &&
-        State->SpriteSnapshotStride >=
-            sizeof(SpriteConfigCpu);
 }
 
 bool MetalRenderer2D::FrameUsesCaptureTextures() const noexcept

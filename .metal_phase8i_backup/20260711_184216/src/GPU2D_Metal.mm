@@ -1,7 +1,6 @@
 // MelonPrimeDS - experimental Metal 2D renderer scaffold (Metal-plan Phase 4)
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
-// MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -15,7 +14,6 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 
 namespace melonDS
@@ -26,35 +24,6 @@ namespace
 constexpr int kScreenW = 256;
 constexpr int kScreenH = 192;
 constexpr int kBGLayerCount = 22;
-
-
-bool MetalSegmented2DSnapshotEnabled()
-{
-    static const bool enabled = []() {
-        const char* value =
-            std::getenv("MELONPRIME_METAL_SEGMENTED_2D_CAPTURE");
-        return value && value[0] == '1';
-    }();
-    return enabled;
-}
-
-constexpr size_t MetalAlignConstantStride(size_t size)
-{
-    return (size + 255u) & ~size_t(255u);
-}
-
-uint64_t MetalSnapshotHash(const void* data, size_t size)
-{
-    const uint8_t* bytes = static_cast<const uint8_t*>(data);
-    uint64_t hash = 1469598103934665603ull;
-    constexpr uint64_t prime = 1099511628211ull;
-    for (size_t i = 0; i < size; i++)
-    {
-        hash ^= bytes[i];
-        hash *= prime;
-    }
-    return hash;
-}
 
 constexpr uint8_t kBGBaseIndex[4][4] = {
     {2, 10, 6, 14},
@@ -274,23 +243,6 @@ struct SpriteScanlineConfigCpu
     int32_t mosaicLine[192] = {};
 };
 
-struct LayerScanlineSnapshotCpu
-{
-    LayerConfigCpu line[192] = {};
-};
-
-struct SpriteScanlineMetaCpu
-{
-    uint32_t numSprites = 0;
-    uint32_t useMosaic = 0;
-    uint64_t configHash = 0;
-};
-
-struct SpriteScanlineMetaFrameCpu
-{
-    SpriteScanlineMetaCpu line[192] = {};
-};
-
 struct CompositorConfigCpu
 {
     uint32_t bgPrio[4] = {};
@@ -305,8 +257,6 @@ static_assert((sizeof(LayerConfigCpu) & 15) == 0);
 static_assert((sizeof(SpriteConfigCpu) & 15) == 0);
 static_assert((sizeof(ScanlineConfigCpu) & 15) == 0);
 static_assert((sizeof(SpriteScanlineConfigCpu) & 15) == 0);
-static_assert((sizeof(LayerScanlineSnapshotCpu) & 15) == 0);
-static_assert((sizeof(SpriteScanlineMetaFrameCpu) & 15) == 0);
 static_assert((sizeof(CompositorConfigCpu) & 15) == 0);
 
 template <typename DirtyState>
@@ -405,25 +355,10 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> SpriteConfigBuffer = nil;
     id<MTLBuffer> ScanlineConfigBuffer = nil;
     id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
-    id<MTLBuffer> LayerScanlineSnapshotBuffer = nil;
-    id<MTLBuffer> SpriteScanlineSnapshotBuffer = nil;
-    id<MTLBuffer> SpriteScanlineMetaBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
     LayerConfigCpu LayerConfig;
     SpriteConfigCpu SpriteConfig;
     CompositorConfigCpu CompositorConfig;
-    std::array<uint64_t, kScreenH> LayerSnapshotHash {};
-    std::array<uint64_t, kScreenH> SpriteSnapshotHash {};
-    std::array<uint8_t, kScreenH> LayerSnapshotValid {};
-    std::array<uint8_t, kScreenH> SpriteSnapshotValid {};
-    std::array<uint32_t, kScreenH> SpriteSnapshotCount {};
-    std::array<uint8_t, kScreenH> SpriteSnapshotMosaic {};
-    size_t SpriteSnapshotStride = 0;
-    int LayerSnapshotLastLine = -1;
-    int SpriteSnapshotLastLine = -1;
-    uint64_t SnapshotFrameCount = 0;
-    bool SnapshotBuffersReady = false;
-    bool LoggedSnapshotAllocation = false;
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
@@ -751,26 +686,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     id<MTLBuffer> newCompositorConfig =
         [state.Device newBufferWithLength:sizeof(CompositorConfigCpu) options:MTLResourceStorageModeShared];
 
-    const bool snapshotRequested = MetalSegmented2DSnapshotEnabled();
-    const size_t spriteSnapshotStride =
-        MetalAlignConstantStride(sizeof(SpriteConfigCpu));
-    id<MTLBuffer> newLayerScanlineSnapshot = nil;
-    id<MTLBuffer> newSpriteScanlineSnapshot = nil;
-    id<MTLBuffer> newSpriteScanlineMeta = nil;
-    if (snapshotRequested)
-    {
-        newLayerScanlineSnapshot =
-            [state.Device newBufferWithLength:sizeof(LayerScanlineSnapshotCpu)
-                                      options:MTLResourceStorageModeShared];
-        newSpriteScanlineSnapshot =
-            [state.Device newBufferWithLength:
-                spriteSnapshotStride * static_cast<size_t>(kScreenH)
-                                      options:MTLResourceStorageModeShared];
-        newSpriteScanlineMeta =
-            [state.Device newBufferWithLength:sizeof(SpriteScanlineMetaFrameCpu)
-                                      options:MTLResourceStorageModeShared];
-    }
-
     id<MTLTexture> newBGLayers[kBGLayerCount] = {};
     const uint16_t bgSizes[8][3] = {
         {128, 128, 2},
@@ -806,11 +721,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     if (!newOutput || !newOBJLayer || !newOBJDepth || !newVRAMBG || !newVRAMOBJ ||
         !newPalBG || !newPalOBJ || !newMosaic || !newSprite ||
         !newLayerConfig || !newSpriteConfig || !newScanlineConfig ||
-        !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady ||
-        (snapshotRequested &&
-         (!newLayerScanlineSnapshot ||
-          !newSpriteScanlineSnapshot ||
-          !newSpriteScanlineMeta)))
+        !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady)
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to allocate scaffold targets for engine %u\n", GPU2D.Num);
         return false;
@@ -846,20 +757,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     state.SpriteConfigBuffer = newSpriteConfig;
     state.ScanlineConfigBuffer = newScanlineConfig;
     state.SpriteScanlineConfigBuffer = newSpriteScanlineConfig;
-    state.LayerScanlineSnapshotBuffer = newLayerScanlineSnapshot;
-    state.SpriteScanlineSnapshotBuffer = newSpriteScanlineSnapshot;
-    state.SpriteScanlineMetaBuffer = newSpriteScanlineMeta;
     state.CompositorConfigBuffer = newCompositorConfig;
-    state.SpriteSnapshotStride = spriteSnapshotStride;
-    state.SnapshotBuffersReady =
-        snapshotRequested &&
-        newLayerScanlineSnapshot &&
-        newSpriteScanlineSnapshot &&
-        newSpriteScanlineMeta;
-    state.LayerSnapshotValid.fill(0);
-    state.SpriteSnapshotValid.fill(0);
-    state.LayerSnapshotLastLine = -1;
-    state.SpriteSnapshotLastLine = -1;
     state.Scale = ScaleFactor;
     state.BGUploadInitialized = false;
     state.OBJUploadInitialized = false;
@@ -895,23 +793,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     {
         std::fprintf(stderr, "[MelonPrime] metal 2d: failed to prerender initial BG layer scaffold for engine %u\n", GPU2D.Num);
         return false;
-    }
-
-    if (state.SnapshotBuffersReady &&
-        !state.LoggedSnapshotAllocation)
-    {
-        state.LoggedSnapshotAllocation = true;
-        std::fprintf(
-            stderr,
-            "[MelonPrime] metal segmented 2d snapshot: allocated "
-            "engine=%u layerBytes=%zu spriteBytes=%zu "
-            "spriteStride=%zu metaBytes=%zu visiblePath=unchanged\n",
-            GPU2D.Num,
-            sizeof(LayerScanlineSnapshotCpu),
-            state.SpriteSnapshotStride *
-                static_cast<size_t>(kScreenH),
-            state.SpriteSnapshotStride,
-            sizeof(SpriteScanlineMetaFrameCpu));
     }
 
     if (!state.LoggedFirstAllocation)
@@ -1840,16 +1721,7 @@ void MetalRenderer2D::Reset() noexcept
     State->SpriteConfigBuffer = nil;
     State->ScanlineConfigBuffer = nil;
     State->SpriteScanlineConfigBuffer = nil;
-    State->LayerScanlineSnapshotBuffer = nil;
-    State->SpriteScanlineSnapshotBuffer = nil;
-    State->SpriteScanlineMetaBuffer = nil;
     State->CompositorConfigBuffer = nil;
-    State->LayerSnapshotValid.fill(0);
-    State->SpriteSnapshotValid.fill(0);
-    State->LayerSnapshotLastLine = -1;
-    State->SpriteSnapshotLastLine = -1;
-    State->SnapshotBuffersReady = false;
-    State->SpriteSnapshotStride = 0;
     State->Scale = 0;
 }
 
