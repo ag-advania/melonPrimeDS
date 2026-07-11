@@ -643,12 +643,12 @@ namespace MelonPrime {
                 m_platformRawFilter, m_inputSubscription);
 #endif
         }
-        const uint32_t additionalRequests = show
-            ? MelonPrimeThreadBridge::GuiRequestNone
-            : (MelonPrimeThreadBridge::GuiRequestRecenter
+        const uint32_t request = show
+            ? MelonPrimeThreadBridge::GuiRequestShowCursor
+            : (MelonPrimeThreadBridge::GuiRequestHideCursor
+               | MelonPrimeThreadBridge::GuiRequestRecenter
                | MelonPrimeThreadBridge::GuiRequestRefreshCapture);
-        m_threadBridge.RequestCursorVisibilityFromEmu(
-            show, additionalRequests);
+        m_threadBridge.RequestGuiFromEmu(request);
     }
 
     void MelonPrimeCore::FrameAdvanceCustom() { m_frameAdvanceFunc(); }

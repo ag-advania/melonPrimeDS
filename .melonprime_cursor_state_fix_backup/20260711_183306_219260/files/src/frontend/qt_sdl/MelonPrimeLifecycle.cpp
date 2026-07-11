@@ -145,10 +145,6 @@ namespace MelonPrime {
         InstanceDiagnostics::LogOwnedStates(
             emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
-        // A restarted/reopened ROM begins in menu cursor mode. Supersede any
-        // hide/capture request left by the previous match before its next GUI pass.
-        isCursorMode = true;
-        m_threadBridge.ResetCursorPresentationFromEmu();
 #ifdef _WIN32
         if (m_rawFilter)
             m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
@@ -180,14 +176,11 @@ namespace MelonPrime {
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
 
         m_layoutGenerationSeen = 0;
-        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::ResetRuntimeStateForBoot()
     {
         m_flags.packed = 0;
-        isCursorMode = true;
-        m_threadBridge.ResetCursorPresentationFromEmu();
         m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
@@ -205,7 +198,6 @@ namespace MelonPrime {
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
-        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::OnEmuStop()
@@ -213,8 +205,6 @@ namespace MelonPrime {
         InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
-        isCursorMode = true;
-        m_threadBridge.ResetCursorPresentationFromEmu();
 #ifdef _WIN32
         if (m_rawFilter)
             m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
@@ -245,7 +235,6 @@ namespace MelonPrime {
             m_currentRom,
             this);
 #endif
-        PublishUiSnapshot();
     }
 
     void MelonPrimeCore::OnEmuPause() {}
