@@ -12,7 +12,6 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1
-// MELONPRIME_METAL_COMPUTE_DEFAULT_VISIBLE_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -70,20 +69,9 @@ bool MetalComputeFinalDiffEnabled()
 
 bool MetalComputeVisibleEnabled()
 {
-    // Metal Compute Shader is an explicitly selected renderer. Its completed
-    // compute final texture is therefore the production visible source by
-    // default. Keep runtime kill switches for emergency comparison/fallback.
     static const bool enabled = []() {
-        const char* disable =
-            std::getenv("MELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE");
-        if (disable && disable[0] == '1')
-            return false;
-
-        // Preserve the old variable as a compatibility override: unset/1 means
-        // normal default-visible operation, while 0 forces RasterReference.
-        const char* legacy =
-            std::getenv("MELONPRIME_METAL_COMPUTE_VISIBLE");
-        return !legacy || legacy[0] != '0';
+        const char* value = std::getenv("MELONPRIME_METAL_COMPUTE_VISIBLE");
+        return value && value[0] == '1';
     }();
     return enabled;
 }
