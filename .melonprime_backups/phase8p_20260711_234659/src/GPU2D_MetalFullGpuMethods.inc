@@ -9,7 +9,6 @@
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
 // MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
-// MELONPRIME_METAL_2D_CHANGE_DRIVEN_SPRITE_CACHE_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -681,7 +680,7 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     if (!command)
         return false;
     command.label =
-        @"MelonPrime Metal Phase 8P Segmented 2D";
+        @"MelonPrime Metal Phase 8O Segmented 2D";
 
     {
         MTLRenderPassDescriptor* pass =

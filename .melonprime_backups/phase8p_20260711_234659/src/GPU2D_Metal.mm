@@ -7,7 +7,6 @@
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
 // MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
-// MELONPRIME_METAL_2D_CHANGE_DRIVEN_SPRITE_CACHE_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -558,23 +557,6 @@ struct MetalRenderer2D::Metal2DState
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;
-
-    // Phase 8P: cache raw OBJ source state and normalize OAM only when the
-    // source changes. Per-line work consumes precomputed active masks.
-    std::array<uint16_t, 512> SpriteSourceOAM {};
-    std::array<int, 16> SpriteSourceCaptureInfo {};
-    uint32_t SpriteSourceDispCnt = 0;
-    int32_t SpriteSourceMosaicWidth = 0;
-    uint32_t SpriteSourceVramMask = 0;
-    bool SpriteSourceCacheValid = false;
-    SpriteConfigCpu SpriteStaticConfig {};
-    std::array<SpriteConfigCpu::OAMConfig, 128>
-        SpriteNormalizedOAM {};
-    std::array<std::array<uint64_t, 2>, kScreenH>
-        SpriteActiveMask {};
-    uint64_t SpriteCacheRebuilds = 0;
-    uint64_t SpriteCacheHits = 0;
-
     int Scale = 0;
     bool FullGpuReady = false;
     bool BGUploadInitialized = false;
@@ -764,7 +746,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         state.SegmentedCaptureSlot = -1;
         state.SegmentedCaptureAttempted = false;
         state.SegmentedUploadRing.reset();
-        state.SpriteSourceCacheValid = false;
         state.Scale = 0;
         state.Device = preferredMetalDevice;
         state.Queue = nil;
@@ -1618,334 +1599,190 @@ bool MetalRenderer2D::RefreshSpriteConfig(int ystart, int yend) noexcept
         return false;
 
     Metal2DState& state = *State;
-    const uint16_t* liveOAM =
-        reinterpret_cast<const uint16_t*>(
-            &GPU.OAM[GPU2D.Num ? 0x400 : 0]);
-    std::array<int, 16> captureInfo {};
-    GPU2D.GetCaptureInfo_OBJ(captureInfo.data());
-
-    const uint32_t vramMask =
-        static_cast<uint32_t>(
-            state.VRAMTexOBJ
-                ? (state.VRAMTexOBJ.height - 1)
-                : 0);
-    const uint32_t dispCnt = GPU2D.DispCnt;
-    const int32_t mosaicWidth =
-        static_cast<int32_t>(GPU2D.OBJMosaicSize[0]);
-    const size_t oamBytes =
-        state.SpriteSourceOAM.size() * sizeof(uint16_t);
-
-    const bool sourceChanged =
-        !state.SpriteSourceCacheValid ||
-        state.SpriteSourceDispCnt != dispCnt ||
-        state.SpriteSourceMosaicWidth != mosaicWidth ||
-        state.SpriteSourceVramMask != vramMask ||
-        state.SpriteSourceCaptureInfo != captureInfo ||
-        std::memcmp(
-            state.SpriteSourceOAM.data(),
-            liveOAM,
-            oamBytes) != 0;
-
-    if (sourceChanged)
-    {
-        std::memcpy(
-            state.SpriteSourceOAM.data(),
-            liveOAM,
-            oamBytes);
-        state.SpriteSourceCaptureInfo = captureInfo;
-        state.SpriteSourceDispCnt = dispCnt;
-        state.SpriteSourceMosaicWidth = mosaicWidth;
-        state.SpriteSourceVramMask = vramMask;
-        state.SpriteStaticConfig = {};
-        state.SpriteStaticConfig.vramMask = vramMask;
-        state.SpriteNormalizedOAM = {};
-        state.SpriteActiveMask = {};
-
-        const uint16_t* oam =
-            state.SpriteSourceOAM.data();
-        for (int index = 0; index < 32; index++)
-        {
-            const int16_t* rotscale =
-                reinterpret_cast<const int16_t*>(
-                    &oam[(index * 16) + 3]);
-            auto& destination =
-                state.SpriteStaticConfig.rotscale[index];
-            destination[0] = rotscale[0];
-            destination[1] = rotscale[4];
-            destination[2] = rotscale[8];
-            destination[3] = rotscale[12];
-        }
-
-        static constexpr uint8_t kSpriteWidth[16] = {
-            8, 16, 8, 8, 16, 32, 8, 8,
-            32, 32, 16, 8, 64, 64, 32, 8,
-        };
-        static constexpr uint8_t kSpriteHeight[16] = {
-            8, 8, 16, 8, 16, 8, 32, 8,
-            32, 16, 32, 8, 64, 32, 64, 8,
-        };
-
-        auto activateRange = [&](int spriteIndex,
-                                 int32_t start,
-                                 int32_t end) {
-            start = std::max<int32_t>(start, 0);
-            end = std::min<int32_t>(end, kScreenH);
-            if (start >= end)
-                return;
-
-            const uint32_t word =
-                static_cast<uint32_t>(spriteIndex) >> 6u;
-            const uint64_t bit =
-                1ull <<
-                (static_cast<uint32_t>(spriteIndex) & 63u);
-            for (int32_t line = start; line < end; line++)
-                state.SpriteActiveMask[line][word] |= bit;
-        };
-
-        const int captureMask = GPU2D.Num ? 0x7 : 0xF;
-        for (int spriteIndex = 0;
-             spriteIndex < 128;
-             spriteIndex++)
-        {
-            const uint16_t* attrib =
-                &oam[spriteIndex * 4];
-            const uint32_t spriteType =
-                (attrib[0] >> 8) & 0x3u;
-            if (spriteType == 2u)
-                continue;
-
-            const int32_t x =
-                static_cast<int32_t>(attrib[1] << 23) >> 23;
-            const int32_t y =
-                static_cast<int32_t>(attrib[0] << 24) >> 24;
-            const uint32_t sizeParam =
-                (attrib[0] >> 14) |
-                ((attrib[1] & 0xC000u) >> 12);
-            const int32_t width = kSpriteWidth[sizeParam];
-            const int32_t height = kSpriteHeight[sizeParam];
-            int32_t boundWidth = width;
-            int32_t boundHeight = height;
-            if (spriteType == 3u)
-            {
-                boundWidth <<= 1;
-                boundHeight <<= 1;
-            }
-            if (x <= -boundWidth)
-                continue;
-
-            const uint32_t spriteMode =
-                (attrib[0] >> 10) & 0x3u;
-            if (spriteMode == 3u)
-            {
-                if ((dispCnt & 0x60u) == 0x60u)
-                    continue;
-                if ((attrib[2] >> 12) == 0)
-                    continue;
-            }
-
-            SpriteConfigCpu::OAMConfig normalized {};
-            normalized.position[0] = x;
-            normalized.position[1] = y;
-            normalized.size[0] = width;
-            normalized.size[1] = height;
-            normalized.boundSize[0] = boundWidth;
-            normalized.boundSize[1] = boundHeight;
-
-            if ((spriteType & 1u) != 0u)
-            {
-                normalized.flip[0] = 0;
-                normalized.flip[1] = 0;
-                normalized.rotscale =
-                    (attrib[1] >> 9) & 0x1Fu;
-            }
-            else
-            {
-                normalized.flip[0] =
-                    (attrib[1] & (1u << 12)) != 0u;
-                normalized.flip[1] =
-                    (attrib[1] & (1u << 13)) != 0u;
-                normalized.rotscale = 0xFFFFFFFFu;
-            }
-
-            normalized.objMode = spriteMode;
-            normalized.mosaic =
-                (attrib[0] & (1u << 12)) != 0u &&
-                spriteMode != 2u;
-            normalized.bgPrio =
-                (attrib[2] >> 10) & 0x3u;
-
-            const uint32_t tileNumber =
-                attrib[2] & 0x3FFu;
-            if (spriteMode == 3u)
-            {
-                normalized.type = 2u;
-                if ((dispCnt & (1u << 6)) != 0u)
-                {
-                    normalized.tileOffset =
-                        tileNumber <<
-                        (7u + ((dispCnt >> 22) & 0x1u));
-                    normalized.tileStride =
-                        static_cast<uint32_t>(width * 2);
-                }
-                else
-                {
-                    const bool is256 =
-                        (dispCnt & (1u << 5)) != 0u;
-                    uint32_t tileOffset = 0;
-                    uint32_t tileStride = 0;
-                    if (is256)
-                    {
-                        tileOffset =
-                            ((tileNumber & 0x01Fu) << 4) +
-                            ((tileNumber & 0x3E0u) << 7);
-                        tileStride = 256u * 2u;
-                    }
-                    else
-                    {
-                        tileOffset =
-                            ((tileNumber & 0x00Fu) << 4) +
-                            ((tileNumber & 0x3F0u) << 7);
-                        tileStride = 128u * 2u;
-                    }
-
-                    int capturedBlock = -1;
-                    uint32_t startAddress = tileOffset;
-                    uint32_t endAddress =
-                        startAddress +
-                        static_cast<uint32_t>(height) * tileStride;
-                    startAddress >>= 14;
-                    endAddress =
-                        (endAddress + 0x3FFFu) >> 14;
-                    for (uint32_t block = startAddress;
-                         block < endAddress;
-                         block++)
-                    {
-                        const int captured =
-                            captureInfo[block & captureMask];
-                        if (captured != -1)
-                            capturedBlock = captured;
-                    }
-
-                    if (capturedBlock != -1)
-                    {
-                        if (!is256)
-                        {
-                            normalized.type = 3u;
-                            tileStride =
-                                static_cast<uint32_t>(capturedBlock);
-                            tileOffset &= 0x7FFFu;
-                        }
-                        else
-                        {
-                            normalized.type = 4u;
-                            tileStride =
-                                static_cast<uint32_t>(capturedBlock >> 2);
-                            tileOffset &= 0x1FFFFu;
-                        }
-                    }
-
-                    normalized.tileOffset = tileOffset;
-                    normalized.tileStride = tileStride;
-                }
-
-                normalized.palOffset =
-                    1u + (attrib[2] >> 12);
-            }
-            else
-            {
-                if ((dispCnt & (1u << 4)) != 0u)
-                {
-                    normalized.tileOffset =
-                        tileNumber <<
-                        (5u + ((dispCnt >> 20) & 0x3u));
-                    normalized.tileStride =
-                        static_cast<uint32_t>((width >> 3) * 32);
-                    if ((attrib[0] & (1u << 13)) != 0u)
-                        normalized.tileStride <<= 1;
-                }
-                else
-                {
-                    normalized.tileOffset = tileNumber << 5;
-                    normalized.tileStride = 32u * 32u;
-                }
-
-                if ((attrib[0] & (1u << 13)) != 0u)
-                {
-                    normalized.type = 1u;
-                    normalized.palOffset =
-                        (dispCnt & (1u << 31)) != 0u
-                            ? (1u + (attrib[2] >> 12))
-                            : 0u;
-                }
-                else
-                {
-                    normalized.type = 0u;
-                    normalized.palOffset =
-                        (attrib[2] >> 12) << 4;
-                }
-            }
-
-            state.SpriteNormalizedOAM[spriteIndex] = normalized;
-            activateRange(
-                spriteIndex,
-                y,
-                y + boundHeight);
-            const int32_t wrappedY = y & 0xFF;
-            activateRange(
-                spriteIndex,
-                wrappedY,
-                wrappedY + boundHeight);
-        }
-
-        state.SpriteSourceCacheValid = true;
-        state.SpriteCacheRebuilds++;
-    }
-    else
-    {
-        state.SpriteCacheHits++;
-    }
-
-    state.SpriteConfig = state.SpriteStaticConfig;
+    state.SpriteConfig = {};
+    state.SpriteConfig.vramMask = static_cast<uint32_t>(state.VRAMTexOBJ ? (state.VRAMTexOBJ.height - 1) : 0);
     state.NumSprites = 0;
     state.SpriteUseMosaic = false;
 
-    const int rangeStart =
-        std::clamp(ystart, 0, kScreenH);
-    const int rangeEnd =
-        std::clamp(yend, 0, kScreenH);
-    std::array<uint64_t, 2> active {};
-    for (int line = rangeStart;
-         line < rangeEnd;
-         line++)
+    const uint16_t* oam = reinterpret_cast<const uint16_t*>(&GPU.OAM[GPU2D.Num ? 0x400 : 0]);
+    int captureInfo[16] = {};
+    GPU2D.GetCaptureInfo_OBJ(captureInfo);
+    const int captureMask = GPU2D.Num ? 0x7 : 0xF;
+
+    for (int i = 0; i < 32; i++)
     {
-        active[0] |= state.SpriteActiveMask[line][0];
-        active[1] |= state.SpriteActiveMask[line][1];
+        const int16_t* rotscale = reinterpret_cast<const int16_t*>(&oam[(i * 16) + 3]);
+        auto& rotDst = state.SpriteConfig.rotscale[i];
+        rotDst[0] = rotscale[0];
+        rotDst[1] = rotscale[4];
+        rotDst[2] = rotscale[8];
+        rotDst[3] = rotscale[12];
     }
 
-    for (uint32_t word = 0; word < 2u; word++)
+    static constexpr uint8_t kSpriteWidth[16] = {
+        8, 16, 8, 8, 16, 32, 8, 8, 32, 32, 16, 8, 64, 64, 32, 8,
+    };
+    static constexpr uint8_t kSpriteHeight[16] = {
+        8, 8, 16, 8, 16, 8, 32, 8, 32, 16, 32, 8, 64, 32, 64, 8,
+    };
+
+    for (int sprNum = 0; sprNum < 128; sprNum++)
     {
-        uint64_t bits = active[word];
-        while (bits != 0u && state.NumSprites < 128)
+        const uint16_t* attrib = &oam[sprNum * 4];
+        const uint32_t sprType = (attrib[0] >> 8) & 0x3;
+        if (sprType == 2)
+            continue;
+
+        const int32_t xpos = static_cast<int32_t>(attrib[1] << 23) >> 23;
+        const int32_t ypos = static_cast<int32_t>(attrib[0] << 24) >> 24;
+        const uint32_t sizeParam = (attrib[0] >> 14) | ((attrib[1] & 0xC000) >> 12);
+        const int32_t width = kSpriteWidth[sizeParam];
+        const int32_t height = kSpriteHeight[sizeParam];
+        int32_t boundWidth = width;
+        int32_t boundHeight = height;
+
+        if (sprType == 3)
         {
-            const uint32_t bit =
-                static_cast<uint32_t>(
-                    __builtin_ctzll(bits));
-            bits &= bits - 1u;
-            const uint32_t spriteIndex =
-                (word << 6u) + bit;
-            const auto& normalized =
-                state.SpriteNormalizedOAM[spriteIndex];
-            state.SpriteConfig.oam[state.NumSprites++] =
-                normalized;
-            if (normalized.mosaic != 0u && mosaicWidth > 0)
-                state.SpriteUseMosaic = true;
+            boundWidth <<= 1;
+            boundHeight <<= 1;
         }
+        if (xpos <= -boundWidth)
+            continue;
+
+        const bool yCheck0 = ((ypos + boundHeight) > ystart) && (ypos < yend);
+        const bool yCheck1 = (((ypos & 0xFF) + boundHeight) > ystart) && ((ypos & 0xFF) < yend);
+        if (!(yCheck0 || yCheck1))
+            continue;
+
+        const uint32_t sprMode = (attrib[0] >> 10) & 0x3;
+        if (sprMode == 3)
+        {
+            if ((GPU2D.DispCnt & 0x60) == 0x60)
+                continue;
+            if ((attrib[2] >> 12) == 0)
+                continue;
+        }
+
+        if (state.NumSprites >= 128)
+            break;
+
+        auto& sprCfg = state.SpriteConfig.oam[state.NumSprites];
+        sprCfg.position[0] = xpos;
+        sprCfg.position[1] = ypos;
+        sprCfg.size[0] = width;
+        sprCfg.size[1] = height;
+        sprCfg.boundSize[0] = boundWidth;
+        sprCfg.boundSize[1] = boundHeight;
+
+        if (sprType & 1)
+        {
+            sprCfg.flip[0] = 0;
+            sprCfg.flip[1] = 0;
+            sprCfg.rotscale = (attrib[1] >> 9) & 0x1F;
+        }
+        else
+        {
+            sprCfg.flip[0] = !!(attrib[1] & (1 << 12));
+            sprCfg.flip[1] = !!(attrib[1] & (1 << 13));
+            sprCfg.rotscale = 0xFFFFFFFFu;
+        }
+
+        sprCfg.objMode = sprMode;
+        sprCfg.mosaic = !!(attrib[0] & (1 << 12)) && (sprMode != 2);
+        sprCfg.bgPrio = (attrib[2] >> 10) & 0x3;
+
+        const uint32_t tileNum = attrib[2] & 0x3FF;
+        if (sprMode == 3)
+        {
+            sprCfg.type = 2;
+            if (GPU2D.DispCnt & (1 << 6))
+            {
+                sprCfg.tileOffset = tileNum << (7 + ((GPU2D.DispCnt >> 22) & 0x1));
+                sprCfg.tileStride = width * 2;
+            }
+            else
+            {
+                const bool is256 = !!(GPU2D.DispCnt & (1 << 5));
+                uint32_t tileOffset = 0;
+                uint32_t tileStride = 0;
+                if (is256)
+                {
+                    tileOffset = ((tileNum & 0x01F) << 4) + ((tileNum & 0x3E0) << 7);
+                    tileStride = 256 * 2;
+                }
+                else
+                {
+                    tileOffset = ((tileNum & 0x00F) << 4) + ((tileNum & 0x3F0) << 7);
+                    tileStride = 128 * 2;
+                }
+
+                int capBlock = -1;
+                uint32_t startAddr = tileOffset;
+                uint32_t endAddr = startAddr + (height * tileStride);
+                startAddr >>= 14;
+                endAddr = (endAddr + 0x3FFF) >> 14;
+                for (uint32_t block = startAddr; block < endAddr; block++)
+                {
+                    const int captured = captureInfo[block & captureMask];
+                    if (captured != -1)
+                        capBlock = captured;
+                }
+
+                if (capBlock != -1)
+                {
+                    if (!is256)
+                    {
+                        sprCfg.type = 3;
+                        tileStride = capBlock;
+                        tileOffset &= 0x7FFF;
+                    }
+                    else
+                    {
+                        sprCfg.type = 4;
+                        tileStride = capBlock >> 2;
+                        tileOffset &= 0x1FFFF;
+                    }
+                }
+
+                sprCfg.tileOffset = tileOffset;
+                sprCfg.tileStride = tileStride;
+            }
+
+            sprCfg.palOffset = 1 + (attrib[2] >> 12);
+        }
+        else
+        {
+            if (GPU2D.DispCnt & (1 << 4))
+            {
+                sprCfg.tileOffset = tileNum << (5 + ((GPU2D.DispCnt >> 20) & 0x3));
+                sprCfg.tileStride = (width >> 3) * 32;
+                if (attrib[0] & (1 << 13))
+                    sprCfg.tileStride <<= 1;
+            }
+            else
+            {
+                sprCfg.tileOffset = tileNum << 5;
+                sprCfg.tileStride = 32 * 32;
+            }
+
+            if (attrib[0] & (1 << 13))
+            {
+                sprCfg.type = 1;
+                sprCfg.palOffset = (GPU2D.DispCnt & (1 << 31)) ? (1 + (attrib[2] >> 12)) : 0;
+            }
+            else
+            {
+                sprCfg.type = 0;
+                sprCfg.palOffset = (attrib[2] >> 12) << 4;
+            }
+        }
+
+        state.NumSprites++;
+        if (sprCfg.mosaic && (GPU2D.OBJMosaicSize[0] > 0))
+            state.SpriteUseMosaic = true;
     }
 
-    std::memcpy(
-        [state.SpriteConfigBuffer contents],
-        &state.SpriteConfig,
-        sizeof(state.SpriteConfig));
+    std::memcpy([state.SpriteConfigBuffer contents], &state.SpriteConfig, sizeof(state.SpriteConfig));
     return true;
 }
 
@@ -2218,7 +2055,6 @@ void MetalRenderer2D::Reset() noexcept
     State->SnapshotBuffersReady = false;
     State->SegmentedRenderReady = false;
     State->SpriteSnapshotStride = 0;
-    State->SpriteSourceCacheValid = false;
     State->Scale = 0;
 }
 
