@@ -7,6 +7,12 @@ namespace MelonPrime::ScreenCursorPolicy {
 void ClipCenter1px(ScreenPanel& panel);
 void UpdateClipIfNeeded(ScreenPanel& panel);
 void Unclip(ScreenPanel& panel);
+
+// Temporarily release the active platform capture while preserving the aim
+// capture request. Used for focus loss, modal windows, hide/show, and
+// parent/window-state transitions.
+void Suspend(ScreenPanel& panel);
+
 void ContainAimCursorIfNeeded(ScreenPanel& panel);
 
 // Unconditional cursor-state release for panel shutdown. Unlike Unclip(),

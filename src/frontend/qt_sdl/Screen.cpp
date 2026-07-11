@@ -81,10 +81,11 @@
 using namespace melonDS;
 
 #if !defined(_WIN32) && !defined(__APPLE__)
-// Qt's Wayland WId is not a wl_surface. Keep the platform native interface
-// available on every supported Qt version so the actual child surface can be
-// passed to EGL and the pointer-constraints protocol.
+// Qt < 6.5 uses QPlatformNativeInterface for both X11 and Wayland. Qt 6.5+
+// only needs the private QPA header when the Wayland backend is compiled.
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) || defined(WAYLAND_ENABLED)
 #include <qpa/qplatformnativeinterface.h>
+#endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 using namespace QNativeInterface;
 #endif
@@ -379,7 +380,10 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
-    closing = true;
+    if (!closing) {
+        closing = true;
+        releaseCursorStateForClose();
+    }
 #endif
 }
 
@@ -722,13 +726,9 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         const bool strayed = !safeRect.contains(local);
 
         if (core->IsPlatformRawAimActive()) {
-            // Platform raw owns aim deltas (warp-immune). Threshold containment only.
+            // Raw motion owns deltas, while the X11 grab continues to own
+            // pointer routing and hidden-cursor lifetime.
             aimLastGlobalValid.store(false, std::memory_order_release);
-            if (MelonPrime::PlatformInput_IsXcb()
-                && QWidget::mouseGrabber() == this)
-            {
-                releaseMouse();
-            }
             if (strayed)
                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;
@@ -859,6 +859,36 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
 
 bool ScreenPanel::event(QEvent * event)
 {
+#ifdef MELONPRIME_DS
+    // MELONPRIME_CURSOR_CAPTURE_STATE_V3
+    // Suspend on every transition that can transfer input to another window.
+    // Reacquire on the next event-loop turn after activation/unblocking so Qt
+    // and MainWindow have finished updating their focus state.
+    switch (event->type())
+    {
+    case QEvent::WindowBlocked:
+    case QEvent::WindowDeactivate:
+    case QEvent::Hide:
+    case QEvent::ParentChange:
+        MelonPrime::ScreenCursorPolicy::Suspend(*this);
+        break;
+    case QEvent::WindowActivate:
+    case QEvent::WindowUnblocked:
+    case QEvent::Show:
+    case QEvent::WindowStateChange:
+        QTimer::singleShot(0, this, [this]() {
+            if (!closing && qApp && !qApp->closingDown())
+                updateClipIfNeeded();
+        });
+        break;
+    case QEvent::Close:
+        beginClose();
+        break;
+    default:
+        break;
+    }
+#endif
+
     if (event->type() == QEvent::TouchBegin
         || event->type() == QEvent::TouchEnd
         || event->type() == QEvent::TouchUpdate)
@@ -2016,11 +2046,9 @@ void ScreenPanel::unfocus()
     }
 #endif
 
-    if (!isVisible())
-        return;
-
-    setCursor(Qt::ArrowCursor);
-    unclip();
+    // Focus loss is temporary. Preserve clipWanted and only release the
+    // active platform capture; focus/click activation can reacquire it.
+    MelonPrime::ScreenCursorPolicy::Suspend(*this);
 }
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)

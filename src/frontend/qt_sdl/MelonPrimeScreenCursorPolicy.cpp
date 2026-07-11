@@ -121,53 +121,62 @@ void ClipCenter1px(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
+
+    // MELONPRIME_CURSOR_CAPTURE_STATE_V3:
+    // clipWanted is the persistent request; platform locks/grabs are the
+    // transient active state. This mirrors the request-vs-active split used by
+    // mature emulator render widgets.
     panel.setClipWantedForMelonPrime(true);
-    panel.setCursor(Qt::BlankCursor);
+
+    const auto* core = panel.melonPrimeCoreForPolicy();
+    if (!panel.isActiveVisibleWindowForMelonPrime()
+        || (core && !core->isFocused.load(std::memory_order_acquire)))
+    {
+        panel.setCursor(Qt::ArrowCursor);
+        Suspend(panel);
+        return;
+    }
+
 #if defined(__linux__)
     panel.resetAimMouseDelta();
 #endif
+    panel.setCursor(Qt::BlankCursor);
 
 #if defined(__APPLE__)
-    if (panel.isActiveVisibleWindowForMelonPrime()) {
-        const auto* core = panel.melonPrimeCoreForPolicy();
-        const QPoint c = panel.aimContainmentCenterGlobalForPolicy();
-        const bool gcMouseActive = core && core->IsGcMouseAimActive();
-        PlatformInput_WarpCursor(c.x(), c.y());
-        MacSetAimCursorCaptured(gcMouseActive);
-    }
+    const QPoint c = panel.aimContainmentCenterGlobalForPolicy();
+    const bool gcMouseActive = core && core->IsGcMouseAimActive();
+    PlatformInput_WarpCursor(c.x(), c.y());
+    MacSetAimCursorCaptured(gcMouseActive);
 #elif defined(__linux__)
-    // MELONPRIME_WAYLAND_POINTER_LOCK_V1: Wayland does not permit arbitrary global cursor warps.
-    // Request compositor-native relative motion and pointer locking first.
+    // Native Wayland is the preferred backend because global warps and X11
+    // grabs are not valid Wayland confinement primitives.
     if (panel.setWaylandPointerLockForMelonPrime(true))
         return;
 
-    if (panel.isActiveVisibleWindowForMelonPrime()) {
-        const auto* core = panel.melonPrimeCoreForPolicy();
-        const bool rawActive = core && core->IsPlatformRawAimActive();
+    if (PlatformInput_IsXcb()) {
+        QWidget* const grabber = QWidget::mouseGrabber();
+        if (grabber == nullptr)
+            panel.grabMouse(QCursor(Qt::BlankCursor));
 
-        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
-        // Keep receiving Qt fallback motion across native child-window edges.
-        if (PlatformInput_IsXcb()) {
-            if (!rawActive && QWidget::mouseGrabber() == nullptr)
-                panel.grabMouse();
-            else if (rawActive && QWidget::mouseGrabber() == &panel)
-                panel.releaseMouse();
+        // Never steal a modal/menu grab. The request remains set and a later
+        // activation/click event will retry capture.
+        if (QWidget::mouseGrabber() != &panel) {
+            panel.setCursor(Qt::ArrowCursor);
+            return;
         }
 
-        if (!rawActive) {
-            const QPoint c = panel.mapToGlobal(panel.rect().center());
-            PlatformInput_WarpCursor(c.x(), c.y());
-        }
-    }
-#elif !defined(_WIN32)
-    if (panel.isActiveVisibleWindowForMelonPrime()) {
+        // Raw motion owns aim deltas when available; the grab only owns cursor
+        // routing/visibility. Keeping both active avoids a transition hole when
+        // XInput2 starts delivering after the Qt fallback has already begun.
         const QPoint c = panel.mapToGlobal(panel.rect().center());
         PlatformInput_WarpCursor(c.x(), c.y());
     }
+#elif !defined(_WIN32)
+    const QPoint c = panel.mapToGlobal(panel.rect().center());
+    PlatformInput_WarpCursor(c.x(), c.y());
 #endif
 
 #ifdef _WIN32
-    if (!panel.isActiveVisibleWindowForMelonPrime()) return;
     const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
     RECT clip = computeCenter1pxClipRectSafe(hwnd);
     clip = shrinkRectHeightToHalfCentered(clip);
@@ -175,40 +184,37 @@ void ClipCenter1px(ScreenPanel& panel)
 #endif
 }
 
+void Suspend(ScreenPanel& panel)
+{
+    // Release only the active backend state. clipWanted intentionally remains
+    // unchanged so activation/show/click can reacquire it safely.
+#if defined(__APPLE__)
+    MacSetAimCursorCaptured(false);
+#endif
+#if defined(__linux__)
+    panel.setWaylandPointerLockForMelonPrime(false);
+    if (QWidget::mouseGrabber() == &panel)
+        panel.releaseMouse();
+    panel.resetAimMouseDelta();
+#endif
+#ifdef _WIN32
+    ClipCursor(nullptr);
+#endif
+    panel.setCursor(Qt::ArrowCursor);
+}
+
 void Unclip(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
     panel.setClipWantedForMelonPrime(false);
-#if defined(__APPLE__)
-    MacSetAimCursorCaptured(false);
-#endif
-#if defined(__linux__)
-    panel.setWaylandPointerLockForMelonPrime(false);
-    if (QWidget::mouseGrabber() == &panel)
-        panel.releaseMouse();
-    panel.resetAimMouseDelta();
-#endif
-#ifdef _WIN32
-    ClipCursor(nullptr);
-#endif
+    Suspend(panel);
 }
 
 void ReleaseForClose(ScreenPanel& panel)
 {
     panel.setClipWantedForMelonPrime(false);
-#if defined(__APPLE__)
-    MacSetAimCursorCaptured(false);
-#endif
-#if defined(__linux__)
-    panel.setWaylandPointerLockForMelonPrime(false);
-    if (QWidget::mouseGrabber() == &panel)
-        panel.releaseMouse();
-    panel.resetAimMouseDelta();
-#endif
-#ifdef _WIN32
-    ClipCursor(nullptr);
-#endif
+    Suspend(panel);
 }
 
 void ConfineToBottomScreen(ScreenPanel& panel)
@@ -242,8 +248,8 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
     if (core && !core->isFocused.load(std::memory_order_acquire)) {
-        panel.setCursor(Qt::ArrowCursor);
-        Unclip(panel);
+        // Temporary focus loss must not erase the persistent capture request.
+        Suspend(panel);
         return;
     }
 

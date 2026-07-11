@@ -378,146 +378,160 @@ else()
 
     option(ENABLE_WAYLAND "Enable Wayland support" ON)
 
+    # MelonPrimeDS Linux window/input backend policy.
+    #
+    # ENABLE_WAYLAND controls the optional Wayland EGL backend. X11 remains the
+    # baseline Linux backend, so missing Wayland development packages must not
+    # make an otherwise valid Linux build fail.
+    set(MELONPRIME_WAYLAND_ACTIVE OFF)
+    set(MELONPRIME_WAYLAND_POINTER_LOCK_ACTIVE OFF)
+
+    set(MELONPRIME_WAYLAND_POINTER_LOCK "AUTO" CACHE STRING
+        "Native Wayland mouse lock: AUTO, ON, or OFF")
+    set_property(CACHE MELONPRIME_WAYLAND_POINTER_LOCK
+        PROPERTY STRINGS AUTO ON OFF)
+    string(TOUPPER "${MELONPRIME_WAYLAND_POINTER_LOCK}"
+        MELONPRIME_WAYLAND_POINTER_LOCK_MODE)
+    if (NOT MELONPRIME_WAYLAND_POINTER_LOCK_MODE MATCHES "^(AUTO|ON|OFF)$")
+        message(FATAL_ERROR
+            "MELONPRIME_WAYLAND_POINTER_LOCK must be AUTO, ON, or OFF")
+    endif()
+
     if (ENABLE_WAYLAND)
-        # MELONPRIME_OPTIONAL_WAYLAND_BUILD_V1
-        #
-        # Wayland EGL support and MelonPrime's native pointer lock are optional.
-        # A Linux machine that only has X11 development packages must still be
-        # able to configure and build successfully.
-        set(MELONPRIME_WAYLAND_BUILD_AVAILABLE OFF)
-
-        find_package(ECM QUIET NO_MODULE)
-        if (ECM_FOUND)
-            list(APPEND CMAKE_MODULE_PATH "${ECM_MODULE_PATH}")
-            find_package(Wayland QUIET Client)
-
-            if (TARGET Wayland::Client OR Wayland_Client_LIBRARIES)
-                set(MELONPRIME_WAYLAND_BUILD_AVAILABLE ON)
-            endif()
-        endif()
-
-        if (NOT MELONPRIME_WAYLAND_BUILD_AVAILABLE)
-            message(WARNING
-                "Wayland development dependencies were not found; building X11-only. "
-                "Install extra-cmake-modules and libwayland development files to enable Wayland, "
-                "or pass -DENABLE_WAYLAND=OFF to suppress this warning.")
-            set(ENABLE_WAYLAND OFF)
-        else()
+        # PkgConfig is already a required project dependency. Using the standard
+        # wayland-client .pc file avoids requiring ECM solely for Wayland.
+        pkg_check_modules(WaylandClient QUIET IMPORTED_TARGET wayland-client)
+        if (TARGET PkgConfig::WaylandClient)
+            set(MELONPRIME_WAYLAND_ACTIVE ON)
+            target_link_libraries(melonDS PRIVATE PkgConfig::WaylandClient)
             target_compile_definitions(melonDS PRIVATE WAYLAND_ENABLED)
             target_sources(melonDS PRIVATE
                 ../duckstation/gl/context_egl_wayland.cpp
             )
-
-            if (TARGET Wayland::Client)
-                target_link_libraries(melonDS PRIVATE Wayland::Client)
-            else()
-                target_link_libraries(melonDS PRIVATE ${Wayland_Client_LIBRARIES})
-                target_include_directories(melonDS PRIVATE ${Wayland_Client_INCLUDE_DIRS})
-            endif()
-
-            option(MELONPRIME_WAYLAND_POINTER_LOCK
-                "Enable native Wayland relative-pointer/pointer-constraints mouse lock when dependencies are available"
-                ON)
-
-            if (MELONPRIME_WAYLAND_POINTER_LOCK)
-                # CMake 3.16 compatibility: do not use find_program(REQUIRED),
-                # which was introduced in CMake 3.18.
-                find_program(MELONPRIME_WAYLAND_SCANNER_EXECUTABLE
-                    NAMES wayland-scanner)
-
-                pkg_get_variable(MELONPRIME_WAYLAND_PROTOCOLS_DATADIR
-                    wayland-protocols pkgdatadir)
-
-                set(MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE ON)
-                if (NOT MELONPRIME_WAYLAND_SCANNER_EXECUTABLE)
-                    set(MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE OFF)
-                endif()
-                if (NOT MELONPRIME_WAYLAND_PROTOCOLS_DATADIR)
-                    set(MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE OFF)
-                endif()
-
-                if (MELONPRIME_WAYLAND_PROTOCOLS_DATADIR)
-                    set(MELONPRIME_RELATIVE_POINTER_XML
-                        "${MELONPRIME_WAYLAND_PROTOCOLS_DATADIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml")
-                    set(MELONPRIME_POINTER_CONSTRAINTS_XML
-                        "${MELONPRIME_WAYLAND_PROTOCOLS_DATADIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml")
-
-                    if (NOT EXISTS "${MELONPRIME_RELATIVE_POINTER_XML}")
-                        set(MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE OFF)
-                    endif()
-                    if (NOT EXISTS "${MELONPRIME_POINTER_CONSTRAINTS_XML}")
-                        set(MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE OFF)
-                    endif()
-                endif()
-
-                if (MELONPRIME_WAYLAND_POINTER_LOCK_AVAILABLE)
-                    set(MELONPRIME_WAYLAND_GEN_DIR
-                        "${CMAKE_CURRENT_BINARY_DIR}/melonprime-wayland-protocols")
-                    file(MAKE_DIRECTORY "${MELONPRIME_WAYLAND_GEN_DIR}")
-
-                    set(MELONPRIME_RELATIVE_POINTER_HEADER
-                        "${MELONPRIME_WAYLAND_GEN_DIR}/relative-pointer-unstable-v1-client-protocol.h")
-                    set(MELONPRIME_RELATIVE_POINTER_CODE
-                        "${MELONPRIME_WAYLAND_GEN_DIR}/relative-pointer-unstable-v1-protocol.c")
-                    set(MELONPRIME_POINTER_CONSTRAINTS_HEADER
-                        "${MELONPRIME_WAYLAND_GEN_DIR}/pointer-constraints-unstable-v1-client-protocol.h")
-                    set(MELONPRIME_POINTER_CONSTRAINTS_CODE
-                        "${MELONPRIME_WAYLAND_GEN_DIR}/pointer-constraints-unstable-v1-protocol.c")
-
-                    add_custom_command(
-                        OUTPUT
-                            "${MELONPRIME_RELATIVE_POINTER_HEADER}"
-                            "${MELONPRIME_RELATIVE_POINTER_CODE}"
-                        COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
-                            client-header
-                            "${MELONPRIME_RELATIVE_POINTER_XML}"
-                            "${MELONPRIME_RELATIVE_POINTER_HEADER}"
-                        COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
-                            private-code
-                            "${MELONPRIME_RELATIVE_POINTER_XML}"
-                            "${MELONPRIME_RELATIVE_POINTER_CODE}"
-                        DEPENDS "${MELONPRIME_RELATIVE_POINTER_XML}"
-                        VERBATIM)
-
-                    add_custom_command(
-                        OUTPUT
-                            "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
-                            "${MELONPRIME_POINTER_CONSTRAINTS_CODE}"
-                        COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
-                            client-header
-                            "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
-                            "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
-                        COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
-                            private-code
-                            "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
-                            "${MELONPRIME_POINTER_CONSTRAINTS_CODE}"
-                        DEPENDS "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
-                        VERBATIM)
-
-                    target_sources(melonDS PRIVATE
-                        MelonPrimeWaylandPointerLock.cpp
-                        "${MELONPRIME_RELATIVE_POINTER_HEADER}"
-                        "${MELONPRIME_RELATIVE_POINTER_CODE}"
-                        "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
-                        "${MELONPRIME_POINTER_CONSTRAINTS_CODE}")
-                    target_include_directories(melonDS PRIVATE
-                        "${MELONPRIME_WAYLAND_GEN_DIR}")
-                    target_compile_definitions(melonDS PRIVATE
-                        MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK=1)
-
-                    message(STATUS "MelonPrime native Wayland mouse lock: enabled")
-                else()
-                    message(WARNING
-                        "MelonPrime native Wayland mouse lock is disabled because wayland-scanner "
-                        "or the wayland-protocols XML files were not found. "
-                        "The build will continue with the Qt/X11 mouse fallback.")
-                endif()
-            else()
-                message(STATUS "MelonPrime native Wayland mouse lock: disabled by option")
-            endif()
+            message(STATUS "Linux Wayland EGL backend: enabled")
+        else()
+            message(WARNING
+                "wayland-client development files were not found; "
+                "continuing with the X11 backend only. "
+                "Pass -DENABLE_WAYLAND=OFF to request X11-only explicitly.")
         endif()
     else()
-        message(STATUS "Wayland support disabled; building X11-only")
+        message(STATUS "Linux Wayland EGL backend: disabled (X11-only build)")
+    endif()
+
+    if (MELONPRIME_WAYLAND_POINTER_LOCK_MODE STREQUAL "ON"
+        AND NOT MELONPRIME_WAYLAND_ACTIVE)
+        message(FATAL_ERROR
+            "MELONPRIME_WAYLAND_POINTER_LOCK=ON requires ENABLE_WAYLAND and "
+            "the wayland-client development package")
+    endif()
+
+    if (MELONPRIME_WAYLAND_ACTIVE
+        AND NOT MELONPRIME_WAYLAND_POINTER_LOCK_MODE STREQUAL "OFF")
+        # The protocol generator and XML descriptions are optional in AUTO
+        # mode. ON mode intentionally fails when the explicitly requested
+        # feature cannot be built.
+        find_program(MELONPRIME_WAYLAND_SCANNER_EXECUTABLE
+            NAMES wayland-scanner)
+        pkg_get_variable(MELONPRIME_WAYLAND_PROTOCOLS_DATADIR
+            wayland-protocols pkgdatadir)
+
+        set(_mp_wayland_pointer_lock_missing "")
+        if (NOT MELONPRIME_WAYLAND_SCANNER_EXECUTABLE)
+            list(APPEND _mp_wayland_pointer_lock_missing "wayland-scanner")
+        endif()
+        if (NOT MELONPRIME_WAYLAND_PROTOCOLS_DATADIR)
+            list(APPEND _mp_wayland_pointer_lock_missing "wayland-protocols")
+        else()
+            set(MELONPRIME_RELATIVE_POINTER_XML
+                "${MELONPRIME_WAYLAND_PROTOCOLS_DATADIR}/unstable/relative-pointer/relative-pointer-unstable-v1.xml")
+            set(MELONPRIME_POINTER_CONSTRAINTS_XML
+                "${MELONPRIME_WAYLAND_PROTOCOLS_DATADIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml")
+
+            if (NOT EXISTS "${MELONPRIME_RELATIVE_POINTER_XML}")
+                list(APPEND _mp_wayland_pointer_lock_missing
+                    "relative-pointer-unstable-v1.xml")
+            endif()
+            if (NOT EXISTS "${MELONPRIME_POINTER_CONSTRAINTS_XML}")
+                list(APPEND _mp_wayland_pointer_lock_missing
+                    "pointer-constraints-unstable-v1.xml")
+            endif()
+        endif()
+
+        if (_mp_wayland_pointer_lock_missing)
+            list(JOIN _mp_wayland_pointer_lock_missing ", "
+                _mp_wayland_pointer_lock_missing_text)
+            if (MELONPRIME_WAYLAND_POINTER_LOCK_MODE STREQUAL "ON")
+                message(FATAL_ERROR
+                    "Native Wayland mouse lock was explicitly required, but "
+                    "these dependencies are missing: "
+                    "${_mp_wayland_pointer_lock_missing_text}")
+            else()
+                message(STATUS
+                    "Native Wayland mouse lock: disabled in AUTO mode "
+                    "(missing: ${_mp_wayland_pointer_lock_missing_text}); "
+                    "the build will use the X11/Qt fallback path")
+            endif()
+        else()
+            set(MELONPRIME_WAYLAND_GEN_DIR
+                "${CMAKE_CURRENT_BINARY_DIR}/melonprime-wayland-protocols")
+            file(MAKE_DIRECTORY "${MELONPRIME_WAYLAND_GEN_DIR}")
+
+            set(MELONPRIME_RELATIVE_POINTER_HEADER
+                "${MELONPRIME_WAYLAND_GEN_DIR}/relative-pointer-unstable-v1-client-protocol.h")
+            set(MELONPRIME_RELATIVE_POINTER_CODE
+                "${MELONPRIME_WAYLAND_GEN_DIR}/relative-pointer-unstable-v1-protocol.c")
+            set(MELONPRIME_POINTER_CONSTRAINTS_HEADER
+                "${MELONPRIME_WAYLAND_GEN_DIR}/pointer-constraints-unstable-v1-client-protocol.h")
+            set(MELONPRIME_POINTER_CONSTRAINTS_CODE
+                "${MELONPRIME_WAYLAND_GEN_DIR}/pointer-constraints-unstable-v1-protocol.c")
+
+            add_custom_command(
+                OUTPUT
+                    "${MELONPRIME_RELATIVE_POINTER_HEADER}"
+                    "${MELONPRIME_RELATIVE_POINTER_CODE}"
+                COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
+                    client-header
+                    "${MELONPRIME_RELATIVE_POINTER_XML}"
+                    "${MELONPRIME_RELATIVE_POINTER_HEADER}"
+                COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
+                    private-code
+                    "${MELONPRIME_RELATIVE_POINTER_XML}"
+                    "${MELONPRIME_RELATIVE_POINTER_CODE}"
+                DEPENDS "${MELONPRIME_RELATIVE_POINTER_XML}"
+                VERBATIM)
+
+            add_custom_command(
+                OUTPUT
+                    "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
+                    "${MELONPRIME_POINTER_CONSTRAINTS_CODE}"
+                COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
+                    client-header
+                    "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
+                    "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
+                COMMAND "${MELONPRIME_WAYLAND_SCANNER_EXECUTABLE}"
+                    private-code
+                    "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
+                    "${MELONPRIME_POINTER_CONSTRAINTS_CODE}"
+                DEPENDS "${MELONPRIME_POINTER_CONSTRAINTS_XML}"
+                VERBATIM)
+
+            target_sources(melonDS PRIVATE
+                MelonPrimeWaylandPointerLock.cpp
+                "${MELONPRIME_RELATIVE_POINTER_HEADER}"
+                "${MELONPRIME_RELATIVE_POINTER_CODE}"
+                "${MELONPRIME_POINTER_CONSTRAINTS_HEADER}"
+                "${MELONPRIME_POINTER_CONSTRAINTS_CODE}")
+            target_include_directories(melonDS PRIVATE
+                "${MELONPRIME_WAYLAND_GEN_DIR}")
+            target_compile_definitions(melonDS PRIVATE
+                MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK=1)
+
+            set(MELONPRIME_WAYLAND_POINTER_LOCK_ACTIVE ON)
+            message(STATUS "Native Wayland mouse lock: enabled")
+        endif()
+    elseif (MELONPRIME_WAYLAND_POINTER_LOCK_MODE STREQUAL "OFF")
+        message(STATUS "Native Wayland mouse lock: disabled by option")
     endif()
 
     target_sources(melonDS PRIVATE
