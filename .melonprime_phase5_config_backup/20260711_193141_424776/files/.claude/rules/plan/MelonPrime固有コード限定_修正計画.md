@@ -1001,25 +1001,6 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 5: Config利用方法
 
-進捗: **完了 (2026-07-11)**
-
-- 感度hotkeyをEmuThread-owned runtime値へ移し、frame pathから
-  `Config::Table`のread／writeと`Config::Save()`を除去
-- `MelonPrimeThreadBridge`へ世代付き・latest-winsの
-  `AimSensitivity`永続化mailboxを追加
-- primary `ScreenPanel`がGUI threadで要求を消費し、750ms debounce後に
-  `localCfg.SetInt()`と既存`Config::Save()`を実行
-- 連続hotkey入力はruntimeへ即時反映し、disk保存は最後の値へ集約
-- 設定画面のOK保存時は古いmailbox要求とpending timerを破棄し、
-  明示的なGUI設定を優先
-- primary window／app終了時は未保存要求を消費して同期flush
-- `RuntimeConfigSnapshot`へ`AimConfigSnapshot`を統合し、
-  full reload時のConfig readを単一Load／Apply境界へ集約
-- `Config.cpp`／`Config.h`およびmelonDS共通保存実装は変更なし
-- multi-instanceではcore別mailbox／primary panel別timerとして分離
-
-完了項目:
-
 - EmuThread保存除去
 - runtime sensitivity
 - GUI-side debounce save

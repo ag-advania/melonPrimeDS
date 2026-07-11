@@ -536,10 +536,6 @@ namespace MelonPrime {
         float    m_aimSensiFactor = 0.01f;
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
-        // Phase 5: EmuThread-owned raw aim config used by the sensitivity
-        // hotkey. Config::Table remains a cold reload/persistence boundary.
-        int      m_runtimeAimSensitivity = 1;
-        float    m_runtimeAimYScale = 1.0f;
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
@@ -762,7 +758,7 @@ namespace MelonPrime {
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
-        void ApplyRuntimeAimSensitivity(int sensitivity);
+        void RecalcAimSensitivityCache(Config::Table& cfg);
         void RecalcAimFixedPoint();
         void RecalcAimEffectiveFixedScale();
         void UpdateZoomAimEffectiveScale();

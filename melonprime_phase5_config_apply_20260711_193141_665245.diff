@@ -1,0 +1,537 @@
+warning: in the working copy of '.claude/rules/plan/MelonPrime固有コード限定_修正計画.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeLifecycle.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeRuntimeConfig.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeRuntimeConfig.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeThreadBridge.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/Screen.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/frontend/qt_sdl/Screen.h', LF will be replaced by CRLF the next time Git touches it
+diff --git a/.claude/rules/plan/MelonPrime固有コード限定_修正計画.md b/.claude/rules/plan/MelonPrime固有コード限定_修正計画.md
+index 38e27834..1d8d2304 100644
+--- a/.claude/rules/plan/MelonPrime固有コード限定_修正計画.md
++++ b/.claude/rules/plan/MelonPrime固有コード限定_修正計画.md
+@@ -1001,6 +1001,25 @@ MelonPrimeのhook userdata／context内で解決する。
+ 
+ ## Phase 5: Config利用方法
+ 
++進捗: **完了 (2026-07-11)**
++
++- 感度hotkeyをEmuThread-owned runtime値へ移し、frame pathから
++  `Config::Table`のread／writeと`Config::Save()`を除去
++- `MelonPrimeThreadBridge`へ世代付き・latest-winsの
++  `AimSensitivity`永続化mailboxを追加
++- primary `ScreenPanel`がGUI threadで要求を消費し、750ms debounce後に
++  `localCfg.SetInt()`と既存`Config::Save()`を実行
++- 連続hotkey入力はruntimeへ即時反映し、disk保存は最後の値へ集約
++- 設定画面のOK保存時は古いmailbox要求とpending timerを破棄し、
++  明示的なGUI設定を優先
++- primary window／app終了時は未保存要求を消費して同期flush
++- `RuntimeConfigSnapshot`へ`AimConfigSnapshot`を統合し、
++  full reload時のConfig readを単一Load／Apply境界へ集約
++- `Config.cpp`／`Config.h`およびmelonDS共通保存実装は変更なし
++- multi-instanceではcore別mailbox／primary panel別timerとして分離
++
++完了項目:
++
+ - EmuThread保存除去
+ - runtime sensitivity
+ - GUI-side debounce save
+diff --git a/src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp b/src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp
+index 28050ab0..1d881ac2 100644
+--- a/src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp
++++ b/src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp
+@@ -38,6 +38,20 @@ namespace {
+ void MelonPrimeInputConfig::saveConfig()
+ {
+     Config::Table& instcfg = emuInstance->getLocalConfig();
++
++#ifdef MELONPRIME_DS
++    // GUI settings are an explicit user commit and therefore supersede any
++    // older PageUp/PageDown persistence request or pending debounce timer.
++    if (auto* thread = emuInstance->getEmuThread()) {
++        if (auto* core = thread->GetMelonPrimeCore())
++            core->ThreadBridge().DiscardPersistRequestsFromGui();
++    }
++    if (auto* primary = emuInstance->getMainWindow()) {
++        if (primary->panel)
++            primary->panel->cancelMelonPrimeDeferredConfigSave();
++    }
++#endif
++
+     const bool oldClipCursorToBottomScreenWhenNotInGame =
+         instcfg.GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame);
+     const bool oldInGameTopScreenOnly =
+diff --git a/src/frontend/qt_sdl/MelonPrime.cpp b/src/frontend/qt_sdl/MelonPrime.cpp
+index 248cae73..678c8e06 100644
+--- a/src/frontend/qt_sdl/MelonPrime.cpp
++++ b/src/frontend/qt_sdl/MelonPrime.cpp
+@@ -144,24 +144,27 @@ namespace MelonPrime {
+     // comment in MelonPrimeRuntimeConfig.h.
+     void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
+     {
++        m_runtimeAimSensitivity = s.aimSensitivity;
++        m_runtimeAimYScale = s.aimYScale;
+         m_aimSensiFactor = s.aimSensiFactor;
+         m_aimCombinedY = s.aimCombinedY;
+         m_aimAdjust = s.aimAdjust;
+         RecalcAimFixedPoint();
+     }
+ 
+-    // Called from Initialize(), ApplyConfigReload(), and ROM detect — see
+-    // MelonPrimeRuntimeConfig.h for why this is a separate reload path from
+-    // ReloadConfigFlags()/RuntimeConfigSnapshot.
++    // Compatibility cold-path entry point. Normal reloads now carry aim config
++    // inside RuntimeConfigSnapshot.
+     void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
+     {
+         ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
+     }
+ 
+-    void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
+-        const AimSensitivitySnapshot s = LoadAimSensitivitySnapshot(cfg);
+-        m_aimSensiFactor = s.aimSensiFactor;
+-        m_aimCombinedY = s.aimCombinedY;
++    void MelonPrimeCore::ApplyRuntimeAimSensitivity(int sensitivity)
++    {
++        m_runtimeAimSensitivity = std::max(1, sensitivity);
++        m_aimSensiFactor =
++            static_cast<float>(m_runtimeAimSensitivity) * 0.01f;
++        m_aimCombinedY = m_aimSensiFactor * m_runtimeAimYScale;
+         RecalcAimFixedPoint();
+     }
+ 
+@@ -253,19 +256,17 @@ namespace MelonPrime {
+         if (LIKELY(!released)) return;
+ 
+         const int change = (released & kSensiUpBit) ? 1 : -1;
+-        const int cur = localCfg.GetInt(CfgKey::AimSens);
++        const int cur = m_runtimeAimSensitivity;
+         const int next = cur + change;
+ 
+         if (next < 1) {
+             emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
+         }
+         else if (next != cur) {
+-            localCfg.SetInt(CfgKey::AimSens, next);
+-            InstanceDiagnostics::CheckGuiThread(
+-                emuInstance,
+-                "Config::Save(AimSensitivity hotkey)");
+-            Config::Save();
+-            RecalcAimSensitivityCache(localCfg);
++            // Runtime response is immediate; persistence is delegated to the
++            // GUI thread and debounced there.
++            ApplyRuntimeAimSensitivity(next);
++            m_threadBridge.RequestAimSensitivityPersistFromEmu(next);
+             emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);
+         }
+     }
+diff --git a/src/frontend/qt_sdl/MelonPrime.h b/src/frontend/qt_sdl/MelonPrime.h
+index 01d83e1d..99d38afc 100644
+--- a/src/frontend/qt_sdl/MelonPrime.h
++++ b/src/frontend/qt_sdl/MelonPrime.h
+@@ -536,6 +536,10 @@ namespace MelonPrime {
+         float    m_aimSensiFactor = 0.01f;
+         float    m_aimCombinedY = 0.013333333f;
+         float    m_aimAdjust = 0.5f;
++        // Phase 5: EmuThread-owned raw aim config used by the sensitivity
++        // hotkey. Config::Table remains a cold reload/persistence boundary.
++        int      m_runtimeAimSensitivity = 1;
++        float    m_runtimeAimYScale = 1.0f;
+ 
+         // --- Damage Notify Purple ---
+         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
+@@ -758,7 +762,7 @@ namespace MelonPrime {
+         COLD_FUNCTION void DetectRomAndSetAddresses();
+         COLD_FUNCTION void ApplyGameSettingsOnce();
+ 
+-        void RecalcAimSensitivityCache(Config::Table& cfg);
++        void ApplyRuntimeAimSensitivity(int sensitivity);
+         void RecalcAimFixedPoint();
+         void RecalcAimEffectiveFixedScale();
+         void UpdateZoomAimEffectiveScale();
+diff --git a/src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp b/src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp
+index 69082f25..dc7d5dcf 100644
+--- a/src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp
+@@ -147,8 +147,6 @@ namespace MelonPrime {
+             snprintf(message, sizeof(message), "MPH Rom Detected: %s", osdName);
+         }
+         emuInstance->osdAddMessage(0, message);
+-
+-        ReloadAimConfigFromTable(localCfg);
+     }
+ 
+ } // namespace MelonPrime
+diff --git a/src/frontend/qt_sdl/MelonPrimeLifecycle.cpp b/src/frontend/qt_sdl/MelonPrimeLifecycle.cpp
+index b7229c85..4b168fd8 100644
+--- a/src/frontend/qt_sdl/MelonPrimeLifecycle.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeLifecycle.cpp
+@@ -104,6 +104,9 @@ namespace MelonPrime {
+ #endif
+ 
+         screenSyncMode = s.screenSyncMode;
++
++        // Aim fields now share the same snapshot load/apply transaction.
++        ApplyAimConfigSnapshot(s.aimConfig);
+     }
+ 
+     void MelonPrimeCore::ReloadConfigFlags()
+@@ -118,7 +121,6 @@ namespace MelonPrime {
+     void MelonPrimeCore::Initialize()
+     {
+         ReloadConfigFlags();
+-        ReloadAimConfigFromTable(localCfg);
+ 
+ #ifdef _WIN32
+         SetupRawInput();
+@@ -257,8 +259,6 @@ namespace MelonPrime {
+         const bool newJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
+         ApplyJoy2KeySupportAndQtFilter(newJoy2Key, oldJoy2Key != newJoy2Key);
+ 
+-        ReloadAimConfigFromTable(localCfg);
+-
+ #ifdef _WIN32
+         if (m_rawFilter) {
+             BindMetroidHotkeysFromConfig(
+@@ -289,8 +289,6 @@ namespace MelonPrime {
+ 
+         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+ 
+-        ReloadAimConfigFromTable(localCfg);
+-
+ #ifdef _WIN32
+         if (m_rawFilter) {
+             // Reload VK bindings from config, then re-sync edge state.
+diff --git a/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.cpp b/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.cpp
+index 9006be07..5e7aa8ac 100644
+--- a/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.cpp
+@@ -26,6 +26,7 @@ constexpr int64_t kAimOneFp = 1LL << 14;
+ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
+ {
+     RuntimeConfigSnapshot s{};
++    s.aimConfig = LoadAimConfigSnapshot(cfg);
+ 
+     s.joy2Key = cfg.GetBool(CfgKey::Joy2Key);
+     s.snapTap = cfg.GetBool(CfgKey::SnapTap);
+@@ -107,10 +108,10 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
+ AimSensitivitySnapshot LoadAimSensitivitySnapshot(Config::Table& cfg) noexcept
+ {
+     AimSensitivitySnapshot s{};
+-    const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
+-    const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
+-    s.aimSensiFactor = sens * 0.01f;
+-    s.aimCombinedY = s.aimSensiFactor * yScale;
++    s.aimSensitivity = cfg.GetInt(CfgKey::AimSens);
++    s.aimYScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
++    s.aimSensiFactor = static_cast<float>(s.aimSensitivity) * 0.01f;
++    s.aimCombinedY = s.aimSensiFactor * s.aimYScale;
+     return s;
+ }
+ 
+@@ -118,6 +119,8 @@ AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
+ {
+     AimConfigSnapshot s{};
+     const AimSensitivitySnapshot sens = LoadAimSensitivitySnapshot(cfg);
++    s.aimSensitivity = sens.aimSensitivity;
++    s.aimYScale = sens.aimYScale;
+     s.aimSensiFactor = sens.aimSensiFactor;
+     s.aimCombinedY = sens.aimCombinedY;
+     const double v = cfg.GetDouble(CfgKey::AimAdjust);
+diff --git a/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.h b/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.h
+index 28b144ee..b8cf68be 100644
+--- a/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.h
++++ b/src/frontend/qt_sdl/MelonPrimeRuntimeConfig.h
+@@ -21,6 +21,25 @@ namespace MelonPrime {
+ // Keep this split when adding new runtime config fields: clamp/derive in the
+ // snapshot struct's Load function, apply side effects in the Apply function.
+ 
++// AimSens/AimYScale derivation only (no AimAdjust). The raw values are
++// retained so the EmuThread hotkey can update sensitivity without reading or
++// writing Config::Table. AimAdjust remains structurally excluded.
++struct AimSensitivitySnapshot {
++    int aimSensitivity = 1;
++    float aimYScale = 1.0f;
++    float aimSensiFactor = 1.0f;
++    float aimCombinedY = 1.0f;
++};
++
++// Complete aim snapshot used by the normal config reload boundary.
++struct AimConfigSnapshot {
++    int aimSensitivity = 1;
++    float aimYScale = 1.0f;
++    float aimSensiFactor = 0.f;
++    float aimCombinedY = 0.f;
++    float aimAdjust = 0.f;
++};
++
+ struct RuntimeConfigSnapshot {
+     bool joy2Key = false;
+     bool snapTap = false;
+@@ -51,32 +70,12 @@ struct RuntimeConfigSnapshot {
+     bool nativeWeaponSwitch = false;
+ #endif
+ 
+-    int     screenSyncMode = 0;
+-};
+-
+-// AimSens/AimYScale derivation only (no AimAdjust). Shared by
+-// LoadAimConfigSnapshot (full aim config reload) and the in-game
+-// sensitivity hotkey path (MelonPrimeCore::RecalcAimSensitivityCache).
+-// The in-game sensitivity hotkey path uses AimSensitivitySnapshot and still
+-// intentionally skips AimAdjust — a sensitivity hotkey should only touch
+-// sensitivity. Since this struct has no aimAdjust field, that skip is now
+-// structural rather than a convention the hotkey path has to remember.
+-struct AimSensitivitySnapshot {
+-    float aimSensiFactor = 1.0f;
+-    float aimCombinedY = 1.0f;
+-};
++    int screenSyncMode = 0;
+ 
+-// Aim sensitivity/adjust only. Loaded/applied via
+-// MelonPrimeCore::ReloadAimConfigFromTable(cfg), called from Initialize(),
+-// ApplyConfigReload(), and ROM detect. Separate from RuntimeConfigSnapshot
+-// because it predates the wider snapshot (Phase 10 of the SRP refactor
+-// scoped only the aim-sensitivity fields out of the ad-hoc reload code that
+-// existed at the time). Includes AimAdjust and is used by the full aim
+-// config reload path only.
+-struct AimConfigSnapshot {
+-    float aimSensiFactor = 0.f;
+-    float aimCombinedY = 0.f;
+-    float aimAdjust = 0.f;
++    // MELONPRIME_PHASE5_CONFIG_USAGE_V1
++    // Aim config now crosses the same Load/Apply snapshot boundary as the
++    // remaining runtime settings. No second Config::Table read is needed.
++    AimConfigSnapshot aimConfig{};
+ };
+ 
+ // Pure: reads `cfg`, clamps/derives values, applies developer-feature gating.
+diff --git a/src/frontend/qt_sdl/MelonPrimeThreadBridge.h b/src/frontend/qt_sdl/MelonPrimeThreadBridge.h
+index c754db8c..21035501 100644
+--- a/src/frontend/qt_sdl/MelonPrimeThreadBridge.h
++++ b/src/frontend/qt_sdl/MelonPrimeThreadBridge.h
+@@ -20,6 +20,19 @@ struct MelonPrimeUiSnapshot {
+     int centerY = 0;
+ };
+ 
++// EmuThread -> GUI persistence request. Only the latest hotkey value matters;
++// generation makes replacement/order explicit and supports stale-request checks.
++struct MelonPrimePersistRequest {
++    enum class Type : uint8_t {
++        None = 0,
++        AimSensitivity = 1,
++    };
++
++    Type type = Type::None;
++    int value = 0;
++    uint64_t generation = 0;
++};
++
+ // Explicit GUI/EmuThread boundary for MelonPrime-only state. GUI producers
+ // write command/input mailboxes; EmuThread publishes the runtime snapshot and
+ // GUI request bits. No QWidget or platform GUI object crosses this boundary.
+@@ -81,6 +94,42 @@ public:
+         m_panelAimY.store(0, std::memory_order_release);
+     }
+ 
++    // MELONPRIME_PHASE5_CONFIG_USAGE_V1
++    // Packed publication keeps value and generation in one atomic operation.
++    // Rapid hotkey presses intentionally coalesce to the latest value.
++    void RequestAimSensitivityPersistFromEmu(int value) noexcept
++    {
++        uint32_t generation =
++            m_persistGeneration.fetch_add(1, std::memory_order_relaxed) + 1u;
++        if (generation == 0) {
++            generation =
++                m_persistGeneration.fetch_add(1, std::memory_order_relaxed) + 1u;
++        }
++
++        const uint64_t packed =
++            (static_cast<uint64_t>(generation) << 32)
++            | static_cast<uint32_t>(value);
++        m_aimSensitivityPersist.store(packed, std::memory_order_release);
++    }
++
++    bool TakePersistRequestForGui(MelonPrimePersistRequest& out) noexcept
++    {
++        const uint64_t packed =
++            m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
++        if (packed == 0)
++            return false;
++
++        out.type = MelonPrimePersistRequest::Type::AimSensitivity;
++        out.value = static_cast<int32_t>(static_cast<uint32_t>(packed));
++        out.generation = static_cast<uint32_t>(packed >> 32);
++        return true;
++    }
++
++    void DiscardPersistRequestsFromGui() noexcept
++    {
++        (void)m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
++    }
++
+     [[nodiscard]] bool FocusedForEmu() const noexcept
+     {
+         return m_focused.load(std::memory_order_acquire);
+@@ -212,6 +261,8 @@ private:
+     std::atomic<uint32_t> m_runtimeBits{1u};
+     std::atomic_bool m_cursorVisibleDesired{true};
+     std::atomic<uint32_t> m_guiRequests{0};
++    std::atomic<uint32_t> m_persistGeneration{0};
++    std::atomic<uint64_t> m_aimSensitivityPersist{0};
+ };
+ 
+ } // namespace MelonPrime
+diff --git a/src/frontend/qt_sdl/Screen.cpp b/src/frontend/qt_sdl/Screen.cpp
+index da4238b9..6b5f7c02 100755
+--- a/src/frontend/qt_sdl/Screen.cpp
++++ b/src/frontend/qt_sdl/Screen.cpp
+@@ -56,6 +56,8 @@
+ #include "MelonPrimeLocalization.h"
+ #include "MelonPrimePlatformInput.h"
+ #include "MelonPrimeScreenCursorPolicy.h"
++#include "MelonPrimeDef.h"
++#include "MelonPrimeInstanceDiagnostics.h"
+ #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+ #include "MelonPrimeWaylandPointerLock.h" // MELONPRIME_WAYLAND_POINTER_LOCK_V1
+ #endif
+@@ -126,6 +128,61 @@ void ScreenPanel::addAimMouseDeltaForMelonPrime(
+ }
+ #endif
+ 
++// MELONPRIME_PHASE5_CONFIG_USAGE_V1
++void ScreenPanel::processMelonPrimePersistRequests()
++{
++    if (closing || !emuInstance || !mainWindow)
++        return;
++
++    // Only the primary panel owns persistence for this EmuInstance. Secondary
++    // windows must not race to consume the single-consumer mailbox.
++    if (emuInstance->getMainWindow() != mainWindow)
++        return;
++
++    auto* core = melonPrimeCore();
++    if (!core)
++        return;
++
++    MelonPrime::MelonPrimePersistRequest request;
++    if (!core->ThreadBridge().TakePersistRequestForGui(request))
++        return;
++    if (request.type !=
++            MelonPrime::MelonPrimePersistRequest::Type::AimSensitivity
++        || request.generation <= m_melonPrimeLastPersistGeneration)
++        return;
++
++    m_melonPrimeLastPersistGeneration = request.generation;
++    emuInstance->getLocalConfig().SetInt(
++        MelonPrime::CfgKey::AimSens,
++        std::max(1, request.value));
++    scheduleMelonPrimeConfigSave();
++}
++
++void ScreenPanel::scheduleMelonPrimeConfigSave()
++{
++    m_melonPrimeConfigSavePending = true;
++    m_melonPrimeConfigSaveTimer.start(750);
++}
++
++void ScreenPanel::flushMelonPrimeConfigSave()
++{
++    if (!m_melonPrimeConfigSavePending)
++        return;
++
++    m_melonPrimeConfigSaveTimer.stop();
++    m_melonPrimeConfigSavePending = false;
++    MelonPrime::InstanceDiagnostics::CheckGuiThread(
++        emuInstance,
++        "Config::Save(AimSensitivity debounce)");
++    Config::Save();
++}
++
++void ScreenPanel::cancelMelonPrimeDeferredConfigSave()
++{
++    m_melonPrimeConfigSaveTimer.stop();
++    m_melonPrimeConfigSavePending = false;
++}
++
+ void ScreenPanel::syncMelonPrimeThreadBridge()
+ {
+     auto* core = melonPrimeCore();
+@@ -136,6 +193,7 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
+     const QPoint center = mapToGlobal(rect().center());
+     bridge.PublishCenterFromGui(center.x(), center.y());
+     bridge.PublishWindowHandleFromGui(static_cast<uintptr_t>(winId()));
++    processMelonPrimePersistRequests();
+ 
+     const uint32_t requests = bridge.TakeGuiRequestsFromGui();
+     const uint32_t cursorRequests =
+@@ -364,6 +422,8 @@ void ScreenPanel::beginClose()
+ {
+     if (closing)
+         return;
++    processMelonPrimePersistRequests();
++    flushMelonPrimeConfigSave();
+     closing = true;
+     if (auto* core = melonPrimeCore()) {
+         core->ThreadBridge().SetFocusedFromGui(false);
+@@ -441,6 +501,15 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
+ 
+     emuInstance = mainWindow->getEmuInstance();
+ 
++#ifdef MELONPRIME_DS
++    m_melonPrimeConfigSaveTimer.setSingleShot(true);
++    connect(
++        &m_melonPrimeConfigSaveTimer,
++        &QTimer::timeout,
++        this,
++        &ScreenPanel::flushMelonPrimeConfigSave);
++#endif
++
+     mouseHide = false;
+     mouseHideDelay = 0;
+ 
+@@ -484,6 +553,8 @@ ScreenPanel::~ScreenPanel()
+ {
+ #ifdef MELONPRIME_DS
+     if (!closing) {
++        processMelonPrimePersistRequests();
++        flushMelonPrimeConfigSave();
+         closing = true;
+         releaseCursorStateForClose();
+     }
+diff --git a/src/frontend/qt_sdl/Screen.h b/src/frontend/qt_sdl/Screen.h
+index 401ad6b0..e6b8a8bb 100755
+--- a/src/frontend/qt_sdl/Screen.h
++++ b/src/frontend/qt_sdl/Screen.h
+@@ -108,6 +108,8 @@ public:
+     void reloadNoRomSplashLocalization();
+     void containAimCursorIfNeeded();
+     void syncMelonPrimeThreadBridge();
++    // Explicit settings-dialog save wins over any older debounced hotkey save.
++    void cancelMelonPrimeDeferredConfigSave();
+ 
+     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
+     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
+@@ -296,6 +298,9 @@ private:
+     void clipCursorToBottomScreen();
+     void releaseCursorStateForClose();
+     QRect aimContainmentLocalRect() const;
++    void processMelonPrimePersistRequests();
++    void scheduleMelonPrimeConfigSave();
++    void flushMelonPrimeConfigSave();
+     void setClipWanted(bool value);
+     bool getClipWanted() const;
+     bool m_lastInGameTopScreenOnlyOverride = false;
+@@ -307,6 +312,9 @@ private:
+     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
+     // coalesces repeated per-frame requests without touching QWidget off-thread.
+     std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
++    QTimer m_melonPrimeConfigSaveTimer;
++    bool m_melonPrimeConfigSavePending = false;
++    uint64_t m_melonPrimeLastPersistGeneration = 0;
+     bool closing = false;
+ #endif
+ };
