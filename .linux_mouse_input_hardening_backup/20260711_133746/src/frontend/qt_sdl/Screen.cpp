@@ -710,25 +710,16 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         const QPoint center = mapToGlobal(rect().center());
 #if QT_VERSION_MAJOR == 6
         const QPoint global = event->globalPosition().toPoint();
-        const QPoint local = event->position().toPoint();
 #else
         const QPoint global = event->globalPos();
-        const QPoint local = event->pos();
 #endif
-        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
-        // The previous 96px threshold matched half the height of a 256x192
-        // single-screen panel, allowing the pointer to leave before recentering.
-        const QRect safeRect = rect().adjusted(16, 16, -16, -16);
-        const bool strayed = !safeRect.contains(local);
+        const int offX = global.x() - center.x();
+        const int offY = global.y() - center.y();
+        const bool strayed = offX > 96 || offX < -96 || offY > 96 || offY < -96;
 
         if (core->IsPlatformRawAimActive()) {
             // Platform raw owns aim deltas (warp-immune). Threshold containment only.
             aimLastGlobalValid.store(false, std::memory_order_release);
-            if (MelonPrime::PlatformInput_IsXcb()
-                && QWidget::mouseGrabber() == this)
-            {
-                releaseMouse();
-            }
             if (strayed)
                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;

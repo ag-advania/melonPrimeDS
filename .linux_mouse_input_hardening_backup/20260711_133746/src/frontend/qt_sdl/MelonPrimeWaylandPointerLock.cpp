@@ -121,6 +121,7 @@ struct WaylandPointerLock::Impl
             self.pointer = wl_seat_get_pointer(seatObject);
             if (self.pointer)
                 wl_pointer_add_listener(self.pointer, &PointerListener, &self);
+            return;
         }
 
         if (!hasPointer && self.pointer)
@@ -136,15 +137,8 @@ struct WaylandPointerLock::Impl
                 wl_pointer_destroy(self.pointer);
             }
             self.pointer = nullptr;
+            self.supported = false;
         }
-
-        // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2:
-        // A seat can lose and later regain pointer capability after hotplug.
-        self.supported =
-            self.seat
-            && self.pointer
-            && self.relativeManager
-            && self.pointerConstraints;
     }
 
     static void SeatName(void*, wl_seat*, const char*) {}
@@ -456,12 +450,7 @@ WaylandPointerLock::WaylandPointerLock(DeltaCallback callback)
 {
 }
 
-WaylandPointerLock::~WaylandPointerLock()
-{
-    // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2
-    if (m_impl)
-        m_impl->Shutdown();
-}
+WaylandPointerLock::~WaylandPointerLock() = default;
 
 bool WaylandPointerLock::setLocked(
     void* displayHandle,
