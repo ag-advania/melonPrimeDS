@@ -322,6 +322,15 @@ if (MELONPRIME_METAL_ACTIVE)
     )
 endif()
 
+if (MELONPRIME_VULKAN_ACTIVE)
+    # Runtime calls intentionally remain absent in Vulkan Phase 1. This source
+    # and definition prove that the complete build gate reaches the frontend.
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1)
+    target_sources(melonDS PRIVATE
+        MelonPrimeVulkanFeatureCheck.cpp
+        MelonPrimeVulkanFeatureCheck.h)
+endif()
+
 add_subdirectory("../../net"
     ${CMAKE_BINARY_DIR}/net)
 

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "target_environment": "vulkan1.1",
+  "shaders": [
+    {
+      "name": "VulkanBuildProbe",
+      "source": "build_probe.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    }
+  ]
+}

@@ -81,6 +81,23 @@
 				"qt5-multimedia",
 				"qt5-svg"
 			]
+		},
+		"vulkan": {
+			"description": "Build the optional MelonPrime Vulkan backend and shader tools.",
+			"dependencies": [
+				"vulkan-headers",
+				"volk",
+				"vulkan-memory-allocator",
+				{
+					"name": "glslang",
+					"host": true,
+					"features": ["tools"]
+				},
+				{
+					"name": "moltenvk",
+					"platform": "osx"
+				}
+			]
 		}
 	}
 }

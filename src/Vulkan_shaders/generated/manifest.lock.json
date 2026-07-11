@@ -1,0 +1,24 @@
+{
+  "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
+  "generation_sha256": "8375b44cf1ff9401a72fa4bcc75019aa0bc84016334d6fb4489edb300fc792c8",
+  "manifest_sha256": "ccb8bc8738fae6250e532b906b29fdae4024b7f36faa320b65c2ffbec80a4723",
+  "schema_version": 1,
+  "sources": [
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/build_probe.comp",
+      "sha256": "d329caa6bd897c30d2dfb6a63041f9f53165ce40363b7e5bb79c13acd9b2d403",
+      "stage": "comp",
+      "variant": "default"
+    }
+  ],
+  "spirv": [
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanBuildProbe.spv.h",
+      "sha256": "6f47438a6eba1d69c8a8f99f3bfb3b518726634f793dfbdf10c346f7a68e6bf5",
+      "size": 280,
+      "symbol": "VulkanBuildProbe"
+    }
+  ]
+}
