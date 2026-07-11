@@ -5,7 +5,6 @@
 // MELONPRIME_METAL_STABILITY_SCALE_PERF_V1
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 // MELONPRIME_METAL_RENDER_OPTIONS_V1
-// MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 
 #import <Metal/Metal.h>
@@ -1037,11 +1036,6 @@ void MetalRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
     BetterPolygons = betterPolygons;
 }
 
-void MetalRenderer3D::SetCpuReadbackRequired(bool required) noexcept
-{
-    CpuReadbackRequired = required;
-}
-
 void MetalRenderer3D::RenderFrame()
 {
     @autoreleasepool
@@ -1130,10 +1124,7 @@ void MetalRenderer3D::RenderFrame()
                 else
                     RenderNativeOpaquePolygons();
                 RenderFinalPostPass();
-                if (CpuReadbackRequired)
-                    ReadbackNativeColorTargetToLineBuffer();
-                else
-                    State->NativeLineReady = false;
+                ReadbackNativeColorTargetToLineBuffer();
                 if (perfEnabled)
                     perfFrame.Native3DMs += MetalPerfElapsedMs(nativeStart, MetalPerfClock::now());
             }

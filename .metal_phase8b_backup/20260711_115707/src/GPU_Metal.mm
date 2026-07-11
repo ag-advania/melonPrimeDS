@@ -9,7 +9,6 @@
 // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
 // MELONPRIME_METAL_FRAME_SNAPSHOT_V1
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
-// MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 
 #import <Metal/Metal.h>
 
@@ -23,7 +22,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
-#include <vector>
 
 #include "GPU2D_Metal.h"
 #include "GPU3D_Metal.h"
@@ -313,7 +311,6 @@ struct MetalRenderer::MetalOutputState
 };
 
 #include "GPU_MetalFullGpuMethods.inc"
-#include "GPU_MetalCaptureMethods.inc"
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
     : SoftRenderer(nds)
@@ -356,12 +353,6 @@ bool MetalRenderer::Init()
     {
         std::fprintf(stderr,
             "[MelonPrime] metal full-gpu: initialization failed; stable CPU compositor path remains active\n");
-    }
-    if (!ConfigureMetalCaptureState(preferredDevice))
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal display capture: initialization failed; "
-            "capture frames remain on the CPU path\n");
     }
     return true;
 }
@@ -419,7 +410,6 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
     ConfigureMetal2DMirror(preferredDevice);
     ConfigureMetalVisibleOutput(preferredDevice);
-    ConfigureMetalCaptureState(preferredDevice);
 }
 
 void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
@@ -918,36 +908,13 @@ void MetalRenderer::VBlank()
     if (FullGpuState && FullGpuState->FrameActive)
     {
         bool rendered = false;
-        if (FullGpuState->FrameValid &&
-            MetalCaptureFrameSupported())
+        if (FullGpuState->FrameValid)
         {
             void* high3D = Metal3DColorTarget(Rend3D.get());
-            void* capture128 = GetMetalCapture128Texture();
-            void* capture256 = GetMetalCapture256Texture();
-            const bool allowCaptureTextures =
-                !MetalCaptureFrameHadCapture();
-
             rendered = Metal2D_A && Metal2D_B &&
-                capture128 && capture256 &&
-                Metal2D_A->RenderFullGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures) &&
-                Metal2D_B->RenderFullGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures);
-
-            if (rendered)
-            {
-                rendered = EncodeMetalDisplayCapture(
-                    Metal2D_A->GetOutputTexture(),
-                    high3D);
-            }
+                Metal2D_A->RenderFullGpuFrame(high3D) &&
+                Metal2D_B->RenderFullGpuFrame(high3D);
         }
-
         if (rendered)
         {
             FullGpuState->Completed = MetalFullGpuState::FullGpu;
@@ -958,22 +925,18 @@ void MetalRenderer::VBlank()
         else
         {
             FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
-            FullGpuState->BlockedByCaptureFeedback =
-                MetalCaptureFrameHadCapture();
+            FullGpuState->DisabledAfterReject = true;
             if (!FullGpuState->LoggedRejected)
             {
                 FullGpuState->LoggedRejected = true;
                 std::fprintf(stderr,
-                    "[MelonPrime] metal full-gpu: frame rejected; "
-                    "retaining previous frame and using CPU fallback while "
-                    "same-frame capture feedback remains active\n");
+                    "[MelonPrime] metal full-gpu: frame rejected; retaining previous frame and returning to CPU fallback next frame\n");
             }
         }
         return;
     }
 
     SoftRenderer::VBlank();
-    UploadCpuCompletedCaptures();
     if (FullGpuState)
         FullGpuState->Completed = MetalFullGpuState::CpuComposite;
 }

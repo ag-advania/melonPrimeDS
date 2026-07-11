@@ -6,7 +6,6 @@
 // MELONPRIME_METAL_COMPUTE_MSL_ADDRESS_SPACE_FIX_V1
 // MELONPRIME_METAL_COMPUTE_GRACEFUL_DEGRADATION_V1
 // MELONPRIME_METAL_COMPUTE_SCALE_SYNC_V1
-// MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_HIGH_PERFORMANCE_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -2228,11 +2227,6 @@ void MetalComputeRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
     RasterReference.SetBetterPolygons(betterPolygons);
 }
 
-void MetalComputeRenderer3D::SetCpuReadbackRequired(bool required) noexcept
-{
-    RasterReference.SetCpuReadbackRequired(required);
-}
-
 bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
 {
     if (!State || !State->SpanBinReady || GPU3D.RenderNumPolygons == 0)
@@ -2815,15 +2809,7 @@ void MetalComputeRenderer3D::RenderFrame()
             RasterReference.GetTargetWidth() != 256 * requestedScale ||
             RasterReference.GetTargetHeight() != 192 * requestedScale)
         {
-            if (!RasterReference.ForceScaleFactor(requestedScale))
-            {
-                std::fprintf(stderr,
-                    "[MelonPrime] metal compute: failed to resize "
-                    "RasterReference to scale=%d; retaining previous frame\n",
-                    requestedScale);
-                return;
-            }
-            // MELONPRIME_METAL_COMPUTE_FORCE_SCALE_CHECK_V1
+            RasterReference.ForceScaleFactor(requestedScale);
         }
 
         // Visible output has priority. Latch and render the validated Metal
