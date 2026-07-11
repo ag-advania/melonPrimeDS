@@ -1,0 +1,100 @@
+--- a/.claude/rules/plan/metal_compute_shader_phase7_execution.md
++++ b/.claude/rules/plan/metal_compute_shader_phase7_execution.md
+@@ -292,3 +292,13 @@
+ - palette／extended paletteもdirty時だけupload。
+ - BG/OBJ enable、priority、BLDCNT、EVA/EVB/EVYをscanline単位でlatch。
+ - VBlank時の単一compositor stateによって3Dだけ残る問題を防止。
++
++<!-- MELONPRIME_METAL_PHASE8G_V3_SCANLINE_COORD_PARITY -->
++## 2026-07-11 — Phase 8G v3 Metal 2D scanline-coordinate parity
++
++- Metal compositorが`ScanlineConfig.BGOffset.y`へnative scanlineを再加算していた問題を修正。
++- OpenGLの`fTexcoord.xy`契約に合わせ、BG Xはnative連続座標、BG Yはscanline内の小数部分だけを渡す。
++- Text BG、affine BG、bitmap BGのY座標二重加算を解消。
++- 3D BG0にも`RenderXPos`由来のoffsetを適用。
++- 3D BG0の範囲外sampleをedge clampではなく透明borderへ変更。
++- MetalとMetal Computeは共通のGPU2D Metal shaderを使用するため両方へ適用。
+--- a/src/GPU2D_MetalFullGpuShaders.inc
++++ b/src/GPU2D_MetalFullGpuShaders.inc
+@@ -2,6 +2,7 @@
+ // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
+ // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+ // MELONPRIME_METAL_2D_HUD_PARITY_V1
++// MELONPRIME_METAL_2D_SCANLINE_COORD_PARITY_V1
+ static constexpr const char* kMetal2DFullGpuShaderSource = R"MSL(
+ #include <metal_stdlib>
+ using namespace metal;
+@@ -430,10 +431,26 @@
+ 
+     if (layer == 0u && bg.type == 6u)
+     {
+-        uint2 maxCoord = uint2(
++        // OpenGL applies the latched 3D BG offset and uses transparent
++        // border outside the native 256x192 source. The previous Metal path
++        // bypassed the offset and clamped out-of-range pixels to the edge.
++        const float2 bgPosition =
++            float2(scan.bgOffset[layer].xy) + coord;
++        if (bgPosition.x < 0.0 || bgPosition.y < 0.0 ||
++            bgPosition.x >= 256.0 || bgPosition.y >= 192.0)
++        {
++            return float4(0.0);
++        }
++
++        const float2 textureScale = float2(
++            float(max(high3D.get_width(), 1u)) / 256.0,
++            float(max(high3D.get_height(), 1u)) / 192.0);
++        const uint2 sampleCoord = uint2(
++            floor(bgPosition * textureScale));
++        const uint2 maxCoord = uint2(
+             max(high3D.get_width(), 1u) - 1u,
+             max(high3D.get_height(), 1u) - 1u);
+-        return high3D.read(min(outputCoord, maxCoord));
++        return high3D.read(min(sampleCoord, maxCoord));
+     }
+ 
+     int2 offset = scan.bgOffset[layer].xy;
+@@ -492,13 +509,25 @@
+     texture2d_array<float> capture256 [[texture(8)]],
+     sampler repeatSampler [[sampler(0)]])
+ {
+-    uint safeScale = max(scale, 1u);
+-    uint2 outputCoord = uint2(in.position.xy);
+-    int2 nativeCoord = int2(outputCoord / safeScale);
++    const uint safeScale = max(scale, 1u);
++    const float safeScaleF = float(safeScale);
++    const uint2 outputCoord = uint2(in.position.xy);
++
++    // Match OpenGL 2DCompositorVS/FS exactly. ScanlineConfig already stores
++    // BGYPos + line (or the affine internal reference for that line), so the
++    // fragment must pass only the within-scanline Y fraction to BG sampling.
++    // The old code passed nativeCoord.y again, producing BGYPos+line+line.
++    const float2 nativeTexcoord =
++        in.position.xy / safeScaleF;
++    int2 nativeCoord = int2(floor(nativeTexcoord));
+     nativeCoord.x = clamp(nativeCoord.x, 0, 255);
+     nativeCoord.y = clamp(nativeCoord.y, 0, 191);
+-    uint line = uint(nativeCoord.y);
+-    constant ScanlineState& scan = scanlineConfig.scanline[line];
++    const uint line = uint(nativeCoord.y);
++    constant ScanlineState& scan =
++        scanlineConfig.scanline[line];
++    const float2 bgSampleCoord = float2(
++        nativeTexcoord.x,
++        fract(nativeTexcoord.y));
+ 
+     int mosaicX = 0;
+     if (scan.mosaicSize.x > 0)
+@@ -507,12 +536,11 @@
+         mosaicX = mosaicTexture.read(uint2(uint(nativeCoord.x), uint(mx))).r;
+     }
+ 
+-    float2 nativePosition = float2(nativeCoord);
+     float4 layers[6];
+     for (uint i = 0u; i < 4u; i++)
+     {
+         layers[i] = mp_calculate_bg(
+-            i, nativePosition, outputCoord, line,
++            i, bgSampleCoord, outputCoord, line,
+             layerConfig, scanlineConfig,
+             bg0, bg1, bg2, bg3, high3D,
+             capture128, capture256,
