@@ -12,6 +12,7 @@ namespace melonDS { class NDS; }
 namespace MelonPrime {
 
     struct RomAddresses;
+    struct MelonPrimePatchState;
 
     // =========================================================================
     //  Patch registry — single data-driven lifecycle for static write-patches.
@@ -40,6 +41,7 @@ namespace MelonPrime {
         EmuInstance* emu;
         Config::Table& cfg;
         const RomAddresses& rom;
+        MelonPrimePatchState& state;
     };
 
     // Lifecycle sites at which registry entries apply (bitmask).
@@ -68,7 +70,7 @@ namespace MelonPrime {
 
     // Resets every entry's per-module patch state (s_applied flags etc.).
     // Does NOT touch emulated RAM.
-    void Patches_ResetAll();
+    void Patches_ResetAll(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

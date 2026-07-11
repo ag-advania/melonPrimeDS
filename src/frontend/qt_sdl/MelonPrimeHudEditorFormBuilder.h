@@ -18,6 +18,8 @@ namespace Config {
 class Table;
 }
 
+namespace MelonPrime { struct CustomHudConfigState; }
+
 namespace MelonPrime::HudEditorForm {
 
 // `populating` is a reference to the owning widget's live guard flag (e.g.
@@ -44,6 +46,7 @@ struct WidgetFactoryContext {
     QFormLayout& form;
     QList<QWidget*>& rows;
     Config::Table& cfg;
+    MelonPrime::CustomHudConfigState& hudConfig;
     bool& populating;
     QObject& signalReceiver;
 };
@@ -52,23 +55,23 @@ struct WidgetFactoryContext {
 
 void UpdateColorButton(QPushButton& button, int r, int g, int b);
 
-void InvalidateHudConfigCache();
+void InvalidateHudConfigCache(MelonPrime::CustomHudConfigState& hudConfig);
 
 void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
                       const QString& label, QWidget& widget);
 
 // ─── Config write helpers (all no-op while `populating` is true) ───────────
 
-void SetBoolIfEditing(Config::Table& cfg, bool populating,
+void SetBoolIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                       const std::string& key, bool value);
 
-void SetIntIfEditing(Config::Table& cfg, bool populating,
+void SetIntIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                      const std::string& key, int value);
 
-void SetDoubleIfEditing(Config::Table& cfg, bool populating,
+void SetDoubleIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                         const std::string& key, double value);
 
-void SetStringIfEditing(Config::Table& cfg, bool populating,
+void SetStringIfEditing(MelonPrime::CustomHudConfigState& hudConfig, Config::Table& cfg, bool populating,
                         const std::string& key, const std::string& value);
 
 // ─── Plain value-widget row factories ───────────────────────────────────────
@@ -116,6 +119,7 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     QFormLayout& form,
     QList<QWidget*>& rows,
     Config::Table& cfg,
+    MelonPrime::CustomHudConfigState& hudConfig,
     bool& populating,
     QObject& signalReceiver);
 

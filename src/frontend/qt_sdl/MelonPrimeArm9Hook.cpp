@@ -39,63 +39,61 @@ enum DispatchMask : uint16_t
     Dispatch_LowLatencyAim              = 1u << 8,
 };
 
-struct DispatchEntry
-{
-    uint32_t Address;
-    uint16_t Mask;
-};
+static_assert(
+    MelonPrimeArm9HookState::Capacity
+        == melonDS::NDS::ARM9InstructionHookMaxAddresses);
 
-static DispatchEntry s_dispatchEntries[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
-static uint32_t s_dispatchCount = 0;
-static uint32_t s_lastDispatchAddress = 0;
-static uint16_t s_lastDispatchMask = 0;
-
-static void ClearDispatchEntries() noexcept
+static void ClearDispatchEntries(MelonPrimeArm9HookState& state) noexcept
 {
-    s_dispatchCount = 0;
-    s_lastDispatchAddress = 0;
-    s_lastDispatchMask = 0;
-    for (auto& entry : s_dispatchEntries)
+    state.count = 0;
+    state.lastAddress = 0;
+    state.lastMask = 0;
+    for (auto& entry : state.entries)
         entry = {};
 }
 
-static void AddDispatchAddress(uint32_t address, uint16_t mask) noexcept
+static void AddDispatchAddress(
+    MelonPrimeArm9HookState& state,
+    uint32_t address,
+    uint16_t mask) noexcept
 {
-    for (uint32_t i = 0; i < s_dispatchCount; ++i)
+    for (uint32_t i = 0; i < state.count; ++i)
     {
-        if (s_dispatchEntries[i].Address == address)
+        if (state.entries[i].address == address)
         {
-            s_dispatchEntries[i].Mask |= mask;
+            state.entries[i].mask |= mask;
             return;
         }
     }
 
-    if (s_dispatchCount >= melonDS::NDS::ARM9InstructionHookMaxAddresses)
+    if (state.count >= MelonPrimeArm9HookState::Capacity)
     {
         MP_ARM9_HOOK_LOG(
             "ARM9Hook RegisterDrop: address=%08X mask=%02X count=%u max=%u\n",
             address,
             static_cast<unsigned>(mask),
-            s_dispatchCount,
+            state.count,
             melonDS::NDS::ARM9InstructionHookMaxAddresses);
         return;
     }
 
-    s_dispatchEntries[s_dispatchCount++] = {address, mask};
+    state.entries[state.count++] = {address, mask};
 }
 
-[[nodiscard]] static FORCE_INLINE uint16_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
+[[nodiscard]] static FORCE_INLINE uint16_t FindDispatchMask(
+    MelonPrimeArm9HookState& state,
+    uint32_t arm9ExecAddr) noexcept
 {
-    if (LIKELY(arm9ExecAddr == s_lastDispatchAddress))
-        return s_lastDispatchMask;
+    if (LIKELY(arm9ExecAddr == state.lastAddress))
+        return state.lastMask;
 
-    for (uint32_t i = 0; i < s_dispatchCount; ++i)
+    for (uint32_t i = 0; i < state.count; ++i)
     {
-        if (s_dispatchEntries[i].Address == arm9ExecAddr)
+        if (state.entries[i].address == arm9ExecAddr)
         {
-            s_lastDispatchAddress = arm9ExecAddr;
-            s_lastDispatchMask = s_dispatchEntries[i].Mask;
-            return s_dispatchEntries[i].Mask;
+            state.lastAddress = arm9ExecAddr;
+            state.lastMask = state.entries[i].mask;
+            return state.entries[i].mask;
         }
     }
     return 0;
@@ -110,15 +108,14 @@ static bool DispatcherCallback(
 {
     redirectExecAddr = 0;
 
-    const uint16_t mask = FindDispatchMask(arm9ExecAddr);
-    if (UNLIKELY(mask == 0))
-        return false;
-
     // ARM9Hook_Install() always passes a non-null MelonPrimeCore as userdata,
     // and ClearARM9InstructionHook() detaches the dispatcher entirely, so when
     // we get here core is by construction non-null. Skip the per-handler null
     // checks that the previous design carried.
     auto* const core = static_cast<MelonPrimeCore*>(userdata);
+    const uint16_t mask = FindDispatchMask(core->Arm9HookState(), arm9ExecAddr);
+    if (UNLIKELY(mask == 0))
+        return false;
 
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
@@ -229,7 +226,8 @@ void ARM9Hook_Install(
     uint8_t activeScope,
     EmuInstance* osdEmu)
 {
-    ClearDispatchEntries();
+    auto& state = core->Arm9HookState();
+    ClearDispatchEntries(state);
 
     if (!nds)
     {
@@ -257,7 +255,7 @@ void ARM9Hook_Install(
 
     auto addModuleAddresses = [&](uint16_t mask) {
         for (uint32_t i = 0; i < moduleCount; ++i)
-            AddDispatchAddress(moduleAddresses[i], mask);
+            AddDispatchAddress(state, moduleAddresses[i], mask);
     };
 
     int nativeAimHookMode = cfg.GetInt(CfgKey::NativeAimHookMode);
@@ -395,9 +393,9 @@ void ARM9Hook_Install(
     }
 
     uint32_t addresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
-    const uint32_t count = s_dispatchCount;
+    const uint32_t count = state.count;
     for (uint32_t i = 0; i < count; ++i)
-        addresses[i] = s_dispatchEntries[i].Address;
+        addresses[i] = state.entries[i].address;
 
     MP_ARM9_HOOK_LOG(
         "ARM9Hook Install: rom=%u count=%u max=%u\n",
@@ -409,8 +407,8 @@ void ARM9Hook_Install(
         MP_ARM9_HOOK_LOG(
             "ARM9Hook Address[%u]: %08X mask=%02X\n",
             i,
-            s_dispatchEntries[i].Address,
-            static_cast<unsigned>(s_dispatchEntries[i].Mask));
+            state.entries[i].address,
+            static_cast<unsigned>(state.entries[i].mask));
     }
 
     if (count > 0)
@@ -461,15 +459,19 @@ void ARM9Hook_SetMatchHooksActive(
         osdEmu);
 }
 
-void ARM9Hook_Uninstall(melonDS::NDS* nds, EmuInstance* osdEmu)
+void ARM9Hook_Uninstall(
+    melonDS::NDS* nds,
+    MelonPrimeCore* core,
+    EmuInstance* osdEmu)
 {
+    auto& state = core->Arm9HookState();
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     // emuInstance->reset() clears the NDS hook slot before OnEmuStart, but
-    // s_dispatchCount still reflects MelonPrime's last registered hook set.
+    // Instance state still reflects MelonPrime's last registered hook set.
     const bool hadHooks =
-        s_dispatchCount > 0 || HasInstalledInstructionHook(nds);
+        state.count > 0 || HasInstalledInstructionHook(nds);
 #endif
-    ClearDispatchEntries();
+    ClearDispatchEntries(state);
     ShadowFreezeRuntimeHook_ClearState();
     FixNoxusBladePersistence_ClearState();
     if (nds)

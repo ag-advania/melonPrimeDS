@@ -1,6 +1,7 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchOsdColor.h"
+#include "MelonPrimePatchState.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeHudPropSchema.inc"
@@ -87,10 +88,6 @@ static constexpr uint32_t kOsdSlotAddr[7][OSD_SLOT_COUNT] = {
 // -------------------------------------------------------------------------
 //  Static state
 // -------------------------------------------------------------------------
-static bool s_osdColorPatchApplied = false;
-static int  s_osdH211PatchMode     = 0; // 0=none, 1=4-instr shim, 2=10-instr sep color
-static bool s_osdConfigDirty       = true;
-
 // -------------------------------------------------------------------------
 //  Helpers
 // -------------------------------------------------------------------------
@@ -142,43 +139,42 @@ static void ApplySlotOverridePerFlag(melonDS::u8* ram, size_t idx,
 // -------------------------------------------------------------------------
 //  Public API
 // -------------------------------------------------------------------------
-void OsdColor_ResetPatchState()
+void OsdColor_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_osdColorPatchApplied = false;
-    s_osdH211PatchMode     = 0;
-    s_osdConfigDirty       = true;
+    state.osdColor = {};
 }
 
-void OsdColor_InvalidatePatch()
+void OsdColor_InvalidatePatch(MelonPrimePatchState& state)
 {
-    s_osdConfigDirty = true;
+    state.osdColor.configDirty = true;
 }
 
-void OsdColor_RestoreOnce(melonDS::NDS* nds, const RomAddresses& rom)
+void OsdColor_RestoreOnce(MelonPrimePatchState& state, melonDS::NDS* nds, const RomAddresses& rom)
 {
-    if (!s_osdColorPatchApplied && s_osdH211PatchMode == 0) {
-        s_osdConfigDirty = true;
+    auto& patch = state.osdColor;
+    if (!patch.applied && patch.h211Mode == 0) {
+        patch.configDirty = true;
         return;
     }
 
     melonDS::u8* ram = nds->MainRAM;
     const size_t idx = rom.romGroupIndex;
 
-    if (s_osdColorPatchApplied) {
+    if (patch.applied) {
 #define MP_OSD_COLOR_RESTORE_LITERAL(id, dialogLabel, keyPrefix, literalList, restoreValue) \
         Write32(ram, LIST_##literalList[idx], restoreValue);
         MP_OSD_COLOR_LITERAL_ROWS(MP_OSD_COLOR_RESTORE_LITERAL)
 #undef MP_OSD_COLOR_RESTORE_LITERAL
-        s_osdColorPatchApplied = false;
+        patch.applied = false;
     }
 
-    if (s_osdH211PatchMode != 0) {
+    if (patch.h211Mode != 0) {
         const uint32_t shimBase = LIST_OsdH211ShimAddr[idx];
         Write32(ram, shimBase + 0x00u, kH211OrigInstr0);
         Write32(ram, shimBase + 0x04u, kH211OrigInstr1);
         Write32(ram, shimBase + 0x08u, LIST_OsdH211OrigShimInstr2[idx]);
         Write32(ram, shimBase + 0x0Cu, kH211OrigInstr3);
-        if (s_osdH211PatchMode == 2) {
+        if (patch.h211Mode == 2) {
             Write32(ram, shimBase + 0x10u, LIST_OsdH211SepOrigInstr4[idx]);
             Write32(ram, shimBase + 0x14u, kH211SepOrigInstr5);
             Write32(ram, shimBase + 0x18u, kH211SepOrigInstr6);
@@ -186,23 +182,25 @@ void OsdColor_RestoreOnce(melonDS::NDS* nds, const RomAddresses& rom)
             Write32(ram, shimBase + 0x20u, kH211SepOrigInstr8);
             Write32(ram, shimBase + 0x24u, kH211SepOrigInstr9);
         }
-        s_osdH211PatchMode = 0;
+        patch.h211Mode = 0;
     }
 
-    s_osdConfigDirty = true; // restored state needs re-apply on next join
+    patch.configDirty = true; // restored state needs re-apply on next join
 }
 
-void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
+void OsdColor_ApplyOnce(MelonPrimePatchState& state,
+                         EmuInstance* emu, Config::Table& localCfg,
                          const RomAddresses& rom)
 {
+    auto& patch = state.osdColor;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     MelonPrimePerf::CountOsdColorApply();
 #endif
-    if (!s_osdConfigDirty) return;
+    if (!patch.configDirty) return;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     MelonPrimePerf::CountOsdColorWrite();
 #endif
-    s_osdConfigDirty = false;
+    patch.configDirty = false;
 
     // OsdColor patches are part of the Custom HUD feature; force-disable when
     // CustomHUD itself is off so toggling it cleanly restores all OSD literals.
@@ -211,8 +209,8 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
     const bool h211Enabled   = customHudEnabled && localCfg.GetBool(kCfgOsdColorH211Enable);
 
     // Restore any previously applied state so mode changes are handled cleanly
-    OsdColor_RestoreOnce(emu->getNDS(), rom);
-    s_osdConfigDirty = false; // RestoreOnce sets it true; we're about to re-apply
+    OsdColor_RestoreOnce(state, emu->getNDS(), rom);
+    patch.configDirty = false; // RestoreOnce sets it true; we're about to re-apply
 
     if (!globalEnabled && !h211Enabled) return;
 
@@ -234,7 +232,7 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
                 litColor(MP_OSD_COLOR_KEY_R(keyPrefix), MP_OSD_COLOR_KEY_G(keyPrefix), MP_OSD_COLOR_KEY_B(keyPrefix)));
         MP_OSD_COLOR_LITERAL_ROWS(MP_OSD_COLOR_APPLY_LITERAL)
 #undef MP_OSD_COLOR_APPLY_LITERAL
-        s_osdColorPatchApplied = true;
+        patch.applied = true;
 
         // Immediately update currently displayed OSD slots.
         // applyGlobal=true  → write globalColor to every slot.
@@ -282,7 +280,7 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
         Write32(ram, shimBase + 0x1Cu, 0xE3A03011u);
         Write32(ram, shimBase + 0x20u, 0xE28DC00Cu);
         Write32(ram, shimBase + 0x24u, 0xE88C000Eu);
-        s_osdH211PatchMode = 2;
+        patch.h211Mode = 2;
     } else if (globalEnabled) {
         // H211 shim (4 instructions): redirect H211 to the ReturnBase literal
         const uint32_t shimBase = LIST_OsdH211ShimAddr[idx];
@@ -290,7 +288,7 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
         Write32(ram, shimBase + 0x04u, 0xE3A0301Fu);
         Write32(ram, shimBase + 0x08u, 0xE98D000Cu);
         Write32(ram, shimBase + 0x0Cu, LIST_OsdH211ShimInstr3[idx]);
-        s_osdH211PatchMode = 1;
+        patch.h211Mode = 1;
     }
 }
 

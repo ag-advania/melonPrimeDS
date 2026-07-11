@@ -1,6 +1,7 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchAspectRatio.h"
+#include "MelonPrimePatchState.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeHudPropSchema.inc"
@@ -24,9 +25,7 @@ static constexpr uint16_t kScalePatchVal[4] = {
     0x1AAB, 0x199A, 0x1C72, 0x2555,
 };
 
-static bool s_scalePatchApplied = false;
-
-static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mode)
+static void ApplyScalingPatch(MelonPrimePatchState& state, melonDS::NDS* nds, const RomAddresses& rom, int mode)
 {
     if (mode < 0 || mode > 3) return;
     melonDS::u8* ram = nds->MainRAM;
@@ -36,12 +35,12 @@ static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mo
         Write32(ram, rom.scalePatchAddr2, kScalePatchInstr[mode]);
     if (Read16(ram, rom.scaleValueAddr) == kScaleOrigVal)
         Write16(ram, rom.scaleValueAddr, kScalePatchVal[mode]);
-    s_scalePatchApplied = true;
+    state.aspectRatioApplied = true;
 }
 
-void InGameAspectRatio_ResetPatchState()
+void InGameAspectRatio_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_scalePatchApplied = false;
+    state.aspectRatioApplied = false;
 }
 
 static int AspectIdToScaleMode(int aspectId)
@@ -54,7 +53,8 @@ static int AspectIdToScaleMode(int aspectId)
     }
 }
 
-void InGameAspectRatio_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
+void InGameAspectRatio_ApplyOnce(MelonPrimePatchState& state,
+                                  EmuInstance* emu, Config::Table& localCfg,
                                   const RomAddresses& rom)
 {
     bool enabled = localCfg.GetBool(kCfgAspectRatioEnabled);
@@ -71,7 +71,7 @@ void InGameAspectRatio_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
     } else {
         patchMode = comboMode - 1;
     }
-    ApplyScalingPatch(emu->getNDS(), rom, patchMode);
+    ApplyScalingPatch(state, emu->getNDS(), rom, patchMode);
 }
 
 } // namespace MelonPrime

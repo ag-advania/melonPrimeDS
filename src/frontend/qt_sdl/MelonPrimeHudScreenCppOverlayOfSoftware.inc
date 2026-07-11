@@ -12,8 +12,8 @@
         const float hudScale    = m_hudScale;
         const float topStretchX = m_topStretchX;
 
-        MelonPrimeHud_RefreshHudEnabledIfNeeded(instcfg, m_hudCfgEpoch, m_hudEnabled);
-        MelonPrimeHud_RefreshOverlayFontIfNeeded(instcfg, m_hudFontEpoch, overlayFont);
+        MelonPrimeHud_RefreshHudEnabledIfNeeded(mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+        MelonPrimeHud_RefreshOverlayFontIfNeeded(mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
 
         if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
         {

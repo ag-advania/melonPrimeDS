@@ -4,6 +4,8 @@
 #include "MelonPrime.h"
 #include "MelonPrimeArm9Hook.h"
 #include "MelonPrimePatchRegistry.h"
+#include "MelonPrimePatchOsdColor.h"
+#include "MelonPrimePatchExpandStageMatrix.h"
 
 namespace MelonPrime::PatchLifecycle {
 
@@ -25,18 +27,19 @@ void SetMatchHooksActive(melonDS::NDS* nds,
         emu);
 }
 
-void ResetPatchAndHookBookkeeping()
+void ResetPatchAndHookBookkeeping(MelonPrimeCore* core)
 {
-    Patches_ResetAll();
+    Patches_ResetAll(core->PatchState());
     ARM9Hook_ResetPatchState();
 }
 
 void RestoreStopPatches(melonDS::NDS* nds,
                         EmuInstance* emu,
                         Config::Table& cfg,
-                        const RomAddresses& rom)
+                        const RomAddresses& rom,
+                        MelonPrimeCore* core)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
+    const PatchCtx ctx{ nds, emu, cfg, rom, core->PatchState() };
     Patches_RestoreOnStop(ctx);
 }
 
@@ -44,18 +47,20 @@ void ApplyRegistryPatches(uint8_t siteMask,
                           melonDS::NDS* nds,
                           EmuInstance* emu,
                           Config::Table& cfg,
-                          const RomAddresses& rom)
+                          const RomAddresses& rom,
+                          MelonPrimeCore* core)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
+    const PatchCtx ctx{ nds, emu, cfg, rom, core->PatchState() };
     Patches_Apply(siteMask, ctx);
 }
 
 void RestoreLeavePatches(melonDS::NDS* nds,
                          EmuInstance* emu,
                          Config::Table& cfg,
-                         const RomAddresses& rom)
+                         const RomAddresses& rom,
+                         MelonPrimeCore* core)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
+    const PatchCtx ctx{ nds, emu, cfg, rom, core->PatchState() };
     Patches_RestoreOnLeave(ctx);
 }
 
@@ -64,31 +69,34 @@ void RestoreLeavePatches(melonDS::NDS* nds,
 void ResetForEmuStart(melonDS::NDS* nds,
                       EmuInstance* emu,
                       Config::Table& cfg,
-                      const RomAddresses& rom)
+                      const RomAddresses& rom,
+                      MelonPrimeCore* core)
 {
-    ARM9Hook_Uninstall(nds, emu);
-    RestoreStopPatches(nds, emu, cfg, rom);
-    ResetPatchAndHookBookkeeping();
+    ARM9Hook_Uninstall(nds, core, emu);
+    RestoreStopPatches(nds, emu, cfg, rom, core);
+    ResetPatchAndHookBookkeeping(core);
 }
 
 void ResetForBoot(melonDS::NDS* nds,
-                  EmuInstance* emu)
+                  EmuInstance* emu,
+                  MelonPrimeCore* core)
 {
-    ARM9Hook_Uninstall(nds, emu);
+    ARM9Hook_Uninstall(nds, core, emu);
     // boot reset: state only, no RAM restore (emu memory is being re-initialized)
-    ResetPatchAndHookBookkeeping();
+    ResetPatchAndHookBookkeeping(core);
 }
 
 void RestoreForEmuStop(melonDS::NDS* nds,
                        EmuInstance* emu,
                        Config::Table& cfg,
-                       const RomAddresses& rom)
+                       const RomAddresses& rom,
+                       MelonPrimeCore* core)
 {
     // Historical OnEmuStop behavior: DS patch restore runs unconditionally,
     // regardless of whether a ROM was ever detected this session.
-    ARM9Hook_Uninstall(nds, emu);
-    RestoreStopPatches(nds, emu, cfg, rom);
-    ResetPatchAndHookBookkeeping();
+    ARM9Hook_Uninstall(nds, core, emu);
+    RestoreStopPatches(nds, emu, cfg, rom, core);
+    ResetPatchAndHookBookkeeping(core);
 }
 
 void ReapplyForConfigReload(melonDS::NDS* nds,
@@ -99,19 +107,22 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
                             bool romDetected,
                             bool battleRuntimeMode)
 {
+    OsdColor_InvalidatePatch(core->PatchState());
+    ExpandStageMatrix_InvalidatePatch(core->PatchState());
     if (!romDetected || !battleRuntimeMode)
         return;
 
     SetMatchHooksActive(nds, emu, cfg, rom, core, true);
-    ApplyRegistryPatches(PatchSite_ConfigReload, nds, emu, cfg, rom);
+    ApplyRegistryPatches(PatchSite_ConfigReload, nds, emu, cfg, rom, core);
 }
 
 void ApplyOutOfGameFrame(melonDS::NDS* nds,
                          EmuInstance* emu,
                          Config::Table& cfg,
-                         const RomAddresses& rom)
+                         const RomAddresses& rom,
+                         MelonPrimeCore* core)
 {
-    ApplyRegistryPatches(PatchSite_OutOfGameFrame, nds, emu, cfg, rom);
+    ApplyRegistryPatches(PatchSite_OutOfGameFrame, nds, emu, cfg, rom, core);
 }
 
 void RestoreOnMatchEnd(melonDS::NDS* nds,
@@ -120,7 +131,7 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
                        const RomAddresses& rom,
                        MelonPrimeCore* core)
 {
-    RestoreLeavePatches(nds, emu, cfg, rom);
+    RestoreLeavePatches(nds, emu, cfg, rom, core);
     SetMatchHooksActive(nds, emu, cfg, rom, core, false);
 }
 
@@ -131,7 +142,7 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                MelonPrimeCore* core,
                                bool nativeWeaponSwitchEnabled)
 {
-    ApplyRegistryPatches(PatchSite_BattleRuntime, nds, emu, cfg, rom);
+    ApplyRegistryPatches(PatchSite_BattleRuntime, nds, emu, cfg, rom, core);
     SetMatchHooksActive(nds, emu, cfg, rom, core, true);
     if (nativeWeaponSwitchEnabled)
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);

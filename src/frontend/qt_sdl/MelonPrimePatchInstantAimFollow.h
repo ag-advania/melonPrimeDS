@@ -9,17 +9,20 @@ namespace Config { class Table; }
 namespace melonDS { class NDS; }
 
 namespace MelonPrime {
+struct MelonPrimePatchState;
 
 void InstantAimFollow_ApplyOnce(
+    MelonPrimePatchState& state,
     melonDS::NDS* nds,
     Config::Table& cfg,
     uint8_t romGroupIndex);
 
 void InstantAimFollow_RestoreOnce(
+    MelonPrimePatchState& state,
     melonDS::NDS* nds,
     uint8_t romGroupIndex);
 
-void InstantAimFollow_ResetPatchState();
+void InstantAimFollow_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

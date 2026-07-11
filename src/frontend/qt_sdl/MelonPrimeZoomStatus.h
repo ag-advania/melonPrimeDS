@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include "MelonPrimeInternal.h"
+#include "MelonPrimeZoomState.h"
 
 namespace MelonPrime::ZoomStatus {
 
@@ -30,13 +31,6 @@ namespace MelonPrime::ZoomStatus {
         bool scoped = false;
         bool canZoom = false;
         bool rawVisible = false;
-    };
-
-    struct ZoomCapabilityCache {
-        uint32_t player = 0;
-        uint32_t weapon = 0;
-        bool valid = false;
-        bool canZoom = false;
     };
 
     struct ReticleVisibilityState {

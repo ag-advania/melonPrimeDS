@@ -1,6 +1,7 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchExpandStageMatrix.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 #include "NDS.h"
@@ -111,22 +112,20 @@ static bool StageMatrixLoadedStrict(melonDS::NDS* nds, const MatrixVersionInfo& 
 
 // ---- Public API ----
 
-static bool s_pendingRestore = false;
-
-void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void ExpandStageMatrix_ApplyIfLoaded(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     const bool enabled = cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrix);
 
-    if (!s_pendingRestore && !enabled) return;
+    if (!state.expandStageMatrixPendingRestore && !enabled) return;
     if (romGroupIndex >= 7) return;
 
     const MatrixVersionInfo& info = kMatrixVersions[romGroupIndex];
     if (!StageMatrixLoadedStrict(nds, info)) return;
 
-    if (s_pendingRestore) {
+    if (state.expandStageMatrixPendingRestore) {
         // Write the correct state for every cell based on current settings.
         // Handles: parent off, extra off, or any combination changing on save.
-        s_pendingRestore = false;
+        state.expandStageMatrixPendingRestore = false;
         const bool extraEnabled = enabled && cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrixExtra);
         for (const auto& cell : kBaseCells)
             nds->ARM9Write8(MatrixAddr(info, cell), enabled ? 0x01u : 0x00u);
@@ -145,14 +144,14 @@ void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint
     }
 }
 
-void ExpandStageMatrix_InvalidatePatch()
+void ExpandStageMatrix_InvalidatePatch(MelonPrimePatchState& state)
 {
-    s_pendingRestore = true;
+    state.expandStageMatrixPendingRestore = true;
 }
 
-void ExpandStageMatrix_ResetPatchState()
+void ExpandStageMatrix_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_pendingRestore = false;
+    state.expandStageMatrixPendingRestore = false;
 }
 
 } // namespace MelonPrime

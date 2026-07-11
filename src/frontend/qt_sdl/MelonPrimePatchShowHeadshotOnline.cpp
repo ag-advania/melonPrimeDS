@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchShowHeadshotOnline.h"
 #include "MelonPrimePatchCommon.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 
@@ -32,29 +33,29 @@ static constexpr RomPatchSpan kPatchSpans[7] = {
     { &kPatchWords[6], 1 },
 };
 
-static StaticWordPatch s_patch(kPatchSpans);
+static const StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
-void ShowHeadshotOnline_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void ShowHeadshotOnline_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     if (!cfg.GetBool(kCfgShowHeadshotOnline))
     {
-        s_patch.RestoreOnce(nds, romGroupIndex);
+        s_patch.RestoreOnce(state.showHeadshotOnline, nds, romGroupIndex);
         return;
     }
 
-    s_patch.ApplyOnce(nds, romGroupIndex);
+    s_patch.ApplyOnce(state.showHeadshotOnline, nds, romGroupIndex);
 }
 
-void ShowHeadshotOnline_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+void ShowHeadshotOnline_RestoreOnce(MelonPrimePatchState& state, melonDS::NDS* nds, uint8_t romGroupIndex)
 {
-    s_patch.RestoreOnce(nds, romGroupIndex);
+    s_patch.RestoreOnce(state.showHeadshotOnline, nds, romGroupIndex);
 }
 
-void ShowHeadshotOnline_ResetPatchState()
+void ShowHeadshotOnline_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_patch.ResetState();
+    StaticWordPatch::ResetState(state.showHeadshotOnline);
 }
 
 } // namespace MelonPrime

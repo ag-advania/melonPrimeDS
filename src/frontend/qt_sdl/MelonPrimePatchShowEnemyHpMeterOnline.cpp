@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
 #include "MelonPrimePatchCommon.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 
@@ -60,29 +61,29 @@ static constexpr RomPatchSpan kPatchSpans[7] = {
     { &kPatchWords[6][0], 2 },
 };
 
-static StaticWordPatch s_patch(kPatchSpans);
+static const StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
-void ShowEnemyHpMeterOnline_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void ShowEnemyHpMeterOnline_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     if (!cfg.GetBool(kCfgShowEnemyHpMeterOnline))
     {
-        s_patch.RestoreOnce(nds, romGroupIndex);
+        s_patch.RestoreOnce(state.showEnemyHpOnline, nds, romGroupIndex);
         return;
     }
 
-    s_patch.ApplyOnce(nds, romGroupIndex);
+    s_patch.ApplyOnce(state.showEnemyHpOnline, nds, romGroupIndex);
 }
 
-void ShowEnemyHpMeterOnline_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+void ShowEnemyHpMeterOnline_RestoreOnce(MelonPrimePatchState& state, melonDS::NDS* nds, uint8_t romGroupIndex)
 {
-    s_patch.RestoreOnce(nds, romGroupIndex);
+    s_patch.RestoreOnce(state.showEnemyHpOnline, nds, romGroupIndex);
 }
 
-void ShowEnemyHpMeterOnline_ResetPatchState()
+void ShowEnemyHpMeterOnline_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_patch.ResetState();
+    StaticWordPatch::ResetState(state.showEnemyHpOnline);
 }
 
 } // namespace MelonPrime

@@ -22,7 +22,13 @@ namespace MelonPrime {
         uint32_t count;
     };
 
-    // Shared state machine for per-process singleton static write-patches.
+    struct StaticWordPatchState {
+        bool applied = false;
+        uint8_t appliedRomGroupIndex = 0xFFu;
+    };
+
+    // Immutable patch description. Mutable bookkeeping is supplied by the
+    // owning MelonPrimeCore through StaticWordPatchState.
     // This helper is intentionally limited to all-or-nothing word patches;
     // instruction hooks, pattern-C loaded-state patches, and partial masks stay
     // in their modules.
@@ -33,41 +39,46 @@ namespace MelonPrime {
         {
         }
 
-        void ApplyOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+        void ApplyOnce(
+            StaticWordPatchState& state,
+            melonDS::NDS* nds,
+            uint8_t romGroupIndex) const
         {
             if (!IsSupportedRomGroup(romGroupIndex))
                 return;
-            if (m_applied && m_appliedRomGroupIndex == romGroupIndex)
+            if (state.applied && state.appliedRomGroupIndex == romGroupIndex)
                 return;
-            if (m_applied)
-                RestoreOnce(nds, m_appliedRomGroupIndex);
+            if (state.applied)
+                RestoreOnce(state, nds, state.appliedRomGroupIndex);
             if (!CanWritePatch(nds, romGroupIndex, true))
                 return;
 
             WritePatch(nds, romGroupIndex, true);
-            m_applied = true;
-            m_appliedRomGroupIndex = romGroupIndex;
+            state.applied = true;
+            state.appliedRomGroupIndex = romGroupIndex;
         }
 
-        void RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+        void RestoreOnce(
+            StaticWordPatchState& state,
+            melonDS::NDS* nds,
+            uint8_t romGroupIndex) const
         {
-            if (!m_applied || !nds)
+            if (!state.applied || !nds)
                 return;
-            if (IsSupportedRomGroup(m_appliedRomGroupIndex))
-                romGroupIndex = m_appliedRomGroupIndex;
+            if (IsSupportedRomGroup(state.appliedRomGroupIndex))
+                romGroupIndex = state.appliedRomGroupIndex;
             if (!IsSupportedRomGroup(romGroupIndex))
                 return;
             if (!CanWritePatch(nds, romGroupIndex, false))
                 return;
 
             WritePatch(nds, romGroupIndex, false);
-            ResetState();
+            ResetState(state);
         }
 
-        void ResetState()
+        static void ResetState(StaticWordPatchState& state)
         {
-            m_applied = false;
-            m_appliedRomGroupIndex = 0xFFu;
+            state = {};
         }
 
     private:
@@ -108,8 +119,6 @@ namespace MelonPrime {
         }
 
         const RomPatchSpan (&m_perRomSpans)[7];
-        bool m_applied = false;
-        uint8_t m_appliedRomGroupIndex = 0xFFu;
     };
 
 } // namespace MelonPrime

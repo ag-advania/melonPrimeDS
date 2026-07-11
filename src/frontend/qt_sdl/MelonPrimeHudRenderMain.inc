@@ -20,6 +20,7 @@ static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX
 //  CustomHud_Render — main entry point
 // =========================================================================
 HOT_FUNCTION QRect CustomHud_Render(
+    CustomHudConfigState& hudConfig,
     EmuInstance* emu, Config::Table& localCfg,
     const RomAddresses& rom, const GameAddressesHot& addrHot,
     uint8_t playerPosition,
@@ -29,6 +30,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
+    const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
                                                        hudOriginXds, hudOriginYds);
 

@@ -70,6 +70,7 @@ namespace MelonPrime {
 
     COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
     {
+        m_zoomAimCanZoomCache = {};
         RomGroup    group;
         const char* osdName;
         bool        isVariant = false;  // true => matched by header fallback, not checksum

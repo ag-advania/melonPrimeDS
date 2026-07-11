@@ -20,15 +20,18 @@ namespace PatchLifecycle {
 void ResetForEmuStart(melonDS::NDS* nds,
                       EmuInstance* emu,
                       Config::Table& cfg,
-                      const RomAddresses& rom);
+                      const RomAddresses& rom,
+                      MelonPrimeCore* core);
 
 void ResetForBoot(melonDS::NDS* nds,
-                  EmuInstance* emu);
+                  EmuInstance* emu,
+                  MelonPrimeCore* core);
 
 void RestoreForEmuStop(melonDS::NDS* nds,
                        EmuInstance* emu,
                        Config::Table& cfg,
-                       const RomAddresses& rom);
+                       const RomAddresses& rom,
+                       MelonPrimeCore* core);
 
 void ReapplyForConfigReload(melonDS::NDS* nds,
                             EmuInstance* emu,
@@ -46,7 +49,8 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
 void ApplyOutOfGameFrame(melonDS::NDS* nds,
                          EmuInstance* emu,
                          Config::Table& cfg,
-                         const RomAddresses& rom);
+                         const RomAddresses& rom,
+                         MelonPrimeCore* core);
 
 // Step 3 / Site A (see melonprime_patch_lifecycle_gateway_step3_plan.md).
 // Called once, on the match-end poll transition (flowState leaving

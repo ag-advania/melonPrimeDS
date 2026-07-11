@@ -3,8 +3,9 @@
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg)
+void CustomHud_EnterEditMode(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     s_editEmu           = emu;
     s_editSelected      = -1;
     s_editHovered       = -1;
@@ -21,8 +22,9 @@ void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg)
         core->isCursorMode = true;
 }
 
-void CustomHud_ExitEditMode(bool save, Config::Table& cfg)
+void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     if (!save) {
         RestoreEditSnapshot(cfg);
     }
@@ -85,8 +87,9 @@ static int HitTestEditElement(const QPointF& ds)
     return -1;
 }
 
-void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
+void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     // Accept both left and right mouse buttons
     if (btn != Qt::LeftButton && btn != Qt::RightButton) return;
     const QPointF ds = WidgetToDS(pt);
@@ -167,11 +170,11 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
 
     // Priority 1: Save / Cancel / Reset
     if (kEditSaveRect.contains(ds)) {
-        CustomHud_ExitEditMode(true, cfg);
+        CustomHud_ExitEditMode(hudConfig, true, cfg);
         return;
     }
     if (kEditCancelRect.contains(ds)) {
-        CustomHud_ExitEditMode(false, cfg);
+        CustomHud_ExitEditMode(hudConfig, false, cfg);
         return;
     }
     if (kEditResetRect.contains(ds)) {
@@ -635,8 +638,9 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     NotifySelectionChanged(-1);
 }
 
-void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
+void CustomHud_EditMouseMove(CustomHudConfigState& hudConfig, QPointF pt, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     const QPointF ds = WidgetToDS(pt);
 
     if (s_textScaleDragging) {
@@ -696,8 +700,9 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
     s_editHovered = HitTestEditElement(ds);
 }
 
-void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
+void CustomHud_EditMouseRelease(CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     Q_UNUSED(pt);
     Q_UNUSED(btn);
     Q_UNUSED(cfg);
@@ -708,8 +713,9 @@ void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& 
     s_autoScaleCapDragging = false;
 }
 
-void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
+void CustomHud_EditMouseWheel(CustomHudConfigState& hudConfig, QPointF pt, int delta, Config::Table& cfg)
 {
+    const ScopedHudConfigState active(hudConfig);
     if (!s_editMode) return;
     QPointF ds = WidgetToDS(pt);
 

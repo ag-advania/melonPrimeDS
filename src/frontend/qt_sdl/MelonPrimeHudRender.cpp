@@ -73,6 +73,9 @@ namespace MelonPrime {
 // Developer-only golden hash harness.
 #include "MelonPrimeHudGoldenHarness.inc"
 
+#undef s_cacheEpoch
+#undef s_cache
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD

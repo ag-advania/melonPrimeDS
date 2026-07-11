@@ -41,6 +41,19 @@ void LogLifecycle(EmuInstance* emu, const void* core, const char* event) noexcep
         << "][core=" << core << "] " << event;
 }
 
+void LogOwnedStates(
+    EmuInstance* emu,
+    const void* hook,
+    const void* patch,
+    const void* hud) noexcept
+{
+    qInfo().nospace()
+        << "[MelonPrime][instance=" << InstanceId(emu)
+        << "][state] hook=" << hook
+        << " patch=" << patch
+        << " hud=" << hud;
+}
+
 bool CheckGuiThread(EmuInstance* emu, const char* operation) noexcept
 {
     const QCoreApplication* app = QCoreApplication::instance();

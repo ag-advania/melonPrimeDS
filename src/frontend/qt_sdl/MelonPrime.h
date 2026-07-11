@@ -20,8 +20,10 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeZoomState.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
+#include "MelonPrimePatchState.h"
 #endif
 
 class EmuInstance;
@@ -29,9 +31,27 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
+#ifdef MELONPRIME_DS
+    struct MelonPrimeArm9HookState {
+        struct DispatchEntry {
+            uint32_t address = 0;
+            uint16_t mask = 0;
+        };
+
+        static constexpr uint32_t Capacity = 32;
+        std::array<DispatchEntry, Capacity> entries{};
+        uint32_t count = 0;
+        uint32_t lastAddress = 0;
+        uint16_t lastMask = 0;
+    };
+#endif
+
     struct RuntimeConfigSnapshot;
 
     struct AimConfigSnapshot;
+#ifdef MELONPRIME_CUSTOM_HUD
+    struct CustomHudConfigState;
+#endif
 
 #ifdef _WIN32
     class RawInputWinFilter;
@@ -221,6 +241,14 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
+        [[nodiscard]] MelonPrimeArm9HookState& Arm9HookState() noexcept
+        {
+            return m_arm9HookState;
+        }
+        [[nodiscard]] MelonPrimePatchState& PatchState() noexcept
+        {
+            return m_patchState;
+        }
 
         // -----------------------------------------------------------------
         // ARM9 instruction-hook module contracts (Foo_GetAddresses /
@@ -320,6 +348,10 @@ namespace MelonPrime {
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
         [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
+        [[nodiscard]] CustomHudConfigState& HudConfigState() noexcept
+        {
+            return *m_hudConfigState;
+        }
 #endif
 
         // --- Public runtime state (read/written directly by Screen.cpp,
@@ -623,6 +655,15 @@ namespace MelonPrime {
         PlatformRawFilter* m_platformRawFilter = nullptr;
         // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
         uint8_t m_platformRawAimWasActive = 0;
+#endif
+
+        ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
+#ifdef MELONPRIME_DS
+        MelonPrimeArm9HookState m_arm9HookState{};
+        MelonPrimePatchState m_patchState{};
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+        std::shared_ptr<CustomHudConfigState> m_hudConfigState;
 #endif
 
         // =================================================================
