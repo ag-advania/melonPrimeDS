@@ -27,6 +27,7 @@ config/schema discipline. It runs before the Windows build:
 - `.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1`
 - `.claude/skills/audit-platform-scatter-budget.ps1 -Budget 22`
 - `.claude/skills/audit-color-dialog-prefs.ps1`
+- `.claude/skills/audit-melonprime-thread-boundary.ps1 -Strict`
 - `.claude/skills/generate-hud-prop-schema.py` followed by `git diff --exit-code`
 
 Rules:

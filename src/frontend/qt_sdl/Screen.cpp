@@ -98,9 +98,66 @@ const int kLogoWidth = 192;
 #ifdef MELONPRIME_DS
 #include "MelonPrimeHudScreenCppHelpers.inc"
 
+void ScreenPanel::getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy)
+{
+    if (auto* core = melonPrimeCore())
+        core->ThreadBridge().getAimMouseDelta(outDx, outDy);
+    else
+        outDx = outDy = 0;
+}
+
+void ScreenPanel::resetAimMouseDelta()
+{
+    if (auto* core = melonPrimeCore())
+        core->ThreadBridge().ResetPanelAimDeltaFromGui();
+#if !defined(_WIN32)
+    aimLastGlobalValid.store(false, std::memory_order_release);
+#endif
+}
+
+#if defined(__linux__)
+void ScreenPanel::addAimMouseDeltaForMelonPrime(
+    std::int32_t dx, std::int32_t dy) noexcept
+{
+    if (auto* core = melonPrimeCore())
+        core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
+}
+#endif
+
+void ScreenPanel::syncMelonPrimeThreadBridge()
+{
+    auto* core = melonPrimeCore();
+    if (!core)
+        return;
+    auto& bridge = core->ThreadBridge();
+    bridge.SetPanelAvailableFromGui(!closing && isVisible());
+    const QPoint center = mapToGlobal(rect().center());
+    bridge.PublishCenterFromGui(center.x(), center.y());
+    bridge.PublishWindowHandleFromGui(static_cast<uintptr_t>(winId()));
+
+    const uint32_t requests = bridge.TakeGuiRequestsFromGui();
+    if (requests & MelonPrime::MelonPrimeThreadBridge::GuiRequestShowCursor) {
+        setCursor(Qt::ArrowCursor);
+        MelonPrime::ScreenCursorPolicy::Unclip(*this);
+        return;
+    }
+    if (requests & (MelonPrime::MelonPrimeThreadBridge::GuiRequestHideCursor
+                    | MelonPrime::MelonPrimeThreadBridge::GuiRequestRefreshCapture)) {
+        MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
+    }
+#if !defined(_WIN32)
+    if (requests & MelonPrime::MelonPrimeThreadBridge::GuiRequestRecenter) {
+        resetAimMouseDelta();
+        MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
+    }
+#endif
+}
+
 void ScreenPanel::wheelEvent(QWheelEvent* event)
 {
-    wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+    if (auto* core = melonPrimeCore())
+        core->ThreadBridge().AddWheelFromGui(
+            (event->angleDelta().y() > 0) ? 1 : -1);
 #include "MelonPrimeHudScreenCppMouseWheel.inc"
     event->accept();
 }
@@ -110,13 +167,16 @@ void ScreenPanel::refreshClipForGameStateChange()
     if (closing || !qApp || qApp->closingDown())
         return;
 
+    syncMelonPrimeThreadBridge();
     auto* core = melonPrimeCore();
     const bool hasState = (core != nullptr);
-    const bool isInGame = hasState && core->IsInGame();
-    const bool isFocused = hasState && core->isFocused;
+    const auto ui = hasState ? core->ThreadBridge().ReadForGui()
+                             : MelonPrime::MelonPrimeUiSnapshot{};
+    const bool isInGame = hasState && ui.inGame;
+    const bool isFocused = hasState && ui.focused;
     const bool wantsInGameTopScreenOnly =
         hasState
-        && core->IsRomDetected()
+        && ui.romDetected
         && isInGame
         && inGameTopScreenOnly;
 
@@ -155,8 +215,9 @@ void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) con
 
     auto* core = melonPrimeCore();
     if (!core) return;
-    if (!core->IsRomDetected()) return;
-    if (!core->IsInGame()) return;
+    const auto ui = core->ThreadBridge().ReadForGui();
+    if (!ui.romDetected) return;
+    if (!ui.inGame) return;
     if (!inGameTopScreenOnly) return;
 
     layout = screenLayout_Natural;
@@ -170,9 +231,10 @@ bool ScreenPanel::shouldConfineCursorToBottomScreen() const
 
     auto* core = melonPrimeCore();
     if (!core) return false;
-    if (!core->IsRomDetected()) return false;
+    const auto ui = core->ThreadBridge().ReadForGui();
+    if (!ui.romDetected) return false;
     if (getClipWanted()) return false;
-    if (core->IsInGame()) return false;
+    if (ui.inGame) return false;
 
     auto* emu = emuInstance;
     if (!emu) return false;
@@ -267,6 +329,11 @@ void ScreenPanel::beginClose()
     if (closing)
         return;
     closing = true;
+    if (auto* core = melonPrimeCore()) {
+        core->ThreadBridge().SetFocusedFromGui(false);
+        core->ThreadBridge().SetPanelAvailableFromGui(false);
+        core->ThreadBridge().SetCaptureWantedFromGui(false);
+    }
     releaseCursorStateForClose();
 }
 
@@ -474,6 +541,7 @@ void ScreenPanel::setupScreenLayout()
 #ifdef MELONPRIME_DS
     // Notify layout change
     if (!closing && qApp && !qApp->closingDown()) {
+        syncMelonPrimeThreadBridge();
         if (auto* core = melonPrimeCore()) {
             core->NotifyLayoutChange();
         }
@@ -580,7 +648,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
 #endif
     // Click sets focus
-    if (core) core->isFocused = true;
+    if (core) core->ThreadBridge().SetFocusedFromGui(true);
 
     emu->onMousePress(event);
 #endif
@@ -590,10 +658,12 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
     // Mouse aim mode logic
-    if (core && !core->isStylusMode && core->IsInGame())
+    const auto ui = core ? core->ThreadBridge().ReadForGui()
+                         : MelonPrime::MelonPrimeUiSnapshot{};
+    if (core && !ui.stylusMode && ui.inGame)
     {
         // If not in cursor mode (aim mode), treat click as returning to aim (clip)
-        if (!core->isCursorMode)
+        if (!ui.cursorMode)
         {
             clipCursorCenter1px();
             return;
@@ -614,7 +684,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
     // If not in cursor mode, re-clip
-    if (core && !core->isStylusMode && !core->isCursorMode)
+    if (core && !ui.stylusMode && !ui.cursorMode)
     {
         clipCursorCenter1px();
     }
@@ -667,14 +737,16 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 #if defined(MELONPRIME_DS) && (defined(__linux__) || defined(__APPLE__))
     auto* const thread = emu->getEmuThread();
     auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
+    const auto ui = core ? core->ThreadBridge().ReadForGui()
+                         : MelonPrime::MelonPrimeUiSnapshot{};
     // MELONPRIME_INPUT_DEBUG=1: 1 Hz gate/event diagnostics for the Qt aim path.
     static const bool s_aimDbg = getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
     if (Q_UNLIKELY(s_aimDbg)) {
         static int s_events = 0, s_blocked = 0;
         static qint64 s_lastLog = 0;
         const bool gateOk = core
-            && core->isFocused.load(std::memory_order_acquire)
-            && !core->isStylusMode && !core->isCursorMode && core->IsInGame();
+            && ui.focused
+            && !ui.stylusMode && !ui.cursorMode && ui.inGame;
         gateOk ? ++s_events : ++s_blocked;
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         if (now - s_lastLog >= 1000) {
@@ -683,22 +755,39 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
                 " (core=%d focused=%d stylus=%d cursor=%d inGame=%d rawActive=%d)\n",
                 s_events, s_blocked,
                 core ? 1 : 0,
-                core ? (core->isFocused.load(std::memory_order_acquire) ? 1 : 0) : -1,
-                core ? (core->isStylusMode ? 1 : 0) : -1,
-                core ? (core->isCursorMode ? 1 : 0) : -1,
-                core ? (core->IsInGame() ? 1 : 0) : -1,
-                core ? (core->IsPlatformRawAimActive() ? 1 : 0) : -1);
+                core ? (ui.focused ? 1 : 0) : -1,
+                core ? (ui.stylusMode ? 1 : 0) : -1,
+                core ? (ui.cursorMode ? 1 : 0) : -1,
+                core ? (ui.inGame ? 1 : 0) : -1,
+                core ? (ui.rawAimActive ? 1 : 0) : -1);
             s_events = s_blocked = 0;
             s_lastLog = now;
         }
     }
     if (core
-        && core->isFocused.load(std::memory_order_acquire)
-        && !core->isStylusMode
-        && !core->isCursorMode
-        && core->IsInGame())
+        && ui.focused
+        && !ui.stylusMode
+        && !ui.cursorMode
+        && ui.inGame)
     {
 #if defined(__APPLE__)
+        if (ui.rawAimActive) {
+            aimLastGlobalValid.store(false, std::memory_order_release);
+        } else {
+#if QT_VERSION_MAJOR == 6
+            const QPoint global = event->globalPosition().toPoint();
+#else
+            const QPoint global = event->globalPos();
+#endif
+            if (aimLastGlobalValid.load(std::memory_order_acquire)) {
+                const int dx = global.x() - aimLastGlobal.x();
+                const int dy = global.y() - aimLastGlobal.y();
+                if ((dx | dy) != 0)
+                    core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
+            }
+            aimLastGlobal = global;
+            aimLastGlobalValid.store(true, std::memory_order_release);
+        }
         if (getClipWanted())
             containAimCursorIfNeeded();
         return;
@@ -725,7 +814,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         const QRect safeRect = rect().adjusted(16, 16, -16, -16);
         const bool strayed = !safeRect.contains(local);
 
-        if (core->IsPlatformRawAimActive()) {
+        if (ui.rawAimActive) {
             // Raw motion owns deltas, while the X11 grab continues to own
             // pointer routing and hidden-cursor lifetime.
             aimLastGlobalValid.store(false, std::memory_order_release);
@@ -747,8 +836,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
             const int dx = global.x() - aimLastGlobal.x();
             const int dy = global.y() - aimLastGlobal.y();
             if ((dx | dy) != 0) {
-                aimMouseDeltaX.fetch_add(dx, std::memory_order_release);
-                aimMouseDeltaY.fetch_add(dy, std::memory_order_release);
+                core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
             }
         }
         aimLastGlobal = global;
@@ -1886,15 +1974,16 @@ void ScreenPanelGL::drawScreen()
     //   - Forced off during FastForward/SlowMo (isFastForward set by EmuThread)
     //   - DwmFlush mode is normalized away on non-Windows (Linux/macOS expose
     //     only Off/glFinish in settings)
-    if (auto* core = emuThread->GetMelonPrimeCore();
-        core && UNLIKELY(core->screenSyncMode != 0) && !core->isFastForward)
-    {
-        if (core->screenSyncMode == 1)
-            glFinish();
+    if (auto* core = emuThread->GetMelonPrimeCore(); core) {
+        const auto ui = core->ThreadBridge().ReadForGui();
+        if (UNLIKELY(ui.screenSyncMode != 0) && !ui.fastForward) {
+            if (ui.screenSyncMode == 1)
+                glFinish();
 #ifdef _WIN32
-        else if (core->screenSyncMode == 2)
-            DwmFlush();
+            else if (ui.screenSyncMode == 2)
+                DwmFlush();
 #endif
+        }
     }
 #endif
 }
@@ -2034,7 +2123,7 @@ void ScreenPanel::unfocus()
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
     if (core)
-        core->isFocused = false;
+        core->ThreadBridge().SetFocusedFromGui(false);
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
     if (emu) {
@@ -2053,6 +2142,8 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)
 {
+    if (auto* core = melonPrimeCore())
+        core->ThreadBridge().SetFocusedFromGui(true);
 #if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
     updateClipIfNeeded();
 #endif
@@ -2091,13 +2182,13 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
     if (auto* core = melonPrimeCore())
-        core->isClipWanted = value;
+        core->ThreadBridge().SetCaptureWantedFromGui(value);
 }
 
 __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
 {
     if (auto* core = melonPrimeCore())
-        return core->isClipWanted;
+        return core->ThreadBridge().ReadForGui().captureWanted;
     return false;
 }
 

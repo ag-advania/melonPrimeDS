@@ -981,6 +981,18 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 4: Thread境界
 
+進捗: **完了 (2026-07-11)**
+
+- `MelonPrimeThreadBridge`へGUI→Emu command/input mailboxとEmu→GUI runtime snapshot／requestを実装
+- focus／capture／cursor mode／layout generation／native window handleを方向付きatomic stateへ分離
+- wheel stepとWayland／Qt panel deltaをGUI producer・Emu consumerのexchange mailboxへ移動
+- center座標をGUI側でpublishし、EmuThreadから`QWidget::mapToGlobal()`／`QCursor`／panel参照を除去
+- cursor show／hide／recenter／capture refreshをGUI request bitとしてcoalesceし、draw時にGUI threadで処理
+- GUI側のcursor／stylus／in-game／ROM／fast-forward／screen-sync参照をruntime snapshotへ移行
+- macOSの非Raw fallback delta生成もGUI mouse event側へ移動
+- `.claude/skills/audit-melonprime-thread-boundary.ps1 -Strict`で直接GUI API／legacy state参照0件を固定
+- Windows MinGW build、HUD golden、全CI auditを確認
+
 - GUI／Emu snapshot
 - command mailbox
 - cursor GUI request
