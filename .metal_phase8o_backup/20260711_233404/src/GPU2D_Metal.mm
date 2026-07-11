@@ -6,7 +6,6 @@
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
-// MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -388,54 +387,6 @@ struct MetalSegmentedUploadRing
     }
 };
 
-
-int32_t MetalReserveSegmentedUploadSlot(
-    const std::shared_ptr<MetalSegmentedUploadRing>& ring) noexcept
-{
-    if (!ring || !ring->Ready())
-        return -1;
-
-    const uint32_t start =
-        ring->NextSlot.fetch_add(
-            1u,
-            std::memory_order_relaxed) %
-        MetalSegmentedUploadRing::SlotCount;
-
-    for (uint32_t offset = 0;
-         offset < MetalSegmentedUploadRing::SlotCount;
-         offset++)
-    {
-        const uint32_t slot =
-            (start + offset) %
-            MetalSegmentedUploadRing::SlotCount;
-        const uint32_t bit = 1u << slot;
-        const uint32_t previous =
-            ring->BusyMask.fetch_or(
-                bit,
-                std::memory_order_acq_rel);
-        if ((previous & bit) == 0u)
-            return static_cast<int32_t>(slot);
-    }
-
-    return -1;
-}
-
-void MetalReleaseSegmentedUploadSlot(
-    const std::shared_ptr<MetalSegmentedUploadRing>& ring,
-    int32_t slot) noexcept
-{
-    if (!ring || slot < 0 ||
-        slot >= static_cast<int32_t>(
-            MetalSegmentedUploadRing::SlotCount))
-    {
-        return;
-    }
-
-    ring->BusyMask.fetch_and(
-        ~(1u << static_cast<uint32_t>(slot)),
-        std::memory_order_release);
-}
-
 template <typename DirtyState>
 size_t UploadMetalDirtyRows(
     id<MTLTexture> texture,
@@ -533,12 +484,10 @@ struct MetalRenderer2D::Metal2DState
     id<MTLBuffer> ScanlineConfigBuffer = nil;
     id<MTLBuffer> SpriteScanlineConfigBuffer = nil;
     id<MTLBuffer> LayerScanlineSnapshotBuffer = nil;
+    id<MTLBuffer> SpriteScanlineSnapshotBuffer = nil;
     id<MTLBuffer> SpriteScanlineMetaBuffer = nil;
     id<MTLBuffer> CompositorConfigBuffer = nil;
     std::shared_ptr<MetalSegmentedUploadRing> SegmentedUploadRing;
-    std::shared_ptr<MetalSegmentedUploadRing> SegmentedCaptureRing;
-    int32_t SegmentedCaptureSlot = -1;
-    bool SegmentedCaptureAttempted = false;
     LayerConfigCpu LayerConfig;
     SpriteConfigCpu SpriteConfig;
     CompositorConfigCpu CompositorConfig;
@@ -739,12 +688,6 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         state.ScanlineConfigBuffer = nil;
         state.SpriteScanlineConfigBuffer = nil;
         state.CompositorConfigBuffer = nil;
-        MetalReleaseSegmentedUploadSlot(
-            state.SegmentedCaptureRing,
-            state.SegmentedCaptureSlot);
-        state.SegmentedCaptureRing.reset();
-        state.SegmentedCaptureSlot = -1;
-        state.SegmentedCaptureAttempted = false;
         state.SegmentedUploadRing.reset();
         state.Scale = 0;
         state.Device = preferredMetalDevice;
@@ -894,11 +837,16 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     const size_t spriteSnapshotStride =
         MetalAlignConstantStride(sizeof(SpriteConfigCpu));
     id<MTLBuffer> newLayerScanlineSnapshot = nil;
+    id<MTLBuffer> newSpriteScanlineSnapshot = nil;
     id<MTLBuffer> newSpriteScanlineMeta = nil;
     if (snapshotRequested)
     {
         newLayerScanlineSnapshot =
             [state.Device newBufferWithLength:sizeof(LayerScanlineSnapshotCpu)
+                                      options:MTLResourceStorageModeShared];
+        newSpriteScanlineSnapshot =
+            [state.Device newBufferWithLength:
+                spriteSnapshotStride * static_cast<size_t>(kScreenH)
                                       options:MTLResourceStorageModeShared];
         newSpriteScanlineMeta =
             [state.Device newBufferWithLength:sizeof(SpriteScanlineMetaFrameCpu)
@@ -965,6 +913,7 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
         !newSpriteScanlineConfig || !newCompositorConfig || !bgLayersReady ||
         (snapshotRequested &&
          (!newLayerScanlineSnapshot ||
+          !newSpriteScanlineSnapshot ||
           !newSpriteScanlineMeta ||
           !newSegmentedUploadRing)))
     {
@@ -1003,23 +952,17 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
     state.ScanlineConfigBuffer = newScanlineConfig;
     state.SpriteScanlineConfigBuffer = newSpriteScanlineConfig;
     state.LayerScanlineSnapshotBuffer = newLayerScanlineSnapshot;
+    state.SpriteScanlineSnapshotBuffer = newSpriteScanlineSnapshot;
     state.SpriteScanlineMetaBuffer = newSpriteScanlineMeta;
     state.CompositorConfigBuffer = newCompositorConfig;
-    MetalReleaseSegmentedUploadSlot(
-        state.SegmentedCaptureRing,
-        state.SegmentedCaptureSlot);
-    state.SegmentedCaptureRing.reset();
-    state.SegmentedCaptureSlot = -1;
-    state.SegmentedCaptureAttempted = false;
     state.SegmentedUploadRing =
         std::move(newSegmentedUploadRing);
     state.SpriteSnapshotStride = spriteSnapshotStride;
     state.SnapshotBuffersReady =
         snapshotRequested &&
         newLayerScanlineSnapshot &&
-        newSpriteScanlineMeta &&
-        state.SegmentedUploadRing &&
-        state.SegmentedUploadRing->Ready();
+        newSpriteScanlineSnapshot &&
+        newSpriteScanlineMeta;
     state.SegmentedRenderReady =
         state.SnapshotBuffersReady &&
         state.SegmentedUploadRing &&
@@ -2039,15 +1982,9 @@ void MetalRenderer2D::Reset() noexcept
     State->ScanlineConfigBuffer = nil;
     State->SpriteScanlineConfigBuffer = nil;
     State->LayerScanlineSnapshotBuffer = nil;
+    State->SpriteScanlineSnapshotBuffer = nil;
     State->SpriteScanlineMetaBuffer = nil;
     State->CompositorConfigBuffer = nil;
-    MetalReleaseSegmentedUploadSlot(
-        State->SegmentedCaptureRing,
-        State->SegmentedCaptureSlot);
-    State->SegmentedCaptureRing.reset();
-    State->SegmentedCaptureSlot = -1;
-    State->SegmentedCaptureAttempted = false;
-    State->SegmentedUploadRing.reset();
     State->LayerSnapshotValid.fill(0);
     State->SpriteSnapshotValid.fill(0);
     State->LayerSnapshotLastLine = -1;

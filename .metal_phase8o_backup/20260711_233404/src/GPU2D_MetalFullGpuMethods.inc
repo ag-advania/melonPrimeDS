@@ -8,7 +8,6 @@
 // MELONPRIME_METAL_2D_SEGMENTED_SUBMIT_OPT_V1
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
 // MELONPRIME_METAL_2D_PERSISTENT_UPLOAD_RING_V1
-// MELONPRIME_METAL_2D_DIRECT_SNAPSHOT_RING_V1
 
 bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
 {
@@ -130,64 +129,21 @@ bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
     return state.FullGpuReady;
 }
 
-template <typename StateT>
-uint8_t* MetalSegmentedCaptureBase(StateT& state) noexcept
-{
-    const std::shared_ptr<MetalSegmentedUploadRing>& ring =
-        state.SegmentedCaptureRing;
-    const int32_t slot = state.SegmentedCaptureSlot;
-    if (!ring || !ring->Ready() || slot < 0 ||
-        slot >= static_cast<int32_t>(
-            MetalSegmentedUploadRing::SlotCount))
-    {
-        return nullptr;
-    }
-
-    id<MTLBuffer> buffer =
-        ring->Buffers[static_cast<uint32_t>(slot)];
-    if (!buffer || buffer.length < ring->FrameLength)
-        return nullptr;
-    return static_cast<uint8_t*>([buffer contents]);
-}
-
 void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
     int line) noexcept
 {
     if (!State || line != 0)
         return;
 
-    // DrawSprites(0) and DrawScanline(0) can arrive in either order. The first
-    // recorder entering a new frame releases an unsubmitted prior reservation,
-    // resets validity, and reserves one immutable ring slot for direct writes.
+    // DrawSprites(0) and DrawScanline(0) can arrive in either order. Reset only
+    // when at least one recorder still points at a line from the previous frame.
     if (State->LayerSnapshotLastLine > 0 ||
         State->SpriteSnapshotLastLine > 0)
     {
-        MetalReleaseSegmentedUploadSlot(
-            State->SegmentedCaptureRing,
-            State->SegmentedCaptureSlot);
-        State->SegmentedCaptureRing.reset();
-        State->SegmentedCaptureSlot = -1;
-        State->SegmentedCaptureAttempted = false;
         State->LayerSnapshotValid.fill(0);
         State->SpriteSnapshotValid.fill(0);
         State->LayerSnapshotLastLine = -1;
         State->SpriteSnapshotLastLine = -1;
-    }
-
-    if (!State->SegmentedCaptureAttempted &&
-        State->SnapshotBuffersReady)
-    {
-        State->SegmentedCaptureAttempted = true;
-        std::shared_ptr<MetalSegmentedUploadRing> ring =
-            State->SegmentedUploadRing;
-        const int32_t slot =
-            MetalReserveSegmentedUploadSlot(ring);
-        if (slot >= 0)
-        {
-            State->SegmentedCaptureRing =
-                std::move(ring);
-            State->SegmentedCaptureSlot = slot;
-        }
     }
 }
 
@@ -201,46 +157,27 @@ void MetalRenderer2D::CaptureScanlineState(int line) noexcept
         return;
 
     BeginSegmentSnapshotFrameIfNeeded(line);
-    if (!RefreshScanlineConfig(line) ||
-        !State->SnapshotBuffersReady)
+    RefreshScanlineConfig(line);
+
+    if (State->SnapshotBuffersReady)
     {
-        return;
-    }
-
-    uint8_t* frameUploadBase =
-        MetalSegmentedCaptureBase(*State);
-    if (!frameUploadBase)
-        return;
-
-    const MetalSegmentedUploadLayout uploadLayout =
-        MetalMakeSegmentedUploadLayout(
-            State->SpriteSnapshotStride);
-    auto* sourceScanlines =
-        reinterpret_cast<const ScanlineConfigCpu*>(
-            [State->ScanlineConfigBuffer contents]);
-    auto* capturedScanlines =
-        reinterpret_cast<ScanlineConfigCpu*>(
-            frameUploadBase +
-            uploadLayout.ScanlineFrameOffset);
-    capturedScanlines->scanline[line] =
-        sourceScanlines->scanline[line];
-
-    // RefreshLayerConfig builds the normalized BG contract consumed by the
-    // segmented compositor. It remains compact and is retained separately for
-    // segment hashing and BG target selection.
-    if (RefreshLayerConfig())
-    {
-        auto* frame =
-            reinterpret_cast<LayerScanlineSnapshotCpu*>(
+        // RefreshLayerConfig builds the same normalized BG contract currently
+        // consumed at VBlank. Store it per line instead of losing all but the
+        // final register state.
+        if (RefreshLayerConfig())
+        {
+            auto* frame = reinterpret_cast<LayerScanlineSnapshotCpu*>(
                 [State->LayerScanlineSnapshotBuffer contents]);
-        frame->line[line] = State->LayerConfig;
-        State->LayerSnapshotHash[line] =
-            MetalSnapshotHash(
-                &frame->line[line],
-                sizeof(LayerConfigCpu));
-        State->LayerSnapshotValid[line] = 1;
-        State->LayerSnapshotLastLine = line;
+            frame->line[line] = State->LayerConfig;
+            State->LayerSnapshotHash[line] =
+                MetalSnapshotHash(
+                    &frame->line[line],
+                    sizeof(LayerConfigCpu));
+            State->LayerSnapshotValid[line] = 1;
+            State->LayerSnapshotLastLine = line;
+        }
     }
+
 }
 
 void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
@@ -253,105 +190,61 @@ void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
 
     BeginSegmentSnapshotFrameIfNeeded(line);
 
-    auto* compatibilityConfig =
-        reinterpret_cast<SpriteScanlineConfigCpu*>(
-            [State->SpriteScanlineConfigBuffer contents]);
-    compatibilityConfig->mosaicLine[line] =
-        GPU2D.OBJMosaicLine;
+    auto* config = reinterpret_cast<SpriteScanlineConfigCpu*>(
+        [State->SpriteScanlineConfigBuffer contents]);
+    config->mosaicLine[line] = GPU2D.OBJMosaicLine;
 
-    if (!State->SnapshotBuffersReady ||
-        !RefreshSpriteConfig(line, line + 1))
+    if (State->SnapshotBuffersReady &&
+        RefreshSpriteConfig(line, line + 1))
     {
-        return;
-    }
-
-    uint8_t* frameUploadBase =
-        MetalSegmentedCaptureBase(*State);
-    if (!frameUploadBase)
-        return;
-
-    const MetalSegmentedUploadLayout uploadLayout =
-        MetalMakeSegmentedUploadLayout(
-            State->SpriteSnapshotStride);
-    uint8_t* destination =
-        frameUploadBase +
-        uploadLayout.SpriteFrameOffset +
-        State->SpriteSnapshotStride *
-            static_cast<size_t>(line);
-    std::memcpy(
-        destination,
-        &State->SpriteConfig,
-        sizeof(SpriteConfigCpu));
-
-    auto* capturedSpriteScanlines =
-        reinterpret_cast<SpriteScanlineConfigCpu*>(
-            frameUploadBase +
-            uploadLayout.SpriteScanlineFrameOffset);
-    capturedSpriteScanlines->mosaicLine[line] =
-        compatibilityConfig->mosaicLine[line];
-
-    auto* meta =
-        reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
-            [State->SpriteScanlineMetaBuffer contents]);
-    meta->line[line].numSprites =
-        static_cast<uint32_t>(State->NumSprites);
-    meta->line[line].useMosaic =
-        State->SpriteUseMosaic ? 1u : 0u;
-    meta->line[line].configHash =
-        MetalSnapshotHash(
+        uint8_t* destination =
+            static_cast<uint8_t*>(
+                [State->SpriteScanlineSnapshotBuffer contents]) +
+            State->SpriteSnapshotStride *
+                static_cast<size_t>(line);
+        std::memcpy(
             destination,
+            &State->SpriteConfig,
             sizeof(SpriteConfigCpu));
 
-    State->SpriteSnapshotHash[line] =
-        meta->line[line].configHash ^
-        (static_cast<uint64_t>(
-            meta->line[line].numSprites) << 32u) ^
-        static_cast<uint64_t>(
-            meta->line[line].useMosaic);
-    State->SpriteSnapshotCount[line] =
-        meta->line[line].numSprites;
-    State->SpriteSnapshotMosaic[line] =
-        static_cast<uint8_t>(
-            meta->line[line].useMosaic);
-    State->SpriteSnapshotValid[line] = 1;
-    State->SpriteSnapshotLastLine = line;
+        auto* meta =
+            reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
+                [State->SpriteScanlineMetaBuffer contents]);
+        meta->line[line].numSprites =
+            static_cast<uint32_t>(State->NumSprites);
+        meta->line[line].useMosaic =
+            State->SpriteUseMosaic ? 1u : 0u;
+        meta->line[line].configHash =
+            MetalSnapshotHash(
+                destination,
+                sizeof(SpriteConfigCpu));
+
+        State->SpriteSnapshotHash[line] =
+            meta->line[line].configHash ^
+            (static_cast<uint64_t>(
+                meta->line[line].numSprites) << 32u) ^
+            static_cast<uint64_t>(
+                meta->line[line].useMosaic);
+        State->SpriteSnapshotCount[line] =
+            meta->line[line].numSprites;
+        State->SpriteSnapshotMosaic[line] =
+            static_cast<uint8_t>(
+                meta->line[line].useMosaic);
+        State->SpriteSnapshotValid[line] = 1;
+        State->SpriteSnapshotLastLine = line;
+    }
+
 }
 
 bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept
 {
-    if (!State ||
-        !State->SnapshotBuffersReady ||
-        !State->LayerScanlineSnapshotBuffer ||
-        !State->SpriteScanlineMetaBuffer ||
-        State->SpriteSnapshotStride <
-            sizeof(SpriteConfigCpu))
-    {
-        return false;
-    }
-
-    const std::shared_ptr<MetalSegmentedUploadRing>& ring =
-        State->SegmentedCaptureRing;
-    const int32_t slot = State->SegmentedCaptureSlot;
-    if (!ring || !ring->Ready() || slot < 0 ||
-        slot >= static_cast<int32_t>(
-            MetalSegmentedUploadRing::SlotCount))
-    {
-        return false;
-    }
-
-    const uint32_t bit =
-        1u << static_cast<uint32_t>(slot);
-    if ((ring->BusyMask.load(
-             std::memory_order_acquire) & bit) == 0u)
-    {
-        return false;
-    }
-
-    id<MTLBuffer> buffer =
-        ring->Buffers[static_cast<uint32_t>(slot)];
-    return buffer &&
-        buffer.length >= ring->FrameLength &&
-        [buffer contents] != nullptr;
+    return State &&
+        State->SnapshotBuffersReady &&
+        State->LayerScanlineSnapshotBuffer &&
+        State->SpriteScanlineSnapshotBuffer &&
+        State->SpriteScanlineMetaBuffer &&
+        State->SpriteSnapshotStride >=
+            sizeof(SpriteConfigCpu);
 }
 
 
@@ -445,36 +338,43 @@ private:
     bool Submitted = false;
 };
 
-template <typename StateT>
-MetalSegmentedUploadLease MetalTakeSegmentedUploadLease(
-    StateT& state,
+MetalSegmentedUploadLease MetalAcquireSegmentedUploadLease(
+    const std::shared_ptr<MetalSegmentedUploadRing>& ring,
     NSUInteger requiredLength) noexcept
 {
-    std::shared_ptr<MetalSegmentedUploadRing> ring =
-        state.SegmentedCaptureRing;
-    const int32_t slot = state.SegmentedCaptureSlot;
     if (!ring || !ring->Ready() ||
-        ring->FrameLength < requiredLength ||
-        slot < 0 ||
-        slot >= static_cast<int32_t>(
-            MetalSegmentedUploadRing::SlotCount))
+        ring->FrameLength < requiredLength)
     {
         return {};
     }
 
-    const uint32_t bit =
-        1u << static_cast<uint32_t>(slot);
-    if ((ring->BusyMask.load(
-             std::memory_order_acquire) & bit) == 0u)
+    const uint32_t start =
+        ring->NextSlot.fetch_add(
+            1u,
+            std::memory_order_relaxed) %
+        MetalSegmentedUploadRing::SlotCount;
+
+    for (uint32_t offset = 0;
+         offset < MetalSegmentedUploadRing::SlotCount;
+         offset++)
     {
-        return {};
+        const uint32_t slot =
+            (start + offset) %
+            MetalSegmentedUploadRing::SlotCount;
+        const uint32_t bit = 1u << slot;
+        const uint32_t previous =
+            ring->BusyMask.fetch_or(
+                bit,
+                std::memory_order_acq_rel);
+        if ((previous & bit) == 0u)
+        {
+            return MetalSegmentedUploadLease(
+                ring,
+                slot);
+        }
     }
 
-    state.SegmentedCaptureRing.reset();
-    state.SegmentedCaptureSlot = -1;
-    return MetalSegmentedUploadLease(
-        std::move(ring),
-        static_cast<uint32_t>(slot));
+    return {};
 }
 
 template <typename StateT>
@@ -615,41 +515,14 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     auto* spriteMeta =
         reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
             [State->SpriteScanlineMetaBuffer contents]);
+    uint8_t* spriteBase =
+        static_cast<uint8_t*>(
+            [State->SpriteScanlineSnapshotBuffer contents]);
 
     const Metal2DSegmentList segments =
         MetalBuild2DSegments(*State);
     if (segments.Count == 0)
         return false;
-
-    const MetalSegmentedUploadLayout uploadLayout =
-        MetalMakeSegmentedUploadLayout(
-            State->SpriteSnapshotStride);
-    MetalSegmentedUploadLease uploadLease =
-        MetalTakeSegmentedUploadLease(
-            *State,
-            uploadLayout.FrameLength);
-    if (!uploadLease)
-        return false;
-
-    id<MTLBuffer> frameUploadBuffer =
-        uploadLease.Buffer();
-    if (!frameUploadBuffer)
-        return false;
-
-    const NSUInteger spriteFrameOffset =
-        uploadLayout.SpriteFrameOffset;
-    const NSUInteger scanlineFrameOffset =
-        uploadLayout.ScanlineFrameOffset;
-    const NSUInteger spriteScanlineFrameOffset =
-        uploadLayout.SpriteScanlineFrameOffset;
-
-    uint8_t* frameUploadBase =
-        static_cast<uint8_t*>(
-            [frameUploadBuffer contents]);
-    if (!frameUploadBase)
-        return false;
-    uint8_t* spriteBase =
-        frameUploadBase + spriteFrameOffset;
 
     if (!allowCaptureTextures)
     {
@@ -680,7 +553,50 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     if (!command)
         return false;
     command.label =
-        @"MelonPrime Metal Phase 8O Segmented 2D";
+        @"MelonPrime Metal Phase 8N Segmented 2D";
+
+    const MetalSegmentedUploadLayout uploadLayout =
+        MetalMakeSegmentedUploadLayout(
+            State->SpriteSnapshotStride);
+    MetalSegmentedUploadLease uploadLease =
+        MetalAcquireSegmentedUploadLease(
+            State->SegmentedUploadRing,
+            uploadLayout.FrameLength);
+    if (!uploadLease)
+        return false;
+
+    id<MTLBuffer> frameUploadBuffer =
+        uploadLease.Buffer();
+    if (!frameUploadBuffer)
+        return false;
+
+    const NSUInteger spriteFrameLength =
+        uploadLayout.SpriteFrameLength;
+    const NSUInteger spriteFrameOffset =
+        uploadLayout.SpriteFrameOffset;
+    const NSUInteger scanlineFrameOffset =
+        uploadLayout.ScanlineFrameOffset;
+    const NSUInteger spriteScanlineFrameOffset =
+        uploadLayout.SpriteScanlineFrameOffset;
+
+    uint8_t* frameUploadBase =
+        static_cast<uint8_t*>(
+            [frameUploadBuffer contents]);
+    if (!frameUploadBase)
+        return false;
+
+    std::memcpy(
+        frameUploadBase + spriteFrameOffset,
+        spriteBase,
+        spriteFrameLength);
+    std::memcpy(
+        frameUploadBase + scanlineFrameOffset,
+        [State->ScanlineConfigBuffer contents],
+        sizeof(ScanlineConfigCpu));
+    std::memcpy(
+        frameUploadBase + spriteScanlineFrameOffset,
+        [State->SpriteScanlineConfigBuffer contents],
+        sizeof(SpriteScanlineConfigCpu));
 
     {
         MTLRenderPassDescriptor* pass =
