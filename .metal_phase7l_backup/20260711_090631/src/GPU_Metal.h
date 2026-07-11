@@ -29,7 +29,6 @@ public:
     void VBlank() override;
     void SwapBuffers() override;
     RendererOutput GetOutput() override;
-    RendererOutputLease AcquireOutputLease() override;
 
 private:
     struct MetalOutputState;
@@ -38,12 +37,8 @@ private:
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
     int ScaleFactor = 1;
     bool ComputeRendererSelected = false;
-    u16 FrameMasterBrightnessA = 0;
-    u16 FrameMasterBrightnessB = 0;
     // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
-    // MELONPRIME_METAL_OUTPUT_LEASE_V1
-    // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
-    std::shared_ptr<MetalOutputState> OutputState;
+    std::unique_ptr<MetalOutputState> OutputState;
 
     void ConfigureMetal2DMirror(void* preferredDevice);
     bool ConfigureMetalVisibleOutput(void* preferredDevice);

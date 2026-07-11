@@ -5,8 +5,6 @@
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
 // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
 // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
-// MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
 
 #import <Metal/Metal.h>
 
@@ -179,20 +177,8 @@ struct VisibleOutputConfig
     uint outputLayer;
     uint engineALayer;
     uint useHighResolution3D;
-    uint masterBrightnessA;
-    uint masterBrightnessB;
+    uint2 _pad;
 };
-
-static inline float3 mp_apply_master_brightness(float3 color, uint reg)
-{
-    uint mode = reg >> 14;
-    float factor = float(min(reg & 0x1Fu, 16u)) / 16.0;
-    if (mode == 1u)
-        return mix(color, float3(1.0), factor);
-    if (mode == 2u)
-        return color * (1.0 - factor);
-    return color;
-}
 
 fragment float4 mp_visible_output_fs(
     VisibleOutputVertex in [[stage_in]],
@@ -216,15 +202,6 @@ fragment float4 mp_visible_output_fs(
         uint2(highResolution3D.get_width() - 1u, highResolution3D.get_height() - 1u));
     float4 high3D = highResolution3D.read(highCoord);
     float4 low3D = nativeResolution3D.read(nativeCoord);
-
-    // The CPU composite already contains the per-engine Master Brightness.
-    // Apply the same affine transform to both 3D samples before replacing the
-    // native layer. This keeps fade-to-black/white frames in one color space.
-    uint brightness = (config.outputLayer == config.engineALayer)
-        ? config.masterBrightnessA
-        : config.masterBrightnessB;
-    high3D.rgb = mp_apply_master_brightness(high3D.rgb, brightness);
-    low3D.rgb = mp_apply_master_brightness(low3D.rgb, brightness);
 
     // CPU 2D already contains the native 3D layer. Recover the background
     // underneath that native sample, then composite the full-resolution 3D
@@ -256,7 +233,6 @@ struct MetalRenderer::MetalOutputState
         id<MTLTexture> CpuComposite = nil;
         id<MTLTexture> FinalTexture = nil;
         bool InFlight = false;
-        int PresenterRefs = 0;
         uint64_t Serial = 0;
         uint64_t Generation = 0;
     };
@@ -270,7 +246,6 @@ struct MetalRenderer::MetalOutputState
     std::mutex Mutex;
     std::condition_variable Completion;
     int InFlightCount = 0;
-    int PresenterRefCount = 0;
     int NextSlot = 0;
     int PublishedSlot = -1;
     uint64_t PublishedSerial = 0;
@@ -286,9 +261,7 @@ struct MetalRenderer::MetalOutputState
     ~MetalOutputState()
     {
         std::unique_lock<std::mutex> lock(Mutex);
-        Completion.wait(lock, [this]() {
-            return InFlightCount == 0 && PresenterRefCount == 0;
-        });
+        Completion.wait(lock, [this]() { return InFlightCount == 0; });
     }
 };
 
@@ -412,7 +385,7 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         if (!OutputState || OutputState->Device != device ||
             OutputState->Queue != rendererQueue)
         {
-            OutputState = std::make_shared<MetalOutputState>();
+            OutputState = std::make_unique<MetalOutputState>();
             OutputState->Device = device;
             // Use the renderer's queue. Output composition then sits between
             // completed frame N and 3D writes for frame N+1 without a CPU wait
@@ -477,35 +450,23 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
             return false;
         }
 
-        std::unique_lock<std::mutex> lock(OutputState->Mutex);
+        std::lock_guard<std::mutex> lock(OutputState->Mutex);
         if (OutputState->Ready && OutputState->Scale == scale &&
             OutputState->Width == width && OutputState->Height == height)
         {
             return true;
         }
 
-        // Stop new leases before replacing ring textures. Existing presenter
-        // command buffers release from their completion handlers.
-        OutputState->Ready = false;
+        OutputState->Generation++;
         OutputState->PublishedSlot = -1;
         OutputState->PublishedSerial = 0;
-        OutputState->Generation++;
-        OutputState->Completion.wait(lock, [state = OutputState.get()]() {
-            return state->InFlightCount == 0 && state->PresenterRefCount == 0;
-        });
-
         OutputState->Scale = scale;
         OutputState->Width = width;
         OutputState->Height = height;
+        OutputState->Ready = false;
 
         for (int i = 0; i < MetalOutputState::SlotCount; i++)
         {
-            MetalOutputState::Slot& outputSlot = OutputState->Slots[i];
-            outputSlot.InFlight = false;
-            outputSlot.PresenterRefs = 0;
-            outputSlot.Serial = 0;
-            outputSlot.Generation = OutputState->Generation;
-
             MTLTextureDescriptor* cpuDesc =
                 [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                                                    width:256
@@ -595,8 +556,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             uint32_t outputLayer;
             uint32_t engineALayer;
             uint32_t useHighResolution3D;
-            uint32_t masterBrightnessA;
-            uint32_t masterBrightnessB;
+            uint32_t pad[2];
         };
         static_assert(sizeof(VisibleOutputConfigCpu) == 32,
             "VisibleOutputConfigCpu must match MSL layout");
@@ -607,8 +567,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         {
             const int candidate =
                 (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
-            if (!OutputState->Slots[candidate].InFlight &&
-                OutputState->Slots[candidate].PresenterRefs == 0)
+            if (!OutputState->Slots[candidate].InFlight)
             {
                 slotIndex = candidate;
                 break;
@@ -680,8 +639,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             config.outputLayer = layer;
             config.engineALayer = engineALayer;
             config.useHighResolution3D = useHighResolution3D;
-            config.masterBrightnessA = FrameMasterBrightnessA;
-            config.masterBrightnessB = FrameMasterBrightnessB;
 
             [encoder setRenderPipelineState:OutputState->Pipeline];
             [encoder setFragmentBytes:&config length:sizeof(config) atIndex:0];
@@ -752,73 +709,8 @@ void MetalRenderer::VBlank()
 
 void MetalRenderer::SwapBuffers()
 {
-    FrameMasterBrightnessA = GPU.MasterBrightnessA;
-    FrameMasterBrightnessB = GPU.MasterBrightnessB;
     Renderer::SwapBuffers();
     ComposeMetalVisibleOutput();
-}
-
-RendererOutputLease MetalRenderer::AcquireOutputLease()
-{
-    if (OutputState)
-    {
-        std::shared_ptr<MetalOutputState> state = OutputState;
-        std::lock_guard<std::mutex> lock(state->Mutex);
-        if (state->Ready && state->PublishedSlot >= 0)
-        {
-            const int slotIndex = state->PublishedSlot;
-            MetalOutputState::Slot& slot = state->Slots[slotIndex];
-            id<MTLTexture> texture = slot.FinalTexture;
-            if (texture && !slot.InFlight &&
-                slot.Generation == state->Generation &&
-                slot.Serial == state->PublishedSerial)
-            {
-                slot.PresenterRefs++;
-                state->PresenterRefCount++;
-
-                struct LeaseContext
-                {
-                    std::shared_ptr<MetalOutputState> State;
-                    int SlotIndex;
-                    uint64_t Generation;
-                    uint64_t Serial;
-                };
-
-                LeaseContext* context = new LeaseContext{
-                    state, slotIndex, slot.Generation, slot.Serial };
-
-                auto release = +[](void* opaque) {
-                    std::unique_ptr<LeaseContext> lease(
-                        static_cast<LeaseContext*>(opaque));
-                    std::lock_guard<std::mutex> releaseLock(lease->State->Mutex);
-                    MetalOutputState::Slot& leasedSlot =
-                        lease->State->Slots[lease->SlotIndex];
-                    if (leasedSlot.PresenterRefs > 0 &&
-                        leasedSlot.Generation == lease->Generation &&
-                        leasedSlot.Serial == lease->Serial)
-                    {
-                        leasedSlot.PresenterRefs--;
-                        lease->State->PresenterRefCount--;
-                    }
-                    else
-                    {
-                        std::fprintf(stderr,
-                            "[MelonPrime] metal visible output: stale presenter lease serial=%llu\n",
-                            static_cast<unsigned long long>(lease->Serial));
-                    }
-                    lease->State->Completion.notify_all();
-                };
-
-                return RendererOutputLease(
-                    RendererOutput::MetalTexture(
-                        (__bridge void*)texture, slot.Serial),
-                    context,
-                    release);
-            }
-        }
-    }
-
-    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 
 RendererOutput MetalRenderer::GetOutput()

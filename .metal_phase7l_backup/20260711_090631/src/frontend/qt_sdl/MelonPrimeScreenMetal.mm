@@ -1,6 +1,5 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: Metal build-gate, not input dispatch
 // MELONPRIME_METAL_HIRES_PRESENT_FILTER_V2
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -601,14 +600,12 @@ void ScreenPanelMetal::drawScreen()
         void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
         id<MTLTexture> finalMetalTextureForFrame = nil;
-        melonDS::RendererOutputLease rendererOutputLease;
 
         if (emuThread->emuIsActive())
         {
             auto nds = emuInstance->getNDS();
 
-            rendererOutputLease = nds->GPU.AcquireRendererOutputLease();
-            const melonDS::RendererOutput& output = rendererOutputLease.Output;
+            const melonDS::RendererOutput output = nds->GPU.GetRendererOutput();
             const int selectedRenderer =
                 emuInstance->getGlobalConfig().GetInt("3D.Renderer");
             const bool metalRendererSelected =
@@ -719,12 +716,7 @@ void ScreenPanelMetal::drawScreen()
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         id<MTLCommandBuffer> cmdBuffer = [m->queue commandBuffer];
-        if (!cmdBuffer)
-            return;
-        id<MTLRenderCommandEncoder> encoder =
-            [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
-        if (!encoder)
-            return;
+        id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDesc];
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
         if (emuThread->emuIsActive())
@@ -928,20 +920,6 @@ void ScreenPanelMetal::drawScreen()
         }
 
         [encoder endEncoding];
-
-        // Keep the producer ring slot immutable until this separate presenter
-        // queue has finished sampling the texture for both DS screens.
-        if (rendererOutputLease.Context && rendererOutputLease.ReleaseFn)
-        {
-            void* leaseContext = rendererOutputLease.Context;
-            void (*leaseRelease)(void*) = rendererOutputLease.ReleaseFn;
-            rendererOutputLease.Context = nullptr;
-            rendererOutputLease.ReleaseFn = nullptr;
-            [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer>) {
-                leaseRelease(leaseContext);
-            }];
-        }
-
         [cmdBuffer presentDrawable:drawable];
         [cmdBuffer commit];
 
