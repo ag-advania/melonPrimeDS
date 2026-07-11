@@ -227,8 +227,41 @@ struct CachedHudConfig {
     bool hiResText;  // HudFontMode != 0: rasterise glyphs at output resolution (hi-DPI text)
     bool valid;
 };
-static CachedHudConfig s_cache = { .valid = false };
-static uint32_t s_cacheEpoch = 1;
+
+struct CustomHudConfigState {
+    CachedHudConfig cache = { .valid = false };
+    uint32_t cacheEpoch = 1;
+};
+
+static thread_local CustomHudConfigState* g_activeHudConfigState = nullptr;
+
+class ScopedHudConfigState {
+public:
+    explicit ScopedHudConfigState(CustomHudConfigState& state) noexcept
+        : previous(g_activeHudConfigState)
+    {
+        g_activeHudConfigState = &state;
+    }
+
+    ~ScopedHudConfigState() { g_activeHudConfigState = previous; }
+
+private:
+    CustomHudConfigState* previous;
+};
+
+static CustomHudConfigState& ActiveHudConfigState()
+{
+    Q_ASSERT(g_activeHudConfigState);
+    return *g_activeHudConfigState;
+}
+
+std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
+{
+    return std::make_shared<CustomHudConfigState>();
+}
+
+#define s_cache (ActiveHudConfigState().cache)
+#define s_cacheEpoch (ActiveHudConfigState().cacheEpoch)
 
 static QRect ScaleRectAroundOrigin(const QRect& r, double scale)
 {

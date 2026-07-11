@@ -4,6 +4,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 if (MelonPrime::CustomHud_IsEditMode()) {
     Config::Table& instcfg = emuInstance->getLocalConfig();
-    MelonPrime::CustomHud_EditMouseWheel(event->position(), event->angleDelta().y(), instcfg);
+    if (auto* mp = melonPrimeCore())
+        MelonPrime::CustomHud_EditMouseWheel(mp->HudConfigState(), event->position(), event->angleDelta().y(), instcfg);
 }
 #endif

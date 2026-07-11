@@ -52,6 +52,9 @@ namespace MelonPrime {
         , globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
+#ifdef MELONPRIME_CUSTOM_HUD
+        m_hudConfigState = CustomHud_CreateConfigState();
+#endif
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "constructed");
     }
 
@@ -372,7 +375,7 @@ namespace MelonPrime {
                     // every in-game frame). Bypasses the registry/gateway on purpose;
                     // see melonprime-srp-performance-contract.md's "Never mix" list
                     // and melonprime-srp-v3-completion-summary.md's Deferred table.
-                    OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                    OsdColor_ApplyOnce(m_patchState, emuInstance, localCfg, m_currentRom);
                 }
 #ifdef MELONPRIME_CUSTOM_HUD
                 // Before RunFrame: hold the helmet layers off across the spawn
@@ -429,7 +432,7 @@ namespace MelonPrime {
                     // PatchLifecycle Step 3 / Site E — see
                     // melonprime_patch_lifecycle_gateway_step3_plan.md.
                     PatchLifecycle::ApplyOutOfGameFrame(
-                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
+                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
                     // Out-of-game screens (e.g. the Adventure planet/region map)
                     // still accept WASD movement so the player can navigate.
@@ -613,7 +616,8 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
-        Patches_Apply(PatchSite_GameJoin, PatchCtx{ nds, emuInstance, localCfg, m_currentRom });
+        Patches_Apply(PatchSite_GameJoin,
+                      PatchCtx{ nds, emuInstance, localCfg, m_currentRom, m_patchState });
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

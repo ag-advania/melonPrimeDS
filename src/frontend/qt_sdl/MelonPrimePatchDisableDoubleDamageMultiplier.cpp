@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
 #include "MelonPrimePatchCommon.h"
+#include "MelonPrimePatchState.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
 
@@ -96,29 +97,29 @@ static constexpr RomPatchSpan kPatchSpans[7] = {
     { &kPatchWords[6][0], 8 },
 };
 
-static StaticWordPatch s_patch(kPatchSpans);
+static const StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
-void DisableDoubleDamageMultiplier_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void DisableDoubleDamageMultiplier_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     if (!cfg.GetBool(kCfgDisableDoubleDamageMultiplier))
     {
-        s_patch.RestoreOnce(nds, romGroupIndex);
+        s_patch.RestoreOnce(state.disableDoubleDamage, nds, romGroupIndex);
         return;
     }
 
-    s_patch.ApplyOnce(nds, romGroupIndex);
+    s_patch.ApplyOnce(state.disableDoubleDamage, nds, romGroupIndex);
 }
 
-void DisableDoubleDamageMultiplier_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+void DisableDoubleDamageMultiplier_RestoreOnce(MelonPrimePatchState& state, melonDS::NDS* nds, uint8_t romGroupIndex)
 {
-    s_patch.RestoreOnce(nds, romGroupIndex);
+    s_patch.RestoreOnce(state.disableDoubleDamage, nds, romGroupIndex);
 }
 
-void DisableDoubleDamageMultiplier_ResetPatchState()
+void DisableDoubleDamageMultiplier_ResetPatchState(MelonPrimePatchState& state)
 {
-    s_patch.ResetState();
+    StaticWordPatch::ResetState(state.disableDoubleDamage);
 }
 
 } // namespace MelonPrime

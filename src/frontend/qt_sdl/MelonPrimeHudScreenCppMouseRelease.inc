@@ -4,7 +4,8 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
     Config::Table& instcfg = emuInstance->getLocalConfig();
-    MelonPrime::CustomHud_EditMouseRelease(event->pos(), event->button(), instcfg);
+    if (auto* mp = melonPrimeCore())
+        MelonPrime::CustomHud_EditMouseRelease(mp->HudConfigState(), event->pos(), event->button(), instcfg);
     return;
 }
 #endif

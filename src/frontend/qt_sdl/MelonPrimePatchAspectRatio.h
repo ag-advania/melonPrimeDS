@@ -9,10 +9,12 @@ namespace Config { class Table; }
 namespace MelonPrime {
 
     struct RomAddresses;
+    struct MelonPrimePatchState;
 
-    void InGameAspectRatio_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
+    void InGameAspectRatio_ApplyOnce(MelonPrimePatchState& state,
+                                      EmuInstance* emu, Config::Table& localCfg,
                                       const RomAddresses& rom);
-    void InGameAspectRatio_ResetPatchState();
+    void InGameAspectRatio_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

@@ -6,7 +6,8 @@
 if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
     Config::Table& instcfg = emuInstance->getLocalConfig();
     MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
-    MelonPrime::CustomHud_EditMousePress(event->pos(), event->button(), instcfg);
+    if (auto* mp = melonPrimeCore())
+        MelonPrime::CustomHud_EditMousePress(mp->HudConfigState(), event->pos(), event->button(), instcfg);
     if (!MelonPrime::CustomHud_IsEditMode() && InputConfigDialog::currentDlg)
         InputConfigDialog::currentDlg->refreshAfterHudEditSave();
     return;

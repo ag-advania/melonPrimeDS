@@ -987,8 +987,9 @@ void CustomHud_EnsurePatchRestored(
     CustomHud_RestoreNativeHudState(rom, st);
 }
 
-void CustomHud_ResetPatchState()
+void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
 {
+    const ScopedHudConfigState active(hudConfig);
     NoHudPatch_ResetState();
     s_cache.valid = false;
     s_battleState.valid = false;
@@ -999,7 +1000,7 @@ void CustomHud_ResetPatchState()
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame
-void CustomHud_InvalidateConfigCache()
+static void CustomHud_InvalidateConfigCache()
 {
     s_cache.valid = false;
     s_bombTintCacheValid = false;
@@ -1015,8 +1016,14 @@ void CustomHud_InvalidateConfigCache()
     if (++s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
 
-uint32_t CustomHud_GetCacheEpoch()
+void CustomHud_InvalidateConfigCache(CustomHudConfigState& hudConfig)
 {
-    return s_cacheEpoch;
+    const ScopedHudConfigState active(hudConfig);
+    CustomHud_InvalidateConfigCache();
+}
+
+uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig)
+{
+    return hudConfig.cacheEpoch;
 }
 

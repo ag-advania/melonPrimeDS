@@ -13,9 +13,10 @@
                 const float hudScale    = m_hudScale;
                 const float topStretchX = m_topStretchX;
 
-                MelonPrimeHud_RefreshHudEnabledIfNeeded(instcfg, m_hudCfgEpoch, m_hudEnabled);
-                MelonPrimeHud_RefreshOverlayFontIfNeeded(instcfg, m_hudFontEpoch, overlayFont);
+                MelonPrimeHud_RefreshHudEnabledIfNeeded(mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+                MelonPrimeHud_RefreshOverlayFontIfNeeded(mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
                 MelonPrimeHud_RefreshRadarConfigIfNeeded(
+                    mp->HudConfigState(),
                     instcfg, m_radarCfgEpoch,
                     m_radarEnable, m_radarAnchor,
                     m_radarDstX, m_radarDstY, m_radarDstSize,

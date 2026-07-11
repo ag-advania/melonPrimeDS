@@ -17,12 +17,18 @@
 
 class EmuInstance;
 
-namespace MelonPrime { namespace HudEditorSidePanel { struct Row; } }
+namespace MelonPrime {
+struct CustomHudConfigState;
+namespace HudEditorSidePanel { struct Row; }
+}
 
 class MelonPrimeHudConfigOnScreenEdit : public QWidget
 {
 public:
-    explicit MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu);
+    explicit MelonPrimeHudConfigOnScreenEdit(
+        QWidget* parent,
+        EmuInstance* emu,
+        MelonPrime::CustomHudConfigState& hudConfig);
 
     void populateForElement(int elemIdx);
     void populateForCrosshair();
@@ -31,6 +37,7 @@ public:
 
 private:
     EmuInstance* m_emu;
+    MelonPrime::CustomHudConfigState& m_hudConfig;
     QScrollArea* m_scroll;
     QWidget* m_inner;
     QFormLayout* m_form;

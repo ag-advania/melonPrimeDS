@@ -10,12 +10,15 @@ namespace melonDS { class NDS; }
 namespace MelonPrime {
 
     struct RomAddresses;
+    struct MelonPrimePatchState;
 
-    void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
+    void OsdColor_ApplyOnce(MelonPrimePatchState& state,
+                             EmuInstance* emu, Config::Table& localCfg,
                              const RomAddresses& rom);
-    void OsdColor_RestoreOnce(melonDS::NDS* nds, const RomAddresses& rom);
-    void OsdColor_InvalidatePatch();
-    void OsdColor_ResetPatchState();
+    void OsdColor_RestoreOnce(MelonPrimePatchState& state,
+                              melonDS::NDS* nds, const RomAddresses& rom);
+    void OsdColor_InvalidatePatch(MelonPrimePatchState& state);
+    void OsdColor_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

@@ -918,6 +918,16 @@ MelonPrimeのhook userdata／context内で解決する。
 
 ## Phase 1: 小さく分離できるstate
 
+進捗: **完了 (2026-07-11)**
+
+- Zoom capability cacheを`MelonPrimeCore` memberへ移動し、boot／stop／ROM検出でreset
+- ARM9 dispatch entries／count／last-hit cacheをinstance-owned stateへ移動
+- 単純write patchのapplied／ROM group／dirty bookkeepingを
+  `MelonPrimePatchState`へ集約
+- HUD config cache／epochをinstance-owned opaque stateへ移動し、render／editorへ明示伝播
+- developer logへhook／patch／HUD state addressをinstance ID付きで追加
+- mutable-state監査ratchetを199件から180件へ削減
+
 1. Zoom capability cache
 2. ARM9 dispatch state
 3. Patch stateのうち単純bool／original value

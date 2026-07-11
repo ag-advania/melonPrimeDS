@@ -15,7 +15,10 @@ Overlay[1].fill(0x00000000);
     overlayFont = MelonPrime::CustomHud_ResolveBaseFont(hudCfg);
     overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(hudCfg));
 }
-m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
+m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(
+    this,
+    emuInstance,
+    emuInstance->getEmuThread()->GetMelonPrimeCore()->HudConfigState());
 MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
     if (!MelonPrime::CustomHud_IsEditMode() || idx < 0) {
         m_hudEditPanel->clear();

@@ -38,8 +38,6 @@
 
 namespace MelonPrime {
 
-    static ZoomStatus::ZoomCapabilityCache s_zoomAimCanZoomCache;
-
     // =========================================================================
     // UpdateInputStateImpl<kReentrant>
     //
@@ -396,9 +394,9 @@ namespace MelonPrime {
         const melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
         const ZoomStatus::ScopeState scope =
             ZoomStatus::ReadScopeState(
-                ram, m_currentRom.hookLocalPlayerPtrGlobal, s_zoomAimCanZoomCache);
+                ram, m_currentRom.hookLocalPlayerPtrGlobal, m_zoomAimCanZoomCache);
         if (!scope.valid)
-            s_zoomAimCanZoomCache = {};
+            m_zoomAimCanZoomCache = {};
         if (scope.valid && scope.rawVisible)
             nextScaleQ14 = m_zoomAimScaleQ14;
 #endif

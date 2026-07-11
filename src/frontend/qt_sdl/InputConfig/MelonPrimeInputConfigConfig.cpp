@@ -204,15 +204,15 @@ void MelonPrimeInputConfig::saveConfig()
         instcfg.SetBool(cfgKey, btn->isChecked());
 
     // P-3: Invalidate cached config so next frame re-reads all values
-    MelonPrime::CustomHud_InvalidateConfigCache();
 #ifdef MELONPRIME_DS
-    MelonPrime::OsdColor_InvalidatePatch();
-    MelonPrime::ExpandStageMatrix_InvalidatePatch();
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
     if (auto* thread = emuInstance->getEmuThread()) {
         if (auto* core = thread->GetMelonPrimeCore())
+        {
+            MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState());
             core->NotifyConfigChanged();
+        }
     }
 #endif
 }

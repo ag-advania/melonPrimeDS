@@ -9,10 +9,11 @@ namespace Config { class Table; }
 namespace melonDS { class NDS; }
 
 namespace MelonPrime {
+struct MelonPrimePatchState;
 
-void ShowEnemyHpMeterOnline_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
-void ShowEnemyHpMeterOnline_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex);
-void ShowEnemyHpMeterOnline_ResetPatchState();
+void ShowEnemyHpMeterOnline_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
+void ShowEnemyHpMeterOnline_RestoreOnce(MelonPrimePatchState& state, melonDS::NDS* nds, uint8_t romGroupIndex);
+void ShowEnemyHpMeterOnline_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

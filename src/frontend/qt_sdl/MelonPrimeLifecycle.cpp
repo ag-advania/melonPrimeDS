@@ -131,7 +131,20 @@ namespace MelonPrime {
     {
         InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStart");
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-start");
+        const void* hookState = nullptr;
+        const void* patchState = nullptr;
+        const void* hudState = nullptr;
+#ifdef MELONPRIME_DS
+        hookState = &m_arm9HookState;
+        patchState = &m_patchState;
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+        hudState = m_hudConfigState.get();
+#endif
+        InstanceDiagnostics::LogOwnedStates(
+            emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
+        m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
 #ifdef _WIN32
@@ -139,12 +152,12 @@ namespace MelonPrime {
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
         PatchLifecycle::ResetForEmuStart(
-            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
 
         ReloadConfigFlags();
@@ -167,15 +180,16 @@ namespace MelonPrime {
     void MelonPrimeCore::ResetRuntimeStateForBoot()
     {
         m_flags.packed = 0;
+        m_zoomAimCanZoomCache = {};
         m_isLayoutChangePending = true;
         m_isWeaponCheckActive = false;
         m_aimBlockBits = 0;
 #ifdef MELONPRIME_CUSTOM_HUD
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance);
+        PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance, this);
 #endif
 
         InputReset();
@@ -190,6 +204,7 @@ namespace MelonPrime {
         InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
+        m_zoomAimCanZoomCache = {};
         // Intentional historical asymmetry: stop clears transform/fire
         // transients but leaves aim residuals and overlay-held state alone.
         // OnEmuStart/boot perform broader resets; changing this stop-time
@@ -202,7 +217,7 @@ namespace MelonPrime {
             CustomHud_EnsurePatchRestored(
                 emuInstance, localCfg, m_currentRom, m_playerPosition, false);
         }
-        CustomHud_ResetPatchState();
+        CustomHud_ResetPatchState(*m_hudConfigState);
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
@@ -210,7 +225,8 @@ namespace MelonPrime {
             emuInstance->getNDS(),
             emuInstance,
             localCfg,
-            m_currentRom);
+            m_currentRom,
+            this);
 #endif
     }
 
