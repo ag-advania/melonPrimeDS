@@ -10,7 +10,6 @@
 // MELONPRIME_METAL_FRAME_SNAPSHOT_V1
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
-// MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 
 #import <Metal/Metal.h>
 
@@ -137,19 +136,6 @@ void Metal3DSetCpuReadbackRequired(Renderer3D* renderer, bool required)
         compute->SetCpuReadbackRequired(required);
     else if (auto* raster = dynamic_cast<MetalRenderer3D*>(renderer))
         raster->SetCpuReadbackRequired(required);
-}
-
-void Metal3DSetCaptureTextures(
-    Renderer3D* renderer,
-    void* capture128Texture,
-    void* capture256Texture)
-{
-    if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
-    {
-        compute->SetCaptureTextures(
-            capture128Texture,
-            capture256Texture);
-    }
 }
 
 void ConfigureMetal3DRenderer(
