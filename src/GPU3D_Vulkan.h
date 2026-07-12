@@ -571,4 +571,44 @@ std::array<float, 4> EvaluateVulkanToonHighlightReference(
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;
 
+
+// MELONPRIME_VULKAN_TEXTURE_SAMPLING_CONTRACT_V1
+inline constexpr std::uint32_t kTextureSamplingContractVersion = 1;
+
+enum class VulkanTextureCombinerMode : std::uint32_t
+{
+    Raw = 0,
+    Modulate = 1,
+    Decal = 2,
+    Toon = 3,
+    Highlight = 4,
+};
+
+struct VulkanTextureSamplingDescriptorContract
+{
+    std::uint32_t ContractVersion = kTextureSamplingContractVersion;
+    std::uint32_t DescriptorSet = 0;
+    std::uint32_t UniformBinding = 0;
+    std::uint32_t ClampBinding = 1;
+    std::uint32_t RepeatBinding = 2;
+    std::uint32_t MirrorBinding = 3;
+    std::uint32_t OutputBinding = 4;
+    VkFormat TextureFormat = VK_FORMAT_R8G8B8A8_UINT;
+};
+
+struct VulkanTextureCombinerInput
+{
+    VulkanTextureCombinerMode Mode = VulkanTextureCombinerMode::Raw;
+    std::array<float, 4> VertexColor{{1.0f, 1.0f, 1.0f, 1.0f}};
+    std::array<float, 4> TextureColor{{1.0f, 1.0f, 1.0f, 1.0f}};
+    std::array<float, 4> ToonColor{{0.0f, 0.0f, 0.0f, 1.0f}};
+};
+
+VulkanTextureSamplingDescriptorContract
+DescribeVulkanTextureSamplingDescriptorContract() noexcept;
+std::array<float, 4> EvaluateVulkanTextureCombiner(
+    const VulkanTextureCombinerInput& input) noexcept;
+std::array<std::uint8_t, 4> QuantizeVulkanColor8(
+    const std::array<float, 4>& color) noexcept;
+
 } // namespace melonDS::Vulkan

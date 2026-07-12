@@ -69,6 +69,7 @@
 #include "MelonPrimeVulkanShadowBootstrap.h"
 #include "MelonPrimeVulkanToonHighlightBootstrap.h"
 #include "MelonPrimeVulkanToonHighlightDescriptorBootstrap.h"
+#include "MelonPrimeVulkanTextureSamplingBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -493,6 +494,20 @@ static std::optional<QString> melonPrimeVulkanToonHighlightContractTestPath(int 
     (void)argc; (void)argv; return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeVulkanTextureSamplingTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-texture-sampling-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -589,7 +604,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 13 && compute.ContractVersion == 13 &&
+        raster.ContractVersion == 14 && compute.ContractVersion == 14 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -617,10 +632,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable &&
         raster.NativeVulkanToonHighlightGpuDrawAvailable &&
         compute.NativeVulkanToonHighlightGpuDrawAvailable &&
+        raster.NativeVulkanTextureSamplingBootstrapAvailable &&
+        compute.NativeVulkanTextureSamplingBootstrapAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 13},
+        {"schema_version", 14},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -651,6 +668,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_toon_highlight_descriptor_runtime_available", compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable},
         {"raster_toon_highlight_gpu_draw_available", raster.NativeVulkanToonHighlightGpuDrawAvailable},
         {"compute_toon_highlight_gpu_draw_available", compute.NativeVulkanToonHighlightGpuDrawAvailable},
+        {"raster_texture_sampling_bootstrap_available", raster.NativeVulkanTextureSamplingBootstrapAvailable},
+        {"compute_texture_sampling_bootstrap_available", compute.NativeVulkanTextureSamplingBootstrapAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -796,6 +815,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto toonDescriptorOut = melonPrimeVulkanToonHighlightDescriptorTestPath(argc, argv); toonDescriptorOut.has_value())
         return MelonPrime::Vulkan::RunToonHighlightDescriptorRuntimeHarness(*toonDescriptorOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto textureOut = melonPrimeVulkanTextureSamplingTestPath(argc, argv); textureOut.has_value())
+        return MelonPrime::Vulkan::RunTextureSamplingBootstrapHarness(*textureOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

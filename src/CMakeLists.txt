@@ -150,6 +150,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanShadowMaskFragmentWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanToonHighlightVertex.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanToonHighlightFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTextureSamplingCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanShaders.h"
         "${_mp_vk_shader_root}/generated/manifest.lock.json")
 
@@ -170,6 +171,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/opaque.frag"
             "${_mp_vk_shader_root}/translucent.vert"
             "${_mp_vk_shader_root}/translucent.frag"
+            "${_mp_vk_shader_root}/texture_sampling.comp"
             "${_mp_vk_shader_root}/shadow_mask.frag"
             "${_mp_vk_shader_root}/toon_highlight.vert"
             "${_mp_vk_shader_root}/toon_highlight.frag"

@@ -201,6 +201,18 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanTextureSamplingCompute",
+      "source": "texture_sampling.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

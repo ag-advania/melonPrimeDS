@@ -1,5 +1,8 @@
 #include "GPU3D_Vulkan.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <cstring>
 #include <limits>
 
@@ -842,6 +845,69 @@ VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
 VulkanToonHighlightShaderAbi DescribeVulkanToonHighlightShaderAbi() noexcept
 {
     return {};
+}
+
+
+VulkanTextureSamplingDescriptorContract
+DescribeVulkanTextureSamplingDescriptorContract() noexcept
+{
+    return {};
+}
+
+std::array<float, 4> EvaluateVulkanTextureCombiner(
+    const VulkanTextureCombinerInput& input) noexcept
+{
+    if (input.Mode == VulkanTextureCombinerMode::Raw)
+        return input.TextureColor;
+
+    std::array<float, 4> working = input.VertexColor;
+    if (input.Mode == VulkanTextureCombinerMode::Toon)
+    {
+        working[0] = input.ToonColor[0];
+        working[1] = input.ToonColor[1];
+        working[2] = input.ToonColor[2];
+    }
+    else if (input.Mode == VulkanTextureCombinerMode::Highlight)
+    {
+        working[1] = working[0];
+        working[2] = working[0];
+    }
+
+    std::array<float, 4> output{};
+    if (input.Mode == VulkanTextureCombinerMode::Decal)
+    {
+        const float alpha = input.TextureColor[3];
+        for (std::size_t channel = 0; channel < 3; ++channel)
+        {
+            output[channel] = input.TextureColor[channel] * alpha +
+                working[channel] * (1.0f - alpha);
+        }
+        output[3] = working[3];
+    }
+    else
+    {
+        for (std::size_t channel = 0; channel < 4; ++channel)
+            output[channel] = working[channel] * input.TextureColor[channel];
+    }
+
+    if (input.Mode == VulkanTextureCombinerMode::Highlight)
+    {
+        for (std::size_t channel = 0; channel < 3; ++channel)
+            output[channel] = std::min(output[channel] + input.ToonColor[channel], 1.0f);
+    }
+    return output;
+}
+
+std::array<std::uint8_t, 4> QuantizeVulkanColor8(
+    const std::array<float, 4>& color) noexcept
+{
+    std::array<std::uint8_t, 4> output{};
+    for (std::size_t channel = 0; channel < output.size(); ++channel)
+    {
+        output[channel] = static_cast<std::uint8_t>(std::lround(
+            std::clamp(color[channel], 0.0f, 1.0f) * 255.0f));
+    }
+    return output;
 }
 
 } // namespace melonDS::Vulkan
