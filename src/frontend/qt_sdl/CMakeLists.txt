@@ -352,6 +352,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanTextureSamplingBootstrap.h
         MelonPrimeVulkanTexturedPolygonBootstrap.cpp
         MelonPrimeVulkanTexturedPolygonBootstrap.h
+        MelonPrimeVulkanTextureCacheBootstrap.cpp
+        MelonPrimeVulkanTextureCacheBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

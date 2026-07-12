@@ -290,6 +290,18 @@
           }
         }
       ]
+    },
+    {
+      "name": "VulkanTextureCacheCompute",
+      "source": "texture_cache.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }
