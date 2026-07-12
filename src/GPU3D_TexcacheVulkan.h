@@ -364,4 +364,63 @@ void MarkVulkanTextureDirtyPage(
     std::uint32_t byteAddress,
     std::size_t memorySize) noexcept;
 
+
+// MELONPRIME_VULKAN_TEXCACHE_UPLOAD_RING_CONTRACT_V1
+inline constexpr std::uint32_t kTextureUploadRingContractVersion = 1;
+inline constexpr std::uint32_t kTextureUploadRingDefaultCopyAlignment = 16;
+
+struct VulkanTextureUploadRingConfig
+{
+    std::uint64_t Capacity = 0;
+    std::uint64_t CopyAlignment = kTextureUploadRingDefaultCopyAlignment;
+    std::uint64_t NonCoherentAtomSize = 1;
+};
+
+struct VulkanTextureUploadReservation
+{
+    std::uint64_t Offset = 0;
+    std::uint64_t Size = 0;
+    std::uint64_t PaddedSize = 0;
+    std::uint64_t FlushOffset = 0;
+    std::uint64_t FlushSize = 0;
+    std::uint64_t SubmissionSerial = 0;
+    bool Wrapped = false;
+    bool ReusedRetiredSpace = false;
+};
+
+struct VulkanTextureUploadRingState
+{
+    VulkanTextureUploadRingConfig Config{};
+    std::vector<VulkanTextureUploadReservation> InFlight;
+    std::uint64_t Head = 0;
+    std::uint64_t LastRetiredSerial = 0;
+    std::uint64_t ReservationCount = 0;
+    std::uint64_t WrapCount = 0;
+    std::uint64_t ReuseCount = 0;
+    std::uint64_t RejectedOverlapCount = 0;
+    bool PersistentMappingRequired = true;
+    bool NonCoherentFlushRequired = true;
+
+    void Reset(const VulkanTextureUploadRingConfig& config) noexcept;
+};
+
+std::uint64_t AlignVulkanTextureUploadOffset(
+    std::uint64_t value,
+    std::uint64_t alignment) noexcept;
+
+bool ReserveVulkanTextureUpload(
+    VulkanTextureUploadRingState& state,
+    std::uint64_t size,
+    std::uint64_t submissionSerial,
+    VulkanTextureUploadReservation& reservation,
+    std::string* failureReason = nullptr) noexcept;
+
+void RetireVulkanTextureUploads(
+    VulkanTextureUploadRingState& state,
+    std::uint64_t completedSerial) noexcept;
+
+bool ValidateVulkanTextureUploadFlushRange(
+    const VulkanTextureUploadRingState& state,
+    const VulkanTextureUploadReservation& reservation) noexcept;
+
 } // namespace melonDS::Vulkan

@@ -385,4 +385,164 @@ void MarkVulkanTextureDirtyPage(
     words[page >> 6u] |= 1ull << (page & 63u);
 }
 
+
+std::uint64_t AlignVulkanTextureUploadOffset(
+    std::uint64_t value,
+    std::uint64_t alignment) noexcept
+{
+    if (alignment <= 1u) return value;
+    const std::uint64_t remainder = value % alignment;
+    if (remainder == 0u) return value;
+    const std::uint64_t delta = alignment - remainder;
+    if (value > std::numeric_limits<std::uint64_t>::max() - delta)
+        return std::numeric_limits<std::uint64_t>::max();
+    return value + delta;
+}
+
+void VulkanTextureUploadRingState::Reset(
+    const VulkanTextureUploadRingConfig& config) noexcept
+{
+    Config = config;
+    InFlight.clear();
+    Head = 0;
+    LastRetiredSerial = 0;
+    ReservationCount = 0;
+    WrapCount = 0;
+    ReuseCount = 0;
+    RejectedOverlapCount = 0;
+    PersistentMappingRequired = true;
+    NonCoherentFlushRequired = true;
+}
+
+namespace
+{
+
+bool UploadRangesOverlap(
+    std::uint64_t leftOffset,
+    std::uint64_t leftSize,
+    std::uint64_t rightOffset,
+    std::uint64_t rightSize) noexcept
+{
+    if (leftSize == 0u || rightSize == 0u) return false;
+    return leftOffset < rightOffset + rightSize &&
+        rightOffset < leftOffset + leftSize;
+}
+
+bool UploadRangeAvailable(
+    const VulkanTextureUploadRingState& state,
+    std::uint64_t offset,
+    std::uint64_t size) noexcept
+{
+    for (const auto& active : state.InFlight)
+    {
+        if (UploadRangesOverlap(offset, size, active.Offset, active.PaddedSize))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool ReserveVulkanTextureUpload(
+    VulkanTextureUploadRingState& state,
+    std::uint64_t size,
+    std::uint64_t submissionSerial,
+    VulkanTextureUploadReservation& reservation,
+    std::string* failureReason) noexcept
+{
+    reservation = {};
+    const std::uint64_t copyAlignment = std::max<std::uint64_t>(
+        1u, state.Config.CopyAlignment);
+    const std::uint64_t atomSize = std::max<std::uint64_t>(
+        1u, state.Config.NonCoherentAtomSize);
+    if (state.Config.Capacity == 0u || size == 0u)
+    {
+        if (failureReason) *failureReason = "upload ring capacity and size must be nonzero";
+        return false;
+    }
+    if (submissionSerial == 0u || submissionSerial <= state.LastRetiredSerial)
+    {
+        if (failureReason) *failureReason = "upload submission serial is already retired";
+        return false;
+    }
+    const std::uint64_t paddedSize = AlignVulkanTextureUploadOffset(size, copyAlignment);
+    if (paddedSize == std::numeric_limits<std::uint64_t>::max() ||
+        paddedSize > state.Config.Capacity)
+    {
+        if (failureReason) *failureReason = "upload is larger than the staging ring";
+        return false;
+    }
+
+    std::uint64_t offset = AlignVulkanTextureUploadOffset(state.Head, copyAlignment);
+    bool wrapped = false;
+    if (offset == std::numeric_limits<std::uint64_t>::max() ||
+        offset + paddedSize > state.Config.Capacity ||
+        !UploadRangeAvailable(state, offset, paddedSize))
+    {
+        offset = 0u;
+        wrapped = true;
+        if (!UploadRangeAvailable(state, offset, paddedSize))
+        {
+            ++state.RejectedOverlapCount;
+            if (failureReason) *failureReason = "upload ring overlaps an unretired submission";
+            return false;
+        }
+    }
+
+    reservation.Offset = offset;
+    reservation.Size = size;
+    reservation.PaddedSize = paddedSize;
+    reservation.SubmissionSerial = submissionSerial;
+    reservation.Wrapped = wrapped;
+    reservation.ReusedRetiredSpace = wrapped && state.LastRetiredSerial != 0u;
+    reservation.FlushOffset = (offset / atomSize) * atomSize;
+    const std::uint64_t flushEnd = std::min<std::uint64_t>(
+        state.Config.Capacity,
+        AlignVulkanTextureUploadOffset(offset + size, atomSize));
+    reservation.FlushSize = flushEnd - reservation.FlushOffset;
+
+    state.InFlight.push_back(reservation);
+    state.Head = offset + paddedSize;
+    ++state.ReservationCount;
+    if (wrapped) ++state.WrapCount;
+    if (reservation.ReusedRetiredSpace) ++state.ReuseCount;
+    return true;
+}
+
+void RetireVulkanTextureUploads(
+    VulkanTextureUploadRingState& state,
+    std::uint64_t completedSerial) noexcept
+{
+    if (completedSerial <= state.LastRetiredSerial) return;
+    state.LastRetiredSerial = completedSerial;
+    state.InFlight.erase(
+        std::remove_if(state.InFlight.begin(), state.InFlight.end(),
+            [completedSerial](const VulkanTextureUploadReservation& reservation)
+            {
+                return reservation.SubmissionSerial <= completedSerial;
+            }),
+        state.InFlight.end());
+}
+
+bool ValidateVulkanTextureUploadFlushRange(
+    const VulkanTextureUploadRingState& state,
+    const VulkanTextureUploadReservation& reservation) noexcept
+{
+    const std::uint64_t atomSize = std::max<std::uint64_t>(
+        1u, state.Config.NonCoherentAtomSize);
+    if (reservation.Size == 0u || reservation.FlushSize == 0u)
+        return false;
+    if (reservation.FlushOffset % atomSize != 0u)
+        return false;
+    if (reservation.FlushOffset > reservation.Offset)
+        return false;
+    if (reservation.FlushOffset + reservation.FlushSize <
+        reservation.Offset + reservation.Size)
+        return false;
+    if (reservation.FlushOffset + reservation.FlushSize > state.Config.Capacity)
+        return false;
+    return reservation.FlushSize % atomSize == 0u ||
+        reservation.FlushOffset + reservation.FlushSize == state.Config.Capacity;
+}
+
 } // namespace melonDS::Vulkan
