@@ -338,30 +338,6 @@
           "defines": {}
         }
       ]
-    },
-    {
-      "name": "VulkanPhase10PresenterVertex",
-      "source": "phase10_presenter.vert",
-      "stage": "vert",
-      "entry_point": "main",
-      "variants": [
-        {
-          "name": "default",
-          "defines": {}
-        }
-      ]
-    },
-    {
-      "name": "VulkanPhase10PresenterFragment",
-      "source": "phase10_presenter.frag",
-      "stage": "frag",
-      "entry_point": "main",
-      "variants": [
-        {
-          "name": "default",
-          "defines": {}
-        }
-      ]
     }
   ]
 }

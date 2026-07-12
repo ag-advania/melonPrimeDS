@@ -39,14 +39,9 @@ struct VulkanRendererShellContract
     bool NativeVulkanFinalCompositionAvailable = true;
     bool NativeVulkanGpuResidentOutputAvailable = true;
     bool NativeVulkanPhase9SubsystemComplete = true;
-    bool NativeVulkanOutputRingAvailable = true;
-    bool NativeVulkanZeroCopyPresenterAvailable = true;
-    bool NativeVulkanMultiWindowLeaseAvailable = true;
-    bool NativeVulkanTimelinePresenterWaitAvailable = true;
-    bool NativeVulkanPhase10SubsystemComplete = true;
     bool NativeVulkanRomIntegrationImplemented = false;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 21;
+    u32 ContractVersion = 20;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
