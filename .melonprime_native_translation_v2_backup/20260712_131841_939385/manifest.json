@@ -1,0 +1,7 @@
+{
+  "files": [
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc",
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc",
+    "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc"
+  ]
+}
