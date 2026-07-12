@@ -213,6 +213,83 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanTexturedPolygonVertex",
+      "source": "textured_polygon.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "VulkanTexturedPolygonFragment",
+      "source": "textured_polygon.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "OpaqueModulate",
+          "defines": {}
+        },
+        {
+          "name": "OpaqueDecal",
+          "defines": {
+            "DECAL_MODE": "1"
+          }
+        },
+        {
+          "name": "TranslucentModulate",
+          "defines": {
+            "TRANSLUCENT_PASS": "1"
+          }
+        },
+        {
+          "name": "TranslucentDecal",
+          "defines": {
+            "TRANSLUCENT_PASS": "1",
+            "DECAL_MODE": "1"
+          }
+        },
+        {
+          "name": "OpaqueModulateWBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        },
+        {
+          "name": "OpaqueDecalWBuffer",
+          "defines": {
+            "W_BUFFER": "1",
+            "DECAL_MODE": "1"
+          }
+        },
+        {
+          "name": "TranslucentModulateWBuffer",
+          "defines": {
+            "W_BUFFER": "1",
+            "TRANSLUCENT_PASS": "1"
+          }
+        },
+        {
+          "name": "TranslucentDecalWBuffer",
+          "defines": {
+            "W_BUFFER": "1",
+            "TRANSLUCENT_PASS": "1",
+            "DECAL_MODE": "1"
+          }
+        }
+      ]
     }
   ]
 }

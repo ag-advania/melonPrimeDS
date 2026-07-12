@@ -611,4 +611,23 @@ std::array<float, 4> EvaluateVulkanTextureCombiner(
 std::array<std::uint8_t, 4> QuantizeVulkanColor8(
     const std::array<float, 4>& color) noexcept;
 
+// MELONPRIME_VULKAN_TEXTURED_POLYGON_PIPELINE_CONTRACT_V1
+inline constexpr std::uint32_t kTexturedPolygonPipelineContractVersion = 1;
+
+struct VulkanTexturedPolygonDescriptorContract
+{
+    std::uint32_t ContractVersion = kTexturedPolygonPipelineContractVersion;
+    std::uint32_t DescriptorSet = 0;
+    std::uint32_t UniformBinding = 0;
+    std::uint32_t TextureBinding = 1;
+    VkFormat TextureFormat = VK_FORMAT_R8G8B8A8_UINT;
+    bool Modulate = true;
+    bool Decal = true;
+    bool Toon = true;
+    bool Highlight = true;
+};
+
+VulkanTexturedPolygonDescriptorContract
+DescribeVulkanTexturedPolygonDescriptorContract() noexcept;
+
 } // namespace melonDS::Vulkan

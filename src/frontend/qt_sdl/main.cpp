@@ -70,6 +70,7 @@
 #include "MelonPrimeVulkanToonHighlightBootstrap.h"
 #include "MelonPrimeVulkanToonHighlightDescriptorBootstrap.h"
 #include "MelonPrimeVulkanTextureSamplingBootstrap.h"
+#include "MelonPrimeVulkanTexturedPolygonBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -604,7 +605,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 14 && compute.ContractVersion == 14 &&
+        raster.ContractVersion == 15 && compute.ContractVersion == 15 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -634,10 +635,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanToonHighlightGpuDrawAvailable &&
         raster.NativeVulkanTextureSamplingBootstrapAvailable &&
         compute.NativeVulkanTextureSamplingBootstrapAvailable &&
+        raster.NativeVulkanTexturedPolygonBootstrapAvailable &&
+        compute.NativeVulkanTexturedPolygonBootstrapAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 14},
+        {"schema_version", 15},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -670,6 +673,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_toon_highlight_gpu_draw_available", compute.NativeVulkanToonHighlightGpuDrawAvailable},
         {"raster_texture_sampling_bootstrap_available", raster.NativeVulkanTextureSamplingBootstrapAvailable},
         {"compute_texture_sampling_bootstrap_available", compute.NativeVulkanTextureSamplingBootstrapAvailable},
+        {"raster_textured_polygon_bootstrap_available", raster.NativeVulkanTexturedPolygonBootstrapAvailable},
+        {"compute_textured_polygon_bootstrap_available", compute.NativeVulkanTexturedPolygonBootstrapAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -680,6 +685,16 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     return passed ? 0 : 1;
 }
 #endif
+
+static std::optional<QString> melonPrimeVulkanTexturedPolygonTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-textured-polygon-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc; (void)argv; return std::nullopt;
+}
 
 int main(int argc, char** argv)
 {
@@ -837,6 +852,11 @@ int main(int argc, char** argv)
         }
         return MelonPrime::CustomHud_RunGoldenHarness(*goldenOut);
     }
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto texturedOut = melonPrimeVulkanTexturedPolygonTestPath(argc, argv); texturedOut.has_value())
+        return MelonPrime::Vulkan::RunTexturedPolygonBootstrapHarness(*texturedOut);
 #endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);

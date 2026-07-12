@@ -910,4 +910,10 @@ std::array<std::uint8_t, 4> QuantizeVulkanColor8(
     return output;
 }
 
+VulkanTexturedPolygonDescriptorContract
+DescribeVulkanTexturedPolygonDescriptorContract() noexcept
+{
+    return {};
+}
+
 } // namespace melonDS::Vulkan
