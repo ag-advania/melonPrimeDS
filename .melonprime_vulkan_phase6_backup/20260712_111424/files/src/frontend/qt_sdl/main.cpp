@@ -59,7 +59,6 @@
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "GPU_Vulkan.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeScreenVulkan.h"
@@ -346,20 +345,6 @@ static std::optional<QString> melonPrimeOutputLeaseTestPath(int argc, char** arg
     return std::nullopt;
 }
 
-static std::optional<QString> melonPrimeVulkanRendererShellTestPath(int argc, char** argv)
-{
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    for (int i = 1; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--melonprime-vulkan-renderer-shell-test") == 0 && i + 1 < argc)
-            return QString::fromLocal8Bit(argv[i + 1]);
-    }
-#endif
-    (void)argc;
-    (void)argv;
-    return std::nullopt;
-}
-
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -426,40 +411,6 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
         {"stale_generation_rejected", staleGenerationRejected},
         {"frame_serial", frameSerial},
         {"generation", generation},
-    };
-    QFile file(outputPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return 2;
-    file.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
-    return passed ? 0 : 1;
-}
-#endif
-
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
-{
-    // MELONPRIME_VULKAN_RENDERER_SHELL_V1
-    const melonDS::VulkanRendererShellContract raster =
-        melonDS::DescribeVulkanRendererShell(false);
-    const melonDS::VulkanRendererShellContract compute =
-        melonDS::DescribeVulkanRendererShell(true);
-    const bool passed =
-        raster.ContractVersion == 1 && compute.ContractVersion == 1 &&
-        !raster.ComputeSelected && compute.ComputeSelected &&
-        raster.UsesSoftwareCorrectnessBaseline &&
-        compute.UsesSoftwareCorrectnessBaseline &&
-        !raster.NativeVulkan3DImplemented &&
-        !compute.NativeVulkan3DImplemented;
-    const QJsonObject result{
-        {"schema_version", 1},
-        {"passed", passed},
-        {"contract_version", static_cast<int>(raster.ContractVersion)},
-        {"raster_mode", QString::fromLatin1(raster.ModeName)},
-        {"compute_mode", QString::fromLatin1(compute.ModeName)},
-        {"raster_software_correctness_baseline", raster.UsesSoftwareCorrectnessBaseline},
-        {"compute_software_correctness_baseline", compute.UsesSoftwareCorrectnessBaseline},
-        {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
-        {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
     QFile file(outputPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -548,11 +499,6 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto leaseOut = melonPrimeOutputLeaseTestPath(argc, argv); leaseOut.has_value())
         return runMelonPrimeOutputLeaseTest(*leaseOut);
-#endif
-
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (const auto shellOut = melonPrimeVulkanRendererShellTestPath(argc, argv); shellOut.has_value())
-        return runMelonPrimeVulkanRendererShellTest(*shellOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

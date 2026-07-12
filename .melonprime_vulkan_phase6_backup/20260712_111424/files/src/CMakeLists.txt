@@ -156,8 +156,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VERBATIM)
 
     target_sources(core PRIVATE
-        GPU_Vulkan.cpp
-        GPU_Vulkan.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

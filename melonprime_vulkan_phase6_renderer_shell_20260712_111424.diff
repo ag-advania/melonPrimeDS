@@ -1,0 +1,436 @@
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -156,6 +156,8 @@
+         VERBATIM)
+ 
+     target_sources(core PRIVATE
++        GPU_Vulkan.cpp
++        GPU_Vulkan.h
+         VulkanSupport.cpp
+         VulkanSupport.h
+         ${_mp_vk_shader_outputs})
+--- a/src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp
+@@ -9,6 +9,9 @@
+ #include "GPU_Soft.h"
+ #if defined(MELONPRIME_ENABLE_METAL)
+ #include "GPU_Metal.h"
++#endif
++#if defined(MELONPRIME_ENABLE_VULKAN)
++#include "GPU_Vulkan.h"
+ #endif
+ 
+ namespace MelonPrime::VideoBackend
+@@ -47,13 +50,14 @@
+ #endif
+ #if defined(MELONPRIME_ENABLE_VULKAN)
+     case renderer3D_Vulkan:
++        // MELONPRIME_VULKAN_RENDERER_SHELL_V1
++        report.fallbackReason =
++            "Phase 6 Vulkan shell uses Software 2D/3D/capture output; native Vulkan rasterization starts in Phase 7";
++        return std::make_unique<melonDS::VulkanRenderer>(nds, false);
+     case renderer3D_VulkanCompute:
+-        // Phase 2 reserves and routes the IDs. The safe renderer shell is
+-        // deliberately Phase 6, after instance/device/presenter ownership.
+-        report.actual = renderer3D_Software;
+-        report.failedStage = "renderer factory";
+-        report.fallbackReason = "Vulkan renderer shell is not available before Phase 6";
+-        return std::make_unique<melonDS::SoftRenderer>(nds);
++        report.fallbackReason =
++            "Phase 6 Vulkan Compute shell uses Software 2D/3D/capture output; native Vulkan compute rasterization starts in Phase 11";
++        return std::make_unique<melonDS::VulkanRenderer>(nds, true);
+ #endif
+     default:
+         report.normalized = renderer3D_Software;
+--- a/src/frontend/qt_sdl/main.cpp
++++ b/src/frontend/qt_sdl/main.cpp
+@@ -59,6 +59,7 @@
+ #include "MelonPrimeMetalFeatureCheck.h"
+ #endif
+ #if defined(MELONPRIME_ENABLE_VULKAN)
++#include "GPU_Vulkan.h"
+ #include "MelonPrimeVulkanInstanceHost.h"
+ #include "MelonPrimeVulkanFeatureCheck.h"
+ #include "MelonPrimeScreenVulkan.h"
+@@ -337,6 +338,20 @@
+     for (int i = 1; i < argc; ++i)
+     {
+         if (strcmp(argv[i], "--melonprime-output-lease-test") == 0 && i + 1 < argc)
++            return QString::fromLocal8Bit(argv[i + 1]);
++    }
++#endif
++    (void)argc;
++    (void)argv;
++    return std::nullopt;
++}
++
++static std::optional<QString> melonPrimeVulkanRendererShellTestPath(int argc, char** argv)
++{
++#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++    for (int i = 1; i < argc; ++i)
++    {
++        if (strcmp(argv[i], "--melonprime-vulkan-renderer-shell-test") == 0 && i + 1 < argc)
+             return QString::fromLocal8Bit(argv[i + 1]);
+     }
+ #endif
+@@ -420,6 +435,40 @@
+ }
+ #endif
+ 
++#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
++{
++    // MELONPRIME_VULKAN_RENDERER_SHELL_V1
++    const melonDS::VulkanRendererShellContract raster =
++        melonDS::DescribeVulkanRendererShell(false);
++    const melonDS::VulkanRendererShellContract compute =
++        melonDS::DescribeVulkanRendererShell(true);
++    const bool passed =
++        raster.ContractVersion == 1 && compute.ContractVersion == 1 &&
++        !raster.ComputeSelected && compute.ComputeSelected &&
++        raster.UsesSoftwareCorrectnessBaseline &&
++        compute.UsesSoftwareCorrectnessBaseline &&
++        !raster.NativeVulkan3DImplemented &&
++        !compute.NativeVulkan3DImplemented;
++    const QJsonObject result{
++        {"schema_version", 1},
++        {"passed", passed},
++        {"contract_version", static_cast<int>(raster.ContractVersion)},
++        {"raster_mode", QString::fromLatin1(raster.ModeName)},
++        {"compute_mode", QString::fromLatin1(compute.ModeName)},
++        {"raster_software_correctness_baseline", raster.UsesSoftwareCorrectnessBaseline},
++        {"compute_software_correctness_baseline", compute.UsesSoftwareCorrectnessBaseline},
++        {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
++        {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
++    };
++    QFile file(outputPath);
++    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
++        return 2;
++    file.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
++    return passed ? 0 : 1;
++}
++#endif
++
+ int main(int argc, char** argv)
+ {
+     sysTimer.start();
+@@ -499,6 +548,11 @@
+ #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+     if (const auto leaseOut = melonPrimeOutputLeaseTestPath(argc, argv); leaseOut.has_value())
+         return runMelonPrimeOutputLeaseTest(*leaseOut);
++#endif
++
++#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++    if (const auto shellOut = melonPrimeVulkanRendererShellTestPath(argc, argv); shellOut.has_value())
++        return runMelonPrimeVulkanRendererShellTest(*shellOut);
+ #endif
+ 
+ #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+--- a/.claude/rules/plan/MelonPrimeDS_Vulkan_Rendering_完全実装フェーズ計画.md
++++ b/.claude/rules/plan/MelonPrimeDS_Vulkan_Rendering_完全実装フェーズ計画.md
+@@ -3,7 +3,7 @@
+ **作成日:** 2026-07-11  
+ **対象リポジトリ:** `ag-advania/melonPrimeDS`  
+ **対象ブランチ:** `highres_fonts_v3`  
+-**文書ステータス:** 実装前の正式設計・実行計画  
++**文書ステータス:** 実装進行中の正式設計・実行計画
+ **最終目標:** `Vulkan` と `Vulkan Compute Shader` の両方を、既存の `OpenGL` と `OpenGL Compute Shader` に並ぶ正式な描画バックエンドとして完成させる
+ 
+ ## 実装進捗
+@@ -15,7 +15,9 @@
+ | 2 — backend policy / stable IDs | Done | `refactor(video): add stable renderer IDs and Vulkan backend policy` | Windows default OFF / Vulkan ON / force-disable passed | OFF config ID 5 and ON env raster/compute no-ROM smoke passed | Win11 / RTX 5070 Ti; repo audits passed | ROM renderer creation/log and non-Windows unverified; see `tests/vulkan/reference/phase2-verification.md` | Revert the Phase 2 commit |
+ | 3 — Qt instance / device probe | Done | `feat(vulkan): add Qt Vulkan instance host and device capability probe` | Windows Vulkan ON / force-disable / default OFF passed | RTX 5070 Ti surface/device probe and create/destroy 10/10 passed | Win11 / RTX 5070 Ti; raster+compute+timeline available | Validation layer absent; X11, Wayland, macOS and CI execution deferred; see `tests/vulkan/reference/phase3-verification.md` | Revert the Phase 3 commit |
+ | 4 — CPU BGRA presenter baseline | Implemented; ROM/long-run acceptance pending | `feat(vulkan): add CPU BGRA Vulkan presenter baseline` | Windows Vulkan ON / force-disable / default OFF passed | Vulkan no-ROM capture, resize, maximize, minimize/restore and two-window capture passed | Win11 / RTX 5070 Ti; generated presenter SPIR-V and repo audits passed | No scoped ROM; active OSD/HUD/radar/Fast Forward and 30-minute run unverified; Qt baseline is FIFO pending explicit VSync-OFF mode work; see `tests/vulkan/reference/phase4-verification.md` | Revert the Phase 4 commit |
+-| 5〜16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
++| 5 — typed Vulkan output / shared lease | Done; progress record normalized by Phase 6 package | `9040e63728d8 (Phase 5 source state)` | Windows default OFF / Vulkan ON / force-disable passed in supplied log | lease harness passed; serial/generation and stale-generation rejection confirmed | Win11 / RTX 5070 Ti | Real Vulkan GPU-image producer and cross-queue slot reuse deferred; see `tests/vulkan/reference/phase5-verification.md` | Revert the Phase 5 source commit(s) |
++| 6 — Vulkan renderer shell | Implemented; Windows build/runtime pending | `pending Phase 6 commit` | Windows Vulkan build pending | shell harness pending; ROM runtime pending | Windows package targets UCRT64 | Native Vulkan 3D intentionally absent; see `tests/vulkan/reference/phase6-verification.md` | Revert the Phase 6 commit |
++| 7～16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
+ 
+ ---
+ 
+--- a/src/GPU_Vulkan.h
++++ b/src/GPU_Vulkan.h
+@@ -0,0 +1,74 @@
++#pragma once
++
++#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
++#error "GPU_Vulkan.h is owned by the complete MelonPrime Vulkan build gate"
++#endif
++
++// MELONPRIME_VULKAN_RENDERER_SHELL_V1
++
++#include "GPU_Soft.h"
++
++namespace melonDS
++{
++
++struct VulkanRendererShellContract
++{
++    const char* ModeName = nullptr;
++    bool ComputeSelected = false;
++    bool UsesSoftwareCorrectnessBaseline = true;
++    bool NativeVulkan3DImplemented = false;
++    u32 ContractVersion = 1;
++};
++
++VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
++
++// Phase 6 establishes the Vulkan renderer identity and lifecycle while keeping
++// Software 2D/3D/capture/CPU-BGRA output as the correctness source. Native
++// Vulkan rasterization starts in Phase 7 and must not be implied by this class.
++class VulkanRenderer final : public SoftRenderer
++{
++public:
++    explicit VulkanRenderer(melonDS::NDS& nds, bool useComputeRenderer = false) noexcept;
++    ~VulkanRenderer() override;
++
++    bool Init() override;
++    void Reset() override;
++    void Stop() override;
++    void PreSavestate() override;
++    void PostSavestate() override;
++    void SetRenderSettings(RendererSettings& settings) override;
++    void SwapBuffers() override;
++    RendererOutput GetOutput() override;
++    RendererOutputLease AcquireOutputLease() override;
++
++    [[nodiscard]] bool IsComputeRendererSelected() const noexcept
++    {
++        return ComputeRendererSelected;
++    }
++
++    [[nodiscard]] int GetRecordedScaleFactor() const noexcept
++    {
++        return ScaleFactor;
++    }
++
++    [[nodiscard]] u64 GetFrameSerialForDiagnostics() const noexcept
++    {
++        return FrameSerial;
++    }
++
++    [[nodiscard]] u64 GetOutputGenerationForDiagnostics() const noexcept
++    {
++        return OutputGeneration;
++    }
++
++private:
++    void AdvanceOutputGeneration() noexcept;
++
++    bool ComputeRendererSelected = false;
++    bool Initialized = false;
++    int ScaleFactor = 1;
++    u64 FrameSerial = 0;
++    u64 OutputGeneration = 1;
++};
++
++} // namespace melonDS
+--- a/src/GPU_Vulkan.cpp
++++ b/src/GPU_Vulkan.cpp
+@@ -0,0 +1,114 @@
++#include "GPU_Vulkan.h"
++
++#include <algorithm>
++
++#include "Platform.h"
++
++namespace melonDS
++{
++
++VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept
++{
++    return {
++        computeSelected ? "Vulkan Compute Shader" : "Vulkan",
++        computeSelected,
++        true,
++        false,
++        1,
++    };
++}
++
++VulkanRenderer::VulkanRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
++    : SoftRenderer(nds),
++      ComputeRendererSelected(useComputeRenderer)
++{
++}
++
++VulkanRenderer::~VulkanRenderer() = default;
++
++bool VulkanRenderer::Init()
++{
++    if (Initialized)
++        return true;
++
++    if (!SoftRenderer::Init())
++        return false;
++
++    Initialized = true;
++    const VulkanRendererShellContract contract =
++        DescribeVulkanRendererShell(ComputeRendererSelected);
++    Platform::Log(
++        Platform::LogLevel::Info,
++        "[MelonPrime] %s renderer shell initialized: "
++        "software_correctness_baseline=1 native_vulkan_3d=0 generation=%llu\n",
++        contract.ModeName,
++        static_cast<unsigned long long>(OutputGeneration));
++    return true;
++}
++
++void VulkanRenderer::AdvanceOutputGeneration() noexcept
++{
++    ++OutputGeneration;
++    if (OutputGeneration == 0)
++        OutputGeneration = 1;
++    FrameSerial = 0;
++}
++
++void VulkanRenderer::Reset()
++{
++    SoftRenderer::Reset();
++    AdvanceOutputGeneration();
++}
++
++void VulkanRenderer::Stop()
++{
++    SoftRenderer::Stop();
++    Initialized = false;
++    AdvanceOutputGeneration();
++}
++
++void VulkanRenderer::PreSavestate()
++{
++    SoftRenderer::PreSavestate();
++}
++
++void VulkanRenderer::PostSavestate()
++{
++    SoftRenderer::PostSavestate();
++    AdvanceOutputGeneration();
++}
++
++void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
++{
++    SoftRenderer::SetRenderSettings(settings);
++
++    const int requestedScale = std::clamp(settings.ScaleFactor, 1, 16);
++    if (requestedScale != ScaleFactor)
++    {
++        ScaleFactor = requestedScale;
++        AdvanceOutputGeneration();
++    }
++}
++
++void VulkanRenderer::SwapBuffers()
++{
++    SoftRenderer::SwapBuffers();
++    ++FrameSerial;
++    if (FrameSerial == 0)
++        ++FrameSerial;
++}
++
++RendererOutput VulkanRenderer::GetOutput()
++{
++    RendererOutput output = SoftRenderer::GetOutput();
++    output.FrameSerial = FrameSerial;
++    output.Generation = OutputGeneration;
++    return output;
++}
++
++RendererOutputLease VulkanRenderer::AcquireOutputLease()
++{
++    return RendererOutputLease(GetOutput(), nullptr, nullptr);
++}
++
++} // namespace melonDS
+--- a/tests/vulkan/reference/phase5-verification.md
++++ b/tests/vulkan/reference/phase5-verification.md
+@@ -0,0 +1,30 @@
++# Vulkan Phase 5 verification
++
++**Status:** Implemented before the Phase 6 Windows patch.
++**Source revision observed by this patch:** `9040e63728d8`
++**Scope:** `RendererOutputKind::VulkanImage`, typed `VulkanRendererOutput`, shared move-only `RendererOutputLease`, frame serial/generation matching.
++
++## Evidence preserved from the supplied Windows work log
++
++- Default-OFF Windows build completed.
++- Vulkan-ON Windows build completed.
++- Force-disabled Vulkan build completed and excluded Vulkan presenter sources/strings.
++- `--melonprime-output-lease-test` returned success for OFF, Vulkan-ON, and force-disabled configurations.
++- The Vulkan-ON result propagated `frame_serial=42` and `generation=7`.
++- A stale generation was rejected.
++- The release callback ran exactly once after move construction, move assignment, and repeated `ReleaseNow()`.
++- The Phase 4 Vulkan presenter capture remained functional.
++
++## Source contract checked by the Phase 6 patch preflight
++
++- `RendererOutputKind::VulkanImage` exists only inside the Vulkan build gate.
++- `VulkanRendererOutput` carries image/view/format/extent/layout/layers/serial/generation/timeline metadata.
++- `RendererOutput::MatchesProducerFrame()` rejects stale generations.
++- `RendererOutputLease` is available to MelonPrime CPU/OpenGL/Metal/Vulkan outputs and remains move-only.
++- `GPU::AcquireRendererOutputLease()` delegates to the active renderer.
++
++## Deferred acceptance
++
++- A real Vulkan GPU-image producer does not exist until later phases.
++- Output-slot reuse and cross-queue timeline waiting cannot be runtime-validated in Phase 5 alone.
++- Linux, macOS/MoltenVK, GitHub Actions, and validation-layer runs remain deferred.
+--- a/tests/vulkan/reference/phase6-verification.md
++++ b/tests/vulkan/reference/phase6-verification.md
+@@ -0,0 +1,56 @@
++# Vulkan Phase 6 verification
++
++**Status:** Patch applied; Windows build pending.
++**Build status:** `PENDING_WINDOWS_BUILD`
++**ROM runtime status:** `PENDING_ROM_RUNTIME`
++
++## Implemented scope
++
++- Adds `melonDS::VulkanRenderer` under `MELONPRIME_VULKAN_ACTIVE` only.
++- Keeps Software 2D, Software 3D, display capture, savestate hooks, and CPU BGRA output as the correctness source.
++- Routes `renderer3D_Vulkan` and `renderer3D_VulkanCompute` through the renderer factory instead of replacing them with `SoftRenderer` before construction.
++- Preserves requested/normalized/actual backend logging.
++- Records frame serial and output generation on CPU BGRA output.
++- Advances generation on reset, stop, savestate load completion, and scale changes.
++- Adds `--melonprime-vulkan-renderer-shell-test <json>` for a no-ROM link/contract check.
++- Does not claim native Vulkan 3D; that begins in Phase 7.
++
++## Windows commands executed by the package
++
++```bat
++.claude\skills\build-mingw.bat --vulkan --tail 160
++build\release-mingw-x86_64\melonPrimeDS.exe --melonprime-vulkan-renderer-shell-test <json>
++build\release-mingw-x86_64\melonPrimeDS.exe --melonprime-output-lease-test <json>
++build\release-mingw-x86_64\melonPrimeDS.exe --melonprime-vulkan-probe <json>
++```
++
++## Expected shell harness contract
++
++```json
++{
++  "passed": true,
++  "contract_version": 1,
++  "raster_software_correctness_baseline": true,
++  "compute_software_correctness_baseline": true,
++  "raster_native_vulkan_3d": false,
++  "compute_native_vulkan_3d": false
++}
++```
++
++## Required ROM runtime follow-up
++
++Run with a valid ROM and the Phase 4 Vulkan presenter:
++
++```bat
++set MELONPRIME_FORCE_VULKAN_RENDERER=1
++set MELONPRIME_FORCE_VULKAN_PRESENTER=1
++build\release-mingw-x86_64\melonPrimeDS.exe "X:\path\game.nds"
++```
++
++Confirm the log contains `actual=Vulkan(5)` and the explicit Software correctness-baseline shell log. Repeat with `MELONPRIME_FORCE_VULKAN_COMPUTE_RENDERER=1` and confirm `actual=VulkanCompute(6)`.
++
++## Deferred acceptance
++
++- ROM boot, reset, savestate load, renderer switch, and long-run gameplay require the user's ROM environment.
++- Native Vulkan rasterization is intentionally absent.
++- Linux, macOS/MoltenVK, CI, and validation-layer execution remain deferred.

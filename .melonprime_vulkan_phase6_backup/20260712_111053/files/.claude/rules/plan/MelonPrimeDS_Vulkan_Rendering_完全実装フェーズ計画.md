@@ -3,7 +3,7 @@
 **作成日:** 2026-07-11  
 **対象リポジトリ:** `ag-advania/melonPrimeDS`  
 **対象ブランチ:** `highres_fonts_v3`  
-**文書ステータス:** 実装進行中の正式設計・実行計画
+**文書ステータス:** 実装前の正式設計・実行計画  
 **最終目標:** `Vulkan` と `Vulkan Compute Shader` の両方を、既存の `OpenGL` と `OpenGL Compute Shader` に並ぶ正式な描画バックエンドとして完成させる
 
 ## 実装進捗
@@ -15,9 +15,7 @@
 | 2 — backend policy / stable IDs | Done | `refactor(video): add stable renderer IDs and Vulkan backend policy` | Windows default OFF / Vulkan ON / force-disable passed | OFF config ID 5 and ON env raster/compute no-ROM smoke passed | Win11 / RTX 5070 Ti; repo audits passed | ROM renderer creation/log and non-Windows unverified; see `tests/vulkan/reference/phase2-verification.md` | Revert the Phase 2 commit |
 | 3 — Qt instance / device probe | Done | `feat(vulkan): add Qt Vulkan instance host and device capability probe` | Windows Vulkan ON / force-disable / default OFF passed | RTX 5070 Ti surface/device probe and create/destroy 10/10 passed | Win11 / RTX 5070 Ti; raster+compute+timeline available | Validation layer absent; X11, Wayland, macOS and CI execution deferred; see `tests/vulkan/reference/phase3-verification.md` | Revert the Phase 3 commit |
 | 4 — CPU BGRA presenter baseline | Implemented; ROM/long-run acceptance pending | `feat(vulkan): add CPU BGRA Vulkan presenter baseline` | Windows Vulkan ON / force-disable / default OFF passed | Vulkan no-ROM capture, resize, maximize, minimize/restore and two-window capture passed | Win11 / RTX 5070 Ti; generated presenter SPIR-V and repo audits passed | No scoped ROM; active OSD/HUD/radar/Fast Forward and 30-minute run unverified; Qt baseline is FIFO pending explicit VSync-OFF mode work; see `tests/vulkan/reference/phase4-verification.md` | Revert the Phase 4 commit |
-| 5 — typed Vulkan output / shared lease | Done; progress record normalized by Phase 6 package | `9040e63728d8 (Phase 5 source state)` | Windows default OFF / Vulkan ON / force-disable passed in supplied log | lease harness passed; serial/generation and stale-generation rejection confirmed | Win11 / RTX 5070 Ti | Real Vulkan GPU-image producer and cross-queue slot reuse deferred; see `tests/vulkan/reference/phase5-verification.md` | Revert the Phase 5 source commit(s) |
-| 6 — Vulkan renderer shell | Implemented; Windows build/runtime pending | `pending Phase 6 commit` | Windows Vulkan build pending | shell harness pending; ROM runtime pending | Windows package targets UCRT64 | Native Vulkan 3D intentionally absent; see `tests/vulkan/reference/phase6-verification.md` | Revert the Phase 6 commit |
-| 7～16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
+| 5〜16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
 
 ---
 

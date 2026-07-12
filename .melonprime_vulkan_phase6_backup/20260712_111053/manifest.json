@@ -1,0 +1,55 @@
+{
+  "patch_version": "phase6-vulkan-renderer-shell-v1",
+  "timestamp": "20260712_111053",
+  "head_before_apply": "9040e63728d8af3b4ad47ed303eb89f2519eb097",
+  "entries": [
+    {
+      "path": "src/CMakeLists.txt",
+      "existed": true,
+      "original_sha256": "e89eb787ac5fdf7f9a0d223bb63959923edf2564edda03df693df74dd563e6da",
+      "patched_sha256": "a42ff37ab93ccc70b715d97210a88ea465dd1762bfd947c7c3328d441d0cd9b1"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp",
+      "existed": true,
+      "original_sha256": "bef5d3bc2c9191e30c128d7ffb365e326bed89328e246c7560d6f35c2912ced0",
+      "patched_sha256": "a1b87bed011fdec197613dac05d7a5b1a75ca8790d1a9d38f186c51a8f2c2a2b"
+    },
+    {
+      "path": "src/frontend/qt_sdl/main.cpp",
+      "existed": true,
+      "original_sha256": "02a36acc20670fcec9d3ecb3dd8a6c3e38440090d800868b6e77696db3f3c5f7",
+      "patched_sha256": "dd2f384190a9db55f4ede2124586af4956371c79d4552ea8657fd0bc227dec5e"
+    },
+    {
+      "path": ".claude/rules/plan/MelonPrimeDS_Vulkan_Rendering_\u5b8c\u5168\u5b9f\u88c5\u30d5\u30a7\u30fc\u30ba\u8a08\u753b.md",
+      "existed": true,
+      "original_sha256": "6225edbbaed203dd2499e567f130606dd8aa9dd1805777023bcbe27210fd159d",
+      "patched_sha256": "a9528722eade8dace9117ef72097e5e9c7113fc177f14f39d35b9933c61a50d0"
+    },
+    {
+      "path": "src/GPU_Vulkan.h",
+      "existed": false,
+      "original_sha256": null,
+      "patched_sha256": "807f05b831046ca7fbb9b551d718c4230d8ab4be0931cad44073aca431cb336f"
+    },
+    {
+      "path": "src/GPU_Vulkan.cpp",
+      "existed": false,
+      "original_sha256": null,
+      "patched_sha256": "0e0349de89f3d1fed2ca9325f07add5bef798c6f4e8b0bf526dafbe9f3198094"
+    },
+    {
+      "path": "tests/vulkan/reference/phase5-verification.md",
+      "existed": false,
+      "original_sha256": null,
+      "patched_sha256": "64c7d983ed91f228edc5eef549524ee655d75e5326dae50e87fa55175d4be0ef"
+    },
+    {
+      "path": "tests/vulkan/reference/phase6-verification.md",
+      "existed": false,
+      "original_sha256": null,
+      "patched_sha256": "7e0df9dd467e2b3830cc1be27f7eeee50fde0a8be74952f2b805aa3b23f235eb"
+    }
+  ]
+}
