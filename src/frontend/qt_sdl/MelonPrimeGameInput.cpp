@@ -130,13 +130,27 @@ namespace MelonPrime {
         }
 
 #ifdef _WIN32
-        const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
-        if constexpr (!kReentrant)
-            m_input.press = InputProjection::ProjectPressMask(hk.pressed | emuInstance->joyHotkeyPress);
-        else
+        // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FALLBACK_V1
+        // Raw Input ownership is reserved for captured FPS aim. Cursor-mode
+        // screens intentionally release that owner, but their focused window
+        // still records keyboard hotkeys in this EmuInstance's Qt snapshot.
+        //
+        // Select one keyboard source instead of OR-ing Raw and Qt together.
+        // This keeps instances isolated and avoids duplicate press edges when
+        // active ownership changes.
+        const uint64_t hotDownMask = isInputOwner
+            ? (hk.down | emuInstance->joyHotkeyMask)
+            : emuInstance->hotkeyMask;
+        if constexpr (!kReentrant) {
+            const uint64_t hotPressMask = isInputOwner
+                ? (hk.pressed | emuInstance->joyHotkeyPress)
+                : emuInstance->hotkeyPress;
+            m_input.press = InputProjection::ProjectPressMask(hotPressMask);
+        } else {
             m_input.press = 0;
+        }
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        if (MelonPrimePerf::IsFrameActive() && rawFilter)
+        if (MelonPrimePerf::IsFrameActive() && rawFilter && isInputOwner)
             MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::WinRaw);
 #endif
 #else
