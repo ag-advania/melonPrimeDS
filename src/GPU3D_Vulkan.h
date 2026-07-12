@@ -8,6 +8,7 @@
 // MELONPRIME_VULKAN_CLEAR_BITMAP_CONTRACT_V1
 // MELONPRIME_VULKAN_VERTEX_UPLOAD_CONTRACT_V1
 // MELONPRIME_VULKAN_POLYGON_BATCH_CONTRACT_V1
+// MELONPRIME_VULKAN_OPAQUE_PIPELINE_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -30,6 +31,7 @@ inline constexpr std::uint32_t kClearPlaneContractVersion = 1;
 inline constexpr std::uint32_t kClearBitmapContractVersion = 1;
 inline constexpr std::uint32_t kVertexUploadContractVersion = 1;
 inline constexpr std::uint32_t kPolygonBatchContractVersion = 1;
+inline constexpr std::uint32_t kOpaquePipelineContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -242,7 +244,7 @@ struct alignas(16) VulkanRasterPipelineKey
     std::uint32_t ColorFormat = 0;
     std::uint32_t AttributeFormat = 0;
     std::uint32_t DepthStencilFormat = 0;
-    std::uint32_t Reserved0 = 0;
+    std::uint32_t StencilReference = 0;
 };
 
 static_assert(sizeof(VulkanRasterPipelineKey) == 64);
@@ -305,6 +307,33 @@ struct VulkanRasterBatchPlan
     void Clear() noexcept;
 };
 
+// Phase 7.6 translates one opaque triangle batch key into Vulkan 1.1 fixed
+// function state. Textured, translucent, shadow and line paths remain later
+// subphases; this contract prevents the bootstrap from overclaiming support.
+struct VulkanOpaquePipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_TRUE;
+    VkBool32 StencilReplace = VK_TRUE;
+    std::uint32_t StencilReference = 0;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaTest = true;
+    bool Valid = false;
+};
+
+struct alignas(16) VulkanOpaquePushConstants
+{
+    std::array<float, 2> ScreenSize{{256.0f, 192.0f}};
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t Reserved = 0;
+};
+
+static_assert(sizeof(VulkanOpaquePushConstants) == 16);
+static_assert(offsetof(VulkanOpaquePushConstants, RenderDispCnt) == 8);
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -352,6 +381,9 @@ bool BuildVulkanRasterBatchPlan(
     const VulkanRasterBatchOptions& options,
     VulkanRasterBatchPlan& plan,
     std::string* failureReason = nullptr);
+
+VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;
 

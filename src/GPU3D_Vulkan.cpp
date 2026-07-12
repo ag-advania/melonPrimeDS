@@ -515,6 +515,7 @@ VulkanRasterPipelineKey BuildVulkanRasterPipelineKey(
     key.ColorFormat = static_cast<std::uint32_t>(options.ColorFormat);
     key.AttributeFormat = static_cast<std::uint32_t>(options.AttributeFormat);
     key.DepthStencilFormat = static_cast<std::uint32_t>(options.DepthStencilFormat);
+    key.StencilReference = (polygon.Attr >> 24) & 0x3Fu;
     return key;
 }
 
@@ -632,6 +633,35 @@ bool BuildVulkanRasterBatchPlan(
     plan.AdjacentOnly = true;
     plan.Valid = true;
     return true;
+}
+
+VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
+    const VulkanRasterPipelineKey& key) noexcept
+{
+    VulkanOpaquePipelineState state;
+    state.Topology = key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles)
+        ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+        : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    state.DepthCompare = key.DepthEqual != 0 ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    state.DepthWrite = key.DepthWrite != 0 ? VK_TRUE : VK_FALSE;
+    state.StencilReplace = VK_TRUE;
+    state.StencilReference = key.StencilReference & 0x3Fu;
+    state.ColorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.AttributeWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.WBuffer = key.WBuffer != 0;
+    state.AlphaTest = true;
+
+    state.Valid =
+        key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::Opaque) &&
+        key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
+        key.Textured == 0 &&
+        key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&
+        key.ColorFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED) &&
+        key.AttributeFormat == static_cast<std::uint32_t>(VK_FORMAT_R8G8B8A8_UNORM) &&
+        key.DepthStencilFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED);
+    return state;
 }
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
