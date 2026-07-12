@@ -359,8 +359,7 @@ RendererOutput GPU::GetRendererOutput()
     return Rend->GetOutput();
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
+#if defined(MELONPRIME_DS)
 RendererOutputLease GPU::AcquireRendererOutputLease()
 {
     return Rend->AcquireOutputLease();

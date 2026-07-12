@@ -20,6 +20,11 @@
 #define GPU_H
 
 #include <memory>
+#include <type_traits>
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <vulkan/vulkan.h>
+#endif
 
 #include "GPU2D.h"
 #include "GPU3D.h"
@@ -37,22 +42,49 @@ enum class RendererOutputKind
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     MetalTexture,
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    VulkanImage,
+#endif
     None,
 };
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+struct VulkanRendererOutput
+{
+    VkImage Image = VK_NULL_HANDLE;
+    VkImageView View = VK_NULL_HANDLE;
+    VkFormat Format = VK_FORMAT_UNDEFINED;
+    VkExtent2D Extent{};
+    VkImageLayout Layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    u32 LayerCount = 0;
+    u32 EngineALayer = 0;
+    u64 FrameSerial = 0;
+    u64 Generation = 0;
+    VkSemaphore ProducerTimeline = VK_NULL_HANDLE;
+    u64 ProducerValue = 0;
+    void* LeaseContext = nullptr;
+};
+#endif
 
 struct RendererOutput
 {
     RendererOutputKind Kind = RendererOutputKind::None;
     void* Top = nullptr;
     void* Bottom = nullptr;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS)
     u64 FrameSerial = 0;
+    u64 Generation = 0;
+
+    bool MatchesProducerFrame(u64 frameSerial, u64 generation) const noexcept
+    {
+        return FrameSerial == frameSerial && Generation == generation;
+    }
 #endif
 
     static RendererOutput CpuBgra(void* top, void* bottom) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
+#if defined(MELONPRIME_DS)
+        return { RendererOutputKind::CpuBgra, top, bottom, 0, 0 };
 #else
         return { RendererOutputKind::CpuBgra, top, bottom };
 #endif
@@ -60,25 +92,39 @@ struct RendererOutput
 
     static RendererOutput OpenGLTextureArray(void* texture) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0 };
+#if defined(MELONPRIME_DS)
+        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0, 0 };
 #else
         return { RendererOutputKind::OpenGLTextureArray, texture, nullptr };
 #endif
     }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
+    static RendererOutput MetalTexture(
+        void* texture, u64 frameSerial = 0, u64 generation = 0) noexcept
     {
-        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial, generation };
+    }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    static RendererOutput VulkanImage(VulkanRendererOutput* descriptor) noexcept
+    {
+        return {
+            RendererOutputKind::VulkanImage,
+            descriptor,
+            nullptr,
+            descriptor ? descriptor->FrameSerial : 0,
+            descriptor ? descriptor->Generation : 0};
     }
 #endif
 };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
-// Metal output is consumed by a command queue separate from the renderer
-// queue. Keep its ring slot immutable until that presenter command completes.
+#if defined(MELONPRIME_DS)
+// Native GPU output may be consumed by a command queue separate from the
+// renderer queue. Keep its ring slot immutable until the presenter command
+// completes. CPU and OpenGL outputs use the same zero-cost type with no
+// release callback.
 struct RendererOutputLease
 {
     RendererOutput Output;
@@ -135,6 +181,9 @@ struct RendererOutputLease
             releaseFn(context);
     }
 };
+
+static_assert(!std::is_copy_constructible_v<RendererOutputLease>);
+static_assert(std::is_nothrow_move_constructible_v<RendererOutputLease>);
 #endif
 
 static constexpr u32 VRAMDirtyGranularity = 512;
@@ -181,7 +230,7 @@ public:
     //          - values are renderer-specific (ie. OpenGL texture handle)
     bool GetFramebuffers(void** top, void** bottom);
     RendererOutput GetRendererOutput();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS)
     RendererOutputLease AcquireRendererOutputLease();
 #endif
 
@@ -981,7 +1030,7 @@ public:
             return RendererOutput::OpenGLTextureArray(top);
         return {};
     }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS)
     virtual RendererOutputLease AcquireOutputLease()
     {
         return RendererOutputLease(GetOutput(), nullptr, nullptr);

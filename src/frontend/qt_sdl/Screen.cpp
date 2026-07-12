@@ -1507,7 +1507,12 @@ void ScreenPanelNative::drawScreen()
     auto nds = emuInstance->getNDS();
     assert(nds != nullptr);
 
+#ifdef MELONPRIME_DS
+    RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
+    const RendererOutput& output = outputLease.Output;
+#else
     const RendererOutput output = nds->GPU.GetRendererOutput();
+#endif
     bufferLock.lock();
     hasBuffers = (output.Kind == RendererOutputKind::CpuBgra);
     topBuffer = hasBuffers ? output.Top : nullptr;
@@ -1914,7 +1919,12 @@ void ScreenPanelGL::drawScreen()
         glUseProgram(screenShaderProgram);
         glUniform2f(screenShaderScreenSizeULoc, w / factor, h / factor);
 
+#ifdef MELONPRIME_DS
+        RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
+        const RendererOutput& output = outputLease.Output;
+#else
         const RendererOutput output = nds->GPU.GetRendererOutput();
+#endif
         const bool hasCPUBuffers = (output.Kind == RendererOutputKind::CpuBgra);
         GLuint activeScreenTexture = screenTexture; // track which texture has the screen data
         if (hasCPUBuffers)
