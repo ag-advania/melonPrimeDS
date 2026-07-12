@@ -21071,7 +21071,7 @@ constexpr Translation kTranslations[] = {
     {
         "Cloak",
         {
-            {MenuLangId::Japanese, "クローク"},
+            {MenuLangId::Japanese, "クローク/ステルス"},
             {MenuLangId::German, "Tarnung"},
             {MenuLangId::Spanish, "Capa"},
             {MenuLangId::French, "Camouflage"},
@@ -21152,7 +21152,7 @@ constexpr Translation kTranslations[] = {
     {
         "DEATH ALT",
         {
-            {MenuLangId::Japanese, "死亡形態"},
+            {MenuLangId::Japanese, "デストランス"},
             {MenuLangId::German, "Todesform"},
             {MenuLangId::Spanish, "Forma mortal"},
             {MenuLangId::French, "Forme mortelle"},
