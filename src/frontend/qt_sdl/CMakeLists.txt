@@ -358,6 +358,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanTextureDecodeBootstrap.h
         MelonPrimeVulkanTextureUploadRingBootstrap.cpp
         MelonPrimeVulkanTextureUploadRingBootstrap.h
+        MelonPrimeVulkanPhase8CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase8CompletionBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

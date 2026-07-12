@@ -33,8 +33,9 @@ struct VulkanRendererShellContract
     bool NativeVulkanTextureCacheBootstrapAvailable = true;
     bool NativeVulkanTextureDecodeBootstrapAvailable = true;
     bool NativeVulkanTextureUploadRingAvailable = true;
+    bool NativeVulkanPhase8SubsystemComplete = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 18;
+    u32 ContractVersion = 19;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;

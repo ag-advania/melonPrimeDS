@@ -423,4 +423,307 @@ bool ValidateVulkanTextureUploadFlushRange(
     const VulkanTextureUploadRingState& state,
     const VulkanTextureUploadReservation& reservation) noexcept;
 
+
+
+// MELONPRIME_VULKAN_PHASE8_COMPLETION_CONTRACT_V1
+inline constexpr std::uint32_t kPhase8CompletionContractVersion = 1;
+inline constexpr std::uint32_t kPhase8MinimumScale = 1;
+inline constexpr std::uint32_t kPhase8MaximumScale = 16;
+
+// Upload completion is expressed as a monotonically increasing signal value.
+// Timeline semaphores are preferred, while the same state machine can be fed
+// by fence/frame serial completion on Vulkan 1.1 implementations.
+enum class VulkanTextureRetirementBackend : std::uint32_t
+{
+    TimelineSemaphore = 0,
+    FenceSerial = 1,
+};
+
+struct VulkanTextureAsyncSubmission
+{
+    std::uint64_t Serial = 0;
+    std::uint64_t SignalValue = 0;
+    bool Completed = false;
+};
+
+struct VulkanTextureAsyncRetirementState
+{
+    VulkanTextureRetirementBackend Backend =
+        VulkanTextureRetirementBackend::FenceSerial;
+    std::vector<VulkanTextureAsyncSubmission> InFlight;
+    std::uint64_t NextSerial = 1;
+    std::uint64_t LastQueuedSignalValue = 0;
+    std::uint64_t ObservedSignalValue = 0;
+    std::uint64_t LastRetiredSerial = 0;
+    std::uint64_t SubmissionCount = 0;
+    std::uint64_t RetirementCount = 0;
+
+    void Reset(bool timelineSemaphoreAvailable) noexcept;
+};
+
+bool QueueVulkanTextureAsyncSubmission(
+    VulkanTextureAsyncRetirementState& state,
+    std::uint64_t signalValue,
+    VulkanTextureAsyncSubmission& submission,
+    std::string* failureReason = nullptr) noexcept;
+
+std::uint64_t ObserveVulkanTextureCompletion(
+    VulkanTextureAsyncRetirementState& state,
+    std::uint64_t completedSignalValue) noexcept;
+
+void RetireVulkanTextureUploadsFromAsync(
+    VulkanTextureUploadRingState& ring,
+    const VulkanTextureAsyncRetirementState& retirement) noexcept;
+
+struct VulkanTextureRuntimeEntry
+{
+    VulkanTextureCacheKey Key{};
+    VulkanTextureDecodeFootprint Footprint{};
+    VulkanTextureDecodeHashes Hashes{};
+    std::uint64_t ContentGeneration = 0;
+    std::uint64_t ImageGeneration = 0;
+    std::uint64_t LastUseSerial = 0;
+    std::uint32_t UploadCount = 0;
+    bool Resident = false;
+    bool CaptureBacked = false;
+};
+
+struct VulkanTextureRuntimeState
+{
+    std::vector<VulkanTextureRuntimeEntry> Entries;
+    std::vector<VulkanTextureDescriptorSlot> DescriptorSlots;
+    VulkanTextureUploadRingState UploadRing{};
+    VulkanTextureAsyncRetirementState Retirement{};
+    std::uint64_t NextImageGeneration = 1;
+    std::uint64_t UseSerial = 0;
+    std::uint64_t CacheHitCount = 0;
+    std::uint64_t CacheMissCount = 0;
+    std::uint64_t UploadCount = 0;
+    std::uint64_t UploadBytes = 0;
+    std::uint64_t InvalidationCount = 0;
+    std::uint64_t DescriptorRewriteCount = 0;
+    bool FirstFrameFullUpload = true;
+
+    void Reset(
+        const VulkanTextureUploadRingConfig& ringConfig,
+        bool timelineSemaphoreAvailable) noexcept;
+};
+
+struct VulkanTextureRuntimeAcquireResult
+{
+    std::uint32_t EntryIndex = 0;
+    std::uint32_t DescriptorSlot = 0;
+    std::uint32_t SamplerIndex = 0;
+    bool CacheHit = false;
+    bool UploadRequired = false;
+    bool DirtyPagesTouched = false;
+    bool HashChanged = false;
+    bool DescriptorRewriteRequired = false;
+    VulkanTextureUploadReservation Reservation{};
+    VulkanTextureAsyncSubmission Submission{};
+    std::vector<std::uint32_t> DecodedRgb6a5;
+};
+
+bool AcquireVulkanTextureRuntime(
+    VulkanTextureRuntimeState& state,
+    const VulkanTextureCacheRequest& request,
+    const VulkanTextureMemoryView& memory,
+    const VulkanTextureDirtyPageSet& dirty,
+    std::uint64_t completionSignalValue,
+    VulkanTextureRuntimeAcquireResult& result,
+    std::string* failureReason = nullptr);
+
+// DS display-capture reference. Pixels use the native RGB5551 layout so the
+// CPU synchronization path can write directly to LCDC VRAM.
+enum class VulkanDisplayCaptureMode : std::uint32_t
+{
+    SourceA = 0,
+    SourceB = 1,
+    Blend = 2,
+};
+
+enum class VulkanDisplayCaptureSourceA : std::uint32_t
+{
+    Engine2D = 0,
+    Engine3D = 1,
+};
+
+enum class VulkanDisplayCaptureSourceB : std::uint32_t
+{
+    Vram = 0,
+    Fifo = 1,
+};
+
+struct VulkanDisplayCaptureConfig
+{
+    std::uint32_t Width = 256;
+    std::uint32_t Height = 192;
+    std::uint32_t YStart = 0;
+    std::uint32_t YEnd = 192;
+    std::uint32_t DestinationBank = 0;
+    std::uint32_t DestinationOffset = 0;
+    std::uint32_t DestinationBufferHeight = 256;
+    std::uint32_t SourceBOffset = 0;
+    std::uint32_t Eva = 16;
+    std::uint32_t Evb = 0;
+    VulkanDisplayCaptureMode Mode = VulkanDisplayCaptureMode::SourceA;
+    VulkanDisplayCaptureSourceA SourceA = VulkanDisplayCaptureSourceA::Engine2D;
+    VulkanDisplayCaptureSourceB SourceB = VulkanDisplayCaptureSourceB::Vram;
+    std::array<std::int16_t, 192> SourceAXOffset{};
+};
+
+bool ValidateVulkanDisplayCaptureConfig(
+    const VulkanDisplayCaptureConfig& config,
+    std::string* failureReason = nullptr) noexcept;
+
+std::uint16_t BlendVulkanDisplayCapturePixel(
+    std::uint16_t sourceA,
+    std::uint16_t sourceB,
+    std::uint32_t eva,
+    std::uint32_t evb) noexcept;
+
+bool ExecuteVulkanDisplayCaptureReference(
+    const VulkanDisplayCaptureConfig& config,
+    const std::vector<std::uint16_t>& sourceA,
+    const std::vector<std::uint16_t>& sourceB,
+    std::vector<std::uint16_t>& destination,
+    std::string* failureReason = nullptr);
+
+struct VulkanCaptureSlot
+{
+    std::uint32_t Bank = 0;
+    std::uint32_t Offset = 0;
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+    std::uint32_t BufferHeight = 0;
+    std::uint64_t Generation = 0;
+    bool Complete = false;
+    bool GpuResident = false;
+    bool CpuSynchronized = false;
+    std::vector<std::uint16_t> Pixels;
+};
+
+struct VulkanCaptureRegistry
+{
+    std::vector<VulkanCaptureSlot> Slots;
+    std::uint64_t NextGeneration = 1;
+    std::uint64_t CaptureCount = 0;
+    std::uint64_t GpuReuseCount = 0;
+    std::uint64_t CpuSyncCount = 0;
+
+    void Reset() noexcept;
+};
+
+VulkanCaptureSlot& StoreVulkanCapture(
+    VulkanCaptureRegistry& registry,
+    const VulkanDisplayCaptureConfig& config,
+    std::vector<std::uint16_t> pixels,
+    bool complete = true);
+
+const VulkanCaptureSlot* ResolveVulkanCaptureTexture(
+    VulkanCaptureRegistry& registry,
+    std::uint32_t bank,
+    std::uint32_t offset,
+    std::uint32_t width) noexcept;
+
+bool SyncVulkanCaptureToCpuVram(
+    VulkanCaptureRegistry& registry,
+    std::uint32_t bank,
+    std::uint32_t offset,
+    std::uint32_t width,
+    std::vector<std::uint8_t>& vram,
+    std::vector<std::uint64_t>& dirtyWords,
+    std::string* failureReason = nullptr);
+
+struct VulkanScaleResourcePlan
+{
+    std::uint32_t OldScale = 1;
+    std::uint32_t NewScale = 1;
+    std::uint64_t OldGeneration = 0;
+    std::uint64_t NewGeneration = 0;
+    std::uint64_t RequiredBytes = 0;
+    std::uint64_t MemoryBudgetBytes = 0;
+    bool PresenterLeaseOutstanding = false;
+    bool DeferOldResourceDestruction = false;
+    bool ReusePipelines = true;
+    bool Valid = false;
+    std::string FailureReason;
+};
+
+std::uint64_t EstimateVulkanPhase8ScaleBytes(std::uint32_t scale) noexcept;
+
+VulkanScaleResourcePlan BuildVulkanScaleResourcePlan(
+    std::uint32_t oldScale,
+    std::uint32_t newScale,
+    std::uint64_t oldGeneration,
+    std::uint64_t memoryBudgetBytes,
+    bool presenterLeaseOutstanding) noexcept;
+
+struct VulkanPhase8LifecycleState
+{
+    VulkanTextureRuntimeState TextureRuntime{};
+    VulkanCaptureRegistry CaptureRegistry{};
+    std::uint32_t Scale = 1;
+    std::uint64_t OutputGeneration = 1;
+    std::uint64_t DeferredResourceBytes = 0;
+    std::uint64_t ResetCount = 0;
+    std::uint64_t SavestateCount = 0;
+    std::uint64_t RendererSwitchCount = 0;
+    std::uint64_t ScaleChangeCount = 0;
+    bool GpuWorkInFlight = false;
+    bool PreSavestateSynchronized = false;
+    bool FirstFrameFullUpload = true;
+
+    void Initialize(
+        const VulkanTextureUploadRingConfig& ringConfig,
+        bool timelineSemaphoreAvailable) noexcept;
+};
+
+bool PreSavestateVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    std::array<std::vector<std::uint8_t>, 4>& vramBanks,
+    std::array<std::vector<std::uint64_t>, 4>& dirtyWords,
+    std::string* failureReason = nullptr);
+
+void PostSavestateVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept;
+
+void ResetVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept;
+
+bool FlushVulkanPhase8ForRendererSwitch(
+    VulkanPhase8LifecycleState& state,
+    std::array<std::vector<std::uint8_t>, 4>& vramBanks,
+    std::array<std::vector<std::uint64_t>, 4>& dirtyWords,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable,
+    std::string* failureReason = nullptr);
+
+bool ApplyVulkanPhase8ScaleChange(
+    VulkanPhase8LifecycleState& state,
+    const VulkanScaleResourcePlan& plan) noexcept;
+
+struct VulkanPhase8ExitAudit
+{
+    bool AllTextureFormats = false;
+    bool RepeatMirrorClamp = false;
+    bool ClearBitmap = false;
+    bool DisplayCapture = false;
+    bool CaptureTextureReuse = false;
+    bool Savestate = false;
+    bool Reset = false;
+    bool RendererSwitch = false;
+    bool ScaleLiveChange = false;
+    bool AsyncRetirement = false;
+    bool CpuReadbackSynchronization = false;
+    bool MemoryBudget = false;
+    bool ResourceLifetime = false;
+
+    bool Passed() const noexcept;
+};
+
 } // namespace melonDS::Vulkan

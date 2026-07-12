@@ -1,0 +1,81 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba8ui) uniform readonly uimage2D SourceA;
+layout(set = 0, binding = 1, rgba8ui) uniform readonly uimage2D SourceB;
+layout(set = 0, binding = 2, rgba8ui) uniform uimage2D CaptureOutput;
+layout(std430, set = 0, binding = 3) buffer ResultBuffer
+{
+    uvec4 values[8];
+} resultBuffer;
+
+layout(push_constant) uniform Phase8CapturePush
+{
+    uint operation;
+    uint width;
+    uint height;
+    uint yStart;
+    uint yEnd;
+    uint destinationOffset;
+    uint destinationHeight;
+    uint sourceBOffset;
+    uint mode;
+    uint eva;
+    uint evb;
+    int sourceAXOffset;
+    uint sampleX;
+    uint sampleY;
+    uint sampleIndex;
+    uint reserved;
+} pushData;
+
+uvec4 blendCapture(uvec4 sourceA, uvec4 sourceB)
+{
+    uint aa = sourceA.a > 0u ? 1u : 0u;
+    uint ab = sourceB.a > 0u ? 1u : 0u;
+    uvec3 rgb = ((sourceA.rgb * aa * pushData.eva) +
+                 (sourceB.rgb * ab * pushData.evb) + uvec3(8u)) >> 4u;
+    rgb = min(rgb, uvec3(31u));
+    uint alpha = ((pushData.eva > 0u && aa != 0u) ||
+                  (pushData.evb > 0u && ab != 0u)) ? 1u : 0u;
+    return uvec4(rgb, alpha);
+}
+
+void main()
+{
+    if (pushData.operation == 1u)
+    {
+        if (gl_GlobalInvocationID.x == 0u && gl_GlobalInvocationID.y == 0u)
+        {
+            resultBuffer.values[pushData.sampleIndex] = imageLoad(
+                CaptureOutput, ivec2(pushData.sampleX, pushData.sampleY));
+        }
+        return;
+    }
+
+    uint x = gl_GlobalInvocationID.x;
+    uint line = gl_GlobalInvocationID.y;
+    if (x >= pushData.width || line >= pushData.height ||
+        line < pushData.yStart || line >= pushData.yEnd)
+        return;
+
+    int sourceAX = int(x) + pushData.sourceAXOffset;
+    uvec4 sourceA = uvec4(0u);
+    if (sourceAX >= 0 && sourceAX < 256 && line < 192u)
+        sourceA = imageLoad(SourceA, ivec2(sourceAX, int(line)));
+    uint sourceBY = (pushData.sourceBOffset * 64u + line) & 255u;
+    uvec4 sourceB = imageLoad(SourceB, ivec2(int(x), int(sourceBY)));
+
+    uvec4 outputValue;
+    if (pushData.mode == 0u)
+        outputValue = sourceA;
+    else if (pushData.mode == 1u)
+        outputValue = sourceB;
+    else
+        outputValue = blendCapture(sourceA, sourceB);
+
+    uint destinationY =
+        (pushData.destinationOffset * 64u + line) % pushData.destinationHeight;
+    imageStore(CaptureOutput, ivec2(int(x), int(destinationY)), outputValue);
+}

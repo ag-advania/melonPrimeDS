@@ -545,4 +545,703 @@ bool ValidateVulkanTextureUploadFlushRange(
         reservation.FlushOffset + reservation.FlushSize == state.Config.Capacity;
 }
 
+
+
+void VulkanTextureAsyncRetirementState::Reset(
+    bool timelineSemaphoreAvailable) noexcept
+{
+    Backend = timelineSemaphoreAvailable
+        ? VulkanTextureRetirementBackend::TimelineSemaphore
+        : VulkanTextureRetirementBackend::FenceSerial;
+    InFlight.clear();
+    NextSerial = 1;
+    LastQueuedSignalValue = 0;
+    ObservedSignalValue = 0;
+    LastRetiredSerial = 0;
+    SubmissionCount = 0;
+    RetirementCount = 0;
+}
+
+bool QueueVulkanTextureAsyncSubmission(
+    VulkanTextureAsyncRetirementState& state,
+    std::uint64_t signalValue,
+    VulkanTextureAsyncSubmission& submission,
+    std::string* failureReason) noexcept
+{
+    if (signalValue == 0u)
+        signalValue = state.LastQueuedSignalValue + 1u;
+    if (signalValue <= state.LastQueuedSignalValue)
+    {
+        if (failureReason)
+            *failureReason = "texture completion signal must be strictly monotonic";
+        return false;
+    }
+    submission = {};
+    submission.Serial = state.NextSerial++;
+    submission.SignalValue = signalValue;
+    state.LastQueuedSignalValue = signalValue;
+    state.InFlight.push_back(submission);
+    ++state.SubmissionCount;
+    return true;
+}
+
+std::uint64_t ObserveVulkanTextureCompletion(
+    VulkanTextureAsyncRetirementState& state,
+    std::uint64_t completedSignalValue) noexcept
+{
+    state.ObservedSignalValue = std::max(
+        state.ObservedSignalValue, completedSignalValue);
+    std::uint64_t retiredSerial = state.LastRetiredSerial;
+    std::size_t completedPrefix = 0;
+    for (auto& submission : state.InFlight)
+    {
+        submission.Completed = submission.SignalValue <= state.ObservedSignalValue;
+        if (!submission.Completed)
+            break;
+        retiredSerial = submission.Serial;
+        ++completedPrefix;
+    }
+    if (completedPrefix != 0u)
+    {
+        state.InFlight.erase(
+            state.InFlight.begin(),
+            state.InFlight.begin() + static_cast<std::ptrdiff_t>(completedPrefix));
+        state.RetirementCount += completedPrefix;
+        state.LastRetiredSerial = retiredSerial;
+    }
+    return state.LastRetiredSerial;
+}
+
+void RetireVulkanTextureUploadsFromAsync(
+    VulkanTextureUploadRingState& ring,
+    const VulkanTextureAsyncRetirementState& retirement) noexcept
+{
+    RetireVulkanTextureUploads(ring, retirement.LastRetiredSerial);
+}
+
+void VulkanTextureRuntimeState::Reset(
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept
+{
+    Entries.clear();
+    DescriptorSlots.clear();
+    UploadRing.Reset(ringConfig);
+    Retirement.Reset(timelineSemaphoreAvailable);
+    NextImageGeneration = 1;
+    UseSerial = 0;
+    CacheHitCount = 0;
+    CacheMissCount = 0;
+    UploadCount = 0;
+    UploadBytes = 0;
+    InvalidationCount = 0;
+    DescriptorRewriteCount = 0;
+    FirstFrameFullUpload = true;
+}
+
+bool AcquireVulkanTextureRuntime(
+    VulkanTextureRuntimeState& state,
+    const VulkanTextureCacheRequest& request,
+    const VulkanTextureMemoryView& memory,
+    const VulkanTextureDirtyPageSet& dirty,
+    std::uint64_t completionSignalValue,
+    VulkanTextureRuntimeAcquireResult& result,
+    std::string* failureReason)
+{
+    result = {};
+    const VulkanTextureCacheKey key = BuildVulkanTextureCacheKey(
+        request.TexParam, request.TexPalette);
+    if (key.Format == 0u)
+    {
+        if (failureReason) *failureReason = "texture format zero is not cacheable";
+        return false;
+    }
+
+    VulkanTextureDecodeFootprint footprint;
+    if (!BuildVulkanTextureDecodeFootprint(key, footprint, failureReason))
+        return false;
+    const VulkanTextureDecodeHashes hashes =
+        HashVulkanTextureDecodeInput(footprint, memory);
+
+    std::uint32_t entryIndex = static_cast<std::uint32_t>(state.Entries.size());
+    for (std::uint32_t index = 0; index < state.Entries.size(); ++index)
+    {
+        if (state.Entries[index].Key == key)
+        {
+            entryIndex = index;
+            break;
+        }
+    }
+
+    bool newEntry = entryIndex == state.Entries.size();
+    bool dirtyTouched = newEntry || state.FirstFrameFullUpload ||
+        VulkanTextureDecodeTouchesDirtyPages(footprint, memory, dirty);
+    bool hashChanged = newEntry;
+    if (!newEntry)
+        hashChanged = state.Entries[entryIndex].Hashes.Combined != hashes.Combined;
+    const bool uploadRequired = newEntry ||
+        state.FirstFrameFullUpload || (dirtyTouched && hashChanged);
+
+    if (newEntry)
+    {
+        VulkanTextureRuntimeEntry entry;
+        entry.Key = key;
+        entry.Footprint = footprint;
+        entry.Hashes = hashes;
+        entry.ContentGeneration = request.ContentGeneration;
+        entry.ImageGeneration = state.NextImageGeneration++;
+        entry.Resident = true;
+        state.Entries.push_back(entry);
+        ++state.CacheMissCount;
+    }
+    else if (uploadRequired)
+    {
+        ++state.CacheMissCount;
+        ++state.InvalidationCount;
+    }
+    else
+    {
+        ++state.CacheHitCount;
+        result.CacheHit = true;
+    }
+
+    auto& entry = state.Entries[entryIndex];
+    entry.LastUseSerial = ++state.UseSerial;
+    result.EntryIndex = entryIndex;
+    result.DirtyPagesTouched = dirtyTouched;
+    result.HashChanged = hashChanged;
+    result.UploadRequired = uploadRequired;
+
+    if (uploadRequired)
+    {
+        if (!DecodeVulkanTextureRgb6a5(
+                footprint, memory, result.DecodedRgb6a5, failureReason))
+            return false;
+        const std::uint64_t byteCount =
+            static_cast<std::uint64_t>(result.DecodedRgb6a5.size()) *
+            sizeof(std::uint32_t);
+        if (!QueueVulkanTextureAsyncSubmission(
+                state.Retirement, completionSignalValue,
+                result.Submission, failureReason))
+            return false;
+        if (!ReserveVulkanTextureUpload(
+                state.UploadRing, byteCount, result.Submission.Serial,
+                result.Reservation, failureReason))
+        {
+            state.Retirement.InFlight.pop_back();
+            --state.Retirement.SubmissionCount;
+            --state.Retirement.NextSerial;
+            return false;
+        }
+        entry.Footprint = footprint;
+        entry.Hashes = hashes;
+        entry.ContentGeneration = request.ContentGeneration;
+        entry.ImageGeneration = state.NextImageGeneration++;
+        entry.Resident = true;
+        ++entry.UploadCount;
+        ++state.UploadCount;
+        state.UploadBytes += byteCount;
+        result.DescriptorRewriteRequired = true;
+        ++state.DescriptorRewriteCount;
+    }
+
+    const auto s = DecodeVulkanTextureSamplerAxis(request.TexParam, false);
+    const auto t = DecodeVulkanTextureSamplerAxis(request.TexParam, true);
+    result.SamplerIndex = VulkanTextureSamplerTableIndex(s, t);
+    result.DescriptorSlot = static_cast<std::uint32_t>(state.DescriptorSlots.size());
+    for (std::uint32_t index = 0; index < state.DescriptorSlots.size(); ++index)
+    {
+        const auto& slot = state.DescriptorSlots[index];
+        if (slot.EntryIndex == entryIndex && slot.SamplerIndex == result.SamplerIndex)
+        {
+            result.DescriptorSlot = index;
+            break;
+        }
+    }
+    if (result.DescriptorSlot == state.DescriptorSlots.size())
+    {
+        state.DescriptorSlots.push_back({entryIndex, result.SamplerIndex});
+        result.DescriptorRewriteRequired = true;
+        ++state.DescriptorRewriteCount;
+    }
+    state.FirstFrameFullUpload = false;
+    return true;
+}
+
+namespace
+{
+
+std::uint16_t CaptureRead(
+    const std::vector<std::uint16_t>& pixels,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::int64_t x,
+    std::int64_t y,
+    bool borderTransparent) noexcept
+{
+    if (width == 0u || height == 0u || pixels.empty())
+        return 0;
+    if (borderTransparent &&
+        (x < 0 || y < 0 || x >= static_cast<std::int64_t>(width) ||
+         y >= static_cast<std::int64_t>(height)))
+        return 0;
+    const std::uint32_t wrappedX = static_cast<std::uint32_t>(
+        (x % static_cast<std::int64_t>(width) + width) % width);
+    const std::uint32_t wrappedY = static_cast<std::uint32_t>(
+        (y % static_cast<std::int64_t>(height) + height) % height);
+    const std::size_t index = static_cast<std::size_t>(wrappedY) * width + wrappedX;
+    return index < pixels.size() ? pixels[index] : 0;
+}
+
+std::uint64_t CheckedScaleBytes(
+    std::uint64_t width,
+    std::uint64_t height,
+    std::uint64_t layers,
+    std::uint64_t bytesPerPixel) noexcept
+{
+    if (width == 0u || height == 0u || layers == 0u || bytesPerPixel == 0u)
+        return 0u;
+    if (width > std::numeric_limits<std::uint64_t>::max() / height)
+        return std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t value = width * height;
+    if (value > std::numeric_limits<std::uint64_t>::max() / layers)
+        return std::numeric_limits<std::uint64_t>::max();
+    value *= layers;
+    if (value > std::numeric_limits<std::uint64_t>::max() / bytesPerPixel)
+        return std::numeric_limits<std::uint64_t>::max();
+    return value * bytesPerPixel;
+}
+
+bool AddChecked(std::uint64_t& total, std::uint64_t value) noexcept
+{
+    if (value == std::numeric_limits<std::uint64_t>::max() ||
+        total > std::numeric_limits<std::uint64_t>::max() - value)
+    {
+        total = std::numeric_limits<std::uint64_t>::max();
+        return false;
+    }
+    total += value;
+    return true;
+}
+
+} // namespace
+
+bool ValidateVulkanDisplayCaptureConfig(
+    const VulkanDisplayCaptureConfig& config,
+    std::string* failureReason) noexcept
+{
+    if (config.Width != 128u && config.Width != 256u)
+    {
+        if (failureReason) *failureReason = "capture width must be 128 or 256";
+        return false;
+    }
+    const bool validSize =
+        (config.Width == 128u && config.Height == 128u) ||
+        (config.Width == 256u &&
+         (config.Height == 64u || config.Height == 128u || config.Height == 192u));
+    if (!validSize || config.YStart > config.YEnd || config.YEnd > config.Height)
+    {
+        if (failureReason) *failureReason = "capture size or line range is invalid";
+        return false;
+    }
+    if (config.DestinationBank >= 4u || config.DestinationOffset >= 4u)
+    {
+        if (failureReason) *failureReason = "capture destination bank or offset is invalid";
+        return false;
+    }
+    if (config.DestinationBufferHeight != 128u &&
+        config.DestinationBufferHeight != 256u)
+    {
+        if (failureReason) *failureReason = "capture destination height is invalid";
+        return false;
+    }
+    if ((config.Width == 128u && config.DestinationBufferHeight != 128u) ||
+        (config.Width == 256u && config.DestinationBufferHeight != 256u))
+    {
+        if (failureReason) *failureReason =
+            "capture width and destination buffer height do not match";
+        return false;
+    }
+    if (config.Eva > 16u || config.Evb > 16u)
+    {
+        if (failureReason) *failureReason = "capture blend factors exceed DS range";
+        return false;
+    }
+    return true;
+}
+
+std::uint16_t BlendVulkanDisplayCapturePixel(
+    std::uint16_t sourceA,
+    std::uint16_t sourceB,
+    std::uint32_t eva,
+    std::uint32_t evb) noexcept
+{
+    eva = std::min<std::uint32_t>(eva, 16u);
+    evb = std::min<std::uint32_t>(evb, 16u);
+    const std::uint32_t aa = (sourceA & 0x8000u) != 0u ? 1u : 0u;
+    const std::uint32_t ab = (sourceB & 0x8000u) != 0u ? 1u : 0u;
+    std::uint16_t output = 0;
+    for (std::uint32_t shift : {0u, 5u, 10u})
+    {
+        const std::uint32_t a = (sourceA >> shift) & 0x1Fu;
+        const std::uint32_t b = (sourceB >> shift) & 0x1Fu;
+        const std::uint32_t value = std::min<std::uint32_t>(
+            31u, ((a * aa * eva) + (b * ab * evb) + 8u) >> 4u);
+        output = static_cast<std::uint16_t>(output | (value << shift));
+    }
+    if ((eva != 0u && aa != 0u) || (evb != 0u && ab != 0u))
+        output = static_cast<std::uint16_t>(output | 0x8000u);
+    return output;
+}
+
+bool ExecuteVulkanDisplayCaptureReference(
+    const VulkanDisplayCaptureConfig& config,
+    const std::vector<std::uint16_t>& sourceA,
+    const std::vector<std::uint16_t>& sourceB,
+    std::vector<std::uint16_t>& destination,
+    std::string* failureReason)
+{
+    if (!ValidateVulkanDisplayCaptureConfig(config, failureReason))
+        return false;
+    constexpr std::uint32_t sourceAWidth = 256u;
+    constexpr std::uint32_t sourceAHeight = 192u;
+    constexpr std::uint32_t sourceBWidth = 256u;
+    constexpr std::uint32_t sourceBHeight = 256u;
+    if (sourceA.size() < sourceAWidth * sourceAHeight ||
+        sourceB.size() < sourceBWidth * sourceBHeight)
+    {
+        if (failureReason) *failureReason = "capture source buffers are incomplete";
+        return false;
+    }
+    destination.resize(
+        static_cast<std::size_t>(config.Width) * config.DestinationBufferHeight, 0u);
+    for (std::uint32_t line = config.YStart; line < config.YEnd; ++line)
+    {
+        const std::uint32_t destinationLine =
+            (config.DestinationOffset * 64u + line) % config.DestinationBufferHeight;
+        const std::uint32_t sourceBLine =
+            (config.SourceBOffset * 64u + line) % sourceBHeight;
+        const std::int32_t sourceAX = config.SourceA ==
+            VulkanDisplayCaptureSourceA::Engine3D && line < config.SourceAXOffset.size()
+            ? config.SourceAXOffset[line]
+            : 0;
+        for (std::uint32_t x = 0; x < config.Width; ++x)
+        {
+            const std::uint16_t a = CaptureRead(
+                sourceA, sourceAWidth, sourceAHeight,
+                static_cast<std::int64_t>(x) + sourceAX, line, true);
+            const std::uint16_t b = CaptureRead(
+                sourceB, sourceBWidth, sourceBHeight, x, sourceBLine, false);
+            std::uint16_t output = 0;
+            switch (config.Mode)
+            {
+            case VulkanDisplayCaptureMode::SourceA:
+                output = a;
+                break;
+            case VulkanDisplayCaptureMode::SourceB:
+                output = b;
+                break;
+            case VulkanDisplayCaptureMode::Blend:
+                output = BlendVulkanDisplayCapturePixel(a, b, config.Eva, config.Evb);
+                break;
+            }
+            destination[static_cast<std::size_t>(destinationLine) * config.Width + x] = output;
+        }
+    }
+    return true;
+}
+
+void VulkanCaptureRegistry::Reset() noexcept
+{
+    Slots.clear();
+    NextGeneration = 1;
+    CaptureCount = 0;
+    GpuReuseCount = 0;
+    CpuSyncCount = 0;
+}
+
+VulkanCaptureSlot& StoreVulkanCapture(
+    VulkanCaptureRegistry& registry,
+    const VulkanDisplayCaptureConfig& config,
+    std::vector<std::uint16_t> pixels,
+    bool complete)
+{
+    for (auto& slot : registry.Slots)
+    {
+        if (slot.Bank == config.DestinationBank &&
+            slot.Offset == config.DestinationOffset &&
+            slot.Width == config.Width)
+        {
+            slot.Height = config.Height;
+            slot.BufferHeight = config.DestinationBufferHeight;
+            slot.Generation = registry.NextGeneration++;
+            slot.Complete = complete;
+            slot.GpuResident = true;
+            slot.CpuSynchronized = false;
+            slot.Pixels = std::move(pixels);
+            ++registry.CaptureCount;
+            return slot;
+        }
+    }
+    VulkanCaptureSlot slot;
+    slot.Bank = config.DestinationBank;
+    slot.Offset = config.DestinationOffset;
+    slot.Width = config.Width;
+    slot.Height = config.Height;
+    slot.BufferHeight = config.DestinationBufferHeight;
+    slot.Generation = registry.NextGeneration++;
+    slot.Complete = complete;
+    slot.GpuResident = true;
+    slot.CpuSynchronized = false;
+    slot.Pixels = std::move(pixels);
+    registry.Slots.push_back(std::move(slot));
+    ++registry.CaptureCount;
+    return registry.Slots.back();
+}
+
+const VulkanCaptureSlot* ResolveVulkanCaptureTexture(
+    VulkanCaptureRegistry& registry,
+    std::uint32_t bank,
+    std::uint32_t offset,
+    std::uint32_t width) noexcept
+{
+    for (auto& slot : registry.Slots)
+    {
+        if (slot.Bank == bank && slot.Offset == offset && slot.Width == width &&
+            slot.Complete && slot.GpuResident)
+        {
+            ++registry.GpuReuseCount;
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
+bool SyncVulkanCaptureToCpuVram(
+    VulkanCaptureRegistry& registry,
+    std::uint32_t bank,
+    std::uint32_t offset,
+    std::uint32_t width,
+    std::vector<std::uint8_t>& vram,
+    std::vector<std::uint64_t>& dirtyWords,
+    std::string* failureReason)
+{
+    if (vram.empty())
+    {
+        if (failureReason) *failureReason = "capture VRAM bank is empty";
+        return false;
+    }
+    for (auto& slot : registry.Slots)
+    {
+        if (slot.Bank != bank || slot.Offset != offset || slot.Width != width)
+            continue;
+        if (!slot.Complete)
+        {
+            if (failureReason) *failureReason = "capture is still in flight";
+            return false;
+        }
+        const std::uint64_t start = static_cast<std::uint64_t>(offset) * 64u * 512u;
+        const std::uint64_t byteCount =
+            static_cast<std::uint64_t>(slot.Pixels.size()) * sizeof(std::uint16_t);
+        for (std::uint64_t byte = 0; byte < byteCount; ++byte)
+        {
+            const std::uint16_t pixel = slot.Pixels[byte / 2u];
+            const std::uint8_t value = (byte & 1u) == 0u
+                ? static_cast<std::uint8_t>(pixel & 0xFFu)
+                : static_cast<std::uint8_t>(pixel >> 8u);
+            vram[(start + byte) % vram.size()] = value;
+        }
+        const std::uint64_t pageCount =
+            (byteCount + kTextureDirtyPageSize - 1u) / kTextureDirtyPageSize;
+        for (std::uint64_t page = 0; page < pageCount; ++page)
+        {
+            MarkVulkanTextureDirtyPage(
+                dirtyWords,
+                static_cast<std::uint32_t>((start + page * kTextureDirtyPageSize) % vram.size()),
+                vram.size());
+        }
+        slot.CpuSynchronized = true;
+        ++registry.CpuSyncCount;
+        return true;
+    }
+    if (failureReason) *failureReason = "capture slot was not found";
+    return false;
+}
+
+std::uint64_t EstimateVulkanPhase8ScaleBytes(std::uint32_t scale) noexcept
+{
+    if (scale < kPhase8MinimumScale || scale > kPhase8MaximumScale)
+        return std::numeric_limits<std::uint64_t>::max();
+    const std::uint64_t s = scale;
+    std::uint64_t total = 0;
+    // Two double-buffered final outputs, each with top and bottom layers.
+    if (!AddChecked(total, CheckedScaleBytes(256u * s, 192u * s, 4u, 4u)))
+        return total;
+    // Four 256-wide capture banks and sixteen 128-wide bank/offset slots.
+    if (!AddChecked(total, CheckedScaleBytes(256u * s, 256u * s, 4u, 4u)))
+        return total;
+    if (!AddChecked(total, CheckedScaleBytes(128u * s, 128u * s, 16u, 4u)))
+        return total;
+    // Same-bank capture snapshot, CPU synchronization target and aux inputs.
+    if (!AddChecked(total, CheckedScaleBytes(256u * s, 256u * s, 1u, 4u)))
+        return total;
+    if (!AddChecked(total, CheckedScaleBytes(256u, 256u, 1u, 4u)))
+        return total;
+    if (!AddChecked(total, CheckedScaleBytes(256u, 256u, 2u, 2u)))
+        return total;
+    return total;
+}
+
+VulkanScaleResourcePlan BuildVulkanScaleResourcePlan(
+    std::uint32_t oldScale,
+    std::uint32_t newScale,
+    std::uint64_t oldGeneration,
+    std::uint64_t memoryBudgetBytes,
+    bool presenterLeaseOutstanding) noexcept
+{
+    VulkanScaleResourcePlan plan;
+    plan.OldScale = oldScale;
+    plan.NewScale = newScale;
+    plan.OldGeneration = oldGeneration;
+    plan.NewGeneration = oldGeneration + 1u;
+    plan.MemoryBudgetBytes = memoryBudgetBytes;
+    plan.PresenterLeaseOutstanding = presenterLeaseOutstanding;
+    plan.DeferOldResourceDestruction = presenterLeaseOutstanding;
+    plan.RequiredBytes = EstimateVulkanPhase8ScaleBytes(newScale);
+    if (oldScale < kPhase8MinimumScale || oldScale > kPhase8MaximumScale ||
+        newScale < kPhase8MinimumScale || newScale > kPhase8MaximumScale)
+    {
+        plan.FailureReason = "Vulkan scale must be in the range 1 through 16";
+        return plan;
+    }
+    if (plan.RequiredBytes == std::numeric_limits<std::uint64_t>::max())
+    {
+        plan.FailureReason = "Vulkan scale resource size overflow";
+        return plan;
+    }
+    if (plan.RequiredBytes > memoryBudgetBytes)
+    {
+        plan.FailureReason = "insufficient Vulkan memory budget for requested scale";
+        return plan;
+    }
+    plan.Valid = true;
+    return plan;
+}
+
+void VulkanPhase8LifecycleState::Initialize(
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept
+{
+    TextureRuntime.Reset(ringConfig, timelineSemaphoreAvailable);
+    CaptureRegistry.Reset();
+    Scale = 1;
+    OutputGeneration = 1;
+    DeferredResourceBytes = 0;
+    ResetCount = 0;
+    SavestateCount = 0;
+    RendererSwitchCount = 0;
+    ScaleChangeCount = 0;
+    GpuWorkInFlight = false;
+    PreSavestateSynchronized = false;
+    FirstFrameFullUpload = true;
+}
+
+bool PreSavestateVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    std::array<std::vector<std::uint8_t>, 4>& vramBanks,
+    std::array<std::vector<std::uint64_t>, 4>& dirtyWords,
+    std::string* failureReason)
+{
+    if (state.GpuWorkInFlight || !state.TextureRuntime.UploadRing.InFlight.empty() ||
+        !state.TextureRuntime.Retirement.InFlight.empty())
+    {
+        if (failureReason) *failureReason = "Vulkan Phase 8 work is still in flight";
+        return false;
+    }
+    for (auto& slot : state.CaptureRegistry.Slots)
+    {
+        if (!slot.CpuSynchronized)
+        {
+            if (!SyncVulkanCaptureToCpuVram(
+                    state.CaptureRegistry, slot.Bank, slot.Offset, slot.Width,
+                    vramBanks[slot.Bank], dirtyWords[slot.Bank], failureReason))
+                return false;
+        }
+    }
+    state.PreSavestateSynchronized = true;
+    ++state.SavestateCount;
+    return true;
+}
+
+void PostSavestateVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept
+{
+    state.TextureRuntime.Reset(ringConfig, timelineSemaphoreAvailable);
+    state.CaptureRegistry.Reset();
+    ++state.OutputGeneration;
+    state.GpuWorkInFlight = false;
+    state.PreSavestateSynchronized = false;
+    state.FirstFrameFullUpload = true;
+}
+
+void ResetVulkanPhase8(
+    VulkanPhase8LifecycleState& state,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable) noexcept
+{
+    const std::uint32_t scale = state.Scale;
+    const std::uint64_t generation = state.OutputGeneration + 1u;
+    const std::uint64_t resetCount = state.ResetCount + 1u;
+    state.TextureRuntime.Reset(ringConfig, timelineSemaphoreAvailable);
+    state.CaptureRegistry.Reset();
+    state.Scale = scale;
+    state.OutputGeneration = generation;
+    state.GpuWorkInFlight = false;
+    state.PreSavestateSynchronized = false;
+    state.FirstFrameFullUpload = true;
+    state.ResetCount = resetCount;
+}
+
+bool FlushVulkanPhase8ForRendererSwitch(
+    VulkanPhase8LifecycleState& state,
+    std::array<std::vector<std::uint8_t>, 4>& vramBanks,
+    std::array<std::vector<std::uint64_t>, 4>& dirtyWords,
+    const VulkanTextureUploadRingConfig& ringConfig,
+    bool timelineSemaphoreAvailable,
+    std::string* failureReason)
+{
+    if (!PreSavestateVulkanPhase8(state, vramBanks, dirtyWords, failureReason))
+        return false;
+    const std::uint64_t switches = state.RendererSwitchCount + 1u;
+    PostSavestateVulkanPhase8(state, ringConfig, timelineSemaphoreAvailable);
+    state.RendererSwitchCount = switches;
+    return true;
+}
+
+bool ApplyVulkanPhase8ScaleChange(
+    VulkanPhase8LifecycleState& state,
+    const VulkanScaleResourcePlan& plan) noexcept
+{
+    if (!plan.Valid || plan.OldScale != state.Scale ||
+        plan.OldGeneration != state.OutputGeneration)
+        return false;
+    if (plan.DeferOldResourceDestruction)
+        state.DeferredResourceBytes += EstimateVulkanPhase8ScaleBytes(state.Scale);
+    state.Scale = plan.NewScale;
+    state.OutputGeneration = plan.NewGeneration;
+    state.FirstFrameFullUpload = true;
+    state.TextureRuntime.FirstFrameFullUpload = true;
+    ++state.ScaleChangeCount;
+    return true;
+}
+
+bool VulkanPhase8ExitAudit::Passed() const noexcept
+{
+    return AllTextureFormats && RepeatMirrorClamp && ClearBitmap &&
+        DisplayCapture && CaptureTextureReuse && Savestate && Reset &&
+        RendererSwitch && ScaleLiveChange && AsyncRetirement &&
+        CpuReadbackSynchronization && MemoryBudget && ResourceLifetime;
+}
+
 } // namespace melonDS::Vulkan

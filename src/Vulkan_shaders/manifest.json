@@ -302,6 +302,18 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanPhase8CaptureCompute",
+      "source": "phase8_capture.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }
