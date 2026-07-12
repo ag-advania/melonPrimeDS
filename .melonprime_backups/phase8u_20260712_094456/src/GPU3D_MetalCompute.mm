@@ -16,7 +16,6 @@
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_FIX_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_V1
-// MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_FIX_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -1630,8 +1629,7 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->CompleteDepthBlendPipeline ||
         !State->ClearFinalPassSummaryPipeline ||
         !State->FinalPassPipeline ||
-        !State->ClearDepthBlendSummaryPipeline ||
-        !State->DepthBlendNoTexturePipeline)
+        !State->ClearDepthBlendSummaryPipeline ||\1)
     {
         return false;
     }
@@ -1793,8 +1791,7 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
             !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
-            !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
-             !slot.TextureMemoryBuffer ||
+            \1!slot.TextureMemoryBuffer ||
             !slot.TexturePaletteBuffer || !slot.ToonTableBuffer ||
             !slot.FinalTablesBuffer || !slot.FinalPassSummaryBuffer ||
             !slot.FinalTexture)
