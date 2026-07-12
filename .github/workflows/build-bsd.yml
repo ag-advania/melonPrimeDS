@@ -94,16 +94,14 @@ jobs:
         cmake -S $GITHUB_WORKSPACE -B /tmp/build -G Ninja
         -DMELONDS_EMBED_BUILD_INFO=ON
 
-    - name: Build and stage binary
-      # MELONPRIME_BSD_STAGED_ARTIFACT_V2
-      # Locate the executable inside the BSD VM, then copy only that file to the
-      # NFS-backed workspace under a deterministic per-matrix path.
+    - name: Build and package binary
+      # MELONPRIME_BSD_LOCAL_PACKAGE_V3
+      # Build and create the ZIP entirely on the BSD VM's local /tmp filesystem.
+      # Copy only the completed ZIP to the NFS-backed GitHub workspace.
       run: |
         set -eu
         cmake --build /tmp/build
 
-        stage_dir="$GITHUB_WORKSPACE/bsd-stage/${{ matrix.os }}-${{ matrix.arch }}"
-        staged_binary="$stage_dir/melonPrimeDS"
         binary=""
 
         for candidate in \
@@ -126,52 +124,39 @@ jobs:
           )"
         fi
 
-        if [ -z "$binary" ] || [ ! -f "$binary" ]; then
+        if [ -z "$binary" ] || [ ! -s "$binary" ]; then
           echo "Expected BSD executable was not found after a successful build."
-          echo "Candidate executables and files:"
+          echo "Candidate files:"
           find /tmp/build -maxdepth 8 -type f -print 2>/dev/null || true
           exit 1
         fi
 
-        mkdir -p "$stage_dir"
-        cp -f "$binary" "$staged_binary"
-        chmod +x "$staged_binary"
-        test -s "$staged_binary"
+        package_dir="/tmp/melonPrimeDS-bsd-package-${{ matrix.os }}-${{ matrix.arch }}"
+        local_zip="/tmp/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
+        workspace_zip="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
 
-        echo "Staged BSD executable:"
-        ls -l "$staged_binary"
+        rm -rf "$package_dir"
+        rm -f "$local_zip" "$workspace_zip"
+        mkdir -p "$package_dir"
 
-    - name: Compress staged binary
-      # Run on the Ubuntu host. Do not rediscover or copy the BSD build tree.
-      shell: bash
-      run: |
-        set -euo pipefail
+        cp "$binary" "$package_dir/melonPrimeDS"
+        test -s "$package_dir/melonPrimeDS"
 
-        staged_binary="$GITHUB_WORKSPACE/bsd-stage/${{ matrix.os }}-${{ matrix.arch }}/melonPrimeDS"
-        zip_path="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
+        (
+          cd "$package_dir"
+          zip -9 -j "$local_zip" melonPrimeDS
+        )
 
-        if [ ! -s "$staged_binary" ]; then
-          echo "Staged BSD executable is missing or empty: $staged_binary"
-          echo "Workspace staging contents:"
-          find "$GITHUB_WORKSPACE/bsd-stage" -maxdepth 4 -type f -print 2>/dev/null || true
-          exit 1
-        fi
+        test -s "$local_zip"
+        echo "Created ZIP inside BSD VM:"
+        ls -l "$local_zip"
+        unzip -l "$local_zip"
 
-        python3 - "$zip_path" "$staged_binary" <<'PY'
-        import pathlib
-        import sys
-        import zipfile
+        cp "$local_zip" "$workspace_zip"
+        test -s "$workspace_zip"
 
-        output = pathlib.Path(sys.argv[1])
-        source = pathlib.Path(sys.argv[2])
-        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.write(source, arcname="melonPrimeDS")
-        PY
-
-        test -s "$zip_path"
-        echo "Created BSD artifact:"
-        ls -l "$zip_path"
-        python3 -m zipfile -l "$zip_path"
+        echo "Copied completed ZIP to GitHub workspace:"
+        ls -l "$workspace_zip"
 
     - name: Upload binary
       uses: actions/upload-artifact@v7
