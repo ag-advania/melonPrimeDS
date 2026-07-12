@@ -1,12 +1,20 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
-// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // GPU-resident DS final pass: edge marking, fog and anti-aliasing.
 static constexpr const char* kMetalComputeFinalPassSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
+constant uint MPF_SummaryPixels = 0u;
+constant uint MPF_SummaryEdgePixels = 1u;
+constant uint MPF_SummaryFogTopPixels = 2u;
+constant uint MPF_SummaryFogSecondPixels = 3u;
+constant uint MPF_SummaryAAPixels = 4u;
+constant uint MPF_SummaryNonzeroAlpha = 5u;
+constant uint MPF_SummaryColorHash = 6u;
+constant uint MPF_SummaryReserved = 7u;
+constant uint MPF_SummaryWords = 8u;
 
 struct MPFFinalConfig
 {
@@ -66,6 +74,14 @@ static inline uint mpf_blend_fog(
     return (config.dispCnt & (1u << 6u)) != 0u
         ? ((color & 0x00FFFFFFu) | ((finalGA >> 16u) << 24u))
         : (finalRB | (finalGA << 8u));
+}
+
+kernel void mp_compute_clear_final_pass_summary(
+    device atomic_uint* summary [[buffer(0)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid < MPF_SummaryWords)
+        atomic_store_explicit(&summary[gid], 0u, memory_order_relaxed);
 }
 
 kernel void mp_compute_final_pass(
