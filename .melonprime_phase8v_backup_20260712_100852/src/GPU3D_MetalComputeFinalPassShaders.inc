@@ -1,6 +1,5 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
-// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 // GPU-resident DS final pass: edge marking, fog and anti-aliasing.
 static constexpr const char* kMetalComputeFinalPassSource = R"MSL(
 #include <metal_stdlib>
@@ -88,6 +87,7 @@ kernel void mp_compute_final_pass(
     device const uint* resultColor [[buffer(0)]],
     device const uint* resultDepth [[buffer(1)]],
     device const uint* resultAttr [[buffer(2)]],
+    device atomic_uint* summary [[buffer(3)]],
     device const uint* tables [[buffer(4)]],
     constant MPFFinalConfig& config [[buffer(5)]],
     texture2d<float, access::write> finalTexture [[texture(0)]],
@@ -107,6 +107,10 @@ kernel void mp_compute_final_pass(
     uint attr0 = resultAttr[gid];
     const uint attr1 = resultAttr[second];
 
+    bool edgeApplied = false;
+    bool fogTopApplied = false;
+    bool fogSecondApplied = false;
+    bool aaApplied = false;
 
     // DISP3DCNT bit 5: edge marking.
     if ((config.dispCnt & (1u << 5u)) != 0u &&
@@ -146,6 +150,7 @@ kernel void mp_compute_final_pass(
         {
             color0 = tables[polygonId >> 3u] | (color0 & 0x1F000000u);
             attr0 = (attr0 & 0xFFFFE0FFu) | 0x00001000u;
+            edgeApplied = true;
         }
     }
 
@@ -155,11 +160,13 @@ kernel void mp_compute_final_pass(
         if ((attr0 & (1u << 15u)) != 0u)
         {
             color0 = mpf_blend_fog(color0, depth0, config, tables);
+            fogTopApplied = true;
         }
         if ((attr0 & 0xFu) != 0u &&
             (attr1 & (1u << 15u)) != 0u)
         {
             color1 = mpf_blend_fog(color1, depth1, config, tables);
+            fogSecondApplied = true;
         }
     }
 
@@ -195,6 +202,7 @@ kernel void mp_compute_final_pass(
         {
             color0 = color1;
         }
+        aaApplied = true;
     }
 
     const uint r = color0 & 0x3Fu;
@@ -208,6 +216,21 @@ kernel void mp_compute_final_pass(
                float(a) / 31.0f),
         uint2(x, y));
 
+    atomic_fetch_add_explicit(&summary[MPF_SummaryPixels], 1u, memory_order_relaxed);
+    if (edgeApplied)
+        atomic_fetch_add_explicit(&summary[MPF_SummaryEdgePixels], 1u, memory_order_relaxed);
+    if (fogTopApplied)
+        atomic_fetch_add_explicit(&summary[MPF_SummaryFogTopPixels], 1u, memory_order_relaxed);
+    if (fogSecondApplied)
+        atomic_fetch_add_explicit(&summary[MPF_SummaryFogSecondPixels], 1u, memory_order_relaxed);
+    if (aaApplied)
+        atomic_fetch_add_explicit(&summary[MPF_SummaryAAPixels], 1u, memory_order_relaxed);
+    if (a != 0u)
+        atomic_fetch_add_explicit(&summary[MPF_SummaryNonzeroAlpha], 1u, memory_order_relaxed);
+    atomic_fetch_xor_explicit(
+        &summary[MPF_SummaryColorHash],
+        color0 + gid * 0x9E3779B9u,
+        memory_order_relaxed);
 }
 
 )MSL";
