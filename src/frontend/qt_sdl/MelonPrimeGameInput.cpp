@@ -62,21 +62,23 @@ namespace MelonPrime {
     {
         const int requestedCursorMode =
             m_threadBridge.ConsumeCursorModeForEmu();
-        if (requestedCursorMode >= 0) {
+        if (UNLIKELY(requestedCursorMode >= 0)) {
             isCursorMode = requestedCursorMode != 0;
             SetAimBlockBranchless(AIMBLK_CURSOR_MODE, isCursorMode);
         }
         const uint64_t layoutGeneration =
             m_threadBridge.LayoutGenerationForEmu();
-        if (layoutGeneration != m_layoutGenerationSeen) {
+        if (UNLIKELY(layoutGeneration != m_layoutGenerationSeen)) {
             m_layoutGenerationSeen = layoutGeneration;
             m_isLayoutChangePending = true;
             m_threadBridge.ReadCenterForEmu(
                 m_aimData.centerX, m_aimData.centerY);
         }
+        // Reject cursor mode before the bridge atomics. Menu and license
+        // screens therefore avoid both acquire loads on their steady-state path.
         const bool captureEligible = focused
-            && m_threadBridge.PanelAvailableForEmu()
             && !isCursorMode
+            && m_threadBridge.PanelAvailableForEmu()
             && m_threadBridge.CaptureWantedForEmu();
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
@@ -86,7 +88,7 @@ namespace MelonPrime {
         // OPT-Z3: Always poll to drain WM_INPUT even when unfocused,
         // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
-        if (rawFilter) {
+        if (LIKELY(rawFilter != nullptr)) {
             rawFilter->setRawInputTarget(
                 m_rawInputSubscription,
                 reinterpret_cast<HWND>(m_threadBridge.WindowHandleForEmu()));
@@ -107,14 +109,14 @@ namespace MelonPrime {
 #endif
         const bool isInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
-        if (wasInputOwner != isInputOwner) {
+        if (UNLIKELY(wasInputOwner != isInputOwner)) {
             InstanceDiagnostics::LogInputSubscription(
                 emuInstance, &m_inputSubscription,
                 static_cast<unsigned long long>(m_inputSubscription.generation),
                 isInputOwner);
         }
 
-        if (!focused) {
+        if (UNLIKELY(!focused)) {
             m_input.down = 0;
             m_input.press = 0;
             m_input.moveIndex = 0;
@@ -130,25 +132,28 @@ namespace MelonPrime {
         }
 
 #ifdef _WIN32
-        // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FALLBACK_V1
-        // Raw Input ownership is reserved for captured FPS aim. Cursor-mode
-        // screens intentionally release that owner, but their focused window
-        // still records keyboard hotkeys in this EmuInstance's Qt snapshot.
-        //
-        // Select one keyboard source instead of OR-ing Raw and Qt together.
-        // This keeps instances isolated and avoids duplicate press edges when
-        // active ownership changes.
-        const uint64_t hotDownMask = isInputOwner
-            ? (hk.down | emuInstance->joyHotkeyMask)
-            : emuInstance->hotkeyMask;
-        if constexpr (!kReentrant) {
-            const uint64_t hotPressMask = isInputOwner
-                ? (hk.pressed | emuInstance->joyHotkeyPress)
-                : emuInstance->hotkeyPress;
-            m_input.press = InputProjection::ProjectPressMask(hotPressMask);
+        // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FASTPATH_V2
+        // Captured gameplay is the dominant path. Keep Raw Input as the likely
+        // fall-through and touch this EmuInstance's Qt snapshot only while its
+        // cursor-mode window is focused but does not own captured Raw Input.
+        // One runtime branch selects both down and press sources, avoiding two
+        // independent owner selections and preventing Raw/Qt edge duplication.
+        uint64_t hotDownMask;
+        if (LIKELY(isInputOwner)) {
+            hotDownMask = hk.down | emuInstance->joyHotkeyMask;
+            if constexpr (!kReentrant) {
+                m_input.press = InputProjection::ProjectPressMask(
+                    hk.pressed | emuInstance->joyHotkeyPress);
+            }
         } else {
-            m_input.press = 0;
+            hotDownMask = emuInstance->hotkeyMask;
+            if constexpr (!kReentrant) {
+                m_input.press = InputProjection::ProjectPressMask(
+                    emuInstance->hotkeyPress);
+            }
         }
+        if constexpr (kReentrant)
+            m_input.press = 0;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (MelonPrimePerf::IsFrameActive() && rawFilter && isInputOwner)
             MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::WinRaw);
