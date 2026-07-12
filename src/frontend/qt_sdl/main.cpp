@@ -486,7 +486,7 @@ static std::optional<QString> melonPrimeVulkanToonHighlightContractTestPath(int 
 {
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     for (int i = 1; i < argc; ++i)
-        if (strcmp(argv[i], "--melonprime-vulkan-toon-highlight-contract-test") == 0 && i + 1 < argc)
+        if (strcmp(argv[i], "--melonprime-vulkan-toon-highlight-shader-abi-test") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
 #endif
     (void)argc; (void)argv; return std::nullopt;
@@ -576,7 +576,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 10 && compute.ContractVersion == 10 &&
+        raster.ContractVersion == 11 && compute.ContractVersion == 11 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -598,10 +598,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanShadowPipelineBootstrapAvailable &&
         raster.NativeVulkanToonHighlightContractAvailable &&
         compute.NativeVulkanToonHighlightContractAvailable &&
+        raster.NativeVulkanToonHighlightShaderAbiAvailable &&
+        compute.NativeVulkanToonHighlightShaderAbiAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 10},
+        {"schema_version", 11},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -626,6 +628,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_shadow_pipeline_bootstrap_available", compute.NativeVulkanShadowPipelineBootstrapAvailable},
         {"raster_toon_highlight_contract_available", raster.NativeVulkanToonHighlightContractAvailable},
         {"compute_toon_highlight_contract_available", compute.NativeVulkanToonHighlightContractAvailable},
+        {"raster_toon_highlight_shader_abi_available", raster.NativeVulkanToonHighlightShaderAbiAvailable},
+        {"compute_toon_highlight_shader_abi_available", compute.NativeVulkanToonHighlightShaderAbiAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -765,7 +769,7 @@ int main(int argc, char** argv)
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto toonOut = melonPrimeVulkanToonHighlightContractTestPath(argc, argv); toonOut.has_value())
-        return MelonPrime::Vulkan::RunToonHighlightContractHarness(*toonOut);
+        return MelonPrime::Vulkan::RunToonHighlightShaderAbiHarness(*toonOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

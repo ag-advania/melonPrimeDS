@@ -1,4 +1,5 @@
 #version 450
+layout(std140,set=0,binding=0) uniform ToonHighlightConfig { vec4 toon[32]; uint dispCnt; uint mode; uint textured; uint pad; } cfg;
 
 layout(location = 0) in vec4 fColor;
 layout(location = 1) flat in uint fPolygonAttr;

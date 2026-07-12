@@ -839,4 +839,9 @@ VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
     return aspects;
 }
 
+VulkanToonHighlightShaderAbi DescribeVulkanToonHighlightShaderAbi() noexcept
+{
+    return {};
+}
+
 } // namespace melonDS::Vulkan

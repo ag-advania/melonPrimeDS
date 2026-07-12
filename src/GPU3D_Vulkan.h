@@ -12,6 +12,7 @@
 // MELONPRIME_VULKAN_TRANSLUCENT_PIPELINE_CONTRACT_V1
 // MELONPRIME_VULKAN_SHADOW_PIPELINE_CONTRACT_V1
 // MELONPRIME_VULKAN_TOON_HIGHLIGHT_CONTRACT_V1
+// MELONPRIME_VULKAN_TOON_HIGHLIGHT_SHADER_ABI_V1
 
 #include <array>
 #include <cstddef>
@@ -538,6 +539,30 @@ VulkanToonHighlightConfig BuildVulkanToonHighlightConfig(
     std::uint32_t dispCnt,
     VulkanToonHighlightMode mode,
     bool textured) noexcept;
+
+
+inline constexpr std::uint32_t kVulkanToonHighlightDescriptorSet = 0;
+inline constexpr std::uint32_t kVulkanToonHighlightDescriptorBinding = 0;
+inline constexpr std::uint32_t kVulkanToonHighlightShaderAbiVersion = 1;
+
+struct VulkanToonHighlightShaderAbi
+{
+    std::uint32_t DescriptorSet = kVulkanToonHighlightDescriptorSet;
+    std::uint32_t DescriptorBinding = kVulkanToonHighlightDescriptorBinding;
+    std::uint32_t ConfigSize = sizeof(VulkanToonHighlightConfig);
+    std::uint32_t ToonTableEntries = 32;
+    bool SupportsOpaque = true;
+    bool SupportsTranslucent = true;
+    bool SupportsWBuffer = true;
+    bool SupportsTextured = true;
+};
+
+static_assert(sizeof(VulkanToonHighlightConfig) == 528);
+static_assert(offsetof(VulkanToonHighlightConfig, DispCnt) == 512);
+static_assert(offsetof(VulkanToonHighlightConfig, Mode) == 516);
+static_assert(offsetof(VulkanToonHighlightConfig, Textured) == 520);
+
+VulkanToonHighlightShaderAbi DescribeVulkanToonHighlightShaderAbi() noexcept;
 
 std::array<float, 4> EvaluateVulkanToonHighlightReference(
     const VulkanToonHighlightConfig& config,
