@@ -56969,7 +56969,7 @@ constexpr Translation kTranslations[] = {
             {MenuLangId::Hebrew, "השתמש בשיטה החדשה 2 לזום"},
         }
     },
-#include "MelonPrimeLocalizationMelondsDialogs.inc",
+#include "MelonPrimeLocalizationMelondsDialogs.inc"
     {
         "Hide Boost (Bomb HUD kept)",
         {
