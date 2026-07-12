@@ -130,6 +130,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     set(_mp_vk_shader_root "${CMAKE_CURRENT_SOURCE_DIR}/Vulkan_shaders")
     set(_mp_vk_shader_outputs
         "${_mp_vk_shader_root}/generated/VulkanBuildProbe.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPresenterVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPresenterFragment.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanShaders.h"
         "${_mp_vk_shader_root}/generated/manifest.lock.json")
 
@@ -142,6 +144,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_spirv.py"
             "${_mp_vk_shader_root}/manifest.json"
             "${_mp_vk_shader_root}/build_probe.comp"
+            "${_mp_vk_shader_root}/presenter.vert"
+            "${_mp_vk_shader_root}/presenter.frag"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Generating deterministic MelonPrime Vulkan SPIR-V headers"
         VERBATIM)
@@ -158,6 +162,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_sources(core PRIVATE
         GPU_Vulkan.cpp
         GPU_Vulkan.h
+        GPU3D_Vulkan.cpp
+        GPU3D_Vulkan.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

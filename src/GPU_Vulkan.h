@@ -17,16 +17,18 @@ struct VulkanRendererShellContract
     bool ComputeSelected = false;
     bool UsesSoftwareCorrectnessBaseline = true;
     bool NativeVulkanRasterBootstrapAvailable = true;
+    bool NativeVulkanClearPlaneBootstrapAvailable = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 2;
+    u32 ContractVersion = 3;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
 
 // Phase 6 establishes the Vulkan renderer identity and lifecycle while keeping
-// Software 2D/3D/capture/CPU-BGRA output as the correctness source. Phase 7
-// proves a native offscreen graphics pipeline and readback, but DS polygon
-// rasterization is not integrated into this class yet.
+// Software 2D/3D/capture/CPU-BGRA output as the correctness source. Phase 7.1
+// proves a native offscreen graphics pipeline; Phase 7.2 adds typed color,
+// attribute and depth-stencil clear-plane targets. DS polygon rasterization is
+// not integrated into this class yet.
 class VulkanRenderer final : public SoftRenderer
 {
 public:

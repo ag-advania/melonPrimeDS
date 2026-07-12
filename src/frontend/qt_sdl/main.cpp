@@ -60,6 +60,8 @@
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
+#include "GPU3D_Vulkan.h"
+#include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanRasterBootstrap.h"
@@ -375,6 +377,20 @@ static std::optional<QString> melonPrimeVulkanRasterBootstrapTestPath(int argc, 
     return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeVulkanClearPlaneTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-clear-plane-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -459,16 +475,18 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 2 && compute.ContractVersion == 2 &&
+        raster.ContractVersion == 3 && compute.ContractVersion == 3 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
         raster.NativeVulkanRasterBootstrapAvailable &&
         compute.NativeVulkanRasterBootstrapAvailable &&
+        raster.NativeVulkanClearPlaneBootstrapAvailable &&
+        compute.NativeVulkanClearPlaneBootstrapAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 2},
+        {"schema_version", 3},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -477,6 +495,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_software_correctness_baseline", compute.UsesSoftwareCorrectnessBaseline},
         {"raster_bootstrap_available", raster.NativeVulkanRasterBootstrapAvailable},
         {"compute_raster_bootstrap_available", compute.NativeVulkanRasterBootstrapAvailable},
+        {"raster_clear_plane_bootstrap_available", raster.NativeVulkanClearPlaneBootstrapAvailable},
+        {"compute_clear_plane_bootstrap_available", compute.NativeVulkanClearPlaneBootstrapAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -577,6 +597,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto rasterOut = melonPrimeVulkanRasterBootstrapTestPath(argc, argv); rasterOut.has_value())
         return MelonPrime::Vulkan::RunRasterBootstrapHarness(*rasterOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto clearOut = melonPrimeVulkanClearPlaneTestPath(argc, argv); clearOut.has_value())
+        return MelonPrime::Vulkan::RunClearPlaneBootstrapHarness(*clearOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
