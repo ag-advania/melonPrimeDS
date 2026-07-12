@@ -589,7 +589,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 11 && compute.ContractVersion == 11 &&
+        raster.ContractVersion == 13 && compute.ContractVersion == 13 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -613,10 +613,14 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanToonHighlightContractAvailable &&
         raster.NativeVulkanToonHighlightShaderAbiAvailable &&
         compute.NativeVulkanToonHighlightShaderAbiAvailable &&
+        raster.NativeVulkanToonHighlightDescriptorRuntimeAvailable &&
+        compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable &&
+        raster.NativeVulkanToonHighlightGpuDrawAvailable &&
+        compute.NativeVulkanToonHighlightGpuDrawAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 11},
+        {"schema_version", 13},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -643,6 +647,10 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_toon_highlight_contract_available", compute.NativeVulkanToonHighlightContractAvailable},
         {"raster_toon_highlight_shader_abi_available", raster.NativeVulkanToonHighlightShaderAbiAvailable},
         {"compute_toon_highlight_shader_abi_available", compute.NativeVulkanToonHighlightShaderAbiAvailable},
+        {"raster_toon_highlight_descriptor_runtime_available", raster.NativeVulkanToonHighlightDescriptorRuntimeAvailable},
+        {"compute_toon_highlight_descriptor_runtime_available", compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable},
+        {"raster_toon_highlight_gpu_draw_available", raster.NativeVulkanToonHighlightGpuDrawAvailable},
+        {"compute_toon_highlight_gpu_draw_available", compute.NativeVulkanToonHighlightGpuDrawAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };

@@ -27,8 +27,9 @@ struct VulkanRendererShellContract
     bool NativeVulkanToonHighlightContractAvailable = true;
     bool NativeVulkanToonHighlightShaderAbiAvailable = true;
     bool NativeVulkanToonHighlightDescriptorRuntimeAvailable = true;
+    bool NativeVulkanToonHighlightGpuDrawAvailable = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 12;
+    u32 ContractVersion = 13;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;

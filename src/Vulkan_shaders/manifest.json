@@ -95,6 +95,19 @@
           "defines": {
             "W_BUFFER": "1"
           }
+        },
+        {
+          "name": "ToonHighlight",
+          "defines": {
+            "TOON_HIGHLIGHT_RUNTIME": "1"
+          }
+        },
+        {
+          "name": "ToonHighlightWBuffer",
+          "defines": {
+            "TOON_HIGHLIGHT_RUNTIME": "1",
+            "W_BUFFER": "1"
+          }
         }
       ]
     },
@@ -129,6 +142,19 @@
         {
           "name": "WBuffer",
           "defines": {
+            "W_BUFFER": "1"
+          }
+        },
+        {
+          "name": "ToonHighlight",
+          "defines": {
+            "TOON_HIGHLIGHT_RUNTIME": "1"
+          }
+        },
+        {
+          "name": "ToonHighlightWBuffer",
+          "defines": {
+            "TOON_HIGHLIGHT_RUNTIME": "1",
             "W_BUFFER": "1"
           }
         }
