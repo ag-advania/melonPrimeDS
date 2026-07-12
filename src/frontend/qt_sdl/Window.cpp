@@ -84,9 +84,7 @@
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeVulkanFeatureCheck.h"
-#include "MelonPrimeVulkanInstanceHost.h"
-#include <QWindow>
+#include "MelonPrimeScreenVulkan.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
@@ -1120,36 +1118,27 @@ void MainWindow::createScreenPanel()
         globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
     hasOGL = MelonPrime::VideoBackend::IsOpenGLPresentation(presentationBackend);
 
-#if defined(MELONPRIME_ENABLE_VULKAN)
-    const int requestedRenderer = MelonPrime::VideoBackend::ResolveRequestedRenderer(
-        globalCfg.GetInt("3D.Renderer"));
-    const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-        requestedRenderer);
-    if (MelonPrime::VideoBackend::RendererRequiresVulkanContext(normalizedRenderer) ||
-        MelonPrime::VideoBackend::ShouldForceVulkanPresenterFromEnv())
-    {
-        auto& host = static_cast<MelonApplication*>(qApp)->vulkanInstanceHost();
-        MelonPrime::Vulkan::FeatureInfo featureInfo;
-        if (host.ensureCreated())
-        {
-            QWindow probeWindow;
-            probeWindow.setSurfaceType(QSurface::VulkanSurface);
-            probeWindow.setVulkanInstance(&host.instance());
-            probeWindow.resize(1, 1);
-            probeWindow.create();
-            emuInstance->ensureVulkanDeviceContext(&probeWindow, featureInfo);
-            probeWindow.destroy();
-        }
-        else
-        {
-            featureInfo.unavailableReason = host.unavailableReason();
-        }
-        MelonPrime::Vulkan::LogFeatureInfo(featureInfo);
-    }
-#endif
 #else
     hasOGL = globalCfg.GetBool("Screen.UseGL") ||
         (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+    {
+        auto* panelVulkan = new ScreenPanelVulkan(this);
+        if (panelVulkan->initVulkan())
+        {
+            panel = panelVulkan;
+            panel->show();
+        }
+        else
+        {
+            Log(Platform::LogLevel::Error,
+                "Failed to init Vulkan presenter, falling back to NativeQt.\n");
+            delete panelVulkan;
+        }
+    }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
@@ -1215,7 +1204,14 @@ void MainWindow::createScreenPanel()
     setCentralWidget(panel);
 
     if (hasMenu)
-        actScreenFiltering->setEnabled(hasOGL);
+    {
+        bool filteringAvailable = hasOGL;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        filteringAvailable = filteringAvailable ||
+            MelonPrime::VideoBackend::IsVulkanPresentation(presentationBackend);
+#endif
+        actScreenFiltering->setEnabled(filteringAvailable);
+    }
     panel->osdSetEnabled(showOSD);
 
     connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(repaint()));

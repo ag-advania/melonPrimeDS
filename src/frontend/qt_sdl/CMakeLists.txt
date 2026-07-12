@@ -331,7 +331,14 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanInstanceHost.cpp
         MelonPrimeVulkanInstanceHost.h
         MelonPrimeVulkanFeatureCheck.cpp
-        MelonPrimeVulkanFeatureCheck.h)
+        MelonPrimeVulkanFeatureCheck.h
+        MelonPrimeScreenVulkan.cpp
+        MelonPrimeScreenVulkan.h)
+    # MinGW LTO can discard the QWindow/QSurface adjustment thunk emitted by
+    # a TU that subclasses QVulkanWindow (GNU ld reports QWindow::size() as a
+    # reference to a discarded COMDAT). Keep this one Qt boundary TU native.
+    set_source_files_properties(MelonPrimeScreenVulkan.cpp
+        PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()
 
 add_subdirectory("../../net"

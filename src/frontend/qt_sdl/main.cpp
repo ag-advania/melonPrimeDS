@@ -61,6 +61,7 @@
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
+#include "MelonPrimeScreenVulkan.h"
 #endif
 
 #include "Config.h"
@@ -483,6 +484,35 @@ int main(int argc, char** argv)
     NetInit();
 
     createEmuInstance();
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const QString vulkanCapturePath = qEnvironmentVariable(
+        "MELONPRIME_VULKAN_PRESENTER_CAPTURE");
+    if (!vulkanCapturePath.isEmpty())
+    {
+        const bool multiWindow = qEnvironmentVariableIntValue(
+            "MELONPRIME_VULKAN_PRESENTER_MULTIWINDOW") == 1;
+        if (multiWindow)
+            createEmuInstance();
+        QTimer::singleShot(1500, qApp, [vulkanCapturePath, multiWindow] {
+            MainWindow* window = emuInstances[0]
+                ? emuInstances[0]->getMainWindow() : nullptr;
+            auto* panel = window
+                ? dynamic_cast<ScreenPanelVulkan*>(window->panel) : nullptr;
+            bool saved = panel && panel->captureVulkanFrame(vulkanCapturePath);
+            if (multiWindow)
+            {
+                MainWindow* secondWindow = emuInstances[1]
+                    ? emuInstances[1]->getMainWindow() : nullptr;
+                auto* secondPanel = secondWindow
+                    ? dynamic_cast<ScreenPanelVulkan*>(secondWindow->panel) : nullptr;
+                saved = saved && secondPanel && secondPanel->captureVulkanFrame(
+                    vulkanCapturePath + ".window2.png");
+            }
+            qApp->exit(saved ? 0 : 3);
+        });
+    }
+#endif
 
     {
         MainWindow* win = emuInstances[0]->getMainWindow();

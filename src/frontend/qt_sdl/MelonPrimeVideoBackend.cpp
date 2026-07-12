@@ -42,7 +42,14 @@ bool ShouldForceMetalRendererFromEnv()
 bool ShouldForceVulkanPresenterFromEnv()
 {
     const char* env = std::getenv("MELONPRIME_FORCE_VULKAN_PRESENTER");
-    return env != nullptr && env[0] == '1';
+    if (env != nullptr && env[0] == '1')
+        return true;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const char* capture = std::getenv("MELONPRIME_VULKAN_PRESENTER_CAPTURE");
+    return capture != nullptr && capture[0] != '\0';
+#else
+    return false;
+#endif
 }
 
 bool ShouldForceVulkanRendererFromEnv()
@@ -196,12 +203,8 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    // The enum/policy bootstrap exists now, but ScreenPanelVulkan is Phase 4.
-    // Keep the actual presenter on NativeQt until that implementation owns
-    // repaint/present scheduling. This still prevents accidental GL context
-    // creation for Vulkan renderer IDs.
     if (ShouldForceVulkanPresenterFromEnv())
-        return PresentationBackend::NativeQt;
+        return PresentationBackend::Vulkan;
 #endif
 
     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
@@ -211,7 +214,7 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (normalized == renderer3D_Vulkan || normalized == renderer3D_VulkanCompute)
-        return PresentationBackend::NativeQt;
+        return PresentationBackend::Vulkan;
 #endif
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
         return PresentationBackend::OpenGL;
