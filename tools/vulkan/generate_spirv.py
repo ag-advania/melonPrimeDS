@@ -55,6 +55,21 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# MELONPRIME_VULKAN_TEXT_HASH_NORMALIZATION_V1
+# Git may materialize committed text as CRLF on Windows. Shader metadata tracks
+# semantic UTF-8 text, so normalize line endings before hashing or comparing.
+def normalize_text_bytes(data: bytes) -> bytes:
+    return data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def read_normalized_text(path: Path) -> bytes:
+    return normalize_text_bytes(path.read_bytes())
+
+
+def sha256_text_file(path: Path) -> str:
+    return sha256_bytes(read_normalized_text(path))
+
+
 def canonical_json(value: object) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
@@ -238,7 +253,7 @@ def generate(compiler: Path) -> dict[Path, bytes]:
     with tempfile.TemporaryDirectory(prefix="melonprime-spirv-") as directory:
         temp = Path(directory)
         for variant in variants:
-            source_hash = sha256_bytes(variant.source.read_bytes())
+            source_hash = sha256_text_file(variant.source)
             data = compile_variant(
                 compiler, target_environment, variant, temp / f"{variant.symbol}.spv"
             )
@@ -275,7 +290,7 @@ def generate(compiler: Path) -> dict[Path, bytes]:
     lock = {
         "schema_version": 1,
         "compiler_version": version,
-        "manifest_sha256": sha256_bytes(MANIFEST_PATH.read_bytes()),
+        "manifest_sha256": sha256_text_file(MANIFEST_PATH),
         "generation_sha256": manifest_hash,
         "sources": source_records,
         "spirv": spirv_records,
@@ -290,7 +305,7 @@ def check_metadata_only() -> bool:
         print("error: generated Vulkan shader metadata is missing", file=sys.stderr)
         return False
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
-    expected_manifest_hash = sha256_bytes(MANIFEST_PATH.read_bytes())
+    expected_manifest_hash = sha256_text_file(MANIFEST_PATH)
     if lock.get("manifest_sha256") != expected_manifest_hash:
         print("error: Vulkan shader manifest changed without regeneration", file=sys.stderr)
         return False
@@ -304,7 +319,7 @@ def check_metadata_only() -> bool:
         return False
     for variant in variants:
         key = (variant.source.relative_to(REPO_ROOT).as_posix(), variant.variant_name)
-        if locked_sources.get(key) != sha256_bytes(variant.source.read_bytes()):
+        if locked_sources.get(key) != sha256_text_file(variant.source):
             print(f"error: Vulkan shader source drift: {key[0]} ({key[1]})", file=sys.stderr)
             return False
         generated_header = GENERATED_ROOT / variant.output_name
@@ -352,7 +367,7 @@ def check_metadata_only() -> bool:
 def write_or_check(outputs: dict[Path, bytes], check: bool) -> bool:
     changed: list[Path] = []
     for path, data in outputs.items():
-        if not path.is_file() or path.read_bytes() != data:
+        if not path.is_file() or read_normalized_text(path) != normalize_text_bytes(data):
             changed.append(path)
             if not check:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -373,16 +388,41 @@ def write_or_check(outputs: dict[Path, bytes], check: bool) -> bool:
     return True
 
 
+def run_line_ending_self_test() -> bool:
+    samples = [
+        b'{"schema_version": 1}\n',
+        b"#version 450\nvoid main() {}\n",
+    ]
+    with tempfile.TemporaryDirectory(prefix="melonprime-line-ending-test-") as directory:
+        root = Path(directory)
+        for index, lf_data in enumerate(samples):
+            lf_path = root / f"sample-{index}-lf.txt"
+            crlf_path = root / f"sample-{index}-crlf.txt"
+            lf_path.write_bytes(lf_data)
+            crlf_path.write_bytes(lf_data.replace(b"\n", b"\r\n"))
+            if sha256_text_file(lf_path) != sha256_text_file(crlf_path):
+                print("error: Vulkan text hash line-ending self-test failed", file=sys.stderr)
+                return False
+            if read_normalized_text(lf_path) != read_normalized_text(crlf_path):
+                print("error: Vulkan text comparison line-ending self-test failed", file=sys.stderr)
+                return False
+    print("Vulkan shader text line-ending normalization: PASS")
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--allow-missing-compiler", action="store_true")
+    parser.add_argument("--self-test-line-endings", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.self_test_line_endings:
+        return 0 if run_line_ending_self_test() else 1
     compiler = find_compiler(args.compiler)
     if compiler is None:
         if args.check and args.allow_missing_compiler:
