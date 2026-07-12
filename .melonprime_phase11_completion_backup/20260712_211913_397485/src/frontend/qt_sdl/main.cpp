@@ -77,7 +77,6 @@
 #include "MelonPrimeVulkanPhase8CompletionBootstrap.h"
 #include "MelonPrimeVulkanPhase9CompletionBootstrap.h"
 #include "MelonPrimeVulkanPhase10CompletionBootstrap.h"
-#include "MelonPrimeVulkanPhase11CompletionBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -612,7 +611,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 22 && compute.ContractVersion == 22 &&
+        raster.ContractVersion == 21 && compute.ContractVersion == 21 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -672,28 +671,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanTimelinePresenterWaitAvailable &&
         raster.NativeVulkanPhase10SubsystemComplete &&
         compute.NativeVulkanPhase10SubsystemComplete &&
-        raster.NativeVulkanComputeStageGraphAvailable &&
-        compute.NativeVulkanComputeStageGraphAvailable &&
-        raster.NativeVulkanComputeSpecializationCacheAvailable &&
-        compute.NativeVulkanComputeSpecializationCacheAvailable &&
-        raster.NativeVulkanComputeIndirectDispatchAvailable &&
-        compute.NativeVulkanComputeIndirectDispatchAvailable &&
-        raster.NativeVulkanComputeBarrierGraphAvailable &&
-        compute.NativeVulkanComputeBarrierGraphAvailable &&
-        raster.NativeVulkanComputeHiresCoordinatesAvailable &&
-        compute.NativeVulkanComputeHiresCoordinatesAvailable &&
-        raster.NativeVulkanComputeVisibleOutputAvailable &&
-        compute.NativeVulkanComputeVisibleOutputAvailable &&
-        raster.NativeVulkanPhase11SubsystemComplete &&
-        compute.NativeVulkanPhase11SubsystemComplete &&
-        !raster.NativeVulkanComputeRomVisible &&
-        !compute.NativeVulkanComputeRomVisible &&
         !raster.NativeVulkanRomIntegrationImplemented &&
         !compute.NativeVulkanRomIntegrationImplemented &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 22},
+        {"schema_version", 21},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -756,22 +739,6 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_timeline_presenter_wait_available", compute.NativeVulkanTimelinePresenterWaitAvailable},
         {"raster_phase10_subsystem_complete", raster.NativeVulkanPhase10SubsystemComplete},
         {"compute_phase10_subsystem_complete", compute.NativeVulkanPhase10SubsystemComplete},
-        {"raster_compute_stage_graph_available", raster.NativeVulkanComputeStageGraphAvailable},
-        {"compute_compute_stage_graph_available", compute.NativeVulkanComputeStageGraphAvailable},
-        {"raster_compute_specialization_cache_available", raster.NativeVulkanComputeSpecializationCacheAvailable},
-        {"compute_compute_specialization_cache_available", compute.NativeVulkanComputeSpecializationCacheAvailable},
-        {"raster_compute_indirect_dispatch_available", raster.NativeVulkanComputeIndirectDispatchAvailable},
-        {"compute_compute_indirect_dispatch_available", compute.NativeVulkanComputeIndirectDispatchAvailable},
-        {"raster_compute_barrier_graph_available", raster.NativeVulkanComputeBarrierGraphAvailable},
-        {"compute_compute_barrier_graph_available", compute.NativeVulkanComputeBarrierGraphAvailable},
-        {"raster_compute_hires_coordinates_available", raster.NativeVulkanComputeHiresCoordinatesAvailable},
-        {"compute_compute_hires_coordinates_available", compute.NativeVulkanComputeHiresCoordinatesAvailable},
-        {"raster_compute_visible_output_available", raster.NativeVulkanComputeVisibleOutputAvailable},
-        {"compute_compute_visible_output_available", compute.NativeVulkanComputeVisibleOutputAvailable},
-        {"raster_phase11_subsystem_complete", raster.NativeVulkanPhase11SubsystemComplete},
-        {"compute_phase11_subsystem_complete", compute.NativeVulkanPhase11SubsystemComplete},
-        {"raster_compute_rom_visible", raster.NativeVulkanComputeRomVisible},
-        {"compute_compute_rom_visible", compute.NativeVulkanComputeRomVisible},
         {"raster_rom_integration_implemented", raster.NativeVulkanRomIntegrationImplemented},
         {"compute_rom_integration_implemented", compute.NativeVulkanRomIntegrationImplemented},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
@@ -860,18 +827,6 @@ static std::optional<QString> melonPrimeVulkanPhase10CompletionTestPath(int argc
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     for (int i = 1; i < argc; ++i)
         if (strcmp(argv[i], "--melonprime-vulkan-phase10-completion-test") == 0 && i + 1 < argc)
-            return QString::fromLocal8Bit(argv[i + 1]);
-#endif
-    (void)argc;
-    (void)argv;
-    return std::nullopt;
-}
-
-static std::optional<QString> melonPrimeVulkanPhase11CompletionTestPath(int argc, char** argv)
-{
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    for (int i = 1; i < argc; ++i)
-        if (strcmp(argv[i], "--melonprime-vulkan-phase11-completion-test") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
 #endif
     (void)argc;
@@ -1070,11 +1025,6 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto phase10Out = melonPrimeVulkanPhase10CompletionTestPath(argc, argv); phase10Out.has_value())
         return MelonPrime::Vulkan::RunPhase10CompletionHarness(*phase10Out);
-#endif
-
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (const auto phase11Out = melonPrimeVulkanPhase11CompletionTestPath(argc, argv); phase11Out.has_value())
-        return MelonPrime::Vulkan::RunPhase11CompletionHarness(*phase11Out);
 #endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);

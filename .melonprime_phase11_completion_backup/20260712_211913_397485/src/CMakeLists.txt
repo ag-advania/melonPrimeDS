@@ -155,7 +155,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanPhase8CaptureCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase9FinalCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterFragment.spv.h"
-        "${_mp_vk_shader_root}/generated/VulkanPhase11Compute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterVertex.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase9TwoDCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertex.spv.h"
@@ -193,7 +192,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/phase8_capture.comp"
             "${_mp_vk_shader_root}/phase9_final.comp"
             "${_mp_vk_shader_root}/phase10_presenter.frag"
-            "${_mp_vk_shader_root}/phase11_compute.comp"
             "${_mp_vk_shader_root}/phase10_presenter.vert"
             "${_mp_vk_shader_root}/phase9_2d.comp"
             "${_mp_vk_shader_root}/textured_polygon.vert"
@@ -225,8 +223,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU2D_Vulkan.h
         GPU_VulkanOutputRing.cpp
         GPU_VulkanOutputRing.h
-        GPU3D_VulkanCompute.cpp
-        GPU3D_VulkanCompute.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

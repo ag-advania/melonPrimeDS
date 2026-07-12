@@ -45,16 +45,8 @@ struct VulkanRendererShellContract
     bool NativeVulkanTimelinePresenterWaitAvailable = true;
     bool NativeVulkanPhase10SubsystemComplete = true;
     bool NativeVulkanRomIntegrationImplemented = false;
-    bool NativeVulkanComputeStageGraphAvailable = true;
-    bool NativeVulkanComputeSpecializationCacheAvailable = true;
-    bool NativeVulkanComputeIndirectDispatchAvailable = true;
-    bool NativeVulkanComputeBarrierGraphAvailable = true;
-    bool NativeVulkanComputeHiresCoordinatesAvailable = true;
-    bool NativeVulkanComputeVisibleOutputAvailable = true;
-    bool NativeVulkanPhase11SubsystemComplete = true;
-    bool NativeVulkanComputeRomVisible = false;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 22;
+    u32 ContractVersion = 21;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;

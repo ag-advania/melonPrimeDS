@@ -362,18 +362,6 @@
           "defines": {}
         }
       ]
-    },
-    {
-      "name": "VulkanPhase11Compute",
-      "source": "phase11_compute.comp",
-      "stage": "comp",
-      "entry_point": "main",
-      "variants": [
-        {
-          "name": "default",
-          "defines": {}
-        }
-      ]
     }
   ]
 }
