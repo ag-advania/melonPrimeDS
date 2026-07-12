@@ -83,6 +83,11 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#include "MelonPrimeVulkanInstanceHost.h"
+#include <QWindow>
+#endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
 #endif
@@ -1114,6 +1119,34 @@ void MainWindow::createScreenPanel()
     const auto presentationBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
         globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
     hasOGL = MelonPrime::VideoBackend::IsOpenGLPresentation(presentationBackend);
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    const int requestedRenderer = MelonPrime::VideoBackend::ResolveRequestedRenderer(
+        globalCfg.GetInt("3D.Renderer"));
+    const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+        requestedRenderer);
+    if (MelonPrime::VideoBackend::RendererRequiresVulkanContext(normalizedRenderer) ||
+        MelonPrime::VideoBackend::ShouldForceVulkanPresenterFromEnv())
+    {
+        auto& host = static_cast<MelonApplication*>(qApp)->vulkanInstanceHost();
+        MelonPrime::Vulkan::FeatureInfo featureInfo;
+        if (host.ensureCreated())
+        {
+            QWindow probeWindow;
+            probeWindow.setSurfaceType(QSurface::VulkanSurface);
+            probeWindow.setVulkanInstance(&host.instance());
+            probeWindow.resize(1, 1);
+            probeWindow.create();
+            emuInstance->ensureVulkanDeviceContext(&probeWindow, featureInfo);
+            probeWindow.destroy();
+        }
+        else
+        {
+            featureInfo.unavailableReason = host.unavailableReason();
+        }
+        MelonPrime::Vulkan::LogFeatureInfo(featureInfo);
+    }
+#endif
 #else
     hasOGL = globalCfg.GetBool("Screen.UseGL") ||
         (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);

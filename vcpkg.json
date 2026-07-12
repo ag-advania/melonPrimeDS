@@ -89,6 +89,11 @@
 				"volk",
 				"vulkan-memory-allocator",
 				{
+					"name": "qtbase",
+					"default-features": false,
+					"features": ["vulkan"]
+				},
+				{
 					"name": "glslang",
 					"host": true,
 					"features": ["tools"]

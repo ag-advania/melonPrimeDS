@@ -30,6 +30,10 @@
 
 #include <QDateTime>
 
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
+
 #include <zstd.h>
 #ifdef ARCHIVE_SUPPORT_ENABLED
 #include "ArchiveUtil.h"
@@ -230,6 +234,25 @@ EmuInstance::~EmuInstance()
         delete nds;
     }
 }
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+std::shared_ptr<MelonPrime::Vulkan::DeviceContext> EmuInstance::ensureVulkanDeviceContext(
+    QWindow* surfaceWindow,
+    MelonPrime::Vulkan::FeatureInfo& info)
+{
+    if (vulkanDeviceContext)
+    {
+        info = vulkanDeviceContext->featureInfo();
+        return vulkanDeviceContext;
+    }
+    if (vulkanDeviceProbeAttempted)
+        return {};
+
+    vulkanDeviceProbeAttempted = true;
+    vulkanDeviceContext = MelonPrime::Vulkan::CreateDeviceContext(surfaceWindow, info);
+    return vulkanDeviceContext;
+}
+#endif
 
 
 std::string EmuInstance::instanceFileSuffix()

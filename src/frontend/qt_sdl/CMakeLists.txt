@@ -328,6 +328,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     # and definition prove that the complete build gate reaches the frontend.
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1)
     target_sources(melonDS PRIVATE
+        MelonPrimeVulkanInstanceHost.cpp
+        MelonPrimeVulkanInstanceHost.h
         MelonPrimeVulkanFeatureCheck.cpp
         MelonPrimeVulkanFeatureCheck.h)
 endif()

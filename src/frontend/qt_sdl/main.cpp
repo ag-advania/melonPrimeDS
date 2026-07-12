@@ -58,6 +58,10 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanInstanceHost.h"
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 
 #include "Config.h"
 
@@ -255,6 +259,17 @@ MelonApplication::MelonApplication(int& argc, char** argv)
 #endif
 }
 
+MelonApplication::~MelonApplication() = default;
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+MelonPrime::Vulkan::InstanceHost& MelonApplication::vulkanInstanceHost()
+{
+    if (!m_vulkanInstanceHost)
+        m_vulkanInstanceHost = std::make_unique<MelonPrime::Vulkan::InstanceHost>();
+    return *m_vulkanInstanceHost;
+}
+#endif
+
 // TODO: ROM loading should be moved to EmuInstance
 // especially so the preloading below and in main() can be done in a nicer fashion
 
@@ -287,6 +302,20 @@ static std::optional<QString> melonPrimeHudGoldenOutputPath(int argc, char** arg
     for (int i = 1; i < argc; ++i)
     {
         if (strcmp(argv[i], "--melonprime-hud-golden") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanProbeOutputPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-probe") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
     }
 #endif
@@ -370,6 +399,11 @@ int main(int argc, char** argv)
 
     MelonApplication melon(argc, argv);
     pathInit();
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto probeOut = melonPrimeVulkanProbeOutputPath(argc, argv); probeOut.has_value())
+        return MelonPrime::Vulkan::RunProbeHarness(*probeOut);
+#endif
 
 #if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto goldenOut = melonPrimeHudGoldenOutputPath(argc, argv); goldenOut.has_value())
