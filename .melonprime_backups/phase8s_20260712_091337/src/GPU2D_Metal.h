@@ -38,7 +38,11 @@ public:
         bool allowCaptureTextures) noexcept;
     // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
     // MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
-    // MELONPRIME_METAL_2D_LEGACY_FULL_FRAME_REMOVAL_V1
+    bool RenderFullGpuFrame(
+        void* high3DTexture,
+        void* capture128Texture,
+        void* capture256Texture,
+        bool allowCaptureTextures) noexcept;
     [[nodiscard]] bool FullGpuReady() const noexcept;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
     // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
@@ -69,6 +73,14 @@ private:
     bool BuildLayerPipeline() noexcept;
     bool BuildFullGpuPipelines() noexcept;
     bool PrerenderConfiguredLayers() noexcept;
+    bool EncodeFullGpuSprites(
+        void* capture128Texture,
+        void* capture256Texture) noexcept;
+    bool EncodeFullGpuCompositor(
+        void* high3DTexture,
+        void* capture128Texture,
+        void* capture256Texture) noexcept;
+    [[nodiscard]] bool FrameUsesCaptureTextures() const noexcept;
     void BeginSegmentSnapshotFrameIfNeeded(int line) noexcept;
     void MaybeReportSegmentSnapshotFrame() noexcept;
 
