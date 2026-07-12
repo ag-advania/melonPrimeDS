@@ -1,0 +1,13 @@
+{
+  "date": "2026-07-12",
+  "repository": "ag-advania/melonPrimeDS",
+  "branch": "highres_fonts_v3",
+  "files": {
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc": "89d99dfb0b268e6d470bafe41cc9fa80a81b1eff",
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc": "ed0ebe46f34c9c320836ab1e22882b87624a1e98",
+    "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc": "bf982d3d4333c9acfc8dec3a14ace98f139d8e49",
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslationDynamic.cpp": "92e52819bfea20f9156e4f88a6c01b7564148f7e",
+    "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeLanguageRegistry.cpp": "c7951c353b11c37fec6b20efed477cff62e0722f",
+    "tools/complete_zh_hant_from_zh_hans.py": "02bcc76a3f293be731ffda60039be76be5f9b531"
+  }
+}
