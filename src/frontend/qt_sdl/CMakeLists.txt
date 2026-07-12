@@ -97,6 +97,7 @@ set(SOURCES_QT_SDL
     MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeVideoBackend.cpp
+    MelonPrimeRendererFactory.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormBuilder.cpp
     MelonPrimePatchLifecycle.cpp
@@ -320,6 +321,24 @@ if (MELONPRIME_METAL_ACTIVE)
         MelonPrimeScreenMetal.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
     )
+endif()
+
+if (MELONPRIME_VULKAN_ACTIVE)
+    # Runtime calls intentionally remain absent in Vulkan Phase 1. This source
+    # and definition prove that the complete build gate reaches the frontend.
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1)
+    target_sources(melonDS PRIVATE
+        MelonPrimeVulkanInstanceHost.cpp
+        MelonPrimeVulkanInstanceHost.h
+        MelonPrimeVulkanFeatureCheck.cpp
+        MelonPrimeVulkanFeatureCheck.h
+        MelonPrimeScreenVulkan.cpp
+        MelonPrimeScreenVulkan.h)
+    # MinGW LTO can discard the QWindow/QSurface adjustment thunk emitted by
+    # a TU that subclasses QVulkanWindow (GNU ld reports QWindow::size() as a
+    # reference to a discarded COMDAT). Keep this one Qt boundary TU native.
+    set_source_files_properties(MelonPrimeScreenVulkan.cpp
+        PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()
 
 add_subdirectory("../../net"

@@ -108,6 +108,68 @@ if (ENABLE_OGLRENDERER)
     target_compile_definitions(core PUBLIC OGLRENDERER_ENABLED)
 endif()
 
+if (MELONPRIME_VULKAN_ACTIVE)
+    # MELONPRIME_VULKAN_BUILD_GATE_V1
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    find_package(volk CONFIG REQUIRED)
+    find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+
+    find_program(MELONPRIME_GLSLANG_VALIDATOR
+        NAMES glslangValidator glslangValidator.exe
+        HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "$ENV{VULKAN_SDK}/bin"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/glslang"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/glslang"
+        DOC "glslangValidator used for MelonPrime Vulkan SPIR-V generation")
+    if (NOT MELONPRIME_GLSLANG_VALIDATOR)
+        message(FATAL_ERROR
+            "MELONPRIME_ENABLE_VULKAN requires glslangValidator (vcpkg feature: vulkan)")
+    endif()
+
+    set(_mp_vk_shader_root "${CMAKE_CURRENT_SOURCE_DIR}/Vulkan_shaders")
+    set(_mp_vk_shader_outputs
+        "${_mp_vk_shader_root}/generated/VulkanBuildProbe.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanShaders.h"
+        "${_mp_vk_shader_root}/generated/manifest.lock.json")
+
+    add_custom_command(
+        OUTPUT ${_mp_vk_shader_outputs}
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_spirv.py"
+            --compiler "${MELONPRIME_GLSLANG_VALIDATOR}"
+        DEPENDS
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_spirv.py"
+            "${_mp_vk_shader_root}/manifest.json"
+            "${_mp_vk_shader_root}/build_probe.comp"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Generating deterministic MelonPrime Vulkan SPIR-V headers"
+        VERBATIM)
+    add_custom_target(melonprime_vulkan_shaders DEPENDS ${_mp_vk_shader_outputs})
+    add_custom_target(melonprime_vulkan_shaders_check
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_spirv.py"
+            --compiler "${MELONPRIME_GLSLANG_VALIDATOR}"
+            --check
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Checking committed MelonPrime Vulkan SPIR-V headers"
+        VERBATIM)
+
+    target_sources(core PRIVATE
+        VulkanSupport.cpp
+        VulkanSupport.h
+        ${_mp_vk_shader_outputs})
+    add_dependencies(core melonprime_vulkan_shaders)
+    target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_VULKAN=1)
+    target_compile_definitions(core PRIVATE
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
+    target_link_libraries(core PRIVATE
+        volk::volk
+        volk::volk_headers
+        GPUOpen::VulkanMemoryAllocator)
+endif()
+
 if (ENABLE_JIT)
     enable_language(ASM)
 

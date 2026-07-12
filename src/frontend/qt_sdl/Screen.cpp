@@ -24,6 +24,7 @@
 
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QMetaObject>
@@ -1517,8 +1518,13 @@ void ScreenPanelNative::drawScreen()
 void ScreenPanelNative::paintEvent(QPaintEvent * event)
 {
     QPainter painter(this);
+    paintFrame(painter, event->rect());
+}
 
-    painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
+void ScreenPanelNative::paintFrame(QPainter& painter, const QRect& updateRect)
+{
+
+    painter.fillRect(updateRect, QColor::fromRgb(0, 0, 0));
 
     auto emuThread = emuInstance->getEmuThread();
 

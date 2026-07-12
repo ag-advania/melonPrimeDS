@@ -15,6 +15,12 @@
 
         MelonPrimeHud_RefreshHudEnabledIfNeeded(mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
         MelonPrimeHud_RefreshOverlayFontIfNeeded(mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+        MelonPrimeHud_RefreshRadarConfigIfNeeded(
+            mp->HudConfigState(), instcfg, m_radarCfgEpoch,
+            m_radarEnable, m_radarAnchor,
+            m_radarDstX, m_radarDstY, m_radarDstSize,
+            m_radarOpacity, m_radarSrcRadius,
+            m_radarAnchorDsX, m_radarAnchorDsY);
 
         if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
         {
@@ -43,6 +49,45 @@
                                   Overlay[0], compositeRect);
             }
             s_hudPrevDirtyS = curDirty;
+        }
+
+        if (m_radarEnable && m_hudTopMatrixValid &&
+            MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
+        {
+            const float* topMtx = m_hudTopMatrix;
+            const float worldAnchorX =
+                topMtx[0] * m_radarAnchorDsX + topMtx[1] * m_radarAnchorDsY + topMtx[4];
+            const float worldAnchorY =
+                topMtx[2] * m_radarAnchorDsX + topMtx[3] * m_radarAnchorDsY + topMtx[5];
+            const int baseX = static_cast<int>(m_hudOriginX);
+            const int baseY = static_cast<int>(m_hudOriginY);
+            const int dstX = baseX + static_cast<int>(
+                (worldAnchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
+            const int dstY = baseY + static_cast<int>(
+                (worldAnchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
+            const int dstPixels = std::max(1,
+                static_cast<int>(m_radarDstSize * m_hudScale));
+            const std::uint8_t hunterId = mp->GetHunterID();
+            const QPointF sourceCenter(
+                MelonPrime::kBtmOverlaySrcCenterX,
+                MelonPrime::kBtmOverlaySrcCenterY[hunterId]);
+            const QRectF sourceRect(
+                sourceCenter.x() - m_radarSrcRadius,
+                sourceCenter.y() - m_radarSrcRadius,
+                m_radarSrcRadius * 2.0,
+                m_radarSrcRadius * 2.0);
+            const QRectF destination(dstX, dstY, dstPixels, dstPixels);
+
+            painter.save();
+            painter.resetTransform();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setOpacity(std::clamp(m_radarOpacity, 0.0f, 1.0f));
+            QPainterPath clip;
+            clip.addEllipse(destination);
+            painter.setClipPath(clip);
+            painter.drawImage(destination, screen[1], sourceRect);
+            painter.restore();
         }
     }
 }

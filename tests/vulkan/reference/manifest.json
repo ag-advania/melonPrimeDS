@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "baseline_branch": "highres_fonts_v3",
+  "baseline_commit": "2ecc543b",
+  "runtime_behavior_changed": false,
+  "copyrighted_images_committed": false,
+  "renderers": [
+    {
+      "id": 1,
+      "name": "OpenGL",
+      "reference_role": "Vulkan raster correctness"
+    },
+    {
+      "id": 2,
+      "name": "OpenGL Compute Shader",
+      "reference_role": "Vulkan compute correctness"
+    }
+  ],
+  "scales": [1, 2, 4, 8],
+  "settings": {
+    "filter": ["nearest"],
+    "better_polygons": [false, true],
+    "high_resolution_coordinates": [false, true],
+    "osd_for_core_gpu_capture": false,
+    "custom_hud_for_core_gpu_capture": false
+  },
+  "mph_scenes": [
+    "boot_logo",
+    "title",
+    "menu",
+    "hunter_select",
+    "match_start_fade",
+    "normal_combat",
+    "translucent_effect",
+    "shadow_freeze",
+    "noxus_effect",
+    "map",
+    "pause",
+    "scan",
+    "zoom",
+    "morph_ball",
+    "damage",
+    "low_hp",
+    "match_end",
+    "screen_transition"
+  ],
+  "gpu_features": [
+    "clear_plane",
+    "clear_bitmap",
+    "opaque_polygon",
+    "translucent_polygon",
+    "z_buffer",
+    "w_buffer",
+    "shadow_mask",
+    "shadow_polygon",
+    "texture_formats",
+    "texture_repeat",
+    "texture_mirror",
+    "toon",
+    "highlight",
+    "fog",
+    "edge_marking",
+    "antialiasing",
+    "line_polygon",
+    "vram_display",
+    "main_memory_fifo_display",
+    "display_capture_128",
+    "display_capture_256",
+    "screen_swap_per_line",
+    "master_brightness",
+    "render_x_pos"
+  ],
+  "frontend_scenes": [
+    "no_rom_splash",
+    "osd",
+    "custom_hud",
+    "radar",
+    "resize",
+    "fullscreen",
+    "minimize_restore",
+    "hidpi",
+    "multi_window"
+  ],
+  "classic_pass_order": [
+    "clear_or_clear_bitmap",
+    "opaque_polygons_in_polygon_ram_order",
+    "translucent_and_shadow_polygons_in_polygon_ram_order",
+    "edge_marking",
+    "fog",
+    "display_capture",
+    "final_top_bottom_composition"
+  ],
+  "compute_stage_groups": [
+    "interp_spans_z_w",
+    "bin_combined",
+    "depth_blend_z_w",
+    "raster_variants",
+    "clear_coarse_bin_mask",
+    "clear_indirect_work_count",
+    "calculate_work_offsets",
+    "sort_work",
+    "final_pass_8_variants"
+  ],
+  "capture_outputs": [
+    "gpu3d_color",
+    "gpu3d_alpha",
+    "gpu3d_depth",
+    "gpu3d_attribute",
+    "final_top",
+    "final_bottom",
+    "display_capture"
+  ],
+  "measurements": [
+    "cpu_frame_time",
+    "gpu_frame_time",
+    "draw_calls",
+    "compute_dispatches",
+    "upload_bytes",
+    "readback_bytes",
+    "vram_dirty_bytes"
+  ],
+  "pixel_policy": {
+    "integer_and_fixed_point": "exact",
+    "allowed_channel_tolerance": 0,
+    "allowed_changed_pixels": 0,
+    "exceptions": "Each nonzero tolerance requires a named pass, reason, and hardware-specific evidence."
+  }
+}

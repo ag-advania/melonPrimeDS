@@ -11,8 +11,29 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DefaultBuildFlags.cmake")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
 
+# --- MelonPrime Vulkan backend master build gate ----------------------------
+# This resolution happens before project()/vcpkg so an inactive Vulkan build
+# cannot acquire Vulkan manifest features as a configure-time side effect.
+option(MELONPRIME_ENABLE_VULKAN
+    "Build MelonPrime Vulkan renderers and presenter"
+    OFF)
+option(MELONPRIME_FORCE_DISABLE_VULKAN
+    "Completely exclude all MelonPrime Vulkan code and dependencies"
+    OFF)
+option(MELONPRIME_ENABLE_VULKAN_MOLTENVK
+    "Allow the Vulkan backend through MoltenVK on macOS"
+    OFF)
+
+set(MELONPRIME_VULKAN_ACTIVE OFF)
+if (MELONPRIME_ENABLE_VULKAN AND NOT MELONPRIME_FORCE_DISABLE_VULKAN)
+    set(MELONPRIME_VULKAN_ACTIVE ON)
+endif()
+
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)
 if (USE_VCPKG)
+	if (MELONPRIME_VULKAN_ACTIVE)
+		list(APPEND VCPKG_MANIFEST_FEATURES vulkan)
+	endif()
 	include(ConfigureVcpkg)
 endif()
 
@@ -21,6 +42,11 @@ project(melonDS
     DESCRIPTION "DS emulator, sorta"
     HOMEPAGE_URL "https://melonds.kuribo64.net"
     LANGUAGES C CXX)
+
+if (MELONPRIME_VULKAN_ACTIVE AND APPLE AND NOT MELONPRIME_ENABLE_VULKAN_MOLTENVK)
+    message(FATAL_ERROR
+        "Vulkan on macOS requires MELONPRIME_ENABLE_VULKAN_MOLTENVK=ON")
+endif()
 
 include(CheckSymbolExists)
 include(CheckLibraryExists)

@@ -11,6 +11,9 @@ if not exist "%BASH%" (
 set "JOBS=1"
 set "TAIL_LINES=40"
 set "VERBOSE=0"
+set "VULKAN_MODE=default-off"
+set "VULKAN_ARGS=-DMELONPRIME_ENABLE_VULKAN=OFF -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF"
+set "VCPKG_MAX_CONCURRENCY=1"
 
 :parse_args
 if "%~1"=="" goto run_build
@@ -18,6 +21,18 @@ if /I "%~1"=="--help" goto help
 if /I "%~1"=="-h" goto help
 if /I "%~1"=="--verbose" (
     set "VERBOSE=1"
+    shift
+    goto parse_args
+)
+if /I "%~1"=="--vulkan" (
+    set "VULKAN_MODE=enabled"
+    set "VULKAN_ARGS=-DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF"
+    shift
+    goto parse_args
+)
+if /I "%~1"=="--force-disable-vulkan" (
+    set "VULKAN_MODE=force-disabled"
+    set "VULKAN_ARGS=-DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=ON"
     shift
     goto parse_args
 )
@@ -48,7 +63,7 @@ call :print_usage
 exit /b 2
 
 :print_usage
-echo Usage: .claude\skills\build-mingw.bat [--verbose] [--jobs N] [--tail N]
+echo Usage: .claude\skills\build-mingw.bat [--verbose] [--vulkan] [--force-disable-vulkan] [--jobs N] [--tail N]
 echo.
 echo Default: configure with MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON, then build
 echo release-mingw-x86_64 with --parallel 1 and show the last 40 build log lines.
@@ -75,11 +90,13 @@ goto find_repo_root
 echo [melonprime-build] Repo: %REPO_ROOT_WIN%
 echo [melonprime-build] Preset: release-mingw-x86_64
 echo [melonprime-build] Jobs: %JOBS%
+echo [melonprime-build] Vulkan: %VULKAN_MODE%
+echo [melonprime-build] vcpkg jobs: %VCPKG_MAX_CONCURRENCY%
 
 if "%VERBOSE%"=="1" (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
 ) else (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tail -n %TAIL_LINES%"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tail -n %TAIL_LINES%"
 )
 
 set "RESULT=%ERRORLEVEL%"

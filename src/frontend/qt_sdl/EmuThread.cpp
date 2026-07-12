@@ -43,12 +43,6 @@
 #include "RTC.h"
 #include "DSi.h"
 #include "DSi_I2C.h"
-#include "GPU_Soft.h"
-#include "GPU_OpenGL.h"
-#if defined(MELONPRIME_ENABLE_METAL)
-#include "GPU_Metal.h"
-#endif
-
 #include "Savestate.h"
 #include "EmuInstance.h"
 
@@ -1280,29 +1274,24 @@ void EmuThread::updateRenderer()
 
     if (videoRenderer != lastVideoRenderer)
     {
-        switch (videoRenderer)
-        {
-        case renderer3D_Software:
-            nds->SetRenderer(std::make_unique<SoftRenderer>(*nds));
-            break;
-        case renderer3D_OpenGL:
-            nds->SetRenderer(std::make_unique<GLRenderer>(*nds, false));
-            break;
-        case renderer3D_OpenGLCompute:
-            nds->SetRenderer(std::make_unique<GLRenderer>(*nds, true));
-            break;
-#if defined(MELONPRIME_ENABLE_METAL)
-        case renderer3D_Metal:
-            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, false));
-            break;
-        case renderer3D_MetalCompute:
-            nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
-            break;
-#endif
-        default: __builtin_unreachable();
-        }
+        MelonPrime::VideoBackend::BackendCreationReport report;
+        auto renderer = MelonPrime::VideoBackend::CreateRendererForSelection(
+            *nds, cfg.GetInt("3D.Renderer"), report);
+        nds->SetRenderer(std::move(renderer));
+
+        Platform::Log(Platform::LogLevel::Info,
+            "[MelonPrime] video backend: requested=%s(%d) normalized=%s(%d) "
+            "actual=%s(%d) presenter=%s failed_stage=%s reason=%s config_changed=no\n",
+            MelonPrime::VideoBackend::RendererName(report.requested), report.requested,
+            MelonPrime::VideoBackend::RendererName(report.normalized), report.normalized,
+            MelonPrime::VideoBackend::RendererName(report.actual), report.actual,
+            MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
+            report.failedStage.empty() ? "none" : report.failedStage.c_str(),
+            report.fallbackReason.empty() ? "none" : report.fallbackReason.c_str());
+
+        videoRenderer = report.actual;
+        lastVideoRenderer = report.normalized;
     }
-    lastVideoRenderer = videoRenderer;
 
     melonDS::RendererSettings settings = {
         .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),

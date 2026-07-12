@@ -1,28 +1,12 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
-// GPU-resident DS final pass: edge marking, fog, anti-aliasing and GPU diff diagnostics.
+// MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
+// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
+// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
+// GPU-resident DS final pass: edge marking, fog and anti-aliasing.
 static constexpr const char* kMetalComputeFinalPassSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
-constant uint MPF_SummaryPixels = 0u;
-constant uint MPF_SummaryEdgePixels = 1u;
-constant uint MPF_SummaryFogTopPixels = 2u;
-constant uint MPF_SummaryFogSecondPixels = 3u;
-constant uint MPF_SummaryAAPixels = 4u;
-constant uint MPF_SummaryNonzeroAlpha = 5u;
-constant uint MPF_SummaryColorHash = 6u;
-constant uint MPF_SummaryReserved = 7u;
-constant uint MPF_SummaryWords = 8u;
-
-constant uint MPF_DiffPixels = 0u;
-constant uint MPF_DiffDifferent = 1u;
-constant uint MPF_DiffExact = 2u;
-constant uint MPF_DiffMaxChannelDelta = 3u;
-constant uint MPF_DiffSumChannelDelta = 4u;
-constant uint MPF_DiffComputeHash = 5u;
-constant uint MPF_DiffReferenceHash = 6u;
-constant uint MPF_DiffVerticalFlipDifferent = 7u;
-constant uint MPF_DiffWords = 8u;
 
 struct MPFFinalConfig
 {
@@ -84,27 +68,10 @@ static inline uint mpf_blend_fog(
         : (finalRB | (finalGA << 8u));
 }
 
-kernel void mp_compute_clear_final_pass_summary(
-    device atomic_uint* summary [[buffer(0)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid < MPF_SummaryWords)
-        atomic_store_explicit(&summary[gid], 0u, memory_order_relaxed);
-}
-
-kernel void mp_compute_clear_final_diff_summary(
-    device atomic_uint* summary [[buffer(0)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid < MPF_DiffWords)
-        atomic_store_explicit(&summary[gid], 0u, memory_order_relaxed);
-}
-
 kernel void mp_compute_final_pass(
     device const uint* resultColor [[buffer(0)]],
     device const uint* resultDepth [[buffer(1)]],
     device const uint* resultAttr [[buffer(2)]],
-    device atomic_uint* summary [[buffer(3)]],
     device const uint* tables [[buffer(4)]],
     constant MPFFinalConfig& config [[buffer(5)]],
     texture2d<float, access::write> finalTexture [[texture(0)]],
@@ -124,10 +91,6 @@ kernel void mp_compute_final_pass(
     uint attr0 = resultAttr[gid];
     const uint attr1 = resultAttr[second];
 
-    bool edgeApplied = false;
-    bool fogTopApplied = false;
-    bool fogSecondApplied = false;
-    bool aaApplied = false;
 
     // DISP3DCNT bit 5: edge marking.
     if ((config.dispCnt & (1u << 5u)) != 0u &&
@@ -167,7 +130,6 @@ kernel void mp_compute_final_pass(
         {
             color0 = tables[polygonId >> 3u] | (color0 & 0x1F000000u);
             attr0 = (attr0 & 0xFFFFE0FFu) | 0x00001000u;
-            edgeApplied = true;
         }
     }
 
@@ -177,13 +139,11 @@ kernel void mp_compute_final_pass(
         if ((attr0 & (1u << 15u)) != 0u)
         {
             color0 = mpf_blend_fog(color0, depth0, config, tables);
-            fogTopApplied = true;
         }
         if ((attr0 & 0xFu) != 0u &&
             (attr1 & (1u << 15u)) != 0u)
         {
             color1 = mpf_blend_fog(color1, depth1, config, tables);
-            fogSecondApplied = true;
         }
     }
 
@@ -219,7 +179,6 @@ kernel void mp_compute_final_pass(
         {
             color0 = color1;
         }
-        aaApplied = true;
     }
 
     const uint r = color0 & 0x3Fu;
@@ -233,79 +192,6 @@ kernel void mp_compute_final_pass(
                float(a) / 31.0f),
         uint2(x, y));
 
-    atomic_fetch_add_explicit(&summary[MPF_SummaryPixels], 1u, memory_order_relaxed);
-    if (edgeApplied)
-        atomic_fetch_add_explicit(&summary[MPF_SummaryEdgePixels], 1u, memory_order_relaxed);
-    if (fogTopApplied)
-        atomic_fetch_add_explicit(&summary[MPF_SummaryFogTopPixels], 1u, memory_order_relaxed);
-    if (fogSecondApplied)
-        atomic_fetch_add_explicit(&summary[MPF_SummaryFogSecondPixels], 1u, memory_order_relaxed);
-    if (aaApplied)
-        atomic_fetch_add_explicit(&summary[MPF_SummaryAAPixels], 1u, memory_order_relaxed);
-    if (a != 0u)
-        atomic_fetch_add_explicit(&summary[MPF_SummaryNonzeroAlpha], 1u, memory_order_relaxed);
-    atomic_fetch_xor_explicit(
-        &summary[MPF_SummaryColorHash],
-        color0 + gid * 0x9E3779B9u,
-        memory_order_relaxed);
 }
 
-static inline uint4 mpf_quantize_rgba8(float4 value)
-{
-    return uint4(clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
-}
-
-kernel void mp_compute_compare_final(
-    device atomic_uint* summary [[buffer(0)]],
-    constant MPFFinalConfig& config [[buffer(1)]],
-    texture2d<float, access::read> computeTexture [[texture(0)]],
-    texture2d<float, access::read> referenceTexture [[texture(1)]],
-    uint gid [[thread_position_in_grid]])
-{
-    const uint pixelCount = config.screenWidth * config.screenHeight;
-    if (gid >= pixelCount) return;
-    const uint x = gid % config.screenWidth;
-    const uint y = gid / config.screenWidth;
-    const uint2 coordinate = uint2(x, y);
-    const uint2 flippedCoordinate = uint2(x, config.screenHeight - 1u - y);
-
-    const uint4 compute = mpf_quantize_rgba8(computeTexture.read(coordinate));
-    const uint4 reference = mpf_quantize_rgba8(referenceTexture.read(coordinate));
-    const uint4 flipped = mpf_quantize_rgba8(referenceTexture.read(flippedCoordinate));
-    const uint4 delta = uint4(
-        abs(int(compute.r) - int(reference.r)),
-        abs(int(compute.g) - int(reference.g)),
-        abs(int(compute.b) - int(reference.b)),
-        abs(int(compute.a) - int(reference.a)));
-    const uint4 flippedDelta = uint4(
-        abs(int(compute.r) - int(flipped.r)),
-        abs(int(compute.g) - int(flipped.g)),
-        abs(int(compute.b) - int(flipped.b)),
-        abs(int(compute.a) - int(flipped.a)));
-    const uint maxDelta = max(max(delta.r, delta.g), max(delta.b, delta.a));
-    const uint sumDelta = delta.r + delta.g + delta.b + delta.a;
-    const bool different = maxDelta > 2u;
-    const bool flippedDifferent =
-        max(max(flippedDelta.r, flippedDelta.g),
-            max(flippedDelta.b, flippedDelta.a)) > 2u;
-
-    atomic_fetch_add_explicit(&summary[MPF_DiffPixels], 1u, memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[different ? MPF_DiffDifferent : MPF_DiffExact],
-        1u,
-        memory_order_relaxed);
-    atomic_fetch_max_explicit(&summary[MPF_DiffMaxChannelDelta], maxDelta, memory_order_relaxed);
-    atomic_fetch_add_explicit(&summary[MPF_DiffSumChannelDelta], sumDelta, memory_order_relaxed);
-    atomic_fetch_xor_explicit(
-        &summary[MPF_DiffComputeHash],
-        compute.r | (compute.g << 8u) | (compute.b << 16u) | (compute.a << 24u),
-        memory_order_relaxed);
-    atomic_fetch_xor_explicit(
-        &summary[MPF_DiffReferenceHash],
-        reference.r | (reference.g << 8u) | (reference.b << 16u) | (reference.a << 24u),
-        memory_order_relaxed);
-    if (flippedDifferent)
-        atomic_fetch_add_explicit(
-            &summary[MPF_DiffVerticalFlipDifferent], 1u, memory_order_relaxed);
-}
 )MSL";

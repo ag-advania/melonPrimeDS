@@ -421,3 +421,91 @@ variant単位でMetal raster版とのpixel diffを縮小する。
 - GPU command failure後はrenderer session中のCompute cutoverを無効化し、再起動までRasterReferenceを使用する。
 - MELONPRIME_METAL_COMPUTE_VISIBLE=0またはMELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE=1で緊急比較用に可視cutoverを無効化できる。
 - MIRROR、FINAL_DIFF、VISIBLE_VERIFYのdeveloper診断契約は維持する。
+
+<!-- MELONPRIME_METAL_PHASE8R_REMOVE_SEGMENTED_SHADOW -->
+## 2026-07-11 — Phase 8R remove obsolete segmented shadow path
+
+- direct segmented Metal 2Dがproduction可視経路になったため、旧MELONPRIME_METAL_SEGMENTED_2D_SHADOW診断経路を撤去。
+- CPU fallback時に行っていたEngine A/Bの重複scanline／OAM snapshot取得を削除。
+- Software VBlank後に可視化されないsegmented Engine A/B commandを追加submitしていたshadow renderを削除。
+- LoggedSegmentedShadow状態、環境変数helper、旧shadow marker／ログを削除。
+- production direct segmented path、capture feedback判定、Software fallback、Metal Compute fallbackは維持。
+
+<!-- MELONPRIME_METAL_PHASE8S_REMOVE_LEGACY_FULL_FRAME_2D -->
+## 2026-07-12 — Phase 8S remove legacy full-frame Metal 2D
+
+- direct segmented Metal 2Dへ置換済みのRenderFullGpuFrame、EncodeFullGpuSprites、EncodeFullGpuCompositor、FrameUsesCaptureTexturesを削除。
+- header上の旧public/private API宣言と、旧full-frame専用command encoder実装を削除。
+- 旧HUD parityログ専用のBG／OBJ／palette upload byte統計と累積値を削除。
+- 使用されていなかったSpriteCacheRebuilds／SpriteCacheHitsを削除し、走査線hot pathのカウンタ更新を撤去。
+- dirty-row upload helperをvoid化し、不要になったbyte-count算術を削除。
+- production RenderSegmentedGpuFrame、display capture、Software fallback、Metal Compute fallbackは維持。
+
+<!-- MELONPRIME_METAL_PHASE8T_PRODUCTION_DIAGNOSTICS_CLEANUP -->
+## 2026-07-12 — Phase 8T production diagnostics cleanup
+
+- Metal Compute選択時の標準Compute可視出力とruntime kill switchを維持。
+- 非可視developer mirrorとMELONPRIME_METAL_COMPUTE_MIRRORを削除。
+- visible verifyのRasterReference二重描画とMELONPRIME_METAL_COMPUTE_VISIBLE_VERIFYを削除。
+- final texture GPU diff kernel、pipeline、summary buffer、completionログ、MELONPRIME_METAL_COMPUTE_FINAL_DIFFを削除。
+- FinalPass self-testは出力pixelとsummaryの検証を維持し、自己比較diffだけを削除。
+- CPU readback、AbortFrame、slot不足、GPU command failure時のRasterReference fallbackは維持。
+
+<!-- MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_V1 -->
+## 2026-07-12 — Phase 8U production telemetry cleanup
+
+- per-frame texture variant classifier summaryのclear／classify compute dispatchを削除。
+- TextureVariantSummary用MSL kernel、pipeline、frame-slot shared bufferを削除。
+- command completion handlerのtile／DepthBlend／FinalPass／texture variant周期ログとshared-buffer readを削除。
+- 可視／再利用／fallbackの未参照atomic統計を削除し、frame hot pathの不要なatomic更新を撤去。
+- Compute final texture公開、GPU command failure検出、slot／tile-memory解放、RasterReference fallbackは維持。
+- stage self-test用のtile／DepthBlend／FinalPass summary contractはこのPhaseでは維持する。
+
+<!-- MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_FIX_V1 -->
+## 2026-07-12 — Phase 8U Fixed regex backreference repair
+
+- Phase 8U v1がC++ソースへ書き込んだliteral ``を自動修復。
+- capture groupを必要とする置換をcallable replacementへ変更。
+- fresh適用、壊れた適用済みtreeの修復、再適用の3経路をself-testで固定。
+
+<!-- MELONPRIME_METAL_PHASE8V_SUMMARY_FREE_PRODUCTION_KERNELS -->
+## 2026-07-12 — Phase 8V summary-free production kernels
+
+- productionのtextured tile raster、complete depth blend、final passからsummary bufferへのatomic更新を撤去。
+- 各production commandからsummary clear dispatchとsummary buffer bindingを削除。
+- MSL buffer indexは既存値を維持し、summary slotだけを未使用化してhost/shader契約変更を最小化。
+- textured raster self-testは64 pixelのColor/Depthと上端／下端Attrを直接検証。
+- complete DepthBlend self-testはshadow mask、translucent shadow、top/second layerのColor/Depth/Attrを直接検証。
+- FinalPass self-testは最終BGRA8 textureを直接検証。
+- summary pipeline／bufferの構造体削除は次Phaseへ分離し、今回の変更をproduction hot pathに限定。
+
+<!-- MELONPRIME_METAL_PHASE8W_LEGACY_SUMMARY_RETIREMENT -->
+## 2026-07-12 — Phase 8W legacy summary infrastructure retirement
+
+- Phase 8Vでproduction kernelから切り離されたsummary pipeline、shared summary buffer、summary struct／constantを削除。
+- 旧no-texture raster prototypeと旧single-layer DepthBlend prototypeのMSL kernel／pipelineを削除。
+- RunNoTextureTileSelfTestを廃止し、現行texture-capable raster self-testへuntextured／texturedの2ケースを統合。
+- current complete DepthBlendとFinalPassの直接出力self-testは維持。
+- productionのtextured raster、shadow、two-layer DepthBlend、edge、fog、AA、final texture publish、RasterReference fallbackは変更しない。
+
+<!-- MELONPRIME_METAL_PHASE8X_FRAME_BOOKKEEPING_CLEANUP -->
+## 2026-07-12 — Phase 8X frame bookkeeping cleanup
+
+- visible getterが参照しないPublishedFinalSlot／PublishedFinalSerialを削除。
+- SubmittedFramesを削除し、SubmittedFinalSerialを唯一のfinal texture handoff serialとして使用。
+- frame-slot／tile-memory busy統計counterとone-shot数値ログを削除し、hot pathのatomic加算を撤去。
+- 未参照のLastFrameComputeReused状態と毎フレーム書込みを削除。
+- VariantMetaDataの256件全消去を撤去し、active variantだけをframe-slot bufferへ転送。
+- clear-only／invalid-polygon frame用のvariant 0は明示的にzero初期化。
+- identical-frame final texture再利用、GPU command failure検出、slot／tile-memory lifetime、RasterReference fallbackは維持。
+
+<!-- MELONPRIME_METAL_PHASE8Y_CHANGE_DRIVEN_SNAPSHOT_UPLOADS -->
+## 2026-07-12 — Phase 8Y change-driven frame snapshot uploads
+
+- freeになったframe slotの既存shared buffer内容とcurrent frame sourceを完全比較し、変更されたbufferだけ更新。
+- Texture VRAM 512KiB、Texture Palette 128KiB、active VariantMeta、Toon table、Edge/Fog final tablesを対象化。
+- hashではなくmemcmpによるbyte-exact判定を使い、衝突によるstale texture利用を防止。
+- slot初回利用とscale／resource再構成後はvalid flagをfalseにして必ず全snapshotを転送。
+- GPU使用中slotは従来通りInFlight CASで除外し、immutable snapshot契約を維持。
+- texture／paletteが毎frame変化する場合も比較後に従来と同じ全コピーを実行し、描画結果を変更しない。
+- final texture publish、identical-frame再利用、GPU failure検出、RasterReference fallbackは維持。

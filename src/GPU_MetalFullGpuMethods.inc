@@ -2,22 +2,12 @@
 // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 // MELONPRIME_METAL_MIXED_3D_2D_OPENGL_PARITY_GUARD_V1
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
-// MELONPRIME_METAL_2D_SEGMENTED_SHADOW_RENDER_V1
 // MELONPRIME_METAL_2D_DIRECT_SEGMENTED_CUTOVER_V2
 // MELONPRIME_METAL_2D_HOT_PATH_CLEANUP_V1
+// MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
 
 namespace
 {
-bool MetalSegmented2DShadowRequested()
-{
-    static const bool enabled = []() {
-        const char* value =
-            std::getenv(
-                "MELONPRIME_METAL_SEGMENTED_2D_SHADOW");
-        return value && value[0] == '1';
-    }();
-    return enabled;
-}
 
 
 
@@ -129,8 +119,6 @@ struct MetalRenderer::MetalFullGpuState
     bool LoggedCompose = false;
     bool LoggedMixed3D2DFallback = false;
     bool LoggedMixed3D2DOverride = false;
-    bool LoggedSegmentedShadow = false;
-    bool LoggedSegmentedShadowFailure = false;
     bool LoggedSegmentedVisible = false;
     std::array<uint32_t, 192> ScreenSwap {};
     std::array<uint32_t, 192> BrightnessA {};
@@ -286,34 +274,6 @@ void MetalRenderer::DrawScanline(u32 line)
         }
         return;
     }
-    if (line < 192 &&
-        MetalSegmented2DShadowRequested() &&
-        Metal2D_A && Metal2D_B &&
-        Metal2D_A->SegmentedSnapshotReady() &&
-        Metal2D_B->SegmentedSnapshotReady())
-    {
-        FullGpuState->ScreenSwap[line] =
-            GPU.ScreenSwap ? 1u : 0u;
-        FullGpuState->BrightnessA[line] =
-            GPU.MasterBrightnessA;
-        FullGpuState->BrightnessB[line] =
-            GPU.MasterBrightnessB;
-
-        const uint8_t win0A = GPU.GPU2D_A.Win0Active;
-        const uint8_t win1A = GPU.GPU2D_A.Win1Active;
-        const uint8_t win0B = GPU.GPU2D_B.Win0Active;
-        const uint8_t win1B = GPU.GPU2D_B.Win1Active;
-
-        Metal2D_A->CaptureScanlineState(
-            static_cast<int>(line));
-        Metal2D_B->CaptureScanlineState(
-            static_cast<int>(line));
-
-        GPU.GPU2D_A.Win0Active = win0A;
-        GPU.GPU2D_A.Win1Active = win1A;
-        GPU.GPU2D_B.Win0Active = win0B;
-        GPU.GPU2D_B.Win1Active = win1B;
-    }
 
     SoftRenderer::DrawScanline(line);
 }
@@ -328,17 +288,6 @@ void MetalRenderer::DrawSprites(u32 line)
             Metal2D_B->CaptureSpriteScanlineState(static_cast<int>(line));
         }
         return;
-    }
-    if (line < 192 &&
-        MetalSegmented2DShadowRequested() &&
-        Metal2D_A && Metal2D_B &&
-        Metal2D_A->SegmentedSnapshotReady() &&
-        Metal2D_B->SegmentedSnapshotReady())
-    {
-        Metal2D_A->CaptureSpriteScanlineState(
-            static_cast<int>(line));
-        Metal2D_B->CaptureSpriteScanlineState(
-            static_cast<int>(line));
     }
 
     SoftRenderer::DrawSprites(line);

@@ -1,0 +1,52 @@
+{
+  "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
+  "generation_sha256": "b15b0faa45ce22d1415baa3bff865667303a6a959ab734563a72cfbb16bb7ae4",
+  "manifest_sha256": "ad9f307bb03485a225eccc28ff9b6dc3dbc1a590e0153f8448d675d5aa91e3f5",
+  "schema_version": 1,
+  "sources": [
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/build_probe.comp",
+      "sha256": "d329caa6bd897c30d2dfb6a63041f9f53165ce40363b7e5bb79c13acd9b2d403",
+      "stage": "comp",
+      "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/presenter.vert",
+      "sha256": "fa15a09128d7eb453e43144e2a351877d713c9a3e8bafd9b6a2c7ae886cde1a1",
+      "stage": "vert",
+      "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/presenter.frag",
+      "sha256": "79f786308defcb60ab4c2ba727bbc2bfe7c29c00531d5470e103510108345f0c",
+      "stage": "frag",
+      "variant": "default"
+    }
+  ],
+  "spirv": [
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanBuildProbe.spv.h",
+      "sha256": "6f47438a6eba1d69c8a8f99f3bfb3b518726634f793dfbdf10c346f7a68e6bf5",
+      "size": 280,
+      "symbol": "VulkanBuildProbe"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPresenterVertex.spv.h",
+      "sha256": "a4d8a61a3bf708d86b39a2ab74b92747cc1176b805a4f0b877d2fc50a5e983c6",
+      "size": 1376,
+      "symbol": "VulkanPresenterVertex"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPresenterFragment.spv.h",
+      "sha256": "f0b46f9bc39702253bcb63ae4d8c31be425afee959a35d2951cb05679f269ed4",
+      "size": 568,
+      "symbol": "VulkanPresenterFragment"
+    }
+  ]
+}

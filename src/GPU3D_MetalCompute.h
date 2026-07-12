@@ -8,6 +8,7 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1
+// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -81,7 +82,6 @@ private:
     bool RunFoundationSelfTest();
     bool ConfigureSpanBinResources(int scale);
     bool RunSpanBinSelfTest();
-    bool RunNoTextureTileSelfTest();
     bool RunTextureVariantTileSelfTest();
     bool RunCompleteDepthBlendSelfTest();
     bool RunFinalPassSelfTest();

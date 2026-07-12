@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "target_environment": "vulkan1.1",
+  "shaders": [
+    {
+      "name": "VulkanBuildProbe",
+      "source": "build_probe.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPresenterVertex",
+      "source": "presenter.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPresenterFragment",
+      "source": "presenter.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    }
+  ]
+}

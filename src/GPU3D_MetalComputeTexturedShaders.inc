@@ -1,5 +1,6 @@
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
+// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 // Standalone MSL library for the Phase 8C texture-capable tile raster stage.
 static constexpr const char* kMetalComputeTexturedSource = R"MSL(
 #include <metal_stdlib>
@@ -314,7 +315,6 @@ kernel void mp_compute_rasterise_texture_variants(
     device uint* colorTiles [[buffer(5)]],
     device uint* depthTiles [[buffer(6)]],
     device uint* attrTiles [[buffer(7)]],
-    device atomic_uint* summary [[buffer(8)]],
     constant MPSpanBinConfig& config [[buffer(9)]],
     device const uchar* textureMemory [[buffer(10)]],
     device const uchar* texturePalette [[buffer(11)]],
@@ -331,21 +331,13 @@ kernel void mp_compute_rasterise_texture_variants(
     const uint2 work = workDescs[config.maxWorkTiles + gid];
     const uint polygonIndex = work.y & 0x7FFu;
     const uint originalWorkIndex = work.y >> 11u;
-    if (originalWorkIndex >= config.tileWorkCapacity)
-    {
-        atomic_fetch_add_explicit(&summary[MPTileSummarySkippedCapacity], 1u, memory_order_relaxed);
-        return;
-    }
+    if (originalWorkIndex >= config.tileWorkCapacity) return;
     if (polygonIndex >= config.numPolygons || config.numVariants == 0u) return;
 
     const MPRenderPolygon polygon = polygons[polygonIndex];
     const uint variantIndex = min(polygon.Variant, config.numVariants - 1u);
     const MPVariantMeta variant = variants[variantIndex];
     const bool shadowMask = variant.BlendMode == 4u;
-    if (shadowMask)
-        atomic_fetch_add_explicit(&summary[MPTileSummaryShadowMask], 1u, memory_order_relaxed);
-    else if (variant.Textured != 0u)
-        atomic_fetch_add_explicit(&summary[MPTileSummaryTextured], 1u, memory_order_relaxed);
 
     const uint tileArea = config.tileSize * config.tileSize;
     const uint tileBase = originalWorkIndex * tileArea;
@@ -358,10 +350,6 @@ kernel void mp_compute_rasterise_texture_variants(
 
     const uint tileX = work.x & 0xFFFFu;
     const uint tileY = work.x >> 16u;
-    uint covered = 0u;
-    uint colorHash = 2166136261u;
-    uint depthMin = 0xFFFFFFFFu;
-    uint depthMax = 0u;
     const uint polyAlphaRaw = (polygon.Attr >> 16u) & 0x1Fu;
     const bool wireframe = polyAlphaRaw == 0u;
     const uint polyAlpha = wireframe ? 31u : polyAlphaRaw;
@@ -423,11 +411,6 @@ kernel void mp_compute_rasterise_texture_variants(
                 depthTiles[tilePixel] = depth;
                 attrTiles[tilePixel] = 0u;
 
-                covered++;
-                depthMin = min(depthMin, depth);
-                depthMax = max(depthMax, depth);
-                colorHash ^= color + pixelX * 0x9E3779B9u + pixelY * 0x85EBCA6Bu;
-                colorHash *= 16777619u;
                 continue;
             }
 
@@ -493,21 +476,8 @@ kernel void mp_compute_rasterise_texture_variants(
             depthTiles[tilePixel] = depth;
             attrTiles[tilePixel] = attr;
 
-            covered++;
-            depthMin = min(depthMin, depth);
-            depthMax = max(depthMax, depth);
-            colorHash ^= color + pixelX * 0x9E3779B9u + pixelY * 0x85EBCA6Bu;
-            colorHash *= 16777619u;
         }
     }
 
-    atomic_fetch_add_explicit(&summary[MPTileSummaryRasterised], 1u, memory_order_relaxed);
-    atomic_fetch_add_explicit(&summary[MPTileSummaryCoveredPixels], covered, memory_order_relaxed);
-    atomic_fetch_xor_explicit(&summary[MPTileSummaryColorHash], colorHash, memory_order_relaxed);
-    if (covered != 0u)
-    {
-        atomic_fetch_min_explicit(&summary[MPTileSummaryDepthMin], depthMin, memory_order_relaxed);
-        atomic_fetch_max_explicit(&summary[MPTileSummaryDepthMax], depthMax, memory_order_relaxed);
-    }
 }
 )MSL";

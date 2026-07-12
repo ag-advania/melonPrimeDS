@@ -6,6 +6,17 @@
 **文書ステータス:** 実装前の正式設計・実行計画  
 **最終目標:** `Vulkan` と `Vulkan Compute Shader` の両方を、既存の `OpenGL` と `OpenGL Compute Shader` に並ぶ正式な描画バックエンドとして完成させる
 
+## 実装進捗
+
+| Phase | Status | Commit | Build verified | Runtime verified | Hardware / Validation | Unverified / Known limitation | Rollback |
+|---|---|---|---|---|---|---|---|
+| 0 — baseline | Implemented; evidence gate pending | `docs(vulkan): capture Vulkan backend baseline and acceptance matrix` | Windows configure / compile / link passed | HUD harness repeatable; ROM capture pending | Win11 / RTX 5070 Ti; repo audits passed | No scoped ROM; existing HUD golden drift recorded in `tests/vulkan/reference/phase0-verification.md` | Revert the Phase 0 commit |
+| 1 — build gate / shader toolchain | Done | `build(vulkan): add complete Vulkan build gate and shader toolchain` | Windows default OFF / Vulkan ON / force-disable passed | No Vulkan runtime path by design; default-OFF HUD harness unchanged | Win11 / RTX 5070 Ti; full SPIR-V check and repo audits passed | Linux, macOS, MoltenVK and CI execution unverified; see `tests/vulkan/reference/phase1-verification.md` | Revert the Phase 1 commit |
+| 2 — backend policy / stable IDs | Done | `refactor(video): add stable renderer IDs and Vulkan backend policy` | Windows default OFF / Vulkan ON / force-disable passed | OFF config ID 5 and ON env raster/compute no-ROM smoke passed | Win11 / RTX 5070 Ti; repo audits passed | ROM renderer creation/log and non-Windows unverified; see `tests/vulkan/reference/phase2-verification.md` | Revert the Phase 2 commit |
+| 3 — Qt instance / device probe | Done | `feat(vulkan): add Qt Vulkan instance host and device capability probe` | Windows Vulkan ON / force-disable / default OFF passed | RTX 5070 Ti surface/device probe and create/destroy 10/10 passed | Win11 / RTX 5070 Ti; raster+compute+timeline available | Validation layer absent; X11, Wayland, macOS and CI execution deferred; see `tests/vulkan/reference/phase3-verification.md` | Revert the Phase 3 commit |
+| 4 — CPU BGRA presenter baseline | Implemented; ROM/long-run acceptance pending | `feat(vulkan): add CPU BGRA Vulkan presenter baseline` | Windows Vulkan ON / force-disable / default OFF passed | Vulkan no-ROM capture, resize, maximize, minimize/restore and two-window capture passed | Win11 / RTX 5070 Ti; generated presenter SPIR-V and repo audits passed | No scoped ROM; active OSD/HUD/radar/Fast Forward and 30-minute run unverified; Qt baseline is FIFO pending explicit VSync-OFF mode work; see `tests/vulkan/reference/phase4-verification.md` | Revert the Phase 4 commit |
+| 5〜16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
+
 ---
 
 # 0. この計画の位置付け

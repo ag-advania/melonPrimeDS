@@ -31,6 +31,10 @@
 #ifdef MELONPRIME_DS
 #include <cstdint>
 namespace MelonPrime { class MelonPrimeCore; }
+#if defined(MELONPRIME_ENABLE_VULKAN)
+namespace MelonPrime::Vulkan { class DeviceContext; struct FeatureInfo; }
+class QWindow;
+#endif
 #endif // MELONPRIME_DS
 
 const int kMaxWindows = 4;
@@ -112,15 +116,20 @@ enum
 {
     renderer3D_Software = 0,
 #ifdef OGLRENDERER_ENABLED
-    renderer3D_OpenGL,
-    renderer3D_OpenGLCompute,
+    renderer3D_OpenGL = 1,
+    renderer3D_OpenGLCompute = 2,
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
-    renderer3D_Metal,
-    renderer3D_MetalCompute,
+    renderer3D_Metal = 3,
+    renderer3D_MetalCompute = 4,
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    renderer3D_Vulkan = 5,
+    renderer3D_VulkanCompute = 6,
 #endif
     // MELONPRIME_METAL_COMPUTE_UI_V1
-    renderer3D_Max,
+    // Persisted IDs 0..6 never move when a compile-gated backend is absent.
+    renderer3D_Max = 7,
 };
 
 bool isRightModKey(QKeyEvent* event);
@@ -146,6 +155,12 @@ public:
     int getConsoleType() { return consoleType; }
     EmuThread* getEmuThread() { return emuThread; }
     melonDS::NDS* getNDS() { return nds; }
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    std::shared_ptr<MelonPrime::Vulkan::DeviceContext> ensureVulkanDeviceContext(
+        QWindow* surfaceWindow,
+        MelonPrime::Vulkan::FeatureInfo& info);
+#endif
 
     MainWindow* getMainWindow() { return mainWindow; }
     int getNumWindows() { return numWindows; }
@@ -450,6 +465,11 @@ private:
     std::shared_ptr<SDL_mutex> joyMutex;
 
 #ifdef MELONPRIME_DS
+    #if defined(MELONPRIME_ENABLE_VULKAN)
+    std::shared_ptr<MelonPrime::Vulkan::DeviceContext> vulkanDeviceContext;
+    bool vulkanDeviceProbeAttempted = false;
+    #endif
+
     // OPT: QBitArray -> native integers.
     // QBitArray involves heap allocation, reference counting, byte-level iteration,
     // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,

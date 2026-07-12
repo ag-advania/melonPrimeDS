@@ -45,6 +45,7 @@
 
 class MainWindow;
 class EmuInstance;
+class QPainter;
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -332,6 +333,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void paintFrame(QPainter& painter, const QRect& updateRect);
 
 private:
     void setupScreenLayout() override;

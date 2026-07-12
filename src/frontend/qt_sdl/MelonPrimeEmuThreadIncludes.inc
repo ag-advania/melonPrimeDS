@@ -4,6 +4,7 @@
 #include "MelonPrime.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeRendererFactory.h"
 #ifdef _WIN32
 #include "MelonPrimeRawWinInternal.h"  // P-11: WinInternal::SetHighTimerResolution()
 #endif

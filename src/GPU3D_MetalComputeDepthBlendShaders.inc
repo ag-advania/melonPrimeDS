@@ -1,22 +1,11 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
+// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
+// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // Standalone MSL library for DS two-layer depth/blend, shadow and clear-bitmap processing.
 static constexpr const char* kMetalComputeCompleteDepthBlendSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
-constant uint MPD_SummaryPixels = 0u;
-constant uint MPD_SummaryLayersTested = 1u;
-constant uint MPD_SummaryLayersAccepted = 2u;
-constant uint MPD_SummaryTranslucent = 3u;
-constant uint MPD_SummaryOpaque = 4u;
-constant uint MPD_SummaryShadowMasks = 5u;
-constant uint MPD_SummaryShadowPolygons = 6u;
-constant uint MPD_SummarySecondLayerWrites = 7u;
-constant uint MPD_SummaryColorHash = 8u;
-constant uint MPD_SummaryDepthMin = 9u;
-constant uint MPD_SummaryDepthMax = 10u;
-constant uint MPD_SummaryReserved = 11u;
-constant uint MPD_SummaryWords = 12u;
 
 struct MPDRenderPolygon
 {
@@ -151,21 +140,6 @@ static inline bool mpd_plot_translucent(
     return true;
 }
 
-kernel void mp_compute_clear_complete_depth_blend_summary(
-    device atomic_uint* summary [[buffer(0)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid >= MPD_SummaryWords)
-        return;
-    const uint value = gid == MPD_SummaryDepthMin
-        ? 0xFFFFFFFFu
-        : 0u;
-    atomic_store_explicit(
-        &summary[gid],
-        value,
-        memory_order_relaxed);
-}
-
 kernel void mp_compute_depth_blend_complete(
     device const uint* fineMask [[buffer(0)]],
     device const uint* workOffsets [[buffer(1)]],
@@ -176,7 +150,6 @@ kernel void mp_compute_depth_blend_complete(
     device uint* resultColor [[buffer(6)]],
     device uint* resultDepth [[buffer(7)]],
     device uint* resultAttr [[buffer(8)]],
-    device atomic_uint* summary [[buffer(9)]],
     constant MPDConfig& config [[buffer(10)]],
     device const uchar* textureMemory [[buffer(11)]],
     uint gid [[thread_position_in_grid]])
@@ -242,13 +215,6 @@ kernel void mp_compute_depth_blend_complete(
     uint stencil = 0u;
     bool previousWasShadowMask = false;
 
-    uint layersTested = 0u;
-    uint layersAccepted = 0u;
-    uint translucentLayers = 0u;
-    uint opaqueLayers = 0u;
-    uint shadowMasks = 0u;
-    uint shadowPolygons = 0u;
-    uint secondLayerWrites = 0u;
 
     for (uint group = 0u;
          group < config.polygonGroups;
@@ -285,7 +251,6 @@ kernel void mp_compute_depth_blend_complete(
             if (tileColor == 0u)
                 continue;
 
-            layersTested++;
 
             const MPDRenderPolygon polygon =
                 polygons[polygonIndex];
@@ -313,7 +278,6 @@ kernel void mp_compute_depth_blend_complete(
 
                 if (isShadow)
                 {
-                    shadowPolygons++;
                     if (stencil == 0u)
                         continue;
                     if ((stencil & 1u) == 0u)
@@ -364,7 +328,6 @@ kernel void mp_compute_depth_blend_complete(
                             color1 = color0;
                             depth1 = depth0;
                             attr1 = attr0;
-                            secondLayerWrites++;
                         }
 
                         color0 = tileColor;
@@ -376,11 +339,8 @@ kernel void mp_compute_depth_blend_complete(
                         color1 = tileColor;
                         depth1 = tileDepth;
                         attr1 = opaqueAttr;
-                        secondLayerWrites++;
                     }
 
-                    opaqueLayers++;
-                    layersAccepted++;
                 }
                 else
                 {
@@ -418,19 +378,15 @@ kernel void mp_compute_depth_blend_complete(
                                 writeDepth);
                         accepted |= secondAccepted;
                         if (secondAccepted)
-                            secondLayerWrites++;
                     }
 
                     if (accepted)
                     {
-                        translucentLayers++;
-                        layersAccepted++;
                     }
                 }
             }
             else
             {
-                shadowMasks++;
                 if (!previousShadowMask)
                     stencil = 0u;
 
@@ -464,54 +420,5 @@ kernel void mp_compute_depth_blend_complete(
     resultAttr[gid] = attr0;
     resultAttr[layerStride + gid] = attr1;
 
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryPixels],
-        1u,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryLayersTested],
-        layersTested,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryLayersAccepted],
-        layersAccepted,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryTranslucent],
-        translucentLayers,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryOpaque],
-        opaqueLayers,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryShadowMasks],
-        shadowMasks,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummaryShadowPolygons],
-        shadowPolygons,
-        memory_order_relaxed);
-    atomic_fetch_add_explicit(
-        &summary[MPD_SummarySecondLayerWrites],
-        secondLayerWrites,
-        memory_order_relaxed);
-
-    const uint hash =
-        color0 ^
-        (color1 * 0x9E3779B9u) ^
-        (gid * 0x85EBCA6Bu);
-    atomic_fetch_xor_explicit(
-        &summary[MPD_SummaryColorHash],
-        hash,
-        memory_order_relaxed);
-    atomic_fetch_min_explicit(
-        &summary[MPD_SummaryDepthMin],
-        depth0,
-        memory_order_relaxed);
-    atomic_fetch_max_explicit(
-        &summary[MPD_SummaryDepthMax],
-        depth0,
-        memory_order_relaxed);
 }
 )MSL";

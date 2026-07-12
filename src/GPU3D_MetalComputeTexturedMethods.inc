@@ -1,4 +1,6 @@
 // MELONPRIME_METAL_COMPUTE_TEXTURED_RASTER_V1
+// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
+// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 
 void MetalComputeRenderer3D::SetCaptureTextures(
     void* capture128Texture,
@@ -45,11 +47,12 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
 
     constexpr uint32_t maxWorkTiles = 1;
     constexpr uint32_t lineCount = 8;
-    constexpr uint32_t tileArea = 64;
+    constexpr uint32_t tileWidth = 8;
+    constexpr uint32_t tileArea = tileWidth * lineCount;
     const SpanBinConfig spanConfig {
         1, 1, lineCount,
-        8, 8, 8, 1, 1,
-        8, 1, 64, 8,
+        tileWidth, lineCount, tileWidth, 1, 1,
+        tileWidth, 1, 64, tileWidth,
         maxWorkTiles, kBinStride, kCoarseBinStride, 1,
         0, 0, maxWorkTiles, 0,
     };
@@ -78,9 +81,6 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
     id<MTLBuffer> attrs =
         [State->Device newBufferWithLength:tileArea * sizeof(uint32_t)
                                    options:MTLResourceStorageModeShared];
-    id<MTLBuffer> summary =
-        [State->Device newBufferWithLength:sizeof(TileRasterSummary)
-                                   options:MTLResourceStorageModeShared];
     const uint16_t directRed = 0x801Fu;
     id<MTLBuffer> textureMemory =
         [State->Device newBufferWithBytes:&directRed
@@ -98,7 +98,7 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
                                   options:MTLResourceStorageModeShared];
 
     if (!header || !polygons || !xSpans || !work || !variants ||
-        !colors || !depths || !attrs || !summary ||
+        !colors || !depths || !attrs ||
         !textureMemory || !texturePalette || !toon)
     {
         return false;
@@ -109,10 +109,6 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
     std::memset([xSpans contents], 0, xSpans.length);
     std::memset([work contents], 0, work.length);
     std::memset([variants contents], 0, variants.length);
-    std::memset([colors contents], 0, colors.length);
-    std::memset([depths contents], 0, depths.length);
-    std::memset([attrs contents], 0, attrs.length);
-    std::memset([summary contents], 0, summary.length);
 
     auto* headerWords = static_cast<uint32_t*>([header contents]);
     headerWords[3] = 1;
@@ -134,9 +130,6 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
             (1u << 0u) | (1u << 1u) | (1u << 2u) | (1u << 3u);
         lines[y].Z0 = lines[y].Z1 = 0x123456;
         lines[y].W0 = lines[y].W1 = 0x1000;
-        lines[y].ColorR0 = lines[y].ColorR1 = 63 << 3;
-        lines[y].ColorG0 = lines[y].ColorG1 = 63 << 3;
-        lines[y].ColorB0 = lines[y].ColorB1 = 63 << 3;
         lines[y].TexcoordU0 = lines[y].TexcoordU1 = 0;
         lines[y].TexcoordV0 = lines[y].TexcoordV1 = 0;
     }
@@ -144,31 +137,31 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
     auto* workDescs = static_cast<WorkDesc*>([work contents]);
     workDescs[maxWorkTiles] = { 0, 0 };
     auto* variant = static_cast<VariantMeta*>([variants contents]);
-    variant[0] = {
-        1,
-        0,
-        7u << 26u,
-        0,
-        0,
-        0,
-        0,
-        0,
-    };
 
-    id<MTLCommandBuffer> command = [State->Queue commandBuffer];
-    if (!command)
-        return false;
-    {
-        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-        if (!encoder)
+    auto runCase = [&](bool textured, uint32_t expectedColor, const char* label) -> bool {
+        for (uint32_t y = 0; y < lineCount; y++)
+        {
+            lines[y].ColorR0 = lines[y].ColorR1 = 63 << 3;
+            lines[y].ColorG0 = lines[y].ColorG1 = (textured ? 63 : 31) << 3;
+            lines[y].ColorB0 = lines[y].ColorB1 = (textured ? 63 : 15) << 3;
+        }
+        variant[0] = {
+            textured ? 1u : 0u,
+            0,
+            textured ? (7u << 26u) : 0u,
+            0,
+            0,
+            0,
+            0,
+            0,
+        };
+        std::memset([colors contents], 0xA5, colors.length);
+        std::memset([depths contents], 0xA5, depths.length);
+        std::memset([attrs contents], 0xA5, attrs.length);
+
+        id<MTLCommandBuffer> command = [State->Queue commandBuffer];
+        if (!command)
             return false;
-        [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
-        [encoder setBuffer:summary offset:0 atIndex:0];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-        [encoder endEncoding];
-    }
-    {
         id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
         if (!encoder)
             return false;
@@ -181,7 +174,6 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
         [encoder setBuffer:colors offset:0 atIndex:5];
         [encoder setBuffer:depths offset:0 atIndex:6];
         [encoder setBuffer:attrs offset:0 atIndex:7];
-        [encoder setBuffer:summary offset:0 atIndex:8];
         [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
         [encoder setBuffer:textureMemory offset:0 atIndex:10];
         [encoder setBuffer:texturePalette offset:0 atIndex:11];
@@ -191,48 +183,61 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
         [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
                  threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         [encoder endEncoding];
-    }
 
-    if (!CompleteCommandBuffer(command, "texture-variant tile self-test"))
-        return false;
+        if (!CompleteCommandBuffer(command, label))
+            return false;
 
-    const auto* result =
-        static_cast<const TileRasterSummary*>([summary contents]);
-    const auto* outColor =
-        static_cast<const uint32_t*>([colors contents]);
-    const auto* outDepth =
-        static_cast<const uint32_t*>([depths contents]);
-    const uint32_t expectedColor = 63u | (31u << 24u);
+        const auto* outColor =
+            static_cast<const uint32_t*>([colors contents]);
+        const auto* outDepth =
+            static_cast<const uint32_t*>([depths contents]);
+        const auto* outAttr =
+            static_cast<const uint32_t*>([attrs contents]);
+        uint32_t mismatchPixel = tileArea;
+        for (uint32_t pixel = 0; pixel < tileArea; pixel++)
+        {
+            if (outColor[pixel] != expectedColor ||
+                outDepth[pixel] != 0x123456u)
+            {
+                mismatchPixel = pixel;
+                break;
+            }
+        }
 
-    if (result->RasterisedWorkItems != 1 ||
-        result->TexturedWorkItems != 1 ||
-        result->CoveredPixels != 64 ||
-        result->DepthMin != 0x123456 ||
-        result->DepthMax != 0x123456 ||
-        result->ColorHash == 0 ||
-        outColor[0] != expectedColor ||
-        outDepth[0] != 0x123456)
+        if (mismatchPixel != tileArea ||
+            (outAttr[0] & 0x4u) == 0u ||
+            (outAttr[(lineCount - 1u) * tileWidth] & 0x8u) == 0u)
+        {
+            const uint32_t reportPixel =
+                mismatchPixel == tileArea ? 0u : mismatchPixel;
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute raster: %s self-test mismatch "
+                "pixel=%u color=%08x expected=%08x depth=%08x "
+                "topAttr=%08x bottomAttr=%08x\n",
+                label,
+                reportPixel,
+                outColor[reportPixel],
+                expectedColor,
+                outDepth[reportPixel],
+                outAttr[0],
+                outAttr[(lineCount - 1u) * tileWidth]);
+            return false;
+        }
+        return true;
+    };
+
+    const uint32_t untexturedColor =
+        63u | (31u << 8u) | (15u << 16u) | (31u << 24u);
+    const uint32_t texturedColor = 63u | (31u << 24u);
+    if (!runCase(false, untexturedColor, "untextured production kernel") ||
+        !runCase(true, texturedColor, "textured production kernel"))
     {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute textured raster: self-test mismatch "
-            "work=%u textured=%u covered=%u hash=0x%08x "
-            "depth=%08x..%08x color=%08x\n",
-            result->RasterisedWorkItems,
-            result->TexturedWorkItems,
-            result->CoveredPixels,
-            result->ColorHash,
-            result->DepthMin,
-            result->DepthMax,
-            outColor[0]);
         return false;
     }
 
     std::fprintf(stderr,
-        "[MelonPrime] metal compute textured raster: self-test PASS "
-        "formats=1..7 directRed=%08x work=%u textured=%u covered=%u\n",
-        outColor[0],
-        result->RasterisedWorkItems,
-        result->TexturedWorkItems,
-        result->CoveredPixels);
+        "[MelonPrime] metal compute raster: consolidated self-test PASS "
+        "untextured=%08x directRed=%08x pixels=%u\n",
+        untexturedColor, texturedColor, tileArea);
     return true;
 }

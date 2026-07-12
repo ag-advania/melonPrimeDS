@@ -72,6 +72,10 @@ jobs:
           src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEditProps.inc `
           .claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md
 
+    - name: Verify Vulkan shader source and generated metadata
+      shell: pwsh
+      run: python .\tools\vulkan\generate_spirv.py --check --allow-missing-compiler
+
     - name: Cache MSYS2 packages
       uses: actions/cache@v4
       with:
