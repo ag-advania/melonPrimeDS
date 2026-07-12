@@ -10,6 +10,9 @@ if not exist "%BASE_SCRIPT%" (
     exit /b 1
 )
 
+call :configure_lto_make
+if errorlevel 1 exit /b 1
+
 set "SEARCH_DIR=%~dp0"
 :find_repo_root
 if exist "%SEARCH_DIR%CMakeLists.txt" (
@@ -48,7 +51,10 @@ if errorlevel 1 goto cache_off
 findstr /R /X /C:"MELONPRIME_ENABLE_DEVELOPER_FEATURES:BOOL=ON" "%CACHE%" >nul
 if errorlevel 1 goto cache_off
 
+if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
+
 echo [melonprime-build-vulkan-existing] Vulkan-enabled cache verified.
+echo [melonprime-build-vulkan-existing] GCC LTO make: %MAKE%
 call "%BASE_SCRIPT%" %*
 exit /b %ERRORLEVEL%
 
@@ -59,10 +65,28 @@ echo [melonprime-build-vulkan-existing]   .claude\skills\build-mingw-vulkan.bat
 echo [melonprime-build-vulkan-existing] This script will not silently build a Vulkan-OFF cache.
 exit /b 1
 
+:configure_lto_make
+set "LTO_MAKE=C:\msys64\mingw64\bin\mingw32-make.exe"
+if not exist "%LTO_MAKE%" set "LTO_MAKE=C:\msys64\mingw64\bin\make.exe"
+if not exist "%LTO_MAKE%" (
+    echo [melonprime-build-vulkan-existing] ERROR: Native MinGW make was not found.
+    echo [melonprime-build-vulkan-existing] GCC -flto=auto must not use C:\msys64\usr\bin\make.exe.
+    echo [melonprime-build-vulkan-existing] Install it from an MSYS2 MinGW64 shell:
+    echo [melonprime-build-vulkan-existing]   pacman -S --needed mingw-w64-x86_64-make
+    exit /b 1
+)
+set "MAKE=%LTO_MAKE%"
+set "MAKEFLAGS="
+set "MFLAGS="
+set "GNUMAKEFLAGS="
+set "TMP=C:\msys64\tmp"
+set "TEMP=C:\msys64\tmp"
+exit /b 0
+
 :help
 echo Usage: .claude\skills\build-mingw-vulkan-existing.bat [--verbose] [--jobs N] [--tail N]
 echo.
-echo Builds the existing release-mingw-x86_64 tree only after verifying that the
-echo CMake cache already has Vulkan ON, force-disable OFF, and developer features ON.
-echo Run build-mingw-vulkan.bat once when the existing cache was created with Vulkan OFF.
+echo Builds the existing Vulkan-enabled release-mingw-x86_64 tree and forces
+echo GCC -flto=auto to use native MinGW mingw32-make.exe. It refuses both a
+echo Vulkan-OFF cache and the incompatible C:\msys64\usr\bin\make.exe path.
 exit /b 0
