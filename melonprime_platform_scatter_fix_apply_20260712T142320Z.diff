@@ -1,0 +1,23 @@
+--- a/src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.cpp
+@@ -58,9 +58,9 @@
+ {
+ #if defined(_WIN32)
+     return VulkanUiPlatform::Windows;
+-#elif defined(__APPLE__)
++#elif defined(__APPLE__) // scatter-budget-exempt: Vulkan UI platform classification, not input dispatch
+     return VulkanUiPlatform::MacOS;
+-#elif defined(__linux__)
++#elif defined(__linux__) // scatter-budget-exempt: Vulkan UI platform classification, not input dispatch
+     return VulkanUiPlatform::Linux;
+ #else
+     return VulkanUiPlatform::Other;
+@@ -152,7 +152,7 @@
+     const auto strings = Phase12StringsForLanguage(language);
+     result.RasterTooltip = strings.RasterDescription;
+     result.ComputeTooltip = strings.ComputeDescription;
+-#if defined(__APPLE__)
++#if defined(__APPLE__) // scatter-budget-exempt: MoltenVK Vulkan UI tooltip, not input dispatch
+     if (snapshot.MoltenVkBuildEnabled)
+     {
+         result.RasterTooltip += QStringLiteral(" MoltenVK. Metal remains the recommended macOS backend.");

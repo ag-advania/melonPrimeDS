@@ -58,9 +58,9 @@ VulkanUiPlatform CurrentPlatform() noexcept
 {
 #if defined(_WIN32)
     return VulkanUiPlatform::Windows;
-#elif defined(__APPLE__) // scatter-budget-exempt: Vulkan UI platform classification, not input dispatch
+#elif defined(__APPLE__)
     return VulkanUiPlatform::MacOS;
-#elif defined(__linux__) // scatter-budget-exempt: Vulkan UI platform classification, not input dispatch
+#elif defined(__linux__)
     return VulkanUiPlatform::Linux;
 #else
     return VulkanUiPlatform::Other;
@@ -152,7 +152,7 @@ Phase12RuntimeUiState ProbeRuntimeUiState(MenuLangId language)
     const auto strings = Phase12StringsForLanguage(language);
     result.RasterTooltip = strings.RasterDescription;
     result.ComputeTooltip = strings.ComputeDescription;
-#if defined(__APPLE__) // scatter-budget-exempt: MoltenVK Vulkan UI tooltip, not input dispatch
+#if defined(__APPLE__)
     if (snapshot.MoltenVkBuildEnabled)
     {
         result.RasterTooltip += QStringLiteral(" MoltenVK. Metal remains the recommended macOS backend.");
