@@ -14,7 +14,6 @@
 // MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1
 // MELONPRIME_METAL_COMPUTE_DEFAULT_VISIBLE_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
-// MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_FIX_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -1504,7 +1503,8 @@ bool MetalComputeRenderer3D::Init()
         }
         std::fprintf(stderr,
             "[MelonPrime] metal compute visible: disabled by runtime fallback; "
-            "using Metal raster renderer only\n");
+            "using Metal raster renderer only
+");
         return true;
     }
 
