@@ -26,6 +26,7 @@ namespace Ui { class VideoSettingsDialog; }
 class VideoSettingsDialog;
 class EmuInstance;
 class QRadioButton;
+class QEvent;
 
 class VideoSettingsDialog : public QDialog
 {
@@ -54,6 +55,9 @@ public:
     {
         currentDlg = nullptr;
     }
+protected:
+    void changeEvent(QEvent* event) override;
+
 signals:
     void updateVideoSettings(bool glchange);
 
@@ -74,6 +78,7 @@ private slots:
 private:
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
+    void retranslatePhase12VulkanControls();
 
     Ui::VideoSettingsDialog* ui;
     EmuInstance* emuInstance;
@@ -83,6 +88,13 @@ private:
     // MELONPRIME_METAL_DYNAMIC_LAYOUT_V3
     QRadioButton* rb3DMetal = nullptr;
     QRadioButton* rb3DMetalCompute = nullptr;
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    QRadioButton* rb3DVulkan = nullptr;
+    QRadioButton* rb3DVulkanCompute = nullptr;
+    class QPushButton* btnVulkanRasterPreset = nullptr;
+    class QPushButton* btnVulkanComputePreset = nullptr;
 #endif
 
     int oldRenderer;

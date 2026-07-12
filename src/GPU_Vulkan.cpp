@@ -51,6 +51,11 @@ bool VulkanRenderer::Init()
         "specialization_cache=1 indirect_dispatch=1 explicit_barriers=1 "
         "hires_coordinates=1 compute_visible_output=1 "
         "native_vulkan_phase11_subsystem_complete=1 rom_visible=0\n");
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[MelonPrime] Vulkan Phase 12 capability: capability_aware_ui=1 "
+        "hardware_config_migration=1 localized_ui=1 "
+        "native_vulkan_phase12_ui_complete=1 rom_visible=0\n");
     return true;
 }
 

@@ -1,0 +1,89 @@
+{
+  "patch_version": "phase12-completion-v1",
+  "files": [
+    {
+      "path": "src/Vulkan_Phase12UiContract.h",
+      "existed": false,
+      "after": "1e129abb3400077d154182a6a59216f69adf6e75f249a503ccd447b17f1343a5",
+      "before": null
+    },
+    {
+      "path": "src/Vulkan_Phase12UiContract.cpp",
+      "existed": false,
+      "after": "c399f99938b9adfc59c2f022edd77224aa7e73388b2f8c0811c4459aea56c90d",
+      "before": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.h",
+      "existed": false,
+      "after": "536e26a2a3a655b810b83f8ddb3e915514760e8c7b00950bfad543fd4d654ab9",
+      "before": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.cpp",
+      "existed": false,
+      "after": "33111ea2a595c9f886ec809f1924f0be00679d1378b2bd81838d18e602dd396a",
+      "before": null
+    },
+    {
+      "path": "tests/vulkan/reference/phase12-completion-verification.md",
+      "existed": false,
+      "after": "460672b36e46da1ebed21d618d597afdf917fccd52fc269a664911983a57cf66",
+      "before": null
+    },
+    {
+      "path": "src/CMakeLists.txt",
+      "existed": true,
+      "after": "7ad4e1581ac03386b3687ea3b3f057d1b635779686b90a2ee069a7ae328497b9",
+      "before": "58e8b6f9867ebe122d34448fc3edf430e2b1c915e709e5d544c673ff09be4232"
+    },
+    {
+      "path": "src/frontend/qt_sdl/CMakeLists.txt",
+      "existed": true,
+      "after": "f01417c79aef093cba2f2ce02ac2c3563f083a28760f70ebcf6b7ad33cbed22a",
+      "before": "8a3dfb98818ff77ad7372bb9cdb3410194cdd75834e10068736924493a599c2f"
+    },
+    {
+      "path": "src/frontend/qt_sdl/main.cpp",
+      "existed": true,
+      "after": "2f93466d28e1515a4d07eb9e0a66ab7144f89b197f8816616d28d89f04bb9d31",
+      "before": "8981d0e5bc2f8025c908ce6121103d30b10ae98e85d56205e145fe24f07557dd"
+    },
+    {
+      "path": "src/GPU_Vulkan.h",
+      "existed": true,
+      "after": "e188bbec376525feda765f0584d5831606f5e6cbeb99d9b90f584f34d647b01b",
+      "before": "2c0dbf5c68a5ea3e46a33d5d04cd08dccfc22aa54cd13544f0564cb2b5198fc4"
+    },
+    {
+      "path": "src/GPU_Vulkan.cpp",
+      "existed": true,
+      "after": "9fe0b13ede55ce48debbfecbd7cefbc2804a53a9943f5147a6928fa00cc5e064",
+      "before": "2b7b44cdbfa93dc681e1032c21e616bbcf5909fa72f0241c7ef11f5a437fec62"
+    },
+    {
+      "path": "src/frontend/qt_sdl/VideoSettingsDialog.h",
+      "existed": true,
+      "after": "3a04ee747c878818048f5b4d83ac9197e417c2c34a37bea02cb6b242e451aa9e",
+      "before": "394ab5cd2af55dabcbdb5b0e211e1721a294686839499f5adfbc7347ded10c97"
+    },
+    {
+      "path": "src/frontend/qt_sdl/VideoSettingsDialog.cpp",
+      "existed": true,
+      "after": "3d4835a68f41eebc7559ef4c84c557248d1df5dc3b1f6978f9a803af887f3f6d",
+      "before": "3cad7ee3795170c890e6882f8d59f42af10c49b99a2f03a4c54f9cf67c0003be"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp",
+      "existed": true,
+      "after": "839eac9ac4a558fdf1bb66ce15b80fa627a7d0c556fe6a7c036ae2f802eb3306",
+      "before": "a1b87bed011fdec197613dac05d7a5b1a75ca8790d1a9d38f186c51a8f2c2a2b"
+    },
+    {
+      "path": ".claude/rules/plan/MelonPrimeDS_Vulkan_Rendering_\u5b8c\u5168\u5b9f\u88c5\u30d5\u30a7\u30fc\u30ba\u8a08\u753b.md",
+      "existed": true,
+      "after": "da9a6fba994e7d1acfe8e49fcefcea4f4edc4028262eacb4116b17c661dbc577",
+      "before": "b2cdce8d52e5031beb32dddb5f1eb9fd9b869db97480c227ec2c34b927af4c90"
+    }
+  ]
+}

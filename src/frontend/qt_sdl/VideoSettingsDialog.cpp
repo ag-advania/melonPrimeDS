@@ -18,6 +18,8 @@
 
 #include <QFileDialog>
 #include <QRadioButton>
+#include <QPushButton>
+#include <QEvent>
 #include <QtGlobal>
 
 #include "types.h"
@@ -34,6 +36,9 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeLocalization.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanPhase12CompletionBootstrap.h"
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
@@ -69,6 +74,15 @@ void VideoSettingsDialog::setEnabled()
     const bool softwareRenderer = renderer == renderer3D_Software;
     const bool openGLRenderer = renderer == renderer3D_OpenGL;
     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool vulkanRasterRenderer = renderer == renderer3D_Vulkan;
+    const bool vulkanComputeRenderer = renderer == renderer3D_VulkanCompute;
+    const bool vulkanRenderer = vulkanRasterRenderer || vulkanComputeRenderer;
+#else
+    const bool vulkanRasterRenderer = false;
+    const bool vulkanComputeRenderer = false;
+    const bool vulkanRenderer = false;
+#endif
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     const bool metalRasterRenderer = renderer == renderer3D_Metal;
     const bool metalComputeRenderer = renderer == renderer3D_MetalCompute;
@@ -87,17 +101,17 @@ void VideoSettingsDialog::setEnabled()
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
     // BetterPolygons is implemented by classic OpenGL and both visible Metal
     // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRasterRenderer);
 
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
     // compute mirror in the same coordinate mode.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer);
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || vulkanComputeRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -109,14 +123,17 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     emuInstance = ((MainWindow*)parent)->getEmuInstance();
 
     auto& cfg = emuInstance->getGlobalConfig();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    MelonPrime::Vulkan::MigratePhase12HardwareSettings(cfg);
+#endif
     oldRenderer = cfg.GetInt("3D.Renderer");
     oldGLDisplay = cfg.GetBool("Screen.UseGL");
     oldVSync = cfg.GetBool("Screen.VSync");
     oldVSyncInterval = cfg.GetInt("Screen.VSyncInterval");
     oldSoftThreaded = cfg.GetBool("3D.Soft.Threaded");
-    oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
-    oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
-    oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
+    oldGLScale = cfg.HasKey("3D.Hardware.ScaleFactor") ? cfg.GetInt("3D.Hardware.ScaleFactor") : cfg.GetInt("3D.GL.ScaleFactor");
+    oldGLBetterPolygons = cfg.HasKey("3D.Hardware.BetterPolygons") ? cfg.GetBool("3D.Hardware.BetterPolygons") : cfg.GetBool("3D.GL.BetterPolygons");
+    oldHiresCoordinates = cfg.HasKey("3D.Hardware.HiresCoordinates") ? cfg.GetBool("3D.Hardware.HiresCoordinates") : cfg.GetBool("3D.GL.HiresCoordinates");
 
     grp3DRenderer = new QButtonGroup(this);
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
@@ -153,6 +170,81 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->addWidget(ui->cbVSync, 8, 0, 1, 2);
     ui->gridLayout_2->addWidget(ui->label_2, 9, 0, 1, 1);
     ui->gridLayout_2->addWidget(ui->sbVSyncInterval, 9, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_VULKAN_PHASE12_DYNAMIC_LAYOUT_V1
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+    int vulkanRow = 4;
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    vulkanRow = 6;
+#endif
+    rb3DVulkan = new QRadioButton(ui->groupBox);
+    rb3DVulkan->setObjectName(QStringLiteral("rb3DVulkan"));
+    ui->gridLayout_2->addWidget(rb3DVulkan, vulkanRow, 0, 1, 1);
+    grp3DRenderer->addButton(rb3DVulkan, renderer3D_Vulkan);
+    btnVulkanRasterPreset = new QPushButton(ui->groupBox);
+    btnVulkanRasterPreset->setObjectName(QStringLiteral("btnVulkanRasterPreset"));
+    ui->gridLayout_2->addWidget(btnVulkanRasterPreset, vulkanRow, 1, 1, 1);
+
+    rb3DVulkanCompute = new QRadioButton(ui->groupBox);
+    rb3DVulkanCompute->setObjectName(QStringLiteral("rb3DVulkanCompute"));
+    ui->gridLayout_2->addWidget(rb3DVulkanCompute, vulkanRow + 1, 0, 1, 1);
+    grp3DRenderer->addButton(rb3DVulkanCompute, renderer3D_VulkanCompute);
+    btnVulkanComputePreset = new QPushButton(ui->groupBox);
+    btnVulkanComputePreset->setObjectName(QStringLiteral("btnVulkanComputePreset"));
+    ui->gridLayout_2->addWidget(btnVulkanComputePreset, vulkanRow + 1, 1, 1, 1);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, vulkanRow + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, vulkanRow + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, vulkanRow + 4, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 5, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 5, 1, 1, 1);
+
+    const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
+        MelonPrime::UiText::ActiveMenuLanguage());
+    rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
+    rb3DVulkanCompute->setEnabled(phase12Ui.Contract.Compute.Enabled);
+    btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
+    btnVulkanComputePreset->setEnabled(phase12Ui.Contract.Compute.Enabled);
+    rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
+    rb3DVulkanCompute->setToolTip(phase12Ui.ComputeTooltip);
+    btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
+    btnVulkanComputePreset->setToolTip(phase12Ui.ComputeTooltip);
+
+    connect(btnVulkanRasterPreset, &QPushButton::clicked, this, [this]() {
+        const bool oldGl = UsesGL();
+        auto& config = emuInstance->getGlobalConfig();
+        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(config, false);
+        grp3DRenderer->button(renderer3D_Vulkan)->setChecked(true);
+        ui->cbxGLResolution->setCurrentIndex(3);
+        ui->cbBetterPolygons->setChecked(true);
+        ui->cbxComputeHiResCoords->setChecked(false);
+        ui->cbVSync->setChecked(false);
+        setEnabled();
+        setVsyncControlEnable(UsesGL());
+        emit updateVideoSettings(oldGl != UsesGL());
+    });
+    connect(btnVulkanComputePreset, &QPushButton::clicked, this, [this]() {
+        const bool oldGl = UsesGL();
+        auto& config = emuInstance->getGlobalConfig();
+        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(config, true);
+        grp3DRenderer->button(renderer3D_VulkanCompute)->setChecked(true);
+        ui->cbxGLResolution->setCurrentIndex(3);
+        ui->cbBetterPolygons->setChecked(false);
+        ui->cbxComputeHiResCoords->setChecked(true);
+        ui->cbVSync->setChecked(false);
+        setEnabled();
+        setVsyncControlEnable(UsesGL());
+        emit updateVideoSettings(oldGl != UsesGL());
+    });
+    retranslatePhase12VulkanControls();
     ui->gridLayout_2->invalidate();
     ui->gridLayout_2->activate();
     adjustSize();
@@ -212,9 +304,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
-#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // Metal and Metal Compute intentionally share the existing hardware
-    // renderer scale setting with OpenGL and OpenGL Compute.
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ui->cbxGLResolution->setToolTip(
+        MelonPrime::Vulkan::Phase12StringsForLanguage(
+            MelonPrime::UiText::ActiveMenuLanguage()).ScaleDescription);
+#elif defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     ui->cbxGLResolution->setToolTip(MelonPrime::UiText::Tr(
         "Internal 3D render scale. Used by OpenGL, OpenGL Compute, Metal, and Metal Compute Shader."));
 #endif
@@ -228,6 +322,47 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     setVsyncControlEnable(UsesGL());
 
     setEnabled();
+}
+
+
+void VideoSettingsDialog::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (event && event->type() == QEvent::LanguageChange)
+        retranslatePhase12VulkanControls();
+#endif
+}
+
+
+void VideoSettingsDialog::retranslatePhase12VulkanControls()
+{
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (!rb3DVulkan || !rb3DVulkanCompute)
+        return;
+    const auto language = MelonPrime::UiText::ActiveMenuLanguage();
+    const auto strings = MelonPrime::Vulkan::Phase12StringsForLanguage(language);
+    const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(language);
+    rb3DVulkan->setText(strings.VulkanName);
+    rb3DVulkanCompute->setText(strings.VulkanComputeName);
+    rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
+    rb3DVulkanCompute->setEnabled(phase12Ui.Contract.Compute.Enabled);
+    rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
+    rb3DVulkanCompute->setToolTip(phase12Ui.ComputeTooltip);
+    if (btnVulkanRasterPreset)
+    {
+        btnVulkanRasterPreset->setText(strings.RasterPreset);
+        btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
+        btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
+    }
+    if (btnVulkanComputePreset)
+    {
+        btnVulkanComputePreset->setText(strings.ComputePreset);
+        btnVulkanComputePreset->setEnabled(phase12Ui.Contract.Compute.Enabled);
+        btnVulkanComputePreset->setToolTip(phase12Ui.ComputeTooltip);
+    }
+    ui->cbxGLResolution->setToolTip(strings.ScaleDescription);
+#endif
 }
 
 VideoSettingsDialog::~VideoSettingsDialog()
@@ -261,6 +396,11 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cfg.SetInt("3D.Hardware.ScaleFactor", oldGLScale);
+    cfg.SetBool("3D.Hardware.BetterPolygons", oldGLBetterPolygons);
+    cfg.SetBool("3D.Hardware.HiresCoordinates", oldHiresCoordinates);
+#endif
 
     emit updateVideoSettings(old_gl != UsesGL());
 
@@ -269,8 +409,15 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 
 void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 {
-    ui->cbVSync->setEnabled(hasOGL);
-    ui->sbVSyncInterval->setEnabled(hasOGL);
+    bool presenterSupportsVSync = hasOGL;
+#ifdef MELONPRIME_DS
+    auto& cfg = emuInstance->getGlobalConfig();
+    const auto backend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+    presenterSupportsVSync = backend != MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+#endif
+    ui->cbVSync->setEnabled(presenterSupportsVSync);
+    ui->sbVSyncInterval->setEnabled(presenterSupportsVSync && ui->cbVSync->isChecked());
 }
 
 void VideoSettingsDialog::onChange3DRenderer(int renderer)
@@ -331,6 +478,9 @@ void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetInt("3D.GL.ScaleFactor", idx+1);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cfg.SetInt("3D.Hardware.ScaleFactor", idx+1);
+#endif
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_COMPUTE_LIVE_SCALE_V2
@@ -349,6 +499,9 @@ void VideoSettingsDialog::on_cbBetterPolygons_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("3D.GL.BetterPolygons", (state != 0));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cfg.SetBool("3D.Hardware.BetterPolygons", (state != 0));
+#endif
 
     emit updateVideoSettings(false);
 }
@@ -357,6 +510,9 @@ void VideoSettingsDialog::on_cbxComputeHiResCoords_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("3D.GL.HiresCoordinates", (state != 0));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cfg.SetBool("3D.Hardware.HiresCoordinates", (state != 0));
+#endif
 
     emit updateVideoSettings(false);
 }
