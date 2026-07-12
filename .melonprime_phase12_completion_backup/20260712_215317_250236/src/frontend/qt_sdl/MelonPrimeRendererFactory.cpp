@@ -50,29 +50,14 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-    {
-        const auto contract = melonDS::DescribeVulkanRendererShell(false);
-        if (!contract.NativeVulkanRomIntegrationImplemented || !contract.NativeVulkan3DImplemented)
-        {
-            report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan ROM-visible acceptance gate";
-            report.fallbackReason =
-                "Vulkan raster was requested, but ROM-visible pixel-parity acceptance is incomplete; the Vulkan shell keeps the Software correctness baseline";
-        }
+        // MELONPRIME_VULKAN_RENDERER_SHELL_V1
+        report.fallbackReason =
+            "Phase 6 Vulkan shell uses Software 2D/3D/capture output; native Vulkan rasterization starts in Phase 7";
         return std::make_unique<melonDS::VulkanRenderer>(nds, false);
-    }
     case renderer3D_VulkanCompute:
-    {
-        const auto contract = melonDS::DescribeVulkanRendererShell(true);
-        if (!contract.NativeVulkanRomIntegrationImplemented || !contract.NativeVulkanComputeRomVisible)
-        {
-            report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan Compute ROM-visible acceptance gate";
-            report.fallbackReason =
-                "Vulkan Compute was requested, but ROM-visible pixel-parity acceptance is incomplete; the Vulkan shell keeps the Software correctness baseline";
-        }
+        report.fallbackReason =
+            "Phase 6 Vulkan Compute shell uses Software 2D/3D/capture output; native Vulkan compute rasterization starts in Phase 11";
         return std::make_unique<melonDS::VulkanRenderer>(nds, true);
-    }
 #endif
     default:
         report.normalized = renderer3D_Software;
