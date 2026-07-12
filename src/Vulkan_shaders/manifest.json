@@ -61,6 +61,42 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanOpaqueVertex",
+      "source": "opaque.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "VulkanOpaqueFragment",
+      "source": "opaque.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
     }
   ]
 }

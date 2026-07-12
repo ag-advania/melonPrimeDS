@@ -21,8 +21,9 @@ struct VulkanRendererShellContract
     bool NativeVulkanClearBitmapBootstrapAvailable = true;
     bool NativeVulkanVertexUploadBootstrapAvailable = true;
     bool NativeVulkanPolygonBatchBootstrapAvailable = true;
+    bool NativeVulkanOpaquePipelineBootstrapAvailable = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 6;
+    u32 ContractVersion = 7;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
@@ -32,7 +33,8 @@ VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) no
 // proves a native offscreen graphics pipeline; Phase 7.2 adds typed plain
 // clear-plane targets; Phase 7.3 adds the repeated VRAM clear-bitmap pass;
 // Phase 7.4 adds packed vertex/index/polygon upload; Phase 7.5 adds ordered,
-// adjacent-only pipeline batches. DS polygon rasterization is not integrated.
+// adjacent-only pipeline batches; Phase 7.6 adds an untextured opaque Vulkan
+// draw bootstrap. ROM Renderer3D integration is still intentionally absent.
 class VulkanRenderer final : public SoftRenderer
 {
 public:
