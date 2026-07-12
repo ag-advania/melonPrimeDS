@@ -1,10 +1,10 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
-// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 
 namespace
 {
+constexpr uint32_t kFinalPassSummaryWords = 8u;
 constexpr uint32_t kFinalTableWords = 8u + 34u;
 
 struct FinalPassConfig
@@ -19,6 +19,19 @@ struct FinalPassConfig
     uint32_t FogColor;
 };
 static_assert(sizeof(FinalPassConfig) == 32, "FinalPassConfig must match MSL");
+
+struct FinalPassSummary
+{
+    uint32_t Pixels;
+    uint32_t EdgePixels;
+    uint32_t FogTopPixels;
+    uint32_t FogSecondPixels;
+    uint32_t AAPixels;
+    uint32_t NonzeroAlpha;
+    uint32_t ColorHash;
+    uint32_t Reserved;
+};
+static_assert(sizeof(FinalPassSummary) == kFinalPassSummaryWords * sizeof(uint32_t));
 
 uint32_t ConvertRGB555ToRGB6(uint32_t color)
 {
