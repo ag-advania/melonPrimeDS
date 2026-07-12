@@ -65,6 +65,12 @@
 #endif
 
 #include "Config.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+#include "GPU.h"
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#endif
 
 #include "EmuInstance.h"
 #include "ArchiveUtil.h"
@@ -325,6 +331,95 @@ static std::optional<QString> melonPrimeVulkanProbeOutputPath(int argc, char** a
     return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeOutputLeaseTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-output-lease-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
+{
+    struct ReleaseState
+    {
+        int Calls = 0;
+        int PresenterRefs = 1;
+    } state;
+    auto release = +[](void* opaque) {
+        auto* state = static_cast<ReleaseState*>(opaque);
+        state->Calls++;
+        state->PresenterRefs--;
+    };
+
+    melonDS::RendererOutputLease first(
+        melonDS::RendererOutput::CpuBgra(nullptr, nullptr), &state, release);
+    melonDS::RendererOutputLease second(std::move(first));
+    melonDS::RendererOutputLease third;
+    third = std::move(second);
+    third.ReleaseNow();
+    third.ReleaseNow();
+
+    bool vulkanDescriptorPassed = true;
+    bool staleGenerationRejected = true;
+    qint64 frameSerial = 0;
+    qint64 generation = 0;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    melonDS::VulkanRendererOutput descriptor;
+    descriptor.Format = VK_FORMAT_B8G8R8A8_UNORM;
+    descriptor.Extent = {512, 384};
+    descriptor.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    descriptor.LayerCount = 2;
+    descriptor.EngineALayer = 0;
+    descriptor.FrameSerial = 42;
+    descriptor.Generation = 7;
+    descriptor.ProducerValue = 42;
+    const melonDS::RendererOutput output =
+        melonDS::RendererOutput::VulkanImage(&descriptor);
+    vulkanDescriptorPassed =
+        output.Kind == melonDS::RendererOutputKind::VulkanImage &&
+        output.Top == &descriptor && output.FrameSerial == descriptor.FrameSerial &&
+        output.Generation == descriptor.Generation &&
+        output.MatchesProducerFrame(descriptor.FrameSerial, descriptor.Generation);
+    staleGenerationRejected = !output.MatchesProducerFrame(
+        descriptor.FrameSerial, descriptor.Generation + 1);
+    frameSerial = static_cast<qint64>(output.FrameSerial);
+    generation = static_cast<qint64>(output.Generation);
+#endif
+
+    const bool passed = state.Calls == 1 && state.PresenterRefs == 0 &&
+        vulkanDescriptorPassed && staleGenerationRejected;
+    const QJsonObject result{
+        {"schema_version", 1},
+        {"passed", passed},
+        {"release_calls", state.Calls},
+        {"presenter_refs_after_release", state.PresenterRefs},
+        {"vulkan_descriptor_compiled",
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            true},
+#else
+            false},
+#endif
+        {"vulkan_descriptor_passed", vulkanDescriptorPassed},
+        {"stale_generation_rejected", staleGenerationRejected},
+        {"frame_serial", frameSerial},
+        {"generation", generation},
+    };
+    QFile file(outputPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return 2;
+    file.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
+    return passed ? 0 : 1;
+}
+#endif
+
 int main(int argc, char** argv)
 {
     sysTimer.start();
@@ -400,6 +495,11 @@ int main(int argc, char** argv)
 
     MelonApplication melon(argc, argv);
     pathInit();
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto leaseOut = melonPrimeOutputLeaseTestPath(argc, argv); leaseOut.has_value())
+        return runMelonPrimeOutputLeaseTest(*leaseOut);
+#endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto probeOut = melonPrimeVulkanProbeOutputPath(argc, argv); probeOut.has_value())
