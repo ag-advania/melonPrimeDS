@@ -68,6 +68,7 @@
 #include "MelonPrimeVulkanTranslucentBootstrap.h"
 #include "MelonPrimeVulkanShadowBootstrap.h"
 #include "MelonPrimeVulkanToonHighlightBootstrap.h"
+#include "MelonPrimeVulkanToonHighlightDescriptorBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -568,6 +569,18 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+static std::optional<QString> melonPrimeVulkanToonHighlightDescriptorTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-toon-highlight-descriptor-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
 {
     // MELONPRIME_VULKAN_RENDERER_SHELL_V1
@@ -770,6 +783,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto toonOut = melonPrimeVulkanToonHighlightContractTestPath(argc, argv); toonOut.has_value())
         return MelonPrime::Vulkan::RunToonHighlightShaderAbiHarness(*toonOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto toonDescriptorOut = melonPrimeVulkanToonHighlightDescriptorTestPath(argc, argv); toonDescriptorOut.has_value())
+        return MelonPrime::Vulkan::RunToonHighlightDescriptorRuntimeHarness(*toonDescriptorOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

@@ -23,8 +23,9 @@ VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) no
         true,
         true,
         true,
+        true,
         false,
-        11,
+        12,
     };
 }
 
