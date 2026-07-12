@@ -314,6 +314,30 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanPhase9TwoDCompute",
+      "source": "phase9_2d.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPhase9FinalCompute",
+      "source": "phase9_final.comp",
+      "stage": "comp",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

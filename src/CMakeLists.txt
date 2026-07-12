@@ -153,6 +153,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanTextureSamplingCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTextureCacheCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase8CaptureCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase9FinalCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase9TwoDCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertex.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertexWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentOpaqueModulate.spv.h"
@@ -186,6 +188,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/texture_sampling.comp"
             "${_mp_vk_shader_root}/texture_cache.comp"
             "${_mp_vk_shader_root}/phase8_capture.comp"
+            "${_mp_vk_shader_root}/phase9_final.comp"
+            "${_mp_vk_shader_root}/phase9_2d.comp"
             "${_mp_vk_shader_root}/textured_polygon.vert"
             "${_mp_vk_shader_root}/textured_polygon.frag"
             "${_mp_vk_shader_root}/shadow_mask.frag"
@@ -211,6 +215,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU3D_Vulkan.h
         GPU3D_TexcacheVulkan.cpp
         GPU3D_TexcacheVulkan.h
+        GPU2D_Vulkan.cpp
+        GPU2D_Vulkan.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

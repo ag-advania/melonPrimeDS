@@ -75,6 +75,7 @@
 #include "MelonPrimeVulkanTextureDecodeBootstrap.h"
 #include "MelonPrimeVulkanTextureUploadRingBootstrap.h"
 #include "MelonPrimeVulkanPhase8CompletionBootstrap.h"
+#include "MelonPrimeVulkanPhase9CompletionBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -609,7 +610,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 19 && compute.ContractVersion == 19 &&
+        raster.ContractVersion == 20 && compute.ContractVersion == 20 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -649,10 +650,22 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanTextureUploadRingAvailable &&
         raster.NativeVulkanPhase8SubsystemComplete &&
         compute.NativeVulkanPhase8SubsystemComplete &&
+        raster.NativeVulkanSoftware2DUploadFinalAvailable &&
+        compute.NativeVulkanSoftware2DUploadFinalAvailable &&
+        raster.NativeVulkan2DCompositionAvailable &&
+        compute.NativeVulkan2DCompositionAvailable &&
+        raster.NativeVulkanFinalCompositionAvailable &&
+        compute.NativeVulkanFinalCompositionAvailable &&
+        raster.NativeVulkanGpuResidentOutputAvailable &&
+        compute.NativeVulkanGpuResidentOutputAvailable &&
+        raster.NativeVulkanPhase9SubsystemComplete &&
+        compute.NativeVulkanPhase9SubsystemComplete &&
+        !raster.NativeVulkanRomIntegrationImplemented &&
+        !compute.NativeVulkanRomIntegrationImplemented &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 19},
+        {"schema_version", 20},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -695,6 +708,18 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_texture_upload_ring_available", compute.NativeVulkanTextureUploadRingAvailable},
         {"raster_phase8_subsystem_complete", raster.NativeVulkanPhase8SubsystemComplete},
         {"compute_phase8_subsystem_complete", compute.NativeVulkanPhase8SubsystemComplete},
+        {"raster_software_2d_upload_final_available", raster.NativeVulkanSoftware2DUploadFinalAvailable},
+        {"compute_software_2d_upload_final_available", compute.NativeVulkanSoftware2DUploadFinalAvailable},
+        {"raster_native_2d_composition_available", raster.NativeVulkan2DCompositionAvailable},
+        {"compute_native_2d_composition_available", compute.NativeVulkan2DCompositionAvailable},
+        {"raster_final_composition_available", raster.NativeVulkanFinalCompositionAvailable},
+        {"compute_final_composition_available", compute.NativeVulkanFinalCompositionAvailable},
+        {"raster_gpu_resident_output_available", raster.NativeVulkanGpuResidentOutputAvailable},
+        {"compute_gpu_resident_output_available", compute.NativeVulkanGpuResidentOutputAvailable},
+        {"raster_phase9_subsystem_complete", raster.NativeVulkanPhase9SubsystemComplete},
+        {"compute_phase9_subsystem_complete", compute.NativeVulkanPhase9SubsystemComplete},
+        {"raster_rom_integration_implemented", raster.NativeVulkanRomIntegrationImplemented},
+        {"compute_rom_integration_implemented", compute.NativeVulkanRomIntegrationImplemented},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -757,6 +782,18 @@ static std::optional<QString> melonPrimeVulkanPhase8CompletionTestPath(int argc,
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     for (int i = 1; i < argc; ++i)
         if (strcmp(argv[i], "--melonprime-vulkan-phase8-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase9CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase9-completion-test") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
 #endif
     (void)argc;
@@ -945,6 +982,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto phase8Out = melonPrimeVulkanPhase8CompletionTestPath(argc, argv); phase8Out.has_value())
         return MelonPrime::Vulkan::RunPhase8CompletionHarness(*phase8Out);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase9Out = melonPrimeVulkanPhase9CompletionTestPath(argc, argv); phase9Out.has_value())
+        return MelonPrime::Vulkan::RunPhase9CompletionHarness(*phase9Out);
 #endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);
