@@ -37,6 +37,30 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanClearBitmapVertex",
+      "source": "clear_bitmap.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanClearBitmapFragment",
+      "source": "clear_bitmap.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

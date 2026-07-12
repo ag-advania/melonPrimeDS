@@ -332,6 +332,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanInstanceHost.h
         MelonPrimeVulkanFeatureCheck.cpp
         MelonPrimeVulkanFeatureCheck.h
+        MelonPrimeVulkanClearBitmapBootstrap.cpp
+        MelonPrimeVulkanClearBitmapBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

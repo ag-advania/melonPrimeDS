@@ -5,6 +5,7 @@
 #endif
 
 // MELONPRIME_VULKAN_CLEAR_PLANE_CONTRACT_V1
+// MELONPRIME_VULKAN_CLEAR_BITMAP_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -17,6 +18,7 @@ namespace melonDS::Vulkan
 
 inline constexpr std::uint32_t kRasterTargetContractVersion = 1;
 inline constexpr std::uint32_t kClearPlaneContractVersion = 1;
+inline constexpr std::uint32_t kClearBitmapContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -45,6 +47,49 @@ struct ClearPlaneState
     float Depth = 0.0f;
 };
 
+enum ClearBitmapDirtyBits : std::uint32_t
+{
+    ClearBitmapDirty_None = 0,
+    ClearBitmapDirty_Color = 1u << 0,
+    ClearBitmapDirty_Depth = 1u << 1,
+    ClearBitmapDirty_All = ClearBitmapDirty_Color | ClearBitmapDirty_Depth,
+};
+
+struct alignas(16) ClearBitmapPushConstants
+{
+    std::array<float, 2> Offset{{0.0f, 0.0f}};
+    std::uint32_t OpaquePolyId = 0;
+    std::uint32_t Padding = 0;
+};
+
+static_assert(sizeof(ClearBitmapPushConstants) == 16);
+static_assert(offsetof(ClearBitmapPushConstants, OpaquePolyId) == 8);
+
+struct ClearBitmapState
+{
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t RawAttr1 = 0;
+    std::uint32_t RawAttr2 = 0;
+    bool Enabled = false;
+    std::uint8_t OffsetX = 0;
+    std::uint8_t OffsetY = 0;
+    std::uint8_t OpaquePolyId = 0;
+    std::array<float, 2> Offset{{0.0f, 0.0f}};
+    ClearBitmapPushConstants PushConstants{};
+};
+
+class ClearBitmapDirtyTracker
+{
+public:
+    void Reset() noexcept;
+    void MarkDirty(std::uint32_t mask) noexcept;
+    [[nodiscard]] std::uint32_t PendingMask() const noexcept;
+    std::uint32_t ConsumeIfEnabled(bool enabled) noexcept;
+
+private:
+    std::uint32_t DirtyMask = ClearBitmapDirty_All;
+};
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -56,6 +101,16 @@ ClearPlaneState DecodeClearPlaneState(
 
 std::array<VkClearValue, 3> BuildClearPlaneAttachmentValues(
     const ClearPlaneState& state) noexcept;
+
+ClearBitmapState DecodeClearBitmapState(
+    std::uint32_t renderDispCnt,
+    std::uint32_t renderClearAttr1,
+    std::uint32_t renderClearAttr2) noexcept;
+
+std::array<std::uint8_t, 4> DecodeClearBitmapColorTexel(
+    std::uint16_t color) noexcept;
+
+std::uint32_t DecodeClearBitmapDepthTexel(std::uint16_t value) noexcept;
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;
 

@@ -75,6 +75,80 @@ std::array<VkClearValue, 3> BuildClearPlaneAttachmentValues(
     return values;
 }
 
+ClearBitmapState DecodeClearBitmapState(
+    std::uint32_t renderDispCnt,
+    std::uint32_t renderClearAttr1,
+    std::uint32_t renderClearAttr2) noexcept
+{
+    ClearBitmapState state;
+    state.RenderDispCnt = renderDispCnt;
+    state.RawAttr1 = renderClearAttr1;
+    state.RawAttr2 = renderClearAttr2;
+    state.Enabled = (renderDispCnt & (1u << 14)) != 0;
+    state.OffsetX = static_cast<std::uint8_t>((renderClearAttr2 >> 16) & 0xFFu);
+    state.OffsetY = static_cast<std::uint8_t>((renderClearAttr2 >> 24) & 0xFFu);
+    state.OpaquePolyId = static_cast<std::uint8_t>((renderClearAttr1 >> 24) & 0x3Fu);
+    state.Offset = {
+        static_cast<float>(state.OffsetX) / 256.0f,
+        static_cast<float>(state.OffsetY) / 256.0f};
+    state.PushConstants.Offset = state.Offset;
+    state.PushConstants.OpaquePolyId = state.OpaquePolyId;
+    return state;
+}
+
+std::array<std::uint8_t, 4> DecodeClearBitmapColorTexel(
+    std::uint16_t color) noexcept
+{
+    std::uint32_t red = (static_cast<std::uint32_t>(color) << 1) & 0x3Eu;
+    std::uint32_t green = (static_cast<std::uint32_t>(color) >> 4) & 0x3Eu;
+    std::uint32_t blue = (static_cast<std::uint32_t>(color) >> 9) & 0x3Eu;
+    if (red)
+        ++red;
+    if (green)
+        ++green;
+    if (blue)
+        ++blue;
+    const std::uint32_t alpha = (color & 0x8000u) ? 31u : 0u;
+    return {{
+        static_cast<std::uint8_t>(red),
+        static_cast<std::uint8_t>(green),
+        static_cast<std::uint8_t>(blue),
+        static_cast<std::uint8_t>(alpha)}};
+}
+
+std::uint32_t DecodeClearBitmapDepthTexel(std::uint16_t value) noexcept
+{
+    const std::uint32_t depth =
+        ((static_cast<std::uint32_t>(value) & 0x7FFFu) * 0x200u) + 0x1FFu;
+    const std::uint32_t fog =
+        (static_cast<std::uint32_t>(value) & 0x8000u) << 9;
+    return depth | fog;
+}
+
+void ClearBitmapDirtyTracker::Reset() noexcept
+{
+    DirtyMask = ClearBitmapDirty_All;
+}
+
+void ClearBitmapDirtyTracker::MarkDirty(std::uint32_t mask) noexcept
+{
+    DirtyMask |= mask & ClearBitmapDirty_All;
+}
+
+std::uint32_t ClearBitmapDirtyTracker::PendingMask() const noexcept
+{
+    return DirtyMask;
+}
+
+std::uint32_t ClearBitmapDirtyTracker::ConsumeIfEnabled(bool enabled) noexcept
+{
+    if (!enabled)
+        return ClearBitmapDirty_None;
+    const std::uint32_t consumed = DirtyMask;
+    DirtyMask = ClearBitmapDirty_None;
+    return consumed;
+}
+
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
 {
     VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
