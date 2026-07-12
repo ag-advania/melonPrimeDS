@@ -6,6 +6,9 @@
 #include "Vulkan_Phase13Stability.h"
 #include "main.h"
 
+// MELONPRIME_VULKAN_PHASE13_QT_FUNCTION_TYPES_V2
+#include <QVulkanDeviceFunctions>
+#include <QVulkanFunctions>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
