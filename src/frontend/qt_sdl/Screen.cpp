@@ -85,9 +85,11 @@
 using namespace melonDS;
 
 #if !defined(_WIN32) && !defined(__APPLE__)
-// Qt < 6.5 uses QPlatformNativeInterface for both X11 and Wayland. Qt 6.5+
-// only needs the private QPA header when the Wayland backend is compiled.
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) || defined(WAYLAND_ENABLED)
+// Qt < 6.5 uses QPlatformNativeInterface for X11 and Wayland.
+// Qt 6.5+ uses the public QNativeInterface API on BSD and X11.
+// Only the Linux Wayland surface path still needs the private QPA header.
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) || \
+    (defined(__linux__) && defined(WAYLAND_ENABLED))
 #include <qpa/qplatformnativeinterface.h>
 #endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -2148,13 +2150,23 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
     {
         wi.type = WindowInfo::Type::Wayland;
         const QWaylandApplication* wl = qApp->nativeInterface<QWaylandApplication>();
-        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-        QWindow* handle = windowHandle();
-        if (!wl || !pni || !handle)
+        if (!wl)
             return std::nullopt;
 
         wi.display_connection = wl->display();
+#if defined(__linux__)
+        // MelonPrime's Linux pointer-lock path needs the native wl_surface.
+        // QPlatformNativeInterface is private Qt API and is intentionally not
+        // required by BSD builds, where private QPA headers may not be packaged.
+        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+        QWindow* handle = windowHandle();
+        if (!pni || !handle)
+            return std::nullopt;
         wi.window_handle = pni->nativeResourceForWindow("surface", handle);
+#else
+        // Match upstream Qt 6.5+ behavior on BSD and other Unix platforms.
+        wi.window_handle = reinterpret_cast<void*>(winId());
+#endif
         if (!wi.display_connection || !wi.window_handle)
             return std::nullopt;
     }
