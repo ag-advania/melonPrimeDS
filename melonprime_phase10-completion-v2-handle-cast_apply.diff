@@ -1,0 +1,45 @@
+warning: in the working copy of 'src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp', LF will be replaced by CRLF the next time Git touches it
+diff --git a/src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp b/src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp
+index 084eb675..f534ff8c 100644
+--- a/src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp
+@@ -20,6 +20,7 @@
+ #include <limits>
+ #include <memory>
+ #include <string>
++#include <type_traits>
+ #include <vector>
+ 
+ #include "GPU_VulkanOutputRing.h"
+@@ -49,6 +50,20 @@ constexpr std::uint64_t kGeneration = 5;
+ constexpr std::uint64_t kFrameSerial = 77;
+ constexpr std::uint64_t kProducerValue = 9;
+ 
++
++// MELONPRIME_VULKAN_FAKE_HANDLE_CAST_PORTABLE_V1
++// Vulkan non-dispatchable handles are pointer types on Win64 but integer types
++// on some other ABIs. Keep the synthetic audit handles portable across both.
++template <typename Handle>
++Handle MakeFakeVulkanHandle(std::uint64_t value)
++{
++    static_assert(std::is_pointer_v<Handle> || std::is_integral_v<Handle>);
++    if constexpr (std::is_pointer_v<Handle>)
++        return reinterpret_cast<Handle>(static_cast<std::uintptr_t>(value));
++    else
++        return static_cast<Handle>(value);
++}
++
+ struct BufferResource
+ {
+     VkBuffer Buffer = VK_NULL_HANDLE;
+@@ -464,8 +479,8 @@ private:
+         std::uint64_t producerValue) const
+     {
+         VulkanPhase10OutputDescriptor descriptor;
+-        descriptor.Image = static_cast<VkImage>(frame + 1u);
+-        descriptor.View = static_cast<VkImageView>(frame + 101u);
++        descriptor.Image = MakeFakeVulkanHandle<VkImage>(frame + 1u);
++        descriptor.View = MakeFakeVulkanHandle<VkImageView>(frame + 101u);
+         descriptor.Format = VK_FORMAT_R8G8B8A8_UINT;
+         descriptor.Extent = {kSourceWidth, kSourceHeight};
+         descriptor.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
