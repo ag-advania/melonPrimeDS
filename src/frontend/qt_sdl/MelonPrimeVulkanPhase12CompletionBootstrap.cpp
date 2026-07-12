@@ -208,6 +208,13 @@ Phase12LocalizedStrings Phase12StringsForLanguage(MenuLangId language)
         "Vulkan-computevoorinstelling toepassen", "Aplicar predefinição Vulkan Compute",
         "Применить профиль Vulkan Compute", "应用 Vulkan Compute 预设",
         "Vulkan Compute 사전 설정 적용", "تطبيق إعداد Vulkan Compute");
+    s.OpenSettings = Localized(language,
+        "Open Vulkan video settings...", "Vulkan映像設定を開く...",
+        "Vulkan-Videoeinstellungen öffnen...", "Abrir ajustes de vídeo Vulkan...",
+        "Ouvrir les paramètres vidéo Vulkan...", "Apri impostazioni video Vulkan...",
+        "Vulkan-video-instellingen openen...", "Abrir definições de vídeo Vulkan...",
+        "Открыть настройки видео Vulkan...", "打开 Vulkan 视频设置...",
+        "Vulkan 비디오 설정 열기...", "فتح إعدادات فيديو Vulkan...");
     s.ScaleDescription = Localized(language,
         "Internal 3D render scale used by OpenGL, Metal, and Vulkan hardware renderers.",
         "OpenGL、Metal、Vulkanのハードウェアレンダラーで使用する内部3D描画倍率です。",

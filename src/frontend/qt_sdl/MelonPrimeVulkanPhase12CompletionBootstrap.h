@@ -24,6 +24,7 @@ struct Phase12LocalizedStrings
     QString ComputeDescription;
     QString RasterPreset;
     QString ComputePreset;
+    QString OpenSettings;
     QString ScaleDescription;
     QString BuildUnavailable;
     QString InstanceUnavailable;

@@ -42,16 +42,10 @@ VulkanBackendChoiceState BuildChoice(
         choice.Reason = VulkanUiReason::ComputeFeaturesUnavailable;
         return choice;
     }
-    if (!compute && !snapshot.RasterRomIntegrationReady)
-    {
-        choice.Reason = VulkanUiReason::RasterRomIntegrationPending;
-        return choice;
-    }
-    if (compute && !snapshot.ComputeRomIntegrationReady)
-    {
-        choice.Reason = VulkanUiReason::ComputeRomIntegrationPending;
-        return choice;
-    }
+    // MELONPRIME_VULKAN_PHASE12_UI_ACTIVATION_V2
+    // UI availability is governed by the runtime Vulkan feature probe. ROM pixel-parity
+    // acceptance remains diagnostic information and must not hide or disable a backend
+    // that the user explicitly wants to test. Runtime creation still owns fallback.
     choice.Enabled = true;
     choice.Reason = VulkanUiReason::Available;
     return choice;
@@ -182,8 +176,9 @@ bool ValidateVulkanPhase12ExitContract() noexcept
     full.PresentationAvailable = true;
     full.RasterFeaturesAvailable = true;
     full.ComputeFeaturesAvailable = true;
-    full.RasterRomIntegrationReady = true;
-    full.ComputeRomIntegrationReady = true;
+    // Phase 12 v2: missing ROM acceptance must not grey out feature-capable backends.
+    full.RasterRomIntegrationReady = false;
+    full.ComputeRomIntegrationReady = false;
     const auto available = EvaluateVulkanPhase12UiState(full);
     if (!available.Raster.Generated || !available.Raster.Enabled ||
         !available.Compute.Generated || !available.Compute.Enabled)

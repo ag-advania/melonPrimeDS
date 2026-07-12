@@ -24,6 +24,7 @@
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QEvent;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
@@ -96,6 +97,8 @@ public:
     QTabWidget* getTabWidget();
 
 protected:
+    void changeEvent(QEvent* event) override;
+
     // Redirects wheel events on combo/spin/slider controls to the enclosing
     // scroll area when the control isn't focused, so scrolling the settings
     // page doesn't accidentally change a value the cursor happens to hover.
@@ -131,6 +134,14 @@ private:
     QPushButton* metroidSetVideoQualityToMetalCompute = nullptr;
     void refreshMacMetalPresetText();
     // MELONPRIME_MAC_METAL_PRESETS_V2
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_VULKAN_PHASE12_UI_ACTIVATION_V2
+    QPushButton* metroidSetVideoQualityToVulkan = nullptr;
+    QPushButton* metroidSetVideoQualityToVulkanCompute = nullptr;
+    QPushButton* openVulkanVideoSettings = nullptr;
+    void refreshVulkanPresetText();
 #endif
 
     // Enable only the spinboxes relevant to the selected Low HP Warning mode.

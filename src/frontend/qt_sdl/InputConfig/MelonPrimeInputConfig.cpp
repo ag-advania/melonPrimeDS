@@ -65,6 +65,9 @@
 #include "../Window.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "../MelonPrimeVulkanPhase12CompletionBootstrap.h"
+#endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 #include "../MelonPrimeMetalFeatureCheck.h"
 #endif
@@ -181,6 +184,57 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // MELONPRIME_MAC_METAL_PRESETS_V2
 #endif
 
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_VULKAN_PHASE12_UI_ACTIVATION_V2
+    metroidSetVideoQualityToVulkan = new QPushButton(ui->sectionVideo);
+    metroidSetVideoQualityToVulkan->setObjectName(
+        QStringLiteral("metroidSetVideoQualityToVulkan"));
+    ui->videoButtonsLayout->addWidget(metroidSetVideoQualityToVulkan);
+
+    metroidSetVideoQualityToVulkanCompute = new QPushButton(ui->sectionVideo);
+    metroidSetVideoQualityToVulkanCompute->setObjectName(
+        QStringLiteral("metroidSetVideoQualityToVulkanCompute"));
+    ui->videoButtonsLayout->addWidget(metroidSetVideoQualityToVulkanCompute);
+
+    openVulkanVideoSettings = new QPushButton(ui->sectionVideo);
+    openVulkanVideoSettings->setObjectName(QStringLiteral("openVulkanVideoSettings"));
+    ui->videoButtonsLayout->addWidget(openVulkanVideoSettings);
+
+    connect(metroidSetVideoQualityToVulkan, &QPushButton::clicked, this, [this]() {
+        const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
+            MelonPrime::UiText::ActiveMenuLanguage());
+        if (!runtime.Contract.Raster.Enabled)
+            return;
+        auto& cfg = emuInstance->getGlobalConfig();
+        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(cfg, false);
+        cfg.SetBool("Screen.UseGL", false);
+        cfg.SetInt("Screen.VSyncInterval", 1);
+        cfg.SetBool("3D.Soft.Threaded", true);
+    });
+    connect(metroidSetVideoQualityToVulkanCompute, &QPushButton::clicked, this, [this]() {
+        const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
+            MelonPrime::UiText::ActiveMenuLanguage());
+        if (!runtime.Contract.Compute.Enabled)
+            return;
+        auto& cfg = emuInstance->getGlobalConfig();
+        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(cfg, true);
+        cfg.SetBool("Screen.UseGL", false);
+        cfg.SetInt("Screen.VSyncInterval", 1);
+        cfg.SetBool("3D.Soft.Threaded", true);
+    });
+    connect(openVulkanVideoSettings, &QPushButton::clicked, this, [this]() {
+        QWidget* owner = this;
+        MainWindow* mainWindow = nullptr;
+        while (owner && !mainWindow)
+        {
+            mainWindow = qobject_cast<MainWindow*>(owner);
+            owner = owner->parentWidget();
+        }
+        if (mainWindow)
+            QMetaObject::invokeMethod(mainWindow, "onOpenVideoSettings", Qt::QueuedConnection);
+    });
+#endif
+
     Config::Table& instcfg = emuInstance->getLocalConfig();
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
@@ -197,6 +251,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    refreshVulkanPresetText();
+#endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
     refreshMacMetalPresetText();
 #endif
@@ -261,6 +318,45 @@ void MelonPrimeInputConfig::refreshMacMetalPresetText()
         makeTooltip(QStringLiteral("Metal")));
     metroidSetVideoQualityToMetalCompute->setToolTip(
         makeTooltip(QStringLiteral("Metal Compute Shader")));
+}
+#endif
+
+void MelonPrimeInputConfig::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (event && event->type() == QEvent::LanguageChange)
+        refreshVulkanPresetText();
+#else
+    (void)event;
+#endif
+}
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+void MelonPrimeInputConfig::refreshVulkanPresetText()
+{
+    if (!metroidSetVideoQualityToVulkan ||
+        !metroidSetVideoQualityToVulkanCompute ||
+        !openVulkanVideoSettings)
+        return;
+
+    const auto language = MelonPrime::UiText::ActiveMenuLanguage();
+    const auto strings = MelonPrime::Vulkan::Phase12StringsForLanguage(language);
+    const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(language);
+
+    metroidSetVideoQualityToVulkan->setText(strings.RasterPreset);
+    metroidSetVideoQualityToVulkanCompute->setText(strings.ComputePreset);
+    openVulkanVideoSettings->setText(strings.OpenSettings);
+
+    metroidSetVideoQualityToVulkan->setEnabled(runtime.Contract.Raster.Enabled);
+    metroidSetVideoQualityToVulkanCompute->setEnabled(runtime.Contract.Compute.Enabled);
+    openVulkanVideoSettings->setEnabled(
+        runtime.Contract.Raster.Generated || runtime.Contract.Compute.Generated);
+
+    metroidSetVideoQualityToVulkan->setToolTip(runtime.RasterTooltip);
+    metroidSetVideoQualityToVulkanCompute->setToolTip(runtime.ComputeTooltip);
+    openVulkanVideoSettings->setToolTip(
+        runtime.RasterTooltip + QStringLiteral("\n") + runtime.ComputeTooltip);
 }
 #endif
 
