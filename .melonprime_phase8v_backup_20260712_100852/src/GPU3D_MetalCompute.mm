@@ -17,7 +17,6 @@
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_FIX_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_FIX_V1
-// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -2857,7 +2856,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 8V Summary-Free Production";
+        command.label = @"MelonPrime Metal Compute Phase 8F Visible Cutover";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2930,7 +2929,16 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         if (ownsTileMemory)
         {
             if (submitTileRaster)
-            {            {
+            {
+                {
+                    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                    [encoder setComputePipelineState:State->ClearTileSummaryPipeline];
+                [encoder setBuffer:State->TileSummary offset:0 atIndex:0];
+                [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                [encoder endEncoding];
+            }
+            {
                 id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
                 [encoder setComputePipelineState:State->TextureRasterPipeline];
                 [encoder setBuffer:slot->Header offset:0 atIndex:0];
@@ -2941,6 +2949,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:State->ColorTiles offset:0 atIndex:5];
                 [encoder setBuffer:State->DepthTiles offset:0 atIndex:6];
                 [encoder setBuffer:State->AttrTiles offset:0 atIndex:7];
+                [encoder setBuffer:State->TileSummary offset:0 atIndex:8];
                 [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
                 [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:10];
                 [encoder setBuffer:slot->TexturePaletteBuffer offset:0 atIndex:11];
@@ -2953,7 +2962,21 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 }
             }
             if (submitDepthBlend)
-            {                {
+            {
+                {
+                    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                    [encoder
+                        setComputePipelineState:
+                            State->ClearCompleteDepthBlendSummaryPipeline];
+                    [encoder
+                        setBuffer:State->DepthBlendSummaryBuffer
+                           offset:0
+                          atIndex:0];
+                    [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                             threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                    [encoder endEncoding];
+                }
+                {
                     id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
                     [encoder
                         setComputePipelineState:
@@ -2967,6 +2990,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     [encoder setBuffer:State->DepthBlendColor offset:0 atIndex:6];
                     [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:7];
                     [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:8];
+                    [encoder setBuffer:State->DepthBlendSummaryBuffer offset:0 atIndex:9];
                     [encoder
                         setBytes:&depthBlendConfig
                            length:sizeof(depthBlendConfig)
@@ -2981,12 +3005,22 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     [encoder endEncoding];
                 }
                 if (submitFinalPass)
-                {                    {
+                {
+                    {
+                        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                        [encoder setComputePipelineState:State->ClearFinalPassSummaryPipeline];
+                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:0];
+                        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                        [encoder endEncoding];
+                    }
+                    {
                         id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
                         [encoder setComputePipelineState:State->FinalPassPipeline];
                         [encoder setBuffer:State->DepthBlendColor offset:0 atIndex:0];
                         [encoder setBuffer:State->DepthBlendDepth offset:0 atIndex:1];
                         [encoder setBuffer:State->DepthBlendAttr offset:0 atIndex:2];
+                        [encoder setBuffer:slot->FinalPassSummaryBuffer offset:0 atIndex:3];
                         [encoder setBuffer:slot->FinalTablesBuffer offset:0 atIndex:4];
                         [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:5];
                         [encoder setTexture:slot->FinalTexture atIndex:0];

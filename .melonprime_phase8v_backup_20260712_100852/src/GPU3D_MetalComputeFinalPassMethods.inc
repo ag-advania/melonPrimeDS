@@ -1,6 +1,5 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_DIAGNOSTICS_CLEANUP_V1
-// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 
 namespace
 {
@@ -77,11 +76,13 @@ bool MetalComputeRenderer3D::ComputeFinalReady() const noexcept
 bool MetalComputeRenderer3D::RunFinalPassSelfTest()
 {
     if (!State || !State->Device || !State->Queue ||
+        !State->ClearFinalPassSummaryPipeline ||
         !State->FinalPassPipeline)
     {
         return false;
     }
 
+    constexpr uint32_t pixelCount = 1u;
     const uint32_t colors[2] = {
         63u | (31u << 24u),
         0u,
@@ -103,6 +104,9 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
     id<MTLBuffer> attrBuffer = [State->Device
         newBufferWithBytes:attrs length:sizeof(attrs)
         options:MTLResourceStorageModeShared];
+    id<MTLBuffer> finalSummary = [State->Device
+        newBufferWithLength:kFinalPassSummaryWords * sizeof(uint32_t)
+        options:MTLResourceStorageModeShared];
     id<MTLBuffer> tableBuffer = [State->Device
         newBufferWithBytes:tables length:sizeof(tables)
         options:MTLResourceStorageModeShared];
@@ -115,30 +119,38 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
     descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
     descriptor.storageMode = MTLStorageModeShared;
     id<MTLTexture> finalTexture = [State->Device newTextureWithDescriptor:descriptor];
-    if (!colorBuffer || !depthBuffer || !attrBuffer ||
+    if (!colorBuffer || !depthBuffer || !attrBuffer || !finalSummary ||
         !tableBuffer || !finalTexture)
     {
         return false;
     }
 
     id<MTLCommandBuffer> command = [State->Queue commandBuffer];
-    if (!command)
-        return false;
+    if (!command) return false;
     command.label = @"MelonPrime Metal Compute FinalPass Self-Test";
 
-    id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-    if (!encoder)
-        return false;
-    [encoder setComputePipelineState:State->FinalPassPipeline];
-    [encoder setBuffer:colorBuffer offset:0 atIndex:0];
-    [encoder setBuffer:depthBuffer offset:0 atIndex:1];
-    [encoder setBuffer:attrBuffer offset:0 atIndex:2];
-    [encoder setBuffer:tableBuffer offset:0 atIndex:4];
-    [encoder setBytes:&config length:sizeof(config) atIndex:5];
-    [encoder setTexture:finalTexture atIndex:0];
-    [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-             threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-    [encoder endEncoding];
+    {
+        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+        [encoder setComputePipelineState:State->ClearFinalPassSummaryPipeline];
+        [encoder setBuffer:finalSummary offset:0 atIndex:0];
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+    }
+    {
+        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+        [encoder setComputePipelineState:State->FinalPassPipeline];
+        [encoder setBuffer:colorBuffer offset:0 atIndex:0];
+        [encoder setBuffer:depthBuffer offset:0 atIndex:1];
+        [encoder setBuffer:attrBuffer offset:0 atIndex:2];
+        [encoder setBuffer:finalSummary offset:0 atIndex:3];
+        [encoder setBuffer:tableBuffer offset:0 atIndex:4];
+        [encoder setBytes:&config length:sizeof(config) atIndex:5];
+        [encoder setTexture:finalTexture atIndex:0];
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+    }
 
     if (!CompleteCommandBuffer(command, "final-pass self-test"))
         return false;
@@ -148,20 +160,22 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
                bytesPerRow:sizeof(pixel)
                 fromRegion:MTLRegionMake2D(0, 0, 1, 1)
                mipmapLevel:0];
+    const auto* final = static_cast<const FinalPassSummary*>([finalSummary contents]);
     // BGRA8 raw storage: shader red is byte 2.
     if (pixel[2] < 248u || pixel[0] > 4u || pixel[1] > 4u ||
-        pixel[3] < 248u)
+        final->Pixels != pixelCount || final->NonzeroAlpha != pixelCount)
     {
         std::fprintf(stderr,
             "[MelonPrime] metal compute final pass: self-test mismatch "
-            "bgra=%u,%u,%u,%u\n",
-            pixel[0], pixel[1], pixel[2], pixel[3]);
+            "bgra=%u,%u,%u,%u pixels=%u alpha=%u\n",
+            pixel[0], pixel[1], pixel[2], pixel[3],
+            final->Pixels, final->NonzeroAlpha);
         return false;
     }
 
     std::fprintf(stderr,
         "[MelonPrime] metal compute final pass: self-test PASS "
-        "bgra=%u,%u,%u,%u\n",
-        pixel[0], pixel[1], pixel[2], pixel[3]);
+        "bgra=%u,%u,%u,%u hash=0x%08x\n",
+        pixel[0], pixel[1], pixel[2], pixel[3], final->ColorHash);
     return true;
 }

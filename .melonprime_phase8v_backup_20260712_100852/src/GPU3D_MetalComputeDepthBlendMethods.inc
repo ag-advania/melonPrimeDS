@@ -1,5 +1,4 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
-// MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 
 namespace
 {
@@ -57,6 +56,7 @@ static_assert(
 bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
 {
     if (!State || !State->Device || !State->Queue ||
+        !State->ClearCompleteDepthBlendSummaryPipeline ||
         !State->CompleteDepthBlendPipeline)
     {
         return false;
@@ -74,6 +74,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     std::array<uint32_t, maxWorkTiles> depthTiles {};
     std::array<uint32_t, maxWorkTiles> attrTiles {};
 
+    // Opaque red base at depth 100.
     polygons[0].Attr =
         (1u << 24u) |
         (31u << 16u);
@@ -82,10 +83,12 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         (31u << 24u);
     depthTiles[0] = 100u;
 
+    // Shadow-mask polygon behind the base. The failed depth test sets stencil.
     polygons[1].Attr = 0x30u;
     colorTiles[1] = 0xFFFFFFFFu;
     depthTiles[1] = 200u;
 
+    // Translucent black shadow in front with a different polygon ID.
     polygons[2].Attr =
         (2u << 24u) |
         (15u << 16u) |
@@ -148,6 +151,12 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         [State->Device
             newBufferWithLength:2u * sizeof(uint32_t)
                         options:MTLResourceStorageModeShared];
+    id<MTLBuffer> summary =
+        [State->Device
+            newBufferWithLength:
+                kCompleteDepthBlendSummaryWords *
+                sizeof(uint32_t)
+                        options:MTLResourceStorageModeShared];
 
     const uint16_t zeroTexture = 0;
     id<MTLBuffer> textureMemory =
@@ -159,14 +168,27 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     if (!fine || !offsets || !polygonBuffer ||
         !colors || !depths || !attrs ||
         !resultColor || !resultDepth || !resultAttr ||
-        !textureMemory)
+        !summary || !textureMemory)
     {
         return false;
     }
 
-    std::memset([resultColor contents], 0, resultColor.length);
-    std::memset([resultDepth contents], 0, resultDepth.length);
-    std::memset([resultAttr contents], 0, resultAttr.length);
+    std::memset(
+        [resultColor contents],
+        0,
+        resultColor.length);
+    std::memset(
+        [resultDepth contents],
+        0,
+        resultDepth.length);
+    std::memset(
+        [resultAttr contents],
+        0,
+        resultAttr.length);
+    std::memset(
+        [summary contents],
+        0,
+        summary.length);
 
     id<MTLCommandBuffer> command =
         [State->Queue commandBuffer];
@@ -175,31 +197,49 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     command.label =
         @"MelonPrime Metal Compute Complete DepthBlend Self-Test";
 
-    id<MTLComputeCommandEncoder> encoder =
-        [command computeCommandEncoder];
-    if (!encoder)
-        return false;
-    [encoder
-        setComputePipelineState:
-            State->CompleteDepthBlendPipeline];
-    [encoder setBuffer:fine offset:0 atIndex:0];
-    [encoder setBuffer:offsets offset:0 atIndex:1];
-    [encoder setBuffer:polygonBuffer offset:0 atIndex:2];
-    [encoder setBuffer:colors offset:0 atIndex:3];
-    [encoder setBuffer:depths offset:0 atIndex:4];
-    [encoder setBuffer:attrs offset:0 atIndex:5];
-    [encoder setBuffer:resultColor offset:0 atIndex:6];
-    [encoder setBuffer:resultDepth offset:0 atIndex:7];
-    [encoder setBuffer:resultAttr offset:0 atIndex:8];
-    [encoder
-        setBytes:&config
-           length:sizeof(config)
-          atIndex:10];
-    [encoder setBuffer:textureMemory offset:0 atIndex:11];
-    [encoder
-        dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-        threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-    [encoder endEncoding];
+    {
+        id<MTLComputeCommandEncoder> encoder =
+            [command computeCommandEncoder];
+        if (!encoder)
+            return false;
+        [encoder
+            setComputePipelineState:
+                State->ClearCompleteDepthBlendSummaryPipeline];
+        [encoder setBuffer:summary offset:0 atIndex:0];
+        [encoder
+            dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+    }
+
+    {
+        id<MTLComputeCommandEncoder> encoder =
+            [command computeCommandEncoder];
+        if (!encoder)
+            return false;
+        [encoder
+            setComputePipelineState:
+                State->CompleteDepthBlendPipeline];
+        [encoder setBuffer:fine offset:0 atIndex:0];
+        [encoder setBuffer:offsets offset:0 atIndex:1];
+        [encoder setBuffer:polygonBuffer offset:0 atIndex:2];
+        [encoder setBuffer:colors offset:0 atIndex:3];
+        [encoder setBuffer:depths offset:0 atIndex:4];
+        [encoder setBuffer:attrs offset:0 atIndex:5];
+        [encoder setBuffer:resultColor offset:0 atIndex:6];
+        [encoder setBuffer:resultDepth offset:0 atIndex:7];
+        [encoder setBuffer:resultAttr offset:0 atIndex:8];
+        [encoder setBuffer:summary offset:0 atIndex:9];
+        [encoder
+            setBytes:&config
+               length:sizeof(config)
+              atIndex:10];
+        [encoder setBuffer:textureMemory offset:0 atIndex:11];
+        [encoder
+            dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+    }
 
     if (!CompleteCommandBuffer(
             command,
@@ -209,11 +249,17 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     }
 
     const auto* outputColor =
-        static_cast<const uint32_t*>([resultColor contents]);
+        static_cast<const uint32_t*>(
+            [resultColor contents]);
     const auto* outputDepth =
-        static_cast<const uint32_t*>([resultDepth contents]);
+        static_cast<const uint32_t*>(
+            [resultDepth contents]);
     const auto* outputAttr =
-        static_cast<const uint32_t*>([resultAttr contents]);
+        static_cast<const uint32_t*>(
+            [resultAttr contents]);
+    const auto* outputSummary =
+        static_cast<const CompleteDepthBlendSummary*>(
+            [summary contents]);
 
     const uint32_t expectedColor =
         31u |
@@ -222,24 +268,40 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     if (outputColor[0] != expectedColor ||
         outputDepth[0] != 100u ||
         (outputAttr[0] & (1u << 22u)) == 0u ||
-        outputColor[1] != 0u ||
-        outputDepth[1] != 0u ||
-        outputAttr[1] != 0u)
+        outputSummary->Pixels != 1u ||
+        outputSummary->OpaqueLayers != 1u ||
+        outputSummary->TranslucentLayers != 1u ||
+        outputSummary->ShadowMaskPixels != 1u ||
+        outputSummary->ShadowPolygonPixels != 1u ||
+        outputSummary->LayersAccepted != 2u)
     {
         std::fprintf(
             stderr,
             "[MelonPrime] metal compute complete depth blend: "
-            "self-test mismatch top=%08x/%08x/%08x "
-            "second=%08x/%08x/%08x\n",
-            outputColor[0], outputDepth[0], outputAttr[0],
-            outputColor[1], outputDepth[1], outputAttr[1]);
+            "self-test mismatch color=%08x depth=%08x attr=%08x "
+            "pixels=%u accepted=%u opaque=%u translucent=%u "
+            "shadowMask=%u shadow=%u\n",
+            outputColor[0],
+            outputDepth[0],
+            outputAttr[0],
+            outputSummary->Pixels,
+            outputSummary->LayersAccepted,
+            outputSummary->OpaqueLayers,
+            outputSummary->TranslucentLayers,
+            outputSummary->ShadowMaskPixels,
+            outputSummary->ShadowPolygonPixels);
         return false;
     }
 
     std::fprintf(
         stderr,
         "[MelonPrime] metal compute complete depth blend: "
-        "self-test PASS color=%08x depth=%08x attr=%08x\n",
-        outputColor[0], outputDepth[0], outputAttr[0]);
+        "self-test PASS color=%08x depth=%08x "
+        "shadowMask=%u shadow=%u translucent=%u\n",
+        outputColor[0],
+        outputDepth[0],
+        outputSummary->ShadowMaskPixels,
+        outputSummary->ShadowPolygonPixels,
+        outputSummary->TranslucentLayers);
     return true;
 }
