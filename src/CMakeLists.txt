@@ -138,6 +138,36 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanOpaqueVertexWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanOpaqueFragment.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanOpaqueFragmentWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanOpaqueFragmentToonHighlight.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanOpaqueFragmentToonHighlightWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentVertexWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentFragmentWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentFragmentToonHighlight.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTranslucentFragmentToonHighlightWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanShadowMaskFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanShadowMaskFragmentWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanToonHighlightVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanToonHighlightFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTextureSamplingCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTextureCacheCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase8CaptureCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase9FinalCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase11Compute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase9TwoDCompute.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertexWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentOpaqueModulate.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentOpaqueDecal.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentTranslucentModulate.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentTranslucentDecal.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentOpaqueModulateWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentOpaqueDecalWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentTranslucentModulateWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonFragmentTranslucentDecalWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanShaders.h"
         "${_mp_vk_shader_root}/generated/manifest.lock.json")
 
@@ -156,6 +186,21 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/clear_bitmap.frag"
             "${_mp_vk_shader_root}/opaque.vert"
             "${_mp_vk_shader_root}/opaque.frag"
+            "${_mp_vk_shader_root}/translucent.vert"
+            "${_mp_vk_shader_root}/translucent.frag"
+            "${_mp_vk_shader_root}/texture_sampling.comp"
+            "${_mp_vk_shader_root}/texture_cache.comp"
+            "${_mp_vk_shader_root}/phase8_capture.comp"
+            "${_mp_vk_shader_root}/phase9_final.comp"
+            "${_mp_vk_shader_root}/phase10_presenter.frag"
+            "${_mp_vk_shader_root}/phase11_compute.comp"
+            "${_mp_vk_shader_root}/phase10_presenter.vert"
+            "${_mp_vk_shader_root}/phase9_2d.comp"
+            "${_mp_vk_shader_root}/textured_polygon.vert"
+            "${_mp_vk_shader_root}/textured_polygon.frag"
+            "${_mp_vk_shader_root}/shadow_mask.frag"
+            "${_mp_vk_shader_root}/toon_highlight.vert"
+            "${_mp_vk_shader_root}/toon_highlight.frag"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Generating deterministic MelonPrime Vulkan SPIR-V headers"
         VERBATIM)
@@ -174,6 +219,14 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU_Vulkan.h
         GPU3D_Vulkan.cpp
         GPU3D_Vulkan.h
+        GPU3D_TexcacheVulkan.cpp
+        GPU3D_TexcacheVulkan.h
+        GPU2D_Vulkan.cpp
+        GPU2D_Vulkan.h
+        GPU_VulkanOutputRing.cpp
+        GPU_VulkanOutputRing.h
+        GPU3D_VulkanCompute.cpp
+        GPU3D_VulkanCompute.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

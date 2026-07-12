@@ -2,6 +2,7 @@
 // MELONPRIME_METAL_HIRES_PRESENT_FILTER_V2
 // MELONPRIME_METAL_OUTPUT_LEASE_V1
 // MELONPRIME_METAL_PRESENT_RATE_CONTROL_V1
+// MELONPRIME_METAL_OPENEMU_NONBLOCKING_PRESENTER_V1
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -9,6 +10,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <AppKit/NSView.h>
 #import <AppKit/NSWindow.h>
+#import <dispatch/dispatch.h>
 
 #include <cmath>
 #include <algorithm>
@@ -239,12 +241,66 @@ struct UiUniforms
 };
 static_assert(sizeof(UiUniforms) == 32, "must match the MSL UiUniforms layout exactly");
 
+// OpenEmu deliberately permits only one display command buffer at a time.
+// CAMetalLayer::nextDrawable() can otherwise block the emulation/render thread
+// for more than one display interval when the compositor or GPU is behind.
+// This nonblocking permit drops only the presenter refresh; the emulated frame
+// and renderer-owned final texture remain available for the next refresh.
+class NonblockingPresenterPermit
+{
+public:
+    explicit NonblockingPresenterPermit(dispatch_semaphore_t semaphore) noexcept
+        : semaphore_(semaphore)
+        , acquired_(semaphore_ &&
+                    dispatch_semaphore_wait(semaphore_, DISPATCH_TIME_NOW) == 0)
+    {
+    }
+
+    NonblockingPresenterPermit(const NonblockingPresenterPermit&) = delete;
+    NonblockingPresenterPermit& operator=(const NonblockingPresenterPermit&) = delete;
+
+    ~NonblockingPresenterPermit()
+    {
+        releaseNow();
+    }
+
+    bool acquired() const noexcept
+    {
+        return acquired_;
+    }
+
+    void releaseOnCommandBufferCompletion(id<MTLCommandBuffer> commandBuffer)
+    {
+        if (!acquired_ || !semaphore_ || !commandBuffer)
+            return;
+
+        dispatch_semaphore_t semaphore = semaphore_;
+        acquired_ = false;
+        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer>) {
+            dispatch_semaphore_signal(semaphore);
+        }];
+    }
+
+private:
+    void releaseNow() noexcept
+    {
+        if (!acquired_ || !semaphore_)
+            return;
+        dispatch_semaphore_signal(semaphore_);
+        acquired_ = false;
+    }
+
+    dispatch_semaphore_t semaphore_ = nullptr;
+    bool acquired_ = false;
+};
+
 } // namespace
 
 struct ScreenPanelMetal::Impl
 {
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> queue = nil;
+    dispatch_semaphore_t presenterInflightSemaphore = nullptr;
     CAMetalLayer* layer = nil;
     id<MTLRenderPipelineState> pipeline = nil;
     id<MTLRenderPipelineState> uiPipeline = nil;
@@ -337,6 +393,13 @@ bool ScreenPanelMetal::initMetal()
         if (!m->queue)
         {
             fprintf(stderr, "[MelonPrime] metal presenter: newCommandQueue failed\n");
+            return false;
+        }
+
+        m->presenterInflightSemaphore = dispatch_semaphore_create(1);
+        if (!m->presenterInflightSemaphore)
+        {
+            fprintf(stderr, "[MelonPrime] metal presenter: dispatch_semaphore_create failed\n");
             return false;
         }
 
@@ -647,6 +710,13 @@ void ScreenPanelMetal::drawScreen()
         m->layoutMutex.unlock();
 
         if (!layer || w <= 0 || h <= 0)
+            return;
+
+        // Match OpenEmu's display policy: never let a backed-up CAMetalLayer
+        // stall emulation/audio. If the previous presenter command buffer is
+        // still in flight, keep the newest renderer output and skip this draw.
+        NonblockingPresenterPermit presenterPermit(m->presenterInflightSemaphore);
+        if (!presenterPermit.acquired())
             return;
 
         const auto presentStart = PresenterClock::now();
@@ -1010,6 +1080,9 @@ void ScreenPanelMetal::drawScreen()
             }];
         }
 
+        // Completion, not nextDrawable(), releases the one-frame presenter gate.
+        // Every earlier return is covered by NonblockingPresenterPermit's destructor.
+        presenterPermit.releaseOnCommandBufferCompletion(cmdBuffer);
         [cmdBuffer presentDrawable:drawable];
         [cmdBuffer commit];
 

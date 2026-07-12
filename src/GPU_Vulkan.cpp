@@ -9,19 +9,10 @@ namespace melonDS
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept
 {
-    return {
-        computeSelected ? "Vulkan Compute Shader" : "Vulkan",
-        computeSelected,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        false,
-        7,
-    };
+    VulkanRendererShellContract contract{};
+    contract.ModeName = computeSelected ? "Vulkan Compute Shader" : "Vulkan";
+    contract.ComputeSelected = computeSelected;
+    return contract;
 }
 
 VulkanRenderer::VulkanRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
@@ -49,9 +40,17 @@ bool VulkanRenderer::Init()
         "software_correctness_baseline=1 native_vulkan_raster_bootstrap=1 "
         "native_vulkan_clear_plane_bootstrap=1 native_vulkan_clear_bitmap_bootstrap=1 "
         "native_vulkan_vertex_upload_bootstrap=1 native_vulkan_polygon_batch_bootstrap=1 "
-        "native_vulkan_opaque_pipeline_bootstrap=1 native_vulkan_3d=0 generation=%llu\n",
+        "native_vulkan_opaque_pipeline_bootstrap=1 "
+        "native_vulkan_translucent_pipeline_bootstrap=1 "
+        "native_vulkan_shadow_pipeline_bootstrap=1 native_vulkan_toon_highlight_contract=1 native_vulkan_toon_highlight_shader_abi=1 native_vulkan_toon_highlight_descriptor_runtime=1 native_vulkan_toon_highlight_gpu_draw=1 native_vulkan_texture_sampling_bootstrap=1 native_vulkan_textured_polygon_bootstrap=1 native_vulkan_texture_cache_bootstrap=1 native_vulkan_texture_decode_bootstrap=1 native_vulkan_texture_upload_ring=1 native_vulkan_phase8_subsystem_complete=1 native_vulkan_software_2d_upload_final=1 native_vulkan_2d_composition=1 native_vulkan_final_composition=1 native_vulkan_gpu_resident_output=1 native_vulkan_phase9_subsystem_complete=1 native_vulkan_output_ring=1 native_vulkan_zero_copy_presenter=1 native_vulkan_multi_window_lease=1 native_vulkan_timeline_presenter_wait=1 native_vulkan_phase10_subsystem_complete=1 native_vulkan_rom_integration=0 native_vulkan_3d=0 generation=%llu\n",
         contract.ModeName,
         static_cast<unsigned long long>(OutputGeneration));
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[MelonPrime] Vulkan Phase 11 capability: compute_stage_graph=1 "
+        "specialization_cache=1 indirect_dispatch=1 explicit_barriers=1 "
+        "hires_coordinates=1 compute_visible_output=1 "
+        "native_vulkan_phase11_subsystem_complete=1 rom_visible=0\n");
     return true;
 }
 

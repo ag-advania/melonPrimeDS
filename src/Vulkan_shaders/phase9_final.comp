@@ -1,0 +1,91 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct ScanlineState
+{
+    uint DisplayModeA;
+    uint DisplayModeB;
+    uint ScreenSwap;
+    uint ScreenEnabledMask;
+    uint WindowX0;
+    uint WindowX1;
+    uint MosaicX;
+    uint MosaicY;
+    uint WindowEnableMask;
+    uint ObjEnableMask;
+    uint Use3DMask;
+    uint BlendEnableMask;
+    uint Eva;
+    uint Evb;
+    uint BrightModeA;
+    uint BrightModeB;
+    uint BrightFactorA;
+    uint BrightFactorB;
+    uint Reserved0;
+    uint Reserved1;
+};
+
+layout(set = 0, binding = 0, rgba8ui) uniform readonly uimage2DArray LayerInput;
+layout(set = 0, binding = 1, rgba8ui) uniform readonly uimage2DArray AuxInput;
+layout(std430, set = 0, binding = 2) readonly buffer StateBuffer
+{
+    ScanlineState Lines[];
+} States;
+layout(set = 0, binding = 3, rgba8ui) uniform writeonly uimage2DArray FinalOutput;
+
+layout(push_constant) uniform Phase9FinalPush
+{
+    uint YStart;
+    uint YEnd;
+    uint NativeWidth;
+    uint NativeHeight;
+    uint Scale;
+    uint OutputWidth;
+    uint OutputHeight;
+    uint Reserved;
+} Push;
+
+uvec4 applyBrightness(uvec4 color, uint mode, uint factor)
+{
+    factor = min(factor, 16u);
+    if (mode == 1u)
+        color.rgb = color.rgb + (((uvec3(255u) - color.rgb) * factor + uvec3(8u)) >> 4u);
+    else if (mode == 2u)
+        color.rgb = color.rgb - ((color.rgb * factor + uvec3(7u)) >> 4u);
+    return color;
+}
+
+void main()
+{
+    uvec3 gid = gl_GlobalInvocationID;
+    if (gid.x >= Push.OutputWidth || gid.y >= Push.OutputHeight || gid.z >= 2u)
+        return;
+    uint nativeX = gid.x / Push.Scale;
+    uint nativeY = gid.y / Push.Scale;
+    if (nativeY < Push.YStart || nativeY >= Push.YEnd || nativeY >= Push.NativeHeight)
+        return;
+
+    ScanlineState state = States.Lines[nativeY];
+    uint engine = (gid.z ^ (state.ScreenSwap & 1u)) & 1u;
+    uint bit = 1u << engine;
+    uvec4 color;
+    if ((state.ScreenEnabledMask & bit) == 0u)
+    {
+        color = uvec4(0u, 0u, 0u, 255u);
+    }
+    else
+    {
+        uint mode = engine == 0u ? state.DisplayModeA : state.DisplayModeB;
+        if (mode == 2u)
+            color = imageLoad(AuxInput, ivec3(nativeX, nativeY, 0));
+        else if (mode == 3u)
+            color = imageLoad(AuxInput, ivec3(nativeX, nativeY, 1));
+        else
+            color = imageLoad(LayerInput, ivec3(nativeX, nativeY, engine));
+        uint brightMode = engine == 0u ? state.BrightModeA : state.BrightModeB;
+        uint brightFactor = engine == 0u ? state.BrightFactorA : state.BrightFactorB;
+        color = applyBrightness(color, brightMode, brightFactor);
+    }
+    imageStore(FinalOutput, ivec3(gid), color);
+}

@@ -65,6 +65,19 @@
 #include "MelonPrimeVulkanVertexUploadBootstrap.h"
 #include "MelonPrimeVulkanPolygonBatchBootstrap.h"
 #include "MelonPrimeVulkanOpaqueBootstrap.h"
+#include "MelonPrimeVulkanTranslucentBootstrap.h"
+#include "MelonPrimeVulkanShadowBootstrap.h"
+#include "MelonPrimeVulkanToonHighlightBootstrap.h"
+#include "MelonPrimeVulkanToonHighlightDescriptorBootstrap.h"
+#include "MelonPrimeVulkanTextureSamplingBootstrap.h"
+#include "MelonPrimeVulkanTexturedPolygonBootstrap.h"
+#include "MelonPrimeVulkanTextureCacheBootstrap.h"
+#include "MelonPrimeVulkanTextureDecodeBootstrap.h"
+#include "MelonPrimeVulkanTextureUploadRingBootstrap.h"
+#include "MelonPrimeVulkanPhase8CompletionBootstrap.h"
+#include "MelonPrimeVulkanPhase9CompletionBootstrap.h"
+#include "MelonPrimeVulkanPhase10CompletionBootstrap.h"
+#include "MelonPrimeVulkanPhase11CompletionBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -451,6 +464,58 @@ static std::optional<QString> melonPrimeVulkanOpaquePipelineTestPath(int argc, c
     return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeVulkanTranslucentPipelineTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-translucent-pipeline-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanShadowPipelineTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-shadow-pipeline-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanToonHighlightContractTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-toon-highlight-shader-abi-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc; (void)argv; return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanTextureSamplingTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-texture-sampling-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -527,6 +592,18 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+static std::optional<QString> melonPrimeVulkanToonHighlightDescriptorTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-toon-highlight-descriptor-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
 {
     // MELONPRIME_VULKAN_RENDERER_SHELL_V1
@@ -535,7 +612,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 7 && compute.ContractVersion == 7 &&
+        raster.ContractVersion == 22 && compute.ContractVersion == 22 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -551,10 +628,72 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanPolygonBatchBootstrapAvailable &&
         raster.NativeVulkanOpaquePipelineBootstrapAvailable &&
         compute.NativeVulkanOpaquePipelineBootstrapAvailable &&
+        raster.NativeVulkanTranslucentPipelineBootstrapAvailable &&
+        compute.NativeVulkanTranslucentPipelineBootstrapAvailable &&
+        raster.NativeVulkanShadowPipelineBootstrapAvailable &&
+        compute.NativeVulkanShadowPipelineBootstrapAvailable &&
+        raster.NativeVulkanToonHighlightContractAvailable &&
+        compute.NativeVulkanToonHighlightContractAvailable &&
+        raster.NativeVulkanToonHighlightShaderAbiAvailable &&
+        compute.NativeVulkanToonHighlightShaderAbiAvailable &&
+        raster.NativeVulkanToonHighlightDescriptorRuntimeAvailable &&
+        compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable &&
+        raster.NativeVulkanToonHighlightGpuDrawAvailable &&
+        compute.NativeVulkanToonHighlightGpuDrawAvailable &&
+        raster.NativeVulkanTextureSamplingBootstrapAvailable &&
+        compute.NativeVulkanTextureSamplingBootstrapAvailable &&
+        raster.NativeVulkanTexturedPolygonBootstrapAvailable &&
+        compute.NativeVulkanTexturedPolygonBootstrapAvailable &&
+        raster.NativeVulkanTextureCacheBootstrapAvailable &&
+        compute.NativeVulkanTextureCacheBootstrapAvailable &&
+        raster.NativeVulkanTextureDecodeBootstrapAvailable &&
+        compute.NativeVulkanTextureDecodeBootstrapAvailable &&
+        raster.NativeVulkanTextureUploadRingAvailable &&
+        compute.NativeVulkanTextureUploadRingAvailable &&
+        raster.NativeVulkanPhase8SubsystemComplete &&
+        compute.NativeVulkanPhase8SubsystemComplete &&
+        raster.NativeVulkanSoftware2DUploadFinalAvailable &&
+        compute.NativeVulkanSoftware2DUploadFinalAvailable &&
+        raster.NativeVulkan2DCompositionAvailable &&
+        compute.NativeVulkan2DCompositionAvailable &&
+        raster.NativeVulkanFinalCompositionAvailable &&
+        compute.NativeVulkanFinalCompositionAvailable &&
+        raster.NativeVulkanGpuResidentOutputAvailable &&
+        compute.NativeVulkanGpuResidentOutputAvailable &&
+        raster.NativeVulkanPhase9SubsystemComplete &&
+        compute.NativeVulkanPhase9SubsystemComplete &&
+        raster.NativeVulkanOutputRingAvailable &&
+        compute.NativeVulkanOutputRingAvailable &&
+        raster.NativeVulkanZeroCopyPresenterAvailable &&
+        compute.NativeVulkanZeroCopyPresenterAvailable &&
+        raster.NativeVulkanMultiWindowLeaseAvailable &&
+        compute.NativeVulkanMultiWindowLeaseAvailable &&
+        raster.NativeVulkanTimelinePresenterWaitAvailable &&
+        compute.NativeVulkanTimelinePresenterWaitAvailable &&
+        raster.NativeVulkanPhase10SubsystemComplete &&
+        compute.NativeVulkanPhase10SubsystemComplete &&
+        raster.NativeVulkanComputeStageGraphAvailable &&
+        compute.NativeVulkanComputeStageGraphAvailable &&
+        raster.NativeVulkanComputeSpecializationCacheAvailable &&
+        compute.NativeVulkanComputeSpecializationCacheAvailable &&
+        raster.NativeVulkanComputeIndirectDispatchAvailable &&
+        compute.NativeVulkanComputeIndirectDispatchAvailable &&
+        raster.NativeVulkanComputeBarrierGraphAvailable &&
+        compute.NativeVulkanComputeBarrierGraphAvailable &&
+        raster.NativeVulkanComputeHiresCoordinatesAvailable &&
+        compute.NativeVulkanComputeHiresCoordinatesAvailable &&
+        raster.NativeVulkanComputeVisibleOutputAvailable &&
+        compute.NativeVulkanComputeVisibleOutputAvailable &&
+        raster.NativeVulkanPhase11SubsystemComplete &&
+        compute.NativeVulkanPhase11SubsystemComplete &&
+        !raster.NativeVulkanComputeRomVisible &&
+        !compute.NativeVulkanComputeRomVisible &&
+        !raster.NativeVulkanRomIntegrationImplemented &&
+        !compute.NativeVulkanRomIntegrationImplemented &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 7},
+        {"schema_version", 22},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -573,6 +712,68 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_polygon_batch_bootstrap_available", compute.NativeVulkanPolygonBatchBootstrapAvailable},
         {"raster_opaque_pipeline_bootstrap_available", raster.NativeVulkanOpaquePipelineBootstrapAvailable},
         {"compute_opaque_pipeline_bootstrap_available", compute.NativeVulkanOpaquePipelineBootstrapAvailable},
+        {"raster_translucent_pipeline_bootstrap_available", raster.NativeVulkanTranslucentPipelineBootstrapAvailable},
+        {"compute_translucent_pipeline_bootstrap_available", compute.NativeVulkanTranslucentPipelineBootstrapAvailable},
+        {"raster_shadow_pipeline_bootstrap_available", raster.NativeVulkanShadowPipelineBootstrapAvailable},
+        {"compute_shadow_pipeline_bootstrap_available", compute.NativeVulkanShadowPipelineBootstrapAvailable},
+        {"raster_toon_highlight_contract_available", raster.NativeVulkanToonHighlightContractAvailable},
+        {"compute_toon_highlight_contract_available", compute.NativeVulkanToonHighlightContractAvailable},
+        {"raster_toon_highlight_shader_abi_available", raster.NativeVulkanToonHighlightShaderAbiAvailable},
+        {"compute_toon_highlight_shader_abi_available", compute.NativeVulkanToonHighlightShaderAbiAvailable},
+        {"raster_toon_highlight_descriptor_runtime_available", raster.NativeVulkanToonHighlightDescriptorRuntimeAvailable},
+        {"compute_toon_highlight_descriptor_runtime_available", compute.NativeVulkanToonHighlightDescriptorRuntimeAvailable},
+        {"raster_toon_highlight_gpu_draw_available", raster.NativeVulkanToonHighlightGpuDrawAvailable},
+        {"compute_toon_highlight_gpu_draw_available", compute.NativeVulkanToonHighlightGpuDrawAvailable},
+        {"raster_texture_sampling_bootstrap_available", raster.NativeVulkanTextureSamplingBootstrapAvailable},
+        {"compute_texture_sampling_bootstrap_available", compute.NativeVulkanTextureSamplingBootstrapAvailable},
+        {"raster_textured_polygon_bootstrap_available", raster.NativeVulkanTexturedPolygonBootstrapAvailable},
+        {"compute_textured_polygon_bootstrap_available", compute.NativeVulkanTexturedPolygonBootstrapAvailable},
+        {"raster_texture_cache_bootstrap_available", raster.NativeVulkanTextureCacheBootstrapAvailable},
+        {"compute_texture_cache_bootstrap_available", compute.NativeVulkanTextureCacheBootstrapAvailable},
+        {"raster_texture_decode_bootstrap_available", raster.NativeVulkanTextureDecodeBootstrapAvailable},
+        {"compute_texture_decode_bootstrap_available", compute.NativeVulkanTextureDecodeBootstrapAvailable},
+        {"raster_texture_upload_ring_available", raster.NativeVulkanTextureUploadRingAvailable},
+        {"compute_texture_upload_ring_available", compute.NativeVulkanTextureUploadRingAvailable},
+        {"raster_phase8_subsystem_complete", raster.NativeVulkanPhase8SubsystemComplete},
+        {"compute_phase8_subsystem_complete", compute.NativeVulkanPhase8SubsystemComplete},
+        {"raster_software_2d_upload_final_available", raster.NativeVulkanSoftware2DUploadFinalAvailable},
+        {"compute_software_2d_upload_final_available", compute.NativeVulkanSoftware2DUploadFinalAvailable},
+        {"raster_native_2d_composition_available", raster.NativeVulkan2DCompositionAvailable},
+        {"compute_native_2d_composition_available", compute.NativeVulkan2DCompositionAvailable},
+        {"raster_final_composition_available", raster.NativeVulkanFinalCompositionAvailable},
+        {"compute_final_composition_available", compute.NativeVulkanFinalCompositionAvailable},
+        {"raster_gpu_resident_output_available", raster.NativeVulkanGpuResidentOutputAvailable},
+        {"compute_gpu_resident_output_available", compute.NativeVulkanGpuResidentOutputAvailable},
+        {"raster_phase9_subsystem_complete", raster.NativeVulkanPhase9SubsystemComplete},
+        {"compute_phase9_subsystem_complete", compute.NativeVulkanPhase9SubsystemComplete},
+        {"raster_output_ring_available", raster.NativeVulkanOutputRingAvailable},
+        {"compute_output_ring_available", compute.NativeVulkanOutputRingAvailable},
+        {"raster_zero_copy_presenter_available", raster.NativeVulkanZeroCopyPresenterAvailable},
+        {"compute_zero_copy_presenter_available", compute.NativeVulkanZeroCopyPresenterAvailable},
+        {"raster_multi_window_lease_available", raster.NativeVulkanMultiWindowLeaseAvailable},
+        {"compute_multi_window_lease_available", compute.NativeVulkanMultiWindowLeaseAvailable},
+        {"raster_timeline_presenter_wait_available", raster.NativeVulkanTimelinePresenterWaitAvailable},
+        {"compute_timeline_presenter_wait_available", compute.NativeVulkanTimelinePresenterWaitAvailable},
+        {"raster_phase10_subsystem_complete", raster.NativeVulkanPhase10SubsystemComplete},
+        {"compute_phase10_subsystem_complete", compute.NativeVulkanPhase10SubsystemComplete},
+        {"raster_compute_stage_graph_available", raster.NativeVulkanComputeStageGraphAvailable},
+        {"compute_compute_stage_graph_available", compute.NativeVulkanComputeStageGraphAvailable},
+        {"raster_compute_specialization_cache_available", raster.NativeVulkanComputeSpecializationCacheAvailable},
+        {"compute_compute_specialization_cache_available", compute.NativeVulkanComputeSpecializationCacheAvailable},
+        {"raster_compute_indirect_dispatch_available", raster.NativeVulkanComputeIndirectDispatchAvailable},
+        {"compute_compute_indirect_dispatch_available", compute.NativeVulkanComputeIndirectDispatchAvailable},
+        {"raster_compute_barrier_graph_available", raster.NativeVulkanComputeBarrierGraphAvailable},
+        {"compute_compute_barrier_graph_available", compute.NativeVulkanComputeBarrierGraphAvailable},
+        {"raster_compute_hires_coordinates_available", raster.NativeVulkanComputeHiresCoordinatesAvailable},
+        {"compute_compute_hires_coordinates_available", compute.NativeVulkanComputeHiresCoordinatesAvailable},
+        {"raster_compute_visible_output_available", raster.NativeVulkanComputeVisibleOutputAvailable},
+        {"compute_compute_visible_output_available", compute.NativeVulkanComputeVisibleOutputAvailable},
+        {"raster_phase11_subsystem_complete", raster.NativeVulkanPhase11SubsystemComplete},
+        {"compute_phase11_subsystem_complete", compute.NativeVulkanPhase11SubsystemComplete},
+        {"raster_compute_rom_visible", raster.NativeVulkanComputeRomVisible},
+        {"compute_compute_rom_visible", compute.NativeVulkanComputeRomVisible},
+        {"raster_rom_integration_implemented", raster.NativeVulkanRomIntegrationImplemented},
+        {"compute_rom_integration_implemented", compute.NativeVulkanRomIntegrationImplemented},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -583,6 +784,100 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     return passed ? 0 : 1;
 }
 #endif
+
+static std::optional<QString> melonPrimeVulkanTexturedPolygonTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-textured-polygon-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc; (void)argv; return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanTextureCacheTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-texture-cache-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanTextureDecodeTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-texture-decode-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanTextureUploadRingTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-texture-upload-ring-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase8CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase8-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase9CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase9-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase10CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase10-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase11CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase11-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
 
 int main(int argc, char** argv)
 {
@@ -701,6 +996,31 @@ int main(int argc, char** argv)
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto translucentOut = melonPrimeVulkanTranslucentPipelineTestPath(argc, argv); translucentOut.has_value())
+        return MelonPrime::Vulkan::RunTranslucentPipelineBootstrapHarness(*translucentOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto shadowOut = melonPrimeVulkanShadowPipelineTestPath(argc, argv); shadowOut.has_value())
+        return MelonPrime::Vulkan::RunShadowPipelineBootstrapHarness(*shadowOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto toonOut = melonPrimeVulkanToonHighlightContractTestPath(argc, argv); toonOut.has_value())
+        return MelonPrime::Vulkan::RunToonHighlightShaderAbiHarness(*toonOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto toonDescriptorOut = melonPrimeVulkanToonHighlightDescriptorTestPath(argc, argv); toonDescriptorOut.has_value())
+        return MelonPrime::Vulkan::RunToonHighlightDescriptorRuntimeHarness(*toonDescriptorOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto textureOut = melonPrimeVulkanTextureSamplingTestPath(argc, argv); textureOut.has_value())
+        return MelonPrime::Vulkan::RunTextureSamplingBootstrapHarness(*textureOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto probeOut = melonPrimeVulkanProbeOutputPath(argc, argv); probeOut.has_value())
         return MelonPrime::Vulkan::RunProbeHarness(*probeOut);
 #endif
@@ -715,6 +1035,46 @@ int main(int argc, char** argv)
         }
         return MelonPrime::CustomHud_RunGoldenHarness(*goldenOut);
     }
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto texturedOut = melonPrimeVulkanTexturedPolygonTestPath(argc, argv); texturedOut.has_value())
+        return MelonPrime::Vulkan::RunTexturedPolygonBootstrapHarness(*texturedOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto textureCacheOut = melonPrimeVulkanTextureCacheTestPath(argc, argv); textureCacheOut.has_value())
+        return MelonPrime::Vulkan::RunTextureCacheBootstrapHarness(*textureCacheOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto textureDecodeOut = melonPrimeVulkanTextureDecodeTestPath(argc, argv); textureDecodeOut.has_value())
+        return MelonPrime::Vulkan::RunTextureDecodeDirtyHashHarness(*textureDecodeOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto uploadRingOut = melonPrimeVulkanTextureUploadRingTestPath(argc, argv); uploadRingOut.has_value())
+        return MelonPrime::Vulkan::RunTextureUploadRingHarness(*uploadRingOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase8Out = melonPrimeVulkanPhase8CompletionTestPath(argc, argv); phase8Out.has_value())
+        return MelonPrime::Vulkan::RunPhase8CompletionHarness(*phase8Out);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase9Out = melonPrimeVulkanPhase9CompletionTestPath(argc, argv); phase9Out.has_value())
+        return MelonPrime::Vulkan::RunPhase9CompletionHarness(*phase9Out);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase10Out = melonPrimeVulkanPhase10CompletionTestPath(argc, argv); phase10Out.has_value())
+        return MelonPrime::Vulkan::RunPhase10CompletionHarness(*phase10Out);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase11Out = melonPrimeVulkanPhase11CompletionTestPath(argc, argv); phase11Out.has_value())
+        return MelonPrime::Vulkan::RunPhase11CompletionHarness(*phase11Out);
 #endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);

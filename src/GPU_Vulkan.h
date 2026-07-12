@@ -22,8 +22,39 @@ struct VulkanRendererShellContract
     bool NativeVulkanVertexUploadBootstrapAvailable = true;
     bool NativeVulkanPolygonBatchBootstrapAvailable = true;
     bool NativeVulkanOpaquePipelineBootstrapAvailable = true;
+    bool NativeVulkanTranslucentPipelineBootstrapAvailable = true;
+    bool NativeVulkanShadowPipelineBootstrapAvailable = true;
+    bool NativeVulkanToonHighlightContractAvailable = true;
+    bool NativeVulkanToonHighlightShaderAbiAvailable = true;
+    bool NativeVulkanToonHighlightDescriptorRuntimeAvailable = true;
+    bool NativeVulkanToonHighlightGpuDrawAvailable = true;
+    bool NativeVulkanTextureSamplingBootstrapAvailable = true;
+    bool NativeVulkanTexturedPolygonBootstrapAvailable = true;
+    bool NativeVulkanTextureCacheBootstrapAvailable = true;
+    bool NativeVulkanTextureDecodeBootstrapAvailable = true;
+    bool NativeVulkanTextureUploadRingAvailable = true;
+    bool NativeVulkanPhase8SubsystemComplete = true;
+    bool NativeVulkanSoftware2DUploadFinalAvailable = true;
+    bool NativeVulkan2DCompositionAvailable = true;
+    bool NativeVulkanFinalCompositionAvailable = true;
+    bool NativeVulkanGpuResidentOutputAvailable = true;
+    bool NativeVulkanPhase9SubsystemComplete = true;
+    bool NativeVulkanOutputRingAvailable = true;
+    bool NativeVulkanZeroCopyPresenterAvailable = true;
+    bool NativeVulkanMultiWindowLeaseAvailable = true;
+    bool NativeVulkanTimelinePresenterWaitAvailable = true;
+    bool NativeVulkanPhase10SubsystemComplete = true;
+    bool NativeVulkanRomIntegrationImplemented = false;
+    bool NativeVulkanComputeStageGraphAvailable = true;
+    bool NativeVulkanComputeSpecializationCacheAvailable = true;
+    bool NativeVulkanComputeIndirectDispatchAvailable = true;
+    bool NativeVulkanComputeBarrierGraphAvailable = true;
+    bool NativeVulkanComputeHiresCoordinatesAvailable = true;
+    bool NativeVulkanComputeVisibleOutputAvailable = true;
+    bool NativeVulkanPhase11SubsystemComplete = true;
+    bool NativeVulkanComputeRomVisible = false;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 7;
+    u32 ContractVersion = 22;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
@@ -34,7 +65,9 @@ VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) no
 // clear-plane targets; Phase 7.3 adds the repeated VRAM clear-bitmap pass;
 // Phase 7.4 adds packed vertex/index/polygon upload; Phase 7.5 adds ordered,
 // adjacent-only pipeline batches; Phase 7.6 adds an untextured opaque Vulkan
-// draw bootstrap. ROM Renderer3D integration is still intentionally absent.
+// draw bootstrap; Phase 7.7 adds untextured translucent blend/depth/stencil;
+// Phase 7.8 adds two-stage shadow mask/reject/blend. ROM Renderer3D integration
+// is still intentionally absent.
 class VulkanRenderer final : public SoftRenderer
 {
 public:

@@ -1,0 +1,107 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct ScanlineState
+{
+    uint DisplayModeA;
+    uint DisplayModeB;
+    uint ScreenSwap;
+    uint ScreenEnabledMask;
+    uint WindowX0;
+    uint WindowX1;
+    uint MosaicX;
+    uint MosaicY;
+    uint WindowEnableMask;
+    uint ObjEnableMask;
+    uint Use3DMask;
+    uint BlendEnableMask;
+    uint Eva;
+    uint Evb;
+    uint BrightModeA;
+    uint BrightModeB;
+    uint BrightFactorA;
+    uint BrightFactorB;
+    uint Reserved0;
+    uint Reserved1;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer BgBuffer
+{
+    uint Pixels[];
+} Bg;
+layout(std430, set = 0, binding = 1) readonly buffer ObjBuffer
+{
+    uint Pixels[];
+} Obj;
+layout(std430, set = 0, binding = 2) readonly buffer ThreeDBuffer
+{
+    uint Pixels[];
+} ThreeD;
+layout(std430, set = 0, binding = 3) readonly buffer StateBuffer
+{
+    ScanlineState Lines[];
+} States;
+layout(set = 0, binding = 4, rgba8ui) uniform writeonly uimage2DArray LayerOutput;
+
+layout(push_constant) uniform Phase9TwoDPush
+{
+    uint YStart;
+    uint YEnd;
+    uint Width;
+    uint Height;
+} Push;
+
+uvec4 unpackPixel(uint value)
+{
+    return uvec4(value & 0xFFu, (value >> 8u) & 0xFFu,
+        (value >> 16u) & 0xFFu, (value >> 24u) & 0xFFu);
+}
+
+uvec4 blendPixel(uvec4 top, uvec4 bottom, uint eva, uint evb)
+{
+    if (top.a == 0u) return bottom;
+    if (bottom.a == 0u) return top;
+    eva = min(eva, 16u);
+    evb = min(evb, 16u);
+    uvec3 rgb = min(uvec3(255u),
+        (top.rgb * eva + bottom.rgb * evb + uvec3(8u)) >> 4u);
+    return uvec4(rgb, max(top.a, bottom.a));
+}
+
+void main()
+{
+    uvec3 gid = gl_GlobalInvocationID;
+    if (gid.x >= Push.Width || gid.y < Push.YStart || gid.y >= Push.YEnd || gid.z >= 2u)
+        return;
+
+    ScanlineState state = States.Lines[gid.y];
+    uint engine = gid.z;
+    uint bit = 1u << engine;
+    uint mosaicX = max(state.MosaicX, 1u);
+    uint mosaicY = max(state.MosaicY, 1u);
+    uint sourceX = gid.x - (gid.x % mosaicX);
+    uint sourceY = gid.y - (gid.y % mosaicY);
+    sourceY = clamp(sourceY, Push.YStart, Push.YEnd - 1u);
+    uint index = engine * Push.Width * Push.Height + sourceY * Push.Width + sourceX;
+    uint nativeIndex = sourceY * Push.Width + sourceX;
+
+    uvec4 result = unpackPixel(Bg.Pixels[index]);
+    bool windowInside = gid.x >= state.WindowX0 && gid.x < state.WindowX1;
+    bool windowAllows = (state.WindowEnableMask & bit) == 0u || windowInside;
+    bool blendEnabled = (state.BlendEnableMask & bit) != 0u;
+
+    if (windowAllows && (state.Use3DMask & bit) != 0u)
+    {
+        uvec4 threeD = unpackPixel(ThreeD.Pixels[nativeIndex]);
+        result = blendEnabled ? blendPixel(threeD, result, state.Eva, state.Evb)
+                              : (threeD.a != 0u ? threeD : result);
+    }
+    if (windowAllows && (state.ObjEnableMask & bit) != 0u)
+    {
+        uvec4 obj = unpackPixel(Obj.Pixels[index]);
+        result = blendEnabled ? blendPixel(obj, result, state.Eva, state.Evb)
+                              : (obj.a != 0u ? obj : result);
+    }
+    imageStore(LayerOutput, ivec3(gid), result);
+}

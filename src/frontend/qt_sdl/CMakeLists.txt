@@ -340,6 +340,32 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanPolygonBatchBootstrap.h
         MelonPrimeVulkanOpaqueBootstrap.cpp
         MelonPrimeVulkanOpaqueBootstrap.h
+        MelonPrimeVulkanTranslucentBootstrap.cpp
+        MelonPrimeVulkanTranslucentBootstrap.h
+        MelonPrimeVulkanShadowBootstrap.cpp
+        MelonPrimeVulkanShadowBootstrap.h
+        MelonPrimeVulkanToonHighlightBootstrap.cpp
+        MelonPrimeVulkanToonHighlightBootstrap.h
+        MelonPrimeVulkanToonHighlightDescriptorBootstrap.cpp
+        MelonPrimeVulkanToonHighlightDescriptorBootstrap.h
+        MelonPrimeVulkanTextureSamplingBootstrap.cpp
+        MelonPrimeVulkanTextureSamplingBootstrap.h
+        MelonPrimeVulkanTexturedPolygonBootstrap.cpp
+        MelonPrimeVulkanTexturedPolygonBootstrap.h
+        MelonPrimeVulkanTextureCacheBootstrap.cpp
+        MelonPrimeVulkanTextureCacheBootstrap.h
+        MelonPrimeVulkanTextureDecodeBootstrap.cpp
+        MelonPrimeVulkanTextureDecodeBootstrap.h
+        MelonPrimeVulkanTextureUploadRingBootstrap.cpp
+        MelonPrimeVulkanTextureUploadRingBootstrap.h
+        MelonPrimeVulkanPhase8CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase8CompletionBootstrap.h
+        MelonPrimeVulkanPhase9CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase9CompletionBootstrap.h
+        MelonPrimeVulkanPhase10CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase10CompletionBootstrap.h
+        MelonPrimeVulkanPhase11CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase11CompletionBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

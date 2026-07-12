@@ -1,0 +1,102 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 1, local_size_z = 1) in;
+layout(constant_id = 0) const uint StageId = 0u;
+
+layout(push_constant) uniform PushConstants
+{
+    uint Width;
+    uint Height;
+    uint Layers;
+    uint ScaleFactor;
+    uint HiresCoordinates;
+    uint FinalPassFlags;
+    uint PixelCount;
+    uint Iteration;
+} pc;
+
+layout(set = 0, binding = 0, std430) buffer WorkData
+{
+    uint Values[];
+} workData;
+
+layout(set = 0, binding = 1, std430) readonly buffer TextureData
+{
+    uint Values[];
+} textureData;
+
+layout(set = 0, binding = 2, std430) readonly buffer CaptureData
+{
+    uint Values[];
+} captureData;
+
+layout(set = 0, binding = 3, std430) buffer StageDigest
+{
+    uint Values[];
+} stageDigest;
+
+layout(set = 0, binding = 4, rgba8ui) uniform writeonly uimage2DArray outputImage;
+
+uint rotateLeft(uint value, uint shift)
+{
+    shift &= 31u;
+    return shift == 0u ? value : ((value << shift) | (value >> (32u - shift)));
+}
+
+bool isFinalPass(uint stage)
+{
+    return stage >= 25u;
+}
+
+uint evaluateStage(uint index, uint value, uint texel, uint capture)
+{
+    uint seed = 0x9E3779B9u * (StageId + 1u) +
+        index * 0x85EBCA6Bu + pc.ScaleFactor * 17u +
+        pc.HiresCoordinates * 31u + pc.Iteration * 13u;
+    value ^= seed;
+    value = rotateLeft(value, StageId % 7u + 1u);
+    if (StageId >= 11u && StageId <= 18u)
+        value += texel ^ rotateLeft(capture, StageId & 7u);
+    if (StageId == 19u || StageId == 20u)
+        value ^= 0x80808080u;
+    if (StageId == 21u || StageId == 22u)
+        value = (value & 0x00FFFFFFu) | ((StageId + 1u) << 24u);
+    if (isFinalPass(StageId))
+        value += (pc.FinalPassFlags + 1u) * 0x01010101u;
+    return value;
+}
+
+uvec4 packOutput(uint value, uint texel, uint capture)
+{
+    uint red = ((value >> 0u) ^ (texel >> 8u)) & 0xFFu;
+    uint green = ((value >> 8u) ^ (capture >> 16u)) & 0xFFu;
+    uint blue = ((value >> 16u) + pc.ScaleFactor * 3u +
+        pc.HiresCoordinates * 11u) & 0xFFu;
+    return uvec4(red, green, blue, 255u);
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= pc.PixelCount)
+        return;
+
+    uint texel = textureData.Values[index % textureData.Values.length()];
+    uint capture = captureData.Values[index % captureData.Values.length()];
+    uint value = evaluateStage(index, workData.Values[index], texel, capture);
+    workData.Values[index] = value;
+
+    if ((index & 255u) == 0u)
+        atomicXor(stageDigest.Values[StageId], value + index);
+
+    if (isFinalPass(StageId))
+    {
+        uint layerSize = pc.Width * pc.Height;
+        uint layer = index / layerSize;
+        uint local = index - layer * layerSize;
+        uint x = local % pc.Width;
+        uint y = local / pc.Width;
+        imageStore(outputImage, ivec3(int(x), int(y), int(layer)),
+            packOutput(value, texel, capture));
+    }
+}

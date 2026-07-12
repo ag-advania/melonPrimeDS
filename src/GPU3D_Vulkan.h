@@ -9,6 +9,10 @@
 // MELONPRIME_VULKAN_VERTEX_UPLOAD_CONTRACT_V1
 // MELONPRIME_VULKAN_POLYGON_BATCH_CONTRACT_V1
 // MELONPRIME_VULKAN_OPAQUE_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_TRANSLUCENT_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_SHADOW_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_TOON_HIGHLIGHT_CONTRACT_V1
+// MELONPRIME_VULKAN_TOON_HIGHLIGHT_SHADER_ABI_V1
 
 #include <array>
 #include <cstddef>
@@ -32,6 +36,8 @@ inline constexpr std::uint32_t kClearBitmapContractVersion = 1;
 inline constexpr std::uint32_t kVertexUploadContractVersion = 1;
 inline constexpr std::uint32_t kPolygonBatchContractVersion = 1;
 inline constexpr std::uint32_t kOpaquePipelineContractVersion = 1;
+inline constexpr std::uint32_t kTranslucentPipelineContractVersion = 1;
+inline constexpr std::uint32_t kShadowPipelineContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -334,6 +340,116 @@ struct alignas(16) VulkanOpaquePushConstants
 static_assert(sizeof(VulkanOpaquePushConstants) == 16);
 static_assert(offsetof(VulkanOpaquePushConstants, RenderDispCnt) == 8);
 
+// Phase 7.7 translates one untextured translucent triangle batch key into
+// Vulkan fixed-function blend/depth/stencil state. The stencil compare mirrors
+// the DS rule that only a translucent fragment with the same polyID is blocked;
+// a different translucent polyID may blend over the previous result.
+struct VulkanTranslucentPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkBool32 BlendEnable = VK_TRUE;
+    VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor DstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendOp ColorBlendOp = VK_BLEND_OP_ADD;
+    VkBlendFactor SrcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor DstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendOp AlphaBlendOp = VK_BLEND_OP_MAX;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_NOT_EQUAL;
+    VkStencilOp StencilPass = VK_STENCIL_OP_REPLACE;
+    std::uint32_t StencilCompareMask = 0x7Fu;
+    std::uint32_t StencilWriteMask = 0x7Fu;
+    std::uint32_t StencilReference = 0x40u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool NeedsOpaquePass = false;
+    bool Valid = false;
+};
+
+struct alignas(16) VulkanTranslucentPushConstants
+{
+    std::array<float, 2> ScreenSize{{256.0f, 192.0f}};
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t Reserved = 0;
+};
+
+static_assert(sizeof(VulkanTranslucentPushConstants) == 16);
+static_assert(offsetof(VulkanTranslucentPushConstants, RenderDispCnt) == 8);
+
+// Phase 7.8 shadow mask stage. Bit 7 is written only on depth failure; the
+// lower seven stencil bits are preserved by the 0x80 write mask.
+struct VulkanShadowMaskPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_ALWAYS;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_REPLACE;
+    VkStencilOp StencilPass = VK_STENCIL_OP_KEEP;
+    std::uint32_t StencilCompareMask = 0x80u;
+    std::uint32_t StencilWriteMask = 0x80u;
+    std::uint32_t StencilReference = 0x80u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool Valid = false;
+};
+
+// First visible-shadow stage. Fragments whose lower six stencil bits equal the
+// shadow polygon ID clear bit 7, preventing a polygon from shadowing itself.
+struct VulkanShadowRejectPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_EQUAL;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilPass = VK_STENCIL_OP_ZERO;
+    std::uint32_t StencilCompareMask = 0x3Fu;
+    std::uint32_t StencilWriteMask = 0x80u;
+    std::uint32_t StencilReference = 0;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool Valid = false;
+};
+
+// Second visible-shadow stage. Only pixels retaining stencil bit 7 are blended.
+// The lower seven bits become 0x40 | polygon ID while bit 7 remains untouched.
+struct VulkanShadowBlendPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkBool32 BlendEnable = VK_TRUE;
+    VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor DstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendOp ColorBlendOp = VK_BLEND_OP_ADD;
+    VkBlendFactor SrcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor DstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendOp AlphaBlendOp = VK_BLEND_OP_MAX;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_EQUAL;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilPass = VK_STENCIL_OP_REPLACE;
+    std::uint32_t StencilCompareMask = 0x80u;
+    std::uint32_t StencilWriteMask = 0x7Fu;
+    std::uint32_t StencilReference = 0x40u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool Valid = false;
+};
+
+using VulkanShadowPushConstants = VulkanTranslucentPushConstants;
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -385,6 +501,133 @@ bool BuildVulkanRasterBatchPlan(
 VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
     const VulkanRasterPipelineKey& key) noexcept;
 
+VulkanTranslucentPipelineState BuildVulkanTranslucentPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowMaskPipelineState BuildVulkanShadowMaskPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowRejectPipelineState BuildVulkanShadowRejectPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowBlendPipelineState BuildVulkanShadowBlendPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+inline constexpr std::uint32_t kToonHighlightContractVersion = 1;
+
+enum class VulkanToonHighlightMode : std::uint32_t
+{
+    None = 0,
+    Toon = 1,
+    Highlight = 2,
+};
+
+struct alignas(16) VulkanToonHighlightConfig
+{
+    std::array<std::array<float, 4>, 32> ToonColors{};
+    std::uint32_t DispCnt = 0;
+    std::uint32_t Mode = 0;
+    std::uint32_t Textured = 0;
+    std::uint32_t Padding = 0;
+};
+
+static_assert(sizeof(VulkanToonHighlightConfig) == 528);
+static_assert(alignof(VulkanToonHighlightConfig) == 16);
+
+VulkanToonHighlightConfig BuildVulkanToonHighlightConfig(
+    const std::array<std::uint16_t, 32>& toonTable,
+    std::uint32_t dispCnt,
+    VulkanToonHighlightMode mode,
+    bool textured) noexcept;
+
+
+inline constexpr std::uint32_t kVulkanToonHighlightDescriptorSet = 0;
+inline constexpr std::uint32_t kVulkanToonHighlightDescriptorBinding = 0;
+inline constexpr std::uint32_t kVulkanToonHighlightShaderAbiVersion = 1;
+
+struct VulkanToonHighlightShaderAbi
+{
+    std::uint32_t DescriptorSet = kVulkanToonHighlightDescriptorSet;
+    std::uint32_t DescriptorBinding = kVulkanToonHighlightDescriptorBinding;
+    std::uint32_t ConfigSize = sizeof(VulkanToonHighlightConfig);
+    std::uint32_t ToonTableEntries = 32;
+    bool SupportsOpaque = true;
+    bool SupportsTranslucent = true;
+    bool SupportsWBuffer = true;
+    bool SupportsTextured = true;
+};
+
+static_assert(sizeof(VulkanToonHighlightConfig) == 528);
+static_assert(offsetof(VulkanToonHighlightConfig, DispCnt) == 512);
+static_assert(offsetof(VulkanToonHighlightConfig, Mode) == 516);
+static_assert(offsetof(VulkanToonHighlightConfig, Textured) == 520);
+
+VulkanToonHighlightShaderAbi DescribeVulkanToonHighlightShaderAbi() noexcept;
+
+std::array<float, 4> EvaluateVulkanToonHighlightReference(
+    const VulkanToonHighlightConfig& config,
+    const std::array<float, 4>& vertexColor,
+    const std::array<float, 4>& textureColor) noexcept;
+
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;
+
+
+// MELONPRIME_VULKAN_TEXTURE_SAMPLING_CONTRACT_V1
+inline constexpr std::uint32_t kTextureSamplingContractVersion = 1;
+
+enum class VulkanTextureCombinerMode : std::uint32_t
+{
+    Raw = 0,
+    Modulate = 1,
+    Decal = 2,
+    Toon = 3,
+    Highlight = 4,
+};
+
+struct VulkanTextureSamplingDescriptorContract
+{
+    std::uint32_t ContractVersion = kTextureSamplingContractVersion;
+    std::uint32_t DescriptorSet = 0;
+    std::uint32_t UniformBinding = 0;
+    std::uint32_t ClampBinding = 1;
+    std::uint32_t RepeatBinding = 2;
+    std::uint32_t MirrorBinding = 3;
+    std::uint32_t OutputBinding = 4;
+    VkFormat TextureFormat = VK_FORMAT_R8G8B8A8_UINT;
+};
+
+struct VulkanTextureCombinerInput
+{
+    VulkanTextureCombinerMode Mode = VulkanTextureCombinerMode::Raw;
+    std::array<float, 4> VertexColor{{1.0f, 1.0f, 1.0f, 1.0f}};
+    std::array<float, 4> TextureColor{{1.0f, 1.0f, 1.0f, 1.0f}};
+    std::array<float, 4> ToonColor{{0.0f, 0.0f, 0.0f, 1.0f}};
+};
+
+VulkanTextureSamplingDescriptorContract
+DescribeVulkanTextureSamplingDescriptorContract() noexcept;
+std::array<float, 4> EvaluateVulkanTextureCombiner(
+    const VulkanTextureCombinerInput& input) noexcept;
+std::array<std::uint8_t, 4> QuantizeVulkanColor8(
+    const std::array<float, 4>& color) noexcept;
+
+// MELONPRIME_VULKAN_TEXTURED_POLYGON_PIPELINE_CONTRACT_V1
+inline constexpr std::uint32_t kTexturedPolygonPipelineContractVersion = 1;
+
+struct VulkanTexturedPolygonDescriptorContract
+{
+    std::uint32_t ContractVersion = kTexturedPolygonPipelineContractVersion;
+    std::uint32_t DescriptorSet = 0;
+    std::uint32_t UniformBinding = 0;
+    std::uint32_t TextureBinding = 1;
+    VkFormat TextureFormat = VK_FORMAT_R8G8B8A8_UINT;
+    bool Modulate = true;
+    bool Decal = true;
+    bool Toon = true;
+    bool Highlight = true;
+};
+
+VulkanTexturedPolygonDescriptorContract
+DescribeVulkanTexturedPolygonDescriptorContract() noexcept;
 
 } // namespace melonDS::Vulkan
