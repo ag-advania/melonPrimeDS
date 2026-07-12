@@ -150,7 +150,7 @@ jobs:
         test -s "$local_zip"
         echo "Created ZIP inside BSD VM:"
         ls -l "$local_zip"
-        unzip -l "$local_zip"
+        zip -sf "$local_zip"
 
         cp "$local_zip" "$workspace_zip"
         test -s "$workspace_zip"
