@@ -10,9 +10,6 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
 #endif
-#if defined(MELONPRIME_ENABLE_VULKAN)
-#include "GPU_Vulkan.h"
-#endif
 
 namespace MelonPrime::VideoBackend
 {
@@ -50,14 +47,13 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-        // MELONPRIME_VULKAN_RENDERER_SHELL_V1
-        report.fallbackReason =
-            "Phase 6 Vulkan shell uses Software 2D/3D/capture output; native Vulkan rasterization starts in Phase 7";
-        return std::make_unique<melonDS::VulkanRenderer>(nds, false);
     case renderer3D_VulkanCompute:
-        report.fallbackReason =
-            "Phase 6 Vulkan Compute shell uses Software 2D/3D/capture output; native Vulkan compute rasterization starts in Phase 11";
-        return std::make_unique<melonDS::VulkanRenderer>(nds, true);
+        // Phase 2 reserves and routes the IDs. The safe renderer shell is
+        // deliberately Phase 6, after instance/device/presenter ownership.
+        report.actual = renderer3D_Software;
+        report.failedStage = "renderer factory";
+        report.fallbackReason = "Vulkan renderer shell is not available before Phase 6";
+        return std::make_unique<melonDS::SoftRenderer>(nds);
 #endif
     default:
         report.normalized = renderer3D_Software;
