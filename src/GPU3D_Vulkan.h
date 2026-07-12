@@ -11,6 +11,7 @@
 // MELONPRIME_VULKAN_OPAQUE_PIPELINE_CONTRACT_V1
 // MELONPRIME_VULKAN_TRANSLUCENT_PIPELINE_CONTRACT_V1
 // MELONPRIME_VULKAN_SHADOW_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_TOON_HIGHLIGHT_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -510,6 +511,38 @@ VulkanShadowRejectPipelineState BuildVulkanShadowRejectPipelineState(
 
 VulkanShadowBlendPipelineState BuildVulkanShadowBlendPipelineState(
     const VulkanRasterPipelineKey& key) noexcept;
+
+inline constexpr std::uint32_t kToonHighlightContractVersion = 1;
+
+enum class VulkanToonHighlightMode : std::uint32_t
+{
+    None = 0,
+    Toon = 1,
+    Highlight = 2,
+};
+
+struct alignas(16) VulkanToonHighlightConfig
+{
+    std::array<std::array<float, 4>, 32> ToonColors{};
+    std::uint32_t DispCnt = 0;
+    std::uint32_t Mode = 0;
+    std::uint32_t Textured = 0;
+    std::uint32_t Padding = 0;
+};
+
+static_assert(sizeof(VulkanToonHighlightConfig) == 528);
+static_assert(alignof(VulkanToonHighlightConfig) == 16);
+
+VulkanToonHighlightConfig BuildVulkanToonHighlightConfig(
+    const std::array<std::uint16_t, 32>& toonTable,
+    std::uint32_t dispCnt,
+    VulkanToonHighlightMode mode,
+    bool textured) noexcept;
+
+std::array<float, 4> EvaluateVulkanToonHighlightReference(
+    const VulkanToonHighlightConfig& config,
+    const std::array<float, 4>& vertexColor,
+    const std::array<float, 4>& textureColor) noexcept;
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;
 

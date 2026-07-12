@@ -772,6 +772,62 @@ VulkanShadowBlendPipelineState BuildVulkanShadowBlendPipelineState(
     return state;
 }
 
+VulkanToonHighlightConfig BuildVulkanToonHighlightConfig(
+    const std::array<std::uint16_t, 32>& toonTable,
+    std::uint32_t dispCnt,
+    VulkanToonHighlightMode mode,
+    bool textured) noexcept
+{
+    VulkanToonHighlightConfig config;
+    config.DispCnt = dispCnt;
+    config.Mode = static_cast<std::uint32_t>(mode);
+    config.Textured = textured ? 1u : 0u;
+    for (std::size_t i = 0; i < toonTable.size(); ++i)
+    {
+        const std::uint16_t color = toonTable[i];
+        config.ToonColors[i] = {{
+            static_cast<float>(color & 0x1Fu) / 31.0f,
+            static_cast<float>((color >> 5) & 0x1Fu) / 31.0f,
+            static_cast<float>((color >> 10) & 0x1Fu) / 31.0f,
+            1.0f}};
+    }
+    return config;
+}
+
+std::array<float, 4> EvaluateVulkanToonHighlightReference(
+    const VulkanToonHighlightConfig& config,
+    const std::array<float, 4>& vertexColor,
+    const std::array<float, 4>& textureColor) noexcept
+{
+    auto clamp01 = [](float value) noexcept {
+        return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+    };
+    const std::size_t toonIndex = static_cast<std::size_t>(
+        clamp01(vertexColor[0]) * 31.0f);
+    std::array<float, 4> v = vertexColor;
+    const auto& toon = config.ToonColors[toonIndex];
+    const auto mode = static_cast<VulkanToonHighlightMode>(config.Mode);
+    if (mode == VulkanToonHighlightMode::Toon)
+        v[0] = toon[0], v[1] = toon[1], v[2] = toon[2];
+    else if (mode == VulkanToonHighlightMode::Highlight)
+        v[1] = v[0], v[2] = v[0];
+
+    std::array<float, 4> result = v;
+    if (config.Textured)
+    {
+        for (std::size_t i = 0; i < 4; ++i)
+            result[i] = v[i] * textureColor[i];
+    }
+    if (mode == VulkanToonHighlightMode::Highlight)
+    {
+        result[0] = clamp01(result[0] + toon[0]);
+        result[1] = clamp01(result[1] + toon[1]);
+        result[2] = clamp01(result[2] + toon[2]);
+    }
+    result[3] = config.Textured ? vertexColor[3] * textureColor[3] : vertexColor[3];
+    return result;
+}
+
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
 {
     VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT;

@@ -151,6 +151,30 @@
           }
         }
       ]
+    },
+    {
+      "name": "VulkanToonHighlightVertex",
+      "source": "toon_highlight.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanToonHighlightFragment",
+      "source": "toon_highlight.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }
