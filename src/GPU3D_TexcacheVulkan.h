@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -293,5 +294,74 @@ inline bool BuildVulkanTextureCachePlan(
             plan.Decisions[i].SourceOrder == requests[i].SourceOrder;
     return true;
 }
+
+
+// MELONPRIME_VULKAN_TEXCACHE_DECODE_CONTRACT_V1
+inline constexpr std::uint32_t kTextureDecodeContractVersion = 1;
+inline constexpr std::uint32_t kTextureDecodeFormatCount = 7;
+inline constexpr std::uint32_t kTextureDirtyPageSize = 512;
+
+struct VulkanTextureMemorySpan
+{
+    std::uint32_t Address = 0;
+    std::uint32_t Size = 0;
+};
+
+struct VulkanTextureDecodeFootprint
+{
+    VulkanTextureCacheKey Key{};
+    std::array<VulkanTextureMemorySpan, 2> TextureSpans{};
+    VulkanTextureMemorySpan PaletteSpan{};
+    std::uint32_t TextureSpanCount = 0;
+    std::uint32_t OutputTexelCount = 0;
+    bool UsesPalette = false;
+    bool UsesAuxiliaryTexture = false;
+};
+
+struct VulkanTextureMemoryView
+{
+    const std::uint8_t* Texture = nullptr;
+    std::size_t TextureSize = 0;
+    const std::uint8_t* Palette = nullptr;
+    std::size_t PaletteSize = 0;
+};
+
+struct VulkanTextureDecodeHashes
+{
+    std::array<std::uint64_t, 2> Texture{{0, 0}};
+    std::uint64_t Palette = 0;
+    std::uint64_t Combined = 0;
+};
+
+struct VulkanTextureDirtyPageSet
+{
+    std::vector<std::uint64_t> TextureWords;
+    std::vector<std::uint64_t> PaletteWords;
+};
+
+bool BuildVulkanTextureDecodeFootprint(
+    const VulkanTextureCacheKey& key,
+    VulkanTextureDecodeFootprint& footprint,
+    std::string* failureReason = nullptr) noexcept;
+
+bool DecodeVulkanTextureRgb6a5(
+    const VulkanTextureDecodeFootprint& footprint,
+    const VulkanTextureMemoryView& memory,
+    std::vector<std::uint32_t>& output,
+    std::string* failureReason = nullptr);
+
+VulkanTextureDecodeHashes HashVulkanTextureDecodeInput(
+    const VulkanTextureDecodeFootprint& footprint,
+    const VulkanTextureMemoryView& memory) noexcept;
+
+bool VulkanTextureDecodeTouchesDirtyPages(
+    const VulkanTextureDecodeFootprint& footprint,
+    const VulkanTextureMemoryView& memory,
+    const VulkanTextureDirtyPageSet& dirty) noexcept;
+
+void MarkVulkanTextureDirtyPage(
+    std::vector<std::uint64_t>& words,
+    std::uint32_t byteAddress,
+    std::size_t memorySize) noexcept;
 
 } // namespace melonDS::Vulkan

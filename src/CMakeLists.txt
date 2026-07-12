@@ -207,6 +207,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU_Vulkan.h
         GPU3D_Vulkan.cpp
         GPU3D_Vulkan.h
+        GPU3D_TexcacheVulkan.cpp
+        GPU3D_TexcacheVulkan.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})
