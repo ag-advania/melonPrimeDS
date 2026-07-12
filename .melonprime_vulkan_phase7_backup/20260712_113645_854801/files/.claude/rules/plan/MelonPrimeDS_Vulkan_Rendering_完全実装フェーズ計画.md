@@ -17,8 +17,7 @@
 | 4 — CPU BGRA presenter baseline | Implemented; ROM/long-run acceptance pending | `feat(vulkan): add CPU BGRA Vulkan presenter baseline` | Windows Vulkan ON / force-disable / default OFF passed | Vulkan no-ROM capture, resize, maximize, minimize/restore and two-window capture passed | Win11 / RTX 5070 Ti; generated presenter SPIR-V and repo audits passed | No scoped ROM; active OSD/HUD/radar/Fast Forward and 30-minute run unverified; Qt baseline is FIFO pending explicit VSync-OFF mode work; see `tests/vulkan/reference/phase4-verification.md` | Revert the Phase 4 commit |
 | 5 — typed Vulkan output / shared lease | Done; progress record normalized by Phase 6 package | `9040e63728d8 (Phase 5 source state)` | Windows default OFF / Vulkan ON / force-disable passed in supplied log | lease harness passed; serial/generation and stale-generation rejection confirmed | Win11 / RTX 5070 Ti | Real Vulkan GPU-image producer and cross-queue slot reuse deferred; see `tests/vulkan/reference/phase5-verification.md` | Revert the Phase 5 source commit(s) |
 | 6 — Vulkan renderer shell | Implemented; Windows build/runtime pending | `pending Phase 6 commit` | Windows Vulkan build pending | shell harness pending; ROM runtime pending | Windows package targets UCRT64 | Native Vulkan 3D intentionally absent; see `tests/vulkan/reference/phase6-verification.md` | Revert the Phase 6 commit |
-| 7 — native Vulkan raster bootstrap | Implemented; Windows build/runtime pending | `pending Phase 7 commit` | Windows Vulkan build pending | offscreen graphics pipeline/draw/readback harness pending | Windows UCRT64 package | Software remains the ROM correctness path; DS polygon raster is not integrated; see `tests/vulkan/reference/phase7-verification.md` | Revert the Phase 7 commit |
-| 8～16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
+| 7～16 | Not started | — | — | — | — | Phase順に実施 | Phase単位でrevert |
 
 ---
 
