@@ -20,8 +20,9 @@ VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) no
         true,
         true,
         true,
+        true,
         false,
-        8,
+        9,
     };
 }
 
@@ -51,7 +52,8 @@ bool VulkanRenderer::Init()
         "native_vulkan_clear_plane_bootstrap=1 native_vulkan_clear_bitmap_bootstrap=1 "
         "native_vulkan_vertex_upload_bootstrap=1 native_vulkan_polygon_batch_bootstrap=1 "
         "native_vulkan_opaque_pipeline_bootstrap=1 "
-        "native_vulkan_translucent_pipeline_bootstrap=1 native_vulkan_3d=0 generation=%llu\n",
+        "native_vulkan_translucent_pipeline_bootstrap=1 "
+        "native_vulkan_shadow_pipeline_bootstrap=1 native_vulkan_3d=0 generation=%llu\n",
         contract.ModeName,
         static_cast<unsigned long long>(OutputGeneration));
     return true;

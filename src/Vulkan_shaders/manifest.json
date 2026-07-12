@@ -133,6 +133,24 @@
           }
         }
       ]
+    },
+    {
+      "name": "VulkanShadowMaskFragment",
+      "source": "shadow_mask.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
     }
   ]
 }

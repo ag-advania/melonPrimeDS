@@ -704,6 +704,74 @@ VulkanTranslucentPipelineState BuildVulkanTranslucentPipelineState(
     return state;
 }
 
+VulkanShadowMaskPipelineState BuildVulkanShadowMaskPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept
+{
+    VulkanShadowMaskPipelineState state;
+    state.Topology = key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles)
+        ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+        : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    state.DepthCompare = key.DepthEqual != 0 ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    state.WBuffer = key.WBuffer != 0;
+    state.Valid =
+        key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::ShadowMask) &&
+        key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
+        key.Textured == 0 &&
+        key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&
+        key.ColorFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED) &&
+        key.AttributeFormat == static_cast<std::uint32_t>(VK_FORMAT_R8G8B8A8_UNORM) &&
+        key.DepthStencilFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED);
+    return state;
+}
+
+VulkanShadowRejectPipelineState BuildVulkanShadowRejectPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept
+{
+    VulkanShadowRejectPipelineState state;
+    state.Topology = key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles)
+        ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+        : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    state.DepthCompare = key.DepthEqual != 0 ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    state.StencilReference = key.StencilReference & 0x3Fu;
+    state.WBuffer = key.WBuffer != 0;
+    state.Valid =
+        key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::Shadow) &&
+        key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
+        key.Textured == 0 &&
+        key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&
+        key.ColorFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED) &&
+        key.AttributeFormat == static_cast<std::uint32_t>(VK_FORMAT_R8G8B8A8_UNORM) &&
+        key.DepthStencilFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED);
+    return state;
+}
+
+VulkanShadowBlendPipelineState BuildVulkanShadowBlendPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept
+{
+    VulkanShadowBlendPipelineState state;
+    state.Topology = key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles)
+        ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+        : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    state.DepthCompare = key.DepthEqual != 0 ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    state.DepthWrite = key.DepthWrite != 0 ? VK_TRUE : VK_FALSE;
+    state.StencilReference = 0x40u | (key.StencilReference & 0x3Fu);
+    state.ColorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.AttributeWriteMask = key.FogAttrWrite != 0
+        ? VK_COLOR_COMPONENT_B_BIT
+        : static_cast<VkColorComponentFlags>(0);
+    state.WBuffer = key.WBuffer != 0;
+    state.Valid =
+        key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::Shadow) &&
+        key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
+        key.Textured == 0 &&
+        key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&
+        key.ColorFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED) &&
+        key.AttributeFormat == static_cast<std::uint32_t>(VK_FORMAT_R8G8B8A8_UNORM) &&
+        key.DepthStencilFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED);
+    return state;
+}
+
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept
 {
     VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT;

@@ -10,6 +10,7 @@
 // MELONPRIME_VULKAN_POLYGON_BATCH_CONTRACT_V1
 // MELONPRIME_VULKAN_OPAQUE_PIPELINE_CONTRACT_V1
 // MELONPRIME_VULKAN_TRANSLUCENT_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_SHADOW_PIPELINE_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -34,6 +35,7 @@ inline constexpr std::uint32_t kVertexUploadContractVersion = 1;
 inline constexpr std::uint32_t kPolygonBatchContractVersion = 1;
 inline constexpr std::uint32_t kOpaquePipelineContractVersion = 1;
 inline constexpr std::uint32_t kTranslucentPipelineContractVersion = 1;
+inline constexpr std::uint32_t kShadowPipelineContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -375,6 +377,77 @@ struct alignas(16) VulkanTranslucentPushConstants
 static_assert(sizeof(VulkanTranslucentPushConstants) == 16);
 static_assert(offsetof(VulkanTranslucentPushConstants, RenderDispCnt) == 8);
 
+// Phase 7.8 shadow mask stage. Bit 7 is written only on depth failure; the
+// lower seven stencil bits are preserved by the 0x80 write mask.
+struct VulkanShadowMaskPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_ALWAYS;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_REPLACE;
+    VkStencilOp StencilPass = VK_STENCIL_OP_KEEP;
+    std::uint32_t StencilCompareMask = 0x80u;
+    std::uint32_t StencilWriteMask = 0x80u;
+    std::uint32_t StencilReference = 0x80u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool Valid = false;
+};
+
+// First visible-shadow stage. Fragments whose lower six stencil bits equal the
+// shadow polygon ID clear bit 7, preventing a polygon from shadowing itself.
+struct VulkanShadowRejectPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_EQUAL;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilPass = VK_STENCIL_OP_ZERO;
+    std::uint32_t StencilCompareMask = 0x3Fu;
+    std::uint32_t StencilWriteMask = 0x80u;
+    std::uint32_t StencilReference = 0;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool Valid = false;
+};
+
+// Second visible-shadow stage. Only pixels retaining stencil bit 7 are blended.
+// The lower seven bits become 0x40 | polygon ID while bit 7 remains untouched.
+struct VulkanShadowBlendPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkBool32 BlendEnable = VK_TRUE;
+    VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor DstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendOp ColorBlendOp = VK_BLEND_OP_ADD;
+    VkBlendFactor SrcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor DstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendOp AlphaBlendOp = VK_BLEND_OP_MAX;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_EQUAL;
+    VkStencilOp StencilFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilDepthFail = VK_STENCIL_OP_KEEP;
+    VkStencilOp StencilPass = VK_STENCIL_OP_REPLACE;
+    std::uint32_t StencilCompareMask = 0x80u;
+    std::uint32_t StencilWriteMask = 0x7Fu;
+    std::uint32_t StencilReference = 0x40u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool Valid = false;
+};
+
+using VulkanShadowPushConstants = VulkanTranslucentPushConstants;
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -427,6 +500,15 @@ VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
     const VulkanRasterPipelineKey& key) noexcept;
 
 VulkanTranslucentPipelineState BuildVulkanTranslucentPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowMaskPipelineState BuildVulkanShadowMaskPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowRejectPipelineState BuildVulkanShadowRejectPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanShadowBlendPipelineState BuildVulkanShadowBlendPipelineState(
     const VulkanRasterPipelineKey& key) noexcept;
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;

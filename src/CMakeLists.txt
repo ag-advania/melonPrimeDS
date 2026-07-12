@@ -142,6 +142,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanTranslucentVertexWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTranslucentFragment.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTranslucentFragmentWBuffer.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanShadowMaskFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanShadowMaskFragmentWBuffer.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanShaders.h"
         "${_mp_vk_shader_root}/generated/manifest.lock.json")
 
@@ -162,6 +164,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/opaque.frag"
             "${_mp_vk_shader_root}/translucent.vert"
             "${_mp_vk_shader_root}/translucent.frag"
+            "${_mp_vk_shader_root}/shadow_mask.frag"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Generating deterministic MelonPrime Vulkan SPIR-V headers"
         VERBATIM)

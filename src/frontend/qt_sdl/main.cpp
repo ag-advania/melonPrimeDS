@@ -66,6 +66,7 @@
 #include "MelonPrimeVulkanPolygonBatchBootstrap.h"
 #include "MelonPrimeVulkanOpaqueBootstrap.h"
 #include "MelonPrimeVulkanTranslucentBootstrap.h"
+#include "MelonPrimeVulkanShadowBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -466,6 +467,20 @@ static std::optional<QString> melonPrimeVulkanTranslucentPipelineTestPath(int ar
     return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeVulkanShadowPipelineTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-shadow-pipeline-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -550,7 +565,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 8 && compute.ContractVersion == 8 &&
+        raster.ContractVersion == 9 && compute.ContractVersion == 9 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -568,10 +583,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanOpaquePipelineBootstrapAvailable &&
         raster.NativeVulkanTranslucentPipelineBootstrapAvailable &&
         compute.NativeVulkanTranslucentPipelineBootstrapAvailable &&
+        raster.NativeVulkanShadowPipelineBootstrapAvailable &&
+        compute.NativeVulkanShadowPipelineBootstrapAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 8},
+        {"schema_version", 9},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -592,6 +609,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_opaque_pipeline_bootstrap_available", compute.NativeVulkanOpaquePipelineBootstrapAvailable},
         {"raster_translucent_pipeline_bootstrap_available", raster.NativeVulkanTranslucentPipelineBootstrapAvailable},
         {"compute_translucent_pipeline_bootstrap_available", compute.NativeVulkanTranslucentPipelineBootstrapAvailable},
+        {"raster_shadow_pipeline_bootstrap_available", raster.NativeVulkanShadowPipelineBootstrapAvailable},
+        {"compute_shadow_pipeline_bootstrap_available", compute.NativeVulkanShadowPipelineBootstrapAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -722,6 +741,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto translucentOut = melonPrimeVulkanTranslucentPipelineTestPath(argc, argv); translucentOut.has_value())
         return MelonPrime::Vulkan::RunTranslucentPipelineBootstrapHarness(*translucentOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto shadowOut = melonPrimeVulkanShadowPipelineTestPath(argc, argv); shadowOut.has_value())
+        return MelonPrime::Vulkan::RunShadowPipelineBootstrapHarness(*shadowOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

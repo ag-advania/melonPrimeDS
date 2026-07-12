@@ -342,6 +342,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanOpaqueBootstrap.h
         MelonPrimeVulkanTranslucentBootstrap.cpp
         MelonPrimeVulkanTranslucentBootstrap.h
+        MelonPrimeVulkanShadowBootstrap.cpp
+        MelonPrimeVulkanShadowBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp
