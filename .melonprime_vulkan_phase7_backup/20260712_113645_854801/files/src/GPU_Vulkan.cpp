@@ -13,9 +13,8 @@ VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) no
         computeSelected ? "Vulkan Compute Shader" : "Vulkan",
         computeSelected,
         true,
-        true,
         false,
-        2,
+        1,
     };
 }
 
@@ -41,8 +40,7 @@ bool VulkanRenderer::Init()
     Platform::Log(
         Platform::LogLevel::Info,
         "[MelonPrime] %s renderer shell initialized: "
-        "software_correctness_baseline=1 native_vulkan_raster_bootstrap=1 "
-        "native_vulkan_3d=0 generation=%llu\n",
+        "software_correctness_baseline=1 native_vulkan_3d=0 generation=%llu\n",
         contract.ModeName,
         static_cast<unsigned long long>(OutputGeneration));
     return true;
