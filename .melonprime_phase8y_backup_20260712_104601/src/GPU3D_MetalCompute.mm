@@ -20,7 +20,6 @@
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 // MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // MELONPRIME_METAL_COMPUTE_FRAME_BOOKKEEPING_CLEANUP_V1
-// MELONPRIME_METAL_COMPUTE_CHANGE_DRIVEN_SNAPSHOTS_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -77,24 +76,6 @@ bool MetalComputeVisibleEnabled()
     return enabled;
 }
 
-
-bool UpdateSharedSnapshotIfChanged(
-    id<MTLBuffer> buffer,
-    const void* source,
-    size_t bytes,
-    bool& valid)
-{
-    if (!buffer || !source || bytes > static_cast<size_t>(buffer.length))
-        return false;
-
-    void* destination = [buffer contents];
-    if (!valid || std::memcmp(destination, source, bytes) != 0)
-    {
-        std::memcpy(destination, source, bytes);
-        valid = true;
-    }
-    return true;
-}
 
 constexpr uint32_t kVariantWorkCountStart = 0;
 constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
@@ -952,11 +933,6 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> ToonTableBuffer = nil;
         id<MTLBuffer> FinalTablesBuffer = nil;
         id<MTLTexture> FinalTexture = nil;
-        bool VariantMetaSnapshotValid = false;
-        bool TextureMemorySnapshotValid = false;
-        bool TexturePaletteSnapshotValid = false;
-        bool ToonTableSnapshotValid = false;
-        bool FinalTablesSnapshotValid = false;
         id<MTLCommandBuffer> LastCommand = nil;
         std::atomic<bool> InFlight { false };
         std::atomic<uint64_t> Generation { 0 };
@@ -1404,11 +1380,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.FinalTablesBuffer =
             [State->Device newBufferWithLength:kFinalTableWords * sizeof(uint32_t)
                                        options:MTLResourceStorageModeShared];
-        slot.VariantMetaSnapshotValid = false;
-        slot.TextureMemorySnapshotValid = false;
-        slot.TexturePaletteSnapshotValid = false;
-        slot.ToonTableSnapshotValid = false;
-        slot.FinalTablesSnapshotValid = false;
         MTLTextureDescriptor* finalDescriptor =
             [MTLTextureDescriptor
                 texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
@@ -2202,7 +2173,17 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         std::memcpy([slot->Polygons contents],
                     State->PolygonData.data(),
                     static_cast<size_t>(polygonCount) * sizeof(RenderPolygon));
-        std::array<uint32_t, 32> toonTable {};
+        std::memcpy([slot->VariantMetaBuffer contents],
+                    State->VariantMetaData.data(),
+                    static_cast<size_t>(variantCount) * sizeof(VariantMeta));
+        std::memcpy([slot->TextureMemoryBuffer contents],
+                    GPU.VRAMFlat_Texture,
+                    sizeof(GPU.VRAMFlat_Texture));
+        std::memcpy([slot->TexturePaletteBuffer contents],
+                    GPU.VRAMFlat_TexPal,
+                    sizeof(GPU.VRAMFlat_TexPal));
+        auto* toonTable =
+            static_cast<uint32_t*>([slot->ToonTableBuffer contents]);
         for (uint32_t index = 0; index < 32u; index++)
         {
             const uint32_t color = GPU3D.RenderToonTable[index];
@@ -2210,33 +2191,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             uint32_t g = (color >> 4u) & 0x3Eu; if (g) g++;
             uint32_t b = (color >> 9u) & 0x3Eu; if (b) b++;
             toonTable[index] = r | (g << 8u) | (b << 16u);
-        }
-
-        const size_t variantBytes =
-            static_cast<size_t>(variantCount) * sizeof(VariantMeta);
-        if (!UpdateSharedSnapshotIfChanged(
-                slot->VariantMetaBuffer,
-                State->VariantMetaData.data(),
-                variantBytes,
-                slot->VariantMetaSnapshotValid) ||
-            !UpdateSharedSnapshotIfChanged(
-                slot->TextureMemoryBuffer,
-                GPU.VRAMFlat_Texture,
-                sizeof(GPU.VRAMFlat_Texture),
-                slot->TextureMemorySnapshotValid) ||
-            !UpdateSharedSnapshotIfChanged(
-                slot->TexturePaletteBuffer,
-                GPU.VRAMFlat_TexPal,
-                sizeof(GPU.VRAMFlat_TexPal),
-                slot->TexturePaletteSnapshotValid) ||
-            !UpdateSharedSnapshotIfChanged(
-                slot->ToonTableBuffer,
-                toonTable.data(),
-                sizeof(toonTable),
-                slot->ToonTableSnapshotValid))
-        {
-            slot->InFlight.store(false, std::memory_order_release);
-            return false;
         }
         std::memset([slot->Header contents], 0, slot->Header.length);
 
@@ -2284,20 +2238,12 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         uint32_t clearB = (GPU3D.RenderClearAttr1 >> 9) & 0x3Eu;
         if (clearB) clearB++;
         const uint32_t clearA = (GPU3D.RenderClearAttr1 >> 16) & 0x1Fu;
-        std::array<uint32_t, kFinalTableWords> finalTables {};
+        auto* finalTables =
+            static_cast<uint32_t*>([slot->FinalTablesBuffer contents]);
         for (uint32_t index = 0; index < 8u; index++)
             finalTables[index] = ConvertRGB555ToRGB6(GPU3D.RenderEdgeTable[index]);
         for (uint32_t index = 0; index < 34u; index++)
             finalTables[8u + index] = GPU3D.RenderFogDensityTable[index];
-        if (!UpdateSharedSnapshotIfChanged(
-                slot->FinalTablesBuffer,
-                finalTables.data(),
-                sizeof(finalTables),
-                slot->FinalTablesSnapshotValid))
-        {
-            slot->InFlight.store(false, std::memory_order_release);
-            return false;
-        }
 
         const FinalPassConfig finalPassConfig {
             State->ScreenWidth,
@@ -2369,7 +2315,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 8Y Change-Driven Snapshots";
+        command.label = @"MelonPrime Metal Compute Phase 8X Frame Bookkeeping";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
