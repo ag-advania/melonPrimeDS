@@ -336,6 +336,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanClearBitmapBootstrap.h
         MelonPrimeVulkanVertexUploadBootstrap.cpp
         MelonPrimeVulkanVertexUploadBootstrap.h
+        MelonPrimeVulkanPolygonBatchBootstrap.cpp
+        MelonPrimeVulkanPolygonBatchBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

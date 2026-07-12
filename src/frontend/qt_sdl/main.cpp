@@ -63,6 +63,7 @@
 #include "GPU3D_Vulkan.h"
 #include "MelonPrimeVulkanClearBitmapBootstrap.h"
 #include "MelonPrimeVulkanVertexUploadBootstrap.h"
+#include "MelonPrimeVulkanPolygonBatchBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -421,6 +422,20 @@ static std::optional<QString> melonPrimeVulkanVertexUploadTestPath(int argc, cha
     return std::nullopt;
 }
 
+static std::optional<QString> melonPrimeVulkanPolygonBatchTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-vulkan-polygon-batch-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -505,7 +520,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 5 && compute.ContractVersion == 5 &&
+        raster.ContractVersion == 6 && compute.ContractVersion == 6 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -517,10 +532,12 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanClearBitmapBootstrapAvailable &&
         raster.NativeVulkanVertexUploadBootstrapAvailable &&
         compute.NativeVulkanVertexUploadBootstrapAvailable &&
+        raster.NativeVulkanPolygonBatchBootstrapAvailable &&
+        compute.NativeVulkanPolygonBatchBootstrapAvailable &&
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 5},
+        {"schema_version", 6},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -535,6 +552,8 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_clear_bitmap_bootstrap_available", compute.NativeVulkanClearBitmapBootstrapAvailable},
         {"raster_vertex_upload_bootstrap_available", raster.NativeVulkanVertexUploadBootstrapAvailable},
         {"compute_vertex_upload_bootstrap_available", compute.NativeVulkanVertexUploadBootstrapAvailable},
+        {"raster_polygon_batch_bootstrap_available", raster.NativeVulkanPolygonBatchBootstrapAvailable},
+        {"compute_polygon_batch_bootstrap_available", compute.NativeVulkanPolygonBatchBootstrapAvailable},
         {"raster_native_vulkan_3d", raster.NativeVulkan3DImplemented},
         {"compute_native_vulkan_3d", compute.NativeVulkan3DImplemented},
     };
@@ -650,6 +669,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto vertexOut = melonPrimeVulkanVertexUploadTestPath(argc, argv); vertexOut.has_value())
         return MelonPrime::Vulkan::RunVertexUploadBootstrapHarness(*vertexOut);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto batchOut = melonPrimeVulkanPolygonBatchTestPath(argc, argv); batchOut.has_value())
+        return MelonPrime::Vulkan::RunPolygonBatchBootstrapHarness(*batchOut);
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)

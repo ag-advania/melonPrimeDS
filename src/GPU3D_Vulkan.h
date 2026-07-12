@@ -7,6 +7,7 @@
 // MELONPRIME_VULKAN_CLEAR_PLANE_CONTRACT_V1
 // MELONPRIME_VULKAN_CLEAR_BITMAP_CONTRACT_V1
 // MELONPRIME_VULKAN_VERTEX_UPLOAD_CONTRACT_V1
+// MELONPRIME_VULKAN_POLYGON_BATCH_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -28,6 +29,7 @@ inline constexpr std::uint32_t kRasterTargetContractVersion = 1;
 inline constexpr std::uint32_t kClearPlaneContractVersion = 1;
 inline constexpr std::uint32_t kClearBitmapContractVersion = 1;
 inline constexpr std::uint32_t kVertexUploadContractVersion = 1;
+inline constexpr std::uint32_t kPolygonBatchContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -190,6 +192,119 @@ struct VulkanRasterUpload
     void Clear() noexcept;
 };
 
+enum class VulkanRasterRenderMode : std::uint32_t
+{
+    Opaque = 0,
+    Translucent = 1,
+    ShadowMask = 2,
+    Shadow = 3,
+};
+
+enum class VulkanRasterTextureMode : std::uint32_t
+{
+    Modulate = 0,
+    Decal = 1,
+    ToonHighlight = 2,
+    Reserved = 3,
+    None = 0xFFFFFFFFu,
+};
+
+enum class VulkanRasterToonMode : std::uint32_t
+{
+    None = 0,
+    Toon = 1,
+    Highlight = 2,
+};
+
+enum class VulkanRasterSamplerAxisMode : std::uint32_t
+{
+    Clamp = 0,
+    Repeat = 1,
+    Mirror = 2,
+};
+
+// Fixed-size pipeline identity. Only state that can change Vulkan pipeline or
+// pass semantics belongs here; texture object identity remains in TextureKey.
+struct alignas(16) VulkanRasterPipelineKey
+{
+    std::uint32_t Primitive = 0;
+    std::uint32_t RenderMode = 0;
+    std::uint32_t TextureMode = 0xFFFFFFFFu;
+    std::uint32_t ToonMode = 0;
+    std::uint32_t WBuffer = 0;
+    std::uint32_t DepthEqual = 0;
+    std::uint32_t DepthWrite = 0;
+    std::uint32_t FogAttrWrite = 0;
+    std::uint32_t ShadowStage = 0;
+    std::uint32_t NeedsOpaquePass = 0;
+    std::uint32_t AlphaZero = 0;
+    std::uint32_t Textured = 0;
+    std::uint32_t ColorFormat = 0;
+    std::uint32_t AttributeFormat = 0;
+    std::uint32_t DepthStencilFormat = 0;
+    std::uint32_t Reserved0 = 0;
+};
+
+static_assert(sizeof(VulkanRasterPipelineKey) == 64);
+static_assert(alignof(VulkanRasterPipelineKey) == 16);
+
+// Exact texture/sampler binding identity. Adjacent polygons may share one draw
+// only when both PipelineKey and TextureKey are identical.
+struct alignas(16) VulkanRasterTextureKey
+{
+    std::uint32_t Enabled = 0;
+    std::uint32_t NormalizedTexParam = 0;
+    std::uint32_t TexPalette = 0;
+    std::uint32_t TextureLayer = 0xFFFFFFFFu;
+    std::uint32_t TextureRepeat = 0;
+    std::uint32_t SamplerS = 0;
+    std::uint32_t SamplerT = 0;
+    std::uint32_t TextureFormat = 0;
+};
+
+static_assert(sizeof(VulkanRasterTextureKey) == 32);
+static_assert(alignof(VulkanRasterTextureKey) == 16);
+
+// One batch represents one contiguous range in RenderPolygonRAM order. A/B/A
+// is always three ranges; no frame-wide regrouping is permitted.
+struct alignas(16) VulkanRasterBatch
+{
+    std::uint32_t FirstPolygon = 0;
+    std::uint32_t PolygonCount = 0;
+    std::uint32_t FirstSourceOrder = 0;
+    std::uint32_t LastSourceOrder = 0;
+    std::uint32_t IndexOffset = 0;
+    std::uint32_t IndexCount = 0;
+    std::uint32_t EdgeIndexOffset = 0;
+    std::uint32_t EdgeIndexCount = 0;
+    VulkanRasterPipelineKey PipelineKey{};
+    VulkanRasterTextureKey TextureKey{};
+};
+
+static_assert(sizeof(VulkanRasterBatch) == 128);
+static_assert(alignof(VulkanRasterBatch) == 16);
+static_assert(offsetof(VulkanRasterBatch, PipelineKey) == 32);
+static_assert(offsetof(VulkanRasterBatch, TextureKey) == 96);
+
+struct VulkanRasterBatchOptions
+{
+    std::uint32_t RenderDispCnt = 0;
+    VkFormat ColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat AttributeFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat DepthStencilFormat = VK_FORMAT_UNDEFINED;
+};
+
+struct VulkanRasterBatchPlan
+{
+    std::vector<VulkanRasterBatch> Batches;
+    std::uint32_t SourcePolygonCount = 0;
+    bool SourceOrderPreserved = false;
+    bool AdjacentOnly = false;
+    bool Valid = false;
+
+    void Clear() noexcept;
+};
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -223,6 +338,19 @@ bool BuildVulkanRasterUpload(
     std::size_t polygonCount,
     const VulkanRasterBuildOptions& options,
     VulkanRasterUpload& upload,
+    std::string* failureReason = nullptr);
+
+VulkanRasterPipelineKey BuildVulkanRasterPipelineKey(
+    const VulkanPackedPolygon& polygon,
+    const VulkanRasterBatchOptions& options) noexcept;
+
+VulkanRasterTextureKey BuildVulkanRasterTextureKey(
+    const VulkanPackedPolygon& polygon) noexcept;
+
+bool BuildVulkanRasterBatchPlan(
+    const VulkanRasterUpload& upload,
+    const VulkanRasterBatchOptions& options,
+    VulkanRasterBatchPlan& plan,
     std::string* failureReason = nullptr);
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;

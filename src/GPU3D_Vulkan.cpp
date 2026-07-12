@@ -1,5 +1,6 @@
 #include "GPU3D_Vulkan.h"
 
+#include <cstring>
 #include <limits>
 
 #include "GPU3D.h"
@@ -50,6 +51,50 @@ bool AppendIndex(std::vector<std::uint16_t>& indices, std::size_t value, std::st
     }
     indices.push_back(static_cast<std::uint16_t>(value));
     return true;
+}
+
+template <typename T>
+bool ByteEqual(const T& left, const T& right) noexcept
+{
+    return std::memcmp(&left, &right, sizeof(T)) == 0;
+}
+
+VulkanRasterRenderMode RenderModeFor(const VulkanPackedPolygon& polygon) noexcept
+{
+    if (polygon.Flags & VulkanRasterPolygonFlag_ShadowMask)
+        return VulkanRasterRenderMode::ShadowMask;
+    if (polygon.Flags & VulkanRasterPolygonFlag_Shadow)
+        return VulkanRasterRenderMode::Shadow;
+    if (polygon.Flags & VulkanRasterPolygonFlag_Translucent)
+        return VulkanRasterRenderMode::Translucent;
+    return VulkanRasterRenderMode::Opaque;
+}
+
+VulkanRasterSamplerAxisMode SamplerModeFor(
+    std::uint32_t repeatBits,
+    std::uint32_t repeatBit,
+    std::uint32_t mirrorBit) noexcept
+{
+    if ((repeatBits & repeatBit) == 0)
+        return VulkanRasterSamplerAxisMode::Clamp;
+    return (repeatBits & mirrorBit) != 0
+        ? VulkanRasterSamplerAxisMode::Mirror
+        : VulkanRasterSamplerAxisMode::Repeat;
+}
+
+bool PolygonRangesValid(
+    const VulkanPackedPolygon& polygon,
+    const VulkanRasterUpload& upload) noexcept
+{
+    const std::uint64_t vertexEnd =
+        static_cast<std::uint64_t>(polygon.VertexOffset) + polygon.VertexCount;
+    const std::uint64_t indexEnd =
+        static_cast<std::uint64_t>(polygon.IndexOffset) + polygon.IndexCount;
+    const std::uint64_t edgeEnd =
+        static_cast<std::uint64_t>(polygon.EdgeIndexOffset) + polygon.EdgeIndexCount;
+    return vertexEnd <= upload.Vertices.size() &&
+        indexEnd <= upload.Indices.size() &&
+        edgeEnd <= upload.EdgeIndices.size();
 }
 
 } // namespace
@@ -417,6 +462,175 @@ bool BuildVulkanRasterUpload(
     }
 
     upload.Valid = true;
+    return true;
+}
+
+void VulkanRasterBatchPlan::Clear() noexcept
+{
+    Batches.clear();
+    SourcePolygonCount = 0;
+    SourceOrderPreserved = false;
+    AdjacentOnly = false;
+    Valid = false;
+}
+
+VulkanRasterPipelineKey BuildVulkanRasterPipelineKey(
+    const VulkanPackedPolygon& polygon,
+    const VulkanRasterBatchOptions& options) noexcept
+{
+    VulkanRasterPipelineKey key;
+    const VulkanRasterRenderMode renderMode = RenderModeFor(polygon);
+    const bool textured = (polygon.Flags & VulkanRasterPolygonFlag_Textured) != 0;
+    const std::uint32_t textureMode = (polygon.Attr >> 4) & 0x3u;
+    const std::uint32_t alpha = (polygon.Attr >> 16) & 0x1Fu;
+
+    key.Primitive = polygon.Primitive;
+    key.RenderMode = static_cast<std::uint32_t>(renderMode);
+    key.TextureMode = textured
+        ? textureMode
+        : static_cast<std::uint32_t>(VulkanRasterTextureMode::None);
+    if (textureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::ToonHighlight))
+    {
+        key.ToonMode = static_cast<std::uint32_t>(
+            (options.RenderDispCnt & (1u << 1)) != 0
+                ? VulkanRasterToonMode::Highlight
+                : VulkanRasterToonMode::Toon);
+    }
+    key.WBuffer = (polygon.Flags & VulkanRasterPolygonFlag_WBuffer) != 0;
+    key.DepthEqual = (polygon.Attr >> 14) & 0x1u;
+    key.DepthWrite = renderMode == VulkanRasterRenderMode::Opaque
+        ? 1u
+        : (renderMode == VulkanRasterRenderMode::ShadowMask
+            ? 0u
+            : ((polygon.Attr >> 11) & 0x1u));
+    key.FogAttrWrite = (polygon.Attr >> 15) & 0x1u;
+    key.ShadowStage = renderMode == VulkanRasterRenderMode::ShadowMask
+        ? 1u
+        : (renderMode == VulkanRasterRenderMode::Shadow ? 2u : 0u);
+    key.NeedsOpaquePass =
+        (renderMode == VulkanRasterRenderMode::Translucent ||
+         renderMode == VulkanRasterRenderMode::Shadow) && alpha == 0x1Fu;
+    key.AlphaZero = alpha == 0;
+    key.Textured = textured ? 1u : 0u;
+    key.ColorFormat = static_cast<std::uint32_t>(options.ColorFormat);
+    key.AttributeFormat = static_cast<std::uint32_t>(options.AttributeFormat);
+    key.DepthStencilFormat = static_cast<std::uint32_t>(options.DepthStencilFormat);
+    return key;
+}
+
+VulkanRasterTextureKey BuildVulkanRasterTextureKey(
+    const VulkanPackedPolygon& polygon) noexcept
+{
+    VulkanRasterTextureKey key;
+    const bool textured = (polygon.Flags & VulkanRasterPolygonFlag_Textured) != 0;
+    key.Enabled = textured ? 1u : 0u;
+    if (!textured)
+        return key;
+
+    key.NormalizedTexParam = polygon.TexParam & ~0xC00F0000u;
+    key.TexPalette = polygon.TexPalette;
+    key.TextureLayer = polygon.TextureLayer;
+    key.TextureRepeat = polygon.TextureRepeat & 0xFu;
+    key.SamplerS = static_cast<std::uint32_t>(SamplerModeFor(
+        key.TextureRepeat, 1u << 0, 1u << 2));
+    key.SamplerT = static_cast<std::uint32_t>(SamplerModeFor(
+        key.TextureRepeat, 1u << 1, 1u << 3));
+    key.TextureFormat = (polygon.TexParam >> 26) & 0x7u;
+    return key;
+}
+
+bool BuildVulkanRasterBatchPlan(
+    const VulkanRasterUpload& upload,
+    const VulkanRasterBatchOptions& options,
+    VulkanRasterBatchPlan& plan,
+    std::string* failureReason)
+{
+    plan.Clear();
+    if (failureReason)
+        failureReason->clear();
+
+    if (!upload.Valid ||
+        options.ColorFormat == VK_FORMAT_UNDEFINED ||
+        options.AttributeFormat == VK_FORMAT_UNDEFINED ||
+        options.DepthStencilFormat == VK_FORMAT_UNDEFINED)
+    {
+        SetFailure(failureReason, "invalid Vulkan raster batch input");
+        return false;
+    }
+
+    plan.SourcePolygonCount = upload.SourcePolygonCount;
+    if (upload.Polygons.empty())
+    {
+        plan.SourceOrderPreserved = true;
+        plan.AdjacentOnly = true;
+        plan.Valid = true;
+        return true;
+    }
+
+    std::uint32_t previousSourceOrder = 0;
+    bool havePrevious = false;
+    for (std::size_t polygonIndex = 0; polygonIndex < upload.Polygons.size(); ++polygonIndex)
+    {
+        const VulkanPackedPolygon& polygon = upload.Polygons[polygonIndex];
+        if (!PolygonRangesValid(polygon, upload))
+        {
+            SetFailure(failureReason, "Vulkan raster polygon range exceeds uploaded payload");
+            plan.Clear();
+            return false;
+        }
+        if (havePrevious && polygon.SourceOrder <= previousSourceOrder)
+        {
+            SetFailure(failureReason, "Vulkan raster polygon source order is not strictly increasing");
+            plan.Clear();
+            return false;
+        }
+
+        const VulkanRasterPipelineKey pipelineKey =
+            BuildVulkanRasterPipelineKey(polygon, options);
+        const VulkanRasterTextureKey textureKey =
+            BuildVulkanRasterTextureKey(polygon);
+
+        bool extend = false;
+        if (!plan.Batches.empty() && havePrevious)
+        {
+            VulkanRasterBatch& batch = plan.Batches.back();
+            extend = polygon.SourceOrder == previousSourceOrder + 1u &&
+                polygon.IndexOffset == batch.IndexOffset + batch.IndexCount &&
+                polygon.EdgeIndexOffset == batch.EdgeIndexOffset + batch.EdgeIndexCount &&
+                ByteEqual(batch.PipelineKey, pipelineKey) &&
+                ByteEqual(batch.TextureKey, textureKey);
+            if (extend)
+            {
+                ++batch.PolygonCount;
+                batch.LastSourceOrder = polygon.SourceOrder;
+                batch.IndexCount += polygon.IndexCount;
+                batch.EdgeIndexCount += polygon.EdgeIndexCount;
+            }
+        }
+
+        if (!extend)
+        {
+            VulkanRasterBatch batch;
+            batch.FirstPolygon = static_cast<std::uint32_t>(polygonIndex);
+            batch.PolygonCount = 1;
+            batch.FirstSourceOrder = polygon.SourceOrder;
+            batch.LastSourceOrder = polygon.SourceOrder;
+            batch.IndexOffset = polygon.IndexOffset;
+            batch.IndexCount = polygon.IndexCount;
+            batch.EdgeIndexOffset = polygon.EdgeIndexOffset;
+            batch.EdgeIndexCount = polygon.EdgeIndexCount;
+            batch.PipelineKey = pipelineKey;
+            batch.TextureKey = textureKey;
+            plan.Batches.push_back(batch);
+        }
+
+        previousSourceOrder = polygon.SourceOrder;
+        havePrevious = true;
+    }
+
+    plan.SourceOrderPreserved = true;
+    plan.AdjacentOnly = true;
+    plan.Valid = true;
     return true;
 }
 
