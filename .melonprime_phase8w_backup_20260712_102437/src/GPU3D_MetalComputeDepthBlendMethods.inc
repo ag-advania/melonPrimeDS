@@ -1,10 +1,10 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
-// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 
 namespace
 {
 
+constexpr uint32_t kCompleteDepthBlendSummaryWords = 12u;
 
 struct CompleteDepthBlendConfig
 {
@@ -31,6 +31,26 @@ struct CompleteDepthBlendConfig
 static_assert(
     sizeof(CompleteDepthBlendConfig) == 64,
     "CompleteDepthBlendConfig must match MSL");
+
+struct CompleteDepthBlendSummary
+{
+    uint32_t Pixels;
+    uint32_t LayersTested;
+    uint32_t LayersAccepted;
+    uint32_t TranslucentLayers;
+    uint32_t OpaqueLayers;
+    uint32_t ShadowMaskPixels;
+    uint32_t ShadowPolygonPixels;
+    uint32_t SecondLayerWrites;
+    uint32_t ColorHash;
+    uint32_t DepthMin;
+    uint32_t DepthMax;
+    uint32_t Reserved;
+};
+static_assert(
+    sizeof(CompleteDepthBlendSummary) ==
+        kCompleteDepthBlendSummaryWords * sizeof(uint32_t),
+    "CompleteDepthBlendSummary must match MSL");
 
 } // namespace
 

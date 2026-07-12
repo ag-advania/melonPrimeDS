@@ -1,11 +1,23 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
-// MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // Standalone MSL library for DS two-layer depth/blend, shadow and clear-bitmap processing.
 static constexpr const char* kMetalComputeCompleteDepthBlendSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
+constant uint MPD_SummaryPixels = 0u;
+constant uint MPD_SummaryLayersTested = 1u;
+constant uint MPD_SummaryLayersAccepted = 2u;
+constant uint MPD_SummaryTranslucent = 3u;
+constant uint MPD_SummaryOpaque = 4u;
+constant uint MPD_SummaryShadowMasks = 5u;
+constant uint MPD_SummaryShadowPolygons = 6u;
+constant uint MPD_SummarySecondLayerWrites = 7u;
+constant uint MPD_SummaryColorHash = 8u;
+constant uint MPD_SummaryDepthMin = 9u;
+constant uint MPD_SummaryDepthMax = 10u;
+constant uint MPD_SummaryReserved = 11u;
+constant uint MPD_SummaryWords = 12u;
 
 struct MPDRenderPolygon
 {
@@ -138,6 +150,21 @@ static inline bool mpd_plot_translucent(
         (sourceG & 0x00003F00u) |
         max(destinationA, sourceAlpha);
     return true;
+}
+
+kernel void mp_compute_clear_complete_depth_blend_summary(
+    device atomic_uint* summary [[buffer(0)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= MPD_SummaryWords)
+        return;
+    const uint value = gid == MPD_SummaryDepthMin
+        ? 0xFFFFFFFFu
+        : 0u;
+    atomic_store_explicit(
+        &summary[gid],
+        value,
+        memory_order_relaxed);
 }
 
 kernel void mp_compute_depth_blend_complete(
