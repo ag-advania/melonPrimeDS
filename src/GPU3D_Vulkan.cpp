@@ -503,7 +503,17 @@ VulkanRasterPipelineKey BuildVulkanRasterPipelineKey(
         : (renderMode == VulkanRasterRenderMode::ShadowMask
             ? 0u
             : ((polygon.Attr >> 11) & 0x1u));
-    key.FogAttrWrite = (polygon.Attr >> 15) & 0x1u;
+    if (renderMode == VulkanRasterRenderMode::Translucent ||
+        renderMode == VulkanRasterRenderMode::Shadow)
+    {
+        key.FogAttrWrite =
+            ((options.RenderDispCnt & (1u << 7)) != 0 &&
+             (polygon.Attr & (1u << 15)) == 0) ? 1u : 0u;
+    }
+    else
+    {
+        key.FogAttrWrite = (polygon.Attr >> 15) & 0x1u;
+    }
     key.ShadowStage = renderMode == VulkanRasterRenderMode::ShadowMask
         ? 1u
         : (renderMode == VulkanRasterRenderMode::Shadow ? 2u : 0u);
@@ -655,6 +665,36 @@ VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
 
     state.Valid =
         key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::Opaque) &&
+        key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
+        key.Textured == 0 &&
+        key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&
+        key.ColorFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED) &&
+        key.AttributeFormat == static_cast<std::uint32_t>(VK_FORMAT_R8G8B8A8_UNORM) &&
+        key.DepthStencilFormat != static_cast<std::uint32_t>(VK_FORMAT_UNDEFINED);
+    return state;
+}
+
+
+VulkanTranslucentPipelineState BuildVulkanTranslucentPipelineState(
+    const VulkanRasterPipelineKey& key) noexcept
+{
+    VulkanTranslucentPipelineState state;
+    state.Topology = key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles)
+        ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+        : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    state.DepthCompare = key.DepthEqual != 0 ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    state.DepthWrite = key.DepthWrite != 0 ? VK_TRUE : VK_FALSE;
+    state.StencilReference = 0x40u | (key.StencilReference & 0x3Fu);
+    state.ColorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.AttributeWriteMask = key.FogAttrWrite != 0
+        ? VK_COLOR_COMPONENT_B_BIT
+        : static_cast<VkColorComponentFlags>(0);
+    state.WBuffer = key.WBuffer != 0;
+    state.NeedsOpaquePass = key.NeedsOpaquePass != 0;
+
+    state.Valid =
+        key.RenderMode == static_cast<std::uint32_t>(VulkanRasterRenderMode::Translucent) &&
         key.Primitive == static_cast<std::uint32_t>(VulkanRasterPrimitive::Triangles) &&
         key.Textured == 0 &&
         key.TextureMode == static_cast<std::uint32_t>(VulkanRasterTextureMode::None) &&

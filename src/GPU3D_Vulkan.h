@@ -9,6 +9,7 @@
 // MELONPRIME_VULKAN_VERTEX_UPLOAD_CONTRACT_V1
 // MELONPRIME_VULKAN_POLYGON_BATCH_CONTRACT_V1
 // MELONPRIME_VULKAN_OPAQUE_PIPELINE_CONTRACT_V1
+// MELONPRIME_VULKAN_TRANSLUCENT_PIPELINE_CONTRACT_V1
 
 #include <array>
 #include <cstddef>
@@ -32,6 +33,7 @@ inline constexpr std::uint32_t kClearBitmapContractVersion = 1;
 inline constexpr std::uint32_t kVertexUploadContractVersion = 1;
 inline constexpr std::uint32_t kPolygonBatchContractVersion = 1;
 inline constexpr std::uint32_t kOpaquePipelineContractVersion = 1;
+inline constexpr std::uint32_t kTranslucentPipelineContractVersion = 1;
 
 struct RasterTargetContract
 {
@@ -334,6 +336,45 @@ struct alignas(16) VulkanOpaquePushConstants
 static_assert(sizeof(VulkanOpaquePushConstants) == 16);
 static_assert(offsetof(VulkanOpaquePushConstants, RenderDispCnt) == 8);
 
+// Phase 7.7 translates one untextured translucent triangle batch key into
+// Vulkan fixed-function blend/depth/stencil state. The stencil compare mirrors
+// the DS rule that only a translucent fragment with the same polyID is blocked;
+// a different translucent polyID may blend over the previous result.
+struct VulkanTranslucentPipelineState
+{
+    VkPrimitiveTopology Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkCompareOp DepthCompare = VK_COMPARE_OP_LESS;
+    VkBool32 DepthWrite = VK_FALSE;
+    VkBool32 BlendEnable = VK_TRUE;
+    VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor DstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    VkBlendOp ColorBlendOp = VK_BLEND_OP_ADD;
+    VkBlendFactor SrcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor DstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    VkBlendOp AlphaBlendOp = VK_BLEND_OP_MAX;
+    VkCompareOp StencilCompare = VK_COMPARE_OP_NOT_EQUAL;
+    VkStencilOp StencilPass = VK_STENCIL_OP_REPLACE;
+    std::uint32_t StencilCompareMask = 0x7Fu;
+    std::uint32_t StencilWriteMask = 0x7Fu;
+    std::uint32_t StencilReference = 0x40u;
+    VkColorComponentFlags ColorWriteMask = 0;
+    VkColorComponentFlags AttributeWriteMask = 0;
+    bool WBuffer = false;
+    bool AlphaRangeTest = true;
+    bool NeedsOpaquePass = false;
+    bool Valid = false;
+};
+
+struct alignas(16) VulkanTranslucentPushConstants
+{
+    std::array<float, 2> ScreenSize{{256.0f, 192.0f}};
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t Reserved = 0;
+};
+
+static_assert(sizeof(VulkanTranslucentPushConstants) == 16);
+static_assert(offsetof(VulkanTranslucentPushConstants, RenderDispCnt) == 8);
+
 RasterTargetContract BuildRasterTargetContract(
     int scaleFactor,
     VkFormat colorFormat,
@@ -383,6 +424,9 @@ bool BuildVulkanRasterBatchPlan(
     std::string* failureReason = nullptr);
 
 VulkanOpaquePipelineState BuildVulkanOpaquePipelineState(
+    const VulkanRasterPipelineKey& key) noexcept;
+
+VulkanTranslucentPipelineState BuildVulkanTranslucentPipelineState(
     const VulkanRasterPipelineKey& key) noexcept;
 
 VkImageAspectFlags DepthStencilAspectMask(VkFormat format) noexcept;

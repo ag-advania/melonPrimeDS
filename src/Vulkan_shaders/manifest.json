@@ -97,6 +97,42 @@
           }
         }
       ]
+    },
+    {
+      "name": "VulkanTranslucentVertex",
+      "source": "translucent.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "VulkanTranslucentFragment",
+      "source": "translucent.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        },
+        {
+          "name": "WBuffer",
+          "defines": {
+            "W_BUFFER": "1"
+          }
+        }
+      ]
     }
   ]
 }
