@@ -1277,6 +1277,25 @@ void MainWindow::drawScreen()
     return panel->drawScreen();
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void MainWindow::handleVulkanDeviceLoss(const QString& stage, int result)
+{
+    if (!emuInstance)
+        return;
+    if (!MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+            stage.toUtf8().constData(), result))
+        return;
+
+    Log(Platform::LogLevel::Error,
+        "[MelonPrime] Vulkan device loss fallback: stage=%s VkResult=%d; "
+        "saved renderer is preserved and this process switches to Software/NativeQt.\n",
+        stage.toUtf8().constData(), result);
+    emuInstance->osdAddMessage(0xFFA0A0,
+        "Vulkan device lost. Switched to Software for this session.");
+    onUpdateVideoSettings(true);
+}
+#endif
+
 void MainWindow::keyPressEvent(QKeyEvent* event)
 {
     if (event->isAutoRepeat()) return;

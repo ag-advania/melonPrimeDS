@@ -229,6 +229,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU3D_VulkanCompute.h
         Vulkan_Phase12UiContract.cpp
         Vulkan_Phase12UiContract.h
+        Vulkan_Phase13Stability.cpp
+        Vulkan_Phase13Stability.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

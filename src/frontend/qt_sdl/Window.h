@@ -70,6 +70,9 @@ public:
     void releaseGL();
 
     void drawScreen();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void handleVulkanDeviceLoss(const QString& stage, int result);
+#endif
 
     bool preloadROMs(QStringList file, QStringList gbafile, bool boot);
     QStringList splitArchivePath(const QString& filename, bool useMemberSyntax);

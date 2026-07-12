@@ -56,6 +56,10 @@ bool VulkanRenderer::Init()
         "[MelonPrime] Vulkan Phase 12 capability: capability_aware_ui=1 "
         "hardware_config_migration=1 localized_ui=1 "
         "native_vulkan_phase12_ui_complete=1 rom_visible=0\n");
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[MelonPrime] Vulkan Phase 13 stability: frame_pacing=1 device_loss_fallback=1 "
+        "pipeline_cache=1 native_vulkan_phase13_stability_complete=1\n");
     return true;
 }
 

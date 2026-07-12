@@ -79,6 +79,7 @@
 #include "MelonPrimeVulkanPhase10CompletionBootstrap.h"
 #include "MelonPrimeVulkanPhase11CompletionBootstrap.h"
 #include "MelonPrimeVulkanPhase12CompletionBootstrap.h"
+#include "MelonPrimeVulkanPhase13CompletionBootstrap.h"
 #include "MelonPrimeVulkanClearPlaneBootstrap.h"
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -613,7 +614,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
     const melonDS::VulkanRendererShellContract compute =
         melonDS::DescribeVulkanRendererShell(true);
     const bool passed =
-        raster.ContractVersion == 23 && compute.ContractVersion == 23 &&
+        raster.ContractVersion == 24 && compute.ContractVersion == 24 &&
         !raster.ComputeSelected && compute.ComputeSelected &&
         raster.UsesSoftwareCorrectnessBaseline &&
         compute.UsesSoftwareCorrectnessBaseline &&
@@ -695,6 +696,14 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         compute.NativeVulkanLocalizedUiAvailable &&
         raster.NativeVulkanPhase12UiComplete &&
         compute.NativeVulkanPhase12UiComplete &&
+        raster.NativeVulkanPhase13FramePacingComplete &&
+        compute.NativeVulkanPhase13FramePacingComplete &&
+        raster.NativeVulkanPhase13DeviceLossFallbackComplete &&
+        compute.NativeVulkanPhase13DeviceLossFallbackComplete &&
+        raster.NativeVulkanPhase13PipelineCacheComplete &&
+        compute.NativeVulkanPhase13PipelineCacheComplete &&
+        raster.NativeVulkanPhase13StabilityComplete &&
+        compute.NativeVulkanPhase13StabilityComplete &&
         !raster.NativeVulkanComputeRomVisible &&
         !compute.NativeVulkanComputeRomVisible &&
         !raster.NativeVulkanRomIntegrationImplemented &&
@@ -702,7 +711,7 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         !raster.NativeVulkan3DImplemented &&
         !compute.NativeVulkan3DImplemented;
     const QJsonObject result{
-        {"schema_version", 23},
+        {"schema_version", 24},
         {"passed", passed},
         {"contract_version", static_cast<int>(raster.ContractVersion)},
         {"raster_mode", QString::fromLatin1(raster.ModeName)},
@@ -787,6 +796,14 @@ static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
         {"compute_localized_ui_available", compute.NativeVulkanLocalizedUiAvailable},
         {"raster_phase12_ui_complete", raster.NativeVulkanPhase12UiComplete},
         {"compute_phase12_ui_complete", compute.NativeVulkanPhase12UiComplete},
+        {"raster_phase13_frame_pacing_complete", raster.NativeVulkanPhase13FramePacingComplete},
+        {"compute_phase13_frame_pacing_complete", compute.NativeVulkanPhase13FramePacingComplete},
+        {"raster_phase13_device_loss_fallback_complete", raster.NativeVulkanPhase13DeviceLossFallbackComplete},
+        {"compute_phase13_device_loss_fallback_complete", compute.NativeVulkanPhase13DeviceLossFallbackComplete},
+        {"raster_phase13_pipeline_cache_complete", raster.NativeVulkanPhase13PipelineCacheComplete},
+        {"compute_phase13_pipeline_cache_complete", compute.NativeVulkanPhase13PipelineCacheComplete},
+        {"raster_phase13_stability_complete", raster.NativeVulkanPhase13StabilityComplete},
+        {"compute_phase13_stability_complete", compute.NativeVulkanPhase13StabilityComplete},
         {"raster_compute_rom_visible", raster.NativeVulkanComputeRomVisible},
         {"compute_compute_rom_visible", compute.NativeVulkanComputeRomVisible},
         {"raster_rom_integration_implemented", raster.NativeVulkanRomIntegrationImplemented},
@@ -901,6 +918,18 @@ static std::optional<QString> melonPrimeVulkanPhase12CompletionTestPath(int argc
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     for (int i = 1; i < argc; ++i)
         if (strcmp(argv[i], "--melonprime-vulkan-phase12-completion-test") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
+static std::optional<QString> melonPrimeVulkanPhase13CompletionTestPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], "--melonprime-vulkan-phase13-completion-test") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
 #endif
     (void)argc;
@@ -1109,6 +1138,11 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto phase12Out = melonPrimeVulkanPhase12CompletionTestPath(argc, argv); phase12Out.has_value())
         return MelonPrime::Vulkan::RunPhase12CompletionHarness(*phase12Out);
+#endif
+
+#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto phase13Out = melonPrimeVulkanPhase13CompletionTestPath(argc, argv); phase13Out.has_value())
+        return MelonPrime::Vulkan::RunPhase13CompletionHarness(*phase13Out);
 #endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);

@@ -15,6 +15,9 @@
 #include <vector>
 
 #include "MelonPrimeVulkanInstanceHost.h"
+#include "MelonPrimeVulkanPhase13Runtime.h"
+#include "EmuInstance.h"
+#include "Window.h"
 #include "Platform.h"
 #include "main.h"
 #include "../../../Vulkan_shaders/generated/VulkanShaders.h"
@@ -56,6 +59,8 @@ private:
     bool createShaderModule(const std::uint32_t* code, std::size_t size, VkShaderModule& module);
     std::uint32_t findMemoryType(std::uint32_t bits, VkMemoryPropertyFlags required) const;
     void fail(const char* stage, VkResult result = VK_ERROR_UNKNOWN);
+    void completeFrame();
+    bool savePipelineCache();
 
     PresenterWindow* m_window = nullptr;
     ScreenPanelVulkan* m_panel = nullptr;
@@ -64,6 +69,9 @@ private:
     VkDescriptorSetLayout m_descriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipelineCache m_pipelineCache = VK_NULL_HANDLE;
+    melonDS::Vulkan::Phase13PipelineCacheIdentity m_phase13PipelineCacheIdentity{};
+    bool m_phase13PipelineCacheIdentityValid = false;
+    bool m_phase13PipelineCacheWarm = false;
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkSampler m_nearestSampler = VK_NULL_HANDLE;
     VkSampler m_linearSampler = VK_NULL_HANDLE;
@@ -137,6 +145,8 @@ void PresenterRenderer::fail(const char* stage, VkResult result)
     Log(LogLevel::Error,
         "[MelonPrime] Vulkan presenter failure: stage=%s VkResult=%d\n",
         stage, static_cast<int>(result));
+    if (result == VK_ERROR_DEVICE_LOST && m_panel)
+        m_panel->phase13NotifyDeviceLoss(stage, static_cast<int>(result));
 }
 
 std::uint32_t PresenterRenderer::findMemoryType(
@@ -198,7 +208,32 @@ bool PresenterRenderer::createStaticResources()
     }
 
     VkPipelineCacheCreateInfo cacheInfo{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    const auto* phase13Properties = m_window->physicalDeviceProperties();
+    MelonPrime::Vulkan::Phase13PipelineCacheLoad phase13Cache;
+    if (phase13Properties)
+    {
+        m_phase13PipelineCacheIdentity =
+            MelonPrime::Vulkan::BuildPhase13PipelineCacheIdentity(*phase13Properties);
+        m_phase13PipelineCacheIdentityValid = true;
+        phase13Cache = MelonPrime::Vulkan::LoadPhase13PipelineCache(
+            m_phase13PipelineCacheIdentity);
+        if (phase13Cache.Warm)
+        {
+            cacheInfo.initialDataSize = static_cast<std::size_t>(phase13Cache.Payload.size());
+            cacheInfo.pInitialData = phase13Cache.Payload.constData();
+            m_phase13PipelineCacheWarm = true;
+        }
+    }
     result = m_df->vkCreatePipelineCache(m_device, &cacheInfo, nullptr, &m_pipelineCache);
+    if (result != VK_SUCCESS && phase13Cache.Warm)
+    {
+        Log(LogLevel::Warn,
+            "[MelonPrime] Vulkan pipeline cache rejected by driver; retrying cold.\n");
+        cacheInfo.initialDataSize = 0;
+        cacheInfo.pInitialData = nullptr;
+        m_phase13PipelineCacheWarm = false;
+        result = m_df->vkCreatePipelineCache(m_device, &cacheInfo, nullptr, &m_pipelineCache);
+    }
     if (result != VK_SUCCESS)
     {
         fail("vkCreatePipelineCache", result);
@@ -308,6 +343,7 @@ bool PresenterRenderer::createStaticResources()
         fail("vkCreateGraphicsPipelines", result);
         return false;
     }
+    savePipelineCache();
     return true;
 }
 
@@ -499,7 +535,10 @@ void PresenterRenderer::destroyStaticResources()
     if (m_pipeline)
         m_df->vkDestroyPipeline(m_device, m_pipeline, nullptr);
     if (m_pipelineCache)
+    {
+        savePipelineCache();
         m_df->vkDestroyPipelineCache(m_device, m_pipelineCache, nullptr);
+    }
     if (m_pipelineLayout)
         m_df->vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_nearestSampler)
@@ -514,6 +553,38 @@ void PresenterRenderer::destroyStaticResources()
     m_nearestSampler = VK_NULL_HANDLE;
     m_linearSampler = VK_NULL_HANDLE;
     m_descriptorLayout = VK_NULL_HANDLE;
+}
+
+bool PresenterRenderer::savePipelineCache()
+{
+    if (!m_df || !m_device || !m_pipelineCache || !m_phase13PipelineCacheIdentityValid)
+        return false;
+    std::size_t size = 0;
+    VkResult result = m_df->vkGetPipelineCacheData(m_device, m_pipelineCache, &size, nullptr);
+    if (result != VK_SUCCESS || size == 0)
+        return false;
+    std::vector<std::uint8_t> data(size);
+    result = m_df->vkGetPipelineCacheData(m_device, m_pipelineCache, &size, data.data());
+    if (result != VK_SUCCESS)
+        return false;
+    data.resize(size);
+    QString error;
+    const bool saved = MelonPrime::Vulkan::SavePhase13PipelineCacheAtomic(
+        m_phase13PipelineCacheIdentity, data.data(), data.size(), &error);
+    if (!saved)
+    {
+        Log(LogLevel::Warn,
+            "[MelonPrime] Vulkan pipeline cache save failed: %s\n",
+            error.toUtf8().constData());
+    }
+    return saved;
+}
+
+void PresenterRenderer::completeFrame()
+{
+    if (m_panel)
+        m_panel->phase13PresentCompleted();
+    m_window->frameReady();
 }
 
 void PresenterRenderer::initResources()
@@ -544,26 +615,30 @@ void PresenterRenderer::logicalDeviceLost()
 {
     Log(LogLevel::Error, "[MelonPrime] Vulkan presenter logical device lost\n");
     m_ready = false;
+    if (m_panel)
+        m_panel->phase13NotifyDeviceLoss("logical device", static_cast<int>(VK_ERROR_DEVICE_LOST));
 }
 
 void PresenterRenderer::physicalDeviceLost()
 {
     Log(LogLevel::Error, "[MelonPrime] Vulkan presenter physical device lost\n");
     m_ready = false;
+    if (m_panel)
+        m_panel->phase13NotifyDeviceLoss("physical device", static_cast<int>(VK_ERROR_DEVICE_LOST));
 }
 
 void PresenterRenderer::startNextFrame()
 {
     if (!m_ready)
     {
-        m_window->frameReady();
+        completeFrame();
         return;
     }
 
     const QImage& frame = m_panel->composeFrameForVulkan();
     if (frame.isNull())
     {
-        m_window->frameReady();
+        completeFrame();
         return;
     }
     if (frame.size() != m_frameSize)
@@ -571,7 +646,7 @@ void PresenterRenderer::startNextFrame()
         m_df->vkDeviceWaitIdle(m_device);
         if (!createFrameResources(frame.size()))
         {
-            m_window->frameReady();
+            completeFrame();
             return;
         }
     }
@@ -710,14 +785,16 @@ void PresenterRenderer::startNextFrame()
     m_df->vkCmdSetScissor(command, 0, 1, &scissor);
     m_df->vkCmdDraw(command, 3, 1, 0, 0);
     m_df->vkCmdEndRenderPass(command);
-    m_window->frameReady();
+    completeFrame();
 }
 
 } // namespace
 
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
-    : ScreenPanelNative(parent)
+    : ScreenPanelNative(parent),
+      m_phase13Runtime(std::make_unique<MelonPrime::Vulkan::Phase13RuntimeState>())
 {
+    // MELONPRIME_VULKAN_PHASE13_SCREEN_RUNTIME_V1
     setAttribute(Qt::WA_OpaquePaintEvent, true);
     setAutoFillBackground(false);
 }
@@ -787,9 +864,62 @@ bool ScreenPanelVulkan::captureVulkanFrame(const QString& outputPath)
 void ScreenPanelVulkan::drawScreen()
 {
     ScreenPanelNative::drawScreen();
+    if (!m_vulkanWindow || !m_phase13Runtime || m_phase13Runtime->DeviceLost())
+        return;
+
+    const std::uint64_t serial = m_phase13CompletedSerial.fetch_add(1) + 1;
+    melonDS::Vulkan::Phase13PacingInput input;
+    input.Config.VSync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    input.Config.VSyncInterval = static_cast<std::uint32_t>(std::max(1,
+        emuInstance->getGlobalConfig().GetInt("Screen.VSyncInterval")));
+    input.Config.FrameLimit = emuInstance->doLimitFPS;
+    input.Config.AudioSync = emuInstance->doAudioSync;
+    if (emuInstance->curFPS > emuInstance->targetFPS * 1.01)
+        input.Config.SpeedMode = melonDS::Vulkan::Phase13SpeedMode::FastForward;
+    else if (emuInstance->curFPS < emuInstance->targetFPS * 0.99)
+        input.Config.SpeedMode = melonDS::Vulkan::Phase13SpeedMode::SlowMotion;
+    input.Capabilities.Fifo = true;
+    input.Capabilities.QtFifoOnlyPresenter = true;
+    input.CompletedOutputSerial = serial;
+    input.LastPresentedSerial = m_phase13QueuedSerial.load();
+    input.PresentRequestPending = m_phase13PresentPending.load();
+
+    const auto decision = m_phase13Runtime->Evaluate(input);
+    if (!decision.RequestPresent)
+        return;
+    bool expected = false;
+    if (!m_phase13PresentPending.compare_exchange_strong(expected, true))
+        return;
+    m_phase13QueuedSerial.store(serial);
     QMetaObject::invokeMethod(this, [this] {
         if (m_vulkanWindow)
             m_vulkanWindow->requestUpdate();
+        else
+            m_phase13PresentPending.store(false);
+    }, Qt::QueuedConnection);
+}
+
+void ScreenPanelVulkan::phase13PresentCompleted()
+{
+    const std::uint64_t serial = m_phase13QueuedSerial.load();
+    if (m_phase13Runtime)
+        m_phase13Runtime->OnPresented(serial);
+    m_phase13PresentPending.store(false);
+}
+
+void ScreenPanelVulkan::phase13NotifyDeviceLoss(const char* stage, int result)
+{
+    if (!m_phase13Runtime)
+        return;
+    const auto decision = m_phase13Runtime->RecordDeviceLoss(
+        MelonPrime::Vulkan::Phase13StageFromName(stage), result, stage ? stage : "unknown");
+    m_phase13PresentPending.store(false);
+    if (!decision.FirstNotification)
+        return;
+    const QString stageText = QString::fromUtf8(stage ? stage : "unknown");
+    QMetaObject::invokeMethod(this, [this, stageText, result] {
+        if (mainWindow)
+            mainWindow->handleVulkanDeviceLoss(stageText, result);
     }, Qt::QueuedConnection);
 }
 

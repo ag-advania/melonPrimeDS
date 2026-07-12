@@ -6,8 +6,24 @@
 #if defined(MELONPRIME_ENABLE_METAL) || defined(MELONPRIME_ENABLE_VULKAN)
 #include <cstdlib>
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include <atomic>
+#include <cstdio>
+#include <mutex>
+#include <string>
+#endif
 
 namespace MelonPrime::VideoBackend {
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME_VULKAN_PHASE13_RUNTIME_FALLBACK_V1
+namespace
+{
+std::atomic<bool> gVulkanRuntimeFallback{false};
+std::mutex gVulkanRuntimeFallbackMutex;
+std::string gVulkanRuntimeFallbackReason;
+}
+#endif
 
 static_assert(renderer3D_Software == 0);
 #ifdef OGLRENDERER_ENABLED
@@ -63,6 +79,30 @@ bool ShouldForceVulkanComputeRendererFromEnv()
     const char* env = std::getenv("MELONPRIME_FORCE_VULKAN_COMPUTE_RENDERER");
     return env != nullptr && env[0] == '1';
 }
+
+bool ActivateVulkanRuntimeFallback(const char* stage, int result)
+{
+    bool expected = false;
+    if (!gVulkanRuntimeFallback.compare_exchange_strong(expected, true))
+        return false;
+    std::lock_guard<std::mutex> lock(gVulkanRuntimeFallbackMutex);
+    char buffer[256];
+    std::snprintf(buffer, sizeof(buffer), "stage=%s VkResult=%d",
+        stage ? stage : "unknown", result);
+    gVulkanRuntimeFallbackReason = buffer;
+    return true;
+}
+
+bool VulkanRuntimeFallbackActive()
+{
+    return gVulkanRuntimeFallback.load();
+}
+
+const char* VulkanRuntimeFallbackReason()
+{
+    std::lock_guard<std::mutex> lock(gVulkanRuntimeFallbackMutex);
+    return gVulkanRuntimeFallbackReason.c_str();
+}
 #endif
 
 int ResolveRequestedRenderer(int configuredRenderer)
@@ -83,6 +123,12 @@ int ResolveRequestedRenderer(int configuredRenderer)
 int NormalizeRendererForPlatform(int requested)
 {
     requested = ResolveRequestedRenderer(requested);
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (VulkanRuntimeFallbackActive() &&
+        (requested == renderer3D_Vulkan || requested == renderer3D_VulkanCompute))
+        return renderer3D_Software;
+#endif
 
 #if defined(MELONPRIME_ENABLE_METAL)
     // Phase 4 bootstrap: while the Metal presenter is force-selected there is
@@ -191,6 +237,13 @@ bool RendererRequiresVulkanContext(int renderer)
 
 PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRenderer)
 {
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    const int effectiveRequested = ResolveRequestedRenderer(requestedRenderer);
+    if (VulkanRuntimeFallbackActive() &&
+        (effectiveRequested == renderer3D_Vulkan ||
+         effectiveRequested == renderer3D_VulkanCompute))
+        return PresentationBackend::NativeQt;
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
     // Phase 4/7 bootstrap (see ShouldForceMetalPresenterFromEnv() and
     // ShouldForceMetalRendererFromEnv()). Checked

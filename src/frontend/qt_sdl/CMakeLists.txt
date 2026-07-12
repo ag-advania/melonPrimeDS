@@ -368,6 +368,10 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanPhase11CompletionBootstrap.h
         MelonPrimeVulkanPhase12CompletionBootstrap.cpp
         MelonPrimeVulkanPhase12CompletionBootstrap.h
+        MelonPrimeVulkanPhase13Runtime.cpp
+        MelonPrimeVulkanPhase13Runtime.h
+        MelonPrimeVulkanPhase13CompletionBootstrap.cpp
+        MelonPrimeVulkanPhase13CompletionBootstrap.h
         MelonPrimeVulkanClearPlaneBootstrap.cpp
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp

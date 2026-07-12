@@ -85,6 +85,11 @@ namespace MelonPrime::VideoBackend {
     bool ShouldForceVulkanPresenterFromEnv();
     bool ShouldForceVulkanRendererFromEnv();
     bool ShouldForceVulkanComputeRendererFromEnv();
+
+    // Phase 13 process-local safety fallback. The saved renderer remains unchanged.
+    bool ActivateVulkanRuntimeFallback(const char* stage, int result);
+    bool VulkanRuntimeFallbackActive();
+    const char* VulkanRuntimeFallbackReason();
 #endif
 
 } // namespace MelonPrime::VideoBackend

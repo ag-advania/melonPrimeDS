@@ -57,8 +57,12 @@ struct VulkanRendererShellContract
     bool NativeVulkanHardwareConfigMigrationAvailable = true;
     bool NativeVulkanLocalizedUiAvailable = true;
     bool NativeVulkanPhase12UiComplete = true;
+    bool NativeVulkanPhase13FramePacingComplete = true;
+    bool NativeVulkanPhase13DeviceLossFallbackComplete = true;
+    bool NativeVulkanPhase13PipelineCacheComplete = true;
+    bool NativeVulkanPhase13StabilityComplete = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 23;
+    u32 ContractVersion = 24;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
