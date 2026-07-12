@@ -19,7 +19,6 @@
 // MELONPRIME_METAL_COMPUTE_PRODUCTION_TELEMETRY_CLEANUP_FIX_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 // MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
-// MELONPRIME_METAL_COMPUTE_FRAME_BOOKKEEPING_CLEANUP_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -996,6 +995,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     bool FinalPassReady = false;
     bool CpuReadbackRequired = true;
     bool LastFrameComputeVisible = false;
+    bool LastFrameComputeReused = false;
     bool LastFrameUseHiRes3D = false;
     bool VisibleCutoverDisabled = false;
     bool LoggedVisibleCutover = false;
@@ -1005,7 +1005,13 @@ struct MetalComputeRenderer3D::MetalComputeState
     std::atomic<bool> ComputeVisibleFault { false };
     bool LoggedOverflow = false;
     std::atomic<int> SubmittedFinalSlot { -1 };
+    std::atomic<int> PublishedFinalSlot { -1 };
     std::atomic<uint64_t> SubmittedFinalSerial { 0 };
+    std::atomic<uint64_t> PublishedFinalSerial { 0 };
+
+    std::atomic<uint64_t> SubmittedFrames { 0 };
+    std::atomic<uint64_t> SkippedBusyFrames { 0 };
+    std::atomic<uint64_t> SkippedTileBusyFrames { 0 };
     std::atomic<bool> TileMemoryInFlight { false };
 };
 
@@ -1458,7 +1464,9 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     }
     State->TileWorkCapacity = tileCapacity;
     State->SubmittedFinalSlot.store(-1, std::memory_order_release);
+    State->PublishedFinalSlot.store(-1, std::memory_order_release);
     State->SubmittedFinalSerial.store(0, std::memory_order_release);
+    State->PublishedFinalSerial.store(0, std::memory_order_release);
     State->TileMemoryInFlight.store(false, std::memory_order_release);
 
     const size_t allocatedTileBytes = static_cast<size_t>(tileCapacity) * tileArea * sizeof(uint32_t) * 3u;
@@ -1781,10 +1789,12 @@ void MetalComputeRenderer3D::Reset()
         return;
     State->LoggedOverflow = false;
     State->LastFrameComputeVisible = false;
+    State->LastFrameComputeReused = false;
     State->VisibleCutoverDisabled = false;
     State->LoggedVisibleCutover = false;
     State->LoggedVisibleFallback = false;
     State->ComputeVisibleFault.store(false, std::memory_order_release);
+    State->SkippedTileBusyFrames.store(0, std::memory_order_relaxed);
 }
 
 void MetalComputeRenderer3D::SetThreaded(bool threaded) noexcept
@@ -1887,6 +1897,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     uint32_t numYSpans = 0;
     uint32_t numSetupIndices = 0;
     State->VariantData.clear();
+    std::fill(State->VariantMetaData.begin(), State->VariantMetaData.end(), VariantMeta {});
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1u << 0)) != 0;
     int captureInfo[16] = {};
@@ -2140,12 +2151,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     }
 
     if (State->VariantData.empty())
-    {
         State->VariantData.push_back({});
-        State->VariantMetaData[0] = {};
-    }
-    const uint32_t variantCount =
-        static_cast<uint32_t>(State->VariantData.size());
 
     {
         MetalComputeState::FrameSlot* slot = nullptr;
@@ -2162,7 +2168,10 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             }
         }
         if (!slot)
+        {
+            State->SkippedBusyFrames.fetch_add(1, std::memory_order_relaxed);
             return true;
+        }
 
         std::memcpy([slot->SetupIndices contents],
                     State->SetupIndexData.data(),
@@ -2175,7 +2184,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     static_cast<size_t>(polygonCount) * sizeof(RenderPolygon));
         std::memcpy([slot->VariantMetaBuffer contents],
                     State->VariantMetaData.data(),
-                    static_cast<size_t>(variantCount) * sizeof(VariantMeta));
+                    static_cast<size_t>(kMaxVariants) * sizeof(VariantMeta));
         std::memcpy([slot->TextureMemoryBuffer contents],
                     GPU.VRAMFlat_Texture,
                     sizeof(GPU.VRAMFlat_Texture));
@@ -2194,6 +2203,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         }
         std::memset([slot->Header contents], 0, slot->Header.length);
 
+        const uint32_t variantCount = static_cast<uint32_t>(State->VariantData.size());
         const uint32_t polygonGroups = DispatchGroups(polygonCount, 32);
         const uint32_t coarseTilesX = State->ScreenWidth / State->CoarseTileW;
         const uint32_t coarseTilesY = State->ScreenHeight / State->CoarseTileH;
@@ -2289,6 +2299,9 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 expected, true,
                 std::memory_order_acq_rel,
                 std::memory_order_relaxed);
+            if (!ownsTileMemory)
+                State->SkippedTileBusyFrames.fetch_add(
+                    1, std::memory_order_relaxed);
         }
 
         const bool submitTileRaster =
@@ -2315,7 +2328,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        command.label = @"MelonPrime Metal Compute Phase 8X Frame Bookkeeping";
+        command.label = @"MelonPrime Metal Compute Phase 8W Production";
 
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2457,22 +2470,29 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             }
         }
 
-        uint64_t serial =
-            State->SubmittedFinalSerial.load(std::memory_order_acquire);
+        const uint64_t serial = State->SubmittedFrames.fetch_add(1, std::memory_order_relaxed) + 1;
+        const uint64_t generation = slot->Generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+        const bool completedComputeSurface = ownsTileMemory;
+        const bool completedFinalPass = submitFinalPass;
+        MetalComputeState* state = State.get();
         if (submitFinalPass)
         {
-            serial = State->SubmittedFinalSerial.fetch_add(
-                1, std::memory_order_acq_rel) + 1;
-            State->SubmittedFinalSlot.store(
-                slotIndex, std::memory_order_release);
+            State->SubmittedFinalSlot.store(slotIndex, std::memory_order_release);
+            State->SubmittedFinalSerial.store(serial, std::memory_order_release);
         }
-
-        const uint64_t generation =
-            slot->Generation.fetch_add(1, std::memory_order_acq_rel) + 1;
-        MetalComputeState* state = State.get();
         slot->LastCommand = command;
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            if (completed.status != MTLCommandBufferStatusCompleted)
+            if (completed.status == MTLCommandBufferStatusCompleted)
+            {
+                if (completedFinalPass)
+                {
+                    state->PublishedFinalSlot.store(
+                        slotIndex, std::memory_order_release);
+                    state->PublishedFinalSerial.store(
+                        serial, std::memory_order_release);
+                }
+            }
+            else
             {
                 const char* message = completed.error
                     ? [[completed.error localizedDescription] UTF8String]
@@ -2484,8 +2504,9 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     "GPU failure: %s; visible cutover will fall back\n",
                     static_cast<unsigned long long>(serial), message);
             }
-            state->TileMemoryInFlight.store(
-                false, std::memory_order_release);
+            if (completedComputeSurface)
+                state->TileMemoryInFlight.store(
+                    false, std::memory_order_release);
             if (slot->Generation.load(std::memory_order_acquire) == generation)
                 slot->InFlight.store(false, std::memory_order_release);
         }];
@@ -2568,6 +2589,7 @@ void MetalComputeRenderer3D::RenderFrame()
             if (State)
             {
                 State->LastFrameComputeVisible = false;
+                State->LastFrameComputeReused = false;
                 if (visibleRequested)
                 {
                     if (!State->LoggedVisibleFallback)
@@ -2595,6 +2617,7 @@ void MetalComputeRenderer3D::RenderFrame()
             ComputeFinalReady())
         {
             State->LastFrameComputeVisible = true;
+            State->LastFrameComputeReused = true;
             return;
         }
 
@@ -2609,6 +2632,7 @@ void MetalComputeRenderer3D::RenderFrame()
         if (finalSubmitted)
         {
             State->LastFrameComputeVisible = true;
+            State->LastFrameComputeReused = false;
             if (!State->LoggedVisibleCutover)
             {
                 State->LoggedVisibleCutover = true;
@@ -2625,13 +2649,20 @@ void MetalComputeRenderer3D::RenderFrame()
         }
 
         State->LastFrameComputeVisible = false;
+        State->LastFrameComputeReused = false;
         if (!State->LoggedVisibleFallback)
         {
             State->LoggedVisibleFallback = true;
             std::fprintf(stderr,
                 "[MelonPrime] metal compute visible: no final slot submitted; "
                 "using RasterReference for this frame "
-                "(frame slot or tile memory unavailable)\n");
+                "(spanBusy=%llu tileBusy=%llu)\n",
+                static_cast<unsigned long long>(
+                    State->SkippedBusyFrames.load(
+                        std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    State->SkippedTileBusyFrames.load(
+                        std::memory_order_relaxed)));
         }
 
         RasterReference.RenderFrame();
