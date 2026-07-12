@@ -10,6 +10,9 @@ if not exist "%BASE_SCRIPT%" (
     exit /b 1
 )
 
+call :configure_lto_make
+if errorlevel 1 exit /b 1
+
 set "SEARCH_DIR=%~dp0"
 :find_repo_root
 if exist "%SEARCH_DIR%CMakeLists.txt" (
@@ -36,7 +39,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
+
 echo [melonprime-build-vulkan] Forcing MELONPRIME_ENABLE_VULKAN=ON.
+echo [melonprime-build-vulkan] GCC LTO make: %MAKE%
 echo [melonprime-build-vulkan] Developer features remain ON through build-mingw.bat.
 call "%BASE_SCRIPT%" %* --vulkan
 set "RESULT=%ERRORLEVEL%"
@@ -66,14 +72,33 @@ if errorlevel 1 (
 echo [melonprime-build-vulkan] Verified Vulkan-enabled Phase 12 build configuration.
 exit /b 0
 
+:configure_lto_make
+set "LTO_MAKE=C:\msys64\mingw64\bin\mingw32-make.exe"
+if not exist "%LTO_MAKE%" set "LTO_MAKE=C:\msys64\mingw64\bin\make.exe"
+if not exist "%LTO_MAKE%" (
+    echo [melonprime-build-vulkan] ERROR: Native MinGW make was not found.
+    echo [melonprime-build-vulkan] GCC -flto=auto must not use C:\msys64\usr\bin\make.exe.
+    echo [melonprime-build-vulkan] Install it from an MSYS2 MinGW64 shell:
+    echo [melonprime-build-vulkan]   pacman -S --needed mingw-w64-x86_64-make
+    exit /b 1
+)
+set "MAKE=%LTO_MAKE%"
+set "MAKEFLAGS="
+set "MFLAGS="
+set "GNUMAKEFLAGS="
+set "TMP=C:\msys64\tmp"
+set "TEMP=C:\msys64\tmp"
+exit /b 0
+
 :help
 echo Usage: .claude\skills\build-mingw-vulkan.bat [--verbose] [--jobs N] [--tail N]
 echo.
-echo Runs build-mingw.bat with --vulkan forced, then verifies the CMake cache has:
+echo Runs build-mingw.bat with Vulkan forced ON. Before invoking GCC LTO, it
+echo forces MAKE to the native MinGW mingw32-make.exe instead of the MSYS
+echo C:\msys64\usr\bin\make.exe that cannot safely serve native GCC LTO.
+echo.
+echo Required cache values:
 echo   MELONPRIME_ENABLE_VULKAN=ON
 echo   MELONPRIME_FORCE_DISABLE_VULKAN=OFF
 echo   MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON
-echo.
-echo This is the full configure-and-build script. Run it once after enabling Vulkan
-echo or after using a build tree that was previously configured with Vulkan OFF.
 exit /b 0
