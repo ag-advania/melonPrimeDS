@@ -33,6 +33,10 @@ constexpr std::uint32_t kNativeWidth = 256;
 constexpr std::uint32_t kNativeHeight = 192;
 constexpr std::size_t kNativePixels =
     static_cast<std::size_t>(kNativeWidth) * kNativeHeight;
+constexpr std::uint32_t kClearBitmapWidth = 256;
+constexpr std::uint32_t kClearBitmapHeight = 256;
+constexpr std::size_t kClearBitmapPixels =
+    static_cast<std::size_t>(kClearBitmapWidth) * kClearBitmapHeight;
 constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr VkFormat kTextureFormat = VK_FORMAT_R8G8B8A8_UINT;
 constexpr std::size_t kMaxResidentTextureIdentities = 128;
@@ -355,6 +359,8 @@ void NativeRasterFrame::Clear() noexcept
     Generation = 0;
     Upload.Clear();
     Textures.clear();
+    ClearBitmapColorRgba6a5.clear();
+    ClearBitmapDepthFog.clear();
     NativeReferenceBgra.clear();
 }
 
@@ -410,15 +416,15 @@ bool NativeRasterSnapshotBuilder::Build(
 
     const auto& gpu3D = gpu.GPU3D;
 
-    // Sapphire's Vulkan renderer handles the remaining shadow stencil,
-    // edge/fog final passes, and clear-bitmap state with distinct passes.
+    // Sapphire's Vulkan renderer handles edge/fog as distinct final passes.
+    // The clear-alpha-zero shadow case also needs an opaque/alpha phase split.
     // Mixing an incomplete frame with the software-correct image can expose an
     // occluded polygon wherever one of those passes should have won the DS
     // depth/stencil tests.
     // Treat the native raster as an all-or-nothing replacement until those
     // Sapphire-equivalent passes are wired here.
     const bool frameUsesUnsupportedGlobalPass =
-        (gpu3D.RenderDispCnt & ((1u << 5u) | (1u << 7u) | (1u << 14u))) != 0;
+        (gpu3D.RenderDispCnt & ((1u << 5u) | (1u << 7u))) != 0;
     if (frameUsesUnsupportedGlobalPass)
         return true;
 
@@ -574,6 +580,31 @@ bool NativeRasterSnapshotBuilder::Build(
         frame.NativeReferenceBgra.begin(),
         ExpandNativeRgb6a5);
 
+    if ((gpu3D.RenderDispCnt & (1u << 14u)) != 0)
+    {
+        // Sapphire/OpenGL source the clear bitmap from texture slots 2 and 3.
+        // Keep the decoded integer texels in the immutable frame snapshot so
+        // the presentation thread never reads emulation VRAM directly.
+        const auto* colorVram = reinterpret_cast<const std::uint16_t*>(
+            gpu.VRAMFlat_Texture + 0x40000u);
+        const auto* depthVram = reinterpret_cast<const std::uint16_t*>(
+            gpu.VRAMFlat_Texture + 0x60000u);
+        frame.ClearBitmapColorRgba6a5.resize(kClearBitmapPixels);
+        frame.ClearBitmapDepthFog.resize(kClearBitmapPixels);
+        for (std::size_t pixel = 0; pixel < kClearBitmapPixels; ++pixel)
+        {
+            const auto color = melonDS::Vulkan::DecodeClearBitmapColorTexel(
+                colorVram[pixel]);
+            frame.ClearBitmapColorRgba6a5[pixel] =
+                static_cast<std::uint32_t>(color[0]) |
+                (static_cast<std::uint32_t>(color[1]) << 8u) |
+                (static_cast<std::uint32_t>(color[2]) << 16u) |
+                (static_cast<std::uint32_t>(color[3]) << 24u);
+            frame.ClearBitmapDepthFog[pixel] =
+                melonDS::Vulkan::DecodeClearBitmapDepthTexel(depthVram[pixel]);
+        }
+    }
+
     frame.Scale = scale;
     frame.EngineAScreen = gpu.ScreenSwap ? 0u : 1u;
     frame.MasterBrightnessA = gpu.MasterBrightnessA;
@@ -606,6 +637,11 @@ struct NativeRasterGpu::Impl
         HostBuffer EdgeIndex;
         HostBuffer ToonTable;
         HostBuffer NativeReferenceStaging;
+        ImageResource ClearBitmapColor;
+        ImageResource ClearBitmapDepth;
+        HostBuffer ClearBitmapColorStaging;
+        HostBuffer ClearBitmapDepthStaging;
+        VkDescriptorSet ClearBitmapDescriptor = VK_NULL_HANDLE;
         std::uint64_t FrameSerial = 0;
         std::uint64_t Generation = 0;
     };
@@ -630,6 +666,9 @@ struct NativeRasterGpu::Impl
     VkRenderPass RenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout ClearBitmapDescriptorLayout = VK_NULL_HANDLE;
+    VkPipelineLayout ClearBitmapPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline ClearBitmapPipeline = VK_NULL_HANDLE;
     VkPipeline Pipeline = VK_NULL_HANDLE;
     VkPipeline LinePipeline = VK_NULL_HANDLE;
     VkPipeline DepthEqualPipeline = VK_NULL_HANDLE;
@@ -661,15 +700,23 @@ struct NativeRasterGpu::Impl
         if (slot.Framebuffer)
             Functions->vkDestroyFramebuffer(Device, slot.Framebuffer, nullptr);
         slot.Framebuffer = VK_NULL_HANDLE;
+        if (slot.ClearBitmapDescriptor && DescriptorPool)
+            Functions->vkFreeDescriptorSets(
+                Device, DescriptorPool, 1, &slot.ClearBitmapDescriptor);
+        slot.ClearBitmapDescriptor = VK_NULL_HANDLE;
         DestroyImage(Functions, Device, slot.Color);
         DestroyImage(Functions, Device, slot.Attributes);
         DestroyImage(Functions, Device, slot.Depth);
         DestroyImage(Functions, Device, slot.NativeReference);
+        DestroyImage(Functions, Device, slot.ClearBitmapColor);
+        DestroyImage(Functions, Device, slot.ClearBitmapDepth);
         DestroyHostBuffer(Functions, Device, slot.Vertex);
         DestroyHostBuffer(Functions, Device, slot.Index);
         DestroyHostBuffer(Functions, Device, slot.EdgeIndex);
         DestroyHostBuffer(Functions, Device, slot.ToonTable);
         DestroyHostBuffer(Functions, Device, slot.NativeReferenceStaging);
+        DestroyHostBuffer(Functions, Device, slot.ClearBitmapColorStaging);
+        DestroyHostBuffer(Functions, Device, slot.ClearBitmapDepthStaging);
         slot.FrameSerial = 0;
         slot.Generation = 0;
     }
@@ -776,10 +823,18 @@ struct NativeRasterGpu::Impl
                 Functions->vkDestroyPipeline(Device, pipeline, nullptr);
         if (PipelineLayout)
             Functions->vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
+        if (ClearBitmapPipeline)
+            Functions->vkDestroyPipeline(Device, ClearBitmapPipeline, nullptr);
+        if (ClearBitmapPipelineLayout)
+            Functions->vkDestroyPipelineLayout(
+                Device, ClearBitmapPipelineLayout, nullptr);
         if (DescriptorPool)
             Functions->vkDestroyDescriptorPool(Device, DescriptorPool, nullptr);
         if (DescriptorLayout)
             Functions->vkDestroyDescriptorSetLayout(Device, DescriptorLayout, nullptr);
+        if (ClearBitmapDescriptorLayout)
+            Functions->vkDestroyDescriptorSetLayout(
+                Device, ClearBitmapDescriptorLayout, nullptr);
         if (RenderPass)
             Functions->vkDestroyRenderPass(Device, RenderPass, nullptr);
         for (VkSampler sampler : Samplers)
@@ -803,8 +858,11 @@ struct NativeRasterGpu::Impl
         DepthEqualShadowBlendPipelines.fill(VK_NULL_HANDLE);
         DepthEqualShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
         PipelineLayout = VK_NULL_HANDLE;
+        ClearBitmapPipeline = VK_NULL_HANDLE;
+        ClearBitmapPipelineLayout = VK_NULL_HANDLE;
         DescriptorPool = VK_NULL_HANDLE;
         DescriptorLayout = VK_NULL_HANDLE;
+        ClearBitmapDescriptorLayout = VK_NULL_HANDLE;
         RenderPass = VK_NULL_HANDLE;
         Samplers.fill(VK_NULL_HANDLE);
         Ready = false;
@@ -927,14 +985,56 @@ struct NativeRasterGpu::Impl
                 Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
             return false;
 
+        std::array<VkDescriptorSetLayoutBinding, 2> clearBitmapBindings{};
+        for (std::uint32_t binding = 0; binding < clearBitmapBindings.size(); ++binding)
+        {
+            clearBitmapBindings[binding].binding = binding;
+            clearBitmapBindings[binding].descriptorType =
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            clearBitmapBindings[binding].descriptorCount = 1;
+            clearBitmapBindings[binding].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo clearBitmapDescriptorInfo{
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        clearBitmapDescriptorInfo.bindingCount =
+            static_cast<std::uint32_t>(clearBitmapBindings.size());
+        clearBitmapDescriptorInfo.pBindings = clearBitmapBindings.data();
+        if (Functions->vkCreateDescriptorSetLayout(
+                Device,
+                &clearBitmapDescriptorInfo,
+                nullptr,
+                &ClearBitmapDescriptorLayout) != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        VkPushConstantRange clearBitmapPushRange{};
+        clearBitmapPushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        clearBitmapPushRange.size =
+            sizeof(melonDS::Vulkan::ClearBitmapPushConstants);
+        VkPipelineLayoutCreateInfo clearBitmapLayoutInfo{
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        clearBitmapLayoutInfo.setLayoutCount = 1;
+        clearBitmapLayoutInfo.pSetLayouts = &ClearBitmapDescriptorLayout;
+        clearBitmapLayoutInfo.pushConstantRangeCount = 1;
+        clearBitmapLayoutInfo.pPushConstantRanges = &clearBitmapPushRange;
+        if (Functions->vkCreatePipelineLayout(
+                Device,
+                &clearBitmapLayoutInfo,
+                nullptr,
+                &ClearBitmapPipelineLayout) != VK_SUCCESS)
+        {
+            return false;
+        }
+
         const std::array<VkDescriptorPoolSize, 2> poolSizes{{
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16400},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
         }};
         VkDescriptorPoolCreateInfo poolInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets = 16384;
+        poolInfo.maxSets = 16400;
         poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         if (Functions->vkCreateDescriptorPool(
@@ -973,6 +1073,8 @@ struct NativeRasterGpu::Impl
         VkShaderModule stencilClearVertex = VK_NULL_HANDLE;
         VkShaderModule stencilOnlyFragment = VK_NULL_HANDLE;
         VkShaderModule shadowMaskFragment = VK_NULL_HANDLE;
+        VkShaderModule clearBitmapVertex = VK_NULL_HANDLE;
+        VkShaderModule clearBitmapFragment = VK_NULL_HANDLE;
         if (!CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv),
@@ -992,7 +1094,15 @@ struct NativeRasterGpu::Impl
             !CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14ShadowMaskFragmentSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14ShadowMaskFragmentSpirv),
-                shadowMaskFragment))
+                shadowMaskFragment) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanClearBitmapVertexSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanClearBitmapVertexSpirv),
+                clearBitmapVertex) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanClearBitmapFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanClearBitmapFragmentSpirv),
+                clearBitmapFragment))
         {
             if (vertex)
                 Functions->vkDestroyShaderModule(Device, vertex, nullptr);
@@ -1004,6 +1114,10 @@ struct NativeRasterGpu::Impl
                 Functions->vkDestroyShaderModule(Device, stencilOnlyFragment, nullptr);
             if (shadowMaskFragment)
                 Functions->vkDestroyShaderModule(Device, shadowMaskFragment, nullptr);
+            if (clearBitmapVertex)
+                Functions->vkDestroyShaderModule(Device, clearBitmapVertex, nullptr);
+            if (clearBitmapFragment)
+                Functions->vkDestroyShaderModule(Device, clearBitmapFragment, nullptr);
             return false;
         }
 
@@ -1317,16 +1431,111 @@ struct NativeRasterGpu::Impl
                     break;
             }
         }
+
+        VkResult clearBitmapPipelineResult = shadowPipelineResult;
+        if (clearBitmapPipelineResult == VK_SUCCESS)
+        {
+            VkPipelineShaderStageCreateInfo clearStages[2]{};
+            clearStages[0].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            clearStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+            clearStages[0].module = clearBitmapVertex;
+            clearStages[0].pName = "main";
+            clearStages[1].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            clearStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            clearStages[1].module = clearBitmapFragment;
+            clearStages[1].pName = "main";
+
+            VkPipelineVertexInputStateCreateInfo clearVertexInput{
+                VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+            VkPipelineInputAssemblyStateCreateInfo clearAssembly{
+                VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            clearAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkPipelineViewportStateCreateInfo clearViewport{
+                VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+            clearViewport.viewportCount = 1;
+            clearViewport.scissorCount = 1;
+            VkPipelineRasterizationStateCreateInfo clearRaster{
+                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+            clearRaster.polygonMode = VK_POLYGON_MODE_FILL;
+            clearRaster.cullMode = VK_CULL_MODE_NONE;
+            clearRaster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+            clearRaster.lineWidth = 1.0f;
+            VkPipelineMultisampleStateCreateInfo clearMultisample{
+                VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+            clearMultisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+            VkStencilOpState clearStencil{};
+            clearStencil.failOp = VK_STENCIL_OP_REPLACE;
+            clearStencil.passOp = VK_STENCIL_OP_REPLACE;
+            clearStencil.depthFailOp = VK_STENCIL_OP_REPLACE;
+            clearStencil.compareOp = VK_COMPARE_OP_ALWAYS;
+            clearStencil.compareMask = 0xFFu;
+            clearStencil.writeMask = 0xFFu;
+            clearStencil.reference = 0xFFu;
+            VkPipelineDepthStencilStateCreateInfo clearDepth{
+                VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+            clearDepth.depthTestEnable = VK_TRUE;
+            clearDepth.depthWriteEnable = VK_TRUE;
+            clearDepth.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+            clearDepth.stencilTestEnable = VK_TRUE;
+            clearDepth.front = clearStencil;
+            clearDepth.back = clearStencil;
+            std::array<VkPipelineColorBlendAttachmentState, 2> clearAttachments{};
+            for (auto& attachment : clearAttachments)
+            {
+                attachment.colorWriteMask =
+                    VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            }
+            VkPipelineColorBlendStateCreateInfo clearBlend{
+                VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+            clearBlend.attachmentCount =
+                static_cast<std::uint32_t>(clearAttachments.size());
+            clearBlend.pAttachments = clearAttachments.data();
+            const VkDynamicState clearDynamicStates[] = {
+                VK_DYNAMIC_STATE_VIEWPORT,
+                VK_DYNAMIC_STATE_SCISSOR,
+            };
+            VkPipelineDynamicStateCreateInfo clearDynamic{
+                VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+            clearDynamic.dynamicStateCount = 2;
+            clearDynamic.pDynamicStates = clearDynamicStates;
+            VkGraphicsPipelineCreateInfo clearPipelineInfo{
+                VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            clearPipelineInfo.stageCount = 2;
+            clearPipelineInfo.pStages = clearStages;
+            clearPipelineInfo.pVertexInputState = &clearVertexInput;
+            clearPipelineInfo.pInputAssemblyState = &clearAssembly;
+            clearPipelineInfo.pViewportState = &clearViewport;
+            clearPipelineInfo.pRasterizationState = &clearRaster;
+            clearPipelineInfo.pMultisampleState = &clearMultisample;
+            clearPipelineInfo.pDepthStencilState = &clearDepth;
+            clearPipelineInfo.pColorBlendState = &clearBlend;
+            clearPipelineInfo.pDynamicState = &clearDynamic;
+            clearPipelineInfo.layout = ClearBitmapPipelineLayout;
+            clearPipelineInfo.renderPass = RenderPass;
+            clearBitmapPipelineResult = Functions->vkCreateGraphicsPipelines(
+                Device,
+                VK_NULL_HANDLE,
+                1,
+                &clearPipelineInfo,
+                nullptr,
+                &ClearBitmapPipeline);
+        }
         Functions->vkDestroyShaderModule(Device, vertex, nullptr);
         Functions->vkDestroyShaderModule(Device, fragment, nullptr);
         Functions->vkDestroyShaderModule(Device, stencilClearVertex, nullptr);
         Functions->vkDestroyShaderModule(Device, stencilOnlyFragment, nullptr);
         Functions->vkDestroyShaderModule(Device, shadowMaskFragment, nullptr);
+        Functions->vkDestroyShaderModule(Device, clearBitmapVertex, nullptr);
+        Functions->vkDestroyShaderModule(Device, clearBitmapFragment, nullptr);
         if (pipelineResult != VK_SUCCESS || linePipelineResult != VK_SUCCESS ||
             depthEqualPipelineResult != VK_SUCCESS ||
             depthEqualLinePipelineResult != VK_SUCCESS ||
             translucentPipelineResult != VK_SUCCESS ||
-            shadowPipelineResult != VK_SUCCESS)
+            shadowPipelineResult != VK_SUCCESS ||
+            clearBitmapPipelineResult != VK_SUCCESS)
             return false;
 
         Ready = true;
@@ -1397,10 +1606,73 @@ struct NativeRasterGpu::Impl
                         VK_IMAGE_USAGE_SAMPLED_BIT,
                     VK_IMAGE_ASPECT_COLOR_BIT,
                     VK_IMAGE_VIEW_TYPE_2D,
-                    slot.NativeReference))
+                    slot.NativeReference) ||
+                !CreateImage(
+                    Window,
+                    Functions,
+                    Device,
+                    {kClearBitmapWidth, kClearBitmapHeight},
+                    VK_FORMAT_R8G8B8A8_UINT,
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                        VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_VIEW_TYPE_2D,
+                    slot.ClearBitmapColor) ||
+                !CreateImage(
+                    Window,
+                    Functions,
+                    Device,
+                    {kClearBitmapWidth, kClearBitmapHeight},
+                    VK_FORMAT_R32_UINT,
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                        VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_VIEW_TYPE_2D,
+                    slot.ClearBitmapDepth))
             {
                 return false;
             }
+
+            VkDescriptorSetAllocateInfo clearBitmapAllocation{
+                VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            clearBitmapAllocation.descriptorPool = DescriptorPool;
+            clearBitmapAllocation.descriptorSetCount = 1;
+            clearBitmapAllocation.pSetLayouts = &ClearBitmapDescriptorLayout;
+            if (Functions->vkAllocateDescriptorSets(
+                    Device,
+                    &clearBitmapAllocation,
+                    &slot.ClearBitmapDescriptor) != VK_SUCCESS)
+            {
+                return false;
+            }
+            std::array<VkDescriptorImageInfo, 2> clearBitmapImages{};
+            clearBitmapImages[0].sampler = Samplers[4];
+            clearBitmapImages[0].imageView = slot.ClearBitmapColor.View;
+            clearBitmapImages[0].imageLayout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            clearBitmapImages[1].sampler = Samplers[4];
+            clearBitmapImages[1].imageView = slot.ClearBitmapDepth.View;
+            clearBitmapImages[1].imageLayout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            std::array<VkWriteDescriptorSet, 2> clearBitmapWrites{};
+            for (std::uint32_t binding = 0; binding < clearBitmapWrites.size(); ++binding)
+            {
+                clearBitmapWrites[binding].sType =
+                    VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                clearBitmapWrites[binding].dstSet = slot.ClearBitmapDescriptor;
+                clearBitmapWrites[binding].dstBinding = binding;
+                clearBitmapWrites[binding].descriptorCount = 1;
+                clearBitmapWrites[binding].descriptorType =
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                clearBitmapWrites[binding].pImageInfo =
+                    &clearBitmapImages[binding];
+            }
+            Functions->vkUpdateDescriptorSets(
+                Device,
+                static_cast<std::uint32_t>(clearBitmapWrites.size()),
+                clearBitmapWrites.data(),
+                0,
+                nullptr);
             VkImageView attachments[] = {
                 slot.Color.View,
                 slot.Attributes.View,
@@ -1665,6 +1937,104 @@ struct NativeRasterGpu::Impl
         return true;
     }
 
+    bool UploadClearBitmap(
+        VkCommandBuffer command,
+        Slot& slot,
+        const NativeRasterFrame& frame)
+    {
+        const auto state = melonDS::Vulkan::DecodeClearBitmapState(
+            frame.RenderDispCnt,
+            frame.RenderClearAttr1,
+            frame.RenderClearAttr2);
+        if (!state.Enabled)
+            return true;
+        if (frame.ClearBitmapColorRgba6a5.size() != kClearBitmapPixels ||
+            frame.ClearBitmapDepthFog.size() != kClearBitmapPixels)
+        {
+            return false;
+        }
+
+        const VkDeviceSize bytes =
+            static_cast<VkDeviceSize>(kClearBitmapPixels) * sizeof(std::uint32_t);
+        if (!EnsureHostBuffer(
+                Window,
+                Functions,
+                Device,
+                bytes,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                slot.ClearBitmapColorStaging) ||
+            !EnsureHostBuffer(
+                Window,
+                Functions,
+                Device,
+                bytes,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                slot.ClearBitmapDepthStaging))
+        {
+            return false;
+        }
+        std::memcpy(
+            slot.ClearBitmapColorStaging.Map,
+            frame.ClearBitmapColorRgba6a5.data(),
+            bytes);
+        std::memcpy(
+            slot.ClearBitmapDepthStaging.Map,
+            frame.ClearBitmapDepthFog.data(),
+            bytes);
+
+        ImageResource* images[] = {
+            &slot.ClearBitmapColor,
+            &slot.ClearBitmapDepth,
+        };
+        const VkBuffer buffers[] = {
+            slot.ClearBitmapColorStaging.Buffer,
+            slot.ClearBitmapDepthStaging.Buffer,
+        };
+        for (std::size_t index = 0; index < std::size(images); ++index)
+        {
+            auto& image = *images[index];
+            const bool undefined = image.Layout == VK_IMAGE_LAYOUT_UNDEFINED;
+            TransitionImage(
+                Functions,
+                command,
+                image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                undefined
+                    ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+                    : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                undefined ? 0 : VK_ACCESS_SHADER_READ_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_IMAGE_ASPECT_COLOR_BIT);
+            VkBufferImageCopy copy{};
+            copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copy.imageSubresource.layerCount = 1;
+            copy.imageExtent = {
+                kClearBitmapWidth,
+                kClearBitmapHeight,
+                1,
+            };
+            Functions->vkCmdCopyBufferToImage(
+                command,
+                buffers[index],
+                image.Image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1,
+                &copy);
+            TransitionImage(
+                Functions,
+                command,
+                image,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_ASPECT_COLOR_BIT);
+        }
+        return true;
+    }
+
     bool Render(
         VkCommandBuffer command,
         int frameSlot,
@@ -1728,6 +2098,8 @@ struct NativeRasterGpu::Impl
                 edgeIndexBytes);
         if (!UploadNativeReference(command, slot, frame))
             return false;
+        if (!UploadClearBitmap(command, slot, frame))
+            return false;
 
         if (!UploadToonTable(slot, frame))
             return false;
@@ -1780,6 +2152,40 @@ struct NativeRasterGpu::Impl
         scissor.extent = slot.Color.Extent;
         Functions->vkCmdSetViewport(command, 0, 1, &viewport);
         Functions->vkCmdSetScissor(command, 0, 1, &scissor);
+
+        const auto clearBitmap = melonDS::Vulkan::DecodeClearBitmapState(
+            frame.RenderDispCnt,
+            frame.RenderClearAttr1,
+            frame.RenderClearAttr2);
+        if (clearBitmap.Enabled)
+        {
+            if (slot.ClearBitmapDescriptor == VK_NULL_HANDLE)
+            {
+                Functions->vkCmdEndRenderPass(command);
+                return false;
+            }
+            Functions->vkCmdBindPipeline(
+                command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                ClearBitmapPipeline);
+            Functions->vkCmdBindDescriptorSets(
+                command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                ClearBitmapPipelineLayout,
+                0,
+                1,
+                &slot.ClearBitmapDescriptor,
+                0,
+                nullptr);
+            Functions->vkCmdPushConstants(
+                command,
+                ClearBitmapPipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(clearBitmap.PushConstants),
+                &clearBitmap.PushConstants);
+            Functions->vkCmdDraw(command, 3, 1, 0, 0);
+        }
 
         struct alignas(16) Push
         {

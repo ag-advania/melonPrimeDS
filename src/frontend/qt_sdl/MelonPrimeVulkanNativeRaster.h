@@ -55,6 +55,8 @@ struct NativeRasterFrame
 
     melonDS::Vulkan::VulkanRasterUpload Upload;
     std::vector<NativeRasterTexture> Textures;
+    std::vector<std::uint32_t> ClearBitmapColorRgba6a5;
+    std::vector<std::uint32_t> ClearBitmapDepthFog;
     std::vector<std::uint32_t> NativeReferenceBgra;
 
     void Clear() noexcept;
