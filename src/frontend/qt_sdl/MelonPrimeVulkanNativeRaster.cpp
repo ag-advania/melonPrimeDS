@@ -2826,15 +2826,197 @@ struct NativeRasterGpu::Impl
             Opaque,
             BackgroundZero,
             Alpha,
+            OpaquePaletteUiReplay,
         };
         const bool clearPlaneAlphaZero =
             ((frame.RenderClearAttr1 >> 16u) & 0x1Fu) == 0u;
         const std::uint32_t clearPlanePolygonId =
             (frame.RenderClearAttr1 >> 24u) & 0x3Fu;
-        const std::array<DrawPhase, 3> drawPhases{{
+        const bool alphaBlendEnabled =
+            (frame.RenderDispCnt & (1u << 3u)) != 0u;
+
+        struct PolygonBounds
+        {
+            float Left = 0.0f;
+            float Right = 0.0f;
+            float Top = 0.0f;
+            float Bottom = 0.0f;
+            bool Valid = false;
+        };
+        std::vector<PolygonBounds> polygonBounds(frame.Upload.Polygons.size());
+        const float inverseScale = 1.0f /
+            static_cast<float>(std::max(frame.Scale, 1));
+        for (std::size_t index = 0; index < frame.Upload.Polygons.size(); ++index)
+        {
+            const auto& polygon = frame.Upload.Polygons[index];
+            const std::uint64_t vertexEnd =
+                static_cast<std::uint64_t>(polygon.VertexOffset) +
+                polygon.VertexCount;
+            if (polygon.VertexCount == 0 ||
+                vertexEnd > frame.Upload.Vertices.size())
+            {
+                continue;
+            }
+
+            PolygonBounds bounds;
+            bounds.Left = std::numeric_limits<float>::max();
+            bounds.Right = std::numeric_limits<float>::lowest();
+            bounds.Top = std::numeric_limits<float>::max();
+            bounds.Bottom = std::numeric_limits<float>::lowest();
+            for (std::uint32_t vertexIndex = 0;
+                 vertexIndex < polygon.VertexCount;
+                 ++vertexIndex)
+            {
+                const auto& vertex = frame.Upload.Vertices[
+                    polygon.VertexOffset + vertexIndex];
+                const float x = static_cast<float>(
+                    vertex.PositionXY & 0xFFFFu) * (1.0f / 16.0f) *
+                    inverseScale;
+                const float y = static_cast<float>(
+                    vertex.PositionXY >> 16u) * (1.0f / 16.0f) *
+                    inverseScale;
+                bounds.Left = std::min(bounds.Left, x);
+                bounds.Right = std::max(bounds.Right, x);
+                bounds.Top = std::min(bounds.Top, y);
+                bounds.Bottom = std::max(bounds.Bottom, y);
+            }
+            bounds.Valid = true;
+            polygonBounds[index] = bounds;
+        }
+
+        const auto boundsOverlap = [](const PolygonBounds& first,
+                                      const PolygonBounds& second) {
+            return first.Valid && second.Valid &&
+                first.Right > second.Left && second.Right > first.Left &&
+                first.Bottom > second.Top && second.Bottom > first.Top;
+        };
+        const auto yBoundsOverlap = [](const PolygonBounds& first,
+                                       const PolygonBounds& second) {
+            return first.Valid && second.Valid &&
+                first.Bottom > second.Top && second.Bottom > first.Top;
+        };
+        const auto isClampPaletteUiPolygon = [](const auto& polygon) {
+            const std::uint32_t textureFormat =
+                (polygon.TexParam >> 26u) & 0x7u;
+            const bool color0Transparent =
+                (polygon.TexParam & (1u << 29u)) != 0u;
+            const bool clampBothAxes =
+                (polygon.TexParam & 0x000F0000u) == 0u;
+            return (polygon.Flags &
+                    melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0u &&
+                (textureFormat == 2u || textureFormat == 3u) &&
+                color0Transparent && clampBothAxes;
+        };
+        const auto isFlatDsUiPlane = [&](const auto& polygon) {
+            const std::uint64_t vertexEnd =
+                static_cast<std::uint64_t>(polygon.VertexOffset) +
+                polygon.VertexCount;
+            if (polygon.VertexCount == 0 ||
+                vertexEnd > frame.Upload.FullPrecisionDepthW.size())
+            {
+                return false;
+            }
+            for (std::uint32_t vertexIndex = 0;
+                 vertexIndex < polygon.VertexCount;
+                 ++vertexIndex)
+            {
+                const std::uint32_t w = frame.Upload.FullPrecisionDepthW[
+                    polygon.VertexOffset + vertexIndex].W;
+                if (w < 25599u || w > 25601u)
+                    return false;
+            }
+            return true;
+        };
+        const auto isTranslucentPaletteUiOverlay = [&](std::size_t index) {
+            const auto& polygon = frame.Upload.Polygons[index];
+            const std::uint32_t alpha = (polygon.Attr >> 16u) & 0x1Fu;
+            const std::uint32_t blendMode = (polygon.Attr >> 4u) & 0x3u;
+            const std::uint32_t polygonId = (polygon.Attr >> 24u) & 0x3Fu;
+            return clearPlaneAlphaZero && alphaBlendEnabled &&
+                (polygon.Flags &
+                    melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0u &&
+                alpha > 0u && alpha < 31u && blendMode == 0u &&
+                polygonId >= 3u && (polygon.Attr & (1u << 11u)) == 0u &&
+                isClampPaletteUiPolygon(polygon);
+        };
+        const auto isPaletteUiHelpPanelOverlay = [&](std::size_t index) {
+            if (!isTranslucentPaletteUiOverlay(index))
+                return false;
+            const auto& polygon = frame.Upload.Polygons[index];
+            return ((polygon.Attr >> 16u) & 0x1Fu) == 24u &&
+                ((polygon.Attr >> 24u) & 0x3Fu) == 11u &&
+                polygon.TexParam == 0x6DC00200u;
+        };
+
+        bool hasLowAlphaPaletteUiOverlay = false;
+        for (std::size_t index = 0; index < frame.Upload.Polygons.size(); ++index)
+        {
+            if (isTranslucentPaletteUiOverlay(index) &&
+                ((frame.Upload.Polygons[index].Attr >> 16u) & 0x1Fu) < 27u)
+            {
+                hasLowAlphaPaletteUiOverlay = true;
+                break;
+            }
+        }
+
+        std::vector<bool> replayOpaquePaletteUi(frame.Upload.Polygons.size(), false);
+        for (std::size_t opaqueIndex = 0;
+             opaqueIndex < frame.Upload.Polygons.size();
+             ++opaqueIndex)
+        {
+            const auto& polygon = frame.Upload.Polygons[opaqueIndex];
+            const std::uint32_t alpha = (polygon.Attr >> 16u) & 0x1Fu;
+            const std::uint32_t blendMode = (polygon.Attr >> 4u) & 0x3u;
+            const std::uint32_t polygonId = (polygon.Attr >> 24u) & 0x3Fu;
+            const bool translucent =
+                (polygon.Flags &
+                    melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0u;
+            if (!clearPlaneAlphaZero || !alphaBlendEnabled || translucent ||
+                alpha != 31u || blendMode != 0u ||
+                (polygon.Attr & (1u << 11u)) != 0u ||
+                polygon.TexParam == 0x68C01B10u ||
+                polygon.TexParam == 0x6A5016D0u ||
+                !isClampPaletteUiPolygon(polygon) ||
+                !isFlatDsUiPlane(polygon) ||
+                (!hasLowAlphaPaletteUiOverlay && polygonId != 0u))
+            {
+                continue;
+            }
+
+            for (std::size_t alphaIndex = 0;
+                 alphaIndex < frame.Upload.Polygons.size();
+                 ++alphaIndex)
+            {
+                if (!isTranslucentPaletteUiOverlay(alphaIndex) ||
+                    !yBoundsOverlap(
+                        polygonBounds[opaqueIndex], polygonBounds[alphaIndex]))
+                {
+                    continue;
+                }
+                if (isPaletteUiHelpPanelOverlay(alphaIndex) &&
+                    boundsOverlap(
+                        polygonBounds[opaqueIndex], polygonBounds[alphaIndex]))
+                {
+                    replayOpaquePaletteUi[opaqueIndex] = false;
+                    break;
+                }
+                const std::uint32_t overlayAlpha =
+                    (frame.Upload.Polygons[alphaIndex].Attr >> 16u) & 0x1Fu;
+                if (!hasLowAlphaPaletteUiOverlay && overlayAlpha >= 27u &&
+                    polygonBounds[opaqueIndex].Top >= 18.0f)
+                {
+                    replayOpaquePaletteUi[opaqueIndex] = false;
+                    break;
+                }
+                replayOpaquePaletteUi[opaqueIndex] = true;
+            }
+        }
+
+        const std::array<DrawPhase, 4> drawPhases{{
             DrawPhase::Opaque,
             DrawPhase::BackgroundZero,
             DrawPhase::Alpha,
+            DrawPhase::OpaquePaletteUiReplay,
         }};
         for (DrawPhase drawPhase : drawPhases)
         {
@@ -2871,8 +3053,13 @@ struct NativeRasterGpu::Impl
             }
             const bool opaqueDraw = !translucent && !shadowMask && !shadow;
             const bool alphaDraw = translucent || shadowMask || shadow;
+            const bool replayDraw =
+                drawPhase == DrawPhase::OpaquePaletteUiReplay &&
+                replayOpaquePaletteUi[polygonIndex];
             if ((drawPhase == DrawPhase::Opaque && !opaqueDraw) ||
-                (drawPhase != DrawPhase::Opaque && !alphaDraw))
+                ((drawPhase == DrawPhase::BackgroundZero ||
+                  drawPhase == DrawPhase::Alpha) && !alphaDraw) ||
+                (drawPhase == DrawPhase::OpaquePaletteUiReplay && !replayDraw))
             {
                 ++polygonIndex;
                 continue;
@@ -2882,7 +3069,8 @@ struct NativeRasterGpu::Impl
                 ? polygon.EdgeIndexCount
                 : polygon.IndexCount;
             std::size_t next = polygonIndex + 1;
-            while (!linePrimitive && !wireframe && !shadowMask && !shadow &&
+            while (drawPhase != DrawPhase::OpaquePaletteUiReplay &&
+                   !linePrimitive && !wireframe && !shadowMask && !shadow &&
                    next < frame.Upload.Polygons.size())
             {
                 const auto& candidate = frame.Upload.Polygons[next];
@@ -2936,7 +3124,8 @@ struct NativeRasterGpu::Impl
             const std::uint32_t polygonId = (polygon.Attr >> 24u) & 0x3Fu;
             const bool useLinePipeline = linePrimitive || wireframe;
             const bool useTranslucentPass = translucent && !wireframe && !shadowMask;
-            const bool useDepthEqual = (polygon.Attr & (1u << 14u)) != 0;
+            const bool useDepthEqual = replayDraw ||
+                (polygon.Attr & (1u << 14u)) != 0;
             const bool needsOpaqueTexturePass =
                 useTranslucentPass && ((polygon.Attr >> 16u) & 0x1Fu) == 0x1Fu;
             const std::uint32_t depthWrite = (polygon.Attr >> 11u) & 0x1u;
