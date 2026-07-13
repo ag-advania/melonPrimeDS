@@ -62,14 +62,6 @@ vec3 quantizedNativeReference(vec3 color, uint reg)
     return vec3(expanded) / 255.0;
 }
 
-vec3 quantizedRgb6(vec3 color)
-{
-    uvec3 color8 = uvec3(clamp(color, vec3(0.0), vec3(1.0)) * 255.0 + 0.5);
-    uvec3 color6 = (color8 * uvec3(63u) + uvec3(127u)) / uvec3(255u);
-    uvec3 expanded = (color6 << 2u) | (color6 >> 4u);
-    return vec3(expanded) / 255.0;
-}
-
 void main()
 {
     uint mode = pc.params.x;
@@ -94,19 +86,14 @@ void main()
             {
                 vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
                 const float tolerance = 2.0 / 255.0;
-                // The software 3D plane is the correctness oracle. Besides
-                // proving that this screen pixel belongs to 3D, require the
-                // Vulkan raster to identify the same RGB6 surface. Without
-                // this check an unsupported foreground polygon can be absent
-                // from the partial Vulkan pass and reveal an unrelated opaque
-                // polygon behind it.
-                vec3 highReference = quantizedRgb6(high3D.rgb);
-                vec3 lowReference = quantizedRgb6(low3D.rgb);
-                const float rasterTolerance = 5.0 / 255.0;
-                if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))) &&
-                    all(lessThanEqual(
-                        abs(highReference - lowReference),
-                        vec3(rasterTolerance))))
+                // The software 3D plane remains the ownership oracle: only
+                // replace pixels where the composed engine-A output matches
+                // that plane. Do not require the high-resolution raster color
+                // to equal its native sample. That legacy partial-renderer
+                // guard rejected the very subpixel, fog, edge, and texture
+                // differences the Sapphire-compatible raster is meant to
+                // preserve.
+                if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))))
                 {
                     outColor = vec4(
                         clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),

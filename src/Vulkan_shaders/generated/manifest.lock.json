@@ -1,6 +1,6 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "754cabf92f5be3101c7399d49225f07c678ca5c3e4c3ca848348bb7c458cdae7",
+  "generation_sha256": "a2e1b7b7298ba99fceb5e28e0e6e4a05c8c972dc70c0e793cefd3798b8b4f8e6",
   "manifest_sha256": "6f4781bb0b77f02f3b35fb0d573678c847ca617213fef83cb62e85773e8db14a",
   "schema_version": 1,
   "sources": [
@@ -345,7 +345,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase10_presenter.frag",
-      "sha256": "49da0cd4ee734c35584899d05c45aa6b734c8a5f7a2d9808011113d868cfcf9f",
+      "sha256": "c5ecbc6652f9200907e4211d5d67478d854088fd98e0b743d509e820ddb2a05a",
       "stage": "frag",
       "variant": "default"
     },
@@ -647,8 +647,8 @@
     },
     {
       "header": "src/Vulkan_shaders/generated/VulkanPhase10PresenterFragment.spv.h",
-      "sha256": "edfd10f5f5e8c24daa26d9c1227ed276589962bc7dcdcc20578b27bbfa201327",
-      "size": 11004,
+      "sha256": "7dc7447ab229ae155baa05a59d379e6825472b52c2e29a26d65c5c1571a82a7d",
+      "size": 9776,
       "symbol": "VulkanPhase10PresenterFragment"
     },
     {

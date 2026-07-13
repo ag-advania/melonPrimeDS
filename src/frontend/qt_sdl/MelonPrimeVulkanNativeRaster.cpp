@@ -444,26 +444,8 @@ bool NativeRasterSnapshotBuilder::Build(
     memory.PaletteSize = sizeof(gpu.VRAMFlat_TexPal);
 
     const auto& gpu3D = gpu.GPU3D;
-
-    for (std::uint32_t sourceOrder = 0;
-         sourceOrder < gpu3D.RenderNumPolygons;
-         ++sourceOrder)
-    {
-        const melonDS::Polygon* polygon = gpu3D.RenderPolygonRAM[sourceOrder];
-        if (!polygon || polygon->Degenerate)
-            continue;
-
-        const std::uint32_t textureFormat =
-            (polygon->TexParam >> 26u) & 0x7u;
-        const std::uint32_t textureMode = (polygon->Attr >> 4u) & 0x3u;
-        const bool textured = textureFormat != 0u;
-        const bool shadowPolygon = polygon->IsShadowMask || polygon->IsShadow;
-        const bool unsupportedPolygon =
-            (textureMode > 2u && !shadowPolygon) ||
-            (textured && (gpu3D.RenderDispCnt & 1u) == 0);
-        if (unsupportedPolygon)
-            return true;
-    }
+    const bool textureMapsEnabled =
+        (gpu3D.RenderDispCnt & (1u << 0u)) != 0u;
 
     std::vector<std::uint32_t> textureLayers(
         gpu3D.RenderNumPolygons, 0xFFFFFFFFu);
@@ -495,7 +477,11 @@ bool NativeRasterSnapshotBuilder::Build(
         if (!polygon || polygon->Degenerate)
             continue;
         const std::uint32_t format = (polygon->TexParam >> 26u) & 0x7u;
-        if (format == 0)
+        // Sapphire treats the DISP3DCNT texture-mapping bit as part of each
+        // draw's texture state. Keep the polygon in the native raster when
+        // mapping is disabled, but leave its texture layer invalid so the
+        // shared upload marks it untextured instead of dropping the frame.
+        if (format == 0 || !textureMapsEnabled)
             continue;
 
         const auto key = melonDS::Vulkan::BuildVulkanTextureCacheKey(
