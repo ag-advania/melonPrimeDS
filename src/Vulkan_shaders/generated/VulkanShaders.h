@@ -53,7 +53,7 @@ namespace melonDS::Vulkan::Shaders
 {
 
 inline constexpr std::size_t kShaderCount = 48;
-inline constexpr char kManifestSha256[] = "e982dc5b64eded44c687e7cadb4156db960cafe53916f85d51bf4963703a7042";
+inline constexpr char kManifestSha256[] = "1c052ee0545b77c4a3b1ef165667dfa359600db890bba4e87ee1d3e444c3fe7c";
 inline constexpr char kCompilerVersion[] = "Glslang Version: 11:16.3.0 | ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0 | GLSL Version: 4.60 glslang Khronos. 16.3.0 | SPIR-V Version 0x00010600, Revision 1 | GLSL.std.450 Version 100, Revision 1 | Khronos Tool ID 8 | SPIR-V Generator Version 11 | GL_KHR_vulkan_glsl version 100 | ARB_GL_gl_spirv version 100";
 
 } // namespace melonDS::Vulkan::Shaders

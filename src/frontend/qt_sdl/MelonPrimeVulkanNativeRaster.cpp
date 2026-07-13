@@ -2478,6 +2478,16 @@ struct NativeRasterGpu::Impl
             return true;
         };
 
+        const auto isHiddenAlphaZeroWireframe = [](const auto& polygon) {
+            const std::uint32_t alpha = (polygon.Attr >> 16u) & 0x1Fu;
+            const std::uint32_t blendMode = (polygon.Attr >> 4u) & 0x3u;
+            const bool textured =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0u;
+            return alpha == 0u && !textured && blendMode == 0u &&
+                polygon.AcceleratedFlags == 0u;
+        };
+
         const auto drawEdgeMarks = [&]() {
             if ((frame.RenderDispCnt & (1u << 5u)) == 0)
                 return;
@@ -2545,6 +2555,7 @@ struct NativeRasterGpu::Impl
                 const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
                 edgePush.DrawFlags = (wireframe ? 1u : 0u) | 4u |
                     (usesLinearW(polygon) ? 8u : 0u) |
+                    (isHiddenAlphaZeroWireframe(polygon) ? 16u : 0u) |
                     ((frame.RenderAlphaRef & 0x1Fu) << 8u);
                 edgePush.TexParam = polygon.TexParam;
                 edgePush.ClearAttr = frame.RenderClearAttr1;
@@ -2897,6 +2908,7 @@ struct NativeRasterGpu::Impl
             push.RenderDispCnt = frame.RenderDispCnt;
             push.DrawFlags = (wireframe ? 1u : 0u) |
                 (usesLinearW(polygon) ? 8u : 0u) |
+                (isHiddenAlphaZeroWireframe(polygon) ? 16u : 0u) |
                 ((frame.RenderAlphaRef & 0x1Fu) << 8u);
             push.TexParam = polygon.TexParam;
             push.ClearAttr = frame.RenderClearAttr1;
@@ -3265,6 +3277,19 @@ struct NativeRasterGpu::Impl
             if (blue) ++blue;
             finalPush.EdgeColorPacked[index] =
                 red | (green << 8u) | (blue << 16u);
+        }
+        // Sapphire uses a dedicated final-pass override for the alpha-zero
+        // polyId-56 helper layer. Its boundary lines must remain white even
+        // when edge-table slot 7 is shared by unrelated polygons.
+        for (const auto& polygon : frame.Upload.Polygons)
+        {
+            if (isHiddenAlphaZeroWireframe(polygon) &&
+                ((polygon.Attr >> 24u) & 0x3Fu) == 56u)
+            {
+                finalPush.VariantKey = 0x80000000u | 56u;
+                finalPush.TriangleBase = 0x00FFFFFFu;
+                break;
+            }
         }
 
         const bool runEdgePass = (frame.RenderDispCnt & (1u << 5u)) != 0;

@@ -41,6 +41,16 @@ vec3 unpackEdgeColor(uint packedColor)
         float((packedColor >> 16u) & 0x3Fu)) * (1.0 / 63.0);
 }
 
+vec3 edgeColorForPolyId(int polyid)
+{
+    if ((pc.variantKey & 0x80000000u) != 0u &&
+        uint(polyid) == (pc.variantKey & 0x3Fu))
+    {
+        return unpackEdgeColor(pc.triangleBase);
+    }
+    return unpackEdgeColor(pc.edgeColorPacked[uint(polyid) >> 3u]);
+}
+
 float unpackFogDensity(uint index)
 {
     uint clampedIndex = min(index, 33u);
@@ -113,7 +123,7 @@ void main()
             isgood(texelFetch(AttrBuffer, right, 0),
                    texelFetch(DepthBuffer, right, 0).r, polyid, depth.r))
         {
-            edgeColor = unpackEdgeColor(pc.edgeColorPacked[uint(polyid) >> 3u]);
+            edgeColor = edgeColorForPolyId(polyid);
             edgeAlpha = (pc.dispCnt & (1u << 4u)) != 0u ? 0.5 : 1.0;
         }
     }

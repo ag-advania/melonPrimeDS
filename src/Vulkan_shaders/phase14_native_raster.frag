@@ -356,7 +356,18 @@ void main()
     bool wireframe = (pc.drawFlags & 1u) != 0u;
     bool translucentPass = (pc.drawFlags & 2u) != 0u;
     if (wireframe)
+    {
         color.a = 31;
+        // Sapphire preserves otherwise invisible alpha-zero helper geometry as
+        // white boundary lines. The CPU enables this only for its exact
+        // untextured, mode-zero, flag-free polygon case.
+        if ((pc.drawFlags & 16u) != 0u)
+        {
+            color.r = 63;
+            color.g = 63;
+            color.b = 63;
+        }
+    }
 
     uint alpha5 = uint(clamp5(color.a));
     uint alphaRef = (pc.drawFlags >> 8u) & 0x1Fu;

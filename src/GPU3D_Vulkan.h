@@ -179,7 +179,9 @@ struct alignas(16) VulkanPackedPolygon
     std::uint32_t TextureLayer = 0xFFFFFFFFu;
     std::uint32_t TextureRepeat = 0;
     std::uint32_t Flags = 0;
-    std::uint32_t Reserved0 = 0;
+    // Sapphire accelerated-polygon metadata. Kept separate from Flags because
+    // the native raster contract also records transport-specific state there.
+    std::uint32_t AcceleratedFlags = 0;
     std::uint32_t Reserved1 = 0;
 };
 

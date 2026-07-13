@@ -369,6 +369,7 @@ bool BuildVulkanRasterUpload(
         record.TextureLayer = textureLayer;
         record.TextureRepeat = (polygon->TexParam >> 16) & 0xFu;
         record.Flags = BuildPolygonFlags(*polygon, textureLayer);
+        record.AcceleratedFlags = BuildAcceleratedPolygonMeta(*polygon).Flags;
 
         if (polygon->Type == 1)
         {
@@ -570,6 +571,7 @@ bool BuildVulkanAcceleratedRasterUpload(
         record.TextureLayer = textureLayer;
         record.TextureRepeat = (polygon->TexParam >> 16) & 0xFu;
         record.Flags = BuildPolygonFlags(*polygon, textureLayer);
+        record.AcceleratedFlags = draw.Meta.Flags;
 
         const std::uint32_t textureSize = PackU16Pair(
             TextureWidth(polygon->TexParam), TextureHeight(polygon->TexParam));
