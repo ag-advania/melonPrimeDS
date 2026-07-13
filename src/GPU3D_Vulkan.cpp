@@ -584,6 +584,11 @@ bool BuildVulkanAcceleratedRasterUpload(
 
         const std::uint32_t textureSize = PackU16Pair(
             TextureWidth(polygon->TexParam), TextureHeight(polygon->TexParam));
+        const auto expandRgb6To8 = [](std::uint16_t color) {
+            const std::uint32_t color6 =
+                std::min<std::uint32_t>(63u, static_cast<std::uint32_t>(color) >> 3u);
+            return (color6 << 2u) | (color6 >> 4u);
+        };
         std::vector<std::uint16_t> remappedVertices(draw.VertexCount);
         const auto appendSceneVertex = [&](const AcceleratedSceneVertex& source,
                                            std::uint32_t xFixed,
@@ -598,7 +603,14 @@ bool BuildVulkanAcceleratedRasterUpload(
             VulkanPackedVertex vertex{};
             vertex.PositionXY = PackU16Pair(xFixed, yFixed);
             vertex.DepthZW = source.GlZWPacked;
-            vertex.ColorRgba = source.GlColorPacked;
+            // Sapphire quantizes the expanded frontend color to the DS RGB6
+            // domain first, then expands it to normalized RGB8. The fragment
+            // shader consequently reconstructs the exact integer RGB6 value.
+            vertex.ColorRgba =
+                expandRgb6To8(source.FinalColorR) |
+                (expandRgb6To8(source.FinalColorG) << 8u) |
+                (expandRgb6To8(source.FinalColorB) << 16u) |
+                (static_cast<std::uint32_t>(source.Alpha5) << 24u);
             vertex.TexcoordST = PackU16Pair(
                 static_cast<std::uint16_t>(source.TexCoordS),
                 static_cast<std::uint16_t>(source.TexCoordT));
