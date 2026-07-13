@@ -459,7 +459,6 @@ bool NativeRasterSnapshotBuilder::Build(
         const bool textured = textureFormat != 0u;
         const bool shadowPolygon = polygon->IsShadowMask || polygon->IsShadow;
         const bool unsupportedPolygon =
-            (shadowPolygon && ((gpu3D.RenderClearAttr1 >> 16u) & 0x1Fu) == 0u) ||
             (textureMode > 2u && !shadowPolygon) ||
             (textured && (gpu3D.RenderDispCnt & 1u) == 0);
         if (unsupportedPolygon)
@@ -715,9 +714,15 @@ struct NativeRasterGpu::Impl
     std::array<VkPipeline, 4> TranslucentLinePipelines{};
     std::array<VkPipeline, 4> DepthEqualTranslucentPipelines{};
     std::array<VkPipeline, 4> DepthEqualTranslucentLinePipelines{};
+    std::array<VkPipeline, 4> BgZeroTranslucentPipelines{};
+    std::array<VkPipeline, 4> BgZeroTranslucentLinePipelines{};
+    std::array<VkPipeline, 8> BgZeroShadowBlendPipelines{};
+    std::array<VkPipeline, 8> BgZeroShadowBlendLinePipelines{};
     VkPipeline StencilBitClearPipeline = VK_NULL_HANDLE;
     VkPipeline ShadowMaskPipeline = VK_NULL_HANDLE;
     VkPipeline ShadowMaskLinePipeline = VK_NULL_HANDLE;
+    VkPipeline BgZeroShadowMaskPipeline = VK_NULL_HANDLE;
+    VkPipeline BgZeroShadowMaskLinePipeline = VK_NULL_HANDLE;
     std::array<VkPipeline, 2> ShadowClearPipelines{};
     std::array<VkPipeline, 2> ShadowClearLinePipelines{};
     std::array<VkPipeline, 4> ShadowBlendPipelines{};
@@ -843,12 +848,28 @@ struct NativeRasterGpu::Impl
         for (VkPipeline pipeline : DepthEqualTranslucentLinePipelines)
             if (pipeline)
                 Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : BgZeroTranslucentPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : BgZeroTranslucentLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : BgZeroShadowBlendPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : BgZeroShadowBlendLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
         if (StencilBitClearPipeline)
             Functions->vkDestroyPipeline(Device, StencilBitClearPipeline, nullptr);
         if (ShadowMaskPipeline)
             Functions->vkDestroyPipeline(Device, ShadowMaskPipeline, nullptr);
         if (ShadowMaskLinePipeline)
             Functions->vkDestroyPipeline(Device, ShadowMaskLinePipeline, nullptr);
+        if (BgZeroShadowMaskPipeline)
+            Functions->vkDestroyPipeline(Device, BgZeroShadowMaskPipeline, nullptr);
+        if (BgZeroShadowMaskLinePipeline)
+            Functions->vkDestroyPipeline(Device, BgZeroShadowMaskLinePipeline, nullptr);
         for (VkPipeline pipeline : ShadowClearPipelines)
             if (pipeline)
                 Functions->vkDestroyPipeline(Device, pipeline, nullptr);
@@ -909,9 +930,15 @@ struct NativeRasterGpu::Impl
         TranslucentLinePipelines.fill(VK_NULL_HANDLE);
         DepthEqualTranslucentPipelines.fill(VK_NULL_HANDLE);
         DepthEqualTranslucentLinePipelines.fill(VK_NULL_HANDLE);
+        BgZeroTranslucentPipelines.fill(VK_NULL_HANDLE);
+        BgZeroTranslucentLinePipelines.fill(VK_NULL_HANDLE);
+        BgZeroShadowBlendPipelines.fill(VK_NULL_HANDLE);
+        BgZeroShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
         StencilBitClearPipeline = VK_NULL_HANDLE;
         ShadowMaskPipeline = VK_NULL_HANDLE;
         ShadowMaskLinePipeline = VK_NULL_HANDLE;
+        BgZeroShadowMaskPipeline = VK_NULL_HANDLE;
+        BgZeroShadowMaskLinePipeline = VK_NULL_HANDLE;
         ShadowClearPipelines.fill(VK_NULL_HANDLE);
         ShadowClearLinePipelines.fill(VK_NULL_HANDLE);
         ShadowBlendPipelines.fill(VK_NULL_HANDLE);
@@ -1410,6 +1437,18 @@ struct NativeRasterGpu::Impl
                 Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &DepthEqualLinePipeline)
             : depthEqualPipelineResult;
 
+        const auto createTopologyPair = [&](VkPipeline& trianglePipeline,
+                                            VkPipeline& linePipeline) -> VkResult {
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkResult result = Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &trianglePipeline);
+            if (result != VK_SUCCESS)
+                return result;
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            return Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &linePipeline);
+        };
+
         VkResult translucentPipelineResult = depthEqualLinePipelineResult;
         if (translucentPipelineResult == VK_SUCCESS)
         {
@@ -1465,6 +1504,31 @@ struct NativeRasterGpu::Impl
                             &linePipelines[index]);
                         if (translucentPipelineResult != VK_SUCCESS)
                             break;
+
+                        stencil.passOp = VK_STENCIL_OP_INVERT;
+                        stencil.compareOp = VK_COMPARE_OP_EQUAL;
+                        depth.front = stencil;
+                        depth.back = stencil;
+                        const std::uint32_t bgShadowIndex =
+                            depthEqual * 4u + index;
+                        translucentPipelineResult = createTopologyPair(
+                            BgZeroShadowBlendPipelines[bgShadowIndex],
+                            BgZeroShadowBlendLinePipelines[bgShadowIndex]);
+                        if (translucentPipelineResult == VK_SUCCESS && alphaBlend == 0u)
+                        {
+                            colorBlend.blendEnable = VK_FALSE;
+                            const std::uint32_t bgIndex =
+                                depthEqual * 2u + depthWrite;
+                            translucentPipelineResult = createTopologyPair(
+                                BgZeroTranslucentPipelines[bgIndex],
+                                BgZeroTranslucentLinePipelines[bgIndex]);
+                        }
+                        stencil.passOp = VK_STENCIL_OP_REPLACE;
+                        stencil.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+                        depth.front = stencil;
+                        depth.back = stencil;
+                        if (translucentPipelineResult != VK_SUCCESS)
+                            break;
                     }
                     if (translucentPipelineResult != VK_SUCCESS)
                         break;
@@ -1475,18 +1539,6 @@ struct NativeRasterGpu::Impl
         }
 
         VkResult shadowPipelineResult = translucentPipelineResult;
-        const auto createTopologyPair = [&](VkPipeline& trianglePipeline,
-                                            VkPipeline& linePipeline) -> VkResult {
-            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-            VkResult result = Functions->vkCreateGraphicsPipelines(
-                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &trianglePipeline);
-            if (result != VK_SUCCESS)
-                return result;
-            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-            return Functions->vkCreateGraphicsPipelines(
-                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &linePipeline);
-        };
-
         if (shadowPipelineResult == VK_SUCCESS)
         {
             // Sapphire clears only shadow bit 7 before every mask, preserving
@@ -1534,6 +1586,19 @@ struct NativeRasterGpu::Impl
             depth.back = stencil;
             shadowPipelineResult = createTopologyPair(
                 ShadowMaskPipeline, ShadowMaskLinePipeline);
+        }
+
+        if (shadowPipelineResult == VK_SUCCESS)
+        {
+            // With a transparent clear plane, mark depth-failed background
+            // coverage by flipping stencil bit 0: 0xFF -> 0xFE.
+            stencil.depthFailOp = VK_STENCIL_OP_INVERT;
+            stencil.compareOp = VK_COMPARE_OP_EQUAL;
+            depth.front = stencil;
+            depth.back = stencil;
+            shadowPipelineResult = createTopologyPair(
+                BgZeroShadowMaskPipeline,
+                BgZeroShadowMaskLinePipeline);
         }
 
         if (shadowPipelineResult == VK_SUCCESS)
@@ -2610,9 +2675,28 @@ struct NativeRasterGpu::Impl
         };
         static_assert(sizeof(Push) == 32);
 
-        std::size_t polygonIndex = 0;
-        while (polygonIndex < frame.Upload.Polygons.size())
+        enum class DrawPhase
         {
+            Opaque,
+            BackgroundZero,
+            Alpha,
+        };
+        const bool clearPlaneAlphaZero =
+            ((frame.RenderClearAttr1 >> 16u) & 0x1Fu) == 0u;
+        const std::uint32_t clearPlanePolygonId =
+            (frame.RenderClearAttr1 >> 24u) & 0x3Fu;
+        const std::array<DrawPhase, 3> drawPhases{{
+            DrawPhase::Opaque,
+            DrawPhase::BackgroundZero,
+            DrawPhase::Alpha,
+        }};
+        for (DrawPhase drawPhase : drawPhases)
+        {
+            if (drawPhase == DrawPhase::BackgroundZero && !clearPlaneAlphaZero)
+                continue;
+            std::size_t polygonIndex = 0;
+            while (polygonIndex < frame.Upload.Polygons.size())
+            {
             const auto& polygon = frame.Upload.Polygons[polygonIndex];
             const bool linePrimitive =
                 polygon.Primitive == static_cast<std::uint32_t>(
@@ -2635,6 +2719,14 @@ struct NativeRasterGpu::Impl
                  textureResources[polygon.TextureLayer] == nullptr ||
                  (textureMode > 2u && !shadowMask && !shadow));
             if (textureUnsupported || polygon.IndexCount == 0)
+            {
+                ++polygonIndex;
+                continue;
+            }
+            const bool opaqueDraw = !translucent && !shadowMask && !shadow;
+            const bool alphaDraw = translucent || shadowMask || shadow;
+            if ((drawPhase == DrawPhase::Opaque && !opaqueDraw) ||
+                (drawPhase != DrawPhase::Opaque && !alphaDraw))
             {
                 ++polygonIndex;
                 continue;
@@ -2725,6 +2817,44 @@ struct NativeRasterGpu::Impl
                 0,
                 VK_INDEX_TYPE_UINT16);
 
+            if (drawPhase == DrawPhase::BackgroundZero && shadowMask)
+            {
+                const std::uint32_t maskAlpha = wireframe
+                    ? 31u
+                    : ((polygon.Attr >> 16u) & 0x1Fu);
+                if (maskAlpha > frame.RenderAlphaRef)
+                {
+                    Functions->vkCmdSetStencilCompareMask(
+                        command, VK_STENCIL_FACE_FRONT_AND_BACK, 0xFFu);
+                    Functions->vkCmdSetStencilWriteMask(
+                        command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x01u);
+                    Functions->vkCmdSetStencilReference(
+                        command, VK_STENCIL_FACE_FRONT_AND_BACK, 0xFFu);
+                    Functions->vkCmdBindPipeline(
+                        command,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        useLinePipeline
+                            ? BgZeroShadowMaskLinePipeline
+                            : BgZeroShadowMaskPipeline);
+                    Functions->vkCmdPushConstants(
+                        command,
+                        PipelineLayout,
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                        0,
+                        sizeof(push),
+                        &push);
+                    Functions->vkCmdDrawIndexed(
+                        command,
+                        drawCount,
+                        1,
+                        wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                        0,
+                        0);
+                }
+                polygonIndex = next;
+                continue;
+            }
+
             if (shadowMask)
             {
                 // Consecutive masks share bit 7; a new mask begins a new
@@ -2813,6 +2943,70 @@ struct NativeRasterGpu::Impl
                     0);
             }
 
+            if (drawPhase == DrawPhase::BackgroundZero)
+            {
+                if (!useTranslucentPass ||
+                    (shadow && polygonId != clearPlanePolygonId))
+                {
+                    polygonIndex = next;
+                    continue;
+                }
+                const std::uint32_t stencilWriteMask =
+                    (~(0x40u | polygonId)) & 0xFFu;
+                Functions->vkCmdSetStencilCompareMask(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    shadow ? 0xFFu : 0xFEu);
+                Functions->vkCmdSetStencilWriteMask(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    stencilWriteMask);
+                Functions->vkCmdSetStencilReference(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    shadow ? 0xFEu : 0xFFu);
+                const std::uint32_t depthWrite =
+                    (polygon.Attr >> 11u) & 0x1u;
+                VkPipeline backgroundPipeline = VK_NULL_HANDLE;
+                if (shadow)
+                {
+                    const std::uint32_t backgroundShadowIndex =
+                        (useDepthEqual ? 4u : 0u) + translucentPipelineIndex;
+                    backgroundPipeline = useLinePipeline
+                        ? BgZeroShadowBlendLinePipelines[backgroundShadowIndex]
+                        : BgZeroShadowBlendPipelines[backgroundShadowIndex];
+                }
+                else
+                {
+                    const std::uint32_t backgroundIndex =
+                        (useDepthEqual ? 2u : 0u) + depthWrite;
+                    backgroundPipeline = useLinePipeline
+                        ? BgZeroTranslucentLinePipelines[backgroundIndex]
+                        : BgZeroTranslucentPipelines[backgroundIndex];
+                }
+                push.Reserved[2] |= 2u;
+                Functions->vkCmdBindPipeline(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    backgroundPipeline);
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(push),
+                    &push);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    drawCount,
+                    1,
+                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    0,
+                    0);
+                polygonIndex = next;
+                continue;
+            }
+
             if (shadow)
             {
                 // Remove the mask below the same lower polygon ID.
@@ -2886,7 +3080,7 @@ struct NativeRasterGpu::Impl
             Functions->vkCmdSetStencilWriteMask(
                 command,
                 VK_STENCIL_FACE_FRONT_AND_BACK,
-                0xFFu);
+                useTranslucentPass ? 0x7Fu : 0xFFu);
             Functions->vkCmdSetStencilReference(
                 command,
                 VK_STENCIL_FACE_FRONT_AND_BACK,
@@ -2922,6 +3116,7 @@ struct NativeRasterGpu::Impl
                 0,
                 0);
             polygonIndex = next;
+            }
         }
 
         if ((frame.RenderDispCnt & (1u << 5u)) != 0)
