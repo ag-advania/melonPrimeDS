@@ -9,6 +9,8 @@ layout(push_constant) uniform NativeRasterPush
     uint renderXPos;
     uint renderDispCnt;
     uint drawFlags;
+    uint texParam;
+    uint clearAttr;
 } pc;
 
 layout(location = 2) in float fDepth;

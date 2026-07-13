@@ -8,8 +8,10 @@ layout(push_constant) uniform NativeRasterPush
     uint textureMode;
     uint wBuffer;
     uint renderXPos;
-    uint reserved1;
-    uint reserved2;
+    uint renderDispCnt;
+    uint drawFlags;
+    uint texParam;
+    uint clearAttr;
 } pc;
 
 layout(location = 0) in uvec4 packed0;
@@ -64,8 +66,5 @@ void main()
     ivec2 texel16 = ivec2(
         int(packed0.w << 16) >> 16,
         int(packed0.w) >> 16);
-    uvec2 size = max(
-        uvec2(textureSize & 0xFFFFu, textureSize >> 16),
-        uvec2(1u));
-    fTexcoord = vec2(texel16) / (16.0 * vec2(size));
+    fTexcoord = vec2(texel16) * (1.0 / 16.0);
 }

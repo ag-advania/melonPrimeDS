@@ -49,6 +49,23 @@ struct alignas(16) NativeRasterToonUniform
 
 static_assert(sizeof(NativeRasterToonUniform) == 32u * 16u);
 
+// Shared by the native raster vertex/fragment/shadow stages. Keep field order
+// synchronized with NativeRasterPush in the phase14 shaders.
+struct NativeRasterDrawPush
+{
+    float ScreenSize[2]{};
+    std::uint32_t Textured = 0;
+    std::uint32_t TextureMode = 0;
+    std::uint32_t WBuffer = 0;
+    std::uint32_t RenderXPos = 0;
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t DrawFlags = 0;
+    std::uint32_t TexParam = 0;
+    std::uint32_t ClearAttr = 0;
+};
+
+static_assert(sizeof(NativeRasterDrawPush) == 40u);
+
 // Matches Sapphire's 128-byte graphics final-pass push ABI.
 struct alignas(16) NativeRasterFinalPush
 {
@@ -794,7 +811,7 @@ struct NativeRasterGpu::Impl
 
         VkPushConstantRange pushRange{};
         pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        pushRange.size = 32;
+        pushRange.size = sizeof(NativeRasterDrawPush);
         VkPipelineLayoutCreateInfo layoutInfo{
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         layoutInfo.setLayoutCount = 1;
@@ -2411,15 +2428,31 @@ struct NativeRasterGpu::Impl
             Functions->vkCmdDraw(command, 3, 1, 0, 0);
         }
 
-        struct alignas(16) Push
-        {
-            float ScreenSize[2];
-            std::uint32_t Textured;
-            std::uint32_t TextureMode;
-            std::uint32_t WBuffer;
-            std::uint32_t Reserved[3];
+        const auto usesLinearW = [&](const auto& polygon) {
+            const std::uint64_t vertexEnd =
+                static_cast<std::uint64_t>(polygon.VertexOffset) +
+                polygon.VertexCount;
+            if (polygon.VertexCount == 0 ||
+                vertexEnd > frame.Upload.FullPrecisionDepthW.size())
+            {
+                return false;
+            }
+            const std::uint32_t firstW = frame.Upload.FullPrecisionDepthW[
+                polygon.VertexOffset].W;
+            if ((firstW & 0x7Fu) != 0u)
+                return false;
+            for (std::uint32_t vertexIndex = 1;
+                 vertexIndex < polygon.VertexCount;
+                 ++vertexIndex)
+            {
+                if (frame.Upload.FullPrecisionDepthW[
+                        polygon.VertexOffset + vertexIndex].W != firstW)
+                {
+                    return false;
+                }
+            }
+            return true;
         };
-        static_assert(sizeof(Push) == 32);
 
         const auto drawEdgeMarks = [&]() {
             if ((frame.RenderDispCnt & (1u << 5u)) == 0)
@@ -2471,7 +2504,7 @@ struct NativeRasterGpu::Impl
                     0,
                     nullptr);
 
-                Push edgePush{};
+                NativeRasterDrawPush edgePush{};
                 edgePush.ScreenSize[0] =
                     static_cast<float>(slot.Color.Extent.width);
                 edgePush.ScreenSize[1] =
@@ -2483,11 +2516,14 @@ struct NativeRasterGpu::Impl
                      melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer) != 0
                     ? 1u
                     : 0u;
-                edgePush.Reserved[0] = frame.RenderXPos;
-                edgePush.Reserved[1] = frame.RenderDispCnt;
+                edgePush.RenderXPos = frame.RenderXPos;
+                edgePush.RenderDispCnt = frame.RenderDispCnt;
                 const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
-                edgePush.Reserved[2] = (wireframe ? 1u : 0u) | 4u |
+                edgePush.DrawFlags = (wireframe ? 1u : 0u) | 4u |
+                    (usesLinearW(polygon) ? 8u : 0u) |
                     ((frame.RenderAlphaRef & 0x1Fu) << 8u);
+                edgePush.TexParam = polygon.TexParam;
+                edgePush.ClearAttr = frame.RenderClearAttr1;
                 Functions->vkCmdPushConstants(
                     command,
                     PipelineLayout,
@@ -2822,7 +2858,7 @@ struct NativeRasterGpu::Impl
                 depthWrite * 4u + fogWrite * 2u +
                 ((frame.RenderDispCnt >> 3u) & 0x1u);
 
-            Push push{};
+            NativeRasterDrawPush push{};
             push.ScreenSize[0] = static_cast<float>(slot.Color.Extent.width);
             push.ScreenSize[1] = static_cast<float>(slot.Color.Extent.height);
             push.Textured = textured ? 1u : 0u;
@@ -2831,10 +2867,13 @@ struct NativeRasterGpu::Impl
                 (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer)
                 ? 1u
                 : 0u;
-            push.Reserved[0] = frame.RenderXPos;
-            push.Reserved[1] = frame.RenderDispCnt;
-            push.Reserved[2] = (wireframe ? 1u : 0u) |
+            push.RenderXPos = frame.RenderXPos;
+            push.RenderDispCnt = frame.RenderDispCnt;
+            push.DrawFlags = (wireframe ? 1u : 0u) |
+                (usesLinearW(polygon) ? 8u : 0u) |
                 ((frame.RenderAlphaRef & 0x1Fu) << 8u);
+            push.TexParam = polygon.TexParam;
+            push.ClearAttr = frame.RenderClearAttr1;
 
             Functions->vkCmdBindIndexBuffer(
                 command,
@@ -3007,7 +3046,7 @@ struct NativeRasterGpu::Impl
                         ? BgZeroTranslucentLinePipelines[backgroundIndex]
                         : BgZeroTranslucentPipelines[backgroundIndex];
                 }
-                push.Reserved[2] |= 2u;
+                push.DrawFlags |= 2u;
                 Functions->vkCmdBindPipeline(
                     command,
                     VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -3077,7 +3116,7 @@ struct NativeRasterGpu::Impl
                         : (useDepthEqual
                             ? DepthEqualShadowBlendPipelines[translucentPipelineIndex]
                             : ShadowBlendPipelines[translucentPipelineIndex]));
-                push.Reserved[2] |= 2u;
+                push.DrawFlags |= 2u;
                 Functions->vkCmdPushConstants(
                     command,
                     PipelineLayout,
@@ -3123,7 +3162,7 @@ struct NativeRasterGpu::Impl
                         ? (useLinePipeline ? DepthEqualLinePipeline : DepthEqualPipeline)
                         : (useLinePipeline ? LinePipeline : Pipeline)));
             if (useTranslucentPass)
-                push.Reserved[2] |= 2u;
+                push.DrawFlags |= 2u;
             Functions->vkCmdPushConstants(
                 command,
                 PipelineLayout,
