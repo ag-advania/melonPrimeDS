@@ -1,0 +1,13 @@
+{
+  "patch_version": "5.0",
+  "kind": "apply",
+  "branch": "highres_fonts_v3",
+  "head": "2ad0f5190c9ca0cb28163e161aa03aee2e860819",
+  "created_at": "2026-07-13T11:06:44",
+  "files": [
+    {
+      "path": "src/Vulkan_shaders/phase10_presenter.vert",
+      "sha256": "6c4bfd366d6a6865600878266276f779ef17fea4b64387193280e7c1219f7ad1"
+    }
+  ]
+}

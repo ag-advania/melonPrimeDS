@@ -36,12 +36,8 @@ void main()
         pc.transform1.y;
 
     vec2 panel = max(pc.transform1.zw, vec2(1.0));
-
-    // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P5_ORIENTATION_V1
-    // The presenter uses a positive-height Vulkan viewport. Its framebuffer Y
-    // mapping already sends NDC -1 to the top edge and +1 to the bottom edge.
-    // widget is also top-left based, so no additional Y inversion is needed.
     vec2 ndc = (widget * 2.0) / panel - 1.0;
+    ndc.y *= -1.0;
 
     gl_Position = vec4(ndc, 0.0, 1.0);
     texCoord = unit;

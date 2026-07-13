@@ -1,6 +1,6 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "e92883d15fae103ed8e86aed5a4cc205cb71c01dbd0e6c12da2235f5a2fd9b41",
+  "generation_sha256": "d4bf0519da7fe8920b2fd69b1e7fe037d4a64ac2b142cb9d46576e28a233d090",
   "manifest_sha256": "6a26885553f93093e3b59ab4a9a56edc1c3428809777d85a6438e95afd932aa3",
   "schema_version": 1,
   "sources": [
@@ -337,7 +337,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase10_presenter.vert",
-      "sha256": "6c4bfd366d6a6865600878266276f779ef17fea4b64387193280e7c1219f7ad1",
+      "sha256": "28255b320168d6625ce4ea520f49597d19487c4f9fba26ea7b8721d4bb9b51e9",
       "stage": "vert",
       "variant": "default"
     },
@@ -577,8 +577,8 @@
     },
     {
       "header": "src/Vulkan_shaders/generated/VulkanPhase10PresenterVertex.spv.h",
-      "sha256": "2cc255b142699c8beaedf7f4e47f0a34a89393cd12c95dd3dd9d86e26997c99c",
-      "size": 2904,
+      "sha256": "842bbd3239660606f239d6998a1ff9d449412d060ea77faa50cef9868849f037",
+      "size": 2800,
       "symbol": "VulkanPhase10PresenterVertex"
     },
     {
