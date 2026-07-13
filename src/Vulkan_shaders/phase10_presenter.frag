@@ -50,98 +50,17 @@ vec3 applyMasterBrightness(vec3 color, uint reg)
     return color;
 }
 
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-uvec4 packedCompositionBytes(vec4 packed)
+vec3 quantizedNativeReference(vec3 color, uint reg)
 {
-    return uvec4(clamp(
-        floor(packed * 255.0 + 0.5),
-        vec4(0.0),
-        vec4(255.0)));
-}
-
-uint unpackCompositionMetadata(uvec4 packed)
-{
-    return ((packed.r >> 6u) & 0x3u) |
-        (((packed.g >> 6u) & 0x3u) << 2u) |
-        (((packed.b >> 6u) & 0x3u) << 4u) |
-        ((packed.a & 0x7Fu) << 6u);
-}
-
-uvec3 blendColor4(
-    uvec3 top, uvec3 bottom, uint eva, uint evb)
-{
-    eva = min(eva, 16u);
-    evb = min(evb, 16u);
-    return min(
-        uvec3(63u),
-        (top * eva + bottom * evb + uvec3(8u)) >> 4u);
-}
-
-uvec3 blendColor5(
-    uvec3 top, uvec3 bottom, uint alpha5)
-{
-    uint eva = min(alpha5, 31u) + 1u;
-    if (eva == 32u)
-        return top;
-    uint evb = 32u - eva;
-    return min(
-        uvec3(63u),
-        (top * eva + bottom * evb + uvec3(16u)) >> 5u);
-}
-
-uvec3 brightnessUp6(
-    uvec3 color, uint factor, uint bias)
-{
-    factor = min(factor, 16u);
-    return color +
-        (((uvec3(63u) - color) * factor + uvec3(bias)) >> 4u);
-}
-
-uvec3 brightnessDown6(
-    uvec3 color, uint factor, uint bias)
-{
-    factor = min(factor, 16u);
-    return color -
-        ((color * factor + uvec3(bias)) >> 4u);
-}
-
-uvec3 applyComposition6(
-    uvec3 top,
-    uvec3 under,
-    uint mode,
-    uint factorA,
-    uint factorB,
-    uint alpha5)
-{
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    if (mode == 6u)
-        return blendColor4(under, top, factorA, factorB);
-    if (mode == 2u)
-        return blendColor5(top, under, alpha5);
-    if (mode == 3u)
-        return blendColor4(top, under, factorA, factorB);
-    if (mode == 4u)
-        return brightnessUp6(top, factorA, 8u);
-    if (mode == 5u)
-        return brightnessDown6(top, factorA, 7u);
-    return top;
-}
-
-uvec3 applyMasterBrightness6(
-    uvec3 color, uint reg)
-{
+    uvec3 color8 = uvec3(clamp(color, vec3(0.0), vec3(1.0)) * 255.0 + 0.5);
+    uvec3 color6 = (color8 * uvec3(63u) + uvec3(127u)) / uvec3(255u);
     uint mode = reg >> 14u;
     uint factor = min(reg & 0x1Fu, 16u);
     if (mode == 1u)
-        return brightnessUp6(color, factor, 0u);
-    if (mode == 2u)
-        return brightnessDown6(color, factor, 15u);
-    return color;
-}
-
-vec3 expandColor6(uvec3 color)
-{
-    uvec3 expanded = (color << 2u) | (color >> 4u);
+        color6 += ((uvec3(63u) - color6) * factor) >> 4u;
+    else if (mode == 2u)
+        color6 -= ((color6 * factor + uvec3(15u)) >> 4u);
+    uvec3 expanded = (color6 << 2u) | (color6 >> 4u);
     return vec3(expanded) / 255.0;
 }
 
@@ -163,47 +82,64 @@ void main()
         if (pc.params.z != 0u && pc.params.y + 1u == pc.params.z)
         {
             vec4 high3D = texture(nativeHighResolution3D, texCoord);
+            vec4 low3D = texture(nativeReference3D, texCoord);
             float nativeOwnership = texture(nativeRasterCoverage, texCoord).a;
-
-            ivec2 compositionSize = textureSize(nativeReference3D, 0);
-            ivec2 compositionPixel = clamp(
-                ivec2(texCoord * vec2(compositionSize)),
-                ivec2(0),
-                compositionSize - ivec2(1));
-            uvec4 packedComposition = packedCompositionBytes(
-                texelFetch(nativeReference3D, compositionPixel, 0));
-            uint metadata = unpackCompositionMetadata(packedComposition);
-            uint compositionMode = metadata & 0x7u;
-            uint factorA = (metadata >> 3u) & 0x1Fu;
-            uint factorB = (metadata >> 8u) & 0x1Fu;
-
-            // The Software 2D renderer now publishes the exact operation and
-            // structural BG0/3D slot. Native high-resolution opaque,
-            // translucent, shadow, EVA/EVB, brightness, subpixel-edge, and
-            // single-foreground alpha-blend output can therefore be adopted
-            // without comparing it against a low-resolution RGB oracle.
-            if (compositionMode != 0u && nativeOwnership >= 0.20)
+            uint packedReferenceAlpha = uint(clamp(
+                floor(low3D.a * 255.0 + 0.5), 0.0, 255.0));
+            bool software3DDirectlyOwnsBase =
+                (packedReferenceAlpha & 0x80u) != 0u;
+            float software3DAlpha =
+                float(packedReferenceAlpha & 0x1Fu) / 31.0;
+            const float opaqueThreshold = 30.5 / 31.0;
+            const float tolerance = 2.0 / 255.0;
+            vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
+            bool software3DColorMatchesBase =
+                all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance)));
+            // Coverage 1.0 identifies an opaque native fragment. Values below
+            // 0.75 identify translucent/shadow output and require the stricter
+            // native-center parity proof below.
+            if (nativeOwnership >= 0.75 &&
+                high3D.a >= opaqueThreshold &&
+                software3DAlpha >= opaqueThreshold &&
+                software3DDirectlyOwnsBase)
             {
-                uvec3 top6 = uvec3(clamp(
-                    floor(high3D.rgb * 63.0 + 0.5),
-                    vec3(0.0),
-                    vec3(63.0)));
-                uvec3 under6 = packedComposition.rgb & uvec3(0x3Fu);
-                uint alpha5 = uint(clamp(
-                    floor(high3D.a * 31.0 + 0.5),
-                    0.0,
-                    31.0));
-                uvec3 composed6 = applyComposition6(
-                    top6,
-                    under6,
-                    compositionMode,
-                    factorA,
-                    factorB,
-                    alpha5);
-                composed6 = applyMasterBrightness6(
-                    composed6, pc.params.w);
-                outColor = vec4(expandColor6(composed6), 1.0);
+                // Software 2D now supplies an explicit structural ownership
+                // bit. Opaque native pixels no longer depend on an RGB match,
+                // so intentional Sapphire-compatible high-resolution, fog,
+                // edge, and texture differences remain visible.
+                outColor = vec4(
+                    clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
+                    1.0);
                 return;
+            }
+
+            // A provisional translucent fragment can be adopted only when
+            // the native raster at this DS pixel's center agrees with the
+            // Software RGB6A5 oracle. Checking the center avoids rejecting
+            // intentional high-resolution subpixel coverage while preventing
+            // an alpha/depth mismatch from producing black effect rectangles.
+            if (nativeOwnership >= 0.20 && software3DColorMatchesBase)
+            {
+                ivec2 referenceSize = textureSize(nativeReference3D, 0);
+                ivec2 referencePixel = clamp(
+                    ivec2(texCoord * vec2(referenceSize)),
+                    ivec2(0),
+                    referenceSize - ivec2(1));
+                vec2 referenceCenter =
+                    (vec2(referencePixel) + vec2(0.5)) / vec2(referenceSize);
+                vec4 highCenter = texture(nativeHighResolution3D, referenceCenter);
+                const float alphaTolerance = 1.5 / 31.0;
+                bool centerRgbMatches = all(lessThanEqual(
+                    abs(highCenter.rgb - low3D.rgb), vec3(tolerance)));
+                bool centerAlphaMatches =
+                    abs(highCenter.a - software3DAlpha) <= alphaTolerance;
+                if (centerRgbMatches && centerAlphaMatches)
+                {
+                    outColor = vec4(
+                        clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
+                        1.0);
+                    return;
+                }
             }
         }
 

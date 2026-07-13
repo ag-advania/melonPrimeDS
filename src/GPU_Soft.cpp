@@ -55,8 +55,7 @@ void SoftRenderer::Reset()
     memset(Framebuffer[1][1], 0, len);
 #ifdef MELONPRIME_DS
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    memset(Output3DComposition, 0, sizeof(Output3DComposition));
+    memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
 #endif
 
     Rend2D_A->Reset();
@@ -72,10 +71,6 @@ void SoftRenderer::Stop()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    memset(Output3DComposition, 0, sizeof(Output3DComposition));
-#endif
 }
 
 
@@ -126,7 +121,7 @@ void SoftRenderer::DrawScanline(u32 line)
 
 #ifdef MELONPRIME_DS
         // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-        memset(Output3DComposition, 0, sizeof(Output3DComposition));
+        memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
 #endif
 
         // draw BG/OBJ layers
@@ -134,12 +129,11 @@ void SoftRenderer::DrawScanline(u32 line)
         Rend2D_B->DrawScanline(line);
 
 #ifdef MELONPRIME_DS
-        // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
         // VRAM/FIFO/off display modes do not expose Engine A's regular BG0/3D
         // composition, even though the software 2D renderer prepared it.
         if (((GPU.GPU2D_A.DispCnt >> 16) & 0x3) != 1)
-            memset(Output3DComposition, 0, sizeof(Output3DComposition));
-        OnComposed3DCompositionLine(line, Output3DComposition);
+            memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
+        OnComposed3DOwnershipLine(line, Output3DOwnership);
 #endif
 
         // draw the final screen output

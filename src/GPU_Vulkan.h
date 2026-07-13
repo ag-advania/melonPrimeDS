@@ -60,8 +60,6 @@ struct NativeRasterFrame
     std::vector<NativeRasterTexture> Textures;
     std::vector<std::uint32_t> ClearBitmapColorRgba6a5;
     std::vector<std::uint32_t> ClearBitmapDepthFog;
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    // Byte-packed structured 2D composition map consumed with texelFetch.
     std::vector<std::uint32_t> NativeReferenceBgra;
 
     void Clear() noexcept;
@@ -145,13 +143,8 @@ struct VulkanRendererShellContract
     bool NativeVulkanCursorContainerSync = true;
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
     bool NativeVulkanExplicit3DOwnershipMask = true;
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    bool NativeVulkanStructured3DComposition = true;
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    bool NativeVulkanStructural3DSlot = true;
-    bool NativeVulkanSingleForegroundBlend = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 27;
+    u32 ContractVersion = 25;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
@@ -235,9 +228,8 @@ public:
         std::vector<u32>& output) const;
 
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    [[nodiscard]] bool CopyNative3DCompositionForPresenter(
-        std::vector<u32>& output) const;
+    [[nodiscard]] bool CopyNative3DOwnershipForPresenter(
+        std::vector<std::uint8_t>& output) const;
 
     [[nodiscard]] std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame>
         AcquireNativeRasterFrame() const;
@@ -250,9 +242,8 @@ private:
     void ClearNativeRasterFrame() noexcept;
     void OnRendered3DLine(u32 line, const u32* pixels) noexcept override;
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    void OnComposed3DCompositionLine(
-        u32 line, const u32* composition) noexcept override;
+    void OnComposed3DOwnershipLine(
+        u32 line, const u8* ownership) noexcept override;
 
     bool ComputeRendererSelected = false;
     bool Initialized = false;
@@ -264,10 +255,8 @@ private:
 
     std::vector<u32> Native3DFrame;
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    // Zero means a 2D layer owns the final pixel. Nonzero values carry the
-    // underlying 2D RGB6 color and exact 3D color-effect mode/coefficients.
-    std::array<u32, NativePixelCount> Native3DComposition{};
+    // 0xFF only when Software 2D structurally selected unmodified BG0/3D.
+    std::array<std::uint8_t, NativePixelCount> Native3DVisible{};
     std::array<u32, NativePixelCount> Native3DBgra{};
 
     mutable std::mutex HighResolutionMutex;
