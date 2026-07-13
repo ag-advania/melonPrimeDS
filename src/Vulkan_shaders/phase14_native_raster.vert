@@ -48,12 +48,12 @@ void main()
         rasterPosition.x += float(nativeDelta) * (pc.screenSize.x / 256.0);
     }
 
-    vec4 clip;
-    clip.xy = (rasterPosition * 2.0 / pc.screenSize) - 1.0;
-    clip.z = pc.wBuffer != 0u ? 0.0 : depth;
-    clip.w = w;
-    clip.xyz *= w;
-    gl_Position = clip;
+    vec2 ndc = (rasterPosition * 2.0 / pc.screenSize) - 1.0;
+    // Keep clip-space Z identical for Z- and W-buffer polygons. Sapphire
+    // selects the DS depth interpolation in the fragment stage, but still
+    // supplies the real depth here so clipping and helper passes see the same
+    // primitive volume.
+    gl_Position = vec4(ndc * w, depth * w, w);
     fDepthLinear = depth;
     fDepthPerspective = depth;
 

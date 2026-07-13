@@ -82,9 +82,13 @@ void main()
         {
             vec4 high3D = texture(nativeHighResolution3D, texCoord);
             vec4 low3D = texture(nativeReference3D, texCoord);
-            float nativeCoverage = texture(nativeRasterCoverage, texCoord).a;
+            float nativeOwnership = texture(nativeRasterCoverage, texCoord).a;
             const float opaqueThreshold = 30.5 / 31.0;
-            if (nativeCoverage >= 0.5 &&
+            // Coverage 1.0 identifies an opaque native fragment. Values below
+            // 0.75 identify translucent/shadow output and deliberately retain
+            // the software-correctness composite, preventing black effect
+            // quads and through-wall alpha geometry from replacing it.
+            if (nativeOwnership >= 0.75 &&
                 high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
             {
                 vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);

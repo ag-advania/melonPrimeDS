@@ -157,7 +157,7 @@ ClearPlaneState DecodeClearPlaneState(
 
     // OpenGL's clear shader emits NDC z = depth / 2^23 - 1 and OpenGL then
     // maps NDC [-1, 1] to depth [0, 1]. Vulkan uses [0, 1] directly.
-    state.Depth = static_cast<float>(state.Depth24) / 16777216.0f;
+    state.Depth = static_cast<float>(state.Depth24) / 16777215.0f;
     return state;
 }
 

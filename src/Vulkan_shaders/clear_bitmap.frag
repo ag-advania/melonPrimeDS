@@ -27,6 +27,6 @@ void main()
         0.0,
         float(depth >> 24),
         1.0);
-    oDepth = float(depth & 0x00FFFFFFu) / 16777216.0;
+    oDepth = float(depth & 0x00FFFFFFu) / 16777215.0;
     gl_FragDepth = oDepth;
 }

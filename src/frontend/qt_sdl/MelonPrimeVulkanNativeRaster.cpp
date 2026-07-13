@@ -2507,6 +2507,21 @@ struct NativeRasterGpu::Impl
                 const bool textured =
                     (polygon.Flags &
                      melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
+                const bool textureExpected =
+                    (frame.RenderDispCnt & 1u) != 0u &&
+                    ((polygon.TexParam >> 26u) & 0x7u) != 0u;
+                const bool translucent =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0;
+                const bool textureAvailable = textured &&
+                    polygon.TextureLayer < textureFallback.size() &&
+                    !textureFallback[polygon.TextureLayer];
+                // A missing alpha texture cannot be represented by an
+                // untextured quad: doing so turns transparent effects into a
+                // solid vertex-color (often black) rectangle. Leave those
+                // pixels to the software correctness plane instead.
+                if (textureExpected && translucent && !textureAvailable)
+                    continue;
                 const bool shadow =
                     (polygon.Flags &
                      melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow) != 0;
@@ -2854,6 +2869,14 @@ struct NativeRasterGpu::Impl
             const bool textureAvailable = textured &&
                 polygon.TextureLayer < textureFallback.size() &&
                 !textureFallback[polygon.TextureLayer];
+            const bool textureExpected =
+                (frame.RenderDispCnt & 1u) != 0u &&
+                ((polygon.TexParam >> 26u) & 0x7u) != 0u;
+            if (textureExpected && translucent && !textureAvailable)
+            {
+                ++polygonIndex;
+                continue;
+            }
             if (textureAvailable)
             {
                 const std::uint32_t sampler = std::min<std::uint32_t>(
