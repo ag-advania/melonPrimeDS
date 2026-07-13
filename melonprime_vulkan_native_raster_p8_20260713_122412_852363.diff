@@ -1,0 +1,2423 @@
+--- a/src/GPU_Vulkan.h
++++ b/src/GPU_Vulkan.h
+@@ -140,6 +140,13 @@
+         return OutputGeneration;
+     }
+ 
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    // Called while EmuInstance::renderLock is held. This copies the native
++    // software-correctness 3D plane used only as the ownership reference for
++    // GPU-resident high-resolution Vulkan composition.
++    [[nodiscard]] bool CopyNative3DForPresenter(
++        std::vector<u32>& output) const;
++
+ private:
+     void AdvanceOutputGeneration() noexcept;
+     void RebuildHighResolutionOutput();
+--- a/src/GPU_Vulkan.cpp
++++ b/src/GPU_Vulkan.cpp
+@@ -158,10 +158,9 @@
+         static_cast<unsigned long long>(OutputGeneration));
+     Platform::Log(
+         Platform::LogLevel::Info,
+-        "[MelonPrime] Vulkan compatibility performance: "
+-        "androidstyle_frame_ring=1 slots=3 coverage_only=0 "
+-        "hires_color_reconstruction=1 single_scaled_screen=1 "
+-        "presenter_pixel_diff=0\n");
++        "[MelonPrime] Vulkan native raster: "
++        "presenter_device=1 scaled_render_target=1 packed_geometry=1 "
++        "texture_cache=1 cpu_scale_squared_reconstruction=0\n");
+     return true;
+ }
+ 
+@@ -235,8 +234,12 @@
+     ++FrameSerial;
+     if (FrameSerial == 0)
+         ++FrameSerial;
+-    RebuildHighResolutionOutput();
+-}
++
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    // Do not build a scale-squared CPU compatibility image here. The Qt Vulkan
++    // presenter snapshots packed geometry and renders it on the GPU.
++}
++
+ 
+ void VulkanRenderer::OnRendered3DLine(u32 line, const u32* pixels) noexcept
+ {
+@@ -269,220 +272,36 @@
+ 
+ void VulkanRenderer::RebuildHighResolutionOutput()
+ {
+-    {
+-        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+-        LatestCompatibilityFrameSerial = FrameSerial;
+-        if (ScaleFactor <= 1)
+-        {
+-            PublishedCompatibilityFrame.reset();
+-            return;
+-        }
+-    }
+-
+-    void* topPointer = nullptr;
+-    void* bottomPointer = nullptr;
+-    if (!SoftRenderer::GetFramebuffers(&topPointer, &bottomPointer) ||
+-        !topPointer || !bottomPointer ||
+-        Native3DFrame.size() != NativePixelCount)
+-    {
+-        ClearHighResolutionOutput();
+-        return;
+-    }
+-
+-    std::shared_ptr<VulkanCompatibilityFrame> frame;
+-    std::size_t frameSlot = CompatibilityFrameSlotCount;
+-    {
+-        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+-        for (std::size_t attempt = 0;
+-             attempt < CompatibilityFrameSlotCount;
+-             ++attempt)
+-        {
+-            const std::size_t candidate =
+-                (NextCompatibilityFrameSlot + attempt) %
+-                CompatibilityFrameSlotCount;
+-            const auto& candidateFrame = CompatibilityFrames[candidate];
+-            if (!CompatibilityFrameProducerBusy[candidate] &&
+-                candidateFrame &&
+-                candidateFrame.use_count() == 1)
+-            {
+-                frameSlot = candidate;
+-                frame = candidateFrame;
+-                CompatibilityFrameProducerBusy[candidate] = true;
+-                NextCompatibilityFrameSlot =
+-                    (candidate + 1) % CompatibilityFrameSlotCount;
+-                break;
+-            }
+-        }
+-
+-        if (!frame)
+-        {
+-            ++DroppedCompatibilityFrames;
+-            return;
+-        }
+-    }
+-
+-    const auto releaseProducerSlot = [&](bool publish)
+-    {
+-        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+-        CompatibilityFrameProducerBusy[frameSlot] = false;
+-        if (publish)
+-            PublishedCompatibilityFrame = frame;
+-    };
+-
+-    try
+-    {
+-        const int requestedScale = std::clamp(ScaleFactor, 1, 16);
+-        const int scale = ResolveCompatibilityScale(requestedScale);
+-        const int engineAScreen = GPU.ScreenSwap ? 0 : 1;
+-        const auto* topSource = static_cast<const u32*>(topPointer);
+-        const auto* bottomSource = static_cast<const u32*>(bottomPointer);
+-        const u32* engineASource =
+-            engineAScreen == 0 ? topSource : bottomSource;
+-
+-        if (engineAScreen == 0)
+-        {
+-            FastNearestUpscale(topSource, scale, frame->Top);
+-            frame->Bottom.assign(bottomSource, bottomSource + NativePixelCount);
+-            frame->TopWidth = static_cast<int>(kNativeWidth) * scale;
+-            frame->TopHeight = static_cast<int>(kNativeHeight) * scale;
+-            frame->BottomWidth = static_cast<int>(kNativeWidth);
+-            frame->BottomHeight = static_cast<int>(kNativeHeight);
+-        }
+-        else
+-        {
+-            frame->Top.assign(topSource, topSource + NativePixelCount);
+-            FastNearestUpscale(bottomSource, scale, frame->Bottom);
+-            frame->TopWidth = static_cast<int>(kNativeWidth);
+-            frame->TopHeight = static_cast<int>(kNativeHeight);
+-            frame->BottomWidth = static_cast<int>(kNativeWidth) * scale;
+-            frame->BottomHeight = static_cast<int>(kNativeHeight) * scale;
+-        }
+-
+-        const u16 brightness = GPU.MasterBrightnessA;
+-        for (std::size_t index = 0; index < NativePixelCount; ++index)
+-        {
+-            const u32 native3D = Native3DFrame[index];
+-            const bool opaque = ((native3D >> 24) & 0x1Fu) != 0;
+-            const u32 expectedFinal = opaque
+-                ? ExpandRgb6ToBgra(ApplyEngineABrightness(native3D, brightness))
+-                : 0;
+-            const u32 finalNative = engineASource[index];
+-
+-            Native3DBgra[index] = expectedFinal;
+-            Native3DVisible[index] =
+-                opaque &&
+-                ((expectedFinal & 0x00FFFFFFu) ==
+-                 (finalNative & 0x00FFFFFFu));
+-        }
+-
+-        Vulkan::VulkanRomScaleSettings settings;
+-        settings.ScaleFactor = scale;
+-        settings.BetterPolygons = BetterPolygons;
+-        settings.HiresCoordinates = HiresCoordinates;
+-
+-        // MELONPRIME_VULKAN_INTERNAL_RESOLUTION_VISIBLE_P7_V1
+-        // Coverage-only mode produced a larger image but repeated the same
+-        // native 3D color across every scale x scale block. Request the bridge's
+-        // scale-dependent subpixel color plane so 2x-4x visibly changes 3D output.
+-        settings.CoverageOnly = false;
+-
+-        Vulkan::VulkanRomScaleResult bridge;
+-        if (!Vulkan::BuildVulkanRomScaleBridge(
+-                GPU.GPU3D,
+-                Native3DFrame.data(),
+-                settings,
+-                bridge) ||
+-            !bridge.Valid ||
+-            bridge.Width != static_cast<int>(kNativeWidth) * scale ||
+-            bridge.Height != static_cast<int>(kNativeHeight) * scale ||
+-            bridge.HighResolution3D.size() !=
+-                static_cast<std::size_t>(bridge.Width) *
+-                    static_cast<std::size_t>(bridge.Height) ||
+-            bridge.Coverage.size() !=
+-                static_cast<std::size_t>(bridge.Width) *
+-                    static_cast<std::size_t>(bridge.Height))
+-        {
+-            Platform::Log(
+-                Platform::LogLevel::Warn,
+-                "[MelonPrime] Vulkan high-resolution compatibility bridge failed: %s\n",
+-                bridge.FailureReason.c_str());
+-            releaseProducerSlot(false);
+-            return;
+-        }
+-
+-        std::vector<u32>& engineAOutput =
+-            engineAScreen == 0 ? frame->Top : frame->Bottom;
+-        const int outputWidth = bridge.Width;
+-
+-        for (int nativeY = 0;
+-             nativeY < static_cast<int>(kNativeHeight);
+-             ++nativeY)
+-        {
+-            for (int nativeX = 0;
+-                 nativeX < static_cast<int>(kNativeWidth);
+-                 ++nativeX)
+-            {
+-                const std::size_t nativeIndex =
+-                    static_cast<std::size_t>(nativeY) * kNativeWidth + nativeX;
+-                if (Native3DVisible[nativeIndex] == 0)
+-                    continue;
+-
+-                const int firstX = nativeX * scale;
+-                const int firstY = nativeY * scale;
+-                for (int subY = 0; subY < scale; ++subY)
+-                {
+-                    const std::size_t row =
+-                        static_cast<std::size_t>(firstY + subY) * outputWidth;
+-                    const std::size_t first =
+-                        row + static_cast<std::size_t>(firstX);
+-                    for (int subX = 0; subX < scale; ++subX)
+-                    {
+-                        const std::size_t highIndex =
+-                            first + static_cast<std::size_t>(subX);
+-                        if (bridge.Coverage[highIndex] == 0)
+-                            continue;
+-
+-                        const u32 highResolution3D =
+-                            bridge.HighResolution3D[highIndex];
+-                        if (((highResolution3D >> 24) & 0x1Fu) == 0)
+-                            continue;
+-
+-                        engineAOutput[highIndex] = ExpandRgb6ToBgra(
+-                            ApplyEngineABrightness(highResolution3D, brightness));
+-                    }
+-                }
+-            }
+-        }
+-
+-        frame->RequestedScale = requestedScale;
+-        frame->BuiltScale = scale;
+-        frame->EngineAScreen = engineAScreen;
+-        frame->FrameSerial = FrameSerial;
+-    }
+-    catch (const std::bad_alloc&)
+-    {
+-        Platform::Log(
+-            Platform::LogLevel::Warn,
+-            "[MelonPrime] Vulkan compatibility allocation failed; "
+-            "using native output for this frame\n");
+-        releaseProducerSlot(false);
+-        return;
+-    }
+-
+-    releaseProducerSlot(true);
+-}
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    // Phase 7's CPU scale-squared reconstruction is deliberately retired.
++    // High-resolution polygons are now rasterized by the presenter Vulkan
++    // device directly into a scaled GPU render target.
++    ClearHighResolutionOutput();
++}
++
+ 
+ std::shared_ptr<const VulkanCompatibilityFrame>
+ VulkanRenderer::AcquireCompatibilityFrame() const
+ {
+-    std::lock_guard<std::mutex> lock(HighResolutionMutex);
+-    if (!PublishedCompatibilityFrame ||
+-        PublishedCompatibilityFrame->FrameSerial !=
+-            LatestCompatibilityFrameSerial)
+-    {
+-        return {};
+-    }
+-    return PublishedCompatibilityFrame;
++    // Native presenter raster owns ScaleFactor > 1 output. Returning no CPU
++    // compatibility frame also guarantees copyHighResolutionScreens() cannot
++    // silently reactivate the rejected bilinear reconstruction.
++    return {};
++}
++
++
++
++bool VulkanRenderer::CopyNative3DForPresenter(
++    std::vector<u32>& output) const
++{
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    if (Native3DFrame.size() != NativePixelCount)
++    {
++        output.clear();
++        return false;
++    }
++    output.assign(Native3DFrame.begin(), Native3DFrame.end());
++    return true;
+ }
+ 
+ RendererOutput VulkanRenderer::GetOutput()
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -156,6 +156,8 @@
+         "${_mp_vk_shader_root}/generated/VulkanPhase9FinalCompute.spv.h"
+         "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterFragment.spv.h"
+         "${_mp_vk_shader_root}/generated/VulkanPhase11Compute.spv.h"
++        "${_mp_vk_shader_root}/generated/VulkanPhase14NativeRasterVertex.spv.h"
++        "${_mp_vk_shader_root}/generated/VulkanPhase14NativeRasterFragment.spv.h"
+         "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterVertex.spv.h"
+         "${_mp_vk_shader_root}/generated/VulkanPhase9TwoDCompute.spv.h"
+         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertex.spv.h"
+@@ -194,6 +196,8 @@
+             "${_mp_vk_shader_root}/phase9_final.comp"
+             "${_mp_vk_shader_root}/phase10_presenter.frag"
+             "${_mp_vk_shader_root}/phase11_compute.comp"
++            "${_mp_vk_shader_root}/phase14_native_raster.vert"
++            "${_mp_vk_shader_root}/phase14_native_raster.frag"
+             "${_mp_vk_shader_root}/phase10_presenter.vert"
+             "${_mp_vk_shader_root}/phase9_2d.comp"
+             "${_mp_vk_shader_root}/textured_polygon.vert"
+--- a/src/frontend/qt_sdl/CMakeLists.txt
++++ b/src/frontend/qt_sdl/CMakeLists.txt
+@@ -376,6 +376,8 @@
+         MelonPrimeVulkanClearPlaneBootstrap.h
+         MelonPrimeVulkanRasterBootstrap.cpp
+         MelonPrimeVulkanRasterBootstrap.h
++        MelonPrimeVulkanNativeRaster.cpp
++        MelonPrimeVulkanNativeRaster.h
+         MelonPrimeScreenVulkan.cpp
+         MelonPrimeScreenVulkan.h)
+     # MinGW LTO can discard the QWindow/QSurface adjustment thunk emitted by
+--- a/src/frontend/qt_sdl/MelonPrimeScreenVulkan.h
++++ b/src/frontend/qt_sdl/MelonPrimeScreenVulkan.h
+@@ -5,6 +5,7 @@
+ #endif
+ 
+ #include "Screen.h"
++#include "MelonPrimeVulkanNativeRaster.h"
+ 
+ #include <array>
+ #include <atomic>
+@@ -25,6 +26,9 @@
+ struct VulkanDirectFrameSnapshot
+ {
+     std::array<QImage, 2> Screens;
++
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    MelonPrime::Vulkan::NativeRasterFrame NativeRaster;
+ 
+     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P6_FRAME_IDENTITY_V1
+     // Exact producer identity. Zero disables transfer reuse conservatively.
+@@ -79,6 +83,8 @@
+     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
+     // Reuse native snapshots instead of allocating two QImages every present.
+     std::array<QImage, 2> m_directNativeScreens;
++    std::unique_ptr<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>
++        m_nativeRasterBuilder;
+     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;
+     std::atomic<bool> m_phase13PresentPending{false};
+     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
+--- a/src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp
+@@ -1,4 +1,5 @@
+ #include "MelonPrimeScreenVulkan.h"
++#include "MelonPrimeVulkanNativeRaster.h"
+ 
+ #include <QVulkanDeviceFunctions>
+ #include <QVulkanFunctions>
+@@ -210,6 +211,10 @@
+         m_directDescriptorScreenSamplers{};
+     std::array<bool, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
+         m_directDescriptorInitialized{};
++
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    std::unique_ptr<MelonPrime::Vulkan::NativeRasterGpu>
++        m_nativeRasterGpu;
+ 
+     bool m_ready = false;
+ };
+@@ -477,7 +482,7 @@
+ 
+ bool PresenterRenderer::createDirectStaticResources()
+ {
+-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
++    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+     bindings[0].binding = 0;
+     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+     bindings[0].descriptorCount = 1;
+@@ -486,6 +491,10 @@
+     bindings[1].binding = 1;
+     bindings[2] = bindings[0];
+     bindings[2].binding = 2;
++    bindings[3] = bindings[0];
++    bindings[3].binding = 3;
++    bindings[4] = bindings[0];
++    bindings[4].binding = 4;
+ 
+     VkDescriptorSetLayoutCreateInfo descriptorInfo{
+         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+@@ -879,7 +888,7 @@
+     {
+         VkDescriptorPoolSize poolSize{
+             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+-            static_cast<std::uint32_t>(m_directFrameCount * 3)};
++            static_cast<std::uint32_t>(m_directFrameCount * 5)};
+         VkDescriptorPoolCreateInfo poolInfo{
+             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+         poolInfo.maxSets =
+@@ -1163,6 +1172,23 @@
+ 
+     VkCommandBuffer command =
+         m_window->currentCommandBuffer();
++
++    MelonPrime::Vulkan::NativeRasterViews nativeViews;
++    if (!m_nativeRasterGpu)
++    {
++        m_nativeRasterGpu =
++            std::make_unique<MelonPrime::Vulkan::NativeRasterGpu>();
++    }
++    if (!m_nativeRasterGpu->Render(
++            m_window,
++            m_df,
++            command,
++            slot,
++            snapshot.NativeRaster,
++            nativeViews))
++    {
++        nativeViews = {};
++    }
+ 
+     if (screenUploadRequired)
+     {
+@@ -1382,56 +1408,56 @@
+         : m_nearestSampler;
+     VkDescriptorImageInfo screenInfo{};
+     screenInfo.sampler = desiredScreenSampler;
+-    screenInfo.imageView =
+-        m_directScreenViews[slot];
+-    screenInfo.imageLayout =
+-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++    screenInfo.imageView = m_directScreenViews[slot];
++    screenInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+ 
+     VkDescriptorImageInfo overlayInfo{};
+     overlayInfo.sampler = m_linearSampler;
+-    overlayInfo.imageView =
+-        m_directOverlayViews[slot];
+-    overlayInfo.imageLayout =
+-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++    overlayInfo.imageView = m_directOverlayViews[slot];
++    overlayInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+ 
+     VkDescriptorImageInfo radarInfo = screenInfo;
+     radarInfo.sampler = m_linearSampler;
+ 
+-    const bool descriptorUpdateRequired =
+-        !m_directDescriptorInitialized[slot] ||
+-        m_directDescriptorScreenSamplers[slot] !=
+-            desiredScreenSampler;
+-    if (descriptorUpdateRequired)
+-    {
+-        std::array<VkWriteDescriptorSet, 3> writes{};
+-        const VkDescriptorImageInfo* infos[] = {
+-            &screenInfo,
+-            &overlayInfo,
+-            &radarInfo};
+-        for (std::uint32_t binding = 0;
+-             binding < writes.size();
+-             ++binding)
+-        {
+-            writes[binding].sType =
+-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+-            writes[binding].dstSet =
+-                m_directDescriptorSets[slot];
+-            writes[binding].dstBinding = binding;
+-            writes[binding].descriptorCount = 1;
+-            writes[binding].descriptorType =
+-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+-            writes[binding].pImageInfo = infos[binding];
+-        }
+-        m_df->vkUpdateDescriptorSets(
+-            m_device,
+-            static_cast<std::uint32_t>(writes.size()),
+-            writes.data(),
+-            0,
+-            nullptr);
+-        m_directDescriptorScreenSamplers[slot] =
+-            desiredScreenSampler;
+-        m_directDescriptorInitialized[slot] = true;
+-    }
++    VkDescriptorImageInfo nativeHighInfo{};
++    nativeHighInfo.sampler = nativeViews.Valid
++        ? nativeViews.Sampler : m_nearestSampler;
++    nativeHighInfo.imageView = nativeViews.Valid
++        ? nativeViews.HighResolution : m_directOverlayViews[slot];
++    nativeHighInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++
++    VkDescriptorImageInfo nativeReferenceInfo{};
++    nativeReferenceInfo.sampler = nativeViews.Valid
++        ? nativeViews.Sampler : m_nearestSampler;
++    nativeReferenceInfo.imageView = nativeViews.Valid
++        ? nativeViews.NativeReference : m_directOverlayViews[slot];
++    nativeReferenceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++
++    std::array<VkWriteDescriptorSet, 5> writes{};
++    const VkDescriptorImageInfo* infos[] = {
++        &screenInfo,
++        &overlayInfo,
++        &radarInfo,
++        &nativeHighInfo,
++        &nativeReferenceInfo};
++    for (std::uint32_t binding = 0; binding < writes.size(); ++binding)
++    {
++        writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++        writes[binding].dstSet = m_directDescriptorSets[slot];
++        writes[binding].dstBinding = binding;
++        writes[binding].descriptorCount = 1;
++        writes[binding].descriptorType =
++            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++        writes[binding].pImageInfo = infos[binding];
++    }
++    m_df->vkUpdateDescriptorSets(
++        m_device,
++        static_cast<std::uint32_t>(writes.size()),
++        writes.data(),
++        0,
++        nullptr);
++    m_directDescriptorScreenSamplers[slot] = desiredScreenSampler;
++    m_directDescriptorInitialized[slot] = true;
+ 
+     const QSize swapSize =
+         m_window->swapChainImageSize();
+@@ -1517,7 +1543,16 @@
+                 sourceScaleX,
+                 sourceScaleY};
+             push.Radar = radar;
+-            push.Params = {mode, layer, 0, 0};
++            push.Params = {
++                mode,
++                layer,
++                nativeViews.Valid
++                    ? snapshot.NativeRaster.EngineAScreen + 1u
++                    : 0u,
++                nativeViews.Valid
++                    ? static_cast<std::uint32_t>(
++                        snapshot.NativeRaster.MasterBrightnessA)
++                    : 0u};
+ 
+             m_df->vkCmdPushConstants(
+                 command,
+@@ -1892,6 +1927,11 @@
+ {
+     if (m_df && m_device)
+         m_df->vkDeviceWaitIdle(m_device);
++    if (m_nativeRasterGpu)
++    {
++        m_nativeRasterGpu->Release();
++        m_nativeRasterGpu.reset();
++    }
+     destroyDirectResources();
+     destroyFrameResources();
+     destroyStaticResources();
+@@ -2345,68 +2385,52 @@
+ 
+     QMutexLocker renderLocker(&emuInstance->renderLock);
+ 
+-    QImage highResolution[2];
+-    if (copyHighResolutionScreens(
+-            highResolution[0],
+-            highResolution[1]))
+-    {
+-        snapshot.Screens[0] = highResolution[0];
+-        snapshot.Screens[1] = highResolution[1];
+-
+-        const auto* renderer =
+-            dynamic_cast<const melonDS::VulkanRenderer*>(
+-                &emuInstance->getNDS()->GPU.GetRenderer());
+-        if (renderer)
+-        {
+-            const auto frame =
+-                renderer->AcquireCompatibilityFrame();
+-            if (frame)
+-            {
+-                snapshot.FrameSerial = frame->FrameSerial;
+-                snapshot.Generation =
+-                    renderer->GetOutputGenerationForDiagnostics();
+-            }
++    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++    // Always upload the compact native 2D/final frame. ScaleFactor > 1 is
++    // handled by NativeRasterGpu and never by a CPU-upscaled QImage.
++    auto* nds = emuInstance->getNDS();
++    melonDS::RendererOutputLease outputLease =
++        nds->GPU.AcquireRendererOutputLease();
++    const melonDS::RendererOutput& output = outputLease.Output;
++    if (output.Kind != melonDS::RendererOutputKind::CpuBgra ||
++        !output.Top || !output.Bottom)
++    {
++        return false;
++    }
++
++    snapshot.FrameSerial = output.FrameSerial;
++    snapshot.Generation = output.Generation;
++    constexpr std::size_t nativeBytes =
++        256u * 192u * sizeof(melonDS::u32);
++    const void* nativeSources[2] = {output.Top, output.Bottom};
++    for (int index = 0; index < 2; ++index)
++    {
++        QImage& image = m_directNativeScreens[index];
++        if (image.size() != QSize(256, 192) ||
++            image.format() != QImage::Format_RGB32)
++        {
++            image = QImage(256, 192, QImage::Format_RGB32);
+         }
+-    }
+-    else
+-    {
+-        auto* nds = emuInstance->getNDS();
+-        melonDS::RendererOutputLease outputLease =
+-            nds->GPU.AcquireRendererOutputLease();
+-        const melonDS::RendererOutput& output =
+-            outputLease.Output;
+-        if (output.Kind !=
+-                melonDS::RendererOutputKind::CpuBgra ||
+-            !output.Top ||
+-            !output.Bottom)
+-        {
++        if (image.isNull())
+             return false;
++        std::memcpy(image.bits(), nativeSources[index], nativeBytes);
++        snapshot.Screens[index] = image;
++    }
++
++    const auto* vulkanRenderer =
++        dynamic_cast<const melonDS::VulkanRenderer*>(
++            &nds->GPU.GetRenderer());
++    if (vulkanRenderer && vulkanRenderer->GetRecordedScaleFactor() > 1)
++    {
++        if (!m_nativeRasterBuilder)
++        {
++            m_nativeRasterBuilder =
++                std::make_unique<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
+         }
+-
+-        snapshot.FrameSerial = output.FrameSerial;
+-        snapshot.Generation = output.Generation;
+-
+-        constexpr std::size_t nativeBytes =
+-            256u * 192u * sizeof(melonDS::u32);
+-        const void* nativeSources[2] = {
+-            output.Top,
+-            output.Bottom};
+-        for (int index = 0; index < 2; ++index)
+-        {
+-            QImage& image = m_directNativeScreens[index];
+-            if (image.size() != QSize(256, 192) ||
+-                image.format() != QImage::Format_RGB32)
+-            {
+-                image = QImage(256, 192, QImage::Format_RGB32);
+-            }
+-            if (image.isNull())
+-                return false;
+-
+-            std::memcpy(
+-                image.bits(),
+-                nativeSources[index],
+-                nativeBytes);
+-            snapshot.Screens[index] = image;
++        if (!m_nativeRasterBuilder->Build(
++                *vulkanRenderer, nds->GPU, snapshot.NativeRaster))
++        {
++            snapshot.NativeRaster.Clear();
+         }
+     }
+ 
+--- a/src/Vulkan_shaders/manifest.json
++++ b/src/Vulkan_shaders/manifest.json
+@@ -374,6 +374,30 @@
+           "defines": {}
+         }
+       ]
++    },
++    {
++      "name": "VulkanPhase14NativeRasterVertex",
++      "source": "phase14_native_raster.vert",
++      "stage": "vert",
++      "entry_point": "main",
++      "variants": [
++        {
++          "name": "default",
++          "defines": {}
++        }
++      ]
++    },
++    {
++      "name": "VulkanPhase14NativeRasterFragment",
++      "source": "phase14_native_raster.frag",
++      "stage": "frag",
++      "entry_point": "main",
++      "variants": [
++        {
++          "name": "default",
++          "defines": {}
++        }
++      ]
+     }
+   ]
+ }
+--- a/src/Vulkan_shaders/phase10_presenter.frag
++++ b/src/Vulkan_shaders/phase10_presenter.frag
+@@ -1,9 +1,12 @@
+ #version 450
+ 
+ // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P3_V1
++// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
+ layout(set = 0, binding = 0) uniform sampler2DArray screenTexture;
+ layout(set = 0, binding = 1) uniform sampler2D hudTexture;
+ layout(set = 0, binding = 2) uniform sampler2DArray radarTexture;
++layout(set = 0, binding = 3) uniform sampler2D nativeHighResolution3D;
++layout(set = 0, binding = 4) uniform sampler2D nativeReference3D;
+ 
+ layout(push_constant) uniform DirectPush
+ {
+@@ -34,6 +37,31 @@
+     vec3( 40.0, 216.0, 248.0),
+     vec3(168.0, 168.0, 168.0));
+ 
++vec3 applyMasterBrightness(vec3 color, uint reg)
++{
++    uint mode = reg >> 14u;
++    float factor = float(min(reg & 0x1Fu, 16u)) / 16.0;
++    if (mode == 1u)
++        return mix(color, vec3(1.0), factor);
++    if (mode == 2u)
++        return color * (1.0 - factor);
++    return color;
++}
++
++vec3 quantizedNativeReference(vec3 color, uint reg)
++{
++    uvec3 color8 = uvec3(clamp(color, vec3(0.0), vec3(1.0)) * 255.0 + 0.5);
++    uvec3 color6 = (color8 * uvec3(63u) + uvec3(127u)) / uvec3(255u);
++    uint mode = reg >> 14u;
++    uint factor = min(reg & 0x1Fu, 16u);
++    if (mode == 1u)
++        color6 += ((uvec3(63u) - color6) * factor) >> 4u;
++    else if (mode == 2u)
++        color6 -= ((color6 * factor + uvec3(15u)) >> 4u);
++    uvec3 expanded = (color6 << 2u) | (color6 >> 4u);
++    return vec3(expanded) / 255.0;
++}
++
+ void main()
+ {
+     uint mode = pc.params.x;
+@@ -45,10 +73,30 @@
+             texCoord * sourceScale,
+             vec2(0.0),
+             max(sourceScale - vec2(0.000001), vec2(0.0)));
+-        vec4 pixel = texture(
+-            screenTexture,
+-            vec3(uv, float(pc.params.y)));
+-        outColor = vec4(pixel.rgb, 1.0);
++        vec4 base = texture(screenTexture, vec3(uv, float(pc.params.y)));
++
++        // params.z is zero when native high-resolution raster is unavailable;
++        // otherwise it is EngineAScreen + 1. params.w is MasterBrightnessA.
++        if (pc.params.z != 0u && pc.params.y + 1u == pc.params.z)
++        {
++            vec4 high3D = texture(nativeHighResolution3D, texCoord);
++            vec4 low3D = texture(nativeReference3D, texCoord);
++            constexpr float opaqueThreshold = 30.5 / 31.0;
++            if (high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
++            {
++                vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
++                constexpr float tolerance = 2.0 / 255.0;
++                if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))))
++                {
++                    outColor = vec4(
++                        clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
++                        1.0);
++                    return;
++                }
++            }
++        }
++
++        outColor = vec4(base.rgb, 1.0);
+         return;
+     }
+ 
+@@ -67,18 +115,13 @@
+     if (distanceSquared > 1.0)
+         discard;
+ 
+-    float alpha =
+-        pc.radar.w *
++    float alpha = pc.radar.w *
+         (1.0 - smoothstep(0.95, 1.0, distanceSquared));
+-    vec2 sourceUv =
+-        pc.radar.xy +
+-        centered *
++    vec2 sourceUv = pc.radar.xy + centered *
+         vec2(pc.radar.z, pc.radar.z * (256.0 / 192.0));
+     sourceUv *= sourceScale;
+ 
+-    vec4 pixel = texture(
+-        radarTexture,
+-        vec3(sourceUv, float(pc.params.y)));
++    vec4 pixel = texture(radarTexture, vec3(sourceUv, float(pc.params.y)));
+     vec3 quantized = round(pixel.rgb * 255.0);
+ 
+     bool paletteMatch = false;
+--- /dev/null
++++ b/src/frontend/qt_sdl/MelonPrimeVulkanNativeRaster.h
+@@ -0,0 +1,112 @@
++#pragma once
++
++#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
++#error "MelonPrimeVulkanNativeRaster requires the MelonPrime Vulkan build gate"
++#endif
++
++// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++
++#include <QImage>
++#include <QSize>
++#include <QVulkanWindow>
++
++#include <array>
++#include <cstdint>
++#include <memory>
++#include <vector>
++
++#include "GPU3D_Vulkan.h"
++
++class QVulkanDeviceFunctions;
++
++namespace melonDS
++{
++class GPU;
++class VulkanRenderer;
++}
++
++namespace MelonPrime::Vulkan
++{
++
++struct NativeRasterTexture
++{
++    std::uint64_t Key = 0;
++    std::uint64_t ContentHash = 0;
++    std::uint32_t Width = 0;
++    std::uint32_t Height = 0;
++    std::uint32_t SamplerIndex = 0;
++    std::shared_ptr<const std::vector<std::uint32_t>> Rgb6a5;
++};
++
++struct NativeRasterFrame
++{
++    bool Valid = false;
++    int Scale = 1;
++    std::uint32_t EngineAScreen = 0;
++    std::uint16_t MasterBrightnessA = 0;
++    std::uint32_t RenderDispCnt = 0;
++    std::uint32_t RenderClearAttr1 = 0;
++    std::uint32_t RenderClearAttr2 = 0;
++    std::uint16_t RenderXPos = 0;
++    std::uint64_t FrameSerial = 0;
++    std::uint64_t Generation = 0;
++
++    melonDS::Vulkan::VulkanRasterUpload Upload;
++    std::vector<NativeRasterTexture> Textures;
++    std::vector<std::uint32_t> NativeReferenceBgra;
++
++    void Clear() noexcept;
++};
++
++class NativeRasterSnapshotBuilder
++{
++public:
++    NativeRasterSnapshotBuilder();
++    ~NativeRasterSnapshotBuilder();
++
++    NativeRasterSnapshotBuilder(const NativeRasterSnapshotBuilder&) = delete;
++    NativeRasterSnapshotBuilder& operator=(const NativeRasterSnapshotBuilder&) = delete;
++
++    bool Build(
++        const melonDS::VulkanRenderer& renderer,
++        melonDS::GPU& gpu,
++        NativeRasterFrame& frame);
++
++private:
++    struct Impl;
++    std::unique_ptr<Impl> m_impl;
++};
++
++struct NativeRasterViews
++{
++    VkImageView HighResolution = VK_NULL_HANDLE;
++    VkImageView NativeReference = VK_NULL_HANDLE;
++    VkSampler Sampler = VK_NULL_HANDLE;
++    bool Valid = false;
++};
++
++class NativeRasterGpu
++{
++public:
++    NativeRasterGpu();
++    ~NativeRasterGpu();
++
++    NativeRasterGpu(const NativeRasterGpu&) = delete;
++    NativeRasterGpu& operator=(const NativeRasterGpu&) = delete;
++
++    bool Render(
++        QVulkanWindow* window,
++        QVulkanDeviceFunctions* functions,
++        VkCommandBuffer command,
++        int frameSlot,
++        const NativeRasterFrame& frame,
++        NativeRasterViews& views);
++
++    void Release();
++
++private:
++    struct Impl;
++    std::unique_ptr<Impl> m_impl;
++};
++
++} // namespace MelonPrime::Vulkan
+--- /dev/null
++++ b/src/frontend/qt_sdl/MelonPrimeVulkanNativeRaster.cpp
+@@ -0,0 +1,1383 @@
++#include "MelonPrimeVulkanNativeRaster.h"
++
++// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++
++#include <QVulkanDeviceFunctions>
++#include <QVulkanFunctions>
++
++#include <algorithm>
++#include <array>
++#include <cstring>
++#include <limits>
++#include <string>
++#include <unordered_map>
++#include <utility>
++
++#include "GPU.h"
++#include "GPU3D.h"
++#include "GPU3D_TexcacheVulkan.h"
++#include "GPU_Vulkan.h"
++#include "Platform.h"
++#include "../../../Vulkan_shaders/generated/VulkanShaders.h"
++
++namespace MelonPrime::Vulkan
++{
++namespace
++{
++
++using melonDS::Platform::Log;
++using melonDS::Platform::LogLevel;
++
++constexpr std::uint32_t kNativeWidth = 256;
++constexpr std::uint32_t kNativeHeight = 192;
++constexpr std::size_t kNativePixels =
++    static_cast<std::size_t>(kNativeWidth) * kNativeHeight;
++constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
++constexpr VkFormat kTextureFormat = VK_FORMAT_R8G8B8A8_UINT;
++
++VkImageAspectFlags DepthAspectMask(VkFormat format) noexcept
++{
++    switch (format)
++    {
++    case VK_FORMAT_D16_UNORM_S8_UINT:
++    case VK_FORMAT_D24_UNORM_S8_UINT:
++    case VK_FORMAT_D32_SFLOAT_S8_UINT:
++        return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
++    default:
++        return VK_IMAGE_ASPECT_DEPTH_BIT;
++    }
++}
++
++std::uint64_t TextureIdentity(
++    const melonDS::Vulkan::VulkanTextureCacheKey& key) noexcept
++{
++    std::uint64_t hash = 1469598103934665603ull;
++    const std::uint32_t words[] = {
++        key.TexParam,
++        key.TexPalette,
++        key.Width,
++        key.Height,
++        key.Format,
++        key.TextureAddress,
++        key.PaletteAddress,
++        key.Color0Transparent,
++    };
++    for (std::uint32_t word : words)
++    {
++        for (unsigned shift = 0; shift < 32; shift += 8)
++        {
++            hash ^= static_cast<std::uint8_t>(word >> shift);
++            hash *= 1099511628211ull;
++        }
++    }
++    return hash;
++}
++
++std::uint32_t TextureSamplerIndex(std::uint32_t texParam) noexcept
++{
++    const auto s = melonDS::Vulkan::DecodeVulkanTextureSamplerAxis(
++        texParam, false);
++    const auto t = melonDS::Vulkan::DecodeVulkanTextureSamplerAxis(
++        texParam, true);
++    return melonDS::Vulkan::VulkanTextureSamplerTableIndex(s, t);
++}
++
++std::uint32_t ExpandNativeRgb6a5(std::uint32_t pixel) noexcept
++{
++    const std::uint32_t r6 = pixel & 0x3Fu;
++    const std::uint32_t g6 = (pixel >> 8u) & 0x3Fu;
++    const std::uint32_t b6 = (pixel >> 16u) & 0x3Fu;
++    const std::uint32_t a5 = (pixel >> 24u) & 0x1Fu;
++    const std::uint32_t r8 = (r6 << 2u) | (r6 >> 4u);
++    const std::uint32_t g8 = (g6 << 2u) | (g6 >> 4u);
++    const std::uint32_t b8 = (b6 << 2u) | (b6 >> 4u);
++    const std::uint32_t a8 = (a5 * 255u + 15u) / 31u;
++    return (a8 << 24u) | (r8 << 16u) | (g8 << 8u) | b8;
++}
++
++std::uint32_t FindMemoryType(
++    QVulkanWindow* window,
++    std::uint32_t bits,
++    VkMemoryPropertyFlags required) noexcept
++{
++    if (!window || !window->vulkanInstance())
++        return std::numeric_limits<std::uint32_t>::max();
++    VkPhysicalDeviceMemoryProperties properties{};
++    window->vulkanInstance()->functions()->vkGetPhysicalDeviceMemoryProperties(
++        window->physicalDevice(), &properties);
++    for (std::uint32_t index = 0; index < properties.memoryTypeCount; ++index)
++    {
++        if ((bits & (1u << index)) != 0 &&
++            (properties.memoryTypes[index].propertyFlags & required) == required)
++        {
++            return index;
++        }
++    }
++    return std::numeric_limits<std::uint32_t>::max();
++}
++
++struct HostBuffer
++{
++    VkBuffer Buffer = VK_NULL_HANDLE;
++    VkDeviceMemory Memory = VK_NULL_HANDLE;
++    void* Map = nullptr;
++    VkDeviceSize Capacity = 0;
++};
++
++void DestroyHostBuffer(
++    QVulkanDeviceFunctions* functions,
++    VkDevice device,
++    HostBuffer& buffer) noexcept
++{
++    if (!functions || !device)
++        return;
++    if (buffer.Map && buffer.Memory)
++        functions->vkUnmapMemory(device, buffer.Memory);
++    if (buffer.Buffer)
++        functions->vkDestroyBuffer(device, buffer.Buffer, nullptr);
++    if (buffer.Memory)
++        functions->vkFreeMemory(device, buffer.Memory, nullptr);
++    buffer = {};
++}
++
++bool EnsureHostBuffer(
++    QVulkanWindow* window,
++    QVulkanDeviceFunctions* functions,
++    VkDevice device,
++    VkDeviceSize required,
++    VkBufferUsageFlags usage,
++    HostBuffer& buffer)
++{
++    required = std::max<VkDeviceSize>(required, 4);
++    if (buffer.Buffer && buffer.Capacity >= required)
++        return true;
++
++    DestroyHostBuffer(functions, device, buffer);
++    VkDeviceSize capacity = 64u * 1024u;
++    while (capacity < required)
++        capacity *= 2u;
++
++    VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
++    info.size = capacity;
++    info.usage = usage;
++    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++    VkResult result = functions->vkCreateBuffer(
++        device, &info, nullptr, &buffer.Buffer);
++    if (result != VK_SUCCESS)
++        return false;
++
++    VkMemoryRequirements requirements{};
++    functions->vkGetBufferMemoryRequirements(
++        device, buffer.Buffer, &requirements);
++    const std::uint32_t memoryType = FindMemoryType(
++        window,
++        requirements.memoryTypeBits,
++        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
++            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
++    if (memoryType == std::numeric_limits<std::uint32_t>::max())
++        return false;
++
++    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
++    allocation.allocationSize = requirements.size;
++    allocation.memoryTypeIndex = memoryType;
++    result = functions->vkAllocateMemory(
++        device, &allocation, nullptr, &buffer.Memory);
++    if (result == VK_SUCCESS)
++        result = functions->vkBindBufferMemory(
++            device, buffer.Buffer, buffer.Memory, 0);
++    if (result == VK_SUCCESS)
++    {
++        result = functions->vkMapMemory(
++            device, buffer.Memory, 0, capacity, 0, &buffer.Map);
++    }
++    if (result != VK_SUCCESS)
++        return false;
++    buffer.Capacity = capacity;
++    return true;
++}
++
++struct ImageResource
++{
++    VkImage Image = VK_NULL_HANDLE;
++    VkDeviceMemory Memory = VK_NULL_HANDLE;
++    VkImageView View = VK_NULL_HANDLE;
++    VkImageLayout Layout = VK_IMAGE_LAYOUT_UNDEFINED;
++    VkFormat Format = VK_FORMAT_UNDEFINED;
++    VkExtent2D Extent{};
++};
++
++void DestroyImage(
++    QVulkanDeviceFunctions* functions,
++    VkDevice device,
++    ImageResource& image) noexcept
++{
++    if (!functions || !device)
++        return;
++    if (image.View)
++        functions->vkDestroyImageView(device, image.View, nullptr);
++    if (image.Image)
++        functions->vkDestroyImage(device, image.Image, nullptr);
++    if (image.Memory)
++        functions->vkFreeMemory(device, image.Memory, nullptr);
++    image = {};
++}
++
++bool CreateImage(
++    QVulkanWindow* window,
++    QVulkanDeviceFunctions* functions,
++    VkDevice device,
++    VkExtent2D extent,
++    VkFormat format,
++    VkImageUsageFlags usage,
++    VkImageAspectFlags aspect,
++    VkImageViewType viewType,
++    ImageResource& output)
++{
++    DestroyImage(functions, device, output);
++    VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
++    info.imageType = VK_IMAGE_TYPE_2D;
++    info.format = format;
++    info.extent = {extent.width, extent.height, 1};
++    info.mipLevels = 1;
++    info.arrayLayers = 1;
++    info.samples = VK_SAMPLE_COUNT_1_BIT;
++    info.tiling = VK_IMAGE_TILING_OPTIMAL;
++    info.usage = usage;
++    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++    info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++    VkResult result = functions->vkCreateImage(
++        device, &info, nullptr, &output.Image);
++    if (result != VK_SUCCESS)
++        return false;
++
++    VkMemoryRequirements requirements{};
++    functions->vkGetImageMemoryRequirements(
++        device, output.Image, &requirements);
++    const std::uint32_t memoryType = FindMemoryType(
++        window,
++        requirements.memoryTypeBits,
++        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
++    if (memoryType == std::numeric_limits<std::uint32_t>::max())
++        return false;
++
++    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
++    allocation.allocationSize = requirements.size;
++    allocation.memoryTypeIndex = memoryType;
++    result = functions->vkAllocateMemory(
++        device, &allocation, nullptr, &output.Memory);
++    if (result == VK_SUCCESS)
++        result = functions->vkBindImageMemory(
++            device, output.Image, output.Memory, 0);
++    if (result != VK_SUCCESS)
++        return false;
++
++    VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
++    view.image = output.Image;
++    view.viewType = viewType;
++    view.format = format;
++    view.subresourceRange.aspectMask = aspect;
++    view.subresourceRange.levelCount = 1;
++    view.subresourceRange.layerCount = 1;
++    result = functions->vkCreateImageView(
++        device, &view, nullptr, &output.View);
++    if (result != VK_SUCCESS)
++        return false;
++
++    output.Layout = VK_IMAGE_LAYOUT_UNDEFINED;
++    output.Format = format;
++    output.Extent = extent;
++    return true;
++}
++
++void TransitionImage(
++    QVulkanDeviceFunctions* functions,
++    VkCommandBuffer command,
++    ImageResource& image,
++    VkImageLayout next,
++    VkPipelineStageFlags sourceStage,
++    VkPipelineStageFlags destinationStage,
++    VkAccessFlags sourceAccess,
++    VkAccessFlags destinationAccess,
++    VkImageAspectFlags aspect)
++{
++    if (image.Layout == next)
++        return;
++    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
++    barrier.srcAccessMask = sourceAccess;
++    barrier.dstAccessMask = destinationAccess;
++    barrier.oldLayout = image.Layout;
++    barrier.newLayout = next;
++    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    barrier.image = image.Image;
++    barrier.subresourceRange.aspectMask = aspect;
++    barrier.subresourceRange.levelCount = 1;
++    barrier.subresourceRange.layerCount = 1;
++    functions->vkCmdPipelineBarrier(
++        command,
++        sourceStage,
++        destinationStage,
++        0,
++        0,
++        nullptr,
++        0,
++        nullptr,
++        1,
++        &barrier);
++    image.Layout = next;
++}
++
++} // namespace
++
++void NativeRasterFrame::Clear() noexcept
++{
++    Valid = false;
++    Scale = 1;
++    EngineAScreen = 0;
++    MasterBrightnessA = 0;
++    RenderDispCnt = 0;
++    RenderClearAttr1 = 0;
++    RenderClearAttr2 = 0;
++    RenderXPos = 0;
++    FrameSerial = 0;
++    Generation = 0;
++    Upload.Clear();
++    Textures.clear();
++    NativeReferenceBgra.clear();
++}
++
++struct NativeRasterSnapshotBuilder::Impl
++{
++    struct CachedTexture
++    {
++        std::uint64_t ContentHash = 0;
++        std::uint32_t Width = 0;
++        std::uint32_t Height = 0;
++        std::shared_ptr<const std::vector<std::uint32_t>> Pixels;
++    };
++
++    std::unordered_map<std::uint64_t, CachedTexture> Cache;
++};
++
++NativeRasterSnapshotBuilder::NativeRasterSnapshotBuilder()
++    : m_impl(std::make_unique<Impl>())
++{
++}
++
++NativeRasterSnapshotBuilder::~NativeRasterSnapshotBuilder() = default;
++
++bool NativeRasterSnapshotBuilder::Build(
++    const melonDS::VulkanRenderer& renderer,
++    melonDS::GPU& gpu,
++    NativeRasterFrame& frame)
++{
++    frame.Clear();
++    const int scale = std::clamp(renderer.GetRecordedScaleFactor(), 1, 16);
++    if (scale <= 1)
++        return true;
++
++    std::vector<melonDS::u32> native3D;
++    if (!renderer.CopyNative3DForPresenter(native3D) ||
++        native3D.size() != kNativePixels)
++    {
++        return false;
++    }
++
++    auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(
++        gpu.VRAMMap_Texture, gpu);
++    auto paletteDirty = gpu.VRAMDirty_TexPal.DeriveState(
++        gpu.VRAMMap_TexPal, gpu);
++    gpu.MakeVRAMFlat_TextureCoherent(textureDirty);
++    gpu.MakeVRAMFlat_TexPalCoherent(paletteDirty);
++
++    melonDS::Vulkan::VulkanTextureMemoryView memory;
++    memory.Texture = gpu.VRAMFlat_Texture;
++    memory.TextureSize = sizeof(gpu.VRAMFlat_Texture);
++    memory.Palette = gpu.VRAMFlat_TexPal;
++    memory.PaletteSize = sizeof(gpu.VRAMFlat_TexPal);
++
++    const auto& gpu3D = gpu.GPU3D;
++    std::vector<std::uint32_t> textureLayers(
++        gpu3D.RenderNumPolygons, 0xFFFFFFFFu);
++    std::unordered_map<std::uint64_t, std::uint32_t> frameTextureIndices;
++
++    // Binding zero must remain valid for untextured draws. A one-texel opaque
++    // white RGB6A5 texture is multiplication-neutral and never sampled when
++    // the shader's textured flag is zero.
++    static const auto whiteTexture = [] {
++        auto pixels = std::make_shared<std::vector<std::uint32_t>>();
++        pixels->push_back(0x1F3F3F3Fu);
++        return std::shared_ptr<const std::vector<std::uint32_t>>(pixels);
++    }();
++    frame.Textures.push_back({
++        0x4D504E4154495645ull,
++        0x1F3F3F3Full,
++        1,
++        1,
++        0,
++        whiteTexture,
++    });
++
++    for (std::uint32_t sourceOrder = 0;
++         sourceOrder < gpu3D.RenderNumPolygons;
++         ++sourceOrder)
++    {
++        const melonDS::Polygon* polygon = gpu3D.RenderPolygonRAM[sourceOrder];
++        if (!polygon || polygon->Degenerate)
++            continue;
++        const std::uint32_t format = (polygon->TexParam >> 26u) & 0x7u;
++        if (format == 0)
++            continue;
++
++        const auto key = melonDS::Vulkan::BuildVulkanTextureCacheKey(
++            polygon->TexParam, polygon->TexPalette);
++        const std::uint64_t identity = TextureIdentity(key);
++        const std::uint32_t samplerIndex =
++            TextureSamplerIndex(polygon->TexParam);
++        const std::uint64_t bindingIdentity = identity ^
++            (static_cast<std::uint64_t>(samplerIndex + 1u) *
++             0xD6E8FEB86659FD93ull);
++        auto existing = frameTextureIndices.find(bindingIdentity);
++        if (existing != frameTextureIndices.end())
++        {
++            textureLayers[sourceOrder] = existing->second;
++            continue;
++        }
++
++        melonDS::Vulkan::VulkanTextureDecodeFootprint footprint;
++        std::string failure;
++        if (!melonDS::Vulkan::BuildVulkanTextureDecodeFootprint(
++                key, footprint, &failure))
++        {
++            continue;
++        }
++        const auto hashes = melonDS::Vulkan::HashVulkanTextureDecodeInput(
++            footprint, memory);
++
++        auto& cached = m_impl->Cache[identity];
++        if (!cached.Pixels || cached.ContentHash != hashes.Combined)
++        {
++            auto pixels = std::make_shared<std::vector<std::uint32_t>>();
++            if (!melonDS::Vulkan::DecodeVulkanTextureRgb6a5(
++                    footprint, memory, *pixels, &failure))
++            {
++                m_impl->Cache.erase(identity);
++                continue;
++            }
++            cached.ContentHash = hashes.Combined;
++            cached.Width = key.Width;
++            cached.Height = key.Height;
++            cached.Pixels = std::move(pixels);
++        }
++
++        const std::uint32_t textureIndex =
++            static_cast<std::uint32_t>(frame.Textures.size());
++        frameTextureIndices.emplace(bindingIdentity, textureIndex);
++        textureLayers[sourceOrder] = textureIndex;
++        frame.Textures.push_back({
++            identity,
++            cached.ContentHash,
++            cached.Width,
++            cached.Height,
++            samplerIndex,
++            cached.Pixels,
++        });
++    }
++
++    melonDS::Vulkan::VulkanRasterBuildOptions options;
++    options.ScaleFactor = scale;
++    options.TextureLayers = textureLayers.data();
++    options.TextureLayerCount = textureLayers.size();
++    std::string failure;
++    if (!melonDS::Vulkan::BuildVulkanRasterUpload(
++            gpu3D.RenderPolygonRAM.data(),
++            gpu3D.RenderNumPolygons,
++            options,
++            frame.Upload,
++            &failure) ||
++        !frame.Upload.Valid)
++    {
++        Log(LogLevel::Warn,
++            "[MelonPrime] Vulkan native raster snapshot failed: %s\n",
++            failure.empty() ? "unknown reason" : failure.c_str());
++        frame.Clear();
++        return false;
++    }
++
++    frame.NativeReferenceBgra.resize(kNativePixels);
++    std::transform(
++        native3D.begin(),
++        native3D.end(),
++        frame.NativeReferenceBgra.begin(),
++        ExpandNativeRgb6a5);
++
++    frame.Scale = scale;
++    frame.EngineAScreen = gpu.ScreenSwap ? 0u : 1u;
++    frame.MasterBrightnessA = gpu.MasterBrightnessA;
++    frame.RenderDispCnt = gpu3D.RenderDispCnt;
++    frame.RenderClearAttr1 = gpu3D.RenderClearAttr1;
++    frame.RenderClearAttr2 = gpu3D.RenderClearAttr2;
++    frame.RenderXPos = gpu3D.GetRenderXPos();
++    frame.FrameSerial = renderer.GetFrameSerialForDiagnostics();
++    frame.Generation = renderer.GetOutputGenerationForDiagnostics();
++    frame.Valid = frame.FrameSerial != 0 && frame.Generation != 0;
++    return true;
++}
++
++struct NativeRasterGpu::Impl
++{
++    struct Slot
++    {
++        ImageResource Color;
++        ImageResource Depth;
++        ImageResource NativeReference;
++        VkFramebuffer Framebuffer = VK_NULL_HANDLE;
++        HostBuffer Vertex;
++        HostBuffer Index;
++        HostBuffer NativeReferenceStaging;
++        std::uint64_t FrameSerial = 0;
++        std::uint64_t Generation = 0;
++    };
++
++    struct TextureResource
++    {
++        ImageResource Image;
++        HostBuffer Staging;
++        std::uint64_t ContentHash = 0;
++        std::array<VkDescriptorSet, 9> DescriptorSets{};
++    };
++
++    QVulkanWindow* Window = nullptr;
++    QVulkanDeviceFunctions* Functions = nullptr;
++    VkDevice Device = VK_NULL_HANDLE;
++    VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
++    VkRenderPass RenderPass = VK_NULL_HANDLE;
++    VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
++    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
++    VkPipeline Pipeline = VK_NULL_HANDLE;
++    VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;
++    std::array<VkSampler, 9> Samplers{};
++    std::array<Slot, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> Slots{};
++    std::unordered_map<std::uint64_t, std::unique_ptr<TextureResource>> Textures;
++    int FrameCount = 0;
++    int Scale = 0;
++    bool TargetsReady = false;
++    bool Ready = false;
++
++    void DestroySlot(Slot& slot)
++    {
++        if (slot.Framebuffer)
++            Functions->vkDestroyFramebuffer(Device, slot.Framebuffer, nullptr);
++        slot.Framebuffer = VK_NULL_HANDLE;
++        DestroyImage(Functions, Device, slot.Color);
++        DestroyImage(Functions, Device, slot.Depth);
++        DestroyImage(Functions, Device, slot.NativeReference);
++        DestroyHostBuffer(Functions, Device, slot.Vertex);
++        DestroyHostBuffer(Functions, Device, slot.Index);
++        DestroyHostBuffer(Functions, Device, slot.NativeReferenceStaging);
++        slot.FrameSerial = 0;
++        slot.Generation = 0;
++    }
++
++    void DestroyTargets()
++    {
++        if (!Functions || !Device)
++            return;
++        for (auto& slot : Slots)
++            DestroySlot(slot);
++        Scale = 0;
++        FrameCount = 0;
++        TargetsReady = false;
++    }
++
++    void DestroyTexture(TextureResource& texture)
++    {
++        DestroyImage(Functions, Device, texture.Image);
++        DestroyHostBuffer(Functions, Device, texture.Staging);
++        texture.DescriptorSets.fill(VK_NULL_HANDLE);
++    }
++
++    void Release()
++    {
++        if (!Functions || !Device)
++        {
++            Window = nullptr;
++            Functions = nullptr;
++            Device = VK_NULL_HANDLE;
++            Ready = false;
++            return;
++        }
++        Functions->vkDeviceWaitIdle(Device);
++        DestroyTargets();
++        for (auto& item : Textures)
++            DestroyTexture(*item.second);
++        Textures.clear();
++        if (Pipeline)
++            Functions->vkDestroyPipeline(Device, Pipeline, nullptr);
++        if (PipelineLayout)
++            Functions->vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
++        if (DescriptorPool)
++            Functions->vkDestroyDescriptorPool(Device, DescriptorPool, nullptr);
++        if (DescriptorLayout)
++            Functions->vkDestroyDescriptorSetLayout(Device, DescriptorLayout, nullptr);
++        if (RenderPass)
++            Functions->vkDestroyRenderPass(Device, RenderPass, nullptr);
++        for (VkSampler sampler : Samplers)
++            if (sampler)
++                Functions->vkDestroySampler(Device, sampler, nullptr);
++        Pipeline = VK_NULL_HANDLE;
++        PipelineLayout = VK_NULL_HANDLE;
++        DescriptorPool = VK_NULL_HANDLE;
++        DescriptorLayout = VK_NULL_HANDLE;
++        RenderPass = VK_NULL_HANDLE;
++        Samplers.fill(VK_NULL_HANDLE);
++        Ready = false;
++        Window = nullptr;
++        Functions = nullptr;
++        Device = VK_NULL_HANDLE;
++        DepthFormat = VK_FORMAT_UNDEFINED;
++    }
++
++    bool CreateShader(
++        const std::uint32_t* words,
++        std::size_t bytes,
++        VkShaderModule& module)
++    {
++        VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
++        info.codeSize = bytes;
++        info.pCode = words;
++        return Functions->vkCreateShaderModule(
++            Device, &info, nullptr, &module) == VK_SUCCESS;
++    }
++
++    bool Initialize(QVulkanWindow* window, QVulkanDeviceFunctions* functions)
++    {
++        if (Ready && Window == window && Functions == functions &&
++            Device == window->device())
++        {
++            return true;
++        }
++        Release();
++        Window = window;
++        Functions = functions;
++        Device = window ? window->device() : VK_NULL_HANDLE;
++        DepthFormat = window ? window->depthStencilFormat() : VK_FORMAT_UNDEFINED;
++        if (!Window || !Functions || !Device || DepthFormat == VK_FORMAT_UNDEFINED)
++            return false;
++
++        VkAttachmentDescription attachments[2]{};
++        attachments[0].format = kColorFormat;
++        attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
++        attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
++        attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
++        attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++        attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++        attachments[1].format = DepthFormat;
++        attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
++        attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
++        attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++        attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
++        attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++        attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++        attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
++
++        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
++        VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
++        VkSubpassDescription subpass{};
++        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
++        subpass.colorAttachmentCount = 1;
++        subpass.pColorAttachments = &colorRef;
++        subpass.pDepthStencilAttachment = &depthRef;
++        VkSubpassDependency dependencies[2]{};
++        dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
++        dependencies[0].dstSubpass = 0;
++        dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
++        dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++        dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
++        dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++        dependencies[1].srcSubpass = 0;
++        dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
++        dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++        dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
++        dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++        dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
++        VkRenderPassCreateInfo passInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
++        passInfo.attachmentCount = 2;
++        passInfo.pAttachments = attachments;
++        passInfo.subpassCount = 1;
++        passInfo.pSubpasses = &subpass;
++        passInfo.dependencyCount = 2;
++        passInfo.pDependencies = dependencies;
++        if (Functions->vkCreateRenderPass(
++                Device, &passInfo, nullptr, &RenderPass) != VK_SUCCESS)
++            return false;
++
++        VkDescriptorSetLayoutBinding binding{};
++        binding.binding = 0;
++        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++        binding.descriptorCount = 1;
++        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
++        VkDescriptorSetLayoutCreateInfo descriptorInfo{
++            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
++        descriptorInfo.bindingCount = 1;
++        descriptorInfo.pBindings = &binding;
++        if (Functions->vkCreateDescriptorSetLayout(
++                Device, &descriptorInfo, nullptr, &DescriptorLayout) != VK_SUCCESS)
++            return false;
++
++        VkPushConstantRange pushRange{};
++        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
++        pushRange.size = 32;
++        VkPipelineLayoutCreateInfo layoutInfo{
++            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
++        layoutInfo.setLayoutCount = 1;
++        layoutInfo.pSetLayouts = &DescriptorLayout;
++        layoutInfo.pushConstantRangeCount = 1;
++        layoutInfo.pPushConstantRanges = &pushRange;
++        if (Functions->vkCreatePipelineLayout(
++                Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
++            return false;
++
++        VkDescriptorPoolSize poolSize{
++            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384};
++        VkDescriptorPoolCreateInfo poolInfo{
++            VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
++        poolInfo.maxSets = 16384;
++        poolInfo.poolSizeCount = 1;
++        poolInfo.pPoolSizes = &poolSize;
++        if (Functions->vkCreateDescriptorPool(
++                Device, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
++            return false;
++
++        for (std::uint32_t s = 0; s < 3; ++s)
++        {
++            for (std::uint32_t t = 0; t < 3; ++t)
++            {
++                const auto axis = [](std::uint32_t mode) {
++                    switch (mode)
++                    {
++                    case 1: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
++                    case 2: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
++                    default: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
++                    }
++                };
++                VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
++                samplerInfo.magFilter = VK_FILTER_NEAREST;
++                samplerInfo.minFilter = VK_FILTER_NEAREST;
++                samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
++                samplerInfo.addressModeU = axis(s);
++                samplerInfo.addressModeV = axis(t);
++                samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
++                samplerInfo.maxLod = 0.0f;
++                const std::uint32_t index = s * 3u + t;
++                if (Functions->vkCreateSampler(
++                        Device, &samplerInfo, nullptr, &Samplers[index]) != VK_SUCCESS)
++                    return false;
++            }
++        }
++
++        VkShaderModule vertex = VK_NULL_HANDLE;
++        VkShaderModule fragment = VK_NULL_HANDLE;
++        if (!CreateShader(
++                melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv,
++                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv),
++                vertex) ||
++            !CreateShader(
++                melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterFragmentSpirv,
++                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterFragmentSpirv),
++                fragment))
++        {
++            if (vertex)
++                Functions->vkDestroyShaderModule(Device, vertex, nullptr);
++            if (fragment)
++                Functions->vkDestroyShaderModule(Device, fragment, nullptr);
++            return false;
++        }
++
++        VkPipelineShaderStageCreateInfo stages[2]{};
++        stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
++        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
++        stages[0].module = vertex;
++        stages[0].pName = "main";
++        stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
++        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
++        stages[1].module = fragment;
++        stages[1].pName = "main";
++
++        VkVertexInputBindingDescription vertexBinding{};
++        vertexBinding.binding = 0;
++        vertexBinding.stride = sizeof(melonDS::Vulkan::VulkanPackedVertex);
++        vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
++        VkVertexInputAttributeDescription attributes[4]{};
++        attributes[0] = {0, 0, VK_FORMAT_R32G32B32A32_UINT, 0};
++        attributes[1] = {1, 0, VK_FORMAT_R32_UINT, 16};
++        attributes[2] = {2, 0, VK_FORMAT_R32_UINT, 20};
++        attributes[3] = {3, 0, VK_FORMAT_R32_UINT, 24};
++        VkPipelineVertexInputStateCreateInfo vertexInput{
++            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
++        vertexInput.vertexBindingDescriptionCount = 1;
++        vertexInput.pVertexBindingDescriptions = &vertexBinding;
++        vertexInput.vertexAttributeDescriptionCount = 4;
++        vertexInput.pVertexAttributeDescriptions = attributes;
++        VkPipelineInputAssemblyStateCreateInfo assembly{
++            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
++        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
++        VkPipelineViewportStateCreateInfo viewport{
++            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
++        viewport.viewportCount = 1;
++        viewport.scissorCount = 1;
++        VkPipelineRasterizationStateCreateInfo raster{
++            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
++        raster.polygonMode = VK_POLYGON_MODE_FILL;
++        raster.cullMode = VK_CULL_MODE_NONE;
++        raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
++        raster.lineWidth = 1.0f;
++        VkPipelineMultisampleStateCreateInfo multisample{
++            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
++        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
++        VkPipelineDepthStencilStateCreateInfo depth{
++            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
++        depth.depthTestEnable = VK_TRUE;
++        depth.depthWriteEnable = VK_TRUE;
++        depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
++        VkPipelineColorBlendAttachmentState colorBlend{};
++        colorBlend.colorWriteMask =
++            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
++            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
++        VkPipelineColorBlendStateCreateInfo blend{
++            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
++        blend.attachmentCount = 1;
++        blend.pAttachments = &colorBlend;
++        const VkDynamicState dynamicStates[] = {
++            VK_DYNAMIC_STATE_VIEWPORT,
++            VK_DYNAMIC_STATE_SCISSOR,
++        };
++        VkPipelineDynamicStateCreateInfo dynamic{
++            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
++        dynamic.dynamicStateCount = 2;
++        dynamic.pDynamicStates = dynamicStates;
++        VkGraphicsPipelineCreateInfo pipelineInfo{
++            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
++        pipelineInfo.stageCount = 2;
++        pipelineInfo.pStages = stages;
++        pipelineInfo.pVertexInputState = &vertexInput;
++        pipelineInfo.pInputAssemblyState = &assembly;
++        pipelineInfo.pViewportState = &viewport;
++        pipelineInfo.pRasterizationState = &raster;
++        pipelineInfo.pMultisampleState = &multisample;
++        pipelineInfo.pDepthStencilState = &depth;
++        pipelineInfo.pColorBlendState = &blend;
++        pipelineInfo.pDynamicState = &dynamic;
++        pipelineInfo.layout = PipelineLayout;
++        pipelineInfo.renderPass = RenderPass;
++        const VkResult pipelineResult = Functions->vkCreateGraphicsPipelines(
++            Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &Pipeline);
++        Functions->vkDestroyShaderModule(Device, vertex, nullptr);
++        Functions->vkDestroyShaderModule(Device, fragment, nullptr);
++        if (pipelineResult != VK_SUCCESS)
++            return false;
++
++        Ready = true;
++        return true;
++    }
++
++    bool EnsureTargets(int scale, int frameCount)
++    {
++        if (TargetsReady && Scale == scale && FrameCount == frameCount &&
++            Slots[0].Color.Image != VK_NULL_HANDLE)
++        {
++            return true;
++        }
++        Functions->vkDeviceWaitIdle(Device);
++        DestroyTargets();
++        Scale = scale;
++        FrameCount = frameCount;
++        TargetsReady = false;
++        const VkExtent2D extent{
++            kNativeWidth * static_cast<std::uint32_t>(scale),
++            kNativeHeight * static_cast<std::uint32_t>(scale)};
++        const VkExtent2D nativeExtent{kNativeWidth, kNativeHeight};
++        for (int index = 0; index < frameCount; ++index)
++        {
++            auto& slot = Slots[index];
++            if (!CreateImage(
++                    Window,
++                    Functions,
++                    Device,
++                    extent,
++                    kColorFormat,
++                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
++                        VK_IMAGE_USAGE_SAMPLED_BIT,
++                    VK_IMAGE_ASPECT_COLOR_BIT,
++                    VK_IMAGE_VIEW_TYPE_2D,
++                    slot.Color) ||
++                !CreateImage(
++                    Window,
++                    Functions,
++                    Device,
++                    extent,
++                    DepthFormat,
++                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
++                    DepthAspectMask(DepthFormat),
++                    VK_IMAGE_VIEW_TYPE_2D,
++                    slot.Depth) ||
++                !CreateImage(
++                    Window,
++                    Functions,
++                    Device,
++                    nativeExtent,
++                    kColorFormat,
++                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
++                        VK_IMAGE_USAGE_SAMPLED_BIT,
++                    VK_IMAGE_ASPECT_COLOR_BIT,
++                    VK_IMAGE_VIEW_TYPE_2D,
++                    slot.NativeReference))
++            {
++                return false;
++            }
++            VkImageView attachments[] = {
++                slot.Color.View,
++                slot.Depth.View,
++            };
++            VkFramebufferCreateInfo framebuffer{
++                VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
++            framebuffer.renderPass = RenderPass;
++            framebuffer.attachmentCount = 2;
++            framebuffer.pAttachments = attachments;
++            framebuffer.width = extent.width;
++            framebuffer.height = extent.height;
++            framebuffer.layers = 1;
++            if (Functions->vkCreateFramebuffer(
++                    Device, &framebuffer, nullptr, &slot.Framebuffer) != VK_SUCCESS)
++                return false;
++        }
++        TargetsReady = true;
++        return true;
++    }
++
++    TextureResource* EnsureTexture(
++        VkCommandBuffer command,
++        const NativeRasterTexture& texture)
++    {
++        if (!texture.Rgb6a5 || texture.Rgb6a5->empty() ||
++            texture.Width == 0 || texture.Height == 0)
++        {
++            return nullptr;
++        }
++        const std::uint64_t resourceKey =
++            texture.Key ^ (texture.ContentHash * 0x9E3779B97F4A7C15ull);
++        auto found = Textures.find(resourceKey);
++        if (found != Textures.end())
++            return found->second.get();
++
++        auto resource = std::make_unique<TextureResource>();
++        const auto fail = [&]() -> TextureResource*
++        {
++            DestroyTexture(*resource);
++            return nullptr;
++        };
++        resource->ContentHash = texture.ContentHash;
++        const VkExtent2D extent{texture.Width, texture.Height};
++        if (!CreateImage(
++                Window,
++                Functions,
++                Device,
++                extent,
++                kTextureFormat,
++                VK_IMAGE_USAGE_TRANSFER_DST_BIT |
++                    VK_IMAGE_USAGE_SAMPLED_BIT,
++                VK_IMAGE_ASPECT_COLOR_BIT,
++                VK_IMAGE_VIEW_TYPE_2D_ARRAY,
++                resource->Image))
++            return fail();
++
++        const VkDeviceSize bytes =
++            static_cast<VkDeviceSize>(texture.Width) * texture.Height * 4u;
++        if (!EnsureHostBuffer(
++                Window,
++                Functions,
++                Device,
++                bytes,
++                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
++                resource->Staging))
++            return fail();
++        std::memcpy(resource->Staging.Map, texture.Rgb6a5->data(), bytes);
++
++        TransitionImage(
++            Functions,
++            command,
++            resource->Image,
++            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
++            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
++            VK_PIPELINE_STAGE_TRANSFER_BIT,
++            0,
++            VK_ACCESS_TRANSFER_WRITE_BIT,
++            VK_IMAGE_ASPECT_COLOR_BIT);
++        VkBufferImageCopy copy{};
++        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
++        copy.imageSubresource.layerCount = 1;
++        copy.imageExtent = {texture.Width, texture.Height, 1};
++        Functions->vkCmdCopyBufferToImage(
++            command,
++            resource->Staging.Buffer,
++            resource->Image.Image,
++            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
++            1,
++            &copy);
++        TransitionImage(
++            Functions,
++            command,
++            resource->Image,
++            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
++            VK_PIPELINE_STAGE_TRANSFER_BIT,
++            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
++            VK_ACCESS_TRANSFER_WRITE_BIT,
++            VK_ACCESS_SHADER_READ_BIT,
++            VK_IMAGE_ASPECT_COLOR_BIT);
++
++        for (std::uint32_t sampler = 0; sampler < 9; ++sampler)
++        {
++            VkDescriptorSetAllocateInfo allocation{
++                VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
++            allocation.descriptorPool = DescriptorPool;
++            allocation.descriptorSetCount = 1;
++            allocation.pSetLayouts = &DescriptorLayout;
++            if (Functions->vkAllocateDescriptorSets(
++                    Device, &allocation, &resource->DescriptorSets[sampler]) != VK_SUCCESS)
++                return fail();
++            VkDescriptorImageInfo imageInfo{};
++            imageInfo.sampler = Samplers[sampler];
++            imageInfo.imageView = resource->Image.View;
++            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
++            write.dstSet = resource->DescriptorSets[sampler];
++            write.dstBinding = 0;
++            write.descriptorCount = 1;
++            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++            write.pImageInfo = &imageInfo;
++            Functions->vkUpdateDescriptorSets(
++                Device, 1, &write, 0, nullptr);
++        }
++
++        TextureResource* result = resource.get();
++        Textures.emplace(resourceKey, std::move(resource));
++        return result;
++    }
++
++    bool UploadNativeReference(
++        VkCommandBuffer command,
++        Slot& slot,
++        const NativeRasterFrame& frame)
++    {
++        const VkDeviceSize bytes = kNativePixels * sizeof(std::uint32_t);
++        if (frame.NativeReferenceBgra.size() != kNativePixels ||
++            !EnsureHostBuffer(
++                Window,
++                Functions,
++                Device,
++                bytes,
++                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
++                slot.NativeReferenceStaging))
++        {
++            return false;
++        }
++        std::memcpy(
++            slot.NativeReferenceStaging.Map,
++            frame.NativeReferenceBgra.data(),
++            bytes);
++        TransitionImage(
++            Functions,
++            command,
++            slot.NativeReference,
++            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
++            slot.NativeReference.Layout == VK_IMAGE_LAYOUT_UNDEFINED
++                ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
++                : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
++            VK_PIPELINE_STAGE_TRANSFER_BIT,
++            slot.NativeReference.Layout == VK_IMAGE_LAYOUT_UNDEFINED
++                ? 0
++                : VK_ACCESS_SHADER_READ_BIT,
++            VK_ACCESS_TRANSFER_WRITE_BIT,
++            VK_IMAGE_ASPECT_COLOR_BIT);
++        VkBufferImageCopy copy{};
++        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
++        copy.imageSubresource.layerCount = 1;
++        copy.imageExtent = {kNativeWidth, kNativeHeight, 1};
++        Functions->vkCmdCopyBufferToImage(
++            command,
++            slot.NativeReferenceStaging.Buffer,
++            slot.NativeReference.Image,
++            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
++            1,
++            &copy);
++        TransitionImage(
++            Functions,
++            command,
++            slot.NativeReference,
++            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
++            VK_PIPELINE_STAGE_TRANSFER_BIT,
++            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
++            VK_ACCESS_TRANSFER_WRITE_BIT,
++            VK_ACCESS_SHADER_READ_BIT,
++            VK_IMAGE_ASPECT_COLOR_BIT);
++        return true;
++    }
++
++    bool Render(
++        VkCommandBuffer command,
++        int frameSlot,
++        const NativeRasterFrame& frame,
++        NativeRasterViews& views)
++    {
++        views = {};
++        if (!frame.Valid || frame.Scale <= 1 || frameSlot < 0 ||
++            frameSlot >= FrameCount || !frame.Upload.Valid)
++            return true;
++        auto& slot = Slots[frameSlot];
++        if (slot.FrameSerial == frame.FrameSerial &&
++            slot.Generation == frame.Generation &&
++            slot.Color.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
++            slot.NativeReference.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
++        {
++            views.HighResolution = slot.Color.View;
++            views.NativeReference = slot.NativeReference.View;
++            views.Sampler = Samplers[0];
++            views.Valid = true;
++            return true;
++        }
++
++        const VkDeviceSize vertexBytes =
++            frame.Upload.Vertices.size() * sizeof(melonDS::Vulkan::VulkanPackedVertex);
++        const VkDeviceSize indexBytes =
++            frame.Upload.Indices.size() * sizeof(std::uint16_t);
++        if (!EnsureHostBuffer(
++                Window,
++                Functions,
++                Device,
++                vertexBytes,
++                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
++                slot.Vertex) ||
++            !EnsureHostBuffer(
++                Window,
++                Functions,
++                Device,
++                indexBytes,
++                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
++                slot.Index))
++            return false;
++        if (vertexBytes)
++            std::memcpy(slot.Vertex.Map, frame.Upload.Vertices.data(), vertexBytes);
++        if (indexBytes)
++            std::memcpy(slot.Index.Map, frame.Upload.Indices.data(), indexBytes);
++        if (!UploadNativeReference(command, slot, frame))
++            return false;
++
++        std::vector<TextureResource*> textureResources(frame.Textures.size(), nullptr);
++        for (std::size_t index = 0; index < frame.Textures.size(); ++index)
++            textureResources[index] = EnsureTexture(command, frame.Textures[index]);
++        if (textureResources.empty() || textureResources[0] == nullptr)
++            return false;
++
++        const auto clear = melonDS::Vulkan::DecodeClearPlaneState(
++            frame.RenderClearAttr1,
++            frame.RenderClearAttr2);
++        VkClearValue clearValues[2]{};
++        clearValues[0].color.float32[0] = clear.Color[0];
++        clearValues[0].color.float32[1] = clear.Color[1];
++        clearValues[0].color.float32[2] = clear.Color[2];
++        clearValues[0].color.float32[3] = clear.Color[3];
++        clearValues[1].depthStencil = {clear.Depth, clear.Stencil};
++        VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
++        begin.renderPass = RenderPass;
++        begin.framebuffer = slot.Framebuffer;
++        begin.renderArea.extent = slot.Color.Extent;
++        begin.clearValueCount = 2;
++        begin.pClearValues = clearValues;
++        Functions->vkCmdBeginRenderPass(
++            command, &begin, VK_SUBPASS_CONTENTS_INLINE);
++        Functions->vkCmdBindPipeline(
++            command, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
++        const VkDeviceSize vertexOffset = 0;
++        Functions->vkCmdBindVertexBuffers(
++            command, 0, 1, &slot.Vertex.Buffer, &vertexOffset);
++        Functions->vkCmdBindIndexBuffer(
++            command, slot.Index.Buffer, 0, VK_INDEX_TYPE_UINT16);
++
++        VkViewport viewport{};
++        viewport.x = 0.0f;
++        viewport.y = static_cast<float>(slot.Color.Extent.height);
++        viewport.width = static_cast<float>(slot.Color.Extent.width);
++        viewport.height = -static_cast<float>(slot.Color.Extent.height);
++        viewport.minDepth = 0.0f;
++        viewport.maxDepth = 1.0f;
++        VkRect2D scissor{};
++        scissor.extent = slot.Color.Extent;
++        Functions->vkCmdSetViewport(command, 0, 1, &viewport);
++        Functions->vkCmdSetScissor(command, 0, 1, &scissor);
++
++        struct alignas(16) Push
++        {
++            float ScreenSize[2];
++            std::uint32_t Textured;
++            std::uint32_t TextureMode;
++            std::uint32_t WBuffer;
++            std::uint32_t Reserved[3];
++        };
++        static_assert(sizeof(Push) == 32);
++
++        std::size_t polygonIndex = 0;
++        while (polygonIndex < frame.Upload.Polygons.size())
++        {
++            const auto& polygon = frame.Upload.Polygons[polygonIndex];
++            const bool unsupported =
++                polygon.Primitive != static_cast<std::uint32_t>(
++                    melonDS::Vulkan::VulkanRasterPrimitive::Triangles) ||
++                (polygon.Flags & (
++                    melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent |
++                    melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask |
++                    melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow)) != 0;
++            const std::uint32_t textureMode = (polygon.Attr >> 4u) & 0x3u;
++            const bool textured =
++                (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
++            const bool textureUnsupported = textured &&
++                (polygon.TextureLayer >= textureResources.size() ||
++                 textureResources[polygon.TextureLayer] == nullptr ||
++                 textureMode > 1u);
++            if (unsupported || textureUnsupported || polygon.IndexCount == 0)
++            {
++                ++polygonIndex;
++                continue;
++            }
++
++            std::uint32_t drawCount = polygon.IndexCount;
++            std::size_t next = polygonIndex + 1;
++            while (next < frame.Upload.Polygons.size())
++            {
++                const auto& candidate = frame.Upload.Polygons[next];
++                const bool candidateTextured =
++                    (candidate.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
++                if (candidate.Primitive != polygon.Primitive ||
++                    candidate.Flags != polygon.Flags ||
++                    candidate.TextureLayer != polygon.TextureLayer ||
++                    ((candidate.Attr >> 4u) & 0x3u) != textureMode ||
++                    candidate.IndexOffset != polygon.IndexOffset + drawCount)
++                {
++                    break;
++                }
++                const bool candidateUnsupported =
++                    (candidate.Flags & (
++                        melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent |
++                        melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask |
++                        melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow)) != 0 ||
++                    (candidateTextured &&
++                     (candidate.TextureLayer >= textureResources.size() ||
++                      textureResources[candidate.TextureLayer] == nullptr ||
++                      textureMode > 1u));
++                if (candidateUnsupported)
++                    break;
++                drawCount += candidate.IndexCount;
++                ++next;
++            }
++
++            VkDescriptorSet descriptor = VK_NULL_HANDLE;
++            if (textured)
++            {
++                const std::uint32_t sampler = std::min<std::uint32_t>(
++                    frame.Textures[polygon.TextureLayer].SamplerIndex, 8u);
++                descriptor = textureResources[polygon.TextureLayer]->DescriptorSets[sampler];
++            }
++            else if (!frame.Textures.empty() && textureResources[0])
++            {
++                descriptor = textureResources[0]->DescriptorSets[0];
++            }
++            if (descriptor == VK_NULL_HANDLE)
++            {
++                ++polygonIndex;
++                continue;
++            }
++            Functions->vkCmdBindDescriptorSets(
++                command,
++                VK_PIPELINE_BIND_POINT_GRAPHICS,
++                PipelineLayout,
++                0,
++                1,
++                &descriptor,
++                0,
++                nullptr);
++            Push push{};
++            push.ScreenSize[0] = static_cast<float>(slot.Color.Extent.width);
++            push.ScreenSize[1] = static_cast<float>(slot.Color.Extent.height);
++            push.Textured = textured ? 1u : 0u;
++            push.TextureMode = textureMode;
++            push.WBuffer =
++                (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer)
++                ? 1u
++                : 0u;
++            push.Reserved[0] = frame.RenderXPos;
++            Functions->vkCmdPushConstants(
++                command,
++                PipelineLayout,
++                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
++                0,
++                sizeof(push),
++                &push);
++            Functions->vkCmdDrawIndexed(
++                command,
++                drawCount,
++                1,
++                polygon.IndexOffset,
++                0,
++                0);
++            polygonIndex = next;
++        }
++
++        Functions->vkCmdEndRenderPass(command);
++        slot.Color.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++        slot.Depth.Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
++        slot.FrameSerial = frame.FrameSerial;
++        slot.Generation = frame.Generation;
++        views.HighResolution = slot.Color.View;
++        views.NativeReference = slot.NativeReference.View;
++        views.Sampler = Samplers[0];
++        views.Valid = true;
++        return true;
++    }
++};
++
++NativeRasterGpu::NativeRasterGpu()
++    : m_impl(std::make_unique<Impl>())
++{
++}
++
++NativeRasterGpu::~NativeRasterGpu()
++{
++    Release();
++}
++
++bool NativeRasterGpu::Render(
++    QVulkanWindow* window,
++    QVulkanDeviceFunctions* functions,
++    VkCommandBuffer command,
++    int frameSlot,
++    const NativeRasterFrame& frame,
++    NativeRasterViews& views)
++{
++    views = {};
++    if (!frame.Valid || frame.Scale <= 1)
++        return true;
++    if (!m_impl->Initialize(window, functions))
++        return false;
++    if (!m_impl->EnsureTargets(
++            frame.Scale,
++            window->concurrentFrameCount()))
++        return false;
++    return m_impl->Render(command, frameSlot, frame, views);
++}
++
++void NativeRasterGpu::Release()
++{
++    if (m_impl)
++        m_impl->Release();
++}
++
++} // namespace MelonPrime::Vulkan
+--- /dev/null
++++ b/src/Vulkan_shaders/phase14_native_raster.vert
+@@ -0,0 +1,66 @@
++#version 450
++
++// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++layout(push_constant) uniform NativeRasterPush
++{
++    vec2 screenSize;
++    uint textured;
++    uint textureMode;
++    uint wBuffer;
++    uint renderXPos;
++    uint reserved1;
++    uint reserved2;
++} pc;
++
++layout(location = 0) in uvec4 packed0;
++layout(location = 1) in uint packedFlags;
++layout(location = 2) in uint textureLayer;
++layout(location = 3) in uint textureSize;
++
++layout(location = 0) out vec4 fColor;
++layout(location = 1) out vec2 fTexcoord;
++layout(location = 2) out float fDepth;
++
++void main()
++{
++    uvec4 position = uvec4(
++        packed0.x & 0xFFFFu,
++        packed0.x >> 16,
++        packed0.y & 0xFFFFu,
++        packed0.y >> 16);
++    uint zshift = (packedFlags >> 16) & 0x1Fu;
++    float depth = float(position.z << zshift) / 16777216.0;
++    float w = float(position.w) / 65536.0;
++
++    vec2 rasterPosition = vec2(position.xy);
++    if (pc.renderXPos != 0u)
++    {
++        int nativeDelta = (pc.renderXPos & 0x100u) != 0u
++            ? 512 - int(pc.renderXPos)
++            : -int(pc.renderXPos);
++        rasterPosition.x += float(nativeDelta) * (pc.screenSize.x / 256.0);
++    }
++
++    vec4 clip;
++    clip.xy = (rasterPosition * 2.0 / pc.screenSize) - 1.0;
++    clip.z = pc.wBuffer != 0u ? 0.0 : depth;
++    clip.w = w;
++    clip.xyz *= w;
++    gl_Position = clip;
++    fDepth = depth;
++
++    uvec4 color = uvec4(
++        packed0.z & 0xFFu,
++        (packed0.z >> 8) & 0xFFu,
++        (packed0.z >> 16) & 0xFFu,
++        (packed0.z >> 24) & 0xFFu);
++    fColor = vec4(color) / vec4(255.0, 255.0, 255.0, 31.0);
++
++    ivec2 texel16 = ivec2(
++        int(packed0.w << 16) >> 16,
++        int(packed0.w) >> 16);
++    uvec2 size = max(
++        uvec2(textureSize & 0xFFFFu, textureSize >> 16),
++        uvec2(1u));
++    fTexcoord = vec2(texel16) / (16.0 * vec2(size));
++}
+--- /dev/null
++++ b/src/Vulkan_shaders/phase14_native_raster.frag
+@@ -0,0 +1,45 @@
++#version 450
++
++// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
++layout(set = 0, binding = 0) uniform usampler2DArray nativeTexture;
++
++layout(push_constant) uniform NativeRasterPush
++{
++    vec2 screenSize;
++    uint textured;
++    uint textureMode;
++    uint wBuffer;
++    uint renderXPos;
++    uint reserved1;
++    uint reserved2;
++} pc;
++
++layout(location = 0) in vec4 fColor;
++layout(location = 1) in vec2 fTexcoord;
++layout(location = 2) in float fDepth;
++layout(location = 0) out vec4 outColor;
++
++void main()
++{
++    vec4 color = fColor;
++    if (pc.textured != 0u)
++    {
++        vec4 textureColor = vec4(texture(nativeTexture, vec3(fTexcoord, 0.0))) /
++            vec4(63.0, 63.0, 63.0, 31.0);
++        if (pc.textureMode == 1u)
++        {
++            color.rgb = textureColor.rgb * textureColor.a +
++                color.rgb * (1.0 - textureColor.a);
++        }
++        else
++        {
++            color *= textureColor;
++        }
++    }
++
++    if (color.a < (30.5 / 31.0))
++        discard;
++
++    outColor = color;
++    gl_FragDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
++}

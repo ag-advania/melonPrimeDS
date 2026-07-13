@@ -1,9 +1,12 @@
 #version 450
 
 // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P3_V1
+// MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
 layout(set = 0, binding = 0) uniform sampler2DArray screenTexture;
 layout(set = 0, binding = 1) uniform sampler2D hudTexture;
 layout(set = 0, binding = 2) uniform sampler2DArray radarTexture;
+layout(set = 0, binding = 3) uniform sampler2D nativeHighResolution3D;
+layout(set = 0, binding = 4) uniform sampler2D nativeReference3D;
 
 layout(push_constant) uniform DirectPush
 {
@@ -34,6 +37,31 @@ const vec3 radarPalette[15] = vec3[15](
     vec3( 40.0, 216.0, 248.0),
     vec3(168.0, 168.0, 168.0));
 
+vec3 applyMasterBrightness(vec3 color, uint reg)
+{
+    uint mode = reg >> 14u;
+    float factor = float(min(reg & 0x1Fu, 16u)) / 16.0;
+    if (mode == 1u)
+        return mix(color, vec3(1.0), factor);
+    if (mode == 2u)
+        return color * (1.0 - factor);
+    return color;
+}
+
+vec3 quantizedNativeReference(vec3 color, uint reg)
+{
+    uvec3 color8 = uvec3(clamp(color, vec3(0.0), vec3(1.0)) * 255.0 + 0.5);
+    uvec3 color6 = (color8 * uvec3(63u) + uvec3(127u)) / uvec3(255u);
+    uint mode = reg >> 14u;
+    uint factor = min(reg & 0x1Fu, 16u);
+    if (mode == 1u)
+        color6 += ((uvec3(63u) - color6) * factor) >> 4u;
+    else if (mode == 2u)
+        color6 -= ((color6 * factor + uvec3(15u)) >> 4u);
+    uvec3 expanded = (color6 << 2u) | (color6 >> 4u);
+    return vec3(expanded) / 255.0;
+}
+
 void main()
 {
     uint mode = pc.params.x;
@@ -45,10 +73,30 @@ void main()
             texCoord * sourceScale,
             vec2(0.0),
             max(sourceScale - vec2(0.000001), vec2(0.0)));
-        vec4 pixel = texture(
-            screenTexture,
-            vec3(uv, float(pc.params.y)));
-        outColor = vec4(pixel.rgb, 1.0);
+        vec4 base = texture(screenTexture, vec3(uv, float(pc.params.y)));
+
+        // params.z is zero when native high-resolution raster is unavailable;
+        // otherwise it is EngineAScreen + 1. params.w is MasterBrightnessA.
+        if (pc.params.z != 0u && pc.params.y + 1u == pc.params.z)
+        {
+            vec4 high3D = texture(nativeHighResolution3D, texCoord);
+            vec4 low3D = texture(nativeReference3D, texCoord);
+            constexpr float opaqueThreshold = 30.5 / 31.0;
+            if (high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
+            {
+                vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
+                constexpr float tolerance = 2.0 / 255.0;
+                if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))))
+                {
+                    outColor = vec4(
+                        clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
+                        1.0);
+                    return;
+                }
+            }
+        }
+
+        outColor = vec4(base.rgb, 1.0);
         return;
     }
 
@@ -67,18 +115,13 @@ void main()
     if (distanceSquared > 1.0)
         discard;
 
-    float alpha =
-        pc.radar.w *
+    float alpha = pc.radar.w *
         (1.0 - smoothstep(0.95, 1.0, distanceSquared));
-    vec2 sourceUv =
-        pc.radar.xy +
-        centered *
+    vec2 sourceUv = pc.radar.xy + centered *
         vec2(pc.radar.z, pc.radar.z * (256.0 / 192.0));
     sourceUv *= sourceScale;
 
-    vec4 pixel = texture(
-        radarTexture,
-        vec3(sourceUv, float(pc.params.y)));
+    vec4 pixel = texture(radarTexture, vec3(sourceUv, float(pc.params.y)));
     vec3 quantized = round(pixel.rgb * 255.0);
 
     bool paletteMatch = false;

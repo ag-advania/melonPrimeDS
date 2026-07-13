@@ -158,9 +158,10 @@ bool VulkanRenderer::Init()
         static_cast<unsigned long long>(OutputGeneration));
     Platform::Log(
         Platform::LogLevel::Info,
-        "[MelonPrime] Vulkan native raster: "
-        "presenter_device=1 scaled_render_target=1 packed_geometry=1 "
-        "texture_cache=1 cpu_scale_squared_reconstruction=0\n");
+        "[MelonPrime] Vulkan compatibility performance: "
+        "androidstyle_frame_ring=1 slots=3 coverage_only=0 "
+        "hires_color_reconstruction=1 single_scaled_screen=1 "
+        "presenter_pixel_diff=0\n");
     return true;
 }
 
@@ -234,12 +235,8 @@ void VulkanRenderer::SwapBuffers()
     ++FrameSerial;
     if (FrameSerial == 0)
         ++FrameSerial;
-
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Do not build a scale-squared CPU compatibility image here. The Qt Vulkan
-    // presenter snapshots packed geometry and renders it on the GPU.
+    RebuildHighResolutionOutput();
 }
-
 
 void VulkanRenderer::OnRendered3DLine(u32 line, const u32* pixels) noexcept
 {
@@ -272,36 +269,220 @@ void VulkanRenderer::ClearHighResolutionOutput() noexcept
 
 void VulkanRenderer::RebuildHighResolutionOutput()
 {
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Phase 7's CPU scale-squared reconstruction is deliberately retired.
-    // High-resolution polygons are now rasterized by the presenter Vulkan
-    // device directly into a scaled GPU render target.
-    ClearHighResolutionOutput();
-}
+    {
+        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+        LatestCompatibilityFrameSerial = FrameSerial;
+        if (ScaleFactor <= 1)
+        {
+            PublishedCompatibilityFrame.reset();
+            return;
+        }
+    }
 
+    void* topPointer = nullptr;
+    void* bottomPointer = nullptr;
+    if (!SoftRenderer::GetFramebuffers(&topPointer, &bottomPointer) ||
+        !topPointer || !bottomPointer ||
+        Native3DFrame.size() != NativePixelCount)
+    {
+        ClearHighResolutionOutput();
+        return;
+    }
+
+    std::shared_ptr<VulkanCompatibilityFrame> frame;
+    std::size_t frameSlot = CompatibilityFrameSlotCount;
+    {
+        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+        for (std::size_t attempt = 0;
+             attempt < CompatibilityFrameSlotCount;
+             ++attempt)
+        {
+            const std::size_t candidate =
+                (NextCompatibilityFrameSlot + attempt) %
+                CompatibilityFrameSlotCount;
+            const auto& candidateFrame = CompatibilityFrames[candidate];
+            if (!CompatibilityFrameProducerBusy[candidate] &&
+                candidateFrame &&
+                candidateFrame.use_count() == 1)
+            {
+                frameSlot = candidate;
+                frame = candidateFrame;
+                CompatibilityFrameProducerBusy[candidate] = true;
+                NextCompatibilityFrameSlot =
+                    (candidate + 1) % CompatibilityFrameSlotCount;
+                break;
+            }
+        }
+
+        if (!frame)
+        {
+            ++DroppedCompatibilityFrames;
+            return;
+        }
+    }
+
+    const auto releaseProducerSlot = [&](bool publish)
+    {
+        std::lock_guard<std::mutex> lock(HighResolutionMutex);
+        CompatibilityFrameProducerBusy[frameSlot] = false;
+        if (publish)
+            PublishedCompatibilityFrame = frame;
+    };
+
+    try
+    {
+        const int requestedScale = std::clamp(ScaleFactor, 1, 16);
+        const int scale = ResolveCompatibilityScale(requestedScale);
+        const int engineAScreen = GPU.ScreenSwap ? 0 : 1;
+        const auto* topSource = static_cast<const u32*>(topPointer);
+        const auto* bottomSource = static_cast<const u32*>(bottomPointer);
+        const u32* engineASource =
+            engineAScreen == 0 ? topSource : bottomSource;
+
+        if (engineAScreen == 0)
+        {
+            FastNearestUpscale(topSource, scale, frame->Top);
+            frame->Bottom.assign(bottomSource, bottomSource + NativePixelCount);
+            frame->TopWidth = static_cast<int>(kNativeWidth) * scale;
+            frame->TopHeight = static_cast<int>(kNativeHeight) * scale;
+            frame->BottomWidth = static_cast<int>(kNativeWidth);
+            frame->BottomHeight = static_cast<int>(kNativeHeight);
+        }
+        else
+        {
+            frame->Top.assign(topSource, topSource + NativePixelCount);
+            FastNearestUpscale(bottomSource, scale, frame->Bottom);
+            frame->TopWidth = static_cast<int>(kNativeWidth);
+            frame->TopHeight = static_cast<int>(kNativeHeight);
+            frame->BottomWidth = static_cast<int>(kNativeWidth) * scale;
+            frame->BottomHeight = static_cast<int>(kNativeHeight) * scale;
+        }
+
+        const u16 brightness = GPU.MasterBrightnessA;
+        for (std::size_t index = 0; index < NativePixelCount; ++index)
+        {
+            const u32 native3D = Native3DFrame[index];
+            const bool opaque = ((native3D >> 24) & 0x1Fu) != 0;
+            const u32 expectedFinal = opaque
+                ? ExpandRgb6ToBgra(ApplyEngineABrightness(native3D, brightness))
+                : 0;
+            const u32 finalNative = engineASource[index];
+
+            Native3DBgra[index] = expectedFinal;
+            Native3DVisible[index] =
+                opaque &&
+                ((expectedFinal & 0x00FFFFFFu) ==
+                 (finalNative & 0x00FFFFFFu));
+        }
+
+        Vulkan::VulkanRomScaleSettings settings;
+        settings.ScaleFactor = scale;
+        settings.BetterPolygons = BetterPolygons;
+        settings.HiresCoordinates = HiresCoordinates;
+
+        // MELONPRIME_VULKAN_INTERNAL_RESOLUTION_VISIBLE_P7_V1
+        // Coverage-only mode produced a larger image but repeated the same
+        // native 3D color across every scale x scale block. Request the bridge's
+        // scale-dependent subpixel color plane so 2x-4x visibly changes 3D output.
+        settings.CoverageOnly = false;
+
+        Vulkan::VulkanRomScaleResult bridge;
+        if (!Vulkan::BuildVulkanRomScaleBridge(
+                GPU.GPU3D,
+                Native3DFrame.data(),
+                settings,
+                bridge) ||
+            !bridge.Valid ||
+            bridge.Width != static_cast<int>(kNativeWidth) * scale ||
+            bridge.Height != static_cast<int>(kNativeHeight) * scale ||
+            bridge.HighResolution3D.size() !=
+                static_cast<std::size_t>(bridge.Width) *
+                    static_cast<std::size_t>(bridge.Height) ||
+            bridge.Coverage.size() !=
+                static_cast<std::size_t>(bridge.Width) *
+                    static_cast<std::size_t>(bridge.Height))
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[MelonPrime] Vulkan high-resolution compatibility bridge failed: %s\n",
+                bridge.FailureReason.c_str());
+            releaseProducerSlot(false);
+            return;
+        }
+
+        std::vector<u32>& engineAOutput =
+            engineAScreen == 0 ? frame->Top : frame->Bottom;
+        const int outputWidth = bridge.Width;
+
+        for (int nativeY = 0;
+             nativeY < static_cast<int>(kNativeHeight);
+             ++nativeY)
+        {
+            for (int nativeX = 0;
+                 nativeX < static_cast<int>(kNativeWidth);
+                 ++nativeX)
+            {
+                const std::size_t nativeIndex =
+                    static_cast<std::size_t>(nativeY) * kNativeWidth + nativeX;
+                if (Native3DVisible[nativeIndex] == 0)
+                    continue;
+
+                const int firstX = nativeX * scale;
+                const int firstY = nativeY * scale;
+                for (int subY = 0; subY < scale; ++subY)
+                {
+                    const std::size_t row =
+                        static_cast<std::size_t>(firstY + subY) * outputWidth;
+                    const std::size_t first =
+                        row + static_cast<std::size_t>(firstX);
+                    for (int subX = 0; subX < scale; ++subX)
+                    {
+                        const std::size_t highIndex =
+                            first + static_cast<std::size_t>(subX);
+                        if (bridge.Coverage[highIndex] == 0)
+                            continue;
+
+                        const u32 highResolution3D =
+                            bridge.HighResolution3D[highIndex];
+                        if (((highResolution3D >> 24) & 0x1Fu) == 0)
+                            continue;
+
+                        engineAOutput[highIndex] = ExpandRgb6ToBgra(
+                            ApplyEngineABrightness(highResolution3D, brightness));
+                    }
+                }
+            }
+        }
+
+        frame->RequestedScale = requestedScale;
+        frame->BuiltScale = scale;
+        frame->EngineAScreen = engineAScreen;
+        frame->FrameSerial = FrameSerial;
+    }
+    catch (const std::bad_alloc&)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[MelonPrime] Vulkan compatibility allocation failed; "
+            "using native output for this frame\n");
+        releaseProducerSlot(false);
+        return;
+    }
+
+    releaseProducerSlot(true);
+}
 
 std::shared_ptr<const VulkanCompatibilityFrame>
 VulkanRenderer::AcquireCompatibilityFrame() const
 {
-    // Native presenter raster owns ScaleFactor > 1 output. Returning no CPU
-    // compatibility frame also guarantees copyHighResolutionScreens() cannot
-    // silently reactivate the rejected bilinear reconstruction.
-    return {};
-}
-
-
-
-bool VulkanRenderer::CopyNative3DForPresenter(
-    std::vector<u32>& output) const
-{
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    if (Native3DFrame.size() != NativePixelCount)
+    std::lock_guard<std::mutex> lock(HighResolutionMutex);
+    if (!PublishedCompatibilityFrame ||
+        PublishedCompatibilityFrame->FrameSerial !=
+            LatestCompatibilityFrameSerial)
     {
-        output.clear();
-        return false;
+        return {};
     }
-    output.assign(Native3DFrame.begin(), Native3DFrame.end());
-    return true;
+    return PublishedCompatibilityFrame;
 }
 
 RendererOutput VulkanRenderer::GetOutput()

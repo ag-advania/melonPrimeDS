@@ -140,13 +140,6 @@ public:
         return OutputGeneration;
     }
 
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Called while EmuInstance::renderLock is held. This copies the native
-    // software-correctness 3D plane used only as the ownership reference for
-    // GPU-resident high-resolution Vulkan composition.
-    [[nodiscard]] bool CopyNative3DForPresenter(
-        std::vector<u32>& output) const;
-
 private:
     void AdvanceOutputGeneration() noexcept;
     void RebuildHighResolutionOutput();

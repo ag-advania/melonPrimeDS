@@ -376,8 +376,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanClearPlaneBootstrap.h
         MelonPrimeVulkanRasterBootstrap.cpp
         MelonPrimeVulkanRasterBootstrap.h
-        MelonPrimeVulkanNativeRaster.cpp
-        MelonPrimeVulkanNativeRaster.h
         MelonPrimeScreenVulkan.cpp
         MelonPrimeScreenVulkan.h)
     # MinGW LTO can discard the QWindow/QSurface adjustment thunk emitted by

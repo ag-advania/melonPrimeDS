@@ -5,7 +5,6 @@
 #endif
 
 #include "Screen.h"
-#include "MelonPrimeVulkanNativeRaster.h"
 
 #include <array>
 #include <atomic>
@@ -26,9 +25,6 @@ class Phase13RuntimeState;
 struct VulkanDirectFrameSnapshot
 {
     std::array<QImage, 2> Screens;
-
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    MelonPrime::Vulkan::NativeRasterFrame NativeRaster;
 
     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P6_FRAME_IDENTITY_V1
     // Exact producer identity. Zero disables transfer reuse conservatively.
@@ -83,8 +79,6 @@ private:
     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
     // Reuse native snapshots instead of allocating two QImages every present.
     std::array<QImage, 2> m_directNativeScreens;
-    std::unique_ptr<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>
-        m_nativeRasterBuilder;
     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;
     std::atomic<bool> m_phase13PresentPending{false};
     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};

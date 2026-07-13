@@ -1,5 +1,4 @@
 #include "MelonPrimeScreenVulkan.h"
-#include "MelonPrimeVulkanNativeRaster.h"
 
 #include <QVulkanDeviceFunctions>
 #include <QVulkanFunctions>
@@ -211,10 +210,6 @@ private:
         m_directDescriptorScreenSamplers{};
     std::array<bool, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
         m_directDescriptorInitialized{};
-
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    std::unique_ptr<MelonPrime::Vulkan::NativeRasterGpu>
-        m_nativeRasterGpu;
 
     bool m_ready = false;
 };
@@ -482,7 +477,7 @@ bool PresenterRenderer::createStaticResources()
 
 bool PresenterRenderer::createDirectStaticResources()
 {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[0].descriptorCount = 1;
@@ -491,10 +486,6 @@ bool PresenterRenderer::createDirectStaticResources()
     bindings[1].binding = 1;
     bindings[2] = bindings[0];
     bindings[2].binding = 2;
-    bindings[3] = bindings[0];
-    bindings[3].binding = 3;
-    bindings[4] = bindings[0];
-    bindings[4].binding = 4;
 
     VkDescriptorSetLayoutCreateInfo descriptorInfo{
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -888,7 +879,7 @@ bool PresenterRenderer::createDirectResources(
     {
         VkDescriptorPoolSize poolSize{
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            static_cast<std::uint32_t>(m_directFrameCount * 5)};
+            static_cast<std::uint32_t>(m_directFrameCount * 3)};
         VkDescriptorPoolCreateInfo poolInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.maxSets =
@@ -1173,23 +1164,6 @@ bool PresenterRenderer::renderDirectFrame(
     VkCommandBuffer command =
         m_window->currentCommandBuffer();
 
-    MelonPrime::Vulkan::NativeRasterViews nativeViews;
-    if (!m_nativeRasterGpu)
-    {
-        m_nativeRasterGpu =
-            std::make_unique<MelonPrime::Vulkan::NativeRasterGpu>();
-    }
-    if (!m_nativeRasterGpu->Render(
-            m_window,
-            m_df,
-            command,
-            slot,
-            snapshot.NativeRaster,
-            nativeViews))
-    {
-        nativeViews = {};
-    }
-
     if (screenUploadRequired)
     {
     VkImageMemoryBarrier screenToTransfer{
@@ -1408,56 +1382,56 @@ bool PresenterRenderer::renderDirectFrame(
         : m_nearestSampler;
     VkDescriptorImageInfo screenInfo{};
     screenInfo.sampler = desiredScreenSampler;
-    screenInfo.imageView = m_directScreenViews[slot];
-    screenInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    screenInfo.imageView =
+        m_directScreenViews[slot];
+    screenInfo.imageLayout =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkDescriptorImageInfo overlayInfo{};
     overlayInfo.sampler = m_linearSampler;
-    overlayInfo.imageView = m_directOverlayViews[slot];
-    overlayInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    overlayInfo.imageView =
+        m_directOverlayViews[slot];
+    overlayInfo.imageLayout =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkDescriptorImageInfo radarInfo = screenInfo;
     radarInfo.sampler = m_linearSampler;
 
-    VkDescriptorImageInfo nativeHighInfo{};
-    nativeHighInfo.sampler = nativeViews.Valid
-        ? nativeViews.Sampler : m_nearestSampler;
-    nativeHighInfo.imageView = nativeViews.Valid
-        ? nativeViews.HighResolution : m_directOverlayViews[slot];
-    nativeHighInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkDescriptorImageInfo nativeReferenceInfo{};
-    nativeReferenceInfo.sampler = nativeViews.Valid
-        ? nativeViews.Sampler : m_nearestSampler;
-    nativeReferenceInfo.imageView = nativeViews.Valid
-        ? nativeViews.NativeReference : m_directOverlayViews[slot];
-    nativeReferenceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    std::array<VkWriteDescriptorSet, 5> writes{};
-    const VkDescriptorImageInfo* infos[] = {
-        &screenInfo,
-        &overlayInfo,
-        &radarInfo,
-        &nativeHighInfo,
-        &nativeReferenceInfo};
-    for (std::uint32_t binding = 0; binding < writes.size(); ++binding)
+    const bool descriptorUpdateRequired =
+        !m_directDescriptorInitialized[slot] ||
+        m_directDescriptorScreenSamplers[slot] !=
+            desiredScreenSampler;
+    if (descriptorUpdateRequired)
     {
-        writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[binding].dstSet = m_directDescriptorSets[slot];
-        writes[binding].dstBinding = binding;
-        writes[binding].descriptorCount = 1;
-        writes[binding].descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[binding].pImageInfo = infos[binding];
+        std::array<VkWriteDescriptorSet, 3> writes{};
+        const VkDescriptorImageInfo* infos[] = {
+            &screenInfo,
+            &overlayInfo,
+            &radarInfo};
+        for (std::uint32_t binding = 0;
+             binding < writes.size();
+             ++binding)
+        {
+            writes[binding].sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[binding].dstSet =
+                m_directDescriptorSets[slot];
+            writes[binding].dstBinding = binding;
+            writes[binding].descriptorCount = 1;
+            writes[binding].descriptorType =
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[binding].pImageInfo = infos[binding];
+        }
+        m_df->vkUpdateDescriptorSets(
+            m_device,
+            static_cast<std::uint32_t>(writes.size()),
+            writes.data(),
+            0,
+            nullptr);
+        m_directDescriptorScreenSamplers[slot] =
+            desiredScreenSampler;
+        m_directDescriptorInitialized[slot] = true;
     }
-    m_df->vkUpdateDescriptorSets(
-        m_device,
-        static_cast<std::uint32_t>(writes.size()),
-        writes.data(),
-        0,
-        nullptr);
-    m_directDescriptorScreenSamplers[slot] = desiredScreenSampler;
-    m_directDescriptorInitialized[slot] = true;
 
     const QSize swapSize =
         m_window->swapChainImageSize();
@@ -1543,16 +1517,7 @@ bool PresenterRenderer::renderDirectFrame(
                 sourceScaleX,
                 sourceScaleY};
             push.Radar = radar;
-            push.Params = {
-                mode,
-                layer,
-                nativeViews.Valid
-                    ? snapshot.NativeRaster.EngineAScreen + 1u
-                    : 0u,
-                nativeViews.Valid
-                    ? static_cast<std::uint32_t>(
-                        snapshot.NativeRaster.MasterBrightnessA)
-                    : 0u};
+            push.Params = {mode, layer, 0, 0};
 
             m_df->vkCmdPushConstants(
                 command,
@@ -1927,11 +1892,6 @@ void PresenterRenderer::releaseResources()
 {
     if (m_df && m_device)
         m_df->vkDeviceWaitIdle(m_device);
-    if (m_nativeRasterGpu)
-    {
-        m_nativeRasterGpu->Release();
-        m_nativeRasterGpu.reset();
-    }
     destroyDirectResources();
     destroyFrameResources();
     destroyStaticResources();
@@ -2385,52 +2345,68 @@ bool ScreenPanelVulkan::prepareDirectFrameForVulkan(
 
     QMutexLocker renderLocker(&emuInstance->renderLock);
 
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Always upload the compact native 2D/final frame. ScaleFactor > 1 is
-    // handled by NativeRasterGpu and never by a CPU-upscaled QImage.
-    auto* nds = emuInstance->getNDS();
-    melonDS::RendererOutputLease outputLease =
-        nds->GPU.AcquireRendererOutputLease();
-    const melonDS::RendererOutput& output = outputLease.Output;
-    if (output.Kind != melonDS::RendererOutputKind::CpuBgra ||
-        !output.Top || !output.Bottom)
+    QImage highResolution[2];
+    if (copyHighResolutionScreens(
+            highResolution[0],
+            highResolution[1]))
     {
-        return false;
-    }
+        snapshot.Screens[0] = highResolution[0];
+        snapshot.Screens[1] = highResolution[1];
 
-    snapshot.FrameSerial = output.FrameSerial;
-    snapshot.Generation = output.Generation;
-    constexpr std::size_t nativeBytes =
-        256u * 192u * sizeof(melonDS::u32);
-    const void* nativeSources[2] = {output.Top, output.Bottom};
-    for (int index = 0; index < 2; ++index)
-    {
-        QImage& image = m_directNativeScreens[index];
-        if (image.size() != QSize(256, 192) ||
-            image.format() != QImage::Format_RGB32)
+        const auto* renderer =
+            dynamic_cast<const melonDS::VulkanRenderer*>(
+                &emuInstance->getNDS()->GPU.GetRenderer());
+        if (renderer)
         {
-            image = QImage(256, 192, QImage::Format_RGB32);
+            const auto frame =
+                renderer->AcquireCompatibilityFrame();
+            if (frame)
+            {
+                snapshot.FrameSerial = frame->FrameSerial;
+                snapshot.Generation =
+                    renderer->GetOutputGenerationForDiagnostics();
+            }
         }
-        if (image.isNull())
+    }
+    else
+    {
+        auto* nds = emuInstance->getNDS();
+        melonDS::RendererOutputLease outputLease =
+            nds->GPU.AcquireRendererOutputLease();
+        const melonDS::RendererOutput& output =
+            outputLease.Output;
+        if (output.Kind !=
+                melonDS::RendererOutputKind::CpuBgra ||
+            !output.Top ||
+            !output.Bottom)
+        {
             return false;
-        std::memcpy(image.bits(), nativeSources[index], nativeBytes);
-        snapshot.Screens[index] = image;
-    }
-
-    const auto* vulkanRenderer =
-        dynamic_cast<const melonDS::VulkanRenderer*>(
-            &nds->GPU.GetRenderer());
-    if (vulkanRenderer && vulkanRenderer->GetRecordedScaleFactor() > 1)
-    {
-        if (!m_nativeRasterBuilder)
-        {
-            m_nativeRasterBuilder =
-                std::make_unique<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
         }
-        if (!m_nativeRasterBuilder->Build(
-                *vulkanRenderer, nds->GPU, snapshot.NativeRaster))
+
+        snapshot.FrameSerial = output.FrameSerial;
+        snapshot.Generation = output.Generation;
+
+        constexpr std::size_t nativeBytes =
+            256u * 192u * sizeof(melonDS::u32);
+        const void* nativeSources[2] = {
+            output.Top,
+            output.Bottom};
+        for (int index = 0; index < 2; ++index)
         {
-            snapshot.NativeRaster.Clear();
+            QImage& image = m_directNativeScreens[index];
+            if (image.size() != QSize(256, 192) ||
+                image.format() != QImage::Format_RGB32)
+            {
+                image = QImage(256, 192, QImage::Format_RGB32);
+            }
+            if (image.isNull())
+                return false;
+
+            std::memcpy(
+                image.bits(),
+                nativeSources[index],
+                nativeBytes);
+            snapshot.Screens[index] = image;
         }
     }
 

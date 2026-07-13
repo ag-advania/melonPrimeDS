@@ -374,30 +374,6 @@
           "defines": {}
         }
       ]
-    },
-    {
-      "name": "VulkanPhase14NativeRasterVertex",
-      "source": "phase14_native_raster.vert",
-      "stage": "vert",
-      "entry_point": "main",
-      "variants": [
-        {
-          "name": "default",
-          "defines": {}
-        }
-      ]
-    },
-    {
-      "name": "VulkanPhase14NativeRasterFragment",
-      "source": "phase14_native_raster.frag",
-      "stage": "frag",
-      "entry_point": "main",
-      "variants": [
-        {
-          "name": "default",
-          "defines": {}
-        }
-      ]
     }
   ]
 }
