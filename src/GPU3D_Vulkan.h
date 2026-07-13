@@ -196,6 +196,7 @@ struct VulkanRasterBuildOptions
 {
     int ScaleFactor = 1;
     bool BetterPolygons = false;
+    float PassiveRepeatCoveragePixels = 0.0f;
     const std::uint32_t* TextureLayers = nullptr;
     std::size_t TextureLayerCount = 0;
 };

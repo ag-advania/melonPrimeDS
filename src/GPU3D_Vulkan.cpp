@@ -502,6 +502,8 @@ bool BuildVulkanAcceleratedRasterUpload(
     config.UseHiresCoordinates = true;
     config.MaxFixedX = (256 * options.ScaleFactor * 16) - 1;
     config.MaxFixedY = (192 * options.ScaleFactor * 16) - 1;
+    config.CoverageFix.PassiveRepeatPx =
+        std::max(options.PassiveRepeatCoveragePixels, 0.0f);
 
     AcceleratedScene scene;
     BuildAcceleratedScene(gpu3D, config, scene);

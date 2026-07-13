@@ -617,6 +617,10 @@ bool NativeRasterSnapshotBuilder::Build(
     melonDS::Vulkan::VulkanRasterBuildOptions options;
     options.ScaleFactor = scale;
     options.BetterPolygons = renderer.GetRecordedBetterPolygons();
+    // Sapphire keeps a small passive expansion on repeat-textured polygons.
+    // Without it, subpixel high-resolution coordinates expose cracks between
+    // floor and wall triangles even when the optional user coverage fix is off.
+    options.PassiveRepeatCoveragePixels = 0.2f;
     options.TextureLayers = textureLayers.data();
     options.TextureLayerCount = textureLayers.size();
     std::string failure;
