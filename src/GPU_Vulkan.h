@@ -8,6 +8,9 @@
 
 #include "GPU_Soft.h"
 
+#include <mutex>
+#include <vector>
+
 namespace melonDS
 {
 
@@ -61,6 +64,8 @@ struct VulkanRendererShellContract
     bool NativeVulkanPhase13DeviceLossFallbackComplete = true;
     bool NativeVulkanPhase13PipelineCacheComplete = true;
     bool NativeVulkanPhase13StabilityComplete = true;
+    bool NativeVulkanRomScaleCompatibilityBridge = true;
+    bool NativeVulkanCursorContainerSync = true;
     bool NativeVulkan3DImplemented = false;
     u32 ContractVersion = 24;
 };
@@ -88,9 +93,17 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    void DrawScanline(u32 line) override;
     void SwapBuffers() override;
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
+
+    bool CopyHighResolutionFramebuffers(
+        std::vector<u32>& top,
+        std::vector<u32>& bottom,
+        int& width,
+        int& height,
+        u64& frameSerial) const;
 
     [[nodiscard]] bool IsComputeRendererSelected() const noexcept
     {
@@ -114,10 +127,23 @@ public:
 
 private:
     void AdvanceOutputGeneration() noexcept;
+    void RebuildHighResolutionOutput();
+    void ClearHighResolutionOutput() noexcept;
+    void OnRendered3DLine(u32 line, const u32* pixels) noexcept override;
 
     bool ComputeRendererSelected = false;
     bool Initialized = false;
     int ScaleFactor = 1;
+    bool BetterPolygons = false;
+    bool HiresCoordinates = false;
+    std::vector<u32> Native3DFrame;
+    mutable std::mutex HighResolutionMutex;
+    std::vector<u32> HighResolutionTop;
+    std::vector<u32> HighResolutionBottom;
+    int HighResolutionWidth = 0;
+    int HighResolutionHeight = 0;
+    u64 HighResolutionFrameSerial = 0;
+    bool HighResolutionValid = false;
     u64 FrameSerial = 0;
     u64 OutputGeneration = 1;
 };

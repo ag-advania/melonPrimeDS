@@ -37,8 +37,11 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool copyHighResolutionScreens(QImage& top, QImage& bottom) const override;
 
 private:
+    void syncVulkanCursor();
+
     QVulkanWindow* m_vulkanWindow = nullptr;
     QWidget* m_windowContainer = nullptr;
     QImage m_compositeFrame;
@@ -46,4 +49,5 @@ private:
     std::atomic<bool> m_phase13PresentPending{false};
     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
     std::atomic<std::uint64_t> m_phase13CompletedSerial{0};
+    int m_lastVulkanCursorShape = -1;
 };

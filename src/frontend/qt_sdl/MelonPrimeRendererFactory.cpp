@@ -52,24 +52,25 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
     case renderer3D_Vulkan:
     {
         const auto contract = melonDS::DescribeVulkanRendererShell(false);
-        if (!contract.NativeVulkanRomIntegrationImplemented || !contract.NativeVulkan3DImplemented)
+        // MELONPRIME_VULKAN_ROM_SCALE_FACTORY_V1
+        if (!contract.NativeVulkanRomScaleCompatibilityBridge)
         {
             report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan ROM-visible acceptance gate";
+            report.failedStage = "Vulkan ROM-visible compatibility bridge";
             report.fallbackReason =
-                "Vulkan raster was requested, but ROM-visible pixel-parity acceptance is incomplete; the Vulkan shell keeps the Software correctness baseline";
+                "Vulkan raster was requested, but the ROM-visible compatibility bridge is unavailable";
         }
         return std::make_unique<melonDS::VulkanRenderer>(nds, false);
     }
     case renderer3D_VulkanCompute:
     {
         const auto contract = melonDS::DescribeVulkanRendererShell(true);
-        if (!contract.NativeVulkanRomIntegrationImplemented || !contract.NativeVulkanComputeRomVisible)
+        if (!contract.NativeVulkanRomScaleCompatibilityBridge)
         {
             report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan Compute ROM-visible acceptance gate";
+            report.failedStage = "Vulkan Compute ROM-visible compatibility bridge";
             report.fallbackReason =
-                "Vulkan Compute was requested, but ROM-visible pixel-parity acceptance is incomplete; the Vulkan shell keeps the Software correctness baseline";
+                "Vulkan Compute was requested, but the ROM-visible compatibility bridge is unavailable";
         }
         return std::make_unique<melonDS::VulkanRenderer>(nds, true);
     }

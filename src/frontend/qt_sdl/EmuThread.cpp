@@ -1293,11 +1293,33 @@ void EmuThread::updateRenderer()
         lastVideoRenderer = report.normalized;
     }
 
+    // MELONPRIME_VULKAN_HARDWARE_SETTINGS_READ_V1
+    const int selectedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+        cfg.GetInt("3D.Renderer"));
+    const bool sharedHardwareSettings =
+#if defined(MELONPRIME_ENABLE_METAL)
+        selectedRenderer == renderer3D_Metal ||
+        selectedRenderer == renderer3D_MetalCompute ||
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        selectedRenderer == renderer3D_Vulkan ||
+        selectedRenderer == renderer3D_VulkanCompute ||
+#endif
+        false;
+    const int scaleFactor = sharedHardwareSettings && cfg.HasKey("3D.Hardware.ScaleFactor")
+        ? cfg.GetInt("3D.Hardware.ScaleFactor")
+        : cfg.GetInt("3D.GL.ScaleFactor");
+    const bool hiresCoordinates = sharedHardwareSettings && cfg.HasKey("3D.Hardware.HiresCoordinates")
+        ? cfg.GetBool("3D.Hardware.HiresCoordinates")
+        : cfg.GetBool("3D.GL.HiresCoordinates");
+    const bool betterPolygons = sharedHardwareSettings && cfg.HasKey("3D.Hardware.BetterPolygons")
+        ? cfg.GetBool("3D.Hardware.BetterPolygons")
+        : cfg.GetBool("3D.GL.BetterPolygons");
     melonDS::RendererSettings settings = {
-        .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
+        .ScaleFactor = scaleFactor,
         .Threaded = cfg.GetBool("3D.Soft.Threaded"),
-        .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
-        .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
+        .HiresCoordinates = hiresCoordinates,
+        .BetterPolygons = betterPolygons
     };
     nds->GetRenderer().SetRenderSettings(settings);
 

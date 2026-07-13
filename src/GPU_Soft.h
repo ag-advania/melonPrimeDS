@@ -51,6 +51,13 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
+protected:
+    virtual void OnRendered3DLine(u32 line, const u32* pixels) noexcept
+    {
+        (void)line;
+        (void)pixels;
+    }
+
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;

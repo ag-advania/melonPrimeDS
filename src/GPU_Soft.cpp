@@ -113,6 +113,7 @@ void SoftRenderer::DrawScanline(u32 line)
     {
         // retrieve 3D output
         Output3D = Rend3D->GetLine(line);
+        OnRendered3DLine(line, Output3D);
 
         // draw BG/OBJ layers
         Rend2D_A->DrawScanline(line);

@@ -154,11 +154,14 @@ VulkanRendererOptionMatrix BuildVulkanRendererOptionMatrix(
         result.HiresCoordinates = true;
         break;
     case kPhase12RendererVulkanRaster:
+        // MELONPRIME_VULKAN_RUNTIME_OPTION_CONTRACT_V1
         result.InternalResolution = true;
         result.BetterPolygons = true;
+        result.HiresCoordinates = true;
         break;
     case kPhase12RendererVulkanCompute:
         result.InternalResolution = true;
+        result.BetterPolygons = true;
         result.HiresCoordinates = true;
         break;
     default:

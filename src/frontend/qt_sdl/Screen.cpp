@@ -1522,6 +1522,14 @@ void ScreenPanelNative::drawScreen()
     bufferLock.unlock();
 }
 
+
+bool ScreenPanelNative::copyHighResolutionScreens(QImage& top, QImage& bottom) const
+{
+    (void)top;
+    (void)bottom;
+    return false;
+}
+
 void ScreenPanelNative::paintEvent(QPaintEvent * event)
 {
     QPainter painter(this);
@@ -1539,8 +1547,11 @@ void ScreenPanelNative::paintFrame(QPainter& painter, const QRect& updateRect)
     {
         emuInstance->renderLock.lock();
 
+        QImage highResolutionScreen[2];
+        const bool hasHighResolution =
+            copyHighResolutionScreens(highResolutionScreen[0], highResolutionScreen[1]);
         bufferLock.lock();
-        if (hasBuffers)
+        if (!hasHighResolution && hasBuffers)
         {
             memcpy(screen[0].scanLine(0), topBuffer, 256 * 192 * 4);
             memcpy(screen[1].scanLine(0), bottomBuffer, 256 * 192 * 4);
@@ -1552,7 +1563,8 @@ void ScreenPanelNative::paintFrame(QPainter& painter, const QRect& updateRect)
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
-            painter.drawImage(screenrc, screen[screenKind[i]]);
+            painter.drawImage(screenrc,
+                hasHighResolution ? highResolutionScreen[screenKind[i]] : screen[screenKind[i]]);
         }
 
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"

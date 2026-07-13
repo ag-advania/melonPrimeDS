@@ -4,6 +4,7 @@
 #include <QVulkanFunctions>
 #include <QVulkanWindow>
 #include <QApplication>
+#include <QCursor>
 #include <QMetaObject>
 #include <QPainter>
 #include <QResizeEvent>
@@ -17,6 +18,7 @@
 #include "MelonPrimeVulkanInstanceHost.h"
 #include "MelonPrimeVulkanPhase13Runtime.h"
 #include "EmuInstance.h"
+#include "GPU_Vulkan.h"
 #include "Window.h"
 #include "Platform.h"
 #include "main.h"
@@ -844,6 +846,7 @@ bool ScreenPanelVulkan::initVulkan()
     m_windowContainer->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_windowContainer->setGeometry(rect());
     m_windowContainer->show();
+    syncVulkanCursor();
     window->requestUpdate();
     return true;
 }
@@ -864,6 +867,7 @@ bool ScreenPanelVulkan::captureVulkanFrame(const QString& outputPath)
 void ScreenPanelVulkan::drawScreen()
 {
     ScreenPanelNative::drawScreen();
+    syncVulkanCursor();
     if (!m_vulkanWindow || !m_phase13Runtime || m_phase13Runtime->DeviceLost())
         return;
 
@@ -923,6 +927,54 @@ void ScreenPanelVulkan::phase13NotifyDeviceLoss(const char* stage, int result)
     }, Qt::QueuedConnection);
 }
 
+
+// MELONPRIME_VULKAN_RUNTIME_OPTIONS_CURSOR_FIX_V1
+void ScreenPanelVulkan::syncVulkanCursor()
+{
+    const QCursor desired = cursor();
+    const int shape = static_cast<int>(desired.shape());
+    if (shape == m_lastVulkanCursorShape)
+        return;
+    m_lastVulkanCursorShape = shape;
+    if (m_windowContainer)
+        m_windowContainer->setCursor(desired);
+    if (m_vulkanWindow)
+        m_vulkanWindow->setCursor(desired);
+}
+
+bool ScreenPanelVulkan::copyHighResolutionScreens(QImage& top, QImage& bottom) const
+{
+    if (!emuInstance || !emuInstance->getNDS())
+        return false;
+    const auto* renderer = dynamic_cast<const melonDS::VulkanRenderer*>(
+        &emuInstance->getNDS()->GPU.GetRenderer());
+    if (!renderer)
+        return false;
+
+    std::vector<melonDS::u32> topPixels;
+    std::vector<melonDS::u32> bottomPixels;
+    int width = 0;
+    int height = 0;
+    melonDS::u64 frameSerial = 0;
+    if (!renderer->CopyHighResolutionFramebuffers(
+            topPixels, bottomPixels, width, height, frameSerial) ||
+        width <= 0 || height <= 0)
+        return false;
+    const std::size_t expected = static_cast<std::size_t>(width) * height;
+    if (topPixels.size() != expected || bottomPixels.size() != expected)
+        return false;
+
+    top = QImage(width, height, QImage::Format_RGB32);
+    bottom = QImage(width, height, QImage::Format_RGB32);
+    if (top.isNull() || bottom.isNull())
+        return false;
+    const std::size_t bytes = expected * sizeof(melonDS::u32);
+    std::memcpy(top.bits(), topPixels.data(), bytes);
+    std::memcpy(bottom.bits(), bottomPixels.data(), bytes);
+    (void)frameSerial;
+    return true;
+}
+
 const QImage& ScreenPanelVulkan::composeFrameForVulkan()
 {
     const QSize wanted = size().expandedTo(QSize(1, 1));
@@ -939,6 +991,7 @@ const QImage& ScreenPanelVulkan::composeFrameForVulkan()
 void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
 {
     (void)event;
+    syncVulkanCursor();
     if (m_vulkanWindow)
         m_vulkanWindow->requestUpdate();
 }
@@ -948,4 +1001,5 @@ void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
     ScreenPanelNative::resizeEvent(event);
     if (m_windowContainer)
         m_windowContainer->setGeometry(rect());
+    syncVulkanCursor();
 }

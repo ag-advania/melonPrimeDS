@@ -231,6 +231,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         Vulkan_Phase12UiContract.h
         Vulkan_Phase13Stability.cpp
         Vulkan_Phase13Stability.h
+        Vulkan_RomScaleBridge.cpp
+        Vulkan_RomScaleBridge.h
         VulkanSupport.cpp
         VulkanSupport.h
         ${_mp_vk_shader_outputs})

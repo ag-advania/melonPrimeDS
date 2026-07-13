@@ -104,14 +104,14 @@ void VideoSettingsDialog::setEnabled()
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
-    // BetterPolygons is implemented by classic OpenGL and both visible Metal
-    // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRasterRenderer);
+    // MELONPRIME_VULKAN_RUNTIME_OPTION_MATRIX_V1
+    // Both Vulkan selections feed the same visible ROM-scale geometry bridge,
+    // therefore both geometry switches are active for Raster and Compute.
+    ui->cbBetterPolygons->setEnabled(
+        openGLRenderer || metalRenderer || vulkanRenderer);
 
-    // OpenGL Compute uses this directly. Metal and Metal Compute now forward
-    // it to the visible Metal raster path; Metal Compute also keeps its hidden
-    // compute mirror in the same coordinate mode.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || vulkanComputeRenderer);
+    ui->cbxComputeHiResCoords->setEnabled(
+        computeRenderer || metalRenderer || vulkanRenderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)

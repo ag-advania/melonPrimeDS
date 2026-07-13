@@ -334,6 +334,7 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void paintFrame(QPainter& painter, const QRect& updateRect);
+    virtual bool copyHighResolutionScreens(QImage& top, QImage& bottom) const;
 
 private:
     void setupScreenLayout() override;
