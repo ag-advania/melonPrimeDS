@@ -1558,19 +1558,6 @@ void ScreenPanelNative::paintFrame(QPainter& painter, const QRect& updateRect)
         }
         bufferLock.unlock();
 
-#ifdef MELONPRIME_CUSTOM_HUD
-        // MELONPRIME_VULKAN_RADAR_FRAME_SOURCE_V1
-        // The Vulkan path can draw high-resolution screen snapshots without
-        // refreshing screen[0]/screen[1]. Keep the radar crop on the exact same
-        // bottom-screen snapshot that is being displayed in this paint pass.
-        const QImage& hudRadarSource =
-            hasHighResolution ? highResolutionScreen[1] : screen[1];
-        const qreal hudRadarSourceScaleX =
-            static_cast<qreal>(hudRadarSource.width()) / 256.0;
-        const qreal hudRadarSourceScaleY =
-            static_cast<qreal>(hudRadarSource.height()) / 192.0;
-#endif
-
         QRect screenrc(0, 0, 256, 192);
 
         for (int i = 0; i < numScreens; i++)

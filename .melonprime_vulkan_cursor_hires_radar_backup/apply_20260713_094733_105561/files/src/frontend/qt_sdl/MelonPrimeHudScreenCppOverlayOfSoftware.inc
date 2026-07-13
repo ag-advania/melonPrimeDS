@@ -72,15 +72,11 @@
             const QPointF sourceCenter(
                 MelonPrime::kBtmOverlaySrcCenterX,
                 MelonPrime::kBtmOverlaySrcCenterY[hunterId]);
-            // MELONPRIME_VULKAN_RADAR_FRAME_SOURCE_V1
-            // Source coordinates are authored in native 256x192 DS pixels.
-            // Scale them when the displayed Vulkan compatibility frame is 2x+
-            // so the crop remains on the same radar region.
             const QRectF sourceRect(
-                (sourceCenter.x() - m_radarSrcRadius) * hudRadarSourceScaleX,
-                (sourceCenter.y() - m_radarSrcRadius) * hudRadarSourceScaleY,
-                m_radarSrcRadius * 2.0 * hudRadarSourceScaleX,
-                m_radarSrcRadius * 2.0 * hudRadarSourceScaleY);
+                sourceCenter.x() - m_radarSrcRadius,
+                sourceCenter.y() - m_radarSrcRadius,
+                m_radarSrcRadius * 2.0,
+                m_radarSrcRadius * 2.0);
             const QRectF destination(dstX, dstY, dstPixels, dstPixels);
 
             painter.save();
@@ -90,7 +86,7 @@
             QPainterPath clip;
             clip.addEllipse(destination);
             painter.setClipPath(clip);
-            painter.drawImage(destination, hudRadarSource, sourceRect);
+            painter.drawImage(destination, screen[1], sourceRect);
             painter.restore();
         }
     }

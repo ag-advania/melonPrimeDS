@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <memory>
 
-class QEvent;
 class QPaintEvent;
 class QResizeEvent;
 class QVulkanWindow;
@@ -36,7 +35,6 @@ public:
     void phase13NotifyDeviceLoss(const char* stage, int result);
 
 protected:
-    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool copyHighResolutionScreens(QImage& top, QImage& bottom) const override;
@@ -51,9 +49,5 @@ private:
     std::atomic<bool> m_phase13PresentPending{false};
     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
     std::atomic<std::uint64_t> m_phase13CompletedSerial{0};
-
-    // MELONPRIME_VULKAN_CURSOR_CHILD_SYNC_V2
-    // drawScreen() runs on EmuThread, while QWindow/QWidget cursor mutations
-    // belong to the GUI thread. Coalesce cross-thread synchronization requests.
-    std::atomic<bool> m_vulkanCursorSyncQueued{false};
+    int m_lastVulkanCursorShape = -1;
 };

@@ -134,73 +134,6 @@ void RasterizeLine(
     }
 }
 
-// MELONPRIME_VULKAN_COMPAT_HIRES_SAMPLE_V1
-// The current ROM-visible Vulkan path is a Software-correctness compatibility
-// bridge, not the final native Vulkan rasterizer. Preserve its safety mask, but
-// sample the captured RGB6 3D plane at subpixel centers so ScaleFactor > 1
-// produces a genuinely scale-dependent 3D image instead of writing the same
-// nearest native color into every high-resolution subpixel.
-u32 SampleNative3DBilinear(
-    const u32* source,
-    float sourceX,
-    float sourceY,
-    int fallbackX,
-    int fallbackY) noexcept
-{
-    sourceX = std::clamp(sourceX, 0.0f, 255.0f);
-    sourceY = std::clamp(sourceY, 0.0f, 191.0f);
-
-    const int x0 = static_cast<int>(std::floor(sourceX));
-    const int y0 = static_cast<int>(std::floor(sourceY));
-    const int x1 = std::min(255, x0 + 1);
-    const int y1 = std::min(191, y0 + 1);
-    const float fx = sourceX - static_cast<float>(x0);
-    const float fy = sourceY - static_cast<float>(y0);
-
-    float totalWeight = 0.0f;
-    float red = 0.0f;
-    float green = 0.0f;
-    float blue = 0.0f;
-
-    const auto accumulate = [&](int x, int y, float weight)
-    {
-        if (weight <= 0.0f)
-            return;
-        const u32 pixel = source[static_cast<std::size_t>(y) * 256u + x];
-        const u32 alpha = (pixel >> 24) & 0x1Fu;
-        if (alpha == 0)
-            return;
-        totalWeight += weight;
-        red += static_cast<float>(pixel & 0x3Fu) * weight;
-        green += static_cast<float>((pixel >> 8) & 0x3Fu) * weight;
-        blue += static_cast<float>((pixel >> 16) & 0x3Fu) * weight;
-    };
-
-    accumulate(x0, y0, (1.0f - fx) * (1.0f - fy));
-    accumulate(x1, y0, fx * (1.0f - fy));
-    accumulate(x0, y1, (1.0f - fx) * fy);
-    accumulate(x1, y1, fx * fy);
-
-    fallbackX = std::clamp(fallbackX, 0, 255);
-    fallbackY = std::clamp(fallbackY, 0, 191);
-    const u32 fallback =
-        source[static_cast<std::size_t>(fallbackY) * 256u + fallbackX];
-    if (totalWeight <= 0.0001f)
-        return fallback;
-
-    const auto quantizeRgb6 = [totalWeight](float weighted) -> u32
-    {
-        const long rounded = std::lround(weighted / totalWeight);
-        return static_cast<u32>(std::clamp<long>(rounded, 0L, 63L));
-    };
-
-    const u32 alpha = (fallback >> 24) & 0x1Fu;
-    return quantizeRgb6(red)
-        | (quantizeRgb6(green) << 8)
-        | (quantizeRgb6(blue) << 16)
-        | (alpha << 24);
-}
-
 } // namespace
 
 void VulkanRomScaleResult::Clear() noexcept
@@ -368,12 +301,7 @@ bool BuildVulkanRomScaleBridge(
                     }
                 }
             }
-            const float sourceX =
-                (static_cast<float>(x) + 0.5f) / static_cast<float>(scale) - 0.5f;
-            const float sourceY =
-                (static_cast<float>(y) + 0.5f) / static_cast<float>(scale) - 0.5f;
-            result.HighResolution3D[index] = SampleNative3DBilinear(
-                native3D, sourceX, sourceY, sampleX, sampleY);
+            result.HighResolution3D[index] = native3D[sampleY * 256 + sampleX];
         }
     }
 

@@ -5,11 +5,9 @@
 #include <QVulkanWindow>
 #include <QApplication>
 #include <QCursor>
-#include <QEvent>
 #include <QMetaObject>
 #include <QPainter>
 #include <QResizeEvent>
-#include <QThread>
 
 #include <algorithm>
 #include <array>
@@ -930,53 +928,18 @@ void ScreenPanelVulkan::phase13NotifyDeviceLoss(const char* stage, int result)
 }
 
 
-// MELONPRIME_VULKAN_CURSOR_CHILD_SYNC_V2
+// MELONPRIME_VULKAN_RUNTIME_OPTIONS_CURSOR_FIX_V1
 void ScreenPanelVulkan::syncVulkanCursor()
 {
-    // ScreenPanelNative::drawScreen() is driven by EmuThread. QVulkanWindow and
-    // its QWidget container must only be touched from this panel's GUI thread.
-    if (QThread::currentThread() != thread())
-    {
-        bool expected = false;
-        if (m_vulkanCursorSyncQueued.compare_exchange_strong(expected, true))
-        {
-            const bool queued = QMetaObject::invokeMethod(
-                this,
-                [this]()
-                {
-                    m_vulkanCursorSyncQueued.store(false);
-                    syncVulkanCursor();
-                },
-                Qt::QueuedConnection);
-            if (!queued)
-                m_vulkanCursorSyncQueued.store(false);
-        }
-        return;
-    }
-
     const QCursor desired = cursor();
-
-    // Compare the actual child objects rather than a remembered parent shape.
-    // A native child/window recreation can reset its cursor while the parent's
-    // cursor shape remains unchanged.
-    if (m_windowContainer &&
-        m_windowContainer->cursor().shape() != desired.shape())
-    {
+    const int shape = static_cast<int>(desired.shape());
+    if (shape == m_lastVulkanCursorShape)
+        return;
+    m_lastVulkanCursorShape = shape;
+    if (m_windowContainer)
         m_windowContainer->setCursor(desired);
-    }
-    if (m_vulkanWindow &&
-        m_vulkanWindow->cursor().shape() != desired.shape())
-    {
+    if (m_vulkanWindow)
         m_vulkanWindow->setCursor(desired);
-    }
-}
-
-bool ScreenPanelVulkan::event(QEvent* event)
-{
-    const bool handled = ScreenPanelNative::event(event);
-    if (event && event->type() == QEvent::CursorChange)
-        syncVulkanCursor();
-    return handled;
 }
 
 bool ScreenPanelVulkan::copyHighResolutionScreens(QImage& top, QImage& bottom) const
