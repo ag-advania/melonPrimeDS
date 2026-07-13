@@ -2737,6 +2737,90 @@ struct NativeRasterGpu::Impl
         };
         static_assert(sizeof(Push) == 32);
 
+        const auto drawEdgeMarks = [&]() {
+            if ((frame.RenderDispCnt & (1u << 5u)) == 0)
+                return;
+
+            Functions->vkCmdBindPipeline(
+                command, VK_PIPELINE_BIND_POINT_GRAPHICS, EdgeMarkPipeline);
+            Functions->vkCmdBindIndexBuffer(
+                command, slot.EdgeIndex.Buffer, 0, VK_INDEX_TYPE_UINT16);
+            for (const auto& polygon : frame.Upload.Polygons)
+            {
+                const bool shadowMask =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask) != 0;
+                if (shadowMask || polygon.EdgeIndexCount == 0)
+                    continue;
+
+                const bool textured =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
+                const bool shadow =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow) != 0;
+                const std::uint32_t textureMode = (polygon.Attr >> 4u) & 0x3u;
+                if (textured &&
+                    (polygon.TextureLayer >= textureResources.size() ||
+                     textureResources[polygon.TextureLayer] == nullptr ||
+                     (textureMode > 2u && !shadow)))
+                {
+                    continue;
+                }
+                VkDescriptorSet descriptor = textureResources[0]->DescriptorSets[0];
+                if (textured)
+                {
+                    const std::uint32_t sampler = std::min<std::uint32_t>(
+                        frame.Textures[polygon.TextureLayer].SamplerIndex, 8u);
+                    descriptor = textureResources[polygon.TextureLayer]
+                        ->DescriptorSets[sampler];
+                }
+                if (descriptor == VK_NULL_HANDLE)
+                    continue;
+                Functions->vkCmdBindDescriptorSets(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    PipelineLayout,
+                    0,
+                    1,
+                    &descriptor,
+                    0,
+                    nullptr);
+
+                Push edgePush{};
+                edgePush.ScreenSize[0] =
+                    static_cast<float>(slot.Color.Extent.width);
+                edgePush.ScreenSize[1] =
+                    static_cast<float>(slot.Color.Extent.height);
+                edgePush.Textured = textured ? 1u : 0u;
+                edgePush.TextureMode = textureMode;
+                edgePush.WBuffer =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer) != 0
+                    ? 1u
+                    : 0u;
+                edgePush.Reserved[0] = frame.RenderXPos;
+                edgePush.Reserved[1] = frame.RenderDispCnt;
+                const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
+                edgePush.Reserved[2] = (wireframe ? 1u : 0u) | 4u |
+                    ((frame.RenderAlphaRef & 0x1Fu) << 8u);
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(edgePush),
+                    &edgePush);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    polygon.EdgeIndexCount,
+                    1,
+                    polygon.EdgeIndexOffset,
+                    0,
+                    0);
+            }
+        };
+
         enum class DrawPhase
         {
             Opaque,
@@ -3183,88 +3267,8 @@ struct NativeRasterGpu::Impl
                 0);
             polygonIndex = next;
             }
-        }
-
-        if ((frame.RenderDispCnt & (1u << 5u)) != 0)
-        {
-            Functions->vkCmdBindPipeline(
-                command, VK_PIPELINE_BIND_POINT_GRAPHICS, EdgeMarkPipeline);
-            Functions->vkCmdBindIndexBuffer(
-                command, slot.EdgeIndex.Buffer, 0, VK_INDEX_TYPE_UINT16);
-            for (const auto& polygon : frame.Upload.Polygons)
-            {
-                const bool shadowMask =
-                    (polygon.Flags &
-                     melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask) != 0;
-                if (shadowMask || polygon.EdgeIndexCount == 0)
-                    continue;
-
-                const bool textured =
-                    (polygon.Flags &
-                     melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
-                const bool shadow =
-                    (polygon.Flags &
-                     melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow) != 0;
-                const std::uint32_t textureMode = (polygon.Attr >> 4u) & 0x3u;
-                if (textured &&
-                    (polygon.TextureLayer >= textureResources.size() ||
-                     textureResources[polygon.TextureLayer] == nullptr ||
-                     (textureMode > 2u && !shadow)))
-                {
-                    continue;
-                }
-                VkDescriptorSet descriptor = textureResources[0]->DescriptorSets[0];
-                if (textured)
-                {
-                    const std::uint32_t sampler = std::min<std::uint32_t>(
-                        frame.Textures[polygon.TextureLayer].SamplerIndex, 8u);
-                    descriptor = textureResources[polygon.TextureLayer]
-                        ->DescriptorSets[sampler];
-                }
-                if (descriptor == VK_NULL_HANDLE)
-                    continue;
-                Functions->vkCmdBindDescriptorSets(
-                    command,
-                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    PipelineLayout,
-                    0,
-                    1,
-                    &descriptor,
-                    0,
-                    nullptr);
-
-                Push edgePush{};
-                edgePush.ScreenSize[0] =
-                    static_cast<float>(slot.Color.Extent.width);
-                edgePush.ScreenSize[1] =
-                    static_cast<float>(slot.Color.Extent.height);
-                edgePush.Textured = textured ? 1u : 0u;
-                edgePush.TextureMode = textureMode;
-                edgePush.WBuffer =
-                    (polygon.Flags &
-                     melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer) != 0
-                    ? 1u
-                    : 0u;
-                edgePush.Reserved[0] = frame.RenderXPos;
-                edgePush.Reserved[1] = frame.RenderDispCnt;
-                const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
-                edgePush.Reserved[2] = (wireframe ? 1u : 0u) | 4u |
-                    ((frame.RenderAlphaRef & 0x1Fu) << 8u);
-                Functions->vkCmdPushConstants(
-                    command,
-                    PipelineLayout,
-                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                    0,
-                    sizeof(edgePush),
-                    &edgePush);
-                Functions->vkCmdDrawIndexed(
-                    command,
-                    polygon.EdgeIndexCount,
-                    1,
-                    polygon.EdgeIndexOffset,
-                    0,
-                    0);
-            }
+            if (drawPhase == DrawPhase::Opaque)
+                drawEdgeMarks();
         }
 
         Functions->vkCmdEndRenderPass(command);
