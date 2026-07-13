@@ -7,6 +7,7 @@ layout(set = 0, binding = 1) uniform sampler2D hudTexture;
 layout(set = 0, binding = 2) uniform sampler2DArray radarTexture;
 layout(set = 0, binding = 3) uniform sampler2D nativeHighResolution3D;
 layout(set = 0, binding = 4) uniform sampler2D nativeReference3D;
+layout(set = 0, binding = 5) uniform sampler2D nativeRasterCoverage;
 
 layout(push_constant) uniform DirectPush
 {
@@ -81,8 +82,10 @@ void main()
         {
             vec4 high3D = texture(nativeHighResolution3D, texCoord);
             vec4 low3D = texture(nativeReference3D, texCoord);
+            float nativeCoverage = texture(nativeRasterCoverage, texCoord).a;
             const float opaqueThreshold = 30.5 / 31.0;
-            if (high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
+            if (nativeCoverage >= 0.5 &&
+                high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
             {
                 vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
                 const float tolerance = 2.0 / 255.0;

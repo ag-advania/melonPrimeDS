@@ -23,6 +23,7 @@ struct NativeRasterViews
 {
     VkImageView HighResolution = VK_NULL_HANDLE;
     VkImageView NativeReference = VK_NULL_HANDLE;
+    VkImageView Coverage = VK_NULL_HANDLE;
     VkSampler Sampler = VK_NULL_HANDLE;
     bool Valid = false;
 };

@@ -1176,9 +1176,9 @@ struct NativeRasterGpu::Impl
                         : 0;
                     for (std::uint32_t fogWrite = 0; fogWrite < 2; ++fogWrite)
                     {
-                        colorBlends[1].colorWriteMask = fogWrite
-                            ? VK_COLOR_COMPONENT_B_BIT
-                            : 0;
+                        colorBlends[1].colorWriteMask =
+                            VK_COLOR_COMPONENT_A_BIT |
+                            (fogWrite ? VK_COLOR_COMPONENT_B_BIT : 0);
                         for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
                         {
                             const std::uint32_t index =
@@ -1365,9 +1365,9 @@ struct NativeRasterGpu::Impl
                         : 0;
                     for (std::uint32_t fogWrite = 0; fogWrite < 2; ++fogWrite)
                     {
-                        colorBlends[1].colorWriteMask = fogWrite
-                            ? VK_COLOR_COMPONENT_B_BIT
-                            : 0;
+                        colorBlends[1].colorWriteMask =
+                            VK_COLOR_COMPONENT_A_BIT |
+                            (fogWrite ? VK_COLOR_COMPONENT_B_BIT : 0);
                         for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
                         {
                             const std::uint32_t index =
@@ -1456,6 +1456,12 @@ struct NativeRasterGpu::Impl
                     VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             }
+            // Attribute alpha is a MelonPrime presenter-only native coverage
+            // marker. A clear bitmap is still the DS clear plane, not polygon
+            // coverage, so preserve the attachment's cleared alpha here.
+            clearAttachments[1].colorWriteMask =
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT;
             clearAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
             VkPipelineColorBlendStateCreateInfo clearBlend{
                 VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -2268,6 +2274,7 @@ struct NativeRasterGpu::Impl
         {
             views.HighResolution = slot.Color.View;
             views.NativeReference = slot.NativeReference.View;
+            views.Coverage = slot.Attributes.View;
             views.Sampler = Samplers[0];
             views.Valid = true;
             return true;
@@ -2356,7 +2363,11 @@ struct NativeRasterGpu::Impl
         clearValues[1].color.float32[0] = clear.Attributes[0];
         clearValues[1].color.float32[1] = clear.Attributes[1];
         clearValues[1].color.float32[2] = clear.Attributes[2];
-        clearValues[1].color.float32[3] = clear.Attributes[3];
+        // Sapphire keeps attribute alpha otherwise unused. The presenter uses
+        // zero for the clear plane and one only after a polygon fragment has
+        // survived alpha/depth tests, preventing incomplete native geometry
+        // from erasing the software-correctness frame.
+        clearValues[1].color.float32[3] = 0.0f;
         clearValues[2].color.float32[0] = clear.Depth;
         clearValues[3].depthStencil = {clear.Depth, clear.Stencil};
         VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -3301,6 +3312,7 @@ struct NativeRasterGpu::Impl
         slot.Generation = frame.Generation;
         views.HighResolution = slot.Color.View;
         views.NativeReference = slot.NativeReference.View;
+        views.Coverage = slot.Attributes.View;
         views.Sampler = Samplers[0];
         views.Valid = true;
         return true;

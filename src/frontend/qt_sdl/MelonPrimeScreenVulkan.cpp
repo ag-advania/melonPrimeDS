@@ -482,7 +482,7 @@ bool PresenterRenderer::createStaticResources()
 
 bool PresenterRenderer::createDirectStaticResources()
 {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[0].descriptorCount = 1;
@@ -495,6 +495,8 @@ bool PresenterRenderer::createDirectStaticResources()
     bindings[3].binding = 3;
     bindings[4] = bindings[0];
     bindings[4].binding = 4;
+    bindings[5] = bindings[0];
+    bindings[5].binding = 5;
 
     VkDescriptorSetLayoutCreateInfo descriptorInfo{
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -888,7 +890,7 @@ bool PresenterRenderer::createDirectResources(
     {
         VkDescriptorPoolSize poolSize{
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            static_cast<std::uint32_t>(m_directFrameCount * 5)};
+            static_cast<std::uint32_t>(m_directFrameCount * 6)};
         VkDescriptorPoolCreateInfo poolInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.maxSets =
@@ -1434,13 +1436,21 @@ bool PresenterRenderer::renderDirectFrame(
         ? nativeViews.NativeReference : m_directOverlayViews[slot];
     nativeReferenceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    std::array<VkWriteDescriptorSet, 5> writes{};
+    VkDescriptorImageInfo nativeCoverageInfo{};
+    nativeCoverageInfo.sampler = nativeViews.Valid
+        ? nativeViews.Sampler : m_nearestSampler;
+    nativeCoverageInfo.imageView = nativeViews.Valid
+        ? nativeViews.Coverage : m_directOverlayViews[slot];
+    nativeCoverageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkWriteDescriptorSet, 6> writes{};
     const VkDescriptorImageInfo* infos[] = {
         &screenInfo,
         &overlayInfo,
         &radarInfo,
         &nativeHighInfo,
-        &nativeReferenceInfo};
+        &nativeReferenceInfo,
+        &nativeCoverageInfo};
     for (std::uint32_t binding = 0; binding < writes.size(); ++binding)
     {
         writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
