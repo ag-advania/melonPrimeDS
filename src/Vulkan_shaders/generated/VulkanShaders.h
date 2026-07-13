@@ -47,12 +47,13 @@
 #include "VulkanPhase14FinalVertex.spv.h"
 #include "VulkanPhase14FinalEdgeFragment.spv.h"
 #include "VulkanPhase14FinalFogFragment.spv.h"
+#include "VulkanPhase14FinalEdgeFogFragment.spv.h"
 
 namespace melonDS::Vulkan::Shaders
 {
 
-inline constexpr std::size_t kShaderCount = 47;
-inline constexpr char kManifestSha256[] = "fb525e3977bd72a75b3cd01ed2dd90b4854c5c79e9622565782320b6b55716a6";
+inline constexpr std::size_t kShaderCount = 48;
+inline constexpr char kManifestSha256[] = "b422ec284df1a3786918b7d7daf4fc53fc4967fc19a1dcc70131182db7dcf872";
 inline constexpr char kCompilerVersion[] = "Glslang Version: 11:16.3.0 | ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0 | GLSL Version: 4.60 glslang Khronos. 16.3.0 | SPIR-V Version 0x00010600, Revision 1 | GLSL.std.450 Version 100, Revision 1 | Khronos Tool ID 8 | SPIR-V Generator Version 11 | GL_KHR_vulkan_glsl version 100 | ARB_GL_gl_spirv version 100";
 
 } // namespace melonDS::Vulkan::Shaders

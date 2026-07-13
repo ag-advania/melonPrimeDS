@@ -470,6 +470,18 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanPhase14FinalEdgeFogFragment",
+      "source": "phase14_final_edge_fog.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

@@ -690,8 +690,8 @@ struct NativeRasterGpu::Impl
     VkPipelineLayout FinalPipelineLayout = VK_NULL_HANDLE;
     VkPipeline EdgeMarkPipeline = VK_NULL_HANDLE;
     VkPipeline FinalEdgePipeline = VK_NULL_HANDLE;
+    VkPipeline FinalEdgeFogPipeline = VK_NULL_HANDLE;
     VkPipeline FinalFogPipeline = VK_NULL_HANDLE;
-    VkPipeline FinalFogAlphaPipeline = VK_NULL_HANDLE;
     VkPipeline Pipeline = VK_NULL_HANDLE;
     VkPipeline LinePipeline = VK_NULL_HANDLE;
     VkPipeline DepthEqualPipeline = VK_NULL_HANDLE;
@@ -878,10 +878,10 @@ struct NativeRasterGpu::Impl
             Functions->vkDestroyPipeline(Device, EdgeMarkPipeline, nullptr);
         if (FinalEdgePipeline)
             Functions->vkDestroyPipeline(Device, FinalEdgePipeline, nullptr);
+        if (FinalEdgeFogPipeline)
+            Functions->vkDestroyPipeline(Device, FinalEdgeFogPipeline, nullptr);
         if (FinalFogPipeline)
             Functions->vkDestroyPipeline(Device, FinalFogPipeline, nullptr);
-        if (FinalFogAlphaPipeline)
-            Functions->vkDestroyPipeline(Device, FinalFogAlphaPipeline, nullptr);
         if (PipelineLayout)
             Functions->vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
         if (ClearBitmapPipeline)
@@ -933,8 +933,8 @@ struct NativeRasterGpu::Impl
         DepthEqualShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
         EdgeMarkPipeline = VK_NULL_HANDLE;
         FinalEdgePipeline = VK_NULL_HANDLE;
+        FinalEdgeFogPipeline = VK_NULL_HANDLE;
         FinalFogPipeline = VK_NULL_HANDLE;
-        FinalFogAlphaPipeline = VK_NULL_HANDLE;
         PipelineLayout = VK_NULL_HANDLE;
         ClearBitmapPipeline = VK_NULL_HANDLE;
         ClearBitmapPipelineLayout = VK_NULL_HANDLE;
@@ -1245,6 +1245,7 @@ struct NativeRasterGpu::Impl
         VkShaderModule clearBitmapFragment = VK_NULL_HANDLE;
         VkShaderModule finalVertex = VK_NULL_HANDLE;
         VkShaderModule finalEdgeFragment = VK_NULL_HANDLE;
+        VkShaderModule finalEdgeFogFragment = VK_NULL_HANDLE;
         VkShaderModule finalFogFragment = VK_NULL_HANDLE;
         if (!CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv,
@@ -1283,6 +1284,10 @@ struct NativeRasterGpu::Impl
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalEdgeFragmentSpirv),
                 finalEdgeFragment) ||
             !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14FinalEdgeFogFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalEdgeFogFragmentSpirv),
+                finalEdgeFogFragment) ||
+            !CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14FinalFogFragmentSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalFogFragmentSpirv),
                 finalFogFragment))
@@ -1305,6 +1310,8 @@ struct NativeRasterGpu::Impl
                 Functions->vkDestroyShaderModule(Device, finalVertex, nullptr);
             if (finalEdgeFragment)
                 Functions->vkDestroyShaderModule(Device, finalEdgeFragment, nullptr);
+            if (finalEdgeFogFragment)
+                Functions->vkDestroyShaderModule(Device, finalEdgeFogFragment, nullptr);
             if (finalFogFragment)
                 Functions->vkDestroyShaderModule(Device, finalFogFragment, nullptr);
             return false;
@@ -1866,8 +1873,18 @@ struct NativeRasterGpu::Impl
                 finalAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
                 finalAttachment.dstColorBlendFactor =
                     VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                finalAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-                finalAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                finalAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                finalAttachment.dstAlphaBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            }
+            else if (fragmentModule == finalEdgeFogFragment)
+            {
+                finalAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+                finalAttachment.dstColorBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                finalAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                finalAttachment.dstAlphaBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             }
             else
             {
@@ -1923,17 +1940,18 @@ struct NativeRasterGpu::Impl
         if (finalPipelineResult == VK_SUCCESS)
         {
             finalPipelineResult = createFinalPipeline(
-                finalFogFragment,
+                finalEdgeFogFragment,
                 VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-                FinalFogPipeline);
+                    VK_COLOR_COMPONENT_B_BIT,
+                FinalEdgeFogPipeline);
         }
         if (finalPipelineResult == VK_SUCCESS)
         {
             finalPipelineResult = createFinalPipeline(
                 finalFogFragment,
-                VK_COLOR_COMPONENT_A_BIT,
-                FinalFogAlphaPipeline);
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                    VK_COLOR_COMPONENT_B_BIT,
+                FinalFogPipeline);
         }
         Functions->vkDestroyShaderModule(Device, vertex, nullptr);
         Functions->vkDestroyShaderModule(Device, fragment, nullptr);
@@ -1944,6 +1962,7 @@ struct NativeRasterGpu::Impl
         Functions->vkDestroyShaderModule(Device, clearBitmapFragment, nullptr);
         Functions->vkDestroyShaderModule(Device, finalVertex, nullptr);
         Functions->vkDestroyShaderModule(Device, finalEdgeFragment, nullptr);
+        Functions->vkDestroyShaderModule(Device, finalEdgeFogFragment, nullptr);
         Functions->vkDestroyShaderModule(Device, finalFogFragment, nullptr);
         if (pipelineResult != VK_SUCCESS || linePipelineResult != VK_SUCCESS ||
             depthEqualPipelineResult != VK_SUCCESS ||
@@ -3271,7 +3290,24 @@ struct NativeRasterGpu::Impl
                 red | (green << 8u) | (blue << 16u);
         }
 
-        if ((frame.RenderDispCnt & (1u << 5u)) != 0)
+        const bool runEdgePass = (frame.RenderDispCnt & (1u << 5u)) != 0;
+        const bool runFogPass = (frame.RenderDispCnt & (1u << 7u)) != 0;
+        if (runEdgePass && runFogPass)
+        {
+            Functions->vkCmdBindPipeline(
+                command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                FinalEdgeFogPipeline);
+            Functions->vkCmdPushConstants(
+                command,
+                FinalPipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(finalPush),
+                &finalPush);
+            Functions->vkCmdDraw(command, 3, 1, 0, 0);
+        }
+        else if (runEdgePass)
         {
             Functions->vkCmdBindPipeline(
                 command, VK_PIPELINE_BIND_POINT_GRAPHICS, FinalEdgePipeline);
@@ -3286,13 +3322,12 @@ struct NativeRasterGpu::Impl
             Functions->vkCmdSetBlendConstants(command, blendConstants);
             Functions->vkCmdDraw(command, 3, 1, 0, 0);
         }
-        if ((frame.RenderDispCnt & (1u << 7u)) != 0)
+        if (!runEdgePass && runFogPass)
         {
-            const bool alphaOnly = (frame.RenderDispCnt & (1u << 6u)) != 0;
             Functions->vkCmdBindPipeline(
                 command,
                 VK_PIPELINE_BIND_POINT_GRAPHICS,
-                alphaOnly ? FinalFogAlphaPipeline : FinalFogPipeline);
+                FinalFogPipeline);
             Functions->vkCmdPushConstants(
                 command,
                 FinalPipelineLayout,

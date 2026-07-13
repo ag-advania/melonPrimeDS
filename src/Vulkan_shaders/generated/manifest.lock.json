@@ -1,7 +1,7 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "fb525e3977bd72a75b3cd01ed2dd90b4854c5c79e9622565782320b6b55716a6",
-  "manifest_sha256": "6f4781bb0b77f02f3b35fb0d573678c847ca617213fef83cb62e85773e8db14a",
+  "generation_sha256": "b422ec284df1a3786918b7d7daf4fc53fc4967fc19a1dcc70131182db7dcf872",
+  "manifest_sha256": "165bb918b5de305037e1a749b67472b4dce8d2944a6fda91ac5d90958d834c2e",
   "schema_version": 1,
   "sources": [
     {
@@ -420,6 +420,14 @@
       "sha256": "57d0f85de5e1c34d2408330578c4613647dc85bcab0a833c8b7be3a7e9d67106",
       "stage": "frag",
       "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/phase14_final_edge_fog.frag",
+      "sha256": "0ffe1471a92f47c63cd589f8de09a6c075fdd0daebe82b5d7753ae719d249795",
+      "stage": "frag",
+      "variant": "default"
     }
   ],
   "spirv": [
@@ -704,6 +712,12 @@
       "sha256": "7febad354fb58419acd0b2e9a0add5d26123fd2009e51f18d0c63b70d8b6d8d7",
       "size": 4460,
       "symbol": "VulkanPhase14FinalFogFragment"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPhase14FinalEdgeFogFragment.spv.h",
+      "sha256": "ed3a56cb20c64eef97e25896b98832650faf702b7c23e3e78c6af38db9f1df96",
+      "size": 9992,
+      "symbol": "VulkanPhase14FinalEdgeFogFragment"
     }
   ]
 }
