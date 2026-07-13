@@ -24,12 +24,6 @@ struct VulkanRomScaleSettings
     int ScaleFactor = 1;
     bool BetterPolygons = false;
     bool HiresCoordinates = false;
-
-    // MELONPRIME_VULKAN_COVERAGE_ONLY_V2
-    // The realtime compatibility path only needs high-resolution polygon
-    // coverage. Skipping the high-resolution color reconstruction removes one
-    // scale-squared allocation and one full-frame CPU pass.
-    bool CoverageOnly = false;
 };
 
 struct VulkanRomScaleResult

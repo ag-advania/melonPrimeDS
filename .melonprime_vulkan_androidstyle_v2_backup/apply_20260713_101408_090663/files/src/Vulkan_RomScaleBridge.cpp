@@ -246,8 +246,7 @@ bool BuildVulkanRomScaleBridge(
         result.Width = width;
         result.Height = height;
         result.Coverage.assign(pixelCount, 0);
-        if (!requested.CoverageOnly)
-            result.HighResolution3D.assign(pixelCount, 0);
+        result.HighResolution3D.assign(pixelCount, 0);
     }
     catch (...)
     {
@@ -317,13 +316,6 @@ bool BuildVulkanRomScaleBridge(
                 ++result.RasterizedTriangleCount;
             }
         }
-    }
-
-    // MELONPRIME_VULKAN_COVERAGE_ONLY_V2
-    if (requested.CoverageOnly)
-    {
-        result.Valid = true;
-        return true;
     }
 
     std::array<std::uint8_t, 256u * 192u> nativeCenterCoverage{};

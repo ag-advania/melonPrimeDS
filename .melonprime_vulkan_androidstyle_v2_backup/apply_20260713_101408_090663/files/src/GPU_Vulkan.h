@@ -8,8 +8,6 @@
 
 #include "GPU_Soft.h"
 
-#include <array>
-#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -74,23 +72,6 @@ struct VulkanRendererShellContract
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
 
-// MELONPRIME_VULKAN_ANDROIDSTYLE_COMPAT_FRAME_V2
-// Immutable frame handed from EmuThread to the Vulkan presenter. One screen may
-// be compatibility-upscaled while the non-3D screen remains native 256x192.
-struct VulkanCompatibilityFrame
-{
-    std::vector<u32> Top;
-    std::vector<u32> Bottom;
-    int TopWidth = 256;
-    int TopHeight = 192;
-    int BottomWidth = 256;
-    int BottomHeight = 192;
-    int RequestedScale = 1;
-    int BuiltScale = 1;
-    int EngineAScreen = 0;
-    u64 FrameSerial = 0;
-};
-
 // Phase 6 establishes the Vulkan renderer identity and lifecycle while keeping
 // Software 2D/3D/capture/CPU-BGRA output as the correctness source. Phase 7.1
 // proves a native offscreen graphics pipeline; Phase 7.2 adds typed plain
@@ -117,8 +98,12 @@ public:
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
 
-    [[nodiscard]] std::shared_ptr<const VulkanCompatibilityFrame>
-        AcquireCompatibilityFrame() const;
+    bool CopyHighResolutionFramebuffers(
+        std::vector<u32>& top,
+        std::vector<u32>& bottom,
+        int& width,
+        int& height,
+        u64& frameSerial) const;
 
     [[nodiscard]] bool IsComputeRendererSelected() const noexcept
     {
@@ -151,24 +136,14 @@ private:
     int ScaleFactor = 1;
     bool BetterPolygons = false;
     bool HiresCoordinates = false;
-    static constexpr std::size_t CompatibilityFrameSlotCount = 3;
-    static constexpr std::size_t NativePixelCount = 256u * 192u;
-
     std::vector<u32> Native3DFrame;
-    std::array<std::uint8_t, NativePixelCount> Native3DVisible{};
-    std::array<u32, NativePixelCount> Native3DBgra{};
-
     mutable std::mutex HighResolutionMutex;
-    std::array<std::shared_ptr<VulkanCompatibilityFrame>,
-        CompatibilityFrameSlotCount> CompatibilityFrames{};
-    std::array<bool, CompatibilityFrameSlotCount>
-        CompatibilityFrameProducerBusy{};
-    std::size_t NextCompatibilityFrameSlot = 0;
-    std::shared_ptr<const VulkanCompatibilityFrame>
-        PublishedCompatibilityFrame;
-    u64 LatestCompatibilityFrameSerial = 0;
-    u64 DroppedCompatibilityFrames = 0;
-
+    std::vector<u32> HighResolutionTop;
+    std::vector<u32> HighResolutionBottom;
+    int HighResolutionWidth = 0;
+    int HighResolutionHeight = 0;
+    u64 HighResolutionFrameSerial = 0;
+    bool HighResolutionValid = false;
     u64 FrameSerial = 0;
     u64 OutputGeneration = 1;
 };

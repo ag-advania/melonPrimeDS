@@ -15,7 +15,6 @@
 #include <array>
 #include <cstring>
 #include <limits>
-#include <new>
 #include <vector>
 
 #include "MelonPrimeVulkanInstanceHost.h"
@@ -92,6 +91,10 @@ private:
     std::array<VkImageView, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> m_imageViews{};
     std::array<VkDescriptorSet, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> m_descriptorSets{};
     std::array<VkImageLayout, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> m_imageLayouts{};
+    std::array<std::vector<std::uint32_t>, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
+        m_previousPixels{};
+    std::array<std::uint64_t, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> m_previousHashes{};
+    std::array<bool, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> m_previousValid{};
     bool m_ready = false;
 };
 
@@ -454,6 +457,10 @@ bool PresenterRenderer::createFrameResources(const QSize& size)
             return false;
         }
         m_imageLayouts[index] = VK_IMAGE_LAYOUT_UNDEFINED;
+        m_previousPixels[index].resize(
+            static_cast<std::size_t>(size.width()) * size.height());
+        m_previousHashes[index] = 0;
+        m_previousValid[index] = false;
     }
 
     VkDescriptorPoolSize poolSize{
@@ -510,6 +517,9 @@ void PresenterRenderer::destroyFrameResources()
         m_imageMemory[index] = VK_NULL_HANDLE;
         m_descriptorSets[index] = VK_NULL_HANDLE;
         m_imageLayouts[index] = VK_IMAGE_LAYOUT_UNDEFINED;
+        m_previousPixels[index].clear();
+        m_previousHashes[index] = 0;
+        m_previousValid[index] = false;
     }
     if (m_stagingBuffer)
         m_df->vkDestroyBuffer(m_device, m_stagingBuffer, nullptr);
@@ -645,86 +655,100 @@ void PresenterRenderer::startNextFrame()
         }
     }
 
-    // MELONPRIME_VULKAN_ANDROIDSTYLE_PRESENTER_UPLOAD_V2
-    // Emulator frames normally change every refresh. A full hash followed by a
-    // second full dirty-rectangle scan is more expensive than one cache-friendly
-    // memcpy and one full transfer.
     const int slot = m_window->currentFrame();
-    const VkDeviceSize offset =
-        m_frameStride * static_cast<VkDeviceSize>(slot);
-    const std::size_t byteCount =
-        static_cast<std::size_t>(frame.width()) * frame.height() * 4u;
-    std::memcpy(m_stagingMap + offset, frame.constBits(), byteCount);
+    const VkDeviceSize offset = m_frameStride * static_cast<VkDeviceSize>(slot);
+    const std::size_t byteCount = static_cast<std::size_t>(frame.width()) * frame.height() * 4u;
+    const auto* pixels = reinterpret_cast<const std::uint32_t*>(frame.constBits());
+    const std::size_t pixelCount = byteCount / sizeof(std::uint32_t);
+    std::uint64_t hash = 1469598103934665603ull;
+    for (std::size_t index = 0; index < pixelCount; ++index)
+    {
+        hash ^= pixels[index];
+        hash *= 1099511628211ull;
+    }
+
+    int dirtyLeft = 0;
+    int dirtyTop = 0;
+    int dirtyRight = frame.width();
+    int dirtyBottom = frame.height();
+    const bool uploadNeeded = !m_previousValid[slot] ||
+        hash != m_previousHashes[slot];
+    if (uploadNeeded && m_previousValid[slot])
+    {
+        dirtyLeft = frame.width();
+        dirtyTop = frame.height();
+        dirtyRight = 0;
+        dirtyBottom = 0;
+        const auto& previous = m_previousPixels[slot];
+        for (int y = 0; y < frame.height(); ++y)
+        {
+            const std::size_t row = static_cast<std::size_t>(y) * frame.width();
+            for (int x = 0; x < frame.width(); ++x)
+            {
+                if (pixels[row + x] == previous[row + x])
+                    continue;
+                dirtyLeft = std::min(dirtyLeft, x);
+                dirtyTop = std::min(dirtyTop, y);
+                dirtyRight = std::max(dirtyRight, x + 1);
+                dirtyBottom = std::max(dirtyBottom, y + 1);
+            }
+        }
+    }
+    if (uploadNeeded)
+    {
+        std::memcpy(m_stagingMap + offset, frame.constBits(), byteCount);
+        std::memcpy(m_previousPixels[slot].data(), pixels, byteCount);
+        m_previousHashes[slot] = hash;
+        m_previousValid[slot] = true;
+    }
 
     VkCommandBuffer command = m_window->currentCommandBuffer();
+    if (uploadNeeded)
+    {
+        VkImageMemoryBarrier toTransfer{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        toTransfer.srcAccessMask = m_imageLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED
+            ? 0 : VK_ACCESS_SHADER_READ_BIT;
+        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toTransfer.oldLayout = m_imageLayouts[slot];
+        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.image = m_images[slot];
+        toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toTransfer.subresourceRange.levelCount = 1;
+        toTransfer.subresourceRange.layerCount = 1;
+        m_df->vkCmdPipelineBarrier(command,
+            m_imageLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED
+                ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
 
-    VkImageMemoryBarrier toTransfer{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    toTransfer.srcAccessMask =
-        m_imageLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED
-        ? 0
-        : VK_ACCESS_SHADER_READ_BIT;
-    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toTransfer.oldLayout = m_imageLayouts[slot];
-    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.image = m_images[slot];
-    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransfer.subresourceRange.levelCount = 1;
-    toTransfer.subresourceRange.layerCount = 1;
-    m_df->vkCmdPipelineBarrier(
-        command,
-        m_imageLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED
-            ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
-            : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &toTransfer);
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = offset +
+            (static_cast<VkDeviceSize>(dirtyTop) * frame.width() + dirtyLeft) * 4u;
+        copy.bufferRowLength = static_cast<std::uint32_t>(frame.width());
+        copy.bufferImageHeight = static_cast<std::uint32_t>(frame.height());
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy.imageSubresource.layerCount = 1;
+        copy.imageOffset = {dirtyLeft, dirtyTop, 0};
+        copy.imageExtent = {
+            static_cast<std::uint32_t>(dirtyRight - dirtyLeft),
+            static_cast<std::uint32_t>(dirtyBottom - dirtyTop), 1};
+        m_df->vkCmdCopyBufferToImage(command, m_stagingBuffer, m_images[slot],
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
-    VkBufferImageCopy copy{};
-    copy.bufferOffset = offset;
-    copy.bufferRowLength = static_cast<std::uint32_t>(frame.width());
-    copy.bufferImageHeight = static_cast<std::uint32_t>(frame.height());
-    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy.imageSubresource.layerCount = 1;
-    copy.imageExtent = {
-        static_cast<std::uint32_t>(frame.width()),
-        static_cast<std::uint32_t>(frame.height()),
-        1};
-    m_df->vkCmdCopyBufferToImage(
-        command,
-        m_stagingBuffer,
-        m_images[slot],
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &copy);
-
-    VkImageMemoryBarrier toSample{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    toSample.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toSample.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    toSample.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toSample.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toSample.image = m_images[slot];
-    toSample.subresourceRange = toTransfer.subresourceRange;
-    m_df->vkCmdPipelineBarrier(
-        command,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &toSample);
-    m_imageLayouts[slot] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkImageMemoryBarrier toSample{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        toSample.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toSample.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        toSample.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toSample.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toSample.image = m_images[slot];
+        toSample.subresourceRange = toTransfer.subresourceRange;
+        m_df->vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toSample);
+        m_imageLayouts[slot] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.sampler = m_panel->linearFilteringForVulkan()
@@ -955,68 +979,37 @@ bool ScreenPanelVulkan::event(QEvent* event)
     return handled;
 }
 
-namespace
-{
-
-struct VulkanCompatibilityImageHold
-{
-    std::shared_ptr<const melonDS::VulkanCompatibilityFrame> Frame;
-};
-
-void ReleaseVulkanCompatibilityImage(void* opaque)
-{
-    delete static_cast<VulkanCompatibilityImageHold*>(opaque);
-}
-
-QImage WrapVulkanCompatibilityImage(
-    const std::shared_ptr<const melonDS::VulkanCompatibilityFrame>& frame,
-    const std::vector<melonDS::u32>& pixels,
-    int width,
-    int height)
-{
-    if (!frame || pixels.empty() || width <= 0 || height <= 0 ||
-        pixels.size() != static_cast<std::size_t>(width) * height)
-    {
-        return {};
-    }
-
-    auto* hold = new (std::nothrow) VulkanCompatibilityImageHold{frame};
-    if (!hold)
-        return {};
-
-    return QImage(
-        reinterpret_cast<const uchar*>(pixels.data()),
-        width,
-        height,
-        width * static_cast<int>(sizeof(melonDS::u32)),
-        QImage::Format_RGB32,
-        ReleaseVulkanCompatibilityImage,
-        hold);
-}
-
-} // namespace
-
-bool ScreenPanelVulkan::copyHighResolutionScreens(
-    QImage& top,
-    QImage& bottom) const
+bool ScreenPanelVulkan::copyHighResolutionScreens(QImage& top, QImage& bottom) const
 {
     if (!emuInstance || !emuInstance->getNDS())
         return false;
-
     const auto* renderer = dynamic_cast<const melonDS::VulkanRenderer*>(
         &emuInstance->getNDS()->GPU.GetRenderer());
     if (!renderer)
         return false;
 
-    const auto frame = renderer->AcquireCompatibilityFrame();
-    if (!frame)
+    std::vector<melonDS::u32> topPixels;
+    std::vector<melonDS::u32> bottomPixels;
+    int width = 0;
+    int height = 0;
+    melonDS::u64 frameSerial = 0;
+    if (!renderer->CopyHighResolutionFramebuffers(
+            topPixels, bottomPixels, width, height, frameSerial) ||
+        width <= 0 || height <= 0)
+        return false;
+    const std::size_t expected = static_cast<std::size_t>(width) * height;
+    if (topPixels.size() != expected || bottomPixels.size() != expected)
         return false;
 
-    top = WrapVulkanCompatibilityImage(
-        frame, frame->Top, frame->TopWidth, frame->TopHeight);
-    bottom = WrapVulkanCompatibilityImage(
-        frame, frame->Bottom, frame->BottomWidth, frame->BottomHeight);
-    return !top.isNull() && !bottom.isNull();
+    top = QImage(width, height, QImage::Format_RGB32);
+    bottom = QImage(width, height, QImage::Format_RGB32);
+    if (top.isNull() || bottom.isNull())
+        return false;
+    const std::size_t bytes = expected * sizeof(melonDS::u32);
+    std::memcpy(top.bits(), topPixels.data(), bytes);
+    std::memcpy(bottom.bits(), bottomPixels.data(), bytes);
+    (void)frameSerial;
+    return true;
 }
 
 const QImage& ScreenPanelVulkan::composeFrameForVulkan()
