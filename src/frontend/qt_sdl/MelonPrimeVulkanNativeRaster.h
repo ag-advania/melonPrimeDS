@@ -49,6 +49,11 @@ struct NativeRasterFrame
     std::uint32_t RenderClearAttr2 = 0;
     std::uint32_t RenderAlphaRef = 0;
     std::uint16_t RenderXPos = 0;
+    std::uint32_t RenderFogColor = 0;
+    std::uint32_t RenderFogOffset = 0;
+    std::uint32_t RenderFogShift = 0;
+    std::array<std::uint8_t, 34> RenderFogDensityTable{};
+    std::array<std::uint16_t, 8> RenderEdgeTable{};
     std::array<std::uint16_t, 32> RenderToonTable{};
     std::uint64_t FrameSerial = 0;
     std::uint64_t Generation = 0;

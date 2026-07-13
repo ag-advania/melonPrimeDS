@@ -1,7 +1,7 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "ec8f64a20df8fc8886de6e6c4f3c9a95aeecb1419525e0ebbc211298904fc2ab",
-  "manifest_sha256": "65d40124f9325a031fef495c7efe48169a2528eaf437adae65a364abc3752e58",
+  "generation_sha256": "754cabf92f5be3101c7399d49225f07c678ca5c3e4c3ca848348bb7c458cdae7",
+  "manifest_sha256": "6f4781bb0b77f02f3b35fb0d573678c847ca617213fef83cb62e85773e8db14a",
   "schema_version": 1,
   "sources": [
     {
@@ -40,7 +40,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/clear_bitmap.frag",
-      "sha256": "4d85d3dd6eecb90517402a07cc10c8027c86043fbd4ba423464cc8af7f59e62d",
+      "sha256": "2c42d2bb29b12cf0491884f1149894f67ec5d79d7f2e590bb1b571402e7f3b4d",
       "stage": "frag",
       "variant": "default"
     },
@@ -369,7 +369,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase14_native_raster.frag",
-      "sha256": "5d1a852b0cc2c74ae66cfefe8debe1656d5072c9ae3c26f804d6a636843e3492",
+      "sha256": "87b11c6900f129c5f3b22c4a1bcd27d243c403acae56d53deb5b96f08b83d6c0",
       "stage": "frag",
       "variant": "default"
     },
@@ -394,6 +394,30 @@
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase14_shadow_mask.frag",
       "sha256": "0e003d11ba7b4e6e3fad1cf0cc82ef5f887b8e9ea1d9fd620e3cbade4d0093ff",
+      "stage": "frag",
+      "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/phase14_final.vert",
+      "sha256": "31531c5d2f28b6661625f6bedecbf4891dfdc513cf614965c486d413c94a3d86",
+      "stage": "vert",
+      "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/phase14_final_edge.frag",
+      "sha256": "fd0757861baea52022d6fd6f8a201905cb095297d2f47ac967a78ddb8fadb9fc",
+      "stage": "frag",
+      "variant": "default"
+    },
+    {
+      "defines": {},
+      "entry_point": "main",
+      "path": "src/Vulkan_shaders/phase14_final_fog.frag",
+      "sha256": "57d0f85de5e1c34d2408330578c4613647dc85bcab0a833c8b7be3a7e9d67106",
       "stage": "frag",
       "variant": "default"
     }
@@ -425,8 +449,8 @@
     },
     {
       "header": "src/Vulkan_shaders/generated/VulkanClearBitmapFragment.spv.h",
-      "sha256": "9e9bf3b6bbdef28b544fba68ed355efc63a034c2c99a41db717aeb7b50ad1d09",
-      "size": 1912,
+      "sha256": "a30c6fe239d6a3d576008b28498e1021699b6024c6b4384d7a4e4dedcf4bf987",
+      "size": 1992,
       "symbol": "VulkanClearBitmapFragment"
     },
     {
@@ -641,8 +665,8 @@
     },
     {
       "header": "src/Vulkan_shaders/generated/VulkanPhase14NativeRasterFragment.spv.h",
-      "sha256": "e9ed66e41ffe79dea8c76de3e40f86cdaf478838956c8d9f4afd3d44b458d924",
-      "size": 6164,
+      "sha256": "e13dbdb26a4f2cd6bca1555ad2bc9dc7ce26075bbabd96e86c58f04f60d856ca",
+      "size": 6864,
       "symbol": "VulkanPhase14NativeRasterFragment"
     },
     {
@@ -662,6 +686,24 @@
       "sha256": "918011d9e0d633f4b12847593e6f49e9de00b6913857c2db1e03acae55237932",
       "size": 1016,
       "symbol": "VulkanPhase14ShadowMaskFragment"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPhase14FinalVertex.spv.h",
+      "sha256": "e37d0dca1f6fccefef89a4b49735ed6e99e4997d806d7c5e8b4a8f2945d83646",
+      "size": 1092,
+      "symbol": "VulkanPhase14FinalVertex"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPhase14FinalEdgeFragment.spv.h",
+      "sha256": "007883f006ac723759f0a3931f2380d562584b011fed8a4687e2e4f93c05c89a",
+      "size": 6752,
+      "symbol": "VulkanPhase14FinalEdgeFragment"
+    },
+    {
+      "header": "src/Vulkan_shaders/generated/VulkanPhase14FinalFogFragment.spv.h",
+      "sha256": "7febad354fb58419acd0b2e9a0add5d26123fd2009e51f18d0c63b70d8b6d8d7",
+      "size": 4460,
+      "symbol": "VulkanPhase14FinalFogFragment"
     }
   ]
 }

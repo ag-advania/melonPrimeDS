@@ -24,6 +24,7 @@ layout(location = 2) in float fDepth;
 layout(location = 3) flat in uint fPolygonAttr;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAttr;
+layout(location = 2) out float outDepth;
 
 void main()
 {
@@ -66,6 +67,17 @@ void main()
     if (alpha5 <= alphaRef)
         discard;
 
+    bool edgeMarkPass = (pc.drawFlags & 4u) != 0u;
+    if (edgeMarkPass)
+    {
+        if (alpha5 != 31u)
+            discard;
+        outColor = vec4(0.0);
+        outAttr = vec4(0.0, 1.0, 0.0, 1.0);
+        outDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
+        return;
+    }
+
     if (translucentPass)
     {
         if (alpha5 == 0u || alpha5 == 31u)
@@ -89,5 +101,6 @@ void main()
             0.0,
             float((fPolygonAttr >> 15u) & 0x1u),
             1.0);
-    gl_FragDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
+    outDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
+    gl_FragDepth = outDepth;
 }

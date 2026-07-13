@@ -13,6 +13,7 @@ layout(push_constant) uniform ClearBitmapPush
 layout(location = 0) in vec2 fTexcoord;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oAttr;
+layout(location = 2) out float oDepth;
 
 void main()
 {
@@ -26,5 +27,6 @@ void main()
         0.0,
         float(depth >> 24),
         1.0);
-    gl_FragDepth = float(depth & 0x00FFFFFFu) / 16777216.0;
+    oDepth = float(depth & 0x00FFFFFFu) / 16777216.0;
+    gl_FragDepth = oDepth;
 }

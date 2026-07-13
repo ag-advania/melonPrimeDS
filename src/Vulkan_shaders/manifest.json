@@ -434,6 +434,42 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanPhase14FinalVertex",
+      "source": "phase14_final.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPhase14FinalEdgeFragment",
+      "source": "phase14_final_edge.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPhase14FinalFogFragment",
+      "source": "phase14_final_fog.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

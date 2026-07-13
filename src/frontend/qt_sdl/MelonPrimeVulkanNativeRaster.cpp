@@ -49,6 +49,30 @@ struct alignas(16) NativeRasterToonUniform
 
 static_assert(sizeof(NativeRasterToonUniform) == 32u * 16u);
 
+// Matches Sapphire's 128-byte graphics final-pass push ABI.
+struct alignas(16) NativeRasterFinalPush
+{
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+    std::uint32_t ClearColor = 0;
+    std::uint32_t ClearDepth = 0;
+    std::uint32_t TriangleCount = 0;
+    std::uint32_t DispCnt = 0;
+    std::uint32_t AlphaRef = 0;
+    std::uint32_t FogColor = 0;
+    std::uint32_t FogOffset = 0;
+    std::uint32_t FogShift = 0;
+    std::uint32_t ClearAttr = 0;
+    std::array<std::uint32_t, 9> FogDensityPacked{};
+    std::array<std::uint32_t, 8> EdgeColorPacked{};
+    std::uint32_t VariantKey = 0;
+    std::uint32_t PassIndex = 0;
+    std::uint32_t TriangleBase = 0;
+    std::uint32_t DepthBlendMode = 0;
+};
+
+static_assert(sizeof(NativeRasterFinalPush) == 128u);
+
 VkImageAspectFlags DepthAspectMask(VkFormat format) noexcept
 {
     switch (format)
@@ -354,6 +378,11 @@ void NativeRasterFrame::Clear() noexcept
     RenderClearAttr2 = 0;
     RenderAlphaRef = 0;
     RenderXPos = 0;
+    RenderFogColor = 0;
+    RenderFogOffset = 0;
+    RenderFogShift = 0;
+    RenderFogDensityTable.fill(0);
+    RenderEdgeTable.fill(0);
     RenderToonTable.fill(0);
     FrameSerial = 0;
     Generation = 0;
@@ -415,18 +444,6 @@ bool NativeRasterSnapshotBuilder::Build(
     memory.PaletteSize = sizeof(gpu.VRAMFlat_TexPal);
 
     const auto& gpu3D = gpu.GPU3D;
-
-    // Sapphire's Vulkan renderer handles edge/fog as distinct final passes.
-    // The clear-alpha-zero shadow case also needs an opaque/alpha phase split.
-    // Mixing an incomplete frame with the software-correct image can expose an
-    // occluded polygon wherever one of those passes should have won the DS
-    // depth/stencil tests.
-    // Treat the native raster as an all-or-nothing replacement until those
-    // Sapphire-equivalent passes are wired here.
-    const bool frameUsesUnsupportedGlobalPass =
-        (gpu3D.RenderDispCnt & ((1u << 5u) | (1u << 7u))) != 0;
-    if (frameUsesUnsupportedGlobalPass)
-        return true;
 
     for (std::uint32_t sourceOrder = 0;
          sourceOrder < gpu3D.RenderNumPolygons;
@@ -613,6 +630,17 @@ bool NativeRasterSnapshotBuilder::Build(
     frame.RenderClearAttr2 = gpu3D.RenderClearAttr2;
     frame.RenderAlphaRef = gpu3D.RenderAlphaRef;
     frame.RenderXPos = gpu3D.GetRenderXPos();
+    frame.RenderFogColor = gpu3D.RenderFogColor;
+    frame.RenderFogOffset = gpu3D.RenderFogOffset;
+    frame.RenderFogShift = gpu3D.RenderFogShift;
+    std::copy_n(
+        gpu3D.RenderFogDensityTable,
+        frame.RenderFogDensityTable.size(),
+        frame.RenderFogDensityTable.begin());
+    std::copy_n(
+        gpu3D.RenderEdgeTable,
+        frame.RenderEdgeTable.size(),
+        frame.RenderEdgeTable.begin());
     std::copy_n(
         gpu3D.RenderToonTable,
         frame.RenderToonTable.size(),
@@ -629,9 +657,11 @@ struct NativeRasterGpu::Impl
     {
         ImageResource Color;
         ImageResource Attributes;
+        ImageResource DepthValue;
         ImageResource Depth;
         ImageResource NativeReference;
         VkFramebuffer Framebuffer = VK_NULL_HANDLE;
+        VkFramebuffer FinalFramebuffer = VK_NULL_HANDLE;
         HostBuffer Vertex;
         HostBuffer Index;
         HostBuffer EdgeIndex;
@@ -642,6 +672,7 @@ struct NativeRasterGpu::Impl
         HostBuffer ClearBitmapColorStaging;
         HostBuffer ClearBitmapDepthStaging;
         VkDescriptorSet ClearBitmapDescriptor = VK_NULL_HANDLE;
+        VkDescriptorSet FinalDescriptor = VK_NULL_HANDLE;
         std::uint64_t FrameSerial = 0;
         std::uint64_t Generation = 0;
     };
@@ -664,11 +695,18 @@ struct NativeRasterGpu::Impl
     VkDevice Device = VK_NULL_HANDLE;
     VkFormat DepthFormat = VK_FORMAT_UNDEFINED;
     VkRenderPass RenderPass = VK_NULL_HANDLE;
+    VkRenderPass FinalRenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout ClearBitmapDescriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout ClearBitmapPipelineLayout = VK_NULL_HANDLE;
     VkPipeline ClearBitmapPipeline = VK_NULL_HANDLE;
+    VkDescriptorSetLayout FinalDescriptorLayout = VK_NULL_HANDLE;
+    VkPipelineLayout FinalPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline EdgeMarkPipeline = VK_NULL_HANDLE;
+    VkPipeline FinalEdgePipeline = VK_NULL_HANDLE;
+    VkPipeline FinalFogPipeline = VK_NULL_HANDLE;
+    VkPipeline FinalFogAlphaPipeline = VK_NULL_HANDLE;
     VkPipeline Pipeline = VK_NULL_HANDLE;
     VkPipeline LinePipeline = VK_NULL_HANDLE;
     VkPipeline DepthEqualPipeline = VK_NULL_HANDLE;
@@ -700,12 +738,20 @@ struct NativeRasterGpu::Impl
         if (slot.Framebuffer)
             Functions->vkDestroyFramebuffer(Device, slot.Framebuffer, nullptr);
         slot.Framebuffer = VK_NULL_HANDLE;
+        if (slot.FinalFramebuffer)
+            Functions->vkDestroyFramebuffer(Device, slot.FinalFramebuffer, nullptr);
+        slot.FinalFramebuffer = VK_NULL_HANDLE;
         if (slot.ClearBitmapDescriptor && DescriptorPool)
             Functions->vkFreeDescriptorSets(
                 Device, DescriptorPool, 1, &slot.ClearBitmapDescriptor);
         slot.ClearBitmapDescriptor = VK_NULL_HANDLE;
+        if (slot.FinalDescriptor && DescriptorPool)
+            Functions->vkFreeDescriptorSets(
+                Device, DescriptorPool, 1, &slot.FinalDescriptor);
+        slot.FinalDescriptor = VK_NULL_HANDLE;
         DestroyImage(Functions, Device, slot.Color);
         DestroyImage(Functions, Device, slot.Attributes);
+        DestroyImage(Functions, Device, slot.DepthValue);
         DestroyImage(Functions, Device, slot.Depth);
         DestroyImage(Functions, Device, slot.NativeReference);
         DestroyImage(Functions, Device, slot.ClearBitmapColor);
@@ -821,6 +867,14 @@ struct NativeRasterGpu::Impl
         for (VkPipeline pipeline : DepthEqualShadowBlendLinePipelines)
             if (pipeline)
                 Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        if (EdgeMarkPipeline)
+            Functions->vkDestroyPipeline(Device, EdgeMarkPipeline, nullptr);
+        if (FinalEdgePipeline)
+            Functions->vkDestroyPipeline(Device, FinalEdgePipeline, nullptr);
+        if (FinalFogPipeline)
+            Functions->vkDestroyPipeline(Device, FinalFogPipeline, nullptr);
+        if (FinalFogAlphaPipeline)
+            Functions->vkDestroyPipeline(Device, FinalFogAlphaPipeline, nullptr);
         if (PipelineLayout)
             Functions->vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
         if (ClearBitmapPipeline)
@@ -828,6 +882,8 @@ struct NativeRasterGpu::Impl
         if (ClearBitmapPipelineLayout)
             Functions->vkDestroyPipelineLayout(
                 Device, ClearBitmapPipelineLayout, nullptr);
+        if (FinalPipelineLayout)
+            Functions->vkDestroyPipelineLayout(Device, FinalPipelineLayout, nullptr);
         if (DescriptorPool)
             Functions->vkDestroyDescriptorPool(Device, DescriptorPool, nullptr);
         if (DescriptorLayout)
@@ -835,8 +891,13 @@ struct NativeRasterGpu::Impl
         if (ClearBitmapDescriptorLayout)
             Functions->vkDestroyDescriptorSetLayout(
                 Device, ClearBitmapDescriptorLayout, nullptr);
+        if (FinalDescriptorLayout)
+            Functions->vkDestroyDescriptorSetLayout(
+                Device, FinalDescriptorLayout, nullptr);
         if (RenderPass)
             Functions->vkDestroyRenderPass(Device, RenderPass, nullptr);
+        if (FinalRenderPass)
+            Functions->vkDestroyRenderPass(Device, FinalRenderPass, nullptr);
         for (VkSampler sampler : Samplers)
             if (sampler)
                 Functions->vkDestroySampler(Device, sampler, nullptr);
@@ -857,13 +918,20 @@ struct NativeRasterGpu::Impl
         ShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
         DepthEqualShadowBlendPipelines.fill(VK_NULL_HANDLE);
         DepthEqualShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
+        EdgeMarkPipeline = VK_NULL_HANDLE;
+        FinalEdgePipeline = VK_NULL_HANDLE;
+        FinalFogPipeline = VK_NULL_HANDLE;
+        FinalFogAlphaPipeline = VK_NULL_HANDLE;
         PipelineLayout = VK_NULL_HANDLE;
         ClearBitmapPipeline = VK_NULL_HANDLE;
         ClearBitmapPipelineLayout = VK_NULL_HANDLE;
+        FinalPipelineLayout = VK_NULL_HANDLE;
         DescriptorPool = VK_NULL_HANDLE;
         DescriptorLayout = VK_NULL_HANDLE;
         ClearBitmapDescriptorLayout = VK_NULL_HANDLE;
+        FinalDescriptorLayout = VK_NULL_HANDLE;
         RenderPass = VK_NULL_HANDLE;
+        FinalRenderPass = VK_NULL_HANDLE;
         Samplers.fill(VK_NULL_HANDLE);
         Ready = false;
         Window = nullptr;
@@ -899,33 +967,40 @@ struct NativeRasterGpu::Impl
         if (!Window || !Functions || !Device || DepthFormat == VK_FORMAT_UNDEFINED)
             return false;
 
-        VkAttachmentDescription attachments[3]{};
+        VkAttachmentDescription attachments[4]{};
         attachments[0].format = kColorFormat;
         attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         attachments[1].format = VK_FORMAT_R8G8B8A8_UNORM;
         attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[1].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        attachments[2].format = DepthFormat;
+        attachments[2].format = VK_FORMAT_R32_SFLOAT;
         attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[2].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        attachments[3].format = DepthFormat;
+        attachments[3].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[3].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[3].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[3].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[3].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[3].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[3].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        const std::array<VkAttachmentReference, 2> colorRefs{{
+        const std::array<VkAttachmentReference, 3> colorRefs{{
             {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
             {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+            {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         }};
-        VkAttachmentReference depthRef{2, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        VkAttachmentReference depthRef{3, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = static_cast<std::uint32_t>(colorRefs.size());
@@ -945,7 +1020,7 @@ struct NativeRasterGpu::Impl
         dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         VkRenderPassCreateInfo passInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        passInfo.attachmentCount = 3;
+        passInfo.attachmentCount = 4;
         passInfo.pAttachments = attachments;
         passInfo.subpassCount = 1;
         passInfo.pSubpasses = &subpass;
@@ -953,6 +1028,52 @@ struct NativeRasterGpu::Impl
         passInfo.pDependencies = dependencies;
         if (Functions->vkCreateRenderPass(
                 Device, &passInfo, nullptr, &RenderPass) != VK_SUCCESS)
+            return false;
+
+        VkAttachmentDescription finalColor{};
+        finalColor.format = kColorFormat;
+        finalColor.samples = VK_SAMPLE_COUNT_1_BIT;
+        finalColor.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        finalColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        finalColor.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        finalColor.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkAttachmentReference finalColorRef{
+            0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkSubpassDescription finalSubpass{};
+        finalSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        finalSubpass.colorAttachmentCount = 1;
+        finalSubpass.pColorAttachments = &finalColorRef;
+        std::array<VkSubpassDependency, 2> finalDependencies{};
+        finalDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        finalDependencies[0].dstSubpass = 0;
+        finalDependencies[0].srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        finalDependencies[0].dstStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        finalDependencies[0].srcAccessMask =
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+        finalDependencies[0].dstAccessMask =
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+        finalDependencies[1].srcSubpass = 0;
+        finalDependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        finalDependencies[1].srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        finalDependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        finalDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        finalDependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        VkRenderPassCreateInfo finalPassInfo{
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        finalPassInfo.attachmentCount = 1;
+        finalPassInfo.pAttachments = &finalColor;
+        finalPassInfo.subpassCount = 1;
+        finalPassInfo.pSubpasses = &finalSubpass;
+        finalPassInfo.dependencyCount =
+            static_cast<std::uint32_t>(finalDependencies.size());
+        finalPassInfo.pDependencies = finalDependencies.data();
+        if (Functions->vkCreateRenderPass(
+                Device, &finalPassInfo, nullptr, &FinalRenderPass) != VK_SUCCESS)
             return false;
 
         std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -1027,6 +1148,40 @@ struct NativeRasterGpu::Impl
             return false;
         }
 
+        std::array<VkDescriptorSetLayoutBinding, 2> finalBindings{};
+        for (std::uint32_t binding = 0; binding < finalBindings.size(); ++binding)
+        {
+            finalBindings[binding].binding = binding;
+            finalBindings[binding].descriptorType =
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            finalBindings[binding].descriptorCount = 1;
+            finalBindings[binding].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo finalDescriptorInfo{
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        finalDescriptorInfo.bindingCount =
+            static_cast<std::uint32_t>(finalBindings.size());
+        finalDescriptorInfo.pBindings = finalBindings.data();
+        if (Functions->vkCreateDescriptorSetLayout(
+                Device,
+                &finalDescriptorInfo,
+                nullptr,
+                &FinalDescriptorLayout) != VK_SUCCESS)
+            return false;
+
+        VkPushConstantRange finalPushRange{};
+        finalPushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        finalPushRange.size = sizeof(NativeRasterFinalPush);
+        VkPipelineLayoutCreateInfo finalLayoutInfo{
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        finalLayoutInfo.setLayoutCount = 1;
+        finalLayoutInfo.pSetLayouts = &FinalDescriptorLayout;
+        finalLayoutInfo.pushConstantRangeCount = 1;
+        finalLayoutInfo.pPushConstantRanges = &finalPushRange;
+        if (Functions->vkCreatePipelineLayout(
+                Device, &finalLayoutInfo, nullptr, &FinalPipelineLayout) != VK_SUCCESS)
+            return false;
+
         const std::array<VkDescriptorPoolSize, 2> poolSizes{{
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16400},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
@@ -1075,6 +1230,9 @@ struct NativeRasterGpu::Impl
         VkShaderModule shadowMaskFragment = VK_NULL_HANDLE;
         VkShaderModule clearBitmapVertex = VK_NULL_HANDLE;
         VkShaderModule clearBitmapFragment = VK_NULL_HANDLE;
+        VkShaderModule finalVertex = VK_NULL_HANDLE;
+        VkShaderModule finalEdgeFragment = VK_NULL_HANDLE;
+        VkShaderModule finalFogFragment = VK_NULL_HANDLE;
         if (!CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv),
@@ -1102,7 +1260,19 @@ struct NativeRasterGpu::Impl
             !CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanClearBitmapFragmentSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanClearBitmapFragmentSpirv),
-                clearBitmapFragment))
+                clearBitmapFragment) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14FinalVertexSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalVertexSpirv),
+                finalVertex) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14FinalEdgeFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalEdgeFragmentSpirv),
+                finalEdgeFragment) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14FinalFogFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14FinalFogFragmentSpirv),
+                finalFogFragment))
         {
             if (vertex)
                 Functions->vkDestroyShaderModule(Device, vertex, nullptr);
@@ -1118,6 +1288,12 @@ struct NativeRasterGpu::Impl
                 Functions->vkDestroyShaderModule(Device, clearBitmapVertex, nullptr);
             if (clearBitmapFragment)
                 Functions->vkDestroyShaderModule(Device, clearBitmapFragment, nullptr);
+            if (finalVertex)
+                Functions->vkDestroyShaderModule(Device, finalVertex, nullptr);
+            if (finalEdgeFragment)
+                Functions->vkDestroyShaderModule(Device, finalEdgeFragment, nullptr);
+            if (finalFogFragment)
+                Functions->vkDestroyShaderModule(Device, finalFogFragment, nullptr);
             return false;
         }
 
@@ -1179,11 +1355,12 @@ struct NativeRasterGpu::Impl
         depth.stencilTestEnable = VK_TRUE;
         depth.front = stencil;
         depth.back = stencil;
-        std::array<VkPipelineColorBlendAttachmentState, 2> colorBlends{};
+        std::array<VkPipelineColorBlendAttachmentState, 3> colorBlends{};
         colorBlends[0].colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         colorBlends[1].colorWriteMask = colorBlends[0].colorWriteMask;
+        colorBlends[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
         VkPipelineColorBlendStateCreateInfo blend{
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         blend.attachmentCount = static_cast<std::uint32_t>(colorBlends.size());
@@ -1253,6 +1430,9 @@ struct NativeRasterGpu::Impl
                 for (std::uint32_t depthWrite = 0; depthWrite < 2; ++depthWrite)
                 {
                     depth.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
+                    colorBlends[2].colorWriteMask = depthWrite
+                        ? VK_COLOR_COMPONENT_R_BIT
+                        : 0;
                     for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
                     {
                         const std::uint32_t index = depthWrite * 2u + alphaBlend;
@@ -1326,6 +1506,7 @@ struct NativeRasterGpu::Impl
             depth.back = stencil;
             colorBlends[0] = {};
             colorBlends[1] = {};
+            colorBlends[2] = {};
             assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
             shadowPipelineResult = Functions->vkCreateGraphicsPipelines(
                 Device,
@@ -1404,6 +1585,9 @@ struct NativeRasterGpu::Impl
                 for (std::uint32_t depthWrite = 0; depthWrite < 2; ++depthWrite)
                 {
                     depth.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
+                    colorBlends[2].colorWriteMask = depthWrite
+                        ? VK_COLOR_COMPONENT_R_BIT
+                        : 0;
                     for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
                     {
                         const std::uint32_t index = depthWrite * 2u + alphaBlend;
@@ -1481,13 +1665,14 @@ struct NativeRasterGpu::Impl
             clearDepth.stencilTestEnable = VK_TRUE;
             clearDepth.front = clearStencil;
             clearDepth.back = clearStencil;
-            std::array<VkPipelineColorBlendAttachmentState, 2> clearAttachments{};
-            for (auto& attachment : clearAttachments)
+            std::array<VkPipelineColorBlendAttachmentState, 3> clearAttachments{};
+            for (std::size_t index = 0; index < 2; ++index)
             {
-                attachment.colorWriteMask =
+                clearAttachments[index].colorWriteMask =
                     VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             }
+            clearAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
             VkPipelineColorBlendStateCreateInfo clearBlend{
                 VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
             clearBlend.attachmentCount =
@@ -1523,6 +1708,166 @@ struct NativeRasterGpu::Impl
                 nullptr,
                 &ClearBitmapPipeline);
         }
+
+        VkResult finalPipelineResult = clearBitmapPipelineResult;
+        if (finalPipelineResult == VK_SUCCESS)
+        {
+            VkPipelineShaderStageCreateInfo edgeMarkStages[2]{};
+            edgeMarkStages[0].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            edgeMarkStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+            edgeMarkStages[0].module = vertex;
+            edgeMarkStages[0].pName = "main";
+            edgeMarkStages[1].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            edgeMarkStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            edgeMarkStages[1].module = fragment;
+            edgeMarkStages[1].pName = "main";
+            VkPipelineInputAssemblyStateCreateInfo edgeMarkAssembly{
+                VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            edgeMarkAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            VkPipelineDepthStencilStateCreateInfo edgeMarkDepth{
+                VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+            std::array<VkPipelineColorBlendAttachmentState, 3> edgeMarkAttachments{};
+            edgeMarkAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_G_BIT;
+            VkPipelineColorBlendStateCreateInfo edgeMarkBlend{
+                VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+            edgeMarkBlend.attachmentCount =
+                static_cast<std::uint32_t>(edgeMarkAttachments.size());
+            edgeMarkBlend.pAttachments = edgeMarkAttachments.data();
+            VkGraphicsPipelineCreateInfo edgeMarkInfo{
+                VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            edgeMarkInfo.stageCount = 2;
+            edgeMarkInfo.pStages = edgeMarkStages;
+            edgeMarkInfo.pVertexInputState = &vertexInput;
+            edgeMarkInfo.pInputAssemblyState = &edgeMarkAssembly;
+            edgeMarkInfo.pViewportState = &viewport;
+            edgeMarkInfo.pRasterizationState = &raster;
+            edgeMarkInfo.pMultisampleState = &multisample;
+            edgeMarkInfo.pDepthStencilState = &edgeMarkDepth;
+            edgeMarkInfo.pColorBlendState = &edgeMarkBlend;
+            edgeMarkInfo.pDynamicState = &dynamic;
+            edgeMarkInfo.layout = PipelineLayout;
+            edgeMarkInfo.renderPass = RenderPass;
+            finalPipelineResult = Functions->vkCreateGraphicsPipelines(
+                Device,
+                VK_NULL_HANDLE,
+                1,
+                &edgeMarkInfo,
+                nullptr,
+                &EdgeMarkPipeline);
+        }
+
+        const auto createFinalPipeline = [&](VkShaderModule fragmentModule,
+                                             VkColorComponentFlags writeMask,
+                                             VkPipeline& output) -> VkResult
+        {
+            VkPipelineShaderStageCreateInfo finalStages[2]{};
+            finalStages[0].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            finalStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+            finalStages[0].module = finalVertex;
+            finalStages[0].pName = "main";
+            finalStages[1].sType =
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            finalStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            finalStages[1].module = fragmentModule;
+            finalStages[1].pName = "main";
+            VkPipelineVertexInputStateCreateInfo finalVertexInput{
+                VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+            VkPipelineInputAssemblyStateCreateInfo finalAssembly{
+                VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            finalAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkPipelineViewportStateCreateInfo finalViewport{
+                VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+            finalViewport.viewportCount = 1;
+            finalViewport.scissorCount = 1;
+            VkPipelineRasterizationStateCreateInfo finalRaster{
+                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+            finalRaster.polygonMode = VK_POLYGON_MODE_FILL;
+            finalRaster.cullMode = VK_CULL_MODE_NONE;
+            finalRaster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+            finalRaster.lineWidth = 1.0f;
+            VkPipelineMultisampleStateCreateInfo finalMultisample{
+                VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+            finalMultisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+            VkPipelineColorBlendAttachmentState finalAttachment{};
+            finalAttachment.colorWriteMask = writeMask;
+            finalAttachment.blendEnable = VK_TRUE;
+            if (fragmentModule == finalEdgeFragment)
+            {
+                finalAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                finalAttachment.dstColorBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                finalAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+                finalAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            }
+            else
+            {
+                finalAttachment.srcColorBlendFactor =
+                    VK_BLEND_FACTOR_CONSTANT_COLOR;
+                finalAttachment.dstColorBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                finalAttachment.srcAlphaBlendFactor =
+                    VK_BLEND_FACTOR_CONSTANT_COLOR;
+                finalAttachment.dstAlphaBlendFactor =
+                    VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            }
+            finalAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            finalAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+            VkPipelineColorBlendStateCreateInfo finalBlend{
+                VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+            finalBlend.attachmentCount = 1;
+            finalBlend.pAttachments = &finalAttachment;
+            const VkDynamicState finalDynamicStates[] = {
+                VK_DYNAMIC_STATE_VIEWPORT,
+                VK_DYNAMIC_STATE_SCISSOR,
+                VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+            };
+            VkPipelineDynamicStateCreateInfo finalDynamic{
+                VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+            finalDynamic.dynamicStateCount = 3;
+            finalDynamic.pDynamicStates = finalDynamicStates;
+            VkGraphicsPipelineCreateInfo finalInfo{
+                VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            finalInfo.stageCount = 2;
+            finalInfo.pStages = finalStages;
+            finalInfo.pVertexInputState = &finalVertexInput;
+            finalInfo.pInputAssemblyState = &finalAssembly;
+            finalInfo.pViewportState = &finalViewport;
+            finalInfo.pRasterizationState = &finalRaster;
+            finalInfo.pMultisampleState = &finalMultisample;
+            finalInfo.pColorBlendState = &finalBlend;
+            finalInfo.pDynamicState = &finalDynamic;
+            finalInfo.layout = FinalPipelineLayout;
+            finalInfo.renderPass = FinalRenderPass;
+            return Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &finalInfo, nullptr, &output);
+        };
+
+        if (finalPipelineResult == VK_SUCCESS)
+        {
+            finalPipelineResult = createFinalPipeline(
+                finalEdgeFragment,
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                    VK_COLOR_COMPONENT_B_BIT,
+                FinalEdgePipeline);
+        }
+        if (finalPipelineResult == VK_SUCCESS)
+        {
+            finalPipelineResult = createFinalPipeline(
+                finalFogFragment,
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+                FinalFogPipeline);
+        }
+        if (finalPipelineResult == VK_SUCCESS)
+        {
+            finalPipelineResult = createFinalPipeline(
+                finalFogFragment,
+                VK_COLOR_COMPONENT_A_BIT,
+                FinalFogAlphaPipeline);
+        }
         Functions->vkDestroyShaderModule(Device, vertex, nullptr);
         Functions->vkDestroyShaderModule(Device, fragment, nullptr);
         Functions->vkDestroyShaderModule(Device, stencilClearVertex, nullptr);
@@ -1530,12 +1875,16 @@ struct NativeRasterGpu::Impl
         Functions->vkDestroyShaderModule(Device, shadowMaskFragment, nullptr);
         Functions->vkDestroyShaderModule(Device, clearBitmapVertex, nullptr);
         Functions->vkDestroyShaderModule(Device, clearBitmapFragment, nullptr);
+        Functions->vkDestroyShaderModule(Device, finalVertex, nullptr);
+        Functions->vkDestroyShaderModule(Device, finalEdgeFragment, nullptr);
+        Functions->vkDestroyShaderModule(Device, finalFogFragment, nullptr);
         if (pipelineResult != VK_SUCCESS || linePipelineResult != VK_SUCCESS ||
             depthEqualPipelineResult != VK_SUCCESS ||
             depthEqualLinePipelineResult != VK_SUCCESS ||
             translucentPipelineResult != VK_SUCCESS ||
             shadowPipelineResult != VK_SUCCESS ||
-            clearBitmapPipelineResult != VK_SUCCESS)
+            clearBitmapPipelineResult != VK_SUCCESS ||
+            finalPipelineResult != VK_SUCCESS)
             return false;
 
         Ready = true;
@@ -1586,6 +1935,17 @@ struct NativeRasterGpu::Impl
                     VK_IMAGE_ASPECT_COLOR_BIT,
                     VK_IMAGE_VIEW_TYPE_2D,
                     slot.Attributes) ||
+                !CreateImage(
+                    Window,
+                    Functions,
+                    Device,
+                    extent,
+                    VK_FORMAT_R32_SFLOAT,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                        VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_VIEW_TYPE_2D,
+                    slot.DepthValue) ||
                 !CreateImage(
                     Window,
                     Functions,
@@ -1676,12 +2036,13 @@ struct NativeRasterGpu::Impl
             VkImageView attachments[] = {
                 slot.Color.View,
                 slot.Attributes.View,
+                slot.DepthValue.View,
                 slot.Depth.View,
             };
             VkFramebufferCreateInfo framebuffer{
                 VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
             framebuffer.renderPass = RenderPass;
-            framebuffer.attachmentCount = 3;
+            framebuffer.attachmentCount = 4;
             framebuffer.pAttachments = attachments;
             framebuffer.width = extent.width;
             framebuffer.height = extent.height;
@@ -1689,6 +2050,56 @@ struct NativeRasterGpu::Impl
             if (Functions->vkCreateFramebuffer(
                     Device, &framebuffer, nullptr, &slot.Framebuffer) != VK_SUCCESS)
                 return false;
+
+            VkFramebufferCreateInfo finalFramebuffer{
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            finalFramebuffer.renderPass = FinalRenderPass;
+            finalFramebuffer.attachmentCount = 1;
+            finalFramebuffer.pAttachments = &slot.Color.View;
+            finalFramebuffer.width = extent.width;
+            finalFramebuffer.height = extent.height;
+            finalFramebuffer.layers = 1;
+            if (Functions->vkCreateFramebuffer(
+                    Device,
+                    &finalFramebuffer,
+                    nullptr,
+                    &slot.FinalFramebuffer) != VK_SUCCESS)
+            {
+                return false;
+            }
+
+            VkDescriptorSetAllocateInfo finalAllocation{
+                VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            finalAllocation.descriptorPool = DescriptorPool;
+            finalAllocation.descriptorSetCount = 1;
+            finalAllocation.pSetLayouts = &FinalDescriptorLayout;
+            if (Functions->vkAllocateDescriptorSets(
+                    Device, &finalAllocation, &slot.FinalDescriptor) != VK_SUCCESS)
+                return false;
+            std::array<VkDescriptorImageInfo, 2> finalImages{};
+            finalImages[0].sampler = Samplers[0];
+            finalImages[0].imageView = slot.Attributes.View;
+            finalImages[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            finalImages[1].sampler = Samplers[0];
+            finalImages[1].imageView = slot.DepthValue.View;
+            finalImages[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            std::array<VkWriteDescriptorSet, 2> finalWrites{};
+            for (std::uint32_t binding = 0; binding < finalWrites.size(); ++binding)
+            {
+                finalWrites[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                finalWrites[binding].dstSet = slot.FinalDescriptor;
+                finalWrites[binding].dstBinding = binding;
+                finalWrites[binding].descriptorCount = 1;
+                finalWrites[binding].descriptorType =
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                finalWrites[binding].pImageInfo = &finalImages[binding];
+            }
+            Functions->vkUpdateDescriptorSets(
+                Device,
+                static_cast<std::uint32_t>(finalWrites.size()),
+                finalWrites.data(),
+                0,
+                nullptr);
         }
         TargetsReady = true;
         return true;
@@ -2050,6 +2461,7 @@ struct NativeRasterGpu::Impl
             slot.Generation == frame.Generation &&
             slot.Color.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
             slot.Attributes.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+            slot.DepthValue.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
             slot.NativeReference.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
         {
             views.HighResolution = slot.Color.View;
@@ -2116,7 +2528,7 @@ struct NativeRasterGpu::Impl
         const auto clear = melonDS::Vulkan::DecodeClearPlaneState(
             frame.RenderClearAttr1,
             frame.RenderClearAttr2);
-        VkClearValue clearValues[3]{};
+        VkClearValue clearValues[4]{};
         clearValues[0].color.float32[0] = clear.Color[0];
         clearValues[0].color.float32[1] = clear.Color[1];
         clearValues[0].color.float32[2] = clear.Color[2];
@@ -2125,12 +2537,13 @@ struct NativeRasterGpu::Impl
         clearValues[1].color.float32[1] = clear.Attributes[1];
         clearValues[1].color.float32[2] = clear.Attributes[2];
         clearValues[1].color.float32[3] = clear.Attributes[3];
-        clearValues[2].depthStencil = {clear.Depth, clear.Stencil};
+        clearValues[2].color.float32[0] = clear.Depth;
+        clearValues[3].depthStencil = {clear.Depth, clear.Stencil};
         VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         begin.renderPass = RenderPass;
         begin.framebuffer = slot.Framebuffer;
         begin.renderArea.extent = slot.Color.Extent;
-        begin.clearValueCount = 3;
+        begin.clearValueCount = 4;
         begin.pClearValues = clearValues;
         Functions->vkCmdBeginRenderPass(
             command, &begin, VK_SUBPASS_CONTENTS_INLINE);
@@ -2511,10 +2924,186 @@ struct NativeRasterGpu::Impl
             polygonIndex = next;
         }
 
+        if ((frame.RenderDispCnt & (1u << 5u)) != 0)
+        {
+            Functions->vkCmdBindPipeline(
+                command, VK_PIPELINE_BIND_POINT_GRAPHICS, EdgeMarkPipeline);
+            Functions->vkCmdBindIndexBuffer(
+                command, slot.EdgeIndex.Buffer, 0, VK_INDEX_TYPE_UINT16);
+            for (const auto& polygon : frame.Upload.Polygons)
+            {
+                const bool shadowMask =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask) != 0;
+                if (shadowMask || polygon.EdgeIndexCount == 0)
+                    continue;
+
+                const bool textured =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
+                const bool shadow =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow) != 0;
+                const std::uint32_t textureMode = (polygon.Attr >> 4u) & 0x3u;
+                if (textured &&
+                    (polygon.TextureLayer >= textureResources.size() ||
+                     textureResources[polygon.TextureLayer] == nullptr ||
+                     (textureMode > 2u && !shadow)))
+                {
+                    continue;
+                }
+                VkDescriptorSet descriptor = textureResources[0]->DescriptorSets[0];
+                if (textured)
+                {
+                    const std::uint32_t sampler = std::min<std::uint32_t>(
+                        frame.Textures[polygon.TextureLayer].SamplerIndex, 8u);
+                    descriptor = textureResources[polygon.TextureLayer]
+                        ->DescriptorSets[sampler];
+                }
+                if (descriptor == VK_NULL_HANDLE)
+                    continue;
+                Functions->vkCmdBindDescriptorSets(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    PipelineLayout,
+                    0,
+                    1,
+                    &descriptor,
+                    0,
+                    nullptr);
+
+                Push edgePush{};
+                edgePush.ScreenSize[0] =
+                    static_cast<float>(slot.Color.Extent.width);
+                edgePush.ScreenSize[1] =
+                    static_cast<float>(slot.Color.Extent.height);
+                edgePush.Textured = textured ? 1u : 0u;
+                edgePush.TextureMode = textureMode;
+                edgePush.WBuffer =
+                    (polygon.Flags &
+                     melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer) != 0
+                    ? 1u
+                    : 0u;
+                edgePush.Reserved[0] = frame.RenderXPos;
+                edgePush.Reserved[1] = frame.RenderDispCnt;
+                const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
+                edgePush.Reserved[2] = (wireframe ? 1u : 0u) | 4u |
+                    ((frame.RenderAlphaRef & 0x1Fu) << 8u);
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(edgePush),
+                    &edgePush);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    polygon.EdgeIndexCount,
+                    1,
+                    polygon.EdgeIndexOffset,
+                    0,
+                    0);
+            }
+        }
+
+        Functions->vkCmdEndRenderPass(command);
+        slot.Color.Layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        slot.Attributes.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        slot.DepthValue.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        slot.Depth.Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        if (slot.FinalFramebuffer == VK_NULL_HANDLE ||
+            slot.FinalDescriptor == VK_NULL_HANDLE)
+            return false;
+        VkRenderPassBeginInfo finalBegin{
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        finalBegin.renderPass = FinalRenderPass;
+        finalBegin.framebuffer = slot.FinalFramebuffer;
+        finalBegin.renderArea.extent = slot.Color.Extent;
+        Functions->vkCmdBeginRenderPass(
+            command, &finalBegin, VK_SUBPASS_CONTENTS_INLINE);
+        Functions->vkCmdSetViewport(command, 0, 1, &viewport);
+        Functions->vkCmdSetScissor(command, 0, 1, &scissor);
+        Functions->vkCmdBindDescriptorSets(
+            command,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            FinalPipelineLayout,
+            0,
+            1,
+            &slot.FinalDescriptor,
+            0,
+            nullptr);
+
+        NativeRasterFinalPush finalPush{};
+        finalPush.Width = slot.Color.Extent.width;
+        finalPush.Height = slot.Color.Extent.height;
+        finalPush.DispCnt = frame.RenderDispCnt;
+        finalPush.AlphaRef = frame.RenderAlphaRef;
+        finalPush.FogColor = frame.RenderFogColor;
+        finalPush.FogOffset = frame.RenderFogOffset;
+        finalPush.FogShift = frame.RenderFogShift;
+        finalPush.ClearAttr = frame.RenderClearAttr1;
+        for (std::size_t index = 0;
+             index < frame.RenderFogDensityTable.size();
+             ++index)
+        {
+            finalPush.FogDensityPacked[index / 4u] |=
+                static_cast<std::uint32_t>(frame.RenderFogDensityTable[index])
+                << ((index % 4u) * 8u);
+        }
+        for (std::size_t index = 0; index < frame.RenderEdgeTable.size(); ++index)
+        {
+            const std::uint32_t color = frame.RenderEdgeTable[index];
+            std::uint32_t red = (color << 1u) & 0x3Eu;
+            std::uint32_t green = (color >> 4u) & 0x3Eu;
+            std::uint32_t blue = (color >> 9u) & 0x3Eu;
+            if (red) ++red;
+            if (green) ++green;
+            if (blue) ++blue;
+            finalPush.EdgeColorPacked[index] =
+                red | (green << 8u) | (blue << 16u);
+        }
+
+        if ((frame.RenderDispCnt & (1u << 5u)) != 0)
+        {
+            Functions->vkCmdBindPipeline(
+                command, VK_PIPELINE_BIND_POINT_GRAPHICS, FinalEdgePipeline);
+            Functions->vkCmdPushConstants(
+                command,
+                FinalPipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(finalPush),
+                &finalPush);
+            const float blendConstants[4]{};
+            Functions->vkCmdSetBlendConstants(command, blendConstants);
+            Functions->vkCmdDraw(command, 3, 1, 0, 0);
+        }
+        if ((frame.RenderDispCnt & (1u << 7u)) != 0)
+        {
+            const bool alphaOnly = (frame.RenderDispCnt & (1u << 6u)) != 0;
+            Functions->vkCmdBindPipeline(
+                command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                alphaOnly ? FinalFogAlphaPipeline : FinalFogPipeline);
+            Functions->vkCmdPushConstants(
+                command,
+                FinalPipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(finalPush),
+                &finalPush);
+            const float blendConstants[4] = {
+                static_cast<float>(frame.RenderFogColor & 0x1Fu) / 31.0f,
+                static_cast<float>((frame.RenderFogColor >> 5u) & 0x1Fu) / 31.0f,
+                static_cast<float>((frame.RenderFogColor >> 10u) & 0x1Fu) / 31.0f,
+                static_cast<float>((frame.RenderFogColor >> 16u) & 0x1Fu) / 31.0f,
+            };
+            Functions->vkCmdSetBlendConstants(command, blendConstants);
+            Functions->vkCmdDraw(command, 3, 1, 0, 0);
+        }
         Functions->vkCmdEndRenderPass(command);
         slot.Color.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        slot.Attributes.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        slot.Depth.Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         slot.FrameSerial = frame.FrameSerial;
         slot.Generation = frame.Generation;
         views.HighResolution = slot.Color.View;
