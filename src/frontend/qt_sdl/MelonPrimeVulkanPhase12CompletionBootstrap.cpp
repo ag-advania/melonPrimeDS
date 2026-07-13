@@ -5,7 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QVulkanWindow>
+#include <QWindow>
 #include <QtGlobal>
 
 #include <array>
@@ -113,12 +113,24 @@ Phase12RuntimeUiState ProbeRuntimeUiState(MenuLangId language)
             driverReason = QString::fromStdString(host.unavailableReason());
         else
         {
-            QVulkanWindow probeWindow;
-            probeWindow.setVulkanInstance(&host.instance());
-            probeWindow.create();
             FeatureInfo info;
-            auto context = CreateDeviceContext(&probeWindow, info);
-            (void)context;
+            if (!TryGetCachedFeatureInfo(info))
+            {
+                // A running Vulkan presenter already owns a logical device.
+                // Reuse its cached capability result instead of creating and
+                // destroying another device whenever a settings dialog opens.
+                // If Vulkan has not been used yet, probe with a plain surface
+                // window and tear it down explicitly; QVulkanWindow manages
+                // its own renderer/device lifecycle and is not a probe shell.
+                QWindow probeWindow;
+                probeWindow.setSurfaceType(QSurface::VulkanSurface);
+                probeWindow.setVulkanInstance(&host.instance());
+                probeWindow.resize(1, 1);
+                probeWindow.create();
+                auto context = CreateDeviceContext(&probeWindow, info);
+                context.reset();
+                probeWindow.destroy();
+            }
             snapshot.PresentationAvailable = info.presentationAvailable;
             snapshot.RasterFeaturesAvailable = info.rasterRendererAvailable;
             snapshot.ComputeFeaturesAvailable = info.computeRendererAvailable;
@@ -460,8 +472,8 @@ int RunPhase12CompletionHarness(const QString& outputPath, int iterations)
         computePreset.ScaleFactor == 4 && !computePreset.BetterPolygons &&
         computePreset.HiresCoordinates && !computePreset.VSync;
     const bool optionsPassed = rasterOptions.InternalResolution && rasterOptions.BetterPolygons &&
-        !rasterOptions.HiresCoordinates && computeOptions.InternalResolution &&
-        !computeOptions.BetterPolygons && computeOptions.HiresCoordinates &&
+        rasterOptions.HiresCoordinates && computeOptions.InternalResolution &&
+        computeOptions.BetterPolygons && computeOptions.HiresCoordinates &&
         rasterOptions.VSync && computeOptions.VSync;
     const bool unknownIdPassed = melonDS::Vulkan::NormalizePhase12RendererId(12345) == 0;
 

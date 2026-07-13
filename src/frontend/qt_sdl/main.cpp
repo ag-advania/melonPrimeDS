@@ -1221,7 +1221,14 @@ int main(int argc, char** argv)
             "MELONPRIME_VULKAN_PRESENTER_MULTIWINDOW") == 1;
         if (multiWindow)
             createEmuInstance();
-        QTimer::singleShot(1500, qApp, [vulkanCapturePath, multiWindow] {
+        bool captureDelayValid = false;
+        const int configuredCaptureDelay = qEnvironmentVariableIntValue(
+            "MELONPRIME_VULKAN_PRESENTER_CAPTURE_DELAY_MS",
+            &captureDelayValid);
+        const int captureDelayMs = captureDelayValid
+            ? std::max(1, configuredCaptureDelay)
+            : 1500;
+        QTimer::singleShot(captureDelayMs, qApp, [vulkanCapturePath, multiWindow] {
             MainWindow* window = emuInstances[0]
                 ? emuInstances[0]->getMainWindow() : nullptr;
             auto* panel = window
@@ -1237,6 +1244,24 @@ int main(int argc, char** argv)
                     vulkanCapturePath + ".window2.png");
             }
             qApp->exit(saved ? 0 : 3);
+        });
+    }
+
+    // Developer-only runtime regression hook for the native Vulkan handoff.
+    // A nonzero delay toggles the real QAction/slot path used by the menu and
+    // hotkey, allowing the FPS-unlimited ownership race to be reproduced in a
+    // deterministic ROM run.
+    bool frameLimitToggleDelayValid = false;
+    const int frameLimitToggleDelayMs = qEnvironmentVariableIntValue(
+        "MELONPRIME_VULKAN_FRAME_LIMIT_TOGGLE_TEST_MS",
+        &frameLimitToggleDelayValid);
+    if (frameLimitToggleDelayValid && frameLimitToggleDelayMs > 0)
+    {
+        QTimer::singleShot(frameLimitToggleDelayMs, qApp, [] {
+            MainWindow* window = emuInstances[0]
+                ? emuInstances[0]->getMainWindow() : nullptr;
+            if (window && window->actLimitFramerate)
+                window->actLimitFramerate->trigger();
         });
     }
 #endif

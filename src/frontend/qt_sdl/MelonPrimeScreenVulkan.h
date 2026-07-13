@@ -81,8 +81,16 @@ private:
     QImage m_compositeFrame;
 
     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
-    // Reuse native snapshots instead of allocating two QImages every present.
+    // Producer-owned immutable handoff. EmuThread publishes a complete frame
+    // at a frame boundary; the Vulkan presenter never reads live GPU/VRAM
+    // state that the emulation thread may be mutating.
     std::array<QImage, 2> m_directNativeScreens;
+    QMutex m_directFrameMutex;
+    VulkanDirectFrameSnapshot m_pendingDirectFrame;
+    // Direct Vulkan presentation must keep OSD messages on the GPU path.
+    // Otherwise a renderer-switch notification temporarily forces the whole
+    // frame through the native-resolution QPainter fallback.
+    QImage m_directOsdComposite;
     std::unique_ptr<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>
         m_nativeRasterBuilder;
     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;

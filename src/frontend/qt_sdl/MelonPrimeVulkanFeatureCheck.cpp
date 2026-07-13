@@ -13,6 +13,8 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -26,6 +28,15 @@ namespace MelonPrime::Vulkan
 
 namespace
 {
+
+std::mutex gFeatureInfoMutex;
+std::optional<FeatureInfo> gCachedFeatureInfo;
+
+void CacheFeatureInfo(const FeatureInfo& info)
+{
+    std::lock_guard<std::mutex> lock(gFeatureInfoMutex);
+    gCachedFeatureInfo = info;
+}
 
 struct Candidate
 {
@@ -370,7 +381,17 @@ std::shared_ptr<DeviceContext> CreateDeviceContext(QWindow* surfaceWindow, Featu
     context->m_functions->vkGetDeviceQueue(
         device, selected.info.presentQueueFamily, 0, &context->m_presentQueue);
     info = context->m_info;
+    CacheFeatureInfo(info);
     return context;
+}
+
+bool TryGetCachedFeatureInfo(FeatureInfo& info)
+{
+    std::lock_guard<std::mutex> lock(gFeatureInfoMutex);
+    if (!gCachedFeatureInfo)
+        return false;
+    info = *gCachedFeatureInfo;
+    return true;
 }
 
 void LogFeatureInfo(const FeatureInfo& info)

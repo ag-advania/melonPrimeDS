@@ -81,11 +81,11 @@ void main()
         {
             vec4 high3D = texture(nativeHighResolution3D, texCoord);
             vec4 low3D = texture(nativeReference3D, texCoord);
-            constexpr float opaqueThreshold = 30.5 / 31.0;
+            const float opaqueThreshold = 30.5 / 31.0;
             if (high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
             {
                 vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
-                constexpr float tolerance = 2.0 / 255.0;
+                const float tolerance = 2.0 / 255.0;
                 if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))))
                 {
                     outColor = vec4(

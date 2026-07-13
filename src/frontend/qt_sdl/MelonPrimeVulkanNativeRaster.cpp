@@ -11,6 +11,7 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "GPU.h"
@@ -34,6 +35,8 @@ constexpr std::size_t kNativePixels =
     static_cast<std::size_t>(kNativeWidth) * kNativeHeight;
 constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr VkFormat kTextureFormat = VK_FORMAT_R8G8B8A8_UINT;
+constexpr std::size_t kMaxResidentTextureIdentities = 128;
+constexpr std::uint64_t kMaxResidentTextureBytes = 256ull * 1024ull * 1024ull;
 
 VkImageAspectFlags DepthAspectMask(VkFormat format) noexcept
 {
@@ -400,6 +403,7 @@ bool NativeRasterSnapshotBuilder::Build(
     std::vector<std::uint32_t> textureLayers(
         gpu3D.RenderNumPolygons, 0xFFFFFFFFu);
     std::unordered_map<std::uint64_t, std::uint32_t> frameTextureIndices;
+    std::unordered_set<std::uint64_t> activeTextureIdentities;
 
     // Binding zero must remain valid for untextured draws. A one-texel opaque
     // white RGB6A5 texture is multiplication-neutral and never sampled when
@@ -432,6 +436,7 @@ bool NativeRasterSnapshotBuilder::Build(
         const auto key = melonDS::Vulkan::BuildVulkanTextureCacheKey(
             polygon->TexParam, polygon->TexPalette);
         const std::uint64_t identity = TextureIdentity(key);
+        activeTextureIdentities.insert(identity);
         const std::uint32_t samplerIndex =
             TextureSamplerIndex(polygon->TexParam);
         const std::uint64_t bindingIdentity = identity ^
@@ -482,6 +487,17 @@ bool NativeRasterSnapshotBuilder::Build(
             samplerIndex,
             cached.Pixels,
         });
+    }
+
+    // CPU decoded pixels are retained only for identities used by the current
+    // frame. NativeRasterFrame owns shared references until presentation is
+    // finished, so removing stale cache entries cannot invalidate a snapshot.
+    for (auto item = m_impl->Cache.begin(); item != m_impl->Cache.end();)
+    {
+        if (activeTextureIdentities.find(item->first) == activeTextureIdentities.end())
+            item = m_impl->Cache.erase(item);
+        else
+            ++item;
     }
 
     melonDS::Vulkan::VulkanRasterBuildOptions options;
@@ -539,12 +555,17 @@ struct NativeRasterGpu::Impl
         std::uint64_t Generation = 0;
     };
 
-    struct TextureResource
+    struct TextureVersion
     {
         ImageResource Image;
         HostBuffer Staging;
         std::uint64_t ContentHash = 0;
         std::array<VkDescriptorSet, 9> DescriptorSets{};
+    };
+
+    struct TextureResource
+    {
+        std::array<TextureVersion, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> Versions{};
     };
 
     QVulkanWindow* Window = nullptr;
@@ -590,11 +611,36 @@ struct NativeRasterGpu::Impl
         TargetsReady = false;
     }
 
+    void DestroyTextureVersion(TextureVersion& version)
+    {
+        std::array<VkDescriptorSet, 9> allocated{};
+        std::uint32_t count = 0;
+        for (VkDescriptorSet descriptor : version.DescriptorSets)
+        {
+            if (descriptor)
+                allocated[count++] = descriptor;
+        }
+        if (count && DescriptorPool)
+            Functions->vkFreeDescriptorSets(Device, DescriptorPool, count, allocated.data());
+        DestroyImage(Functions, Device, version.Image);
+        DestroyHostBuffer(Functions, Device, version.Staging);
+        version.ContentHash = 0;
+        version.DescriptorSets.fill(VK_NULL_HANDLE);
+    }
+
     void DestroyTexture(TextureResource& texture)
     {
-        DestroyImage(Functions, Device, texture.Image);
-        DestroyHostBuffer(Functions, Device, texture.Staging);
-        texture.DescriptorSets.fill(VK_NULL_HANDLE);
+        for (auto& version : texture.Versions)
+            DestroyTextureVersion(version);
+    }
+
+    void ClearTextureCache(bool waitForIdle)
+    {
+        if (waitForIdle)
+            Functions->vkDeviceWaitIdle(Device);
+        for (auto& item : Textures)
+            DestroyTexture(*item.second);
+        Textures.clear();
     }
 
     void Release()
@@ -609,9 +655,7 @@ struct NativeRasterGpu::Impl
         }
         Functions->vkDeviceWaitIdle(Device);
         DestroyTargets();
-        for (auto& item : Textures)
-            DestroyTexture(*item.second);
-        Textures.clear();
+        ClearTextureCache(false);
         if (Pipeline)
             Functions->vkDestroyPipeline(Device, Pipeline, nullptr);
         if (PipelineLayout)
@@ -742,6 +786,7 @@ struct NativeRasterGpu::Impl
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384};
         VkDescriptorPoolCreateInfo poolInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         poolInfo.maxSets = 16384;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
@@ -955,28 +1000,65 @@ struct NativeRasterGpu::Impl
         return true;
     }
 
-    TextureResource* EnsureTexture(
+    bool PrepareTextureCache(const NativeRasterFrame& frame)
+    {
+        std::unordered_set<std::uint64_t> frameIdentities;
+        frameIdentities.reserve(frame.Textures.size());
+        std::uint64_t frameWorkingSetBytes = 0;
+        for (const auto& texture : frame.Textures)
+        {
+            const auto inserted = frameIdentities.insert(texture.Key).second;
+            if (inserted)
+            {
+                frameWorkingSetBytes +=
+                    static_cast<std::uint64_t>(texture.Width) * texture.Height * 4ull *
+                    2ull * static_cast<std::uint64_t>(FrameCount);
+            }
+        }
+        if (frameIdentities.size() > kMaxResidentTextureIdentities ||
+            frameWorkingSetBytes > kMaxResidentTextureBytes)
+        {
+            return false;
+        }
+
+        std::size_t missing = 0;
+        for (std::uint64_t identity : frameIdentities)
+            missing += Textures.find(identity) == Textures.end() ? 1u : 0u;
+        if (Textures.size() + missing > kMaxResidentTextureIdentities)
+            ClearTextureCache(true);
+        return true;
+    }
+
+    TextureVersion* EnsureTexture(
         VkCommandBuffer command,
+        int frameSlot,
         const NativeRasterTexture& texture)
     {
-        if (!texture.Rgb6a5 || texture.Rgb6a5->empty() ||
-            texture.Width == 0 || texture.Height == 0)
+        const std::uint64_t expectedPixels =
+            static_cast<std::uint64_t>(texture.Width) * texture.Height;
+        if (!texture.Rgb6a5 || texture.Width == 0 || texture.Height == 0 ||
+            expectedPixels > std::numeric_limits<std::size_t>::max() ||
+            texture.Rgb6a5->size() != static_cast<std::size_t>(expectedPixels))
         {
             return nullptr;
         }
-        const std::uint64_t resourceKey =
-            texture.Key ^ (texture.ContentHash * 0x9E3779B97F4A7C15ull);
-        auto found = Textures.find(resourceKey);
-        if (found != Textures.end())
-            return found->second.get();
+        auto [found, inserted] = Textures.try_emplace(
+            texture.Key, std::make_unique<TextureResource>());
+        (void)inserted;
+        TextureVersion& version = found->second->Versions[frameSlot];
+        if (version.Image.Image && version.ContentHash == texture.ContentHash)
+            return &version;
 
-        auto resource = std::make_unique<TextureResource>();
-        const auto fail = [&]() -> TextureResource*
+        // QVulkanWindow does not reuse currentFrame() until that slot's fence
+        // is complete. Only the selected version can therefore be replaced
+        // without waiting for the other concurrent frames.
+        DestroyTextureVersion(version);
+        const auto fail = [&]() -> TextureVersion*
         {
-            DestroyTexture(*resource);
+            DestroyTextureVersion(version);
             return nullptr;
         };
-        resource->ContentHash = texture.ContentHash;
+        version.ContentHash = texture.ContentHash;
         const VkExtent2D extent{texture.Width, texture.Height};
         if (!CreateImage(
                 Window,
@@ -988,7 +1070,7 @@ struct NativeRasterGpu::Impl
                     VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 VK_IMAGE_VIEW_TYPE_2D_ARRAY,
-                resource->Image))
+                version.Image))
             return fail();
 
         const VkDeviceSize bytes =
@@ -999,14 +1081,14 @@ struct NativeRasterGpu::Impl
                 Device,
                 bytes,
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                resource->Staging))
+                version.Staging))
             return fail();
-        std::memcpy(resource->Staging.Map, texture.Rgb6a5->data(), bytes);
+        std::memcpy(version.Staging.Map, texture.Rgb6a5->data(), bytes);
 
         TransitionImage(
             Functions,
             command,
-            resource->Image,
+            version.Image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1019,15 +1101,15 @@ struct NativeRasterGpu::Impl
         copy.imageExtent = {texture.Width, texture.Height, 1};
         Functions->vkCmdCopyBufferToImage(
             command,
-            resource->Staging.Buffer,
-            resource->Image.Image,
+            version.Staging.Buffer,
+            version.Image.Image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             1,
             &copy);
         TransitionImage(
             Functions,
             command,
-            resource->Image,
+            version.Image,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -1043,14 +1125,14 @@ struct NativeRasterGpu::Impl
             allocation.descriptorSetCount = 1;
             allocation.pSetLayouts = &DescriptorLayout;
             if (Functions->vkAllocateDescriptorSets(
-                    Device, &allocation, &resource->DescriptorSets[sampler]) != VK_SUCCESS)
+                    Device, &allocation, &version.DescriptorSets[sampler]) != VK_SUCCESS)
                 return fail();
             VkDescriptorImageInfo imageInfo{};
             imageInfo.sampler = Samplers[sampler];
-            imageInfo.imageView = resource->Image.View;
+            imageInfo.imageView = version.Image.View;
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            write.dstSet = resource->DescriptorSets[sampler];
+            write.dstSet = version.DescriptorSets[sampler];
             write.dstBinding = 0;
             write.descriptorCount = 1;
             write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1059,9 +1141,7 @@ struct NativeRasterGpu::Impl
                 Device, 1, &write, 0, nullptr);
         }
 
-        TextureResource* result = resource.get();
-        Textures.emplace(resourceKey, std::move(resource));
-        return result;
+        return &version;
     }
 
     bool UploadNativeReference(
@@ -1172,9 +1252,12 @@ struct NativeRasterGpu::Impl
         if (!UploadNativeReference(command, slot, frame))
             return false;
 
-        std::vector<TextureResource*> textureResources(frame.Textures.size(), nullptr);
+        if (!PrepareTextureCache(frame))
+            return false;
+        std::vector<TextureVersion*> textureResources(frame.Textures.size(), nullptr);
         for (std::size_t index = 0; index < frame.Textures.size(); ++index)
-            textureResources[index] = EnsureTexture(command, frame.Textures[index]);
+            textureResources[index] = EnsureTexture(
+                command, frameSlot, frame.Textures[index]);
         if (textureResources.empty() || textureResources[0] == nullptr)
             return false;
 
@@ -1205,9 +1288,12 @@ struct NativeRasterGpu::Impl
 
         VkViewport viewport{};
         viewport.x = 0.0f;
-        viewport.y = static_cast<float>(slot.Color.Extent.height);
+        // The vertex shader maps DS y=0 to NDC -1. A positive-height Vulkan
+        // viewport therefore maps it to framebuffer row zero. Negating the
+        // viewport here inverted the native 3D layer relative to the 2D frame.
+        viewport.y = 0.0f;
         viewport.width = static_cast<float>(slot.Color.Extent.width);
-        viewport.height = -static_cast<float>(slot.Color.Extent.height);
+        viewport.height = static_cast<float>(slot.Color.Extent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         VkRect2D scissor{};

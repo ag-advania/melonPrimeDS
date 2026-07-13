@@ -74,6 +74,8 @@ private:
 };
 
 std::shared_ptr<DeviceContext> CreateDeviceContext(QWindow* surfaceWindow, FeatureInfo& info);
+// Returns the last successful runtime device probe without creating Vulkan objects.
+bool TryGetCachedFeatureInfo(FeatureInfo& info);
 void LogFeatureInfo(const FeatureInfo& info);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 int RunProbeHarness(const QString& outputPath, int iterations = 10);

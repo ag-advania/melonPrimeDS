@@ -2213,6 +2213,69 @@ void ScreenPanelVulkan::drawScreen()
     bool expected = false;
     if (!m_phase13PresentPending.compare_exchange_strong(expected, true))
         return;
+
+    // Build the native Vulkan handoff here, on EmuThread, immediately after
+    // the emulated frame is complete. The previous presenter-side capture
+    // raced RenderPolygonRAM and VRAM writes when the FPS limiter was off.
+    VulkanDirectFrameSnapshot published;
+    auto* nds = emuInstance ? emuInstance->getNDS() : nullptr;
+    if (!nds)
+    {
+        m_phase13PresentPending.store(false);
+        return;
+    }
+    melonDS::RendererOutputLease outputLease =
+        nds->GPU.AcquireRendererOutputLease();
+    const melonDS::RendererOutput& output = outputLease.Output;
+    if (output.Kind != melonDS::RendererOutputKind::CpuBgra ||
+        !output.Top || !output.Bottom)
+    {
+        m_phase13PresentPending.store(false);
+        return;
+    }
+    published.FrameSerial = output.FrameSerial;
+    published.Generation = output.Generation;
+    constexpr std::size_t nativeBytes =
+        256u * 192u * sizeof(melonDS::u32);
+    const void* nativeSources[2] = {output.Top, output.Bottom};
+    for (int index = 0; index < 2; ++index)
+    {
+        QImage& image = m_directNativeScreens[index];
+        if (image.size() != QSize(256, 192) ||
+            image.format() != QImage::Format_RGB32)
+        {
+            image = QImage(256, 192, QImage::Format_RGB32);
+        }
+        if (image.isNull())
+        {
+            m_phase13PresentPending.store(false);
+            return;
+        }
+        std::memcpy(image.bits(), nativeSources[index], nativeBytes);
+        published.Screens[index] = image;
+    }
+
+    const auto* vulkanRenderer =
+        dynamic_cast<const melonDS::VulkanRenderer*>(
+            &nds->GPU.GetRenderer());
+    if (vulkanRenderer && vulkanRenderer->GetRecordedScaleFactor() > 1)
+    {
+        if (!m_nativeRasterBuilder)
+        {
+            m_nativeRasterBuilder =
+                std::make_unique<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
+        }
+        if (!m_nativeRasterBuilder->Build(
+                *vulkanRenderer, nds->GPU, published.NativeRaster))
+        {
+            published.NativeRaster.Clear();
+        }
+    }
+    {
+        QMutexLocker frameLocker(&m_directFrameMutex);
+        m_pendingDirectFrame = std::move(published);
+    }
+
     m_phase13QueuedSerial.store(serial);
     QMetaObject::invokeMethod(this, [this] {
         if (m_vulkanWindow)
@@ -2373,66 +2436,21 @@ bool ScreenPanelVulkan::prepareDirectFrameForVulkan(
     if (!emuThread || !emuThread->emuIsActive())
         return false;
 
-    // OSD messages and the no-ROM splash remain on the existing QPainter path.
-    // Normal gameplay normally exits osdUpdate() immediately.
-    osdUpdate();
-    osdMutex.lock();
-    const bool hasActiveOsd =
-        osdEnabled && !osdItems.empty();
-    osdMutex.unlock();
-    if (hasActiveOsd)
-        return false;
-
-    QMutexLocker renderLocker(&emuInstance->renderLock);
-
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Always upload the compact native 2D/final frame. ScaleFactor > 1 is
-    // handled by NativeRasterGpu and never by a CPU-upscaled QImage.
-    auto* nds = emuInstance->getNDS();
-    melonDS::RendererOutputLease outputLease =
-        nds->GPU.AcquireRendererOutputLease();
-    const melonDS::RendererOutput& output = outputLease.Output;
-    if (output.Kind != melonDS::RendererOutputKind::CpuBgra ||
-        !output.Top || !output.Bottom)
     {
-        return false;
-    }
-
-    snapshot.FrameSerial = output.FrameSerial;
-    snapshot.Generation = output.Generation;
-    constexpr std::size_t nativeBytes =
-        256u * 192u * sizeof(melonDS::u32);
-    const void* nativeSources[2] = {output.Top, output.Bottom};
-    for (int index = 0; index < 2; ++index)
-    {
-        QImage& image = m_directNativeScreens[index];
-        if (image.size() != QSize(256, 192) ||
-            image.format() != QImage::Format_RGB32)
+        QMutexLocker frameLocker(&m_directFrameMutex);
+        if (m_pendingDirectFrame.Screens[0].isNull() ||
+            m_pendingDirectFrame.Screens[1].isNull())
         {
-            image = QImage(256, 192, QImage::Format_RGB32);
-        }
-        if (image.isNull())
             return false;
-        std::memcpy(image.bits(), nativeSources[index], nativeBytes);
-        snapshot.Screens[index] = image;
+        }
+        snapshot = std::move(m_pendingDirectFrame);
+        m_pendingDirectFrame = VulkanDirectFrameSnapshot{};
     }
 
-    const auto* vulkanRenderer =
-        dynamic_cast<const melonDS::VulkanRenderer*>(
-            &nds->GPU.GetRenderer());
-    if (vulkanRenderer && vulkanRenderer->GetRecordedScaleFactor() > 1)
-    {
-        if (!m_nativeRasterBuilder)
-        {
-            m_nativeRasterBuilder =
-                std::make_unique<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
-        }
-        if (!m_nativeRasterBuilder->Build(
-                *vulkanRenderer, nds->GPU, snapshot.NativeRaster))
-        {
-            snapshot.NativeRaster.Clear();
-        }
-    }
+    // Keep gameplay OSD messages on the direct path. Renderer changes post an
+    // OSD notification for several seconds; falling back here made Vulkan look
+    // native-resolution until that notification expired.
+    osdUpdate();
 
     snapshot.LogicalSize =
         size().expandedTo(QSize(1, 1));
@@ -2593,6 +2611,60 @@ bool ScreenPanelVulkan::prepareDirectFrameForVulkan(
         }
     }
 #endif
+
+    // The direct compositor has one general overlay upload. When an OSD is
+    // active, combine it with the optional Custom HUD into an owned image so
+    // both remain visible without abandoning high-resolution Vulkan output.
+    {
+        QMutexLocker osdLocker(&osdMutex);
+        const bool hasActiveOsd = osdEnabled && !osdItems.empty();
+        if (hasActiveOsd)
+        {
+            const QSize overlaySize = size().expandedTo(QSize(1, 1));
+            if (m_directOsdComposite.size() != overlaySize ||
+                m_directOsdComposite.format() !=
+                    QImage::Format_ARGB32_Premultiplied)
+            {
+                m_directOsdComposite = QImage(
+                    overlaySize, QImage::Format_ARGB32_Premultiplied);
+            }
+            if (!m_directOsdComposite.isNull())
+            {
+                m_directOsdComposite.fill(Qt::transparent);
+                QPainter overlayPainter(&m_directOsdComposite);
+                if (!snapshot.HudOverlay.isNull() &&
+                    !snapshot.HudSource.isEmpty() &&
+                    !snapshot.HudDestination.isEmpty())
+                {
+                    overlayPainter.drawImage(
+                        snapshot.HudDestination,
+                        snapshot.HudOverlay,
+                        snapshot.HudSource);
+                }
+
+                constexpr int osdMargin = 6;
+                int y = osdMargin;
+                QRect dirty;
+                for (const auto& item : osdItems)
+                {
+                    const QRect destination(
+                        osdMargin, y, item.bitmap.width(), item.bitmap.height());
+                    overlayPainter.drawImage(destination.topLeft(), item.bitmap);
+                    dirty = dirty.united(destination);
+                    y += item.bitmap.height();
+                }
+                if (!snapshot.HudDestination.isEmpty())
+                    dirty = dirty.united(snapshot.HudDestination);
+                dirty = dirty.intersected(m_directOsdComposite.rect());
+                if (!dirty.isEmpty())
+                {
+                    snapshot.HudOverlay = m_directOsdComposite;
+                    snapshot.HudSource = dirty;
+                    snapshot.HudDestination = dirty;
+                }
+            }
+        }
+    }
 
     return true;
 }
