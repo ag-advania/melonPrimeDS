@@ -25,12 +25,6 @@ class Phase13RuntimeState;
 struct VulkanDirectFrameSnapshot
 {
     std::array<QImage, 2> Screens;
-
-    // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P6_FRAME_IDENTITY_V1
-    // Exact producer identity. Zero disables transfer reuse conservatively.
-    std::uint64_t FrameSerial = 0;
-    std::uint64_t Generation = 0;
-
     QSize LogicalSize;
     int NumScreens = 0;
     std::array<std::array<float, 6>, kMaxScreenTransforms> ScreenMatrices{};

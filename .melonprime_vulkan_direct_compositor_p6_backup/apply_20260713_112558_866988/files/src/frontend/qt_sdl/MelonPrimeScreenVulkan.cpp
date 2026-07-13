@@ -196,21 +196,6 @@ private:
     std::array<VkImageLayout, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
         m_directOverlayLayouts{};
 
-    // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P6_FRAME_IDENTITY_V1
-    // Each QVulkanWindow frame slot owns a separate sampled image. Remember the
-    // exact producer frame stored in that slot so expose/paint-driven duplicate
-    // presents do not recopy and retransmit unchanged screen pixels.
-    std::array<std::uint64_t, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
-        m_directScreenFrameSerials{};
-    std::array<std::uint64_t, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
-        m_directScreenGenerations{};
-    std::array<std::array<QSize, 2>, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
-        m_directScreenExtents{};
-    std::array<VkSampler, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
-        m_directDescriptorScreenSamplers{};
-    std::array<bool, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT>
-        m_directDescriptorInitialized{};
-
     bool m_ready = false;
 };
 
@@ -915,12 +900,6 @@ bool PresenterRenderer::createDirectResources(
 
     m_directScreenLayouts.fill(VK_IMAGE_LAYOUT_UNDEFINED);
     m_directOverlayLayouts.fill(VK_IMAGE_LAYOUT_UNDEFINED);
-    m_directScreenFrameSerials.fill(0);
-    m_directScreenGenerations.fill(0);
-    for (auto& extents : m_directScreenExtents)
-        extents = std::array<QSize, 2>{};
-    m_directDescriptorScreenSamplers.fill(VK_NULL_HANDLE);
-    m_directDescriptorInitialized.fill(false);
     return true;
 
 direct_resource_failure:
@@ -1018,11 +997,6 @@ void PresenterRenderer::destroyDirectResources()
         m_directOverlayMemory[index] = VK_NULL_HANDLE;
         m_directOverlayViews[index] = VK_NULL_HANDLE;
         m_directOverlayLayouts[index] = VK_IMAGE_LAYOUT_UNDEFINED;
-        m_directScreenFrameSerials[index] = 0;
-        m_directScreenGenerations[index] = 0;
-        m_directScreenExtents[index] = std::array<QSize, 2>{};
-        m_directDescriptorScreenSamplers[index] = VK_NULL_HANDLE;
-        m_directDescriptorInitialized[index] = false;
     }
 
     if (m_directStagingBuffer)
@@ -1070,11 +1044,6 @@ bool PresenterRenderer::renderDirectFrame(
         std::max(
             snapshot.Screens[0].height(),
             snapshot.Screens[1].height()));
-    const std::array<QSize, 2> screenExtents{{
-        snapshot.Screens[0].size(),
-        snapshot.Screens[1].size()}};
-    const bool screenIdentityValid =
-        snapshot.FrameSerial != 0 && snapshot.Generation != 0;
     const QSize requiredOverlay(
         std::max(1, snapshot.HudSource.width()),
         std::max(1, snapshot.HudSource.height()));
@@ -1116,56 +1085,37 @@ bool PresenterRenderer::renderDirectFrame(
     std::uint8_t* const staging =
         m_directStagingMap + frameBase;
 
-    const bool screenUploadRequired =
-        !screenIdentityValid ||
-        m_directScreenLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED ||
-        m_directScreenFrameSerials[slot] != snapshot.FrameSerial ||
-        m_directScreenGenerations[slot] != snapshot.Generation ||
-        m_directScreenExtents[slot] != screenExtents;
-    if (screenUploadRequired)
-    {
-        CopyImageTightly(
-            staging + m_directTopOffset,
-            snapshot.Screens[0]);
-        CopyImageTightly(
-            staging + m_directBottomOffset,
-            snapshot.Screens[1]);
-    }
+    CopyImageTightly(
+        staging + m_directTopOffset,
+        snapshot.Screens[0]);
+    CopyImageTightly(
+        staging + m_directBottomOffset,
+        snapshot.Screens[1]);
 
-    const bool hasHudOverlay =
-        !snapshot.HudOverlay.isNull() &&
-        !snapshot.HudSource.isEmpty();
-    const bool overlayUploadRequired =
-        hasHudOverlay ||
-        m_directOverlayLayouts[slot] == VK_IMAGE_LAYOUT_UNDEFINED;
     QSize overlayCopySize(1, 1);
-    if (overlayUploadRequired)
+    std::memset(
+        staging + m_directOverlayOffset,
+        0,
+        4);
+    if (!snapshot.HudOverlay.isNull() &&
+        !snapshot.HudSource.isEmpty())
     {
-        std::memset(
-            staging + m_directOverlayOffset,
-            0,
-            4);
-        if (hasHudOverlay)
+        const QRect clippedSource =
+            snapshot.HudSource.intersected(
+                snapshot.HudOverlay.rect());
+        if (!clippedSource.isEmpty())
         {
-            const QRect clippedSource =
-                snapshot.HudSource.intersected(
-                    snapshot.HudOverlay.rect());
-            if (!clippedSource.isEmpty())
-            {
-                overlayCopySize = clippedSource.size();
-                CopyImageRectTightly(
-                    staging + m_directOverlayOffset,
-                    snapshot.HudOverlay,
-                    clippedSource);
-            }
+            overlayCopySize = clippedSource.size();
+            CopyImageRectTightly(
+                staging + m_directOverlayOffset,
+                snapshot.HudOverlay,
+                clippedSource);
         }
     }
 
     VkCommandBuffer command =
         m_window->currentCommandBuffer();
 
-    if (screenUploadRequired)
-    {
     VkImageMemoryBarrier screenToTransfer{
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     screenToTransfer.srcAccessMask =
@@ -1264,24 +1214,9 @@ bool PresenterRenderer::renderDirectFrame(
         nullptr,
         1,
         &screenToSample);
-        m_directScreenLayouts[slot] =
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        if (screenIdentityValid)
-        {
-            m_directScreenFrameSerials[slot] = snapshot.FrameSerial;
-            m_directScreenGenerations[slot] = snapshot.Generation;
-            m_directScreenExtents[slot] = screenExtents;
-        }
-        else
-        {
-            m_directScreenFrameSerials[slot] = 0;
-            m_directScreenGenerations[slot] = 0;
-            m_directScreenExtents[slot] = screenExtents;
-        }
-    }
+    m_directScreenLayouts[slot] =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    if (overlayUploadRequired)
-    {
     VkImageMemoryBarrier overlayToTransfer{
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     overlayToTransfer.srcAccessMask =
@@ -1372,16 +1307,14 @@ bool PresenterRenderer::renderDirectFrame(
         nullptr,
         1,
         &overlayToSample);
-        m_directOverlayLayouts[slot] =
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    }
+    m_directOverlayLayouts[slot] =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    const VkSampler desiredScreenSampler =
+    VkDescriptorImageInfo screenInfo{};
+    screenInfo.sampler =
         m_panel->linearFilteringForVulkan()
         ? m_linearSampler
         : m_nearestSampler;
-    VkDescriptorImageInfo screenInfo{};
-    screenInfo.sampler = desiredScreenSampler;
     screenInfo.imageView =
         m_directScreenViews[slot];
     screenInfo.imageLayout =
@@ -1397,41 +1330,31 @@ bool PresenterRenderer::renderDirectFrame(
     VkDescriptorImageInfo radarInfo = screenInfo;
     radarInfo.sampler = m_linearSampler;
 
-    const bool descriptorUpdateRequired =
-        !m_directDescriptorInitialized[slot] ||
-        m_directDescriptorScreenSamplers[slot] !=
-            desiredScreenSampler;
-    if (descriptorUpdateRequired)
+    std::array<VkWriteDescriptorSet, 3> writes{};
+    const VkDescriptorImageInfo* infos[] = {
+        &screenInfo,
+        &overlayInfo,
+        &radarInfo};
+    for (std::uint32_t binding = 0;
+         binding < writes.size();
+         ++binding)
     {
-        std::array<VkWriteDescriptorSet, 3> writes{};
-        const VkDescriptorImageInfo* infos[] = {
-            &screenInfo,
-            &overlayInfo,
-            &radarInfo};
-        for (std::uint32_t binding = 0;
-             binding < writes.size();
-             ++binding)
-        {
-            writes[binding].sType =
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[binding].dstSet =
-                m_directDescriptorSets[slot];
-            writes[binding].dstBinding = binding;
-            writes[binding].descriptorCount = 1;
-            writes[binding].descriptorType =
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[binding].pImageInfo = infos[binding];
-        }
-        m_df->vkUpdateDescriptorSets(
-            m_device,
-            static_cast<std::uint32_t>(writes.size()),
-            writes.data(),
-            0,
-            nullptr);
-        m_directDescriptorScreenSamplers[slot] =
-            desiredScreenSampler;
-        m_directDescriptorInitialized[slot] = true;
+        writes[binding].sType =
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[binding].dstSet =
+            m_directDescriptorSets[slot];
+        writes[binding].dstBinding = binding;
+        writes[binding].descriptorCount = 1;
+        writes[binding].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[binding].pImageInfo = infos[binding];
     }
+    m_df->vkUpdateDescriptorSets(
+        m_device,
+        static_cast<std::uint32_t>(writes.size()),
+        writes.data(),
+        0,
+        nullptr);
 
     const QSize swapSize =
         m_window->swapChainImageSize();
@@ -2352,21 +2275,6 @@ bool ScreenPanelVulkan::prepareDirectFrameForVulkan(
     {
         snapshot.Screens[0] = highResolution[0];
         snapshot.Screens[1] = highResolution[1];
-
-        const auto* renderer =
-            dynamic_cast<const melonDS::VulkanRenderer*>(
-                &emuInstance->getNDS()->GPU.GetRenderer());
-        if (renderer)
-        {
-            const auto frame =
-                renderer->AcquireCompatibilityFrame();
-            if (frame)
-            {
-                snapshot.FrameSerial = frame->FrameSerial;
-                snapshot.Generation =
-                    renderer->GetOutputGenerationForDiagnostics();
-            }
-        }
     }
     else
     {
@@ -2382,9 +2290,6 @@ bool ScreenPanelVulkan::prepareDirectFrameForVulkan(
         {
             return false;
         }
-
-        snapshot.FrameSerial = output.FrameSerial;
-        snapshot.Generation = output.Generation;
 
         constexpr std::size_t nativeBytes =
             256u * 192u * sizeof(melonDS::u32);
