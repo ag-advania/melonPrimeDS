@@ -84,15 +84,17 @@ void main()
             vec4 low3D = texture(nativeReference3D, texCoord);
             float nativeOwnership = texture(nativeRasterCoverage, texCoord).a;
             const float opaqueThreshold = 30.5 / 31.0;
+            const float tolerance = 2.0 / 255.0;
+            vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
+            bool software3DOwnsBase =
+                all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance)));
             // Coverage 1.0 identifies an opaque native fragment. Values below
-            // 0.75 identify translucent/shadow output and deliberately retain
-            // the software-correctness composite, preventing black effect
-            // quads and through-wall alpha geometry from replacing it.
+            // 0.75 identify translucent/shadow output and require the stricter
+            // native-center parity proof below.
             if (nativeOwnership >= 0.75 &&
-                high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold)
+                high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold &&
+                software3DOwnsBase)
             {
-                vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
-                const float tolerance = 2.0 / 255.0;
                 // The software 3D plane remains the ownership oracle: only
                 // replace pixels where the composed engine-A output matches
                 // that plane. Do not require the high-resolution raster color
@@ -100,7 +102,33 @@ void main()
                 // guard rejected the very subpixel, fog, edge, and texture
                 // differences the Sapphire-compatible raster is meant to
                 // preserve.
-                if (all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance))))
+                outColor = vec4(
+                    clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
+                    1.0);
+                return;
+            }
+
+            // A provisional translucent fragment can be adopted only when
+            // the native raster at this DS pixel's center agrees with the
+            // Software RGB6A5 oracle. Checking the center avoids rejecting
+            // intentional high-resolution subpixel coverage while preventing
+            // an alpha/depth mismatch from producing black effect rectangles.
+            if (nativeOwnership >= 0.20 && software3DOwnsBase)
+            {
+                ivec2 referenceSize = textureSize(nativeReference3D, 0);
+                ivec2 referencePixel = clamp(
+                    ivec2(texCoord * vec2(referenceSize)),
+                    ivec2(0),
+                    referenceSize - ivec2(1));
+                vec2 referenceCenter =
+                    (vec2(referencePixel) + vec2(0.5)) / vec2(referenceSize);
+                vec4 highCenter = texture(nativeHighResolution3D, referenceCenter);
+                const float alphaTolerance = 1.5 / 31.0;
+                bool centerRgbMatches = all(lessThanEqual(
+                    abs(highCenter.rgb - low3D.rgb), vec3(tolerance)));
+                bool centerAlphaMatches =
+                    abs(highCenter.a - low3D.a) <= alphaTolerance;
+                if (centerRgbMatches && centerAlphaMatches)
                 {
                     outColor = vec4(
                         clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
