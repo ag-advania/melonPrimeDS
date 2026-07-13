@@ -2238,7 +2238,7 @@ struct NativeRasterGpu::Impl
         NativeRasterViews& views)
     {
         views = {};
-        if (!frame.Valid || frame.Scale <= 1 || frameSlot < 0 ||
+        if (!frame.Valid || frame.Scale < 1 || frameSlot < 0 ||
             frameSlot >= FrameCount || !frame.Upload.Valid)
             return true;
         auto& slot = Slots[frameSlot];
@@ -3287,7 +3287,10 @@ bool NativeRasterGpu::Render(
     NativeRasterViews& views)
 {
     views = {};
-    if (!frame.Valid || frame.Scale <= 1)
+    // Scale 1 is the normal Vulkan renderer path too. The previous guard
+    // silently kept native raster presentation disabled unless the user chose
+    // an internal resolution above 1x.
+    if (!frame.Valid || frame.Scale < 1)
         return true;
     if (!m_impl->Initialize(window, functions))
         return false;
