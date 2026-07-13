@@ -6,7 +6,6 @@
 
 #include "Screen.h"
 
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -21,25 +20,6 @@ namespace MelonPrime::Vulkan
 class Phase13RuntimeState;
 }
 
-// MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P3_V1
-struct VulkanDirectFrameSnapshot
-{
-    std::array<QImage, 2> Screens;
-    QSize LogicalSize;
-    int NumScreens = 0;
-    std::array<std::array<float, 6>, kMaxScreenTransforms> ScreenMatrices{};
-    std::array<int, kMaxScreenTransforms> ScreenKinds{};
-
-    QImage HudOverlay;
-    QRect HudDestination;
-
-    bool RadarVisible = false;
-    QRectF RadarDestination;
-    QPointF RadarSourceCenter;
-    float RadarSourceRadius = 0.0f;
-    float RadarOpacity = 0.0f;
-};
-
 class ScreenPanelVulkan final : public ScreenPanelNative
 {
 public:
@@ -49,7 +29,6 @@ public:
     bool initVulkan();
     bool captureVulkanFrame(const QString& outputPath);
     void drawScreen() override;
-    bool prepareDirectFrameForVulkan(VulkanDirectFrameSnapshot& snapshot);
     const QImage& composeFrameForVulkan();
     bool linearFilteringForVulkan() const { return filter; }
     // MELONPRIME_VULKAN_PHASE13_SCREEN_RUNTIME_V1
