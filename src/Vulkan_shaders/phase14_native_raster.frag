@@ -22,8 +22,9 @@ layout(push_constant) uniform NativeRasterPush
 
 layout(location = 0) in vec4 fColor;
 layout(location = 1) in vec2 fTexcoord;
-layout(location = 2) in float fDepth;
-layout(location = 3) flat in uint fPolygonAttr;
+layout(location = 2) noperspective in float fDepthLinear;
+layout(location = 3) smooth in float fDepthPerspective;
+layout(location = 4) flat in uint fPolygonAttr;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAttr;
 layout(location = 2) out float outDepth;
@@ -283,6 +284,9 @@ vec4 encodeColorDsTranslucentBlendAlpha(Color6A5 color)
 
 void main()
 {
+    float fragmentDepth = pc.wBuffer != 0u
+        ? fDepthPerspective
+        : fDepthLinear;
     uint polygonAlpha = (fPolygonAttr >> 16u) & 0x1Fu;
     Color6A5 color;
     color.r = clamp6(int(clamp(fColor.r * 63.0 + 0.5, 0.0, 63.0)));
@@ -366,7 +370,8 @@ void main()
             discard;
         outColor = vec4(0.0);
         outAttr = vec4(0.0, 1.0, 0.0, 1.0);
-        outDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
+        outDepth = fragmentDepth;
+        gl_FragDepth = fragmentDepth;
         return;
     }
 
@@ -391,6 +396,6 @@ void main()
             0.0,
             float((fPolygonAttr >> 15u) & 0x1u),
             1.0);
-    outDepth = pc.wBuffer != 0u ? fDepth : gl_FragCoord.z;
+    outDepth = fragmentDepth;
     gl_FragDepth = outDepth;
 }

@@ -13,12 +13,14 @@ layout(push_constant) uniform NativeRasterPush
     uint clearAttr;
 } pc;
 
-layout(location = 2) in float fDepth;
+layout(location = 2) noperspective in float fDepthLinear;
+layout(location = 3) smooth in float fDepthPerspective;
 
 // Shadow masks only update stencil on depth failure. Their texture/color
 // attributes do not participate, matching Sapphire and the software renderer.
 void main()
 {
-    if (pc.wBuffer != 0u)
-        gl_FragDepth = fDepth;
+    gl_FragDepth = pc.wBuffer != 0u
+        ? fDepthPerspective
+        : fDepthLinear;
 }

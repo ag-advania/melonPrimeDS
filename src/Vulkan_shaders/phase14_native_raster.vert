@@ -23,8 +23,9 @@ layout(location = 5) in uint fullW;
 
 layout(location = 0) out vec4 fColor;
 layout(location = 1) out vec2 fTexcoord;
-layout(location = 2) out float fDepth;
-layout(location = 3) flat out uint fPolygonAttr;
+layout(location = 2) noperspective out float fDepthLinear;
+layout(location = 3) smooth out float fDepthPerspective;
+layout(location = 4) flat out uint fPolygonAttr;
 
 void main()
 {
@@ -53,7 +54,8 @@ void main()
     clip.w = w;
     clip.xyz *= w;
     gl_Position = clip;
-    fDepth = depth;
+    fDepthLinear = depth;
+    fDepthPerspective = depth;
 
     uvec4 color = uvec4(
         packed0.z & 0xFFu,
