@@ -1,0 +1,16 @@
+{
+    "Patch":  "MelonPrimeDS Vulkan Structured 3D Composition build fix v5",
+    "AppliedAt":  "2026-07-13T19:27:31.9167020+09:00",
+    "Repository":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS",
+    "Backup":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS\\.melonprime_vulkan_structured_3d_buildfix_backup\\apply_20260713_192731_844",
+    "ReplacementCount":  2,
+    "Files":  [
+                  "src/GPU_Soft.cpp"
+              ],
+    "Validation":  {
+                       "StructuredMarker":  true,
+                       "OutputDeclaration":  true,
+                       "ClearPathCount":  4,
+                       "StaleIdentifiersRemaining":  0
+                   }
+}

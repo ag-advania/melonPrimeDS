@@ -39,10 +39,6 @@ enum class Soft3DCompositionMode : u32
     AlphaCoefficients = 3,
     BrightnessUp = 4,
     BrightnessDown = 5,
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    // A single 2D layer occupies the foreground slot and alpha-blends over
-    // the native Vulkan 3D result.
-    ForegroundAlphaCoefficients = 6,
 };
 
 struct Soft3DCompositionPixel
@@ -62,9 +58,7 @@ struct Soft3DCompositionPixel
     }
 };
 
-static_assert(
-    static_cast<u32>(
-        Soft3DCompositionMode::ForegroundAlphaCoefficients) <= 0x7u);
+static_assert(static_cast<u32>(Soft3DCompositionMode::BrightnessDown) <= 0x7u);
 #endif
 
 class SoftRenderer : public Renderer

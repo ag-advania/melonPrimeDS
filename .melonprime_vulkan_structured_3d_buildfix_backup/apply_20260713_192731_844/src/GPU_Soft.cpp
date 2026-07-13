@@ -126,7 +126,7 @@ void SoftRenderer::DrawScanline(u32 line)
 
 #ifdef MELONPRIME_DS
         // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-        memset(Output3DComposition, 0, sizeof(Output3DComposition));
+        memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
 #endif
 
         // draw BG/OBJ layers

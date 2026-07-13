@@ -1,0 +1,16 @@
+{
+    "Patch":  "MelonPrimeDS Vulkan structured 3D composition",
+    "AppliedAt":  "2026-07-13T19:22:25.7004420+09:00",
+    "Repository":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS",
+    "Backup":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS\\.melonprime_vulkan_structured_3d_backup\\apply_20260713_192225_625",
+    "Files":  [
+                  "src/GPU_Soft.h",
+                  "src/GPU_Soft.cpp",
+                  "src/GPU2D_Soft.h",
+                  "src/GPU2D_Soft.cpp",
+                  "src/GPU_Vulkan.h",
+                  "src/GPU_Vulkan.cpp",
+                  "src/Vulkan_shaders/phase10_presenter.frag"
+              ],
+    "Goal":  "Replace RGB-oracle translucent adoption with exact Software-2D composition metadata."
+}

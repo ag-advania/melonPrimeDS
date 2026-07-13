@@ -38,38 +38,25 @@ void SoftRenderer2D::Reset()
     memset(WindowMask, 0, sizeof(WindowMask));
     memset(OBJLine, 0, sizeof(OBJLine));
     memset(OBJWindow, 0, sizeof(OBJWindow));
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    memset(ThreeDSlotUnder, 0, sizeof(ThreeDSlotUnder));
-    memset(ThreeDSlotForeground, 0, sizeof(ThreeDSlotForeground));
-    memset(ThreeDSlotAboveCount, 0, sizeof(ThreeDSlotAboveCount));
-    memset(ThreeDSlotActive, 0, sizeof(ThreeDSlotActive));
-#endif
 
     NumSprites = 0;
 }
 
 #ifdef MELONPRIME_DS
 // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
 u32 SoftRenderer2D::ColorComposite(
-    int i, u32 val1, u32 val2, u32* threeDComposition) const
+    int i, u32 val1, u32 val2, bool* direct3DOwnership) const
 #else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 #endif
 {
     u32 coloreffect = 0;
-    u32 eva = 0;
-    u32 evb = 0;
+    u32 eva, evb;
 
 #ifdef MELONPRIME_DS
     const u32 sourceFlag1 = val1 >> 24;
-    const u32 sourceFlag2 = val2 >> 24;
-    const bool sourceIs3D = (sourceFlag1 & 0xC0u) == 0x40u;
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    const bool source2Is3D = (sourceFlag2 & 0xC0u) == 0x40u;
-    if (threeDComposition)
-        *threeDComposition = 0;
+    if (direct3DOwnership)
+        *direct3DOwnership = false;
 #endif
     u32 flag1 = val1 >> 24;
     u32 flag2 = val2 >> 24;
@@ -126,55 +113,14 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
-#ifdef MELONPRIME_DS
-    if (threeDComposition && sourceIs3D)
-    {
-        Soft3DCompositionMode mode = Soft3DCompositionMode::None;
-        u32 factorA = 0;
-        u32 factorB = 0;
-        switch (coloreffect)
-        {
-        case 0:
-            mode = Soft3DCompositionMode::Direct;
-            break;
-        case 1:
-            mode = Soft3DCompositionMode::AlphaCoefficients;
-            factorA = eva;
-            factorB = evb;
-            break;
-        case 2:
-            mode = Soft3DCompositionMode::BrightnessUp;
-            factorA = GPU2D.EVY;
-            break;
-        case 3:
-            mode = Soft3DCompositionMode::BrightnessDown;
-            factorA = GPU2D.EVY;
-            break;
-        case 4:
-            mode = Soft3DCompositionMode::Alpha5;
-            break;
-        default:
-            break;
-        }
-        *threeDComposition = Soft3DCompositionPixel::Pack(
-            val2, mode, factorA, factorB);
-    }
-    else if (threeDComposition && source2Is3D && coloreffect == 1)
-    {
-        // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-        // The only 2D-above-3D case where replacing Software 3D can change
-        // the final pixel is an alpha blend whose second target is BG0/3D.
-        *threeDComposition = Soft3DCompositionPixel::Pack(
-            val1,
-            Soft3DCompositionMode::ForegroundAlphaCoefficients,
-            eva,
-            evb);
-    }
-#endif
-
     switch (coloreffect)
     {
-        case 0: return val1;
+        case 0:
+#ifdef MELONPRIME_DS
+            if (direct3DOwnership)
+                *direct3DOwnership = (sourceFlag1 & 0x40) != 0;
+#endif
+            return val1;
         case 1: return ColorBlend4(val1, val2, eva, evb);
         case 2: return ColorBrightnessUp(val1, GPU2D.EVY, 0x8);
         case 3: return ColorBrightnessDown(val1, GPU2D.EVY, 0x7);
@@ -395,17 +341,6 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
             *(u64*)&BGOBJLine[i] = 0;
     }
 
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    if (GPU2D.Num == 0)
-    {
-        memset(ThreeDSlotUnder, 0, sizeof(ThreeDSlotUnder));
-        memset(ThreeDSlotForeground, 0, sizeof(ThreeDSlotForeground));
-        memset(ThreeDSlotAboveCount, 0, sizeof(ThreeDSlotAboveCount));
-        memset(ThreeDSlotActive, 0, sizeof(ThreeDSlotActive));
-    }
-#endif
-
     if (GPU2D.DispCnt & 0xE000)
         GPU2D.CalculateWindowMask(WindowMask, OBJWindow);
     else
@@ -435,43 +370,12 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val2 = BGOBJLine[256+i];
 
 #ifdef MELONPRIME_DS
-        // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-        u32 threeDComposition = 0;
+        bool direct3DOwnership = false;
         dst[i] = ColorComposite(
-            i, val1, val2, &threeDComposition);
+            i, val1, val2, &direct3DOwnership);
         if (GPU2D.Num == 0)
-        {
-            // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-            // Reconstruct BG0/3D's slot even when Software 3D supplied a
-            // transparent center sample. This lets Vulkan high-resolution
-            // subpixel coverage become authoritative.
-            if (ThreeDSlotActive[i])
-            {
-                const u8 aboveCount = ThreeDSlotAboveCount[i];
-                threeDComposition = 0;
-                if (aboveCount == 0)
-                {
-                    // Synthetic opaque 3D source: only source flags and the
-                    // underlying 2D target are needed to derive the operation.
-                    (void)ColorComposite(
-                        i,
-                        0x5F000000u,
-                        ThreeDSlotUnder[i],
-                        &threeDComposition);
-                }
-                else if (aboveCount == 1)
-                {
-                    // A single foreground layer can still expose 3D when its
-                    // color effect alpha-blends against BG0/3D.
-                    (void)ColorComposite(
-                        i,
-                        ThreeDSlotForeground[i],
-                        0x5F000000u,
-                        &threeDComposition);
-                }
-            }
-            Parent.Output3DComposition[i] = threeDComposition;
-        }
+            Parent.Output3DOwnership[i] =
+                direct3DOwnership ? 0xFF : 0x00;
 #else
         dst[i] = ColorComposite(i, val1, val2);
 #endif
@@ -484,29 +388,9 @@ void SoftRenderer2D::DrawPixel(u32* dst, u16 color, u32 flag)
     u8 r = (color & 0x001F) << 1;
     u8 g = ((color & 0x03E0) >> 4) | ((color & 0x8000) >> 15);
     u8 b = (color & 0x7C00) >> 9;
-    const u32 packed = r | (g << 8) | (b << 16) | flag;
-
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    // Every successful draw after DrawBG_3D is structurally above BG0/3D.
-    // Keep the first foreground pixel and cap the count at two because once
-    // two layers are above 3D, 3D cannot participate in the final top-two
-    // color-effect pair.
-    const auto pixelIndex = dst - BGOBJLine;
-    if (GPU2D.Num == 0 &&
-        pixelIndex >= 0 && pixelIndex < 256 &&
-        ThreeDSlotActive[pixelIndex])
-    {
-        u8& aboveCount = ThreeDSlotAboveCount[pixelIndex];
-        if (aboveCount == 0)
-            ThreeDSlotForeground[pixelIndex] = packed;
-        if (aboveCount < 2)
-            ++aboveCount;
-    }
-#endif
 
     *(dst+256) = *dst;
-    *dst = packed;
+    *dst = r | (g << 8) | (b << 16) | flag;
 }
 
 void SoftRenderer2D::DrawBG_3D()
@@ -515,23 +399,8 @@ void SoftRenderer2D::DrawBG_3D()
     {
         u32 c = Parent.Output3D[i];
 
-        if (!(WindowMask[i] & 0x01)) continue;
-
-#ifdef MELONPRIME_DS
-        // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-        // Capture the 2D layer immediately below BG0/3D before checking the
-        // Software 3D alpha. Native high-resolution geometry may cover a
-        // subpixel even when the DS-center Software sample is transparent.
-        if (GPU2D.Num == 0)
-        {
-            ThreeDSlotUnder[i] = BGOBJLine[i];
-            ThreeDSlotForeground[i] = 0;
-            ThreeDSlotAboveCount[i] = 0;
-            ThreeDSlotActive[i] = 1;
-        }
-#endif
-
         if ((c >> 24) == 0) continue;
+        if (!(WindowMask[i] & 0x01)) continue;
 
         BGOBJLine[i+256] = BGOBJLine[i];
         BGOBJLine[i] = c | 0x40000000;

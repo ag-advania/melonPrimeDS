@@ -53,16 +53,6 @@ private:
 
     alignas(8) u32 BGOBJLine[256*2];
 
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    // Tracks BG0/3D's structural position independently of whether the
-    // Software 3D center sample happened to have nonzero alpha.
-    alignas(8) u32 ThreeDSlotUnder[256];
-    alignas(8) u32 ThreeDSlotForeground[256];
-    alignas(8) u8 ThreeDSlotAboveCount[256];
-    alignas(8) u8 ThreeDSlotActive[256];
-#endif
-
     alignas(8) u8 WindowMask[256];
 
     alignas(8) u32 OBJLine[256];
@@ -89,10 +79,9 @@ private:
 
 #ifdef MELONPRIME_DS
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
     u32 ColorComposite(
         int i, u32 val1, u32 val2,
-        u32* threeDComposition = nullptr) const;
+        bool* direct3DOwnership = nullptr) const;
 #else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
 #endif
@@ -102,12 +91,7 @@ private:
     void DrawScanlineBGMode7(u32 line);
     void DrawScanline_BGOBJ(u32 line, u32* dst);
 
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    void DrawPixel(u32* dst, u16 color, u32 flag);
-#else
     static void DrawPixel(u32* dst, u16 color, u32 flag);
-#endif
 
     void DrawBG_3D();
     template<bool mosaic> void DrawBG_Text(u32 line, u32 bgnum);

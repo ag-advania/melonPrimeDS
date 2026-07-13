@@ -186,8 +186,7 @@ void VulkanRenderer::Reset()
     SoftRenderer::Reset();
     std::fill(Native3DFrame.begin(), Native3DFrame.end(), 0);
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    Native3DComposition.fill(0);
+    Native3DVisible.fill(0);
     ClearNativeRasterFrame();
     ClearHighResolutionOutput();
     AdvanceOutputGeneration();
@@ -199,8 +198,7 @@ void VulkanRenderer::Stop()
     Initialized = false;
     std::fill(Native3DFrame.begin(), Native3DFrame.end(), 0);
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    Native3DComposition.fill(0);
+    Native3DVisible.fill(0);
     ClearNativeRasterFrame();
     NativeRasterBuilder.reset();
     ClearHighResolutionOutput();
@@ -278,17 +276,16 @@ void VulkanRenderer::OnRendered3DLine(u32 line, const u32* pixels) noexcept
 }
 
 // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-void VulkanRenderer::OnComposed3DCompositionLine(
-    u32 line, const u32* composition) noexcept
+void VulkanRenderer::OnComposed3DOwnershipLine(
+    u32 line, const u8* ownership) noexcept
 {
-    if (!composition || line >= kNativeHeight)
+    if (!ownership || line >= kNativeHeight)
         return;
     std::memcpy(
-        Native3DComposition.data() +
+        Native3DVisible.data() +
             static_cast<std::size_t>(line) * kNativeWidth,
-        composition,
-        kNativeWidth * sizeof(u32));
+        ownership,
+        kNativeWidth * sizeof(std::uint8_t));
 }
 
 void VulkanRenderer::DrawScanline(u32 line)
@@ -340,11 +337,10 @@ bool VulkanRenderer::CopyNative3DForPresenter(
 }
 
 // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-bool VulkanRenderer::CopyNative3DCompositionForPresenter(
-    std::vector<u32>& output) const
+bool VulkanRenderer::CopyNative3DOwnershipForPresenter(
+    std::vector<std::uint8_t>& output) const
 {
-    output.assign(Native3DComposition.begin(), Native3DComposition.end());
+    output.assign(Native3DVisible.begin(), Native3DVisible.end());
     return output.size() == NativePixelCount;
 }
 
@@ -448,29 +444,21 @@ std::uint32_t NativeTextureSamplerIndex(std::uint32_t texParam) noexcept
 }
 
 // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-// Reuse the existing native-reference BGRA8 image as a lossless 32-bit
-// composition transport. RGB byte low six bits hold the underlying RGB6 color;
-// their high bits plus alpha hold mode/factor metadata.
-std::uint32_t PackNativeCompositionBgra(
-    std::uint32_t composition) noexcept
+// NativeReference is sampled only by the hybrid presenter. Store exact A5 in
+// bits 0..4 and the Software 2D direct-ownership bit in bit 7.
+std::uint32_t PackNativeReferenceRgb6a5(
+    std::uint32_t pixel, bool direct3DOwnership) noexcept
 {
-    const std::uint32_t r6 = composition & 0x3Fu;
-    const std::uint32_t g6 = (composition >> 6u) & 0x3Fu;
-    const std::uint32_t b6 = (composition >> 12u) & 0x3Fu;
-    const std::uint32_t metadata =
-        ((composition >> 18u) & 0x7u) |
-        (((composition >> 21u) & 0x1Fu) << 3u) |
-        (((composition >> 26u) & 0x1Fu) << 8u);
-    const std::uint32_t rByte =
-        r6 | ((metadata & 0x3u) << 6u);
-    const std::uint32_t gByte =
-        g6 | (((metadata >> 2u) & 0x3u) << 6u);
-    const std::uint32_t bByte =
-        b6 | (((metadata >> 4u) & 0x3u) << 6u);
-    const std::uint32_t aByte =
-        (metadata >> 6u) & 0x7Fu;
-    return (aByte << 24u) | (rByte << 16u) | (gByte << 8u) | bByte;
+    const std::uint32_t r6 = pixel & 0x3Fu;
+    const std::uint32_t g6 = (pixel >> 8u) & 0x3Fu;
+    const std::uint32_t b6 = (pixel >> 16u) & 0x3Fu;
+    const std::uint32_t a5 = (pixel >> 24u) & 0x1Fu;
+    const std::uint32_t r8 = (r6 << 2u) | (r6 >> 4u);
+    const std::uint32_t g8 = (g6 << 2u) | (g6 >> 4u);
+    const std::uint32_t b8 = (b6 << 2u) | (b6 >> 4u);
+    const std::uint32_t packedAlpha =
+        a5 | (direct3DOwnership ? 0x80u : 0u);
+    return (packedAlpha << 24u) | (r8 << 16u) | (g8 << 8u) | b8;
 }
 
 } // namespace
@@ -529,10 +517,12 @@ bool NativeRasterSnapshotBuilder::Build(
     frame.Clear();
     const int scale = std::clamp(renderer.GetRecordedScaleFactor(), 1, 16);
 
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    std::vector<melonDS::u32> threeDComposition;
-    if (!renderer.CopyNative3DCompositionForPresenter(threeDComposition) ||
-        threeDComposition.size() != kRasterNativePixels)
+    std::vector<melonDS::u32> native3D;
+    std::vector<std::uint8_t> direct3DOwnership;
+    if (!renderer.CopyNative3DForPresenter(native3D) ||
+        native3D.size() != kRasterNativePixels ||
+        !renderer.CopyNative3DOwnershipForPresenter(direct3DOwnership) ||
+        direct3DOwnership.size() != kRasterNativePixels)
     {
         return false;
     }
@@ -682,12 +672,12 @@ bool NativeRasterSnapshotBuilder::Build(
         return false;
     }
 
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
     frame.NativeReferenceBgra.resize(kRasterNativePixels);
     for (std::size_t pixel = 0; pixel < kRasterNativePixels; ++pixel)
     {
         frame.NativeReferenceBgra[pixel] =
-            PackNativeCompositionBgra(threeDComposition[pixel]);
+            PackNativeReferenceRgb6a5(
+                native3D[pixel], direct3DOwnership[pixel] != 0);
     }
 
     if ((gpu3D.RenderDispCnt & (1u << 14u)) != 0)

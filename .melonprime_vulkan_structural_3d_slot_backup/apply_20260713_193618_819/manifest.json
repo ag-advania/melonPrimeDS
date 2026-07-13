@@ -1,0 +1,24 @@
+{
+    "Patch":  "MelonPrimeDS Vulkan Structural 3D Slot Authority",
+    "AppliedAt":  "2026-07-13T19:36:18.8925966+09:00",
+    "Repository":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS",
+    "Backup":  "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS\\.melonprime_vulkan_structural_3d_slot_backup\\apply_20260713_193618_819",
+    "Files":  [
+                  "src/GPU_Soft.h",
+                  "src/GPU2D_Soft.h",
+                  "src/GPU2D_Soft.cpp",
+                  "src/GPU_Vulkan.h",
+                  "src/Vulkan_shaders/phase10_presenter.frag"
+              ],
+    "ContractVersion":  27,
+    "Goal":  [
+                 "Track BG0/3D position without depending on Software 3D alpha",
+                 "Adopt native high-resolution subpixel coverage in an exposed 3D slot",
+                 "Compose one alpha-blended 2D foreground layer over native Vulkan 3D"
+             ],
+    "RemainingBeforeNative3DCompletion":  [
+                                              "GPU-resident full 2D foreground stack",
+                                              "Display capture and VRAM/FIFO composition ownership",
+                                              "Retirement of SoftwareRenderer3D as the normal Vulkan correctness source"
+                                          ]
+}

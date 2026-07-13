@@ -26,47 +26,6 @@
 namespace melonDS
 {
 
-#ifdef MELONPRIME_DS
-// MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-// Per-pixel Software 2D decision used by the Vulkan presenter. The packed word
-// carries the second 2D color plus the exact effect that was applied while BG0/3D
-// occupied the top composition slot.
-enum class Soft3DCompositionMode : u32
-{
-    None = 0,
-    Direct = 1,
-    Alpha5 = 2,
-    AlphaCoefficients = 3,
-    BrightnessUp = 4,
-    BrightnessDown = 5,
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    // A single 2D layer occupies the foreground slot and alpha-blends over
-    // the native Vulkan 3D result.
-    ForegroundAlphaCoefficients = 6,
-};
-
-struct Soft3DCompositionPixel
-{
-    static constexpr u32 Pack(
-        u32 underColor,
-        Soft3DCompositionMode mode,
-        u32 factorA = 0,
-        u32 factorB = 0) noexcept
-    {
-        return (underColor & 0x3Fu) |
-            (((underColor >> 8u) & 0x3Fu) << 6u) |
-            (((underColor >> 16u) & 0x3Fu) << 12u) |
-            ((static_cast<u32>(mode) & 0x7u) << 18u) |
-            ((factorA & 0x1Fu) << 21u) |
-            ((factorB & 0x1Fu) << 26u);
-    }
-};
-
-static_assert(
-    static_cast<u32>(
-        Soft3DCompositionMode::ForegroundAlphaCoefficients) <= 0x7u);
-#endif
-
 class SoftRenderer : public Renderer
 {
 public:
@@ -101,14 +60,14 @@ protected:
 
 #ifdef MELONPRIME_DS
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    // Reports the exact Software 2D operation used when BG0/3D is the top layer.
-    // A zero word means that another 2D layer owns the final pixel.
-    virtual void OnComposed3DCompositionLine(
-        u32 line, const u32* composition) noexcept
+    // Reports pixels where Engine A's final regular-display color is the
+    // unmodified 3D layer. Translucent/color-effect pixels remain unowned until
+    // Vulkan receives a complete 2D composition contract.
+    virtual void OnComposed3DOwnershipLine(
+        u32 line, const u8* ownership) noexcept
     {
         (void)line;
-        (void)composition;
+        (void)ownership;
     }
 #endif
 
@@ -122,8 +81,7 @@ private:
     alignas(8) u32 Output2D[2][256];
 #ifdef MELONPRIME_DS
     // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
-    alignas(8) u32 Output3DComposition[256];
+    alignas(8) u8 Output3DOwnership[256];
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

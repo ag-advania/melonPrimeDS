@@ -147,11 +147,8 @@ struct VulkanRendererShellContract
     bool NativeVulkanExplicit3DOwnershipMask = true;
     // MELONPRIME_VULKAN_STRUCTURED_3D_COMPOSITION_V1
     bool NativeVulkanStructured3DComposition = true;
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    bool NativeVulkanStructural3DSlot = true;
-    bool NativeVulkanSingleForegroundBlend = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 27;
+    u32 ContractVersion = 26;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;

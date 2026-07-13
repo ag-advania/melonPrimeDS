@@ -113,9 +113,6 @@ uvec3 applyComposition6(
     uint factorB,
     uint alpha5)
 {
-    // MELONPRIME_VULKAN_STRUCTURAL_3D_SLOT_V1
-    if (mode == 6u)
-        return blendColor4(under, top, factorA, factorB);
     if (mode == 2u)
         return blendColor5(top, under, alpha5);
     if (mode == 3u)
@@ -177,11 +174,10 @@ void main()
             uint factorA = (metadata >> 3u) & 0x1Fu;
             uint factorB = (metadata >> 8u) & 0x1Fu;
 
-            // The Software 2D renderer now publishes the exact operation and
-            // structural BG0/3D slot. Native high-resolution opaque,
-            // translucent, shadow, EVA/EVB, brightness, subpixel-edge, and
-            // single-foreground alpha-blend output can therefore be adopted
-            // without comparing it against a low-resolution RGB oracle.
+            // The Software 2D renderer now publishes the exact operation used
+            // when BG0/3D occupied the top slot. Native high-resolution opaque,
+            // translucent, shadow, EVA/EVB, and brightness output can therefore
+            // be adopted without comparing it against a low-resolution RGB oracle.
             if (compositionMode != 0u && nativeOwnership >= 0.20)
             {
                 uvec3 top6 = uvec3(clamp(
