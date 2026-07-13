@@ -47,7 +47,9 @@ struct NativeRasterFrame
     std::uint32_t RenderDispCnt = 0;
     std::uint32_t RenderClearAttr1 = 0;
     std::uint32_t RenderClearAttr2 = 0;
+    std::uint32_t RenderAlphaRef = 0;
     std::uint16_t RenderXPos = 0;
+    std::array<std::uint16_t, 32> RenderToonTable{};
     std::uint64_t FrameSerial = 0;
     std::uint64_t Generation = 0;
 

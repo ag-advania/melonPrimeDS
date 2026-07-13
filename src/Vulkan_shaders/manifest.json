@@ -398,6 +398,42 @@
           "defines": {}
         }
       ]
+    },
+    {
+      "name": "VulkanPhase14StencilClearVertex",
+      "source": "phase14_stencil_clear.vert",
+      "stage": "vert",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPhase14StencilOnlyFragment",
+      "source": "phase14_stencil_only.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
+    },
+    {
+      "name": "VulkanPhase14ShadowMaskFragment",
+      "source": "phase14_shadow_mask.frag",
+      "stage": "frag",
+      "entry_point": "main",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {}
+        }
+      ]
     }
   ]
 }

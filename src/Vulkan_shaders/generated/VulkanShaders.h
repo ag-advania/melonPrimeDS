@@ -41,12 +41,15 @@
 #include "VulkanPhase11Compute.spv.h"
 #include "VulkanPhase14NativeRasterVertex.spv.h"
 #include "VulkanPhase14NativeRasterFragment.spv.h"
+#include "VulkanPhase14StencilClearVertex.spv.h"
+#include "VulkanPhase14StencilOnlyFragment.spv.h"
+#include "VulkanPhase14ShadowMaskFragment.spv.h"
 
 namespace melonDS::Vulkan::Shaders
 {
 
-inline constexpr std::size_t kShaderCount = 41;
-inline constexpr char kManifestSha256[] = "3f1792b383ae71e5b7ae64dd7f13fc60e40d61bc42bb38ca61122498860f5cc2";
+inline constexpr std::size_t kShaderCount = 44;
+inline constexpr char kManifestSha256[] = "ec8f64a20df8fc8886de6e6c4f3c9a95aeecb1419525e0ebbc211298904fc2ab";
 inline constexpr char kCompilerVersion[] = "Glslang Version: 11:16.3.0 | ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0 | GLSL Version: 4.60 glslang Khronos. 16.3.0 | SPIR-V Version 0x00010600, Revision 1 | GLSL.std.450 Version 100, Revision 1 | Khronos Tool ID 8 | SPIR-V Generator Version 11 | GL_KHR_vulkan_glsl version 100 | ARB_GL_gl_spirv version 100";
 
 } // namespace melonDS::Vulkan::Shaders

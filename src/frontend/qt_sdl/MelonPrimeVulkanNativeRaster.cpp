@@ -38,6 +38,13 @@ constexpr VkFormat kTextureFormat = VK_FORMAT_R8G8B8A8_UINT;
 constexpr std::size_t kMaxResidentTextureIdentities = 128;
 constexpr std::uint64_t kMaxResidentTextureBytes = 256ull * 1024ull * 1024ull;
 
+struct alignas(16) NativeRasterToonUniform
+{
+    std::array<std::array<float, 4>, 32> Colors{};
+};
+
+static_assert(sizeof(NativeRasterToonUniform) == 32u * 16u);
+
 VkImageAspectFlags DepthAspectMask(VkFormat format) noexcept
 {
     switch (format)
@@ -341,7 +348,9 @@ void NativeRasterFrame::Clear() noexcept
     RenderDispCnt = 0;
     RenderClearAttr1 = 0;
     RenderClearAttr2 = 0;
+    RenderAlphaRef = 0;
     RenderXPos = 0;
+    RenderToonTable.fill(0);
     FrameSerial = 0;
     Generation = 0;
     Upload.Clear();
@@ -400,6 +409,40 @@ bool NativeRasterSnapshotBuilder::Build(
     memory.PaletteSize = sizeof(gpu.VRAMFlat_TexPal);
 
     const auto& gpu3D = gpu.GPU3D;
+
+    // Sapphire's Vulkan renderer handles the remaining shadow stencil,
+    // edge/fog final passes, and clear-bitmap state with distinct passes.
+    // Mixing an incomplete frame with the software-correct image can expose an
+    // occluded polygon wherever one of those passes should have won the DS
+    // depth/stencil tests.
+    // Treat the native raster as an all-or-nothing replacement until those
+    // Sapphire-equivalent passes are wired here.
+    const bool frameUsesUnsupportedGlobalPass =
+        (gpu3D.RenderDispCnt & ((1u << 5u) | (1u << 7u) | (1u << 14u))) != 0;
+    if (frameUsesUnsupportedGlobalPass)
+        return true;
+
+    for (std::uint32_t sourceOrder = 0;
+         sourceOrder < gpu3D.RenderNumPolygons;
+         ++sourceOrder)
+    {
+        const melonDS::Polygon* polygon = gpu3D.RenderPolygonRAM[sourceOrder];
+        if (!polygon || polygon->Degenerate)
+            continue;
+
+        const std::uint32_t textureFormat =
+            (polygon->TexParam >> 26u) & 0x7u;
+        const std::uint32_t textureMode = (polygon->Attr >> 4u) & 0x3u;
+        const bool textured = textureFormat != 0u;
+        const bool shadowPolygon = polygon->IsShadowMask || polygon->IsShadow;
+        const bool unsupportedPolygon =
+            (shadowPolygon && ((gpu3D.RenderClearAttr1 >> 16u) & 0x1Fu) == 0u) ||
+            (textureMode > 2u && !shadowPolygon) ||
+            (textured && (gpu3D.RenderDispCnt & 1u) == 0);
+        if (unsupportedPolygon)
+            return true;
+    }
+
     std::vector<std::uint32_t> textureLayers(
         gpu3D.RenderNumPolygons, 0xFFFFFFFFu);
     std::unordered_map<std::uint64_t, std::uint32_t> frameTextureIndices;
@@ -454,7 +497,10 @@ bool NativeRasterSnapshotBuilder::Build(
         if (!melonDS::Vulkan::BuildVulkanTextureDecodeFootprint(
                 key, footprint, &failure))
         {
-            continue;
+            // Rendering this polygon without its texture would make the
+            // high-resolution depth result disagree with the native frame.
+            frame.Clear();
+            return true;
         }
         const auto hashes = melonDS::Vulkan::HashVulkanTextureDecodeInput(
             footprint, memory);
@@ -467,7 +513,8 @@ bool NativeRasterSnapshotBuilder::Build(
                     footprint, memory, *pixels, &failure))
             {
                 m_impl->Cache.erase(identity);
-                continue;
+                frame.Clear();
+                return true;
             }
             cached.ContentHash = hashes.Combined;
             cached.Width = key.Width;
@@ -502,12 +549,12 @@ bool NativeRasterSnapshotBuilder::Build(
 
     melonDS::Vulkan::VulkanRasterBuildOptions options;
     options.ScaleFactor = scale;
+    options.BetterPolygons = renderer.GetRecordedBetterPolygons();
     options.TextureLayers = textureLayers.data();
     options.TextureLayerCount = textureLayers.size();
     std::string failure;
-    if (!melonDS::Vulkan::BuildVulkanRasterUpload(
-            gpu3D.RenderPolygonRAM.data(),
-            gpu3D.RenderNumPolygons,
+    if (!melonDS::Vulkan::BuildVulkanAcceleratedRasterUpload(
+            gpu3D,
             options,
             frame.Upload,
             &failure) ||
@@ -533,7 +580,12 @@ bool NativeRasterSnapshotBuilder::Build(
     frame.RenderDispCnt = gpu3D.RenderDispCnt;
     frame.RenderClearAttr1 = gpu3D.RenderClearAttr1;
     frame.RenderClearAttr2 = gpu3D.RenderClearAttr2;
+    frame.RenderAlphaRef = gpu3D.RenderAlphaRef;
     frame.RenderXPos = gpu3D.GetRenderXPos();
+    std::copy_n(
+        gpu3D.RenderToonTable,
+        frame.RenderToonTable.size(),
+        frame.RenderToonTable.begin());
     frame.FrameSerial = renderer.GetFrameSerialForDiagnostics();
     frame.Generation = renderer.GetOutputGenerationForDiagnostics();
     frame.Valid = frame.FrameSerial != 0 && frame.Generation != 0;
@@ -545,11 +597,14 @@ struct NativeRasterGpu::Impl
     struct Slot
     {
         ImageResource Color;
+        ImageResource Attributes;
         ImageResource Depth;
         ImageResource NativeReference;
         VkFramebuffer Framebuffer = VK_NULL_HANDLE;
         HostBuffer Vertex;
         HostBuffer Index;
+        HostBuffer EdgeIndex;
+        HostBuffer ToonTable;
         HostBuffer NativeReferenceStaging;
         std::uint64_t FrameSerial = 0;
         std::uint64_t Generation = 0;
@@ -576,6 +631,22 @@ struct NativeRasterGpu::Impl
     VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline Pipeline = VK_NULL_HANDLE;
+    VkPipeline LinePipeline = VK_NULL_HANDLE;
+    VkPipeline DepthEqualPipeline = VK_NULL_HANDLE;
+    VkPipeline DepthEqualLinePipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 4> TranslucentPipelines{};
+    std::array<VkPipeline, 4> TranslucentLinePipelines{};
+    std::array<VkPipeline, 4> DepthEqualTranslucentPipelines{};
+    std::array<VkPipeline, 4> DepthEqualTranslucentLinePipelines{};
+    VkPipeline StencilBitClearPipeline = VK_NULL_HANDLE;
+    VkPipeline ShadowMaskPipeline = VK_NULL_HANDLE;
+    VkPipeline ShadowMaskLinePipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 2> ShadowClearPipelines{};
+    std::array<VkPipeline, 2> ShadowClearLinePipelines{};
+    std::array<VkPipeline, 4> ShadowBlendPipelines{};
+    std::array<VkPipeline, 4> ShadowBlendLinePipelines{};
+    std::array<VkPipeline, 4> DepthEqualShadowBlendPipelines{};
+    std::array<VkPipeline, 4> DepthEqualShadowBlendLinePipelines{};
     VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;
     std::array<VkSampler, 9> Samplers{};
     std::array<Slot, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> Slots{};
@@ -591,10 +662,13 @@ struct NativeRasterGpu::Impl
             Functions->vkDestroyFramebuffer(Device, slot.Framebuffer, nullptr);
         slot.Framebuffer = VK_NULL_HANDLE;
         DestroyImage(Functions, Device, slot.Color);
+        DestroyImage(Functions, Device, slot.Attributes);
         DestroyImage(Functions, Device, slot.Depth);
         DestroyImage(Functions, Device, slot.NativeReference);
         DestroyHostBuffer(Functions, Device, slot.Vertex);
         DestroyHostBuffer(Functions, Device, slot.Index);
+        DestroyHostBuffer(Functions, Device, slot.EdgeIndex);
+        DestroyHostBuffer(Functions, Device, slot.ToonTable);
         DestroyHostBuffer(Functions, Device, slot.NativeReferenceStaging);
         slot.FrameSerial = 0;
         slot.Generation = 0;
@@ -658,6 +732,48 @@ struct NativeRasterGpu::Impl
         ClearTextureCache(false);
         if (Pipeline)
             Functions->vkDestroyPipeline(Device, Pipeline, nullptr);
+        if (LinePipeline)
+            Functions->vkDestroyPipeline(Device, LinePipeline, nullptr);
+        if (DepthEqualPipeline)
+            Functions->vkDestroyPipeline(Device, DepthEqualPipeline, nullptr);
+        if (DepthEqualLinePipeline)
+            Functions->vkDestroyPipeline(Device, DepthEqualLinePipeline, nullptr);
+        for (VkPipeline pipeline : TranslucentPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : TranslucentLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : DepthEqualTranslucentPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : DepthEqualTranslucentLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        if (StencilBitClearPipeline)
+            Functions->vkDestroyPipeline(Device, StencilBitClearPipeline, nullptr);
+        if (ShadowMaskPipeline)
+            Functions->vkDestroyPipeline(Device, ShadowMaskPipeline, nullptr);
+        if (ShadowMaskLinePipeline)
+            Functions->vkDestroyPipeline(Device, ShadowMaskLinePipeline, nullptr);
+        for (VkPipeline pipeline : ShadowClearPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : ShadowClearLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : ShadowBlendPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : ShadowBlendLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : DepthEqualShadowBlendPipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
+        for (VkPipeline pipeline : DepthEqualShadowBlendLinePipelines)
+            if (pipeline)
+                Functions->vkDestroyPipeline(Device, pipeline, nullptr);
         if (PipelineLayout)
             Functions->vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
         if (DescriptorPool)
@@ -670,6 +786,22 @@ struct NativeRasterGpu::Impl
             if (sampler)
                 Functions->vkDestroySampler(Device, sampler, nullptr);
         Pipeline = VK_NULL_HANDLE;
+        LinePipeline = VK_NULL_HANDLE;
+        DepthEqualPipeline = VK_NULL_HANDLE;
+        DepthEqualLinePipeline = VK_NULL_HANDLE;
+        TranslucentPipelines.fill(VK_NULL_HANDLE);
+        TranslucentLinePipelines.fill(VK_NULL_HANDLE);
+        DepthEqualTranslucentPipelines.fill(VK_NULL_HANDLE);
+        DepthEqualTranslucentLinePipelines.fill(VK_NULL_HANDLE);
+        StencilBitClearPipeline = VK_NULL_HANDLE;
+        ShadowMaskPipeline = VK_NULL_HANDLE;
+        ShadowMaskLinePipeline = VK_NULL_HANDLE;
+        ShadowClearPipelines.fill(VK_NULL_HANDLE);
+        ShadowClearLinePipelines.fill(VK_NULL_HANDLE);
+        ShadowBlendPipelines.fill(VK_NULL_HANDLE);
+        ShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
+        DepthEqualShadowBlendPipelines.fill(VK_NULL_HANDLE);
+        DepthEqualShadowBlendLinePipelines.fill(VK_NULL_HANDLE);
         PipelineLayout = VK_NULL_HANDLE;
         DescriptorPool = VK_NULL_HANDLE;
         DescriptorLayout = VK_NULL_HANDLE;
@@ -709,28 +841,37 @@ struct NativeRasterGpu::Impl
         if (!Window || !Functions || !Device || DepthFormat == VK_FORMAT_UNDEFINED)
             return false;
 
-        VkAttachmentDescription attachments[2]{};
+        VkAttachmentDescription attachments[3]{};
         attachments[0].format = kColorFormat;
         attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        attachments[1].format = DepthFormat;
+        attachments[1].format = VK_FORMAT_R8G8B8A8_UNORM;
         attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[1].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        attachments[2].format = DepthFormat;
+        attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-        VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        const std::array<VkAttachmentReference, 2> colorRefs{{
+            {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+            {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        }};
+        VkAttachmentReference depthRef{2, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &colorRef;
+        subpass.colorAttachmentCount = static_cast<std::uint32_t>(colorRefs.size());
+        subpass.pColorAttachments = colorRefs.data();
         subpass.pDepthStencilAttachment = &depthRef;
         VkSubpassDependency dependencies[2]{};
         dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -746,7 +887,7 @@ struct NativeRasterGpu::Impl
         dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         VkRenderPassCreateInfo passInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        passInfo.attachmentCount = 2;
+        passInfo.attachmentCount = 3;
         passInfo.pAttachments = attachments;
         passInfo.subpassCount = 1;
         passInfo.pSubpasses = &subpass;
@@ -756,15 +897,19 @@ struct NativeRasterGpu::Impl
                 Device, &passInfo, nullptr, &RenderPass) != VK_SUCCESS)
             return false;
 
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo descriptorInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        descriptorInfo.bindingCount = 1;
-        descriptorInfo.pBindings = &binding;
+        descriptorInfo.bindingCount = static_cast<std::uint32_t>(bindings.size());
+        descriptorInfo.pBindings = bindings.data();
         if (Functions->vkCreateDescriptorSetLayout(
                 Device, &descriptorInfo, nullptr, &DescriptorLayout) != VK_SUCCESS)
             return false;
@@ -782,14 +927,16 @@ struct NativeRasterGpu::Impl
                 Device, &layoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
             return false;
 
-        VkDescriptorPoolSize poolSize{
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384};
+        const std::array<VkDescriptorPoolSize, 2> poolSizes{{
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
+        }};
         VkDescriptorPoolCreateInfo poolInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         poolInfo.maxSets = 16384;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes = poolSizes.data();
         if (Functions->vkCreateDescriptorPool(
                 Device, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
             return false;
@@ -823,6 +970,9 @@ struct NativeRasterGpu::Impl
 
         VkShaderModule vertex = VK_NULL_HANDLE;
         VkShaderModule fragment = VK_NULL_HANDLE;
+        VkShaderModule stencilClearVertex = VK_NULL_HANDLE;
+        VkShaderModule stencilOnlyFragment = VK_NULL_HANDLE;
+        VkShaderModule shadowMaskFragment = VK_NULL_HANDLE;
         if (!CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterVertexSpirv),
@@ -830,12 +980,30 @@ struct NativeRasterGpu::Impl
             !CreateShader(
                 melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterFragmentSpirv,
                 sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14NativeRasterFragmentSpirv),
-                fragment))
+                fragment) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14StencilClearVertexSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14StencilClearVertexSpirv),
+                stencilClearVertex) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14StencilOnlyFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14StencilOnlyFragmentSpirv),
+                stencilOnlyFragment) ||
+            !CreateShader(
+                melonDS::Vulkan::Shaders::kVulkanPhase14ShadowMaskFragmentSpirv,
+                sizeof(melonDS::Vulkan::Shaders::kVulkanPhase14ShadowMaskFragmentSpirv),
+                shadowMaskFragment))
         {
             if (vertex)
                 Functions->vkDestroyShaderModule(Device, vertex, nullptr);
             if (fragment)
                 Functions->vkDestroyShaderModule(Device, fragment, nullptr);
+            if (stencilClearVertex)
+                Functions->vkDestroyShaderModule(Device, stencilClearVertex, nullptr);
+            if (stencilOnlyFragment)
+                Functions->vkDestroyShaderModule(Device, stencilOnlyFragment, nullptr);
+            if (shadowMaskFragment)
+                Functions->vkDestroyShaderModule(Device, shadowMaskFragment, nullptr);
             return false;
         }
 
@@ -884,22 +1052,38 @@ struct NativeRasterGpu::Impl
             VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depth.depthTestEnable = VK_TRUE;
         depth.depthWriteEnable = VK_TRUE;
-        depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-        VkPipelineColorBlendAttachmentState colorBlend{};
-        colorBlend.colorWriteMask =
+        // Ordinary DS polygons use strict less-than. Attribute bit 14 selects
+        // the dedicated Sapphire-style less-or-equal variants below.
+        depth.depthCompareOp = VK_COMPARE_OP_LESS;
+        VkStencilOpState stencil{};
+        stencil.failOp = VK_STENCIL_OP_KEEP;
+        stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+        stencil.passOp = VK_STENCIL_OP_REPLACE;
+        stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+        stencil.compareMask = 0xFFu;
+        stencil.writeMask = 0xFFu;
+        depth.stencilTestEnable = VK_TRUE;
+        depth.front = stencil;
+        depth.back = stencil;
+        std::array<VkPipelineColorBlendAttachmentState, 2> colorBlends{};
+        colorBlends[0].colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlends[1].colorWriteMask = colorBlends[0].colorWriteMask;
         VkPipelineColorBlendStateCreateInfo blend{
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-        blend.attachmentCount = 1;
-        blend.pAttachments = &colorBlend;
+        blend.attachmentCount = static_cast<std::uint32_t>(colorBlends.size());
+        blend.pAttachments = colorBlends.data();
         const VkDynamicState dynamicStates[] = {
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_REFERENCE,
         };
         VkPipelineDynamicStateCreateInfo dynamic{
             VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-        dynamic.dynamicStateCount = 2;
+        dynamic.dynamicStateCount = 5;
         dynamic.pDynamicStates = dynamicStates;
         VkGraphicsPipelineCreateInfo pipelineInfo{
             VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -917,9 +1101,232 @@ struct NativeRasterGpu::Impl
         pipelineInfo.renderPass = RenderPass;
         const VkResult pipelineResult = Functions->vkCreateGraphicsPipelines(
             Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &Pipeline);
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        const VkResult linePipelineResult = pipelineResult == VK_SUCCESS
+            ? Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &LinePipeline)
+            : pipelineResult;
+
+        depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        const VkResult depthEqualPipelineResult = linePipelineResult == VK_SUCCESS
+            ? Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &DepthEqualPipeline)
+            : linePipelineResult;
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        const VkResult depthEqualLinePipelineResult = depthEqualPipelineResult == VK_SUCCESS
+            ? Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &DepthEqualLinePipeline)
+            : depthEqualPipelineResult;
+
+        VkResult translucentPipelineResult = depthEqualLinePipelineResult;
+        if (translucentPipelineResult == VK_SUCCESS)
+        {
+            depth.front.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+            depth.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+            colorBlends[1].colorWriteMask = VK_COLOR_COMPONENT_B_BIT;
+            for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
+            {
+                depth.depthCompareOp = depthEqual
+                    ? VK_COMPARE_OP_LESS_OR_EQUAL
+                    : VK_COMPARE_OP_LESS;
+                auto& trianglePipelines = depthEqual
+                    ? DepthEqualTranslucentPipelines
+                    : TranslucentPipelines;
+                auto& linePipelines = depthEqual
+                    ? DepthEqualTranslucentLinePipelines
+                    : TranslucentLinePipelines;
+                for (std::uint32_t depthWrite = 0; depthWrite < 2; ++depthWrite)
+                {
+                    depth.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
+                    for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
+                    {
+                        const std::uint32_t index = depthWrite * 2u + alphaBlend;
+                        auto& colorBlend = colorBlends[0];
+                        colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
+                        colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                        colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                        colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
+                        colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                        colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                        colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
+
+                        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+                        translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
+                            Device,
+                            VK_NULL_HANDLE,
+                            1,
+                            &pipelineInfo,
+                            nullptr,
+                            &trianglePipelines[index]);
+                        if (translucentPipelineResult != VK_SUCCESS)
+                            break;
+                        assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+                        translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
+                            Device,
+                            VK_NULL_HANDLE,
+                            1,
+                            &pipelineInfo,
+                            nullptr,
+                            &linePipelines[index]);
+                        if (translucentPipelineResult != VK_SUCCESS)
+                            break;
+                    }
+                    if (translucentPipelineResult != VK_SUCCESS)
+                        break;
+                }
+                if (translucentPipelineResult != VK_SUCCESS)
+                    break;
+            }
+        }
+
+        VkResult shadowPipelineResult = translucentPipelineResult;
+        const auto createTopologyPair = [&](VkPipeline& trianglePipeline,
+                                            VkPipeline& linePipeline) -> VkResult {
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkResult result = Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &trianglePipeline);
+            if (result != VK_SUCCESS)
+                return result;
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            return Functions->vkCreateGraphicsPipelines(
+                Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &linePipeline);
+        };
+
+        if (shadowPipelineResult == VK_SUCCESS)
+        {
+            // Sapphire clears only shadow bit 7 before every mask, preserving
+            // the lower polygon and translucent ID bits.
+            VkPipelineVertexInputStateCreateInfo emptyVertexInput{
+                VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+            stages[0].module = stencilClearVertex;
+            stages[1].module = stencilOnlyFragment;
+            pipelineInfo.pVertexInputState = &emptyVertexInput;
+            depth.depthTestEnable = VK_FALSE;
+            depth.depthWriteEnable = VK_FALSE;
+            stencil.failOp = VK_STENCIL_OP_KEEP;
+            stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+            stencil.passOp = VK_STENCIL_OP_REPLACE;
+            stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+            depth.front = stencil;
+            depth.back = stencil;
+            colorBlends[0] = {};
+            colorBlends[1] = {};
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            shadowPipelineResult = Functions->vkCreateGraphicsPipelines(
+                Device,
+                VK_NULL_HANDLE,
+                1,
+                &pipelineInfo,
+                nullptr,
+                &StencilBitClearPipeline);
+        }
+
+        if (shadowPipelineResult == VK_SUCCESS)
+        {
+            // Shadow mask: record bit 7 only where the depth test fails.
+            stages[0].module = vertex;
+            stages[1].module = shadowMaskFragment;
+            pipelineInfo.pVertexInputState = &vertexInput;
+            depth.depthTestEnable = VK_TRUE;
+            depth.depthWriteEnable = VK_FALSE;
+            depth.depthCompareOp = VK_COMPARE_OP_LESS;
+            stencil.failOp = VK_STENCIL_OP_KEEP;
+            stencil.depthFailOp = VK_STENCIL_OP_REPLACE;
+            stencil.passOp = VK_STENCIL_OP_KEEP;
+            stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+            depth.front = stencil;
+            depth.back = stencil;
+            shadowPipelineResult = createTopologyPair(
+                ShadowMaskPipeline, ShadowMaskLinePipeline);
+        }
+
+        if (shadowPipelineResult == VK_SUCCESS)
+        {
+            // Visible shadow pre-pass: clear bit 7 where the destination lower
+            // polygon ID equals the shadow polygon ID.
+            stencil.failOp = VK_STENCIL_OP_KEEP;
+            stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+            stencil.passOp = VK_STENCIL_OP_ZERO;
+            stencil.compareOp = VK_COMPARE_OP_EQUAL;
+            depth.front = stencil;
+            depth.back = stencil;
+            for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
+            {
+                depth.depthCompareOp = depthEqual
+                    ? VK_COMPARE_OP_LESS_OR_EQUAL
+                    : VK_COMPARE_OP_LESS;
+                shadowPipelineResult = createTopologyPair(
+                    ShadowClearPipelines[depthEqual],
+                    ShadowClearLinePipelines[depthEqual]);
+                if (shadowPipelineResult != VK_SUCCESS)
+                    break;
+            }
+        }
+
+        if (shadowPipelineResult == VK_SUCCESS)
+        {
+            // Visible shadow blend: draw only where bit 7 remains, then write
+            // the Sapphire translucent marker into the lower seven bits.
+            stages[1].module = fragment;
+            stencil.failOp = VK_STENCIL_OP_KEEP;
+            stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+            stencil.passOp = VK_STENCIL_OP_REPLACE;
+            stencil.compareOp = VK_COMPARE_OP_EQUAL;
+            depth.front = stencil;
+            depth.back = stencil;
+            colorBlends[1].colorWriteMask = VK_COLOR_COMPONENT_B_BIT;
+            for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
+            {
+                depth.depthCompareOp = depthEqual
+                    ? VK_COMPARE_OP_LESS_OR_EQUAL
+                    : VK_COMPARE_OP_LESS;
+                auto& trianglePipelines = depthEqual
+                    ? DepthEqualShadowBlendPipelines
+                    : ShadowBlendPipelines;
+                auto& linePipelines = depthEqual
+                    ? DepthEqualShadowBlendLinePipelines
+                    : ShadowBlendLinePipelines;
+                for (std::uint32_t depthWrite = 0; depthWrite < 2; ++depthWrite)
+                {
+                    depth.depthWriteEnable = depthWrite ? VK_TRUE : VK_FALSE;
+                    for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
+                    {
+                        const std::uint32_t index = depthWrite * 2u + alphaBlend;
+                        auto& colorBlend = colorBlends[0];
+                        colorBlend = {};
+                        colorBlend.colorWriteMask =
+                            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+                        colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
+                        colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                        colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                        colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
+                        colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                        colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                        colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
+                        shadowPipelineResult = createTopologyPair(
+                            trianglePipelines[index], linePipelines[index]);
+                        if (shadowPipelineResult != VK_SUCCESS)
+                            break;
+                    }
+                    if (shadowPipelineResult != VK_SUCCESS)
+                        break;
+                }
+                if (shadowPipelineResult != VK_SUCCESS)
+                    break;
+            }
+        }
         Functions->vkDestroyShaderModule(Device, vertex, nullptr);
         Functions->vkDestroyShaderModule(Device, fragment, nullptr);
-        if (pipelineResult != VK_SUCCESS)
+        Functions->vkDestroyShaderModule(Device, stencilClearVertex, nullptr);
+        Functions->vkDestroyShaderModule(Device, stencilOnlyFragment, nullptr);
+        Functions->vkDestroyShaderModule(Device, shadowMaskFragment, nullptr);
+        if (pipelineResult != VK_SUCCESS || linePipelineResult != VK_SUCCESS ||
+            depthEqualPipelineResult != VK_SUCCESS ||
+            depthEqualLinePipelineResult != VK_SUCCESS ||
+            translucentPipelineResult != VK_SUCCESS ||
+            shadowPipelineResult != VK_SUCCESS)
             return false;
 
         Ready = true;
@@ -934,6 +1341,9 @@ struct NativeRasterGpu::Impl
             return true;
         }
         Functions->vkDeviceWaitIdle(Device);
+        // Texture descriptor sets also reference the per-frame-slot toon
+        // uniform buffer. Rebuild them whenever target slots are recreated.
+        ClearTextureCache(false);
         DestroyTargets();
         Scale = scale;
         FrameCount = frameCount;
@@ -961,6 +1371,17 @@ struct NativeRasterGpu::Impl
                     Functions,
                     Device,
                     extent,
+                    VK_FORMAT_R8G8B8A8_UNORM,
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                        VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_VIEW_TYPE_2D,
+                    slot.Attributes) ||
+                !CreateImage(
+                    Window,
+                    Functions,
+                    Device,
+                    extent,
                     DepthFormat,
                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                     DepthAspectMask(DepthFormat),
@@ -982,12 +1403,13 @@ struct NativeRasterGpu::Impl
             }
             VkImageView attachments[] = {
                 slot.Color.View,
+                slot.Attributes.View,
                 slot.Depth.View,
             };
             VkFramebufferCreateInfo framebuffer{
                 VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
             framebuffer.renderPass = RenderPass;
-            framebuffer.attachmentCount = 2;
+            framebuffer.attachmentCount = 3;
             framebuffer.pAttachments = attachments;
             framebuffer.width = extent.width;
             framebuffer.height = extent.height;
@@ -1131,17 +1553,57 @@ struct NativeRasterGpu::Impl
             imageInfo.sampler = Samplers[sampler];
             imageInfo.imageView = version.Image.View;
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            write.dstSet = version.DescriptorSets[sampler];
-            write.dstBinding = 0;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.pImageInfo = &imageInfo;
+            VkDescriptorBufferInfo toonInfo{};
+            toonInfo.buffer = Slots[frameSlot].ToonTable.Buffer;
+            toonInfo.range = sizeof(NativeRasterToonUniform);
+            std::array<VkWriteDescriptorSet, 2> writes{};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = version.DescriptorSets[sampler];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].pImageInfo = &imageInfo;
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = version.DescriptorSets[sampler];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[1].pBufferInfo = &toonInfo;
             Functions->vkUpdateDescriptorSets(
-                Device, 1, &write, 0, nullptr);
+                Device,
+                static_cast<std::uint32_t>(writes.size()),
+                writes.data(),
+                0,
+                nullptr);
         }
 
         return &version;
+    }
+
+    bool UploadToonTable(Slot& slot, const NativeRasterFrame& frame)
+    {
+        if (!EnsureHostBuffer(
+                Window,
+                Functions,
+                Device,
+                sizeof(NativeRasterToonUniform),
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                slot.ToonTable))
+        {
+            return false;
+        }
+
+        NativeRasterToonUniform uniform{};
+        for (std::size_t index = 0; index < frame.RenderToonTable.size(); ++index)
+        {
+            const std::uint16_t color = frame.RenderToonTable[index];
+            uniform.Colors[index][0] = static_cast<float>(color & 0x1Fu) / 31.0f;
+            uniform.Colors[index][1] = static_cast<float>((color >> 5u) & 0x1Fu) / 31.0f;
+            uniform.Colors[index][2] = static_cast<float>((color >> 10u) & 0x1Fu) / 31.0f;
+            uniform.Colors[index][3] = 1.0f;
+        }
+        std::memcpy(slot.ToonTable.Map, &uniform, sizeof(uniform));
+        return true;
     }
 
     bool UploadNativeReference(
@@ -1217,6 +1679,7 @@ struct NativeRasterGpu::Impl
         if (slot.FrameSerial == frame.FrameSerial &&
             slot.Generation == frame.Generation &&
             slot.Color.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+            slot.Attributes.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
             slot.NativeReference.Layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
         {
             views.HighResolution = slot.Color.View;
@@ -1230,6 +1693,8 @@ struct NativeRasterGpu::Impl
             frame.Upload.Vertices.size() * sizeof(melonDS::Vulkan::VulkanPackedVertex);
         const VkDeviceSize indexBytes =
             frame.Upload.Indices.size() * sizeof(std::uint16_t);
+        const VkDeviceSize edgeIndexBytes =
+            frame.Upload.EdgeIndices.size() * sizeof(std::uint16_t);
         if (!EnsureHostBuffer(
                 Window,
                 Functions,
@@ -1243,13 +1708,28 @@ struct NativeRasterGpu::Impl
                 Device,
                 indexBytes,
                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                slot.Index))
+                slot.Index) ||
+            !EnsureHostBuffer(
+                Window,
+                Functions,
+                Device,
+                edgeIndexBytes,
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                slot.EdgeIndex))
             return false;
         if (vertexBytes)
             std::memcpy(slot.Vertex.Map, frame.Upload.Vertices.data(), vertexBytes);
         if (indexBytes)
             std::memcpy(slot.Index.Map, frame.Upload.Indices.data(), indexBytes);
+        if (edgeIndexBytes)
+            std::memcpy(
+                slot.EdgeIndex.Map,
+                frame.Upload.EdgeIndices.data(),
+                edgeIndexBytes);
         if (!UploadNativeReference(command, slot, frame))
+            return false;
+
+        if (!UploadToonTable(slot, frame))
             return false;
 
         if (!PrepareTextureCache(frame))
@@ -1264,27 +1744,27 @@ struct NativeRasterGpu::Impl
         const auto clear = melonDS::Vulkan::DecodeClearPlaneState(
             frame.RenderClearAttr1,
             frame.RenderClearAttr2);
-        VkClearValue clearValues[2]{};
+        VkClearValue clearValues[3]{};
         clearValues[0].color.float32[0] = clear.Color[0];
         clearValues[0].color.float32[1] = clear.Color[1];
         clearValues[0].color.float32[2] = clear.Color[2];
         clearValues[0].color.float32[3] = clear.Color[3];
-        clearValues[1].depthStencil = {clear.Depth, clear.Stencil};
+        clearValues[1].color.float32[0] = clear.Attributes[0];
+        clearValues[1].color.float32[1] = clear.Attributes[1];
+        clearValues[1].color.float32[2] = clear.Attributes[2];
+        clearValues[1].color.float32[3] = clear.Attributes[3];
+        clearValues[2].depthStencil = {clear.Depth, clear.Stencil};
         VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         begin.renderPass = RenderPass;
         begin.framebuffer = slot.Framebuffer;
         begin.renderArea.extent = slot.Color.Extent;
-        begin.clearValueCount = 2;
+        begin.clearValueCount = 3;
         begin.pClearValues = clearValues;
         Functions->vkCmdBeginRenderPass(
             command, &begin, VK_SUBPASS_CONTENTS_INLINE);
-        Functions->vkCmdBindPipeline(
-            command, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
         const VkDeviceSize vertexOffset = 0;
         Functions->vkCmdBindVertexBuffers(
             command, 0, 1, &slot.Vertex.Buffer, &vertexOffset);
-        Functions->vkCmdBindIndexBuffer(
-            command, slot.Index.Buffer, 0, VK_INDEX_TYPE_UINT16);
 
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -1315,29 +1795,38 @@ struct NativeRasterGpu::Impl
         while (polygonIndex < frame.Upload.Polygons.size())
         {
             const auto& polygon = frame.Upload.Polygons[polygonIndex];
-            const bool unsupported =
-                polygon.Primitive != static_cast<std::uint32_t>(
-                    melonDS::Vulkan::VulkanRasterPrimitive::Triangles) ||
-                (polygon.Flags & (
-                    melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent |
-                    melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask |
-                    melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow)) != 0;
+            const bool linePrimitive =
+                polygon.Primitive == static_cast<std::uint32_t>(
+                    melonDS::Vulkan::VulkanRasterPrimitive::Lines);
+            const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
+            const bool translucent =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0;
+            const bool shadowMask =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask) != 0;
+            const bool shadow =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow) != 0;
             const std::uint32_t textureMode = (polygon.Attr >> 4u) & 0x3u;
             const bool textured =
                 (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
             const bool textureUnsupported = textured &&
                 (polygon.TextureLayer >= textureResources.size() ||
                  textureResources[polygon.TextureLayer] == nullptr ||
-                 textureMode > 1u);
-            if (unsupported || textureUnsupported || polygon.IndexCount == 0)
+                 (textureMode > 2u && !shadowMask && !shadow));
+            if (textureUnsupported || polygon.IndexCount == 0)
             {
                 ++polygonIndex;
                 continue;
             }
 
-            std::uint32_t drawCount = polygon.IndexCount;
+            std::uint32_t drawCount = wireframe
+                ? polygon.EdgeIndexCount
+                : polygon.IndexCount;
             std::size_t next = polygonIndex + 1;
-            while (next < frame.Upload.Polygons.size())
+            while (!linePrimitive && !wireframe && !shadowMask && !shadow &&
+                   next < frame.Upload.Polygons.size())
             {
                 const auto& candidate = frame.Upload.Polygons[next];
                 const bool candidateTextured =
@@ -1345,20 +1834,17 @@ struct NativeRasterGpu::Impl
                 if (candidate.Primitive != polygon.Primitive ||
                     candidate.Flags != polygon.Flags ||
                     candidate.TextureLayer != polygon.TextureLayer ||
-                    ((candidate.Attr >> 4u) & 0x3u) != textureMode ||
+                    candidate.Attr != polygon.Attr ||
                     candidate.IndexOffset != polygon.IndexOffset + drawCount)
                 {
                     break;
                 }
                 const bool candidateUnsupported =
-                    (candidate.Flags & (
-                        melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent |
-                        melonDS::Vulkan::VulkanRasterPolygonFlag_ShadowMask |
-                        melonDS::Vulkan::VulkanRasterPolygonFlag_Shadow)) != 0 ||
+                    (candidate.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0 ||
                     (candidateTextured &&
                      (candidate.TextureLayer >= textureResources.size() ||
                       textureResources[candidate.TextureLayer] == nullptr ||
-                      textureMode > 1u));
+                      textureMode > 2u));
                 if (candidateUnsupported)
                     break;
                 drawCount += candidate.IndexCount;
@@ -1390,6 +1876,16 @@ struct NativeRasterGpu::Impl
                 &descriptor,
                 0,
                 nullptr);
+            const std::uint32_t polygonId = (polygon.Attr >> 24u) & 0x3Fu;
+            const bool useLinePipeline = linePrimitive || wireframe;
+            const bool useTranslucentPass = translucent && !wireframe && !shadowMask;
+            const bool useDepthEqual = (polygon.Attr & (1u << 14u)) != 0;
+            const bool needsOpaqueTexturePass =
+                useTranslucentPass && ((polygon.Attr >> 16u) & 0x1Fu) == 0x1Fu;
+            const std::uint32_t translucentPipelineIndex =
+                (((polygon.Attr >> 11u) & 0x1u) * 2u) +
+                ((frame.RenderDispCnt >> 3u) & 0x1u);
+
             Push push{};
             push.ScreenSize[0] = static_cast<float>(slot.Color.Extent.width);
             push.ScreenSize[1] = static_cast<float>(slot.Color.Extent.height);
@@ -1400,6 +1896,198 @@ struct NativeRasterGpu::Impl
                 ? 1u
                 : 0u;
             push.Reserved[0] = frame.RenderXPos;
+            push.Reserved[1] = frame.RenderDispCnt;
+            push.Reserved[2] = (wireframe ? 1u : 0u) |
+                ((frame.RenderAlphaRef & 0x1Fu) << 8u);
+
+            Functions->vkCmdBindIndexBuffer(
+                command,
+                wireframe ? slot.EdgeIndex.Buffer : slot.Index.Buffer,
+                0,
+                VK_INDEX_TYPE_UINT16);
+
+            if (shadowMask)
+            {
+                // Consecutive masks share bit 7; a new mask begins a new
+                // Sapphire shadow group and therefore clears only that bit.
+                Functions->vkCmdSetStencilCompareMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x80u);
+                Functions->vkCmdSetStencilWriteMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x80u);
+                Functions->vkCmdSetStencilReference(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0u);
+                Functions->vkCmdBindPipeline(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    StencilBitClearPipeline);
+                Functions->vkCmdDraw(command, 3, 1, 0, 0);
+
+                const std::uint32_t maskAlpha = wireframe
+                    ? 31u
+                    : ((polygon.Attr >> 16u) & 0x1Fu);
+                if (maskAlpha > frame.RenderAlphaRef)
+                {
+                    Functions->vkCmdSetStencilReference(
+                        command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x80u);
+                    Functions->vkCmdBindPipeline(
+                        command,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        useLinePipeline ? ShadowMaskLinePipeline : ShadowMaskPipeline);
+                    Functions->vkCmdPushConstants(
+                        command,
+                        PipelineLayout,
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                        0,
+                        sizeof(push),
+                        &push);
+                    Functions->vkCmdDrawIndexed(
+                        command,
+                        drawCount,
+                        1,
+                        wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                        0,
+                        0);
+                }
+                polygonIndex = next;
+                continue;
+            }
+
+            // Alpha-textured polygons with polygon alpha 31 contain both
+            // opaque and translucent texels. Sapphire renders their opaque
+            // coverage first so it participates in depth like an ordinary
+            // polygon, then performs the alpha pass below.
+            if (needsOpaqueTexturePass)
+            {
+                Functions->vkCmdSetStencilCompareMask(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    0xFFu);
+                Functions->vkCmdSetStencilWriteMask(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    0xFFu);
+                Functions->vkCmdSetStencilReference(
+                    command,
+                    VK_STENCIL_FACE_FRONT_AND_BACK,
+                    polygonId);
+                Functions->vkCmdBindPipeline(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    useDepthEqual
+                        ? (useLinePipeline
+                            ? DepthEqualLinePipeline
+                            : DepthEqualPipeline)
+                        : (useLinePipeline ? LinePipeline : Pipeline));
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(push),
+                    &push);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    drawCount,
+                    1,
+                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    0,
+                    0);
+            }
+
+            if (shadow)
+            {
+                // Remove the mask below the same lower polygon ID.
+                Functions->vkCmdSetStencilCompareMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x3Fu);
+                Functions->vkCmdSetStencilWriteMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x80u);
+                Functions->vkCmdSetStencilReference(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, polygonId);
+                Functions->vkCmdBindPipeline(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    useLinePipeline
+                        ? ShadowClearLinePipelines[useDepthEqual ? 1u : 0u]
+                        : ShadowClearPipelines[useDepthEqual ? 1u : 0u]);
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(push),
+                    &push);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    drawCount,
+                    1,
+                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    0,
+                    0);
+
+                // Blend only over surviving shadow-mask pixels.
+                Functions->vkCmdSetStencilCompareMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x80u);
+                Functions->vkCmdSetStencilWriteMask(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0x7Fu);
+                Functions->vkCmdSetStencilReference(
+                    command, VK_STENCIL_FACE_FRONT_AND_BACK, 0xC0u | polygonId);
+                Functions->vkCmdBindPipeline(
+                    command,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    useLinePipeline
+                        ? (useDepthEqual
+                            ? DepthEqualShadowBlendLinePipelines[translucentPipelineIndex]
+                            : ShadowBlendLinePipelines[translucentPipelineIndex])
+                        : (useDepthEqual
+                            ? DepthEqualShadowBlendPipelines[translucentPipelineIndex]
+                            : ShadowBlendPipelines[translucentPipelineIndex]));
+                push.Reserved[2] |= 2u;
+                Functions->vkCmdPushConstants(
+                    command,
+                    PipelineLayout,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    sizeof(push),
+                    &push);
+                Functions->vkCmdDrawIndexed(
+                    command,
+                    drawCount,
+                    1,
+                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    0,
+                    0);
+                polygonIndex = next;
+                continue;
+            }
+
+            Functions->vkCmdSetStencilCompareMask(
+                command,
+                VK_STENCIL_FACE_FRONT_AND_BACK,
+                useTranslucentPass ? 0x7Fu : 0xFFu);
+            Functions->vkCmdSetStencilWriteMask(
+                command,
+                VK_STENCIL_FACE_FRONT_AND_BACK,
+                0xFFu);
+            Functions->vkCmdSetStencilReference(
+                command,
+                VK_STENCIL_FACE_FRONT_AND_BACK,
+                useTranslucentPass ? (0x40u | polygonId) : polygonId);
+            Functions->vkCmdBindPipeline(
+                command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                useTranslucentPass
+                    ? (useLinePipeline
+                        ? (useDepthEqual
+                            ? DepthEqualTranslucentLinePipelines[translucentPipelineIndex]
+                            : TranslucentLinePipelines[translucentPipelineIndex])
+                        : (useDepthEqual
+                            ? DepthEqualTranslucentPipelines[translucentPipelineIndex]
+                            : TranslucentPipelines[translucentPipelineIndex]))
+                    : (useDepthEqual
+                        ? (useLinePipeline ? DepthEqualLinePipeline : DepthEqualPipeline)
+                        : (useLinePipeline ? LinePipeline : Pipeline)));
+            if (useTranslucentPass)
+                push.Reserved[2] |= 2u;
             Functions->vkCmdPushConstants(
                 command,
                 PipelineLayout,
@@ -1411,7 +2099,7 @@ struct NativeRasterGpu::Impl
                 command,
                 drawCount,
                 1,
-                polygon.IndexOffset,
+                wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                 0,
                 0);
             polygonIndex = next;
@@ -1419,6 +2107,7 @@ struct NativeRasterGpu::Impl
 
         Functions->vkCmdEndRenderPass(command);
         slot.Color.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        slot.Attributes.Layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         slot.Depth.Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         slot.FrameSerial = frame.FrameSerial;
         slot.Generation = frame.Generation;

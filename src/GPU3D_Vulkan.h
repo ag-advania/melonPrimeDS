@@ -24,6 +24,7 @@
 
 namespace melonDS
 {
+class GPU3D;
 struct Polygon;
 }
 
@@ -183,6 +184,7 @@ static_assert(offsetof(VulkanPackedPolygon, Flags) == 52);
 struct VulkanRasterBuildOptions
 {
     int ScaleFactor = 1;
+    bool BetterPolygons = false;
     const std::uint32_t* TextureLayers = nullptr;
     std::size_t TextureLayerCount = 0;
 };
@@ -481,6 +483,16 @@ VulkanPackedVertex PackVulkanRasterVertex(
 bool BuildVulkanRasterUpload(
     const Polygon* const* polygons,
     std::size_t polygonCount,
+    const VulkanRasterBuildOptions& options,
+    VulkanRasterUpload& upload,
+    std::string* failureReason = nullptr);
+
+// Builds the upload from Sapphire's shared accelerated scene frontend.  This
+// preserves its line selection, polygon boundary, high-resolution coordinate,
+// and Better Polygons triangulation behavior while retaining MelonPrime's
+// presenter-owned Vulkan resources.
+bool BuildVulkanAcceleratedRasterUpload(
+    const GPU3D& gpu3D,
     const VulkanRasterBuildOptions& options,
     VulkanRasterUpload& upload,
     std::string* failureReason = nullptr);

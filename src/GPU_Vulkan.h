@@ -130,6 +130,11 @@ public:
         return ScaleFactor;
     }
 
+    [[nodiscard]] bool GetRecordedBetterPolygons() const noexcept
+    {
+        return BetterPolygons;
+    }
+
     [[nodiscard]] u64 GetFrameSerialForDiagnostics() const noexcept
     {
         return FrameSerial;

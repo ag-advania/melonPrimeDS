@@ -158,6 +158,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${_mp_vk_shader_root}/generated/VulkanPhase11Compute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase14NativeRasterVertex.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase14NativeRasterFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase14StencilClearVertex.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase14StencilOnlyFragment.spv.h"
+        "${_mp_vk_shader_root}/generated/VulkanPhase14ShadowMaskFragment.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase10PresenterVertex.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanPhase9TwoDCompute.spv.h"
         "${_mp_vk_shader_root}/generated/VulkanTexturedPolygonVertex.spv.h"
@@ -198,6 +201,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${_mp_vk_shader_root}/phase11_compute.comp"
             "${_mp_vk_shader_root}/phase14_native_raster.vert"
             "${_mp_vk_shader_root}/phase14_native_raster.frag"
+            "${_mp_vk_shader_root}/phase14_stencil_clear.vert"
+            "${_mp_vk_shader_root}/phase14_stencil_only.frag"
+            "${_mp_vk_shader_root}/phase14_shadow_mask.frag"
             "${_mp_vk_shader_root}/phase10_presenter.vert"
             "${_mp_vk_shader_root}/phase9_2d.comp"
             "${_mp_vk_shader_root}/textured_polygon.vert"
@@ -221,6 +227,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_sources(core PRIVATE
         GPU_Vulkan.cpp
         GPU_Vulkan.h
+        GPU3D_AcceleratedFrontend.cpp
+        GPU3D_AcceleratedFrontend.h
         GPU3D_Vulkan.cpp
         GPU3D_Vulkan.h
         GPU3D_TexcacheVulkan.cpp

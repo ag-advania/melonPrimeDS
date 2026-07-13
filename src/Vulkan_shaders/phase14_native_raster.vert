@@ -20,6 +20,7 @@ layout(location = 3) in uint textureSize;
 layout(location = 0) out vec4 fColor;
 layout(location = 1) out vec2 fTexcoord;
 layout(location = 2) out float fDepth;
+layout(location = 3) flat out uint fPolygonAttr;
 
 void main()
 {
@@ -32,7 +33,9 @@ void main()
     float depth = float(position.z << zshift) / 16777216.0;
     float w = float(position.w) / 65536.0;
 
-    vec2 rasterPosition = vec2(position.xy);
+    // Sapphire's shared accelerated frontend keeps screen coordinates in
+    // 12.4 fixed point. Preserve the fractional coverage at every scale.
+    vec2 rasterPosition = vec2(position.xy) * (1.0 / 16.0);
     if (pc.renderXPos != 0u)
     {
         int nativeDelta = (pc.renderXPos & 0x100u) != 0u
@@ -55,6 +58,7 @@ void main()
         (packed0.z >> 16) & 0xFFu,
         (packed0.z >> 24) & 0xFFu);
     fColor = vec4(color) / vec4(255.0, 255.0, 255.0, 31.0);
+    fPolygonAttr = packedFlags;
 
     ivec2 texel16 = ivec2(
         int(packed0.w << 16) >> 16,

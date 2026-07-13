@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "GPU3D.h"
+#include "GPU3D_AcceleratedFrontend.h"
 #include "GPU3D_Texcache.h"
 
 namespace melonDS::Vulkan
@@ -281,16 +282,16 @@ VulkanPackedVertex PackVulkanRasterVertex(
         ++zShift;
     }
 
-    std::int32_t x = vertex.FinalPosition[0];
-    std::int32_t y = vertex.FinalPosition[1];
+    std::int32_t xFixed = vertex.FinalPosition[0] << 4;
+    std::int32_t yFixed = vertex.FinalPosition[1] << 4;
     if (scaleFactor > 1)
     {
-        x = (vertex.HiresPosition[0] * scaleFactor) >> 4;
-        y = (vertex.HiresPosition[1] * scaleFactor) >> 4;
+        xFixed = vertex.HiresPosition[0] * scaleFactor;
+        yFixed = vertex.HiresPosition[1] * scaleFactor;
     }
 
     packed.PositionXY = PackU16Pair(
-        static_cast<std::uint32_t>(x), static_cast<std::uint32_t>(y));
+        static_cast<std::uint32_t>(xFixed), static_cast<std::uint32_t>(yFixed));
     packed.DepthZW = PackU16Pair(z, w);
     packed.ColorRgba =
         (static_cast<std::uint32_t>(vertex.FinalColor[0] >> 1) & 0xFFu) |
@@ -461,6 +462,153 @@ bool BuildVulkanRasterUpload(
         record.IndexCount = static_cast<std::uint32_t>(upload.Indices.size()) - record.IndexOffset;
         record.EdgeIndexCount =
             static_cast<std::uint32_t>(upload.EdgeIndices.size()) - record.EdgeIndexOffset;
+        upload.Polygons.push_back(record);
+    }
+
+    upload.Valid = true;
+    return true;
+}
+
+bool BuildVulkanAcceleratedRasterUpload(
+    const GPU3D& gpu3D,
+    const VulkanRasterBuildOptions& options,
+    VulkanRasterUpload& upload,
+    std::string* failureReason)
+{
+    upload.Clear();
+    if (failureReason)
+        failureReason->clear();
+    if (options.ScaleFactor < 1 || options.ScaleFactor > 16)
+    {
+        SetFailure(failureReason, "invalid accelerated Vulkan raster scale");
+        return false;
+    }
+
+    AcceleratedSceneBuildConfig config{};
+    config.Scale = options.ScaleFactor;
+    config.BetterPolygons = options.BetterPolygons;
+    config.UseHiresCoordinates = true;
+    config.MaxFixedX = (256 * options.ScaleFactor * 16) - 1;
+    config.MaxFixedY = (192 * options.ScaleFactor * 16) - 1;
+
+    AcceleratedScene scene;
+    BuildAcceleratedScene(gpu3D, config, scene);
+    upload.SourcePolygonCount = gpu3D.RenderNumPolygons;
+    upload.SkippedDegenerateCount = static_cast<std::uint32_t>(
+        gpu3D.RenderNumPolygons >= scene.Draws.size()
+            ? gpu3D.RenderNumPolygons - scene.Draws.size()
+            : 0u);
+    upload.Vertices.reserve(scene.Vertices.size());
+    upload.Indices.reserve(scene.Indices.size());
+    upload.EdgeIndices.reserve(scene.EdgeIndices.size());
+    upload.Polygons.reserve(scene.Draws.size());
+
+    std::size_t sourceSearch = 0;
+    for (const AcceleratedSceneDraw& draw : scene.Draws)
+    {
+        const Polygon* polygon = draw.SourcePolygon;
+        if (!polygon)
+            continue;
+        while (sourceSearch < gpu3D.RenderNumPolygons &&
+               gpu3D.RenderPolygonRAM[sourceSearch] != polygon)
+        {
+            ++sourceSearch;
+        }
+        if (sourceSearch >= gpu3D.RenderNumPolygons)
+        {
+            SetFailure(failureReason, "accelerated Vulkan draw lost source order");
+            upload.Clear();
+            return false;
+        }
+        const std::uint32_t sourceOrder = static_cast<std::uint32_t>(sourceSearch++);
+        const std::uint32_t textureLayer =
+            options.TextureLayers && sourceOrder < options.TextureLayerCount
+                ? options.TextureLayers[sourceOrder]
+                : 0xFFFFFFFFu;
+
+        const std::uint64_t vertexEnd =
+            static_cast<std::uint64_t>(draw.FirstVertex) + draw.VertexCount;
+        const std::uint64_t indexEnd =
+            static_cast<std::uint64_t>(draw.FirstIndex) + draw.IndexCount;
+        const std::uint64_t edgeEnd =
+            static_cast<std::uint64_t>(draw.FirstEdgeIndex) + draw.EdgeIndexCount;
+        if (vertexEnd > scene.Vertices.size() || indexEnd > scene.Indices.size() ||
+            edgeEnd > scene.EdgeIndices.size())
+        {
+            SetFailure(failureReason, "accelerated Vulkan scene range is invalid");
+            upload.Clear();
+            return false;
+        }
+
+        VulkanPackedPolygon record{};
+        record.SourceOrder = sourceOrder;
+        record.Primitive = static_cast<std::uint32_t>(
+            draw.PrimitiveType == AcceleratedPrimitiveType::Lines
+                ? VulkanRasterPrimitive::Lines
+                : VulkanRasterPrimitive::Triangles);
+        record.VertexOffset = static_cast<std::uint32_t>(upload.Vertices.size());
+        record.IndexOffset = static_cast<std::uint32_t>(upload.Indices.size());
+        record.EdgeIndexOffset = static_cast<std::uint32_t>(upload.EdgeIndices.size());
+        record.Attr = polygon->Attr;
+        record.TexParam = polygon->TexParam;
+        record.TexPalette = polygon->TexPalette;
+        record.TextureLayer = textureLayer;
+        record.TextureRepeat = (polygon->TexParam >> 16) & 0xFu;
+        record.Flags = BuildPolygonFlags(*polygon, textureLayer);
+
+        const std::uint32_t textureSize = PackU16Pair(
+            TextureWidth(polygon->TexParam), TextureHeight(polygon->TexParam));
+        for (std::uint32_t offset = 0; offset < draw.VertexCount; ++offset)
+        {
+            const AcceleratedSceneVertex& source =
+                scene.Vertices[draw.FirstVertex + offset];
+            VulkanPackedVertex vertex{};
+            vertex.PositionXY = PackU16Pair(source.XFixed, source.YFixed);
+            vertex.DepthZW = source.GlZWPacked;
+            vertex.ColorRgba = source.GlColorPacked;
+            vertex.TexcoordST = PackU16Pair(
+                static_cast<std::uint16_t>(source.TexCoordS),
+                static_cast<std::uint16_t>(source.TexCoordT));
+            vertex.PolygonFlags = source.VertexAttr;
+            vertex.TextureLayer = textureLayer;
+            vertex.TextureSize = textureSize;
+            upload.Vertices.push_back(vertex);
+        }
+
+        const auto appendRemapped = [&](std::vector<std::uint16_t>& destination,
+                                        std::uint16_t sceneIndex) -> bool {
+            if (sceneIndex < draw.FirstVertex || sceneIndex >= vertexEnd)
+            {
+                SetFailure(failureReason, "accelerated Vulkan index escaped its draw");
+                return false;
+            }
+            return AppendIndex(
+                destination,
+                record.VertexOffset + (sceneIndex - draw.FirstVertex),
+                failureReason);
+        };
+        for (std::uint32_t offset = 0; offset < draw.IndexCount; ++offset)
+        {
+            if (!appendRemapped(upload.Indices, scene.Indices[draw.FirstIndex + offset]))
+            {
+                upload.Clear();
+                return false;
+            }
+        }
+        for (std::uint32_t offset = 0; offset < draw.EdgeIndexCount; ++offset)
+        {
+            if (!appendRemapped(
+                    upload.EdgeIndices,
+                    scene.EdgeIndices[draw.FirstEdgeIndex + offset]))
+            {
+                upload.Clear();
+                return false;
+            }
+        }
+
+        record.VertexCount = draw.VertexCount;
+        record.IndexCount = draw.IndexCount;
+        record.EdgeIndexCount = draw.EdgeIndexCount;
         upload.Polygons.push_back(record);
     }
 
