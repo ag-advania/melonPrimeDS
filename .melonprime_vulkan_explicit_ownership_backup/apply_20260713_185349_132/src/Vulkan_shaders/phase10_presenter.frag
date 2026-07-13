@@ -2,7 +2,6 @@
 
 // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P3_V1
 // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-// MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
 layout(set = 0, binding = 0) uniform sampler2DArray screenTexture;
 layout(set = 0, binding = 1) uniform sampler2D hudTexture;
 layout(set = 0, binding = 2) uniform sampler2DArray radarTexture;
@@ -84,29 +83,25 @@ void main()
             vec4 high3D = texture(nativeHighResolution3D, texCoord);
             vec4 low3D = texture(nativeReference3D, texCoord);
             float nativeOwnership = texture(nativeRasterCoverage, texCoord).a;
-            uint packedReferenceAlpha = uint(clamp(
-                floor(low3D.a * 255.0 + 0.5), 0.0, 255.0));
-            bool software3DDirectlyOwnsBase =
-                (packedReferenceAlpha & 0x80u) != 0u;
-            float software3DAlpha =
-                float(packedReferenceAlpha & 0x1Fu) / 31.0;
             const float opaqueThreshold = 30.5 / 31.0;
             const float tolerance = 2.0 / 255.0;
             vec3 expected = quantizedNativeReference(low3D.rgb, pc.params.w);
-            bool software3DColorMatchesBase =
+            bool software3DOwnsBase =
                 all(lessThanEqual(abs(base.rgb - expected), vec3(tolerance)));
             // Coverage 1.0 identifies an opaque native fragment. Values below
             // 0.75 identify translucent/shadow output and require the stricter
             // native-center parity proof below.
             if (nativeOwnership >= 0.75 &&
-                high3D.a >= opaqueThreshold &&
-                software3DAlpha >= opaqueThreshold &&
-                software3DDirectlyOwnsBase)
+                high3D.a >= opaqueThreshold && low3D.a >= opaqueThreshold &&
+                software3DOwnsBase)
             {
-                // Software 2D now supplies an explicit structural ownership
-                // bit. Opaque native pixels no longer depend on an RGB match,
-                // so intentional Sapphire-compatible high-resolution, fog,
-                // edge, and texture differences remain visible.
+                // The software 3D plane remains the ownership oracle: only
+                // replace pixels where the composed engine-A output matches
+                // that plane. Do not require the high-resolution raster color
+                // to equal its native sample. That legacy partial-renderer
+                // guard rejected the very subpixel, fog, edge, and texture
+                // differences the Sapphire-compatible raster is meant to
+                // preserve.
                 outColor = vec4(
                     clamp(applyMasterBrightness(high3D.rgb, pc.params.w), 0.0, 1.0),
                     1.0);
@@ -118,7 +113,7 @@ void main()
             // Software RGB6A5 oracle. Checking the center avoids rejecting
             // intentional high-resolution subpixel coverage while preventing
             // an alpha/depth mismatch from producing black effect rectangles.
-            if (nativeOwnership >= 0.20 && software3DColorMatchesBase)
+            if (nativeOwnership >= 0.20 && software3DOwnsBase)
             {
                 ivec2 referenceSize = textureSize(nativeReference3D, 0);
                 ivec2 referencePixel = clamp(
@@ -132,7 +127,7 @@ void main()
                 bool centerRgbMatches = all(lessThanEqual(
                     abs(highCenter.rgb - low3D.rgb), vec3(tolerance)));
                 bool centerAlphaMatches =
-                    abs(highCenter.a - software3DAlpha) <= alphaTolerance;
+                    abs(highCenter.a - low3D.a) <= alphaTolerance;
                 if (centerRgbMatches && centerAlphaMatches)
                 {
                     outColor = vec4(

@@ -42,22 +42,11 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
-#ifdef MELONPRIME_DS
-// MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-u32 SoftRenderer2D::ColorComposite(
-    int i, u32 val1, u32 val2, bool* direct3DOwnership) const
-#else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
-#endif
 {
     u32 coloreffect = 0;
     u32 eva, evb;
 
-#ifdef MELONPRIME_DS
-    const u32 sourceFlag1 = val1 >> 24;
-    if (direct3DOwnership)
-        *direct3DOwnership = false;
-#endif
     u32 flag1 = val1 >> 24;
     u32 flag2 = val2 >> 24;
 
@@ -115,12 +104,7 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 
     switch (coloreffect)
     {
-        case 0:
-#ifdef MELONPRIME_DS
-            if (direct3DOwnership)
-                *direct3DOwnership = (sourceFlag1 & 0x40) != 0;
-#endif
-            return val1;
+        case 0: return val1;
         case 1: return ColorBlend4(val1, val2, eva, evb);
         case 2: return ColorBrightnessUp(val1, GPU2D.EVY, 0x8);
         case 3: return ColorBrightnessDown(val1, GPU2D.EVY, 0x7);
@@ -369,16 +353,7 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val1 = BGOBJLine[i];
         u32 val2 = BGOBJLine[256+i];
 
-#ifdef MELONPRIME_DS
-        bool direct3DOwnership = false;
-        dst[i] = ColorComposite(
-            i, val1, val2, &direct3DOwnership);
-        if (GPU2D.Num == 0)
-            Parent.Output3DOwnership[i] =
-                direct3DOwnership ? 0xFF : 0x00;
-#else
         dst[i] = ColorComposite(i, val1, val2);
-#endif
     }
 }
 

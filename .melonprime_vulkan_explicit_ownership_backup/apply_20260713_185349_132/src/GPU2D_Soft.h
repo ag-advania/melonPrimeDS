@@ -77,14 +77,7 @@ private:
         return table;
     }();
 
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    u32 ColorComposite(
-        int i, u32 val1, u32 val2,
-        bool* direct3DOwnership = nullptr) const;
-#else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
-#endif
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);

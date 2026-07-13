@@ -141,10 +141,8 @@ struct VulkanRendererShellContract
     bool NativeVulkanPhase13StabilityComplete = true;
     bool NativeVulkanRomScaleCompatibilityBridge = true;
     bool NativeVulkanCursorContainerSync = true;
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    bool NativeVulkanExplicit3DOwnershipMask = true;
     bool NativeVulkan3DImplemented = false;
-    u32 ContractVersion = 25;
+    u32 ContractVersion = 24;
 };
 
 VulkanRendererShellContract DescribeVulkanRendererShell(bool computeSelected) noexcept;
@@ -227,10 +225,6 @@ public:
     [[nodiscard]] bool CopyNative3DForPresenter(
         std::vector<u32>& output) const;
 
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    [[nodiscard]] bool CopyNative3DOwnershipForPresenter(
-        std::vector<std::uint8_t>& output) const;
-
     [[nodiscard]] std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame>
         AcquireNativeRasterFrame() const;
 
@@ -241,9 +235,6 @@ private:
     void PublishNativeRasterFrame();
     void ClearNativeRasterFrame() noexcept;
     void OnRendered3DLine(u32 line, const u32* pixels) noexcept override;
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    void OnComposed3DOwnershipLine(
-        u32 line, const u8* ownership) noexcept override;
 
     bool ComputeRendererSelected = false;
     bool Initialized = false;
@@ -254,8 +245,6 @@ private:
     static constexpr std::size_t NativePixelCount = 256u * 192u;
 
     std::vector<u32> Native3DFrame;
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // 0xFF only when Software 2D structurally selected unmodified BG0/3D.
     std::array<std::uint8_t, NativePixelCount> Native3DVisible{};
     std::array<u32, NativePixelCount> Native3DBgra{};
 

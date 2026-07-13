@@ -1,0 +1,34 @@
+{
+    "patch_version":  "vulkan-explicit-3d-ownership-v1",
+    "applied_at":  "2026-07-13T18:53:49.2037039+09:00",
+    "files":  [
+                  {
+                      "path":  "src/GPU_Soft.h",
+                      "sha256":  "833b9490c460fb749d1110441acaca2d2505a49400732194fbd9cef4031ff15f"
+                  },
+                  {
+                      "path":  "src/GPU_Soft.cpp",
+                      "sha256":  "03d198040ff5236c9fdc3ee6a2f22dd0b761b69bbfd48a0fda0416a9a75485fe"
+                  },
+                  {
+                      "path":  "src/GPU2D_Soft.h",
+                      "sha256":  "0586b2015bc6ab25571f4ab531f1d6a525d7144c132a4367e8a39cedfc735f00"
+                  },
+                  {
+                      "path":  "src/GPU2D_Soft.cpp",
+                      "sha256":  "b0e71fddb544a836f2fc01622a11e6700c5afbeaa9692647eb224fffa6aeb4f3"
+                  },
+                  {
+                      "path":  "src/GPU_Vulkan.h",
+                      "sha256":  "fa2646fb6ca5157ad346398e56d5811bcfda593e7a203b374cd810f09c4fa41b"
+                  },
+                  {
+                      "path":  "src/GPU_Vulkan.cpp",
+                      "sha256":  "6a0203504bcdd6f5be76429351e995a521f13858ec9cde53b388cf5b91aa0460"
+                  },
+                  {
+                      "path":  "src/Vulkan_shaders/phase10_presenter.frag",
+                      "sha256":  "2bfd67ab7ff6ce35c4087588b03c09a0fb536347b89cfb36ed443313497547eb"
+                  }
+              ]
+}

@@ -58,19 +58,6 @@ protected:
         (void)pixels;
     }
 
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // Reports pixels where Engine A's final regular-display color is the
-    // unmodified 3D layer. Translucent/color-effect pixels remain unowned until
-    // Vulkan receives a complete 2D composition contract.
-    virtual void OnComposed3DOwnershipLine(
-        u32 line, const u8* ownership) noexcept
-    {
-        (void)line;
-        (void)ownership;
-    }
-#endif
-
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
@@ -79,10 +66,6 @@ private:
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    alignas(8) u8 Output3DOwnership[256];
-#endif
 
     void DrawScanlineA(u32 line, u32* dst);
     void DrawScanlineB(u32 line, u32* dst);
