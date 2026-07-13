@@ -150,6 +150,17 @@ static_assert(offsetof(VulkanPackedVertex, PolygonFlags) == 16);
 static_assert(offsetof(VulkanPackedVertex, TextureLayer) == 20);
 static_assert(offsetof(VulkanPackedVertex, TextureSize) == 24);
 
+// Sapphire's graphics path uploads the full DS depth and W values as floats.
+// Keep the legacy seven-word vertex ABI intact for the phase harnesses while
+// carrying the values that its 16-bit DepthZW field cannot represent.
+struct VulkanRasterDepthW
+{
+    std::uint32_t Depth = 0;
+    std::uint32_t W = 1;
+};
+
+static_assert(sizeof(VulkanRasterDepthW) == 2u * sizeof(std::uint32_t));
+
 // One fixed-size record per non-degenerate source polygon. SourceOrder is never
 // rewritten, allowing Phase 7.5 to batch adjacent compatible records only.
 struct alignas(16) VulkanPackedPolygon
@@ -192,6 +203,7 @@ struct VulkanRasterBuildOptions
 struct VulkanRasterUpload
 {
     std::vector<VulkanPackedVertex> Vertices;
+    std::vector<VulkanRasterDepthW> FullPrecisionDepthW;
     std::vector<std::uint16_t> Indices;
     std::vector<std::uint16_t> EdgeIndices;
     std::vector<VulkanPackedPolygon> Polygons;

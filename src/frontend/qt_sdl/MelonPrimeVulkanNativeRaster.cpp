@@ -648,6 +648,7 @@ struct NativeRasterGpu::Impl
         VkFramebuffer Framebuffer = VK_NULL_HANDLE;
         VkFramebuffer FinalFramebuffer = VK_NULL_HANDLE;
         HostBuffer Vertex;
+        HostBuffer FullPrecisionDepthW;
         HostBuffer Index;
         HostBuffer EdgeIndex;
         HostBuffer ToonTable;
@@ -748,6 +749,7 @@ struct NativeRasterGpu::Impl
         DestroyImage(Functions, Device, slot.ClearBitmapColor);
         DestroyImage(Functions, Device, slot.ClearBitmapDepth);
         DestroyHostBuffer(Functions, Device, slot.Vertex);
+        DestroyHostBuffer(Functions, Device, slot.FullPrecisionDepthW);
         DestroyHostBuffer(Functions, Device, slot.Index);
         DestroyHostBuffer(Functions, Device, slot.EdgeIndex);
         DestroyHostBuffer(Functions, Device, slot.ToonTable);
@@ -1327,20 +1329,27 @@ struct NativeRasterGpu::Impl
         stages[1].module = fragment;
         stages[1].pName = "main";
 
-        VkVertexInputBindingDescription vertexBinding{};
-        vertexBinding.binding = 0;
-        vertexBinding.stride = sizeof(melonDS::Vulkan::VulkanPackedVertex);
-        vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        VkVertexInputAttributeDescription attributes[4]{};
+        std::array<VkVertexInputBindingDescription, 2> vertexBindings{};
+        vertexBindings[0].binding = 0;
+        vertexBindings[0].stride = sizeof(melonDS::Vulkan::VulkanPackedVertex);
+        vertexBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        vertexBindings[1].binding = 1;
+        vertexBindings[1].stride = sizeof(melonDS::Vulkan::VulkanRasterDepthW);
+        vertexBindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        VkVertexInputAttributeDescription attributes[6]{};
         attributes[0] = {0, 0, VK_FORMAT_R32G32B32A32_UINT, 0};
         attributes[1] = {1, 0, VK_FORMAT_R32_UINT, 16};
         attributes[2] = {2, 0, VK_FORMAT_R32_UINT, 20};
         attributes[3] = {3, 0, VK_FORMAT_R32_UINT, 24};
+        attributes[4] = {4, 1, VK_FORMAT_R32_UINT, 0};
+        attributes[5] = {5, 1, VK_FORMAT_R32_UINT, 4};
         VkPipelineVertexInputStateCreateInfo vertexInput{
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-        vertexInput.vertexBindingDescriptionCount = 1;
-        vertexInput.pVertexBindingDescriptions = &vertexBinding;
-        vertexInput.vertexAttributeDescriptionCount = 4;
+        vertexInput.vertexBindingDescriptionCount =
+            static_cast<std::uint32_t>(vertexBindings.size());
+        vertexInput.pVertexBindingDescriptions = vertexBindings.data();
+        vertexInput.vertexAttributeDescriptionCount =
+            static_cast<std::uint32_t>(std::size(attributes));
         vertexInput.pVertexAttributeDescriptions = attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{
             VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -2565,17 +2574,28 @@ struct NativeRasterGpu::Impl
 
         const VkDeviceSize vertexBytes =
             frame.Upload.Vertices.size() * sizeof(melonDS::Vulkan::VulkanPackedVertex);
+        const VkDeviceSize depthWBytes =
+            frame.Upload.FullPrecisionDepthW.size() *
+            sizeof(melonDS::Vulkan::VulkanRasterDepthW);
         const VkDeviceSize indexBytes =
             frame.Upload.Indices.size() * sizeof(std::uint16_t);
         const VkDeviceSize edgeIndexBytes =
             frame.Upload.EdgeIndices.size() * sizeof(std::uint16_t);
-        if (!EnsureHostBuffer(
+        if (frame.Upload.FullPrecisionDepthW.size() != frame.Upload.Vertices.size() ||
+            !EnsureHostBuffer(
                 Window,
                 Functions,
                 Device,
                 vertexBytes,
                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 slot.Vertex) ||
+            !EnsureHostBuffer(
+                Window,
+                Functions,
+                Device,
+                depthWBytes,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                slot.FullPrecisionDepthW) ||
             !EnsureHostBuffer(
                 Window,
                 Functions,
@@ -2593,6 +2613,13 @@ struct NativeRasterGpu::Impl
             return false;
         if (vertexBytes)
             std::memcpy(slot.Vertex.Map, frame.Upload.Vertices.data(), vertexBytes);
+        if (depthWBytes)
+        {
+            std::memcpy(
+                slot.FullPrecisionDepthW.Map,
+                frame.Upload.FullPrecisionDepthW.data(),
+                depthWBytes);
+        }
         if (indexBytes)
             std::memcpy(slot.Index.Map, frame.Upload.Indices.data(), indexBytes);
         if (edgeIndexBytes)
@@ -2639,9 +2666,17 @@ struct NativeRasterGpu::Impl
         begin.pClearValues = clearValues;
         Functions->vkCmdBeginRenderPass(
             command, &begin, VK_SUBPASS_CONTENTS_INLINE);
-        const VkDeviceSize vertexOffset = 0;
+        const std::array<VkBuffer, 2> vertexBuffers{
+            slot.Vertex.Buffer,
+            slot.FullPrecisionDepthW.Buffer,
+        };
+        const std::array<VkDeviceSize, 2> vertexOffsets{};
         Functions->vkCmdBindVertexBuffers(
-            command, 0, 1, &slot.Vertex.Buffer, &vertexOffset);
+            command,
+            0,
+            static_cast<std::uint32_t>(vertexBuffers.size()),
+            vertexBuffers.data(),
+            vertexOffsets.data());
 
         VkViewport viewport{};
         viewport.x = 0.0f;

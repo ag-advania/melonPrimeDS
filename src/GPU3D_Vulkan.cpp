@@ -252,6 +252,7 @@ std::uint32_t ClearBitmapDirtyTracker::ConsumeIfEnabled(bool enabled) noexcept
 void VulkanRasterUpload::Clear() noexcept
 {
     Vertices.clear();
+    FullPrecisionDepthW.clear();
     Indices.clear();
     EdgeIndices.clear();
     Polygons.clear();
@@ -406,8 +407,14 @@ bool BuildVulkanRasterUpload(
 
             for (std::uint32_t index = 0; index < selectedCount; ++index)
             {
+                const std::uint32_t vertexIndex = selected[index];
                 upload.Vertices.push_back(PackVulkanRasterVertex(
-                    *polygon, selected[index], options.ScaleFactor, textureLayer));
+                    *polygon, vertexIndex, options.ScaleFactor, textureLayer));
+                upload.FullPrecisionDepthW.push_back({
+                    static_cast<std::uint32_t>(polygon->FinalZ[vertexIndex]),
+                    static_cast<std::uint32_t>(
+                        std::max<std::int32_t>(1, polygon->FinalW[vertexIndex])),
+                });
             }
             if (!AppendIndex(upload.Indices, record.VertexOffset, failureReason) ||
                 !AppendIndex(upload.Indices, record.VertexOffset + 1u, failureReason) ||
@@ -430,6 +437,11 @@ bool BuildVulkanRasterUpload(
                 }
                 upload.Vertices.push_back(PackVulkanRasterVertex(
                     *polygon, vertexIndex, options.ScaleFactor, textureLayer));
+                upload.FullPrecisionDepthW.push_back({
+                    static_cast<std::uint32_t>(polygon->FinalZ[vertexIndex]),
+                    static_cast<std::uint32_t>(
+                        std::max<std::int32_t>(1, polygon->FinalW[vertexIndex])),
+                });
                 if (vertexIndex >= 2)
                 {
                     if (!AppendIndex(upload.Indices, record.VertexOffset, failureReason) ||
@@ -499,6 +511,7 @@ bool BuildVulkanAcceleratedRasterUpload(
             ? gpu3D.RenderNumPolygons - scene.Draws.size()
             : 0u);
     upload.Vertices.reserve(scene.Vertices.size());
+    upload.FullPrecisionDepthW.reserve(scene.Vertices.size());
     upload.Indices.reserve(scene.Indices.size());
     upload.EdgeIndices.reserve(scene.EdgeIndices.size());
     upload.Polygons.reserve(scene.Draws.size());
@@ -573,6 +586,7 @@ bool BuildVulkanAcceleratedRasterUpload(
             vertex.TextureLayer = textureLayer;
             vertex.TextureSize = textureSize;
             upload.Vertices.push_back(vertex);
+            upload.FullPrecisionDepthW.push_back({source.Z, source.W});
         }
 
         const auto appendRemapped = [&](std::vector<std::uint16_t>& destination,

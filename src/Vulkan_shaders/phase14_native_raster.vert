@@ -16,6 +16,8 @@ layout(location = 0) in uvec4 packed0;
 layout(location = 1) in uint packedFlags;
 layout(location = 2) in uint textureLayer;
 layout(location = 3) in uint textureSize;
+layout(location = 4) in uint fullDepth;
+layout(location = 5) in uint fullW;
 
 layout(location = 0) out vec4 fColor;
 layout(location = 1) out vec2 fTexcoord;
@@ -29,9 +31,8 @@ void main()
         packed0.x >> 16,
         packed0.y & 0xFFFFu,
         packed0.y >> 16);
-    uint zshift = (packedFlags >> 16) & 0x1Fu;
-    float depth = float(position.z << zshift) / 16777216.0;
-    float w = float(position.w) / 65536.0;
+    float depth = clamp(float(fullDepth) / 16777216.0, 0.0, 1.0);
+    float w = float(max(fullW, 1u)) / 65536.0;
 
     // Sapphire's shared accelerated frontend keeps screen coordinates in
     // 12.4 fixed point. Preserve the fractional coverage at every scale.

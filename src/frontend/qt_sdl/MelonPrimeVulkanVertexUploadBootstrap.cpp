@@ -246,6 +246,9 @@ ContractResult RunContractChecks()
         ((triangle0.PolygonFlags >> 16) & 0xFFu) == 1u &&
         triangle0.TextureLayer == 7u &&
         triangle0.TextureSize == (32u | (64u << 16)) &&
+        result.Upload.FullPrecisionDepthW.size() == result.Upload.Vertices.size() &&
+        result.Upload.FullPrecisionDepthW[0].Depth == 0x1FFFFu &&
+        result.Upload.FullPrecisionDepthW[0].W == 0x2345u &&
         result.Upload.Polygons[0].Attr == scene.Polygons[0].Attr &&
         result.Upload.Polygons[0].TexParam == scene.Polygons[0].TexParam &&
         result.Upload.Polygons[0].TexPalette == scene.Polygons[0].TexPalette &&
@@ -270,6 +273,7 @@ ContractResult RunContractChecks()
         melonDS::Vulkan::BuildVulkanRasterUpload(
             triangleOnly, 1, scaleOneOptions, scaleOne, &scaleFailure) &&
         scaleOne.Vertices.size() == 3 &&
+        scaleOne.FullPrecisionDepthW.size() == scaleOne.Vertices.size() &&
         scaleOne.Vertices[0].PositionXY == (10u | (20u << 16));
 
     result.Passed = result.LayoutPassed && result.SourceOrderPassed &&
