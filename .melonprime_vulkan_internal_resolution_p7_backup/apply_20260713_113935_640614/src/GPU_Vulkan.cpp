@@ -159,9 +159,8 @@ bool VulkanRenderer::Init()
     Platform::Log(
         Platform::LogLevel::Info,
         "[MelonPrime] Vulkan compatibility performance: "
-        "androidstyle_frame_ring=1 slots=3 coverage_only=0 "
-        "hires_color_reconstruction=1 single_scaled_screen=1 "
-        "presenter_pixel_diff=0\n");
+        "androidstyle_frame_ring=1 slots=3 coverage_only=1 "
+        "single_scaled_screen=1 presenter_pixel_diff=0\n");
     return true;
 }
 
@@ -379,12 +378,7 @@ void VulkanRenderer::RebuildHighResolutionOutput()
         settings.ScaleFactor = scale;
         settings.BetterPolygons = BetterPolygons;
         settings.HiresCoordinates = HiresCoordinates;
-
-        // MELONPRIME_VULKAN_INTERNAL_RESOLUTION_VISIBLE_P7_V1
-        // Coverage-only mode produced a larger image but repeated the same
-        // native 3D color across every scale x scale block. Request the bridge's
-        // scale-dependent subpixel color plane so 2x-4x visibly changes 3D output.
-        settings.CoverageOnly = false;
+        settings.CoverageOnly = true;
 
         Vulkan::VulkanRomScaleResult bridge;
         if (!Vulkan::BuildVulkanRomScaleBridge(
@@ -394,17 +388,11 @@ void VulkanRenderer::RebuildHighResolutionOutput()
                 bridge) ||
             !bridge.Valid ||
             bridge.Width != static_cast<int>(kNativeWidth) * scale ||
-            bridge.Height != static_cast<int>(kNativeHeight) * scale ||
-            bridge.HighResolution3D.size() !=
-                static_cast<std::size_t>(bridge.Width) *
-                    static_cast<std::size_t>(bridge.Height) ||
-            bridge.Coverage.size() !=
-                static_cast<std::size_t>(bridge.Width) *
-                    static_cast<std::size_t>(bridge.Height))
+            bridge.Height != static_cast<int>(kNativeHeight) * scale)
         {
             Platform::Log(
                 Platform::LogLevel::Warn,
-                "[MelonPrime] Vulkan high-resolution compatibility bridge failed: %s\n",
+                "[MelonPrime] Vulkan fast compatibility bridge failed: %s\n",
                 bridge.FailureReason.c_str());
             releaseProducerSlot(false);
             return;
@@ -427,6 +415,7 @@ void VulkanRenderer::RebuildHighResolutionOutput()
                 if (Native3DVisible[nativeIndex] == 0)
                     continue;
 
+                const u32 replacement = Native3DBgra[nativeIndex];
                 const int firstX = nativeX * scale;
                 const int firstY = nativeY * scale;
                 for (int subY = 0; subY < scale; ++subY)
@@ -439,16 +428,8 @@ void VulkanRenderer::RebuildHighResolutionOutput()
                     {
                         const std::size_t highIndex =
                             first + static_cast<std::size_t>(subX);
-                        if (bridge.Coverage[highIndex] == 0)
-                            continue;
-
-                        const u32 highResolution3D =
-                            bridge.HighResolution3D[highIndex];
-                        if (((highResolution3D >> 24) & 0x1Fu) == 0)
-                            continue;
-
-                        engineAOutput[highIndex] = ExpandRgb6ToBgra(
-                            ApplyEngineABrightness(highResolution3D, brightness));
+                        if (bridge.Coverage[highIndex] != 0)
+                            engineAOutput[highIndex] = replacement;
                     }
                 }
             }
