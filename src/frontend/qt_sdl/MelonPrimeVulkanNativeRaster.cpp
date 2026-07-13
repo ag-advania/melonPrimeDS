@@ -696,14 +696,14 @@ struct NativeRasterGpu::Impl
     VkPipeline LinePipeline = VK_NULL_HANDLE;
     VkPipeline DepthEqualPipeline = VK_NULL_HANDLE;
     VkPipeline DepthEqualLinePipeline = VK_NULL_HANDLE;
-    std::array<VkPipeline, 4> TranslucentPipelines{};
-    std::array<VkPipeline, 4> TranslucentLinePipelines{};
-    std::array<VkPipeline, 4> DepthEqualTranslucentPipelines{};
-    std::array<VkPipeline, 4> DepthEqualTranslucentLinePipelines{};
-    std::array<VkPipeline, 4> BgZeroTranslucentPipelines{};
-    std::array<VkPipeline, 4> BgZeroTranslucentLinePipelines{};
-    std::array<VkPipeline, 8> BgZeroShadowBlendPipelines{};
-    std::array<VkPipeline, 8> BgZeroShadowBlendLinePipelines{};
+    std::array<VkPipeline, 8> TranslucentPipelines{};
+    std::array<VkPipeline, 8> TranslucentLinePipelines{};
+    std::array<VkPipeline, 8> DepthEqualTranslucentPipelines{};
+    std::array<VkPipeline, 8> DepthEqualTranslucentLinePipelines{};
+    std::array<VkPipeline, 8> BgZeroTranslucentPipelines{};
+    std::array<VkPipeline, 8> BgZeroTranslucentLinePipelines{};
+    std::array<VkPipeline, 16> BgZeroShadowBlendPipelines{};
+    std::array<VkPipeline, 16> BgZeroShadowBlendLinePipelines{};
     VkPipeline StencilBitClearPipeline = VK_NULL_HANDLE;
     VkPipeline ShadowMaskPipeline = VK_NULL_HANDLE;
     VkPipeline ShadowMaskLinePipeline = VK_NULL_HANDLE;
@@ -711,10 +711,10 @@ struct NativeRasterGpu::Impl
     VkPipeline BgZeroShadowMaskLinePipeline = VK_NULL_HANDLE;
     std::array<VkPipeline, 2> ShadowClearPipelines{};
     std::array<VkPipeline, 2> ShadowClearLinePipelines{};
-    std::array<VkPipeline, 4> ShadowBlendPipelines{};
-    std::array<VkPipeline, 4> ShadowBlendLinePipelines{};
-    std::array<VkPipeline, 4> DepthEqualShadowBlendPipelines{};
-    std::array<VkPipeline, 4> DepthEqualShadowBlendLinePipelines{};
+    std::array<VkPipeline, 8> ShadowBlendPipelines{};
+    std::array<VkPipeline, 8> ShadowBlendLinePipelines{};
+    std::array<VkPipeline, 8> DepthEqualShadowBlendPipelines{};
+    std::array<VkPipeline, 8> DepthEqualShadowBlendLinePipelines{};
     VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;
     std::array<VkSampler, 9> Samplers{};
     std::array<Slot, QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT> Slots{};
@@ -1440,7 +1440,6 @@ struct NativeRasterGpu::Impl
         {
             depth.front.compareOp = VK_COMPARE_OP_NOT_EQUAL;
             depth.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
-            colorBlends[1].colorWriteMask = VK_COLOR_COMPONENT_B_BIT;
             for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
             {
                 depth.depthCompareOp = depthEqual
@@ -1458,61 +1457,70 @@ struct NativeRasterGpu::Impl
                     colorBlends[2].colorWriteMask = depthWrite
                         ? VK_COLOR_COMPONENT_R_BIT
                         : 0;
-                    for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
+                    for (std::uint32_t fogWrite = 0; fogWrite < 2; ++fogWrite)
                     {
-                        const std::uint32_t index = depthWrite * 2u + alphaBlend;
-                        auto& colorBlend = colorBlends[0];
-                        colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
-                        colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                        colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                        colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
-                        colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                        colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                        colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
-
-                        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-                        translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
-                            Device,
-                            VK_NULL_HANDLE,
-                            1,
-                            &pipelineInfo,
-                            nullptr,
-                            &trianglePipelines[index]);
-                        if (translucentPipelineResult != VK_SUCCESS)
-                            break;
-                        assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-                        translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
-                            Device,
-                            VK_NULL_HANDLE,
-                            1,
-                            &pipelineInfo,
-                            nullptr,
-                            &linePipelines[index]);
-                        if (translucentPipelineResult != VK_SUCCESS)
-                            break;
-
-                        stencil.passOp = VK_STENCIL_OP_INVERT;
-                        stencil.compareOp = VK_COMPARE_OP_EQUAL;
-                        depth.front = stencil;
-                        depth.back = stencil;
-                        const std::uint32_t bgShadowIndex =
-                            depthEqual * 4u + index;
-                        translucentPipelineResult = createTopologyPair(
-                            BgZeroShadowBlendPipelines[bgShadowIndex],
-                            BgZeroShadowBlendLinePipelines[bgShadowIndex]);
-                        if (translucentPipelineResult == VK_SUCCESS && alphaBlend == 0u)
+                        colorBlends[1].colorWriteMask = fogWrite
+                            ? VK_COLOR_COMPONENT_B_BIT
+                            : 0;
+                        for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
                         {
-                            colorBlend.blendEnable = VK_FALSE;
-                            const std::uint32_t bgIndex =
-                                depthEqual * 2u + depthWrite;
+                            const std::uint32_t index =
+                                depthWrite * 4u + fogWrite * 2u + alphaBlend;
+                            auto& colorBlend = colorBlends[0];
+                            colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
+                            colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                            colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                            colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
+                            colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                            colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                            colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
+
+                            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+                            translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
+                                Device,
+                                VK_NULL_HANDLE,
+                                1,
+                                &pipelineInfo,
+                                nullptr,
+                                &trianglePipelines[index]);
+                            if (translucentPipelineResult != VK_SUCCESS)
+                                break;
+                            assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+                            translucentPipelineResult = Functions->vkCreateGraphicsPipelines(
+                                Device,
+                                VK_NULL_HANDLE,
+                                1,
+                                &pipelineInfo,
+                                nullptr,
+                                &linePipelines[index]);
+                            if (translucentPipelineResult != VK_SUCCESS)
+                                break;
+
+                            stencil.passOp = VK_STENCIL_OP_INVERT;
+                            stencil.compareOp = VK_COMPARE_OP_EQUAL;
+                            depth.front = stencil;
+                            depth.back = stencil;
+                            const std::uint32_t bgShadowIndex =
+                                depthEqual * 8u + index;
                             translucentPipelineResult = createTopologyPair(
-                                BgZeroTranslucentPipelines[bgIndex],
-                                BgZeroTranslucentLinePipelines[bgIndex]);
+                                BgZeroShadowBlendPipelines[bgShadowIndex],
+                                BgZeroShadowBlendLinePipelines[bgShadowIndex]);
+                            if (translucentPipelineResult == VK_SUCCESS && alphaBlend == 0u)
+                            {
+                                colorBlend.blendEnable = VK_FALSE;
+                                const std::uint32_t bgIndex =
+                                    depthEqual * 4u + depthWrite * 2u + fogWrite;
+                                translucentPipelineResult = createTopologyPair(
+                                    BgZeroTranslucentPipelines[bgIndex],
+                                    BgZeroTranslucentLinePipelines[bgIndex]);
+                            }
+                            stencil.passOp = VK_STENCIL_OP_REPLACE;
+                            stencil.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+                            depth.front = stencil;
+                            depth.back = stencil;
+                            if (translucentPipelineResult != VK_SUCCESS)
+                                break;
                         }
-                        stencil.passOp = VK_STENCIL_OP_REPLACE;
-                        stencil.compareOp = VK_COMPARE_OP_NOT_EQUAL;
-                        depth.front = stencil;
-                        depth.back = stencil;
                         if (translucentPipelineResult != VK_SUCCESS)
                             break;
                     }
@@ -1621,7 +1629,6 @@ struct NativeRasterGpu::Impl
             stencil.compareOp = VK_COMPARE_OP_EQUAL;
             depth.front = stencil;
             depth.back = stencil;
-            colorBlends[1].colorWriteMask = VK_COLOR_COMPONENT_B_BIT;
             for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
             {
                 depth.depthCompareOp = depthEqual
@@ -1639,23 +1646,32 @@ struct NativeRasterGpu::Impl
                     colorBlends[2].colorWriteMask = depthWrite
                         ? VK_COLOR_COMPONENT_R_BIT
                         : 0;
-                    for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
+                    for (std::uint32_t fogWrite = 0; fogWrite < 2; ++fogWrite)
                     {
-                        const std::uint32_t index = depthWrite * 2u + alphaBlend;
-                        auto& colorBlend = colorBlends[0];
-                        colorBlend = {};
-                        colorBlend.colorWriteMask =
-                            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-                        colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
-                        colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                        colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                        colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
-                        colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                        colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                        colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
-                        shadowPipelineResult = createTopologyPair(
-                            trianglePipelines[index], linePipelines[index]);
+                        colorBlends[1].colorWriteMask = fogWrite
+                            ? VK_COLOR_COMPONENT_B_BIT
+                            : 0;
+                        for (std::uint32_t alphaBlend = 0; alphaBlend < 2; ++alphaBlend)
+                        {
+                            const std::uint32_t index =
+                                depthWrite * 4u + fogWrite * 2u + alphaBlend;
+                            auto& colorBlend = colorBlends[0];
+                            colorBlend = {};
+                            colorBlend.colorWriteMask =
+                                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+                            colorBlend.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
+                            colorBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                            colorBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                            colorBlend.colorBlendOp = VK_BLEND_OP_ADD;
+                            colorBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                            colorBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                            colorBlend.alphaBlendOp = VK_BLEND_OP_MAX;
+                            shadowPipelineResult = createTopologyPair(
+                                trianglePipelines[index], linePipelines[index]);
+                            if (shadowPipelineResult != VK_SUCCESS)
+                                break;
+                        }
                         if (shadowPipelineResult != VK_SUCCESS)
                             break;
                     }
@@ -2785,8 +2801,14 @@ struct NativeRasterGpu::Impl
             const bool useDepthEqual = (polygon.Attr & (1u << 14u)) != 0;
             const bool needsOpaqueTexturePass =
                 useTranslucentPass && ((polygon.Attr >> 16u) & 0x1Fu) == 0x1Fu;
+            const std::uint32_t depthWrite = (polygon.Attr >> 11u) & 0x1u;
+            const std::uint32_t fogWrite =
+                ((frame.RenderDispCnt & (1u << 7u)) != 0u &&
+                 (polygon.Attr & (1u << 15u)) == 0u)
+                ? 1u
+                : 0u;
             const std::uint32_t translucentPipelineIndex =
-                (((polygon.Attr >> 11u) & 0x1u) * 2u) +
+                depthWrite * 4u + fogWrite * 2u +
                 ((frame.RenderDispCnt >> 3u) & 0x1u);
 
             Push push{};
@@ -2957,13 +2979,11 @@ struct NativeRasterGpu::Impl
                     command,
                     VK_STENCIL_FACE_FRONT_AND_BACK,
                     shadow ? 0xFEu : 0xFFu);
-                const std::uint32_t depthWrite =
-                    (polygon.Attr >> 11u) & 0x1u;
                 VkPipeline backgroundPipeline = VK_NULL_HANDLE;
                 if (shadow)
                 {
                     const std::uint32_t backgroundShadowIndex =
-                        (useDepthEqual ? 4u : 0u) + translucentPipelineIndex;
+                        (useDepthEqual ? 8u : 0u) + translucentPipelineIndex;
                     backgroundPipeline = useLinePipeline
                         ? BgZeroShadowBlendLinePipelines[backgroundShadowIndex]
                         : BgZeroShadowBlendPipelines[backgroundShadowIndex];
@@ -2971,7 +2991,7 @@ struct NativeRasterGpu::Impl
                 else
                 {
                     const std::uint32_t backgroundIndex =
-                        (useDepthEqual ? 2u : 0u) + depthWrite;
+                        (useDepthEqual ? 4u : 0u) + depthWrite * 2u + fogWrite;
                     backgroundPipeline = useLinePipeline
                         ? BgZeroTranslucentLinePipelines[backgroundIndex]
                         : BgZeroTranslucentPipelines[backgroundIndex];

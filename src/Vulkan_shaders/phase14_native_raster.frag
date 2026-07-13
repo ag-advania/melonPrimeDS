@@ -175,11 +175,7 @@ void main()
 
     outColor = encodeColor(color);
     if (translucentPass)
-        outAttr = vec4(
-            0.0,
-            0.0,
-            float((fPolygonAttr >> 15u) & 0x1u),
-            1.0);
+        outAttr = vec4(0.0, 0.0, 0.0, 1.0);
     else
         outAttr = vec4(
             float((fPolygonAttr >> 24u) & 0x3Fu) / 63.0,
