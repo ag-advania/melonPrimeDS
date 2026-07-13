@@ -103,7 +103,8 @@ void main()
         }
     }
 
-    if (pc.textured != 0u)
+    bool textureMapsEnabled = (pc.renderDispCnt & (1u << 0u)) != 0u;
+    if (textureMapsEnabled && pc.textured != 0u)
     {
         Color6A5 texel = sampleTexture();
         if (pc.textureMode == 1u)

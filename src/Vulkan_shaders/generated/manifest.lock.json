@@ -1,6 +1,6 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "761d39e242740d342f074515848c69d254b76bf8aa4f13a6b4b24eded20ab433",
+  "generation_sha256": "b4e8f7be8ebed2eadd7ef3e1088ba933eee13f0ef8fe12d1bdf7de0f7cf1cd46",
   "manifest_sha256": "165bb918b5de305037e1a749b67472b4dce8d2944a6fda91ac5d90958d834c2e",
   "schema_version": 1,
   "sources": [
@@ -369,7 +369,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase14_native_raster.frag",
-      "sha256": "4b96abfaa28f4ae8a05541b47938724f6c9824a1a8c9209ada437cbb9cbf8f5a",
+      "sha256": "6ce53ce962d1449779cd960bcdbfb889a603472ec33955a627b1b17b787fe837",
       "stage": "frag",
       "variant": "default"
     },
@@ -673,8 +673,8 @@
     },
     {
       "header": "src/Vulkan_shaders/generated/VulkanPhase14NativeRasterFragment.spv.h",
-      "sha256": "91d7d793df0dea661eaecf594ff3edf69a8a4817d252bf23874e50c089b5b13a",
-      "size": 12612,
+      "sha256": "17ae93e487a615a16f836621ba2d6e53cd824230d81d77426c82d7c08c46bb8d",
+      "size": 12840,
       "symbol": "VulkanPhase14NativeRasterFragment"
     },
     {
