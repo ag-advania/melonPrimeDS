@@ -2800,6 +2800,10 @@ struct NativeRasterGpu::Impl
                 polygon.Primitive == static_cast<std::uint32_t>(
                     melonDS::Vulkan::VulkanRasterPrimitive::Lines);
             const bool wireframe = ((polygon.Attr >> 16u) & 0x1Fu) == 0u;
+            const bool expandedLineQuads =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_ExpandedLineQuads) != 0;
+            const bool usesEdgeIndexBuffer = wireframe && !expandedLineQuads;
             const bool translucent =
                 (polygon.Flags &
                  melonDS::Vulkan::VulkanRasterPolygonFlag_Translucent) != 0;
@@ -2834,7 +2838,7 @@ struct NativeRasterGpu::Impl
                 continue;
             }
 
-            std::uint32_t drawCount = wireframe
+            std::uint32_t drawCount = usesEdgeIndexBuffer
                 ? polygon.EdgeIndexCount
                 : polygon.IndexCount;
             std::size_t next = polygonIndex + 1;
@@ -2902,7 +2906,8 @@ struct NativeRasterGpu::Impl
                 0,
                 nullptr);
             const std::uint32_t polygonId = (polygon.Attr >> 24u) & 0x3Fu;
-            const bool useLinePipeline = linePrimitive || wireframe;
+            const bool useLinePipeline =
+                (linePrimitive || wireframe) && !expandedLineQuads;
             const bool useTranslucentPass = translucent && !wireframe && !shadowMask;
             const bool useDepthEqual = replayDraw ||
                 (polygon.Attr & (1u << 14u)) != 0;
@@ -2938,7 +2943,7 @@ struct NativeRasterGpu::Impl
 
             Functions->vkCmdBindIndexBuffer(
                 command,
-                wireframe ? slot.EdgeIndex.Buffer : slot.Index.Buffer,
+                usesEdgeIndexBuffer ? slot.EdgeIndex.Buffer : slot.Index.Buffer,
                 0,
                 VK_INDEX_TYPE_UINT16);
 
@@ -2972,7 +2977,7 @@ struct NativeRasterGpu::Impl
                         command,
                         drawCount,
                         1,
-                        wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                        usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                         0,
                         0);
                 }
@@ -3018,7 +3023,7 @@ struct NativeRasterGpu::Impl
                         command,
                         drawCount,
                         1,
-                        wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                        usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                         0,
                         0);
                 }
@@ -3063,7 +3068,7 @@ struct NativeRasterGpu::Impl
                     command,
                     drawCount,
                     1,
-                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                     0,
                     0);
             }
@@ -3123,7 +3128,7 @@ struct NativeRasterGpu::Impl
                     command,
                     drawCount,
                     1,
-                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                     0,
                     0);
                 polygonIndex = next;
@@ -3156,7 +3161,7 @@ struct NativeRasterGpu::Impl
                     command,
                     drawCount,
                     1,
-                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                     0,
                     0);
 
@@ -3189,7 +3194,7 @@ struct NativeRasterGpu::Impl
                     command,
                     drawCount,
                     1,
-                    wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                    usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                     0,
                     0);
                 polygonIndex = next;
@@ -3235,7 +3240,7 @@ struct NativeRasterGpu::Impl
                 command,
                 drawCount,
                 1,
-                wireframe ? polygon.EdgeIndexOffset : polygon.IndexOffset,
+                usesEdgeIndexBuffer ? polygon.EdgeIndexOffset : polygon.IndexOffset,
                 0,
                 0);
             polygonIndex = next;

@@ -126,6 +126,10 @@ enum VulkanRasterPolygonFlags : std::uint32_t
     VulkanRasterPolygonFlag_Shadow = 1u << 4,
     VulkanRasterPolygonFlag_Line = 1u << 5,
     VulkanRasterPolygonFlag_Textured = 1u << 6,
+    // Sapphire expands DS line polygons and alpha-zero polygon boundaries to
+    // one-pixel triangle quads. This distinguishes those indices from the
+    // legacy LINE_LIST upload while preserving the source polygon semantics.
+    VulkanRasterPolygonFlag_ExpandedLineQuads = 1u << 7,
 };
 
 // Matches the OpenGL Classic 7-word vertex upload contract exactly.

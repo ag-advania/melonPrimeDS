@@ -556,12 +556,19 @@ bool BuildVulkanAcceleratedRasterUpload(
             return false;
         }
 
+        const bool sourceLine =
+            draw.PrimitiveType == AcceleratedPrimitiveType::Lines;
+        const bool wireframe = !sourceLine && ((polygon->Attr >> 16u) & 0x1Fu) == 0u;
+        const bool expandLineQuads = sourceLine || wireframe;
+
         VulkanPackedPolygon record{};
         record.SourceOrder = sourceOrder;
         record.Primitive = static_cast<std::uint32_t>(
-            draw.PrimitiveType == AcceleratedPrimitiveType::Lines
-                ? VulkanRasterPrimitive::Lines
-                : VulkanRasterPrimitive::Triangles);
+            expandLineQuads
+                ? VulkanRasterPrimitive::Triangles
+                : (sourceLine
+                    ? VulkanRasterPrimitive::Lines
+                    : VulkanRasterPrimitive::Triangles));
         record.VertexOffset = static_cast<std::uint32_t>(upload.Vertices.size());
         record.IndexOffset = static_cast<std::uint32_t>(upload.Indices.size());
         record.EdgeIndexOffset = static_cast<std::uint32_t>(upload.EdgeIndices.size());
@@ -571,16 +578,25 @@ bool BuildVulkanAcceleratedRasterUpload(
         record.TextureLayer = textureLayer;
         record.TextureRepeat = (polygon->TexParam >> 16) & 0xFu;
         record.Flags = BuildPolygonFlags(*polygon, textureLayer);
+        if (expandLineQuads)
+            record.Flags |= VulkanRasterPolygonFlag_ExpandedLineQuads;
         record.AcceleratedFlags = draw.Meta.Flags;
 
         const std::uint32_t textureSize = PackU16Pair(
             TextureWidth(polygon->TexParam), TextureHeight(polygon->TexParam));
-        for (std::uint32_t offset = 0; offset < draw.VertexCount; ++offset)
-        {
-            const AcceleratedSceneVertex& source =
-                scene.Vertices[draw.FirstVertex + offset];
+        std::vector<std::uint16_t> remappedVertices(draw.VertexCount);
+        const auto appendSceneVertex = [&](const AcceleratedSceneVertex& source,
+                                           std::uint32_t xFixed,
+                                           std::uint32_t yFixed,
+                                           std::uint16_t& destinationIndex) -> bool {
+            if (upload.Vertices.size() > std::numeric_limits<std::uint16_t>::max())
+            {
+                SetFailure(failureReason, "Vulkan line-quad upload exceeded 16-bit vertex range");
+                return false;
+            }
+
             VulkanPackedVertex vertex{};
-            vertex.PositionXY = PackU16Pair(source.XFixed, source.YFixed);
+            vertex.PositionXY = PackU16Pair(xFixed, yFixed);
             vertex.DepthZW = source.GlZWPacked;
             vertex.ColorRgba = source.GlColorPacked;
             vertex.TexcoordST = PackU16Pair(
@@ -589,30 +605,160 @@ bool BuildVulkanAcceleratedRasterUpload(
             vertex.PolygonFlags = source.VertexAttr;
             vertex.TextureLayer = textureLayer;
             vertex.TextureSize = textureSize;
+            destinationIndex = static_cast<std::uint16_t>(upload.Vertices.size());
             upload.Vertices.push_back(vertex);
             upload.FullPrecisionDepthW.push_back({source.Z, source.W});
-        }
-
-        const auto appendRemapped = [&](std::vector<std::uint16_t>& destination,
-                                        std::uint16_t sceneIndex) -> bool {
-            if (sceneIndex < draw.FirstVertex || sceneIndex >= vertexEnd)
-            {
-                SetFailure(failureReason, "accelerated Vulkan index escaped its draw");
-                return false;
-            }
-            return AppendIndex(
-                destination,
-                record.VertexOffset + (sceneIndex - draw.FirstVertex),
-                failureReason);
+            return true;
         };
-        for (std::uint32_t offset = 0; offset < draw.IndexCount; ++offset)
+
+        for (std::uint32_t offset = 0; offset < draw.VertexCount; ++offset)
         {
-            if (!appendRemapped(upload.Indices, scene.Indices[draw.FirstIndex + offset]))
+            const AcceleratedSceneVertex& source =
+                scene.Vertices[draw.FirstVertex + offset];
+            if (!appendSceneVertex(
+                    source, source.XFixed, source.YFixed, remappedVertices[offset]))
             {
                 upload.Clear();
                 return false;
             }
         }
+
+        const auto remapSceneIndex = [&](std::uint16_t sceneIndex,
+                                         std::uint16_t& destinationIndex) -> bool {
+            if (sceneIndex < draw.FirstVertex || sceneIndex >= vertexEnd)
+            {
+                SetFailure(failureReason, "accelerated Vulkan index escaped its draw");
+                return false;
+            }
+            destinationIndex = remappedVertices[sceneIndex - draw.FirstVertex];
+            return true;
+        };
+
+        const auto appendRemapped = [&](std::vector<std::uint16_t>& destination,
+                                        std::uint16_t sceneIndex) -> bool {
+            std::uint16_t destinationIndex = 0;
+            if (!remapSceneIndex(sceneIndex, destinationIndex))
+                return false;
+            destination.push_back(destinationIndex);
+            return true;
+        };
+
+        const auto appendLineQuad = [&](std::uint16_t sceneIndex0,
+                                        std::uint16_t sceneIndex1) -> bool {
+            std::uint16_t unusedIndex = 0;
+            if (!remapSceneIndex(sceneIndex0, unusedIndex) ||
+                !remapSceneIndex(sceneIndex1, unusedIndex))
+            {
+                return false;
+            }
+
+            const AcceleratedSceneVertex& vertex0 = scene.Vertices[sceneIndex0];
+            const AcceleratedSceneVertex& vertex1 = scene.Vertices[sceneIndex1];
+            const float deltaX = vertex1.X - vertex0.X;
+            const float deltaY = vertex1.Y - vertex0.Y;
+            const float lengthSquared = deltaX * deltaX + deltaY * deltaY;
+            if (lengthSquared <= 0.000001f)
+                return true;
+
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            const float perpendicularX = -deltaY * inverseLength * 0.5f;
+            const float perpendicularY = deltaX * inverseLength * 0.5f;
+            const std::array<float, 4> quadX{{
+                vertex0.X + perpendicularX,
+                vertex0.X - perpendicularX,
+                vertex1.X - perpendicularX,
+                vertex1.X + perpendicularX,
+            }};
+            const std::array<float, 4> quadY{{
+                vertex0.Y + perpendicularY,
+                vertex0.Y - perpendicularY,
+                vertex1.Y - perpendicularY,
+                vertex1.Y + perpendicularY,
+            }};
+            const auto fixedCoordinate = [](float value, std::int32_t maximum) {
+                return static_cast<std::uint32_t>(std::clamp<std::int32_t>(
+                    static_cast<std::int32_t>(std::lround(value * 16.0f)),
+                    0,
+                    std::max(maximum, 0)));
+            };
+
+            std::array<std::uint16_t, 4> quadIndices{};
+            for (std::size_t corner = 0; corner < quadIndices.size(); ++corner)
+            {
+                const AcceleratedSceneVertex& source = corner < 2 ? vertex0 : vertex1;
+                if (!appendSceneVertex(
+                        source,
+                        fixedCoordinate(quadX[corner], config.MaxFixedX),
+                        fixedCoordinate(quadY[corner], config.MaxFixedY),
+                        quadIndices[corner]))
+                {
+                    return false;
+                }
+            }
+
+            constexpr std::array<std::uint32_t, 6> kQuadOrder{{0u, 1u, 2u, 0u, 2u, 3u}};
+            for (const std::uint32_t corner : kQuadOrder)
+                upload.Indices.push_back(quadIndices[corner]);
+            return true;
+        };
+
+        if (sourceLine)
+        {
+            if (draw.IndexCount >= 2u &&
+                !appendLineQuad(
+                    scene.Indices[draw.FirstIndex],
+                    scene.Indices[draw.FirstIndex + 1u]))
+            {
+                upload.Clear();
+                return false;
+            }
+        }
+        else if (wireframe)
+        {
+            for (std::uint32_t triangleOffset = 0;
+                 triangleOffset < draw.TriangleCount;
+                 ++triangleOffset)
+            {
+                const std::uint32_t triangleIndex = draw.FirstTriangle + triangleOffset;
+                if (triangleIndex >= scene.Triangles.size())
+                {
+                    SetFailure(failureReason, "accelerated wireframe triangle range is invalid");
+                    upload.Clear();
+                    return false;
+                }
+                const AcceleratedSceneTriangle& triangle = scene.Triangles[triangleIndex];
+                if ((triangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge0) != 0u &&
+                    !appendLineQuad(triangle.Indices[1], triangle.Indices[2]))
+                {
+                    upload.Clear();
+                    return false;
+                }
+                if ((triangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge1) != 0u &&
+                    !appendLineQuad(triangle.Indices[2], triangle.Indices[0]))
+                {
+                    upload.Clear();
+                    return false;
+                }
+                if ((triangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge2) != 0u &&
+                    !appendLineQuad(triangle.Indices[0], triangle.Indices[1]))
+                {
+                    upload.Clear();
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            for (std::uint32_t offset = 0; offset < draw.IndexCount; ++offset)
+            {
+                if (!appendRemapped(upload.Indices, scene.Indices[draw.FirstIndex + offset]))
+                {
+                    upload.Clear();
+                    return false;
+                }
+            }
+        }
+
         for (std::uint32_t offset = 0; offset < draw.EdgeIndexCount; ++offset)
         {
             if (!appendRemapped(
@@ -624,9 +770,21 @@ bool BuildVulkanAcceleratedRasterUpload(
             }
         }
 
-        record.VertexCount = draw.VertexCount;
-        record.IndexCount = draw.IndexCount;
-        record.EdgeIndexCount = draw.EdgeIndexCount;
+        record.VertexCount =
+            static_cast<std::uint32_t>(upload.Vertices.size()) - record.VertexOffset;
+        record.IndexCount =
+            static_cast<std::uint32_t>(upload.Indices.size()) - record.IndexOffset;
+        record.EdgeIndexCount =
+            static_cast<std::uint32_t>(upload.EdgeIndices.size()) - record.EdgeIndexOffset;
+        if (expandLineQuads &&
+            (record.Primitive != static_cast<std::uint32_t>(
+                 VulkanRasterPrimitive::Triangles) ||
+             (record.IndexCount % 6u) != 0u))
+        {
+            SetFailure(failureReason, "accelerated Vulkan line-quad topology is invalid");
+            upload.Clear();
+            return false;
+        }
         upload.Polygons.push_back(record);
     }
 
