@@ -562,10 +562,11 @@ bool NativeRasterSnapshotBuilder::Build(
         if (!melonDS::Vulkan::BuildVulkanTextureDecodeFootprint(
                 key, footprint, &failure))
         {
-            // Rendering without a required texture would corrupt both color
-            // and depth, so leave this snapshot unavailable for fallback.
-            frame.Clear();
-            return true;
+            // Sapphire keeps the polygon and falls back to its vertex color
+            // when a texture cannot be materialized. Leaving the layer invalid
+            // makes BuildPolygonFlags publish this draw as untextured instead
+            // of dropping otherwise valid character or stage geometry.
+            continue;
         }
         const auto hashes = melonDS::Vulkan::HashVulkanTextureDecodeInput(
             footprint, memory);
@@ -578,8 +579,7 @@ bool NativeRasterSnapshotBuilder::Build(
                     footprint, memory, *pixels, &failure))
             {
                 m_impl->Cache.erase(identity);
-                frame.Clear();
-                return true;
+                continue;
             }
             cached.ContentHash = hashes.Combined;
             cached.Width = key.Width;

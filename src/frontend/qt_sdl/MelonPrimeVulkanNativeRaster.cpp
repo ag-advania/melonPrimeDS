@@ -2346,11 +2346,24 @@ struct NativeRasterGpu::Impl
         if (!PrepareTextureCache(frame))
             return false;
         std::vector<TextureVersion*> textureResources(frame.Textures.size(), nullptr);
+        std::vector<bool> textureFallback(frame.Textures.size(), false);
         for (std::size_t index = 0; index < frame.Textures.size(); ++index)
             textureResources[index] = EnsureTexture(
                 command, frameSlot, frame.Textures[index]);
         if (textureResources.empty() || textureResources[0] == nullptr)
             return false;
+        // Match Sapphire's white-texture fallback: a failed per-texture GPU
+        // allocation must not remove the owning polygon from the frame. The
+        // shader is told that mapping is disabled so decal polygons retain
+        // vertex color instead of becoming solid white.
+        for (std::size_t index = 1; index < textureResources.size(); ++index)
+        {
+            if (textureResources[index] == nullptr)
+            {
+                textureResources[index] = textureResources[0];
+                textureFallback[index] = true;
+            }
+        }
 
         const auto clear = melonDS::Vulkan::DecodeClearPlaneState(
             frame.RenderClearAttr1,
@@ -2775,7 +2788,6 @@ struct NativeRasterGpu::Impl
                 (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
             const bool textureUnsupported = textured &&
                 (polygon.TextureLayer >= textureResources.size() ||
-                 textureResources[polygon.TextureLayer] == nullptr ||
                  (textureMode > 2u && !shadowMask && !shadow));
             if (textureUnsupported || polygon.IndexCount == 0)
             {
@@ -2828,7 +2840,10 @@ struct NativeRasterGpu::Impl
             }
 
             VkDescriptorSet descriptor = VK_NULL_HANDLE;
-            if (textured)
+            const bool textureAvailable = textured &&
+                polygon.TextureLayer < textureFallback.size() &&
+                !textureFallback[polygon.TextureLayer];
+            if (textureAvailable)
             {
                 const std::uint32_t sampler = std::min<std::uint32_t>(
                     frame.Textures[polygon.TextureLayer].SamplerIndex, 8u);
@@ -2872,7 +2887,7 @@ struct NativeRasterGpu::Impl
             NativeRasterDrawPush push{};
             push.ScreenSize[0] = static_cast<float>(slot.Color.Extent.width);
             push.ScreenSize[1] = static_cast<float>(slot.Color.Extent.height);
-            push.Textured = textured ? 1u : 0u;
+            push.Textured = textureAvailable ? 1u : 0u;
             push.TextureMode = textureMode;
             push.WBuffer =
                 (polygon.Flags & melonDS::Vulkan::VulkanRasterPolygonFlag_WBuffer)
