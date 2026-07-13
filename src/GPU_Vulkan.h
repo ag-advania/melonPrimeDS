@@ -7,11 +7,84 @@
 // MELONPRIME_VULKAN_RENDERER_SHELL_V1
 
 #include "GPU_Soft.h"
+#include "GPU3D_Vulkan.h"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
+
+namespace melonDS
+{
+class GPU;
+class VulkanRenderer;
+}
+
+namespace MelonPrime::Vulkan
+{
+
+// Immutable ROM-frame input owned and published by VulkanRenderer. The Qt
+// presenter consumes this snapshot without touching live GPU3D/VRAM state.
+struct NativeRasterTexture
+{
+    std::uint64_t Key = 0;
+    std::uint64_t ContentHash = 0;
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+    std::uint32_t SamplerIndex = 0;
+    std::shared_ptr<const std::vector<std::uint32_t>> Rgb6a5;
+};
+
+struct NativeRasterFrame
+{
+    bool Valid = false;
+    int Scale = 1;
+    std::uint32_t EngineAScreen = 0;
+    std::uint16_t MasterBrightnessA = 0;
+    std::uint32_t RenderDispCnt = 0;
+    std::uint32_t RenderClearAttr1 = 0;
+    std::uint32_t RenderClearAttr2 = 0;
+    std::uint32_t RenderAlphaRef = 0;
+    std::uint16_t RenderXPos = 0;
+    std::uint32_t RenderFogColor = 0;
+    std::uint32_t RenderFogOffset = 0;
+    std::uint32_t RenderFogShift = 0;
+    std::array<std::uint8_t, 34> RenderFogDensityTable{};
+    std::array<std::uint16_t, 8> RenderEdgeTable{};
+    std::array<std::uint16_t, 32> RenderToonTable{};
+    std::uint64_t FrameSerial = 0;
+    std::uint64_t Generation = 0;
+
+    melonDS::Vulkan::VulkanRasterUpload Upload;
+    std::vector<NativeRasterTexture> Textures;
+    std::vector<std::uint32_t> ClearBitmapColorRgba6a5;
+    std::vector<std::uint32_t> ClearBitmapDepthFog;
+    std::vector<std::uint32_t> NativeReferenceBgra;
+
+    void Clear() noexcept;
+};
+
+class NativeRasterSnapshotBuilder
+{
+public:
+    NativeRasterSnapshotBuilder();
+    ~NativeRasterSnapshotBuilder();
+
+    NativeRasterSnapshotBuilder(const NativeRasterSnapshotBuilder&) = delete;
+    NativeRasterSnapshotBuilder& operator=(const NativeRasterSnapshotBuilder&) = delete;
+
+    bool Build(
+        const melonDS::VulkanRenderer& renderer,
+        melonDS::GPU& gpu,
+        NativeRasterFrame& frame);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+} // namespace MelonPrime::Vulkan
 
 namespace melonDS
 {
@@ -152,10 +225,15 @@ public:
     [[nodiscard]] bool CopyNative3DForPresenter(
         std::vector<u32>& output) const;
 
+    [[nodiscard]] std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame>
+        AcquireNativeRasterFrame() const;
+
 private:
     void AdvanceOutputGeneration() noexcept;
     void RebuildHighResolutionOutput();
     void ClearHighResolutionOutput() noexcept;
+    void PublishNativeRasterFrame();
+    void ClearNativeRasterFrame() noexcept;
     void OnRendered3DLine(u32 line, const u32* pixels) noexcept override;
 
     bool ComputeRendererSelected = false;
@@ -183,6 +261,12 @@ private:
 
     u64 FrameSerial = 0;
     u64 OutputGeneration = 1;
+
+    std::unique_ptr<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>
+        NativeRasterBuilder;
+    mutable std::mutex NativeRasterMutex;
+    std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame>
+        PublishedNativeRasterFrame;
 };
 
 } // namespace melonDS

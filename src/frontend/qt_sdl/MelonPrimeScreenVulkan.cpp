@@ -1179,12 +1179,13 @@ bool PresenterRenderer::renderDirectFrame(
         m_nativeRasterGpu =
             std::make_unique<MelonPrime::Vulkan::NativeRasterGpu>();
     }
-    if (!m_nativeRasterGpu->Render(
+    if (!snapshot.NativeRaster ||
+        !m_nativeRasterGpu->Render(
             m_window,
             m_df,
             command,
             slot,
-            snapshot.NativeRaster,
+            *snapshot.NativeRaster,
             nativeViews))
     {
         nativeViews = {};
@@ -1547,11 +1548,11 @@ bool PresenterRenderer::renderDirectFrame(
                 mode,
                 layer,
                 nativeViews.Valid
-                    ? snapshot.NativeRaster.EngineAScreen + 1u
+                    ? snapshot.NativeRaster->EngineAScreen + 1u
                     : 0u,
                 nativeViews.Valid
                     ? static_cast<std::uint32_t>(
-                        snapshot.NativeRaster.MasterBrightnessA)
+                        snapshot.NativeRaster->MasterBrightnessA)
                     : 0u};
 
             m_df->vkCmdPushConstants(
@@ -2258,19 +2259,8 @@ void ScreenPanelVulkan::drawScreen()
     const auto* vulkanRenderer =
         dynamic_cast<const melonDS::VulkanRenderer*>(
             &nds->GPU.GetRenderer());
-    if (vulkanRenderer && vulkanRenderer->GetRecordedScaleFactor() > 1)
-    {
-        if (!m_nativeRasterBuilder)
-        {
-            m_nativeRasterBuilder =
-                std::make_unique<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
-        }
-        if (!m_nativeRasterBuilder->Build(
-                *vulkanRenderer, nds->GPU, published.NativeRaster))
-        {
-            published.NativeRaster.Clear();
-        }
-    }
+    if (vulkanRenderer)
+        published.NativeRaster = vulkanRenderer->AcquireNativeRasterFrame();
     {
         QMutexLocker frameLocker(&m_directFrameMutex);
         m_pendingDirectFrame = std::move(published);

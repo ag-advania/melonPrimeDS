@@ -1,11 +1,15 @@
 #include "GPU_Vulkan.h"
 
 #include "GPU_ColorOp.h"
+#include "GPU3D_TexcacheVulkan.h"
 #include "Vulkan_RomScaleBridge.h"
 
 #include <algorithm>
 #include <cstring>
 #include <new>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "Platform.h"
 
@@ -128,6 +132,11 @@ bool VulkanRenderer::Init()
 
     try
     {
+        if (!NativeRasterBuilder)
+        {
+            NativeRasterBuilder = std::make_unique<
+                MelonPrime::Vulkan::NativeRasterSnapshotBuilder>();
+        }
         for (auto& frame : CompatibilityFrames)
         {
             if (!frame)
@@ -138,7 +147,7 @@ bool VulkanRenderer::Init()
     {
         Platform::Log(
             Platform::LogLevel::Error,
-            "[MelonPrime] Vulkan compatibility frame ring allocation failed\n");
+            "[MelonPrime] Vulkan renderer frame state allocation failed\n");
         return false;
     }
 
@@ -176,6 +185,7 @@ void VulkanRenderer::Reset()
 {
     SoftRenderer::Reset();
     std::fill(Native3DFrame.begin(), Native3DFrame.end(), 0);
+    ClearNativeRasterFrame();
     ClearHighResolutionOutput();
     AdvanceOutputGeneration();
 }
@@ -185,6 +195,8 @@ void VulkanRenderer::Stop()
     SoftRenderer::Stop();
     Initialized = false;
     std::fill(Native3DFrame.begin(), Native3DFrame.end(), 0);
+    ClearNativeRasterFrame();
+    NativeRasterBuilder.reset();
     ClearHighResolutionOutput();
     AdvanceOutputGeneration();
 }
@@ -197,6 +209,7 @@ void VulkanRenderer::PreSavestate()
 void VulkanRenderer::PostSavestate()
 {
     SoftRenderer::PostSavestate();
+    ClearNativeRasterFrame();
     ClearHighResolutionOutput();
     AdvanceOutputGeneration();
 }
@@ -214,6 +227,7 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
     HiresCoordinates = settings.HiresCoordinates;
     if (changed)
     {
+        ClearNativeRasterFrame();
         ClearHighResolutionOutput();
         AdvanceOutputGeneration();
         Platform::Log(
@@ -235,9 +249,10 @@ void VulkanRenderer::SwapBuffers()
     if (FrameSerial == 0)
         ++FrameSerial;
 
-    // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    // Do not build a scale-squared CPU compatibility image here. The Qt Vulkan
-    // presenter snapshots packed geometry and renders it on the GPU.
+    // MELONPRIME_VULKAN_RENDERER_OWNED_RASTER_FRAME_V1
+    // Snapshot live GPU3D/VRAM state on EmuThread at the renderer frame
+    // boundary. The presenter only retains the immutable published frame.
+    PublishNativeRasterFrame();
 }
 
 
@@ -304,6 +319,48 @@ bool VulkanRenderer::CopyNative3DForPresenter(
     return true;
 }
 
+void VulkanRenderer::PublishNativeRasterFrame()
+{
+    if (!NativeRasterBuilder)
+    {
+        ClearNativeRasterFrame();
+        return;
+    }
+
+    try
+    {
+        auto frame = std::make_shared<MelonPrime::Vulkan::NativeRasterFrame>();
+        if (!NativeRasterBuilder->Build(*this, GPU, *frame) || !frame->Valid)
+        {
+            ClearNativeRasterFrame();
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(NativeRasterMutex);
+        PublishedNativeRasterFrame = std::move(frame);
+    }
+    catch (const std::bad_alloc&)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[MelonPrime] Vulkan native raster frame allocation failed\n");
+        ClearNativeRasterFrame();
+    }
+}
+
+void VulkanRenderer::ClearNativeRasterFrame() noexcept
+{
+    std::lock_guard<std::mutex> lock(NativeRasterMutex);
+    PublishedNativeRasterFrame.reset();
+}
+
+std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame>
+VulkanRenderer::AcquireNativeRasterFrame() const
+{
+    std::lock_guard<std::mutex> lock(NativeRasterMutex);
+    return PublishedNativeRasterFrame;
+}
+
 RendererOutput VulkanRenderer::GetOutput()
 {
     RendererOutput output = SoftRenderer::GetOutput();
@@ -318,3 +375,324 @@ RendererOutputLease VulkanRenderer::AcquireOutputLease()
 }
 
 } // namespace melonDS
+
+namespace MelonPrime::Vulkan
+{
+namespace
+{
+
+constexpr std::size_t kRasterNativePixels = 256u * 192u;
+constexpr std::size_t kRasterClearBitmapPixels = 256u * 256u;
+
+std::uint64_t NativeTextureIdentity(
+    const melonDS::Vulkan::VulkanTextureCacheKey& key) noexcept
+{
+    std::uint64_t hash = 1469598103934665603ull;
+    const std::uint32_t words[] = {
+        key.TexParam,
+        key.TexPalette,
+        key.Width,
+        key.Height,
+        key.Format,
+        key.TextureAddress,
+        key.PaletteAddress,
+        key.Color0Transparent,
+    };
+    for (std::uint32_t word : words)
+    {
+        for (unsigned shift = 0; shift < 32; shift += 8)
+        {
+            hash ^= static_cast<std::uint8_t>(word >> shift);
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
+std::uint32_t NativeTextureSamplerIndex(std::uint32_t texParam) noexcept
+{
+    const auto s = melonDS::Vulkan::DecodeVulkanTextureSamplerAxis(
+        texParam, false);
+    const auto t = melonDS::Vulkan::DecodeVulkanTextureSamplerAxis(
+        texParam, true);
+    return melonDS::Vulkan::VulkanTextureSamplerTableIndex(s, t);
+}
+
+std::uint32_t ExpandNativeRgb6a5(std::uint32_t pixel) noexcept
+{
+    const std::uint32_t r6 = pixel & 0x3Fu;
+    const std::uint32_t g6 = (pixel >> 8u) & 0x3Fu;
+    const std::uint32_t b6 = (pixel >> 16u) & 0x3Fu;
+    const std::uint32_t a5 = (pixel >> 24u) & 0x1Fu;
+    const std::uint32_t r8 = (r6 << 2u) | (r6 >> 4u);
+    const std::uint32_t g8 = (g6 << 2u) | (g6 >> 4u);
+    const std::uint32_t b8 = (b6 << 2u) | (b6 >> 4u);
+    const std::uint32_t a8 = (a5 * 255u + 15u) / 31u;
+    return (a8 << 24u) | (r8 << 16u) | (g8 << 8u) | b8;
+}
+
+} // namespace
+
+void NativeRasterFrame::Clear() noexcept
+{
+    Valid = false;
+    Scale = 1;
+    EngineAScreen = 0;
+    MasterBrightnessA = 0;
+    RenderDispCnt = 0;
+    RenderClearAttr1 = 0;
+    RenderClearAttr2 = 0;
+    RenderAlphaRef = 0;
+    RenderXPos = 0;
+    RenderFogColor = 0;
+    RenderFogOffset = 0;
+    RenderFogShift = 0;
+    RenderFogDensityTable.fill(0);
+    RenderEdgeTable.fill(0);
+    RenderToonTable.fill(0);
+    FrameSerial = 0;
+    Generation = 0;
+    Upload.Clear();
+    Textures.clear();
+    ClearBitmapColorRgba6a5.clear();
+    ClearBitmapDepthFog.clear();
+    NativeReferenceBgra.clear();
+}
+
+struct NativeRasterSnapshotBuilder::Impl
+{
+    struct CachedTexture
+    {
+        std::uint64_t ContentHash = 0;
+        std::uint32_t Width = 0;
+        std::uint32_t Height = 0;
+        std::shared_ptr<const std::vector<std::uint32_t>> Pixels;
+    };
+
+    std::unordered_map<std::uint64_t, CachedTexture> Cache;
+};
+
+NativeRasterSnapshotBuilder::NativeRasterSnapshotBuilder()
+    : m_impl(std::make_unique<Impl>())
+{
+}
+
+NativeRasterSnapshotBuilder::~NativeRasterSnapshotBuilder() = default;
+
+bool NativeRasterSnapshotBuilder::Build(
+    const melonDS::VulkanRenderer& renderer,
+    melonDS::GPU& gpu,
+    NativeRasterFrame& frame)
+{
+    frame.Clear();
+    const int scale = std::clamp(renderer.GetRecordedScaleFactor(), 1, 16);
+
+    std::vector<melonDS::u32> native3D;
+    if (!renderer.CopyNative3DForPresenter(native3D) ||
+        native3D.size() != kRasterNativePixels)
+    {
+        return false;
+    }
+
+    auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(
+        gpu.VRAMMap_Texture, gpu);
+    auto paletteDirty = gpu.VRAMDirty_TexPal.DeriveState(
+        gpu.VRAMMap_TexPal, gpu);
+    gpu.MakeVRAMFlat_TextureCoherent(textureDirty);
+    gpu.MakeVRAMFlat_TexPalCoherent(paletteDirty);
+
+    melonDS::Vulkan::VulkanTextureMemoryView memory;
+    memory.Texture = gpu.VRAMFlat_Texture;
+    memory.TextureSize = sizeof(gpu.VRAMFlat_Texture);
+    memory.Palette = gpu.VRAMFlat_TexPal;
+    memory.PaletteSize = sizeof(gpu.VRAMFlat_TexPal);
+
+    const auto& gpu3D = gpu.GPU3D;
+    const bool textureMapsEnabled =
+        (gpu3D.RenderDispCnt & (1u << 0u)) != 0u;
+
+    std::vector<std::uint32_t> textureLayers(
+        gpu3D.RenderNumPolygons, 0xFFFFFFFFu);
+    std::unordered_map<std::uint64_t, std::uint32_t> frameTextureIndices;
+    std::unordered_set<std::uint64_t> activeTextureIdentities;
+
+    static const auto whiteTexture = [] {
+        auto pixels = std::make_shared<std::vector<std::uint32_t>>();
+        pixels->push_back(0x1F3F3F3Fu);
+        return std::shared_ptr<const std::vector<std::uint32_t>>(pixels);
+    }();
+    frame.Textures.push_back({
+        0x4D504E4154495645ull,
+        0x1F3F3F3Full,
+        1,
+        1,
+        0,
+        whiteTexture,
+    });
+
+    for (std::uint32_t sourceOrder = 0;
+         sourceOrder < gpu3D.RenderNumPolygons;
+         ++sourceOrder)
+    {
+        const melonDS::Polygon* polygon = gpu3D.RenderPolygonRAM[sourceOrder];
+        if (!polygon || polygon->Degenerate)
+            continue;
+        const std::uint32_t format = (polygon->TexParam >> 26u) & 0x7u;
+        if (format == 0 || !textureMapsEnabled)
+            continue;
+
+        const auto key = melonDS::Vulkan::BuildVulkanTextureCacheKey(
+            polygon->TexParam, polygon->TexPalette);
+        const std::uint64_t identity = NativeTextureIdentity(key);
+        activeTextureIdentities.insert(identity);
+        const std::uint32_t samplerIndex =
+            NativeTextureSamplerIndex(polygon->TexParam);
+        const std::uint64_t bindingIdentity = identity ^
+            (static_cast<std::uint64_t>(samplerIndex + 1u) *
+             0xD6E8FEB86659FD93ull);
+        const auto existing = frameTextureIndices.find(bindingIdentity);
+        if (existing != frameTextureIndices.end())
+        {
+            textureLayers[sourceOrder] = existing->second;
+            continue;
+        }
+
+        melonDS::Vulkan::VulkanTextureDecodeFootprint footprint;
+        std::string failure;
+        if (!melonDS::Vulkan::BuildVulkanTextureDecodeFootprint(
+                key, footprint, &failure))
+        {
+            // Rendering without a required texture would corrupt both color
+            // and depth, so leave this snapshot unavailable for fallback.
+            frame.Clear();
+            return true;
+        }
+        const auto hashes = melonDS::Vulkan::HashVulkanTextureDecodeInput(
+            footprint, memory);
+
+        auto& cached = m_impl->Cache[identity];
+        if (!cached.Pixels || cached.ContentHash != hashes.Combined)
+        {
+            auto pixels = std::make_shared<std::vector<std::uint32_t>>();
+            if (!melonDS::Vulkan::DecodeVulkanTextureRgb6a5(
+                    footprint, memory, *pixels, &failure))
+            {
+                m_impl->Cache.erase(identity);
+                frame.Clear();
+                return true;
+            }
+            cached.ContentHash = hashes.Combined;
+            cached.Width = key.Width;
+            cached.Height = key.Height;
+            cached.Pixels = std::move(pixels);
+        }
+
+        const std::uint32_t textureIndex =
+            static_cast<std::uint32_t>(frame.Textures.size());
+        frameTextureIndices.emplace(bindingIdentity, textureIndex);
+        textureLayers[sourceOrder] = textureIndex;
+        frame.Textures.push_back({
+            identity,
+            cached.ContentHash,
+            cached.Width,
+            cached.Height,
+            samplerIndex,
+            cached.Pixels,
+        });
+    }
+
+    for (auto item = m_impl->Cache.begin(); item != m_impl->Cache.end();)
+    {
+        if (activeTextureIdentities.find(item->first) ==
+            activeTextureIdentities.end())
+        {
+            item = m_impl->Cache.erase(item);
+        }
+        else
+        {
+            ++item;
+        }
+    }
+
+    melonDS::Vulkan::VulkanRasterBuildOptions options;
+    options.ScaleFactor = scale;
+    options.BetterPolygons = renderer.GetRecordedBetterPolygons();
+    options.TextureLayers = textureLayers.data();
+    options.TextureLayerCount = textureLayers.size();
+    std::string failure;
+    if (!melonDS::Vulkan::BuildVulkanAcceleratedRasterUpload(
+            gpu3D,
+            options,
+            frame.Upload,
+            &failure) ||
+        !frame.Upload.Valid)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "[MelonPrime] Vulkan native raster snapshot failed: %s\n",
+            failure.empty() ? "unknown reason" : failure.c_str());
+        frame.Clear();
+        return false;
+    }
+
+    frame.NativeReferenceBgra.resize(kRasterNativePixels);
+    std::transform(
+        native3D.begin(),
+        native3D.end(),
+        frame.NativeReferenceBgra.begin(),
+        ExpandNativeRgb6a5);
+
+    if ((gpu3D.RenderDispCnt & (1u << 14u)) != 0)
+    {
+        const auto* colorVram = reinterpret_cast<const std::uint16_t*>(
+            gpu.VRAMFlat_Texture + 0x40000u);
+        const auto* depthVram = reinterpret_cast<const std::uint16_t*>(
+            gpu.VRAMFlat_Texture + 0x60000u);
+        frame.ClearBitmapColorRgba6a5.resize(kRasterClearBitmapPixels);
+        frame.ClearBitmapDepthFog.resize(kRasterClearBitmapPixels);
+        for (std::size_t pixel = 0;
+             pixel < kRasterClearBitmapPixels;
+             ++pixel)
+        {
+            const auto color = melonDS::Vulkan::DecodeClearBitmapColorTexel(
+                colorVram[pixel]);
+            frame.ClearBitmapColorRgba6a5[pixel] =
+                static_cast<std::uint32_t>(color[0]) |
+                (static_cast<std::uint32_t>(color[1]) << 8u) |
+                (static_cast<std::uint32_t>(color[2]) << 16u) |
+                (static_cast<std::uint32_t>(color[3]) << 24u);
+            frame.ClearBitmapDepthFog[pixel] =
+                melonDS::Vulkan::DecodeClearBitmapDepthTexel(depthVram[pixel]);
+        }
+    }
+
+    frame.Scale = scale;
+    frame.EngineAScreen = gpu.ScreenSwap ? 0u : 1u;
+    frame.MasterBrightnessA = gpu.MasterBrightnessA;
+    frame.RenderDispCnt = gpu3D.RenderDispCnt;
+    frame.RenderClearAttr1 = gpu3D.RenderClearAttr1;
+    frame.RenderClearAttr2 = gpu3D.RenderClearAttr2;
+    frame.RenderAlphaRef = gpu3D.RenderAlphaRef;
+    frame.RenderXPos = gpu3D.GetRenderXPos();
+    frame.RenderFogColor = gpu3D.RenderFogColor;
+    frame.RenderFogOffset = gpu3D.RenderFogOffset;
+    frame.RenderFogShift = gpu3D.RenderFogShift;
+    std::copy_n(
+        gpu3D.RenderFogDensityTable,
+        frame.RenderFogDensityTable.size(),
+        frame.RenderFogDensityTable.begin());
+    std::copy_n(
+        gpu3D.RenderEdgeTable,
+        frame.RenderEdgeTable.size(),
+        frame.RenderEdgeTable.begin());
+    std::copy_n(
+        gpu3D.RenderToonTable,
+        frame.RenderToonTable.size(),
+        frame.RenderToonTable.begin());
+    frame.FrameSerial = renderer.GetFrameSerialForDiagnostics();
+    frame.Generation = renderer.GetOutputGenerationForDiagnostics();
+    frame.Valid = frame.FrameSerial != 0 && frame.Generation != 0;
+    return true;
+}
+
+} // namespace MelonPrime::Vulkan

@@ -28,7 +28,7 @@ struct VulkanDirectFrameSnapshot
     std::array<QImage, 2> Screens;
 
     // MELONPRIME_VULKAN_NATIVE_RASTER_P8_V1
-    MelonPrime::Vulkan::NativeRasterFrame NativeRaster;
+    std::shared_ptr<const MelonPrime::Vulkan::NativeRasterFrame> NativeRaster;
 
     // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P6_FRAME_IDENTITY_V1
     // Exact producer identity. Zero disables transfer reuse conservatively.
@@ -91,8 +91,6 @@ private:
     // Otherwise a renderer-switch notification temporarily forces the whole
     // frame through the native-resolution QPainter fallback.
     QImage m_directOsdComposite;
-    std::unique_ptr<MelonPrime::Vulkan::NativeRasterSnapshotBuilder>
-        m_nativeRasterBuilder;
     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;
     std::atomic<bool> m_phase13PresentPending{false};
     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
