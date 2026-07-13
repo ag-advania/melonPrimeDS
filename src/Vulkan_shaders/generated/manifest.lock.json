@@ -1,6 +1,6 @@
 {
   "compiler_version": "Glslang Version: 11:16.3.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.3.0\nGLSL Version: 4.60 glslang Khronos. 16.3.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
-  "generation_sha256": "bd840c7e74a127cbde3b1c6573290a371d1128fb0ef6dc945e17d80c66248ec4",
+  "generation_sha256": "2b10fca5b1aa120d6385568e33425c4b171c4819e8f3d94d788ce0eeb058cd43",
   "manifest_sha256": "165bb918b5de305037e1a749b67472b4dce8d2944a6fda91ac5d90958d834c2e",
   "schema_version": 1,
   "sources": [
@@ -369,7 +369,7 @@
       "defines": {},
       "entry_point": "main",
       "path": "src/Vulkan_shaders/phase14_native_raster.frag",
-      "sha256": "9efbb06c8a55df23d927bd5e40bdf1295d447779ff0e239fe1385312bfa31346",
+      "sha256": "dab80d8a2e35c239c7ba540897e681a22e6607655f60d07cd5537d4de27a0ef5",
       "stage": "frag",
       "variant": "default"
     },

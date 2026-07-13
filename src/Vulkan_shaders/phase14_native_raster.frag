@@ -401,9 +401,9 @@ void main()
         : encodeColor(color);
     if (translucentPass)
         // Attribute alpha is also the hybrid presenter's ownership class.
-        // Translucent/shadow results remain useful to later native passes, but
-        // must not replace the software-composited pixel until native alpha
-        // parity is complete. Opaque coverage below remains 1.0.
+        // The pipeline MAX-blends this with destination alpha, so effects over
+        // native opaque geometry retain ownership 1.0 while effects over the
+        // clear plane remain provisional and preserve Software composition.
         outAttr = vec4(0.0, 0.0, 0.0, 0.25);
     else
         outAttr = vec4(

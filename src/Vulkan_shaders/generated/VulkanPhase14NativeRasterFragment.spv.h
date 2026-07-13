@@ -6,7 +6,7 @@
 namespace melonDS::Vulkan::Shaders
 {
 
-inline constexpr char kVulkanPhase14NativeRasterFragmentSourceSha256[] = "9efbb06c8a55df23d927bd5e40bdf1295d447779ff0e239fe1385312bfa31346";
+inline constexpr char kVulkanPhase14NativeRasterFragmentSourceSha256[] = "dab80d8a2e35c239c7ba540897e681a22e6607655f60d07cd5537d4de27a0ef5";
 inline constexpr char kVulkanPhase14NativeRasterFragmentSpirvSha256[] = "44e0037bd4918c757a51b908b1489f15eb97f26ce1e4db13c8d5fcd8583840a7";
 alignas(4) inline constexpr std::uint32_t kVulkanPhase14NativeRasterFragmentSpirv[] = {
     0x07230203u, 0x00010300u, 0x0008000bu, 0x00000598u, 0x00000000u, 0x00020011u, 0x00000001u, 0x00020011u,

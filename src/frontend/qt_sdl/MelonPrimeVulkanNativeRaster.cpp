@@ -1155,6 +1155,18 @@ struct NativeRasterGpu::Impl
         VkResult translucentPipelineResult = depthEqualLinePipelineResult;
         if (translucentPipelineResult == VK_SUCCESS)
         {
+            // Attribute alpha is the hybrid ownership channel. Replace the
+            // DS fog bit in RGB exactly like Sapphire, while retaining the
+            // strongest ownership already written at this pixel: a
+            // translucent fragment over native opaque geometry remains fully
+            // native-owned; one over the clear plane remains provisional.
+            colorBlends[1].blendEnable = VK_TRUE;
+            colorBlends[1].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colorBlends[1].colorBlendOp = VK_BLEND_OP_ADD;
+            colorBlends[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].alphaBlendOp = VK_BLEND_OP_MAX;
             depth.front.compareOp = VK_COMPARE_OP_NOT_EQUAL;
             depth.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
             for (std::uint32_t depthEqual = 0; depthEqual < 2; ++depthEqual)
@@ -1340,6 +1352,13 @@ struct NativeRasterGpu::Impl
             // Visible shadow blend: draw only where bit 7 remains, then write
             // the Sapphire translucent marker into the lower seven bits.
             stages[1].module = fragment;
+            colorBlends[1].blendEnable = VK_TRUE;
+            colorBlends[1].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colorBlends[1].colorBlendOp = VK_BLEND_OP_ADD;
+            colorBlends[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlends[1].alphaBlendOp = VK_BLEND_OP_MAX;
             stencil.failOp = VK_STENCIL_OP_KEEP;
             stencil.depthFailOp = VK_STENCIL_OP_KEEP;
             stencil.passOp = VK_STENCIL_OP_REPLACE;
@@ -2362,6 +2381,28 @@ struct NativeRasterGpu::Impl
             {
                 textureResources[index] = textureResources[0];
                 textureFallback[index] = true;
+            }
+        }
+        // Do not publish a partially textured native frame. In particular, an
+        // unavailable alpha texture cannot mark only its transparent texels;
+        // adopting the opaque native destination below it would erase the
+        // Software-composited effect. Resource failure is rare and retryable,
+        // so retain the complete Software frame until every expected texture
+        // is materialized.
+        for (const auto& polygon : frame.Upload.Polygons)
+        {
+            const bool textureExpected =
+                (frame.RenderDispCnt & 1u) != 0u &&
+                ((polygon.TexParam >> 26u) & 0x7u) != 0u;
+            if (!textureExpected)
+                continue;
+            const bool textured =
+                (polygon.Flags &
+                 melonDS::Vulkan::VulkanRasterPolygonFlag_Textured) != 0;
+            if (!textured || polygon.TextureLayer >= textureFallback.size() ||
+                textureFallback[polygon.TextureLayer])
+            {
+                return true;
             }
         }
 
