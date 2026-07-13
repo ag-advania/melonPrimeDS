@@ -1,0 +1,205 @@
+--- a/src/frontend/qt_sdl/MelonPrimeScreenVulkan.h
++++ b/src/frontend/qt_sdl/MelonPrimeScreenVulkan.h
+@@ -31,6 +31,7 @@
+     std::array<int, kMaxScreenTransforms> ScreenKinds{};
+ 
+     QImage HudOverlay;
++    QRect HudSource;
+     QRect HudDestination;
+ 
+     bool RadarVisible = false;
+@@ -68,6 +69,10 @@
+     QVulkanWindow* m_vulkanWindow = nullptr;
+     QWidget* m_windowContainer = nullptr;
+     QImage m_compositeFrame;
++
++    // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
++    // Reuse native snapshots instead of allocating two QImages every present.
++    std::array<QImage, 2> m_directNativeScreens;
+     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;
+     std::atomic<bool> m_phase13PresentPending{false};
+     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
+--- a/src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp
++++ b/src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp
+@@ -30,6 +30,15 @@
+ #include "MelonPrime.h"
+ #include "MelonPrimeConstants.h"
+ #include "MelonPrimeHudRender.h"
++#include "MelonPrimeHudConfigOnScreenEdit.h"
++#include "MelonPrimePerfProbe.h"
++#include "MelonPrimeHudPropSchema.inc"
++
++// MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
++// Phase 3 called these Screen.cpp-local static helpers from a different
++// translation unit. Include the shared implementation here as well so MinGW
++// sees their declarations and definitions in MelonPrimeScreenVulkan.cpp.
++#include "MelonPrimeHudScreenCppHelpers.inc"
+ #endif
+ #include "../../../Vulkan_shaders/generated/VulkanShaders.h"
+ 
+@@ -63,17 +72,32 @@
+     return (value + 63) & ~63;
+ }
+ 
+-void CopyImageTightly(std::uint8_t* destination, const QImage& image)
+-{
++void CopyImageRectTightly(
++    std::uint8_t* destination,
++    const QImage& image,
++    const QRect& requestedRect)
++{
++    const QRect sourceRect = requestedRect.intersected(image.rect());
++    if (!destination || image.isNull() || sourceRect.isEmpty())
++        return;
++
+     const std::size_t rowBytes =
+-        static_cast<std::size_t>(image.width()) * 4u;
+-    for (int y = 0; y < image.height(); ++y)
+-    {
++        static_cast<std::size_t>(sourceRect.width()) * 4u;
++    for (int y = 0; y < sourceRect.height(); ++y)
++    {
++        const std::uint8_t* source =
++            image.constScanLine(sourceRect.y() + y) +
++            static_cast<std::size_t>(sourceRect.x()) * 4u;
+         std::memcpy(
+             destination + static_cast<std::size_t>(y) * rowBytes,
+-            image.constScanLine(y),
++            source,
+             rowBytes);
+     }
++}
++
++void CopyImageTightly(std::uint8_t* destination, const QImage& image)
++{
++    CopyImageRectTightly(destination, image, image.rect());
+ }
+ 
+ class PresenterWindow;
+@@ -1021,8 +1045,8 @@
+             snapshot.Screens[0].height(),
+             snapshot.Screens[1].height()));
+     const QSize requiredOverlay(
+-        std::max(1, snapshot.HudOverlay.width()),
+-        std::max(1, snapshot.HudOverlay.height()));
++        std::max(1, snapshot.HudSource.width()),
++        std::max(1, snapshot.HudSource.height()));
+ 
+     const bool needsResources =
+         !m_directStagingMap ||
+@@ -1073,12 +1097,20 @@
+         staging + m_directOverlayOffset,
+         0,
+         4);
+-    if (!snapshot.HudOverlay.isNull())
+-    {
+-        overlayCopySize = snapshot.HudOverlay.size();
+-        CopyImageTightly(
+-            staging + m_directOverlayOffset,
+-            snapshot.HudOverlay);
++    if (!snapshot.HudOverlay.isNull() &&
++        !snapshot.HudSource.isEmpty())
++    {
++        const QRect clippedSource =
++            snapshot.HudSource.intersected(
++                snapshot.HudOverlay.rect());
++        if (!clippedSource.isEmpty())
++        {
++            overlayCopySize = clippedSource.size();
++            CopyImageRectTightly(
++                staging + m_directOverlayOffset,
++                snapshot.HudOverlay,
++                clippedSource);
++        }
+     }
+ 
+     VkCommandBuffer command =
+@@ -1446,6 +1478,7 @@
+     }
+ 
+     if (!snapshot.HudOverlay.isNull() &&
++        !snapshot.HudSource.isEmpty() &&
+         !snapshot.HudDestination.isEmpty())
+     {
+         const std::array<float, 6> matrix{{
+@@ -1464,10 +1497,10 @@
+             static_cast<float>(
+                 snapshot.HudDestination.height()),
+             static_cast<float>(
+-                snapshot.HudOverlay.width()) /
++                snapshot.HudSource.width()) /
+                 m_directOverlaySize.width(),
+             static_cast<float>(
+-                snapshot.HudOverlay.height()) /
++                snapshot.HudSource.height()) /
+                 m_directOverlaySize.height(),
+             1,
+             0,
+@@ -2258,26 +2291,28 @@
+             return false;
+         }
+ 
+-        snapshot.Screens[0] =
+-            QImage(256, 192, QImage::Format_RGB32);
+-        snapshot.Screens[1] =
+-            QImage(256, 192, QImage::Format_RGB32);
+-        if (snapshot.Screens[0].isNull() ||
+-            snapshot.Screens[1].isNull())
+-        {
+-            return false;
+-        }
+-
+         constexpr std::size_t nativeBytes =
+             256u * 192u * sizeof(melonDS::u32);
+-        std::memcpy(
+-            snapshot.Screens[0].bits(),
++        const void* nativeSources[2] = {
+             output.Top,
+-            nativeBytes);
+-        std::memcpy(
+-            snapshot.Screens[1].bits(),
+-            output.Bottom,
+-            nativeBytes);
++            output.Bottom};
++        for (int index = 0; index < 2; ++index)
++        {
++            QImage& image = m_directNativeScreens[index];
++            if (image.size() != QSize(256, 192) ||
++                image.format() != QImage::Format_RGB32)
++            {
++                image = QImage(256, 192, QImage::Format_RGB32);
++            }
++            if (image.isNull())
++                return false;
++
++            std::memcpy(
++                image.bits(),
++                nativeSources[index],
++                nativeBytes);
++            snapshot.Screens[index] = image;
++        }
+     }
+ 
+     snapshot.LogicalSize =
+@@ -2362,10 +2397,17 @@
+             m_hudPrevDirty = currentDirty;
+             if (!currentDirty.isEmpty())
+             {
+-                snapshot.HudOverlay =
+-                    Overlay[0].copy(currentDirty);
+-                snapshot.HudDestination =
+-                    currentDirty;
++                // Keep the implicitly-shared full overlay alive for this
++                // presenter call. renderDirectFrame copies only HudSource into
++                // staging, avoiding QImage::copy() allocation and pixel copy.
++                const QRect clippedDirty =
++                    currentDirty.intersected(Overlay[0].rect());
++                if (!clippedDirty.isEmpty())
++                {
++                    snapshot.HudOverlay = Overlay[0];
++                    snapshot.HudSource = clippedDirty;
++                    snapshot.HudDestination = clippedDirty;
++                }
+             }
+         }
+ 

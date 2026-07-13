@@ -31,7 +31,6 @@ struct VulkanDirectFrameSnapshot
     std::array<int, kMaxScreenTransforms> ScreenKinds{};
 
     QImage HudOverlay;
-    QRect HudSource;
     QRect HudDestination;
 
     bool RadarVisible = false;
@@ -69,10 +68,6 @@ private:
     QVulkanWindow* m_vulkanWindow = nullptr;
     QWidget* m_windowContainer = nullptr;
     QImage m_compositeFrame;
-
-    // MELONPRIME_VULKAN_DIRECT_COMPOSITOR_P4_V1
-    // Reuse native snapshots instead of allocating two QImages every present.
-    std::array<QImage, 2> m_directNativeScreens;
     std::unique_ptr<MelonPrime::Vulkan::Phase13RuntimeState> m_phase13Runtime;
     std::atomic<bool> m_phase13PresentPending{false};
     std::atomic<std::uint64_t> m_phase13QueuedSerial{0};
