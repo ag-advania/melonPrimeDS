@@ -4,7 +4,7 @@
 layout(set = 0, binding = 0) uniform usampler2DArray nativeTexture;
 layout(std140, set = 0, binding = 1) uniform NativeRasterToonTable
 {
-    vec4 toon[32];
+    uvec4 toon[32];
 } toonConfig;
 
 layout(push_constant) uniform NativeRasterPush
@@ -26,43 +26,128 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAttr;
 layout(location = 2) out float outDepth;
 
+struct Color6A5
+{
+    int r;
+    int g;
+    int b;
+    int a;
+};
+
+int clamp6(int value)
+{
+    return clamp(value, 0, 63);
+}
+
+int clamp5(int value)
+{
+    return clamp(value, 0, 31);
+}
+
+Color6A5 unpackToonColor(uint shadeIndex)
+{
+    uvec4 packed = toonConfig.toon[min(shadeIndex, 31u)];
+    Color6A5 color;
+    color.r = int(packed.r & 0x3Fu);
+    color.g = int(packed.g & 0x3Fu);
+    color.b = int(packed.b & 0x3Fu);
+    color.a = 31;
+    return color;
+}
+
+Color6A5 sampleTexture()
+{
+    uvec4 texel = texture(nativeTexture, vec3(fTexcoord, 0.0));
+    Color6A5 color;
+    color.r = int(texel.r & 0x3Fu);
+    color.g = int(texel.g & 0x3Fu);
+    color.b = int(texel.b & 0x3Fu);
+    color.a = int(texel.a & 0x1Fu);
+    return color;
+}
+
+vec4 encodeColor(Color6A5 color)
+{
+    return vec4(
+        float(clamp6(color.r)) * (1.0 / 63.0),
+        float(clamp6(color.g)) * (1.0 / 63.0),
+        float(clamp6(color.b)) * (1.0 / 63.0),
+        float(clamp5(color.a)) * (1.0 / 31.0));
+}
+
 void main()
 {
-    vec4 color = fColor;
-    int toonIndex = int(clamp(fColor.r, 0.0, 1.0) * 31.0);
+    uint polygonAlpha = (fPolygonAttr >> 16u) & 0x1Fu;
+    Color6A5 color;
+    color.r = clamp6(int(clamp(fColor.r * 63.0 + 0.5, 0.0, 63.0)));
+    color.g = clamp6(int(clamp(fColor.g * 63.0 + 0.5, 0.0, 63.0)));
+    color.b = clamp6(int(clamp(fColor.b * 63.0 + 0.5, 0.0, 63.0)));
+    color.a = int(polygonAlpha);
+
+    int highlightShade = color.r;
     bool highlight = (pc.renderDispCnt & (1u << 1u)) != 0u;
     if (pc.textureMode == 2u)
     {
-        color.rgb = highlight
-            ? fColor.rrr
-            : toonConfig.toon[toonIndex].rgb;
+        if (highlight)
+        {
+            color.g = color.r;
+            color.b = color.r;
+            highlightShade = color.r;
+        }
+        else
+        {
+            Color6A5 toonColor = unpackToonColor(uint(clamp(color.r >> 1, 0, 31)));
+            color.r = toonColor.r;
+            color.g = toonColor.g;
+            color.b = toonColor.b;
+        }
     }
 
     if (pc.textured != 0u)
     {
-        vec4 textureColor = vec4(texture(nativeTexture, vec3(fTexcoord, 0.0))) /
-            vec4(63.0, 63.0, 63.0, 31.0);
-        if ((pc.textureMode & 1u) != 0u)
+        Color6A5 texel = sampleTexture();
+        if (pc.textureMode == 1u)
         {
-            color.rgb = textureColor.rgb * textureColor.a +
-                color.rgb * (1.0 - textureColor.a);
+            if (texel.a >= 31)
+            {
+                color.r = texel.r;
+                color.g = texel.g;
+                color.b = texel.b;
+            }
+            else if (texel.a > 0)
+            {
+                color.r = clamp6(((texel.r * texel.a) +
+                    (color.r * (31 - texel.a))) >> 5);
+                color.g = clamp6(((texel.g * texel.a) +
+                    (color.g * (31 - texel.a))) >> 5);
+                color.b = clamp6(((texel.b * texel.a) +
+                    (color.b * (31 - texel.a))) >> 5);
+            }
         }
         else
         {
-            color *= textureColor;
+            color.r = clamp6((((texel.r + 1) * (color.r + 1)) - 1) >> 6);
+            color.g = clamp6((((texel.g + 1) * (color.g + 1)) - 1) >> 6);
+            color.b = clamp6((((texel.b + 1) * (color.b + 1)) - 1) >> 6);
+            color.a = clamp5((((texel.a + 1) * (color.a + 1)) - 1) >> 5);
         }
     }
 
-
     if (pc.textureMode == 2u && highlight)
-        color.rgb = min(color.rgb + toonConfig.toon[toonIndex].rgb, vec3(1.0));
+    {
+        Color6A5 toonColor = unpackToonColor(
+            uint(clamp(highlightShade >> 1, 0, 31)));
+        color.r = clamp6(color.r + toonColor.r);
+        color.g = clamp6(color.g + toonColor.g);
+        color.b = clamp6(color.b + toonColor.b);
+    }
 
     bool wireframe = (pc.drawFlags & 1u) != 0u;
     bool translucentPass = (pc.drawFlags & 2u) != 0u;
     if (wireframe)
-        color.a = 1.0;
+        color.a = 31;
 
-    uint alpha5 = uint(clamp(color.a, 0.0, 1.0) * 31.0 + 0.5);
+    uint alpha5 = uint(clamp5(color.a));
     uint alphaRef = (pc.drawFlags >> 8u) & 0x1Fu;
     if (alpha5 <= alphaRef)
         discard;
@@ -88,7 +173,7 @@ void main()
         discard;
     }
 
-    outColor = color;
+    outColor = encodeColor(color);
     if (translucentPass)
         outAttr = vec4(
             0.0,

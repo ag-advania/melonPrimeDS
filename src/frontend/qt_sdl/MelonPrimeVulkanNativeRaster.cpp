@@ -44,7 +44,7 @@ constexpr std::uint64_t kMaxResidentTextureBytes = 256ull * 1024ull * 1024ull;
 
 struct alignas(16) NativeRasterToonUniform
 {
-    std::array<std::array<float, 4>, 32> Colors{};
+    std::array<std::array<std::uint32_t, 4>, 32> Colors{};
 };
 
 static_assert(sizeof(NativeRasterToonUniform) == 32u * 16u);
@@ -2331,10 +2331,16 @@ struct NativeRasterGpu::Impl
         for (std::size_t index = 0; index < frame.RenderToonTable.size(); ++index)
         {
             const std::uint16_t color = frame.RenderToonTable[index];
-            uniform.Colors[index][0] = static_cast<float>(color & 0x1Fu) / 31.0f;
-            uniform.Colors[index][1] = static_cast<float>((color >> 5u) & 0x1Fu) / 31.0f;
-            uniform.Colors[index][2] = static_cast<float>((color >> 10u) & 0x1Fu) / 31.0f;
-            uniform.Colors[index][3] = 1.0f;
+            std::uint32_t red = (color << 1u) & 0x3Eu;
+            std::uint32_t green = (color >> 4u) & 0x3Eu;
+            std::uint32_t blue = (color >> 9u) & 0x3Eu;
+            if (red) ++red;
+            if (green) ++green;
+            if (blue) ++blue;
+            uniform.Colors[index][0] = red;
+            uniform.Colors[index][1] = green;
+            uniform.Colors[index][2] = blue;
+            uniform.Colors[index][3] = 31u;
         }
         std::memcpy(slot.ToonTable.Map, &uniform, sizeof(uniform));
         return true;
