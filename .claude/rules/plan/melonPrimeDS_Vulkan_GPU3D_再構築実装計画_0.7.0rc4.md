@@ -5840,3 +5840,54 @@ bool VulkanOutput::validateCompositorSubmission(
 - `build/.mingw-make-shim/make.exe`は`.gitignore`対象の`build/`配下にあるため、git管理には入らない（ビルドスクリプトが毎回自動生成する）。
 - Vulkan選択時、現在は`actual=Software`（正しい・意図的）。UIやログで「Vulkanが動いている」ように見える箇所があれば、それはR3（完全なVulkanRenderer）が無い現状では誤りである。
 - `GPU3D_Vulkan.cpp`/`.h`は「書き直し」ではなく「参照からの意味的差分約5%の適応版」。次のR1作業は全面ポートではなく、(a) `SapphireVulkanComposition*`のR6への切り出し、(b) `VulkanContext.cpp/h`の大幅な縮小箇所（800→47行、94→36行）が実際に必要な機能を欠いているかの精査、(c) `GPU3D_TexcacheVulkan`・`GPU2D_Vulkan`の詳細diffに絞れる。
+
+## R3の真の作業量判明（2026-07-14 続き、同日中の追加調査）
+
+R1修正で開いたままだった「まだ未確定の点」2件を実際に調査し、**R3が想定していたよりはるかに大きい**ことが判明した。以下は次セッションが同じ道を辿り直さないための確定事実の記録である。
+
+### 確認手順と結果
+
+1. **`MelonPrimeScreenVulkan.cpp/.h`を全文再読**（前回セッション終了時点から変化なし）。`ScreenPanelNative`を継承した13/16行の正直な空実装で、`initVulkan()`はログを出して`true`を返すだけ、`drawScreen()`は`ScreenPanelNative::drawScreen()`へ委譲するだけ。`GetCurrentRenderer`・`VulkanRenderer3D`・`VulkanOutput`等への参照は**一切ない**（grep 0件。コメント中に"VulkanOutput/VulkanSurfacePresenter"という語がある**だけ**で、実コードからの呼び出しではない）。
+2. **`VulkanContext.h/.cpp`を全文再読**（前回「800→47行に大幅縮小」と記録した箇所）。結論を訂正する: これは**スタブではなく実働する完全な実装**。`Acquire()`/`Release()`の参照カウント、instance生成、physical device列挙とスコアリング、queue family探索、timeline semaphore/descriptor indexingのfeature/extension検出、`vkCreateDevice`、`volkLoadDevice`、関数ポインタ解決までを全部行っている。行数が少ないのは1行に複数文を詰めた極めて密な記法のためであり、コメントで自己申告された未完成ではない。Win32用の`VK_KHR_WIN32_SURFACE_EXTENSION_NAME`もinstance拡張に含まれている。R4（非Windows surface拡張の追加）はこのファイルへの**追記**で足り、書き直しは不要と判断する。
+3. **`src/frontend/qt_sdl/VulkanReference/`配下を全ファイル確認**。`VulkanOutput.h`（575行）・`VulkanOutput.cpp`（5622行）・`VulkanSurfacePresenter.h`（423行）・`VulkanSurfacePresenter.cpp`（3753行）は、**参照リポジトリの同名ファイルと行数が完全に一致する**（`wc -l`で両方575/5622/423/3753行、双方で確認済み）。つまりこれらは実質的に**参照からの忠実な移植**であり、独自拡張ではない。`FrameQueue.h/.cpp`（各18行）も、terse記法ながら9-frameリングバッファ・free/presentキュー・前フレーム再利用・統計を全部実装した**実働コード**。
+4. **`VulkanOutput::prepareFrameForPresentation`の実装を確認**（`.cpp` 2279行目付近）。シグネチャに`const melonDS::GPU& gpu`と`int frontBuffer`を取るが、本体冒頭は`(void)gpu; (void)frontBuffer;`——**両方とも未使用**。関数は呼び出し側が渡す`SoftPackedFrameSnapshot& softPackedSnapshot`が**既に`valid=true`かつ`frontBufferLatched`が0か1にセット済みであることを前提**にしており、`gpu`/`frontBuffer`から何かを計算して埋める処理は一切ない。
+5. **参照リポジトリ全体を`SoftPackedFrameSnapshot`で検索**したところ、`renderer/VulkanOutput.h/.cpp`に加えて`app/src/main/cpp/MelonInstance.cpp`（**8058行**）・`MelonInstance.h`（294行）がヒットした。melonPrimeDSには対応する`MelonInstance.cpp`が存在しない。
+6. **`MelonInstance.cpp`内の`SoftPackedFrameSnapshot`関連コードを精査**。`MelonInstance::latchSoftPackedFrameSnapshot(...)`という関数（約4819行目〜6200行超、**1400行超**）が、`SoftPackedFrameSnapshot.valid = true`を含む実際のスナップショット構築を行っている唯一の場所。この関数は次を行っている:
+   - `previousSoftPackedFrameSnapshot = lastSoftPackedFrameSnapshot;`で前フレーム履歴を保持
+   - `frameId`/`frontBufferLatched`/`screenSwapLatched`をセット
+   - DSの2D BG/OBJレイヤーを1ピクセルずつplane0/plane1/control配列へ直接エンコード（capture-backed comp4/comp7判定、前フレームとの再利用可否判定、VRAM captureとの合成、class4非対称ケードンス処理などを含む、非常に作り込まれたロジック）
+   - `vulkanOutput->buildCompositionInputs(...)`と`vulkanSurfacePresenter->presentFrame(...)`を呼ぶ実際のフレームループ（約1480〜2260行目付近）はこの関数の**外側**にあり、`frameQueue.getRenderFrame()` → `vulkanOutput->captureRenderer3dSnapshot()` → `latchSoftPackedFrameSnapshot()` → `vulkanOutput->prepareFrameForPresentation()` → `buildCompositionInputs()` → `presenter->presentFrame()`という順で呼ばれている。
+
+### 確定した結論
+
+```text
+melonPrimeDSにポートされている:
+  VulkanContext            (実働・完全)
+  GPU3D_Vulkan.h/.cpp       (実働・参照から意味的差分5%程度)
+  GPU3D_TexcacheVulkan      (要detailed diff、ただし行数は参照と近い)
+  VulkanReference/VulkanOutput.*         (参照と行数完全一致 = 忠実な移植)
+  VulkanReference/VulkanSurfacePresenter.* (同上)
+  VulkanReference/FrameQueue.*            (同上、terse実装だが実働)
+
+melonPrimeDSにポートされていない（MelonPrimeScreenVulkan.cppが13行のスタブのまま）:
+  MelonInstance.cppのVulkan駆動ロジック全体（8058行中の該当部分、
+  特にlatchSoftPackedFrameSnapshot が1400行超）
+  = フレームループの実際の呼び出し順序
+  = SoftPackedFrameSnapshotへ実データを詰める唯一のコード
+```
+
+つまり「レンダラー本体（GPU3D_Vulkan）」と「合成・プレゼンテーション本体（VulkanOutput/VulkanSurfacePresenter/FrameQueue）」という**2つの巨大な下位層は実質的に完成しており参照に忠実**だが、両者を実際につなぐ**フレームループの司令塔（Androidでは`MelonInstance.cpp`が担う）が、Qt側では一行も書かれていない**。`MelonPrimeScreenVulkan.cpp`はこの司令塔の置き場所として設計されたはずの場所（コメントがそう示唆している）だが、中身は空。
+
+さらに、`GPU_Soft.cpp`が`SubmitStructured2DLine`/`BeginStructured2DFrame`/`EndStructured2DFrame`経由で`VulkanRenderer3D`（`GPU3D_Vulkan.h`の`Structured2DPlane0/1/Control`等）へ供給している別系統のデータも確認したが、これは`latchSoftPackedFrameSnapshot`とは**別物**であり（参照側に対応する仕組みが見当たらない — melonPrimeDS独自）、`GetStructured2DPlane0()`等のgetterはコードベース全体で**呼び出し元が0件**（宣言のみで未使用）。この系統は現状デッドパイプであり、`latchSoftPackedFrameSnapshot`を移植する際に置き換えられるか、削除対象になる可能性が高い（要判断・R6/R17の対象に含める）。
+
+### R3の再スコープ（正式な訂正）
+
+R3は当初「`MelonPrimeScreenVulkan`を`GPU3D`と`VulkanOutput`/`VulkanSurfacePresenter`に繋ぐ」という比較的小さな配線作業として見積もっていたが、実際には**参照の`MelonInstance.cpp`が持つ8000行規模のVulkan駆動ロジック（特に1400行超の`latchSoftPackedFrameSnapshot`）を、Android JNI環境からQt/デスクトップ環境へ適応移植する**という、本計画の中でも最大級の単一タスクである。
+
+このタスクを次のように段階分割することを推奨する（次セッションでR3を着手する際はこの分割に従うこと）。
+
+- **R3a（最小疎通）**: capture-backed comp4/comp7・前フレーム履歴・class4非対称ケードンス等の高度なケースを**すべて省略**し、`GPU_Soft.cpp`が既に供給している単純な`Structured2DPlane0/1/Control`（またはそれと同等の毎フレーム全画素データ）から`SoftPackedFrameSnapshot`を機械的に構築する最小実装を書く。目的は「何か絵が出るところまで実配線して`presentFrame`を1回でも成功させる」こと。この段階では画質・エッジケース・パフォーマンスは度外視してよい。
+- **R3b（機能パリティ）**: `latchSoftPackedFrameSnapshot`の残りのロジック（capture-backed判定、前フレーム再利用、class4ケードンス等）を実際に読み解いて移植し、参照とのパリティを取る。
+- **R3c（配線の後始末）**: R3a/R3bが完了した時点で、`GPU3D_Vulkan.h`の`Structured2D*`系デッドパイプ（もしR3aでこれを使わない設計にした場合）と`SapphireVulkanComposition*`（R6対象）を除去する。
+
+R3aだけでも、`Frame`のライフサイクル（`FrameQueue::getRenderFrame`→`pushRenderedFrame`→`getPresentFrame`→`commitPresentedFrame`）、Win32 surfaceの取得（`winId()`から`HWND`、`reinterpret_cast<void*>`で`attachSurface`へ渡す）、`ScreenPanel::emuInstance`（`protected`、`ScreenPanelVulkan`からアクセス可）経由での`EmuInstance::getNDS()`→`nds->GPU.GPU3D.GetCurrentRendererOverride()`→`dynamic_cast<VulkanRenderer3D*>`という一連の配線が必要で、これ自体が独立した検証可能な作業単位になる。
