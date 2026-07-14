@@ -1,5 +1,10 @@
 #pragma once
-// MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 desktop-only queue
+
+// Reference: SapphireRhodonite/melonDS-android
+// app/src/main/cpp/renderer/FrameQueue.h @ tag 0.7.0.rc4.
+// Desktop adaptation: queue policy/lifecycle is retained verbatim in shape,
+// while Android EGL/OpenGL frame resources are replaced by Vulkan handles.
+
 #include <array>
 #include <chrono>
 #include <condition_variable>
@@ -9,10 +14,112 @@
 #include <queue>
 #include <volk.h>
 #include "types.h"
+
 using namespace melonDS;
-constexpr std::size_t FRAME_QUEUE_SIZE=9;
-struct FrameQueuePolicy{u64 MaxBacklogDepth=FRAME_QUEUE_SIZE-1;bool AllowStealPending=true,AllowPreviousFrameReuse=true,AllowDropForDeadline=false,PreferOldestFrame=false,PreserveBacklogOnPresent=false,TreatBacklogTrimAsFastForwardSkip=false,UseLegacyOpenGlQueue=false;};
-enum class FrameBackend:u8{OpenGlTexture=0,VulkanImage=1};
-struct FrameQueueStats{u64 RenderFramesAcquired=0,RenderFramesQueued=0,RenderFramesDiscarded=0,PresentFramesReturned=0,StaleFramesDropped=0,PendingFramesStolenForRender=0,RenderFramesDroppedByPolicy=0,PresentFramesDroppedByPolicy=0,PresentDroppedByStale=0,PresentDroppedBySteal=0,PresentDroppedByDeadline=0,PresentDroppedByBacklogTrim=0,PresentDeferredByDeadline=0,FastForwardFramesSkipped=0,PreviousFrameReused=0,MaxBacklogDepth=0,CurrentBacklogDepth=0,PresentedFrameAgeTotalNs=0,PresentedFrameAgeMaxNs=0,PresentedFrameAgeSamples=0,DroppedFrameAgeTotalNs=0,DroppedFrameAgeMaxNs=0,DroppedFrameAgeSamples=0;};
-struct Frame{FrameBackend backend=FrameBackend::VulkanImage;unsigned int frameTexture=0;u32 width=0,height=0;u64 frameId=0;VkFence renderFence=VK_NULL_HANDLE;VkFence presentFence=VK_NULL_HANDLE;u64 renderTimelineValue=0,presentTimelineValue=0,queuedAtNs=0;};
-class FrameQueue{public:FrameQueue();Frame* getRenderFrame(const FrameQueuePolicy&);Frame* getPresentFrame(const FrameQueuePolicy&,std::optional<std::chrono::time_point<std::chrono::steady_clock>>);Frame* getPresentCandidate(const FrameQueuePolicy&,std::optional<std::chrono::time_point<std::chrono::steady_clock>>);Frame* getReusablePreviousFrame(const FrameQueuePolicy&);void recycleRenderFrame(Frame*);void commitPresentedFrame(Frame*,const FrameQueuePolicy&);void deferPresentedFrame(Frame*,const FrameQueuePolicy&);void validateRenderFrame(Frame*,int,int,FrameBackend);void pushRenderedFrame(Frame*,const FrameQueuePolicy&);void discardRenderedFrame(Frame*);void requestPresentationResync();void requestFastForwardPresentationTransition();void clear();FrameQueueStats takeStatsSnapshotAndReset();private:std::mutex m;std::condition_variable cv;std::array<Frame,FRAME_QUEUE_SIZE> frames{};std::queue<Frame*> freeQ;std::deque<Frame*> presentQ;Frame* previous=nullptr;Frame* pending=nullptr;bool suppress=false;u64 nextId=1;FrameQueueStats stats{};};
+
+// 9 frames should allow the emulator to run up 8x speed. This includes 8 frames ready to present, plus one frame currently being rendered to.
+constexpr std::size_t FRAME_QUEUE_SIZE = 9;
+
+struct FrameQueuePolicy
+{
+    u64 MaxBacklogDepth = FRAME_QUEUE_SIZE - 1;
+    bool AllowStealPending = true;
+    bool AllowPreviousFrameReuse = true;
+    bool AllowDropForDeadline = false;
+    bool PreferOldestFrame = false;
+    bool PreserveBacklogOnPresent = false;
+    bool TreatBacklogTrimAsFastForwardSkip = false;
+    bool UseLegacyOpenGlQueue = false;
+};
+enum class FrameBackend : u8 {
+    OpenGlTexture = 0,
+    VulkanImage = 1,
+};
+
+struct FrameQueueStats
+{
+    u64 RenderFramesAcquired = 0;
+    u64 RenderFramesQueued = 0;
+    u64 RenderFramesDiscarded = 0;
+    u64 PresentFramesReturned = 0;
+    u64 StaleFramesDropped = 0;
+    u64 PendingFramesStolenForRender = 0;
+    u64 RenderFramesDroppedByPolicy = 0;
+    u64 PresentFramesDroppedByPolicy = 0;
+    u64 PresentDroppedByStale = 0;
+    u64 PresentDroppedBySteal = 0;
+    u64 PresentDroppedByDeadline = 0;
+    u64 PresentDroppedByBacklogTrim = 0;
+    u64 PresentDeferredByDeadline = 0;
+    u64 FastForwardFramesSkipped = 0;
+    u64 PreviousFrameReused = 0;
+    u64 MaxBacklogDepth = 0;
+    u64 CurrentBacklogDepth = 0;
+    u64 PresentedFrameAgeTotalNs = 0;
+    u64 PresentedFrameAgeMaxNs = 0;
+    u64 PresentedFrameAgeSamples = 0;
+    u64 DroppedFrameAgeTotalNs = 0;
+    u64 DroppedFrameAgeMaxNs = 0;
+    u64 DroppedFrameAgeSamples = 0;
+};
+
+struct Frame {
+    FrameBackend backend{FrameBackend::VulkanImage};
+    unsigned int frameTexture{};
+    u32 width{};
+    u32 height{};
+    u64 frameId{};
+    VkFence renderFence{VK_NULL_HANDLE};
+    VkFence presentFence{VK_NULL_HANDLE};
+    u64 renderTimelineValue{};
+    u64 presentTimelineValue{};
+    u64 queuedAtNs{};
+};
+
+class FrameQueue
+{
+public:
+    FrameQueue();
+    Frame* getRenderFrame(const FrameQueuePolicy& policy);
+    Frame* getPresentFrame(const FrameQueuePolicy& policy, std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
+    Frame* getPresentCandidate(const FrameQueuePolicy& policy, std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
+    Frame* getReusablePreviousFrame(const FrameQueuePolicy& policy);
+    void recycleRenderFrame(Frame* frame);
+    void commitPresentedFrame(Frame* frame, const FrameQueuePolicy& policy);
+    void deferPresentedFrame(Frame* frame, const FrameQueuePolicy& policy);
+    void validateRenderFrame(Frame* frame, int requiredWidth, int requiredHeight, FrameBackend backend);
+    void pushRenderedFrame(Frame* frame, const FrameQueuePolicy& policy);
+    void discardRenderedFrame(Frame* frame);
+    void requestPresentationResync();
+    void requestFastForwardPresentationTransition();
+    void clear();
+    FrameQueueStats takeStatsSnapshotAndReset();
+
+private:
+    enum class PresentDropCause : u8
+    {
+        Stale = 0,
+        StealForRender = 1,
+        Deadline = 2,
+        BacklogTrim = 3,
+    };
+
+    static FrameQueuePolicy sanitizePolicy(FrameQueuePolicy policy);
+    void rebuildFreeQueueLocked();
+    void dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip);
+    void updateBacklogStatsLocked();
+    void recordPresentedFrameAgeLocked(Frame* frame, u64 nowNs);
+    void recordDroppedFrameLocked(Frame* frame, PresentDropCause cause, u64 nowNs);
+
+private:
+    std::mutex frameLock;
+    std::condition_variable presentFrameReadyCondition;
+    std::array<Frame, FRAME_QUEUE_SIZE> frames{};
+    std::queue<Frame*> freeQueue{};
+    std::deque<Frame*> presentQueue{};
+    Frame* previousFrame = nullptr;
+    Frame* pendingPresentFrame = nullptr;
+    bool suppressPreviousFrameReuse = false;
+    u64 nextFrameId = 1;
+    FrameQueueStats stats{};
+};

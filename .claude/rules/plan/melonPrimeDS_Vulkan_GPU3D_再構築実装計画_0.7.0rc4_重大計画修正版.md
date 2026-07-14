@@ -40,6 +40,29 @@
 
 検証: `git diff --check`成功。Vulkanビルドは`build-mingw-vulkan.bat`を正規手順とし、ユーザー指示によりこのフェーズでは再実行せず実装を優先する。
 
+## R1 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/VulkanReferenceManifest.md`
+   - `src/frontend/qt_sdl/VulkanReference/FrameQueue.h`
+   - `src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp`
+2. 新しく追加した型、関数、resource
+   - 固定tagの完全な`FrameQueuePolicy`、frame identity、deadline、drop/reuse/resync、age/statistics実装を復元した。
+   - 全core/frontend対象ファイルの参照repository、path、commit/tag、保持差分、削除フェーズを追跡する移植manifestを追加した。
+3. 削除した旧経路
+   - 18行へ圧縮され、deadline/drop cause/age/policy処理を省略していたdesktop-only簡略`FrameQueue`を置換した。
+4. 所有権とframe lifecycleの変更
+   - `FrameQueue`はまだ実行経路へ接続せず、R19の正式owner化を先取りしない。
+   - queue内部のpending/previous/free/present lifecycleは0.7.0.rc4参照実装へ戻した。
+5. 参照実装との差分
+   - Android EGL/OpenGL texture生成・破棄を持ち込まず、frame resource fieldを`VkFence`とVulkan timeline metadataへ置換した。
+   - Vulkan image本体は`VulkanOutput`/presenter ownerが管理し、queueはframe identityと同期metadataだけを搬送する。
+6. 後続フェーズへ渡すinterface
+   - R3/R19が接続できる`getRenderFrame`、`pushRenderedFrame`、`getPresentCandidate`、`commitPresentedFrame`、resync/statistics一式。
+   - R4/R6/R17/R20/R24/R26が残存adapterを削除・完成させるためのファイル単位manifest。
+
+検証: 固定core commitと45ファイル、固定frontend tagと9ファイルの改行正規化比較に成功。`FrameQueue`参照method 18件とAndroid/EGL API非混入を静的監査し、`git diff --check`成功。ビルドはユーザー指示により省略。
+
 ---
 
 # 1. 目的

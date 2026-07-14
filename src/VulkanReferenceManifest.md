@@ -1,0 +1,132 @@
+# Vulkan reference port manifest
+
+This manifest is implementation metadata for the desktop Vulkan reconstruction. It is not a runtime capability contract and must never be used to select a renderer or report a backend as active.
+
+## Pinned reference points
+
+- Core repository: `SapphireRhodonite/melonDS-android-lib`
+- Core commit: `d77944275fa61f9b79cfcead2c3e98993429a023`
+- Frontend repository: `SapphireRhodonite/melonDS-android`
+- Frontend tag: `0.7.0.rc4` (commit `2c10e59d7209d354e90d9ef4228330bac3f6e794`)
+
+The matching constants live in `VulkanReferencePortVersion.h`. Updating either reference requires a new file-by-file audit of every row below.
+
+## Difference classes
+
+- `Reference code`: text matches the pinned source after ignoring line-ending conversion.
+- `Core compatibility adaptation`: include/dispatch/API changes required by this melonDS fork.
+- `Desktop platform adaptation`: replaces Android window, EGL, JNI, or Vulkan dispatch ownership without changing the reference ABI.
+- `MelonPrime adaptation`: game/frontend integration kept outside the reference algorithm where possible.
+- `Temporary bridge`: pre-existing phased integration that remains isolated until the deletion phase named in the notes.
+
+There are no unclassified divergences in the audited set. Any future difference not covered by a row is an unexplained divergence and must be reverted to the pinned reference or added here with a concrete owner and removal/lifetime rule.
+
+## Core implementation files
+
+| Destination | Reference path | Class and retained difference |
+|---|---|---|
+| `src/GPU3D_AcceleratedFrontend.h` | `src/GPU3D_AcceleratedFrontend.h` | Reference code; provenance comment only. |
+| `src/GPU3D_AcceleratedFrontend.cpp` | `src/GPU3D_AcceleratedFrontend.cpp` | Reference code; provenance comment only. |
+| `src/GPU3D_Vulkan.h` | `src/GPU3D_Vulkan.h` | Reference code plus core compatibility adapters and isolated MelonPrime structured-2D/compositor temporary bridges; R6 removes core composition ownership and R17/R26 remove the temporary structured bridge. |
+| `src/GPU3D_Vulkan.cpp` | `src/GPU3D_Vulkan.cpp` | Same classification as the header; the reference renderer body remains the base, with desktop `volk` dispatch and the temporary bridges named above. |
+| `src/GPU3D_TexcacheVulkan.h` | `src/GPU3D_TexcacheVulkan.h` | Core compatibility adaptation: `<volk.h>` replaces direct Vulkan prototypes. |
+| `src/GPU3D_TexcacheVulkan.cpp` | `src/GPU3D_TexcacheVulkan.cpp` | Core compatibility adaptation: `volk` replaces `VulkanDispatch.h`. |
+| `src/VulkanContext.h` | `src/VulkanContext.h` | Desktop platform adaptation: process-wide ref-counted context, desktop surface extensions, and `volk`; R4 completes platform instance/present requirements and R24 completes shared synchronization/lifetime. |
+| `src/VulkanContext.cpp` | `src/VulkanContext.cpp` | Desktop platform adaptation corresponding to the header; Android surface/AHB/debug integration is intentionally not imported into core. |
+| `src/VulkanPerfStats.h` | `src/VulkanPerfStats.h` | Reference code. |
+
+## Core shader sources
+
+Every source below is reference code and is text-identical to the pinned core commit after ignoring line endings.
+
+| Destination | Reference path |
+|---|---|
+| `src/GPU3D_Vulkan_InterpSpansShader.comp` | `src/GPU3D_Vulkan_InterpSpansShader.comp` |
+| `src/GPU3D_Vulkan_BinCombinedShader.comp` | `src/GPU3D_Vulkan_BinCombinedShader.comp` |
+| `src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp` | `src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp` |
+| `src/GPU3D_Vulkan_SortWorkShader.comp` | `src/GPU3D_Vulkan_SortWorkShader.comp` |
+| `src/GPU3D_Vulkan_TriRasterShader.comp` | `src/GPU3D_Vulkan_TriRasterShader.comp` |
+| `src/GPU3D_Vulkan_TriRasterBaseShader.comp` | `src/GPU3D_Vulkan_TriRasterBaseShader.comp` |
+| `src/GPU3D_Vulkan_TriRasterCompatShader.comp` | `src/GPU3D_Vulkan_TriRasterCompatShader.comp` |
+| `src/GPU3D_Vulkan_DepthBlendShader.comp` | `src/GPU3D_Vulkan_DepthBlendShader.comp` |
+| `src/GPU3D_Vulkan_FinalPassShader.comp` | `src/GPU3D_Vulkan_FinalPassShader.comp` |
+| `src/GPU3D_Vulkan_CaptureLineExportShader.comp` | `src/GPU3D_Vulkan_CaptureLineExportShader.comp` |
+| `src/GPU3D_Vulkan_GraphicsRasterShader.vert` | `src/GPU3D_Vulkan_GraphicsRasterShader.vert` |
+| `src/GPU3D_Vulkan_GraphicsRasterShader.frag` | `src/GPU3D_Vulkan_GraphicsRasterShader.frag` |
+| `src/GPU3D_Vulkan_GraphicsNoColorShader.frag` | `src/GPU3D_Vulkan_GraphicsNoColorShader.frag` |
+| `src/GPU3D_Vulkan_GraphicsClearShader.frag` | `src/GPU3D_Vulkan_GraphicsClearShader.frag` |
+| `src/GPU3D_Vulkan_GraphicsFinalShader.vert` | `src/GPU3D_Vulkan_GraphicsFinalShader.vert` |
+| `src/GPU3D_Vulkan_GraphicsEdgeShader.frag` | `src/GPU3D_Vulkan_GraphicsEdgeShader.frag` |
+| `src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag` | `src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag` |
+| `src/GPU3D_Vulkan_GraphicsFogShader.frag` | `src/GPU3D_Vulkan_GraphicsFogShader.frag` |
+
+## Core generated shader headers
+
+Every generated header below is text-identical to the pinned core commit after ignoring line endings. Source and generated data therefore come from the same reference point.
+
+| Destination/reference path |
+|---|
+| `src/GPU3D_Vulkan_BinCombinedShaderData.h` |
+| `src/GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h` |
+| `src/GPU3D_Vulkan_CaptureLineExportShaderData.h` |
+| `src/GPU3D_Vulkan_DepthBlendShaderData.h` |
+| `src/GPU3D_Vulkan_FinalPassShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsClearShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsEdgeFogShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsEdgeShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsFinalShaderVertexData.h` |
+| `src/GPU3D_Vulkan_GraphicsFogShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsNoColorShaderData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h` |
+| `src/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h` |
+| `src/GPU3D_Vulkan_InterpSpansShaderData.h` |
+| `src/GPU3D_Vulkan_ShaderData.h` |
+| `src/GPU3D_Vulkan_SortWorkShaderData.h` |
+| `src/GPU3D_Vulkan_TriRasterBaseShaderData.h` |
+| `src/GPU3D_Vulkan_TriRasterCompatShaderData.h` |
+| `src/GPU3D_Vulkan_TriRasterShaderData.h` |
+
+## Frontend implementation files
+
+Reference paths in this table are relative to `app/src/main/cpp/renderer/` in the pinned frontend tag.
+
+| Destination | Reference path | Class and retained difference |
+|---|---|---|
+| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h` | `VulkanOutput.h` | Core compatibility adaptation: local include paths and `volk`; descriptor/push-constant ABI unchanged. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp` | `VulkanOutput.cpp` | Core compatibility adaptation: `volk` replaces `VulkanDispatch.h`; reference algorithm otherwise retained. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp` | `VulkanCompositorShader.comp` | Reference code. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp` | `VulkanAccumulate3dShader.comp` | Reference code. |
+| `src/frontend/qt_sdl/VulkanReference/FrameQueue.h` | `FrameQueue.h` | Desktop platform adaptation: reference policy, frame identity, queue statistics, deadline, drop, reuse, and resync ABI retained; EGL/GL resource fields replaced by Vulkan handles. |
+| `src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp` | `FrameQueue.cpp` | Desktop platform adaptation: full reference queue lifecycle restored; Android GL texture allocation/destruction excluded because desktop VulkanOutput/presenter own images. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h` | `VulkanSurfacePresenter.h` | Desktop platform adaptation: `void*` native handle, Win32 declarations, local includes, and `volk`; Android native window API excluded. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp` | `VulkanSurfacePresenter.cpp` | Desktop platform adaptation: Win32 surface creation and client extent replace `ANativeWindow`; cross-platform generalization is owned by R20. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert` | `VulkanSurfacePresenter.vert` | Reference code. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag` | `VulkanSurfacePresenter.frag` | Reference code. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanFilterMode.h` | `VulkanFilterMode.h` | Reference code. |
+
+## Frontend generated shader headers
+
+Reference paths are relative to `app/src/main/cpp/renderer/`; all four files are text-identical to the pinned tag after ignoring line endings.
+
+| Destination/reference filename |
+|---|
+| `VulkanAccumulate3dShaderData.h` |
+| `VulkanCompositorShaderData.h` |
+| `VulkanSurfacePresenterFragmentShaderData.h` |
+| `VulkanSurfacePresenterVertexShaderData.h` |
+
+## Deliberately excluded Android ownership
+
+- JNI, Java callbacks, Android logging, and Activity lifecycle.
+- `ANativeWindow` retain/release and size queries.
+- Android surface and Android Hardware Buffer extensions in the shared desktop context.
+- EGL/OpenGL texture allocation in the Vulkan frame queue.
+
+Desktop replacements are owned by `VulkanContext`, `MelonPrimeVulkanSurfaceHost` (R20), and the Qt frontend session (R3/R19/R21). No Android UI code is copied into the core renderer.
