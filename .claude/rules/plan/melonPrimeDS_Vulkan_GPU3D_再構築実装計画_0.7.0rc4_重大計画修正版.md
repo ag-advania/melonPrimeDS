@@ -12,6 +12,36 @@
 
 ---
 
+# 0. 実装進捗記録
+
+この記録は各フェーズの変更・検証・引き渡しinterfaceを追跡する証拠台帳であり、記録だけをruntime能力判定には使わない。能力は常に生成済みresourceと有効なruntime stateから判定する。
+
+## R0 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/VulkanReferencePortVersion.h`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.h`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp`
+2. 新しく追加した型、関数、resource
+   - `VulkanRuntimeCapabilities`
+   - `QueryCurrentVulkanCapabilities()`
+   - 固定参照tag/commit定数（runtime制御には不使用）
+3. 削除した旧経路
+   - 先行R0コミット`d3300293e`でhardcoded shell contractと自己検査CLIを削除済み。
+   - 「outer VulkanRendererが存在しないこと」をfallback理由にする誤った説明を削除した。
+4. 所有権とframe lifecycleの変更
+   - `GPU3D::CurrentRenderer`所有は維持。
+   - frontend composition/presentation未接続中は`actual=Software`を維持し、`failedStage`を`Vulkan frontend session`として報告する。
+5. 参照実装との差分
+   - desktop frontend session未接続のため、structured 2D、final compositor、FrameQueue、surface、presenter capabilityは実体が追加されるまでfalseのままにする。
+6. 後続フェーズへ渡すinterface
+   - R3以降のsession/resource ownerが生成成功後に各capabilityを実体から埋めるための`VulkanRuntimeCapabilities`。
+   - R1の唯一の参照点として`0.7.0.rc4`と`d77944275fa61f9b79cfcead2c3e98993429a023`を定数化。
+
+検証: `git diff --check`成功。Vulkanビルドは`build-mingw-vulkan.bat`を正規手順とし、ユーザー指示によりこのフェーズでは再実行せず実装を優先する。
+
+---
+
 # 1. 目的
 
 melonPrimeDSでVulkanを選択した場合に、Nintendo DSの3DポリゴンをVulkan GPUで直接ラスタライズし、そのGPU上の3D画像を2D合成、画面配置、最終表示までGPU常駐で処理する。

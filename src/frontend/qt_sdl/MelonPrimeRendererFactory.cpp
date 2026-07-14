@@ -12,6 +12,7 @@
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
+#include "VulkanContext.h"
 #endif
 
 namespace MelonPrime::VideoBackend
@@ -51,18 +52,24 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
     case renderer3D_VulkanCompute:
-        // The outer renderer object is still SoftRenderer: there is no complete
-        // VulkanRenderer yet that owns 2D, 3D, final composition, and
-        // presentation (see the reconstruction plan's R2/R3). A separate
-        // GPU3D-level Renderer3D override may run the real Vulkan 3D raster
-        // path for internal validation (CreateRenderer3DOverrideForSelection),
-        // but until R3 lands a complete VulkanRenderer, `actual` must not
-        // report Vulkan: the visible output is Software end to end.
+        // The outer 2D/timing renderer stays SoftRenderer here: melonDS's own
+        // Vulkan architecture (see the reconstruction plan, "重大計画修正版")
+        // has GPU3D alone own the swappable Renderer3D backend -- there is no
+        // separate outer "VulkanRenderer" class to build. GPU3D may already
+        // own a real VulkanRenderer3D for internal validation, but `actual`
+        // must not report Vulkan
+        // until the Qt frontend session actually consumes it end to end:
+        // structured 2D snapshot -> VulkanOutput final composition ->
+        // FrameQueue -> VulkanSurfacePresenter (plan phase R3). Until that
+        // pipeline is connected, visible output is Software end to end.
         report.actual = renderer3D_Software;
-        report.failedStage = "Vulkan outer renderer";
+        report.failedStage = "Vulkan frontend session";
         report.fallbackReason =
-            "no complete VulkanRenderer exists yet (owning 2D/3D/output/presentation); "
-            "only a GPU3D-level Renderer3D override may be active for internal validation";
+            "Vulkan frontend composition/presentation path incomplete: GPU3D may own a "
+            "VulkanRenderer3D backend for internal validation, but the Qt frontend session "
+            "(structured 2D snapshot + VulkanOutput + FrameQueue + surface + "
+            "VulkanSurfacePresenter, plan phase R3) is not yet connected, so visible output "
+            "is Software end to end";
         return std::make_unique<melonDS::SoftRenderer>(nds);
 #endif
     default:
@@ -79,9 +86,9 @@ std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
     int configuredRenderer,
     BackendCreationReport& report)
 {
-    // GPU3D-level override used only for internal validation of the Vulkan 3D
-    // raster path (see plan phase R2 for why this override exists and R3 for
-    // the follow-up that removes it once VulkanRenderer owns Rend3D directly).
+    // GPU3D owns the active Renderer3D backend; this factory builds the
+    // Vulkan/VulkanCompute selection for that existing ownership path. R2
+    // canonicalizes the temporary Override name without moving ownership.
     const int normalized = NormalizeRendererForPlatform(
         ResolveRequestedRenderer(configuredRenderer));
 #if defined(MELONPRIME_ENABLE_VULKAN)
@@ -105,6 +112,26 @@ std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
 #endif
     return nullptr;
 }
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
+{
+    VulkanRuntimeCapabilities caps;
+
+    // Real, wired today: whether a Vulkan-capable device/queue exists, and
+    // whether GPU3D currently owns a VulkanRenderer3D instance.
+    caps.ContextReady = melonDS::VulkanContext::Get().IsReady();
+    if (melonDS::Renderer3D* current = nds.GPU.GPU3D.GetCurrentRendererOverride())
+        caps.Renderer3DReady = dynamic_cast<melonDS::VulkanRenderer3D*>(current) != nullptr;
+
+    // Structured2DReady/FinalCompositorReady/FrameQueueReady/SurfaceReady/
+    // PresenterReady/TimelineSemaphoreReady/DescriptorIndexingReady stay at
+    // their false default: nothing in the Qt frontend session (plan phase
+    // R3b) exists yet to populate them from real resource state, and we do
+    // not fabricate a true value ahead of that.
+    return caps;
+}
+#endif
 
 } // namespace MelonPrime::VideoBackend
 
