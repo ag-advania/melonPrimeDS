@@ -45,6 +45,14 @@ layout(push_constant) uniform PresenterPushConstants
     uint bottomStructuredHandoffSuppress3d;
     float viewportWidth;
     float viewportHeight;
+    float radarSourceCenterX;
+    float radarSourceCenterY;
+    float radarSourceRadius;
+    float radarPadding;
+    float radarFrameColorR;
+    float radarFrameColorG;
+    float radarFrameColorB;
+    float radarFrameColorA;
 } pushConstants;
 
 const uint kMetaFlagRegularCaptureUses3d = 1u << 21u;
@@ -62,6 +70,7 @@ const uint kFilterScanlines = 7u;
 
 layout(location = 0) in vec2 fragUv;
 layout(location = 1) in float fragAlpha;
+layout(location = 2) in vec4 fragColor;
 
 layout(location = 0) out vec4 outColor;
 
@@ -1452,6 +1461,37 @@ vec3 applyCompositePostFilter(vec2 uv, bool topScreen)
 
 void main()
 {
+    if (pushConstants.drawMode == 7u)
+    {
+        outColor = fragColor;
+        return;
+    }
+
+    if (pushConstants.drawMode == 8u)
+    {
+        vec2 circle = (fragUv - vec2(0.5)) * 2.0;
+        float distanceFromCenter = length(circle);
+        if (distanceFromCenter > 1.0)
+            discard;
+        if (distanceFromCenter >= 0.92)
+        {
+            outColor = vec4(
+                pushConstants.radarFrameColorR,
+                pushConstants.radarFrameColorG,
+                pushConstants.radarFrameColorB,
+                pushConstants.radarFrameColorA * fragAlpha);
+            return;
+        }
+        vec2 sourcePixel = vec2(
+            pushConstants.radarSourceCenterX,
+            pushConstants.radarSourceCenterY)
+            + circle * pushConstants.radarSourceRadius;
+        vec2 sourceLocal = sourcePixel / vec2(256.0, 192.0);
+        vec4 sampledColor = texture(uTexture, uvFromScreenLocal(sourceLocal, false));
+        outColor = vec4(sampledColor.bgr, fragAlpha);
+        return;
+    }
+
     if (pushConstants.drawMode == 0u)
     {
         vec4 sampledColor = texture(uTexture, fragUv);

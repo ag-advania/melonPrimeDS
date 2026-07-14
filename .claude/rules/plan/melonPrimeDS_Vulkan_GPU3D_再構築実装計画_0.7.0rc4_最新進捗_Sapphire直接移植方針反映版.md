@@ -644,6 +644,37 @@
 
 検証: `vkCreateWin32SurfaceKHR`/`vkCreateXcbSurfaceKHR`/`vkCreateWaylandSurfaceKHR`/`vkCreateMetalSurfaceEXT`と`vkDestroySurfaceKHR`がsurface hostだけに存在すること、presenterのnative handle/Win32 API参照0件、detach-before-destroy順、全create pathの`ResolvePresentQueue`、DPR pixel size、native child window/identity generation、surface lifecycleごとの単一register管理、coreのQt/QWidget参照0件、platform compile definitionsとconditional sourcesを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R21 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/frontend/qt_sdl/MelonPrimeScreenVulkan.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h/.cpp/.vert/.frag`
+   - `src/frontend/qt_sdl/MelonPrimeHudRender.h/.cpp`
+   - `src/frontend/qt_sdl/Screen.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. Qt GUI consumerとNative経路廃止
+   - `ScreenPanelVulkan`の基底を`ScreenPanelNative`から`ScreenPanel`へ変更し、Native `paintEvent`、CPU screen buffer、QImage overlay uploadへ戻れる継承経路を除去した。Vulkan panel生成時はbase側のCPU overlay/splash storage割当も抑止する。
+   - EmuThreadの`drawScreen()`はimmutable HUD snapshotをpublishしてGUI repaintをatomic coalesceするだけとし、QWidget/native handle/surface/swapchainを触らない。`paintEvent()`だけがGUI threadでsurface identity確認、DPR/layout/overlay更新、Ready/Previous acquire、present、commit/deferを行う。`paintEngine()`はnullを返しQPainterを生成しない。
+3. 正式layout、resize、filter
+   - 固定の上下半分rectを削除し、`ScreenLayout::GetScreenTransforms()`が生成する最大3個の6係数affine matrixをphysical-pixel DPR付きでpresenterへ渡す。presenterは各DS cornerを直接変換するため、0/90/180/270度回転、screen swap、Top/Bottom only、gap/aspect/integer scaling、HybridをOpenGL経路と同じtransform順で描画する。
+   - native identity変更だけをsurface generation更新、logical resize/DPI/filter/layout変更を同一surfaceのconfigure/dirty swapchain更新として扱う。out-of-date/suboptimal/present失敗時の固定tag recoveryを維持し、resizeで3D texture cacheを破棄しない。
+4. GPU HUD、OSD、crosshair、radar
+   - presenterへimmutable `VulkanSurfaceOverlay`を追加し、GPU solid quad draw modeでbitmap-font text、HP/ammo gauge、rank/time/bomb text、crosshair、OSDを同一swapchain render passへ追加した。OSDはtext metadataからglyph quadを生成し、`osdRenderItem()`、QImage、QPainter、CPU framebufferを使用しない。
+   - HUD gameplay/RAM値はEmuThreadだけが読むsnapshot境界へ固定した。GUIはsnapshotとlayoutしか読まない。Vulkan専用NoHud同期はQImage/QPainter/config asset cacheを経由せず、既存patch ownerへmaskを同期する。
+   - radar draw modeはproducerが完成させたfinal two-screen imageのbottom atlas regionを直接sampleし、円形clipとGPU frame ringを適用する。radar有効時はraw single-screen direct modeを選ばず、必ずcompleted composite imageをsourceにする。
+5. Ready/Previous、pause、同期
+   - R18/R19 producerがReady publish前にcompositionを完了するため、presenter内の二重`composeAndSubmitFrame()`を削除した。GUIはsurface generation一致済みReadyまたはFrameQueueがpresentation reference付きで貸し出すPreviousだけを消費する。
+   - 成功frame idをpanelへ保持し、実resource referenceはFrameQueueの`Previous` ownerとpresentation referenceで保持する。pause中も同じPreviousを再acquireしてVulkan swapchainへpresentし、Native fallbackへ切り替えない。
+   - dynamic overlay更新はsession mutex下でpresent completion/history同期と直列化する。surface configure/recreateは一時unregister、overlay/presentはregistered presenter確認を通すため、EmuThreadのcompletion照会とGUI vertex更新が競合しない。
+6. Sapphire参照との差分
+   - 固定tag presenterのsurface format/present mode/swapchain/background/descriptor/filter/pacing/recovery本体を維持した。desktop追加はQt affine layout input、producer-composed Ready image消費、MelonPrime GPU overlay draw mode、borrowed surface境界だけである。
+   - 固定tag presenterにはMelonPrime HUD/OSD/radar相当が存在しないため、その部分だけをdesktop/MelonPrime extensionとしてmanifestへ分類した。既存draw mode 0～6とcomposition/filter式は変更していない。
+
+検証: `ScreenPanelNative`参照0件、Vulkan panel内`QImage`/`QPainter`実コード0件、presenter側`composeAndSubmitFrame()` 0件、GUI present path外のsurface/native操作0件、EmuThread snapshot外のRAM read 0件、surface generation gate、FrameQueue Previous再利用、overlay/session mutex直列化、65,536 vertex capacityに対する最大60,030 vertex上限を静的監査。presenter vertex/fragment shaderは`glslangValidator -V`成功。既存Vulkan build treeの記録済みMinGWコマンドで`MelonPrimeScreenVulkan.cpp`、`MelonPrimeVulkanFrontendSession.cpp`、`VulkanSurfacePresenter.cpp`、`MelonPrimeHudRender.cpp`、`Screen.cpp`の5翻訳単位がコンパイル成功。通常Ninja入口はCMake再生成時のvcpkg compiler検出で停止したためフルリンクは行わず、ユーザー指示どおり実装を優先した。`git diff --check`成功。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -21,8 +22,8 @@ bool areRendererDebugBgObjLogsEnabled();
 
 namespace
 {
-constexpr u32 kMaxSurfaceVertexCount = 30;
-constexpr VkDeviceSize kVertexBufferSize = static_cast<VkDeviceSize>(kMaxSurfaceVertexCount * 5u * sizeof(float));
+constexpr u32 kMaxSurfaceVertexCount = 65'536;
+constexpr VkDeviceSize kVertexBufferSize = static_cast<VkDeviceSize>(kMaxSurfaceVertexCount * 9u * sizeof(float));
 constexpr u32 kDescriptorSetCapacity = 64;
 constexpr u32 kDrawModeBackground = 0u;
 constexpr u32 kDrawModeCompositeFrame = 1u;
@@ -31,6 +32,8 @@ constexpr u32 kDrawModeBottomScreen = 3u;
 constexpr u32 kDrawModeFilteredCompositeTop = 4u;
 constexpr u32 kDrawModeFilteredCompositeBottom = 5u;
 constexpr u32 kDrawModeRetroArchCompositeFrame = 6u;
+constexpr u32 kDrawModeSolidOverlay = 7u;
+constexpr u32 kDrawModeRadarOverlay = 8u;
 constexpr u32 kNativeScreenWidth = 256u;
 constexpr u32 kNativeScreenHeight = 192u;
 constexpr u32 kNativeAtlasHeight = 386u;
@@ -71,6 +74,14 @@ struct PresenterPushConstants
     u32 bottomStructuredHandoffSuppress3d;
     float viewportWidth;
     float viewportHeight;
+    float radarSourceCenterX;
+    float radarSourceCenterY;
+    float radarSourceRadius;
+    float radarPadding;
+    float radarFrameColorR;
+    float radarFrameColorG;
+    float radarFrameColorB;
+    float radarFrameColorA;
 };
 
 struct PrewarmedRetroArchChains
@@ -91,9 +102,23 @@ bool presenterRectsEqual(const VulkanPresenterRect& left, const VulkanPresenterR
         && left.height == right.height;
 }
 
+bool presenterTransformsEqual(
+    const VulkanPresenterTransform& left,
+    const VulkanPresenterTransform& right)
+{
+    return left.enabled == right.enabled
+        && left.topScreen == right.topScreen
+        && left.matrix == right.matrix
+        && left.alpha == right.alpha;
+}
+
 bool surfaceConfigsEqual(const VulkanSurfaceConfig& left, const VulkanSurfaceConfig& right)
 {
-    return presenterRectsEqual(left.topScreen, right.topScreen)
+    return left.screenTransformCount == right.screenTransformCount
+        && std::equal(
+            left.screenTransforms.begin(), left.screenTransforms.end(),
+            right.screenTransforms.begin(), presenterTransformsEqual)
+        && presenterRectsEqual(left.topScreen, right.topScreen)
         && presenterRectsEqual(left.bottomScreen, right.bottomScreen)
         && presenterRectsEqual(left.hybridTopScreen, right.hybridTopScreen)
         && presenterRectsEqual(left.hybridBottomScreen, right.hybridBottomScreen)
@@ -911,6 +936,23 @@ bool VulkanSurfacePresenter::configureSurface(int surfaceId, const VulkanSurface
     return true;
 }
 
+bool VulkanSurfacePresenter::updateOverlay(
+    int surfaceId,
+    const VulkanSurfaceOverlay& overlay)
+{
+    auto iterator = surfaces.find(surfaceId);
+    if (iterator == surfaces.end())
+        return false;
+
+    SurfaceState& surfaceState = iterator->second;
+    if (surfaceState.overlay.generation == overlay.generation)
+        return true;
+
+    surfaceState.overlay = overlay;
+    surfaceState.vertexBufferDirty = true;
+    return true;
+}
+
 void VulkanSurfacePresenter::detachSurface(int surfaceId)
 {
     auto iterator = surfaces.find(surfaceId);
@@ -953,6 +995,9 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             if (!surfaceState.configured)
                 return false;
 
+            if (surfaceState.config.screenTransformCount > 0)
+                return surfaceState.config.screenTransformCount > 1;
+
             const auto rectEnabled = [](const VulkanPresenterRect& rect) {
                 return rect.enabled && rect.width > 0 && rect.height > 0;
             };
@@ -972,6 +1017,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             return surfaceState.configured
                 && IsVulkanPostProcessFilter(surfaceState.config.filtering);
         });
+    const bool radarOverlayRequested = std::any_of(
+        surfaces.begin(), surfaces.end(), [](const auto& entry) {
+            return entry.second.overlay.radar.enabled;
+        });
     const bool directPresentRequested = !inputs.needsReadback
         && !inputs.validationMode
         && !postProcessFilterRequested
@@ -980,7 +1029,8 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         && hasRequiredDirectHandles
         && !inputs.capture3dSourceValid
         && !inputs.previousTopSourceValid
-        && !inputs.previousBottomSourceValid;
+        && !inputs.previousBottomSourceValid
+        && !radarOverlayRequested;
 
     if (!directPresentRequested)
     {
@@ -998,11 +1048,9 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     VkImageView frameImageView = VK_NULL_HANDLE;
     if (!directPresentRequested)
     {
-        if (!output.composeAndSubmitFrame(frame, inputs))
-        {
-            composeSubmitFailures++;
-            return false;
-        }
+        // The desktop frontend producer composes before publishing a Ready
+        // frame. Presenting must consume that immutable image and must not
+        // submit composition a second time.
         const bool highResolutionRealtimeFallbackPresent =
             !fastForwardActive
             && inputs.scale > 1
@@ -1739,7 +1787,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     bindingDescription.stride = sizeof(SurfaceVertex);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -1752,6 +1800,10 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     attributeDescriptions[2].binding = 0;
     attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
     attributeDescriptions[2].offset = offsetof(SurfaceVertex, alpha);
+    attributeDescriptions[3].location = 3;
+    attributeDescriptions[3].binding = 0;
+    attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(SurfaceVertex, r);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -3309,6 +3361,78 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         });
     };
 
+    auto appendTransformedScreen = [&](const VulkanPresenterTransform& transform) {
+        if (!transform.enabled)
+            return;
+
+        const auto mapPoint = [&](float x, float y) {
+            const float px = transform.matrix[0] * x
+                + transform.matrix[2] * y + transform.matrix[4];
+            const float py = transform.matrix[1] * x
+                + transform.matrix[3] * y + transform.matrix[5];
+            return std::array<float, 2>{
+                (px / surfaceWidth) * 2.0f - 1.0f,
+                1.0f - (py / surfaceHeight) * 2.0f};
+        };
+
+        const auto topLeft = mapPoint(0.0f, 0.0f);
+        const auto topRight = mapPoint(256.0f, 0.0f);
+        const auto bottomLeft = mapPoint(0.0f, 192.0f);
+        const auto bottomRight = mapPoint(256.0f, 192.0f);
+        const float uvTop = directPresent
+            ? 0.0f
+            : (transform.topScreen ? 0.0f : (0.5f + (1.0f / 386.0f)));
+        const float uvBottom = directPresent
+            ? 1.0f
+            : (transform.topScreen ? (0.5f - (1.0f / 386.0f)) : 1.0f);
+        const u32 drawMode = directPresent
+            ? (transform.topScreen ? kDrawModeTopScreen : kDrawModeBottomScreen)
+            : (retroArchApplied
+                ? kDrawModeRetroArchCompositeFrame
+                : (config.filtering != VulkanFilterMode::RetroArch
+                    && IsVulkanPostProcessFilter(config.filtering)
+                    ? (transform.topScreen
+                        ? kDrawModeFilteredCompositeTop
+                        : kDrawModeFilteredCompositeBottom)
+                    : kDrawModeCompositeFrame));
+        const float topVertexUv = directPresent ? uvBottom : uvTop;
+        const float bottomVertexUv = directPresent ? uvTop : uvBottom;
+        const u32 firstVertex = static_cast<u32>(vertices.size());
+
+        vertices.push_back(SurfaceVertex{bottomLeft[0], bottomLeft[1], 0.0f, bottomVertexUv, transform.alpha});
+        vertices.push_back(SurfaceVertex{topLeft[0], topLeft[1], 0.0f, topVertexUv, transform.alpha});
+        vertices.push_back(SurfaceVertex{topRight[0], topRight[1], 1.0f, topVertexUv, transform.alpha});
+        vertices.push_back(SurfaceVertex{bottomLeft[0], bottomLeft[1], 0.0f, bottomVertexUv, transform.alpha});
+        vertices.push_back(SurfaceVertex{topRight[0], topRight[1], 1.0f, topVertexUv, transform.alpha});
+        vertices.push_back(SurfaceVertex{bottomRight[0], bottomRight[1], 1.0f, bottomVertexUv, transform.alpha});
+
+        const float width = std::hypot(
+            transform.matrix[0] * 256.0f,
+            transform.matrix[1] * 256.0f);
+        const float height = std::hypot(
+            transform.matrix[2] * 192.0f,
+            transform.matrix[3] * 192.0f);
+        drawCalls.push_back(DrawCall{
+            .descriptorSet = surfaceState.screenDescriptorSet,
+            .firstVertex = firstVertex,
+            .vertexCount = 6,
+            .drawMode = drawMode,
+            .viewportWidth = width,
+            .viewportHeight = height,
+        });
+    };
+
+    if (config.screenTransformCount > 0)
+    {
+        const u32 transformCount = std::min<u32>(
+            config.screenTransformCount,
+            static_cast<u32>(config.screenTransforms.size()));
+        for (u32 index = 0; index < transformCount; ++index)
+            appendTransformedScreen(config.screenTransforms[index]);
+    }
+    else
+    {
+
     struct PendingScreen
     {
         VulkanPresenterRect rect;
@@ -3338,10 +3462,72 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     enqueueScreen(config.hybridTopScreen, true, config.hybridAlpha, config.hybridOnTop);
     enqueueScreen(config.hybridBottomScreen, false, config.hybridAlpha, config.hybridOnTop);
 
-    for (const PendingScreen& screen : underScreens)
-        appendScreen(screen.rect, screen.topScreen, screen.alpha);
-    for (const PendingScreen& screen : overScreens)
-        appendScreen(screen.rect, screen.topScreen, screen.alpha);
+        for (const PendingScreen& screen : underScreens)
+            appendScreen(screen.rect, screen.topScreen, screen.alpha);
+        for (const PendingScreen& screen : overScreens)
+            appendScreen(screen.rect, screen.topScreen, screen.alpha);
+    }
+
+    const auto appendOverlayVertices = [&](const VulkanOverlayQuad& quad) {
+        const auto toNdc = [&](float x, float y) {
+            return std::array<float, 2>{
+                (x / surfaceWidth) * 2.0f - 1.0f,
+                1.0f - (y / surfaceHeight) * 2.0f};
+        };
+        const auto tl = toNdc(quad.points[0], quad.points[1]);
+        const auto tr = toNdc(quad.points[2], quad.points[3]);
+        const auto bl = toNdc(quad.points[4], quad.points[5]);
+        const auto br = toNdc(quad.points[6], quad.points[7]);
+        const auto vertex = [&](const std::array<float, 2>& point, float u, float v) {
+            return SurfaceVertex{
+                point[0], point[1], u, v, quad.color[3],
+                quad.color[0], quad.color[1], quad.color[2], quad.color[3]};
+        };
+        vertices.push_back(vertex(bl, 0.0f, 1.0f));
+        vertices.push_back(vertex(tl, 0.0f, 0.0f));
+        vertices.push_back(vertex(tr, 1.0f, 0.0f));
+        vertices.push_back(vertex(bl, 0.0f, 1.0f));
+        vertices.push_back(vertex(tr, 1.0f, 0.0f));
+        vertices.push_back(vertex(br, 1.0f, 1.0f));
+    };
+
+    if (!surfaceState.overlay.solidQuads.empty())
+    {
+        const u32 firstVertex = static_cast<u32>(vertices.size());
+        for (const VulkanOverlayQuad& quad : surfaceState.overlay.solidQuads)
+        {
+            if (vertices.size() + 6 > kMaxSurfaceVertexCount)
+                return false;
+            appendOverlayVertices(quad);
+        }
+        drawCalls.push_back(DrawCall{
+            .descriptorSet = surfaceState.screenDescriptorSet,
+            .firstVertex = firstVertex,
+            .vertexCount = static_cast<u32>(vertices.size()) - firstVertex,
+            .drawMode = kDrawModeSolidOverlay,
+        });
+    }
+
+    if (surfaceState.overlay.radar.enabled)
+    {
+        if (vertices.size() + 6 > kMaxSurfaceVertexCount)
+            return false;
+        VulkanOverlayQuad radarQuad{};
+        radarQuad.points = surfaceState.overlay.radar.points;
+        radarQuad.color = {1.0f, 1.0f, 1.0f, surfaceState.overlay.radar.opacity};
+        const u32 firstVertex = static_cast<u32>(vertices.size());
+        appendOverlayVertices(radarQuad);
+        drawCalls.push_back(DrawCall{
+            .descriptorSet = surfaceState.screenDescriptorSet,
+            .firstVertex = firstVertex,
+            .vertexCount = 6,
+            .drawMode = kDrawModeRadarOverlay,
+            .radarSourceCenterX = surfaceState.overlay.radar.sourceCenterX,
+            .radarSourceCenterY = surfaceState.overlay.radar.sourceCenterY,
+            .radarSourceRadius = surfaceState.overlay.radar.sourceRadius,
+            .radarFrameColor = surfaceState.overlay.radar.frameColor,
+        });
+    }
 
     if (vertices.size() > kMaxSurfaceVertexCount)
         return false;
@@ -3611,6 +3797,13 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
         pushConstants.bottomStructuredHandoffSuppress3d = inputs.bottomStructuredHandoffSuppress3d ? 1u : 0u;
         pushConstants.viewportWidth = drawCall.viewportWidth;
         pushConstants.viewportHeight = drawCall.viewportHeight;
+        pushConstants.radarSourceCenterX = drawCall.radarSourceCenterX;
+        pushConstants.radarSourceCenterY = drawCall.radarSourceCenterY;
+        pushConstants.radarSourceRadius = drawCall.radarSourceRadius;
+        pushConstants.radarFrameColorR = drawCall.radarFrameColor[0];
+        pushConstants.radarFrameColorG = drawCall.radarFrameColor[1];
+        pushConstants.radarFrameColorB = drawCall.radarFrameColor[2];
+        pushConstants.radarFrameColorA = drawCall.radarFrameColor[3];
         if (MelonDSAndroid::areRendererDebugBgObjLogsEnabled())
         {
             melonDS::Platform::Log(

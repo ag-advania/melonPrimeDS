@@ -67,6 +67,78 @@ static constexpr int kRadarArtSize = 76;
 // CustomHud_Render and radar overlay entry points.
 #include "MelonPrimeHudRenderMain.inc"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+bool CustomHud_SyncVulkanPatch(
+    CustomHudConfigState& hudConfig,
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    uint8_t playerPosition,
+    bool isInGame)
+{
+    const ScopedHudConfigState active(hudConfig);
+    HudRuntimeState state{};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, state))
+        return false;
+
+    if (!isInGame || !CustomHud_IsEnabled(localCfg))
+    {
+        CustomHud_RestoreNativeHudState(rom, state);
+        return false;
+    }
+
+    uint16_t mask = 0;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet))
+        mask |= 1u << NOHUD_HELMET;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Ammo))
+        mask |= 1u << NOHUD_AMMO;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_WeaponIcon))
+        mask |= 1u << NOHUD_WEAPONICON;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_HP))
+        mask |= 1u << NOHUD_HP;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair))
+        mask |= 1u << NOHUD_CROSSHAIR;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle))
+        mask |= 1u << NOHUD_SCORE_BATTLE;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival))
+        mask |= 1u << NOHUD_SCORE_SURVIVAL;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter))
+        mask |= 1u << NOHUD_SCORE_PRIMEHUNTER;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBounty))
+        mask |= 1u << NOHUD_SCORE_BOUNTY;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreCapture))
+        mask |= 1u << NOHUD_SCORE_CAPTURE;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreDefender))
+        mask |= 1u << NOHUD_SCORE_DEFENDER;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreNode))
+        mask |= 1u << NOHUD_SCORE_NODE;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Bomb))
+        mask |= 1u << NOHUD_BOMB;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Boost))
+        mask |= 1u << NOHUD_BOOST;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Cloak))
+        mask |= 1u << NOHUD_CLOAK;
+    if (localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_DoubleDamage))
+        mask |= 1u << NOHUD_DOUBLE_DAMAGE;
+
+    NoHudPatch_Sync(
+        ActiveHudConfigState().noHudPatch,
+        state.nds,
+        state.romGroup,
+        mask);
+    CustomHud_MarkNoHudPatchDesired();
+
+    if (!state.isStartPressed && state.currentHP != 0 && !state.isGameOver)
+        ReadHudRuntimeAdventurePauseState(rom, state);
+    return !ShouldHideForGameplayState(
+        state.isStartPressed,
+        state.currentHP,
+        state.isGameOver,
+        state.isAdventure,
+        state.isMapOrUserActionPaused);
+}
+#endif
+
 // =========================================================================
 //  P-7: HUD Layout Editor unity fragment.
 //  The on-screen editor shares the runtime HUD statics and helpers above.

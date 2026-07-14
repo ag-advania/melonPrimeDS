@@ -488,7 +488,8 @@ bool ScreenPanel::getClipWantedForMelonPrime() const
 }
 #endif // MELONPRIME_DS
 
-ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
+ScreenPanel::ScreenPanel(QWidget* parent, bool allocateCpuOverlayStorage)
+    : QWidget(parent), cpuOverlayStorageEnabled(allocateCpuOverlayStorage)
 {
     setMouseTracking(true);
     setAttribute(Qt::WA_AcceptTouchEvents);
@@ -524,7 +525,8 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
 
-    splashLogo = QPixmap(":/melon-logo");
+    if (cpuOverlayStorageEnabled)
+        splashLogo = QPixmap(":/melon-logo");
 
     strncpy(splashText[0].text, "File->Open ROM...", 256);
     splashText[0].id = 0x80000000;
@@ -572,7 +574,8 @@ void ScreenPanel::reloadNoRomSplashLocalization()
     for (int i = 0; i < 2; ++i)
     {
         splashText[i].rendered = false;
-        splashText[i].bitmap = QImage();
+        if (cpuOverlayStorageEnabled)
+            splashText[i].bitmap = QImage();
     }
     m_splashRendered = false;
     osdMutex.unlock();

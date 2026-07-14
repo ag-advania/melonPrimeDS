@@ -75,7 +75,7 @@ class ScreenPanel : public QWidget
     Q_OBJECT
 
 public:
-    explicit ScreenPanel(QWidget* parent);
+    explicit ScreenPanel(QWidget* parent, bool allocateCpuOverlayStorage = true);
     virtual ~ScreenPanel();
 
     void setFilter(bool filter);
@@ -152,6 +152,7 @@ private slots:
 protected:
     MainWindow* mainWindow;
     EmuInstance* emuInstance;
+    const bool cpuOverlayStorageEnabled;
 
     bool filter;
 
@@ -177,7 +178,7 @@ protected:
 
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
-    int numScreens;
+    int numScreens = 0;
 
     bool touching = false;
 

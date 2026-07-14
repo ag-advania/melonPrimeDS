@@ -91,6 +91,19 @@ namespace MelonPrime {
     // Returns true when the radar overlay should be drawn on the top screen.
     bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Emu-thread-only Vulkan HUD preparation. Synchronizes the native HUD
+    // patch without allocating or rendering any QImage/QPainter surface and
+    // returns whether the GPU overlay should be visible for this frame.
+    bool CustomHud_SyncVulkanPatch(
+        CustomHudConfigState& hudConfig,
+        EmuInstance* emu,
+        Config::Table& localCfg,
+        const RomAddresses& rom,
+        uint8_t playerPosition,
+        bool isInGame);
+#endif
+
     // Per-frame, before RunFrame: keep the native helmet layers off across the
     // spawn window. No-op unless the helmet hide patch is currently applied;
     // start/death/pause frames are left untouched so native UI stays intact.

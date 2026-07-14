@@ -409,6 +409,17 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
     return presenter.presentFrame(frame, output, iterator->second, timeoutNs);
 }
 
+bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
+    VulkanSurfacePresenter& presenter,
+    int surfaceId,
+    const VulkanSurfaceOverlay& overlay)
+{
+    std::scoped_lock lock(stateMutex);
+    if (!initialized || activePresenter != &presenter)
+        return false;
+    return presenter.updateOverlay(surfaceId, overlay);
+}
+
 void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
 {
     std::scoped_lock lock(stateMutex);
