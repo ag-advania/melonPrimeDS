@@ -5,6 +5,7 @@
 #include "EmuInstance.h"
 #include "MelonPrimeVulkanFrontendSession.h"
 #include "Platform.h"
+#include "VulkanContext.h"
 
 #include "VulkanReference/VulkanSurfacePresenter.h"
 
@@ -13,51 +14,112 @@ using namespace MelonDSAndroid;
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     : ScreenPanelNative(parent)
 {
+    setAutoFillBackground(false);
+    setAttribute(Qt::WA_NativeWindow, true);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_PaintOnScreen, true);
 }
 
 ScreenPanelVulkan::~ScreenPanelVulkan()
 {
-    if (!presenter)
-        return;
-    emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
-    if (surfaceId != 0)
-        presenter->detachSurface(surfaceId);
-    presenter->shutdown();
+    if (presenter)
+    {
+        if (sessionPresenterRegistered)
+            emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
+        sessionPresenterRegistered = false;
+        if (surfaceId != 0)
+            presenter->detachSurface(surfaceId);
+        surfaceId = 0;
+    }
+    surfaceHost.destroy(melonDS::VulkanContext::Get().GetInstance());
+    if (presenter)
+        presenter->shutdown();
 }
 
 bool ScreenPanelVulkan::initVulkan()
 {
-#if !defined(_WIN32)
-    return false;
-#else
     presenter = std::make_unique<VulkanSurfacePresenter>();
     if (!presenter->init())
         return false;
 
-    const int initialWidth = std::max(width(), 1);
-    const int initialHeight = std::max(height(), 1);
-    surfaceId = presenter->attachSurface(
-        reinterpret_cast<void*>(static_cast<quintptr>(winId())),
-        static_cast<u32>(initialWidth),
-        static_cast<u32>(initialHeight));
-    if (surfaceId == 0 || !configureBasicSurface(initialWidth, initialHeight))
+    if (!ensureNativeSurface())
     {
+        if (surfaceId != 0)
+            presenter->detachSurface(surfaceId);
+        surfaceId = 0;
+        surfaceHost.destroy(melonDS::VulkanContext::Get().GetInstance());
         presenter->shutdown();
         presenter.reset();
         return false;
     }
 
     emuInstance->vulkanFrontendSession().registerPresenter(presenter.get());
+    sessionPresenterRegistered = true;
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info,
-        "[MelonPrime] Vulkan frontend session attached to Win32 surface\n");
+        "[MelonPrime] Vulkan frontend session attached to desktop surface generation %llu\n",
+        static_cast<unsigned long long>(surfaceHost.generation()));
     return true;
-#endif
 }
 
-bool ScreenPanelVulkan::configureBasicSurface(int newWidth, int newHeight)
+bool ScreenPanelVulkan::ensureNativeSurface()
+{
+    if (!presenter)
+        return false;
+    if (surfaceId != 0 && surfaceHost.matchesWidget(*this))
+        return true;
+
+    auto& context = melonDS::VulkanContext::Get();
+    auto& session = emuInstance->vulkanFrontendSession();
+    const bool presenterWasRegistered = sessionPresenterRegistered;
+    if (presenterWasRegistered)
+        session.unregisterPresenter(presenter.get());
+    if (surfaceId != 0)
+    {
+        presenter->detachSurface(surfaceId);
+        surfaceId = 0;
+    }
+    surfaceHost.destroy(context.GetInstance());
+    configuredWidth = 0;
+    configuredHeight = 0;
+
+    if (!surfaceHost.createForWidget(*this, context.GetInstance()))
+        return false;
+    const QSize size = surfaceHost.pixelSize();
+    surfaceId = presenter->attachSurface(
+        surfaceHost.surface(),
+        static_cast<u32>(size.width()),
+        static_cast<u32>(size.height()));
+    if (surfaceId == 0)
+    {
+        surfaceHost.destroy(context.GetInstance());
+        return false;
+    }
+
+    session.beginSurfaceGeneration(surfaceHost.generation());
+    if (configureBasicSurface(size.width(), size.height(), false))
+    {
+        if (presenterWasRegistered)
+            session.registerPresenter(presenter.get());
+        return true;
+    }
+
+    presenter->detachSurface(surfaceId);
+    surfaceId = 0;
+    surfaceHost.destroy(context.GetInstance());
+    return false;
+}
+
+bool ScreenPanelVulkan::configureBasicSurface(
+    int newWidth, int newHeight, bool managePresenterRegistration)
 {
     if (!presenter || surfaceId == 0 || newWidth <= 0 || newHeight <= 0)
         return false;
+
+    auto& session = emuInstance->vulkanFrontendSession();
+    const bool presenterWasRegistered =
+        managePresenterRegistration && sessionPresenterRegistered;
+    if (presenterWasRegistered)
+        session.unregisterPresenter(presenter.get());
 
     VulkanSurfaceConfig config{};
     const int halfHeight = std::max(newHeight / 2, 1);
@@ -70,14 +132,21 @@ bool ScreenPanelVulkan::configureBasicSurface(int newWidth, int newHeight)
         && !presenter->resizeSurface(
             surfaceId, static_cast<u32>(newWidth), static_cast<u32>(newHeight)))
     {
+        if (presenterWasRegistered)
+            session.registerPresenter(presenter.get());
         return false;
     }
     if (!presenter->configureSurface(surfaceId, config, {}))
+    {
+        if (presenterWasRegistered)
+            session.registerPresenter(presenter.get());
         return false;
+    }
 
     configuredWidth = newWidth;
     configuredHeight = newHeight;
-    emuInstance->vulkanFrontendSession().advanceSurfaceGeneration();
+    if (presenterWasRegistered)
+        session.registerPresenter(presenter.get());
     return true;
 }
 
@@ -89,11 +158,13 @@ bool ScreenPanelVulkan::captureVulkanFrame(const QString&)
 void ScreenPanelVulkan::drawScreen()
 {
     refreshClipForGameStateChange();
-    if (!presenter || surfaceId == 0 || !emuInstance->getEmuThread()->emuIsActive())
+    if (!presenter || !emuInstance->getEmuThread()->emuIsActive()
+        || !ensureNativeSurface())
         return;
 
-    const int currentWidth = std::max(width(), 1);
-    const int currentHeight = std::max(height(), 1);
+    const QSize pixelSize = surfaceHost.pixelSize();
+    const int currentWidth = pixelSize.width();
+    const int currentHeight = pixelSize.height();
     if ((currentWidth != configuredWidth || currentHeight != configuredHeight)
         && !configureBasicSurface(currentWidth, currentHeight))
     {

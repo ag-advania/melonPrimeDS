@@ -1,9 +1,6 @@
 #ifndef VULKANSURFACEPRESENTER_H
 #define VULKANSURFACEPRESENTER_H
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
 #include <memory>
 #include <string>
 #include <utility>
@@ -115,7 +112,9 @@ public:
     bool init();
     void shutdown();
 
-    int attachSurface(void* window, u32 width, u32 height);
+    // VkSurfaceKHR remains owned by MelonPrimeVulkanSurfaceHost. detachSurface
+    // releases swapchain/presenter resources but never destroys the surface.
+    int attachSurface(VkSurfaceKHR surface, u32 width, u32 height);
     bool resizeSurface(int surfaceId, u32 width, u32 height);
     bool configureSurface(int surfaceId, const VulkanSurfaceConfig& config, const VulkanBackgroundImage& backgroundImage);
     void detachSurface(int surfaceId);
@@ -229,14 +228,13 @@ private:
     struct SurfaceState
     {
         int id = 0;
-        void* window = nullptr;
         u32 requestedWidth = 0;
         u32 requestedHeight = 0;
         VkQueue presentQueue = VK_NULL_HANDLE;
         u32 presentQueueFamilyIndex = UINT32_MAX;
         bool separatePresentQueue = false;
 
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        VkSurfaceKHR surface = VK_NULL_HANDLE; // borrowed
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;

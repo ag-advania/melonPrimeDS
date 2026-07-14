@@ -599,18 +599,50 @@
    - producer leaseを持つ`Rendering`だけがpublish/discard可能、GUI consumerは`Ready`またはcompletion済み`Previous`だけをacquire可能とした。latest-ready選択、deadline、drop cause、previous reuse、backlog/statisticsは固定tagのpolicyを維持する。
 3. frame identityとgeneration gate
    - 各`Frame`へsource frame serial、renderer generation、surface generation、final `VkImage/VkImageView/layout`、composition semaphore/valueまたはfence、present timeline、queue stateを保持する。`VulkanOutput` resource生成・再利用・submit・破棄時に同じslot metadataを更新する。
-   - Queueはactive renderer/surface generationを保持し、publish時とpresent取得時に不一致を拒否する。renderer切替とsurface configure/resizeはgeneration更新とpresentation resyncを同じsession lock内で行い、旧surfaceのReady frameをGUIへ渡さない。
+   - Queueはactive renderer/surface generationを保持し、publish時とpresent取得時に不一致を拒否する。renderer切替とsurface generation更新はpresentation resyncを同じsession lock内で行い、旧surfaceのReady frameをGUIへ渡さない。R20でsurface generationをnative window identityへ接続した。
 4. history referenceとpresentation reference
    - `historyReferences`と`presentationReferences`を別fieldにし、`VulkanOutput`のtop/bottom renderer/composed historyとpresenter consumption completionをQueueへ同期する。
    - stale/drop/resync後もいずれかの参照が残るslotは`HistoryReferenced`へ退避し、両方が0になるまでfree queueへ戻さない。present中、history中、GUI lease中のslotはproducer steal対象にならない。
 5. producer/consumerとlifetime
    - EmuThread producerは参照completionを同期してから1 slotだけを取得し、complete 2D/3D identityを構築・composeして`Ready` publishする。ScreenPanel GUI consumerはQueue acquire後だけpresentし、成功時commit、失敗時deferする。
-   - presenter unregister/shutdownでは保持中present completionを完了まで解放してからowner pointerを外す。surface configure成功時にsurface generationを単調増加し、FrameQueue resyncを行う。
+   - presenter unregister/shutdownでは保持中present completionを完了まで解放してからowner pointerを外す。R20でnative surface再生成時だけprocess-wide surface generationを単調増加し、pixel resizeは同一surfaceのswapchain resizeとして分離した。
 6. 参照実装との差分
    - 固定tagのqueue policy、9-frame構成、latest/oldest選択、deadline/drop/reuse/statisticsを維持し、Android EGL/OpenGL resource fieldだけをdesktop Vulkan identityとR19明示ownership metadataへ置換した。
    - VulkanOutputが実image/resource owner、FrameQueueがslot lifecycle owner、VulkanSurfacePresenterがpresent completion ownerというfrontend責務境界を維持し、core GPU/RendererへQueueを追加していない。
 
 検証: Queue stateの直接書換えが`transitionFrameLocked()`内部だけであること、active producerが`Rendering`だけ、GUI取得が`Ready/Previous`だけ、renderer/surface generation gate、latest-ready drop、history/presentation別参照、参照中slotのfree/steal禁止、旧R18候補退避loop削除、Frameへのimage/view/layout/completion metadata反映、core側FrameQueue所有0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
+## R20 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/frontend/qt_sdl/MelonPrimeVulkanSurfaceHost.h/.cpp/.mm`
+   - `src/frontend/qt_sdl/MelonPrimeScreenVulkan.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp`
+   - `src/VulkanContext.cpp`
+   - `src/frontend/qt_sdl/CMakeLists.txt`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. sole surface owner
+   - desktop-only `MelonPrimeVulkanSurfaceHost`を追加し、`VkSurfaceKHR`生成・present queue解決・破棄を一元化した。`ScreenPanelVulkan`はhostを所有し、`VulkanSurfacePresenter`はborrowed surfaceからswapchain resourceだけを生成する。
+   - presenterからWin32 `HWND` cast、`vkCreateWin32SurfaceKHR`、`vkDestroySurfaceKHR`、`GetClientRect` fallbackを削除した。旧surfaceは必ず`detachSurface()`でswapchain/present completionを解放した後にhostが破棄する。
+3. platform adapters
+   - WindowsはQt `winId()`のdocumented `HWND`とmodule instanceから`vkCreateWin32SurfaceKHR`を呼ぶ。
+   - X11はQt 6.5+ `QNativeInterface::QX11Application::connection()`（旧QtはQPA connection resource）と`WId/xcb_window_t`から`vkCreateXcbSurfaceKHR`を呼ぶ。loaderがXCB surfaceを公開しない場合だけ同じQt interfaceの`Display*`でXlib surfaceへfallbackする。handle種別をcastで推測せず、Qt platform nameと実際にenable済みのinstance extensionをgateにする。
+   - Waylandは`QWaylandApplication::display()`とQt QPAのwindow `surface` resourceから`vkCreateWaylandSurfaceKHR`を呼ぶ。Wayland development packageが有効なbuildだけでcompileする。
+   - macOSはQt `NSView`へ`CAMetalLayer`を設定し、device pixel ratioを`contentsScale/drawableSize`へ反映して`vkCreateMetalSurfaceEXT`を呼ぶ。MoltenVK portability enumeration/subset経路を維持する。
+4. native generationとpixel size
+   - Vulkan panelを明示的なQt native child windowとして生成し、hostはdisplay/window identity（macOSは`NSView`と`CAMetalLayer`）を保存してdraw前に現在のQt native identityと比較する。fullscreen等でnative window/layerが変わった場合はdetach→destroy→create→attachを行い、process-wide単調generationをsession/FrameQueueへ渡す。
+   - `pixelSize()`はwidget logical sizeへ`devicePixelRatioF()`を適用する。単なるresize/DPI size変化はsurface generationを増やさず、presenterのrequested extentとswapchain dirtyだけを更新する。
+   - native recreationとsurface configure中はPresenterをsessionから一時unregisterし、FrameQueueのpresent completionを解放してEmuThread側参照を止める。初回attach/recreation中のconfigureは外側lifecycleだけが登録を管理し、nested unregister/registerを行わない。失敗後も再試行成功時に登録を復元するdesired-registration stateをScreenPanelが保持する。
+5. VulkanContext/CMake
+   - hostはsurface生成直後に`VulkanContext::ResolvePresentQueue(surface)`を呼び、presenterは解決済みqueue/familyをSurfaceStateへcopyする。coreはQt、QWidget、native handleを参照しない。
+   - Vulkan buildへWin32、XCB/Xlib、optional Wayland、Metal platform macroを選択的に追加し、AppleはObjective-C++/ARC hostとQuartzCoreを、Waylandは既存optional client packageを使用する。
+6. 参照実装との差分
+   - 固定tag presenterのsurface format、present mode、extent clamp、swapchain recovery、layout、descriptor、vertex、filter、pacing処理は変更していない。置換範囲はAndroid/Win32 surface creation boundaryとborrowed ownershipだけである。
+   - Android `ANativeWindow`、JNI、AHBを持ち込まず、Qt native interfaceはsurface host実装だけへ限定した。
+
+検証: `vkCreateWin32SurfaceKHR`/`vkCreateXcbSurfaceKHR`/`vkCreateWaylandSurfaceKHR`/`vkCreateMetalSurfaceEXT`と`vkDestroySurfaceKHR`がsurface hostだけに存在すること、presenterのnative handle/Win32 API参照0件、detach-before-destroy順、全create pathの`ResolvePresentQueue`、DPR pixel size、native child window/identity generation、surface lifecycleごとの単一register管理、coreのQt/QWidget参照0件、platform compile definitionsとconditional sourcesを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 

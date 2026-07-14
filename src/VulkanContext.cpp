@@ -74,7 +74,7 @@ VulkanPlatformRequirements SelectPlatformRequirements(
         requirements.InstanceFlags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
         requirements.PortabilityEnumerationEnabled = true;
     }
-#elif defined(__linux__)
+#elif defined(__unix__)
     const std::array<std::pair<const char*, VulkanDesktopSurfaceBackend>, 3> candidates = {{
         {kWaylandSurfaceExtension, VulkanDesktopSurfaceBackend::Wayland},
         {kXcbSurfaceExtension, VulkanDesktopSurfaceBackend::Xcb},

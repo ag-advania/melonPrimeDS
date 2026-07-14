@@ -330,6 +330,17 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1 VK_NO_PROTOTYPES=1)
     if (WIN32)
         target_compile_definitions(melonDS PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
+    elseif (APPLE)
+        target_compile_definitions(melonDS PRIVATE VK_USE_PLATFORM_METAL_EXT=1)
+        find_library(QUARTZCORE_LIB_VULKAN QuartzCore)
+        if (NOT QUARTZCORE_LIB_VULKAN)
+            message(FATAL_ERROR "MELONPRIME Vulkan requires the QuartzCore framework")
+        endif()
+        target_link_libraries(melonDS PRIVATE ${QUARTZCORE_LIB_VULKAN})
+    else()
+        target_compile_definitions(melonDS PRIVATE
+            VK_USE_PLATFORM_XCB_KHR=1
+            VK_USE_PLATFORM_XLIB_KHR=1)
     endif()
     target_sources(melonDS PRIVATE
         MelonPrimeVulkanInstanceHost.cpp
@@ -339,11 +350,20 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanUiCompat.h
         MelonPrimeScreenVulkan.cpp
         MelonPrimeScreenVulkan.h
+        MelonPrimeVulkanSurfaceHost.h
         MelonPrimeVulkanFrontendSession.cpp
         MelonPrimeVulkanFrontendSession.h
         VulkanReference/VulkanOutput.cpp
         VulkanReference/VulkanSurfacePresenter.cpp
         VulkanReference/FrameQueue.cpp)
+    if (APPLE)
+        target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceHost.mm)
+        set_source_files_properties(
+            MelonPrimeVulkanSurfaceHost.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    else()
+        target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceHost.cpp)
+    endif()
     target_include_directories(melonDS PRIVATE
         "${CMAKE_BINARY_DIR}/generated"
         "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference")
@@ -433,7 +453,9 @@ else()
         if (TARGET PkgConfig::WaylandClient)
             set(MELONPRIME_WAYLAND_ACTIVE ON)
             target_link_libraries(melonDS PRIVATE PkgConfig::WaylandClient)
-            target_compile_definitions(melonDS PRIVATE WAYLAND_ENABLED)
+            target_compile_definitions(melonDS PRIVATE
+                WAYLAND_ENABLED
+                $<$<BOOL:${MELONPRIME_VULKAN_ACTIVE}>:VK_USE_PLATFORM_WAYLAND_KHR=1>)
             target_sources(melonDS PRIVATE
                 ../duckstation/gl/context_egl_wayland.cpp
             )

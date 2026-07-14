@@ -59,7 +59,7 @@ public:
     bool initialize(melonDS::NDS& nds);
     void shutdown();
     void beginGeneration(u64 generation);
-    u64 advanceSurfaceGeneration();
+    void beginSurfaceGeneration(u64 generation);
 
     static bool captureCompletedSnapshot(
         const melonDS::GPU& gpu,

@@ -103,16 +103,15 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
     frameQueue.requestPresentationResync();
 }
 
-u64 MelonPrimeVulkanFrontendSession::advanceSurfaceGeneration()
+void MelonPrimeVulkanFrontendSession::beginSurfaceGeneration(u64 newGeneration)
 {
     std::scoped_lock lock(stateMutex);
-    activeSurfaceGeneration++;
-    if (activeSurfaceGeneration == 0)
-        activeSurfaceGeneration = 1;
+    if (newGeneration == 0 || activeSurfaceGeneration == newGeneration)
+        return;
+    activeSurfaceGeneration = newGeneration;
     frameInputs.clear();
     frameQueue.setActiveGenerations(activeGeneration, activeSurfaceGeneration);
     frameQueue.requestPresentationResync();
-    return activeSurfaceGeneration;
 }
 
 void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()

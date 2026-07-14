@@ -834,31 +834,30 @@ void VulkanSurfacePresenter::destroyTimestampQueryPool(VkQueryPool& queryPool)
     }
 }
 
-int VulkanSurfacePresenter::attachSurface(void* window, u32 width, u32 height)
+int VulkanSurfacePresenter::attachSurface(VkSurfaceKHR surface, u32 width, u32 height)
 {
-    if (!initialized || window == nullptr) return 0;
-#ifdef _WIN32
+    if (!initialized || surface == VK_NULL_HANDLE)
+        return 0;
+
     SurfaceState surfaceState{};
     surfaceState.id = nextSurfaceId++;
-    surfaceState.window = window;
     surfaceState.requestedWidth = width;
     surfaceState.requestedHeight = height;
-    VkWin32SurfaceCreateInfoKHR ci{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
-    ci.hinstance = GetModuleHandleW(nullptr);
-    ci.hwnd = static_cast<HWND>(window);
-    if (vkCreateWin32SurfaceKHR(instance, &ci, nullptr, &surfaceState.surface) != VK_SUCCESS) return 0;
+    surfaceState.surface = surface;
     auto& context = melonDS::VulkanContext::Get();
-    if (!context.ResolvePresentQueue(surfaceState.surface)) {
-        vkDestroySurfaceKHR(instance, surfaceState.surface, nullptr); return 0;
-    }
+    if (!context.IsPresentQueueResolved())
+        return 0;
     surfaceState.presentQueue = context.GetPresentQueue();
     surfaceState.presentQueueFamilyIndex = context.GetPresentQueueFamily();
     surfaceState.separatePresentQueue = context.RequiresSeparatePresentQueue();
-    if (!createSurfaceStateResources(surfaceState)) { vkDestroySurfaceKHR(instance, surfaceState.surface, nullptr); return 0; }
-    const int id=surfaceState.id; surfaces.emplace(id,std::move(surfaceState)); return id;
-#else
-    (void)width; (void)height; return 0;
-#endif
+    if (!createSurfaceStateResources(surfaceState))
+    {
+        destroySurfaceStateResources(surfaceState);
+        return 0;
+    }
+    const int id = surfaceState.id;
+    surfaces.emplace(id, std::move(surfaceState));
+    return id;
 }
 
 bool VulkanSurfacePresenter::resizeSurface(int surfaceId, u32 width, u32 height)
@@ -1424,11 +1423,9 @@ void VulkanSurfacePresenter::destroySurfaceStateResources(SurfaceState& surfaceS
         vkDestroyCommandPool(device, surfaceState.commandPool, nullptr);
     destroyTimestampQueryPool(surfaceState.timestampQueryPool);
 
-    if (surfaceState.surface != VK_NULL_HANDLE)
-        vkDestroySurfaceKHR(instance, surfaceState.surface, nullptr);
-
-    if (surfaceState.window != nullptr)
-        (void)0;
+    // VkSurfaceKHR is borrowed from MelonPrimeVulkanSurfaceHost. The frontend
+    // detaches the presenter before destroying that owner.
+    surfaceState.surface = VK_NULL_HANDLE;
 }
 
 bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
@@ -1466,23 +1463,6 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     u32 width = std::max<u32>(1u, surfaceState.requestedWidth);
     u32 height = std::max<u32>(1u, surfaceState.requestedHeight);
-#ifdef _WIN32
-    if ((surfaceState.requestedWidth == 0u || surfaceState.requestedHeight == 0u)
-        && surfaceState.window != nullptr)
-    {
-        RECT clientRect{};
-        if (GetClientRect(static_cast<HWND>(surfaceState.window), &clientRect) != 0)
-        {
-            const LONG clientWidth = clientRect.right - clientRect.left;
-            const LONG clientHeight = clientRect.bottom - clientRect.top;
-            if (surfaceState.requestedWidth == 0u)
-                width = static_cast<u32>(std::max<LONG>(1, clientWidth));
-            if (surfaceState.requestedHeight == 0u)
-                height = static_cast<u32>(std::max<LONG>(1, clientHeight));
-        }
-    }
-#endif
-
     VkExtent2D extent{};
     if (capabilities.currentExtent.width != UINT32_MAX)
     {
