@@ -130,6 +130,7 @@ public:
     bool MarkDeviceLost(const char* reason);
     [[nodiscard]] bool IsDeviceLost() const;
     [[nodiscard]] std::string DeviceLostReason() const;
+    bool CheckResult(VkResult result, const char* operation);
 
 private:
     VulkanContext() = default;

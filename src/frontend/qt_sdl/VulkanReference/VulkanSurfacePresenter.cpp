@@ -468,10 +468,13 @@ bool VulkanSurfacePresenter::init()
 
 void VulkanSurfacePresenter::shutdown()
 {
-    if (device != VK_NULL_HANDLE)
+    const bool deviceLost = melonDS::VulkanContext::Get().IsDeviceLost();
+    if (device != VK_NULL_HANDLE && !deviceLost)
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
-        vkQueueWaitIdle(queue);
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            vkQueueWaitIdle(queue),
+            "VulkanSurfacePresenter graphics queue shutdown");
     }
 
     clearPrewarmedRetroArchFilters();
@@ -480,6 +483,7 @@ void VulkanSurfacePresenter::shutdown()
     {
         detachSurface(surfaces.begin()->first);
     }
+    retiredResources.Drain(device, waitSemaphores, deviceLost);
 
     destroySyncObjects();
     destroyCommonResources();
@@ -968,6 +972,12 @@ void VulkanSurfacePresenter::detachSurface(int surfaceId)
 
 bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs)
 {
+    retiredResources.Collect(
+        device,
+        melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
+        melonDS::VulkanContext::Get().IsDeviceLost());
+    if (melonDS::VulkanContext::Get().IsDeviceLost())
+        return false;
     if (!initialized)
         return false;
 
@@ -1121,7 +1131,9 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             presentSkippedForDeadline++;
             continue;
         }
-        if (waitResult != VK_SUCCESS)
+        if (!melonDS::VulkanContext::Get().CheckResult(
+                waitResult,
+                "VulkanSurfacePresenter surface fence wait"))
         {
             surfaceWaitFailures++;
             continue;
@@ -1219,12 +1231,23 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR)
         {
             acquireFailures++;
-            recoverSwapchain(surfaceState, "vkAcquireNextImageKHR");
+            (void)melonDS::VulkanContext::Get().CheckResult(
+                acquireResult,
+                "VulkanSurfacePresenter vkAcquireNextImageKHR");
+            if (!melonDS::VulkanContext::Get().IsDeviceLost())
+                recoverSwapchain(surfaceState, "vkAcquireNextImageKHR");
             continue;
         }
 
         const u64 recordStartNs = PerfNowNs();
-        if (!recordSurfaceCommands(surfaceState, surfaceState.framebuffers[imageIndex], inputs, sampledImage, directPresent, drawCalls))
+        if (!recordSurfaceCommands(
+                surfaceState,
+                surfaceState.framebuffers[imageIndex],
+                imageIndex,
+                inputs,
+                sampledImage,
+                directPresent,
+                drawCalls))
         {
             recordFailures++;
             recoverSwapchain(surfaceState, "recordSurfaceCommands");
@@ -1238,7 +1261,8 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (!submitSurfaceCommands(surfaceState, imageIndex, surfacePresentCpuNs, surfacePresentTimelineValue))
         {
             submitFailures++;
-            recoverSwapchain(surfaceState, "submitSurfaceCommands");
+            if (!melonDS::VulkanContext::Get().IsDeviceLost())
+                recoverSwapchain(surfaceState, "submitSurfaceCommands");
             continue;
         }
         submitCpuNs += PerfNowNs() - submitStartNs;
@@ -1293,7 +1317,10 @@ bool VulkanSurfacePresenter::waitForFrameConsumption(Frame* frame, u64 timeoutNs
     waitInfo.pSemaphores = &timelineSemaphore;
     waitInfo.pValues = &frame->presentTimelineValue;
 
-    const bool waitOk = waitSemaphores(device, &waitInfo, timeoutNs) == VK_SUCCESS;
+    const VkResult waitResult = waitSemaphores(device, &waitInfo, timeoutNs);
+    const bool waitOk = melonDS::VulkanContext::Get().CheckResult(
+        waitResult,
+        "VulkanSurfacePresenter frame timeline wait");
     if (waitOk)
         frame->presentTimelineValue = 0;
     return waitOk;
@@ -1559,6 +1586,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(formats);
     VkPresentModeKHR presentMode = choosePresentMode(presentModes);
     auto failSwapchainConfig = [&](const char* stage, VkResult result) -> bool {
+        (void)melonDS::VulkanContext::Get().CheckResult(result, stage);
         const u64 configKey = makeSwapchainConfigKey(
             surfaceState.id,
             surfaceFormat.format,
@@ -1589,11 +1617,6 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
             : capabilities.currentTransform;
     bool swapchainCreated = false;
-    const std::array<u32, 2> sharingQueueFamilies = {
-        queueFamilyIndex,
-        surfaceState.presentQueueFamilyIndex,
-    };
-
     for (const VkPresentModeKHR candidatePresentMode : rankedPresentModes)
     {
         for (const VkSurfaceFormatKHR candidateFormat : rankedFormats)
@@ -1616,20 +1639,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             swapchainInfo.imageExtent = extent;
             swapchainInfo.imageArrayLayers = 1;
             swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-            if (surfaceState.separatePresentQueue)
-            {
-                // Concurrent sharing is the desktop-safe ownership path when
-                // graphics and present families differ. It avoids a second
-                // VkDevice and makes both family owners explicit.
-                swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-                swapchainInfo.queueFamilyIndexCount =
-                    static_cast<u32>(sharingQueueFamilies.size());
-                swapchainInfo.pQueueFamilyIndices = sharingQueueFamilies.data();
-            }
-            else
-            {
-                swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            }
+            swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
             swapchainInfo.preTransform = preTransform;
             swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
             swapchainInfo.presentMode = candidatePresentMode;
@@ -1643,6 +1653,13 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
                 presentMode = candidatePresentMode;
                 swapchainCreated = true;
                 break;
+            }
+            if (!melonDS::VulkanContext::Get().CheckResult(
+                    swapchainResult,
+                    "VulkanSurfacePresenter vkCreateSwapchainKHR")
+                && melonDS::VulkanContext::Get().IsDeviceLost())
+            {
+                return false;
             }
 
             failedSwapchainConfigs.insert(configKey);
@@ -1672,8 +1689,8 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
     attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference attachmentReference{};
     attachmentReference.attachment = 0;
@@ -1755,6 +1772,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     surfaceState.swapchainImageViews.resize(swapchainImageCount);
     surfaceState.framebuffers.resize(swapchainImageCount);
+    surfaceState.swapchainImageInitialized.assign(swapchainImageCount, false);
 
     for (u32 i = 0; i < swapchainImageCount; i++)
     {
@@ -1922,46 +1940,67 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
 void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
 {
-    if (surfaceState.swapchain != VK_NULL_HANDLE
-        && surfaceState.separatePresentQueue
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    if (!melonDS::VulkanContext::Get().IsDeviceLost()
         && surfaceState.presentQueue != VK_NULL_HANDLE)
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
-        (void)vkQueueWaitIdle(surfaceState.presentQueue);
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            vkQueueWaitIdle(surfaceState.presentQueue),
+            "VulkanSurfacePresenter pending present completion");
     }
 
-    for (VkFramebuffer framebuffer : surfaceState.framebuffers)
-    {
-        if (framebuffer != VK_NULL_HANDLE)
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
-    surfaceState.framebuffers.clear();
+    const VkDevice retireDevice = device;
+    std::vector<VkFramebuffer> framebuffers =
+        std::move(surfaceState.framebuffers);
+    std::vector<VkImageView> imageViews =
+        std::move(surfaceState.swapchainImageViews);
+    const VkPipeline pipeline =
+        std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
+    const VkRenderPass renderPass =
+        std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
+    const VkSwapchainKHR swapchain =
+        std::exchange(surfaceState.swapchain, VK_NULL_HANDLE);
 
-    for (VkImageView imageView : surfaceState.swapchainImageViews)
-    {
-        if (imageView != VK_NULL_HANDLE)
-            vkDestroyImageView(device, imageView, nullptr);
-    }
-    surfaceState.swapchainImageViews.clear();
     surfaceState.swapchainImages.clear();
+    surfaceState.swapchainImageInitialized.clear();
+    surfaceState.extent = {};
+    surfaceState.swapchainFormat = VK_FORMAT_UNDEFINED;
+    surfaceState.swapchainDirty = true;
+    surfaceState.screenDescriptorCache = {};
+    surfaceState.backgroundDescriptorCache = {};
+    surfaceState.cachedDrawCalls.clear();
 
-    if (surfaceState.pipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(device, surfaceState.pipeline, nullptr);
-        surfaceState.pipeline = VK_NULL_HANDLE;
-    }
-
-    if (surfaceState.renderPass != VK_NULL_HANDLE)
-    {
-        vkDestroyRenderPass(device, surfaceState.renderPass, nullptr);
-        surfaceState.renderPass = VK_NULL_HANDLE;
-    }
-
-    if (surfaceState.swapchain != VK_NULL_HANDLE)
-    {
-        vkDestroySwapchainKHR(device, surfaceState.swapchain, nullptr);
-        surfaceState.swapchain = VK_NULL_HANDLE;
-    }
+    retiredResources.RetireReady(
+        [retireDevice,
+         framebuffers = std::move(framebuffers),
+         imageViews = std::move(imageViews),
+         pipeline,
+         renderPass,
+         swapchain]() mutable {
+            for (VkFramebuffer framebuffer : framebuffers)
+            {
+                if (framebuffer != VK_NULL_HANDLE)
+                    vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
+            }
+            if (pipeline != VK_NULL_HANDLE)
+                vkDestroyPipeline(retireDevice, pipeline, nullptr);
+            if (renderPass != VK_NULL_HANDLE)
+                vkDestroyRenderPass(retireDevice, renderPass, nullptr);
+            for (VkImageView imageView : imageViews)
+            {
+                if (imageView != VK_NULL_HANDLE)
+                    vkDestroyImageView(retireDevice, imageView, nullptr);
+            }
+            if (swapchain != VK_NULL_HANDLE)
+                vkDestroySwapchainKHR(retireDevice, swapchain, nullptr);
+        });
+    retiredResources.Collect(
+        device,
+        melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
+        melonDS::VulkanContext::Get().IsDeviceLost());
 }
 
 void VulkanSurfacePresenter::recoverSwapchain(SurfaceState& surfaceState, const char* reason)
@@ -3611,6 +3650,7 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
 bool VulkanSurfacePresenter::recordSurfaceCommands(
     SurfaceState& surfaceState,
     VkFramebuffer framebuffer,
+    u32 imageIndex,
     const VulkanCompositionInputs& inputs,
     VkImage sampledImage,
     bool directPresent,
@@ -3631,102 +3671,54 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     if (vkBeginCommandBuffer(surfaceState.commandBuffer, &beginInfo) != VK_SUCCESS)
         return false;
 
+    if (imageIndex >= surfaceState.swapchainImages.size()
+        || imageIndex >= surfaceState.swapchainImageInitialized.size())
+        return false;
+    melonDS::VulkanR24Barrier::PresentToRender(
+        surfaceState.commandBuffer,
+        surfaceState.swapchainImages[imageIndex],
+        surfaceState.swapchainImageInitialized[imageIndex],
+        queueFamilyIndex,
+        surfaceState.presentQueueFamilyIndex);
+
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(surfaceState.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, surfaceState.timestampQueryPool, 0);
 
-    std::array<VkImageMemoryBarrier, 4> sourceBarriers{};
-    u32 sourceBarrierCount = 0;
-
-    auto appendImageBarrier = [&](VkImage image) {
-        if (image == VK_NULL_HANDLE)
-            return;
-
-        VkImageMemoryBarrier& barrier = sourceBarriers[sourceBarrierCount++];
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.layerCount = 1;
+    auto makeReadable = [&](VkImage image) {
+        melonDS::VulkanR24Barrier::CompositionWriteToPresenterRead(
+            surfaceState.commandBuffer,
+            image,
+            VK_IMAGE_LAYOUT_GENERAL);
     };
-
-    appendImageBarrier(sampledImage);
-    if (inputs.sourceImage != sampledImage && sourceBarrierCount < sourceBarriers.size())
-        appendImageBarrier(inputs.sourceImage);
+    makeReadable(sampledImage);
+    if (inputs.sourceImage != sampledImage)
+        makeReadable(inputs.sourceImage);
     if (inputs.previousTopSourceImage != sampledImage
-        && inputs.previousTopSourceImage != inputs.sourceImage
-        && sourceBarrierCount < sourceBarriers.size())
+        && inputs.previousTopSourceImage != inputs.sourceImage)
     {
-        appendImageBarrier(inputs.previousTopSourceImage);
+        makeReadable(inputs.previousTopSourceImage);
     }
     if (inputs.previousBottomSourceImage != sampledImage
-        && inputs.previousBottomSourceImage != inputs.sourceImage
-        && sourceBarrierCount < sourceBarriers.size())
+        && inputs.previousBottomSourceImage != inputs.sourceImage)
     {
-        appendImageBarrier(inputs.previousBottomSourceImage);
+        makeReadable(inputs.previousBottomSourceImage);
     }
 
-    if (sourceBarrierCount > 0)
-    {
-        vkCmdPipelineBarrier(
-            surfaceState.commandBuffer,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr,
-            sourceBarrierCount,
-            sourceBarriers.data()
-        );
-    }
-
-    std::array<VkBufferMemoryBarrier, 3> bufferBarriers{};
-    bufferBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    bufferBarriers[0].srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    bufferBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    bufferBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[0].buffer = inputs.topPackedBuffer;
-    bufferBarriers[0].offset = 0;
-    bufferBarriers[0].size = inputs.packedBufferSize;
-
-    bufferBarriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    bufferBarriers[1].srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    bufferBarriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    bufferBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[1].buffer = inputs.bottomPackedBuffer;
-    bufferBarriers[1].offset = 0;
-    bufferBarriers[1].size = inputs.packedBufferSize;
-
-    bufferBarriers[2].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    bufferBarriers[2].srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    bufferBarriers[2].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    bufferBarriers[2].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[2].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarriers[2].buffer = surfaceState.vertexBuffer;
-    bufferBarriers[2].offset = 0;
-    bufferBarriers[2].size = surfaceState.vertexBufferSize;
-
-    vkCmdPipelineBarrier(
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
         surfaceState.commandBuffer,
-        VK_PIPELINE_STAGE_HOST_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-        0,
-        0,
-        nullptr,
-        static_cast<u32>(bufferBarriers.size()),
-        bufferBarriers.data(),
-        0,
-        nullptr
-    );
+        inputs.topPackedBuffer,
+        inputs.packedBufferSize,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
+        surfaceState.commandBuffer,
+        inputs.bottomPackedBuffer,
+        inputs.packedBufferSize,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
+        surfaceState.commandBuffer,
+        surfaceState.vertexBuffer,
+        surfaceState.vertexBufferSize,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
 
     VkClearValue clearValue{};
     clearValue.color.float32[0] = 0.0f;
@@ -3835,6 +3827,12 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     }
 
     vkCmdEndRenderPass(surfaceState.commandBuffer);
+    melonDS::VulkanR24Barrier::RenderToPresent(
+        surfaceState.commandBuffer,
+        surfaceState.swapchainImages[imageIndex],
+        queueFamilyIndex,
+        surfaceState.presentQueueFamilyIndex);
+    surfaceState.swapchainImageInitialized[imageIndex] = true;
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(surfaceState.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, surfaceState.timestampQueryPool, 1);
@@ -3910,7 +3908,11 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
     }
     if (submitResult != VK_SUCCESS)
     {
-        (void)createInFlightFence(surfaceState, true);
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            submitResult,
+            "VulkanSurfacePresenter vkQueueSubmit");
+        if (!melonDS::VulkanContext::Get().IsDeviceLost())
+            (void)createInFlightFence(surfaceState, true);
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
             "VulkanSurfacePresenter: vkQueueSubmit failed for surface %d (%d)",
@@ -3936,6 +3938,9 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
 
     if (presentResult != VK_SUCCESS)
     {
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            presentResult,
+            "VulkanSurfacePresenter vkQueuePresentKHR");
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
             "VulkanSurfacePresenter: vkQueuePresentKHR failed for surface %d (%d)",

@@ -721,6 +721,16 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
     // renderer as unavailable so EmuThread falls back honestly.
     if (VulkanContext::Get().IsDeviceLost())
         return;
+    if (Device != VK_NULL_HANDLE)
+    {
+        RetiredResources.Collect(
+            Device,
+            VulkanContext::Get().GetSemaphoreCounterValue(),
+            false);
+    }
+    Texcache.GetLoader().SetRetirementPoint(
+        CompletionTimelineSemaphore,
+        LastCompletionTimelineValue);
     activeBackend().RenderFrame(gpu);
 }
 
@@ -1789,8 +1799,18 @@ bool VulkanRenderer3D::ensureInitialized()
 
 void VulkanRenderer3D::destroyVulkan()
 {
-    if (Device != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(Device);
+    const bool deviceLost = VulkanContext::Get().IsDeviceLost();
+    if (Device != VK_NULL_HANDLE && !deviceLost)
+    {
+        (void)VulkanContext::Get().CheckResult(
+            vkDeviceWaitIdle(Device),
+            "VulkanRenderer3D shutdown");
+    }
+    Texcache.GetLoader().DrainRetiredTextures();
+    RetiredResources.Drain(
+        Device,
+        VulkanContext::Get().GetWaitSemaphores(),
+        deviceLost);
 
     CaptureReadbackPending = false;
     PendingCaptureReadbackContext = nullptr;
@@ -2756,7 +2776,9 @@ bool VulkanRenderer3D::waitForQueueTail(const char* reason)
         ? vkWaitForFences(Device, 1, &tailFence, VK_TRUE, UINT64_MAX)
         : submitResult;
     vkDestroyFence(Device, tailFence, nullptr);
-    if (waitResult != VK_SUCCESS)
+    if (!VulkanContext::Get().CheckResult(
+            waitResult,
+            reason != nullptr ? reason : "VulkanRenderer3D queue tail"))
     {
         Log(
             LogLevel::Error,
@@ -5599,8 +5621,12 @@ bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
         destroySpanSetupBuffer();
         destroyWorkOffsetBuffer();
         destroyResultBuffer();
+        retireRenderTarget();
     }
-    destroyRenderTarget();
+    else
+    {
+        destroyRenderTarget();
+    }
 
     ColorImage = std::exchange(newColorImage, VK_NULL_HANDLE);
     ColorImageMemory = std::exchange(newColorMemory, VK_NULL_HANDLE);
@@ -5628,7 +5654,90 @@ bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
     invalidateAllGraphicsDescriptorSetCaches();
     updateDescriptorSet(nullptr);
     updateGraphicsDescriptorSet(nullptr);
+    RetiredResources.Collect(
+        Device,
+        VulkanContext::Get().GetSemaphoreCounterValue(),
+        VulkanContext::Get().IsDeviceLost());
     return true;
+}
+
+void VulkanRenderer3D::retireRenderTarget()
+{
+    invalidateAllDescriptorSetCaches();
+    invalidateAllGraphicsDescriptorSetCaches();
+
+    const VkDevice device = Device;
+    const VkFramebuffer finalFramebuffer =
+        std::exchange(GraphicsFinalFramebuffer, VK_NULL_HANDLE);
+    const VkFramebuffer rasterFramebuffer =
+        std::exchange(GraphicsRasterFramebuffer, VK_NULL_HANDLE);
+    const VkImageView depthStencilView =
+        std::exchange(DepthStencilImageView, VK_NULL_HANDLE);
+    const VkImage depthStencilImage =
+        std::exchange(DepthStencilImage, VK_NULL_HANDLE);
+    const VkDeviceMemory depthStencilMemory =
+        std::exchange(DepthStencilImageMemory, VK_NULL_HANDLE);
+    const VkImageView depthView =
+        std::exchange(DepthImageView, VK_NULL_HANDLE);
+    const VkImage depthImage =
+        std::exchange(DepthImage, VK_NULL_HANDLE);
+    const VkDeviceMemory depthMemory =
+        std::exchange(DepthImageMemory, VK_NULL_HANDLE);
+    const VkImageView attrView =
+        std::exchange(AttrImageView, VK_NULL_HANDLE);
+    const VkImage attrImage =
+        std::exchange(AttrImage, VK_NULL_HANDLE);
+    const VkDeviceMemory attrMemory =
+        std::exchange(AttrImageMemory, VK_NULL_HANDLE);
+    const VkImageView colorView =
+        std::exchange(ColorImageView, VK_NULL_HANDLE);
+    const VkImage colorImage =
+        std::exchange(ColorImage, VK_NULL_HANDLE);
+    const VkDeviceMemory colorMemory =
+        std::exchange(ColorImageMemory, VK_NULL_HANDLE);
+
+    ColorImageWidth = 0;
+    ColorImageHeight = 0;
+    ColorImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    AttrImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthStencilImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ColorImageInitialized = false;
+
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    RetiredResources.RetireReady(
+        [=]() {
+            if (finalFramebuffer != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(device, finalFramebuffer, nullptr);
+            if (rasterFramebuffer != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(device, rasterFramebuffer, nullptr);
+            if (depthStencilView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, depthStencilView, nullptr);
+            if (depthStencilImage != VK_NULL_HANDLE)
+                vkDestroyImage(device, depthStencilImage, nullptr);
+            if (depthStencilMemory != VK_NULL_HANDLE)
+                vkFreeMemory(device, depthStencilMemory, nullptr);
+            if (depthView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, depthView, nullptr);
+            if (depthImage != VK_NULL_HANDLE)
+                vkDestroyImage(device, depthImage, nullptr);
+            if (depthMemory != VK_NULL_HANDLE)
+                vkFreeMemory(device, depthMemory, nullptr);
+            if (attrView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, attrView, nullptr);
+            if (attrImage != VK_NULL_HANDLE)
+                vkDestroyImage(device, attrImage, nullptr);
+            if (attrMemory != VK_NULL_HANDLE)
+                vkFreeMemory(device, attrMemory, nullptr);
+            if (colorView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, colorView, nullptr);
+            if (colorImage != VK_NULL_HANDLE)
+                vkDestroyImage(device, colorImage, nullptr);
+            if (colorMemory != VK_NULL_HANDLE)
+                vkFreeMemory(device, colorMemory, nullptr);
+        });
 }
 
 void VulkanRenderer3D::destroyRenderTarget()
@@ -9587,6 +9696,13 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
         context->CompletionValue = completionValue;
     }
     LastCompletionTimelineValue = completionValue;
+    Texcache.GetLoader().SetRetirementPoint(
+        CompletionTimelineSemaphore,
+        LastCompletionTimelineValue);
+    RetiredResources.Collect(
+        Device,
+        VulkanContext::Get().GetSemaphoreCounterValue(),
+        VulkanContext::Get().IsDeviceLost());
 
     if (timestampQueryPool != VK_NULL_HANDLE)
     {
@@ -9753,7 +9869,8 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     {
         const u64 waitStartNs = PerfNowNs();
         const VkResult waitResult = vkWaitForFences(Device, 1, &frameFence, VK_TRUE, UINT64_MAX);
-        if (waitResult != VK_SUCCESS)
+        if (!VulkanContext::Get().CheckResult(
+                waitResult, "VulkanRenderer3D graphics fence wait"))
         {
             Log(LogLevel::Error, "VulkanRenderer3D: graphics vkWaitForFences failed (%d)", static_cast<int>(waitResult));
             return false;
@@ -11327,7 +11444,8 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
         const VkResult submitResult = vkQueueSubmit(Queue, 1, &submitInfo, frameFence);
-        if (submitResult != VK_SUCCESS)
+        if (!VulkanContext::Get().CheckResult(
+                submitResult, "VulkanRenderer3D graphics vkQueueSubmit"))
         {
             Log(LogLevel::Error, "VulkanRenderer3D: graphics vkQueueSubmit failed (%d)", static_cast<int>(submitResult));
             return false;
@@ -11342,6 +11460,13 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
         context->CompletionValue = completionValue;
     }
     LastCompletionTimelineValue = completionValue;
+    Texcache.GetLoader().SetRetirementPoint(
+        CompletionTimelineSemaphore,
+        LastCompletionTimelineValue);
+    RetiredResources.Collect(
+        Device,
+        VulkanContext::Get().GetSemaphoreCounterValue(),
+        VulkanContext::Get().IsDeviceLost());
 
     if (timestampQueryPool != VK_NULL_HANDLE)
     {

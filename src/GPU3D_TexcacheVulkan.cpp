@@ -1,5 +1,6 @@
 #include <cstring>
 #include <mutex>
+#include <utility>
 
 #include "GPU3D_TexcacheVulkan.h"
 
@@ -21,15 +22,48 @@ TexcacheVulkanLoader::~TexcacheVulkanLoader()
         CleanupVulkanState();
 }
 
+void TexcacheVulkanLoader::SetRetirementPoint(
+    VkSemaphore timelineSemaphore,
+    u64 timelineValue)
+{
+    if (State == nullptr)
+        return;
+
+    State->RetirementTimeline = timelineSemaphore;
+    State->RetirementValue = timelineValue;
+    if (State->Device != VK_NULL_HANDLE)
+    {
+        auto& context = VulkanContext::Get();
+        State->RetiredTextures.Collect(
+            State->Device,
+            context.GetSemaphoreCounterValue(),
+            context.IsDeviceLost());
+    }
+}
+
+void TexcacheVulkanLoader::DrainRetiredTextures()
+{
+    if (State == nullptr || State->Device == VK_NULL_HANDLE)
+        return;
+
+    auto& context = VulkanContext::Get();
+    State->RetiredTextures.Drain(
+        State->Device,
+        context.GetWaitSemaphores(),
+        context.IsDeviceLost());
+}
+
 bool TexcacheVulkanLoader::EnsureVulkanState()
 {
     if (State == nullptr)
         State = std::make_shared<SharedState>();
 
     if (State->Device != VK_NULL_HANDLE)
-        return true;
+        return !VulkanContext::Get().IsDeviceLost();
 
     auto& context = VulkanContext::Get();
+    if (context.IsDeviceLost())
+        return false;
     if (!context.Acquire())
     {
         Platform::Log(Platform::LogLevel::Error, "TexcacheVulkan: failed to acquire Vulkan context");
@@ -90,7 +124,20 @@ void TexcacheVulkanLoader::CleanupVulkanState()
         return;
 
     if (State->Device != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(State->Device);
+    {
+        auto& context = VulkanContext::Get();
+        if (!context.IsDeviceLost() && State->Queue != VK_NULL_HANDLE)
+        {
+            std::scoped_lock queueLock(context.GetQueueLock());
+            (void)context.CheckResult(
+                vkQueueWaitIdle(State->Queue),
+                "TexcacheVulkan vkQueueWaitIdle during shutdown");
+        }
+        State->RetiredTextures.Drain(
+            State->Device,
+            context.GetWaitSemaphores(),
+            context.IsDeviceLost());
+    }
 
     for (auto& [handle, textureArray] : State->TextureArrays)
     {
@@ -99,6 +146,8 @@ void TexcacheVulkanLoader::CleanupVulkanState()
     }
     State->TextureArrays.clear();
     State->NextHandle = 1;
+    State->RetirementTimeline = VK_NULL_HANDLE;
+    State->RetirementValue = 0;
 
     if (State->UploadFence != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
     {
@@ -309,9 +358,20 @@ TexcacheVulkanLoader::TextureHandle TexcacheVulkanLoader::GenerateTexture(u32 wi
         return 0;
     }
 
-    if (vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-        || vkResetFences(State->Device, 1, &State->UploadFence) != VK_SUCCESS
-        || vkResetCommandBuffer(State->CommandBuffer, 0) != VK_SUCCESS)
+    const VkResult initialWaitResult = vkWaitForFences(
+        State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX);
+    const VkResult initialResetFenceResult = initialWaitResult == VK_SUCCESS
+        ? vkResetFences(State->Device, 1, &State->UploadFence)
+        : initialWaitResult;
+    const VkResult initialResetCommandResult = initialResetFenceResult == VK_SUCCESS
+        ? vkResetCommandBuffer(State->CommandBuffer, 0)
+        : initialResetFenceResult;
+    if (!VulkanContext::Get().CheckResult(
+            initialWaitResult, "TexcacheVulkan initial upload fence")
+        || !VulkanContext::Get().CheckResult(
+            initialResetFenceResult, "TexcacheVulkan initial fence reset")
+        || !VulkanContext::Get().CheckResult(
+            initialResetCommandResult, "TexcacheVulkan initial command reset"))
     {
         Platform::Log(Platform::LogLevel::Error, "TexcacheVulkan: failed to prepare upload sync objects");
         DestroyTextureArray(textureArray);
@@ -369,14 +429,19 @@ TexcacheVulkanLoader::TextureHandle TexcacheVulkanLoader::GenerateTexture(u32 wi
     submitInfo.pCommandBuffers = &State->CommandBuffer;
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
-        if (vkQueueSubmit(State->Queue, 1, &submitInfo, State->UploadFence) != VK_SUCCESS)
+        const VkResult submitResult = vkQueueSubmit(
+            State->Queue, 1, &submitInfo, State->UploadFence);
+        if (!VulkanContext::Get().CheckResult(
+                submitResult, "TexcacheVulkan initial texture upload"))
         {
             DestroyTextureArray(textureArray);
             return 0;
         }
     }
 
-    if (vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+    if (!VulkanContext::Get().CheckResult(
+            vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX),
+            "TexcacheVulkan initial upload completion"))
     {
         DestroyTextureArray(textureArray);
         return 0;
@@ -425,9 +490,20 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     std::memcpy(mappedMemory, data, layerPixelCount * sizeof(u32));
     vkUnmapMemory(State->Device, textureArray.StagingMemory);
 
-    if (vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-        || vkResetFences(State->Device, 1, &State->UploadFence) != VK_SUCCESS
-        || vkResetCommandBuffer(State->CommandBuffer, 0) != VK_SUCCESS)
+    const VkResult updateWaitResult = vkWaitForFences(
+        State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX);
+    const VkResult updateResetFenceResult = updateWaitResult == VK_SUCCESS
+        ? vkResetFences(State->Device, 1, &State->UploadFence)
+        : updateWaitResult;
+    const VkResult updateResetCommandResult = updateResetFenceResult == VK_SUCCESS
+        ? vkResetCommandBuffer(State->CommandBuffer, 0)
+        : updateResetFenceResult;
+    if (!VulkanContext::Get().CheckResult(
+            updateWaitResult, "TexcacheVulkan update upload fence")
+        || !VulkanContext::Get().CheckResult(
+            updateResetFenceResult, "TexcacheVulkan update fence reset")
+        || !VulkanContext::Get().CheckResult(
+            updateResetCommandResult, "TexcacheVulkan update command reset"))
         return;
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -523,11 +599,16 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     submitInfo.pCommandBuffers = &State->CommandBuffer;
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
-        if (vkQueueSubmit(State->Queue, 1, &submitInfo, State->UploadFence) != VK_SUCCESS)
+        const VkResult submitResult = vkQueueSubmit(
+            State->Queue, 1, &submitInfo, State->UploadFence);
+        if (!VulkanContext::Get().CheckResult(
+                submitResult, "TexcacheVulkan texture upload"))
             return;
     }
 
-    (void)vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX);
+    (void)VulkanContext::Get().CheckResult(
+        vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX),
+        "TexcacheVulkan texture upload fence");
 }
 
 void TexcacheVulkanLoader::DeleteTexture(TextureHandle handle)
@@ -539,11 +620,34 @@ void TexcacheVulkanLoader::DeleteTexture(TextureHandle handle)
     if (it == State->TextureArrays.end())
         return;
 
-    DestroyTextureArray(it->second);
+    TextureArray retired = std::move(it->second);
     State->TextureArrays.erase(it);
-
-    if (State->TextureArrays.empty())
-        CleanupVulkanState();
+    const VkDevice retireDevice = State->Device;
+    const u64 retirementValue = State->RetirementValue;
+    const VkSemaphore retirementTimeline = retirementValue != 0
+        ? State->RetirementTimeline
+        : VK_NULL_HANDLE;
+    State->RetiredTextures.Retire(
+        retirementTimeline,
+        retirementValue,
+        VK_NULL_HANDLE,
+        [retireDevice, retired = std::move(retired)]() mutable {
+            if (retireDevice == VK_NULL_HANDLE)
+                return;
+            const VkDevice device = retireDevice;
+            if (retired.Sampler != VK_NULL_HANDLE)
+                vkDestroySampler(device, retired.Sampler, nullptr);
+            if (retired.ArrayView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, retired.ArrayView, nullptr);
+            if (retired.StagingBuffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(device, retired.StagingBuffer, nullptr);
+            if (retired.StagingMemory != VK_NULL_HANDLE)
+                vkFreeMemory(device, retired.StagingMemory, nullptr);
+            if (retired.Image != VK_NULL_HANDLE)
+                vkDestroyImage(device, retired.Image, nullptr);
+            if (retired.Memory != VK_NULL_HANDLE)
+                vkFreeMemory(device, retired.Memory, nullptr);
+        });
 }
 
 bool TexcacheVulkanLoader::GetTextureDescriptor(TextureHandle handle, VkDescriptorImageInfo* outImageInfo) const

@@ -125,8 +125,17 @@ void VulkanContext::SetCompatibilityOverrides(
 bool VulkanContext::Acquire()
 {
     std::lock_guard<std::mutex> lock(ContextLock);
-    if (ReferenceCount++)
+    {
+        std::lock_guard<std::mutex> lossLock(DeviceLossLock);
+        if (DeviceLostFlag)
+            return false;
+    }
+    if (ReferenceCount != 0)
+    {
+        ++ReferenceCount;
         return Device != VK_NULL_HANDLE;
+    }
+    ReferenceCount = 1;
     if (!initializeLocked())
     {
         ReferenceCount = 0;
@@ -147,7 +156,10 @@ void VulkanContext::Release()
 bool VulkanContext::IsReady() const
 {
     std::lock_guard<std::mutex> lock(ContextLock);
-    return Device != VK_NULL_HANDLE;
+    if (Device == VK_NULL_HANDLE)
+        return false;
+    std::lock_guard<std::mutex> lossLock(DeviceLossLock);
+    return !DeviceLostFlag;
 }
 
 bool VulkanContext::MarkDeviceLost(const char* reason)
@@ -175,6 +187,15 @@ std::string VulkanContext::DeviceLostReason() const
 {
     std::lock_guard<std::mutex> lock(DeviceLossLock);
     return DeviceLostReasonText;
+}
+
+bool VulkanContext::CheckResult(VkResult result, const char* operation)
+{
+    if (result == VK_SUCCESS)
+        return true;
+    if (result == VK_ERROR_DEVICE_LOST)
+        MarkDeviceLost(operation != nullptr ? operation : "Vulkan operation");
+    return false;
 }
 
 bool VulkanContext::initializeLocked()
@@ -491,7 +512,13 @@ void VulkanContext::shutdownLocked()
 {
     if (Device != VK_NULL_HANDLE)
     {
-        vkDeviceWaitIdle(Device);
+        bool deviceLost = false;
+        {
+            std::lock_guard<std::mutex> lossLock(DeviceLossLock);
+            deviceLost = DeviceLostFlag;
+        }
+        if (!deviceLost)
+            (void)CheckResult(vkDeviceWaitIdle(Device), "vkDeviceWaitIdle during VulkanContext shutdown");
         vkDestroyDevice(Device, nullptr);
     }
     Device = VK_NULL_HANDLE;

@@ -739,6 +739,38 @@
 
 検証: `GPU.cpp`のVCount==0における`VulkanFrameSerial`単一incrementとcapture screen-swap latch、`GPU_Soft.cpp`の`EndStructured2DFrame()`による384-line complete gateとdouble-buffer publish、`MelonPrimeVulkanFrontendSession.cpp`の`captureCompletedSnapshot()`/`submitCompletedFrame()`における生成元snapshotと`Vulkan3DFrameView`のserial/generation一致チェック、`EmuInstance.cpp`の`submitVulkanFrontendFrame()`が`RunFrame()`直後の単一呼び出し点であること、`EmuThread.cpp`のouter loopでRunning/FrameStepが同一`frameAdvanceOnce()`経路を共有しPausedがsubmit自体をスキップすること、GUI側API（`acquirePresentFrame`等）がlive GPU stateを読まないことを実装コードの読解で確認した。source変更が無いため、`.claude\skills\build-mingw-vulkan-existing.bat`は実行しなかった（既存build treeに影響なし）。`git diff --check`成功。
 
+## R24 — 2026-07-14 実装・Windows Vulkanビルド完了
+
+1. 変更したファイル
+   - `src/VulkanR24Sync.h`
+   - `src/VulkanContext.h/.cpp`
+   - `src/GPU3D_Vulkan.h/.cpp`
+   - `src/GPU3D_TexcacheVulkan.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h/.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. 新しく追加した型、関数、resource
+   - completion timeline value／fenceと破棄callbackを関連付ける`VulkanRetireQueue`。
+   - `HostWriteToShaderRead`、`TransferWriteToShaderRead`、`ColorAttachmentToSampled`、`StorageWriteToSampled`、`ShaderWriteToIndirectRead`、`CompositionWriteToPresenterRead`、`PresentToRender`、`RenderToPresent`。
+   - `VulkanContext::CheckResult()`による`VK_ERROR_DEVICE_LOST`の一元ラッチ。
+3. 削除した旧経路
+   - 別queue familyのswapchainを`VK_SHARING_MODE_CONCURRENT`だけで処理する経路を削除し、EXCLUSIVE imageの明示ownership transferへ統一した。
+   - resize時の旧render target、旧FrameQueue slot image、無効texture、旧swapchain resourceの直接破棄をretire queue経路へ置換した。
+   - device loss後のqueue submit／acquire／present再試行を停止した。
+4. 所有権とframe lifecycleの変更
+   - 3D completion valueがtexture／render-target retirement point、composition completion valueまたはslot fenceがVulkanOutput frame resource retirement pointになる。
+   - swapchain imageはacquire後にpresent familyからgraphics familyへ移し、render pass完了後にpresent familyへ戻す。同一familyではqueue family indexを`VK_QUEUE_FAMILY_IGNORED`にする。
+   - teardownは新規publish停止済みの上位ownerから、present completion、FrameQueue/output、3D/texture、surface、contextの順を維持し、各ownerが自身のretire queueをtimeline破棄前にdrainする。
+5. 参照実装との差分
+   - barrier／retire／desktop present-family ownershipはAndroid参照に対応物がないdesktop-only adapterである。
+   - Sapphireのraster、texture decode、composition、present layout、descriptor/push-constant ABIは変更していない。
+6. 後続フェーズへ渡すinterface
+   - R25 pipeline cache replacementを安全にretireできる共通queue。
+   - R26 cleanup後も利用できるdevice-loss result gateと用途別barrier API。
+
+検証: 対象blob SHA、target fileの未commit差分、exact anchor、`git diff --check`を確認した。Windows正規入口`.claude\skills\build-mingw-vulkan.bat --jobs 1`が成功し、本見出しを「実装・Windows Vulkanビルド完了」へ更新した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

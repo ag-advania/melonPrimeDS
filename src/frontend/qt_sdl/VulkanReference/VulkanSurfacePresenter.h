@@ -15,6 +15,7 @@
 #include "VulkanRetroArchFilterChain.h"
 #include "VulkanFilterMode.h"
 #include "types.h"
+#include "VulkanR24Sync.h"
 
 namespace MelonDSAndroid
 {
@@ -292,6 +293,7 @@ private:
         std::vector<VkImage> swapchainImages;
         std::vector<VkImageView> swapchainImageViews;
         std::vector<VkFramebuffer> framebuffers;
+        std::vector<bool> swapchainImageInitialized;
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
@@ -372,6 +374,7 @@ private:
     bool recordSurfaceCommands(
         SurfaceState& surfaceState,
         VkFramebuffer framebuffer,
+        u32 imageIndex,
         const VulkanCompositionInputs& inputs,
         VkImage sampledImage,
         bool directPresent,
@@ -431,6 +434,7 @@ private:
     bool timestampQueriesSupported = false;
 
     std::unordered_map<int, SurfaceState> surfaces;
+    melonDS::VulkanRetireQueue retiredResources;
     PerfSampleWindow<120> descriptorCpuWindow;
     PerfSampleWindow<120> vertexCpuWindow;
     PerfSampleWindow<120> waitCpuWindow;

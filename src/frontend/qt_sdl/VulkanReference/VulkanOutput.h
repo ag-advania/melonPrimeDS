@@ -14,6 +14,7 @@
 #include "types.h"
 #include "VulkanPerfStats.h"
 #include "VulkanStructuredControlAbi.h"
+#include "VulkanR24Sync.h"
 
 namespace melonDS
 {
@@ -548,6 +549,7 @@ private:
     VkImageView cachedAccumulateBottomSourceView{VK_NULL_HANDLE};
 
     std::unordered_map<Frame*, FrameResource> resources;
+    melonDS::VulkanRetireQueue retiredResources;
     std::mutex commandPoolLock;
     Frame* lastPreparedFrame{nullptr};
     Frame* lastTopRendererSourceFrame{nullptr};

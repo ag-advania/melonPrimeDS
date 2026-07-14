@@ -7,6 +7,7 @@
 #include <volk.h>
 
 #include "GPU3D_Texcache.h"
+#include "VulkanR24Sync.h"
 
 namespace melonDS
 {
@@ -24,6 +25,8 @@ public:
     void DeleteTexture(TextureHandle handle);
     bool GetTextureDescriptor(TextureHandle handle, VkDescriptorImageInfo* outImageInfo) const;
     bool IsTextureLayerOpaque(TextureHandle handle, u32 layer) const;
+    void SetRetirementPoint(VkSemaphore timelineSemaphore, u64 timelineValue);
+    void DrainRetiredTextures();
 
 private:
     struct TextureArray
@@ -47,6 +50,9 @@ private:
     {
         TextureHandle NextHandle = 1;
         std::unordered_map<TextureHandle, TextureArray> TextureArrays;
+        VkSemaphore RetirementTimeline = VK_NULL_HANDLE;
+        u64 RetirementValue = 0;
+        VulkanRetireQueue RetiredTextures;
 
         bool ContextAcquired = false;
         VkDevice Device = VK_NULL_HANDLE;

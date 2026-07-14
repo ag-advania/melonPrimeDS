@@ -28,6 +28,7 @@
 #include "GPU3D_AcceleratedFrontend.h"
 #include "GPU3D_TexcacheVulkan.h"
 #include "VulkanPerfStats.h"
+#include "VulkanR24Sync.h"
 
 namespace melonDS
 {
@@ -461,6 +462,7 @@ private:
     std::string buildPipelineCacheFileName(TextureSamplingPath samplingPath) const;
 
     bool ensureRenderTarget(u32 width, u32 height);
+    void retireRenderTarget();
     void destroyRenderTarget();
     bool waitForQueueTail(const char* reason);
     static void TransitionImage(
@@ -744,6 +746,7 @@ private:
     VkSemaphore CompletionTimelineSemaphore = VK_NULL_HANDLE;
     u64 NextCompletionTimelineValue = 0;
     u64 LastCompletionTimelineValue = 0;
+    VulkanRetireQueue RetiredResources;
     RasterDispatchPath ActiveRasterDispatchPath = RasterDispatchPath::DirectTiles;
     bool CpuTileBinningEnabled = false;
 
