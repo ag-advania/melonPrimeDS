@@ -6,7 +6,9 @@
 
 #include <assert.h>
 #include <unordered_map>
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <utility>
+#endif
 #include <vector>
 
 #define XXH_STATIC_LINKING_ONLY
@@ -93,8 +95,12 @@ public:
         return false;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     template <typename BeforeMutationT>
     bool Update(u8& clrBitmapDirty, BeforeMutationT&& beforeMutation)
+#else
+    bool Update(u8& clrBitmapDirty)
+#endif
     {
         auto textureDirty = GPU.VRAMDirty_Texture.DeriveState(GPU.VRAMMap_Texture, GPU);
         auto texPalDirty = GPU.VRAMDirty_TexPal.DeriveState(GPU.VRAMMap_TexPal, GPU);
@@ -106,7 +112,9 @@ public:
 
         if (textureChanged || texPalChanged)
         {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
             std::forward<BeforeMutationT>(beforeMutation)();
+#endif
 
             // check if slots 2 and 3 are dirty (for the clear bitmap)
             for (u32 j = (0x40000/(VRAMDirtyGranularity*64)); j < (0x60000/(VRAMDirtyGranularity*64)); j++)
@@ -167,10 +175,12 @@ public:
         return false;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool Update(u8& clrBitmapDirty)
     {
         return Update(clrBitmapDirty, []() {});
     }
+#endif
 
     void GetTexture(u32 texParam, u32 palBase, TexHandleT& textureHandle, u32& layer, u32*& helper)
     {

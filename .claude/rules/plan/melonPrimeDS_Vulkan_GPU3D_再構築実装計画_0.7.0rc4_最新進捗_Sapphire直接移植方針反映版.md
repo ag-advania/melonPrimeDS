@@ -556,7 +556,7 @@
    - R18が唯一のfinal composition入力としてconsumeするcomplete `SapphireStructured2DFrameSnapshot`と、physical top/bottomへlatch済み`MelonPrimeStructuredSnapshot`。
    - `VulkanRenderer3D`はGPU-resident 3D target/captureとcompletion metadataだけを所有し、2D data lifetimeから独立した。
 
-検証: `VulkanRenderer3D`内のstructured CPU array/getter/sink参照0件、source側384-line complete gate、double-buffer publish、engine順storage、frontendだけのtop/bottom変換、Control packer一経路、2D/3D frame serial一致、regular Vulkan CPU final write省略、非Vulkan fallback維持、共通追加箇所の二重build gateを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+検証: `VulkanRenderer3D`内のstructured CPU array/getter/sink参照0件、source側384-line complete gate、double-buffer publish、engine順storage、frontendだけのtop/bottom変換、Control packer一経路、2D/3D frame serial一致、regular Vulkan CPU final write省略、非Vulkan fallback維持、共通追加箇所の二重build gateを静的監査。追加追試で`GPU_Soft.cpp`のVulkan専用標準headerと`GPU3D_Texcache.h`のmutation callback APIも二重build gateへ隔離し、旧compatibility pathのcoverage-fix aggregate初期化をfield単位代入へ修正した。`MELONPRIME_DS`あり／Vulkanなし、および両macroなしの2条件で`GPU.cpp`、`GPU_Soft.cpp`、`GPU2D_Soft.cpp`、`GPU3D.cpp`、`GPU3D_Texcache.cpp`の構文確認に成功し、Vulkanあり条件では`GPU_Soft.cpp`、`GPU3D_Texcache.cpp`、`GPU3D_Vulkan.cpp`の構文確認に成功した。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
 ## R18 — 2026-07-14 実装完了
 

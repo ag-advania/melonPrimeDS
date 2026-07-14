@@ -20,8 +20,10 @@
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <algorithm>
 #include <cstring>
+#endif
 
 namespace melonDS
 {

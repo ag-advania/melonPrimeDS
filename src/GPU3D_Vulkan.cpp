@@ -13408,16 +13408,16 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
             continue;
         }
 
-        const AcceleratedCoverageFixState coverageFixState = ResolveAcceleratedCoverageFix(
-            *polygon,
-            AcceleratedCoverageFixConfig{
-                CoverageFixEnabled,
-                CoverageFixPx,
-                CoverageFixApplyRepeat,
-                CoverageFixApplyClamp,
-                PassiveCoverageFixRepeatPx,
-                disablePassiveRepeatCoverageExpand,
-            });
+        AcceleratedCoverageFixConfig coverageFixConfig{};
+        coverageFixConfig.Enabled = CoverageFixEnabled;
+        coverageFixConfig.UserPx = CoverageFixPx;
+        coverageFixConfig.DepthBias = CoverageFixDepthBias;
+        coverageFixConfig.ApplyRepeat = CoverageFixApplyRepeat;
+        coverageFixConfig.ApplyClamp = CoverageFixApplyClamp;
+        coverageFixConfig.PassiveRepeatPx = PassiveCoverageFixRepeatPx;
+        coverageFixConfig.DisablePassiveRepeat = disablePassiveRepeatCoverageExpand;
+        const AcceleratedCoverageFixState coverageFixState =
+            ResolveAcceleratedCoverageFix(*polygon, coverageFixConfig);
         const float effectiveCoverageFixPx = coverageFixState.EffectivePx;
         const float effectiveCoverageDepthBias =
             coverageFixState.ApplyUserFix ? coverageDepthBias : 0.0f;
