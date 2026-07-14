@@ -64,23 +64,31 @@ inline bool VideoSettingsDialog::UsesGL()
 #endif // MELONPRIME_DS
 }
 
+#ifdef MELONPRIME_DS
+int VideoSettingsDialog::presentationBackendId()
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    return static_cast<int>(MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer")));
+}
+#endif
+
 VideoSettingsDialog* VideoSettingsDialog::currentDlg = nullptr;
 
 void VideoSettingsDialog::setEnabled()
 {
     auto& cfg = emuInstance->getGlobalConfig();
     int renderer = cfg.GetInt("3D.Renderer");
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    renderer = MelonPrime::VideoBackend::MigrateLegacyRendererId(renderer);
+#endif
 
     const bool softwareRenderer = renderer == renderer3D_Software;
     const bool openGLRenderer = renderer == renderer3D_OpenGL;
     const bool computeRenderer = renderer == renderer3D_OpenGLCompute;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const bool vulkanRasterRenderer = renderer == renderer3D_Vulkan;
-    const bool vulkanComputeRenderer = renderer == renderer3D_VulkanCompute;
-    const bool vulkanRenderer = vulkanRasterRenderer || vulkanComputeRenderer;
+    const bool vulkanRenderer = renderer == renderer3D_Vulkan;
 #else
-    const bool vulkanRasterRenderer = false;
-    const bool vulkanComputeRenderer = false;
     const bool vulkanRenderer = false;
 #endif
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
@@ -127,6 +135,10 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     MelonPrime::Vulkan::MigratePhase12HardwareSettings(cfg);
 #endif
     oldRenderer = cfg.GetInt("3D.Renderer");
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    oldRenderer = MelonPrime::VideoBackend::MigrateLegacyRendererId(oldRenderer);
+    cfg.SetInt("3D.Renderer", oldRenderer);
+#endif
     oldGLDisplay = cfg.GetBool("Screen.UseGL");
     oldVSync = cfg.GetBool("Screen.VSync");
     oldVSyncInterval = cfg.GetInt("Screen.VSyncInterval");
@@ -193,33 +205,21 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     btnVulkanRasterPreset->setObjectName(QStringLiteral("btnVulkanRasterPreset"));
     ui->gridLayout_2->addWidget(btnVulkanRasterPreset, vulkanRow, 1, 1, 1);
 
-    rb3DVulkanCompute = new QRadioButton(ui->groupBox);
-    rb3DVulkanCompute->setObjectName(QStringLiteral("rb3DVulkanCompute"));
-    ui->gridLayout_2->addWidget(rb3DVulkanCompute, vulkanRow + 1, 0, 1, 1);
-    grp3DRenderer->addButton(rb3DVulkanCompute, renderer3D_VulkanCompute);
-    btnVulkanComputePreset = new QPushButton(ui->groupBox);
-    btnVulkanComputePreset->setObjectName(QStringLiteral("btnVulkanComputePreset"));
-    ui->gridLayout_2->addWidget(btnVulkanComputePreset, vulkanRow + 1, 1, 1, 1);
-
-    ui->gridLayout_2->addItem(ui->verticalSpacer, vulkanRow + 2, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->cbGLDisplay, vulkanRow + 3, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->cbVSync, vulkanRow + 4, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 5, 0, 1, 1);
-    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 5, 1, 1, 1);
+    ui->gridLayout_2->addItem(ui->verticalSpacer, vulkanRow + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, vulkanRow + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, vulkanRow + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 4, 1, 1, 1);
 
     const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
         MelonPrime::UiText::ActiveMenuLanguage());
     rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    rb3DVulkanCompute->setEnabled(phase12Ui.Contract.Compute.Enabled);
     btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    btnVulkanComputePreset->setEnabled(phase12Ui.Contract.Compute.Enabled);
     rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
-    rb3DVulkanCompute->setToolTip(phase12Ui.ComputeTooltip);
     btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
-    btnVulkanComputePreset->setToolTip(phase12Ui.ComputeTooltip);
 
     connect(btnVulkanRasterPreset, &QPushButton::clicked, this, [this]() {
-        const bool oldGl = UsesGL();
+        const int oldPresentation = presentationBackendId();
         auto& config = emuInstance->getGlobalConfig();
         MelonPrime::Vulkan::ApplyPhase12VulkanPreset(config, false);
         grp3DRenderer->button(renderer3D_Vulkan)->setChecked(true);
@@ -229,20 +229,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         ui->cbVSync->setChecked(false);
         setEnabled();
         setVsyncControlEnable(UsesGL());
-        emit updateVideoSettings(oldGl != UsesGL());
-    });
-    connect(btnVulkanComputePreset, &QPushButton::clicked, this, [this]() {
-        const bool oldGl = UsesGL();
-        auto& config = emuInstance->getGlobalConfig();
-        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(config, true);
-        grp3DRenderer->button(renderer3D_VulkanCompute)->setChecked(true);
-        ui->cbxGLResolution->setCurrentIndex(3);
-        ui->cbBetterPolygons->setChecked(false);
-        ui->cbxComputeHiResCoords->setChecked(true);
-        ui->cbVSync->setChecked(false);
-        setEnabled();
-        setVsyncControlEnable(UsesGL());
-        emit updateVideoSettings(oldGl != UsesGL());
+        emit updateVideoSettings(oldPresentation != presentationBackendId());
     });
     retranslatePhase12VulkanControls();
     ui->gridLayout_2->invalidate();
@@ -338,28 +325,19 @@ void VideoSettingsDialog::changeEvent(QEvent* event)
 void VideoSettingsDialog::retranslatePhase12VulkanControls()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (!rb3DVulkan || !rb3DVulkanCompute)
+    if (!rb3DVulkan)
         return;
     const auto language = MelonPrime::UiText::ActiveMenuLanguage();
     const auto strings = MelonPrime::Vulkan::Phase12StringsForLanguage(language);
     const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(language);
     rb3DVulkan->setText(strings.VulkanName);
-    rb3DVulkanCompute->setText(strings.VulkanComputeName);
     rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    rb3DVulkanCompute->setEnabled(phase12Ui.Contract.Compute.Enabled);
     rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
-    rb3DVulkanCompute->setToolTip(phase12Ui.ComputeTooltip);
     if (btnVulkanRasterPreset)
     {
         btnVulkanRasterPreset->setText(strings.RasterPreset);
         btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
         btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
-    }
-    if (btnVulkanComputePreset)
-    {
-        btnVulkanComputePreset->setText(strings.ComputePreset);
-        btnVulkanComputePreset->setEnabled(phase12Ui.Contract.Compute.Enabled);
-        btnVulkanComputePreset->setToolTip(phase12Ui.ComputeTooltip);
     }
     ui->cbxGLResolution->setToolTip(strings.ScaleDescription);
 #endif
@@ -385,7 +363,11 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
         return;
     }
 
+#ifdef MELONPRIME_DS
+    const int oldPresentation = presentationBackendId();
+#else
     bool old_gl = UsesGL();
+#endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetInt("3D.Renderer", oldRenderer);
@@ -402,7 +384,11 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetBool("3D.Hardware.HiresCoordinates", oldHiresCoordinates);
 #endif
 
+#ifdef MELONPRIME_DS
+    emit updateVideoSettings(oldPresentation != presentationBackendId());
+#else
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 
     closeDlg();
 }
@@ -422,26 +408,45 @@ void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 
 void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
+#ifdef MELONPRIME_DS
+    const int oldPresentation = presentationBackendId();
+#else
     bool old_gl = UsesGL();
+#endif
 
     auto& cfg = emuInstance->getGlobalConfig();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    renderer = MelonPrime::VideoBackend::MigrateLegacyRendererId(renderer);
+#endif
     cfg.SetInt("3D.Renderer", renderer);
 
     setEnabled();
 
+#ifdef MELONPRIME_DS
+    emit updateVideoSettings(oldPresentation != presentationBackendId());
+#else
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 }
 
 void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
 {
+#ifdef MELONPRIME_DS
+    const int oldPresentation = presentationBackendId();
+#else
     bool old_gl = UsesGL();
+#endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.UseGL", (state != 0));
 
     setVsyncControlEnable(UsesGL());
 
+#ifdef MELONPRIME_DS
+    emit updateVideoSettings(oldPresentation != presentationBackendId());
+#else
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 }
 
 void VideoSettingsDialog::on_cbVSync_stateChanged(int state)

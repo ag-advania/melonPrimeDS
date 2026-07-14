@@ -37,6 +37,7 @@
 #ifdef MELONPRIME_DS
 // Forward declaration
 namespace MelonPrime { class MelonPrimeCore; }
+namespace MelonPrime::VideoBackend { struct RendererCreationResult; }
 #include "MelonPrimeVideoBackend.h"
 #endif
 
@@ -96,6 +97,9 @@ public:
         msg_ImportSavefile,
 
         msg_EnableCheats,
+#ifdef MELONPRIME_DS
+        msg_ApplyVideoBackendSwitch,
+#endif
     };
 
     struct Message
@@ -148,6 +152,10 @@ public:
     void returnGL();
     void updateVideoSettings() { videoSettingsDirty = true; }
     void updateVideoRenderer() { videoSettingsDirty = true; lastVideoRenderer = -1; }
+#ifdef MELONPRIME_DS
+    MelonPrime::VideoBackend::PresentationBackend applyVideoBackendSwitch(
+        MelonPrime::VideoBackend::PresentationBackend stagedPresentation);
+#endif
 
     QWaitCondition glBorrowCond;
     QMutex glBorrowMutex;
@@ -171,11 +179,20 @@ signals:
     void screenEmphasisToggle();
 
     void syncVolumeLevel();
+#ifdef MELONPRIME_DS
+    void windowVideoRendererChanged(int requestedRenderer, int actualRenderer);
+#endif
 
 private:
     void handleMessages();
 
     void updateRenderer();
+#ifdef MELONPRIME_DS
+    MelonPrime::VideoBackend::PresentationBackend applyRendererCreation(
+        MelonPrime::VideoBackend::RendererCreationResult&& result);
+    void applyRendererSettings();
+    void refreshActualRenderer();
+#endif
     void compileShaders();
 
     enum EmuStatusKind

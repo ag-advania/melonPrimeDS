@@ -675,6 +675,47 @@
 
 検証: `ScreenPanelNative`参照0件、Vulkan panel内`QImage`/`QPainter`実コード0件、presenter側`composeAndSubmitFrame()` 0件、GUI present path外のsurface/native操作0件、EmuThread snapshot外のRAM read 0件、surface generation gate、FrameQueue Previous再利用、overlay/session mutex直列化、65,536 vertex capacityに対する最大60,030 vertex上限を静的監査。presenter vertex/fragment shaderは`glslangValidator -V`成功。既存Vulkan build treeの記録済みMinGWコマンドで`MelonPrimeScreenVulkan.cpp`、`MelonPrimeVulkanFrontendSession.cpp`、`VulkanSurfacePresenter.cpp`、`MelonPrimeHudRender.cpp`、`Screen.cpp`の5翻訳単位がコンパイル成功。通常Ninja入口はCMake再生成時のvcpkg compiler検出で停止したためフルリンクは行わず、ユーザー指示どおり実装を優先した。`git diff --check`成功。
 
+## R22 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.h/.cpp`
+   - `src/frontend/qt_sdl/EmuThread.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeEmuThreadIncludes.inc`
+   - `src/frontend/qt_sdl/Window.h/.cpp`
+   - `src/frontend/qt_sdl/VideoSettingsDialog.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVideoBackend.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanSurfaceHost.cpp`
+   - `src/frontend/qt_sdl/Config.cpp`
+   - `src/GPU.h/.cpp`
+   - `src/GPU_Vulkan.cpp`
+   - `src/VulkanDesktopCompat.h/.cpp`
+   - 本計画書
+2. 新しく追加した型、関数、resource
+   - `RendererCreationResult`（move-only）が`BackendCreationReport`を置換し、`OuterRenderer`、`Renderer3D`、`Presentation`、`RequestedRenderer`、`NormalizedRenderer`、`ActualRenderer`、`FailedStage`、`FallbackReason`を単一transactionとして保持する。
+   - `MelonPrimeRendererFactory::RegenerateSoftwareFallback()`と`EvaluateActualRenderer()`。後者はcapability全成立時だけ`actual=Vulkan`を返す。
+   - `EmuThread::msg_ApplyVideoBackendSwitch`メッセージ、`applyVideoBackendSwitch()`、`applyRendererCreation()`、`applyRendererSettings()`、`refreshActualRenderer()`、`windowVideoRendererChanged`シグナル。
+   - `MainWindow::createScreenPanel(std::optional<PresentationBackend>)`と`activePresentationBackend`メンバ。
+   - `MelonPrimeVulkanFrontendSession::beginBackendSwitch()`/`completeBackendSwitch(bool)`、`producerSuspended`、`stagedPresenter`。
+   - `MelonPrimeVideoBackend::MigrateLegacyRendererId()`、`Config::MigrateLegacyRendererConfig()`、`GPU::LastRendererInitializationSucceeded()`。
+3. 削除した旧経路
+   - `VideoSettingsDialog`の`rb3DVulkanCompute`ラジオボタンと`btnVulkanComputePreset`を削除し、`renderer3D_VulkanCompute`をUI選択肢から除去した。
+   - 旧`BackendCreationReport`と、outer renderer切替と3D renderer切替が別々のタイミングで行われていた`updateRenderer()`の分岐を削除した。
+   - surface host内の直接`vkCreateWin32SurfaceKHR`等static呼び出しを、`vkGetInstanceProcAddr`解決＋null checkへ置換した。
+4. 所有権とframe lifecycleの変更
+   - outer renderer、`Renderer3D`、frontend sessionの切替を`msg_ApplyVideoBackendSwitch`一つのEmuThreadトランザクションへ統合した。`applyRendererCreation()`がconfig snapshot→normalize→creation result→render lock→producer停止→旧presentation detach→旧3D renderer stop→`GPU::SetRenderer`→`GPU3D::SetCurrentRenderer`→settings適用→frontend generation更新→producer再開→render lock解除→UIへactual通知の順で実行する。
+   - `Window::onUpdateVideoSettings()`はpanel切替を要求としてstageし、EmuThreadから返る実際にcommitされたpresentationと staged 値が異なる場合（Vulkan初期化失敗時など）だけpanelを再構成する。
+   - `MelonPrimeVulkanFrontendSession`は`beginBackendSwitch()`から`completeBackendSwitch()`までの間`producerSuspended`を立て、frame submit・presenter registration・overlay更新をすべて抑止することでbackend切替中のrace conditionを構造的に排除した。
+   - `videoRenderer`はswitch時点で固定されず、毎frame`refreshActualRenderer()`が`EvaluateActualRenderer()`（`Renderer3DReady && Structured2DReady && FinalCompositorReady && FrameQueueReady && SurfaceReady && PresenterReady`）を再評価し、いずれかのcapabilityが失われた場合は即座に`actual`をSoftwareへ戻す。
+   - `renderer3D_VulkanCompute`は`MigrateLegacyRendererId()`によりconfig load/save、UI、actual表示のすべてで`renderer3D_Vulkan`へ統一移行した。
+5. 参照実装との差分
+   - このフェーズはSapphire参照に対応ファイルを持たない、melonPrimeDS固有のrenderer/presentation切替オーケストレーションである。`MelonPrimeVulkanFrontendSession`の`producerSuspended`/`stagedPresenter`はR20/R21で確立したsession mutexの下で追加した薄いadapterであり、`VulkanOutput`／`FrameQueue`／`VulkanSurfacePresenter`本体のcomposition/present契約は変更していない。
+6. 後続フェーズへ渡すinterface
+   - `RendererCreationResult`と`EvaluateActualRenderer()`はR23以降のframe lifecycle統合がそのまま参照できるcapability評価点になる。
+   - `producerSuspended`/staged-presenterパターンはR24のdevice loss／teardown順序で同型のguardとして再利用できる。
+
+検証: `RendererCreationResult`の move-only 挙動、`CreateRenderer3DForSelection()`呼び出し経路、`renderer3D_VulkanCompute`のUI/Config/actual全経路での`MigrateLegacyRendererId()`一元適用、`producerSuspended`によるsubmit/acquire/present/overlay/registration全ゲート、`GPU3D::CurrentRenderer`削除なし、`VulkanRenderer3D`とSoftwareRenderer3Dの並走ゼロを静的監査。`.claude\skills\build-mingw-vulkan-existing.bat --jobs 1`で`ninja: no work to do`（既存build treeが本フェーズの全変更を含めて事前にビルド済みであることを確認）。`git diff --check`成功。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

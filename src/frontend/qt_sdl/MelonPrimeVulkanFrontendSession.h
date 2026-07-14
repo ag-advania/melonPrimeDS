@@ -59,6 +59,8 @@ public:
 
     bool initialize(melonDS::NDS& nds);
     void shutdown();
+    void beginBackendSwitch();
+    void completeBackendSwitch(bool vulkanPresentationActive);
     void beginGeneration(u64 generation);
     void beginSurfaceGeneration(u64 generation);
 
@@ -89,6 +91,7 @@ public:
     [[nodiscard]] bool hasCompleteStructuredSnapshot() const;
     [[nodiscard]] bool hasCompositedFrame() const;
     [[nodiscard]] bool hasRegisteredPresenter() const;
+    [[nodiscard]] bool backendSwitchInProgress() const;
     [[nodiscard]] u64 generation() const;
 
 private:
@@ -110,9 +113,11 @@ private:
     FrameQueue frameQueue;
     std::unordered_map<Frame*, MelonDSAndroid::VulkanCompositionInputs> frameInputs;
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
+    MelonDSAndroid::VulkanSurfacePresenter* stagedPresenter = nullptr;
     MelonPrimeStructuredSnapshot lastCompleteSnapshot{};
     u64 activeGeneration = 0;
     u64 activeSurfaceGeneration = 0;
     u64 lastSubmittedSerial = 0;
     bool initialized = false;
+    bool producerSuspended = false;
 };

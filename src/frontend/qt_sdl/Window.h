@@ -32,10 +32,14 @@
 #include <QMutex>
 #include <QScreen>
 #include <QCloseEvent>
+#include <optional>
 
 #include "Screen.h"
 #include "Config.h"
 #include "MPInterface.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimeVideoBackend.h"
+#endif
 
 
 class EmuInstance;
@@ -214,7 +218,12 @@ private:
     QStringList pickROM(bool gba);
     void updateCartInserted(bool gba);
 
+#ifdef MELONPRIME_DS
+    void createScreenPanel(
+        std::optional<MelonPrime::VideoBackend::PresentationBackend> forcedPresentation = std::nullopt);
+#else
     void createScreenPanel();
+#endif
 #ifdef MELONPRIME_DS
     void localizeMenuText();
     void applyMenuLanguageSelection(int configValue);
@@ -226,6 +235,10 @@ private:
     bool showOSD;
 
     bool hasOGL;
+#ifdef MELONPRIME_DS
+    MelonPrime::VideoBackend::PresentationBackend activePresentationBackend =
+        MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+#endif
 
     bool pauseOnLostFocus;
     bool pausedManually;

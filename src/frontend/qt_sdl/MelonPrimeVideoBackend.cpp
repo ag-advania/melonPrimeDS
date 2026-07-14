@@ -40,6 +40,15 @@ static_assert(renderer3D_VulkanCompute == 6);
 #endif
 static_assert(renderer3D_Max == 7);
 
+int MigrateLegacyRendererId(int renderer)
+{
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (renderer == renderer3D_VulkanCompute)
+        return renderer3D_Vulkan;
+#endif
+    return renderer;
+}
+
 #if defined(MELONPRIME_ENABLE_METAL)
 bool ShouldForceMetalPresenterFromEnv()
 {
@@ -109,7 +118,7 @@ int ResolveRequestedRenderer(int configuredRenderer)
 {
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (ShouldForceVulkanComputeRendererFromEnv())
-        return renderer3D_VulkanCompute;
+        return renderer3D_Vulkan;
     if (ShouldForceVulkanRendererFromEnv())
         return renderer3D_Vulkan;
 #endif
@@ -117,16 +126,16 @@ int ResolveRequestedRenderer(int configuredRenderer)
     if (ShouldForceMetalRendererFromEnv())
         return renderer3D_Metal;
 #endif
-    return configuredRenderer;
+    return MigrateLegacyRendererId(configuredRenderer);
 }
 
 int NormalizeRendererForPlatform(int requested)
 {
-    requested = ResolveRequestedRenderer(requested);
+    requested = MigrateLegacyRendererId(ResolveRequestedRenderer(requested));
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (VulkanRuntimeFallbackActive() &&
-        (requested == renderer3D_Vulkan || requested == renderer3D_VulkanCompute))
+        requested == renderer3D_Vulkan)
         return renderer3D_Software;
 #endif
 
@@ -149,8 +158,7 @@ int NormalizeRendererForPlatform(int requested)
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (ShouldForceVulkanPresenterFromEnv() &&
         requested != renderer3D_Software &&
-        requested != renderer3D_Vulkan &&
-        requested != renderer3D_VulkanCompute)
+        requested != renderer3D_Vulkan)
     {
         return renderer3D_Software;
     }
@@ -184,7 +192,6 @@ int NormalizeRendererForPlatform(int requested)
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-    case renderer3D_VulkanCompute:
         return requested;
 #endif
     default:
@@ -194,6 +201,7 @@ int NormalizeRendererForPlatform(int requested)
 
 bool RendererIsAvailableInBuild(int renderer)
 {
+    renderer = MigrateLegacyRendererId(renderer);
     switch (renderer)
     {
     case renderer3D_Software:
@@ -210,7 +218,6 @@ bool RendererIsAvailableInBuild(int renderer)
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-    case renderer3D_VulkanCompute:
         return true;
 #endif
     default:
@@ -231,7 +238,7 @@ bool RendererRequiresOpenGLContext(int renderer)
 #if defined(MELONPRIME_ENABLE_VULKAN)
 bool RendererRequiresVulkanContext(int renderer)
 {
-    return renderer == renderer3D_Vulkan || renderer == renderer3D_VulkanCompute;
+    return MigrateLegacyRendererId(renderer) == renderer3D_Vulkan;
 }
 #endif
 
@@ -240,8 +247,7 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #if defined(MELONPRIME_ENABLE_VULKAN)
     const int effectiveRequested = ResolveRequestedRenderer(requestedRenderer);
     if (VulkanRuntimeFallbackActive() &&
-        (effectiveRequested == renderer3D_Vulkan ||
-         effectiveRequested == renderer3D_VulkanCompute))
+        effectiveRequested == renderer3D_Vulkan)
         return PresentationBackend::NativeQt;
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -266,7 +272,7 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
         return PresentationBackend::Metal;
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    if (normalized == renderer3D_Vulkan || normalized == renderer3D_VulkanCompute)
+    if (normalized == renderer3D_Vulkan)
         return PresentationBackend::Vulkan;
 #endif
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
@@ -304,6 +310,7 @@ const char* PresentationBackendName(PresentationBackend backend)
 
 const char* RendererName(int renderer)
 {
+    renderer = MigrateLegacyRendererId(renderer);
     switch (renderer)
     {
     case renderer3D_Software:
@@ -323,8 +330,6 @@ const char* RendererName(int renderer)
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
         return "Vulkan";
-    case renderer3D_VulkanCompute:
-        return "VulkanCompute";
 #endif
     default:
         return "Unavailable";

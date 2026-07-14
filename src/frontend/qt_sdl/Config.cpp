@@ -34,6 +34,9 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
 #include "MelonPrimeHudPropSchema.inc"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVideoBackend.h"
+#endif
 #endif
 
 using namespace std::string_literals;
@@ -1115,6 +1118,19 @@ namespace Config
         return true;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void MigrateLegacyRendererConfig()
+    {
+        Table cfg(RootTable, "");
+        if (!cfg.HasKey("3D.Renderer"))
+            return;
+        const int configured = cfg.GetInt("3D.Renderer");
+        const int migrated = MelonPrime::VideoBackend::MigrateLegacyRendererId(configured);
+        if (migrated != configured)
+            cfg.SetInt("3D.Renderer", migrated);
+    }
+#endif
+
     bool Load()
     {
         auto cfgpath = Platform::GetLocalFilePath(kConfigFile);
@@ -1125,7 +1141,13 @@ namespace Config
         RootTable = toml::value();
 
         if (!Platform::FileExists(cfgpath))
-            return LoadLegacy();
+        {
+            const bool loaded = LoadLegacy();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            MigrateLegacyRendererConfig();
+#endif
+            return loaded;
+        }
 
         try
         {
@@ -1136,11 +1158,18 @@ namespace Config
             //RootTable = toml::table();
         }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        MigrateLegacyRendererConfig();
+#endif
+
         return true;
     }
 
     void Save()
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        MigrateLegacyRendererConfig();
+#endif
         auto cfgpath = Platform::GetLocalFilePath(kConfigFile);
         if (!Platform::CheckFileWritable(cfgpath))
             return;

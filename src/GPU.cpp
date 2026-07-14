@@ -339,6 +339,9 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     GPU3D.SetCurrentRenderer(nullptr);
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool rendererRequested = renderer != nullptr;
+#endif
     bool good = false;
     if (renderer)
     {
@@ -365,6 +368,9 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
         Rend->Init();
         Rend->Reset();
     }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    LastRendererInitSucceeded = !rendererRequested || good;
+#endif
 
     ResetVRAMCache();
     OAMDirty = 0x3;

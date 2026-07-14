@@ -85,6 +85,7 @@
 #include "MelonPrimeVideoBackend.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeScreenVulkan.h"
+#include "MelonPrimeVulkanFrontendSession.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
@@ -1101,7 +1102,12 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QMainWindow::closeEvent(event);
 }
 
+#ifdef MELONPRIME_DS
+void MainWindow::createScreenPanel(
+    std::optional<MelonPrime::VideoBackend::PresentationBackend> forcedPresentation)
+#else
 void MainWindow::createScreenPanel()
+#endif
 {
     auto oldpanel = panel;
     panel = nullptr;
@@ -1114,8 +1120,11 @@ void MainWindow::createScreenPanel()
     // now normalizes to Software (hasOGL=false) instead of vacuously
     // requesting a GL context, consistent with the Phase 0 safety fix in
     // EmuThread::updateRenderer().
-    const auto presentationBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-        globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+    const auto presentationBackend = forcedPresentation.value_or(
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer")));
+    auto actualPresentationBackend =
+        MelonPrime::VideoBackend::PresentationBackend::NativeQt;
     hasOGL = MelonPrime::VideoBackend::IsOpenGLPresentation(presentationBackend);
 
 #else
@@ -1131,11 +1140,15 @@ void MainWindow::createScreenPanel()
         {
             panel = panelVulkan;
             panel->show();
+            actualPresentationBackend =
+                MelonPrime::VideoBackend::PresentationBackend::Vulkan;
         }
         else
         {
             Log(Platform::LogLevel::Error,
                 "Failed to init Vulkan presenter, falling back to NativeQt.\n");
+            MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+                "Vulkan desktop surface/presenter initialization", -1);
             delete panelVulkan;
         }
     }
@@ -1156,6 +1169,8 @@ void MainWindow::createScreenPanel()
         if (panelMetal->initMetal())
         {
             panel = panelMetal;
+            actualPresentationBackend =
+                MelonPrime::VideoBackend::PresentationBackend::Metal;
         }
         else
         {
@@ -1193,6 +1208,11 @@ void MainWindow::createScreenPanel()
             emuThread->returnGL();
 
         panel = panelGL;
+#ifdef MELONPRIME_DS
+        if (panel != nullptr)
+            actualPresentationBackend =
+                MelonPrime::VideoBackend::PresentationBackend::OpenGL;
+#endif
     }
 
     if (!panel && !hasOGL)
@@ -1200,7 +1220,14 @@ void MainWindow::createScreenPanel()
         ScreenPanelNative* panelNative = new ScreenPanelNative(this);
         panel = panelNative;
         panel->show();
+#ifdef MELONPRIME_DS
+        actualPresentationBackend =
+            MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+#endif
     }
+#ifdef MELONPRIME_DS
+    activePresentationBackend = actualPresentationBackend;
+#endif
     setCentralWidget(panel);
 
     if (hasMenu)
@@ -1208,7 +1235,7 @@ void MainWindow::createScreenPanel()
         bool filteringAvailable = hasOGL;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         filteringAvailable = filteringAvailable ||
-            MelonPrime::VideoBackend::IsVulkanPresentation(presentationBackend);
+            MelonPrime::VideoBackend::IsVulkanPresentation(activePresentationBackend);
 #endif
         actScreenFiltering->setEnabled(filteringAvailable);
     }
@@ -2783,9 +2810,26 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     auto childwins = findChildren<MainWindow*>(nullptr);
 
     bool hadOGL = hasOGL;
-    if (glchange)
+#ifdef MELONPRIME_DS
+    const auto requestedPresentation =
+        MelonPrime::VideoBackend::ResolvePresentationBackend(
+            globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+    const bool presentationChange =
+        glchange || requestedPresentation != activePresentationBackend;
+#else
+    const bool presentationChange = glchange;
+#endif
+    if (presentationChange)
     {
         emuThread->emuPause();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        emuInstance->vulkanFrontendSession().beginBackendSwitch();
+        for (auto child : childwins)
+        {
+            if (child->getWindowID() == 0)
+                child->getEmuInstance()->vulkanFrontendSession().beginBackendSwitch();
+        }
+#endif
         if (hadOGL)
         {
             emuThread->deinitContext(windowID);
@@ -2801,6 +2845,48 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
         {
             child->createScreenPanel();
         }
+        if (hasOGL)
+        {
+            emuThread->initContext(windowID);
+            for (auto child : childwins)
+            {
+                auto thread = child->getEmuInstance()->getEmuThread();
+                thread->initContext(child->windowID);
+            }
+        }
+
+#ifdef MELONPRIME_DS
+        const auto committedPresentation =
+            emuThread->applyVideoBackendSwitch(activePresentationBackend);
+        if (committedPresentation != activePresentationBackend)
+        {
+            if (hasOGL)
+                emuThread->deinitContext(windowID);
+            createScreenPanel(committedPresentation);
+            if (hasOGL)
+                emuThread->initContext(windowID);
+        }
+        for (auto child : childwins)
+        {
+            if (child->getWindowID() != 0)
+                continue;
+            auto* childThread = child->getEmuInstance()->getEmuThread();
+            const auto childCommitted =
+                childThread->applyVideoBackendSwitch(child->activePresentationBackend);
+            if (childCommitted != child->activePresentationBackend)
+            {
+                if (child->hasOGL)
+                    childThread->deinitContext(child->windowID);
+                child->createScreenPanel(childCommitted);
+                if (child->hasOGL)
+                    childThread->initContext(child->windowID);
+            }
+        }
+#else
+        emuThread->updateVideoSettings();
+#endif
+        emuThread->emuUnpause();
+        return;
     }
 
     emuThread->updateVideoSettings();
@@ -2811,23 +2897,5 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
         auto thread = child->getEmuInstance()->getEmuThread();
         if (child->getWindowID() == 0)
             thread->updateVideoSettings();
-    }
-
-    if (glchange)
-    {
-        if (hasOGL)
-        {
-            emuThread->initContext(windowID);
-            for (auto child : childwins)
-            {
-                auto thread = child->getEmuInstance()->getEmuThread();
-                thread->initContext(child->windowID);
-            }
-        }
-    }
-
-    if (glchange)
-    {
-        emuThread->emuUnpause();
     }
 }

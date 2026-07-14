@@ -173,21 +173,30 @@ bool MelonPrimeVulkanSurfaceHost::createForWidget(QWidget& newWidget, VkInstance
     VkWin32SurfaceCreateInfoKHR createInfo{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
     createInfo.hinstance = reinterpret_cast<HINSTANCE>(identity.display);
     createInfo.hwnd = reinterpret_cast<HWND>(identity.window);
-    result = vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &newSurface);
+    const auto createSurface = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
+        vkGetInstanceProcAddr(instance, "vkCreateWin32SurfaceKHR"));
+    if (createSurface != nullptr)
+        result = createSurface(instance, &createInfo, nullptr, &newSurface);
 #else
     if (identity.system == VulkanWindowSystem::Xcb)
     {
         VkXcbSurfaceCreateInfoKHR createInfo{VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR};
         createInfo.connection = reinterpret_cast<xcb_connection_t*>(identity.display);
         createInfo.window = static_cast<xcb_window_t>(identity.window);
-        result = vkCreateXcbSurfaceKHR(instance, &createInfo, nullptr, &newSurface);
+        const auto createSurface = reinterpret_cast<PFN_vkCreateXcbSurfaceKHR>(
+            vkGetInstanceProcAddr(instance, "vkCreateXcbSurfaceKHR"));
+        if (createSurface != nullptr)
+            result = createSurface(instance, &createInfo, nullptr, &newSurface);
     }
     else if (identity.system == VulkanWindowSystem::Xlib)
     {
         VkXlibSurfaceCreateInfoKHR createInfo{VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR};
         createInfo.dpy = reinterpret_cast<Display*>(identity.display);
         createInfo.window = static_cast<Window>(identity.window);
-        result = vkCreateXlibSurfaceKHR(instance, &createInfo, nullptr, &newSurface);
+        const auto createSurface = reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(
+            vkGetInstanceProcAddr(instance, "vkCreateXlibSurfaceKHR"));
+        if (createSurface != nullptr)
+            result = createSurface(instance, &createInfo, nullptr, &newSurface);
     }
 #if defined(WAYLAND_ENABLED)
     else if (identity.system == VulkanWindowSystem::Wayland)
@@ -195,7 +204,10 @@ bool MelonPrimeVulkanSurfaceHost::createForWidget(QWidget& newWidget, VkInstance
         VkWaylandSurfaceCreateInfoKHR createInfo{VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR};
         createInfo.display = reinterpret_cast<wl_display*>(identity.display);
         createInfo.surface = reinterpret_cast<wl_surface*>(identity.window);
-        result = vkCreateWaylandSurfaceKHR(instance, &createInfo, nullptr, &newSurface);
+        const auto createSurface = reinterpret_cast<PFN_vkCreateWaylandSurfaceKHR>(
+            vkGetInstanceProcAddr(instance, "vkCreateWaylandSurfaceKHR"));
+        if (createSurface != nullptr)
+            result = createSurface(instance, &createInfo, nullptr, &newSurface);
     }
 #endif
 #endif

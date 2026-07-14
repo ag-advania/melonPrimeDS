@@ -5,6 +5,11 @@
 
 namespace MelonPrime::VideoBackend {
 
+    // Persisted renderer ID migration shared by config load/save, UI and
+    // runtime selection. Sapphire 0.7.0.rc4 has one Vulkan graphics backend;
+    // the former Vulkan Compute ID is therefore a legacy alias only.
+    int MigrateLegacyRendererId(int renderer);
+
     // Clamps a persisted/runtime `3D.Renderer` value to one that is safe to
     // construct on the current platform. macOS's OpenGL implementation does
     // not reliably support the OpenGL compute-shader renderer path (see

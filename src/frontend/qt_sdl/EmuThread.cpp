@@ -352,8 +352,6 @@ void EmuThread::run()
             {
 #ifdef MELONPRIME_DS
                 emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
-                videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
 #else
                 emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
@@ -363,18 +361,9 @@ void EmuThread::run()
             else
             {
 #ifdef MELONPRIME_DS
-                // Metal-plan Phase 8 fix: no live GL context this iteration
-                // (`useOpenGL` only flips via msg_InitGL/msg_DeInitGL, not
-                // here). Before this fix, `videoRenderer` was unconditionally
-                // forced to 0 whenever `!useOpenGL`, silently discarding a
-                // renderer that doesn't need a GL context at all (Metal, once
-                // Phase 9 UI exists) instead of only clamping renderers that
-                // actually require one.
-                const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
-                videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
-                    ? renderer3D_Software
-                    : normalizedRenderer;
+                // `videoRenderer` is the runtime-actual backend. Keep it
+                // untouched until applyRendererCreation()/capability refresh
+                // has evaluated the complete presentation pipeline.
 #else
                 videoRenderer = 0;
 #endif
@@ -444,6 +433,7 @@ void EmuThread::run()
         // Producer-side snapshot and Vulkan submission stay at the emulation
         // frame completion point. The GUI/presenter never reads live GPU state.
         emuInstance->submitVulkanFrontendFrame();
+        refreshActualRenderer();
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1071,6 +1061,59 @@ void EmuThread::handleMessages()
         case msg_EnableCheats:
             emuInstance->enableCheats(msg.param.value<bool>());
             break;
+
+#ifdef MELONPRIME_DS
+        case msg_ApplyVideoBackendSwitch:
+        {
+            const auto stagedPresentation =
+                static_cast<MelonPrime::VideoBackend::PresentationBackend>(
+                    msg.param.value<int>());
+            auto& cfg = emuInstance->getGlobalConfig();
+            auto result = MelonPrime::VideoBackend::CreateRendererForSelection(
+                *emuInstance->nds,
+                cfg.GetInt("3D.Renderer"),
+                cfg.GetBool("Screen.UseGL"));
+            if (result.Presentation != stagedPresentation)
+            {
+                MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+                    *emuInstance->nds,
+                    result,
+                    "presentation backend staging",
+                    "staged panel does not match the constructed renderer transaction");
+            }
+
+            emuInstance->renderLock.lock();
+            auto committedPresentation = applyRendererCreation(std::move(result));
+            if (committedPresentation != stagedPresentation)
+            {
+                auto fallback = MelonPrime::VideoBackend::CreateRendererForSelection(
+                    *emuInstance->nds,
+                    cfg.GetInt("3D.Renderer"),
+                    cfg.GetBool("Screen.UseGL"));
+                MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+                    *emuInstance->nds,
+                    fallback,
+                    "presentation backend commit",
+                    "constructed backend could not commit to the staged panel");
+                committedPresentation = applyRendererCreation(std::move(fallback));
+            }
+            videoBackend = committedPresentation;
+            applyRendererSettings();
+            videoSettingsDirty = true;
+            lastVideoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+                cfg.GetInt("3D.Renderer"));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            emuInstance->vulkanFrontendSession().completeBackendSwitch(
+                videoBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan);
+            if (videoBackend != MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+                emuInstance->vulkanFrontendSession().shutdown();
+#endif
+            emuInstance->renderLock.unlock();
+            refreshActualRenderer();
+            msgResult = static_cast<int>(videoBackend);
+            break;
+        }
+#endif
         }
 
         msgSemaphore.release();
@@ -1270,57 +1313,104 @@ void EmuThread::enableCheats(bool enable)
     waitMessage();
 }
 
-void EmuThread::updateRenderer()
+#ifdef MELONPRIME_DS
+MelonPrime::VideoBackend::PresentationBackend EmuThread::applyVideoBackendSwitch(
+    MelonPrime::VideoBackend::PresentationBackend stagedPresentation)
+{
+    sendMessage({
+        .type = msg_ApplyVideoBackendSwitch,
+        .param = static_cast<int>(stagedPresentation),
+    });
+    waitMessage();
+    return static_cast<MelonPrime::VideoBackend::PresentationBackend>(msgResult);
+}
+#endif
+
+MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
+    MelonPrime::VideoBackend::RendererCreationResult&& result)
 {
     auto nds = emuInstance->nds;
-
-    auto& cfg = emuInstance->getGlobalConfig();
-
-#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
-
-    const int configuredRenderer = cfg.GetInt("3D.Renderer");
-    const int normalizedRenderer =
-        MelonPrime::VideoBackend::NormalizeRendererForPlatform(configuredRenderer);
-    if (normalizedRenderer != lastVideoRenderer)
+    const int requestedRenderer = result.RequestedRenderer;
+    const int normalizedRenderer = result.NormalizedRenderer;
+    // R22 renderer transaction: old CurrentRenderer is stopped by
+    // GPU::SetRenderer(), then the outer owner and the explicit Vulkan
+    // Renderer3D override are installed before producer generation changes.
+    nds->SetRenderer(std::move(result.OuterRenderer));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (!nds->GPU.LastRendererInitializationSucceeded())
     {
-        MelonPrime::VideoBackend::BackendCreationReport report;
-        auto renderer = MelonPrime::VideoBackend::CreateRendererForSelection(
-            *nds, configuredRenderer, report);
-        // Renderer switching runs while the caller holds renderLock. Replacing
-        // the outer renderer first stops/destroys the previous GPU3D owner;
-        // the new 3D backend is then initialized and published as one
-        // GUI-invisible transaction.
-        nds->SetRenderer(std::move(renderer));
-#if defined(MELONPRIME_ENABLE_VULKAN)
-        auto renderer3D =
-            MelonPrime::VideoBackend::CreateRenderer3DForSelection(
-                *nds, configuredRenderer, report);
-        nds->GPU.SetRenderer3D(std::move(renderer3D));
-#endif
-
-        Platform::Log(Platform::LogLevel::Info,
-            "[MelonPrime] video backend: requested=%s(%d) normalized=%s(%d) "
-            "actual=%s(%d) presenter=%s generation=%llu failed_stage=%s reason=%s config_changed=no\n",
-            MelonPrime::VideoBackend::RendererName(report.requested), report.requested,
-            MelonPrime::VideoBackend::RendererName(report.normalized), report.normalized,
-            MelonPrime::VideoBackend::RendererName(report.actual), report.actual,
-            MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
-#if defined(MELONPRIME_ENABLE_VULKAN)
-            static_cast<unsigned long long>(
-                nds->GPU.GPU3D.GetCurrentRendererGeneration()),
-#else
-            0ull,
-#endif
-            report.failedStage.empty() ? "none" : report.failedStage.c_str(),
-            report.fallbackReason.empty() ? "none" : report.fallbackReason.c_str());
-
-        videoRenderer = report.actual;
-        lastVideoRenderer = report.normalized;
+        if (normalizedRenderer == renderer3D_Vulkan)
+        {
+            MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+                "outer renderer initialization", -1);
+        }
+        MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+            *nds,
+            result,
+            "outer renderer initialization",
+            "selected outer renderer failed Init(); Software pair regenerated");
+        nds->SetRenderer(std::move(result.OuterRenderer));
     }
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    const bool activateVulkanFrontend =
+        normalizedRenderer == renderer3D_Vulkan
+        && result.Presentation == MelonPrime::VideoBackend::PresentationBackend::Vulkan
+        && result.Renderer3D != nullptr;
+    nds->GPU.SetRenderer3D(std::move(result.Renderer3D));
+    if (activateVulkanFrontend)
+    {
+        auto& session = emuInstance->vulkanFrontendSession();
+        if (!session.initialize(*nds))
+        {
+            MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+                "Vulkan frontend session initialization", -1);
+            MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+                *nds,
+                result,
+                "Vulkan frontend session initialization",
+                "VulkanOutput or FrameQueue initialization failed");
+            nds->SetRenderer(std::move(result.OuterRenderer));
+            nds->GPU.SetRenderer3D(nullptr);
+        }
+        else
+        {
+            session.beginGeneration(nds->GPU.GPU3D.GetCurrentRendererGeneration());
+        }
+    }
+#endif
 
-    // MELONPRIME_VULKAN_HARDWARE_SETTINGS_READ_V1
+    videoBackend = result.Presentation;
+    videoRenderer = MelonPrime::VideoBackend::EvaluateActualRenderer(
+        *nds, normalizedRenderer, videoBackend);
+    result.ActualRenderer = videoRenderer;
+    lastVideoRenderer = normalizedRenderer;
+
+    Platform::Log(Platform::LogLevel::Info,
+        "[MelonPrime] video transaction: requested=%s(%d) normalized=%s(%d) "
+        "actual=%s(%d) presenter=%s generation=%llu failed_stage=%s reason=%s config_changed=no\n",
+        MelonPrime::VideoBackend::RendererName(requestedRenderer), requestedRenderer,
+        MelonPrime::VideoBackend::RendererName(normalizedRenderer), normalizedRenderer,
+        MelonPrime::VideoBackend::RendererName(result.ActualRenderer), result.ActualRenderer,
+        MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        static_cast<unsigned long long>(nds->GPU.GPU3D.GetCurrentRendererGeneration()),
+#else
+        0ull,
+#endif
+        result.FailedStage.empty() ? "none" : result.FailedStage.c_str(),
+        result.FallbackReason.empty() ? "none" : result.FallbackReason.c_str());
+
+    emit windowVideoRendererChanged(requestedRenderer, result.ActualRenderer);
+    return videoBackend;
+}
+
+void EmuThread::applyRendererSettings()
+{
+    auto nds = emuInstance->nds;
+    auto& cfg = emuInstance->getGlobalConfig();
     const int selectedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-        configuredRenderer);
+        cfg.GetInt("3D.Renderer"));
     const bool sharedHardwareSettings =
 #if defined(MELONPRIME_ENABLE_METAL)
         selectedRenderer == renderer3D_Metal ||
@@ -1328,7 +1418,6 @@ void EmuThread::updateRenderer()
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
         selectedRenderer == renderer3D_Vulkan ||
-        selectedRenderer == renderer3D_VulkanCompute ||
 #endif
         false;
     const int scaleFactor = sharedHardwareSettings && cfg.HasKey("3D.Hardware.ScaleFactor")
@@ -1347,8 +1436,48 @@ void EmuThread::updateRenderer()
         .BetterPolygons = betterPolygons
     };
     nds->GetRenderer().SetRenderSettings(settings);
+}
+
+void EmuThread::updateRenderer()
+{
+    auto nds = emuInstance->nds;
+    auto& cfg = emuInstance->getGlobalConfig();
+
+#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
+
+    const int configuredRenderer = cfg.GetInt("3D.Renderer");
+    const int normalizedRenderer =
+        MelonPrime::VideoBackend::NormalizeRendererForPlatform(configuredRenderer);
+    if (normalizedRenderer != lastVideoRenderer)
+    {
+        auto result = MelonPrime::VideoBackend::CreateRendererForSelection(
+            *nds, configuredRenderer, cfg.GetBool("Screen.UseGL"));
+        applyRendererCreation(std::move(result));
+    }
+
+    applyRendererSettings();
 
 #include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
+}
+
+void EmuThread::refreshActualRenderer()
+{
+    if (emuInstance->nds == nullptr)
+        return;
+    auto& cfg = emuInstance->getGlobalConfig();
+    const int normalized = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+        cfg.GetInt("3D.Renderer"));
+    const int actual = MelonPrime::VideoBackend::EvaluateActualRenderer(
+        *emuInstance->nds, normalized, videoBackend);
+    if (actual == videoRenderer)
+        return;
+    videoRenderer = actual;
+    Platform::Log(Platform::LogLevel::Info,
+        "[MelonPrime] video actual renderer changed: requested=%s(%d) actual=%s(%d) presenter=%s\n",
+        MelonPrime::VideoBackend::RendererName(normalized), normalized,
+        MelonPrime::VideoBackend::RendererName(actual), actual,
+        MelonPrime::VideoBackend::PresentationBackendName(videoBackend));
+    emit windowVideoRendererChanged(normalized, actual);
 }
 
 void EmuThread::compileShaders()

@@ -22,10 +22,9 @@ std::unique_ptr<Renderer3D> CreateSapphireVulkanRenderer3D(
     renderer->SetBackendMode(VulkanRenderer3D::BackendMode::GraphicsHardware);
     Platform::Log(
         Platform::LogLevel::Info,
-        "[MelonPrime] Vulkan Renderer3D initialized (GPU3D-level override only; "
-        "not yet the active renderer's owned Rend3D, and final 2D/3D composition "
-        "and presentation are still Software); requested=%s\n",
-        computeSelected ? "compute" : "graphics");
+        "[MelonPrime] Vulkan Renderer3D initialized for the R22 renderer transaction; "
+        "requested=%s active_backend=graphics\n",
+        computeSelected ? "legacy-compute-migrated-to-graphics" : "graphics");
     return renderer;
 }
 } // namespace melonDS

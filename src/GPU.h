@@ -225,6 +225,12 @@ public:
 
     void SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    [[nodiscard]] bool LastRendererInitializationSucceeded() const noexcept
+    {
+        return LastRendererInitSucceeded;
+    }
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     void SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept
     {
@@ -989,6 +995,9 @@ private:
     u16 VMatch[2] {};
 
     std::unique_ptr<Renderer> Rend = nullptr;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool LastRendererInitSucceeded = true;
+#endif
 
     u16 VRAMCaptureBlockFlags[16];
 

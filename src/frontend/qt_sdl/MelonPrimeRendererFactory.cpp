@@ -19,92 +19,114 @@
 namespace MelonPrime::VideoBackend
 {
 
-std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
+RendererCreationResult::RendererCreationResult() = default;
+RendererCreationResult::~RendererCreationResult() = default;
+RendererCreationResult::RendererCreationResult(RendererCreationResult&&) noexcept = default;
+RendererCreationResult& RendererCreationResult::operator=(RendererCreationResult&&) noexcept = default;
+
+void RegenerateSoftwareFallback(
+    melonDS::NDS& nds,
+    RendererCreationResult& result,
+    std::string failedStage,
+    std::string fallbackReason)
+{
+    result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
+    result.Renderer3D.reset();
+    result.Presentation = PresentationBackend::NativeQt;
+    result.ActualRenderer = renderer3D_Software;
+    result.FailedStage = std::move(failedStage);
+    result.FallbackReason = std::move(fallbackReason);
+}
+
+RendererCreationResult CreateRendererForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
-    BackendCreationReport& report)
+    bool useGLPresentation)
 {
-    report = {};
-    report.requested = ResolveRequestedRenderer(configuredRenderer);
-    report.normalized = NormalizeRendererForPlatform(report.requested);
-    report.actual = report.normalized;
-    if (report.normalized != report.requested)
+    RendererCreationResult result;
+    result.RequestedRenderer = ResolveRequestedRenderer(configuredRenderer);
+    result.NormalizedRenderer = NormalizeRendererForPlatform(result.RequestedRenderer);
+    result.ActualRenderer = result.NormalizedRenderer;
+    result.Presentation = ResolvePresentationBackend(
+        useGLPresentation, result.NormalizedRenderer);
+    if (result.NormalizedRenderer != result.RequestedRenderer)
     {
-        report.failedStage = "renderer normalization";
-        report.fallbackReason = "requested renderer is unavailable or incompatible with the active backend";
+        result.FailedStage = "renderer normalization";
+        result.FallbackReason =
+            "requested renderer is unavailable or incompatible with the active backend";
     }
 
-    switch (report.normalized)
+    switch (result.NormalizedRenderer)
     {
     case renderer3D_Software:
-        return std::make_unique<melonDS::SoftRenderer>(nds);
+        result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
+        break;
 #ifdef OGLRENDERER_ENABLED
     case renderer3D_OpenGL:
-        return std::make_unique<melonDS::GLRenderer>(nds, false);
+        result.OuterRenderer = std::make_unique<melonDS::GLRenderer>(nds, false);
+        break;
     case renderer3D_OpenGLCompute:
-        return std::make_unique<melonDS::GLRenderer>(nds, true);
+        result.OuterRenderer = std::make_unique<melonDS::GLRenderer>(nds, true);
+        break;
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
     case renderer3D_Metal:
-        return std::make_unique<melonDS::MetalRenderer>(nds, false);
+        result.OuterRenderer = std::make_unique<melonDS::MetalRenderer>(nds, false);
+        break;
     case renderer3D_MetalCompute:
-        return std::make_unique<melonDS::MetalRenderer>(nds, true);
+        result.OuterRenderer = std::make_unique<melonDS::MetalRenderer>(nds, true);
+        break;
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-    case renderer3D_VulkanCompute:
-        // The outer 2D/timing renderer stays SoftRenderer here: melonDS's own
-        // Vulkan architecture (see the reconstruction plan, "重大計画修正版")
-        // has GPU3D alone own the swappable Renderer3D backend -- there is no
-        // separate outer "VulkanRenderer" class to build. GPU3D may already
-        // own a real VulkanRenderer3D for internal validation, but `actual`
-        // must not report Vulkan
-        // until the Qt frontend session actually consumes it end to end:
-        // structured 2D snapshot -> VulkanOutput final composition ->
-        // FrameQueue -> VulkanSurfacePresenter (plan phase R3). Until that
-        // pipeline is connected, visible output is Software end to end.
-        report.actual = renderer3D_Software;
-        report.failedStage = "Vulkan frontend session";
-        report.fallbackReason =
-            "Vulkan frontend composition/presentation path incomplete: GPU3D may own a "
-            "VulkanRenderer3D backend for internal validation, but the Qt frontend session "
-            "(structured 2D snapshot + VulkanOutput + FrameQueue + surface + "
-            "VulkanSurfacePresenter, plan phase R3) is not yet connected, so visible output "
-            "is Software end to end";
-        return std::make_unique<melonDS::SoftRenderer>(nds);
+        result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
+        result.Renderer3D = CreateRenderer3DForSelection(
+            nds, result.NormalizedRenderer, result);
+        result.ActualRenderer = renderer3D_Software;
+        if (!result.Renderer3D)
+        {
+            const std::string failedStage = result.FailedStage.empty()
+                ? "Sapphire Vulkan Renderer3D initialization"
+                : result.FailedStage;
+            const std::string fallbackReason = result.FallbackReason.empty()
+                ? "Vulkan Renderer3D initialization failed"
+                : result.FallbackReason;
+            ActivateVulkanRuntimeFallback(
+                failedStage.c_str(), -1);
+            RegenerateSoftwareFallback(
+                nds, result, failedStage, fallbackReason);
+        }
+        break;
 #endif
     default:
-        report.normalized = renderer3D_Software;
-        report.actual = renderer3D_Software;
-        report.failedStage = "renderer normalization";
-        report.fallbackReason = "renderer ID is unavailable in this build";
-        return std::make_unique<melonDS::SoftRenderer>(nds);
+        result.NormalizedRenderer = renderer3D_Software;
+        RegenerateSoftwareFallback(
+            nds,
+            result,
+            "renderer normalization",
+            "renderer ID is unavailable in this build");
+        break;
     }
+
+    return result;
 }
 
 std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
-    BackendCreationReport& report)
+    RendererCreationResult& result)
 {
-    // GPU3D owns the active Renderer3D backend; this factory builds the
-    // Vulkan/VulkanCompute selection for that existing ownership path. R2
-    // canonicalizes the temporary Override name without moving ownership.
-    const int normalized = NormalizeRendererForPlatform(
-        ResolveRequestedRenderer(configuredRenderer));
+    const int normalized = NormalizeRendererForPlatform(configuredRenderer);
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    if (normalized == renderer3D_Vulkan || normalized == renderer3D_VulkanCompute)
+    if (normalized == renderer3D_Vulkan)
     {
-        const bool computeRequested = normalized == renderer3D_VulkanCompute;
         auto renderer3D = melonDS::CreateSapphireVulkanRenderer3D(
-            nds.GPU.GPU3D, computeRequested);
+            nds.GPU.GPU3D, false);
         if (!renderer3D)
         {
-            report.actual = renderer3D_Software;
-            report.failedStage = computeRequested
-                ? "Sapphire Vulkan Compute Renderer3D initialization"
-                : "Sapphire Vulkan Renderer3D initialization";
-            report.fallbackReason = "Vulkan Renderer3D initialization failed";
+            result.ActualRenderer = renderer3D_Software;
+            result.FailedStage = "Sapphire Vulkan Renderer3D initialization";
+            result.FallbackReason = "Vulkan Renderer3D initialization failed";
         }
         return renderer3D;
     }
@@ -112,6 +134,43 @@ std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DForSelection(
     (void)nds;
 #endif
     return nullptr;
+}
+
+int EvaluateActualRenderer(
+    melonDS::NDS& nds,
+    int normalizedRenderer,
+    PresentationBackend presentation)
+{
+    normalizedRenderer = NormalizeRendererForPlatform(normalizedRenderer);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (normalizedRenderer == renderer3D_Vulkan)
+    {
+        if (presentation != PresentationBackend::Vulkan)
+            return renderer3D_Software;
+        const VulkanRuntimeCapabilities caps = QueryCurrentVulkanCapabilities(nds);
+        return caps.Renderer3DReady
+            && caps.Structured2DReady
+            && caps.FinalCompositorReady
+            && caps.FrameQueueReady
+            && caps.SurfaceReady
+            && caps.PresenterReady
+            ? renderer3D_Vulkan
+            : renderer3D_Software;
+    }
+#else
+    (void)nds;
+#endif
+
+    if (RendererRequiresOpenGLContext(normalizedRenderer)
+        && presentation != PresentationBackend::OpenGL)
+        return renderer3D_Software;
+#if defined(MELONPRIME_ENABLE_METAL)
+    if ((normalizedRenderer == renderer3D_Metal
+         || normalizedRenderer == renderer3D_MetalCompute)
+        && presentation != PresentationBackend::Metal)
+        return renderer3D_Software;
+#endif
+    return normalizedRenderer;
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)

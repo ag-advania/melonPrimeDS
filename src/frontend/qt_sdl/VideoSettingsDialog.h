@@ -76,6 +76,9 @@ private slots:
 
     void on_cbSoftwareThreaded_stateChanged(int state);
 private:
+#ifdef MELONPRIME_DS
+    int presentationBackendId();
+#endif
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
     void retranslatePhase12VulkanControls();
@@ -92,9 +95,7 @@ private:
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     QRadioButton* rb3DVulkan = nullptr;
-    QRadioButton* rb3DVulkanCompute = nullptr;
     class QPushButton* btnVulkanRasterPreset = nullptr;
-    class QPushButton* btnVulkanComputePreset = nullptr;
 #endif
 
     int oldRenderer;

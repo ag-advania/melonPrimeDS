@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+#include "MelonPrimeVideoBackend.h"
+
 namespace melonDS
 {
 class NDS;
@@ -15,34 +17,55 @@ class Renderer3D;
 namespace MelonPrime::VideoBackend
 {
 
-struct BackendCreationReport
+struct RendererCreationResult
 {
-    int requested = 0;
-    int normalized = 0;
-    int actual = 0;
-    std::string failedStage;
-    std::string fallbackReason;
+    RendererCreationResult();
+    ~RendererCreationResult();
+    RendererCreationResult(RendererCreationResult&&) noexcept;
+    RendererCreationResult& operator=(RendererCreationResult&&) noexcept;
+    RendererCreationResult(const RendererCreationResult&) = delete;
+    RendererCreationResult& operator=(const RendererCreationResult&) = delete;
+
+    std::unique_ptr<melonDS::Renderer> OuterRenderer;
+    std::unique_ptr<melonDS::Renderer3D> Renderer3D;
+    PresentationBackend Presentation = PresentationBackend::NativeQt;
+    int RequestedRenderer = 0;
+    int NormalizedRenderer = 0;
+    int ActualRenderer = 0;
+    std::string FailedStage;
+    std::string FallbackReason;
 };
 
-std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
+RendererCreationResult CreateRendererForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
-    BackendCreationReport& report);
+    bool useGLPresentation);
 
 // Canonical GPU3D backend factory. GPU3D::SetCurrentRenderer is the only
 // active Vulkan Renderer3D ownership path.
 std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
-    BackendCreationReport& report);
+    RendererCreationResult& result);
+
+void RegenerateSoftwareFallback(
+    melonDS::NDS& nds,
+    RendererCreationResult& result,
+    std::string failedStage,
+    std::string fallbackReason);
+
+int EvaluateActualRenderer(
+    melonDS::NDS& nds,
+    int normalizedRenderer,
+    PresentationBackend presentation);
 
 // Migration alias only; remove after call-site audit in R26.
 inline std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
-    BackendCreationReport& report)
+    RendererCreationResult& result)
 {
-    return CreateRenderer3DForSelection(nds, configuredRenderer, report);
+    return CreateRenderer3DForSelection(nds, configuredRenderer, result);
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
