@@ -1129,8 +1129,6 @@ void VulkanRenderer3D::destroySapphireCompositionCommandContext() noexcept
 }
 
 // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_EXACT_ABI_A7
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_ODR_FIX_V1
 bool VulkanRenderer3D::ensureSapphireCompositionShaderModule()
 {
     if (Device == VK_NULL_HANDLE)
@@ -1138,8 +1136,8 @@ bool VulkanRenderer3D::ensureSapphireCompositionShaderModule()
     if (SapphireCompositionShaderModule != VK_NULL_HANDLE)
         return true;
 
-    const auto* bytes = melonDS::SapphireCompositorShaderData::kCompositorSpirv;
-    const size_t byteCount = melonDS::SapphireCompositorShaderData::kCompositorSpirvSize;
+    const unsigned char* bytes = melonDS_android_vulkan_compositor_comp_spv;
+    const size_t byteCount = sizeof(melonDS_android_vulkan_compositor_comp_spv);
     if (byteCount < 20u || (byteCount & 3u) != 0u
         || bytes[0] != 0x03u || bytes[1] != 0x02u
         || bytes[2] != 0x23u || bytes[3] != 0x07u)

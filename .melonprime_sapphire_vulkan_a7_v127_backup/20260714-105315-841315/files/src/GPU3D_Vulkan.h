@@ -76,32 +76,18 @@ struct SapphireVulkanCompositionResources
 // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
 // Command-recording context and push-constant ABI for the final GPU compositor.
 // A5 intentionally does not claim the final shader pipeline or dispatch.
-struct SapphireCompositionPushConstants
+struct alignas(16) SapphireCompositionPushConstants
 {
     u32 OutputWidth = 0;
     u32 OutputHeight = 0;
+    u32 Source3DWidth = 0;
+    u32 Source3DHeight = 0;
+    u32 PackedStrideWords = 0;
     u32 Scale = 1;
-    u32 RendererWidth = 0;
-    u32 RendererHeight = 0;
-    u32 PackedStride = 0;
     u32 ScreenSwap = 0;
-    u32 Filtering = 0;
-    u32 PreviousTopSourceValid = 0;
-    u32 PreviousBottomSourceValid = 0;
-    u32 CaptureSourceValid = 0;
-    u32 CaptureSourceScreenSwapValid = 0;
-    u32 CaptureSourceScreenSwap = 0;
-    u32 LiveSourceScreenSwap = 0;
-    u32 Class4VramStructuredPair = 0;
-    u32 Class4NoAboveVramStructuredPair = 0;
-    u32 Class4PreservePackedVramValid = 0;
-    u32 Class4PreservePackedVramScreenSwap = 0;
-    u32 TopStructuredHandoffNoCurrent3d = 0;
-    u32 BottomStructuredHandoffNoCurrent3d = 0;
-    u32 TopStructuredHandoffSuppress3d = 0;
-    u32 BottomStructuredHandoffSuppress3d = 0;
+    u32 Reserved = 0;
 };
-static_assert(sizeof(SapphireCompositionPushConstants) == 88);
+static_assert(sizeof(SapphireCompositionPushConstants) == 32);
 
 struct SapphireVulkanCompositionCommandContext
 {
@@ -113,29 +99,10 @@ struct SapphireVulkanCompositionCommandContext
     bool Ready = false;
 };
 
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_EXACT_ABI_A7
-// Exact descriptor and push-constant ABI of Sapphire's VulkanCompositor shader.
-// Pipeline creation and vkCmdDispatch remain intentionally disabled until A4's
-// output/history/capture resources are migrated to these exact image2D contracts.
-struct SapphireCompositionDescriptorAbi
-{
-    static constexpr u32 OutputImageBinding = 0;
-    static constexpr u32 Current3DImageBinding = 1;
-    static constexpr u32 TopPackedBufferBinding = 2;
-    static constexpr u32 BottomPackedBufferBinding = 3;
-    static constexpr u32 PreviousTop3DImageBinding = 4;
-    static constexpr u32 Capture3DBufferBinding = 5;
-    static constexpr u32 PreviousBottom3DImageBinding = 6;
-    static constexpr u32 BindingCount = 7;
-    static constexpr u32 PushConstantBytes = 88;
-};
-static_assert(SapphireCompositionDescriptorAbi::BindingCount == 7);
-static_assert(SapphireCompositionDescriptorAbi::PushConstantBytes == 88);
-
 // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
 // The exact Sapphire compositor SPIR-V is now owned by the core renderer and
-// materialized as a VkShaderModule. The exact A7 descriptor and push-constant ABI is declared above; pipeline
-// creation and dispatch remain deferred until A4 resources match that ABI.
+// materialized as a VkShaderModule. Descriptor ABI correction and dispatch are
+// intentionally deferred; no invalid pipeline is created against the A4 layout.
 struct SapphireVulkanCompositionShaderModule
 {
     VkShaderModule Module = VK_NULL_HANDLE;
