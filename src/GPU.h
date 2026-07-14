@@ -1018,16 +1018,16 @@ public:
     Renderer3D& GetRenderer3D() noexcept
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (Renderer3D* current = GPU.GPU3D.GetCurrentRendererOverride())
-            return *current;
+        if (GPU.GPU3D.HasCurrentRenderer())
+            return GPU.GPU3D.GetCurrentRenderer();
 #endif
         return *Rend3D;
     }
     const Renderer3D& GetRenderer3D() const noexcept
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (const Renderer3D* current = GPU.GPU3D.GetCurrentRendererOverride())
-            return *current;
+        if (GPU.GPU3D.HasCurrentRenderer())
+            return GPU.GPU3D.GetCurrentRenderer();
 #endif
         return *Rend3D;
     }

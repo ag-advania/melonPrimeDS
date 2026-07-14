@@ -108,8 +108,24 @@ public:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     void SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept;
-    [[nodiscard]] Renderer3D* GetCurrentRendererOverride() noexcept { return CurrentRenderer.get(); }
-    [[nodiscard]] const Renderer3D* GetCurrentRendererOverride() const noexcept { return CurrentRenderer.get(); }
+    [[nodiscard]] Renderer3D& GetCurrentRenderer() noexcept { return *CurrentRenderer; }
+    [[nodiscard]] const Renderer3D& GetCurrentRenderer() const noexcept { return *CurrentRenderer; }
+    [[nodiscard]] bool HasCurrentRenderer() const noexcept { return CurrentRenderer != nullptr; }
+    [[nodiscard]] u64 GetCurrentRendererGeneration() const noexcept
+    {
+        return CurrentRendererGeneration;
+    }
+
+    // Migration aliases only. New call sites use HasCurrentRenderer() and
+    // GetCurrentRenderer(); remove these pointer-returning names in R26.
+    [[nodiscard]] Renderer3D* GetCurrentRendererOverride() noexcept
+    {
+        return HasCurrentRenderer() ? &GetCurrentRenderer() : nullptr;
+    }
+    [[nodiscard]] const Renderer3D* GetCurrentRendererOverride() const noexcept
+    {
+        return HasCurrentRenderer() ? &GetCurrentRenderer() : nullptr;
+    }
 #endif
 
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
@@ -327,6 +343,7 @@ public:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     std::unique_ptr<Renderer3D> CurrentRenderer;
+    u64 CurrentRendererGeneration = 0;
 #endif
 };
 

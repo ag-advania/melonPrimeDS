@@ -29,11 +29,21 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
     int configuredRenderer,
     BackendCreationReport& report);
 
-// MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
-std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
+// Canonical GPU3D backend factory. GPU3D::SetCurrentRenderer is the only
+// active Vulkan Renderer3D ownership path.
+std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
     BackendCreationReport& report);
+
+// Migration alias only; remove after call-site audit in R26.
+inline std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
+    melonDS::NDS& nds,
+    int configuredRenderer,
+    BackendCreationReport& report)
+{
+    return CreateRenderer3DForSelection(nds, configuredRenderer, report);
+}
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
 // Runtime capability flags for the Vulkan frontend pipeline (plan phase R0).

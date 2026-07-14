@@ -158,6 +158,7 @@ void GPU3D::SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept
     CurrentRenderer = std::move(renderer);
     if (CurrentRenderer)
         CurrentRenderer->Reset();
+    ++CurrentRendererGeneration;
 }
 #endif
 
@@ -2932,4 +2933,3 @@ void GPU3D::Write32(u32 addr, u32 val) noexcept
 }
 
 }
-

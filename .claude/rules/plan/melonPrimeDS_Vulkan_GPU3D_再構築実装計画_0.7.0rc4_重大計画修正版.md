@@ -63,6 +63,35 @@
 
 検証: 固定core commitと45ファイル、固定frontend tagと9ファイルの改行正規化比較に成功。`FrameQueue`参照method 18件とAndroid/EGL API非混入を静的監査し、`git diff --check`成功。ビルドはユーザー指示により省略。
 
+## R2 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU.h`
+   - `src/GPU3D.h`
+   - `src/GPU3D.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.h`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp`
+   - `src/frontend/qt_sdl/EmuThread.cpp`
+2. 新しく追加した型、関数、resource
+   - canonical `GPU3D::GetCurrentRenderer()` const/non-const、`HasCurrentRenderer()`。
+   - renderer切替ごとに増加する`GetCurrentRendererGeneration()` hook。
+   - canonical `CreateRenderer3DForSelection()` factory。
+3. 削除した旧経路
+   - 実行call siteから`GetCurrentRendererOverride()`と`CreateRenderer3DOverrideForSelection()`を除去し、R26削除用aliasだけを残した。
+   - `actual=Software`と`normalized=Vulkan`の差によって同じrendererを再生成する旧切替判定を除去した。
+4. 所有権とframe lifecycleの変更
+   - active Vulkan `Renderer3D`の唯一のunique ownerを`GPU3D::CurrentRenderer`とした。
+   - callerが保持する`renderLock`内で、旧owner停止・破棄、outer生成、Vulkan 3D生成・Init、`SetCurrentRenderer`によるReset、render settings適用を一つの外部非公開transactionとして実行する。
+   - `CurrentRendererGeneration`は公開完了後だけ読み取られ、R3 frontend sessionが旧generation resourceを拒否する基準になる。
+5. 参照実装との差分
+   - 非Vulkan outer rendererが持つ既存`Rend3D`は非MelonPrime互換用に維持し、MelonPrime Vulkan選択時だけ`GPU3D::CurrentRenderer`をactive backendとして優先する。
+   - Vulkan初期化失敗時はcurrent ownerを設定せず、outer `SoftRenderer3D`へfallbackする。
+6. 後続フェーズへ渡すinterface
+   - `HasCurrentRenderer()` + reference-returning `GetCurrentRenderer()`。
+   - `GetCurrentRendererGeneration()`とcanonical factory名。
+
+検証: legacy `Override`実行call site 0件、`VulkanRenderer3D` owner unique_ptrがfactory returnと`GPU3D::CurrentRenderer`以外に存在しないこと、切替判定がnormalized renderer基準であることを静的監査。`git diff --check`成功。ビルドはユーザー指示により省略。
+
 ---
 
 # 1. 目的

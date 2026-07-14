@@ -81,7 +81,7 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
     }
 }
 
-std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
+std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DForSelection(
     melonDS::NDS& nds,
     int configuredRenderer,
     BackendCreationReport& report)
@@ -121,8 +121,12 @@ VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
     // Real, wired today: whether a Vulkan-capable device/queue exists, and
     // whether GPU3D currently owns a VulkanRenderer3D instance.
     caps.ContextReady = melonDS::VulkanContext::Get().IsReady();
-    if (melonDS::Renderer3D* current = nds.GPU.GPU3D.GetCurrentRendererOverride())
-        caps.Renderer3DReady = dynamic_cast<melonDS::VulkanRenderer3D*>(current) != nullptr;
+    if (nds.GPU.GPU3D.HasCurrentRenderer())
+    {
+        caps.Renderer3DReady =
+            dynamic_cast<melonDS::VulkanRenderer3D*>(
+                &nds.GPU.GPU3D.GetCurrentRenderer()) != nullptr;
+    }
 
     // Structured2DReady/FinalCompositorReady/FrameQueueReady/SurfaceReady/
     // PresenterReady/TimelineSemaphoreReady/DescriptorIndexingReady stay at

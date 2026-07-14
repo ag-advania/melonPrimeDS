@@ -1272,27 +1272,39 @@ void EmuThread::updateRenderer()
 
 #include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
 
-    if (videoRenderer != lastVideoRenderer)
+    const int configuredRenderer = cfg.GetInt("3D.Renderer");
+    const int normalizedRenderer =
+        MelonPrime::VideoBackend::NormalizeRendererForPlatform(configuredRenderer);
+    if (normalizedRenderer != lastVideoRenderer)
     {
         MelonPrime::VideoBackend::BackendCreationReport report;
         auto renderer = MelonPrime::VideoBackend::CreateRendererForSelection(
-            *nds, cfg.GetInt("3D.Renderer"), report);
-        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: stop the previous owner before constructing the new Vulkan Renderer3D.
+            *nds, configuredRenderer, report);
+        // Renderer switching runs while the caller holds renderLock. Replacing
+        // the outer renderer first stops/destroys the previous GPU3D owner;
+        // the new 3D backend is then initialized and published as one
+        // GUI-invisible transaction.
         nds->SetRenderer(std::move(renderer));
 #if defined(MELONPRIME_ENABLE_VULKAN)
-        auto renderer3DOverride =
-            MelonPrime::VideoBackend::CreateRenderer3DOverrideForSelection(
-                *nds, cfg.GetInt("3D.Renderer"), report);
-        nds->GPU.SetRenderer3D(std::move(renderer3DOverride));
+        auto renderer3D =
+            MelonPrime::VideoBackend::CreateRenderer3DForSelection(
+                *nds, configuredRenderer, report);
+        nds->GPU.SetRenderer3D(std::move(renderer3D));
 #endif
 
         Platform::Log(Platform::LogLevel::Info,
             "[MelonPrime] video backend: requested=%s(%d) normalized=%s(%d) "
-            "actual=%s(%d) presenter=%s failed_stage=%s reason=%s config_changed=no\n",
+            "actual=%s(%d) presenter=%s generation=%llu failed_stage=%s reason=%s config_changed=no\n",
             MelonPrime::VideoBackend::RendererName(report.requested), report.requested,
             MelonPrime::VideoBackend::RendererName(report.normalized), report.normalized,
             MelonPrime::VideoBackend::RendererName(report.actual), report.actual,
             MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            static_cast<unsigned long long>(
+                nds->GPU.GPU3D.GetCurrentRendererGeneration()),
+#else
+            0ull,
+#endif
             report.failedStage.empty() ? "none" : report.failedStage.c_str(),
             report.fallbackReason.empty() ? "none" : report.fallbackReason.c_str());
 
@@ -1302,7 +1314,7 @@ void EmuThread::updateRenderer()
 
     // MELONPRIME_VULKAN_HARDWARE_SETTINGS_READ_V1
     const int selectedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-        cfg.GetInt("3D.Renderer"));
+        configuredRenderer);
     const bool sharedHardwareSettings =
 #if defined(MELONPRIME_ENABLE_METAL)
         selectedRenderer == renderer3D_Metal ||
