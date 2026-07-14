@@ -412,6 +412,33 @@
 
 検証: 3 shader sourceの固定commit正規化diff 0件、`GraphicsVertexGpu` field/offset assertion、opaque/fragment-depth/fast/UI pipeline存在、source-order append、NeedOpaque flag条件、texture opaque flag、draw command、Color/Attr/Depth/DepthStencil attachment、SoftwareRenderer3D/QImage依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R13 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - 本計画書（translucent実装本体は固定Sapphire codeが既に完備していたため、独自source差分を追加していない）
+2. Sapphire直接移植conformance
+   - `GPU3D_Vulkan_GraphicsRasterShader.frag`と`GPU3D_Vulkan_GraphicsNoColorShader.frag`は固定core commitとの正規化diff 0件である。
+   - translucent blend、depth/stencil、polygon ID、background alpha zeroのpipeline作成とdraw処理は、固定`GPU3D_Vulkan.cpp`の同一関数ブロックを一体で維持する。
+3. blendとpipeline variant
+   - alpha blend有効時はcolorを`SRC_ALPHA`／`ONE_MINUS_SRC_ALPHA`／`ADD`、alphaを`ONE`／`ONE`／`MAX`とするSapphire原文のattachment stateを使用する。
+   - DS alpha blend disable時は別のreplace attachmentを選び、一般blend pipelineの係数を実行時に改変しない。
+   - W/Z、less/less-or-equal、depth write on/off、fog write on/off、alpha blend on/offを32個の`GraphicsTranslucentPipelines`へ固定index化する。
+   - background alpha zeroはW/Z、depth compare、depth write、fog writeの16個の`GraphicsBgZeroTranslucentPipelines`として独立し、通常translucent pipelineへ統合しない。
+4. depthとpolygon ID
+   - polygon attr bit 14/11とtriangle W-buffer flagからcompare／write／Z-W variantをdraw単位で選択し、全alpha drawへ固定しない。
+   - 通常translucent drawはstencil compare mask/write mask `0x7F`、reference `0x40 | polyId`、`NOT_EQUAL`＋`REPLACE`を使用し、同一6-bit polygon IDの同一pixel再blendを抑止する。
+   - shadow ownershipのbit 7は`0x80` maskで別管理し、translucent marker＋IDのbit 6..0とclear/write maskを共有しない。
+   - background alpha zero pathは参照どおり`EQUAL`＋`INVERT`と`0xFE` maskを使用し、背景alpha-zero固有のcolor/attribute処理を保つ。
+5. draw order
+   - `GraphicsPolygons`はaccelerated sceneのsource append順のまま走査し、alpha drawの一括sortやtexture単位group化を行わない。
+   - `NeedOpaque`があるdrawは同じsource位置でopaque fragment passを先に実行し、その直後にtranslucent fragmentを参照pipelineへ残す。
+   - pipeline、descriptor、stencil stateはcached bind helperで変更時だけbindし、CPU polygon-ID maskを生成しない。
+6. 参照実装との差分
+   - R13のblend式、pipeline family、depth/stencil state、polygon-ID mask、background-alpha-zero分岐にはMelonPrime独自差分を追加していない。
+   - R8～R12のcontext ring、immutable scene/clear state、scaled attachments、Volk/desktop contextを外側adapterとして利用する。
+
+検証: 2 shader sourceの固定commit正規化diff 0件、blend factor/op、32通常＋16 bg-zero variant、depth compare/write、W/Z index、`NOT_EQUAL`/`REPLACE`、`0x7F` polygon-ID mask、`0x80` shadow mask、bg-zero `EQUAL`/`INVERT`、NeedOpaque先行、source-order drawを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論
