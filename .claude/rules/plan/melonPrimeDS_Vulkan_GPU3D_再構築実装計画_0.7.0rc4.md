@@ -5782,6 +5782,58 @@ melonDS-android     @ tag 0.7.0.rc4 （HEADがtagと一致）
 | R0b | 完了 | 2026-07-14 | `.claude\skills\build-mingw.bat --vulkan --jobs 1`で`MELONPRIME_ENABLE_VULKAN=ON`の実configure/build/link試行。R0で触った3ファイルのコンパイルはすべて成功したが、最終リンクが`ld.exe: cannot find ...ltrans*.ltrans.o`＋`make.exe: cannot open shared object file: C:`で失敗（2回連続で再現）。原因を特定: `/mingw64/bin`に`make.exe`という名前のバイナリが存在せず（`mingw32-make.exe`のみ）、`-flto=auto`がLTRANS並列化のため内部で`make`をPATH解決すると、`/usr/bin/make.exe`（x86_64-pc-msys向けビルド、MSYS-native）に解決されてしまい、このクロスシェル呼び出し経路では起動時に失敗することを確認。`mingw32-make.exe`を`make.exe`としてshadowするscratch PATH経由で手動検証し、成功（`melonPrimeDS.exe`が生成され、`PE32+ executable ... for MS Windows`と確認）。恒久修正として`build-mingw.bat`と`build-mingw-existing.bat`の両方に、`build/.mingw-make-shim/make.exe`（`mingw32-make.exe`のコピー）を自動生成しPATH先頭に追加する処理を追加し、チェックイン済みスクリプト経由でも同じ修正後の手順で再度configure/build/linkを実行し、`melonPrimeDS.exe`生成を再確認した。ただし、外側の`make`をshadowしても、LTRANS個別unitのコンパイルは内部で`sh.exe`（`/usr/bin/sh.exe`、MSYS-native）をさらに1段spawnしており、そちらは同じ「cannot open shared object file: C:」に引っかかることがあり、ログに`make: [...] Error 256 (ignored)`が数件残った。これはGCCのLTOドライバがparallel LTRANS失敗unitを検出してシリアルにフォールバック処理するためで、最終的な`ld`リンクは成功し、55MBの完全なexeが生成されることを確認済み（サイズ・PE32+ヘッダとも前回の手動shim検証と一致）。つまりshimは「ビルドを完走させる」という目的は達成しているが、環境の根本原因（`/usr/bin/sh.exe`がこのクロスシェル呼び出し経路で不安定）はこのshimだけでは完全には解消していない。この環境で`MELONPRIME_ENABLE_VULKAN=ON`のexeが実際にリンク成功したのは、本セッションで確認した限り初めてである（既存進捗記録は軒並み「ビルド／実機確認待ち」のままだった）。 |
 | R1 | 調査完了・実装未着手 | 2026-07-14 | ローカル参照リポジトリと`diff`／`diff -bw`で実比較を実施。line count差だけでは`GPU3D_Vulkan.cpp`が参照比14519対13943行、`diff`が28464行（ほぼ全行不一致に見える）だったが、`diff -bw`（空白無視）では751行まで縮小し、実質的な意味的差分は約5%と判明。`GPU3D_Vulkan.h`も同様（2053→400行）。差分の実体を確認: (1) 意図的で正しい適応 — 参照の`#include <vulkan/vulkan.h>`に対しmelonPrimeDSは`#include <volk.h>`を使用（プランのVulkanDispatch方針どおり）。(2) 意図的で正しい適応 — 参照の`New()`/`Reset(GPU&)`等のシグネチャに対し、melonPrimeDSは`New(GPU3D&)`+zero-arg override（`Reset() override { Reset(GPU); }`）でラップしている。これは本物の`GPU3D.h`の`Renderer3D`基底が実際に zero-arg virtual（`virtual void Reset() = 0;`等）であることを確認した結果、reference Android版のRenderer3D基底とは異なるこのcore向けの必須な適応であり、バグではないと判断。(3) 本当の乖離 — `SapphireVulkanCompositionInput/Resources/CommandContext/DescriptorAbi/ShaderModule`という約110行の構造体一式が`GPU3D_Vulkan.h`にだけ存在し、参照には無い。これはコメント中で自己申告どおり「pipeline creation and dispatch remain deferred」であり、R0のような虚偽の完了主張ではないが、architecturally R6（compositionの責務をVulkanOutputへ戻す）で移設予定の内容と一致した。`GPU2D_Vulkan.cpp/h`（melonPrimeDS独自、参照に対応ファイルなし）、`VulkanContext.cpp/h`（参照800/94行に対しmelonPrimeDS47/36行——大幅な縮小版）、`GPU3D_TexcacheVulkan.cpp/h`（行数同一だが内容はwhitespace差込みでほぼ全行相違——要detailed diff）は次セッションでの継続調査対象として残す。 |
 
+## 重大な計画修正（2026-07-14、R1調査中に発覚）
+
+**本計画の第3章（最終クラス所有関係）およびR2/R3の前提は誤りだった。** 実際に`melonDS-android-lib @ d779442`（本計画が指定する参照commitそのもの）を調査した結果、次が判明した。
+
+```text
+grep -rn "^class Renderer\b" melonDS-android-lib/src/*.h  → 該当なし
+```
+
+参照コアには、`Renderer2D`と`Renderer3D`は存在するが、両方を束ねる単一の`Renderer`基底クラスは**存在しない**。
+
+```cpp
+// melonDS-android-lib/src/GPU3D.h
+class GPU3D {
+    ...
+    [[nodiscard]] Renderer3D& GetCurrentRenderer() noexcept { return *CurrentRenderer; }
+    void SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept;
+    ...
+private:
+    std::unique_ptr<Renderer3D> CurrentRenderer = nullptr;
+};
+
+// melonDS-android-lib/src/GPU.h
+[[nodiscard]] Renderer3D& GetRenderer3D() noexcept { return GPU3D.GetCurrentRenderer(); }
+```
+
+つまり参照アーキテクチャでは、**3Dバックエンドの差し替えは`GPU3D`が単独で所有し**、2D（`GPU2D_Soft : Renderer2D`など）とは完全に独立している。さらに、Android側フロントエンド（`melonDS-android/app/src/main/cpp/renderer/VulkanOutput.cpp`）は次のように`VulkanRenderer3D&`を**直接**受け取っており、melonDSコア側に「Vulkan用の外側Rendererクラス」は一切存在しない。
+
+```cpp
+bool VulkanOutput::validateCompositorSubmission(
+    Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, int scale, u64 waitTimeoutNs);
+```
+
+つまり、GPU-resident 2D合成・`FrameQueue`・swapchainプレゼンテーションはすべて**melonDSコアの外、アプリ／フロントエンド層**に存在し、`GPU3D::CurrentRenderer`経由で得た`VulkanRenderer3D`を直接consumeしている。
+
+### 何が誤りだったか
+
+第3章・第7章・第8章で書いた「`VulkanRenderer : Renderer`が`Rend2D_A/B`・`Rend3D`・`Output`・`FrameQueue`を所有する」という設計は、**desktop upstream melonDS（melonPrimeDSの実際のコア）が持つ`GLRenderer : Renderer`／`MetalRenderer : Renderer`の形を参照アーキテクチャに投影しただけ**であり、参照コード自体には存在しない。
+
+一方、`melonPrimeDS`の現状（`GPU3D::CurrentRenderer`をVulkan専用に`#if defined(MELONPRIME_ENABLE_VULKAN)`でグラフトし、`SoftRenderer`を名目上の外側`Renderer`のままにし、Qt側`VulkanReference/VulkanOutput.*`・`VulkanSurfacePresenter.*`・`MelonPrimeScreenVulkan.*`がAndroidのapp層と同じ役割を担う）は、**desktop側の既存`Renderer`階層を壊さずに参照の実際の設計思想（3D backendはGPU3D単独所有、2D合成・presentationはコア外）を正しく移植した、意図的で妥当なハイブリッド**だったと判断する。
+
+### 撤回・修正する項目
+
+- **R2は撤回する。** `GPU3D::CurrentRenderer`は削除しない。これは参照コアの正規の設計であり、削除するとVulkan統合を参照から乖離させる（退行になる）。
+- **R3は「新規`VulkanRenderer : Renderer`をコアに実装する」ではなく、「Qt frontend層（`VulkanReference/VulkanOutput.*`・`VulkanSurfacePresenter.*`・`MelonPrimeScreenVulkan.*`）が、Androidのapp層と同じパターンで`GPU3D`から得た`VulkanRenderer3D&`を直接consumeし、GPU-resident 2D合成・FrameQueue・presentationを完成させる」に読み替える。**
+- 第6章・第9章・第18章・第19章・第21章・第22章の「outer VulkanRenderer」への言及は、上記の意味（コアではなくQt frontend層）へ読み替えて解釈すること。次回セッションで該当章を明示的に書き換える。
+- `GPU_Vulkan.h/.cpp`（現在`CreateSapphireVulkanRenderer3D`のみ保持）は、このまま「`GPU3D::CurrentRenderer`へ渡す`VulkanRenderer3D`を生成するfactory」の置き場所として妥当。新しい`class VulkanRenderer`をここに追加する必要はない。
+
+### まだ未確定の点（次セッションで調査すべき）
+
+- Android版が2D合成をどう扱っているか（`GPU2D_Soft`のみを常に使い、3DだけをVulkanに差し替えているのか、あるいは2D側にも何らかのVulkan pathがあるのか）を`GPU2D_Vulkan.cpp/h`（melonPrimeDS独自、参照に対応ファイルなし）の実装内容と突き合わせる。melonPrimeDSが独自に`GPU2D_Vulkan`を作った経緯（reference不在のため）が正しい設計判断だったかどうかは要検証。
+- `VulkanReference/VulkanOutput.cpp`・`VulkanSurfacePresenter.cpp`が実際に`GPU3D::GetCurrentRenderer()`（または`GPU::GetRenderer3D()`）経由で`VulkanRenderer3D&`を取得しているか、それとも別経路（例えば独自のGPU3D_Vulkan直接参照）を使っているかをコードで確認する。
+
 ## R0/R0b 検証済み事実（次セッション向けの前提）
 
 - `MELONPRIME_ENABLE_VULKAN=ON`のconfigure/build/linkは、`.claude\skills\build-mingw.bat --vulkan`（初回）または`.claude\skills\build-mingw-existing.bat`（増分）で、修正後は追加の手動PATH変更なしに成功する。
