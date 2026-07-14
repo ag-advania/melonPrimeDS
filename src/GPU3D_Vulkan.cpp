@@ -696,6 +696,8 @@ void VulkanRenderer3D::Reset(melonDS::GPU& gpu)
 void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
 {
     (void)gpu;
+    if (Initialized)
+        (void)waitForTextureCacheMutationSafePoint();
     Texcache.Reset();
     HasCpuFrame = false;
     FrameIdentical = false;
@@ -786,10 +788,11 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         logPerformanceIfNeeded();
     });
 
-    if (Initialized && ActiveBackendMode == BackendMode::GraphicsHardware)
-        (void)waitForTextureCacheMutationSafePoint();
     u8 clearBitmapDirty = 0;
-    const bool textureCacheChanged = Texcache.Update(clearBitmapDirty);
+    const bool textureCacheChanged = Texcache.Update(clearBitmapDirty, [this]() {
+        if (Initialized && ActiveBackendMode == BackendMode::GraphicsHardware)
+            (void)waitForTextureCacheMutationSafePoint();
+    });
     WarmTextureCache(gpu);
 
     const u32 scale = static_cast<u32>(std::max(1, ScaleFactor));
@@ -1446,6 +1449,8 @@ void VulkanRenderer3D::Stop(const melonDS::GPU& gpu)
 void VulkanRenderer3D::StopActiveBackend(const melonDS::GPU& gpu)
 {
     (void)gpu;
+    if (Initialized)
+        (void)waitForTextureCacheMutationSafePoint();
     Texcache.Reset();
     destroyVulkan();
     InitFailed = false;
@@ -12811,42 +12816,15 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
 
         if (sceneDraw.PrimitiveType == AcceleratedPrimitiveType::Lines)
         {
-            for (u32 triangleIndex = sceneDraw.FirstTriangle;
-                 triangleIndex < sceneDraw.FirstTriangle + sceneDraw.TriangleCount;
-                 triangleIndex++)
-            {
-                if (triangleIndex >= SharedGraphicsScene.Triangles.size())
-                    break;
+            if (sceneDraw.IndexCount < 2u || (sceneDraw.FirstIndex + 1u) >= SharedGraphicsScene.Indices.size())
+                continue;
 
-                const AcceleratedSceneTriangle& sceneTriangle = SharedGraphicsScene.Triangles[triangleIndex];
-                const u16 vertexIndex0 = sceneTriangle.Indices[0];
-                const u16 vertexIndex1 = sceneTriangle.Indices[1];
-                const u16 vertexIndex2 = sceneTriangle.Indices[2];
-                if (vertexIndex0 >= SharedGraphicsScene.Vertices.size()
-                    || vertexIndex1 >= SharedGraphicsScene.Vertices.size()
-                    || vertexIndex2 >= SharedGraphicsScene.Vertices.size())
-                {
-                    continue;
-                }
+            const u16 vertexIndex0 = SharedGraphicsScene.Indices[sceneDraw.FirstIndex];
+            const u16 vertexIndex1 = SharedGraphicsScene.Indices[sceneDraw.FirstIndex + 1u];
+            if (vertexIndex0 >= SharedGraphicsScene.Vertices.size() || vertexIndex1 >= SharedGraphicsScene.Vertices.size())
+                continue;
 
-                u32 boundaryFlags = 0u;
-                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge0) != 0u)
-                    boundaryFlags |= kTriangleFlagBoundaryEdge0;
-                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge1) != 0u)
-                    boundaryFlags |= kTriangleFlagBoundaryEdge1;
-                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge2) != 0u)
-                    boundaryFlags |= kTriangleFlagBoundaryEdge2;
-
-                const AcceleratedSceneVertex& vertex0 = SharedGraphicsScene.Vertices[vertexIndex0];
-                const AcceleratedSceneVertex& vertex1 = SharedGraphicsScene.Vertices[vertexIndex1];
-                const AcceleratedSceneVertex& vertex2 = SharedGraphicsScene.Vertices[vertexIndex2];
-                appendTriangle(
-                    makeTriangleVertex(vertex0, vertex0.X, vertex0.Y),
-                    makeTriangleVertex(vertex1, vertex1.X, vertex1.Y),
-                    makeTriangleVertex(vertex2, vertex2.X, vertex2.Y),
-                    boundaryFlags,
-                    sceneTriangle.PackedYBounds);
-            }
+            appendLineSegment(vertexIndex0, vertexIndex1);
             enqueueGraphicsDraw(Triangles.size() - polygonTriangleBase);
             continue;
         }

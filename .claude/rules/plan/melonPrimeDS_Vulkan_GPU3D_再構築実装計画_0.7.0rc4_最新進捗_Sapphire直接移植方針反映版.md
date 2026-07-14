@@ -310,24 +310,53 @@
    - `RenderPolygonRAM`とpolygon数、display/alpha/clear/fog/toon/edge/XPos stateを一度に固定する`AcceleratedSceneBuildInput`と`CaptureAcceleratedSceneBuildInput()`。
    - build結果へ同じscalar/table stateを保持する`AcceleratedSceneRenderState`。
    - draw単位の`TexParam`/`TexPalette`とcoverage depth bias。
-   - 共通frontend内で2 endpointを1px幅の4 vertex/2 triangleへ変換するline polygon quad。
+   - Sapphire原文どおり、共通frontendがline polygonの2 endpoint/indexを確定し、Vulkan側の`appendLineSegment`が1px幅の4 vertex/2 triangleへ変換する責務境界。
 3. 削除した旧経路
    - `SetRenderSettings()`で`HiresCoordinates`を捨てる処理を削除した。
    - live graphics pathからVulkan独自polygon loopを外し、`GPU3D_AcceleratedFrontend`を常時呼ぶよう固定した。旧非到達builder本体のsource削除はR26 cleanupで行う。
-   - source lineをVulkan側で再quad化する経路を削除し、sceneが生成したtriangleをそのままGPU ABIへ変換する。
+   - Vulkan独自の第二polygon builderをlive pathから外しつつ、Sapphire原文のsource line quad化関数は正式scene upload adapterとして維持した。
 4. 所有権とframe lifecycleの変更
    - EmuThread上でrender stateとpolygon pointer順をimmutable build inputへ一度captureし、そのinputだけからsceneを構築する。
-   - draw順は`RenderPolygonRAM`順のままappendし、非隣接stateを結合・再sortしない。`FirstTranslucentDraw`は有効drawをpublishする瞬間に確定する。
+   - draw順は`RenderPolygonRAM`順のままappendし、非隣接stateを結合・再sortしない。`FirstTranslucentDraw`の確定位置もSapphire原文に合わせた。
    - Vulkan graphics変換区間はsceneのvertex/triangle/draw/texture/render stateだけを読み、source polygonを再dereferenceしない。
 5. 参照実装との差分
-   - desktop側の既存GPU ABI buffer/pipelineは維持し、scene build後の一括packing adapterとして使用する。geometry変換はadapter内で行わない。
+   - desktop側の既存GPU ABI buffer/pipelineは維持し、scene build後の一括packing adapterとして使用する。line quad化はSapphire原文の`appendLineSegment`だけを使用し、MelonPrime独自展開は追加しない。
    - alpha-zero polygonのboundary line描画はsource line primitive変換ではなくraster pass生成のため、既存scene triangle boundaryから生成する処理を維持する。
 6. 後続フェーズへ渡すinterface
    - R10 texture cacheがsource polygon pointerを読まず利用できるdraw単位texture key。
    - R11～R16が同一frameのclear/fog/toon/edge/capture stateを参照できる`AcceleratedSceneRenderState`。
    - R24がslot-local upload/synchronizationへ接続できる、live `GPU3D`から分離されたscene build境界。
 
-検証: build input指定13項目のcapture、`HiresCoordinates`伝播、line 4 vertex/2 triangle、draw append順、graphics変換区間のsource polygon dereference 0件、live geometry pathの共通frontend固定を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+検証: build input指定13項目のcapture、`HiresCoordinates`伝播、frontendのline 2 endpoint/index出力、Vulkan参照`appendLineSegment`による4 vertex/2 triangle化、draw append順、graphics変換区間のsource polygon dereference 0件、live geometry pathの共通frontend固定を静的監査。R10着手時の正規化diffでMelonPrime独自line展開を除去し、Sapphire原文の責務境界へ復元した。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
+## R10 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Texcache.h`
+   - `src/GPU3D_AcceleratedFrontend.cpp`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/VulkanReferenceManifest.md`
+2. Sapphire直接移植とconformance audit
+   - 固定core commitとの正規化diffで`GPU3D_TexcacheVulkan.h/.cpp`を照合し、差分が計画で許可された`<volk.h>`／dispatch includeの2行だけであることを確認した。allocation、upload、opaque判定、descriptor取得、cleanupはSapphire原文をそのまま維持する。
+   - R9でMelonPrime独自にfrontendへ移していたline quad化を除去し、Sapphire原文どおりfrontendは2 endpoint/indexを出力、`GPU3D_Vulkan.cpp`の参照`appendLineSegment`がquad化する境界へ復元した。
+   - `VulkanReferenceManifest.md`を現行のimmutable scene input、coverage adapter、render context／frame handoff差分に合わせ、未分類差分を残さない記録へ更新した。
+3. texture cache更新とlifetime
+   - 現行melonDSのGPU所有／clear bitmap dirty APIを維持したまま、Sapphireの`BeforeMutation` callbackを`Texcache::Update()`へ移植した。
+   - `VRAMDirty_Texture`／`VRAMDirty_TexPal`とVRAM mapからcoherent flat VRAMを作り、hashが変わったcache entryだけをinvalidate/reuseする。
+   - dirtyがない通常frameではcontext fenceを待たず、実際にentryをinvalidate/reuseする直前だけ`waitForTextureCacheMutationSafePoint()`を呼ぶ。
+   - `Reset()`／`Stop()`では`Texcache.Reset()`によるimage破棄前にprimary fenceとthreaded render contextを待ち、in-flight descriptor/image参照を残さない。
+   - 参照loaderのupload command/fenceを維持し、staging copy完了後だけlayerを公開する。texture更新ごとの`vkDeviceWaitIdle()`は使用しない。
+4. descriptor、sampler、fallback
+   - runtime capabilityから`NonUniform`、`CompatDynamicUniform`、`BaseSingleDescriptor`を選び、descriptor indexing非対応でもVulkan GPU rasterを継続する。
+   - DSのclamp/repeat/mirrorは参照shaderの`texParam`座標処理と`texelFetch`で実装済みであり、texture arrayの固定samplerを共有してdrawごとのsampler生成を行わない。
+   - renderer初期化時に1×1白fallback textureを一度作り、invalid descriptorやdescriptor上限時もpolygonを削除せずfallback indexで描画する。
+   - `IsTextureLayerOpaque()`のlayer maskをNeedOpaque判定へ渡し、同じdecode結果を3 descriptor pathで共有する。
+5. 参照実装との差分
+   - `GPU3D_TexcacheVulkan.*`の差分はVolk include／dispatchだけである。
+   - generic `GPU3D_Texcache.h`は現行melonDSの`GPU&`所有と`clrBitmapDirty`出力をcore compatibility adapterとして維持し、mutation callbackの位置とcache invalidation algorithmをSapphireへ合わせた。
+   - desktop resource lifetimeはR8の6 context fenceをsafe pointに利用する。R24で一般retire queueへ統合するまで、texture mutation時だけ明示待機する。
+
+検証: 固定commitに対する`GPU3D_TexcacheVulkan.*`正規化diff、loader API 5関数、dirty derivation/coherency/hash invalidation、3 descriptor mode選択、opaque layer mask、fallback descriptor、shader側clamp/repeat/mirror、mutation callback位置、Reset/Stop破棄前wait、R9 line責務境界を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 

@@ -25,10 +25,11 @@ There are no unclassified divergences in the audited set. Any future difference 
 
 | Destination | Reference path | Class and retained difference |
 |---|---|---|
-| `src/GPU3D_AcceleratedFrontend.h` | `src/GPU3D_AcceleratedFrontend.h` | Reference code; provenance comment only. |
-| `src/GPU3D_AcceleratedFrontend.cpp` | `src/GPU3D_AcceleratedFrontend.cpp` | Reference code; provenance comment only. |
-| `src/GPU3D_Vulkan.h` | `src/GPU3D_Vulkan.h` | Reference code plus core compatibility adapters and isolated MelonPrime structured-2D/compositor temporary bridges; R6 removes core composition ownership and R17/R26 remove the temporary structured bridge. |
-| `src/GPU3D_Vulkan.cpp` | `src/GPU3D_Vulkan.cpp` | Same classification as the header; the reference renderer body remains the base, with desktop `volk` dispatch and the temporary bridges named above. |
+| `src/GPU3D_AcceleratedFrontend.h` | `src/GPU3D_AcceleratedFrontend.h` | Reference-majority MelonPrime adaptation: provenance plus immutable polygon/render-state input, per-draw texture keys, high-resolution setting transport, and coverage depth-bias transport. Geometry, line endpoint resolution, draw ordering, and coverage algorithms remain at the pinned reference locations. |
+| `src/GPU3D_AcceleratedFrontend.cpp` | `src/GPU3D_AcceleratedFrontend.cpp` | Same classification as the header. The R10 conformance audit restored reference line ownership: this frontend emits the two resolved endpoints and `GPU3D_Vulkan.cpp` performs the pinned `appendLineSegment` expansion. |
+| `src/GPU3D_Texcache.h` | `src/GPU3D_Texcache.h` | Core compatibility adaptation: current melonDS GPU ownership and clear-bitmap dirty ABI are retained; the pinned before-mutation callback is preserved so Vulkan waits only immediately before invalidation/reuse. |
+| `src/GPU3D_Vulkan.h` | `src/GPU3D_Vulkan.h` | Reference-majority core/Desktop adaptation: `Renderer3D` ownership wrappers, `volk`, desktop `VulkanContext` accessors, scaled render-target state, six-slot resource completion handoff, immutable scene input, and `Vulkan3DFrameView`. The duplicate core compositor was removed in R6; remaining temporary/dead builders are owned by R26. |
+| `src/GPU3D_Vulkan.cpp` | `src/GPU3D_Vulkan.cpp` | Same classification as the header. The pinned raster/texture/line algorithms remain the base; desktop queue synchronization and frame handoff are isolated adapters. |
 | `src/GPU3D_TexcacheVulkan.h` | `src/GPU3D_TexcacheVulkan.h` | Core compatibility adaptation: `<volk.h>` replaces direct Vulkan prototypes. |
 | `src/GPU3D_TexcacheVulkan.cpp` | `src/GPU3D_TexcacheVulkan.cpp` | Core compatibility adaptation: `volk` replaces `VulkanDispatch.h`. |
 | `src/VulkanContext.h` | `src/VulkanContext.h` | Desktop platform adaptation: process-wide ref-counted context, desktop surface extensions, and `volk`; R4 completes platform instance/present requirements and R24 completes shared synchronization/lifetime. |

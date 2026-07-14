@@ -503,6 +503,9 @@ void BuildAcceleratedScene(
         draw.FirstTriangle = static_cast<u32>(outScene.Triangles.size());
         draw.PrimitiveType = polygon->Type == 1 ? AcceleratedPrimitiveType::Lines : AcceleratedPrimitiveType::Triangles;
 
+        if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
+            outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
+
         u32 vertexAttrBase = BuildAcceleratedVertexAttr(draw.Meta);
         if (draw.CoverageFixState.Apply)
             vertexAttrBase |= (1u << 10u);
@@ -553,77 +556,33 @@ void BuildAcceleratedScene(
         if (polygon->Type == 1)
         {
             const AcceleratedLineEndpoints lineEndpoints = ResolveAcceleratedLineEndpoints(*polygon);
-            if (lineEndpoints.Count != 2u
-                || lineEndpoints.Vertices[0] == nullptr
-                || lineEndpoints.Vertices[1] == nullptr)
+            for (u32 endpointIndex = 0; endpointIndex < lineEndpoints.Count; endpointIndex++)
             {
-                continue;
-            }
+                const Vertex* vertex = lineEndpoints.Vertices[endpointIndex];
+                if (vertex == nullptr)
+                    continue;
 
-            const u32 sourceIndex0 = lineEndpoints.Indices[0];
-            const u32 sourceIndex1 = lineEndpoints.Indices[1];
-            const auto [xFixed0, yFixed0] = resolveFixedCoords(sourceIndex0);
-            const auto [xFixed1, yFixed1] = resolveFixedCoords(sourceIndex1);
-            const float x0 = static_cast<float>(xFixed0) * (1.0f / 16.0f);
-            const float y0 = static_cast<float>(yFixed0) * (1.0f / 16.0f);
-            const float x1 = static_cast<float>(xFixed1) * (1.0f / 16.0f);
-            const float y1 = static_cast<float>(yFixed1) * (1.0f / 16.0f);
-            const float deltaX = x1 - x0;
-            const float deltaY = y1 - y0;
-            const float lineLengthSquared = (deltaX * deltaX) + (deltaY * deltaY);
-            if (lineLengthSquared <= 0.000001f)
-                continue;
-
-            const float inverseLineLength = 1.0f / std::sqrt(lineLengthSquared);
-            const float perpX = -deltaY * inverseLineLength * 0.5f;
-            const float perpY = deltaX * inverseLineLength * 0.5f;
-            const std::array<float, 4> quadX = {x0 + perpX, x0 - perpX, x1 - perpX, x1 + perpX};
-            const std::array<float, 4> quadY = {y0 + perpY, y0 - perpY, y1 - perpY, y1 + perpY};
-
-            for (u32 quadIndex = 0; quadIndex < 4u; quadIndex++)
-            {
-                const u32 endpointIndex = quadIndex < 2u ? 0u : 1u;
                 const u32 sourceVertexIndex = lineEndpoints.Indices[endpointIndex];
-                const Vertex& vertex = *lineEndpoints.Vertices[endpointIndex];
+                const auto [xFixed, yFixed] = resolveFixedCoords(sourceVertexIndex);
                 const u16 sceneVertexIndex = appendSceneVertex(
-                    static_cast<s32>(std::lround(quadX[quadIndex] * 16.0f)),
-                    static_cast<s32>(std::lround(quadY[quadIndex] * 16.0f)),
+                    xFixed,
+                    yFixed,
                     polygon->FinalZ[sourceVertexIndex],
                     std::max<s32>(1, polygon->FinalW[sourceVertexIndex]),
-                    static_cast<u16>(std::clamp(vertex.FinalColor[0], 0, 511)),
-                    static_cast<u16>(std::clamp(vertex.FinalColor[1], 0, 511)),
-                    static_cast<u16>(std::clamp(vertex.FinalColor[2], 0, 511)),
+                    static_cast<u16>(std::clamp(vertex->FinalColor[0], 0, 511)),
+                    static_cast<u16>(std::clamp(vertex->FinalColor[1], 0, 511)),
+                    static_cast<u16>(std::clamp(vertex->FinalColor[2], 0, 511)),
                     static_cast<u16>(draw.Meta.Alpha5),
-                    static_cast<s16>(vertex.TexCoords[0]),
-                    static_cast<s16>(vertex.TexCoords[1]),
-                    vertexAttrBase,
-                    true);
-                outScene.Vertices[sceneVertexIndex].X = quadX[quadIndex];
-                outScene.Vertices[sceneVertexIndex].Y = quadY[quadIndex];
+                    static_cast<s16>(vertex->TexCoords[0]),
+                    static_cast<s16>(vertex->TexCoords[1]),
+                    vertexAttrBase);
                 polygonVertexIndices.push_back(sceneVertexIndex);
+                outScene.Indices.push_back(sceneVertexIndex);
+                draw.IndexCount++;
             }
 
-            draw.VertexCount = 4u;
-            const std::optional<u32> lineYBounds = packYBounds(polygonVertexIndices, false, *polygon);
-            if (!lineYBounds.has_value())
-                continue;
-            appendTriangle(
-                draw,
-                polygonVertexIndices[0],
-                polygonVertexIndices[1],
-                polygonVertexIndices[2],
-                AcceleratedTriangleBoundaryEdge0 | AcceleratedTriangleBoundaryEdge2,
-                *lineYBounds);
-            appendTriangle(
-                draw,
-                polygonVertexIndices[0],
-                polygonVertexIndices[2],
-                polygonVertexIndices[3],
-                AcceleratedTriangleBoundaryEdge0 | AcceleratedTriangleBoundaryEdge1,
-                *lineYBounds);
+            draw.VertexCount = static_cast<u32>(outScene.Vertices.size()) - draw.FirstVertex;
             appendEdges(draw, draw.VertexCount);
-            if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
-                outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
             outScene.Draws.push_back(draw);
             continue;
         }
@@ -796,8 +755,6 @@ void BuildAcceleratedScene(
         }
 
         appendEdges(draw, draw.VertexCount);
-        if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
-            outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
         outScene.Draws.push_back(draw);
     }
 }
