@@ -5891,3 +5891,25 @@ R3は当初「`MelonPrimeScreenVulkan`を`GPU3D`と`VulkanOutput`/`VulkanSurface
 - **R3c（配線の後始末）**: R3a/R3bが完了した時点で、`GPU3D_Vulkan.h`の`Structured2D*`系デッドパイプ（もしR3aでこれを使わない設計にした場合）と`SapphireVulkanComposition*`（R6対象）を除去する。
 
 R3aだけでも、`Frame`のライフサイクル（`FrameQueue::getRenderFrame`→`pushRenderedFrame`→`getPresentFrame`→`commitPresentedFrame`）、Win32 surfaceの取得（`winId()`から`HWND`、`reinterpret_cast<void*>`で`attachSurface`へ渡す）、`ScreenPanel::emuInstance`（`protected`、`ScreenPanelVulkan`からアクセス可）経由での`EmuInstance::getNDS()`→`nds->GPU.GPU3D.GetCurrentRendererOverride()`→`dynamic_cast<VulkanRenderer3D*>`という一連の配線が必要で、これ自体が独立した検証可能な作業単位になる。
+
+### Structured2Dバッファの実レイアウト（R3a着手前に必読、確認済み）
+
+`GPU3D_Vulkan.h`/`.cpp`を実際に読み、以下を確定した（次セッションはこの節を読めば再調査不要）。
+
+```cpp
+// GPU3D_Vulkan.h（メンバ宣言、1029-1035行目付近）
+std::array<u32, 2 * 256 * 192> Structured2DPlane0{};
+std::array<u32, 2 * 256 * 192> Structured2DPlane1{};
+std::array<u32, 2 * 256 * 192> Structured2DControl{};
+std::array<u32, 2 * 256 * 192> Structured2DNativeFinal{};
+std::array<u32, 2 * 192> Structured2DLineMeta{};   // DispCntの生値
+std::array<u32, 2 * 192> Structured2DLineState{};  // MasterBrightness | ScreensEnabled<<16 | EngineEnabled<<17 | ForcedBlank<<18
+```
+
+`SubmitStructured2DLine`（`GPU3D_Vulkan.cpp:614`）は`lineIndex = engine*192 + line`、`pixelOffset = lineIndex*256`で書き込む。つまり4つの`2*256*192`配列は「engine 0の192行ぶん（先頭256*192語）→engine 1の192行ぶん（後半256*192語）」という単純な連結レイアウトで、topともbottomとも書いていない（`GPU2D_A`/`GPU2D_B`という**engine**単位）。`GPU_Soft.cpp:117`の`DrawScanline`が示す通り、物理top/bottomへの割り当ては`GPU.ScreenSwap`次第（`!ScreenSwap`ならengine A=top・engine B=bottom、`ScreenSwap`なら逆）。`SoftPackedFrameSnapshot`へ詰める際はこの`ScreenSwap`判定を必ず踏襲すること（`GPU_Soft.cpp`の`dstA`/`dstB`選択と同じ分岐）。
+
+`EndStructured2DFrame`（`GPU3D_Vulkan.cpp:643`）は384行（`2*192`）全部の`Structured2DLineReceived`が立って初めて`Structured2DFrameValid=true`にする——`HasCompleteStructured2DFrame()`はこれを見ればよい。同関数は成功時に`packStructured2DFrame()`+`uploadStructured2DFrameToGpu()`も呼んでおり、これは前述「Sapphire GPU composition」（R6対象・in-core重複pipeline）側の入力になる。**この2系統（CPU向けgetter経由 と GPU buffer経由）は同じ`Structured2D*`ソースを共有しているが、消費先は別**——R3aでCPU側getterを使う設計にするなら、GPU buffer側（`uploadStructured2DFrameToGpu`とその消費者）は使わないことになり、R6でまとめて削除候補にできる。
+
+### R3a着手前に残る唯一の未検証点（次セッションの最初の一歩）
+
+`SubmitStructured2DLine`に渡される`packet.Control`（`GPU_Soft.cpp:171`、`packet.Control = StructuredControl[engine]`）の**ビットレイアウトそのものの生成元**（`GPU_Soft.cpp`のどこで`StructuredControl[engine][x]`へ実際に値を書き込んでいるか、まだ未確認）と、`VulkanOutput`/`VulkanCompositorShader.comp`が`SoftPackedFrameSnapshot::packedTopControl`/`packedBottomControl`に期待するビットレイアウトが**一致するかどうか**を、コードを読んで確認していない。両者は同じ「Control」という名前を持つが、独立に設計された可能性があり、ここを確認せずに`Structured2DControl`をそのまま`packedTopControl`へmemcpyすると、build/linkは通っても構図（3D合成、ウィンドウ、ブレンド等）が壊れた絵になるリスクがある。**次セッションでR3aの実装コードを書く前に、必ずこの2つの「Control」フォーマットを突き合わせてから進めること。** これが今回のセッションでコード実装まで進めなかった理由である。
