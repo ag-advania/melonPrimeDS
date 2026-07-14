@@ -179,12 +179,19 @@ VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
     VulkanRuntimeCapabilities caps;
 
     // Every flag is read from a successfully-created runtime owner/resource.
-    caps.ContextReady = melonDS::VulkanContext::Get().IsReady();
+    // A lost device (VK_ERROR_DEVICE_LOST observed by any Vulkan subsystem)
+    // is treated the same as "context not ready": it must never be masked by
+    // the renderer object still existing, since destroying/recreating it is
+    // a separate, explicit teardown step (R24), not something this query
+    // performs itself.
+    const bool deviceLost = melonDS::VulkanContext::Get().IsDeviceLost();
+    caps.ContextReady = melonDS::VulkanContext::Get().IsReady() && !deviceLost;
     if (nds.GPU.GPU3D.HasCurrentRenderer())
     {
         caps.Renderer3DReady =
             dynamic_cast<melonDS::VulkanRenderer3D*>(
-                &nds.GPU.GPU3D.GetCurrentRenderer()) != nullptr;
+                &nds.GPU.GPU3D.GetCurrentRenderer()) != nullptr
+            && !deviceLost;
     }
 
     auto* emuInstance = static_cast<EmuInstance*>(nds.UserData);

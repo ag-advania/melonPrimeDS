@@ -713,6 +713,14 @@ void VulkanRenderer3D::VCount144ActiveBackend(melonDS::GPU& gpu)
 
 void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 {
+    // R24: once a submit/present/wait call anywhere in the pipeline has
+    // observed VK_ERROR_DEVICE_LOST, VulkanContext::MarkDeviceLost() latches
+    // that state for the life of the context. Stop issuing new commands
+    // against the dead VkDevice instead of retrying every frame; the R22
+    // capability query (QueryCurrentVulkanCapabilities) already reports this
+    // renderer as unavailable so EmuThread falls back honestly.
+    if (VulkanContext::Get().IsDeviceLost())
+        return;
     activeBackend().RenderFrame(gpu);
 }
 

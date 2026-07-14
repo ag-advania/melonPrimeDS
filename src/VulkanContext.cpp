@@ -150,6 +150,33 @@ bool VulkanContext::IsReady() const
     return Device != VK_NULL_HANDLE;
 }
 
+bool VulkanContext::MarkDeviceLost(const char* reason)
+{
+    std::lock_guard<std::mutex> lock(DeviceLossLock);
+    if (DeviceLostFlag)
+        return false;
+    DeviceLostFlag = true;
+    DeviceLostReasonText = (reason != nullptr) ? reason : "unknown";
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "VulkanContext: device lost (%s); refusing further submits until the "
+        "context is fully released and reacquired\n",
+        DeviceLostReasonText.c_str());
+    return true;
+}
+
+bool VulkanContext::IsDeviceLost() const
+{
+    std::lock_guard<std::mutex> lock(DeviceLossLock);
+    return DeviceLostFlag;
+}
+
+std::string VulkanContext::DeviceLostReason() const
+{
+    std::lock_guard<std::mutex> lock(DeviceLossLock);
+    return DeviceLostReasonText;
+}
+
 bool VulkanContext::initializeLocked()
 {
     ForceDisableTimelineSemaphores = gNoTimeline.load();
@@ -488,6 +515,12 @@ void VulkanContext::shutdownLocked()
     NonUniformTextureIndexingSupported = false;
     DeviceProfile = {};
     PlatformRequirements = {};
+
+    {
+        std::lock_guard<std::mutex> lossLock(DeviceLossLock);
+        DeviceLostFlag = false;
+        DeviceLostReasonText.clear();
+    }
 }
 
 u32 VulkanContext::FindMemoryType(

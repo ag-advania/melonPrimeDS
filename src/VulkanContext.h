@@ -117,6 +117,20 @@ public:
         bool disableTimelineSemaphores,
         bool disableDynamicTextureIndexing);
 
+    // Device loss (R24). Any subsystem that observes VK_ERROR_DEVICE_LOST at a
+    // vkQueueSubmit / vkQueuePresentKHR / vkAcquireNextImageKHR / fence-wait
+    // call site must report it here instead of silently retrying against a
+    // dead VkDevice. Once set, the flag persists until the last owner
+    // Releases and the context fully shuts down and later reinitializes on a
+    // fresh Acquire(); it does not clear itself frame-to-frame. Callers use
+    // IsDeviceLost() to stop issuing new submits and to make the R22 runtime
+    // capability query (QueryCurrentVulkanCapabilities) report the renderer
+    // as unavailable, so EvaluateActualRenderer() falls back honestly instead
+    // of silently continuing to present a broken Vulkan frame.
+    bool MarkDeviceLost(const char* reason);
+    [[nodiscard]] bool IsDeviceLost() const;
+    [[nodiscard]] std::string DeviceLostReason() const;
+
 private:
     VulkanContext() = default;
     ~VulkanContext() = default;
@@ -137,6 +151,10 @@ private:
     bool PresentQueueResolved = false;
     std::vector<u32> CreatedQueueFamilies;
     std::mutex QueueLock;
+
+    mutable std::mutex DeviceLossLock;
+    bool DeviceLostFlag = false;
+    std::string DeviceLostReasonText;
 
     PFN_vkWaitSemaphoresKHR WaitSemaphores = nullptr;
     PFN_vkGetSemaphoreCounterValueKHR GetSemaphoreCounterValueFn = nullptr;
