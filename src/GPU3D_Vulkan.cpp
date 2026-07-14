@@ -347,6 +347,16 @@ VkMemoryAllocateInfo makeMemoryAllocateInfo(VkDeviceSize allocationSize, u32 mem
     return allocateInfo;
 }
 
+VkDeviceSize growBufferCapacity(VkDeviceSize requiredSize, VkDeviceSize currentCapacity)
+{
+    if (currentCapacity == 0)
+        return requiredSize;
+    const VkDeviceSize doubled = currentCapacity <= (UINT64_MAX / 2u)
+        ? currentCapacity * 2u
+        : UINT64_MAX;
+    return std::max(requiredSize, doubled);
+}
+
 VkWriteDescriptorSet makeImageDescriptorWrite(
     VkDescriptorSet descriptorSet,
     u32 binding,
@@ -944,7 +954,13 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         return;
     }
 
-    const bool useThreadedRenderContexts = Threaded && ActiveBackendMode != BackendMode::GraphicsHardware;
+    if (!Threaded && !waitForReadbackSource())
+    {
+        HasCpuFrame = false;
+        return;
+    }
+
+    const bool useThreadedRenderContexts = Threaded;
     RenderContext* renderContext = nullptr;
     if (useThreadedRenderContexts)
     {
@@ -997,8 +1013,8 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     if (ActiveBackendMode == BackendMode::GraphicsHardware
-        && (!ensureGraphicsSceneVertexBuffer(GraphicsSceneVertices.size())
-            || !ensureGraphicsEdgeIndexBuffer(SharedGraphicsScene.EdgeIndices.size())))
+        && (!ensureGraphicsSceneVertexBuffer(renderContext, GraphicsSceneVertices.size())
+            || !ensureGraphicsEdgeIndexBuffer(renderContext, SharedGraphicsScene.EdgeIndices.size())))
     {
         HasCpuFrame = false;
         return;
@@ -1614,10 +1630,8 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
     view.Scale = static_cast<u32>(std::max(ScaleFactor, 1));
     view.FrameSerial = Structured2DFrameSerial;
     view.Generation = GPU3D.GetCurrentRendererGeneration();
-    // Core rendering is fence-complete before this immutable view is exposed.
-    // R24 may replace this compatibility state with an explicit timeline value.
-    view.CompletionSemaphore = VK_NULL_HANDLE;
-    view.CompletionValue = 0;
+    view.CompletionSemaphore = CompletionTimelineSemaphore;
+    view.CompletionValue = LastCompletionTimelineValue;
     view.Valid = ColorImageInitialized
         && ColorImage != VK_NULL_HANDLE
         && ColorImageView != VK_NULL_HANDLE
@@ -1646,9 +1660,9 @@ bool VulkanRenderer3D::EnsureVulkanReadyForValidation()
         return false;
     if (!ensureGraphicsVertexBuffer(nullptr, 1))
         return false;
-    if (!ensureGraphicsSceneVertexBuffer(1))
+    if (!ensureGraphicsSceneVertexBuffer(nullptr, 1))
         return false;
-    if (!ensureGraphicsEdgeIndexBuffer(1))
+    if (!ensureGraphicsEdgeIndexBuffer(nullptr, 1))
         return false;
     if (!ensureBinMaskBuffer(0, kValidationWidth, kValidationHeight))
         return false;
@@ -1766,8 +1780,8 @@ void VulkanRenderer3D::destroyVulkan()
     destroyResultReadbackBuffer();
     destroyTriangleBuffer(nullptr);
     destroyGraphicsVertexBuffer(nullptr);
-    destroyGraphicsSceneVertexBuffer();
-    destroyGraphicsEdgeIndexBuffer();
+    destroyGraphicsSceneVertexBuffer(nullptr);
+    destroyGraphicsEdgeIndexBuffer(nullptr);
     destroyBinMaskBuffer();
     destroyGroupListBuffer();
     destroySpanSetupBuffer();
@@ -2087,6 +2101,8 @@ void VulkanRenderer3D::destroyVulkan()
         destroyCpuWorkOffsetBuffer(renderContext);
         destroyTriangleBuffer(&renderContext);
         destroyGraphicsVertexBuffer(&renderContext);
+        destroyGraphicsSceneVertexBuffer(&renderContext);
+        destroyGraphicsEdgeIndexBuffer(&renderContext);
         destroyToonBuffer(&renderContext);
         destroyGraphicsClearBuffer(&renderContext);
         destroyCaptureLineBuffer(&renderContext);
@@ -2107,6 +2123,14 @@ void VulkanRenderer3D::destroyVulkan()
         }
         renderContext.CommandBuffer = VK_NULL_HANDLE;
     }
+
+    if (CompletionTimelineSemaphore != VK_NULL_HANDLE)
+    {
+        vkDestroySemaphore(Device, CompletionTimelineSemaphore, nullptr);
+        CompletionTimelineSemaphore = VK_NULL_HANDLE;
+    }
+    NextCompletionTimelineValue = 0;
+    LastCompletionTimelineValue = 0;
 
     if (FrameFence != VK_NULL_HANDLE)
     {
@@ -2207,6 +2231,19 @@ bool VulkanRenderer3D::createSyncObjects()
             return false;
     }
 
+    if (VulkanContext::Get().SupportsTimelineSemaphores())
+    {
+        VkSemaphoreTypeCreateInfo timelineInfo{};
+        timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineInfo.initialValue = 0;
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreInfo.pNext = &timelineInfo;
+        if (vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &CompletionTimelineSemaphore) != VK_SUCCESS)
+            return false;
+    }
+
     return true;
 }
 
@@ -2266,8 +2303,8 @@ bool VulkanRenderer3D::waitForRenderContext(RenderContext& context)
     if (waitDurationNs >= 1000000ull)
         LateFrameCount++;
     consumeGpuTiming(&context);
-
-    return true;
+    return context.CommandPool == VK_NULL_HANDLE
+        || vkResetCommandPool(Device, context.CommandPool, 0) == VK_SUCCESS;
 }
 
 bool VulkanRenderer3D::tryAcquireRenderContext(RenderContext& context, bool countMisses)
@@ -2280,7 +2317,8 @@ bool VulkanRenderer3D::tryAcquireRenderContext(RenderContext& context, bool coun
     {
         FenceWaitCpuWindow.Add(0);
         consumeGpuTiming(&context);
-        return true;
+        return context.CommandPool == VK_NULL_HANDLE
+            || vkResetCommandPool(Device, context.CommandPool, 0) == VK_SUCCESS;
     }
 
     if (fenceStatus == VK_NOT_READY)
@@ -2334,7 +2372,6 @@ bool VulkanRenderer3D::waitForReadbackSource()
 
     const bool usePrimaryFrameFence =
         !Threaded
-        || ActiveBackendMode == BackendMode::GraphicsHardware
         || LastSubmittedRenderContext == nullptr;
     if (usePrimaryFrameFence)
     {
@@ -5683,12 +5720,13 @@ bool VulkanRenderer3D::ensureTriangleBuffer(RenderContext* context, size_t trian
         return true;
     }
 
+    const VkDeviceSize allocationSize = growBufferCapacity(requiredSize, triangleBufferSize);
     destroyTriangleBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -5701,7 +5739,7 @@ bool VulkanRenderer3D::ensureTriangleBuffer(RenderContext* context, size_t trian
         return false;
     }
 
-    triangleBufferSize = requiredSize;
+    triangleBufferSize = allocationSize;
     updateDescriptorSet(context);
     return true;
 }
@@ -5756,12 +5794,13 @@ bool VulkanRenderer3D::ensureGraphicsVertexBuffer(RenderContext* context, size_t
     if (graphicsVertexBuffer != VK_NULL_HANDLE && graphicsVertexBufferSize >= requiredSize)
         return true;
 
+    const VkDeviceSize allocationSize = growBufferCapacity(requiredSize, graphicsVertexBufferSize);
     destroyGraphicsVertexBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -5774,7 +5813,7 @@ bool VulkanRenderer3D::ensureGraphicsVertexBuffer(RenderContext* context, size_t
         return false;
     }
 
-    graphicsVertexBufferSize = requiredSize;
+    graphicsVertexBufferSize = allocationSize;
     return true;
 }
 
@@ -5806,109 +5845,127 @@ void VulkanRenderer3D::destroyGraphicsVertexBuffer(RenderContext* context)
     graphicsVertexBufferSize = 0;
 }
 
-bool VulkanRenderer3D::ensureGraphicsSceneVertexBuffer(size_t vertexCount)
+bool VulkanRenderer3D::ensureGraphicsSceneVertexBuffer(RenderContext* context, size_t vertexCount)
 {
     static_assert(sizeof(GraphicsVertexGpu) == 56u, "GraphicsVertexGpu layout must match vertex shader inputs");
+    VkBuffer& buffer = context != nullptr ? context->GraphicsSceneVertexBuffer : GraphicsSceneVertexBuffer;
+    VkDeviceMemory& memory = context != nullptr ? context->GraphicsSceneVertexMemory : GraphicsSceneVertexMemory;
+    VkDeviceSize& capacity = context != nullptr ? context->GraphicsSceneVertexBufferSize : GraphicsSceneVertexBufferSize;
+    void*& mapped = context != nullptr ? context->GraphicsSceneVertexMapped : GraphicsSceneVertexMapped;
     const size_t requiredVertexCount = std::max<size_t>(1, vertexCount);
     const VkDeviceSize requiredSize = static_cast<VkDeviceSize>(requiredVertexCount * sizeof(GraphicsVertexGpu));
-    if (GraphicsSceneVertexBuffer != VK_NULL_HANDLE && GraphicsSceneVertexBufferSize >= requiredSize)
+    if (buffer != VK_NULL_HANDLE && capacity >= requiredSize)
         return true;
 
-    destroyGraphicsSceneVertexBuffer();
+    const VkDeviceSize allocationSize = growBufferCapacity(requiredSize, capacity);
+    destroyGraphicsSceneVertexBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            GraphicsSceneVertexBuffer,
-            GraphicsSceneVertexMemory,
-            &GraphicsSceneVertexMapped))
+            buffer,
+            memory,
+            &mapped))
     {
         Log(LogLevel::Error, "VulkanRenderer3D: failed to allocate graphics scene vertex buffer");
-        destroyGraphicsSceneVertexBuffer();
+        destroyGraphicsSceneVertexBuffer(context);
         return false;
     }
 
-    GraphicsSceneVertexBufferSize = requiredSize;
+    capacity = allocationSize;
     return true;
 }
 
-void VulkanRenderer3D::destroyGraphicsSceneVertexBuffer()
+void VulkanRenderer3D::destroyGraphicsSceneVertexBuffer(RenderContext* context)
 {
-    if (GraphicsSceneVertexMapped != nullptr)
+    VkBuffer& buffer = context != nullptr ? context->GraphicsSceneVertexBuffer : GraphicsSceneVertexBuffer;
+    VkDeviceMemory& memory = context != nullptr ? context->GraphicsSceneVertexMemory : GraphicsSceneVertexMemory;
+    VkDeviceSize& capacity = context != nullptr ? context->GraphicsSceneVertexBufferSize : GraphicsSceneVertexBufferSize;
+    void*& mapped = context != nullptr ? context->GraphicsSceneVertexMapped : GraphicsSceneVertexMapped;
+    if (mapped != nullptr)
     {
-        vkUnmapMemory(Device, GraphicsSceneVertexMemory);
-        GraphicsSceneVertexMapped = nullptr;
+        vkUnmapMemory(Device, memory);
+        mapped = nullptr;
     }
 
-    if (GraphicsSceneVertexBuffer != VK_NULL_HANDLE)
+    if (buffer != VK_NULL_HANDLE)
     {
-        vkDestroyBuffer(Device, GraphicsSceneVertexBuffer, nullptr);
-        GraphicsSceneVertexBuffer = VK_NULL_HANDLE;
+        vkDestroyBuffer(Device, buffer, nullptr);
+        buffer = VK_NULL_HANDLE;
     }
 
-    if (GraphicsSceneVertexMemory != VK_NULL_HANDLE)
+    if (memory != VK_NULL_HANDLE)
     {
-        vkFreeMemory(Device, GraphicsSceneVertexMemory, nullptr);
-        GraphicsSceneVertexMemory = VK_NULL_HANDLE;
+        vkFreeMemory(Device, memory, nullptr);
+        memory = VK_NULL_HANDLE;
     }
 
-    GraphicsSceneVertexBufferSize = 0;
+    capacity = 0;
 }
 
-bool VulkanRenderer3D::ensureGraphicsEdgeIndexBuffer(size_t indexCount)
+bool VulkanRenderer3D::ensureGraphicsEdgeIndexBuffer(RenderContext* context, size_t indexCount)
 {
+    VkBuffer& buffer = context != nullptr ? context->GraphicsEdgeIndexBuffer : GraphicsEdgeIndexBuffer;
+    VkDeviceMemory& memory = context != nullptr ? context->GraphicsEdgeIndexMemory : GraphicsEdgeIndexMemory;
+    VkDeviceSize& capacity = context != nullptr ? context->GraphicsEdgeIndexBufferSize : GraphicsEdgeIndexBufferSize;
+    void*& mapped = context != nullptr ? context->GraphicsEdgeIndexMapped : GraphicsEdgeIndexMapped;
     const size_t requiredIndexCount = std::max<size_t>(1, indexCount);
     const VkDeviceSize requiredSize = static_cast<VkDeviceSize>(requiredIndexCount * sizeof(u16));
-    if (GraphicsEdgeIndexBuffer != VK_NULL_HANDLE && GraphicsEdgeIndexBufferSize >= requiredSize)
+    if (buffer != VK_NULL_HANDLE && capacity >= requiredSize)
         return true;
 
-    destroyGraphicsEdgeIndexBuffer();
+    const VkDeviceSize allocationSize = growBufferCapacity(requiredSize, capacity);
+    destroyGraphicsEdgeIndexBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            GraphicsEdgeIndexBuffer,
-            GraphicsEdgeIndexMemory,
-            &GraphicsEdgeIndexMapped))
+            buffer,
+            memory,
+            &mapped))
     {
         Log(LogLevel::Error, "VulkanRenderer3D: failed to allocate graphics edge index buffer");
-        destroyGraphicsEdgeIndexBuffer();
+        destroyGraphicsEdgeIndexBuffer(context);
         return false;
     }
 
-    GraphicsEdgeIndexBufferSize = requiredSize;
+    capacity = allocationSize;
     return true;
 }
 
-void VulkanRenderer3D::destroyGraphicsEdgeIndexBuffer()
+void VulkanRenderer3D::destroyGraphicsEdgeIndexBuffer(RenderContext* context)
 {
-    if (GraphicsEdgeIndexMapped != nullptr)
+    VkBuffer& buffer = context != nullptr ? context->GraphicsEdgeIndexBuffer : GraphicsEdgeIndexBuffer;
+    VkDeviceMemory& memory = context != nullptr ? context->GraphicsEdgeIndexMemory : GraphicsEdgeIndexMemory;
+    VkDeviceSize& capacity = context != nullptr ? context->GraphicsEdgeIndexBufferSize : GraphicsEdgeIndexBufferSize;
+    void*& mapped = context != nullptr ? context->GraphicsEdgeIndexMapped : GraphicsEdgeIndexMapped;
+    if (mapped != nullptr)
     {
-        vkUnmapMemory(Device, GraphicsEdgeIndexMemory);
-        GraphicsEdgeIndexMapped = nullptr;
+        vkUnmapMemory(Device, memory);
+        mapped = nullptr;
     }
 
-    if (GraphicsEdgeIndexBuffer != VK_NULL_HANDLE)
+    if (buffer != VK_NULL_HANDLE)
     {
-        vkDestroyBuffer(Device, GraphicsEdgeIndexBuffer, nullptr);
-        GraphicsEdgeIndexBuffer = VK_NULL_HANDLE;
+        vkDestroyBuffer(Device, buffer, nullptr);
+        buffer = VK_NULL_HANDLE;
     }
 
-    if (GraphicsEdgeIndexMemory != VK_NULL_HANDLE)
+    if (memory != VK_NULL_HANDLE)
     {
-        vkFreeMemory(Device, GraphicsEdgeIndexMemory, nullptr);
-        GraphicsEdgeIndexMemory = VK_NULL_HANDLE;
+        vkFreeMemory(Device, memory, nullptr);
+        memory = VK_NULL_HANDLE;
     }
 
-    GraphicsEdgeIndexBufferSize = 0;
+    capacity = 0;
 }
 
 bool VulkanRenderer3D::ensureCpuBinBuffers(RenderContext& context, size_t triangleCount, u32 width, u32 height)
@@ -5935,6 +5992,10 @@ bool VulkanRenderer3D::ensureCpuBinBuffers(RenderContext& context, size_t triang
         return true;
     }
 
+    const VkDeviceSize binMaskAllocationSize = growBufferCapacity(
+        requiredBinMaskSize, context.BinMaskBufferSize);
+    const VkDeviceSize groupListAllocationSize = growBufferCapacity(
+        requiredGroupListSize, context.GroupListBufferSize);
     destroyCpuBinBuffers(context);
 
     const auto createMappedStorageBuffer = [&](VkDeviceSize bufferSize,
@@ -5954,7 +6015,7 @@ bool VulkanRenderer3D::ensureCpuBinBuffers(RenderContext& context, size_t triang
     };
 
     if (!createMappedStorageBuffer(
-            requiredBinMaskSize,
+            binMaskAllocationSize,
             context.BinMaskBuffer,
             context.BinMaskMemory,
             context.BinMaskMapped))
@@ -5965,7 +6026,7 @@ bool VulkanRenderer3D::ensureCpuBinBuffers(RenderContext& context, size_t triang
     }
 
     if (!createMappedStorageBuffer(
-            requiredGroupListSize,
+            groupListAllocationSize,
             context.GroupListBuffer,
             context.GroupListMemory,
             context.GroupListMapped))
@@ -5975,8 +6036,8 @@ bool VulkanRenderer3D::ensureCpuBinBuffers(RenderContext& context, size_t triang
         return false;
     }
 
-    context.BinMaskBufferSize = requiredBinMaskSize;
-    context.GroupListBufferSize = requiredGroupListSize;
+    context.BinMaskBufferSize = binMaskAllocationSize;
+    context.GroupListBufferSize = groupListAllocationSize;
     updateDescriptorSet(&context);
     return true;
 }
@@ -5995,12 +6056,14 @@ bool VulkanRenderer3D::ensureCpuSpanSetupBuffer(RenderContext& context, size_t t
         return true;
     }
 
+    const VkDeviceSize allocationSize = growBufferCapacity(
+        requiredSize, context.SpanSetupBufferSize);
     destroyCpuSpanSetupBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -6013,7 +6076,7 @@ bool VulkanRenderer3D::ensureCpuSpanSetupBuffer(RenderContext& context, size_t t
         return false;
     }
 
-    context.SpanSetupBufferSize = requiredSize;
+    context.SpanSetupBufferSize = allocationSize;
     updateDescriptorSet(&context);
     return true;
 }
@@ -6106,12 +6169,14 @@ bool VulkanRenderer3D::ensureCpuWorkOffsetBuffer(RenderContext& context, u32 wid
         return true;
     }
 
+    const VkDeviceSize allocationSize = growBufferCapacity(
+        requiredSize, context.WorkOffsetBufferSize);
     destroyCpuWorkOffsetBuffer(context);
 
     if (!createBufferAllocation(
             Device,
             [&](u32 typeBits, VkMemoryPropertyFlags properties) { return findMemoryType(typeBits, properties); },
-            requiredSize,
+            allocationSize,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -6124,7 +6189,7 @@ bool VulkanRenderer3D::ensureCpuWorkOffsetBuffer(RenderContext& context, u32 wid
         return false;
     }
 
-    context.WorkOffsetBufferSize = requiredSize;
+    context.WorkOffsetBufferSize = allocationSize;
     updateDescriptorSet(&context);
     return true;
 }
@@ -6166,7 +6231,7 @@ bool VulkanRenderer3D::ensureResultBuffer(u32 width, u32 height)
         return true;
     }
 
-    if (ResultBuffer != VK_NULL_HANDLE && !waitForDeviceIdle("resize result buffer"))
+    if (ResultBuffer != VK_NULL_HANDLE && !waitForQueueTail("resize result buffer"))
         return false;
 
     destroyResultBuffer();
@@ -6228,7 +6293,7 @@ bool VulkanRenderer3D::ensureBinMaskBuffer(size_t triangleCount, u32 width, u32 
         return true;
     }
 
-    if (BinMaskBuffer != VK_NULL_HANDLE && !waitForDeviceIdle("resize bin mask buffer"))
+    if (BinMaskBuffer != VK_NULL_HANDLE && !waitForQueueTail("resize bin mask buffer"))
         return false;
 
     destroyBinMaskBuffer();
@@ -6290,7 +6355,7 @@ bool VulkanRenderer3D::ensureGroupListBuffer(size_t triangleCount, u32 width, u3
         return true;
     }
 
-    if (GroupListBuffer != VK_NULL_HANDLE && !waitForDeviceIdle("resize group list buffer"))
+    if (GroupListBuffer != VK_NULL_HANDLE && !waitForQueueTail("resize group list buffer"))
         return false;
 
     destroyGroupListBuffer();
@@ -6345,7 +6410,7 @@ bool VulkanRenderer3D::ensureSpanSetupBuffer(size_t triangleCount)
         return true;
     }
 
-    if (SpanSetupBuffer != VK_NULL_HANDLE && !waitForDeviceIdle("resize span setup buffer"))
+    if (SpanSetupBuffer != VK_NULL_HANDLE && !waitForQueueTail("resize span setup buffer"))
         return false;
 
     destroySpanSetupBuffer();
@@ -6410,7 +6475,7 @@ bool VulkanRenderer3D::ensureWorkOffsetBuffer(u32 width, u32 height, size_t tria
         return true;
     }
 
-    if (WorkOffsetBuffer != VK_NULL_HANDLE && !waitForDeviceIdle("resize work offset buffer"))
+    if (WorkOffsetBuffer != VK_NULL_HANDLE && !waitForQueueTail("resize work offset buffer"))
         return false;
 
     destroyWorkOffsetBuffer();
@@ -9414,6 +9479,18 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &CommandBuffer;
+    u64 completionValue = 0;
+    VkTimelineSemaphoreSubmitInfo completionInfo{};
+    if (CompletionTimelineSemaphore != VK_NULL_HANDLE)
+    {
+        completionValue = ++NextCompletionTimelineValue;
+        completionInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        completionInfo.signalSemaphoreValueCount = 1;
+        completionInfo.pSignalSemaphoreValues = &completionValue;
+        submitInfo.pNext = &completionInfo;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &CompletionTimelineSemaphore;
+    }
 
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
@@ -9426,7 +9503,15 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
     }
 
     if (context != nullptr && Threaded)
+    {
         LastSubmittedRenderContext = context;
+        context->SubmittedFrameSerial = Structured2DPendingSerial != 0
+            ? Structured2DPendingSerial
+            : Structured2DFrameSerial;
+        context->SubmittedGeneration = GPU3D.GetCurrentRendererGeneration();
+        context->CompletionValue = completionValue;
+    }
+    LastCompletionTimelineValue = completionValue;
 
     if (timestampQueryPool != VK_NULL_HANDLE)
     {
@@ -9555,14 +9640,22 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     const VkFence frameFence = context != nullptr ? context->FrameFence : FrameFence;
     const VkBuffer triangleBuffer = context != nullptr ? context->TriangleBuffer : TriangleBuffer;
     const VkBuffer graphicsVertexBuffer = context != nullptr ? context->GraphicsVertexBuffer : GraphicsVertexBuffer;
-    const VkBuffer graphicsSceneVertexBuffer = GraphicsSceneVertexBuffer;
-    const VkBuffer graphicsEdgeIndexBuffer = GraphicsEdgeIndexBuffer;
+    const VkBuffer graphicsSceneVertexBuffer = context != nullptr
+        ? context->GraphicsSceneVertexBuffer
+        : GraphicsSceneVertexBuffer;
+    const VkBuffer graphicsEdgeIndexBuffer = context != nullptr
+        ? context->GraphicsEdgeIndexBuffer
+        : GraphicsEdgeIndexBuffer;
     const VkBuffer toonBuffer = context != nullptr ? context->ToonBuffer : ToonBuffer;
     const VkBuffer clearBuffer = context != nullptr ? context->ClearBuffer : ClearBuffer;
     void* triangleMapped = context != nullptr ? context->TriangleMapped : TriangleMapped;
     void* graphicsVertexMapped = context != nullptr ? context->GraphicsVertexMapped : GraphicsVertexMapped;
-    void* graphicsSceneVertexMapped = GraphicsSceneVertexMapped;
-    void* graphicsEdgeIndexMapped = GraphicsEdgeIndexMapped;
+    void* graphicsSceneVertexMapped = context != nullptr
+        ? context->GraphicsSceneVertexMapped
+        : GraphicsSceneVertexMapped;
+    void* graphicsEdgeIndexMapped = context != nullptr
+        ? context->GraphicsEdgeIndexMapped
+        : GraphicsEdgeIndexMapped;
     const VkBuffer captureLineBuffer = context != nullptr ? context->CaptureLineBuffer : CaptureLineBuffer;
     void* captureLineMapped = context != nullptr ? context->CaptureLineMapped : CaptureLineMapped;
     VkQueryPool timestampQueryPool = context != nullptr ? context->TimestampQueryPool : TimestampQueryPool;
@@ -11139,6 +11232,18 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
+    u64 completionValue = 0;
+    VkTimelineSemaphoreSubmitInfo completionInfo{};
+    if (CompletionTimelineSemaphore != VK_NULL_HANDLE)
+    {
+        completionValue = ++NextCompletionTimelineValue;
+        completionInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        completionInfo.signalSemaphoreValueCount = 1;
+        completionInfo.pSignalSemaphoreValues = &completionValue;
+        submitInfo.pNext = &completionInfo;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &CompletionTimelineSemaphore;
+    }
 
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
@@ -11151,7 +11256,15 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     }
 
     if (context != nullptr && Threaded)
+    {
         LastSubmittedRenderContext = context;
+        context->SubmittedFrameSerial = Structured2DPendingSerial != 0
+            ? Structured2DPendingSerial
+            : Structured2DFrameSerial;
+        context->SubmittedGeneration = GPU3D.GetCurrentRendererGeneration();
+        context->CompletionValue = completionValue;
+    }
+    LastCompletionTimelineValue = completionValue;
 
     if (timestampQueryPool != VK_NULL_HANDLE)
     {

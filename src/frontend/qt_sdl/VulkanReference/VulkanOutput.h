@@ -364,6 +364,8 @@ private:
         u32 snapshotHeight{};
         u64 renderer3dFrameSerial{};
         u64 renderer3dGeneration{};
+        VkSemaphore renderer3dCompletionSemaphore{VK_NULL_HANDLE};
+        u64 renderer3dCompletionValue{};
         VkImage previousTopRendererSourceImage{VK_NULL_HANDLE};
         VkImageView previousTopRendererSourceImageView{VK_NULL_HANDLE};
         bool previousTopRendererSourceValid{};

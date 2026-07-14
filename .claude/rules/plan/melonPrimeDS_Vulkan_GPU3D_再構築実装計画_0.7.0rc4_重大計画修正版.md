@@ -268,6 +268,36 @@
 
 検証: Color/Attr/Depth/DepthStencilのusage bit、depth/stencil候補順、device-local allocation、target作成前後のcleanup順、scale/recreate箇所の`vkDeviceWaitIdle`不存在、layout fieldの生成・描画・readback・破棄遷移を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R8 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+2. 新しく追加した型、関数、resource
+   - 6個の`RenderContext`ごとに独立するgraphics scene vertex / edge index bufferとpersistent mapping。
+   - contextごとのsubmitted frame serial、renderer generation、completion value。
+   - core 3D submitが単調増加値をsignalする`CompletionTimelineSemaphore`。
+   - requiredと旧capacityの2倍の大きい方を選ぶ`growBufferCapacity()`。
+3. 削除した旧経路
+   - graphics hardwareだけを単一global command/fenceへ固定する`ActiveBackendMode != GraphicsHardware`除外条件を削除した。
+   - context/global buffer拡張時のrequired-sizeぴったり再確保を、倍増capacity確保へ置換した。
+   - result/bin/group/span/work buffer resize時のdevice-wide idleをqueue-tail fenceへ置換した。
+4. 所有権とframe lifecycleの変更
+   - threaded graphics pathはready slotを探索し、なければ次の1 slotだけを待ってcommand poolをresetして再利用する。
+   - triangle、graphics vertex、scene vertex、edge index、bin/group、span、work offset、toon、clear、capture line、descriptor、timestampはslot単位で保持する。
+   - core submitのtimeline semaphore/valueを`Vulkan3DFrameView`へ載せ、`VulkanOutput`のsnapshot copy submitがtransfer stageで明示waitしてからFrameQueue-owned imageへcopyする。
+5. 参照実装との差分
+   - timeline非対応時はshared graphics queueのsubmit順序とcontext fenceをfallbackとし、binary semaphore adapterの一般化はR24へ渡す。
+   - non-threaded pathはprimary fenceだけを待ってからglobal mapped bufferを更新し、全context待機は行わない。
+6. 後続フェーズへ渡すinterface
+   - R9 scene builderがslot-local scene/edge bufferへ直接書けるcontext境界。
+   - R16 captureがsource contextだけを待てるsubmitted identity。
+   - R23/R24が3D→composition依存へそのまま利用できるcompletion timeline value。
+
+検証: context数6、slot別resource、graphics pathのring取得、対象slot以外の通常frame待機不存在、capacity倍増、persistent mapping、descriptor cache分離、timestamp optional、3D timeline signal→VulkanOutput waitのsubmit連鎖を静的監査。通常frameのbuffer resizeに`vkDeviceWaitIdle`を使わないことと`git diff --check`成功を確認。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ---
 
 # 1. 目的

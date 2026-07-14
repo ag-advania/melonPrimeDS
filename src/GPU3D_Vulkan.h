@@ -300,6 +300,14 @@ private:
         VkDeviceMemory GraphicsVertexMemory = VK_NULL_HANDLE;
         VkDeviceSize GraphicsVertexBufferSize = 0;
         void* GraphicsVertexMapped = nullptr;
+        VkBuffer GraphicsSceneVertexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory GraphicsSceneVertexMemory = VK_NULL_HANDLE;
+        VkDeviceSize GraphicsSceneVertexBufferSize = 0;
+        void* GraphicsSceneVertexMapped = nullptr;
+        VkBuffer GraphicsEdgeIndexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory GraphicsEdgeIndexMemory = VK_NULL_HANDLE;
+        VkDeviceSize GraphicsEdgeIndexBufferSize = 0;
+        void* GraphicsEdgeIndexMapped = nullptr;
         VkBuffer BinMaskBuffer = VK_NULL_HANDLE;
         VkDeviceMemory BinMaskMemory = VK_NULL_HANDLE;
         VkDeviceSize BinMaskBufferSize = 0;
@@ -330,6 +338,9 @@ private:
         void* CaptureLineMapped = nullptr;
         VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
         bool TimestampPending = false;
+        u64 SubmittedFrameSerial = 0;
+        u64 SubmittedGeneration = 0;
+        u64 CompletionValue = 0;
         DescriptorSetCache DescriptorCache{};
         std::array<DescriptorSetCache, MaxTextureDescriptors> SingleTextureDescriptorCaches{};
         GraphicsDescriptorSetCache GraphicsDescriptorCache{};
@@ -471,10 +482,10 @@ private:
     void destroyTriangleBuffer(RenderContext* context);
     bool ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount);
     void destroyGraphicsVertexBuffer(RenderContext* context);
-    bool ensureGraphicsSceneVertexBuffer(size_t vertexCount);
-    void destroyGraphicsSceneVertexBuffer();
-    bool ensureGraphicsEdgeIndexBuffer(size_t indexCount);
-    void destroyGraphicsEdgeIndexBuffer();
+    bool ensureGraphicsSceneVertexBuffer(RenderContext* context, size_t vertexCount);
+    void destroyGraphicsSceneVertexBuffer(RenderContext* context);
+    bool ensureGraphicsEdgeIndexBuffer(RenderContext* context, size_t indexCount);
+    void destroyGraphicsEdgeIndexBuffer(RenderContext* context);
     bool ensureCpuSpanSetupBuffer(RenderContext& context, size_t triangleCount);
     void destroyCpuSpanSetupBuffer(RenderContext& context);
     bool ensureCpuBinBuffers(RenderContext& context, size_t triangleCount, u32 width, u32 height);
@@ -734,6 +745,9 @@ private:
     std::array<RenderContext, AsyncRenderContextCount> RenderContexts{};
     size_t NextRenderContextIndex = 0;
     RenderContext* LastSubmittedRenderContext = nullptr;
+    VkSemaphore CompletionTimelineSemaphore = VK_NULL_HANDLE;
+    u64 NextCompletionTimelineValue = 0;
+    u64 LastCompletionTimelineValue = 0;
     RasterDispatchPath ActiveRasterDispatchPath = RasterDispatchPath::DirectTiles;
     bool CpuTileBinningEnabled = false;
 

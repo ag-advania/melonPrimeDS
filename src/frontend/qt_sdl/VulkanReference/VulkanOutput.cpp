@@ -1916,6 +1916,20 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
     u64 signalValue = resource.submissionValue;
     VkTimelineSemaphoreSubmitInfo timelineSubmitInfo{};
     const bool shouldSignalTimelineSemaphore = signalTimeline && useTimelineSemaphores && timelineSemaphore != VK_NULL_HANDLE;
+    const bool shouldWaitForRenderer3d =
+        resource.renderer3dCompletionSemaphore != VK_NULL_HANDLE
+        && resource.renderer3dCompletionValue != 0;
+    VkPipelineStageFlags rendererWaitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    if (shouldWaitForRenderer3d)
+    {
+        timelineSubmitInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineSubmitInfo.waitSemaphoreValueCount = 1;
+        timelineSubmitInfo.pWaitSemaphoreValues = &resource.renderer3dCompletionValue;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &resource.renderer3dCompletionSemaphore;
+        submitInfo.pWaitDstStageMask = &rendererWaitStage;
+        submitInfo.pNext = &timelineSubmitInfo;
+    }
     if (signalTimeline)
     {
         signalValue = ++timelineValue;
@@ -1949,6 +1963,12 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
 
     if (signalTimeline && resource.timestampQueryPool != VK_NULL_HANDLE)
         resource.timestampPending = true;
+
+    if (shouldWaitForRenderer3d)
+    {
+        resource.renderer3dCompletionSemaphore = VK_NULL_HANDLE;
+        resource.renderer3dCompletionValue = 0;
+    }
 
     return true;
 }
@@ -4162,6 +4182,8 @@ void VulkanOutput::destroyRenderer3dSnapshot(FrameResource& resource)
     resource.snapshotHeight = 0;
     resource.renderer3dFrameSerial = 0;
     resource.renderer3dGeneration = 0;
+    resource.renderer3dCompletionSemaphore = VK_NULL_HANDLE;
+    resource.renderer3dCompletionValue = 0;
     resource.hasRenderer3dSnapshot = false;
 }
 
@@ -4515,6 +4537,8 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(
     resource.renderer3dSnapshotScreenSwap = snapshotScreenSwap;
     resource.renderer3dFrameSerial = frameView.FrameSerial;
     resource.renderer3dGeneration = frameView.Generation;
+    resource.renderer3dCompletionSemaphore = frameView.CompletionSemaphore;
+    resource.renderer3dCompletionValue = frameView.CompletionValue;
     return true;
 }
 
