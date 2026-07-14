@@ -232,6 +232,9 @@ private:
         void* window = nullptr;
         u32 requestedWidth = 0;
         u32 requestedHeight = 0;
+        VkQueue presentQueue = VK_NULL_HANDLE;
+        u32 presentQueueFamilyIndex = UINT32_MAX;
+        bool separatePresentQueue = false;
 
         VkSurfaceKHR surface = VK_NULL_HANDLE;
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
@@ -360,6 +363,8 @@ private:
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
+    // All rendering commands use the shared context's graphics queue. Each
+    // SurfaceState stores the surface-resolved present queue separately.
     VkQueue queue = VK_NULL_HANDLE;
     u32 queueFamilyIndex = 0;
     bool useTimelineSemaphores = false;

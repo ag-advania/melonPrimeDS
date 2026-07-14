@@ -410,8 +410,8 @@ bool VulkanSurfacePresenter::init()
     instance = melonDS::VulkanContext::Get().GetInstance();
     physicalDevice = melonDS::VulkanContext::Get().GetPhysicalDevice();
     device = melonDS::VulkanContext::Get().GetDevice();
-    queue = melonDS::VulkanContext::Get().GetQueue();
-    queueFamilyIndex = melonDS::VulkanContext::Get().GetQueueFamilyIndex();
+    queue = melonDS::VulkanContext::Get().GetGraphicsQueue();
+    queueFamilyIndex = melonDS::VulkanContext::Get().GetGraphicsQueueFamily();
     useTimelineSemaphores = melonDS::VulkanContext::Get().SupportsTimelineSemaphores();
     waitSemaphores = useTimelineSemaphores ? melonDS::VulkanContext::Get().GetWaitSemaphores() : nullptr;
     resetQueryPool = melonDS::VulkanContext::Get().GetResetQueryPool();
@@ -849,10 +849,13 @@ int VulkanSurfacePresenter::attachSurface(void* window, u32 width, u32 height)
     ci.hinstance = GetModuleHandleW(nullptr);
     ci.hwnd = static_cast<HWND>(window);
     if (vkCreateWin32SurfaceKHR(instance, &ci, nullptr, &surfaceState.surface) != VK_SUCCESS) return 0;
-    VkBool32 supported = VK_FALSE;
-    if (vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, surfaceState.surface, &supported) != VK_SUCCESS || !supported) {
+    auto& context = melonDS::VulkanContext::Get();
+    if (!context.ResolvePresentQueue(surfaceState.surface)) {
         vkDestroySurfaceKHR(instance, surfaceState.surface, nullptr); return 0;
     }
+    surfaceState.presentQueue = context.GetPresentQueue();
+    surfaceState.presentQueueFamilyIndex = context.GetPresentQueueFamily();
+    surfaceState.separatePresentQueue = context.RequiresSeparatePresentQueue();
     if (!createSurfaceStateResources(surfaceState)) { vkDestroySurfaceKHR(instance, surfaceState.surface, nullptr); return 0; }
     const int id=surfaceState.id; surfaces.emplace(id,std::move(surfaceState)); return id;
 #else
@@ -1560,6 +1563,10 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
             : capabilities.currentTransform;
     bool swapchainCreated = false;
+    const std::array<u32, 2> sharingQueueFamilies = {
+        queueFamilyIndex,
+        surfaceState.presentQueueFamilyIndex,
+    };
 
     for (const VkPresentModeKHR candidatePresentMode : rankedPresentModes)
     {
@@ -1583,7 +1590,20 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             swapchainInfo.imageExtent = extent;
             swapchainInfo.imageArrayLayers = 1;
             swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-            swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (surfaceState.separatePresentQueue)
+            {
+                // Concurrent sharing is the desktop-safe ownership path when
+                // graphics and present families differ. It avoids a second
+                // VkDevice and makes both family owners explicit.
+                swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+                swapchainInfo.queueFamilyIndexCount =
+                    static_cast<u32>(sharingQueueFamilies.size());
+                swapchainInfo.pQueueFamilyIndices = sharingQueueFamilies.data();
+            }
+            else
+            {
+                swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            }
             swapchainInfo.preTransform = preTransform;
             swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
             swapchainInfo.presentMode = candidatePresentMode;
@@ -1872,6 +1892,14 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
 void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
 {
+    if (surfaceState.swapchain != VK_NULL_HANDLE
+        && surfaceState.separatePresentQueue
+        && surfaceState.presentQueue != VK_NULL_HANDLE)
+    {
+        std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
+        (void)vkQueueWaitIdle(surfaceState.presentQueue);
+    }
+
     for (VkFramebuffer framebuffer : surfaceState.framebuffers)
     {
         if (framebuffer != VK_NULL_HANDLE)
@@ -3702,7 +3730,10 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
         if (submitResult == VK_SUCCESS)
         {
             const u64 presentStartNs = PerfNowNs();
-            presentResult = vkQueuePresentKHR(queue, &presentInfo);
+            VkQueue presentQueue = surfaceState.presentQueue != VK_NULL_HANDLE
+                ? surfaceState.presentQueue
+                : queue;
+            presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
             presentCpuNs += PerfNowNs() - presentStartNs;
         }
     }

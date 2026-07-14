@@ -138,6 +138,36 @@
 
 検証: Control変換のconstexpr ABI assertion、384-line complete gate、ScreenSwap false=A/B・true=B/Aの全配列mapping、generation/serial拒否、producer/presenter call順、NativeQt委譲0件、in-core upload call 0件を静的監査。`git diff --check`成功。Vulkanビルド入口は`build-mingw-vulkan.bat`と確認済みだが、ユーザー指示によりこのフェーズでは実行せず実装を優先した。
 
+## R4 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/VulkanContext.h`
+   - `src/VulkanContext.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp`
+2. 新しく追加した型、関数、resource
+   - `VulkanDesktopSurfaceBackend`と`VulkanPlatformRequirements`。
+   - 列挙済みinstance extensionからWin32、Wayland/XCB/Xlib、Metalをplatform別に選択する処理。
+   - `ResolvePresentQueue()`、graphics/present queue/family getter、separate-family query。
+   - surface作成後のpresent family解決に備え、同じVkDeviceから全non-empty queue familyのqueue 0を生成するdevice queue set。
+3. 削除した旧経路
+   - extension存在確認なしで`VK_KHR_surface`とWin32 extensionを要求する固定instance構築を削除した。
+   - graphics familyにpresent supportがあることをattach時に固定仮定する分岐を削除した。
+   - descriptor indexing featureの自己代入をやめ、列挙結果から必要なfeatureだけを明示enableする。
+4. 所有権とframe lifecycleの変更
+   - GPU3D、VulkanOutput、presenterは従来どおり単一`VulkanContext`の同一instance/physical device/deviceをAcquire/Release共有する。
+   - graphicsとpresent familyが同じsurfaceでは従来のexclusive swapchainを維持する。
+   - 異なるsurfaceではsurfaceごとのpresent queueを保存し、swapchain imageを両familyのconcurrent sharingへ切り替え、graphics submitと`vkQueuePresentKHR`をそれぞれ正しいqueueへ送る。
+5. 参照実装との差分
+   - R20のplatform surface host実装前でもLinux/macOSが必要extensionを選択できるが、実surface生成はまだWin32 basic pathだけに限定する。
+   - explicit queue-family ownership barrierではなく、swapchain作成時のconcurrent family ownershipを使用する。単一familyでは余分なsharing costを追加しない。
+6. 後続フェーズへ渡すinterface
+   - R20 surface hostがsurface生成直後に呼べる`ResolvePresentQueue(VkSurfaceKHR)`。
+   - R20/R21 presenterがsurface単位で保持できるgraphics/present familyとqueue情報。
+   - MoltenVK列挙用portability instance flagと、存在時だけenableする`VK_KHR_portability_subset` device extension。
+
+検証: 全platform extension文字列が列挙結果を通してのみenableされること、surface生成前にpresent supportを要求しないこと、surface解決がgraphics family優先かつ別family fallbackを持つこと、presenterがgraphics submit/presentを別queueへ分離すること、runtime ownerが同一`VulkanContext`をAcquireすることを静的監査。`git diff --check`成功。ユーザー指示によりビルドは省略。
+
 ---
 
 # 1. 目的
