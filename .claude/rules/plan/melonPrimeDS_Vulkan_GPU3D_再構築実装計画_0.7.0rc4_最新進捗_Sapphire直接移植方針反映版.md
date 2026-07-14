@@ -464,6 +464,33 @@
 
 検証: shader固定commit正規化diff 0件、shadow flags/list、mask color/depth write off、depth-fail `REPLACE`、self-reject `EQUAL`/`ZERO`、bit-7限定clear、shadow blend `0x80`/`0x7F` mask、bg-zero variant、source orderを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R15 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. Sapphire直接移植conformance
+   - `GPU3D_Vulkan_GraphicsRasterShader.frag`、`GraphicsEdgeShader.frag`、`GraphicsEdgeFogShader.frag`、`GraphicsFogShader.frag`、`FinalPassShader.comp`は固定core commitとの正規化diff 0件である。
+   - toon／highlight演算、edge／fog適用順、hidden-alpha-zero override、fog density補間、coverage AA、final specialization variantは固定Sapphire shaderとpipeline作成・選択を正本として維持した。
+3. immutable final-effect state
+   - graphics hardware pathはR9で固定した`SharedGraphicsScene.RenderState`からalpha reference、fog color/offset/shift/density、edge table、toon tableをdispatchへ渡し、command recording直前のlive `gpu.GPU3D.Render*`再読込を除去した。
+   - 互換用non-graphics branchも同じ`AcceleratedSceneRenderState`へ一度captureしてからclear/final dispatchへ渡すため、両経路の引き渡しABIを統一した。
+4. toon／highlightとtable upload
+   - Sapphire原文の32-entry RGB555→RGB6 packとper-context host-visible GPU bufferを維持し、global table generationと各render-contextのuploaded generationを追加した。
+   - table内容が変化した場合だけgenerationを進め、同一generationを既に保持するcontextでは32-entry変換とmapped writeを省略する。buffer破棄・再作成時はslotのuploaded generationを無効化する。
+   - raster shaderは5-bit intensityで同じtoon bufferを参照し、toon color置換とhighlight加算・clampを別の参照分岐としてtextured/untextured双方へ適用する。
+5. edge／fog／AA final pass
+   - graphics final pathはAttr/Depth attachment、polygon ID、fog flag、scaled target座標、8-entry edge table、34-entry packed fog density、fog color/offset/shiftを直接使用し、edge、fog、edge+fogをSapphire原文のpipelineで選択する。
+   - fixed graphics edge shaderはDS antialias bitでedge alphaを選び、coverage fix設定を参照しない。full coverage resolveは固定`FinalPassShader.comp`のtop/bottom attribute/depth layerとcoverage値を使用する。
+   - compute final pipelineはedge、fog、AAの3 specialization bitから8 variant（noneを含む全組合せ）を生成・選択する。CPU画像処理、presenter fog、coverage-fix代用は追加していない。
+6. 参照実装との差分
+   - shader、final-effect式、attribute解釈、pipeline selection、適用順にはMelonPrime独自差分を追加していない。
+   - immutable state dispatchとtoon generation cacheだけをR8/R9 context ring向けdesktop adapterとして追加し、manifestへ分類した。
+
+検証: 5 shader sourceの固定commit正規化diff 0件、toon/highlight分離、32-entry per-context buffer、generation hit/miss/recreate無効化、edge/fog graphics pipeline、8 compute final variant、coverage AA、hidden-alpha-zero override、live final-effect state再読込除去、CPU postprocess依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

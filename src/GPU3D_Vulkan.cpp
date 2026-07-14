@@ -1007,20 +1007,34 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     buildTriangleList(gpu);
-    ClearGpuState frameClearState{};
+    AcceleratedSceneRenderState legacyRenderState{};
+    const AcceleratedSceneRenderState* frameRenderState = nullptr;
     if (ActiveBackendMode == BackendMode::GraphicsHardware)
     {
-        frameClearState = buildClearGpuState(SharedGraphicsScene.RenderState);
+        frameRenderState = &SharedGraphicsScene.RenderState;
     }
     else
     {
-        AcceleratedSceneRenderState legacyRenderState{};
         legacyRenderState.RenderDispCnt = gpu.GPU3D.RenderDispCnt;
+        legacyRenderState.RenderAlphaRef = gpu.GPU3D.RenderAlphaRef;
         legacyRenderState.RenderClearAttr1 = gpu.GPU3D.RenderClearAttr1;
         legacyRenderState.RenderClearAttr2 = gpu.GPU3D.RenderClearAttr2;
+        legacyRenderState.RenderFogColor = gpu.GPU3D.RenderFogColor;
+        legacyRenderState.RenderFogOffset = gpu.GPU3D.RenderFogOffset;
+        legacyRenderState.RenderFogShift = gpu.GPU3D.RenderFogShift;
+        std::copy_n(gpu.GPU3D.RenderFogDensityTable,
+                    legacyRenderState.RenderFogDensityTable.size(),
+                    legacyRenderState.RenderFogDensityTable.begin());
+        std::copy_n(gpu.GPU3D.RenderToonTable,
+                    legacyRenderState.RenderToonTable.size(),
+                    legacyRenderState.RenderToonTable.begin());
+        std::copy_n(gpu.GPU3D.RenderEdgeTable,
+                    legacyRenderState.RenderEdgeTable.size(),
+                    legacyRenderState.RenderEdgeTable.begin());
         legacyRenderState.RenderXPos = gpu.GPU3D.RenderXPos;
-        frameClearState = buildClearGpuState(legacyRenderState);
+        frameRenderState = &legacyRenderState;
     }
+    const ClearGpuState frameClearState = buildClearGpuState(*frameRenderState);
     if (!ensureTriangleBuffer(renderContext, Triangles.size()))
     {
         HasCpuFrame = false;
@@ -1141,14 +1155,14 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
             clearColor,
             clearDepth,
             renderDispCnt,
-            gpu.GPU3D.RenderAlphaRef,
-            gpu.GPU3D.RenderFogColor,
-            gpu.GPU3D.RenderFogOffset,
-            gpu.GPU3D.RenderFogShift,
+            frameRenderState->RenderAlphaRef,
+            frameRenderState->RenderFogColor,
+            frameRenderState->RenderFogOffset,
+            frameRenderState->RenderFogShift,
             renderClearAttr,
-            gpu.GPU3D.RenderFogDensityTable,
-            gpu.GPU3D.RenderEdgeTable,
-            gpu.GPU3D.RenderToonTable,
+            frameRenderState->RenderFogDensityTable.data(),
+            frameRenderState->RenderEdgeTable.data(),
+            frameRenderState->RenderToonTable.data(),
             captureNeedsCpuReadback,
             captureNeedsGpuCaptureLine))
     {
@@ -6601,6 +6615,9 @@ void VulkanRenderer3D::destroyToonBuffer(RenderContext* context)
     VkDeviceMemory& toonMemory = context != nullptr ? context->ToonMemory : ToonMemory;
     VkDeviceSize& toonBufferSize = context != nullptr ? context->ToonBufferSize : ToonBufferSize;
     void*& toonMapped = context != nullptr ? context->ToonMapped : ToonMapped;
+    u64& uploadedGeneration = context != nullptr
+        ? context->UploadedToonTableGeneration
+        : UploadedToonTableGeneration;
 
     if (toonMapped != nullptr)
     {
@@ -6621,6 +6638,7 @@ void VulkanRenderer3D::destroyToonBuffer(RenderContext* context)
     }
 
     toonBufferSize = 0;
+    uploadedGeneration = 0;
 }
 
 bool VulkanRenderer3D::updateToonBuffer(RenderContext* context, const u16* toonTable)
@@ -6632,10 +6650,29 @@ bool VulkanRenderer3D::updateToonBuffer(RenderContext* context, const u16* toonT
     if (toonBuffer == VK_NULL_HANDLE || toonMemory == VK_NULL_HANDLE || toonMapped == nullptr)
         return false;
 
+    std::array<u16, ToonTableEntryCount> nextToonTable{};
+    if (toonTable != nullptr)
+        std::copy_n(toonTable, nextToonTable.size(), nextToonTable.begin());
+
+    if (!ToonTableGenerationValid || nextToonTable != CachedToonTable)
+    {
+        CachedToonTable = nextToonTable;
+        ToonTableGeneration++;
+        if (ToonTableGeneration == 0)
+            ToonTableGeneration = 1;
+        ToonTableGenerationValid = true;
+    }
+
+    u64& uploadedGeneration = context != nullptr
+        ? context->UploadedToonTableGeneration
+        : UploadedToonTableGeneration;
+    if (uploadedGeneration == ToonTableGeneration)
+        return true;
+
     u32* packedToon = reinterpret_cast<u32*>(const_cast<void*>(toonMapped));
     for (u32 i = 0; i < ToonTableEntryCount; i++)
     {
-        const u32 toonColor = toonTable != nullptr ? static_cast<u32>(toonTable[i]) : 0u;
+        const u32 toonColor = static_cast<u32>(CachedToonTable[i]);
         u32 r = (toonColor << 1u) & 0x3Eu;
         u32 g = (toonColor >> 4u) & 0x3Eu;
         u32 b = (toonColor >> 9u) & 0x3Eu;
@@ -6644,6 +6681,8 @@ bool VulkanRenderer3D::updateToonBuffer(RenderContext* context, const u16* toonT
         if (b) b++;
         packedToon[i] = (r & 0x3Fu) | ((g & 0x3Fu) << 8u) | ((b & 0x3Fu) << 16u);
     }
+
+    uploadedGeneration = ToonTableGeneration;
 
     return true;
 }

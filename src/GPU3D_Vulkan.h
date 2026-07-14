@@ -341,6 +341,7 @@ private:
         VkDeviceMemory ToonMemory = VK_NULL_HANDLE;
         VkDeviceSize ToonBufferSize = 0;
         void* ToonMapped = nullptr;
+        u64 UploadedToonTableGeneration = 0;
         VkBuffer ClearBuffer = VK_NULL_HANDLE;
         VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
         VkDeviceSize ClearBufferSize = 0;
@@ -844,6 +845,10 @@ private:
     VkDeviceMemory ToonMemory = VK_NULL_HANDLE;
     VkDeviceSize ToonBufferSize = 0;
     void* ToonMapped = nullptr;
+    std::array<u16, ToonTableEntryCount> CachedToonTable{};
+    u64 ToonTableGeneration = 0;
+    u64 UploadedToonTableGeneration = 0;
+    bool ToonTableGenerationValid = false;
     VkBuffer ClearBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
     VkDeviceSize ClearBufferSize = 0;
