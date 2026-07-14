@@ -128,13 +128,13 @@ void GPU::Reset() noexcept
 {
     ScreensEnabled = false;
     ScreenSwap = false;
-    CaptureCnt = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    CaptureCnt = 0;
     CaptureFrameCnt = 0;
     CaptureFrameDispCntA = 0;
     CaptureFrameScreenSwap = false;
-#endif
     CaptureEnable = false;
+#endif
 
     VCount = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
