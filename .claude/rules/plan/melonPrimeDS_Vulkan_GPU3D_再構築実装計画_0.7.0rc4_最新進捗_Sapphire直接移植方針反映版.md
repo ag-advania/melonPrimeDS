@@ -716,6 +716,29 @@
 
 検証: `RendererCreationResult`の move-only 挙動、`CreateRenderer3DForSelection()`呼び出し経路、`renderer3D_VulkanCompute`のUI/Config/actual全経路での`MigrateLegacyRendererId()`一元適用、`producerSuspended`によるsubmit/acquire/present/overlay/registration全ゲート、`GPU3D::CurrentRenderer`削除なし、`VulkanRenderer3D`とSoftwareRenderer3Dの並走ゼロを静的監査。`.claude\skills\build-mingw-vulkan-existing.bat --jobs 1`で`ninja: no work to do`（既存build treeが本フェーズの全変更を含めて事前にビルド済みであることを確認）。`git diff --check`成功。
 
+## R23 — 2026-07-14 検証完了（コード変更なし）
+
+1. 変更したファイル
+   - 本計画書のみ（source変更なし）
+2. 新しく追加した型、関数、resource
+   - なし。R23の7要件はR17／R18／R19／R21／R22で既に確立済みの実装だけで全て充足していることを、実装コードの読解によって確認した。
+3. 削除した旧経路
+   - なし。
+4. 所有権とframe lifecycleの変更（検証結果、変更なし）
+   - **要件1（frame serialの単一増加点）**: `GPU.cpp`の`VCount==0`分岐で`++VulkanFrameSerial`が1回だけ実行される（`MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN`ガード内）。同じ分岐で`CaptureFrameDispCntA`／`CaptureFrameScreenSwap`も同時にlatchされる。
+   - **要件7（capture screen swapをframe identityへlatch）**: 上記と同一箇所で`CaptureFrameScreenSwap = ScreenSwap;`が実行され、captureのidentityがGPU frame serialと同時に固定される。
+   - **要件3（384 line complete後だけsnapshotをlatch）**: `GPU_Soft.cpp::EndStructured2DFrame()`が`StructuredLineReceived`（192 line × 2 engine = 384エントリ）を全走査し、1件でも未受信ならその場で`complete=false`にする。completeの場合だけ`StructuredPublishedFrame`をdouble-bufferで確定・公開する（`HasPublishedStructuredFrame=true`）。`CopyStructured2DFrameSnapshot()`は`published.Complete`が立っているsnapshotだけを返す。
+   - **要件2（structured 2D sourceと3D viewの同一serial/generation）**: `MelonPrimeVulkanFrontendSession::captureCompletedSnapshot()`が`source->Complete`／`source->FrameSerial != 0`／`source->Generation == generation`を確認してからsnapshotへcopyする。`submitCompletedFrame()`は`renderer3D.GetVulkan3DFrameView()`から得た`Vulkan3DFrameView.FrameSerial/Generation`と、snapshot側の`frameSerial/generation`が完全一致することを要求し、不一致・invalidなら`false`を返してsubmitを拒否する。
+   - **要件4（composition producerをframe完了点へ接続）**: `EmuInstance::submitVulkanFrontendFrame()`が`EmuThread.cpp`の`nds->RunFrame()`直後（`frameAdvanceOnce()`内、`#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)`ガード内）で毎frame呼ばれ、`beginGeneration(rendererGeneration)`→`captureCompletedSnapshot()`→`submitCompletedFrame()`の順で実行される。
+   - **要件5（GUI presentをFrameQueue consumerだけへ限定）**: `MelonPrimeVulkanFrontendSession::acquirePresentFrame()`/`presentAcquiredFrame()`/`updatePresenterOverlay()`/`commitPresentedFrame()`/`deferPresentedFrame()`はいずれもlive GPU stateを読まず、FrameQueueが公開したReady frameだけを扱う。EmuThread側の`drawScreen()`はHUD snapshotのpublishとrepaint要求だけを行う（R21で確立済み）。
+   - **要件6（pause／frame step／fast forwardで同じownership遷移）**: `EmuThread.cpp`のouter loopは`emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep`の一つの分岐だけが`frameAdvanceOnce()`（→`submitVulkanFrontendFrame()`を含む）を呼ぶ。frame stepはこの分岐に入った直後に`emuStatus`を`Paused`へ落とすが、当該iterationの`frameAdvanceOnce()`自体はRunningと全く同じ経路を通る。Paused中は`frameAdvanceOnce()`自体が呼ばれず新規frameは生成されないが、`FrameQueuePolicy::AllowPreviousFrameReuse=true`によりGUI側は直前のReady frameを提示し続ける。fast forwardは`frameAdvanceOnce()`内のsleep/curFPSにのみ影響し、1回のloop iterationにつき1回の`submitVulkanFrontendFrame()`という契約を変えない。
+5. 参照実装との差分
+   - このフェーズはSapphire参照に対応する新規ファイルを持たない。R17（structured 2D double buffer）／R18（VulkanOutput）／R19（FrameQueue previous-frame reuse policy）／R21（GUI-only Ready frame consumption）／R22（毎frame capability再評価と`beginGeneration()`によるgeneration切替時のreset）の実装がR23の要件を組み合わせとして既に満たしていることを確認しただけであり、新規のcore/frontend adapterは追加していない。
+6. 後続フェーズへ渡すinterface
+   - R24のtimeline/barrier/retire-queue整理は、本フェーズで確認した「serial/generation不一致は即座に破棄する」契約（`submitCompletedFrame()`のフレームビュー一致チェック）をそのまま同期プリミティブの正当性根拠として利用できる。
+
+検証: `GPU.cpp`のVCount==0における`VulkanFrameSerial`単一incrementとcapture screen-swap latch、`GPU_Soft.cpp`の`EndStructured2DFrame()`による384-line complete gateとdouble-buffer publish、`MelonPrimeVulkanFrontendSession.cpp`の`captureCompletedSnapshot()`/`submitCompletedFrame()`における生成元snapshotと`Vulkan3DFrameView`のserial/generation一致チェック、`EmuInstance.cpp`の`submitVulkanFrontendFrame()`が`RunFrame()`直後の単一呼び出し点であること、`EmuThread.cpp`のouter loopでRunning/FrameStepが同一`frameAdvanceOnce()`経路を共有しPausedがsubmit自体をスキップすること、GUI側API（`acquirePresentFrame`等）がlive GPU stateを読まないことを実装コードの読解で確認した。source変更が無いため、`.claude\skills\build-mingw-vulkan-existing.bat`は実行しなかった（既存build treeに影響なし）。`git diff --check`成功。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論
