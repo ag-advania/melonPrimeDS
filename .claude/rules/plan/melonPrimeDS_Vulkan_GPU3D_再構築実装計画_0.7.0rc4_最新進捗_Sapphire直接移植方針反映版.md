@@ -558,6 +558,33 @@
 
 検証: `VulkanRenderer3D`内のstructured CPU array/getter/sink参照0件、source側384-line complete gate、double-buffer publish、engine順storage、frontendだけのtop/bottom変換、Control packer一経路、2D/3D frame serial一致、regular Vulkan CPU final write省略、非Vulkan fallback維持、共通追加箇所の二重build gateを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R18 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. 固定frontend同期単位
+   - `melonDS-android @ 0.7.0.rc4` commit `2c10e59d7209d354e90d9ef4228330bac3f6e794`の`VulkanOutput.h/.cpp`、`VulkanCompositorShader.comp`、`VulkanAccumulate3dShader.comp`をblob間diffで再監査した。
+   - accumulate shaderは差分0件。compositor shaderの差分は共通ABI include、binding/control/native寸法定数への置換だけで、composition式、capture/class4分岐、dispatch semanticsは固定tagのまま維持した。
+   - VulkanOutputの差分はVolk、generated SPIR-V、共通ABI、`Vulkan3DFrameView`、frame identity/timeline adapterへ限定し、参照のsnapshot、capture/class4、temporal history本体を再実装していない。
+3. packed input identity
+   - `SoftPackedFrameSnapshot`へsource frame serialとrenderer generationを追加し、R17でtop/bottomへlatchした2D snapshot identityを失わずVulkanOutputへ搬送する。
+   - `prepareFrameForPresentation()`はFrame、packed 2D snapshot、`Vulkan3DFrameView`のserial/generation三者一致をupload前に要求し、別frameまたはrenderer切替前の2D/3D組合せを拒否する。
+4. per-slot upload lifetime
+   - FrameQueue slotが所有するpersistently mapped top/bottom/capture bufferを書き換える前に、そのslotの直前のoutput timeline/fenceだけを待つ。通常frameでdevice/queue全体をidleにしない。
+   - host write後は固定tagのHOST_WRITE→compute barrier、3D completion timelineのtransfer-stage wait、source image snapshot copy、compute composition、output readable barrier、output timeline signalの順を維持する。
+5. temporal history ownership
+   - render slot探索時に、presenter未消費frameだけでなく`VulkanOutput::isFrameReferencedAsPendingPreviousSource()`が保持中のtop/bottom renderer/composed historyも除外する。
+   - 除外candidateは探索中に再取得しないよう一時配列へ保持し、安全なslot確定または探索終了後にFrameQueueへ返す。history参照中imageを次frame uploadで上書きしない。
+6. descriptor/output ownership
+   - binding 0～6は共通ABIのOutput、Current3D、TopPacked、BottomPacked、PreviousTop3D、Capture3D、PreviousBottom3Dと一致し、previous無効時はcurrent snapshotを実image fallbackとしてbindしてnull descriptorを渡さない。
+   - final two-screen imageを生成するcompute compositor、FrameResource image、temporal resourcesはfrontend session所有の`VulkanOutput`だけに残し、core compositor/readback presentation経路を追加していない。
+
+検証: 固定tag4ファイルのblob diff、accumulate shader差分0、compositor差分のABI adapter限定、descriptor 7 binding C++/GLSL一致、push constant size static assert、packed/3D serial-generation三者gate、target slotだけの事前wait、HOST_WRITE/transfer/compute/output barrier順、3D completion wait、null descriptor 0件、temporal参照frame除外、通常frameの`vkDeviceWaitIdle`/`vkQueueWaitIdle` 0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

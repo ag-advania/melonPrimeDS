@@ -82,8 +82,8 @@ Reference paths in this table are relative to `app/src/main/cpp/renderer/` in th
 
 | Destination | Reference path | Class and retained difference |
 |---|---|---|
-| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h` | `VulkanOutput.h` | Core compatibility adaptation: local include paths and `volk`; descriptor/push-constant ABI unchanged. |
-| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp` | `VulkanOutput.cpp` | Core compatibility adaptation: `volk` replaces `VulkanDispatch.h`; reference algorithm otherwise retained. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h` | `VulkanOutput.h` | Core compatibility adaptation: local include paths, `volk`, generated-shader ABI, `Vulkan3DFrameView`, and R18 source serial/generation fields. Descriptor order, push constants, packed/capture/history resource shape, and reference temporal state remain unchanged. |
+| `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp` | `VulkanOutput.cpp` | Reference-majority desktop adaptation: `volk`, generated shader words, shared Control/binding constants, immutable 3D view copy, explicit 3D timeline wait, and R18 per-slot mapped-buffer lifetime/2D-to-3D identity gates. The pinned capture/class4/temporal/composition algorithms and dispatch order remain the base. |
 | `src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp` | `VulkanCompositorShader.comp` | Reference code. |
 | `src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp` | `VulkanAccumulate3dShader.comp` | Reference code. |
 | `src/frontend/qt_sdl/VulkanReference/FrameQueue.h` | `FrameQueue.h` | Desktop platform adaptation: reference policy, frame identity, queue statistics, deadline, drop, reuse, and resync ABI retained; EGL/GL resource fields replaced by Vulkan handles. |
@@ -93,7 +93,7 @@ Reference paths in this table are relative to `app/src/main/cpp/renderer/` in th
 | `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert` | `VulkanSurfacePresenter.vert` | Reference code. |
 | `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag` | `VulkanSurfacePresenter.frag` | Reference code. |
 | `src/frontend/qt_sdl/VulkanReference/VulkanFilterMode.h` | `VulkanFilterMode.h` | Reference code. |
-| `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp` | `VulkanOutput.h/.cpp` consumer boundary | MelonPrime desktop adapter: R17 copies the complete engine-order snapshot from `GPU::Renderer`, applies the latched screen swap exactly once, and then performs the existing sole Control-ABI conversion. It no longer reads any structured-2D getter from `VulkanRenderer3D`. |
+| `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp` | `VulkanOutput.h/.cpp` consumer boundary | MelonPrime desktop adapter: R17 copies the complete engine-order snapshot from the active outer `Renderer`, applies the latched screen swap exactly once, and then performs the sole Control-ABI conversion. R18 transports the source serial/generation into the packed snapshot and withholds any FrameQueue candidate still referenced by VulkanOutput temporal history. |
 | `src/frontend/qt_sdl/EmuInstance.cpp` | desktop lifecycle adapter | MelonPrime desktop adapter: frame submission obtains structured metadata from `NDS::GPU` and the independent GPU-resident 3D view from `VulkanRenderer3D`, then requires matching generation/frame identity before composition. |
 
 ## Frontend generated shader headers

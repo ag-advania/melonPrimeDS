@@ -2305,7 +2305,9 @@ bool VulkanOutput::prepareFrameForPresentation(
     (void)frontBuffer;
     if (!initialized || frame == nullptr || !frameView.Valid
         || frame->source3dFrameSerial != frameView.FrameSerial
-        || frame->rendererGeneration != frameView.Generation)
+        || frame->rendererGeneration != frameView.Generation
+        || softPackedSnapshot.sourceFrameSerial != frameView.FrameSerial
+        || softPackedSnapshot.rendererGeneration != frameView.Generation)
         return false;
     if (!softPackedSnapshot.valid
         || softPackedSnapshot.frontBufferLatched < 0
@@ -2319,6 +2321,14 @@ bool VulkanOutput::prepareFrameForPresentation(
         return false;
 
     FrameResource& resource = iterator->second;
+
+    // A FrameQueue slot owns its persistently mapped packed buffers. Wait only
+    // for this slot's previous submission before overwriting those buffers.
+    if (frame->renderTimelineValue != 0
+        && !waitForFrame(frame, UINT64_MAX))
+    {
+        return false;
+    }
 
     resource.screenSwap = softPackedSnapshot.valid ? softPackedSnapshot.screenSwapLatched : frameScreenSwap;
     const u64 packedUploadStartNs = PerfNowNs();

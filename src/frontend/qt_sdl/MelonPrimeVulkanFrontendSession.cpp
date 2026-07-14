@@ -151,6 +151,8 @@ void MelonPrimeVulkanFrontendSession::buildSoftPackedSnapshot(
 {
     destination.clear();
     destination.frameId = frameId;
+    destination.sourceFrameSerial = source.frameSerial;
+    destination.rendererGeneration = source.generation;
     destination.frontBufferLatched = 0;
     destination.screenSwapLatched = source.screenSwap;
 
@@ -313,18 +315,26 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
 
     const FrameQueuePolicy policy = queuePolicy();
     Frame* frame = nullptr;
+    std::array<Frame*, FRAME_QUEUE_SIZE> deferredFrames{};
+    size_t deferredFrameCount = 0;
     for (size_t attempt = 0; attempt < FRAME_QUEUE_SIZE; ++attempt)
     {
         Frame* candidate = frameQueue.getRenderFrame(policy);
         if (candidate == nullptr)
             break;
-        if (activePresenter == nullptr || activePresenter->waitForFrameConsumption(candidate, 0))
+        const bool presentationComplete = activePresenter == nullptr
+            || activePresenter->waitForFrameConsumption(candidate, 0);
+        const bool retainedByTemporalHistory =
+            output.isFrameReferencedAsPendingPreviousSource(candidate);
+        if (presentationComplete && !retainedByTemporalHistory)
         {
             frame = candidate;
             break;
         }
-        frameQueue.recycleRenderFrame(candidate);
+        deferredFrames[deferredFrameCount++] = candidate;
     }
+    for (size_t index = 0; index < deferredFrameCount; ++index)
+        frameQueue.recycleRenderFrame(deferredFrames[index]);
     if (frame == nullptr)
         return false;
 
@@ -334,7 +344,6 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
     frame->source3dFrameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
-    frame->renderTimelineValue = 0;
 
     SoftPackedFrameSnapshot packedSnapshot{};
     buildSoftPackedSnapshot(snapshot, frame->frameId, packedSnapshot);

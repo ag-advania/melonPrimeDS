@@ -62,6 +62,8 @@ struct SoftPackedFrameSnapshot
     static constexpr size_t kLineCount = kScreenHeight;
 
     u64 frameId = 0;
+    u64 sourceFrameSerial = 0;
+    u64 rendererGeneration = 0;
     int frontBufferLatched = -1;
     bool screenSwapLatched = false;
     bool valid = false;
@@ -86,6 +88,8 @@ struct SoftPackedFrameSnapshot
     void clear()
     {
         frameId = 0;
+        sourceFrameSerial = 0;
+        rendererGeneration = 0;
         frontBufferLatched = -1;
         screenSwapLatched = false;
         valid = false;
