@@ -128,6 +128,11 @@ void GPU::Reset() noexcept
 {
     ScreensEnabled = false;
     ScreenSwap = false;
+    CaptureCnt = 0;
+    CaptureFrameCnt = 0;
+    CaptureFrameDispCntA = 0;
+    CaptureFrameScreenSwap = false;
+    CaptureEnable = false;
 
     VCount = 0;
     VCountOverride = false;
@@ -300,6 +305,13 @@ void GPU::DoSavestate(Savestate* file) noexcept
     GPU2D_A.DoSavestate(file);
     GPU2D_B.DoSavestate(file);
     GPU3D.DoSavestate(file);
+
+    if (!file->Saving)
+    {
+        CaptureFrameCnt = CaptureEnable ? CaptureCnt : 0u;
+        CaptureFrameDispCntA = GPU2D_A.DispCnt;
+        CaptureFrameScreenSwap = ScreenSwap;
+    }
 
     if (!file->Saving)
     {
@@ -1282,6 +1294,9 @@ void GPU::StartScanline(u32 line) noexcept
 
     if (VCount == 0)
     {
+        CaptureFrameCnt = 0;
+        CaptureFrameDispCntA = GPU2D_A.DispCnt;
+        CaptureFrameScreenSwap = ScreenSwap;
         if (CaptureCnt & (1<<31))
         {
             CaptureEnable = true;
@@ -1581,12 +1596,17 @@ void GPU::VRAMCBFlagsOr(u32 bank, u32 block, u16 val)
 
 void GPU::CheckCaptureStart()
 {
-    u32 dstbank = (CaptureCnt >> 16) & 0x3;
+    CaptureFrameCnt = CaptureCnt;
+    CaptureFrameDispCntA = GPU2D_A.DispCnt;
+    CaptureFrameScreenSwap = ScreenSwap;
+
+    const u32 captureCnt = CaptureFrameCnt;
+    u32 dstbank = (captureCnt >> 16) & 0x3;
     if (!(VRAMMap_LCDC & (1<<dstbank)))
         return;
 
-    u32 dstoff = (CaptureCnt >> 18) & 0x3;
-    u32 size = (CaptureCnt >> 20) & 0x3;
+    u32 dstoff = (captureCnt >> 18) & 0x3;
+    u32 size = (captureCnt >> 20) & 0x3;
     u32 len = (size == 0) ? 1 : size;
 
     // if needed, invalidate old captures
@@ -1621,10 +1641,10 @@ void GPU::CheckCaptureStart()
 void GPU::CheckCaptureEnd()
 {
     // mark this capture as complete
-    // TODO this will break if they change CaptureCnt during a capture
-    u32 dstbank = (CaptureCnt >> 16) & 0x3;
-    u32 dstoff = (CaptureCnt >> 18) & 0x3;
-    u32 size = (CaptureCnt >> 20) & 0x3;
+    const u32 captureCnt = CaptureFrameCnt;
+    u32 dstbank = (captureCnt >> 16) & 0x3;
+    u32 dstoff = (captureCnt >> 18) & 0x3;
+    u32 size = (captureCnt >> 20) & 0x3;
 
     u16 flags = VRAMCaptureBlockFlags[(dstbank << 2) | dstoff];
     if (!(flags & CBFlag_IsCapture))

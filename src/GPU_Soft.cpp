@@ -330,7 +330,7 @@ void SoftRenderer::DrawScanlineB(u32 line, u32* dst)
 
 void SoftRenderer::DoCapture(u32 line)
 {
-    u32 captureCnt = GPU.CaptureCnt;
+    const u32 captureCnt = GPU.CaptureFrameCnt;
 
     u32 width, height;
     u32 sz = (captureCnt >> 20) & 0x3;
@@ -367,7 +367,7 @@ void SoftRenderer::DoCapture(u32 line)
         srcB = GPU.DispFIFOBuffer;
     else
     {
-        u32 dispcnt = GPU.GPU2D_A.DispCnt;
+        const u32 dispcnt = GPU.CaptureFrameDispCntA;
         u32 srcvram = (dispcnt >> 18) & 0x3;
         if (GPU.VRAMMap_LCDC & (1<<srcvram))
         {

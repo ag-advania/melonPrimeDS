@@ -719,6 +719,8 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     LastValidExactCaptureLineCache.fill(0);
     HasLastValidExactCapture = false;
     LastValidExactCaptureScreenSwap = false;
+    LastValidExactCaptureFrameSerial = 0;
+    CurrentDisplayCaptureState = {};
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
@@ -741,7 +743,7 @@ void VulkanRenderer3D::VCount144ActiveBackend(melonDS::GPU& gpu)
     if (!Threaded)
         return;
 
-    const u32 captureCnt = gpu.CaptureCnt;
+    const u32 captureCnt = gpu.CaptureFrameCnt;
     const bool captureEnabled = (captureCnt & (1u << 31u)) != 0u;
     const u32 captureMode = (captureCnt >> 29u) & 0x3u;
     const bool captureNeedsSourceA = captureEnabled && (captureMode != 1u);
@@ -779,7 +781,6 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 {
     refreshActiveBackendMode();
-    CurrentRenderScreenSwap = gpu.ScreenSwap;
 
     if (SkipRenderAtVCount215 && gpu.VCount == 215u)
     {
@@ -810,19 +811,41 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     const u32 scale = static_cast<u32>(std::max(1, ScaleFactor));
     const u32 targetWidth = 256u * scale;
     const u32 targetHeight = 192u * scale;
-    const u32 captureCnt = gpu.CaptureCnt;
+    const u32 captureCnt = gpu.CaptureFrameCnt;
     const bool captureEnabled = (captureCnt & (1u << 31u)) != 0u;
     const u32 captureMode = (captureCnt >> 29u) & 0x3u;
     const u32 captureSizeMode = (captureCnt >> 20u) & 0x3u;
     const bool captureSource3d = (captureCnt & (1u << 24u)) != 0u;
     const bool sourceAContributes = captureMode == 0u
         || ((captureMode >= 2u) && ((captureCnt & 0x1Fu) != 0u));
-    const bool bg0Uses3d = (gpu.GPU2D_A.DispCnt & 0x0108u) == 0x0108u;
+    const bool bg0Uses3d = (gpu.CaptureFrameDispCntA & 0x0108u) == 0x0108u;
     const bool captureNeedsCpuReadback = false;
     const bool captureNeedsGpuCaptureLineBase =
         captureEnabled
         && (captureMode != 1u)
         && (captureSource3d || (bg0Uses3d && sourceAContributes));
+    const u32 captureLineWidth = captureSizeMode == 0u ? 128u : 256u;
+    const u32 captureLineCount = captureSizeMode == 0u ? 128u : 64u * captureSizeMode;
+    CurrentDisplayCaptureState.Control = captureCnt;
+    CurrentDisplayCaptureState.SourceWidth = targetWidth;
+    CurrentDisplayCaptureState.SourceHeight = targetHeight;
+    CurrentDisplayCaptureState.Scale = scale;
+    CurrentDisplayCaptureState.DestinationBank = (captureCnt >> 16u) & 0x3u;
+    CurrentDisplayCaptureState.DestinationOffset = (captureCnt >> 18u) & 0x3u;
+    CurrentDisplayCaptureState.DestinationSizeMode = captureSizeMode;
+    CurrentDisplayCaptureState.DestinationLineWidth = captureLineWidth;
+    CurrentDisplayCaptureState.DestinationLineCount = captureLineCount;
+    CurrentDisplayCaptureState.FrameSerial = Structured2DPendingSerial != 0
+        ? Structured2DPendingSerial
+        : Structured2DFrameSerial;
+    CurrentDisplayCaptureState.Enabled = captureEnabled;
+    CurrentDisplayCaptureState.ScreenSwap = gpu.CaptureFrameScreenSwap;
+    CurrentDisplayCaptureState.Bg0Uses3d = bg0Uses3d;
+    CurrentDisplayCaptureState.Needs3dLine = captureNeedsGpuCaptureLineBase;
+    CurrentDisplayCaptureState.Valid = true;
+    CurrentRenderScreenSwap = CurrentDisplayCaptureState.ScreenSwap;
+    CurrentCaptureScreenSwapHint = CurrentDisplayCaptureState.ScreenSwap;
+    HasCurrentCaptureScreenSwapHint = true;
     const auto updateExactCaptureFallbackColor = [&](u32 clearColor) {
         const u32 r = clearColor & 0xFFu;
         const u32 g = (clearColor >> 8u) & 0xFFu;
@@ -850,7 +873,8 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     {
         if (ActiveBackendMode == BackendMode::GraphicsHardware && captureNeedsGpuCaptureLineBase)
         {
-            updateExactCaptureFallbackColor();
+            updateExactCaptureFallbackColor(
+                buildClearGpuState(SharedGraphicsScene.RenderState).ColorRgba8);
             if (!CaptureLinePending && !CaptureLineReady)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
@@ -1236,9 +1260,13 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
         }
 
         const auto readyCaptureMatchesHint = [&]() {
-            return !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
+            const bool screenSwapMatches = !HasCurrentCaptureScreenSwapHint
                 || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
+            const bool frameSerialMatches = !CurrentDisplayCaptureState.Valid
+                || CurrentDisplayCaptureState.FrameSerial == 0
+                || ReadyCaptureLineFrameSerial == 0
+                || ReadyCaptureLineFrameSerial == CurrentDisplayCaptureState.FrameSerial;
+            return !exactCaptureOnly || (screenSwapMatches && frameSerialMatches);
         };
 
         if (!HasCpuFrame && CaptureLineReady && ReadyCaptureLineData != nullptr && readyCaptureMatchesHint())
@@ -1347,8 +1375,12 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
         {
             const bool readyMatchesHint =
                 !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
-                || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
+                || ((!HasCurrentCaptureScreenSwapHint
+                        || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint)
+                    && (!CurrentDisplayCaptureState.Valid
+                        || CurrentDisplayCaptureState.FrameSerial == 0
+                        || ReadyCaptureLineFrameSerial == 0
+                        || ReadyCaptureLineFrameSerial == CurrentDisplayCaptureState.FrameSerial));
             HasCpuFrame = readyMatchesHint && copyReadyCaptureLineToLineCache();
             return;
         }
@@ -1437,7 +1469,7 @@ void VulkanRenderer3D::Blit(const melonDS::GPU& gpu)
 
 void VulkanRenderer3D::BlitActiveBackend(const melonDS::GPU& gpu)
 {
-    CurrentRenderScreenSwap = gpu.ScreenSwap;
+    (void)gpu;
 
     if (ActiveBackendMode != BackendMode::GraphicsHardware
         || !Initialized
@@ -1450,19 +1482,10 @@ void VulkanRenderer3D::BlitActiveBackend(const melonDS::GPU& gpu)
         return;
     }
 
-    const u32 captureCnt = gpu.CaptureCnt;
-    const bool captureEnabled = (captureCnt & (1u << 31u)) != 0u;
-    const u32 captureMode = (captureCnt >> 29u) & 0x3u;
-    const bool captureSource3d = (captureCnt & (1u << 24u)) != 0u;
-    const bool sourceAContributes = captureMode == 0u
-        || ((captureMode >= 2u) && ((captureCnt & 0x1Fu) != 0u));
-    const bool bg0Uses3d = (gpu.GPU2D_A.DispCnt & 0x0108u) == 0x0108u;
-    const bool captureNeedsGpuCaptureLine =
-        captureEnabled
-        && (captureMode != 1u)
-        && (captureSource3d || (bg0Uses3d && sourceAContributes));
-    if (!captureNeedsGpuCaptureLine)
+    if (!CurrentDisplayCaptureState.Valid || !CurrentDisplayCaptureState.Needs3dLine)
         return;
+
+    CurrentRenderScreenSwap = CurrentDisplayCaptureState.ScreenSwap;
 
     // Match the OpenGL timing contract more closely: prime the DS-sized export
     // during VBlank, before GPU2D_Soft starts the next frame's capture path.
@@ -1508,6 +1531,8 @@ void VulkanRenderer3D::StopActiveBackend(const melonDS::GPU& gpu)
     LastValidExactCaptureLineCache.fill(0);
     HasLastValidExactCapture = false;
     LastValidExactCaptureScreenSwap = false;
+    LastValidExactCaptureFrameSerial = 0;
+    CurrentDisplayCaptureState = {};
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
@@ -2633,6 +2658,8 @@ void VulkanRenderer3D::resetCaptureLineState()
     ReadyCaptureLineBufferSlot = -1;
     PendingCaptureLineScreenSwap = false;
     ReadyCaptureLineScreenSwap = false;
+    PendingCaptureLineFrameSerial = 0;
+    ReadyCaptureLineFrameSerial = 0;
 }
 
 void VulkanRenderer3D::clearRawReadbackState()
@@ -2733,7 +2760,9 @@ bool VulkanRenderer3D::finalizeCaptureLineFrame(bool blocking)
     PendingCaptureLineContext = nullptr;
     PendingCaptureLineBufferSlot = -1;
     ReadyCaptureLineScreenSwap = PendingCaptureLineScreenSwap;
+    ReadyCaptureLineFrameSerial = PendingCaptureLineFrameSerial;
     PendingCaptureLineScreenSwap = false;
+    PendingCaptureLineFrameSerial = 0;
     CaptureLineReady = ReadyCaptureLineData != nullptr;
     return CaptureLineReady;
 }
@@ -9671,9 +9700,11 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
             PendingCaptureLineContext = nullptr;
             PendingCaptureLineBufferSlot = -1;
             PendingCaptureLineScreenSwap = false;
+            PendingCaptureLineFrameSerial = 0;
             CaptureLineReady = ReadyCaptureLineData != nullptr;
             ReadyCaptureLineBufferSlot = CaptureLineReady ? static_cast<int>(ActiveCaptureLineBufferSlot) : -1;
             ReadyCaptureLineScreenSwap = CurrentRenderScreenSwap;
+            ReadyCaptureLineFrameSerial = CurrentDisplayCaptureState.FrameSerial;
         }
         else
         {
@@ -9681,9 +9712,11 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
             PendingCaptureLineContext = context;
             PendingCaptureLineBufferSlot = -1;
             PendingCaptureLineScreenSwap = CurrentRenderScreenSwap;
+            PendingCaptureLineFrameSerial = CurrentDisplayCaptureState.FrameSerial;
             CaptureLineReady = false;
             ReadyCaptureLineBufferSlot = -1;
             ReadyCaptureLineScreenSwap = false;
+            ReadyCaptureLineFrameSerial = 0;
         }
     }
 
@@ -11383,10 +11416,12 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
         CaptureLineDataIsRgba8 = false;
         PendingCaptureLineBufferSlot = -1;
         PendingCaptureLineScreenSwap = CurrentRenderScreenSwap;
+        PendingCaptureLineFrameSerial = CurrentDisplayCaptureState.FrameSerial;
         CaptureLineReady = false;
         ReadyCaptureLineBufferSlot = -1;
         ReadyCaptureLineData = nullptr;
         ReadyCaptureLineScreenSwap = false;
+        ReadyCaptureLineFrameSerial = 0;
         ActiveCapturePathMode = CapturePathMode::CaptureLineExport;
         CapturePathModeCounts[static_cast<size_t>(CapturePathMode::CaptureLineExport)]++;
     }
@@ -11673,10 +11708,12 @@ bool VulkanRenderer3D::submitGraphicsCaptureExportForCurrentFrame()
     CaptureLineDataIsRgba8 = true;
     PendingCaptureLineBufferSlot = static_cast<int>(ActiveCaptureLineBufferSlot);
     PendingCaptureLineScreenSwap = CurrentRenderScreenSwap;
+    PendingCaptureLineFrameSerial = CurrentDisplayCaptureState.FrameSerial;
     CaptureLineReady = false;
     ReadyCaptureLineBufferSlot = -1;
     ReadyCaptureLineData = nullptr;
     ReadyCaptureLineScreenSwap = false;
+    ReadyCaptureLineFrameSerial = 0;
     ActiveCapturePathMode = CapturePathMode::CaptureLineExport;
     CapturePathModeCounts[static_cast<size_t>(CapturePathMode::CaptureLineExport)]++;
     return true;
@@ -14198,14 +14235,20 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
         resetCaptureLineState();
         return false;
     }
+    const bool readyScreenSwapMismatch = HasCurrentCaptureScreenSwapHint
+        && ReadyCaptureLineScreenSwap != CurrentCaptureScreenSwapHint;
+    const bool readyFrameSerialMismatch = CurrentDisplayCaptureState.Valid
+        && CurrentDisplayCaptureState.FrameSerial != 0
+        && ReadyCaptureLineFrameSerial != 0
+        && ReadyCaptureLineFrameSerial != CurrentDisplayCaptureState.FrameSerial;
     if (ActiveBackendMode == BackendMode::GraphicsHardware
-        && HasCurrentCaptureScreenSwapHint
-        && ReadyCaptureLineScreenSwap != CurrentCaptureScreenSwapHint)
+        && (readyScreenSwapMismatch || readyFrameSerialMismatch))
     {
         CaptureLineReady = false;
         ReadyCaptureLineData = nullptr;
         ReadyCaptureLineBufferSlot = -1;
         ReadyCaptureLineScreenSwap = false;
+        ReadyCaptureLineFrameSerial = 0;
         return false;
     }
 
@@ -14239,10 +14282,12 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
         LastValidExactCaptureLineCache = LineCache;
         HasLastValidExactCapture = true;
         LastValidExactCaptureScreenSwap = ReadyCaptureLineScreenSwap;
+        LastValidExactCaptureFrameSerial = ReadyCaptureLineFrameSerial;
     }
     CaptureLineReady = false;
     ReadyCaptureLineData = nullptr;
     ReadyCaptureLineBufferSlot = -1;
+    ReadyCaptureLineFrameSerial = 0;
     CaptureLineDataIsRgba8 = false;
 
     ActiveCapturePathMode = CapturePathMode::CaptureLineExport;

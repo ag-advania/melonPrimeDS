@@ -491,6 +491,38 @@
 
 検証: 5 shader sourceの固定commit正規化diff 0件、toon/highlight分離、32-entry per-context buffer、generation hit/miss/recreate無効化、edge/fog graphics pipeline、8 compute final variant、coverage AA、hidden-alpha-zero override、live final-effect state再読込除去、CPU postprocess依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R16 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU.h`
+   - `src/GPU.cpp`
+   - `src/GPU_Soft.cpp`
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. capture frame snapshot
+   - line 0の`CheckCaptureStart()`でcapture control、engine A `DispCnt`、screen swapを`CaptureFrame*`へ固定し、`GPU_Soft::DoCapture()`と`CheckCaptureEnd()`のscanline途中live register再読込を除去した。
+   - capture destination bank/offset/size、source A/B、EVA/EVB、FIFO/VRAM source選択は同一snapshotを使う。savestate byte layoutは増やさず、load後にtransient snapshotを現行stateから再構築する。
+   - `VulkanRenderer3D`はenabled/control/screen swap、source dimensions/scale、destination range、3D frame serial、BG0 3D contributionを`DisplayCaptureFrameState`へ一度captureし、VBlank `Blit`でもlive `GPU`を再読込しない。
+3. capture line exportとslot lifecycle
+   - `GPU3D_Vulkan_CaptureLineExportShader.comp`は固定core commitとの正規化diff 0件で、scaled `ColorImage`をnative 256×192へnearest resolveし、DS 6-bit RGB＋5-bit alphaへGPU packする。
+   - active/pending/readyを分離するglobal 2-slot bufferと6個のrender-context bufferを維持し、pending/readyへscreen swapと3D frame serialを同時に保存する。
+   - completion fenceがreadyになったslotだけをline cacheへcopyし、未完了slotはnon-blocking prepareで保持する。global 2-slotの両方がpending/readyなら新しいexportをdeferし、上書きしない。
+4. exact capture historyとfallback
+   - ready slotはcapture snapshotのscreen swap/frame serialと照合し、別frameのpending exportを同一captureとして採用しない。
+   - 有効なexact captureは`LastValidExactCaptureLineCache`へ保存し、source unavailable時は同screen-swapの直前履歴、次にimmutable clear colorから作った明示fallbackを使用する。Software 3Dを並走させない。
+   - identical 3D frameのlate exportで引数なしfallback更新になっていた不整合を修正し、immutable `SharedGraphicsScene.RenderState`のclear colorを使用する。
+5. VRAM同期とnormal presentation分離
+   - `GPU_Soft::DoCapture()`はsnapshotのwidth/height/destinationだけを対象にRGB555へmixし、書いたcapture lineの512-byte dirty granuleだけを更新する。
+   - `CheckCaptureStart/End()`のcapture block flagsと既存`SyncVRAMCapture()` ownershipを維持し、必要bank/block以外を同期しない。
+   - window presentationはR6の`Vulkan3DFrameView`／frontend compositorを使用し、capture line bufferやcapture readbackを通常表示sourceにしない。
+6. 参照実装との差分
+   - capture shader、GPU dispatch/barrier、exact history、slot completion、screen-swap照合は固定Sapphire実装を正本として維持した。
+   - current upstreamのGPU owner構造へ合わせたline-0 register latchとframe-serial metadataだけをdesktop/core compatibility adapterとして追加し、manifestへ分類した。
+
+検証: capture shader固定commit正規化diff 0件、line-0 control/DispCnt/screen-swap latch、source dimension/scale/destination snapshot、shader write→host read barrier、2-slot busy/defer、6-context fence completion、pending→ready frame identity、exact history/clear fallback、capture range dirty、Vulkan capture判断のlive `CaptureCnt`/`ScreenSwap`/engine-A `DispCnt`再読込0件、SoftwareRenderer3D並走0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

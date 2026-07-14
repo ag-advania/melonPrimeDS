@@ -268,6 +268,25 @@ private:
         bool BitmapEnabled = false;
     };
 
+    struct DisplayCaptureFrameState
+    {
+        u32 Control = 0;
+        u32 SourceWidth = 0;
+        u32 SourceHeight = 0;
+        u32 Scale = 1;
+        u32 DestinationBank = 0;
+        u32 DestinationOffset = 0;
+        u32 DestinationSizeMode = 0;
+        u32 DestinationLineWidth = 0;
+        u32 DestinationLineCount = 0;
+        u64 FrameSerial = 0;
+        bool Enabled = false;
+        bool ScreenSwap = false;
+        bool Bg0Uses3d = false;
+        bool Needs3dLine = false;
+        bool Valid = false;
+    };
+
     struct DescriptorSetCache
     {
         bool Ready = false;
@@ -871,6 +890,9 @@ private:
     int ReadyCaptureLineBufferSlot = -1;
     bool PendingCaptureLineScreenSwap = false;
     bool ReadyCaptureLineScreenSwap = false;
+    u64 PendingCaptureLineFrameSerial = 0;
+    u64 ReadyCaptureLineFrameSerial = 0;
+    DisplayCaptureFrameState CurrentDisplayCaptureState{};
 
     VkImage FallbackTextureImage = VK_NULL_HANDLE;
     VkDeviceMemory FallbackTextureMemory = VK_NULL_HANDLE;
@@ -916,6 +938,7 @@ private:
     bool ExactCaptureFallbackValid = false;
     bool HasLastValidExactCapture = false;
     bool LastValidExactCaptureScreenSwap = false;
+    u64 LastValidExactCaptureFrameSerial = 0;
     bool CurrentCaptureScreenSwapHint = false;
     bool HasCurrentCaptureScreenSwapHint = false;
     bool CurrentRenderScreenSwap = false;
