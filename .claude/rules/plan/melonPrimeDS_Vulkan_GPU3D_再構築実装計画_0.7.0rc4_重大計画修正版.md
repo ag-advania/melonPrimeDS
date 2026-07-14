@@ -240,6 +240,34 @@
 
 検証: core/frontend全体で旧`SapphireVulkanComposition*`、`Structured2DGpu*`、`Structured2DPacked`、pack/upload関数、個別`GetColorTarget*` getterの参照0件を静的監査。`VulkanOutput`がFrameQueue slotのsnapshot以外をcomposition sourceにしないこと、serial/generation不一致を拒否すること、`git diff --check`成功を確認。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R7 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+2. 新しく追加した型、関数、resource
+   - color/attribute/depthの固定format定数と、device format feature検査。
+   - `ColorImageLayout`、`AttrImageLayout`、`DepthImageLayout`、`DepthStencilImageLayout`、`CaptureReadbackImageLayout`によるresource別layout追跡。
+   - synchronization2形式を既存`vkCmdPipelineBarrier`へ変換する`TransitionImage()` adapter。
+   - graphics queue上の既送信workだけをfence待機する`waitForQueueTail()`。
+3. 削除した旧経路
+   - scale変更時とrender-target再生成時の`vkDeviceWaitIdle()`を削除した。
+   - image layoutを`ColorImageInitialized`一個から推測する分岐を削除し、attachmentごとの実layoutをbarrierへ渡すようにした。
+   - device-local memoryが見つからない場合に任意memory typeへfallbackするtarget allocationを削除した。
+4. 所有権とframe lifecycleの変更
+   - 1以上へclampした`ScaleFactor`から`256*scale × 192*scale`の実targetを次frameで生成する。
+   - resize時は新target一式を先に作成し、shared graphics queue末尾fenceが完了してから旧framebuffer/view/image/memoryと寸法依存bufferを破棄する。
+   - `Vulkan3DFrameView`は追跡中のColor layoutを公開し、未遷移targetをvalidとして公開しない。
+5. 参照実装との差分
+   - DepthImageは現行graphics MRTでdepth値を`R32_SFLOAT` color attachmentへ書くため、計画のSTORAGE/SAMPLED/TRANSFERに加えてCOLOR_ATTACHMENT usageを維持する。
+   - depth/stencil formatは`D32_SFLOAT_S8_UINT → D24_UNORM_S8_UINT → D16_UNORM_S8_UINT`の順で、attachment/transfer featureを全て満たす候補を保存する。
+6. 後続フェーズへ渡すinterface
+   - R8以降がcontext別commandで利用する一元化されたtarget format/layout state。
+   - R16 captureとR24 barrier整理が共有できる`TransitionImage()`。
+   - R24 retire queueへ一般化可能な、device全体を止めないqueue-tail completion point。
+
+検証: Color/Attr/Depth/DepthStencilのusage bit、depth/stencil候補順、device-local allocation、target作成前後のcleanup順、scale/recreate箇所の`vkDeviceWaitIdle`不存在、layout fieldの生成・描画・readback・破棄遷移を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ---
 
 # 1. 目的

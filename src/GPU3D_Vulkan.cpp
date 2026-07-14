@@ -1484,32 +1484,8 @@ void VulkanRenderer3D::SetRenderSettings(
 
     if (Initialized && oldScale != ScaleFactor)
     {
-        (void)waitForDeviceIdle("scale change");
-        destroyTriangleBuffer(nullptr);
-        for (RenderContext& renderContext : RenderContexts)
-        {
-            destroyCpuSpanSetupBuffer(renderContext);
-            destroyCpuBinBuffers(renderContext);
-            destroyCpuWorkOffsetBuffer(renderContext);
-            destroyTriangleBuffer(&renderContext);
-            destroyCaptureLineBuffer(&renderContext);
-        }
-        destroyBinMaskBuffer();
-        destroyGroupListBuffer();
-        destroySpanSetupBuffer();
-        destroyWorkOffsetBuffer();
-        destroyToonBuffer(nullptr);
-        destroyGraphicsClearBuffer(nullptr);
-        for (RenderContext& renderContext : RenderContexts)
-        {
-            destroyToonBuffer(&renderContext);
-            destroyGraphicsClearBuffer(&renderContext);
-        }
-        destroyResultBuffer();
-        destroyRenderTarget();
-        destroyReadbackBuffer();
-        destroyCaptureReadbackImage();
-        destroyAllCaptureLineBuffers();
+        // The next frame creates the new-size target and waits only for the
+        // shared graphics queue tail before retiring the old attachments.
         InvalidatePresentationState(true);
     }
 }
@@ -1632,7 +1608,7 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
     Vulkan3DFrameView view{};
     view.ColorImage = ColorImage;
     view.ColorImageView = ColorImageView;
-    view.ColorLayout = VK_IMAGE_LAYOUT_GENERAL;
+    view.ColorLayout = ColorImageLayout;
     view.Width = ColorImageWidth;
     view.Height = ColorImageHeight;
     view.Scale = static_cast<u32>(std::max(ScaleFactor, 1));
@@ -1647,6 +1623,7 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
         && ColorImageView != VK_NULL_HANDLE
         && ColorImageWidth != 0
         && ColorImageHeight != 0
+        && ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         && Structured2DFrameValid
         && Structured2DFrameSerial != 0
         && view.Generation != 0;
@@ -2695,6 +2672,79 @@ bool VulkanRenderer3D::waitForDeviceIdle(const char* reason)
     return true;
 }
 
+bool VulkanRenderer3D::waitForQueueTail(const char* reason)
+{
+    if (Device == VK_NULL_HANDLE || Queue == VK_NULL_HANDLE)
+        return false;
+
+    VkFence tailFence = VK_NULL_HANDLE;
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    if (vkCreateFence(Device, &fenceInfo, nullptr, &tailFence) != VK_SUCCESS)
+        return false;
+
+    VkResult submitResult = VK_ERROR_INITIALIZATION_FAILED;
+    {
+        std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitResult = vkQueueSubmit(Queue, 1, &submitInfo, tailFence);
+    }
+
+    const VkResult waitResult = submitResult == VK_SUCCESS
+        ? vkWaitForFences(Device, 1, &tailFence, VK_TRUE, UINT64_MAX)
+        : submitResult;
+    vkDestroyFence(Device, tailFence, nullptr);
+    if (waitResult != VK_SUCCESS)
+    {
+        Log(
+            LogLevel::Error,
+            "VulkanRenderer3D: graphics queue tail wait failed while waiting for %s (%d)",
+            reason != nullptr ? reason : "queue completion",
+            static_cast<int>(waitResult));
+        return false;
+    }
+    return true;
+}
+
+void VulkanRenderer3D::TransitionImage(
+    VkCommandBuffer commandBuffer,
+    VkImage image,
+    VkImageLayout oldLayout,
+    VkImageLayout newLayout,
+    VkPipelineStageFlags2 srcStage,
+    VkAccessFlags2 srcAccess,
+    VkPipelineStageFlags2 dstStage,
+    VkAccessFlags2 dstAccess,
+    VkImageAspectFlags aspectMask)
+{
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = static_cast<VkAccessFlags>(srcAccess);
+    barrier.dstAccessMask = static_cast<VkAccessFlags>(dstAccess);
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = aspectMask;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        static_cast<VkPipelineStageFlags>(srcStage),
+        static_cast<VkPipelineStageFlags>(dstStage),
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &barrier);
+}
+
 VulkanRenderer3D::RenderContext& VulkanRenderer3D::acquireNextRenderContext() noexcept
 {
     RenderContext& renderContext = RenderContexts[NextRenderContextIndex];
@@ -3617,8 +3667,8 @@ bool VulkanRenderer3D::createGraphicsDescriptorObjects()
 bool VulkanRenderer3D::selectGraphicsDepthStencilFormat()
 {
     const std::array<VkFormat, 3> candidates = {
-        VK_FORMAT_D24_UNORM_S8_UINT,
         VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
         VK_FORMAT_D16_UNORM_S8_UINT,
     };
 
@@ -3626,7 +3676,11 @@ bool VulkanRenderer3D::selectGraphicsDepthStencilFormat()
     {
         VkFormatProperties formatProperties{};
         vkGetPhysicalDeviceFormatProperties(PhysicalDevice, candidate, &formatProperties);
-        if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
+        constexpr VkFormatFeatureFlags requiredFeatures =
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+            | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT
+            | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+        if ((formatProperties.optimalTilingFeatures & requiredFeatures) == requiredFeatures)
         {
             GraphicsDepthStencilFormat = candidate;
             return true;
@@ -4151,7 +4205,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     }
 
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    colorAttachment.format = ColorTargetFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -4161,10 +4215,11 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription attrAttachment = colorAttachment;
+    attrAttachment.format = AttrTargetFormat;
     attrAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription depthColorAttachment{};
-    depthColorAttachment.format = VK_FORMAT_R32_SFLOAT;
+    depthColorAttachment.format = DepthTargetFormat;
     depthColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -4235,7 +4290,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     }
 
     VkAttachmentDescription finalColorAttachment{};
-    finalColorAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    finalColorAttachment.format = ColorTargetFormat;
     finalColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     finalColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     finalColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -5230,189 +5285,288 @@ bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
             && DepthStencilImage != VK_NULL_HANDLE
             && GraphicsRasterFramebuffer != VK_NULL_HANDLE
             && GraphicsFinalFramebuffer != VK_NULL_HANDLE);
-    if (ColorImage != VK_NULL_HANDLE && ColorImageWidth == width && ColorImageHeight == height && graphicsAttachmentsReady)
-        return true;
-
-    if ((ColorImage != VK_NULL_HANDLE
-            || CaptureReadbackImage != VK_NULL_HANDLE
-            || ReadbackBuffer != VK_NULL_HANDLE
-            || ResultReadbackBuffer != VK_NULL_HANDLE
-            || ResultBuffer != VK_NULL_HANDLE
-            || BinMaskBuffer != VK_NULL_HANDLE
-            || GroupListBuffer != VK_NULL_HANDLE
-            || SpanSetupBuffer != VK_NULL_HANDLE
-            || WorkOffsetBuffer != VK_NULL_HANDLE)
-        && !waitForDeviceIdle("recreate render target"))
+    if (ColorImage != VK_NULL_HANDLE
+        && ColorImageWidth == width
+        && ColorImageHeight == height
+        && graphicsAttachmentsReady)
     {
+        return true;
+    }
+
+    const auto supportsFormat = [&](VkFormat format, VkFormatFeatureFlags requiredFeatures) {
+        VkFormatProperties properties{};
+        vkGetPhysicalDeviceFormatProperties(PhysicalDevice, format, &properties);
+        return (properties.optimalTilingFeatures & requiredFeatures) == requiredFeatures;
+    };
+    constexpr VkFormatFeatureFlags colorFeatures =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+        | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT
+        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+        | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT
+        | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    constexpr VkFormatFeatureFlags attrFeatures =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+        | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT
+        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+        | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    constexpr VkFormatFeatureFlags depthFeatures =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+        | VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT
+        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+        | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT
+        | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    if (!supportsFormat(ColorTargetFormat, colorFeatures)
+        || (GraphicsReady
+            && (!supportsFormat(AttrTargetFormat, attrFeatures)
+                || !supportsFormat(DepthTargetFormat, depthFeatures))))
+    {
+        Log(LogLevel::Error, "VulkanRenderer3D: required render target format features are unavailable");
         return false;
     }
 
-    destroyReadbackBuffer();
-    destroyCaptureReadbackImage();
-    destroyResultReadbackBuffer();
-    destroyBinMaskBuffer();
-    destroyGroupListBuffer();
-    destroySpanSetupBuffer();
-    destroyWorkOffsetBuffer();
-    destroyResultBuffer();
-    destroyRenderTarget();
+    VkImage newColorImage = VK_NULL_HANDLE;
+    VkDeviceMemory newColorMemory = VK_NULL_HANDLE;
+    VkImageView newColorView = VK_NULL_HANDLE;
+    VkImage newAttrImage = VK_NULL_HANDLE;
+    VkDeviceMemory newAttrMemory = VK_NULL_HANDLE;
+    VkImageView newAttrView = VK_NULL_HANDLE;
+    VkImage newDepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory newDepthMemory = VK_NULL_HANDLE;
+    VkImageView newDepthView = VK_NULL_HANDLE;
+    VkImage newDepthStencilImage = VK_NULL_HANDLE;
+    VkDeviceMemory newDepthStencilMemory = VK_NULL_HANDLE;
+    VkImageView newDepthStencilView = VK_NULL_HANDLE;
+    VkFramebuffer newRasterFramebuffer = VK_NULL_HANDLE;
+    VkFramebuffer newFinalFramebuffer = VK_NULL_HANDLE;
 
-    const auto createImage = [&](VkFormat format,
-                                 VkImageUsageFlags usage,
-                                 VkImageAspectFlags aspectMask,
-                                 VkImage& image,
-                                 VkDeviceMemory& memory,
-                                 VkImageView& view) -> bool {
-        VkImageCreateInfo imageCreateInfo{};
-        imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageCreateInfo.format = format;
-        imageCreateInfo.extent.width = width;
-        imageCreateInfo.extent.height = height;
-        imageCreateInfo.extent.depth = 1;
-        imageCreateInfo.mipLevels = 1;
-        imageCreateInfo.arrayLayers = 1;
-        imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageCreateInfo.usage = usage;
-        imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        if (vkCreateImage(Device, &imageCreateInfo, nullptr, &image) != VK_SUCCESS)
+    const auto destroyImage = [&](VkImage& image, VkDeviceMemory& memory, VkImageView& view) {
+        if (view != VK_NULL_HANDLE)
+            vkDestroyImageView(Device, view, nullptr);
+        if (image != VK_NULL_HANDLE)
+            vkDestroyImage(Device, image, nullptr);
+        if (memory != VK_NULL_HANDLE)
+            vkFreeMemory(Device, memory, nullptr);
+        view = VK_NULL_HANDLE;
+        image = VK_NULL_HANDLE;
+        memory = VK_NULL_HANDLE;
+    };
+    const auto destroyNewTarget = [&]() {
+        if (newFinalFramebuffer != VK_NULL_HANDLE)
+            vkDestroyFramebuffer(Device, newFinalFramebuffer, nullptr);
+        if (newRasterFramebuffer != VK_NULL_HANDLE)
+            vkDestroyFramebuffer(Device, newRasterFramebuffer, nullptr);
+        newFinalFramebuffer = VK_NULL_HANDLE;
+        newRasterFramebuffer = VK_NULL_HANDLE;
+        destroyImage(newDepthStencilImage, newDepthStencilMemory, newDepthStencilView);
+        destroyImage(newDepthImage, newDepthMemory, newDepthView);
+        destroyImage(newAttrImage, newAttrMemory, newAttrView);
+        destroyImage(newColorImage, newColorMemory, newColorView);
+    };
+    const auto createImage = [&] (
+        VkFormat format,
+        VkImageUsageFlags usage,
+        VkImageAspectFlags aspectMask,
+        VkImage& image,
+        VkDeviceMemory& memory,
+        VkImageView& view) {
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = format;
+        imageInfo.extent = {width, height, 1};
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = usage;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(Device, &imageInfo, nullptr, &image) != VK_SUCCESS)
             return false;
 
-        VkMemoryRequirements memoryRequirements{};
-        vkGetImageMemoryRequirements(Device, image, &memoryRequirements);
-
-        VkMemoryAllocateInfo memoryAllocateInfo{};
-        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memoryAllocateInfo.allocationSize = memoryRequirements.size;
-        memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX)
-            memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, 0);
-        if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX)
+        VkMemoryRequirements requirements{};
+        vkGetImageMemoryRequirements(Device, image, &requirements);
+        const u32 memoryType = VulkanContext::Get().FindMemoryType(
+            requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (memoryType == UINT32_MAX)
+        {
+            destroyImage(image, memory, view);
             return false;
+        }
 
-        if (vkAllocateMemory(Device, &memoryAllocateInfo, nullptr, &memory) != VK_SUCCESS)
+        VkMemoryAllocateInfo allocationInfo{};
+        allocationInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocationInfo.allocationSize = requirements.size;
+        allocationInfo.memoryTypeIndex = memoryType;
+        if (vkAllocateMemory(Device, &allocationInfo, nullptr, &memory) != VK_SUCCESS
+            || vkBindImageMemory(Device, image, memory, 0) != VK_SUCCESS)
+        {
+            destroyImage(image, memory, view);
             return false;
+        }
 
-        if (vkBindImageMemory(Device, image, memory, 0) != VK_SUCCESS)
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = format;
+        viewInfo.subresourceRange.aspectMask = aspectMask;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(Device, &viewInfo, nullptr, &view) != VK_SUCCESS)
+        {
+            destroyImage(image, memory, view);
             return false;
-
-        VkImageViewCreateInfo imageViewCreateInfo{};
-        imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewCreateInfo.image = image;
-        imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewCreateInfo.format = format;
-        imageViewCreateInfo.subresourceRange.aspectMask = aspectMask;
-        imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
-        imageViewCreateInfo.subresourceRange.levelCount = 1;
-        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        imageViewCreateInfo.subresourceRange.layerCount = 1;
-
-        return vkCreateImageView(Device, &imageViewCreateInfo, nullptr, &view) == VK_SUCCESS;
+        }
+        return true;
     };
 
+    const VkImageUsageFlags colorUsage =
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+        | VK_IMAGE_USAGE_STORAGE_BIT
+        | VK_IMAGE_USAGE_SAMPLED_BIT
+        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+        | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (!createImage(
-            VK_FORMAT_R8G8B8A8_UNORM,
-            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            ColorTargetFormat,
+            colorUsage,
             VK_IMAGE_ASPECT_COLOR_BIT,
-            ColorImage,
-            ColorImageMemory,
-            ColorImageView))
+            newColorImage,
+            newColorMemory,
+            newColorView))
     {
         Log(LogLevel::Error, "VulkanRenderer3D: failed to create color target");
-        destroyRenderTarget();
+        destroyNewTarget();
         return false;
     }
 
     if (GraphicsReady)
     {
+        const VkImageUsageFlags attrUsage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+            | VK_IMAGE_USAGE_STORAGE_BIT
+            | VK_IMAGE_USAGE_SAMPLED_BIT
+            | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        const VkImageUsageFlags depthUsage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+            | VK_IMAGE_USAGE_STORAGE_BIT
+            | VK_IMAGE_USAGE_SAMPLED_BIT
+            | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+            | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        const VkImageUsageFlags depthStencilUsage =
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+            | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+            | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         if (!createImage(
-                VK_FORMAT_R8G8B8A8_UNORM,
-                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                AttrTargetFormat,
+                attrUsage,
                 VK_IMAGE_ASPECT_COLOR_BIT,
-                AttrImage,
-                AttrImageMemory,
-                AttrImageView))
-        {
-            Log(LogLevel::Error, "VulkanRenderer3D: failed to create attr target");
-            destroyRenderTarget();
-            return false;
-        }
-
-        if (!createImage(
-                VK_FORMAT_R32_SFLOAT,
-                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                newAttrImage,
+                newAttrMemory,
+                newAttrView)
+            || !createImage(
+                DepthTargetFormat,
+                depthUsage,
                 VK_IMAGE_ASPECT_COLOR_BIT,
-                DepthImage,
-                DepthImageMemory,
-                DepthImageView))
-        {
-            Log(LogLevel::Error, "VulkanRenderer3D: failed to create depth-color target");
-            destroyRenderTarget();
-            return false;
-        }
-
-        if (!createImage(
+                newDepthImage,
+                newDepthMemory,
+                newDepthView)
+            || !createImage(
                 GraphicsDepthStencilFormat,
-                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                depthStencilUsage,
                 VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-                DepthStencilImage,
-                DepthStencilImageMemory,
-                DepthStencilImageView))
+                newDepthStencilImage,
+                newDepthStencilMemory,
+                newDepthStencilView))
         {
-            Log(LogLevel::Error, "VulkanRenderer3D: failed to create depth-stencil target");
-            destroyRenderTarget();
+            Log(LogLevel::Error, "VulkanRenderer3D: failed to create graphics attachments");
+            destroyNewTarget();
             return false;
         }
 
-        std::array<VkImageView, 4> rasterAttachments = {
-            ColorImageView,
-            AttrImageView,
-            DepthImageView,
-            DepthStencilImageView,
+        const std::array<VkImageView, 4> rasterAttachments = {
+            newColorView,
+            newAttrView,
+            newDepthView,
+            newDepthStencilView,
         };
-        VkFramebufferCreateInfo rasterFramebufferCreateInfo{};
-        rasterFramebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        rasterFramebufferCreateInfo.renderPass = GraphicsRasterRenderPass;
-        rasterFramebufferCreateInfo.attachmentCount = static_cast<u32>(rasterAttachments.size());
-        rasterFramebufferCreateInfo.pAttachments = rasterAttachments.data();
-        rasterFramebufferCreateInfo.width = width;
-        rasterFramebufferCreateInfo.height = height;
-        rasterFramebufferCreateInfo.layers = 1;
-        if (vkCreateFramebuffer(Device, &rasterFramebufferCreateInfo, nullptr, &GraphicsRasterFramebuffer) != VK_SUCCESS)
+        VkFramebufferCreateInfo rasterInfo{};
+        rasterInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        rasterInfo.renderPass = GraphicsRasterRenderPass;
+        rasterInfo.attachmentCount = static_cast<u32>(rasterAttachments.size());
+        rasterInfo.pAttachments = rasterAttachments.data();
+        rasterInfo.width = width;
+        rasterInfo.height = height;
+        rasterInfo.layers = 1;
+        if (vkCreateFramebuffer(Device, &rasterInfo, nullptr, &newRasterFramebuffer) != VK_SUCCESS)
         {
-            Log(LogLevel::Error, "VulkanRenderer3D: failed to create graphics raster framebuffer");
-            destroyRenderTarget();
+            destroyNewTarget();
             return false;
         }
 
-        VkFramebufferCreateInfo finalFramebufferCreateInfo{};
-        finalFramebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        finalFramebufferCreateInfo.renderPass = GraphicsFinalRenderPass;
-        finalFramebufferCreateInfo.attachmentCount = 1;
-        finalFramebufferCreateInfo.pAttachments = &ColorImageView;
-        finalFramebufferCreateInfo.width = width;
-        finalFramebufferCreateInfo.height = height;
-        finalFramebufferCreateInfo.layers = 1;
-        if (vkCreateFramebuffer(Device, &finalFramebufferCreateInfo, nullptr, &GraphicsFinalFramebuffer) != VK_SUCCESS)
+        VkFramebufferCreateInfo finalInfo{};
+        finalInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        finalInfo.renderPass = GraphicsFinalRenderPass;
+        finalInfo.attachmentCount = 1;
+        finalInfo.pAttachments = &newColorView;
+        finalInfo.width = width;
+        finalInfo.height = height;
+        finalInfo.layers = 1;
+        if (vkCreateFramebuffer(Device, &finalInfo, nullptr, &newFinalFramebuffer) != VK_SUCCESS)
         {
-            Log(LogLevel::Error, "VulkanRenderer3D: failed to create graphics final framebuffer");
-            destroyRenderTarget();
+            destroyNewTarget();
             return false;
         }
     }
 
+    const bool replacingTarget = ColorImage != VK_NULL_HANDLE;
+    if (replacingTarget && !waitForQueueTail("retire resized render target"))
+    {
+        destroyNewTarget();
+        return false;
+    }
+
+    if (replacingTarget)
+    {
+        destroyReadbackBuffer();
+        destroyCaptureReadbackImage();
+        destroyResultReadbackBuffer();
+        destroyBinMaskBuffer();
+        destroyGroupListBuffer();
+        destroySpanSetupBuffer();
+        destroyWorkOffsetBuffer();
+        destroyResultBuffer();
+    }
+    destroyRenderTarget();
+
+    ColorImage = std::exchange(newColorImage, VK_NULL_HANDLE);
+    ColorImageMemory = std::exchange(newColorMemory, VK_NULL_HANDLE);
+    ColorImageView = std::exchange(newColorView, VK_NULL_HANDLE);
+    AttrImage = std::exchange(newAttrImage, VK_NULL_HANDLE);
+    AttrImageMemory = std::exchange(newAttrMemory, VK_NULL_HANDLE);
+    AttrImageView = std::exchange(newAttrView, VK_NULL_HANDLE);
+    DepthImage = std::exchange(newDepthImage, VK_NULL_HANDLE);
+    DepthImageMemory = std::exchange(newDepthMemory, VK_NULL_HANDLE);
+    DepthImageView = std::exchange(newDepthView, VK_NULL_HANDLE);
+    DepthStencilImage = std::exchange(newDepthStencilImage, VK_NULL_HANDLE);
+    DepthStencilImageMemory = std::exchange(newDepthStencilMemory, VK_NULL_HANDLE);
+    DepthStencilImageView = std::exchange(newDepthStencilView, VK_NULL_HANDLE);
+    GraphicsRasterFramebuffer = std::exchange(newRasterFramebuffer, VK_NULL_HANDLE);
+    GraphicsFinalFramebuffer = std::exchange(newFinalFramebuffer, VK_NULL_HANDLE);
     ColorImageWidth = width;
     ColorImageHeight = height;
+    ColorImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    AttrImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthStencilImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     ColorImageInitialized = false;
 
     invalidateAllDescriptorSetCaches();
     invalidateAllGraphicsDescriptorSetCaches();
     updateDescriptorSet(nullptr);
     updateGraphicsDescriptorSet(nullptr);
-
     return true;
 }
 
@@ -5507,6 +5661,10 @@ void VulkanRenderer3D::destroyRenderTarget()
 
     ColorImageWidth = 0;
     ColorImageHeight = 0;
+    ColorImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    AttrImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    DepthStencilImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     ColorImageInitialized = false;
 }
 
@@ -7037,9 +7195,8 @@ bool VulkanRenderer3D::ensureCaptureReadbackImage()
     VkMemoryAllocateInfo memoryAllocateInfo{};
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = imageMemoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = findMemoryType(imageMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX)
-        memoryAllocateInfo.memoryTypeIndex = findMemoryType(imageMemoryRequirements.memoryTypeBits, 0);
+    memoryAllocateInfo.memoryTypeIndex = VulkanContext::Get().FindMemoryType(
+        imageMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX)
     {
         Log(LogLevel::Error, "VulkanRenderer3D: unable to find memory type for capture readback image");
@@ -7062,6 +7219,7 @@ bool VulkanRenderer3D::ensureCaptureReadbackImage()
     }
 
     CaptureReadbackImageInitialized = false;
+    CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     return true;
 }
 
@@ -7080,6 +7238,7 @@ void VulkanRenderer3D::destroyCaptureReadbackImage()
     }
 
     CaptureReadbackImageInitialized = false;
+    CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 bool VulkanRenderer3D::createResultReadbackBuffer()
@@ -8048,9 +8207,11 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
 
     VkImageMemoryBarrier toGeneralBarrier{};
     toGeneralBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toGeneralBarrier.srcAccessMask = ColorImageInitialized ? (VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT) : 0;
+    toGeneralBarrier.srcAccessMask = ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
+        ? (VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT)
+        : 0;
     toGeneralBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    toGeneralBarrier.oldLayout = ColorImageInitialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    toGeneralBarrier.oldLayout = ColorImageLayout;
     toGeneralBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     toGeneralBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toGeneralBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -8061,7 +8222,7 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
     toGeneralBarrier.subresourceRange.baseArrayLayer = 0;
     toGeneralBarrier.subresourceRange.layerCount = 1;
 
-    const VkPipelineStageFlags toGeneralSrcStage = ColorImageInitialized
+    const VkPipelineStageFlags toGeneralSrcStage = ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT)
         : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
@@ -9038,9 +9199,7 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
             captureToTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             captureToTransferDstBarrier.srcAccessMask = CaptureReadbackImageInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0u;
             captureToTransferDstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            captureToTransferDstBarrier.oldLayout = CaptureReadbackImageInitialized
-                ? VK_IMAGE_LAYOUT_GENERAL
-                : VK_IMAGE_LAYOUT_UNDEFINED;
+            captureToTransferDstBarrier.oldLayout = CaptureReadbackImageLayout;
             captureToTransferDstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             captureToTransferDstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             captureToTransferDstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -9342,6 +9501,7 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
     }
 
     ColorImageInitialized = true;
+    ColorImageLayout = VK_IMAGE_LAYOUT_GENERAL;
     HasCpuFrame = readbackToCpu && !deferCaptureReadbackCompletion;
     return true;
 }
@@ -9626,51 +9786,43 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     }
 
     rasterAttachmentBarriers[0].image = ColorImage;
-    rasterAttachmentBarriers[0].srcAccessMask = ColorImageInitialized
+    rasterAttachmentBarriers[0].srcAccessMask = ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? (VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT)
         : 0u;
     rasterAttachmentBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    rasterAttachmentBarriers[0].oldLayout = ColorImageInitialized
-        ? VK_IMAGE_LAYOUT_GENERAL
-        : VK_IMAGE_LAYOUT_UNDEFINED;
+    rasterAttachmentBarriers[0].oldLayout = ColorImageLayout;
     rasterAttachmentBarriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
     rasterAttachmentBarriers[1].image = AttrImage;
-    rasterAttachmentBarriers[1].srcAccessMask = ColorImageInitialized
+    rasterAttachmentBarriers[1].srcAccessMask = AttrImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? (VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT)
         : 0u;
     rasterAttachmentBarriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    rasterAttachmentBarriers[1].oldLayout = ColorImageInitialized
-        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        : VK_IMAGE_LAYOUT_UNDEFINED;
+    rasterAttachmentBarriers[1].oldLayout = AttrImageLayout;
     rasterAttachmentBarriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
     rasterAttachmentBarriers[2].image = DepthImage;
-    rasterAttachmentBarriers[2].srcAccessMask = ColorImageInitialized
+    rasterAttachmentBarriers[2].srcAccessMask = DepthImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? (VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT)
         : 0u;
     rasterAttachmentBarriers[2].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    rasterAttachmentBarriers[2].oldLayout = ColorImageInitialized
-        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        : VK_IMAGE_LAYOUT_UNDEFINED;
+    rasterAttachmentBarriers[2].oldLayout = DepthImageLayout;
     rasterAttachmentBarriers[2].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[2].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
     rasterAttachmentBarriers[3].image = DepthStencilImage;
-    rasterAttachmentBarriers[3].srcAccessMask = ColorImageInitialized
+    rasterAttachmentBarriers[3].srcAccessMask = DepthStencilImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
         : 0u;
     rasterAttachmentBarriers[3].dstAccessMask =
         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    rasterAttachmentBarriers[3].oldLayout = ColorImageInitialized
-        ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        : VK_IMAGE_LAYOUT_UNDEFINED;
+    rasterAttachmentBarriers[3].oldLayout = DepthStencilImageLayout;
     rasterAttachmentBarriers[3].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[3].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
-    const VkPipelineStageFlags rasterAttachmentSrcStage = ColorImageInitialized
+    const VkPipelineStageFlags rasterAttachmentSrcStage = ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
         ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
         : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     vkCmdPipelineBarrier(
@@ -10895,7 +11047,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
                 captureToTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
                 captureToTransferDstBarrier.srcAccessMask = CaptureReadbackImageInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0u;
                 captureToTransferDstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                captureToTransferDstBarrier.oldLayout = CaptureReadbackImageInitialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+                captureToTransferDstBarrier.oldLayout = CaptureReadbackImageLayout;
                 captureToTransferDstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
                 captureToTransferDstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 captureToTransferDstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -10943,6 +11095,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
                 captureBackToGeneralBarrier.subresourceRange.layerCount = 1;
                 vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &captureBackToGeneralBarrier);
                 CaptureReadbackImageInitialized = true;
+                CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_GENERAL;
             }
             else
             {
@@ -11041,6 +11194,12 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     }
 
     ColorImageInitialized = true;
+    ColorImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    AttrImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    DepthImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    DepthStencilImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    if (useCaptureDownscaleForReadback)
+        CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_GENERAL;
     HasCpuFrame = readbackToCpu && !deferCaptureReadbackCompletion;
     return true;
 }
@@ -11121,7 +11280,7 @@ bool VulkanRenderer3D::submitGraphicsCaptureExportForCurrentFrame()
     captureToTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     captureToTransferDstBarrier.srcAccessMask = CaptureReadbackImageInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0u;
     captureToTransferDstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    captureToTransferDstBarrier.oldLayout = CaptureReadbackImageInitialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    captureToTransferDstBarrier.oldLayout = CaptureReadbackImageLayout;
     captureToTransferDstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     captureToTransferDstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     captureToTransferDstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -11291,6 +11450,7 @@ bool VulkanRenderer3D::submitGraphicsCaptureExportForCurrentFrame()
     }
 
     CaptureReadbackImageInitialized = true;
+    CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_GENERAL;
     CaptureLineExportCount++;
     CaptureLineExportCpuWindow.Add(0);
     PendingCaptureLineContext = nullptr;
@@ -11335,19 +11495,15 @@ bool VulkanRenderer3D::readbackGraphicsAttrImageToCpu(std::vector<u32>& outAttrP
     if (vkBeginCommandBuffer(CommandBuffer, &beginInfo) != VK_SUCCESS)
         return false;
 
-    VkImageMemoryBarrier toTransferBarrier{};
-    toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransferBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.image = AttrImage;
-    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransferBarrier.subresourceRange.levelCount = 1;
-    toTransferBarrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferBarrier);
+    TransitionImage(
+        CommandBuffer,
+        AttrImage,
+        AttrImageLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        VK_ACCESS_2_TRANSFER_READ_BIT);
 
     VkBufferImageCopy copyRegion{};
     copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -11367,12 +11523,15 @@ bool VulkanRenderer3D::readbackGraphicsAttrImageToCpu(std::vector<u32>& outAttrP
     toHostBarrier.size = ReadbackSize;
     vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &toHostBarrier, 0, nullptr);
 
-    VkImageMemoryBarrier backToShaderBarrier = toTransferBarrier;
-    backToShaderBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    backToShaderBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    backToShaderBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    backToShaderBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &backToShaderBarrier);
+    TransitionImage(
+        CommandBuffer,
+        AttrImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        AttrImageLayout,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        VK_ACCESS_2_TRANSFER_READ_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT);
 
     if (vkEndCommandBuffer(CommandBuffer) != VK_SUCCESS)
         return false;
@@ -11428,19 +11587,15 @@ bool VulkanRenderer3D::readbackGraphicsDepthImageToCpu(std::vector<u32>& outDept
     if (vkBeginCommandBuffer(CommandBuffer, &beginInfo) != VK_SUCCESS)
         return false;
 
-    VkImageMemoryBarrier toTransferBarrier{};
-    toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransferBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.image = DepthImage;
-    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransferBarrier.subresourceRange.levelCount = 1;
-    toTransferBarrier.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferBarrier);
+    TransitionImage(
+        CommandBuffer,
+        DepthImage,
+        DepthImageLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        VK_ACCESS_2_TRANSFER_READ_BIT);
 
     VkBufferImageCopy copyRegion{};
     copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -11460,12 +11615,15 @@ bool VulkanRenderer3D::readbackGraphicsDepthImageToCpu(std::vector<u32>& outDept
     toHostBarrier.size = ReadbackSize;
     vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &toHostBarrier, 0, nullptr);
 
-    VkImageMemoryBarrier backToShaderBarrier = toTransferBarrier;
-    backToShaderBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    backToShaderBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    backToShaderBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    backToShaderBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &backToShaderBarrier);
+    TransitionImage(
+        CommandBuffer,
+        DepthImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        DepthImageLayout,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        VK_ACCESS_2_TRANSFER_READ_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT);
 
     if (vkEndCommandBuffer(CommandBuffer) != VK_SUCCESS)
         return false;
@@ -11576,9 +11734,7 @@ bool VulkanRenderer3D::readbackColorTargetToCpu(bool capturePath)
         captureToTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         captureToTransferDstBarrier.srcAccessMask = CaptureReadbackImageInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0u;
         captureToTransferDstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        captureToTransferDstBarrier.oldLayout = CaptureReadbackImageInitialized
-            ? VK_IMAGE_LAYOUT_GENERAL
-            : VK_IMAGE_LAYOUT_UNDEFINED;
+        captureToTransferDstBarrier.oldLayout = CaptureReadbackImageLayout;
         captureToTransferDstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         captureToTransferDstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         captureToTransferDstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -11811,8 +11967,12 @@ bool VulkanRenderer3D::readbackColorTargetToCpu(bool capturePath)
 
     HasCpuFrame = true;
     ColorImageInitialized = true;
+    ColorImageLayout = VK_IMAGE_LAYOUT_GENERAL;
     if (canUseCaptureDownscale)
+    {
         CaptureReadbackImageInitialized = true;
+        CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    }
     if (capturePath)
     {
         ActiveCapturePathMode = CapturePathMode::FallbackReadback;

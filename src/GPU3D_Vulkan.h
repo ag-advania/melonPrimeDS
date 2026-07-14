@@ -203,6 +203,9 @@ private:
     static constexpr u32 MaxActiveTextureDescriptors = MaxTextureDescriptors - 1;
     static constexpr u32 FallbackTextureDescriptorIndex = MaxTextureDescriptors - 1;
     static constexpr u32 ToonTableEntryCount = 32;
+    static constexpr VkFormat ColorTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    static constexpr VkFormat AttrTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    static constexpr VkFormat DepthTargetFormat = VK_FORMAT_R32_SFLOAT;
 
     enum class RasterDispatchPath : u8
     {
@@ -453,6 +456,17 @@ private:
 
     bool ensureRenderTarget(u32 width, u32 height);
     void destroyRenderTarget();
+    bool waitForQueueTail(const char* reason);
+    static void TransitionImage(
+        VkCommandBuffer commandBuffer,
+        VkImage image,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout,
+        VkPipelineStageFlags2 srcStage,
+        VkAccessFlags2 srcAccess,
+        VkPipelineStageFlags2 dstStage,
+        VkAccessFlags2 dstAccess,
+        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
     bool ensureTriangleBuffer(RenderContext* context, size_t triangleCount);
     void destroyTriangleBuffer(RenderContext* context);
     bool ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount);
@@ -735,6 +749,10 @@ private:
     VkImage DepthStencilImage = VK_NULL_HANDLE;
     VkDeviceMemory DepthStencilImageMemory = VK_NULL_HANDLE;
     VkImageView DepthStencilImageView = VK_NULL_HANDLE;
+    VkImageLayout ColorImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout AttrImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout DepthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout DepthStencilImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     u32 ColorImageWidth = 0;
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
@@ -747,6 +765,7 @@ private:
     u32 RawReadbackHeight = 0;
     VkImage CaptureReadbackImage = VK_NULL_HANDLE;
     VkDeviceMemory CaptureReadbackMemory = VK_NULL_HANDLE;
+    VkImageLayout CaptureReadbackImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     bool CaptureReadbackImageInitialized = false;
     VkBuffer ResultReadbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ResultReadbackMemory = VK_NULL_HANDLE;
