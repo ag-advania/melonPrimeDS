@@ -255,6 +255,19 @@ private:
         Count = 3,
     };
 
+    struct ClearGpuState
+    {
+        u32 DispCnt = 0;
+        u32 ClearAttr1 = 0;
+        u32 ClearAttr2 = 0;
+        u32 ColorRgba8 = 0;
+        u32 Depth24 = 0;
+        u32 AttrRgba8 = 0;
+        u32 Stencil = 0xFFu;
+        u16 RenderXPos = 0;
+        bool BitmapEnabled = false;
+    };
+
     struct DescriptorSetCache
     {
         bool Ready = false;
@@ -332,6 +345,9 @@ private:
         VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
         VkDeviceSize ClearBufferSize = 0;
         void* ClearMapped = nullptr;
+        ClearGpuState CachedClearState{};
+        u64 CachedClearBitmapGeneration = 0;
+        bool ClearBufferContentsValid = false;
         VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
         VkDeviceMemory CaptureLineMemory = VK_NULL_HANDLE;
         VkDeviceSize CaptureLineBufferSize = 0;
@@ -507,7 +523,7 @@ private:
     bool updateToonBuffer(RenderContext* context, const u16* toonTable);
     bool ensureGraphicsClearBuffer(RenderContext* context);
     void destroyGraphicsClearBuffer(RenderContext* context);
-    bool updateGraphicsClearBuffer(RenderContext* context, const melonDS::GPU& gpu);
+    bool updateGraphicsClearBuffer(RenderContext* context, const melonDS::GPU& gpu, const ClearGpuState& clearState);
     bool ensureCaptureLineBuffer(RenderContext* context);
     void destroyCaptureLineBuffer(RenderContext* context);
     void destroyAllCaptureLineBuffers();
@@ -607,7 +623,7 @@ private:
     bool restoreLastValidExactCaptureToLineCache();
     void convertReadbackToLineCache();
     void fillLineCacheWithCaptureFallbackColor();
-    u32 buildClearColorRgba8(const melonDS::GPU& gpu) const;
+    ClearGpuState buildClearGpuState(const AcceleratedSceneRenderState& renderState) const;
     void clearLineCache();
     void ResetActiveBackend(melonDS::GPU& gpu);
     void VCount144ActiveBackend(melonDS::GPU& gpu);
@@ -832,6 +848,10 @@ private:
     VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
     VkDeviceSize ClearBufferSize = 0;
     void* ClearMapped = nullptr;
+    ClearGpuState CachedClearState{};
+    u64 CachedClearBitmapGeneration = 0;
+    bool ClearBufferContentsValid = false;
+    u64 ClearBitmapGeneration = 1;
     VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
     VkDeviceMemory CaptureLineMemory = VK_NULL_HANDLE;
     VkDeviceSize CaptureLineBufferSize = 0;

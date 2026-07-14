@@ -358,6 +358,35 @@
 
 検証: 固定commitに対する`GPU3D_TexcacheVulkan.*`正規化diff、loader API 5関数、dirty derivation/coherency/hash invalidation、3 descriptor mode選択、opaque layer mask、fallback descriptor、shader側clamp/repeat/mirror、mutation callback位置、Reset/Stop破棄前wait、R9 line責務境界を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R11 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/VulkanReferenceManifest.md`
+2. Sapphire直接移植とclear state
+   - 固定core commitの`updateGraphicsClearBuffer()`、graphics clear pipeline、full-screen clear draw、`GPU3D_Vulkan_GraphicsClearShader.frag`を正本として維持した。clear shaderは固定commitと正規化diff 0件である。
+   - R9のimmutable `AcceleratedSceneRenderState`から`ClearGpuState`を一度構築し、`RenderDispCnt`、`RenderClearAttr1/2`、RGBA8、24-bit depth、polygon ID/fog attribute、stencil初期値、`RenderXPos`、bitmap enableを同じframe identityへ固定した。
+   - graphics pathのclear buffer、render-pass clear value、capture fallback clear色はlive `GPU3D`を再参照せず、この`ClearGpuState`を使用する。
+3. clear plane
+   - `RenderClearAttr1/2`をSapphire原文のbit精度で6-bit RGB／5-bit alpha、24-bit depth、6-bit polygon ID、fog flagへ展開する。
+   - Color、Attr、Depth color attachmentとDepthStencil attachmentの4 clear valueへ同じstateを設定し、stencilを参照値`0xFF`で初期化する。
+   - developerの`Debug3dClearMagenta`だけがcolorを上書きし、depth／attribute／stencilはDS stateを維持する。
+4. clear bitmap
+   - `RenderDispCnt` bit 14が有効な場合だけ、coherent texture VRAMの`0x40000` colorと`0x60000` depth/fogを、`RenderClearAttr2`の8-bit X/Y offsetとu8 wrapでSapphire原文どおりdecodeする。
+   - decode先は各`RenderContext`のpersistently mapped clear storage bufferであり、Qt/QImage、SoftwareRenderer3D、presenter snapshot、毎frameの一時`std::vector`を使用しない。
+   - 固定clear shaderがDS 256×192座標へscaleしてColor／Attr／Depth／DepthStencilへfull-screen drawするため、render scale後も同じclear bitmap semanticsを保持する。
+   - `RenderXPos`はframe stateへ保持するが、固定参照どおりclear bitmap VRAM addressへ加算しない。これは3D line出力のscanline/capture shiftであり、R16の`GetLine()`／capture接続で使用する。
+5. source generation再利用
+   - R10の`clrBitmapDirty`から単調増加`ClearBitmapGeneration`を更新し、global contextと6個のrender contextがそれぞれ前回の`ClearGpuState`／generation／validityを保持する。
+   - clear stateとVRAM generationが同一のslotでは49,152 pixelの再decodeとmapped buffer書込を省略する。dirtyまたはoffset/state変更時だけ参照decodeを実行する。
+   - buffer再作成、renderer resetではvalidityを破棄し、古いVRAM内容を再利用しない。
+6. 参照実装との差分
+   - clear decode、bit変換、offset wrap、shader、pipeline、draw順はSapphire原文のままである。
+   - `ClearGpuState`はR9 immutable input用adapter、slot別generation cacheはR8 context ringと現行dirty trackerを接続するdesktop lifetime/performance adapterである。
+
+検証: `ClearGpuState`の全field capture、clear planeの4 attachment値、bitmap enable、VRAM base、X/Y offset wrap、RGBA/depth/fog/poly ID decode、full-screen clear pipeline、固定clear shader正規化diff 0件、slot別generation hit/miss、reset/recreate invalidation、Qt/Software/QImage依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

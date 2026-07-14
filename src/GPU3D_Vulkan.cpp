@@ -699,6 +699,12 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     if (Initialized)
         (void)waitForTextureCacheMutationSafePoint();
     Texcache.Reset();
+    ClearBufferContentsValid = false;
+    for (RenderContext& renderContext : RenderContexts)
+        renderContext.ClearBufferContentsValid = false;
+    ClearBitmapGeneration++;
+    if (ClearBitmapGeneration == 0u)
+        ClearBitmapGeneration = 1u;
     HasCpuFrame = false;
     FrameIdentical = false;
     LastSubmittedRenderPolygonCount = 0;
@@ -793,6 +799,12 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         if (Initialized && ActiveBackendMode == BackendMode::GraphicsHardware)
             (void)waitForTextureCacheMutationSafePoint();
     });
+    if (clearBitmapDirty != 0u)
+    {
+        ClearBitmapGeneration++;
+        if (ClearBitmapGeneration == 0u)
+            ClearBitmapGeneration = 1u;
+    }
     WarmTextureCache(gpu);
 
     const u32 scale = static_cast<u32>(std::max(1, ScaleFactor));
@@ -811,8 +823,7 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         captureEnabled
         && (captureMode != 1u)
         && (captureSource3d || (bg0Uses3d && sourceAContributes));
-    const auto updateExactCaptureFallbackColor = [&]() {
-        const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
+    const auto updateExactCaptureFallbackColor = [&](u32 clearColor) {
         const u32 r = clearColor & 0xFFu;
         const u32 g = (clearColor >> 8u) & 0xFFu;
         const u32 b = (clearColor >> 16u) & 0xFFu;
@@ -996,6 +1007,20 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     buildTriangleList(gpu);
+    ClearGpuState frameClearState{};
+    if (ActiveBackendMode == BackendMode::GraphicsHardware)
+    {
+        frameClearState = buildClearGpuState(SharedGraphicsScene.RenderState);
+    }
+    else
+    {
+        AcceleratedSceneRenderState legacyRenderState{};
+        legacyRenderState.RenderDispCnt = gpu.GPU3D.RenderDispCnt;
+        legacyRenderState.RenderClearAttr1 = gpu.GPU3D.RenderClearAttr1;
+        legacyRenderState.RenderClearAttr2 = gpu.GPU3D.RenderClearAttr2;
+        legacyRenderState.RenderXPos = gpu.GPU3D.RenderXPos;
+        frameClearState = buildClearGpuState(legacyRenderState);
+    }
     if (!ensureTriangleBuffer(renderContext, Triangles.size()))
     {
         HasCpuFrame = false;
@@ -1025,7 +1050,8 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 
     if (ActiveBackendMode == BackendMode::GraphicsHardware)
     {
-        if (!ensureGraphicsClearBuffer(renderContext) || !updateGraphicsClearBuffer(renderContext, gpu))
+        if (!ensureGraphicsClearBuffer(renderContext)
+            || !updateGraphicsClearBuffer(renderContext, gpu, frameClearState))
         {
             HasCpuFrame = false;
             return;
@@ -1105,19 +1131,21 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
             CaptureSource3dCount++;
     }
 
-    const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-    updateExactCaptureFallbackColor();
-    const u32 clearDepth = ((gpu.GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu;
+    const u32 clearColor = frameClearState.ColorRgba8;
+    updateExactCaptureFallbackColor(clearColor);
+    const u32 clearDepth = frameClearState.Depth24;
+    const u32 renderDispCnt = frameClearState.DispCnt;
+    const u32 renderClearAttr = frameClearState.ClearAttr1 & 0x3F008000u;
     if (!dispatchRasterAndReadback(
             renderContext,
             clearColor,
             clearDepth,
-            gpu.GPU3D.RenderDispCnt,
+            renderDispCnt,
             gpu.GPU3D.RenderAlphaRef,
             gpu.GPU3D.RenderFogColor,
             gpu.GPU3D.RenderFogOffset,
             gpu.GPU3D.RenderFogShift,
-            gpu.GPU3D.RenderClearAttr1 & 0x3F008000u,
+            renderClearAttr,
             gpu.GPU3D.RenderFogDensityTable,
             gpu.GPU3D.RenderEdgeTable,
             gpu.GPU3D.RenderToonTable,
@@ -6668,6 +6696,9 @@ void VulkanRenderer3D::destroyGraphicsClearBuffer(RenderContext* context)
     VkDeviceMemory& clearMemory = context != nullptr ? context->ClearMemory : ClearMemory;
     VkDeviceSize& clearBufferSize = context != nullptr ? context->ClearBufferSize : ClearBufferSize;
     void*& clearMapped = context != nullptr ? context->ClearMapped : ClearMapped;
+    bool& clearBufferContentsValid = context != nullptr
+        ? context->ClearBufferContentsValid
+        : ClearBufferContentsValid;
 
     if (clearMapped != nullptr && clearMemory != VK_NULL_HANDLE)
     {
@@ -6688,16 +6719,43 @@ void VulkanRenderer3D::destroyGraphicsClearBuffer(RenderContext* context)
     }
 
     clearBufferSize = 0;
+    clearBufferContentsValid = false;
 }
 
-bool VulkanRenderer3D::updateGraphicsClearBuffer(RenderContext* context, const melonDS::GPU& gpu)
+bool VulkanRenderer3D::updateGraphicsClearBuffer(
+    RenderContext* context,
+    const melonDS::GPU& gpu,
+    const ClearGpuState& clearState)
 {
     const void* clearMapped = context != nullptr ? context->ClearMapped : ClearMapped;
     const VkBuffer clearBuffer = context != nullptr ? context->ClearBuffer : ClearBuffer;
     const VkDeviceMemory clearMemory = context != nullptr ? context->ClearMemory : ClearMemory;
+    ClearGpuState& cachedClearState = context != nullptr ? context->CachedClearState : CachedClearState;
+    u64& cachedClearBitmapGeneration = context != nullptr
+        ? context->CachedClearBitmapGeneration
+        : CachedClearBitmapGeneration;
+    bool& clearBufferContentsValid = context != nullptr
+        ? context->ClearBufferContentsValid
+        : ClearBufferContentsValid;
 
     if (clearBuffer == VK_NULL_HANDLE || clearMemory == VK_NULL_HANDLE || clearMapped == nullptr)
         return false;
+
+    const bool clearStateUnchanged =
+        cachedClearState.DispCnt == clearState.DispCnt
+        && cachedClearState.ClearAttr1 == clearState.ClearAttr1
+        && cachedClearState.ClearAttr2 == clearState.ClearAttr2
+        && cachedClearState.ColorRgba8 == clearState.ColorRgba8
+        && cachedClearState.Depth24 == clearState.Depth24
+        && cachedClearState.AttrRgba8 == clearState.AttrRgba8
+        && cachedClearState.Stencil == clearState.Stencil
+        && cachedClearState.BitmapEnabled == clearState.BitmapEnabled;
+    if (clearBufferContentsValid
+        && clearStateUnchanged
+        && (!clearState.BitmapEnabled || cachedClearBitmapGeneration == ClearBitmapGeneration))
+    {
+        return true;
+    }
 
     u32* clearWords = reinterpret_cast<u32*>(const_cast<void*>(clearMapped));
     constexpr size_t clearPixelCount = 256u * 192u;
@@ -6705,27 +6763,22 @@ bool VulkanRenderer3D::updateGraphicsClearBuffer(RenderContext* context, const m
     u32* clearAttrWords = clearWords + clearPixelCount;
     u32* clearDepthWords = clearWords + (clearPixelCount * 2u);
 
-    const u32 clearAttr1 = gpu.GPU3D.RenderClearAttr1;
-    const u32 clearAttr2 = gpu.GPU3D.RenderClearAttr2;
-    const u32 clearPolyId = (clearAttr1 >> 24u) & 0x3Fu;
-    const u32 clearFogFlag = (clearAttr1 >> 15u) & 0x1u;
-    const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-    const u32 clearDepth = ((clearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu;
-    const u32 clearPolyIdByte = ((clearPolyId * 255u) + 31u) / 63u;
-    const u32 clearFogByte = clearFogFlag != 0u ? 0xFFu : 0u;
-    const u32 plainAttr = clearPolyIdByte | (clearFogByte << 16u) | 0xFF000000u;
-    const u32 clearDepthBits = BitCastFloatToU32(static_cast<float>(clearDepth) * (1.0f / 16777215.0f));
+    const u32 clearColor = clearState.ColorRgba8;
+    const u32 clearDepthBits = BitCastFloatToU32(static_cast<float>(clearState.Depth24) * (1.0f / 16777215.0f));
 
-    if ((gpu.GPU3D.RenderDispCnt & (1u << 14u)) == 0u)
+    if (!clearState.BitmapEnabled)
     {
         std::fill_n(clearColorWords, clearPixelCount, clearColor);
-        std::fill_n(clearAttrWords, clearPixelCount, plainAttr);
+        std::fill_n(clearAttrWords, clearPixelCount, clearState.AttrRgba8);
         std::fill_n(clearDepthWords, clearPixelCount, clearDepthBits);
+        cachedClearState = clearState;
+        cachedClearBitmapGeneration = ClearBitmapGeneration;
+        clearBufferContentsValid = true;
         return true;
     }
 
-    u8 baseXOff = (clearAttr2 >> 16u) & 0xFFu;
-    u8 yOff = (clearAttr2 >> 24u) & 0xFFu;
+    u8 baseXOff = (clearState.ClearAttr2 >> 16u) & 0xFFu;
+    u8 yOff = (clearState.ClearAttr2 >> 24u) & 0xFFu;
 
     for (u32 y = 0; y < 192u; y++)
     {
@@ -6751,7 +6804,7 @@ bool VulkanRenderer3D::updateGraphicsClearBuffer(RenderContext* context, const m
             clearColorWords[offset] = Debug3dClearMagenta ? 0xFFFF00FFu : (r8 | (g8 << 8u) | (b8 << 16u) | (a8 << 24u));
 
             const u32 fogByte = (depthSource & 0x8000u) != 0u ? 0xFFu : 0u;
-            clearAttrWords[offset] = clearPolyIdByte | (fogByte << 16u) | 0xFF000000u;
+            clearAttrWords[offset] = (clearState.AttrRgba8 & 0xFF00FFFFu) | (fogByte << 16u);
 
             const u32 pixelDepth = ((static_cast<u32>(depthSource & 0x7FFFu)) * 0x200u) + 0x1FFu;
             clearDepthWords[offset] = BitCastFloatToU32(static_cast<float>(pixelDepth) * (1.0f / 16777215.0f));
@@ -6762,6 +6815,9 @@ bool VulkanRenderer3D::updateGraphicsClearBuffer(RenderContext* context, const m
         yOff++;
     }
 
+    cachedClearState = clearState;
+    cachedClearBitmapGeneration = ClearBitmapGeneration;
+    clearBufferContentsValid = true;
     return true;
 }
 
@@ -14237,30 +14293,46 @@ void VulkanRenderer3D::fillLineCacheWithCaptureFallbackColor()
     ExactCaptureLineCacheFresh = false;
 }
 
-u32 VulkanRenderer3D::buildClearColorRgba8(const melonDS::GPU& gpu) const
+VulkanRenderer3D::ClearGpuState VulkanRenderer3D::buildClearGpuState(
+    const AcceleratedSceneRenderState& renderState) const
 {
-    const u32 clearAttr1 = gpu.GPU3D.RenderClearAttr1;
+    ClearGpuState state{};
+    state.DispCnt = renderState.RenderDispCnt;
+    state.ClearAttr1 = renderState.RenderClearAttr1;
+    state.ClearAttr2 = renderState.RenderClearAttr2;
+    // Sapphire addresses the clear bitmap with ClearAttr2. RenderXPos is kept
+    // with the frame for the later scanline/capture shift, not as a clear-buffer key.
+    state.RenderXPos = renderState.RenderXPos;
+    state.BitmapEnabled = (state.DispCnt & (1u << 14u)) != 0u;
 
-    u32 r = (clearAttr1 << 1) & 0x3E;
+    u32 r = (state.ClearAttr1 << 1) & 0x3E;
     if (r)
         r++;
 
-    u32 g = (clearAttr1 >> 4) & 0x3E;
+    u32 g = (state.ClearAttr1 >> 4) & 0x3E;
     if (g)
         g++;
 
-    u32 b = (clearAttr1 >> 9) & 0x3E;
+    u32 b = (state.ClearAttr1 >> 9) & 0x3E;
     if (b)
         b++;
 
-    const u32 a = (clearAttr1 >> 16) & 0x1F;
+    const u32 a = (state.ClearAttr1 >> 16) & 0x1F;
 
     const u32 r8 = (r << 2) | (r >> 4);
     const u32 g8 = (g << 2) | (g >> 4);
     const u32 b8 = (b << 2) | (b >> 4);
     const u32 a8 = (a << 3) | (a >> 2);
 
-    return r8 | (g8 << 8) | (b8 << 16) | (a8 << 24);
+    state.ColorRgba8 = Debug3dClearMagenta
+        ? 0xFFFF00FFu
+        : r8 | (g8 << 8) | (b8 << 16) | (a8 << 24);
+    state.Depth24 = ((state.ClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu;
+    const u32 clearPolyId = (state.ClearAttr1 >> 24u) & 0x3Fu;
+    const u32 clearPolyIdByte = ((clearPolyId * 255u) + 31u) / 63u;
+    const u32 clearFogByte = (state.ClearAttr1 & (1u << 15u)) != 0u ? 0xFFu : 0u;
+    state.AttrRgba8 = clearPolyIdByte | (clearFogByte << 16u) | 0xFF000000u;
+    return state;
 }
 
 void VulkanRenderer3D::clearLineCache()
