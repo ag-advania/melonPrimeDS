@@ -504,6 +504,7 @@
 2. capture frame snapshot
    - line 0の`CheckCaptureStart()`でcapture control、engine A `DispCnt`、screen swapを`CaptureFrame*`へ固定し、`GPU_Soft::DoCapture()`と`CheckCaptureEnd()`のscanline途中live register再読込を除去した。
    - capture destination bank/offset/size、source A/B、EVA/EVB、FIFO/VRAM source選択は同一snapshotを使う。savestate byte layoutは増やさず、load後にtransient snapshotを現行stateから再構築する。
+   - `CaptureFrame*` field、初期化、savestate再構築、参照分岐はすべて`MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN`内へ隔離した。非Vulkan buildのGPU object layoutとcapture処理は従来の`CaptureCnt`／engine A `DispCnt`経路を維持する。
    - `VulkanRenderer3D`はenabled/control/screen swap、source dimensions/scale、destination range、3D frame serial、BG0 3D contributionを`DisplayCaptureFrameState`へ一度captureし、VBlank `Blit`でもlive `GPU`を再読込しない。
 3. capture line exportとslot lifecycle
    - `GPU3D_Vulkan_CaptureLineExportShader.comp`は固定core commitとの正規化diff 0件で、scaled `ColorImage`をnative 256×192へnearest resolveし、DS 6-bit RGB＋5-bit alphaへGPU packする。
@@ -521,7 +522,7 @@
    - capture shader、GPU dispatch/barrier、exact history、slot completion、screen-swap照合は固定Sapphire実装を正本として維持した。
    - current upstreamのGPU owner構造へ合わせたline-0 register latchとframe-serial metadataだけをdesktop/core compatibility adapterとして追加し、manifestへ分類した。
 
-検証: capture shader固定commit正規化diff 0件、line-0 control/DispCnt/screen-swap latch、source dimension/scale/destination snapshot、shader write→host read barrier、2-slot busy/defer、6-context fence completion、pending→ready frame identity、exact history/clear fallback、capture range dirty、Vulkan capture判断のlive `CaptureCnt`/`ScreenSwap`/engine-A `DispCnt`再読込0件、SoftwareRenderer3D並走0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+検証: capture shader固定commit正規化diff 0件、line-0 control/DispCnt/screen-swap latch、source dimension/scale/destination snapshot、shader write→host read barrier、2-slot busy/defer、6-context fence completion、pending→ready frame identity、exact history/clear fallback、capture range dirty、Vulkan capture判断のlive `CaptureCnt`/`ScreenSwap`/engine-A `DispCnt`再読込0件、SoftwareRenderer3D並走0件を静的監査。追加監査で共通GPU変更をMelonPrime Vulkan build gateへ隔離し、非Vulkan branchが従来fieldだけを参照することを確認。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 

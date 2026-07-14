@@ -800,11 +800,13 @@ public:
     alignas(8) u16 DispFIFOBuffer[256];
 
     u32 CaptureCnt;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     // Display capture control is latched at line 0 for the full capture frame.
     // Register writes during the frame affect the next capture, not the active one.
     u32 CaptureFrameCnt = 0;
     u32 CaptureFrameDispCntA = 0;
     bool CaptureFrameScreenSwap = false;
+#endif
     bool CaptureEnable;
 
     alignas(u64) u8 Palette[2*1024] {};
