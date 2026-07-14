@@ -20,6 +20,9 @@
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
 
+#include <algorithm>
+#include <cstring>
+
 namespace melonDS
 {
 
@@ -59,7 +62,17 @@ void SoftRenderer::Reset()
     memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
     memset(StructuredControl, 0, sizeof(StructuredControl));
     memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
-    StructuredFrameSerial = 0;
+    for (SapphireStructured2DFrameSnapshot& frame : StructuredFrames)
+    {
+        frame.FrameSerial = 0;
+        frame.Generation = 0;
+        frame.ScreenSwap = false;
+        frame.Complete = false;
+    }
+    StructuredLineReceived.fill(0);
+    StructuredWriteFrame = 0;
+    StructuredPublishedFrame = 1;
+    HasPublishedStructuredFrame = false;
 #endif
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -113,6 +126,10 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 void SoftRenderer::DrawScanline(u32 line)
 {
     u32 *dstA, *dstB;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool writeCpuFinalA = true;
+    bool writeCpuFinalB = true;
+#endif
     u32 dstoffset = 256 * line;
     if (GPU.ScreenSwap)
     {
@@ -130,13 +147,11 @@ void SoftRenderer::DrawScanline(u32 line)
     if (line < 192)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        Renderer3D* structuredRenderer3D = nullptr;
-        if (GetRenderer3D().UsesStructured2DMetadata())
-        {
-            structuredRenderer3D = &GetRenderer3D();
-            if (line == 0)
-                structuredRenderer3D->BeginStructured2DFrame(StructuredFrameSerial + 1);
-        }
+        const bool structuredSourceActive = GetRenderer3D().UsesStructured2DMetadata();
+        const u64 structuredFrameSerial = GPU.VulkanFrameSerial;
+        const u64 structuredGeneration = GPU.GPU3D.GetCurrentRendererGeneration();
+        if (structuredSourceActive && line == 0)
+            BeginStructured2DFrame(structuredFrameSerial, structuredGeneration);
 #endif
         // retrieve 3D output
         Output3D = GetRenderer3D().GetLine(line);
@@ -154,11 +169,31 @@ void SoftRenderer::DrawScanline(u32 line)
         Rend2D_B->DrawScanline(line);
 
         // draw the final screen output
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (structuredSourceActive)
+        {
+            const u32 displayModeA = (GPU.GPU2D_A.DispCnt >> 16u) & 0x3u;
+            const u32 displayModeB = (GPU.GPU2D_B.DispCnt >> 16u) & 0x1u;
+            writeCpuFinalA = displayModeA != 1u
+                || !GPU.ScreensEnabled
+                || !GPU.GPU2D_A.Enabled
+                || GPU.GPU2D_A.ForcedBlank;
+            writeCpuFinalB = displayModeB != 1u
+                || !GPU.ScreensEnabled
+                || !GPU.GPU2D_B.Enabled
+                || GPU.GPU2D_B.ForcedBlank;
+        }
+        if (writeCpuFinalA)
+            DrawScanlineA(line, dstA);
+        if (writeCpuFinalB)
+            DrawScanlineB(line, dstB);
+#else
         DrawScanlineA(line, dstA);
         DrawScanlineB(line, dstB);
+#endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (structuredRenderer3D)
+        if (structuredSourceActive)
         {
             for (u32 engine = 0; engine < 2; ++engine)
             {
@@ -170,11 +205,18 @@ void SoftRenderer::DrawScanline(u32 line)
                     && !engine2D.ForcedBlank;
                 if (!regularStructuredLine)
                 {
-                    const u32* nativeOutput = engine == 0 ? dstA : dstB;
-                    memcpy(
-                        StructuredNativeFinal[engine],
-                        nativeOutput,
-                        sizeof(StructuredNativeFinal[engine]));
+                    if (!GPU.ScreensEnabled)
+                    {
+                        std::fill_n(StructuredNativeFinal[engine], 256u, 0x20000000u);
+                    }
+                    else
+                    {
+                        const u32* nativeOutput = engine == 0 ? dstA : dstB;
+                        memcpy(
+                            StructuredNativeFinal[engine],
+                            nativeOutput,
+                            sizeof(StructuredNativeFinal[engine]));
+                    }
                 }
                 SapphireStructured2DLine packet{};
                 packet.Plane0 = StructuredPlane0[engine];
@@ -189,15 +231,11 @@ void SoftRenderer::DrawScanline(u32 line)
                 packet.EngineEnabled = engine2D.Enabled;
                 packet.ForcedBlank = engine2D.ForcedBlank;
                 packet.ScreensEnabled = GPU.ScreensEnabled;
-                packet.ScreenSwap = GPU.ScreenSwap;
-                structuredRenderer3D->SubmitStructured2DLine(packet);
+                SubmitStructured2DLine(packet);
             }
             if (line == 191)
-            {
-                ++StructuredFrameSerial;
-                structuredRenderer3D->EndStructured2DFrame(
-                    StructuredFrameSerial, GPU.ScreenSwap);
-            }
+                EndStructured2DFrame(
+                    structuredFrameSerial, structuredGeneration, GPU.ScreenSwap);
         }
 #endif
 
@@ -222,8 +260,15 @@ void SoftRenderer::DrawScanline(u32 line)
     if (GPU.ScreensEnabled)
     {
         // expand the color from 6-bit to 8-bit
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (writeCpuFinalA)
+            ExpandColor(dstA);
+        if (writeCpuFinalB)
+            ExpandColor(dstB);
+#else
         ExpandColor(dstA);
         ExpandColor(dstB);
+#endif
     }
     else
     {
@@ -235,6 +280,95 @@ void SoftRenderer::DrawScanline(u32 line)
         }
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void SoftRenderer::BeginStructured2DFrame(u64 frameSerial, u64 generation)
+{
+    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
+    frame.FrameSerial = frameSerial;
+    frame.Generation = generation;
+    frame.ScreenSwap = false;
+    frame.Complete = false;
+    StructuredLineReceived.fill(0);
+}
+
+void SoftRenderer::SubmitStructured2DLine(const SapphireStructured2DLine& line)
+{
+    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
+    if (frame.FrameSerial == 0
+        || line.Engine >= SapphireStructured2DFrameSnapshot::EngineCount
+        || line.Line >= SapphireStructured2DFrameSnapshot::LineCount
+        || line.Plane0 == nullptr
+        || line.Plane1 == nullptr
+        || line.Control == nullptr
+        || line.NativeFinal == nullptr)
+    {
+        return;
+    }
+
+    const size_t lineIndex = static_cast<size_t>(line.Engine)
+        * SapphireStructured2DFrameSnapshot::LineCount + line.Line;
+    const size_t pixelOffset = lineIndex * 256u;
+    std::memcpy(frame.Plane0.data() + pixelOffset, line.Plane0, 256u * sizeof(u32));
+    std::memcpy(frame.Plane1.data() + pixelOffset, line.Plane1, 256u * sizeof(u32));
+    std::memcpy(frame.Control.data() + pixelOffset, line.Control, 256u * sizeof(u32));
+    std::memcpy(frame.NativeFinal.data() + pixelOffset, line.NativeFinal, 256u * sizeof(u32));
+    frame.LineMeta[lineIndex] = line.DispCnt;
+    frame.LineState[lineIndex] =
+        static_cast<u32>(line.MasterBrightness)
+        | (line.ScreensEnabled ? (1u << 16u) : 0u)
+        | (line.EngineEnabled ? (1u << 17u) : 0u)
+        | (line.ForcedBlank ? (1u << 18u) : 0u);
+    StructuredLineReceived[lineIndex] = 1;
+}
+
+void SoftRenderer::EndStructured2DFrame(
+    u64 frameSerial, u64 generation, bool screenSwap)
+{
+    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
+    bool complete = frameSerial != 0
+        && generation != 0
+        && frame.FrameSerial == frameSerial
+        && frame.Generation == generation;
+    if (complete)
+    {
+        for (u8 received : StructuredLineReceived)
+        {
+            if (!received)
+            {
+                complete = false;
+                break;
+            }
+        }
+    }
+
+    frame.Complete = complete;
+    if (!complete)
+        return;
+
+    frame.ScreenSwap = screenSwap;
+    StructuredPublishedFrame = StructuredWriteFrame;
+    StructuredWriteFrame ^= 1u;
+    HasPublishedStructuredFrame = true;
+}
+
+bool SoftRenderer::CopyStructured2DFrameSnapshot(
+    SapphireStructured2DFrameSnapshot& snapshot) const
+{
+    if (!HasPublishedStructuredFrame)
+        return false;
+
+    const SapphireStructured2DFrameSnapshot& published =
+        StructuredFrames[StructuredPublishedFrame];
+    if (!published.Complete
+        || published.FrameSerial == 0
+        || published.Generation == 0)
+        return false;
+
+    snapshot = published;
+    return true;
+}
+#endif
 
 void SoftRenderer::DrawSprites(u32 line)
 {

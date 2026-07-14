@@ -273,7 +273,7 @@ void EmuInstance::submitVulkanFrontendFrame()
 
     MelonPrimeStructuredSnapshot snapshot{};
     if (MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
-            *renderer3D, rendererGeneration, snapshot))
+            nds->GPU, rendererGeneration, snapshot))
     {
         (void)vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D, snapshot);
     }

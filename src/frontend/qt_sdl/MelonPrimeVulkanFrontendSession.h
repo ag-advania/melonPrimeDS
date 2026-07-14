@@ -15,6 +15,7 @@
 namespace melonDS
 {
 class NDS;
+class GPU;
 class VulkanRenderer3D;
 }
 
@@ -60,7 +61,7 @@ public:
     void beginGeneration(u64 generation);
 
     static bool captureCompletedSnapshot(
-        const melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::GPU& gpu,
         u64 generation,
         MelonPrimeStructuredSnapshot& snapshot);
     bool submitCompletedFrame(

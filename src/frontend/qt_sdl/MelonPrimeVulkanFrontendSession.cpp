@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 
 #include "GPU.h"
 #include "GPU3D_Vulkan.h"
@@ -93,44 +94,43 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
 }
 
 bool MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
-    const VulkanRenderer3D& renderer3D,
+    const GPU& gpu,
     u64 generation,
     MelonPrimeStructuredSnapshot& snapshot)
 {
-    if (!renderer3D.HasCompleteStructured2DFrame()
-        || renderer3D.GetStructured2DFrameSerial() == 0)
-    {
+    auto source = std::make_unique<SapphireStructured2DFrameSnapshot>();
+    if (!gpu.CopyStructured2DFrameSnapshot(*source)
+        || !source->Complete
+        || source->FrameSerial == 0
+        || source->Generation != generation)
         return false;
-    }
 
-    MelonPrimeStructuredSnapshot captured{};
-    captured.generation = generation;
-    captured.frameSerial = renderer3D.GetStructured2DFrameSerial();
-    captured.screenSwap = renderer3D.GetStructured2DScreenSwap();
+    snapshot.generation = source->Generation;
+    snapshot.frameSerial = source->FrameSerial;
+    snapshot.screenSwap = source->ScreenSwap;
 
-    const size_t topEngine = captured.screenSwap ? 1u : 0u;
-    const size_t bottomEngine = captured.screenSwap ? 0u : 1u;
-    const u32* plane0 = renderer3D.GetStructured2DPlane0();
-    const u32* plane1 = renderer3D.GetStructured2DPlane1();
-    const u32* control = renderer3D.GetStructured2DControl();
-    const u32* nativeFinal = renderer3D.GetStructured2DNativeFinal();
-    const u32* lineMeta = renderer3D.GetStructured2DLineMeta();
-    const u32* lineState = renderer3D.GetStructured2DLineState();
+    const size_t topEngine = snapshot.screenSwap ? 1u : 0u;
+    const size_t bottomEngine = snapshot.screenSwap ? 0u : 1u;
+    const u32* plane0 = source->Plane0.data();
+    const u32* plane1 = source->Plane1.data();
+    const u32* control = source->Control.data();
+    const u32* nativeFinal = source->NativeFinal.data();
+    const u32* lineMeta = source->LineMeta.data();
+    const u32* lineState = source->LineState.data();
 
-    CopyEngineArray(captured.topPlane0, plane0, topEngine, kEnginePixels);
-    CopyEngineArray(captured.topPlane1, plane1, topEngine, kEnginePixels);
-    CopyEngineArray(captured.topControl, control, topEngine, kEnginePixels);
-    CopyEngineArray(captured.topNativeFinal, nativeFinal, topEngine, kEnginePixels);
-    CopyEngineArray(captured.topLineMeta, lineMeta, topEngine, kEngineLines);
-    CopyEngineArray(captured.topLineState, lineState, topEngine, kEngineLines);
-    CopyEngineArray(captured.bottomPlane0, plane0, bottomEngine, kEnginePixels);
-    CopyEngineArray(captured.bottomPlane1, plane1, bottomEngine, kEnginePixels);
-    CopyEngineArray(captured.bottomControl, control, bottomEngine, kEnginePixels);
-    CopyEngineArray(captured.bottomNativeFinal, nativeFinal, bottomEngine, kEnginePixels);
-    CopyEngineArray(captured.bottomLineMeta, lineMeta, bottomEngine, kEngineLines);
-    CopyEngineArray(captured.bottomLineState, lineState, bottomEngine, kEngineLines);
-    captured.complete = true;
-    snapshot = std::move(captured);
+    CopyEngineArray(snapshot.topPlane0, plane0, topEngine, kEnginePixels);
+    CopyEngineArray(snapshot.topPlane1, plane1, topEngine, kEnginePixels);
+    CopyEngineArray(snapshot.topControl, control, topEngine, kEnginePixels);
+    CopyEngineArray(snapshot.topNativeFinal, nativeFinal, topEngine, kEnginePixels);
+    CopyEngineArray(snapshot.topLineMeta, lineMeta, topEngine, kEngineLines);
+    CopyEngineArray(snapshot.topLineState, lineState, topEngine, kEngineLines);
+    CopyEngineArray(snapshot.bottomPlane0, plane0, bottomEngine, kEnginePixels);
+    CopyEngineArray(snapshot.bottomPlane1, plane1, bottomEngine, kEnginePixels);
+    CopyEngineArray(snapshot.bottomControl, control, bottomEngine, kEnginePixels);
+    CopyEngineArray(snapshot.bottomNativeFinal, nativeFinal, bottomEngine, kEnginePixels);
+    CopyEngineArray(snapshot.bottomLineMeta, lineMeta, bottomEngine, kEngineLines);
+    CopyEngineArray(snapshot.bottomLineState, lineState, bottomEngine, kEngineLines);
+    snapshot.complete = true;
     return true;
 }
 

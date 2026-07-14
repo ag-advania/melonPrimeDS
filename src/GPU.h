@@ -27,6 +27,9 @@
 #endif
 
 #include "GPU2D.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "GPU2D_Structured.h"
+#endif
 #include "GPU3D.h"
 #include "NonStupidBitfield.h"
 
@@ -230,6 +233,9 @@ public:
 #endif
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const;
+#endif
 
     // return value for GetFramebuffers:
     // true -> pointers to RAM framebuffers are returned via the parameters
@@ -786,6 +792,10 @@ public:
     bool ScreenSwap = false;
 
     u16 VCount = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Shared transient identity for one complete software-2D/Vulkan-3D frame.
+    u64 VulkanFrameSerial = 0;
+#endif
     u16 TotalScanlines = 0;
     u16 DispStat[2] {};
     u8 VRAMCNT[9] {};
@@ -1054,6 +1064,12 @@ public:
     // a renderer may render to RAM buffers, or to something else (ie. OpenGL)
     // if the renderer uses RAM buffers, they should be 32-bit BGRA, 256x192 for each screen
     virtual bool GetFramebuffers(void** top, void** bottom) = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot&) const
+    {
+        return false;
+    }
+#endif
     virtual RendererOutput GetOutput()
     {
         void* top = nullptr;

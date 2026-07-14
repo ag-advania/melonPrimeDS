@@ -524,6 +524,40 @@
 
 検証: capture shader固定commit正規化diff 0件、line-0 control/DispCnt/screen-swap latch、source dimension/scale/destination snapshot、shader write→host read barrier、2-slot busy/defer、6-context fence completion、pending→ready frame identity、exact history/clear fallback、capture range dirty、Vulkan capture判断のlive `CaptureCnt`/`ScreenSwap`/engine-A `DispCnt`再読込0件、SoftwareRenderer3D並走0件を静的監査。追加監査で共通GPU変更をMelonPrime Vulkan build gateへ隔離し、非Vulkan branchが従来fieldだけを参照することを確認。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R17 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU2D_Structured.h`
+   - `src/GPU.h`
+   - `src/GPU.cpp`
+   - `src/GPU3D.h`
+   - `src/GPU_Soft.h`
+   - `src/GPU_Soft.cpp`
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp`
+   - `src/frontend/qt_sdl/EmuInstance.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. GPU2D source ownership
+   - software GPU2D evaluatorが生成するplane0、plane1、Control、native final、line metadata/stateを、engine A/B順の`SapphireStructured2DFrameSnapshot`へ直接収集するline sinkを`SoftRenderer`へ移した。
+   - write/publishedの2 snapshotを分離し、384 engine-lineのreceived bitmapがすべて埋まり、同一frame serialでline 191へ到達した場合だけpublished indexを切り替える。incomplete write frameは直前のimmutable complete snapshotを破壊しない。
+   - snapshot型、outer renderer copy hook、全storageと処理は`MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN`内に限定し、非Vulkan API/object layoutへ追加しない。
+3. frame identityとscreen mapping
+   - 2D snapshotと3D viewはline 0で進める同じtransient `GPU::VulkanFrameSerial`を使用し、VCount 144 early submitとVCount 215 normal submitの双方で同一identityになる。serialはsavestate payloadへ入れずstate loadを跨いでruntime単調性を維持し、0へのwrapを禁止する。2D sourceはrenderer generationもline 0からline 191まで固定し、切替途中のframeをpublishしない。
+   - sourceはengine A/B順だけを保持し、`ScreenSwap`はcomplete frame publish時に一度latchする。physical top/bottom変換はfrontend snapshot copyでのみ行う。
+4. R3a temporary bridge削除
+   - `VulkanRenderer3D`から`Structured2D*`全CPU array、received bitmap、pending/complete state、Begin/Submit/End sink、Has/Get getterを削除した。
+   - `GPU::CopyStructured2DFrameSnapshot()`はactive outer `Renderer`からimmutable copyを取得し、frontend sessionは`NDS::GPU`を2D source、`VulkanRenderer3D::GetVulkan3DFrameView()`を3D sourceとして独立取得後、serial/generation一致を要求する。
+5. Control ABIとCPU final分離
+   - GPU2D `ColorComposite`の既存structured Control生成を維持し、`VulkanStructuredControlAbi`以外のpackerを追加していない。top/bottom latch後の既存frontend変換だけがpacked compositor ABIを生成する。
+   - structured regular displayではCPU framebufferへのfinal copy、master brightness、BGRA expansionを省略する。GPU2D layer evaluation、display capture用`Output2D`、non-regular VRAM/FIFO/off/forced-blank fallbackは維持し、Software/OpenGL/Metalと非Vulkan buildは従来経路のままとした。
+6. 後続フェーズへ渡すinterface
+   - R18が唯一のfinal composition入力としてconsumeするcomplete `SapphireStructured2DFrameSnapshot`と、physical top/bottomへlatch済み`MelonPrimeStructuredSnapshot`。
+   - `VulkanRenderer3D`はGPU-resident 3D target/captureとcompletion metadataだけを所有し、2D data lifetimeから独立した。
+
+検証: `VulkanRenderer3D`内のstructured CPU array/getter/sink参照0件、source側384-line complete gate、double-buffer publish、engine順storage、frontendだけのtop/bottom変換、Control packer一経路、2D/3D frame serial一致、regular Vulkan CPU final write省略、非Vulkan fallback維持、共通追加箇所の二重build gateを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

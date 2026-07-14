@@ -84,47 +84,6 @@ public:
     void Blit() override { Blit(GPU); }
     void StopRenderer() override { Stop(GPU); }
 
-    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
-    void BeginStructured2DFrame(u64 frameSerial) override;
-    void SubmitStructured2DLine(const SapphireStructured2DLine& line) override;
-    void EndStructured2DFrame(u64 frameSerial, bool screenSwap) override;
-    [[nodiscard]] bool HasCompleteStructured2DFrame() const noexcept
-    {
-        return Structured2DFrameValid;
-    }
-    [[nodiscard]] u64 GetStructured2DFrameSerial() const noexcept
-    {
-        return Structured2DFrameSerial;
-    }
-    [[nodiscard]] bool GetStructured2DScreenSwap() const noexcept
-    {
-        return Structured2DScreenSwap;
-    }
-    [[nodiscard]] const u32* GetStructured2DPlane0() const noexcept
-    {
-        return Structured2DPlane0.data();
-    }
-    [[nodiscard]] const u32* GetStructured2DPlane1() const noexcept
-    {
-        return Structured2DPlane1.data();
-    }
-    [[nodiscard]] const u32* GetStructured2DControl() const noexcept
-    {
-        return Structured2DControl.data();
-    }
-    [[nodiscard]] const u32* GetStructured2DNativeFinal() const noexcept
-    {
-        return Structured2DNativeFinal.data();
-    }
-    [[nodiscard]] const u32* GetStructured2DLineMeta() const noexcept
-    {
-        return Structured2DLineMeta.data();
-    }
-    [[nodiscard]] const u32* GetStructured2DLineState() const noexcept
-    {
-        return Structured2DLineState.data();
-    }
-
     void SetRenderSettings(bool threaded, bool betterPolygons, int scale, bool hiresCoordinates) override
     {
         SetRenderSettings(
@@ -918,19 +877,7 @@ private:
     u32 GraphicsHiddenAlphaZeroFinalEdgeColorOverride = 0;
     std::vector<u32> RawReadbackRgba;
     std::vector<u32> RawResultReadback;
-    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
-    std::array<u32, 2 * 256 * 192> Structured2DPlane0{};
-    std::array<u32, 2 * 256 * 192> Structured2DPlane1{};
-    std::array<u32, 2 * 256 * 192> Structured2DControl{};
-    std::array<u32, 2 * 256 * 192> Structured2DNativeFinal{};
-    // Per engine/line: DispCnt, MasterBrightness and enabled/blank/screen flags.
-    std::array<u32, 2 * 192> Structured2DLineMeta{};
-    std::array<u32, 2 * 192> Structured2DLineState{};
-    std::array<u8, 2 * 192> Structured2DLineReceived{};
-    u64 Structured2DPendingSerial = 0;
-    u64 Structured2DFrameSerial = 0;
-    bool Structured2DScreenSwap = false;
-    bool Structured2DFrameValid = false;
+    u64 CurrentRenderFrameSerial = 0;
 
     std::array<u32, 256 * 192> LineCache{};
     std::array<u32, 256 * 192> LastValidExactCaptureLineCache{};

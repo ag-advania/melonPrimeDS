@@ -50,6 +50,9 @@ public:
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
 
     bool GetFramebuffers(void** top, void** bottom) override;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const override;
+#endif
 
 private:
     friend class SoftRenderer2D;
@@ -65,7 +68,16 @@ private:
     alignas(64) u32 StructuredPlane1[2][256];
     alignas(64) u32 StructuredControl[2][256];
     alignas(64) u32 StructuredNativeFinal[2][256];
-    u64 StructuredFrameSerial = 0;
+    std::array<SapphireStructured2DFrameSnapshot, 2> StructuredFrames{};
+    std::array<u8, SapphireStructured2DFrameSnapshot::EngineCount
+        * SapphireStructured2DFrameSnapshot::LineCount> StructuredLineReceived{};
+    std::size_t StructuredWriteFrame = 0;
+    std::size_t StructuredPublishedFrame = 1;
+    bool HasPublishedStructuredFrame = false;
+
+    void BeginStructured2DFrame(u64 frameSerial, u64 generation);
+    void SubmitStructured2DLine(const SapphireStructured2DLine& line);
+    void EndStructured2DFrame(u64 frameSerial, u64 generation, bool screenSwap);
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

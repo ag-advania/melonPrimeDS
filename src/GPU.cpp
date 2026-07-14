@@ -137,6 +137,9 @@ void GPU::Reset() noexcept
     CaptureEnable = false;
 
     VCount = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    VulkanFrameSerial = 0;
+#endif
     VCountOverride = false;
     NextVCount = 0;
     TotalScanlines = 0;
@@ -368,6 +371,12 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     PaletteDirty = 0x5F;
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+bool GPU::CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const
+{
+    return Rend != nullptr && Rend->CopyStructured2DFrameSnapshot(snapshot);
+}
+#endif
 
 bool GPU::GetFramebuffers(void** top, void** bottom)
 {
@@ -1299,6 +1308,8 @@ void GPU::StartScanline(u32 line) noexcept
     if (VCount == 0)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (++VulkanFrameSerial == 0)
+            ++VulkanFrameSerial;
         CaptureFrameCnt = 0;
         CaptureFrameDispCntA = GPU2D_A.DispCnt;
         CaptureFrameScreenSwap = ScreenSwap;

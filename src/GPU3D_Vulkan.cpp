@@ -609,69 +609,6 @@ VulkanRenderer3D::VulkanRenderer3D(melonDS::GPU3D& gpu3D) noexcept
     clearLineCache();
 }
 
-// MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
-void VulkanRenderer3D::BeginStructured2DFrame(u64 frameSerial)
-{
-    Structured2DPendingSerial = frameSerial;
-    Structured2DFrameValid = false;
-    Structured2DLineReceived.fill(0);
-}
-
-void VulkanRenderer3D::SubmitStructured2DLine(
-    const SapphireStructured2DLine& line)
-{
-    if (Structured2DPendingSerial == 0
-        || line.Engine >= 2
-        || line.Line >= 192
-        || line.Plane0 == nullptr
-        || line.Plane1 == nullptr
-        || line.Control == nullptr
-        || line.NativeFinal == nullptr)
-    {
-        return;
-    }
-
-    const size_t lineIndex = static_cast<size_t>(line.Engine) * 192u + line.Line;
-    const size_t pixelOffset = lineIndex * 256u;
-    std::memcpy(Structured2DPlane0.data() + pixelOffset, line.Plane0, 256u * sizeof(u32));
-    std::memcpy(Structured2DPlane1.data() + pixelOffset, line.Plane1, 256u * sizeof(u32));
-    std::memcpy(Structured2DControl.data() + pixelOffset, line.Control, 256u * sizeof(u32));
-    std::memcpy(Structured2DNativeFinal.data() + pixelOffset, line.NativeFinal, 256u * sizeof(u32));
-    Structured2DLineMeta[lineIndex] = line.DispCnt;
-    Structured2DLineState[lineIndex] =
-        static_cast<u32>(line.MasterBrightness)
-        | (line.ScreensEnabled ? (1u << 16u) : 0u)
-        | (line.EngineEnabled ? (1u << 17u) : 0u)
-        | (line.ForcedBlank ? (1u << 18u) : 0u);
-    Structured2DLineReceived[lineIndex] = 1;
-}
-
-void VulkanRenderer3D::EndStructured2DFrame(u64 frameSerial, bool screenSwap)
-{
-    bool complete = frameSerial != 0 && frameSerial == Structured2DPendingSerial;
-    if (complete)
-    {
-        for (u8 received : Structured2DLineReceived)
-        {
-            if (!received)
-            {
-                complete = false;
-                break;
-            }
-        }
-    }
-
-    Structured2DFrameValid = complete;
-    if (complete)
-    {
-        Structured2DFrameSerial = frameSerial;
-        Structured2DScreenSwap = screenSwap;
-        // The desktop frontend remains the sole consumer of this temporary
-        // CPU snapshot until R17 moves ownership to GPU2D SoftRenderer.
-    }
-    Structured2DPendingSerial = 0;
-}
-
 VulkanRenderer3D::~VulkanRenderer3D()
 {
     destroyVulkan();
@@ -721,6 +658,7 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     LastValidExactCaptureScreenSwap = false;
     LastValidExactCaptureFrameSerial = 0;
     CurrentDisplayCaptureState = {};
+    CurrentRenderFrameSerial = 0;
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
@@ -789,6 +727,8 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         return;
     }
 
+    CurrentRenderFrameSerial = gpu.VulkanFrameSerial;
+
     const u64 renderStartNs = PerfNowNs();
     auto renderPerfScope = MakeScopeExit([&]() {
         RenderCpuWindow.Add(PerfNowNs() - renderStartNs);
@@ -835,9 +775,7 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     CurrentDisplayCaptureState.DestinationSizeMode = captureSizeMode;
     CurrentDisplayCaptureState.DestinationLineWidth = captureLineWidth;
     CurrentDisplayCaptureState.DestinationLineCount = captureLineCount;
-    CurrentDisplayCaptureState.FrameSerial = Structured2DPendingSerial != 0
-        ? Structured2DPendingSerial
-        : Structured2DFrameSerial;
+    CurrentDisplayCaptureState.FrameSerial = CurrentRenderFrameSerial;
     CurrentDisplayCaptureState.Enabled = captureEnabled;
     CurrentDisplayCaptureState.ScreenSwap = gpu.CaptureFrameScreenSwap;
     CurrentDisplayCaptureState.Bg0Uses3d = bg0Uses3d;
@@ -1533,6 +1471,7 @@ void VulkanRenderer3D::StopActiveBackend(const melonDS::GPU& gpu)
     LastValidExactCaptureScreenSwap = false;
     LastValidExactCaptureFrameSerial = 0;
     CurrentDisplayCaptureState = {};
+    CurrentRenderFrameSerial = 0;
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
@@ -1702,7 +1641,7 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
     view.Width = ColorImageWidth;
     view.Height = ColorImageHeight;
     view.Scale = static_cast<u32>(std::max(ScaleFactor, 1));
-    view.FrameSerial = Structured2DFrameSerial;
+    view.FrameSerial = CurrentRenderFrameSerial;
     view.Generation = GPU3D.GetCurrentRendererGeneration();
     view.CompletionSemaphore = CompletionTimelineSemaphore;
     view.CompletionValue = LastCompletionTimelineValue;
@@ -1712,8 +1651,7 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
         && ColorImageWidth != 0
         && ColorImageHeight != 0
         && ColorImageLayout != VK_IMAGE_LAYOUT_UNDEFINED
-        && Structured2DFrameValid
-        && Structured2DFrameSerial != 0
+        && CurrentRenderFrameSerial != 0
         && view.Generation != 0;
     return view;
 }
@@ -9636,9 +9574,7 @@ bool VulkanRenderer3D::dispatchRasterAndReadback(
     if (context != nullptr && Threaded)
     {
         LastSubmittedRenderContext = context;
-        context->SubmittedFrameSerial = Structured2DPendingSerial != 0
-            ? Structured2DPendingSerial
-            : Structured2DFrameSerial;
+        context->SubmittedFrameSerial = CurrentRenderFrameSerial;
         context->SubmittedGeneration = GPU3D.GetCurrentRendererGeneration();
         context->CompletionValue = completionValue;
     }
@@ -11393,9 +11329,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     if (context != nullptr && Threaded)
     {
         LastSubmittedRenderContext = context;
-        context->SubmittedFrameSerial = Structured2DPendingSerial != 0
-            ? Structured2DPendingSerial
-            : Structured2DFrameSerial;
+        context->SubmittedFrameSerial = CurrentRenderFrameSerial;
         context->SubmittedGeneration = GPU3D.GetCurrentRendererGeneration();
         context->CompletionValue = completionValue;
     }
