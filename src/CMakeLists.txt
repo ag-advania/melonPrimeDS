@@ -112,6 +112,104 @@ if (MELONPRIME_VULKAN_ACTIVE)
     # MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
     find_package(volk CONFIG REQUIRED)
     find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    find_program(MELONPRIME_GLSLANG_VALIDATOR
+        NAMES glslangValidator glslangValidator.exe
+        HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "$ENV{VULKAN_SDK}/bin"
+            "C:/msys64/mingw64/bin")
+    if (NOT MELONPRIME_GLSLANG_VALIDATOR)
+        message(FATAL_ERROR
+            "Vulkan shader generation requires glslangValidator. "
+            "Install glslang or set MELONPRIME_GLSLANG_VALIDATOR.")
+    endif()
+
+    set(MELONPRIME_SAPPHIRE_SHADER_OUTPUT_DIR
+        "${CMAKE_BINARY_DIR}/generated/sapphire")
+    set(MELONPRIME_SAPPHIRE_SHADER_HEADERS
+        GPU3D_Vulkan_BinCombinedShaderData.h
+        GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h
+        GPU3D_Vulkan_CaptureLineExportShaderData.h
+        GPU3D_Vulkan_DepthBlendShaderData.h
+        GPU3D_Vulkan_FinalPassShaderData.h
+        GPU3D_Vulkan_InterpSpansShaderData.h
+        GPU3D_Vulkan_SortWorkShaderData.h
+        GPU3D_Vulkan_TriRasterBaseShaderData.h
+        GPU3D_Vulkan_TriRasterCompatShaderData.h
+        GPU3D_Vulkan_TriRasterShaderData.h
+        GPU3D_Vulkan_GraphicsClearShaderData.h
+        GPU3D_Vulkan_GraphicsEdgeFogShaderData.h
+        GPU3D_Vulkan_GraphicsEdgeShaderData.h
+        GPU3D_Vulkan_GraphicsFinalShaderVertexData.h
+        GPU3D_Vulkan_GraphicsFogShaderData.h
+        GPU3D_Vulkan_GraphicsNoColorShaderData.h
+        GPU3D_Vulkan_GraphicsRasterShaderVertexData.h
+        GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h
+        GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h
+        VulkanAccumulate3dShaderData.h
+        VulkanCompositorShaderData.h
+        VulkanSurfacePresenterVertexShaderData.h
+        VulkanSurfacePresenterFragmentShaderData.h)
+    list(TRANSFORM MELONPRIME_SAPPHIRE_SHADER_HEADERS
+        PREPEND "${MELONPRIME_SAPPHIRE_SHADER_OUTPUT_DIR}/")
+
+    set(MELONPRIME_SAPPHIRE_SHADER_SOURCES
+        GPU3D_Vulkan_BinCombinedShader.comp
+        GPU3D_Vulkan_CalculateWorkOffsetsShader.comp
+        GPU3D_Vulkan_CaptureLineExportShader.comp
+        GPU3D_Vulkan_DepthBlendShader.comp
+        GPU3D_Vulkan_FinalPassShader.comp
+        GPU3D_Vulkan_InterpSpansShader.comp
+        GPU3D_Vulkan_SortWorkShader.comp
+        GPU3D_Vulkan_TriRasterBaseShader.comp
+        GPU3D_Vulkan_TriRasterCompatShader.comp
+        GPU3D_Vulkan_TriRasterShader.comp
+        GPU3D_Vulkan_GraphicsClearShader.frag
+        GPU3D_Vulkan_GraphicsEdgeFogShader.frag
+        GPU3D_Vulkan_GraphicsEdgeShader.frag
+        GPU3D_Vulkan_GraphicsFinalShader.vert
+        GPU3D_Vulkan_GraphicsFogShader.frag
+        GPU3D_Vulkan_GraphicsNoColorShader.frag
+        GPU3D_Vulkan_GraphicsRasterShader.vert
+        GPU3D_Vulkan_GraphicsRasterShader.frag
+        VulkanStructuredControlAbi.inc
+        frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp
+        frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp
+        frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert
+        frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag)
+    list(TRANSFORM MELONPRIME_SAPPHIRE_SHADER_SOURCES
+        PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+    set(MELONPRIME_SAPPHIRE_SHADER_STAMP
+        "${MELONPRIME_SAPPHIRE_SHADER_OUTPUT_DIR}/generation.stamp")
+
+    add_custom_command(
+        OUTPUT "${MELONPRIME_SAPPHIRE_SHADER_STAMP}"
+        BYPRODUCTS ${MELONPRIME_SAPPHIRE_SHADER_HEADERS}
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_sapphire_spirv.py"
+            --manifest "${CMAKE_SOURCE_DIR}/tools/vulkan/sapphire_shader_manifest.json"
+            --output-root "${MELONPRIME_SAPPHIRE_SHADER_OUTPUT_DIR}"
+            --compiler "${MELONPRIME_GLSLANG_VALIDATOR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch
+            "${MELONPRIME_SAPPHIRE_SHADER_STAMP}"
+        DEPENDS
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/generate_sapphire_spirv.py"
+            "${CMAKE_SOURCE_DIR}/tools/vulkan/sapphire_shader_manifest.json"
+            ${MELONPRIME_SAPPHIRE_SHADER_SOURCES}
+        COMMENT "Generating Sapphire Vulkan SPIR-V headers"
+        VERBATIM)
+    add_custom_target(melonprime_sapphire_shaders
+        DEPENDS "${MELONPRIME_SAPPHIRE_SHADER_STAMP}")
+    add_dependencies(core melonprime_sapphire_shaders)
+    target_include_directories(core PRIVATE "${CMAKE_BINARY_DIR}/generated")
+
     target_sources(core PRIVATE
         GPU_Vulkan.cpp
         GPU_Vulkan.h
@@ -126,22 +224,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU3D_TexcacheVulkan.cpp
         GPU3D_TexcacheVulkan.h
         VulkanPerfStats.h
-        GPU3D_Vulkan_BinCombinedShaderData.h
-        GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h
-        GPU3D_Vulkan_CaptureLineExportShaderData.h
-        GPU3D_Vulkan_DepthBlendShaderData.h
-        GPU3D_Vulkan_FinalPassShaderData.h
-        GPU3D_Vulkan_GraphicsClearShaderData.h
-        GPU3D_Vulkan_GraphicsEdgeFogShaderData.h
-        GPU3D_Vulkan_GraphicsEdgeShaderData.h
-        GPU3D_Vulkan_GraphicsFogShaderData.h
-        GPU3D_Vulkan_GraphicsNoColorShaderData.h
-        GPU3D_Vulkan_InterpSpansShaderData.h
-        GPU3D_Vulkan_ShaderData.h
-        GPU3D_Vulkan_SortWorkShaderData.h
-        GPU3D_Vulkan_TriRasterBaseShaderData.h
-        GPU3D_Vulkan_TriRasterCompatShaderData.h
-        GPU3D_Vulkan_TriRasterShaderData.h
         Vulkan_Phase12UiContract.cpp
         Vulkan_Phase12UiContract.h
         Vulkan_Phase13Stability.cpp
@@ -299,4 +381,3 @@ endif()
 #    BEFORE PUBLIC -fsanitize=undefined PUBLIC -fsanitize=address
 #  )
 #endif()
-

@@ -168,6 +168,46 @@
 
 検証: 全platform extension文字列が列挙結果を通してのみenableされること、surface生成前にpresent supportを要求しないこと、surface解決がgraphics family優先かつ別family fallbackを持つこと、presenterがgraphics submit/presentを別queueへ分離すること、runtime ownerが同一`VulkanContext`をAcquireすることを静的監査。`git diff --check`成功。ユーザー指示によりビルドは省略。
 
+## R5 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `tools/vulkan/generate_sapphire_spirv.py`
+   - `tools/vulkan/sapphire_shader_manifest.json`
+   - `src/CMakeLists.txt`
+   - `src/frontend/qt_sdl/CMakeLists.txt`
+   - `src/VulkanStructuredControlAbi.h`
+   - `src/VulkanStructuredControlAbi.inc`
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp`
+   - `src/VulkanReferenceManifest.md`
+2. 新しく追加した型、関数、resource
+   - 固定manifestからcore 25本、frontend 4本を生成する単一`melonprime_sapphire_shaders` target。
+   - stage、entry point、variant define、生成header、固定symbol、reference repository/path/commit/tagを一行程へ固定するmanifest。
+   - `glslangValidator`解決、SPIR-V magic/size検証、決定的な`uint32_t`配列生成、source/SPIR-V/ABI hash、compiler version、byte/word countを埋め込むgenerator。
+   - descriptor binding count、push constant byte数、native dimensions、packed stride/layer、screen index、control variant bitをC++/GLSLで共有するABI定数。
+3. 削除した旧経路
+   - source treeに手編集可能な形で存在したcore 26個、frontend 4個のgenerated headerを削除した。
+   - core専用`MelonPrimeSapphireCompositorShaderData.h`複製を削除し、core/frontendを同じcompositor generated symbolへ統一した。
+   - 対応GLSL sourceもruntime consumerも存在しない旧`GPU3D_Vulkan_ShaderData.h`を生成対象から除外した。
+4. 所有権とframe lifecycleの変更
+   - runtime frame ownershipは変更せず、shader data ownershipだけをsource treeからbuild directoryのgenerated targetへ移した。
+   - core、VulkanOutput、presenterは同じ`melonDS::Vulkan::GeneratedShaders` namespaceの`uint32_t`配列を直接`VkShaderModuleCreateInfo::pCode`へ渡し、byte配列copyを廃止した。
+   - in-core compositor moduleはR6で削除するまでfrontendと同一generated compositor symbolを一時的に参照する。
+5. 参照実装との差分
+   - shader sourceとvariant意味は固定core commit/frontend tagへpinし、compiler固有byte列は使用中`glslangValidator`とsource hashを生成headerへ記録する。
+   - R3で導入したdesktop structured-control変換に必要な共通ABI includeはmanifest ABI hashへ含め、変更時に全consumerを再生成する。
+   - generated headerは参照repositoryのsource tree配置を再現せず、`${CMAKE_BINARY_DIR}/generated/sapphire`だけへ生成する。
+6. 後続フェーズへ渡すinterface
+   - R6が重複composition resourceを削除してもfrontendに残る単一`VulkanCompositorShaderData.h` generated symbol。
+   - 後続shader変更をmanifestへ追加し、platform別一覧を作らず同一targetで再生成するCMake経路。
+   - push constant/descriptor/packed-layout変更をC++とGLSLで同時に更新させる`VulkanStructuredControlAbi`。
+
+検証: manifest 29本をMSYS2 glslangとvcpkg glslangの双方で生成・`--check`成功。正式MinGW環境と同じPATHでCMake configure成功。`melonprime_sapphire_shaders`初回生成成功後、再実行が`ninja: no work to do`となることを確認。旧source-tree shader data include 0件、旧private compositor symbol 0件、`git diff --check`成功。アプリ全体の`build-mingw-vulkan.bat`はユーザー指示により実行せず、実装を優先した。
+
 ---
 
 # 1. 目的

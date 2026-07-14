@@ -13,6 +13,7 @@
 #include "VulkanFilterMode.h"
 #include "types.h"
 #include "VulkanPerfStats.h"
+#include "VulkanStructuredControlAbi.h"
 
 namespace melonDS
 {
@@ -52,8 +53,10 @@ struct SoftPackedScreenStats
 
 struct SoftPackedFrameSnapshot
 {
-    static constexpr size_t kScreenWidth = 256u;
-    static constexpr size_t kScreenHeight = 192u;
+    static constexpr size_t kScreenWidth =
+        melonDS::VulkanStructuredControlAbi::NativeScreenWidth;
+    static constexpr size_t kScreenHeight =
+        melonDS::VulkanStructuredControlAbi::NativeScreenHeight;
     static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;
     static constexpr size_t kLineCount = kScreenHeight;
 
@@ -320,6 +323,10 @@ private:
         u32 packedStride;
         u32 topLcd;
     };
+    static_assert(sizeof(CompositorPushConstants)
+        == melonDS::VulkanStructuredControlAbi::CompositorPushConstantBytes);
+    static_assert(sizeof(AccumulatePushConstants)
+        == melonDS::VulkanStructuredControlAbi::AccumulatePushConstantBytes);
 
     struct FrameResource
     {

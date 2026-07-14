@@ -326,6 +326,7 @@ endif()
 if (MELONPRIME_VULKAN_ACTIVE)
     # MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
     find_package(volk CONFIG REQUIRED)
+    add_dependencies(melonDS melonprime_sapphire_shaders)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1 VK_NO_PROTOTYPES=1)
     if (WIN32)
         target_compile_definitions(melonDS PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
@@ -343,7 +344,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanReference/VulkanOutput.cpp
         VulkanReference/VulkanSurfacePresenter.cpp
         VulkanReference/FrameQueue.cpp)
-    target_include_directories(melonDS PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference")
+    target_include_directories(melonDS PRIVATE
+        "${CMAKE_BINARY_DIR}/generated"
+        "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference")
     target_link_libraries(melonDS PRIVATE volk::volk volk::volk_headers)
 endif()
 

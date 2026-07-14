@@ -6,6 +6,17 @@
 namespace melonDS::VulkanStructuredControlAbi
 {
 
+inline constexpr u32 NativeScreenWidth = MP_VK_NATIVE_SCREEN_WIDTH;
+inline constexpr u32 NativeScreenHeight = MP_VK_NATIVE_SCREEN_HEIGHT;
+inline constexpr u32 PackedPlaneCount = MP_VK_PACKED_PLANE_COUNT;
+inline constexpr u32 PackedLineMetadataWords = MP_VK_PACKED_LINE_METADATA_WORDS;
+inline constexpr u32 PackedScreenStride = MP_VK_PACKED_SCREEN_STRIDE;
+inline constexpr u32 CompositorBindingCount = MP_VK_COMPOSITOR_BINDING_COUNT;
+inline constexpr u32 CompositorPushConstantBytes = MP_VK_COMPOSITOR_PUSH_CONSTANT_BYTES;
+inline constexpr u32 AccumulatePushConstantBytes = MP_VK_ACCUMULATE_PUSH_CONSTANT_BYTES;
+inline constexpr u32 TopScreenIndex = MP_VK_TOP_SCREEN_INDEX;
+inline constexpr u32 BottomScreenIndex = MP_VK_BOTTOM_SCREEN_INDEX;
+
 inline constexpr u32 SourceEffectMask = MP_VK_SOURCE_CONTROL_EFFECT_MASK;
 inline constexpr u32 SourceEvaShift = MP_VK_SOURCE_CONTROL_EVA_SHIFT;
 inline constexpr u32 SourceEvbShift = MP_VK_SOURCE_CONTROL_EVB_SHIFT;

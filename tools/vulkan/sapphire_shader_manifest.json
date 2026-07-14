@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "target_environment": "vulkan1.1",
+  "namespace": "melonDS::Vulkan::GeneratedShaders",
+  "abi_sources": [
+    "src/VulkanStructuredControlAbi.inc"
+  ],
+  "shaders": [
+    {
+      "source": "src/GPU3D_Vulkan_BinCombinedShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_BinCombinedShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_bin_combined_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_BinCombinedShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_calc_work_offsets_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_CaptureLineExportShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_CaptureLineExportShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_capture_line_export_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_CaptureLineExportShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_DepthBlendShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_DepthBlendShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_depth_blend_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_DepthBlendShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_FinalPassShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_FinalPassShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_final_pass_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_FinalPassShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_InterpSpansShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_InterpSpansShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_interp_spans_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_InterpSpansShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_SortWorkShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_SortWorkShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_sort_work_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_SortWorkShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_TriRasterBaseShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_TriRasterBaseShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_tri_raster_base_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_TriRasterBaseShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_TriRasterCompatShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_TriRasterCompatShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_tri_raster_compat_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_TriRasterCompatShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_TriRasterShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_TriRasterShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_tri_raster_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_TriRasterShader.comp"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsClearShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsClearShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_clear_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsClearShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsEdgeFogShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_edge_fog_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsEdgeShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsEdgeShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_edge_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsEdgeShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsFinalShader.vert",
+      "stage": "vert", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsFinalShaderVertexData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_final_vert_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsFinalShader.vert"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsFogShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsFogShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_fog_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsFogShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsNoColorShaderData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_no_color_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.vert",
+      "stage": "vert", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterShaderVertexData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_vert_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.vert"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_fast_modulate_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1, "MELONDS_FAST_OPAQUE_MODULATE": 1, "MELONDS_FAST_TEXTURE_PUSH_CONSTANTS": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_fast_modulate_toon_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1, "MELONDS_FAST_OPAQUE_MODULATE": 1, "MELONDS_FAST_TEXTURE_PUSH_CONSTANTS": 1, "MELONDS_FAST_TOON_MODE": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_fast_modulate_plain_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1, "MELONDS_FAST_OPAQUE_MODULATE": 1, "MELONDS_FAST_TEXTURE_PUSH_CONSTANTS": 1, "MELONDS_FAST_TOON_MODE": 2},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_fast_modulate_opaque_alpha_toon_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1, "MELONDS_FAST_OPAQUE_MODULATE": 1, "MELONDS_FAST_TEXTURE_PUSH_CONSTANTS": 1, "MELONDS_FAST_TOON_MODE": 1, "MELONDS_FAST_OPAQUE_FULL_ALPHA": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h",
+      "symbol": "melonDS_gpu3d_vulkan_graphics_raster_no_frag_depth_direct_fast_modulate_opaque_alpha_plain_frag_spv",
+      "defines": {"MELONDS_NO_FRAG_DEPTH": 1, "MELONDS_DIRECT_TEXTURE_INDEXING": 1, "MELONDS_FAST_OPAQUE_MODULATE": 1, "MELONDS_FAST_TEXTURE_PUSH_CONSTANTS": 1, "MELONDS_FAST_TOON_MODE": 2, "MELONDS_FAST_OPAQUE_FULL_ALPHA": 1},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android-lib", "commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023", "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "VulkanAccumulate3dShaderData.h",
+      "symbol": "melonDS_android_vulkan_accumulate_3d_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android", "commit_or_tag": "0.7.0.rc4@2c10e59d7209d354e90d9ef4228330bac3f6e794", "path": "app/src/main/cpp/renderer/VulkanAccumulate3dShader.comp"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp",
+      "stage": "comp", "entry_point": "main",
+      "generated_header": "VulkanCompositorShaderData.h",
+      "symbol": "melonDS_android_vulkan_compositor_comp_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android", "commit_or_tag": "0.7.0.rc4@2c10e59d7209d354e90d9ef4228330bac3f6e794", "path": "app/src/main/cpp/renderer/VulkanCompositorShader.comp"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert",
+      "stage": "vert", "entry_point": "main",
+      "generated_header": "VulkanSurfacePresenterVertexShaderData.h",
+      "symbol": "melonDS_android_vulkan_surface_presenter_vert_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android", "commit_or_tag": "0.7.0.rc4@2c10e59d7209d354e90d9ef4228330bac3f6e794", "path": "app/src/main/cpp/renderer/VulkanSurfacePresenter.vert"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "VulkanSurfacePresenterFragmentShaderData.h",
+      "symbol": "melonDS_android_vulkan_surface_presenter_frag_spv", "defines": {},
+      "reference": {"repository": "SapphireRhodonite/melonDS-android", "commit_or_tag": "0.7.0.rc4@2c10e59d7209d354e90d9ef4228330bac3f6e794", "path": "app/src/main/cpp/renderer/VulkanSurfacePresenter.frag"}
+    }
+  ]
+}

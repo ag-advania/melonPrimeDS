@@ -15,11 +15,12 @@
 #include "Platform.h"
 #include "VulkanContext.h"
 #include <volk.h>
-#include "VulkanCompositorShaderData.h"
-#include "VulkanAccumulate3dShaderData.h"
+#include <sapphire/VulkanCompositorShaderData.h>
+#include <sapphire/VulkanAccumulate3dShaderData.h>
 
 namespace MelonDSAndroid
 {
+using namespace melonDS::Vulkan::GeneratedShaders;
 bool areRendererDebugToolsEnabled();
 bool areRendererDebugBgObjLogsEnabled();
 bool areRenderer2DDebugControlsActive();
@@ -27,9 +28,9 @@ bool isRenderer2DDebugBackgroundKindEnabled(melonDS::u32 featureFlag);
 
 namespace
 {
-constexpr int kScreenWidth = 256;
-constexpr int kScreenHeight = 192;
-constexpr int kAcceleratedStride = kScreenWidth * 3 + 1;
+constexpr int kScreenWidth = static_cast<int>(melonDS::VulkanStructuredControlAbi::NativeScreenWidth);
+constexpr int kScreenHeight = static_cast<int>(melonDS::VulkanStructuredControlAbi::NativeScreenHeight);
+constexpr int kAcceleratedStride = static_cast<int>(melonDS::VulkanStructuredControlAbi::PackedScreenStride);
 constexpr VkDeviceSize kPackedBufferSize = static_cast<VkDeviceSize>(kScreenHeight) * static_cast<VkDeviceSize>(kAcceleratedStride) * sizeof(melonDS::u32);
 constexpr VkDeviceSize kCapture3dBufferSize = static_cast<VkDeviceSize>(kScreenWidth) * static_cast<VkDeviceSize>(kScreenHeight) * sizeof(melonDS::u32);
 constexpr u64 kValidationWaitTimeoutNs = 2'000'000'000ull;
@@ -715,7 +716,8 @@ bool VulkanOutput::createCompositorResources()
     previousBottomInput3dBinding.descriptorCount = 1;
     previousBottomInput3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 7> compositorBindings = {
+    std::array<VkDescriptorSetLayoutBinding,
+        melonDS::VulkanStructuredControlAbi::CompositorBindingCount> compositorBindings = {
         outputBinding,
         input3dBinding,
         topPackedBinding,
@@ -779,13 +781,10 @@ bool VulkanOutput::createCompositorResources()
         return false;
     }
 
-    std::vector<u32> shaderWords((melonDS_android_vulkan_compositor_comp_spv_len + sizeof(u32) - 1u) / sizeof(u32));
-    std::memcpy(shaderWords.data(), melonDS_android_vulkan_compositor_comp_spv, melonDS_android_vulkan_compositor_comp_spv_len);
-
     VkShaderModuleCreateInfo shaderModuleCreateInfo{};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderModuleCreateInfo.codeSize = melonDS_android_vulkan_compositor_comp_spv_len;
-    shaderModuleCreateInfo.pCode = shaderWords.data();
+    shaderModuleCreateInfo.pCode = melonDS_android_vulkan_compositor_comp_spv;
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -959,13 +958,10 @@ bool VulkanOutput::createAccumulateResources()
         return false;
     }
 
-    std::vector<u32> shaderWords((melonDS_android_vulkan_accumulate_3d_comp_spv_len + sizeof(u32) - 1u) / sizeof(u32));
-    std::memcpy(shaderWords.data(), melonDS_android_vulkan_accumulate_3d_comp_spv, melonDS_android_vulkan_accumulate_3d_comp_spv_len);
-
     VkShaderModuleCreateInfo shaderModuleCreateInfo{};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderModuleCreateInfo.codeSize = melonDS_android_vulkan_accumulate_3d_comp_spv_len;
-    shaderModuleCreateInfo.pCode = shaderWords.data();
+    shaderModuleCreateInfo.pCode = melonDS_android_vulkan_accumulate_3d_comp_spv;
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -4684,7 +4680,8 @@ bool VulkanOutput::dispatchCompositor(
         || resource.cachedPreviousTopRendererImageView != inputs.previousTopSourceImageView
         || resource.cachedPreviousBottomRendererImageView != inputs.previousBottomSourceImageView)
     {
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
+        std::array<VkWriteDescriptorSet,
+            melonDS::VulkanStructuredControlAbi::CompositorBindingCount> descriptorWrites{};
         descriptorWrites[0] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING, &outputImageInfo);
         descriptorWrites[1] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_CURRENT_3D_BINDING, &input3dImageInfo);
         descriptorWrites[2] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_TOP_PACKED_BINDING, &topPackedBufferInfo);

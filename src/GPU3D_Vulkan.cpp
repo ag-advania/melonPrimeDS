@@ -17,7 +17,6 @@
 */
 
 #include "GPU3D_Vulkan.h"
-#include "MelonPrimeSapphireCompositorShaderData.h"
 
 #include <volk.h>
 #include "VulkanDesktopCompat.h"
@@ -33,31 +32,32 @@
 
 #include "GPU.h"
 #include "GPU3D_AcceleratedFrontend.h"
-#include "GPU3D_Vulkan_BinCombinedShaderData.h"
-#include "GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h"
-#include "GPU3D_Vulkan_CaptureLineExportShaderData.h"
-#include "GPU3D_Vulkan_DepthBlendShaderData.h"
-#include "GPU3D_Vulkan_FinalPassShaderData.h"
-#include "GPU3D_Vulkan_GraphicsEdgeFogShaderData.h"
-#include "GPU3D_Vulkan_GraphicsEdgeShaderData.h"
-#include "GPU3D_Vulkan_GraphicsFinalShaderVertexData.h"
-#include "GPU3D_Vulkan_GraphicsFogShaderData.h"
-#include "GPU3D_Vulkan_GraphicsClearShaderData.h"
-#include "GPU3D_Vulkan_GraphicsNoColorShaderData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h"
-#include "GPU3D_Vulkan_GraphicsRasterShaderVertexData.h"
-#include "GPU3D_Vulkan_InterpSpansShaderData.h"
-#include "GPU3D_Vulkan_SortWorkShaderData.h"
-#include "GPU3D_Vulkan_TriRasterBaseShaderData.h"
-#include "GPU3D_Vulkan_TriRasterCompatShaderData.h"
-#include "GPU3D_Vulkan_TriRasterShaderData.h"
+#include <sapphire/GPU3D_Vulkan_BinCombinedShaderData.h>
+#include <sapphire/GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h>
+#include <sapphire/GPU3D_Vulkan_CaptureLineExportShaderData.h>
+#include <sapphire/GPU3D_Vulkan_DepthBlendShaderData.h>
+#include <sapphire/GPU3D_Vulkan_FinalPassShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsEdgeFogShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsEdgeShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsFinalShaderVertexData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsFogShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsClearShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsNoColorShaderData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h>
+#include <sapphire/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h>
+#include <sapphire/GPU3D_Vulkan_InterpSpansShaderData.h>
+#include <sapphire/GPU3D_Vulkan_SortWorkShaderData.h>
+#include <sapphire/GPU3D_Vulkan_TriRasterBaseShaderData.h>
+#include <sapphire/GPU3D_Vulkan_TriRasterCompatShaderData.h>
+#include <sapphire/GPU3D_Vulkan_TriRasterShaderData.h>
+#include <sapphire/VulkanCompositorShaderData.h>
 #include "Platform.h"
 #include "VulkanContext.h"
 #include "version.h"
@@ -73,6 +73,7 @@ melonDS::u32 getVulkanDiagnosticFlags();
 
 namespace melonDS
 {
+using namespace Vulkan::GeneratedShaders;
 using Platform::Log;
 using Platform::LogLevel;
 
@@ -439,18 +440,15 @@ bool createBufferAllocation(
     return true;
 }
 
-VkShaderModule createShaderModule(VkDevice device, const unsigned char* spirvBytes, size_t spirvLength)
+VkShaderModule createShaderModule(VkDevice device, const u32* spirvWords, size_t spirvLength)
 {
-    if (device == VK_NULL_HANDLE || spirvBytes == nullptr || spirvLength == 0)
+    if (device == VK_NULL_HANDLE || spirvWords == nullptr || spirvLength == 0 || (spirvLength & 3u) != 0u)
         return VK_NULL_HANDLE;
-
-    std::vector<u32> shaderWords((spirvLength + sizeof(u32) - 1u) / sizeof(u32));
-    std::memcpy(shaderWords.data(), spirvBytes, spirvLength);
 
     VkShaderModuleCreateInfo shaderCreateInfo{};
     shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderCreateInfo.codeSize = spirvLength;
-    shaderCreateInfo.pCode = shaderWords.data();
+    shaderCreateInfo.pCode = spirvWords;
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device, &shaderCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -1122,22 +1120,18 @@ bool VulkanRenderer3D::ensureSapphireCompositionShaderModule()
     if (SapphireCompositionShaderModule != VK_NULL_HANDLE)
         return true;
 
-    const auto* bytes = melonDS::SapphireCompositorShaderData::kCompositorSpirv;
-    const size_t byteCount = melonDS::SapphireCompositorShaderData::kCompositorSpirvSize;
+    const auto* words = melonDS_android_vulkan_compositor_comp_spv;
+    const size_t byteCount = melonDS_android_vulkan_compositor_comp_spv_len;
     if (byteCount < 20u || (byteCount & 3u) != 0u
-        || bytes[0] != 0x03u || bytes[1] != 0x02u
-        || bytes[2] != 0x23u || bytes[3] != 0x07u)
+        || words[0] != 0x07230203u)
     {
         return false;
     }
 
-    std::vector<u32> words(byteCount / sizeof(u32));
-    std::memcpy(words.data(), bytes, byteCount);
-
     VkShaderModuleCreateInfo moduleInfo{};
     moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     moduleInfo.codeSize = byteCount;
-    moduleInfo.pCode = words.data();
+    moduleInfo.pCode = words;
     if (vkCreateShaderModule(
             Device, &moduleInfo, nullptr, &SapphireCompositionShaderModule) != VK_SUCCESS)
     {
@@ -4282,18 +4276,15 @@ bool VulkanRenderer3D::createComputePipeline()
         return false;
     }
 
-    const auto createPipelineFromSpirv = [&](const unsigned char* spirvBytes,
+    const auto createPipelineFromSpirv = [&](const u32* spirvWords,
                                              size_t spirvLength,
                                              const char* pipelineName,
                                              const VkSpecializationInfo* specializationInfo,
                                              VkPipeline* outPipeline) -> bool {
-        std::vector<u32> shaderWords((spirvLength + sizeof(u32) - 1u) / sizeof(u32));
-        std::memcpy(shaderWords.data(), spirvBytes, spirvLength);
-
         VkShaderModuleCreateInfo shaderCreateInfo{};
         shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shaderCreateInfo.codeSize = spirvLength;
-        shaderCreateInfo.pCode = shaderWords.data();
+        shaderCreateInfo.pCode = spirvWords;
 
         VkShaderModule shaderModule = VK_NULL_HANDLE;
         if (vkCreateShaderModule(Device, &shaderCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -4418,7 +4409,7 @@ bool VulkanRenderer3D::createComputePipeline()
     constexpr u32 kCreateRasterShadeModeAny = 5u;
     constexpr u32 kCreateRasterTextureModeAny = 2u;
     constexpr u32 kCreateRasterTranslucencyModeAny = 2u;
-    const unsigned char* triRasterSpirv = melonDS_gpu3d_vulkan_tri_raster_comp_spv;
+    const u32* triRasterSpirv = melonDS_gpu3d_vulkan_tri_raster_comp_spv;
     size_t triRasterSpirvLen = melonDS_gpu3d_vulkan_tri_raster_comp_spv_len;
     if (samplingPath == TextureSamplingPath::BaseSingleDescriptor)
     {

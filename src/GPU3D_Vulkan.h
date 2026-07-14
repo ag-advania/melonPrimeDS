@@ -101,7 +101,8 @@ struct SapphireCompositionPushConstants
     u32 TopStructuredHandoffSuppress3d = 0;
     u32 BottomStructuredHandoffSuppress3d = 0;
 };
-static_assert(sizeof(SapphireCompositionPushConstants) == 88);
+static_assert(sizeof(SapphireCompositionPushConstants)
+    == VulkanStructuredControlAbi::CompositorPushConstantBytes);
 
 struct SapphireVulkanCompositionCommandContext
 {
@@ -126,11 +127,13 @@ struct SapphireCompositionDescriptorAbi
     static constexpr u32 PreviousTop3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING;
     static constexpr u32 Capture3DBufferBinding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING;
     static constexpr u32 PreviousBottom3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING;
-    static constexpr u32 BindingCount = 7;
-    static constexpr u32 PushConstantBytes = 88;
+    static constexpr u32 BindingCount = MP_VK_COMPOSITOR_BINDING_COUNT;
+    static constexpr u32 PushConstantBytes = MP_VK_COMPOSITOR_PUSH_CONSTANT_BYTES;
 };
-static_assert(SapphireCompositionDescriptorAbi::BindingCount == 7);
-static_assert(SapphireCompositionDescriptorAbi::PushConstantBytes == 88);
+static_assert(SapphireCompositionDescriptorAbi::BindingCount
+    == VulkanStructuredControlAbi::CompositorBindingCount);
+static_assert(SapphireCompositionDescriptorAbi::PushConstantBytes
+    == VulkanStructuredControlAbi::CompositorPushConstantBytes);
 
 // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
 // The exact Sapphire compositor SPIR-V is now owned by the core renderer and

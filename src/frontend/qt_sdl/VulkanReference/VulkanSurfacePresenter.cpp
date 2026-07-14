@@ -10,11 +10,12 @@
 #include "VulkanContext.h"
 #include <volk.h>
 #include "VulkanOutput.h"
-#include "VulkanSurfacePresenterFragmentShaderData.h"
-#include "VulkanSurfacePresenterVertexShaderData.h"
+#include <sapphire/VulkanSurfacePresenterFragmentShaderData.h>
+#include <sapphire/VulkanSurfacePresenterVertexShaderData.h>
 
 namespace MelonDSAndroid
 {
+using namespace melonDS::Vulkan::GeneratedShaders;
 bool isFastForwardActive();
 bool areRendererDebugBgObjLogsEnabled();
 
@@ -718,14 +719,11 @@ bool VulkanSurfacePresenter::createCommonResources()
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
         return false;
 
-    auto createShaderModule = [&](const unsigned char* data, size_t length, VkShaderModule* shaderModule) -> bool {
-        std::vector<u32> shaderWords((length + sizeof(u32) - 1u) / sizeof(u32));
-        std::memcpy(shaderWords.data(), data, length);
-
+    auto createShaderModule = [&](const u32* data, size_t length, VkShaderModule* shaderModule) -> bool {
         VkShaderModuleCreateInfo shaderModuleInfo{};
         shaderModuleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shaderModuleInfo.codeSize = length;
-        shaderModuleInfo.pCode = shaderWords.data();
+        shaderModuleInfo.pCode = data;
 
         return vkCreateShaderModule(device, &shaderModuleInfo, nullptr, shaderModule) == VK_SUCCESS;
     };

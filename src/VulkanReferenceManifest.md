@@ -62,36 +62,14 @@ Every source below is reference code and is text-identical to the pinned core co
 
 ## Core generated shader headers
 
-Every generated header below is text-identical to the pinned core commit after ignoring line endings. Source and generated data therefore come from the same reference point.
-
-| Destination/reference path |
-|---|
-| `src/GPU3D_Vulkan_BinCombinedShaderData.h` |
-| `src/GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h` |
-| `src/GPU3D_Vulkan_CaptureLineExportShaderData.h` |
-| `src/GPU3D_Vulkan_DepthBlendShaderData.h` |
-| `src/GPU3D_Vulkan_FinalPassShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsClearShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsEdgeFogShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsEdgeShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsFinalShaderVertexData.h` |
-| `src/GPU3D_Vulkan_GraphicsFogShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsNoColorShaderData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaPlainShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateOpaqueAlphaToonShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulatePlainShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectFastModulateToonShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthDirectShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterNoFragDepthShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h` |
-| `src/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h` |
-| `src/GPU3D_Vulkan_InterpSpansShaderData.h` |
-| `src/GPU3D_Vulkan_ShaderData.h` |
-| `src/GPU3D_Vulkan_SortWorkShaderData.h` |
-| `src/GPU3D_Vulkan_TriRasterBaseShaderData.h` |
-| `src/GPU3D_Vulkan_TriRasterCompatShaderData.h` |
-| `src/GPU3D_Vulkan_TriRasterShaderData.h` |
+The pinned headers were used to audit source/variant identity, but are no longer
+tracked or included from the source tree. `tools/vulkan/sapphire_shader_manifest.json`
+records every core source, entry point, define set, legacy symbol/header name,
+reference path, and pinned commit. `generate_sapphire_spirv.py` emits the 25 core
+headers under `${CMAKE_BINARY_DIR}/generated/sapphire`; CMake regenerates them
+from GLSL only when a manifest, ABI include, generator, or shader source changes.
+The old source-only `GPU3D_Vulkan_ShaderData.h` had no corresponding GLSL source
+and no runtime consumer, so it is deliberately not part of the generated set.
 
 ## Frontend implementation files
 
@@ -113,14 +91,10 @@ Reference paths in this table are relative to `app/src/main/cpp/renderer/` in th
 
 ## Frontend generated shader headers
 
-Reference paths are relative to `app/src/main/cpp/renderer/`; all four files are text-identical to the pinned tag after ignoring line endings.
-
-| Destination/reference filename |
-|---|
-| `VulkanAccumulate3dShaderData.h` |
-| `VulkanCompositorShaderData.h` |
-| `VulkanSurfacePresenterFragmentShaderData.h` |
-| `VulkanSurfacePresenterVertexShaderData.h` |
+The same manifest and generator emit all four frontend headers into the same
+build-directory namespace as the core headers. The manifest pins their reference
+paths to `app/src/main/cpp/renderer/` at `0.7.0.rc4`; source-tree copies and the
+former private core compositor SPIR-V duplicate are intentionally absent.
 
 ## Deliberately excluded Android ownership
 
