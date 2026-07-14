@@ -39,9 +39,13 @@ if not exist "%REPO_ROOT_WIN%\build\release-mingw-x86_64\build.ninja" (
     echo [melonprime-build-vulkan-existing] Run .claude\skills\build-mingw-vulkan.bat first.
     exit /b 1
 )
-findstr /C:"MELONPRIME_VULKAN_PHASE12_DYNAMIC_LAYOUT_V1" "%REPO_ROOT_WIN%\src\frontend\qt_sdl\VideoSettingsDialog.cpp" >nul
+if not exist "%REPO_ROOT_WIN%\src\frontend\qt_sdl\MelonPrimeVulkanSettings.h" (
+    echo [melonprime-build-vulkan-existing] Missing R26 canonical Vulkan settings header.
+    exit /b 1
+)
+findstr /C:"MELONPRIME_VULKAN_R26_CANONICAL_SETTINGS_V1" "%REPO_ROOT_WIN%\src\frontend\qt_sdl\MelonPrimeVulkanSettings.h" >nul
 if errorlevel 1 (
-    echo [melonprime-build-vulkan-existing] Phase 12 UI patch is not applied.
+    echo [melonprime-build-vulkan-existing] R26 canonical Vulkan settings marker is missing.
     exit /b 1
 )
 findstr /R /X /C:"MELONPRIME_ENABLE_VULKAN:BOOL=ON" "%CACHE%" >nul
@@ -59,7 +63,7 @@ call "%BASE_SCRIPT%" %*
 exit /b %ERRORLEVEL%
 
 :cache_off
-echo [melonprime-build-vulkan-existing] ERROR: Existing build tree is not configured for Vulkan Phase 12.
+echo [melonprime-build-vulkan-existing] ERROR: Existing build tree is not configured for Vulkan R26.
 echo [melonprime-build-vulkan-existing] Run this once first:
 echo [melonprime-build-vulkan-existing]   .claude\skills\build-mingw-vulkan.bat
 echo [melonprime-build-vulkan-existing] This script will not silently build a Vulkan-OFF cache.
@@ -89,4 +93,9 @@ echo.
 echo Builds the existing Vulkan-enabled release-mingw-x86_64 tree and forces
 echo GCC -flto=auto to use native MinGW mingw32-make.exe. It refuses both a
 echo Vulkan-OFF cache and the incompatible C:\msys64\usr\bin\make.exe path.
+echo.
+echo Required cache values:
+echo   MELONPRIME_ENABLE_VULKAN=ON
+echo   MELONPRIME_FORCE_DISABLE_VULKAN=OFF
+echo   MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON
 exit /b 0

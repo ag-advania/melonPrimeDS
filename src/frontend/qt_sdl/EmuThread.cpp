@@ -1069,6 +1069,30 @@ void EmuThread::handleMessages()
                 static_cast<MelonPrime::VideoBackend::PresentationBackend>(
                     msg.param.value<int>());
             auto& cfg = emuInstance->getGlobalConfig();
+
+            if (emuInstance->nds == nullptr)
+            {
+                // No console exists yet. Commit only the staged presentation state.
+                // The actual renderer transaction runs after NDS creation because
+                // updateVideoRenderer() forces lastVideoRenderer = -1.
+                videoBackend = stagedPresentation;
+                videoSettingsDirty = true;
+                lastVideoRenderer = -1;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                auto& session = emuInstance->vulkanFrontendSession();
+                session.completeBackendSwitch(
+                    videoBackend
+                        == MelonPrime::VideoBackend::PresentationBackend::Vulkan);
+                if (videoBackend
+                    != MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+                {
+                    session.shutdown();
+                }
+#endif
+                msgResult = static_cast<int>(videoBackend);
+                break;
+            }
+
             auto result = MelonPrime::VideoBackend::CreateRendererForSelection(
                 *emuInstance->nds,
                 cfg.GetInt("3D.Renderer"),

@@ -998,7 +998,7 @@ private:
     bool LastRendererInitSucceeded = true;
 #endif
 
-    u16 VRAMCaptureBlockFlags[16];
+    u16 VRAMCaptureBlockFlags[16] {};
 
     u16* VRAMCBF_ABG[0x20] {};
     u16* VRAMCBF_AOBJ[0x10] {};

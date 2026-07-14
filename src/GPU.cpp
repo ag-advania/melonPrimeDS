@@ -333,7 +333,8 @@ void GPU::DoSavestate(Savestate* file) noexcept
 
 void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
-    SyncAllVRAMCaptures();
+    if (Rend)
+        SyncAllVRAMCaptures();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     GPU3D.SetCurrentRenderer(nullptr);
 #endif
