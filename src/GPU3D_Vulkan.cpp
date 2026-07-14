@@ -1654,6 +1654,11 @@ Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
     return view;
 }
 
+bool VulkanRenderer3D::Init()
+{
+    return ensureInitialized();
+}
+
 bool VulkanRenderer3D::EnsureVulkanReadyForValidation()
 {
     if (!ensureInitialized())

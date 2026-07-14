@@ -66,7 +66,7 @@ public:
     explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D) noexcept;
     ~VulkanRenderer3D() override;
 
-    bool Init() override { return EnsureVulkanReadyForValidation(); }
+    bool Init() override;
     void Reset() override { Reset(GPU); }
     void RenderFrame() override
     {
