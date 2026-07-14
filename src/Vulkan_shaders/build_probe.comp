@@ -1,9 +1,0 @@
-#version 450
-
-// Phase 1 build-only probe. It is embedded to prove the GLSL -> SPIR-V path,
-// but no runtime code creates or dispatches this shader.
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-
-void main()
-{
-}

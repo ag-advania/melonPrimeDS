@@ -17,7 +17,7 @@ The matching constants live in `VulkanReferencePortVersion.h`. Updating either r
 - `Core compatibility adaptation`: include/dispatch/API changes required by this melonDS fork.
 - `Desktop platform adaptation`: replaces Android window, EGL, JNI, or Vulkan dispatch ownership without changing the reference ABI.
 - `MelonPrime adaptation`: game/frontend integration kept outside the reference algorithm where possible.
-- `Temporary bridge`: pre-existing phased integration that remains isolated until the deletion phase named in the notes.
+- R26 leaves no active temporary-bridge classification; all retained differences have a permanent owner above.
 
 There are no unclassified divergences in the audited set. Any future difference not covered by a row is an unexplained divergence and must be reverted to the pinned reference or added here with a concrete owner and removal/lifetime rule.
 
@@ -32,7 +32,7 @@ There are no unclassified divergences in the audited set. Any future difference 
 | `src/GPU3D_AcceleratedFrontend.h` | `src/GPU3D_AcceleratedFrontend.h` | Reference-majority MelonPrime adaptation: provenance plus immutable polygon/render-state input, per-draw texture keys, high-resolution setting transport, and coverage depth-bias transport. Geometry, line endpoint resolution, draw ordering, and coverage algorithms remain at the pinned reference locations. |
 | `src/GPU3D_AcceleratedFrontend.cpp` | `src/GPU3D_AcceleratedFrontend.cpp` | Same classification as the header. The R10 conformance audit restored reference line ownership: this frontend emits the two resolved endpoints and `GPU3D_Vulkan.cpp` performs the pinned `appendLineSegment` expansion. |
 | `src/GPU3D_Texcache.h` | `src/GPU3D_Texcache.h` | Core compatibility adaptation: current melonDS GPU ownership and clear-bitmap dirty ABI are retained; the pinned before-mutation callback is preserved so Vulkan waits only immediately before invalidation/reuse. |
-| `src/GPU3D_Vulkan.h` | `src/GPU3D_Vulkan.h` | Reference-majority core/Desktop adaptation: `Renderer3D` ownership wrappers, `volk`, desktop `VulkanContext` accessors, scaled render-target state, six-slot resource completion handoff, immutable scene/capture input, per-context clear/toon upload generations, capture-slot frame identity, and `Vulkan3DFrameView`. R17 removes every structured-2D array/getter/sink from this 3D owner; remaining temporary/dead builders are owned by R26. |
+| `src/GPU3D_Vulkan.h` | `src/GPU3D_Vulkan.h` | Reference-majority core/Desktop adaptation: `Renderer3D` ownership wrappers, `volk`, desktop `VulkanContext` accessors, scaled render-target state, six-slot resource completion handoff, immutable scene/capture input, per-context clear/toon upload generations, capture-slot frame identity, and `Vulkan3DFrameView`. R17 removed every structured-2D array/getter/sink from this 3D owner; R26 removed the remaining phase aliases and dead bootstrap contracts. |
 | `src/GPU3D_Vulkan.cpp` | `src/GPU3D_Vulkan.cpp` | Same classification as the header. The pinned raster/texture/line/clear/final-effect/capture-export algorithms remain the base; desktop queue synchronization, frame handoff, immutable full render/capture-state dispatch, capture slot/history identity, per-context clear-buffer reuse, and change-driven toon-table upload are isolated adapters. R17 derives 3D frame identity from the same emulated-frame latch as the independent software-GPU2D snapshot, without reading 2D storage. R24 adds device-loss stop gates, target retirement, and named synchronization barriers without changing raster semantics. |
 | `src/GPU3D_TexcacheVulkan.h` | `src/GPU3D_TexcacheVulkan.h` | Core compatibility adaptation: `<volk.h>` replaces direct Vulkan prototypes. |
 | `src/GPU3D_TexcacheVulkan.cpp` | `src/GPU3D_TexcacheVulkan.cpp` | Core compatibility adaptation: `volk` replaces `VulkanDispatch.h`; R24 retires invalidated VkImage arrays against the last 3D completion value and drains them before the renderer timeline is destroyed. |
@@ -132,3 +132,17 @@ Desktop replacements are owned by `VulkanContext`, `MelonPrimeVulkanSurfaceHost`
 - `VulkanOutput` owns `melonprime_vulkan_r25_compositor.cache` for compositor and accumulated-high-resolution compute pipelines.
 - `VulkanSurfacePresenter` owns `melonprime_vulkan_r25_presenter.cache` for swapchain-format-compatible presenter graphics pipelines.
 - Cache data never crosses owner/pipeline-layout boundaries. Load/save failure is non-fatal, empty data never replaces a valid file, and device loss skips cache extraction.
+
+## R26 final cleanup
+
+<!-- MELONPRIME_VULKAN_R26_CLEANUP_V1 -->
+
+- The sole 3D owner remains `GPU3D::CurrentRenderer`; pointer-returning Override aliases are removed.
+- The sole final compositor remains frontend `VulkanOutput`; Phase 9 CPU fake composition and all Phase 12/13 contract sources are deleted.
+- The sole frame owner remains frontend `FrameQueue`; no phase/bootstrap queue contract remains.
+- The sole presentation path remains `MelonPrimeVulkanSurfaceHost` plus `VulkanSurfacePresenter`; the separate QVulkanInstance/QVulkanDevice probe path, failed capture stub, and empty Phase 13 callbacks are deleted.
+- Tracked `.melonprime_*_backup` source trees, Vulkan bootstrap/native-raster remnants, and obsolete generated shell shader trees are deleted rather than hidden behind a build or environment switch.
+- UI migration/preset helpers are retained under the canonical `MelonPrimeVulkanSettings.h` name and use the canonical renderer ID supplied by the caller; both video settings surfaces use the same helper, and the duplicate InputConfig Vulkan Compute preset is removed.
+- The canonical Windows Vulkan build entrypoint validates the R26 settings marker; the deleted Phase 12 UI marker is no longer a build prerequisite.
+- The obsolete `MelonApplication` `InstanceHost` forward declaration, owner and accessor are removed with the deleted host implementation.
+

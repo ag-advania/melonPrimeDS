@@ -343,11 +343,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
             VK_USE_PLATFORM_XLIB_KHR=1)
     endif()
     target_sources(melonDS PRIVATE
-        MelonPrimeVulkanInstanceHost.cpp
-        MelonPrimeVulkanInstanceHost.h
-        MelonPrimeVulkanFeatureCheck.cpp
-        MelonPrimeVulkanFeatureCheck.h
-        MelonPrimeVulkanUiCompat.h
+        MelonPrimeVulkanSettings.h
         MelonPrimeScreenVulkan.cpp
         MelonPrimeScreenVulkan.h
         MelonPrimeVulkanSurfaceHost.h

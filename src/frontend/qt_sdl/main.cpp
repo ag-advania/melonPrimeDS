@@ -61,8 +61,6 @@
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
 #include "GPU3D_Vulkan.h"
-#include "MelonPrimeVulkanInstanceHost.h"
-#include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeScreenVulkan.h"
 #endif
 
@@ -270,15 +268,6 @@ MelonApplication::MelonApplication(int& argc, char** argv)
 
 MelonApplication::~MelonApplication() = default;
 
-#if defined(MELONPRIME_ENABLE_VULKAN)
-MelonPrime::Vulkan::InstanceHost& MelonApplication::vulkanInstanceHost()
-{
-    if (!m_vulkanInstanceHost)
-        m_vulkanInstanceHost = std::make_unique<MelonPrime::Vulkan::InstanceHost>();
-    return *m_vulkanInstanceHost;
-}
-#endif
-
 // TODO: ROM loading should be moved to EmuInstance
 // especially so the preloading below and in main() can be done in a nicer fashion
 
@@ -311,20 +300,6 @@ static std::optional<QString> melonPrimeHudGoldenOutputPath(int argc, char** arg
     for (int i = 1; i < argc; ++i)
     {
         if (strcmp(argv[i], "--melonprime-hud-golden") == 0 && i + 1 < argc)
-            return QString::fromLocal8Bit(argv[i + 1]);
-    }
-#endif
-    (void)argc;
-    (void)argv;
-    return std::nullopt;
-}
-
-static std::optional<QString> melonPrimeVulkanProbeOutputPath(int argc, char** argv)
-{
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    for (int i = 1; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--melonprime-vulkan-probe") == 0 && i + 1 < argc)
             return QString::fromLocal8Bit(argv[i + 1]);
     }
 #endif
@@ -514,11 +489,6 @@ int main(int argc, char** argv)
 
 
 
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (const auto probeOut = melonPrimeVulkanProbeOutputPath(argc, argv); probeOut.has_value())
-        return MelonPrime::Vulkan::RunProbeHarness(*probeOut);
-#endif
-
 #if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto goldenOut = melonPrimeHudGoldenOutputPath(argc, argv); goldenOut.has_value())
     {
@@ -609,40 +579,6 @@ int main(int argc, char** argv)
     createEmuInstance();
 
 #if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    const QString vulkanCapturePath = qEnvironmentVariable(
-        "MELONPRIME_VULKAN_PRESENTER_CAPTURE");
-    if (!vulkanCapturePath.isEmpty())
-    {
-        const bool multiWindow = qEnvironmentVariableIntValue(
-            "MELONPRIME_VULKAN_PRESENTER_MULTIWINDOW") == 1;
-        if (multiWindow)
-            createEmuInstance();
-        bool captureDelayValid = false;
-        const int configuredCaptureDelay = qEnvironmentVariableIntValue(
-            "MELONPRIME_VULKAN_PRESENTER_CAPTURE_DELAY_MS",
-            &captureDelayValid);
-        const int captureDelayMs = captureDelayValid
-            ? std::max(1, configuredCaptureDelay)
-            : 1500;
-        QTimer::singleShot(captureDelayMs, qApp, [vulkanCapturePath, multiWindow] {
-            MainWindow* window = emuInstances[0]
-                ? emuInstances[0]->getMainWindow() : nullptr;
-            auto* panel = window
-                ? dynamic_cast<ScreenPanelVulkan*>(window->panel) : nullptr;
-            bool saved = panel && panel->captureVulkanFrame(vulkanCapturePath);
-            if (multiWindow)
-            {
-                MainWindow* secondWindow = emuInstances[1]
-                    ? emuInstances[1]->getMainWindow() : nullptr;
-                auto* secondPanel = secondWindow
-                    ? dynamic_cast<ScreenPanelVulkan*>(secondWindow->panel) : nullptr;
-                saved = saved && secondPanel && secondPanel->captureVulkanFrame(
-                    vulkanCapturePath + ".window2.png");
-            }
-            qApp->exit(saved ? 0 : 3);
-        });
-    }
-
     // Developer-only runtime regression hook for the native Vulkan handoff.
     // A nonzero delay toggles the real QAction/slot path used by the menu and
     // hotkey, allowing the FPS-unlimited ownership race to be reproduced in a

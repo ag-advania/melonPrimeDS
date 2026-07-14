@@ -25,12 +25,6 @@
 #include <QEvent>
 #include <QElapsedTimer>
 
-#include <memory>
-
-#if defined(MELONPRIME_ENABLE_VULKAN)
-namespace MelonPrime::Vulkan { class InstanceHost; }
-#endif
-
 #include "EmuInstance.h"
 #include "Window.h"
 #include "EmuThread.h"
@@ -54,14 +48,6 @@ public:
     MelonApplication(int &argc, char** argv);
     ~MelonApplication() override;
     bool event(QEvent* event) override;
-#if defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrime::Vulkan::InstanceHost& vulkanInstanceHost();
-#endif
-
-private:
-#if defined(MELONPRIME_ENABLE_VULKAN)
-    std::unique_ptr<MelonPrime::Vulkan::InstanceHost> m_vulkanInstanceHost;
-#endif
 };
 
 extern QString* systemThemeName;

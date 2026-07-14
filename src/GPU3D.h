@@ -106,7 +106,6 @@ public:
     void VBlank() noexcept;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     void SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept;
     [[nodiscard]] Renderer3D& GetCurrentRenderer() noexcept { return *CurrentRenderer; }
     [[nodiscard]] const Renderer3D& GetCurrentRenderer() const noexcept { return *CurrentRenderer; }
@@ -116,16 +115,6 @@ public:
         return CurrentRendererGeneration;
     }
 
-    // Migration aliases only. New call sites use HasCurrentRenderer() and
-    // GetCurrentRenderer(); remove these pointer-returning names in R26.
-    [[nodiscard]] Renderer3D* GetCurrentRendererOverride() noexcept
-    {
-        return HasCurrentRenderer() ? &GetCurrentRenderer() : nullptr;
-    }
-    [[nodiscard]] const Renderer3D* GetCurrentRendererOverride() const noexcept
-    {
-        return HasCurrentRenderer() ? &GetCurrentRenderer() : nullptr;
-    }
 #endif
 
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
@@ -341,7 +330,6 @@ public:
     u32 FlushAttributes = 0;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     std::unique_ptr<Renderer3D> CurrentRenderer;
     u64 CurrentRendererGeneration = 0;
 #endif
@@ -370,7 +358,6 @@ public:
     // this is used in software renderers
     virtual u32* GetLine(int line) = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
     virtual void VCount144() {}
     virtual void SetupAccelFrame() {}
     virtual void PrepareCaptureFrame() {}

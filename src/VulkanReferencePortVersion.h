@@ -1,5 +1,4 @@
 #pragma once
-// MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
 //
 // Pinned upstream reference points for the Vulkan backend reconstruction
 // plan (.claude/rules/plan/melonPrimeDS_Vulkan_GPU3D_...md, "重大計画修正版").
@@ -32,13 +31,6 @@ namespace MelonPrime::Vulkan
 // breadcrumbs for the incremental patches that built up the current Vulkan
 // port. They do not gate any runtime behavior and must not be treated as
 // evidence that a feature is complete (plan phase R0).
-// MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
-// MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
 // MELONPRIME_SAPPHIRE_VULKAN_FACTORY_NAMESPACE_FIX_V1
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_EXACT_ABI_A7
 // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_ODR_FIX_V1
 // MELONPRIME_SAPPHIRE_COMPOSITOR_SHADER_INLINE_DATA_V1

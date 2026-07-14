@@ -1,5 +1,4 @@
 #pragma once
-// MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
 #include "types.h"
 namespace MelonDSAndroid {
 bool isFastForwardActive(); bool areRendererDebugToolsEnabled(); bool areRendererDebugBgObjLogsEnabled();

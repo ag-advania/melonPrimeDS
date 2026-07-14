@@ -81,7 +81,7 @@ private:
 #endif
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
-    void retranslatePhase12VulkanControls();
+    void retranslateVulkanControls();
 
     Ui::VideoSettingsDialog* ui;
     EmuInstance* emuInstance;

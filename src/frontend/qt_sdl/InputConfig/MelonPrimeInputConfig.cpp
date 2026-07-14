@@ -66,7 +66,7 @@
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "../MelonPrimeVulkanUiCompat.h"
+#include "../MelonPrimeVulkanSettings.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 #include "../MelonPrimeMetalFeatureCheck.h"
@@ -185,39 +185,22 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_VULKAN_PHASE12_UI_ACTIVATION_V2
     metroidSetVideoQualityToVulkan = new QPushButton(ui->sectionVideo);
     metroidSetVideoQualityToVulkan->setObjectName(
         QStringLiteral("metroidSetVideoQualityToVulkan"));
     ui->videoButtonsLayout->addWidget(metroidSetVideoQualityToVulkan);
-
-    metroidSetVideoQualityToVulkanCompute = new QPushButton(ui->sectionVideo);
-    metroidSetVideoQualityToVulkanCompute->setObjectName(
-        QStringLiteral("metroidSetVideoQualityToVulkanCompute"));
-    ui->videoButtonsLayout->addWidget(metroidSetVideoQualityToVulkanCompute);
 
     openVulkanVideoSettings = new QPushButton(ui->sectionVideo);
     openVulkanVideoSettings->setObjectName(QStringLiteral("openVulkanVideoSettings"));
     ui->videoButtonsLayout->addWidget(openVulkanVideoSettings);
 
     connect(metroidSetVideoQualityToVulkan, &QPushButton::clicked, this, [this]() {
-        const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
-            MelonPrime::UiText::ActiveMenuLanguage());
-        if (!runtime.Contract.Raster.Enabled)
+        const auto runtime = MelonPrime::Vulkan::BuildVulkanRuntimeUiState(
+            MelonPrime::UiText::ActiveMenuLanguage(), renderer3D_Vulkan);
+        if (!runtime.Enabled)
             return;
         auto& cfg = emuInstance->getGlobalConfig();
-        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(cfg, false);
-        cfg.SetBool("Screen.UseGL", false);
-        cfg.SetInt("Screen.VSyncInterval", 1);
-        cfg.SetBool("3D.Soft.Threaded", true);
-    });
-    connect(metroidSetVideoQualityToVulkanCompute, &QPushButton::clicked, this, [this]() {
-        const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
-            MelonPrime::UiText::ActiveMenuLanguage());
-        if (!runtime.Contract.Compute.Enabled)
-            return;
-        auto& cfg = emuInstance->getGlobalConfig();
-        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(cfg, true);
+        MelonPrime::Vulkan::ApplyVulkanPreset(cfg, renderer3D_Vulkan);
         cfg.SetBool("Screen.UseGL", false);
         cfg.SetInt("Screen.VSyncInterval", 1);
         cfg.SetBool("3D.Soft.Threaded", true);
@@ -335,28 +318,22 @@ void MelonPrimeInputConfig::changeEvent(QEvent* event)
 #if defined(MELONPRIME_ENABLE_VULKAN)
 void MelonPrimeInputConfig::refreshVulkanPresetText()
 {
-    if (!metroidSetVideoQualityToVulkan ||
-        !metroidSetVideoQualityToVulkanCompute ||
-        !openVulkanVideoSettings)
+    if (!metroidSetVideoQualityToVulkan || !openVulkanVideoSettings)
         return;
 
     const auto language = MelonPrime::UiText::ActiveMenuLanguage();
-    const auto strings = MelonPrime::Vulkan::Phase12StringsForLanguage(language);
-    const auto runtime = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(language);
+    const auto strings = MelonPrime::Vulkan::VulkanStringsForLanguage(language);
+    const auto runtime = MelonPrime::Vulkan::BuildVulkanRuntimeUiState(
+        language, renderer3D_Vulkan);
 
     metroidSetVideoQualityToVulkan->setText(strings.RasterPreset);
-    metroidSetVideoQualityToVulkanCompute->setText(strings.ComputePreset);
     openVulkanVideoSettings->setText(strings.OpenSettings);
 
-    metroidSetVideoQualityToVulkan->setEnabled(runtime.Contract.Raster.Enabled);
-    metroidSetVideoQualityToVulkanCompute->setEnabled(runtime.Contract.Compute.Enabled);
-    openVulkanVideoSettings->setEnabled(
-        runtime.Contract.Raster.Generated || runtime.Contract.Compute.Generated);
+    metroidSetVideoQualityToVulkan->setEnabled(runtime.Enabled);
+    openVulkanVideoSettings->setEnabled(runtime.Enabled);
 
-    metroidSetVideoQualityToVulkan->setToolTip(runtime.RasterTooltip);
-    metroidSetVideoQualityToVulkanCompute->setToolTip(runtime.ComputeTooltip);
-    openVulkanVideoSettings->setToolTip(
-        runtime.RasterTooltip + QStringLiteral("\n") + runtime.ComputeTooltip);
+    metroidSetVideoQualityToVulkan->setToolTip(runtime.Tooltip);
+    openVulkanVideoSettings->setToolTip(runtime.Tooltip);
 }
 #endif
 

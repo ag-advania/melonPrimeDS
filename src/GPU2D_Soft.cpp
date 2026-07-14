@@ -43,7 +43,6 @@ void SoftRenderer2D::Reset()
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-// MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
 u32 SoftRenderer2D::ColorComposite(
     int i, u32 val1, u32 val2, u32* structuredControl) const
 #else

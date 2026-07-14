@@ -231,7 +231,6 @@ public:
     }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     void SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept
     {
         GPU3D.SetCurrentRenderer(std::move(renderer));
@@ -1040,7 +1039,6 @@ public:
     virtual void DrawScanline(u32 line) = 0;
     virtual void DrawSprites(u32 line) = 0;
 
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     Renderer3D& GetRenderer3D() noexcept
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)

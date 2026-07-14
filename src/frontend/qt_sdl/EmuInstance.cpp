@@ -31,7 +31,6 @@
 #include <QDateTime>
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanFrontendSession.h"
 #include "GPU3D_Vulkan.h"
 #endif
@@ -279,22 +278,6 @@ void EmuInstance::submitVulkanFrontendFrame()
     }
 }
 
-std::shared_ptr<MelonPrime::Vulkan::DeviceContext> EmuInstance::ensureVulkanDeviceContext(
-    QWindow* surfaceWindow,
-    MelonPrime::Vulkan::FeatureInfo& info)
-{
-    if (vulkanDeviceContext)
-    {
-        info = vulkanDeviceContext->featureInfo();
-        return vulkanDeviceContext;
-    }
-    if (vulkanDeviceProbeAttempted)
-        return {};
-
-    vulkanDeviceProbeAttempted = true;
-    vulkanDeviceContext = MelonPrime::Vulkan::CreateDeviceContext(surfaceWindow, info);
-    return vulkanDeviceContext;
-}
 #endif
 
 

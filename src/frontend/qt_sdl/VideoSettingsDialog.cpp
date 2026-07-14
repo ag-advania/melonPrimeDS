@@ -37,7 +37,7 @@
 #include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeLocalization.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeVulkanUiCompat.h"
+#include "MelonPrimeVulkanSettings.h"
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
@@ -132,7 +132,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     auto& cfg = emuInstance->getGlobalConfig();
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrime::Vulkan::MigratePhase12HardwareSettings(cfg);
+    MelonPrime::Vulkan::MigrateVulkanHardwareSettings(cfg);
 #endif
     oldRenderer = cfg.GetInt("3D.Renderer");
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -187,7 +187,6 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     adjustSize();
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_VULKAN_PHASE12_DYNAMIC_LAYOUT_V1
     ui->gridLayout_2->removeItem(ui->verticalSpacer);
     ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
     ui->gridLayout_2->removeWidget(ui->cbVSync);
@@ -211,17 +210,17 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 4, 0, 1, 1);
     ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 4, 1, 1, 1);
 
-    const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(
-        MelonPrime::UiText::ActiveMenuLanguage());
-    rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
-    btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
+    const auto vulkanUi = MelonPrime::Vulkan::BuildVulkanRuntimeUiState(
+        MelonPrime::UiText::ActiveMenuLanguage(), renderer3D_Vulkan);
+    rb3DVulkan->setEnabled(vulkanUi.Enabled);
+    btnVulkanRasterPreset->setEnabled(vulkanUi.Enabled);
+    rb3DVulkan->setToolTip(vulkanUi.Tooltip);
+    btnVulkanRasterPreset->setToolTip(vulkanUi.Tooltip);
 
     connect(btnVulkanRasterPreset, &QPushButton::clicked, this, [this]() {
         const int oldPresentation = presentationBackendId();
         auto& config = emuInstance->getGlobalConfig();
-        MelonPrime::Vulkan::ApplyPhase12VulkanPreset(config, false);
+        MelonPrime::Vulkan::ApplyVulkanPreset(config, renderer3D_Vulkan);
         grp3DRenderer->button(renderer3D_Vulkan)->setChecked(true);
         ui->cbxGLResolution->setCurrentIndex(3);
         ui->cbBetterPolygons->setChecked(true);
@@ -231,7 +230,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         setVsyncControlEnable(UsesGL());
         emit updateVideoSettings(oldPresentation != presentationBackendId());
     });
-    retranslatePhase12VulkanControls();
+    retranslateVulkanControls();
     ui->gridLayout_2->invalidate();
     ui->gridLayout_2->activate();
     adjustSize();
@@ -293,7 +292,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setToolTip(
-        MelonPrime::Vulkan::Phase12StringsForLanguage(
+        MelonPrime::Vulkan::VulkanStringsForLanguage(
             MelonPrime::UiText::ActiveMenuLanguage()).ScaleDescription);
 #elif defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     ui->cbxGLResolution->setToolTip(MelonPrime::UiText::Tr(
@@ -317,27 +316,27 @@ void VideoSettingsDialog::changeEvent(QEvent* event)
     QDialog::changeEvent(event);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (event && event->type() == QEvent::LanguageChange)
-        retranslatePhase12VulkanControls();
+        retranslateVulkanControls();
 #endif
 }
 
 
-void VideoSettingsDialog::retranslatePhase12VulkanControls()
+void VideoSettingsDialog::retranslateVulkanControls()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (!rb3DVulkan)
         return;
     const auto language = MelonPrime::UiText::ActiveMenuLanguage();
-    const auto strings = MelonPrime::Vulkan::Phase12StringsForLanguage(language);
-    const auto phase12Ui = MelonPrime::Vulkan::BuildPhase12RuntimeUiState(language);
+    const auto strings = MelonPrime::Vulkan::VulkanStringsForLanguage(language);
+    const auto vulkanUi = MelonPrime::Vulkan::BuildVulkanRuntimeUiState(language, renderer3D_Vulkan);
     rb3DVulkan->setText(strings.VulkanName);
-    rb3DVulkan->setEnabled(phase12Ui.Contract.Raster.Enabled);
-    rb3DVulkan->setToolTip(phase12Ui.RasterTooltip);
+    rb3DVulkan->setEnabled(vulkanUi.Enabled);
+    rb3DVulkan->setToolTip(vulkanUi.Tooltip);
     if (btnVulkanRasterPreset)
     {
         btnVulkanRasterPreset->setText(strings.RasterPreset);
-        btnVulkanRasterPreset->setEnabled(phase12Ui.Contract.Raster.Enabled);
-        btnVulkanRasterPreset->setToolTip(phase12Ui.RasterTooltip);
+        btnVulkanRasterPreset->setEnabled(vulkanUi.Enabled);
+        btnVulkanRasterPreset->setToolTip(vulkanUi.Tooltip);
     }
     ui->cbxGLResolution->setToolTip(strings.ScaleDescription);
 #endif

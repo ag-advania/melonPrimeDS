@@ -800,6 +800,34 @@
 
 検証: `git diff --check`、owner cache分離、全pipeline create callへのowner cache接続、legacy raw cache経路除去を静的検証。Windows Vulkanビルド結果は見出しに記録する。
 
+
+## R26 — 2026-07-14 実装・Windows Vulkanビルド完了
+
+<!-- MELONPRIME_VULKAN_R26_CLEANUP_V1 -->
+
+1. 正式経路として維持したowner
+   - `GPU3D::CurrentRenderer` + `CreateRenderer3DForSelection`
+   - GPU2D Soft structured source + `MelonPrimeVulkanFrontendSession`
+   - `VulkanOutput` + `FrameQueue`
+   - `MelonPrimeVulkanSurfaceHost` + `VulkanSurfacePresenter` + `ScreenPanelVulkan`
+2. 削除したlegacy/duplicate
+   - `GetCurrentRendererOverride`、`CreateRenderer3DOverrideForSelection`
+   - Phase 9 CPU fake compositor、Phase 12 UI contract、Phase 13 stability/cache/prewarm contract
+   - 別`QVulkanInstance`/`VkDevice` probe owner、failed capture stub、空Phase 13 callback
+   - `VulkanSupport` build shell、tracked Vulkan bootstrap/native-raster source、`.melonprime_*_backup` tree
+   - legacy Vulkan Compute environment bootstrapとInputConfigの重複Compute preset button
+3. canonical replacement
+   - VideoSettingsDialogとMelonPrimeInputConfigの設定migration、single canonical preset、localized textを`MelonPrimeVulkanSettings.h`へ移し、phase contract boolを廃止した。
+   - runtime availabilityはcanonical renderer build availabilityから導出する。
+   - `.claude/skills/build-mingw-vulkan.bat`の旧Phase 12 marker gateを、R26 canonical settings marker gateへ置換した。
+   - `MelonApplication`に残っていた旧`InstanceHost` owner/accessorを完全除去した。
+4. 検証
+   - exact R25 HEAD、clean tracked tree、全変換のin-memory preflight、repository-wide forbidden-symbol/reference auditを実施。
+   - `CurrentRenderer`、frontend compositor、FrameQueue、surface/presenterの正式symbolが残ることを確認。
+   - 追加行whitespace、deleted sourceのCMake/include残存、hidden backup tree不存在を確認。
+
+Windows正規入口`.claude\skills\build-mingw-vulkan.bat --jobs 1`の結果は見出しへ反映する。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

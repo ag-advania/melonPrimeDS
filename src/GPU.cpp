@@ -335,7 +335,6 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
     SyncAllVRAMCaptures();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: renderer switches must not retain the old Vulkan Renderer3D.
     GPU3D.SetCurrentRenderer(nullptr);
 #endif
 
@@ -1346,7 +1345,6 @@ void GPU::StartScanline(u32 line) noexcept
         // of the next frame.
         // So we can give the rasteriser a bit more headroom
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        // MELONPRIME_SAPPHIRE_VULKAN_FRAME_LIFECYCLE_A1
         Rend->VCount1443D();
 #endif
         Rend->Finish3DRendering();

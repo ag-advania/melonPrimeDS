@@ -16,7 +16,6 @@
 namespace MelonPrime::VideoBackend {
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-// MELONPRIME_VULKAN_PHASE13_RUNTIME_FALLBACK_V1
 namespace
 {
 std::atomic<bool> gVulkanRuntimeFallback{false};
@@ -67,25 +66,12 @@ bool ShouldForceMetalRendererFromEnv()
 bool ShouldForceVulkanPresenterFromEnv()
 {
     const char* env = std::getenv("MELONPRIME_FORCE_VULKAN_PRESENTER");
-    if (env != nullptr && env[0] == '1')
-        return true;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    const char* capture = std::getenv("MELONPRIME_VULKAN_PRESENTER_CAPTURE");
-    return capture != nullptr && capture[0] != '\0';
-#else
-    return false;
-#endif
+    return env != nullptr && env[0] == '1';
 }
 
 bool ShouldForceVulkanRendererFromEnv()
 {
     const char* env = std::getenv("MELONPRIME_FORCE_VULKAN_RENDERER");
-    return env != nullptr && env[0] == '1';
-}
-
-bool ShouldForceVulkanComputeRendererFromEnv()
-{
-    const char* env = std::getenv("MELONPRIME_FORCE_VULKAN_COMPUTE_RENDERER");
     return env != nullptr && env[0] == '1';
 }
 
@@ -117,8 +103,6 @@ const char* VulkanRuntimeFallbackReason()
 int ResolveRequestedRenderer(int configuredRenderer)
 {
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    if (ShouldForceVulkanComputeRendererFromEnv())
-        return renderer3D_Vulkan;
     if (ShouldForceVulkanRendererFromEnv())
         return renderer3D_Vulkan;
 #endif

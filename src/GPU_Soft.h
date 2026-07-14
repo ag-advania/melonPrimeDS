@@ -63,7 +63,6 @@ private:
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
     alignas(64) u32 StructuredPlane0[2][256];
     alignas(64) u32 StructuredPlane1[2][256];
     alignas(64) u32 StructuredControl[2][256];

@@ -66,8 +66,6 @@ public:
     explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D) noexcept;
     ~VulkanRenderer3D() override;
 
-    // MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 target-API adapters
-    // MELONPRIME_SAPPHIRE_VULKAN_FRAME_LIFECYCLE_A1
     bool Init() override { return EnsureVulkanReadyForValidation(); }
     void Reset() override { Reset(GPU); }
     void RenderFrame() override

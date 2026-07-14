@@ -59,7 +59,6 @@ void SoftRenderer::Reset()
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
     memset(StructuredPlane0, 0, sizeof(StructuredPlane0));
     memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
     memset(StructuredControl, 0, sizeof(StructuredControl));
@@ -84,7 +83,6 @@ void SoftRenderer::Reset()
 void SoftRenderer::Stop()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     GetRenderer3D().StopRenderer();
 #endif
     // clear framebuffers to black
@@ -117,7 +115,6 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
     if (auto* soft = dynamic_cast<SoftRenderer3D*>(&renderer3D))
         soft->SetThreaded(settings.Threaded);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
     renderer3D.SetRenderSettings(
         settings.Threaded, settings.BetterPolygons,
         settings.ScaleFactor, settings.HiresCoordinates);

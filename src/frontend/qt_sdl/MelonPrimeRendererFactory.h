@@ -59,15 +59,6 @@ int EvaluateActualRenderer(
     int normalizedRenderer,
     PresentationBackend presentation);
 
-// Migration alias only; remove after call-site audit in R26.
-inline std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
-    melonDS::NDS& nds,
-    int configuredRenderer,
-    RendererCreationResult& result)
-{
-    return CreateRenderer3DForSelection(nds, configuredRenderer, result);
-}
-
 #if defined(MELONPRIME_ENABLE_VULKAN)
 // Runtime capability flags for the Vulkan frontend pipeline (plan phase R0).
 // Every field must be derived from real, successfully-created resource

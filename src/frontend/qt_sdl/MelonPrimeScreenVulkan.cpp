@@ -193,11 +193,6 @@ bool ScreenPanelVulkan::configureSurface(
     return true;
 }
 
-bool ScreenPanelVulkan::captureVulkanFrame(const QString&)
-{
-    return false;
-}
-
 void ScreenPanelVulkan::captureHudSnapshotOnEmuThread()
 {
     // Never let a future GUI-side repaint call site turn this into a live RAM

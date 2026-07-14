@@ -223,13 +223,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         GPU3D_Vulkan.h
         GPU3D_TexcacheVulkan.cpp
         GPU3D_TexcacheVulkan.h
-        VulkanPerfStats.h
-        Vulkan_Phase12UiContract.cpp
-        Vulkan_Phase12UiContract.h
-        Vulkan_Phase13Stability.cpp
-        Vulkan_Phase13Stability.h
-        VulkanSupport.cpp
-        VulkanSupport.h)
+        VulkanPerfStats.h)
     target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_VULKAN=1)
     target_compile_definitions(core PRIVATE VK_NO_PROTOTYPES=1)
     if (WIN32)

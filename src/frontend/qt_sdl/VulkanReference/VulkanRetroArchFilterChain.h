@@ -1,5 +1,4 @@
 #pragma once
-// MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1: desktop no-op librashader adapter
 #include <string>
 #include <utility>
 #include <vector>

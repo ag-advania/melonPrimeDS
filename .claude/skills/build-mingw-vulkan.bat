@@ -28,14 +28,13 @@ set "SEARCH_DIR=%PARENT_DIR%"
 goto find_repo_root
 
 :repo_root_found
-if not exist "%REPO_ROOT_WIN%\src\frontend\qt_sdl\VideoSettingsDialog.cpp" (
-    echo [melonprime-build-vulkan] Missing VideoSettingsDialog.cpp
+if not exist "%REPO_ROOT_WIN%\src\frontend\qt_sdl\MelonPrimeVulkanSettings.h" (
+    echo [melonprime-build-vulkan] Missing R26 canonical Vulkan settings header.
     exit /b 1
 )
-findstr /C:"MELONPRIME_VULKAN_PHASE12_DYNAMIC_LAYOUT_V1" "%REPO_ROOT_WIN%\src\frontend\qt_sdl\VideoSettingsDialog.cpp" >nul
+findstr /C:"MELONPRIME_VULKAN_R26_CANONICAL_SETTINGS_V1" "%REPO_ROOT_WIN%\src\frontend\qt_sdl\MelonPrimeVulkanSettings.h" >nul
 if errorlevel 1 (
-    echo [melonprime-build-vulkan] Phase 12 UI patch is not applied.
-    echo [melonprime-build-vulkan] Apply Phase 12 Completion before building.
+    echo [melonprime-build-vulkan] R26 canonical Vulkan settings marker is missing.
     exit /b 1
 )
 
@@ -69,7 +68,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [melonprime-build-vulkan] Verified Vulkan-enabled Phase 12 build configuration.
+echo [melonprime-build-vulkan] Verified Vulkan-enabled R26 build configuration.
 exit /b 0
 
 :configure_lto_make

@@ -137,9 +137,7 @@ private:
 #endif
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    // MELONPRIME_VULKAN_PHASE12_UI_ACTIVATION_V2
     QPushButton* metroidSetVideoQualityToVulkan = nullptr;
-    QPushButton* metroidSetVideoQualityToVulkanCompute = nullptr;
     QPushButton* openVulkanVideoSettings = nullptr;
     void refreshVulkanPresetText();
 #endif
