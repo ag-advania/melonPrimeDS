@@ -59,6 +59,7 @@ public:
     bool initialize(melonDS::NDS& nds);
     void shutdown();
     void beginGeneration(u64 generation);
+    u64 advanceSurfaceGeneration();
 
     static bool captureCompletedSnapshot(
         const melonDS::GPU& gpu,
@@ -96,6 +97,7 @@ private:
         u64 frameId,
         MelonDSAndroid::SoftPackedFrameSnapshot& destination);
     static FrameQueuePolicy queuePolicy();
+    void synchronizeFrameReferencesLocked();
 
     mutable std::mutex stateMutex;
     melonDS::NDS* nds = nullptr;
@@ -105,6 +107,7 @@ private:
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
     MelonPrimeStructuredSnapshot lastCompleteSnapshot{};
     u64 activeGeneration = 0;
+    u64 activeSurfaceGeneration = 0;
     u64 lastSubmittedSerial = 0;
     bool initialized = false;
 };

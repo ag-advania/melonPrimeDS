@@ -67,13 +67,21 @@ bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
 void MelonPrimeVulkanFrontendSession::shutdown()
 {
     std::scoped_lock lock(stateMutex);
+    output.releaseTemporalFrameReferences();
+    frameQueue.synchronizeHistoryReferences({});
+    if (activePresenter != nullptr)
+    {
+        frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
+            return activePresenter->waitForFrameConsumption(frame, UINT64_MAX);
+        });
+    }
     frameQueue.clear();
     frameInputs.clear();
-    output.releaseTemporalFrameReferences();
     output.shutdown();
     lastCompleteSnapshot = {};
     activePresenter = nullptr;
     activeGeneration = 0;
+    activeSurfaceGeneration = 0;
     lastSubmittedSerial = 0;
     initialized = false;
     nds = nullptr;
@@ -89,8 +97,33 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
     lastSubmittedSerial = 0;
     lastCompleteSnapshot = {};
     frameInputs.clear();
-    frameQueue.requestPresentationResync();
     output.invalidateTemporalHistory();
+    frameQueue.synchronizeHistoryReferences({});
+    frameQueue.setActiveGenerations(activeGeneration, activeSurfaceGeneration);
+    frameQueue.requestPresentationResync();
+}
+
+u64 MelonPrimeVulkanFrontendSession::advanceSurfaceGeneration()
+{
+    std::scoped_lock lock(stateMutex);
+    activeSurfaceGeneration++;
+    if (activeSurfaceGeneration == 0)
+        activeSurfaceGeneration = 1;
+    frameInputs.clear();
+    frameQueue.setActiveGenerations(activeGeneration, activeSurfaceGeneration);
+    frameQueue.requestPresentationResync();
+    return activeSurfaceGeneration;
+}
+
+void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()
+{
+    frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
+        return activePresenter == nullptr
+            || activePresenter->waitForFrameConsumption(frame, 0);
+    });
+    frameQueue.synchronizeHistoryReferences([&](const Frame* frame) {
+        return output.isFrameReferencedAsPendingPreviousSource(frame);
+    });
 }
 
 bool MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
@@ -314,35 +347,17 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     }
 
     const FrameQueuePolicy policy = queuePolicy();
-    Frame* frame = nullptr;
-    std::array<Frame*, FRAME_QUEUE_SIZE> deferredFrames{};
-    size_t deferredFrameCount = 0;
-    for (size_t attempt = 0; attempt < FRAME_QUEUE_SIZE; ++attempt)
-    {
-        Frame* candidate = frameQueue.getRenderFrame(policy);
-        if (candidate == nullptr)
-            break;
-        const bool presentationComplete = activePresenter == nullptr
-            || activePresenter->waitForFrameConsumption(candidate, 0);
-        const bool retainedByTemporalHistory =
-            output.isFrameReferencedAsPendingPreviousSource(candidate);
-        if (presentationComplete && !retainedByTemporalHistory)
-        {
-            frame = candidate;
-            break;
-        }
-        deferredFrames[deferredFrameCount++] = candidate;
-    }
-    for (size_t index = 0; index < deferredFrameCount; ++index)
-        frameQueue.recycleRenderFrame(deferredFrames[index]);
+    synchronizeFrameReferencesLocked();
+    Frame* frame = frameQueue.getRenderFrame(policy);
     if (frame == nullptr)
         return false;
+    frameInputs.erase(frame);
 
     const int scale = static_cast<int>(frameView.Scale);
     const int width = 256 * scale;
     const int height = (192 + 2 + 192) * scale;
     frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
-    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
     SoftPackedFrameSnapshot packedSnapshot{};
@@ -357,6 +372,9 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
         && output.composeAndSubmitFrame(frame, inputs);
     if (!prepared)
     {
+        frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+            return output.isFrameReferencedAsPendingPreviousSource(candidate);
+        });
         frameQueue.discardRenderedFrame(frame);
         return false;
     }
@@ -364,6 +382,9 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     frameInputs[frame] = inputs;
     lastCompleteSnapshot = snapshot;
     lastSubmittedSerial = snapshot.frameSerial;
+    frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+        return output.isFrameReferencedAsPendingPreviousSource(candidate);
+    });
     frameQueue.pushRenderedFrame(frame, policy);
     return true;
 }
@@ -373,6 +394,7 @@ Frame* MelonPrimeVulkanFrontendSession::acquirePresentFrame()
     std::scoped_lock lock(stateMutex);
     if (!initialized)
         return nullptr;
+    synchronizeFrameReferencesLocked();
     return frameQueue.getPresentCandidate(queuePolicy(), std::nullopt);
 }
 
@@ -412,7 +434,12 @@ void MelonPrimeVulkanFrontendSession::unregisterPresenter(VulkanSurfacePresenter
 {
     std::scoped_lock lock(stateMutex);
     if (activePresenter == presenter)
+    {
+        frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
+            return presenter->waitForFrameConsumption(frame, UINT64_MAX);
+        });
         activePresenter = nullptr;
+    }
 }
 
 bool MelonPrimeVulkanFrontendSession::isInitialized() const

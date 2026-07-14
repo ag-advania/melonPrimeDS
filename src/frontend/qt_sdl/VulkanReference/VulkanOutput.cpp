@@ -1750,6 +1750,12 @@ bool VulkanOutput::createFrameResource(Frame* frame, u32 width, u32 height)
     }
 
     frame->backend = FrameBackend::VulkanImage;
+    frame->image = image;
+    frame->imageView = imageView;
+    frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    frame->compositionCompletionSemaphore =
+        useTimelineSemaphores ? timelineSemaphore : VK_NULL_HANDLE;
+    frame->renderFence = submitFence;
     frame->renderTimelineValue = 0;
 
     return true;
@@ -1825,6 +1831,11 @@ void VulkanOutput::destroyFrameResource(Frame* frame)
 
     if (frame != nullptr)
     {
+        frame->image = VK_NULL_HANDLE;
+        frame->imageView = VK_NULL_HANDLE;
+        frame->imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        frame->compositionCompletionSemaphore = VK_NULL_HANDLE;
+        frame->renderFence = VK_NULL_HANDLE;
         frame->renderTimelineValue = 0;
     }
 
@@ -1863,6 +1874,12 @@ bool VulkanOutput::ensureFrameResources(Frame* frame, u32 width, u32 height)
         if (resource.width == width && resource.height == height)
         {
             frame->backend = FrameBackend::VulkanImage;
+            frame->image = resource.image;
+            frame->imageView = resource.imageView;
+            frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            frame->compositionCompletionSemaphore =
+                useTimelineSemaphores ? timelineSemaphore : VK_NULL_HANDLE;
+            frame->renderFence = resource.submitFence;
             return true;
         }
 
@@ -1954,6 +1971,12 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
     if (frame != nullptr)
     {
         frame->backend = FrameBackend::VulkanImage;
+        frame->image = resource.image;
+        frame->imageView = resource.imageView;
+        frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        frame->compositionCompletionSemaphore =
+            shouldSignalTimelineSemaphore ? timelineSemaphore : VK_NULL_HANDLE;
+        frame->renderFence = resource.submitFence;
         if (signalTimeline)
             frame->renderTimelineValue = signalValue;
     }
@@ -2304,7 +2327,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     (void)gpu;
     (void)frontBuffer;
     if (!initialized || frame == nullptr || !frameView.Valid
-        || frame->source3dFrameSerial != frameView.FrameSerial
+        || frame->frameSerial != frameView.FrameSerial
         || frame->rendererGeneration != frameView.Generation
         || softPackedSnapshot.sourceFrameSerial != frameView.FrameSerial
         || softPackedSnapshot.rendererGeneration != frameView.Generation)
@@ -3997,7 +4020,7 @@ bool VulkanOutput::captureRenderer3dSnapshot(
     if (!initialized || frame == nullptr || !frameView.Valid)
         return false;
 
-    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);
@@ -4061,7 +4084,7 @@ bool VulkanOutput::buildCompositionInputs(
     VulkanCompositionInputs& outInputs) const
 {
     if (!initialized || frame == nullptr || scale < 1
-        || frame->source3dFrameSerial != frameView.FrameSerial
+        || frame->frameSerial != frameView.FrameSerial
         || frame->rendererGeneration != frameView.Generation)
         return false;
 
@@ -5001,7 +5024,7 @@ bool VulkanOutput::validateCompositorSubmission(Frame* frame, const melonDS::Vul
     if (!initialized || frame == nullptr || scale < 1 || !frameView.Valid)
         return false;
 
-    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);

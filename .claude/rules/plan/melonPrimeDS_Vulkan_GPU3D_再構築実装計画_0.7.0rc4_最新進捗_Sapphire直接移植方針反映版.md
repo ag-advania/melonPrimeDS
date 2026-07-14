@@ -585,6 +585,33 @@
 
 検証: 固定tag4ファイルのblob diff、accumulate shader差分0、compositor差分のABI adapter限定、descriptor 7 binding C++/GLSL一致、push constant size static assert、packed/3D serial-generation三者gate、target slotだけの事前wait、HOST_WRITE/transfer/compute/output barrier順、3D completion wait、null descriptor 0件、temporal参照frame除外、通常frameの`vkDeviceWaitIdle`/`vkQueueWaitIdle` 0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R19 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/frontend/qt_sdl/VulkanReference/FrameQueue.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h/.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp`
+   - `src/VulkanReferenceManifest.md`
+   - 本計画書
+2. 正式frame ownerとstate transition
+   - `MelonPrimeVulkanFrontendSession`所有の9-slot `FrameQueue`を唯一のreuse判断元とし、`Free → Rendering → Ready → AcquiredForPresentation → Previous / HistoryReferenced → Free`を`transitionFrameLocked()`へ集約した。Queue外で候補を一時退避して再投入していたR18 temporary loopを削除した。
+   - producer leaseを持つ`Rendering`だけがpublish/discard可能、GUI consumerは`Ready`またはcompletion済み`Previous`だけをacquire可能とした。latest-ready選択、deadline、drop cause、previous reuse、backlog/statisticsは固定tagのpolicyを維持する。
+3. frame identityとgeneration gate
+   - 各`Frame`へsource frame serial、renderer generation、surface generation、final `VkImage/VkImageView/layout`、composition semaphore/valueまたはfence、present timeline、queue stateを保持する。`VulkanOutput` resource生成・再利用・submit・破棄時に同じslot metadataを更新する。
+   - Queueはactive renderer/surface generationを保持し、publish時とpresent取得時に不一致を拒否する。renderer切替とsurface configure/resizeはgeneration更新とpresentation resyncを同じsession lock内で行い、旧surfaceのReady frameをGUIへ渡さない。
+4. history referenceとpresentation reference
+   - `historyReferences`と`presentationReferences`を別fieldにし、`VulkanOutput`のtop/bottom renderer/composed historyとpresenter consumption completionをQueueへ同期する。
+   - stale/drop/resync後もいずれかの参照が残るslotは`HistoryReferenced`へ退避し、両方が0になるまでfree queueへ戻さない。present中、history中、GUI lease中のslotはproducer steal対象にならない。
+5. producer/consumerとlifetime
+   - EmuThread producerは参照completionを同期してから1 slotだけを取得し、complete 2D/3D identityを構築・composeして`Ready` publishする。ScreenPanel GUI consumerはQueue acquire後だけpresentし、成功時commit、失敗時deferする。
+   - presenter unregister/shutdownでは保持中present completionを完了まで解放してからowner pointerを外す。surface configure成功時にsurface generationを単調増加し、FrameQueue resyncを行う。
+6. 参照実装との差分
+   - 固定tagのqueue policy、9-frame構成、latest/oldest選択、deadline/drop/reuse/statisticsを維持し、Android EGL/OpenGL resource fieldだけをdesktop Vulkan identityとR19明示ownership metadataへ置換した。
+   - VulkanOutputが実image/resource owner、FrameQueueがslot lifecycle owner、VulkanSurfacePresenterがpresent completion ownerというfrontend責務境界を維持し、core GPU/RendererへQueueを追加していない。
+
+検証: Queue stateの直接書換えが`transitionFrameLocked()`内部だけであること、active producerが`Rendering`だけ、GUI取得が`Ready/Previous`だけ、renderer/surface generation gate、latest-ready drop、history/presentation別参照、参照中slotのfree/steal禁止、旧R18候補退避loop削除、Frameへのimage/view/layout/completion metadata反映、core側FrameQueue所有0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

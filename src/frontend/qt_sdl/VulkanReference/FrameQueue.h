@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -36,6 +37,16 @@ enum class FrameBackend : u8 {
     VulkanImage = 1,
 };
 
+enum class FrameQueueState : u8
+{
+    Free = 0,
+    Rendering = 1,
+    Ready = 2,
+    AcquiredForPresentation = 3,
+    Previous = 4,
+    HistoryReferenced = 5,
+};
+
 struct FrameQueueStats
 {
     u64 RenderFramesAcquired = 0;
@@ -61,6 +72,9 @@ struct FrameQueueStats
     u64 DroppedFrameAgeTotalNs = 0;
     u64 DroppedFrameAgeMaxNs = 0;
     u64 DroppedFrameAgeSamples = 0;
+    u64 GenerationMismatchDropped = 0;
+    u64 ReferenceBlockedReuse = 0;
+    u64 StateTransitionFailures = 0;
 };
 
 struct Frame {
@@ -69,13 +83,28 @@ struct Frame {
     u32 width{};
     u32 height{};
     u64 frameId{};
-    u64 source3dFrameSerial{};
+    u64 frameSerial{};
     u64 rendererGeneration{};
+    u64 surfaceGeneration{};
+    VkImage image{VK_NULL_HANDLE};
+    VkImageView imageView{VK_NULL_HANDLE};
+    VkImageLayout imageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+    VkSemaphore compositionCompletionSemaphore{VK_NULL_HANDLE};
     VkFence renderFence{VK_NULL_HANDLE};
     VkFence presentFence{VK_NULL_HANDLE};
     u64 renderTimelineValue{};
     u64 presentTimelineValue{};
     u64 queuedAtNs{};
+
+    [[nodiscard]] FrameQueueState queueState() const { return state; }
+    [[nodiscard]] u32 historyReferenceCount() const { return historyReferences; }
+    [[nodiscard]] u32 presentationReferenceCount() const { return presentationReferences; }
+
+private:
+    friend class FrameQueue;
+    FrameQueueState state{FrameQueueState::Free};
+    u32 historyReferences{};
+    u32 presentationReferences{};
 };
 
 class FrameQueue
@@ -94,6 +123,9 @@ public:
     void discardRenderedFrame(Frame* frame);
     void requestPresentationResync();
     void requestFastForwardPresentationTransition();
+    void setActiveGenerations(u64 rendererGeneration, u64 surfaceGeneration);
+    void synchronizeHistoryReferences(const std::function<bool(const Frame*)>& isReferenced);
+    void synchronizePresentationCompletion(const std::function<bool(Frame*)>& isComplete);
     void clear();
     FrameQueueStats takeStatsSnapshotAndReset();
 
@@ -107,6 +139,11 @@ private:
     };
 
     static FrameQueuePolicy sanitizePolicy(FrameQueuePolicy policy);
+    bool transitionFrameLocked(Frame* frame, FrameQueueState expected, FrameQueueState next);
+    bool frameMatchesActiveGenerationsLocked(const Frame* frame) const;
+    void acquireRenderFrameLocked(Frame* frame);
+    void retireFrameLocked(Frame* frame);
+    void discardGenerationMismatchesLocked();
     void rebuildFreeQueueLocked();
     void dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip);
     void updateBacklogStatsLocked();
@@ -121,7 +158,10 @@ private:
     std::deque<Frame*> presentQueue{};
     Frame* previousFrame = nullptr;
     Frame* pendingPresentFrame = nullptr;
+    bool pendingPresentReusesPrevious = false;
     bool suppressPreviousFrameReuse = false;
+    u64 activeRendererGeneration = 0;
+    u64 activeSurfaceGeneration = 0;
     u64 nextFrameId = 1;
     FrameQueueStats stats{};
 };

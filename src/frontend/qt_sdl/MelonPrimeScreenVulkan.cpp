@@ -77,6 +77,7 @@ bool ScreenPanelVulkan::configureBasicSurface(int newWidth, int newHeight)
 
     configuredWidth = newWidth;
     configuredHeight = newHeight;
+    emuInstance->vulkanFrontendSession().advanceSurfaceGeneration();
     return true;
 }
 
