@@ -998,6 +998,8 @@ private:
     bool LastRendererInitSucceeded = true;
 #endif
 
+    // Core safety fix, intentionally shared with non-MelonPrime builds:
+    // capture metadata must be deterministic before the first renderer install.
     u16 VRAMCaptureBlockFlags[16] {};
 
     u16* VRAMCBF_ABG[0x20] {};

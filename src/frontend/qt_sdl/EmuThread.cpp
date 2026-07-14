@@ -17,6 +17,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
+#include <cstdarg>
 
 #include <optional>
 #include <vector>
@@ -47,6 +48,19 @@
 #include "EmuInstance.h"
 
 #include "MelonPrimeEmuThreadIncludes.inc"
+
+#ifdef MELONPRIME_DS
+static void RomBootTrace(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    fflush(stdout);
+}
+#else
+#define RomBootTrace(...) ((void)0)
+#endif
 
 using namespace melonDS;
 
@@ -426,14 +440,62 @@ void EmuThread::run()
 #else
             // Original melonDS path (no hook).
 #endif
+#ifdef MELONPRIME_DS
+            if (romBootTraceFirstRunFrame)
+                RomBootTrace("[RomBootTrace] first RunFrame begin\n");
+#endif
             nlines = emuInstance->nds->RunFrame();
+#ifdef MELONPRIME_DS
+            if (romBootTraceFirstRunFrame)
+            {
+                RomBootTrace("[RomBootTrace] first RunFrame complete lines=%u\n", nlines);
+                romBootTraceFirstRunFrame = false;
+            }
+#endif
         }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         // Producer-side snapshot and Vulkan submission stay at the emulation
         // frame completion point. The GUI/presenter never reads live GPU state.
-        emuInstance->submitVulkanFrontendFrame();
+        Platform::Log(Platform::LogLevel::Info,
+            "[VulkanSubmitTrace] frame gate backend=%s actual=%s(%d)\n",
+            MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
+            MelonPrime::VideoBackend::RendererName(videoRenderer),
+            videoRenderer);
+        fflush(stdout);
+        if (videoBackend
+            == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+        {
+#ifdef MELONPRIME_DS
+            if (romBootTraceFirstVulkanSubmit)
+                RomBootTrace("[RomBootTrace] first Vulkan frontend submit begin\n");
+#endif
+            Platform::Log(Platform::LogLevel::Info,
+                "[VulkanSubmitTrace] gate accepted\n");
+            fflush(stdout);
+            emuInstance->submitVulkanFrontendFrame();
+#ifdef MELONPRIME_DS
+            if (romBootTraceFirstVulkanSubmit)
+            {
+                RomBootTrace("[RomBootTrace] first Vulkan frontend submit complete\n");
+                romBootTraceFirstVulkanSubmit = false;
+            }
+#endif
+        }
+        else
+        {
+            Platform::Log(Platform::LogLevel::Info,
+                "[VulkanSubmitTrace] gate skipped: non-Vulkan presentation\n");
+            fflush(stdout);
+        }
+
+        Platform::Log(Platform::LogLevel::Info,
+            "[VulkanSubmitTrace] refreshActualRenderer begin\n");
+        fflush(stdout);
         refreshActualRenderer();
+        Platform::Log(Platform::LogLevel::Info,
+            "[VulkanSubmitTrace] refreshActualRenderer complete\n");
+        fflush(stdout);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -457,7 +519,18 @@ void EmuThread::run()
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::RunFrame);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
+#ifdef MELONPRIME_DS
+        if (romBootTraceFirstDrawScreen)
+            RomBootTrace("[RomBootTrace] first drawScreen begin\n");
+#endif
         emuInstance->drawScreen();
+#ifdef MELONPRIME_DS
+        if (romBootTraceFirstDrawScreen)
+        {
+            RomBootTrace("[RomBootTrace] first drawScreen complete\n");
+            romBootTraceFirstDrawScreen = false;
+        }
+#endif
 
 #ifdef MELONPRIME_DS
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Draw);
@@ -879,15 +952,20 @@ void EmuThread::handleMessages()
             break;
 
         case msg_EmuRun:
+            RomBootTrace("[RomBootTrace] msg_EmuRun begin\n");
             emuStatus = emuStatus_Running;
             emuPauseStack = emuPauseStackRunning;
             emuActive = true;
             emuInstance->audioEnable();
             emit windowEmuStart();
+            RomBootTrace("[RomBootTrace] windowEmuStart emitted\n");
 
 #ifdef MELONPRIME_DS
+            RomBootTrace("[RomBootTrace] MelonPrime OnEmuStart begin\n");
             melonPrime->OnEmuStart();
+            RomBootTrace("[RomBootTrace] MelonPrime OnEmuStart complete\n");
 #endif // MELONPRIME_DS
+            RomBootTrace("[RomBootTrace] msg_EmuRun complete\n");
             break;
 
         case msg_EmuPause:
@@ -978,18 +1056,32 @@ void EmuThread::handleMessages()
             break;
 
         case msg_BootROM:
+            RomBootTrace("[RomBootTrace] msg_BootROM begin\n");
+#ifdef MELONPRIME_DS
+            romBootTraceFirstRunFrame = true;
+            romBootTraceFirstVulkanSubmit = true;
+            romBootTraceFirstDrawScreen = true;
+#endif
             msgResult = 0;
+            RomBootTrace("[RomBootTrace] loadROM begin\n");
             if (!emuInstance->loadROM(msg.param.value<QStringList>(), true, msgError)) break;
+            RomBootTrace("[RomBootTrace] loadROM complete nds=%p\n",
+                static_cast<void*>(emuInstance->nds));
             assert(emuInstance->nds != nullptr);
 #ifdef MELONPRIME_DS
             // bootROM() queues msg_EmuRun only after this message completes. If
             // we boot over an active match, clear stale in-game pointers/hooks
             // now so the running loop cannot enter one more frame with old ROM
             // state before msg_EmuRun's normal OnEmuStart().
+            RomBootTrace("[RomBootTrace] ResetRuntimeStateForBoot begin\n");
             melonPrime->ResetRuntimeStateForBoot();
+            RomBootTrace("[RomBootTrace] ResetRuntimeStateForBoot complete\n");
 #endif // MELONPRIME_DS
+            RomBootTrace("[RomBootTrace] nds->Start begin\n");
             emuInstance->nds->Start();
+            RomBootTrace("[RomBootTrace] nds->Start complete\n");
             msgResult = 1;
+            RomBootTrace("[RomBootTrace] msg_BootROM complete\n");
             break;
 
         case msg_BootFirmware:
@@ -1348,7 +1440,6 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyVideoBackendSwitch
     waitMessage();
     return static_cast<MelonPrime::VideoBackend::PresentationBackend>(msgResult);
 }
-#endif
 
 MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
     MelonPrime::VideoBackend::RendererCreationResult&& result)
@@ -1359,7 +1450,9 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
     // R22 renderer transaction: old CurrentRenderer is stopped by
     // GPU::SetRenderer(), then the outer owner and the explicit Vulkan
     // Renderer3D override are installed before producer generation changes.
+    RomBootTrace("[RomBootTrace] outer SetRenderer begin\n");
     nds->SetRenderer(std::move(result.OuterRenderer));
+    RomBootTrace("[RomBootTrace] outer SetRenderer complete\n");
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (!nds->GPU.LastRendererInitializationSucceeded())
     {
@@ -1381,10 +1474,13 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
         normalizedRenderer == renderer3D_Vulkan
         && result.Presentation == MelonPrime::VideoBackend::PresentationBackend::Vulkan
         && result.Renderer3D != nullptr;
+    RomBootTrace("[RomBootTrace] Renderer3D install begin\n");
     nds->GPU.SetRenderer3D(std::move(result.Renderer3D));
+    RomBootTrace("[RomBootTrace] Renderer3D install complete\n");
     if (activateVulkanFrontend)
     {
         auto& session = emuInstance->vulkanFrontendSession();
+        RomBootTrace("[RomBootTrace] frontend session initialize begin\n");
         if (!session.initialize(*nds))
         {
             MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
@@ -1401,6 +1497,7 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
         {
             session.beginGeneration(nds->GPU.GPU3D.GetCurrentRendererGeneration());
         }
+        RomBootTrace("[RomBootTrace] frontend session initialize complete\n");
     }
 #endif
 
@@ -1472,14 +1569,25 @@ void EmuThread::updateRenderer()
     const int configuredRenderer = cfg.GetInt("3D.Renderer");
     const int normalizedRenderer =
         MelonPrime::VideoBackend::NormalizeRendererForPlatform(configuredRenderer);
+    RomBootTrace(
+        "[RomBootTrace] updateRenderer begin configured=%d last=%d nds=%p\n",
+        configuredRenderer,
+        lastVideoRenderer,
+        static_cast<void*>(nds));
     if (normalizedRenderer != lastVideoRenderer)
     {
+        RomBootTrace("[RomBootTrace] CreateRendererForSelection begin\n");
         auto result = MelonPrime::VideoBackend::CreateRendererForSelection(
             *nds, configuredRenderer, cfg.GetBool("Screen.UseGL"));
+        RomBootTrace("[RomBootTrace] CreateRendererForSelection complete\n");
+        RomBootTrace("[RomBootTrace] applyRendererCreation begin\n");
         applyRendererCreation(std::move(result));
+        RomBootTrace("[RomBootTrace] applyRendererCreation complete\n");
     }
 
+    RomBootTrace("[RomBootTrace] applyRendererSettings begin\n");
     applyRendererSettings();
+    RomBootTrace("[RomBootTrace] applyRendererSettings complete\n");
 
 #include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
 }
@@ -1503,6 +1611,8 @@ void EmuThread::refreshActualRenderer()
         MelonPrime::VideoBackend::PresentationBackendName(videoBackend));
     emit windowVideoRendererChanged(normalized, actual);
 }
+
+#endif
 
 void EmuThread::compileShaders()
 {

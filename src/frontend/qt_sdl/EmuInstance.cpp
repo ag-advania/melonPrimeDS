@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <cstdarg>
 
 #include <codecvt>
 #include <locale>
@@ -30,7 +31,7 @@
 
 #include <QDateTime>
 
-#if defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFrontendSession.h"
 #include "GPU3D_Vulkan.h"
 #endif
@@ -247,35 +248,111 @@ EmuInstance::~EmuInstance()
     }
 }
 
-#if defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 MelonPrimeVulkanFrontendSession& EmuInstance::vulkanFrontendSession()
 {
     return *vulkanFrontendSessionOwner;
 }
 
+static void VulkanSubmitTrace(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    fflush(stdout);
+}
+
 void EmuInstance::submitVulkanFrontendFrame()
 {
-    if (nds == nullptr || !vulkanFrontendSessionOwner)
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] entry this=%p nds=%p owner=%p\n",
+        static_cast<void*>(this),
+        static_cast<void*>(nds),
+        static_cast<void*>(vulkanFrontendSessionOwner.get()));
+
+    if (nds == nullptr)
+    {
+        VulkanSubmitTrace("[VulkanSubmitTrace] skip: nds=null\n");
         return;
+    }
+
+    if (!vulkanFrontendSessionOwner)
+    {
+        VulkanSubmitTrace("[VulkanSubmitTrace] skip: owner=null\n");
+        return;
+    }
 
     auto& gpu3D = nds->GPU.GPU3D;
-    if (!gpu3D.HasCurrentRenderer())
+
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] before HasCurrentRenderer generation=%llu\n",
+        static_cast<unsigned long long>(gpu3D.GetCurrentRendererGeneration()));
+
+    const bool hasCurrent = gpu3D.HasCurrentRenderer();
+
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] HasCurrentRenderer=%d\n",
+        hasCurrent ? 1 : 0);
+
+    if (!hasCurrent)
+    {
+        VulkanSubmitTrace("[VulkanSubmitTrace] skip: no override Renderer3D\n");
         return;
-    auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(&gpu3D.GetCurrentRenderer());
+    }
+
+    auto& current = gpu3D.GetCurrentRenderer();
+
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] current Renderer3D=%p\n",
+        static_cast<void*>(&current));
+
+    auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(&current);
+
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] Vulkan dynamic_cast=%p\n",
+        static_cast<void*>(renderer3D));
+
     if (renderer3D == nullptr)
+    {
+        VulkanSubmitTrace("[VulkanSubmitTrace] skip: current renderer is not Vulkan\n");
         return;
+    }
+
+    VulkanSubmitTrace("[VulkanSubmitTrace] session initialize begin\n");
 
     const u64 rendererGeneration = gpu3D.GetCurrentRendererGeneration();
     if (!vulkanFrontendSessionOwner->initialize(*nds))
+    {
+        VulkanSubmitTrace("[VulkanSubmitTrace] session initialize failed\n");
         return;
+    }
+
+    VulkanSubmitTrace("[VulkanSubmitTrace] session initialize complete\n");
+
     vulkanFrontendSessionOwner->beginGeneration(rendererGeneration);
 
+    VulkanSubmitTrace("[VulkanSubmitTrace] capture snapshot begin\n");
+
     MelonPrimeStructuredSnapshot snapshot{};
-    if (MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
-            nds->GPU, rendererGeneration, snapshot))
+    const bool captured = MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
+        nds->GPU, rendererGeneration, snapshot);
+
+    VulkanSubmitTrace(
+        "[VulkanSubmitTrace] capture snapshot result=%d\n",
+        captured ? 1 : 0);
+
+    if (captured)
     {
-        (void)vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D, snapshot);
+        const bool submitted =
+            vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D, snapshot);
+
+        VulkanSubmitTrace(
+            "[VulkanSubmitTrace] submitCompletedFrame result=%d\n",
+            submitted ? 1 : 0);
     }
+
+    VulkanSubmitTrace("[VulkanSubmitTrace] exit\n");
 }
 
 #endif
@@ -1352,6 +1429,11 @@ void EmuInstance::syncRTC()
 
 bool EmuInstance::updateConsole() noexcept
 {
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info,
+        "[RomBootTrace] updateConsole begin nds=%p\n", static_cast<void*>(nds));
+    fflush(stdout);
+#endif
     // update the console type
     consoleType = globalCfg.GetInt("Emu.ConsoleType");
 
@@ -1394,10 +1476,18 @@ bool EmuInstance::updateConsole() noexcept
     auto arm7bios = loadARM7BIOS();
     if (!arm7bios)
         return false;
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] BIOS loaded\n");
+    fflush(stdout);
+#endif
 
     auto firmware = loadFirmware(consoleType);
     if (!firmware)
         return false;
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] firmware loaded\n");
+    fflush(stdout);
+#endif
 
 #ifdef JIT_ENABLED
     Config::Table jitopt = globalCfg.GetTable("JIT");
@@ -1465,6 +1555,10 @@ bool EmuInstance::updateConsole() noexcept
     }
 
     renderLock.lock();
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] renderLock acquired\n");
+    fflush(stdout);
+#endif
     if ((!nds) || (consoleType != nds->ConsoleType))
     {
         if (nds)
@@ -1473,14 +1567,33 @@ bool EmuInstance::updateConsole() noexcept
             delete nds;
         }
 
+#ifdef MELONPRIME_DS
+        Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] new NDS begin\n");
+        fflush(stdout);
+#endif
         if (consoleType == 1)
             nds = new DSi(std::move(dsiargs.value()), this);
         else
             nds = new NDS(std::move(ndsargs), this);
+#ifdef MELONPRIME_DS
+        Platform::Log(Platform::LogLevel::Info,
+            "[RomBootTrace] new NDS complete nds=%p\n", static_cast<void*>(nds));
+        fflush(stdout);
+        Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] initial NDS Reset begin\n");
+        fflush(stdout);
+#endif
 
         nds->Reset();
+#ifdef MELONPRIME_DS
+        Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] initial NDS Reset complete\n");
+        fflush(stdout);
+#endif
         loadRTCData();
         emuThread->updateVideoRenderer();
+#ifdef MELONPRIME_DS
+        Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] updateVideoRenderer queued\n");
+        fflush(stdout);
+#endif
     }
     else
     {
@@ -1508,16 +1621,32 @@ bool EmuInstance::updateConsole() noexcept
     }
 
     // loads the carts later -- to be sure that everything else is initialized
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] cart installation begin\n");
+    fflush(stdout);
+#endif
     nds->SetNDSCart(std::move(nextndscart));
     if (consoleType == 1)
         nds->EjectGBACart();
     else
         nds->SetGBACart(std::move(nextgbacart));
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] cart installation complete\n");
+    fflush(stdout);
+#endif
 
     renderLock.unlock();
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] renderLock release\n");
+    fflush(stdout);
+#endif
 
     loadCheats();
 
+#ifdef MELONPRIME_DS
+    Platform::Log(Platform::LogLevel::Info, "[RomBootTrace] updateConsole complete\n");
+    fflush(stdout);
+#endif
     return true;
 }
 

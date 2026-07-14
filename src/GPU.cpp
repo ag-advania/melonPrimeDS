@@ -333,6 +333,9 @@ void GPU::DoSavestate(Savestate* file) noexcept
 
 void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
+    // Core safety fix, intentionally shared with non-MelonPrime builds:
+    // the first SetRenderer() call occurs before an existing renderer has been
+    // installed. Do not attempt to synchronize captures through a null renderer.
     if (Rend)
         SyncAllVRAMCaptures();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)

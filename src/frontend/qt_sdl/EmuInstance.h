@@ -155,7 +155,7 @@ public:
     EmuThread* getEmuThread() { return emuThread; }
     melonDS::NDS* getNDS() { return nds; }
 
-#if defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     MelonPrimeVulkanFrontendSession& vulkanFrontendSession();
     void submitVulkanFrontendFrame();
 #endif

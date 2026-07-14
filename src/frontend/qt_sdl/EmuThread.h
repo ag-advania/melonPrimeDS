@@ -252,6 +252,11 @@ private:
 #endif
     int videoRenderer;
     bool videoSettingsDirty;
+#ifdef MELONPRIME_DS
+    bool romBootTraceFirstRunFrame = true;
+    bool romBootTraceFirstVulkanSubmit = true;
+    bool romBootTraceFirstDrawScreen = true;
+#endif
 };
 
 #endif // EMUTHREAD_H
