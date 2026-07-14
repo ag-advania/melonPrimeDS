@@ -439,6 +439,31 @@
 
 検証: 2 shader sourceの固定commit正規化diff 0件、blend factor/op、32通常＋16 bg-zero variant、depth compare/write、W/Z index、`NOT_EQUAL`/`REPLACE`、`0x7F` polygon-ID mask、`0x80` shadow mask、bg-zero `EQUAL`/`INVERT`、NeedOpaque先行、source-order drawを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R14 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - 本計画書（shadow実装本体は固定Sapphire codeが既に完備していたため、独自source差分を追加していない）
+2. Sapphire直接移植conformance
+   - shadow mask／self reject／blendに使用するgraphics raster/no-color shaderは固定core commitとの正規化diff 0件である。
+   - `GraphicsShadowMaskPipelines`、`GraphicsShadowClearPipelines`、`GraphicsShadowBlendPipelines`とbackground-alpha-zero variantを固定`createGraphicsPipelines()`ブロックのまま維持する。
+3. Shadow Mask
+   - accelerated frontendの`IsShadowMask`を`AcceleratedPolygonFlagShadowMask`へ保持し、source append時に`GraphicsShadowMaskDrawIndices`へ分類する。
+   - no-color pipelineはcolor/depth writeを無効化し、depth fail時の`VK_STENCIL_OP_REPLACE`でdynamic reference `0x80`をshadow bit 7へ設定する。
+   - background-alpha-zero maskは参照どおり`EQUAL`＋depth-fail `INVERT`を使用し、lower polygon-ID bitsを保持する。
+4. Self Reject／bit clear／Shadow Blend
+   - `GraphicsShadowClearPipelines`はshadow polygon自身のlower 6-bit poly IDを`EQUAL`比較し、depth pass時の`ZERO`をwrite mask `0x80`へ限定してself-shadow bitだけを消す。
+   - pass境界の`GraphicsStencilBitClearPipeline`もcompare/write mask `0x80`だけでfull-screen clearし、depth/stencil image全体やlower ID bitsを破壊しない。
+   - shadow bitが残るpixelだけ`GraphicsShadowBlendPipelines`へ通し、通常／replace blend、W/Z、depth compare/write、fog、background-alpha-zero variantをR13と同じ参照indexで選ぶ。
+   - blend後のreference `0xC0 | polyId`、compare mask `0x80`、write mask `0x7F`によりshadow bitとtranslucent IDを別管理する。
+5. draw order
+   - `GraphicsShadowMaskDrawIndices`／`GraphicsShadowDrawIndices`はscene source append順で生成し、CPU bitmapや別sortを作らない。
+   - active graphics passはmask、self reject/clear、blendの参照順を保持し、shadowを通常translucent一回描画へ縮退させない。
+6. 参照実装との差分
+   - R14のshader、pipeline state、stencil op/mask、draw順にはMelonPrime独自差分を追加していない。
+   - R8～R13のcontext ring、immutable scene state、scaled depth/stencil attachmentを外側adapterとして使用する。
+
+検証: shader固定commit正規化diff 0件、shadow flags/list、mask color/depth write off、depth-fail `REPLACE`、self-reject `EQUAL`/`ZERO`、bit-7限定clear、shadow blend `0x80`/`0x7F` mask、bg-zero variant、source orderを静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論
