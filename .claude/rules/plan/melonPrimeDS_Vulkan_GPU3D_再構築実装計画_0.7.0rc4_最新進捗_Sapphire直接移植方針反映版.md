@@ -387,6 +387,31 @@
 
 検証: `ClearGpuState`の全field capture、clear planeの4 attachment値、bitmap enable、VRAM base、X/Y offset wrap、RGBA/depth/fog/poly ID decode、full-screen clear pipeline、固定clear shader正規化diff 0件、slot別generation hit/miss、reset/recreate invalidation、Qt/Software/QImage依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R12 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - 本計画書（実装本体は固定Sapphire codeが既に完備していたため、独自source差分を追加していない）
+2. Sapphire直接移植conformance
+   - `GPU3D_Vulkan_GraphicsRasterShader.vert/.frag`と`GPU3D_Vulkan_GraphicsNoColorShader.frag`は固定core commitとの正規化diff 0件で、texture sample、vertex color combine、toon/highlight、alpha evaluation/test、depth、color/attribute/poly ID/fog出力順を原文のまま維持する。
+   - opaque pipeline作成、fragment-depth variant、fast modulate/toon/plain variant、opaque UI overlay pipeline、descriptor path、draw recordingは固定`GPU3D_Vulkan.cpp`の実装を正本としている。
+3. vertex ABIとupload
+   - `GraphicsVertexGpu`はposition/depth/reciprocal-W、UV、RGBA8、flags、texture layer/index/size/param、polygon attrを56 bytesで保持する。
+   - `static_assert`でsize 56、X offset 0、UV offset 16、color offset 24、flags offset 28、texture height offset 44をshader input ABIへ固定する。
+   - R8のcurrent `RenderContext` mapped vertex bufferへscene生成後に一括copyし、vertex/index bufferをpass内で再生成しない。
+4. opaque draw path
+   - `GPU3D_AcceleratedFrontend`が付けたW-buffer、depth equal、fog、texture、shade、coverage flagを固定pipeline selectionへ渡す。
+   - `GraphicsPolygons`へのappend順を保持し、texture/state sortを行わず、pipeline／descriptor／stencil stateが変わったときだけbindする。
+   - Color、Attr、Depth、DepthStencil attachmentを同じrender passでGPU生成し、SoftwareRenderer3D pixel loopやCPU ownership maskへ依存しない。
+5. NeedOpaque
+   - Sapphire原文どおり、translucentかつpolygon alpha 31のdrawだけへ`AcceleratedPolygonFlagNeedOpaquePass`を付ける。
+   - texture decodeの`IsTextureLayerOpaque()`結果をtriangle flagへ渡し、opaque texture／full alpha用fast pathと、alpha fragmentを残すNeedOpaque／translucent passを分離する。
+   - `GraphicsNeedOpaqueDrawIndices`はsource draw append時にだけ追加され、非隣接drawの結合・並べ替え・全translucentへの常時二重描画を行わない。
+6. 参照実装との差分
+   - R12のopaque algorithm、shader、pipeline family、NeedOpaque分類には新しいMelonPrime独自差分を追加していない。
+   - R7～R11で追加したscaled target、context ring、immutable scene/clear state、Volk/desktop contextだけを外側adapterとして使用する。
+
+検証: 3 shader sourceの固定commit正規化diff 0件、`GraphicsVertexGpu` field/offset assertion、opaque/fragment-depth/fast/UI pipeline存在、source-order append、NeedOpaque flag条件、texture opaque flag、draw command、Color/Attr/Depth/DepthStencil attachment、SoftwareRenderer3D/QImage依存0件を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論
