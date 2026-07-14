@@ -1,0 +1,43 @@
+{
+  "version": "1.2.4",
+  "markers": [
+    "MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5"
+  ],
+  "source_version": "1.2.0",
+  "target_branch": "highres_fonts_v3",
+  "target_head": "257f9e9ac2ef06a85df8af23d143bed95fc5d3d7",
+  "build_error_fix": "accept both A1 histories: legacy ownership callbacks present, or already removed by v1.1.15 cleanup",
+  "architecture": {
+    "renderer3d_owner": "GPU3D (A1 retained)",
+    "structured_2d_runtime_handoff": "ENABLED",
+    "structured_payload": [
+      "plane0",
+      "plane1",
+      "effect_control",
+      "native_2d_final",
+      "full_disp_cnt",
+      "master_brightness",
+      "engine_enabled",
+      "forced_blank",
+      "screens_enabled",
+      "screen_swap",
+      "frame_serial"
+    ],
+    "packed_gpu_upload": "ENABLED_HOST_VISIBLE_STORAGE_BUFFER",
+    "gpu_composition_input": "READY",
+    "gpu_composition_output_image": "ALLOCATED_2_LAYER_ARRAY",
+    "gpu_composition_descriptor_set": "READY",
+    "gpu_composition_pipeline_layout": "READY_WITH_32_BYTE_PUSH_CONSTANT_ABI",
+    "gpu_composition_command_pool": "READY",
+    "gpu_composition_command_buffer": "READY",
+    "gpu_composition_fence": "READY",
+    "gpu_to_cpu_readback_compatibility": "DISABLED",
+    "gpu_final_compositor": "NEXT_PHASE_SHADER_PIPELINE_AND_DISPATCH",
+    "zero_copy_qt_presenter": "NEXT_PHASE"
+  },
+  "real_windows_build": "NOT_RUN_BY_PACKAGE_AUTHOR",
+  "real_windows_runtime": "NOT_RUN_BY_PACKAGE_AUTHOR"
+}

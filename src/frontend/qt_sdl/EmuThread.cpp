@@ -1277,7 +1277,14 @@ void EmuThread::updateRenderer()
         MelonPrime::VideoBackend::BackendCreationReport report;
         auto renderer = MelonPrime::VideoBackend::CreateRendererForSelection(
             *nds, cfg.GetInt("3D.Renderer"), report);
+        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: stop the previous owner before constructing the new Vulkan Renderer3D.
         nds->SetRenderer(std::move(renderer));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        auto renderer3DOverride =
+            MelonPrime::VideoBackend::CreateRenderer3DOverrideForSelection(
+                *nds, cfg.GetInt("3D.Renderer"), report);
+        nds->GPU.SetRenderer3D(std::move(renderer3DOverride));
+#endif
 
         Platform::Log(Platform::LogLevel::Info,
             "[MelonPrime] video backend: requested=%s(%d) normalized=%s(%d) "

@@ -1,0 +1,628 @@
+{
+  "version": "1.1.6",
+  "marker": "MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1",
+  "created": "20260713_220531",
+  "repo": "C:\\Users\\Admin\\Documents\\git\\melonPrimeDS",
+  "entries": [
+    {
+      "path": "src/GPU3D_VulkanCompute.cpp",
+      "existed": true,
+      "sha256": "eca191b11e933829a9d4248a391fa5bf9257ad2200b357b630a455f0202ac055"
+    },
+    {
+      "path": "src/GPU3D_VulkanCompute.h",
+      "existed": true,
+      "sha256": "e97e45696a3dae20af6780452c5ba94125f419618dd21676ca02d71bcefbc205"
+    },
+    {
+      "path": "src/GPU_VulkanOutputRing.cpp",
+      "existed": true,
+      "sha256": "fc811409c804a0eac7c79254cddd12f1a6fa50ecd177d9386fc84ea67be4ed6a"
+    },
+    {
+      "path": "src/GPU_VulkanOutputRing.h",
+      "existed": true,
+      "sha256": "fd3daeafc175babec16198d4c16574b9edc072ce691f08d88c5ffcf3e98335ec"
+    },
+    {
+      "path": "src/Vulkan_RomScaleBridge.cpp",
+      "existed": true,
+      "sha256": "c48a1e5d62b6757b8aff5909eca3c3838555d3efa9e424974b454cd4dedb19d6"
+    },
+    {
+      "path": "src/Vulkan_RomScaleBridge.h",
+      "existed": true,
+      "sha256": "194b76c05d2650e8d0b0cc22e51f0888eb8df4232c2ae0867c8c38e22fddd542"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanNativeRaster.cpp",
+      "existed": true,
+      "sha256": "00fde16c0d1195aaf8248801fab871212a0e096dba641d17f75ae855d0c1cd9b"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanNativeRaster.h",
+      "existed": true,
+      "sha256": "fdb38b69a74f6d7da0e78b523809a00e2543d07a07d76d2e609fda0ea538eef7"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanClearBitmapBootstrap.cpp",
+      "existed": true,
+      "sha256": "b52e5102227888e35a3300752c3077133c7e9cac4ceaafbf8b44dec6f19ec55c"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanClearPlaneBootstrap.cpp",
+      "existed": true,
+      "sha256": "d37054afe05f8d19edf98d04e752c0e3d55b9479763bbd5f602107ee280a1e89"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanOpaqueBootstrap.cpp",
+      "existed": true,
+      "sha256": "f7758a993cedb382d7ee5c64a4bb2b15ebb2fe7810d5d0dd1900d078c378792f"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "93ec09993db1a2a09d7b8f1d80252b9e9609b773b2e0713aae16220b3369076f"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase11CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "30e5c8d296a2f8f2aabc2010e8a42a74722f00d031e85cfd5ee2fbedc85d2ae0"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "fd9137c061ccc8de08a11ad2efb36c4e13cc2e07f2fddf65eec82d40d33909d7"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase13CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "172dbdccb9621bcafeacd461184bc9dbb4259cdae93296611a077857c1b82cd8"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase8CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "5cc78108a6359efc15b66da54cb7f28cb8840e1d63e50c1dd947036b98ca3dbb"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase9CompletionBootstrap.cpp",
+      "existed": true,
+      "sha256": "640b47d9d142c6e634383df77e6e3a41bbacac6cd0aa15c60b57203f5f6d768e"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPolygonBatchBootstrap.cpp",
+      "existed": true,
+      "sha256": "509c73be598ee4f9f70f1d9a3bdce1a8a4f0977c2b483bd5dc612650a06e36bb"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanRasterBootstrap.cpp",
+      "existed": true,
+      "sha256": "9ccdd711832f6847ea3f2d8368f2dc0390a35060b8391551fdba0315d40a7edf"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanShadowBootstrap.cpp",
+      "existed": true,
+      "sha256": "bbc34f768407e0748faa59c8faa08392190fcde97b3c1e635aaea8aa3a52f617"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureCacheBootstrap.cpp",
+      "existed": true,
+      "sha256": "72e60f3fe77e1419f0089fcefdf6f3f843436a081846090495f7c6b499c0f091"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureDecodeBootstrap.cpp",
+      "existed": true,
+      "sha256": "dbf4b2651eb75d9d731be5d2da4f7738c7236a2b46088be9f1357a71fb795819"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTexturedPolygonBootstrap.cpp",
+      "existed": true,
+      "sha256": "8c7433d5db54ec162967b25ddb0e1fa088819e4e4aea51cf51b9a932532b7bd5"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureSamplingBootstrap.cpp",
+      "existed": true,
+      "sha256": "7242bec28a49217c06570c4fbb48c28ffc023fdcfc8ac01550e8885f710d7150"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureUploadRingBootstrap.cpp",
+      "existed": true,
+      "sha256": "235d50faf1ec812263e25f886d79857df5b10280407fdc4620f1114be6fde709"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanToonHighlightBootstrap.cpp",
+      "existed": true,
+      "sha256": "3089f0b2db9add99e35d9c225a2bbbbccdbfd725a99a239de798d50b7ccf51ed"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanToonHighlightDescriptorBootstrap.cpp",
+      "existed": true,
+      "sha256": "c11cb6e580986643d3a78b0a2ee844216351949c346b2fe84fcb08c1338cf0f2"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTranslucentBootstrap.cpp",
+      "existed": true,
+      "sha256": "b58aba77b89b065385d69de8ee489ea39984db2c9a053efdbb90e94610d89f72"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanVertexUploadBootstrap.cpp",
+      "existed": true,
+      "sha256": "e71e5bffa6d894f0fcdf769563d78abf8e9f734e2669bd3ae044f859c0ba4502"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanClearBitmapBootstrap.h",
+      "existed": true,
+      "sha256": "dc55570dc83ada96b7def95295c5543bf174206f0f832b23352346b31c5facba"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanClearPlaneBootstrap.h",
+      "existed": true,
+      "sha256": "709ac5c1201eccc08848678bd18f224cc5aeeb0333df5d2903b05abcab52ba21"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanOpaqueBootstrap.h",
+      "existed": true,
+      "sha256": "00f86991392c79a28e62c660233ee7965dd857457f641c34e7159bcc7825d61e"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase10CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "f3745eb254d693fa900870e9ba0e12a1986ac18eceab1535ef7acfcb2c3a0baa"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase11CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "1dd0881b8c8f4fad27c1820f3274366013f0313e460f31efbc17c49c71be099e"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase12CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "9cff0bf9983bfc70468f42bd0a58034b533f2cf314d0e23e95b0772ab7ea2ea4"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase13CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "c1f8734b588a4dd80a4d85de6a6a7f7fc860aa48599113e2be0a0f831142275d"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase8CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "92d8ebc84a636e7b85851f73fcb13bdc476034816bd70887b316324559caf9b3"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPhase9CompletionBootstrap.h",
+      "existed": true,
+      "sha256": "a8f8ae657afeeda883bbd87ed7396e2075b741baa7a37255243a88ea0fdc4d5d"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanPolygonBatchBootstrap.h",
+      "existed": true,
+      "sha256": "e99b4ac59bde8ee57859a70b8ca8f31bd02ec113b3468d898a17e4eacca75510"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanRasterBootstrap.h",
+      "existed": true,
+      "sha256": "64be4ad0a18b188ca44aaa1474b67ab706e18f3d4ad75fe60e46974934fe586f"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanShadowBootstrap.h",
+      "existed": true,
+      "sha256": "076f9a04d71e2a94355698f7c8ff6428c1290826ae493be1a419e88fbcc6a8e9"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureCacheBootstrap.h",
+      "existed": true,
+      "sha256": "0c639626791e1dd0cfbf7277b946d5a50baa7f6807eeb53a5c852373a840ee8a"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureDecodeBootstrap.h",
+      "existed": true,
+      "sha256": "e397b87d81f24415d58b1be2d93ee1387a5582d78a6f4839417230024119aaf6"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTexturedPolygonBootstrap.h",
+      "existed": true,
+      "sha256": "7a4846eb218e48df82641abf51c300dd53837aa2c6fef5e8aad660a0393e2f99"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureSamplingBootstrap.h",
+      "existed": true,
+      "sha256": "2ec8f95c597ab00a5fe696f5e677d2a6837a064db3d1dedb9beff50604917094"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTextureUploadRingBootstrap.h",
+      "existed": true,
+      "sha256": "4f767f44326b2a19b2d287f461b03b1125c70f05c7681e6db262795672e37cb6"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanToonHighlightBootstrap.h",
+      "existed": true,
+      "sha256": "174d65e174de5bc8e5b00219413c40afeb9337097e2262f0e3fb71bbbb1590d3"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanToonHighlightDescriptorBootstrap.h",
+      "existed": true,
+      "sha256": "386b0c852a6ee4c360159569c9cfc3b9e22e48942eef0d79095232590acb851b"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanTranslucentBootstrap.h",
+      "existed": true,
+      "sha256": "7c41c16d9ac130f12910e38388a7784dd1601707e4b5af391a08d3ecac937021"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeVulkanVertexUploadBootstrap.h",
+      "existed": true,
+      "sha256": "32241b732aaf8c329efad8db3b88a078bac7bb5b3cf06452e7b139346061f4ea"
+    },
+    {
+      "path": "src/GPU_Soft.h",
+      "existed": true,
+      "sha256": "833b9490c460fb749d1110441acaca2d2505a49400732194fbd9cef4031ff15f"
+    },
+    {
+      "path": "src/GPU_Soft.cpp",
+      "existed": true,
+      "sha256": "03d198040ff5236c9fdc3ee6a2f22dd0b761b69bbfd48a0fda0416a9a75485fe"
+    },
+    {
+      "path": "src/GPU2D_Soft.h",
+      "existed": true,
+      "sha256": "0586b2015bc6ab25571f4ab531f1d6a525d7144c132a4367e8a39cedfc735f00"
+    },
+    {
+      "path": "src/GPU2D_Soft.cpp",
+      "existed": true,
+      "sha256": "b0e71fddb544a836f2fc01622a11e6700c5afbeaa9692647eb224fffa6aeb4f3"
+    },
+    {
+      "path": "src/GPU3D_Vulkan.cpp",
+      "existed": true,
+      "sha256": "239f0748498b867bcb223fd252d50d5918a1679b81f8adbf52e8ce90ee3d0242"
+    },
+    {
+      "path": "src/GPU3D_Vulkan.h",
+      "existed": true,
+      "sha256": "ea9f810ca8bdb88da6fe58537ae0c8f38ba4cf8dd8930b533cbe8d9d5d95b30c"
+    },
+    {
+      "path": "src/GPU3D_TexcacheVulkan.cpp",
+      "existed": true,
+      "sha256": "f5085500cb0636144011ad6305f0253a59435352dd5fc8eb8b7e7973f506d49e"
+    },
+    {
+      "path": "src/GPU3D_TexcacheVulkan.h",
+      "existed": true,
+      "sha256": "f183761f62030e7f53258730d4cccaa0cddac8860c2ee7631d2cf5cae624ef4c"
+    },
+    {
+      "path": "src/VulkanPerfStats.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_BinCombinedShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_BinCombinedShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_CalculateWorkOffsetsShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_CalculateWorkOffsetsShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_CaptureLineExportShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_CaptureLineExportShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_DepthBlendShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_DepthBlendShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_FinalPassShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_FinalPassShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsClearShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsClearShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsEdgeFogShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsEdgeShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsEdgeShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsFinalShader.vert",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsFogShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsFogShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsNoColorShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_GraphicsRasterShader.vert",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_InterpSpansShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_InterpSpansShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_ShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_SortWorkShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_SortWorkShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterBaseShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterBaseShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterCompatShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterCompatShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU3D_Vulkan_TriRasterShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/VulkanContext.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/VulkanContext.cpp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/VulkanDesktopCompat.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/VulkanDesktopCompat.cpp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/GPU_Vulkan.h",
+      "existed": true,
+      "sha256": "aa255547fd6156bb170233b40fd29ff19ae9aa4c48950fdc798cfec644e3e651"
+    },
+    {
+      "path": "src/GPU_Vulkan.cpp",
+      "existed": true,
+      "sha256": "9a9b780559150eab88d38e0144757326ed2a06841b36cb14bbf02a45bab096d7"
+    },
+    {
+      "path": "src/GPU3D.h",
+      "existed": true,
+      "sha256": "9f09c8ba485ebd2bf159977ba372059f779141270411c12bc087d24e629da283"
+    },
+    {
+      "path": "melonprime_vulkan_v3_structured_reference.patch",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanFilterMode.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanCompositorShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenterVertexShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenterFragmentShaderData.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/VulkanReference/VulkanRetroArchFilterChain.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeScreenVulkan.h",
+      "existed": true,
+      "sha256": "b1336c50fc8abba48d6d163c208fcd99a79afbf571dc8bb354ad77bff5708b9a"
+    },
+    {
+      "path": "src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp",
+      "existed": true,
+      "sha256": "3a363ec2a8746a212c9a1b2637d3315371c33c63d8c2a472ed73802819a102a0"
+    },
+    {
+      "path": "src/frontend/qt_sdl/CMakeLists.txt",
+      "existed": true,
+      "sha256": "8b8b07ade899ac43c82e081ff326d33fc59ea574aefed2faef9245b708d89ffc"
+    },
+    {
+      "path": "src/CMakeLists.txt",
+      "existed": true,
+      "sha256": "f162894f0fb00c84f74755f12de2e5beafb385007d5f3fe89db11c83337ce907"
+    },
+    {
+      "path": "src/VulkanReferencePortVersion.h",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/plan/Vulkan_参照実装ポート_実行計画_V0-V5.md",
+      "existed": true,
+      "sha256": "7249a371eea93b24b5336659b15b694f68d6c0ad3941c06e8efc35c5dd8bb409"
+    },
+    {
+      "path": "melonprime_vulkan_v0_v5_port_report.json",
+      "existed": false,
+      "sha256": null
+    }
+  ]
+}

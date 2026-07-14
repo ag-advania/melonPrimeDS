@@ -221,6 +221,13 @@ public:
     void DoSavestate(Savestate* file) noexcept;
 
     void SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    void SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept
+    {
+        GPU3D.SetCurrentRenderer(std::move(renderer));
+    }
+#endif
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
 
@@ -1007,9 +1014,29 @@ public:
     virtual void DrawScanline(u32 line) = 0;
     virtual void DrawSprites(u32 line) = 0;
 
-    virtual void Start3DRendering() { Rend3D->RenderFrame(); }
-    virtual void Finish3DRendering() { Rend3D->FinishRendering(); }
-    virtual void Restart3DRendering() { Rend3D->RestartFrame(); }
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    Renderer3D& GetRenderer3D() noexcept
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (Renderer3D* current = GPU.GPU3D.GetCurrentRendererOverride())
+            return *current;
+#endif
+        return *Rend3D;
+    }
+    const Renderer3D& GetRenderer3D() const noexcept
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (const Renderer3D* current = GPU.GPU3D.GetCurrentRendererOverride())
+            return *current;
+#endif
+        return *Rend3D;
+    }
+    virtual void Start3DRendering() { GetRenderer3D().RenderFrame(); }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void VCount1443D() { GetRenderer3D().VCount144(); }
+#endif
+    virtual void Finish3DRendering() { GetRenderer3D().FinishRendering(); }
+    virtual void Restart3DRendering() { GetRenderer3D().RestartFrame(); }
 
     virtual void VBlank() = 0;
     virtual void VBlankEnd() = 0;
@@ -1038,8 +1065,13 @@ public:
 #endif
     virtual void SwapBuffers() { BackBuffer ^= 1; }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual bool NeedsShaderCompile() { return GetRenderer3D().NeedsShaderCompile(); }
+    virtual void ShaderCompileStep(int& current, int& count) { GetRenderer3D().ShaderCompileStep(current, count); }
+#else
     virtual bool NeedsShaderCompile() { return false; }
     virtual void ShaderCompileStep(int& current, int& count) {}
+#endif
 
 protected:
     melonDS::GPU& GPU;

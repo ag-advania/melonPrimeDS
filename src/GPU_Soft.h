@@ -51,26 +51,6 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
-protected:
-    virtual void OnRendered3DLine(u32 line, const u32* pixels) noexcept
-    {
-        (void)line;
-        (void)pixels;
-    }
-
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    // Reports pixels where Engine A's final regular-display color is the
-    // unmodified 3D layer. Translucent/color-effect pixels remain unowned until
-    // Vulkan receives a complete 2D composition contract.
-    virtual void OnComposed3DOwnershipLine(
-        u32 line, const u8* ownership) noexcept
-    {
-        (void)line;
-        (void)ownership;
-    }
-#endif
-
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
@@ -79,9 +59,13 @@ private:
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    alignas(8) u8 Output3DOwnership[256];
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
+    alignas(64) u32 StructuredPlane0[2][256];
+    alignas(64) u32 StructuredPlane1[2][256];
+    alignas(64) u32 StructuredControl[2][256];
+    alignas(64) u32 StructuredNativeFinal[2][256];
+    u64 StructuredFrameSerial = 0;
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

@@ -53,18 +53,25 @@ void SoftRenderer::Reset()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
-#ifdef MELONPRIME_DS
-    // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-    memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
+    memset(StructuredPlane0, 0, sizeof(StructuredPlane0));
+    memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
+    memset(StructuredControl, 0, sizeof(StructuredControl));
+    memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
+    StructuredFrameSerial = 0;
 #endif
-
     Rend2D_A->Reset();
     Rend2D_B->Reset();
-    Rend3D->Reset();
+    GetRenderer3D().Reset();
 }
 
 void SoftRenderer::Stop()
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    GetRenderer3D().StopRenderer();
+#endif
     // clear framebuffers to black
     const size_t len = 256 * 192 * sizeof(u32);
     memset(Framebuffer[0][0], 0, len);
@@ -76,23 +83,30 @@ void SoftRenderer::Stop()
 
 void SoftRenderer::PreSavestate()
 {
-    auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
-    if (rend3d->IsThreaded())
+    auto rend3d = dynamic_cast<SoftRenderer3D*>(&GetRenderer3D());
+    if (rend3d && rend3d->IsThreaded())
         rend3d->SetupRenderThread();
 }
 
 void SoftRenderer::PostSavestate()
 {
-    auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
-    if (rend3d->IsThreaded())
+    auto rend3d = dynamic_cast<SoftRenderer3D*>(&GetRenderer3D());
+    if (rend3d && rend3d->IsThreaded())
         rend3d->EnableRenderThread();
 }
 
 
 void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 {
-    auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
-    rend3d->SetThreaded(settings.Threaded);
+    Renderer3D& renderer3D = GetRenderer3D();
+    if (auto* soft = dynamic_cast<SoftRenderer3D*>(&renderer3D))
+        soft->SetThreaded(settings.Threaded);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    renderer3D.SetRenderSettings(
+        settings.Threaded, settings.BetterPolygons,
+        settings.ScaleFactor, settings.HiresCoordinates);
+#endif
 }
 
 
@@ -115,30 +129,66 @@ void SoftRenderer::DrawScanline(u32 line)
     line = GPU.VCount;
     if (line < 192)
     {
-        // retrieve 3D output
-        Output3D = Rend3D->GetLine(line);
-        OnRendered3DLine(line, Output3D);
-
-#ifdef MELONPRIME_DS
-        // MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
-        memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        Renderer3D* structuredRenderer3D = nullptr;
+        if (GetRenderer3D().UsesStructured2DMetadata())
+        {
+            structuredRenderer3D = &GetRenderer3D();
+            if (line == 0)
+                structuredRenderer3D->BeginStructured2DFrame(StructuredFrameSerial + 1);
+        }
 #endif
+        // retrieve 3D output
+        Output3D = GetRenderer3D().GetLine(line);
 
         // draw BG/OBJ layers
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // A line can return early for disabled/forced-blank engines. Clear the
+        // staging pair first so stale metadata can never cross frame boundaries.
+        memset(StructuredPlane0, 0, sizeof(StructuredPlane0));
+        memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
+        memset(StructuredControl, 0, sizeof(StructuredControl));
+        memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
+#endif
         Rend2D_A->DrawScanline(line);
         Rend2D_B->DrawScanline(line);
-
-#ifdef MELONPRIME_DS
-        // VRAM/FIFO/off display modes do not expose Engine A's regular BG0/3D
-        // composition, even though the software 2D renderer prepared it.
-        if (((GPU.GPU2D_A.DispCnt >> 16) & 0x3) != 1)
-            memset(Output3DOwnership, 0, sizeof(Output3DOwnership));
-        OnComposed3DOwnershipLine(line, Output3DOwnership);
-#endif
 
         // draw the final screen output
         DrawScanlineA(line, dstA);
         DrawScanlineB(line, dstB);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (structuredRenderer3D)
+        {
+            memcpy(StructuredNativeFinal[0], dstA, sizeof(StructuredNativeFinal[0]));
+            memcpy(StructuredNativeFinal[1], dstB, sizeof(StructuredNativeFinal[1]));
+            for (u32 engine = 0; engine < 2; ++engine)
+            {
+                const GPU2D& engine2D = engine == 0 ? GPU.GPU2D_A : GPU.GPU2D_B;
+                SapphireStructured2DLine packet{};
+                packet.Plane0 = StructuredPlane0[engine];
+                packet.Plane1 = StructuredPlane1[engine];
+                packet.Control = StructuredControl[engine];
+                packet.NativeFinal = StructuredNativeFinal[engine];
+                packet.Line = line;
+                packet.Engine = engine;
+                packet.DispCnt = engine2D.DispCnt;
+                packet.MasterBrightness = engine == 0
+                    ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
+                packet.EngineEnabled = engine2D.Enabled;
+                packet.ForcedBlank = engine2D.ForcedBlank;
+                packet.ScreensEnabled = GPU.ScreensEnabled;
+                packet.ScreenSwap = GPU.ScreenSwap;
+                structuredRenderer3D->SubmitStructured2DLine(packet);
+            }
+            if (line == 191)
+            {
+                ++StructuredFrameSerial;
+                structuredRenderer3D->EndStructured2DFrame(
+                    StructuredFrameSerial, GPU.ScreenSwap);
+            }
+        }
+#endif
 
         // perform display capture if enabled
         if (GPU.CaptureEnable)

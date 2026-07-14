@@ -42,22 +42,20 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
-#ifdef MELONPRIME_DS
-// MELONPRIME_VULKAN_EXPLICIT_3D_OWNERSHIP_V1
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
 u32 SoftRenderer2D::ColorComposite(
-    int i, u32 val1, u32 val2, bool* direct3DOwnership) const
+    int i, u32 val1, u32 val2, u32* structuredControl) const
 #else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 #endif
 {
     u32 coloreffect = 0;
-    u32 eva, evb;
-
-#ifdef MELONPRIME_DS
+    u32 eva = 0, evb = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const u32 sourceFlag1 = val1 >> 24;
-    if (direct3DOwnership)
-        *direct3DOwnership = false;
 #endif
+
     u32 flag1 = val1 >> 24;
     u32 flag2 = val2 >> 24;
 
@@ -113,21 +111,28 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
+    u32 result = val1;
     switch (coloreffect)
     {
-        case 0:
-#ifdef MELONPRIME_DS
-            if (direct3DOwnership)
-                *direct3DOwnership = (sourceFlag1 & 0x40) != 0;
-#endif
-            return val1;
-        case 1: return ColorBlend4(val1, val2, eva, evb);
-        case 2: return ColorBrightnessUp(val1, GPU2D.EVY, 0x8);
-        case 3: return ColorBrightnessDown(val1, GPU2D.EVY, 0x7);
-        case 4: return ColorBlend5(val1, val2);
+        case 0: result = val1; break;
+        case 1: result = ColorBlend4(val1, val2, eva, evb); break;
+        case 2: result = ColorBrightnessUp(val1, GPU2D.EVY, 0x8); break;
+        case 3: result = ColorBrightnessDown(val1, GPU2D.EVY, 0x7); break;
+        case 4: result = ColorBlend5(val1, val2); break;
     }
 
-    return val1;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (structuredControl)
+    {
+        *structuredControl = SapphireStructured2DControlValidBit
+            | (coloreffect & SapphireStructured2DControlEffectMask)
+            | ((eva & 0x1Fu) << SapphireStructured2DControlEvaShift)
+            | ((evb & 0x1Fu) << SapphireStructured2DControlEvbShift)
+            | ((GPU2D.EVY & 0x1Fu) << SapphireStructured2DControlEvyShift)
+            | ((sourceFlag1 & 0x40u) ? SapphireStructured2DControlDirect3DBit : 0u);
+    }
+#endif
+    return result;
 }
 
 void SoftRenderer2D::DrawScanline(u32 line)
@@ -369,13 +374,12 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val1 = BGOBJLine[i];
         u32 val2 = BGOBJLine[256+i];
 
-#ifdef MELONPRIME_DS
-        bool direct3DOwnership = false;
-        dst[i] = ColorComposite(
-            i, val1, val2, &direct3DOwnership);
-        if (GPU2D.Num == 0)
-            Parent.Output3DOwnership[i] =
-                direct3DOwnership ? 0xFF : 0x00;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        u32 structuredControl = 0;
+        dst[i] = ColorComposite(i, val1, val2, &structuredControl);
+        Parent.StructuredPlane0[GPU2D.Num][i] = val1;
+        Parent.StructuredPlane1[GPU2D.Num][i] = val2;
+        Parent.StructuredControl[GPU2D.Num][i] = structuredControl;
 #else
         dst[i] = ColorComposite(i, val1, val2);
 #endif

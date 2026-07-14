@@ -1,0 +1,72 @@
+{
+  "version": "1.2.4",
+  "markers": [
+    "MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4",
+    "MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5"
+  ],
+  "created": "20260714-095725-832365",
+  "entries": [
+    {
+      "path": "src/GPU3D.h",
+      "existed": true,
+      "sha256": "c610a3ea955fc56f133b6d8044c2070ba5fba79d7362cfc406e6156d879f130d"
+    },
+    {
+      "path": "src/GPU_Soft.h",
+      "existed": true,
+      "sha256": "c3a534c5bd9dba3f1e1279233524247271c04d5e94521ca8536dbd20598e3864"
+    },
+    {
+      "path": "src/GPU_Soft.cpp",
+      "existed": true,
+      "sha256": "6f9d7218b2b15877b8df9c41340a5a2fe25bb6b83000fcecd483870e4b1d4537"
+    },
+    {
+      "path": "src/GPU2D_Soft.h",
+      "existed": true,
+      "sha256": "cdad7c5d9c6266cef2cf1b36628e5e31cc4bc6621795e8671a9602dfb3a1e79a"
+    },
+    {
+      "path": "src/GPU2D_Soft.cpp",
+      "existed": true,
+      "sha256": "bad3b15808daef16079efe8cff0a093b4a86f049deb58d119601dbe5ff76d874"
+    },
+    {
+      "path": "src/GPU3D_Vulkan.h",
+      "existed": true,
+      "sha256": "af32e37168ed7acda9726f66753ec8f77a95cdc9dedeaa33b25e9d6b5887e386"
+    },
+    {
+      "path": "src/GPU3D_Vulkan.cpp",
+      "existed": true,
+      "sha256": "b9c05b0b9cec0403a3abfd25954820e56f5e856de72cb204d7c68036862aed16"
+    },
+    {
+      "path": "src/GPU_Vulkan.h",
+      "existed": true,
+      "sha256": "ae6b78d0c737e4f9644cc51c25892bdcae03b6209aeb4f0af5f6c21192c4a2d1"
+    },
+    {
+      "path": "src/GPU_Vulkan.cpp",
+      "existed": true,
+      "sha256": "563d3c991049087e75aaf7414085f75d606f83f941055f07e3a170e3f5b63a7a"
+    },
+    {
+      "path": "src/frontend/qt_sdl/main.cpp",
+      "existed": true,
+      "sha256": "150ae2367b74dd4431039b11507630f9ef399d818ba02a0384141887558f7423"
+    },
+    {
+      "path": "src/VulkanReferencePortVersion.h",
+      "existed": true,
+      "sha256": "339b73348039a506ba895aa845837480864f8ba6c42463956f780de6e8b81947"
+    },
+    {
+      "path": "melonprime_sapphire_vulkan_a2_a3_a4_a5_report.json",
+      "existed": false,
+      "sha256": null
+    }
+  ]
+}

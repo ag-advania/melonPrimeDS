@@ -157,9 +157,9 @@ frontend: VulkanOutput.cpp (GPUコンポジタ 5,622行, VulkanCompositorShader.
 
 | Phase | 状態 | 日付 | メモ |
 |---|---|---|---|
-| V0 | 未着手 | — | |
-| V1 | 未着手 | — | |
-| V2 | 未着手 | — | |
-| V3 | 未着手 | — | |
-| V4 | 未着手 | — | |
-| V5 | 未着手 | — | |
+| V0 | ソースポート適用済み・ビルド／実機確認待ち | 2026-07-13 | MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 |
+| V1 | ソースポート適用済み・ビルド／実機確認待ち | 2026-07-13 | MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 |
+| V2 | ソースポート適用済み・ビルド／実機確認待ち | 2026-07-13 | MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 |
+| V3 | 参照差分監査済み・modern SoftRenderer統合待ち | 2026-07-13 | 構造化2Dは安全のため無効 |
+| V4 | ソースポート適用済み・ビルド／実機確認待ち | 2026-07-13 | MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 |
+| V5 | ソースポート適用済み・ビルド／実機確認待ち | 2026-07-13 | MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1 |

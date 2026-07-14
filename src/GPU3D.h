@@ -89,7 +89,7 @@ class GPU3D
 {
 public:
     GPU3D(melonDS::GPU& gpu) noexcept;
-    ~GPU3D() noexcept = default;
+    ~GPU3D() noexcept;
     void Reset() noexcept;
 
     void DoSavestate(Savestate* file) noexcept;
@@ -104,6 +104,13 @@ public:
     void CheckFIFODMA() noexcept;
 
     void VBlank() noexcept;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    void SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept;
+    [[nodiscard]] Renderer3D* GetCurrentRendererOverride() noexcept { return CurrentRenderer.get(); }
+    [[nodiscard]] const Renderer3D* GetCurrentRendererOverride() const noexcept { return CurrentRenderer.get(); }
+#endif
 
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
     [[nodiscard]] u16 GetRenderXPos() const noexcept { return RenderXPos; }
@@ -316,7 +323,43 @@ public:
 
     u32 FlushRequest = 0;
     u32 FlushAttributes = 0;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    std::unique_ptr<Renderer3D> CurrentRenderer;
+#endif
 };
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME_SAPPHIRE_VULKAN_STRUCTURED_2D_A2
+// CPU-produced DS 2D composition metadata. This is uploaded to the Vulkan
+// compositor; it is not a GPU-to-CPU readback path.
+struct SapphireStructured2DLine
+{
+    const u32* Plane0 = nullptr;
+    const u32* Plane1 = nullptr;
+    const u32* Control = nullptr;
+    // Native 256-wide Engine output is retained only for DS display modes that
+    // have no structured BG/OBJ pair (VRAM/FIFO/off/forced blank). It is CPU 2D
+    // source data, never a Vulkan GPU-to-CPU readback.
+    const u32* NativeFinal = nullptr;
+    u32 Line = 0;
+    u32 Engine = 0;
+    u32 DispCnt = 0;
+    u16 MasterBrightness = 0;
+    bool EngineEnabled = false;
+    bool ForcedBlank = false;
+    bool ScreensEnabled = false;
+    bool ScreenSwap = false;
+};
+
+inline constexpr u32 SapphireStructured2DControlEffectMask = 0x7u;
+inline constexpr u32 SapphireStructured2DControlEvaShift = 8u;
+inline constexpr u32 SapphireStructured2DControlEvbShift = 13u;
+inline constexpr u32 SapphireStructured2DControlEvyShift = 18u;
+inline constexpr u32 SapphireStructured2DControlDirect3DBit = 1u << 23u;
+inline constexpr u32 SapphireStructured2DControlValidBit = 1u << 31u;
+#endif
 
 class Renderer3D
 {
@@ -333,9 +376,30 @@ public:
     virtual void FinishRendering() {}
     virtual void RestartFrame() {};
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void SetRenderSettings(bool, bool, int, bool) {}
+#endif
+
     // return one scanline of the framebuffer, with X scroll applied
     // this is used in software renderers
     virtual u32* GetLine(int line) = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
+    virtual void VCount144() {}
+    virtual void SetupAccelFrame() {}
+    virtual void PrepareCaptureFrame() {}
+    virtual void BeginCaptureFrame() {}
+    virtual void SetCaptureScreenSwapHint(bool) {}
+    virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void BeginStructured2DFrame(u64) {}
+    virtual void SubmitStructured2DLine(const SapphireStructured2DLine&) {}
+    virtual void EndStructured2DFrame(u64, bool) {}
+#endif
+    virtual void Blit() {}
+    virtual void StopRenderer() {}
+#endif
+
 
     virtual bool NeedsShaderCompile() { return false; }
     virtual void ShaderCompileStep(int& current, int& count) {}

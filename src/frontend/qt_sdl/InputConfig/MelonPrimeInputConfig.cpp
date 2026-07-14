@@ -66,7 +66,7 @@
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "../MelonPrimeVulkanPhase12CompletionBootstrap.h"
+#include "../MelonPrimeVulkanUiCompat.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 #include "../MelonPrimeMetalFeatureCheck.h"

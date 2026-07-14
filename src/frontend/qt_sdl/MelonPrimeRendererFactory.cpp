@@ -60,7 +60,8 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
             report.fallbackReason =
                 "Vulkan raster was requested, but the ROM-visible compatibility bridge is unavailable";
         }
-        return std::make_unique<melonDS::VulkanRenderer>(nds, false);
+        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: the combined Vulkan : SoftRenderer wrapper is retired.
+        return std::make_unique<melonDS::SoftRenderer>(nds);
     }
     case renderer3D_VulkanCompute:
     {
@@ -72,7 +73,8 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
             report.fallbackReason =
                 "Vulkan Compute was requested, but the ROM-visible compatibility bridge is unavailable";
         }
-        return std::make_unique<melonDS::VulkanRenderer>(nds, true);
+        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: Renderer3D is created only after the previous renderer is stopped.
+        return std::make_unique<melonDS::SoftRenderer>(nds);
     }
 #endif
     default:
@@ -82,6 +84,37 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
         report.fallbackReason = "renderer ID is unavailable in this build";
         return std::make_unique<melonDS::SoftRenderer>(nds);
     }
+}
+
+std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
+    melonDS::NDS& nds,
+    int configuredRenderer,
+    BackendCreationReport& report)
+{
+    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
+    // MELONPRIME_SAPPHIRE_VULKAN_FACTORY_NAMESPACE_FIX_V1
+    const int normalized = NormalizeRendererForPlatform(
+        ResolveRequestedRenderer(configuredRenderer));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (normalized == renderer3D_Vulkan || normalized == renderer3D_VulkanCompute)
+    {
+        const bool computeRequested = normalized == renderer3D_VulkanCompute;
+        auto renderer3D = melonDS::CreateSapphireVulkanRenderer3D(
+            nds.GPU.GPU3D, computeRequested);
+        if (!renderer3D)
+        {
+            report.actual = renderer3D_Software;
+            report.failedStage = computeRequested
+                ? "Sapphire Vulkan Compute Renderer3D initialization"
+                : "Sapphire Vulkan Renderer3D initialization";
+            report.fallbackReason = "Vulkan Renderer3D initialization failed";
+        }
+        return renderer3D;
+    }
+#else
+    (void)nds;
+#endif
+    return nullptr;
 }
 
 } // namespace MelonPrime::VideoBackend

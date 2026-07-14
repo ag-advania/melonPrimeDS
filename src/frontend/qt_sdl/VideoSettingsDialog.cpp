@@ -37,7 +37,7 @@
 #include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeLocalization.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeVulkanPhase12CompletionBootstrap.h"
+#include "MelonPrimeVulkanUiCompat.h"
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"

@@ -1,0 +1,22 @@
+{
+  "version": "1.2.0",
+  "marker": "MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1",
+  "source_version": "1.1.14",
+  "target_branch": "highres_fonts_v3",
+  "target_head": "257f9e9ac2ef06a85df8af23d143bed95fc5d3d7",
+  "architecture": {
+    "vulkan_renderer3d_owner": "GPU3D",
+    "software_renderer_role": "2D composition plus fallback SoftRenderer3D; Vulkan no longer inherits SoftRenderer",
+    "old_vulkan_soft_inheritance_wrapper": "REMOVED",
+    "rejected_v1_1_15_cpu_readback": "REMOVED",
+    "frame_lifecycle": [
+      "BeginCaptureFrame",
+      "RenderFrame",
+      "VCount144",
+      "PrepareCaptureFrame",
+      "Blit"
+    ]
+  },
+  "real_windows_build": "NOT_RUN",
+  "real_windows_runtime": "NOT_RUN"
+}
