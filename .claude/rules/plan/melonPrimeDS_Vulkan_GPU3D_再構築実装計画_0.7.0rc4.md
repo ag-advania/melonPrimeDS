@@ -4,7 +4,7 @@
 **作成日:** 2026-07-14  
 **対象リポジトリ:** `ag-advania/melonPrimeDS`  
 **対象ブランチ:** `highres_fonts_v3`  
-**参照フロントエンド:** `SapphireRhodonite/melonDS-android` タグ `0.7.0.rc4`  
+**参照フロントエンド:** `SapphireRhodonite/melonDS-android` タグ `0.7.0.rc4` `https://github.com/SapphireRhodonite/melonDS-android/releases/tag/0.7.0.rc4`
 **参照コア:** `SapphireRhodonite/melonDS-android-lib` コミット `d77944275fa61f9b79cfcead2c3e98993429a023`  
 **対象状態:** 現在のVulkanレンダリング経路は破損しているものとして扱う  
 **既存計画:** 既存計画書の進行度、完了マーク、phase番号、contract versionを実装済み判定に使わない  
@@ -5764,3 +5764,27 @@ Native CPU presenter dependency = なし
 ```
 
 を一つの実行経路として接続し直し、現在の`SoftRenderer + GPU3D override + compositor duplicate + CPU presenter stub`を完全に置き換えることである。
+
+---
+
+# 40. 進捗トラッキング（実施ログ）
+
+参照リポジトリはローカルに固定commitでclone済みで確認した。
+
+```text
+melonDS-android-lib @ d77944275fa61f9b79cfcead2c3e98993429a023 （プラン記載のcommitと一致）
+melonDS-android     @ tag 0.7.0.rc4 （HEADがtagと一致）
+```
+
+| Phase | 状態 | 日付 | 結果メモ |
+|---|---|---|---|
+| R0 | 完了 | 2026-07-14 | `VulkanRendererShellContract`（`ContractVersion=44`のハードコードbool群）と、それを`ContractVersion==44`等の自己参照で検証するだけの`--melonprime-vulkan-renderer-shell-test`診断（`main.cpp`）を削除。`MelonPrimeRendererFactory.cpp`の`CreateRendererForSelection()`を修正し、Vulkan/VulkanCompute選択時は常に`report.actual=renderer3D_Software`+具体的な`failedStage`/`fallbackReason`を返すようにした（完全な`VulkanRenderer`（R3）が存在するまでVulkanを`actual`として報告しない、というR0 §5.3の規則どおり）。`GPU3D::CurrentRenderer`override自体（R2対象）とcomposition構造体（`SapphireVulkanComposition*`、R6対象）はスコープ外として温存し、範囲を越えなかった。`videoRenderer`の変更検知が`report.actual`ではなく`report.normalized`／configから再導出した値を使っていることを確認し、この修正が既存のrenderer切替検知ロジックを壊さないことを検証済み。 |
+| R0b | 完了 | 2026-07-14 | `.claude\skills\build-mingw.bat --vulkan --jobs 1`で`MELONPRIME_ENABLE_VULKAN=ON`の実configure/build/link試行。R0で触った3ファイルのコンパイルはすべて成功したが、最終リンクが`ld.exe: cannot find ...ltrans*.ltrans.o`＋`make.exe: cannot open shared object file: C:`で失敗（2回連続で再現）。原因を特定: `/mingw64/bin`に`make.exe`という名前のバイナリが存在せず（`mingw32-make.exe`のみ）、`-flto=auto`がLTRANS並列化のため内部で`make`をPATH解決すると、`/usr/bin/make.exe`（x86_64-pc-msys向けビルド、MSYS-native）に解決されてしまい、このクロスシェル呼び出し経路では起動時に失敗することを確認。`mingw32-make.exe`を`make.exe`としてshadowするscratch PATH経由で手動検証し、成功（`melonPrimeDS.exe`が生成され、`PE32+ executable ... for MS Windows`と確認）。恒久修正として`build-mingw.bat`と`build-mingw-existing.bat`の両方に、`build/.mingw-make-shim/make.exe`（`mingw32-make.exe`のコピー）を自動生成しPATH先頭に追加する処理を追加し、チェックイン済みスクリプト経由でも同じ修正後の手順で再度configure/build/linkを実行し、`melonPrimeDS.exe`生成を再確認した。ただし、外側の`make`をshadowしても、LTRANS個別unitのコンパイルは内部で`sh.exe`（`/usr/bin/sh.exe`、MSYS-native）をさらに1段spawnしており、そちらは同じ「cannot open shared object file: C:」に引っかかることがあり、ログに`make: [...] Error 256 (ignored)`が数件残った。これはGCCのLTOドライバがparallel LTRANS失敗unitを検出してシリアルにフォールバック処理するためで、最終的な`ld`リンクは成功し、55MBの完全なexeが生成されることを確認済み（サイズ・PE32+ヘッダとも前回の手動shim検証と一致）。つまりshimは「ビルドを完走させる」という目的は達成しているが、環境の根本原因（`/usr/bin/sh.exe`がこのクロスシェル呼び出し経路で不安定）はこのshimだけでは完全には解消していない。この環境で`MELONPRIME_ENABLE_VULKAN=ON`のexeが実際にリンク成功したのは、本セッションで確認した限り初めてである（既存進捗記録は軒並み「ビルド／実機確認待ち」のままだった）。 |
+| R1 | 調査完了・実装未着手 | 2026-07-14 | ローカル参照リポジトリと`diff`／`diff -bw`で実比較を実施。line count差だけでは`GPU3D_Vulkan.cpp`が参照比14519対13943行、`diff`が28464行（ほぼ全行不一致に見える）だったが、`diff -bw`（空白無視）では751行まで縮小し、実質的な意味的差分は約5%と判明。`GPU3D_Vulkan.h`も同様（2053→400行）。差分の実体を確認: (1) 意図的で正しい適応 — 参照の`#include <vulkan/vulkan.h>`に対しmelonPrimeDSは`#include <volk.h>`を使用（プランのVulkanDispatch方針どおり）。(2) 意図的で正しい適応 — 参照の`New()`/`Reset(GPU&)`等のシグネチャに対し、melonPrimeDSは`New(GPU3D&)`+zero-arg override（`Reset() override { Reset(GPU); }`）でラップしている。これは本物の`GPU3D.h`の`Renderer3D`基底が実際に zero-arg virtual（`virtual void Reset() = 0;`等）であることを確認した結果、reference Android版のRenderer3D基底とは異なるこのcore向けの必須な適応であり、バグではないと判断。(3) 本当の乖離 — `SapphireVulkanCompositionInput/Resources/CommandContext/DescriptorAbi/ShaderModule`という約110行の構造体一式が`GPU3D_Vulkan.h`にだけ存在し、参照には無い。これはコメント中で自己申告どおり「pipeline creation and dispatch remain deferred」であり、R0のような虚偽の完了主張ではないが、architecturally R6（compositionの責務をVulkanOutputへ戻す）で移設予定の内容と一致した。`GPU2D_Vulkan.cpp/h`（melonPrimeDS独自、参照に対応ファイルなし）、`VulkanContext.cpp/h`（参照800/94行に対しmelonPrimeDS47/36行——大幅な縮小版）、`GPU3D_TexcacheVulkan.cpp/h`（行数同一だが内容はwhitespace差込みでほぼ全行相違——要detailed diff）は次セッションでの継続調査対象として残す。 |
+
+## R0/R0b 検証済み事実（次セッション向けの前提）
+
+- `MELONPRIME_ENABLE_VULKAN=ON`のconfigure/build/linkは、`.claude\skills\build-mingw.bat --vulkan`（初回）または`.claude\skills\build-mingw-existing.bat`（増分）で、修正後は追加の手動PATH変更なしに成功する。
+- `build/.mingw-make-shim/make.exe`は`.gitignore`対象の`build/`配下にあるため、git管理には入らない（ビルドスクリプトが毎回自動生成する）。
+- Vulkan選択時、現在は`actual=Software`（正しい・意図的）。UIやログで「Vulkanが動いている」ように見える箇所があれば、それはR3（完全なVulkanRenderer）が無い現状では誤りである。
+- `GPU3D_Vulkan.cpp`/`.h`は「書き直し」ではなく「参照からの意味的差分約5%の適応版」。次のR1作業は全面ポートではなく、(a) `SapphireVulkanComposition*`のR6への切り出し、(b) `VulkanContext.cpp/h`の大幅な縮小箇所（800→47行、94→36行）が実際に必要な機能を欠いているかの精査、(c) `GPU3D_TexcacheVulkan`・`GPU2D_Vulkan`の詳細diffに絞れる。

@@ -86,10 +86,24 @@ echo [melonprime-build-existing] Preset: release-mingw-x86_64
 echo [melonprime-build-existing] Jobs: %JOBS%
 echo [melonprime-build-existing] Skipping CMake configure and vcpkg install.
 
+rem See build-mingw.bat for why this shim exists: MSYS2's /mingw64/bin has no
+rem file literally named make.exe, so gcc's -flto=auto falls through PATH to
+rem the MSYS-native /usr/bin/make.exe, which fails at exec time in this
+rem cross-shell chain and breaks the final LTO link ("cannot find
+rem ...ltrans*.ltrans.o"). Shadow a make.exe (copied from mingw32-make.exe)
+rem ahead of /usr/bin.
+set "MAKE_SHIM_DIR=%REPO_ROOT_WIN%\build\.mingw-make-shim"
+if not exist "%MAKE_SHIM_DIR%\make.exe" (
+    if not exist "%MAKE_SHIM_DIR%" mkdir "%MAKE_SHIM_DIR%" >nul 2>nul
+    if exist "C:\msys64\mingw64\bin\mingw32-make.exe" (
+        copy /Y "C:\msys64\mingw64\bin\mingw32-make.exe" "%MAKE_SHIM_DIR%\make.exe" >nul
+    )
+)
+
 if "%VERBOSE%"=="1" (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
 ) else (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build-existing] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build-existing] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
 )
 
 set "RESULT=%ERRORLEVEL%"

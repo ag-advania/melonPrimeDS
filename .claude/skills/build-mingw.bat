@@ -95,10 +95,27 @@ echo [melonprime-build] Jobs: %JOBS%
 echo [melonprime-build] Vulkan: %VULKAN_MODE%
 echo [melonprime-build] vcpkg jobs: %VCPKG_MAX_CONCURRENCY%
 
+rem MSYS2's /mingw64/bin ships mingw32-make.exe but no file literally named
+rem make.exe. GCC's -flto=auto internally looks up "make" on PATH to run the
+rem parallel LTRANS phase, so on a plain MSYS2 install that lookup falls
+rem through to the MSYS-native /usr/bin/make.exe (built for x86_64-pc-msys),
+rem which fails at exec time with "cannot open shared object file: C:" once
+rem invoked from this cross-shell chain, aborting the LTRANS phase before it
+rem writes any object files and making the final link fail with
+rem "ld.exe: cannot find ...ltrans*.ltrans.o". Shadow a make.exe (copied from
+rem mingw32-make.exe) ahead of /usr/bin so the LTO driver finds a working one.
+set "MAKE_SHIM_DIR=%REPO_ROOT_WIN%\build\.mingw-make-shim"
+if not exist "%MAKE_SHIM_DIR%\make.exe" (
+    if not exist "%MAKE_SHIM_DIR%" mkdir "%MAKE_SHIM_DIR%" >nul 2>nul
+    if exist "C:\msys64\mingw64\bin\mingw32-make.exe" (
+        copy /Y "C:\msys64\mingw64\bin\mingw32-make.exe" "%MAKE_SHIM_DIR%\make.exe" >nul
+    )
+)
+
 if "%VERBOSE%"=="1" (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
 ) else (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON %VULKAN_ARGS% && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
 )
 
 set "RESULT=%ERRORLEVEL%"

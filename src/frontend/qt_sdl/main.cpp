@@ -347,20 +347,6 @@ static std::optional<QString> melonPrimeOutputLeaseTestPath(int argc, char** arg
     return std::nullopt;
 }
 
-static std::optional<QString> melonPrimeVulkanRendererShellTestPath(int argc, char** argv)
-{
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    for (int i = 1; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--melonprime-vulkan-renderer-shell-test") == 0 && i + 1 < argc)
-            return QString::fromLocal8Bit(argv[i + 1]);
-    }
-#endif
-    (void)argc;
-    (void)argv;
-    return std::nullopt;
-}
-
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 {
@@ -427,79 +413,6 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
         {"stale_generation_rejected", staleGenerationRejected},
         {"frame_serial", frameSerial},
         {"generation", generation},
-    };
-    QFile file(outputPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return 2;
-    file.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
-    return passed ? 0 : 1;
-}
-#endif
-
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-static int runMelonPrimeVulkanRendererShellTest(const QString& outputPath)
-{
-    // MELONPRIME_SAPPHIRE_VULKAN_SHELL_DIAGNOSTIC_A5
-    const melonDS::VulkanRendererShellContract raster =
-        melonDS::DescribeVulkanRendererShell(false);
-    const melonDS::VulkanRendererShellContract compute =
-        melonDS::DescribeVulkanRendererShell(true);
-
-    const bool passed =
-        raster.ContractVersion == 44 && compute.ContractVersion == 44 &&
-        !raster.ComputeSelected && compute.ComputeSelected &&
-        !raster.UsesSoftwareCorrectnessBaseline &&
-        !compute.UsesSoftwareCorrectnessBaseline &&
-        raster.NativeVulkanRomScaleCompatibilityBridge &&
-        compute.NativeVulkanRomScaleCompatibilityBridge &&
-        raster.NativeVulkan3DImplemented &&
-        compute.NativeVulkan3DImplemented &&
-        raster.SapphireRenderer3DOwnership &&
-        compute.SapphireRenderer3DOwnership &&
-        raster.SapphireFrameLifecycle &&
-        compute.SapphireFrameLifecycle &&
-        raster.SapphireStructured2DMetadata &&
-        compute.SapphireStructured2DMetadata &&
-        raster.SapphireStructured2DLineMetadata &&
-        compute.SapphireStructured2DLineMetadata &&
-        raster.SapphirePacked2DGpuUpload &&
-        compute.SapphirePacked2DGpuUpload &&
-        raster.SapphireGpuCompositionInput &&
-        compute.SapphireGpuCompositionInput &&
-        raster.SapphireGpuCompositionResources &&
-        compute.SapphireGpuCompositionResources &&
-        raster.SapphireGpuCompositionDescriptors &&
-        compute.SapphireGpuCompositionDescriptors &&
-        raster.SapphireGpuCompositionPushConstants &&
-        compute.SapphireGpuCompositionPushConstants &&
-        raster.SapphireGpuCompositionCommandContext &&
-        compute.SapphireGpuCompositionCommandContext &&
-        !raster.SapphireGpuFinalComposition &&
-        !compute.SapphireGpuFinalComposition &&
-        !raster.SapphireZeroCopyPresenter &&
-        !compute.SapphireZeroCopyPresenter &&
-        !raster.CpuReadbackCompatibilityPath &&
-        !compute.CpuReadbackCompatibilityPath;
-
-    const QJsonObject result{
-        {"schema_version", 44},
-        {"passed", passed},
-        {"contract_version", static_cast<int>(raster.ContractVersion)},
-        {"raster_mode", QString::fromLatin1(raster.ModeName)},
-        {"compute_mode", QString::fromLatin1(compute.ModeName)},
-        {"renderer3d_ownership", raster.SapphireRenderer3DOwnership},
-        {"frame_lifecycle", raster.SapphireFrameLifecycle},
-        {"structured_2d_metadata", raster.SapphireStructured2DMetadata},
-        {"structured_2d_line_metadata", raster.SapphireStructured2DLineMetadata},
-        {"packed_2d_gpu_upload", raster.SapphirePacked2DGpuUpload},
-        {"gpu_composition_input", raster.SapphireGpuCompositionInput},
-        {"gpu_composition_resources", raster.SapphireGpuCompositionResources},
-        {"gpu_composition_descriptors", raster.SapphireGpuCompositionDescriptors},
-        {"gpu_composition_push_constants", raster.SapphireGpuCompositionPushConstants},
-        {"gpu_composition_command_context", raster.SapphireGpuCompositionCommandContext},
-        {"gpu_final_composition", raster.SapphireGpuFinalComposition},
-        {"zero_copy_presenter", raster.SapphireZeroCopyPresenter},
-        {"cpu_readback_compatibility", raster.CpuReadbackCompatibilityPath},
     };
     QFile file(outputPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -588,11 +501,6 @@ int main(int argc, char** argv)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto leaseOut = melonPrimeOutputLeaseTestPath(argc, argv); leaseOut.has_value())
         return runMelonPrimeOutputLeaseTest(*leaseOut);
-#endif
-
-#if defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (const auto shellOut = melonPrimeVulkanRendererShellTestPath(argc, argv); shellOut.has_value())
-        return runMelonPrimeVulkanRendererShellTest(*shellOut);
 #endif
 
 

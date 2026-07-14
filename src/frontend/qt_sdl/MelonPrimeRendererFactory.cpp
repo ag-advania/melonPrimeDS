@@ -50,32 +50,20 @@ std::unique_ptr<melonDS::Renderer> CreateRendererForSelection(
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-    {
-        const auto contract = melonDS::DescribeVulkanRendererShell(false);
-        // MELONPRIME_VULKAN_ROM_SCALE_FACTORY_V1
-        if (!contract.NativeVulkanRomScaleCompatibilityBridge)
-        {
-            report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan ROM-visible compatibility bridge";
-            report.fallbackReason =
-                "Vulkan raster was requested, but the ROM-visible compatibility bridge is unavailable";
-        }
-        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: the combined Vulkan : SoftRenderer wrapper is retired.
-        return std::make_unique<melonDS::SoftRenderer>(nds);
-    }
     case renderer3D_VulkanCompute:
-    {
-        const auto contract = melonDS::DescribeVulkanRendererShell(true);
-        if (!contract.NativeVulkanRomScaleCompatibilityBridge)
-        {
-            report.actual = renderer3D_Software;
-            report.failedStage = "Vulkan Compute ROM-visible compatibility bridge";
-            report.fallbackReason =
-                "Vulkan Compute was requested, but the ROM-visible compatibility bridge is unavailable";
-        }
-        // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1: Renderer3D is created only after the previous renderer is stopped.
+        // The outer renderer object is still SoftRenderer: there is no complete
+        // VulkanRenderer yet that owns 2D, 3D, final composition, and
+        // presentation (see the reconstruction plan's R2/R3). A separate
+        // GPU3D-level Renderer3D override may run the real Vulkan 3D raster
+        // path for internal validation (CreateRenderer3DOverrideForSelection),
+        // but until R3 lands a complete VulkanRenderer, `actual` must not
+        // report Vulkan: the visible output is Software end to end.
+        report.actual = renderer3D_Software;
+        report.failedStage = "Vulkan outer renderer";
+        report.fallbackReason =
+            "no complete VulkanRenderer exists yet (owning 2D/3D/output/presentation); "
+            "only a GPU3D-level Renderer3D override may be active for internal validation";
         return std::make_unique<melonDS::SoftRenderer>(nds);
-    }
 #endif
     default:
         report.normalized = renderer3D_Software;
@@ -91,8 +79,9 @@ std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection(
     int configuredRenderer,
     BackendCreationReport& report)
 {
-    // MELONPRIME_SAPPHIRE_VULKAN_RENDERER3D_OWNERSHIP_A1
-    // MELONPRIME_SAPPHIRE_VULKAN_FACTORY_NAMESPACE_FIX_V1
+    // GPU3D-level override used only for internal validation of the Vulkan 3D
+    // raster path (see plan phase R2 for why this override exists and R3 for
+    // the follow-up that removes it once VulkanRenderer owns Rend3D directly).
     const int normalized = NormalizeRendererForPlatform(
         ResolveRequestedRenderer(configuredRenderer));
 #if defined(MELONPRIME_ENABLE_VULKAN)
