@@ -57,7 +57,6 @@
 #include <sapphire/GPU3D_Vulkan_TriRasterBaseShaderData.h>
 #include <sapphire/GPU3D_Vulkan_TriRasterCompatShaderData.h>
 #include <sapphire/GPU3D_Vulkan_TriRasterShaderData.h>
-#include <sapphire/VulkanCompositorShaderData.h>
 #include "Platform.h"
 #include "VulkanContext.h"
 #include "version.h"
@@ -605,7 +604,6 @@ void VulkanRenderer3D::BeginStructured2DFrame(u64 frameSerial)
 {
     Structured2DPendingSerial = frameSerial;
     Structured2DFrameValid = false;
-    Structured2DGpuBufferValid = false;
     Structured2DLineReceived.fill(0);
 }
 
@@ -654,503 +652,14 @@ void VulkanRenderer3D::EndStructured2DFrame(u64 frameSerial, bool screenSwap)
     }
 
     Structured2DFrameValid = complete;
-    Structured2DGpuBufferValid = false;
     if (complete)
     {
         Structured2DFrameSerial = frameSerial;
         Structured2DScreenSwap = screenSwap;
-        // R3a: the desktop frontend is the sole consumer of this CPU-produced
-        // snapshot. The duplicate in-core upload/compositor remains present
-        // only for removal in R6 and must not run in parallel with it.
+        // The desktop frontend remains the sole consumer of this temporary
+        // CPU snapshot until R17 moves ownership to GPU2D SoftRenderer.
     }
     Structured2DPendingSerial = 0;
-}
-
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3
-void VulkanRenderer3D::packStructured2DFrame()
-{
-    for (u32 engine = 0; engine < 2; ++engine)
-    {
-        for (u32 line = 0; line < 192; ++line)
-        {
-            const size_t lineIndex = static_cast<size_t>(engine) * 192u + line;
-            const size_t sourceOffset = lineIndex * 256u;
-            const size_t packedOffset = lineIndex * Structured2DPackedStrideWords;
-            u32* destination = Structured2DPacked.data() + packedOffset;
-            std::memcpy(destination, Structured2DPlane0.data() + sourceOffset, 256u * sizeof(u32));
-            std::memcpy(destination + 256u, Structured2DPlane1.data() + sourceOffset, 256u * sizeof(u32));
-            std::memcpy(destination + 512u, Structured2DControl.data() + sourceOffset, 256u * sizeof(u32));
-            std::memcpy(destination + 768u, Structured2DNativeFinal.data() + sourceOffset, 256u * sizeof(u32));
-            destination[1024u] = Structured2DLineMeta[lineIndex];
-            destination[1025u] = Structured2DLineState[lineIndex];
-        }
-    }
-}
-
-bool VulkanRenderer3D::ensureStructured2DGpuBuffer()
-{
-    const VkDeviceSize requiredSize = sizeof(Structured2DPacked);
-    if (Device == VK_NULL_HANDLE)
-        return false;
-    if (Structured2DGpuBuffer != VK_NULL_HANDLE
-        && Structured2DGpuMapped != nullptr
-        && Structured2DGpuBufferSize == requiredSize)
-    {
-        return true;
-    }
-
-    destroyStructured2DGpuBuffer();
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = requiredSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-        | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(Device, &bufferInfo, nullptr, &Structured2DGpuBuffer) != VK_SUCCESS)
-        return false;
-
-    VkMemoryRequirements requirements{};
-    vkGetBufferMemoryRequirements(Device, Structured2DGpuBuffer, &requirements);
-    u32 memoryType = findMemoryType(
-        requirements.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    Structured2DGpuMemoryCoherent = memoryType != UINT32_MAX;
-    if (memoryType == UINT32_MAX)
-    {
-        memoryType = findMemoryType(
-            requirements.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    }
-    if (memoryType == UINT32_MAX)
-    {
-        destroyStructured2DGpuBuffer();
-        return false;
-    }
-
-    VkMemoryAllocateInfo allocationInfo{};
-    allocationInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocationInfo.allocationSize = requirements.size;
-    allocationInfo.memoryTypeIndex = memoryType;
-    if (vkAllocateMemory(Device, &allocationInfo, nullptr, &Structured2DGpuMemory) != VK_SUCCESS
-        || vkBindBufferMemory(Device, Structured2DGpuBuffer, Structured2DGpuMemory, 0) != VK_SUCCESS
-        || vkMapMemory(Device, Structured2DGpuMemory, 0, requiredSize, 0, &Structured2DGpuMapped) != VK_SUCCESS)
-    {
-        destroyStructured2DGpuBuffer();
-        return false;
-    }
-
-    Structured2DGpuBufferSize = requiredSize;
-    return true;
-}
-
-void VulkanRenderer3D::destroyStructured2DGpuBuffer() noexcept
-{
-    if (Device != VK_NULL_HANDLE && Structured2DGpuMapped != nullptr
-        && Structured2DGpuMemory != VK_NULL_HANDLE)
-    {
-        vkUnmapMemory(Device, Structured2DGpuMemory);
-    }
-    Structured2DGpuMapped = nullptr;
-    if (Device != VK_NULL_HANDLE && Structured2DGpuBuffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(Device, Structured2DGpuBuffer, nullptr);
-    if (Device != VK_NULL_HANDLE && Structured2DGpuMemory != VK_NULL_HANDLE)
-        vkFreeMemory(Device, Structured2DGpuMemory, nullptr);
-    Structured2DGpuBuffer = VK_NULL_HANDLE;
-    Structured2DGpuMemory = VK_NULL_HANDLE;
-    Structured2DGpuBufferSize = 0;
-    Structured2DGpuMemoryCoherent = false;
-    Structured2DGpuBufferValid = false;
-    Structured2DGpuFrameSerial = 0;
-}
-
-bool VulkanRenderer3D::uploadStructured2DFrameToGpu()
-{
-    if (!ensureStructured2DGpuBuffer())
-        return false;
-    std::memcpy(
-        Structured2DGpuMapped,
-        Structured2DPacked.data(),
-        sizeof(Structured2DPacked));
-    if (!Structured2DGpuMemoryCoherent)
-    {
-        VkMappedMemoryRange range{};
-        range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        range.memory = Structured2DGpuMemory;
-        range.offset = 0;
-        range.size = VK_WHOLE_SIZE;
-        if (vkFlushMappedMemoryRanges(Device, 1, &range) != VK_SUCCESS)
-            return false;
-    }
-    return true;
-}
-
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4
-bool VulkanRenderer3D::ensureSapphireCompositionResources()
-{
-    if (Device == VK_NULL_HANDLE
-        || !ColorImageInitialized
-        || ColorImage == VK_NULL_HANDLE
-        || ColorImageView == VK_NULL_HANDLE
-        || !Structured2DGpuBufferValid
-        || Structured2DGpuBuffer == VK_NULL_HANDLE)
-    {
-        return false;
-    }
-
-    const u32 width = std::max<u32>(1u, ColorImageWidth);
-    const u32 height = std::max<u32>(1u, ColorImageHeight);
-    if (SapphireCompositionImage != VK_NULL_HANDLE
-        && SapphireCompositionImageView != VK_NULL_HANDLE
-        && SapphireCompositionDescriptorSetLayout != VK_NULL_HANDLE
-        && SapphireCompositionDescriptorPool != VK_NULL_HANDLE
-        && SapphireCompositionDescriptorSet != VK_NULL_HANDLE
-        && SapphireCompositionPipelineLayout != VK_NULL_HANDLE
-        && SapphireCompositionSampler != VK_NULL_HANDLE
-        && SapphireCompositionWidth == width
-        && SapphireCompositionHeight == height)
-    {
-        return true;
-    }
-
-    destroySapphireCompositionResources();
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = SapphireCompositionFormat;
-    imageInfo.extent = {width, height, 1u};
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 2;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT
-        | VK_IMAGE_USAGE_SAMPLED_BIT
-        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-        | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    if (vkCreateImage(Device, &imageInfo, nullptr, &SapphireCompositionImage) != VK_SUCCESS)
-        return false;
-
-    VkMemoryRequirements memoryRequirements{};
-    vkGetImageMemoryRequirements(Device, SapphireCompositionImage, &memoryRequirements);
-    const u32 memoryType = findMemoryType(
-        memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (memoryType == UINT32_MAX)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    VkMemoryAllocateInfo allocationInfo{};
-    allocationInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocationInfo.allocationSize = memoryRequirements.size;
-    allocationInfo.memoryTypeIndex = memoryType;
-    if (vkAllocateMemory(Device, &allocationInfo, nullptr, &SapphireCompositionMemory) != VK_SUCCESS
-        || vkBindImageMemory(Device, SapphireCompositionImage, SapphireCompositionMemory, 0) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = SapphireCompositionImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-    viewInfo.format = SapphireCompositionFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 2;
-    if (vkCreateImageView(Device, &viewInfo, nullptr, &SapphireCompositionImageView) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_NEAREST;
-    samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    if (vkCreateSampler(Device, &samplerInfo, nullptr, &SapphireCompositionSampler) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(
-            Device, &layoutInfo, nullptr, &SapphireCompositionDescriptorSetLayout) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
-    poolSizes[0] = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
-    poolSizes[1] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
-    poolSizes[2] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    if (vkCreateDescriptorPool(
-            Device, &poolInfo, nullptr, &SapphireCompositionDescriptorPool) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    VkDescriptorSetAllocateInfo setInfo{};
-    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    setInfo.descriptorPool = SapphireCompositionDescriptorPool;
-    setInfo.descriptorSetCount = 1;
-    setInfo.pSetLayouts = &SapphireCompositionDescriptorSetLayout;
-    if (vkAllocateDescriptorSets(Device, &setInfo, &SapphireCompositionDescriptorSet) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(SapphireCompositionPushConstants);
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &SapphireCompositionDescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-    if (vkCreatePipelineLayout(
-            Device, &pipelineLayoutInfo, nullptr, &SapphireCompositionPipelineLayout) != VK_SUCCESS)
-    {
-        destroySapphireCompositionResources();
-        return false;
-    }
-
-    SapphireCompositionWidth = width;
-    SapphireCompositionHeight = height;
-    return true;
-}
-
-bool VulkanRenderer3D::updateSapphireCompositionDescriptors()
-{
-    if (Device == VK_NULL_HANDLE
-        || SapphireCompositionDescriptorSet == VK_NULL_HANDLE
-        || Structured2DGpuBuffer == VK_NULL_HANDLE
-        || ColorImageView == VK_NULL_HANDLE
-        || SapphireCompositionImageView == VK_NULL_HANDLE
-        || SapphireCompositionSampler == VK_NULL_HANDLE)
-    {
-        return false;
-    }
-
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = Structured2DGpuBuffer;
-    bufferInfo.offset = 0;
-    bufferInfo.range = Structured2DGpuBufferSize;
-
-    VkDescriptorImageInfo sourceInfo{};
-    sourceInfo.sampler = SapphireCompositionSampler;
-    sourceInfo.imageView = ColorImageView;
-    sourceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkDescriptorImageInfo outputInfo{};
-    outputInfo.imageView = SapphireCompositionImageView;
-    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    std::array<VkWriteDescriptorSet, 3> writes{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = SapphireCompositionDescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[0].pBufferInfo = &bufferInfo;
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = SapphireCompositionDescriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorCount = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].pImageInfo = &sourceInfo;
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = SapphireCompositionDescriptorSet;
-    writes[2].dstBinding = 2;
-    writes[2].descriptorCount = 1;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[2].pImageInfo = &outputInfo;
-    vkUpdateDescriptorSets(Device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
-    return true;
-}
-
-void VulkanRenderer3D::destroySapphireCompositionResources() noexcept
-{
-    if (Device != VK_NULL_HANDLE && SapphireCompositionPipelineLayout != VK_NULL_HANDLE)
-        vkDestroyPipelineLayout(Device, SapphireCompositionPipelineLayout, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionDescriptorPool != VK_NULL_HANDLE)
-        vkDestroyDescriptorPool(Device, SapphireCompositionDescriptorPool, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionDescriptorSetLayout != VK_NULL_HANDLE)
-        vkDestroyDescriptorSetLayout(Device, SapphireCompositionDescriptorSetLayout, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionSampler != VK_NULL_HANDLE)
-        vkDestroySampler(Device, SapphireCompositionSampler, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionImageView != VK_NULL_HANDLE)
-        vkDestroyImageView(Device, SapphireCompositionImageView, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionImage != VK_NULL_HANDLE)
-        vkDestroyImage(Device, SapphireCompositionImage, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionMemory != VK_NULL_HANDLE)
-        vkFreeMemory(Device, SapphireCompositionMemory, nullptr);
-
-    SapphireCompositionImage = VK_NULL_HANDLE;
-    SapphireCompositionMemory = VK_NULL_HANDLE;
-    SapphireCompositionImageView = VK_NULL_HANDLE;
-    SapphireCompositionSampler = VK_NULL_HANDLE;
-    SapphireCompositionDescriptorSetLayout = VK_NULL_HANDLE;
-    SapphireCompositionDescriptorPool = VK_NULL_HANDLE;
-    SapphireCompositionDescriptorSet = VK_NULL_HANDLE;
-    SapphireCompositionPipelineLayout = VK_NULL_HANDLE;
-    SapphireCompositionWidth = 0;
-    SapphireCompositionHeight = 0;
-    SapphireCompositionFrameSerial = 0;
-    SapphireCompositionResourcesReady = false;
-    SapphireCompositionDescriptorsReady = false;
-}
-
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
-bool VulkanRenderer3D::ensureSapphireCompositionCommandContext()
-{
-    if (Device == VK_NULL_HANDLE
-        || SapphireCompositionPipelineLayout == VK_NULL_HANDLE
-        || QueueFamilyIndex == UINT32_MAX)
-    {
-        return false;
-    }
-
-    if (SapphireCompositionCommandPool != VK_NULL_HANDLE
-        && SapphireCompositionCommandBuffer != VK_NULL_HANDLE
-        && SapphireCompositionFence != VK_NULL_HANDLE)
-    {
-        return true;
-    }
-
-    destroySapphireCompositionCommandContext();
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = QueueFamilyIndex;
-    if (vkCreateCommandPool(
-            Device, &poolInfo, nullptr, &SapphireCompositionCommandPool) != VK_SUCCESS)
-    {
-        destroySapphireCompositionCommandContext();
-        return false;
-    }
-
-    VkCommandBufferAllocateInfo commandInfo{};
-    commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    commandInfo.commandPool = SapphireCompositionCommandPool;
-    commandInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    commandInfo.commandBufferCount = 1;
-    if (vkAllocateCommandBuffers(
-            Device, &commandInfo, &SapphireCompositionCommandBuffer) != VK_SUCCESS)
-    {
-        destroySapphireCompositionCommandContext();
-        return false;
-    }
-
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    if (vkCreateFence(Device, &fenceInfo, nullptr, &SapphireCompositionFence) != VK_SUCCESS)
-    {
-        destroySapphireCompositionCommandContext();
-        return false;
-    }
-
-    return true;
-}
-
-void VulkanRenderer3D::destroySapphireCompositionCommandContext() noexcept
-{
-    if (Device != VK_NULL_HANDLE && SapphireCompositionFence != VK_NULL_HANDLE)
-        vkDestroyFence(Device, SapphireCompositionFence, nullptr);
-    if (Device != VK_NULL_HANDLE && SapphireCompositionCommandPool != VK_NULL_HANDLE)
-        vkDestroyCommandPool(Device, SapphireCompositionCommandPool, nullptr);
-
-    SapphireCompositionCommandPool = VK_NULL_HANDLE;
-    SapphireCompositionCommandBuffer = VK_NULL_HANDLE;
-    SapphireCompositionFence = VK_NULL_HANDLE;
-    SapphireCompositionCommandFrameSerial = 0;
-    SapphireCompositionCommandContextReady = false;
-}
-
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_EXACT_ABI_A7
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_ODR_FIX_V1
-bool VulkanRenderer3D::ensureSapphireCompositionShaderModule()
-{
-    if (Device == VK_NULL_HANDLE)
-        return false;
-    if (SapphireCompositionShaderModule != VK_NULL_HANDLE)
-        return true;
-
-    const auto* words = melonDS_android_vulkan_compositor_comp_spv;
-    const size_t byteCount = melonDS_android_vulkan_compositor_comp_spv_len;
-    if (byteCount < 20u || (byteCount & 3u) != 0u
-        || words[0] != 0x07230203u)
-    {
-        return false;
-    }
-
-    VkShaderModuleCreateInfo moduleInfo{};
-    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    moduleInfo.codeSize = byteCount;
-    moduleInfo.pCode = words;
-    if (vkCreateShaderModule(
-            Device, &moduleInfo, nullptr, &SapphireCompositionShaderModule) != VK_SUCCESS)
-    {
-        SapphireCompositionShaderModule = VK_NULL_HANDLE;
-        return false;
-    }
-
-    SapphireCompositionShaderSpirvBytes = byteCount;
-    return true;
-}
-
-void VulkanRenderer3D::destroySapphireCompositionShaderModule() noexcept
-{
-    if (Device != VK_NULL_HANDLE && SapphireCompositionShaderModule != VK_NULL_HANDLE)
-        vkDestroyShaderModule(Device, SapphireCompositionShaderModule, nullptr);
-    SapphireCompositionShaderModule = VK_NULL_HANDLE;
-    SapphireCompositionShaderSpirvBytes = 0;
-    SapphireCompositionShaderFrameSerial = 0;
-    SapphireCompositionShaderModuleReady = false;
 }
 
 VulkanRenderer3D::~VulkanRenderer3D()
@@ -1308,7 +817,8 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     const bool canReuseIdenticalFrame = FrameIdentical
         && Initialized
         && ColorImageInitialized
-        && HasColorTarget()
+        && ColorImage != VK_NULL_HANDLE
+        && ColorImageView != VK_NULL_HANDLE
         && ColorImageWidth == targetWidth
         && ColorImageHeight == targetHeight
         && !needsZeroGeometryRefresh;
@@ -2117,6 +1627,32 @@ std::vector<u32> VulkanRenderer3D::CaptureTopCoverageForDebug()
     return coverage;
 }
 
+Vulkan3DFrameView VulkanRenderer3D::GetVulkan3DFrameView() const noexcept
+{
+    Vulkan3DFrameView view{};
+    view.ColorImage = ColorImage;
+    view.ColorImageView = ColorImageView;
+    view.ColorLayout = VK_IMAGE_LAYOUT_GENERAL;
+    view.Width = ColorImageWidth;
+    view.Height = ColorImageHeight;
+    view.Scale = static_cast<u32>(std::max(ScaleFactor, 1));
+    view.FrameSerial = Structured2DFrameSerial;
+    view.Generation = GPU3D.GetCurrentRendererGeneration();
+    // Core rendering is fence-complete before this immutable view is exposed.
+    // R24 may replace this compatibility state with an explicit timeline value.
+    view.CompletionSemaphore = VK_NULL_HANDLE;
+    view.CompletionValue = 0;
+    view.Valid = ColorImageInitialized
+        && ColorImage != VK_NULL_HANDLE
+        && ColorImageView != VK_NULL_HANDLE
+        && ColorImageWidth != 0
+        && ColorImageHeight != 0
+        && Structured2DFrameValid
+        && Structured2DFrameSerial != 0
+        && view.Generation != 0;
+    return view;
+}
+
 bool VulkanRenderer3D::EnsureVulkanReadyForValidation()
 {
     if (!ensureInitialized())
@@ -2242,10 +1778,6 @@ bool VulkanRenderer3D::ensureInitialized()
 
 void VulkanRenderer3D::destroyVulkan()
 {
-    destroySapphireCompositionShaderModule();
-    destroySapphireCompositionCommandContext();
-    destroySapphireCompositionResources();
-    destroyStructured2DGpuBuffer();
     if (Device != VK_NULL_HANDLE)
         vkDeviceWaitIdle(Device);
 

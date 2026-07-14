@@ -368,6 +368,8 @@ void FrameQueue::validateRenderFrame(Frame* frame, int requiredWidth, int requir
         frame->width = 0;
         frame->height = 0;
         frame->frameId = 0;
+        frame->source3dFrameSerial = 0;
+        frame->rendererGeneration = 0;
         frame->renderFence = VK_NULL_HANDLE;
         frame->presentFence = VK_NULL_HANDLE;
         frame->renderTimelineValue = 0;
@@ -498,6 +500,8 @@ void FrameQueue::clear()
         frame.width = 0;
         frame.height = 0;
         frame.frameId = 0;
+        frame.source3dFrameSerial = 0;
+        frame.rendererGeneration = 0;
         frame.renderFence = VK_NULL_HANDLE;
         frame.presentFence = VK_NULL_HANDLE;
         frame.renderTimelineValue = 0;

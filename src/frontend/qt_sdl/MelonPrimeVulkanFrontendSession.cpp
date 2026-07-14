@@ -303,6 +303,14 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
         return false;
     }
 
+    const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
+    if (!frameView.Valid
+        || frameView.FrameSerial != snapshot.frameSerial
+        || frameView.Generation != snapshot.generation)
+    {
+        return false;
+    }
+
     const FrameQueuePolicy policy = queuePolicy();
     Frame* frame = nullptr;
     for (size_t attempt = 0; attempt < FRAME_QUEUE_SIZE; ++attempt)
@@ -320,10 +328,12 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     if (frame == nullptr)
         return false;
 
-    const int scale = std::max(renderer3D.GetScaleFactor(), 1);
+    const int scale = static_cast<int>(frameView.Scale);
     const int width = 256 * scale;
     const int height = (192 + 2 + 192) * scale;
     frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
+    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
     frame->renderTimelineValue = 0;
 
     SoftPackedFrameSnapshot packedSnapshot{};
@@ -331,9 +341,9 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     VulkanCompositionInputs inputs{};
     const bool prepared = output.ensureFrameResources(frame, width, height)
         && output.prepareFrameForPresentation(
-            frame, nds->GPU, 0, snapshot.screenSwap, packedSnapshot, renderer3D)
+            frame, nds->GPU, 0, snapshot.screenSwap, packedSnapshot, renderer3D, frameView)
         && output.buildCompositionInputs(
-            frame, renderer3D, scale, VulkanFilterMode::Nearest,
+            frame, frameView, scale, VulkanFilterMode::Nearest,
             false, false, false, inputs)
         && output.composeAndSubmitFrame(frame, inputs);
     if (!prepared)

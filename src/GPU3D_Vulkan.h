@@ -33,118 +33,22 @@ namespace melonDS
 {
 class GPU;
 
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3
-// GPU-resident input prepared for the next Sapphire-style composition pass.
-// The buffer is CPU-produced 2D metadata uploaded to Vulkan; no Vulkan image is
-// read back to the CPU.
-struct SapphireVulkanCompositionInput
+// Immutable 3D render result handed to the frontend compositor. The renderer
+// remains the image owner; VulkanOutput copies this view into a FrameQueue-owned
+// snapshot before publishing the frame.
+struct Vulkan3DFrameView
 {
-    VkImage Source3DImage = VK_NULL_HANDLE;
-    VkImageView Source3DImageView = VK_NULL_HANDLE;
-    VkBuffer Structured2DBuffer = VK_NULL_HANDLE;
-    VkDeviceSize Structured2DBufferSize = 0;
-    u32 PackedStrideWords = 0;
-    u32 ScreenCount = 0;
-    u32 NativeWidth = 0;
-    u32 NativeHeight = 0;
-    u32 Source3DWidth = 0;
-    u32 Source3DHeight = 0;
-    u64 FrameSerial = 0;
-    bool ScreenSwap = false;
-    bool Valid = false;
-};
-
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4
-// GPU-only resource set consumed by the upcoming final composition dispatch.
-// Resources are allocated and descriptors are populated in A4; no image is
-// copied back to the CPU and no final shader dispatch is claimed yet.
-struct SapphireVulkanCompositionResources
-{
-    VkImage OutputImage = VK_NULL_HANDLE;
-    VkImageView OutputImageView = VK_NULL_HANDLE;
-    VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
-    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkFormat Format = VK_FORMAT_UNDEFINED;
+    VkImage ColorImage = VK_NULL_HANDLE;
+    VkImageView ColorImageView = VK_NULL_HANDLE;
+    VkImageLayout ColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     u32 Width = 0;
     u32 Height = 0;
-    u32 Layers = 0;
-    u64 FrameSerial = 0;
-    bool ResourcesReady = false;
-    bool DescriptorsReady = false;
-};
-
-// MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
-// Command-recording context and push-constant ABI for the final GPU compositor.
-// A5 intentionally does not claim the final shader pipeline or dispatch.
-struct SapphireCompositionPushConstants
-{
-    u32 OutputWidth = 0;
-    u32 OutputHeight = 0;
     u32 Scale = 1;
-    u32 RendererWidth = 0;
-    u32 RendererHeight = 0;
-    u32 PackedStride = 0;
-    u32 ScreenSwap = 0;
-    u32 Filtering = 0;
-    u32 PreviousTopSourceValid = 0;
-    u32 PreviousBottomSourceValid = 0;
-    u32 CaptureSourceValid = 0;
-    u32 CaptureSourceScreenSwapValid = 0;
-    u32 CaptureSourceScreenSwap = 0;
-    u32 LiveSourceScreenSwap = 0;
-    u32 Class4VramStructuredPair = 0;
-    u32 Class4NoAboveVramStructuredPair = 0;
-    u32 Class4PreservePackedVramValid = 0;
-    u32 Class4PreservePackedVramScreenSwap = 0;
-    u32 TopStructuredHandoffNoCurrent3d = 0;
-    u32 BottomStructuredHandoffNoCurrent3d = 0;
-    u32 TopStructuredHandoffSuppress3d = 0;
-    u32 BottomStructuredHandoffSuppress3d = 0;
-};
-static_assert(sizeof(SapphireCompositionPushConstants)
-    == VulkanStructuredControlAbi::CompositorPushConstantBytes);
-
-struct SapphireVulkanCompositionCommandContext
-{
-    VkCommandPool CommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
-    VkFence Fence = VK_NULL_HANDLE;
-    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     u64 FrameSerial = 0;
-    bool Ready = false;
-};
-
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_EXACT_ABI_A7
-// Exact descriptor and push-constant ABI of Sapphire's VulkanCompositor shader.
-// Pipeline creation and vkCmdDispatch remain intentionally disabled until A4's
-// output/history/capture resources are migrated to these exact image2D contracts.
-struct SapphireCompositionDescriptorAbi
-{
-    static constexpr u32 OutputImageBinding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING;
-    static constexpr u32 Current3DImageBinding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING;
-    static constexpr u32 TopPackedBufferBinding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING;
-    static constexpr u32 BottomPackedBufferBinding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING;
-    static constexpr u32 PreviousTop3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING;
-    static constexpr u32 Capture3DBufferBinding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING;
-    static constexpr u32 PreviousBottom3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING;
-    static constexpr u32 BindingCount = MP_VK_COMPOSITOR_BINDING_COUNT;
-    static constexpr u32 PushConstantBytes = MP_VK_COMPOSITOR_PUSH_CONSTANT_BYTES;
-};
-static_assert(SapphireCompositionDescriptorAbi::BindingCount
-    == VulkanStructuredControlAbi::CompositorBindingCount);
-static_assert(SapphireCompositionDescriptorAbi::PushConstantBytes
-    == VulkanStructuredControlAbi::CompositorPushConstantBytes);
-
-// MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-// The exact Sapphire compositor SPIR-V is now owned by the core renderer and
-// materialized as a VkShaderModule. The exact A7 descriptor and push-constant ABI is declared above; pipeline
-// creation and dispatch remain deferred until A4 resources match that ABI.
-struct SapphireVulkanCompositionShaderModule
-{
-    VkShaderModule Module = VK_NULL_HANDLE;
-    size_t SpirvBytes = 0;
-    u64 FrameSerial = 0;
-    bool Ready = false;
+    u64 Generation = 0;
+    VkSemaphore CompletionSemaphore = VK_NULL_HANDLE;
+    u64 CompletionValue = 0;
+    bool Valid = false;
 };
 
 class VulkanRenderer3D : public Renderer3D
@@ -221,76 +125,6 @@ public:
         return Structured2DLineState.data();
     }
 
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3
-    [[nodiscard]] SapphireVulkanCompositionInput
-        GetSapphireVulkanCompositionInput() const noexcept
-    {
-        SapphireVulkanCompositionInput input{};
-        input.Source3DImage = ColorImage;
-        input.Source3DImageView = ColorImageView;
-        input.Structured2DBuffer = Structured2DGpuBuffer;
-        input.Structured2DBufferSize = Structured2DGpuBufferSize;
-        input.PackedStrideWords = Structured2DPackedStrideWords;
-        input.ScreenCount = 2;
-        input.NativeWidth = 256;
-        input.NativeHeight = 192;
-        input.Source3DWidth = ColorImageWidth;
-        input.Source3DHeight = ColorImageHeight;
-        input.FrameSerial = Structured2DGpuFrameSerial;
-        input.ScreenSwap = Structured2DScreenSwap;
-        input.Valid = Structured2DFrameValid
-            && Structured2DGpuBufferValid
-            && Structured2DGpuFrameSerial == Structured2DFrameSerial
-            && ColorImageInitialized
-            && ColorImage != VK_NULL_HANDLE
-            && ColorImageView != VK_NULL_HANDLE;
-        return input;
-    }
-
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4
-    [[nodiscard]] SapphireVulkanCompositionResources
-        GetSapphireVulkanCompositionResources() const noexcept
-    {
-        SapphireVulkanCompositionResources resources{};
-        resources.OutputImage = SapphireCompositionImage;
-        resources.OutputImageView = SapphireCompositionImageView;
-        resources.DescriptorSet = SapphireCompositionDescriptorSet;
-        resources.PipelineLayout = SapphireCompositionPipelineLayout;
-        resources.Format = SapphireCompositionFormat;
-        resources.Width = SapphireCompositionWidth;
-        resources.Height = SapphireCompositionHeight;
-        resources.Layers = 2;
-        resources.FrameSerial = SapphireCompositionFrameSerial;
-        resources.ResourcesReady = SapphireCompositionResourcesReady;
-        resources.DescriptorsReady = SapphireCompositionDescriptorsReady;
-        return resources;
-    }
-
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
-    [[nodiscard]] SapphireVulkanCompositionCommandContext
-        GetSapphireVulkanCompositionCommandContext() const noexcept
-    {
-        SapphireVulkanCompositionCommandContext context{};
-        context.CommandPool = SapphireCompositionCommandPool;
-        context.CommandBuffer = SapphireCompositionCommandBuffer;
-        context.Fence = SapphireCompositionFence;
-        context.PipelineLayout = SapphireCompositionPipelineLayout;
-        context.FrameSerial = SapphireCompositionCommandFrameSerial;
-        context.Ready = SapphireCompositionCommandContextReady;
-        return context;
-    }
-
-    // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-    [[nodiscard]] SapphireVulkanCompositionShaderModule
-        GetSapphireVulkanCompositionShaderModule() const noexcept
-    {
-        SapphireVulkanCompositionShaderModule shader{};
-        shader.Module = SapphireCompositionShaderModule;
-        shader.SpirvBytes = SapphireCompositionShaderSpirvBytes;
-        shader.FrameSerial = SapphireCompositionShaderFrameSerial;
-        shader.Ready = SapphireCompositionShaderModuleReady;
-        return shader;
-    }
     void SetRenderSettings(bool threaded, bool betterPolygons, int scale, bool hiresCoordinates) override
     {
         (void)hiresCoordinates;
@@ -348,12 +182,7 @@ public:
     [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
     [[nodiscard]] bool GetLastValidExactCaptureScreenSwap() const noexcept { return LastValidExactCaptureScreenSwap; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
-    [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
-    [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
-    [[nodiscard]] VkImage GetColorTargetImage() const noexcept { return ColorImage; }
-    [[nodiscard]] VkImageView GetColorTargetImageView() const noexcept { return ColorImageView; }
-    [[nodiscard]] u32 GetColorTargetWidth() const noexcept { return ColorImageWidth; }
-    [[nodiscard]] u32 GetColorTargetHeight() const noexcept { return ColorImageHeight; }
+    [[nodiscard]] Vulkan3DFrameView GetVulkan3DFrameView() const noexcept;
     [[nodiscard]] std::vector<u32> CaptureColorTargetForDebug();
     [[nodiscard]] std::vector<u32> CaptureTopDepthForDebug();
     [[nodiscard]] std::vector<u32> CaptureTopAttrForDebug();
@@ -605,26 +434,6 @@ private:
         u32 edgeColorOverrideMask = 0;
         u32 edgeColorOverridePacked = 0;
     };
-
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_INPUT_A3
-    static constexpr u32 Structured2DPackedStrideWords = (256u * 4u) + 2u;
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_RESOURCES_A4
-    // MELONPRIME_SAPPHIRE_VULKAN_GPU_COMPOSITION_COMMAND_A5
-    // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-    bool ensureSapphireCompositionShaderModule();
-    void destroySapphireCompositionShaderModule() noexcept;
-
-    bool ensureSapphireCompositionCommandContext();
-    void destroySapphireCompositionCommandContext() noexcept;
-
-    bool ensureSapphireCompositionResources();
-    bool updateSapphireCompositionDescriptors();
-    void destroySapphireCompositionResources() noexcept;
-
-    bool ensureStructured2DGpuBuffer();
-    void destroyStructured2DGpuBuffer() noexcept;
-    void packStructured2DFrame();
-    bool uploadStructured2DFrameToGpu();
 
     bool ensureInitialized();
     void destroyVulkan();
@@ -1036,40 +845,6 @@ private:
     // Per engine/line: DispCnt, MasterBrightness and enabled/blank/screen flags.
     std::array<u32, 2 * 192> Structured2DLineMeta{};
     std::array<u32, 2 * 192> Structured2DLineState{};
-    // Upload layout per engine/line: plane0[256], plane1[256], control[256],
-    // nativeFinal[256], full DispCnt[1], brightness/status[1].
-    std::array<u32, 2 * 192 * Structured2DPackedStrideWords> Structured2DPacked{};
-    VkBuffer Structured2DGpuBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory Structured2DGpuMemory = VK_NULL_HANDLE;
-    VkDeviceSize Structured2DGpuBufferSize = 0;
-    void* Structured2DGpuMapped = nullptr;
-    bool Structured2DGpuMemoryCoherent = false;
-    bool Structured2DGpuBufferValid = false;
-    u64 Structured2DGpuFrameSerial = 0;
-    VkImage SapphireCompositionImage = VK_NULL_HANDLE;
-    VkDeviceMemory SapphireCompositionMemory = VK_NULL_HANDLE;
-    VkImageView SapphireCompositionImageView = VK_NULL_HANDLE;
-    VkSampler SapphireCompositionSampler = VK_NULL_HANDLE;
-    VkDescriptorSetLayout SapphireCompositionDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool SapphireCompositionDescriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet SapphireCompositionDescriptorSet = VK_NULL_HANDLE;
-    VkPipelineLayout SapphireCompositionPipelineLayout = VK_NULL_HANDLE;
-    VkFormat SapphireCompositionFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    u32 SapphireCompositionWidth = 0;
-    u32 SapphireCompositionHeight = 0;
-    u64 SapphireCompositionFrameSerial = 0;
-    bool SapphireCompositionResourcesReady = false;
-    bool SapphireCompositionDescriptorsReady = false;
-    VkCommandPool SapphireCompositionCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer SapphireCompositionCommandBuffer = VK_NULL_HANDLE;
-    VkFence SapphireCompositionFence = VK_NULL_HANDLE;
-    u64 SapphireCompositionCommandFrameSerial = 0;
-    bool SapphireCompositionCommandContextReady = false;
-    // MELONPRIME_SAPPHIRE_VULKAN_COMPOSITOR_SHADER_MODULE_A6
-    VkShaderModule SapphireCompositionShaderModule = VK_NULL_HANDLE;
-    size_t SapphireCompositionShaderSpirvBytes = 0;
-    u64 SapphireCompositionShaderFrameSerial = 0;
-    bool SapphireCompositionShaderModuleReady = false;
     std::array<u8, 2 * 192> Structured2DLineReceived{};
     u64 Structured2DPendingSerial = 0;
     u64 Structured2DFrameSerial = 0;

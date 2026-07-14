@@ -19,6 +19,7 @@ namespace melonDS
 {
 class GPU;
 class VulkanRenderer3D;
+struct Vulkan3DFrameView;
 }
 
 namespace MelonDSAndroid
@@ -234,18 +235,22 @@ public:
     void invalidateTemporalHistory();
     void clearStructuredCaptureHistory();
     void releaseTemporalFrameReferences();
-    bool captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+    bool captureRenderer3dSnapshot(
+        Frame* frame,
+        const melonDS::Vulkan3DFrameView& frameView,
+        bool snapshotScreenSwap);
     bool prepareFrameForPresentation(
         Frame* frame,
         const melonDS::GPU& gpu,
         int frontBuffer,
         bool frameScreenSwap,
         SoftPackedFrameSnapshot& softPackedSnapshot,
-        melonDS::VulkanRenderer3D& renderer3D);
+        melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::Vulkan3DFrameView& frameView);
     bool composeAndSubmitFrame(Frame* frame, const VulkanCompositionInputs& inputs);
     bool buildCompositionInputs(
         const Frame* frame,
-        const melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::Vulkan3DFrameView& frameView,
         int scale,
         VulkanFilterMode filtering,
         bool needsReadback,
@@ -357,6 +362,8 @@ private:
         VkDeviceMemory renderer3dSnapshotMemory{VK_NULL_HANDLE};
         u32 snapshotWidth{};
         u32 snapshotHeight{};
+        u64 renderer3dFrameSerial{};
+        u64 renderer3dGeneration{};
         VkImage previousTopRendererSourceImage{VK_NULL_HANDLE};
         VkImageView previousTopRendererSourceImageView{VK_NULL_HANDLE};
         bool previousTopRendererSourceValid{};
@@ -440,7 +447,10 @@ private:
         melonDS::VulkanRenderer3D& renderer3D);
     bool ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height);
     void destroyRenderer3dSnapshot(FrameResource& resource);
-    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+    bool recordRenderer3dSnapshotCopy(
+        FrameResource& resource,
+        const melonDS::Vulkan3DFrameView& frameView,
+        bool snapshotScreenSwap);
 
     bool createAccumulateResources();
     void destroyAccumulateResources();
@@ -451,6 +461,7 @@ private:
         Frame* frame,
         FrameResource& resource,
         const melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::Vulkan3DFrameView& frameView,
         bool snapshotScreenSwap,
         bool accumulateTopHighres,
         bool accumulateBottomHighres,

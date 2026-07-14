@@ -69,6 +69,8 @@ struct Frame {
     u32 width{};
     u32 height{};
     u64 frameId{};
+    u64 source3dFrameSerial{};
+    u64 rendererGeneration{};
     VkFence renderFence{VK_NULL_HANDLE};
     VkFence presentFence{VK_NULL_HANDLE};
     u64 renderTimelineValue{};

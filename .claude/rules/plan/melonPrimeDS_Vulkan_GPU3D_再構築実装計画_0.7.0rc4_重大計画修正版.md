@@ -208,6 +208,38 @@
 
 検証: manifest 29本をMSYS2 glslangとvcpkg glslangの双方で生成・`--check`成功。正式MinGW環境と同じPATHでCMake configure成功。`melonprime_sapphire_shaders`初回生成成功後、再実行が`ninja: no work to do`となることを確認。旧source-tree shader data include 0件、旧private compositor symbol 0件、`git diff --check`成功。アプリ全体の`build-mingw-vulkan.bat`はユーザー指示により実行せず、実装を優先した。
 
+## R6 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/FrameQueue.h`
+   - `src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp`
+2. 新しく追加した型、関数、resource
+   - 3D color image、layout、寸法、scale、frame serial、renderer generation、completion情報を不変値として渡す`Vulkan3DFrameView`と`GetVulkan3DFrameView()`。
+   - `Frame`と`VulkanOutput::FrameResource`へ3D source serial/generationを保存し、異なるframe/generationのsnapshotをcomposition入力として拒否するidentity gate。
+3. 削除した旧経路
+   - core内の`SapphireVulkanCompositionInput/Resources/CommandContext/ShaderModule/DescriptorAbi/PushConstants`を削除した。
+   - `Structured2DPacked`、host-visible structured GPU buffer、pack/upload処理を削除した。
+   - core内のfinal composition image/memory/view/sampler、descriptor set/pool/layout、pipeline layout、command pool/buffer/fence、compositor shader moduleと全ensure/update/destroy処理を削除した。
+   - frontendが3D targetを個別getterでlive参照する経路を削除した。
+4. 所有権とframe lifecycleの変更
+   - `VulkanRenderer3D`は3D color target/captureだけを所有し、final compositor resourceは`VulkanOutput`だけが所有する。
+   - frontend sessionはcomplete structured snapshotと同一serial/generationの`Vulkan3DFrameView`だけを受理する。
+   - `VulkanOutput`はviewのsource imageを各`FrameQueue` slot所有のsnapshot imageへcopyし、そのsnapshotだけをcompositionへ渡す。source identityはslotのrender completionまで保持される。
+5. 参照実装との差分
+   - 現時点のcore render完了は既存fenceでCPU確認済みのため、viewのcompletion semaphore/valueはnull/0 compatibility stateとし、明示timeline化はR24へ渡す。
+   - temporary structured 2D CPU arrays/getterはR17 consumer移行まで維持するが、core内GPU upload/composition resourceは残さない。
+6. 後続フェーズへ渡すinterface
+   - R7～R16が3D render targetを公開する唯一のGPU-facing interfaceである`Vulkan3DFrameView`。
+   - R19/R23/R24がtimeline completionとqueue lifecycleを完成させるためのframe serial/generation metadata。
+   - R17で削除する対象をCPU structured arrays/getterだけへ限定したcore renderer境界。
+
+検証: core/frontend全体で旧`SapphireVulkanComposition*`、`Structured2DGpu*`、`Structured2DPacked`、pack/upload関数、個別`GetColorTarget*` getterの参照0件を静的監査。`VulkanOutput`がFrameQueue slotのsnapshot以外をcomposition sourceにしないこと、serial/generation不一致を拒否すること、`git diff --check`成功を確認。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ---
 
 # 1. 目的

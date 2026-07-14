@@ -2278,11 +2278,14 @@ bool VulkanOutput::prepareFrameForPresentation(
     int frontBuffer,
     bool frameScreenSwap,
     SoftPackedFrameSnapshot& softPackedSnapshot,
-    melonDS::VulkanRenderer3D& renderer3D)
+    melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView)
 {
     (void)gpu;
     (void)frontBuffer;
-    if (!initialized || frame == nullptr || !renderer3D.HasColorTarget())
+    if (!initialized || frame == nullptr || !frameView.Valid
+        || frame->source3dFrameSerial != frameView.FrameSerial
+        || frame->rendererGeneration != frameView.Generation)
         return false;
     if (!softPackedSnapshot.valid
         || softPackedSnapshot.frontBufferLatched < 0
@@ -2913,8 +2916,10 @@ bool VulkanOutput::prepareFrameForPresentation(
         && resource.snapshotFromPreRun
         && resource.snapshotFromInitializedTarget
         && resource.snapshotFromGraphicsBackend == currentBackendIsGraphics
-        && resource.snapshotWidth == renderer3D.GetColorTargetWidth()
-        && resource.snapshotHeight == renderer3D.GetColorTargetHeight()
+        && resource.snapshotWidth == frameView.Width
+        && resource.snapshotHeight == frameView.Height
+        && resource.renderer3dFrameSerial == frameView.FrameSerial
+        && resource.renderer3dGeneration == frameView.Generation
         && (!currentBackendIsGraphics || needsDsTimedCaptureBackedComp4Source);
 
     const auto screenCanUseAccumulatedHighres = [&](const SoftPackedScreenStats& stats) {
@@ -2970,6 +2975,7 @@ bool VulkanOutput::prepareFrameForPresentation(
                 frame,
                 resource,
                 renderer3D,
+                frameView,
                 liveSourceScreenSwap,
                 liveSourceScreenSwap,
                 !liveSourceScreenSwap,
@@ -2997,10 +3003,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     }
     else
     {
-        currentSourceImage = renderer3D.GetColorTargetImage();
-        currentSourceImageView = renderer3D.GetColorTargetImageView();
-        currentSourceWidth = renderer3D.GetColorTargetWidth();
-        currentSourceHeight = renderer3D.GetColorTargetHeight();
+        return false;
     }
 
     const bool live3dOwnerIsTop = resource.hasRenderer3dSnapshot
@@ -3951,15 +3954,21 @@ bool VulkanOutput::updatePreparedCapture3dSource(
     return resource.hasPreparedCapture3dSource || !currentFrameNeedsCapture3dSource;
 }
 
-bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool VulkanOutput::captureRenderer3dSnapshot(
+    Frame* frame,
+    const melonDS::Vulkan3DFrameView& frameView,
+    bool snapshotScreenSwap)
 {
     std::scoped_lock commandLock(commandPoolLock);
 
     if (frame != nullptr)
         frame->renderTimelineValue = 0;
 
-    if (!initialized || frame == nullptr || !renderer3D.HasColorTarget())
+    if (!initialized || frame == nullptr || !frameView.Valid)
         return false;
+
+    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);
     if (iterator == resources.end())
@@ -3971,19 +3980,15 @@ bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::Vulkan
     resource.snapshotFromInitializedTarget = false;
     resource.snapshotFromGraphicsBackend = false;
 
-    if (!renderer3D.IsColorTargetInitialized())
-        return false;
-
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, frameView, snapshotScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = true;
     resource.snapshotFromInitializedTarget = true;
-    resource.snapshotFromGraphicsBackend =
-        renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
+    resource.snapshotFromGraphicsBackend = true;
     resource.previousTopSourceFrame = nullptr;
     resource.previousTopSourcePending = false;
     resource.previousBottomSourceFrame = nullptr;
@@ -4017,7 +4022,7 @@ bool VulkanOutput::composeAndSubmitFrame(
 
 bool VulkanOutput::buildCompositionInputs(
     const Frame* frame,
-    const melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView,
     int scale,
     VulkanFilterMode filtering,
     bool needsReadback,
@@ -4025,7 +4030,9 @@ bool VulkanOutput::buildCompositionInputs(
     bool validationMode,
     VulkanCompositionInputs& outInputs) const
 {
-    if (!initialized || frame == nullptr || scale < 1)
+    if (!initialized || frame == nullptr || scale < 1
+        || frame->source3dFrameSerial != frameView.FrameSerial
+        || frame->rendererGeneration != frameView.Generation)
         return false;
 
     auto iterator = resources.find(const_cast<Frame*>(frame));
@@ -4040,23 +4047,15 @@ bool VulkanOutput::buildCompositionInputs(
         resource.hasRenderer3dSnapshot
         && resource.renderer3dSnapshot != VK_NULL_HANDLE
         && resource.renderer3dSnapshotView != VK_NULL_HANDLE;
-    if (!hasRenderer3dSnapshot && !renderer3D.HasColorTarget())
+    if (!hasRenderer3dSnapshot
+        || resource.renderer3dFrameSerial != frameView.FrameSerial
+        || resource.renderer3dGeneration != frameView.Generation)
         return false;
 
-    if (hasRenderer3dSnapshot)
-    {
-        outInputs.sourceImage = resource.renderer3dSnapshot;
-        outInputs.sourceImageView = resource.renderer3dSnapshotView;
-        outInputs.rendererWidth = resource.snapshotWidth;
-        outInputs.rendererHeight = resource.snapshotHeight;
-    }
-    else
-    {
-        outInputs.sourceImage = renderer3D.GetColorTargetImage();
-        outInputs.sourceImageView = renderer3D.GetColorTargetImageView();
-        outInputs.rendererWidth = renderer3D.GetColorTargetWidth();
-        outInputs.rendererHeight = renderer3D.GetColorTargetHeight();
-    }
+    outInputs.sourceImage = resource.renderer3dSnapshot;
+    outInputs.sourceImageView = resource.renderer3dSnapshotView;
+    outInputs.rendererWidth = resource.snapshotWidth;
+    outInputs.rendererHeight = resource.snapshotHeight;
     outInputs.previousTopSourceValid = resource.previousTopRendererSourceValid;
     outInputs.previousTopSourceImage = outInputs.previousTopSourceValid && resource.previousTopRendererSourceImage != VK_NULL_HANDLE
         ? resource.previousTopRendererSourceImage
@@ -4161,6 +4160,8 @@ void VulkanOutput::destroyRenderer3dSnapshot(FrameResource& resource)
 
     resource.snapshotWidth = 0;
     resource.snapshotHeight = 0;
+    resource.renderer3dFrameSerial = 0;
+    resource.renderer3dGeneration = 0;
     resource.hasRenderer3dSnapshot = false;
 }
 
@@ -4241,6 +4242,7 @@ bool VulkanOutput::recordDirectPresentationPrep(
     Frame* frame,
     FrameResource& resource,
     const melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView,
     bool snapshotScreenSwap,
     bool accumulateTopHighres,
     bool accumulateBottomHighres,
@@ -4251,11 +4253,11 @@ bool VulkanOutput::recordDirectPresentationPrep(
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, frameView, snapshotScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = false;
-    resource.snapshotFromInitializedTarget = renderer3D.IsColorTargetInitialized();
+    resource.snapshotFromInitializedTarget = frameView.Valid;
     resource.snapshotFromGraphicsBackend =
         renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
 
@@ -4347,10 +4349,21 @@ bool VulkanOutput::recordDirectPresentationPrep(
     return submitted;
 }
 
-bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool VulkanOutput::recordRenderer3dSnapshotCopy(
+    FrameResource& resource,
+    const melonDS::Vulkan3DFrameView& frameView,
+    bool snapshotScreenSwap)
 {
-    const u32 rendererWidth = renderer3D.GetColorTargetWidth();
-    const u32 rendererHeight = renderer3D.GetColorTargetHeight();
+    if (!frameView.Valid
+        || frameView.ColorImage == VK_NULL_HANDLE
+        || frameView.ColorImageView == VK_NULL_HANDLE
+        || frameView.ColorLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+    {
+        return false;
+    }
+
+    const u32 rendererWidth = frameView.Width;
+    const u32 rendererHeight = frameView.Height;
     if (!ensureRenderer3dSnapshot(resource, rendererWidth, rendererHeight))
         return false;
 
@@ -4362,11 +4375,11 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         VK_ACCESS_TRANSFER_WRITE_BIT |
         VK_ACCESS_TRANSFER_READ_BIT;
     sourceToTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    sourceToTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    sourceToTransferBarrier.oldLayout = frameView.ColorLayout;
     sourceToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     sourceToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     sourceToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceToTransferBarrier.image = renderer3D.GetColorTargetImage();
+    sourceToTransferBarrier.image = frameView.ColorImage;
     sourceToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     sourceToTransferBarrier.subresourceRange.baseMipLevel = 0;
     sourceToTransferBarrier.subresourceRange.levelCount = 1;
@@ -4415,7 +4428,7 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         copyRegion.extent = {rendererWidth, rendererHeight, 1};
         vkCmdCopyImage(
             resource.commandBuffer,
-            renderer3D.GetColorTargetImage(),
+            frameView.ColorImage,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             resource.renderer3dSnapshot,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -4434,7 +4447,7 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         blitRegion.dstOffsets[1] = {static_cast<int32_t>(rendererWidth), static_cast<int32_t>(rendererHeight), 1};
         vkCmdBlitImage(
             resource.commandBuffer,
-            renderer3D.GetColorTargetImage(),
+            frameView.ColorImage,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             resource.renderer3dSnapshot,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -4456,10 +4469,10 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         VK_ACCESS_SHADER_READ_BIT |
         VK_ACCESS_SHADER_WRITE_BIT;
     sourceBackToGeneralBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    sourceBackToGeneralBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    sourceBackToGeneralBarrier.newLayout = frameView.ColorLayout;
     sourceBackToGeneralBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     sourceBackToGeneralBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceBackToGeneralBarrier.image = renderer3D.GetColorTargetImage();
+    sourceBackToGeneralBarrier.image = frameView.ColorImage;
     sourceBackToGeneralBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     sourceBackToGeneralBarrier.subresourceRange.baseMipLevel = 0;
     sourceBackToGeneralBarrier.subresourceRange.levelCount = 1;
@@ -4500,6 +4513,8 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
 
     resource.hasRenderer3dSnapshot = true;
     resource.renderer3dSnapshotScreenSwap = snapshotScreenSwap;
+    resource.renderer3dFrameSerial = frameView.FrameSerial;
+    resource.renderer3dGeneration = frameView.Generation;
     return true;
 }
 
@@ -4948,12 +4963,22 @@ bool VulkanOutput::dispatchCompositor(
 
 bool VulkanOutput::validateCompositorSubmission(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, int scale, u64 waitTimeoutNs)
 {
-    if (!initialized || frame == nullptr || scale < 1 || !renderer3D.HasColorTarget())
+    const melonDS::Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
+    if (!initialized || frame == nullptr || scale < 1 || !frameView.Valid)
         return false;
+
+    frame->source3dFrameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);
     if (iterator == resources.end())
         return false;
+
+    if (!captureRenderer3dSnapshot(
+            frame, frameView, renderer3D.GetCurrentRenderScreenSwap()))
+    {
+        return false;
+    }
 
     FrameResource& resource = iterator->second;
     if (resource.topPackedMapped == nullptr || resource.bottomPackedMapped == nullptr || resource.packedBufferSize == 0)
@@ -4963,7 +4988,7 @@ bool VulkanOutput::validateCompositorSubmission(Frame* frame, const melonDS::Vul
     resource.hasPreparedInputs = true;
 
     VulkanCompositionInputs inputs{};
-    if (!buildCompositionInputs(frame, renderer3D, scale, VulkanFilterMode::Nearest, false, false, true, inputs))
+    if (!buildCompositionInputs(frame, frameView, scale, VulkanFilterMode::Nearest, false, false, true, inputs))
         return false;
 
     if (!dispatchCompositor(frame, resource, inputs))
