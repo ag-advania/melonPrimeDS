@@ -1,23 +1,26 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+#include "../../../VulkanStructuredControlAbi.inc"
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outImage;
-layout(set = 0, binding = 1, rgba8) uniform readonly image2D image3dInput;
-layout(set = 0, binding = 4, rgba8) uniform readonly image2D image3dPreviousTopInput;
-layout(set = 0, binding = 6, rgba8) uniform readonly image2D image3dPreviousBottomInput;
+layout(set = 0, binding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING, rgba8) uniform writeonly image2D outImage;
+layout(set = 0, binding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING, rgba8) uniform readonly image2D image3dInput;
+layout(set = 0, binding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING, rgba8) uniform readonly image2D image3dPreviousTopInput;
+layout(set = 0, binding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING, rgba8) uniform readonly image2D image3dPreviousBottomInput;
 
-layout(set = 0, binding = 2, std430) readonly buffer TopPackedBuffer
+layout(set = 0, binding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING, std430) readonly buffer TopPackedBuffer
 {
     uint topPacked[];
 };
 
-layout(set = 0, binding = 3, std430) readonly buffer BottomPackedBuffer
+layout(set = 0, binding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING, std430) readonly buffer BottomPackedBuffer
 {
     uint bottomPacked[];
 };
 
-layout(set = 0, binding = 5, std430) readonly buffer Capture3dBuffer
+layout(set = 0, binding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING, std430) readonly buffer Capture3dBuffer
 {
     uint capture3dPacked[];
 };
@@ -92,22 +95,22 @@ bool isRegularCaptureBlankPixel(Rgba6 color)
 
 bool hasStructured2D3DSlot(Rgba6 control)
 {
-    return (control.a & 0x40) != 0;
+    return (control.a & int(MP_VK_PACKED_CONTROL_3D_SLOT_FLAG)) != 0;
 }
 
 bool hasStructured2DAbovePlane(Rgba6 control)
 {
-    return (control.a & 0x80) != 0;
+    return (control.a & int(MP_VK_PACKED_CONTROL_ABOVE_3D_FLAG)) != 0;
 }
 
 bool hasStructured2DProtectedBlack(Rgba6 control)
 {
-    return (control.a & 0x20) != 0;
+    return (control.a & int(MP_VK_PACKED_CONTROL_PROTECTED_BLACK_FLAG)) != 0;
 }
 
 bool hasStructured2DNo3DCoverage(Rgba6 control)
 {
-    return (control.a & 0x10) != 0;
+    return (control.a & int(MP_VK_PACKED_CONTROL_NO_3D_COVERAGE_FLAG)) != 0;
 }
 
 bool isStructured2DOnly(Rgba6 control)

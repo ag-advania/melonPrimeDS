@@ -33,6 +33,7 @@
 namespace MelonPrime { class MelonPrimeCore; }
 #if defined(MELONPRIME_ENABLE_VULKAN)
 namespace MelonPrime::Vulkan { class DeviceContext; struct FeatureInfo; }
+class MelonPrimeVulkanFrontendSession;
 class QWindow;
 #endif
 #endif // MELONPRIME_DS
@@ -160,6 +161,8 @@ public:
     std::shared_ptr<MelonPrime::Vulkan::DeviceContext> ensureVulkanDeviceContext(
         QWindow* surfaceWindow,
         MelonPrime::Vulkan::FeatureInfo& info);
+    MelonPrimeVulkanFrontendSession& vulkanFrontendSession();
+    void submitVulkanFrontendFrame();
 #endif
 
     MainWindow* getMainWindow() { return mainWindow; }
@@ -468,6 +471,7 @@ private:
     #if defined(MELONPRIME_ENABLE_VULKAN)
     std::shared_ptr<MelonPrime::Vulkan::DeviceContext> vulkanDeviceContext;
     bool vulkanDeviceProbeAttempted = false;
+    std::unique_ptr<MelonPrimeVulkanFrontendSession> vulkanFrontendSessionOwner;
     #endif
 
     // OPT: QBitArray -> native integers.

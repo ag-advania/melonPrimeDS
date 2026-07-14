@@ -92,6 +92,52 @@
 
 検証: legacy `Override`実行call site 0件、`VulkanRenderer3D` owner unique_ptrがfactory returnと`GPU3D::CurrentRenderer`以外に存在しないこと、切替判定がnormalized renderer基準であることを静的監査。`git diff --check`成功。ビルドはユーザー指示により省略。
 
+## R3a～R3d — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/VulkanStructuredControlAbi.h`
+   - `src/VulkanStructuredControlAbi.inc`
+   - `src/GPU2D_Soft.cpp`
+   - `src/GPU_Soft.cpp`
+   - `src/GPU3D.h`
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.h`
+   - `src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.cpp`
+   - `src/frontend/qt_sdl/EmuInstance.h`
+   - `src/frontend/qt_sdl/EmuInstance.cpp`
+   - `src/frontend/qt_sdl/EmuThread.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeScreenVulkan.h`
+   - `src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.h`
+   - `src/frontend/qt_sdl/MelonPrimeRendererFactory.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp`
+   - `src/frontend/qt_sdl/CMakeLists.txt`
+2. 新しく追加した型、関数、resource
+   - source bit-fieldとcompositor RGBA-byte形式の差を固定した`VulkanStructuredControlAbi`と`ConvertSourceControlToPacked()`。
+   - engine順6配列を同じScreenSwap mappingで物理top/bottomへ固定する`MelonPrimeStructuredSnapshot`。
+   - `VulkanOutput`、`FrameQueue`、generation、frame serial、last complete snapshotを所有する`MelonPrimeVulkanFrontendSession`。
+   - session実体からstructured/compositor/queue/surface/presenter capabilityを返すruntime query。
+3. 削除した旧経路
+   - `ScreenPanelVulkan::drawScreen()`から`ScreenPanelNative::drawScreen()`委譲を削除した。
+   - `EndStructured2DFrame()`成功時のin-core pack/upload/compositor呼出しを停止し、frontend `VulkanOutput`との同時消費を除去した。残存resource/function本体はR6で削除する。
+4. 所有権とframe lifecycleの変更
+   - EmuThreadの`NDS::RunFrame()`完了点だけが384 engine-line complete snapshotを取得し、GUI側はlive GPU/structured配列を読まない。
+   - producerを`getRenderFrame → prepareFrameForPresentation → composeAndSubmitFrame → pushRenderedFrame`へ接続した。
+   - Win32 presenterを`winId/HWND → attachSurface → getPresentCandidate → presentFrame → commitPresentedFrame`へ接続した。
+   - renderer generation変更時にqueue、temporal history、frame input、last snapshotをresyncする。
+5. 参照実装との差分
+   - 現行core producerのControlは0.7.0.rc4 compositor ABIとverbatim一致しないため、Plane0/Plane1の3D layer flagを含めて明示変換する。bindingとcontrol flagはC++/GLSL共通`.inc`を唯一の定義源にした。
+   - desktop R3 bridgeはengine配列をCPU getterから一度copyするtemporary実装であり、R17でGPU2D参照型sourceへ置換する。
+   - Linux/macOS surface一般化、正式layout/HUD、resize完成は計画どおりR20/R21へ残す。
+6. 後続フェーズへ渡すinterface
+   - `captureCompletedSnapshot()`、`submitCompletedFrame()`、`acquirePresentFrame()`、`presentAcquiredFrame()`、commit/defer API。
+   - R4がdesktop surface extension/queue条件を完成させた時点でそのまま実働attachできるWin32 basic presenter path。
+   - R5 shader再生成が直接includeする共通descriptor/control ABI source。
+
+検証: Control変換のconstexpr ABI assertion、384-line complete gate、ScreenSwap false=A/B・true=B/Aの全配列mapping、generation/serial拒否、producer/presenter call順、NativeQt委譲0件、in-core upload call 0件を静的監査。`git diff --check`成功。Vulkanビルド入口は`build-mingw-vulkan.bat`と確認済みだが、ユーザー指示によりこのフェーズでは実行せず実装を優先した。
+
 ---
 
 # 1. 目的

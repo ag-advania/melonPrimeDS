@@ -338,6 +338,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanUiCompat.h
         MelonPrimeScreenVulkan.cpp
         MelonPrimeScreenVulkan.h
+        MelonPrimeVulkanFrontendSession.cpp
+        MelonPrimeVulkanFrontendSession.h
         VulkanReference/VulkanOutput.cpp
         VulkanReference/VulkanSurfacePresenter.cpp
         VulkanReference/FrameQueue.cpp)

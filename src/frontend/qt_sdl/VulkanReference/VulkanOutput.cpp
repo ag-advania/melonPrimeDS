@@ -674,43 +674,43 @@ void VulkanOutput::destroyTimestampQueryPool(VkQueryPool& queryPool)
 bool VulkanOutput::createCompositorResources()
 {
     VkDescriptorSetLayoutBinding outputBinding{};
-    outputBinding.binding = 0;
+    outputBinding.binding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING;
     outputBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     outputBinding.descriptorCount = 1;
     outputBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding input3dBinding{};
-    input3dBinding.binding = 1;
+    input3dBinding.binding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING;
     input3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     input3dBinding.descriptorCount = 1;
     input3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding topPackedBinding{};
-    topPackedBinding.binding = 2;
+    topPackedBinding.binding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING;
     topPackedBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     topPackedBinding.descriptorCount = 1;
     topPackedBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding bottomPackedBinding{};
-    bottomPackedBinding.binding = 3;
+    bottomPackedBinding.binding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING;
     bottomPackedBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bottomPackedBinding.descriptorCount = 1;
     bottomPackedBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding previousTopInput3dBinding{};
-    previousTopInput3dBinding.binding = 4;
+    previousTopInput3dBinding.binding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING;
     previousTopInput3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     previousTopInput3dBinding.descriptorCount = 1;
     previousTopInput3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding capture3dBinding{};
-    capture3dBinding.binding = 5;
+    capture3dBinding.binding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING;
     capture3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     capture3dBinding.descriptorCount = 1;
     capture3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding previousBottomInput3dBinding{};
-    previousBottomInput3dBinding.binding = 6;
+    previousBottomInput3dBinding.binding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING;
     previousBottomInput3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     previousBottomInput3dBinding.descriptorCount = 1;
     previousBottomInput3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -4685,13 +4685,13 @@ bool VulkanOutput::dispatchCompositor(
         || resource.cachedPreviousBottomRendererImageView != inputs.previousBottomSourceImageView)
     {
         std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
-        descriptorWrites[0] = makeImageDescriptorWrite(resource.descriptorSet, 0, &outputImageInfo);
-        descriptorWrites[1] = makeImageDescriptorWrite(resource.descriptorSet, 1, &input3dImageInfo);
-        descriptorWrites[2] = makeBufferDescriptorWrite(resource.descriptorSet, 2, &topPackedBufferInfo);
-        descriptorWrites[3] = makeBufferDescriptorWrite(resource.descriptorSet, 3, &bottomPackedBufferInfo);
-        descriptorWrites[4] = makeImageDescriptorWrite(resource.descriptorSet, 4, &previousTopInput3dImageInfo);
-        descriptorWrites[5] = makeBufferDescriptorWrite(resource.descriptorSet, 5, &capture3dBufferInfo);
-        descriptorWrites[6] = makeImageDescriptorWrite(resource.descriptorSet, 6, &previousBottomInput3dImageInfo);
+        descriptorWrites[0] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING, &outputImageInfo);
+        descriptorWrites[1] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_CURRENT_3D_BINDING, &input3dImageInfo);
+        descriptorWrites[2] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_TOP_PACKED_BINDING, &topPackedBufferInfo);
+        descriptorWrites[3] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING, &bottomPackedBufferInfo);
+        descriptorWrites[4] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING, &previousTopInput3dImageInfo);
+        descriptorWrites[5] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_CAPTURE_3D_BINDING, &capture3dBufferInfo);
+        descriptorWrites[6] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING, &previousBottomInput3dImageInfo);
 
         vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
         resource.descriptorSetReady = true;

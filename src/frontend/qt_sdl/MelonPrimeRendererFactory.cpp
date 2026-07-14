@@ -12,6 +12,7 @@
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
+#include "MelonPrimeVulkanFrontendSession.h"
 #include "VulkanContext.h"
 #endif
 
@@ -118,8 +119,7 @@ VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
 {
     VulkanRuntimeCapabilities caps;
 
-    // Real, wired today: whether a Vulkan-capable device/queue exists, and
-    // whether GPU3D currently owns a VulkanRenderer3D instance.
+    // Every flag is read from a successfully-created runtime owner/resource.
     caps.ContextReady = melonDS::VulkanContext::Get().IsReady();
     if (nds.GPU.GPU3D.HasCurrentRenderer())
     {
@@ -128,11 +128,20 @@ VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
                 &nds.GPU.GPU3D.GetCurrentRenderer()) != nullptr;
     }
 
-    // Structured2DReady/FinalCompositorReady/FrameQueueReady/SurfaceReady/
-    // PresenterReady/TimelineSemaphoreReady/DescriptorIndexingReady stay at
-    // their false default: nothing in the Qt frontend session (plan phase
-    // R3b) exists yet to populate them from real resource state, and we do
-    // not fabricate a true value ahead of that.
+    auto* emuInstance = static_cast<EmuInstance*>(nds.UserData);
+    if (emuInstance != nullptr)
+    {
+        auto& session = emuInstance->vulkanFrontendSession();
+        caps.Structured2DReady = session.hasCompleteStructuredSnapshot();
+        caps.FinalCompositorReady = session.hasCompositedFrame();
+        caps.FrameQueueReady = session.isInitialized();
+        caps.SurfaceReady = session.hasRegisteredPresenter();
+        caps.PresenterReady = session.hasRegisteredPresenter();
+    }
+    caps.TimelineSemaphoreReady = caps.ContextReady
+        && melonDS::VulkanContext::Get().SupportsTimelineSemaphores();
+    caps.DescriptorIndexingReady = caps.ContextReady
+        && melonDS::VulkanContext::Get().SupportsDynamicTextureIndexing();
     return caps;
 }
 #endif

@@ -380,6 +380,10 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         Parent.StructuredPlane0[GPU2D.Num][i] = val1;
         Parent.StructuredPlane1[GPU2D.Num][i] = val2;
         Parent.StructuredControl[GPU2D.Num][i] = structuredControl;
+        // Regular-display 2D-only pixels need the pre-master-brightness
+        // composite. VulkanOutput applies the latched line brightness after
+        // inserting the GPU-resident 3D source.
+        Parent.StructuredNativeFinal[GPU2D.Num][i] = dst[i];
 #else
         dst[i] = ColorComposite(i, val1, val2);
 #endif

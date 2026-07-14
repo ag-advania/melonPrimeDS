@@ -49,10 +49,9 @@ inline std::unique_ptr<melonDS::Renderer3D> CreateRenderer3DOverrideForSelection
 // Runtime capability flags for the Vulkan frontend pipeline (plan phase R0).
 // Every field must be derived from real, successfully-created resource
 // state -- never set true at compile time or based on class identity alone.
-// Structured2DReady/FinalCompositorReady/FrameQueueReady/SurfaceReady/
-// PresenterReady/TimelineSemaphoreReady/DescriptorIndexingReady stay false
-// until the Qt frontend session (plan phase R3b) exists to populate them;
-// only ContextReady and Renderer3DReady are wired today.
+// The Qt frontend session populates structured/compositor/queue/surface and
+// presenter state after the first complete submitted frame. Context feature
+// bits remain direct queries of the shared VulkanContext.
 struct VulkanRuntimeCapabilities
 {
     bool ContextReady = false;

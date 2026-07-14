@@ -32,6 +32,8 @@
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
+#include "MelonPrimeVulkanFrontendSession.h"
+#include "GPU3D_Vulkan.h"
 #endif
 
 #include <zstd.h>
@@ -186,6 +188,12 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     nds = nullptr;
     //updateConsole();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // The session must pre-exist window construction so ScreenPanelVulkan can
+    // register its presenter before the first emulated frame is produced.
+    vulkanFrontendSessionOwner = std::make_unique<MelonPrimeVulkanFrontendSession>();
+#endif
+
     audioInit();
     inputInit();
 
@@ -228,6 +236,11 @@ EmuInstance::~EmuInstance()
     audioDeInit();
     inputDeInit();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanFrontendSessionOwner)
+        vulkanFrontendSessionOwner->shutdown();
+#endif
+
     if (nds)
     {
         saveRTCData();
@@ -236,6 +249,36 @@ EmuInstance::~EmuInstance()
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
+MelonPrimeVulkanFrontendSession& EmuInstance::vulkanFrontendSession()
+{
+    return *vulkanFrontendSessionOwner;
+}
+
+void EmuInstance::submitVulkanFrontendFrame()
+{
+    if (nds == nullptr || !vulkanFrontendSessionOwner)
+        return;
+
+    auto& gpu3D = nds->GPU.GPU3D;
+    if (!gpu3D.HasCurrentRenderer())
+        return;
+    auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(&gpu3D.GetCurrentRenderer());
+    if (renderer3D == nullptr)
+        return;
+
+    const u64 rendererGeneration = gpu3D.GetCurrentRendererGeneration();
+    if (!vulkanFrontendSessionOwner->initialize(*nds))
+        return;
+    vulkanFrontendSessionOwner->beginGeneration(rendererGeneration);
+
+    MelonPrimeStructuredSnapshot snapshot{};
+    if (MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
+            *renderer3D, rendererGeneration, snapshot))
+    {
+        (void)vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D, snapshot);
+    }
+}
+
 std::shared_ptr<MelonPrime::Vulkan::DeviceContext> EmuInstance::ensureVulkanDeviceContext(
     QWindow* surfaceWindow,
     MelonPrime::Vulkan::FeatureInfo& info)

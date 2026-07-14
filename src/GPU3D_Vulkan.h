@@ -119,13 +119,13 @@ struct SapphireVulkanCompositionCommandContext
 // output/history/capture resources are migrated to these exact image2D contracts.
 struct SapphireCompositionDescriptorAbi
 {
-    static constexpr u32 OutputImageBinding = 0;
-    static constexpr u32 Current3DImageBinding = 1;
-    static constexpr u32 TopPackedBufferBinding = 2;
-    static constexpr u32 BottomPackedBufferBinding = 3;
-    static constexpr u32 PreviousTop3DImageBinding = 4;
-    static constexpr u32 Capture3DBufferBinding = 5;
-    static constexpr u32 PreviousBottom3DImageBinding = 6;
+    static constexpr u32 OutputImageBinding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING;
+    static constexpr u32 Current3DImageBinding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING;
+    static constexpr u32 TopPackedBufferBinding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING;
+    static constexpr u32 BottomPackedBufferBinding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING;
+    static constexpr u32 PreviousTop3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING;
+    static constexpr u32 Capture3DBufferBinding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING;
+    static constexpr u32 PreviousBottom3DImageBinding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING;
     static constexpr u32 BindingCount = 7;
     static constexpr u32 PushConstantBytes = 88;
 };

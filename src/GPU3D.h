@@ -24,6 +24,9 @@
 
 #include "Savestate.h"
 #include "FIFO.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "VulkanStructuredControlAbi.h"
+#endif
 
 namespace melonDS
 {
@@ -370,12 +373,12 @@ struct SapphireStructured2DLine
     bool ScreenSwap = false;
 };
 
-inline constexpr u32 SapphireStructured2DControlEffectMask = 0x7u;
-inline constexpr u32 SapphireStructured2DControlEvaShift = 8u;
-inline constexpr u32 SapphireStructured2DControlEvbShift = 13u;
-inline constexpr u32 SapphireStructured2DControlEvyShift = 18u;
-inline constexpr u32 SapphireStructured2DControlDirect3DBit = 1u << 23u;
-inline constexpr u32 SapphireStructured2DControlValidBit = 1u << 31u;
+inline constexpr u32 SapphireStructured2DControlEffectMask = VulkanStructuredControlAbi::SourceEffectMask;
+inline constexpr u32 SapphireStructured2DControlEvaShift = VulkanStructuredControlAbi::SourceEvaShift;
+inline constexpr u32 SapphireStructured2DControlEvbShift = VulkanStructuredControlAbi::SourceEvbShift;
+inline constexpr u32 SapphireStructured2DControlEvyShift = VulkanStructuredControlAbi::SourceEvyShift;
+inline constexpr u32 SapphireStructured2DControlDirect3DBit = VulkanStructuredControlAbi::SourceDirect3DBit;
+inline constexpr u32 SapphireStructured2DControlValidBit = VulkanStructuredControlAbi::SourceValidBit;
 #endif
 
 class Renderer3D

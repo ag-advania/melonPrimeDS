@@ -661,25 +661,9 @@ void VulkanRenderer3D::EndStructured2DFrame(u64 frameSerial, bool screenSwap)
     {
         Structured2DFrameSerial = frameSerial;
         Structured2DScreenSwap = screenSwap;
-        packStructured2DFrame();
-        Structured2DGpuBufferValid = uploadStructured2DFrameToGpu();
-        if (Structured2DGpuBufferValid)
-        {
-            Structured2DGpuFrameSerial = frameSerial;
-            SapphireCompositionResourcesReady = ensureSapphireCompositionResources();
-            SapphireCompositionDescriptorsReady = SapphireCompositionResourcesReady
-                && updateSapphireCompositionDescriptors();
-            SapphireCompositionCommandContextReady = SapphireCompositionDescriptorsReady
-                && ensureSapphireCompositionCommandContext();
-            SapphireCompositionShaderModuleReady = SapphireCompositionCommandContextReady
-                && ensureSapphireCompositionShaderModule();
-            if (SapphireCompositionShaderModuleReady)
-            {
-                SapphireCompositionFrameSerial = frameSerial;
-                SapphireCompositionCommandFrameSerial = frameSerial;
-                SapphireCompositionShaderFrameSerial = frameSerial;
-            }
-        }
+        // R3a: the desktop frontend is the sole consumer of this CPU-produced
+        // snapshot. The duplicate in-core upload/compositor remains present
+        // only for removal in R6 and must not run in parallel with it.
     }
     Structured2DPendingSerial = 0;
 }

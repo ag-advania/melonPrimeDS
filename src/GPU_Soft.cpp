@@ -160,11 +160,22 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (structuredRenderer3D)
         {
-            memcpy(StructuredNativeFinal[0], dstA, sizeof(StructuredNativeFinal[0]));
-            memcpy(StructuredNativeFinal[1], dstB, sizeof(StructuredNativeFinal[1]));
             for (u32 engine = 0; engine < 2; ++engine)
             {
                 const GPU2D& engine2D = engine == 0 ? GPU.GPU2D_A : GPU.GPU2D_B;
+                const u32 displayMode = (engine2D.DispCnt >> 16u) & (engine == 0 ? 0x3u : 0x1u);
+                const bool regularStructuredLine = displayMode == 1u
+                    && GPU.ScreensEnabled
+                    && engine2D.Enabled
+                    && !engine2D.ForcedBlank;
+                if (!regularStructuredLine)
+                {
+                    const u32* nativeOutput = engine == 0 ? dstA : dstB;
+                    memcpy(
+                        StructuredNativeFinal[engine],
+                        nativeOutput,
+                        sizeof(StructuredNativeFinal[engine]));
+                }
                 SapphireStructured2DLine packet{};
                 packet.Plane0 = StructuredPlane0[engine];
                 packet.Plane1 = StructuredPlane1[engine];

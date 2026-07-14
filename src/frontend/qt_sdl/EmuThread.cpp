@@ -440,6 +440,12 @@ void EmuThread::run()
             nlines = emuInstance->nds->RunFrame();
         }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // Producer-side snapshot and Vulkan submission stay at the emulation
+        // frame completion point. The GUI/presenter never reads live GPU state.
+        emuInstance->submitVulkanFrontendFrame();
+#endif
+
 #ifdef MELONPRIME_DS
         // P-25: Save flush throttle — check once per 30 frames (~0.5s).
         {
