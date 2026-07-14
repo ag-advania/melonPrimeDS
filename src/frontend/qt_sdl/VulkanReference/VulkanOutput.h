@@ -15,6 +15,7 @@
 #include "VulkanPerfStats.h"
 #include "VulkanStructuredControlAbi.h"
 #include "VulkanR24Sync.h"
+#include "VulkanPipelineCache.h"
 
 namespace melonDS
 {
@@ -523,6 +524,7 @@ private:
     VkDescriptorPool compositorDescriptorPool{VK_NULL_HANDLE};
     VkPipelineLayout compositorPipelineLayout{VK_NULL_HANDLE};
     VkPipeline compositorPipeline{VK_NULL_HANDLE};
+    melonDS::VulkanPersistentPipelineCache pipelineCache;
 
     VkImage accumulatedTopHighresImage{VK_NULL_HANDLE};
     VkImageView accumulatedTopHighresView{VK_NULL_HANDLE};

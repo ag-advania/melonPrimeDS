@@ -59,7 +59,6 @@
 #include <sapphire/GPU3D_Vulkan_TriRasterShaderData.h>
 #include "Platform.h"
 #include "VulkanContext.h"
-#include "version.h"
 
 namespace MelonDSAndroid
 {
@@ -78,7 +77,6 @@ using Platform::LogLevel;
 
 namespace
 {
-constexpr u32 kPipelineCacheFileVersion = 4;
 constexpr u32 kVulkanDiagnosticDisablePassiveRepeatCoverageExpand = 1u << 0u;
 constexpr float kTriangleAreaEpsilon = 0.000001f;
 constexpr float kTileOverlapEpsilon = 0.00001f;
@@ -275,24 +273,6 @@ void logCaptureDebugState(
         remainingLogs
     );
     remainingLogs--;
-}
-
-u64 fnv1a64(const char* value)
-{
-    constexpr u64 kOffsetBasis = 14695981039346656037ull;
-    constexpr u64 kPrime = 1099511628211ull;
-
-    u64 hash = kOffsetBasis;
-    if (value == nullptr)
-        return hash;
-
-    for (const unsigned char* cursor = reinterpret_cast<const unsigned char*>(value); *cursor != 0; cursor++)
-    {
-        hash ^= static_cast<u64>(*cursor);
-        hash *= kPrime;
-    }
-
-    return hash;
 }
 
 inline float edgeFunction2D(float ax, float ay, float bx, float by, float px, float py)
@@ -2060,13 +2040,7 @@ void VulkanRenderer3D::destroyVulkan()
         }
     }
 
-    savePipelineCache();
-    if (ComputePipelineCache != VK_NULL_HANDLE)
-    {
-        vkDestroyPipelineCache(Device, ComputePipelineCache, nullptr);
-        ComputePipelineCache = VK_NULL_HANDLE;
-    }
-    ComputePipelineCacheFile.clear();
+    PipelineCache.SaveAndDestroy(deviceLost);
 
     if (PipelineLayout != VK_NULL_HANDLE)
     {
@@ -3774,133 +3748,6 @@ bool VulkanRenderer3D::selectGraphicsDepthStencilFormat()
     return false;
 }
 
-std::string VulkanRenderer3D::buildPipelineCacheFileName(TextureSamplingPath samplingPath) const
-{
-    VkPhysicalDeviceProperties deviceProperties{};
-    vkGetPhysicalDeviceProperties(PhysicalDevice, &deviceProperties);
-
-    const u64 versionHash = fnv1a64(MELONDS_VERSION);
-    const char* samplingPathSuffix = textureSamplingPathName(samplingPath);
-    char cacheFileName[256]{};
-    std::snprintf(
-        cacheFileName,
-        sizeof(cacheFileName),
-        "vulkan_pipeline_cache_v%u_%08x_%08x_%08x_%016llx_%s.bin",
-        kPipelineCacheFileVersion,
-        deviceProperties.vendorID,
-        deviceProperties.deviceID,
-        deviceProperties.driverVersion,
-        static_cast<unsigned long long>(versionHash),
-        samplingPathSuffix
-    );
-    return cacheFileName;
-}
-
-bool VulkanRenderer3D::createPipelineCache(TextureSamplingPath samplingPath)
-{
-    if (ComputePipelineCache != VK_NULL_HANDLE)
-        return true;
-
-    ComputePipelineCacheFile = buildPipelineCacheFileName(samplingPath);
-
-    std::vector<u8> cacheData;
-    if (Platform::FileHandle* cacheFile = Platform::OpenLocalFile(ComputePipelineCacheFile, Platform::FileMode::Read))
-    {
-        const u64 cacheSize = Platform::FileLength(cacheFile);
-        if (cacheSize > 0 && cacheSize <= (256ull * 1024ull * 1024ull))
-        {
-            cacheData.resize(static_cast<size_t>(cacheSize));
-            if (Platform::FileRead(cacheData.data(), 1, cacheSize, cacheFile) != cacheSize)
-            {
-                Log(LogLevel::Warn, "VulkanRenderer3D: failed to read pipeline cache %s", ComputePipelineCacheFile.c_str());
-                cacheData.clear();
-            }
-            else
-            {
-                Log(
-                    LogLevel::Info,
-                    "VulkanRenderer3D: loaded pipeline cache (%s, %llu bytes)",
-                    ComputePipelineCacheFile.c_str(),
-                    static_cast<unsigned long long>(cacheSize)
-                );
-            }
-        }
-
-        Platform::CloseFile(cacheFile);
-    }
-
-    VkPipelineCacheCreateInfo cacheCreateInfo{};
-    cacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    cacheCreateInfo.initialDataSize = cacheData.size();
-    cacheCreateInfo.pInitialData = cacheData.empty() ? nullptr : cacheData.data();
-
-    VkResult cacheResult = vkCreatePipelineCache(Device, &cacheCreateInfo, nullptr, &ComputePipelineCache);
-    if (cacheResult != VK_SUCCESS && !cacheData.empty())
-    {
-        Log(
-            LogLevel::Warn,
-            "VulkanRenderer3D: pipeline cache data rejected, recreating empty cache (%d)",
-            static_cast<int>(cacheResult)
-        );
-        cacheCreateInfo.initialDataSize = 0;
-        cacheCreateInfo.pInitialData = nullptr;
-        cacheResult = vkCreatePipelineCache(Device, &cacheCreateInfo, nullptr, &ComputePipelineCache);
-    }
-
-    if (cacheResult != VK_SUCCESS)
-    {
-        Log(LogLevel::Warn, "VulkanRenderer3D: failed to create pipeline cache (%d)", static_cast<int>(cacheResult));
-        ComputePipelineCache = VK_NULL_HANDLE;
-        return false;
-    }
-
-    return true;
-}
-
-void VulkanRenderer3D::savePipelineCache()
-{
-    if (Device == VK_NULL_HANDLE || ComputePipelineCache == VK_NULL_HANDLE || ComputePipelineCacheFile.empty())
-        return;
-
-    size_t cacheSize = 0;
-    if (vkGetPipelineCacheData(Device, ComputePipelineCache, &cacheSize, nullptr) != VK_SUCCESS || cacheSize == 0)
-        return;
-
-    std::vector<u8> cacheData(cacheSize);
-    if (vkGetPipelineCacheData(Device, ComputePipelineCache, &cacheSize, cacheData.data()) != VK_SUCCESS || cacheSize == 0)
-        return;
-
-    Platform::FileHandle* cacheFile = Platform::OpenLocalFile(ComputePipelineCacheFile, Platform::FileMode::ReadWrite);
-    if (cacheFile == nullptr)
-    {
-        Log(LogLevel::Warn, "VulkanRenderer3D: failed to open pipeline cache for writing (%s)", ComputePipelineCacheFile.c_str());
-        return;
-    }
-
-    const u64 written = Platform::FileWrite(cacheData.data(), 1, cacheSize, cacheFile);
-    Platform::FileFlush(cacheFile);
-    Platform::CloseFile(cacheFile);
-
-    if (written != cacheSize)
-    {
-        Log(
-            LogLevel::Warn,
-            "VulkanRenderer3D: incomplete pipeline cache write (%s %llu/%llu)",
-            ComputePipelineCacheFile.c_str(),
-            static_cast<unsigned long long>(written),
-            static_cast<unsigned long long>(cacheSize)
-        );
-        return;
-    }
-
-    Log(
-        LogLevel::Info,
-        "VulkanRenderer3D: saved pipeline cache (%s, %llu bytes)",
-        ComputePipelineCacheFile.c_str(),
-        static_cast<unsigned long long>(cacheSize)
-    );
-}
-
 bool VulkanRenderer3D::createComputePipeline()
 {
     if (melonDS_gpu3d_vulkan_interp_spans_comp_spv_len == 0
@@ -3919,11 +3766,24 @@ bool VulkanRenderer3D::createComputePipeline()
     }
 
     const TextureSamplingPath samplingPath = ActiveTextureSamplingPath;
-    if (!createPipelineCache(samplingPath))
+    const VulkanContext& pipelineCacheContext = VulkanContext::Get();
+    const u32 descriptorIndexingMode =
+        (pipelineCacheContext.SupportsDynamicTextureIndexing() ? 1u : 0u)
+        | (pipelineCacheContext.SupportsNonUniformTextureIndexing() ? 2u : 0u)
+        | (pipelineCacheContext.IsDynamicTextureIndexingForcedOff() ? 4u : 0u);
+    if (!PipelineCache.Create(
+            PhysicalDevice,
+            Device,
+            VulkanPipelineCacheOwner::Renderer3D,
+            "3D",
+            "melonprime_vulkan_r25_3d.cache",
+            MelonPrime::Vulkan::kRenderer3DPipelineAbiVersion,
+            descriptorIndexingMode,
+            static_cast<u32>(samplingPath)))
     {
         Log(
             LogLevel::Warn,
-            "VulkanRenderer3D: pipeline cache unavailable, continuing without persistent cache"
+            "VulkanRenderer3D: persistent pipeline cache unavailable; continuing uncached"
         );
     }
 
@@ -3976,7 +3836,7 @@ bool VulkanRenderer3D::createComputePipeline()
 
         const VkResult pipelineResult = vkCreateComputePipelines(
             Device,
-            ComputePipelineCache,
+            PipelineCache.Get(),
             1,
             &pipelineCreateInfo,
             nullptr,
@@ -4603,7 +4463,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
         pipelineCreateInfo.renderPass = GraphicsRasterRenderPass;
         pipelineCreateInfo.subpass = 0;
 
-        return vkCreateGraphicsPipelines(Device, ComputePipelineCache, 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
+        return vkCreateGraphicsPipelines(Device, PipelineCache.Get(), 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
     };
 
     auto createFullscreenRasterPipeline = [&](VkShaderModule fragmentModule,
@@ -4701,7 +4561,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
         pipelineCreateInfo.renderPass = GraphicsRasterRenderPass;
         pipelineCreateInfo.subpass = 0;
 
-        return vkCreateGraphicsPipelines(Device, ComputePipelineCache, 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
+        return vkCreateGraphicsPipelines(Device, PipelineCache.Get(), 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
     };
 
     auto createFinalPipeline = [&](VkShaderModule fragmentModule,
@@ -4770,7 +4630,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
         pipelineCreateInfo.renderPass = GraphicsFinalRenderPass;
         pipelineCreateInfo.subpass = 0;
 
-        return vkCreateGraphicsPipelines(Device, ComputePipelineCache, 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
+        return vkCreateGraphicsPipelines(Device, PipelineCache.Get(), 1, &pipelineCreateInfo, nullptr, outPipeline) == VK_SUCCESS;
     };
 
     struct RasterFragmentSpecialization
@@ -5353,7 +5213,6 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     vkDestroyShaderModule(Device, fogFragModule, nullptr);
 
     GraphicsReady = true;
-    savePipelineCache();
     return true;
 }
 

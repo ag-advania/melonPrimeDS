@@ -16,6 +16,7 @@
 #include "VulkanFilterMode.h"
 #include "types.h"
 #include "VulkanR24Sync.h"
+#include "VulkanPipelineCache.h"
 
 namespace MelonDSAndroid
 {
@@ -425,6 +426,7 @@ private:
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    melonDS::VulkanPersistentPipelineCache pipelineCache;
     VkShaderModule vertexShaderModule = VK_NULL_HANDLE;
     VkShaderModule fragmentShaderModule = VK_NULL_HANDLE;
     VkSampler nearestSampler = VK_NULL_HANDLE;

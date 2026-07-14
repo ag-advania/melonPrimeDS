@@ -18,6 +18,14 @@ namespace MelonPrime::Vulkan
     inline constexpr const char* kSapphireCoreRepo = "SapphireRhodonite/melonDS-android-lib";
     inline constexpr const char* kSapphireCoreCommit =
         "d77944275fa61f9b79cfcead2c3e98993429a023";
+    // R25 persistent pipeline-cache identity. Bump an owner ABI whenever its
+    // descriptor layout, push constants, shader set, or fixed pipeline state changes.
+    inline constexpr const char* kSapphireShaderManifestIdentity =
+        "git-blob:a9b505e8d017482e7e6f5f67e30b118c6d465a43";
+    inline constexpr unsigned kPipelineCacheDiskFormatVersion = 1;
+    inline constexpr unsigned kRenderer3DPipelineAbiVersion = 1;
+    inline constexpr unsigned kCompositorPipelineAbiVersion = 1;
+    inline constexpr unsigned kPresenterPipelineAbiVersion = 1;
 } // namespace MelonPrime::Vulkan
 
 // Historical marker comments below are retained only as git-blame/code-search

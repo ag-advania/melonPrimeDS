@@ -122,3 +122,13 @@ Desktop replacements are owned by `VulkanContext`, `MelonPrimeVulkanSurfaceHost`
 - `VulkanOutput` retires per-FrameQueue-slot images, buffers, descriptor sets, command buffers, query pools, and fences against composition timeline/fence completion.
 - `VulkanSurfacePresenter` uses EXCLUSIVE swapchain images and explicit present-family to graphics-family and graphics-family to present-family ownership barriers. Old swapchain resources are moved to the presenter retire queue after pending present completion.
 - `VulkanContext::CheckResult()` is the common device-loss latch for queue submit, acquire, present, and blocking completion operations.
+
+## R25 persistent pipeline-cache ownership
+
+<!-- MELONPRIME_VULKAN_R25_MANIFEST_V1 -->
+
+- `src/VulkanPipelineCache.h` is a desktop/core compatibility adapter with no Sapphire algorithm equivalent. It owns the validated disk header, device/driver/pipeline-cache UUID key, reference and shader-manifest identity, owner ABI version, corruption fallback, cross-process save lock, temporary-file write, and atomic replacement.
+- `VulkanRenderer3D` owns `melonprime_vulkan_r25_3d.cache` for both its compute and graphics pipelines. The texture sampling path and descriptor-indexing mode are part of the key.
+- `VulkanOutput` owns `melonprime_vulkan_r25_compositor.cache` for compositor and accumulated-high-resolution compute pipelines.
+- `VulkanSurfacePresenter` owns `melonprime_vulkan_r25_presenter.cache` for swapchain-format-compatible presenter graphics pipelines.
+- Cache data never crosses owner/pipeline-layout boundaries. Load/save failure is non-fatal, empty data never replaces a valid file, and device loss skips cache extraction.

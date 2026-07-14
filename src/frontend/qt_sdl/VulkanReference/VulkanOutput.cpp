@@ -433,6 +433,21 @@ bool VulkanOutput::init()
         return false;
     }
 
+    const auto& pipelineCacheContext = melonDS::VulkanContext::Get();
+    const u32 descriptorIndexingMode =
+        (pipelineCacheContext.SupportsDynamicTextureIndexing() ? 1u : 0u)
+        | (pipelineCacheContext.SupportsNonUniformTextureIndexing() ? 2u : 0u)
+        | (pipelineCacheContext.IsDynamicTextureIndexingForcedOff() ? 4u : 0u);
+    (void)pipelineCache.Create(
+        physicalDevice,
+        device,
+        melonDS::VulkanPipelineCacheOwner::Compositor,
+        "Compositor",
+        "melonprime_vulkan_r25_compositor.cache",
+        MelonPrime::Vulkan::kCompositorPipelineAbiVersion,
+        descriptorIndexingMode,
+        0u);
+
     if (!createSyncObjects() || !createCommandObjects() || !createCompositorResources() || !createAccumulateResources())
     {
         shutdown();
@@ -463,6 +478,7 @@ void VulkanOutput::shutdown()
     retiredResources.Drain(device, waitSemaphores, deviceLost);
     destroyAccumulateResources();
     destroyCompositorResources();
+    pipelineCache.SaveAndDestroy(deviceLost);
 
     if (timelineSemaphore != VK_NULL_HANDLE)
     {
@@ -812,7 +828,7 @@ bool VulkanOutput::createCompositorResources()
 
     const VkResult pipelineResult = vkCreateComputePipelines(
         device,
-        VK_NULL_HANDLE,
+        pipelineCache.Get(),
         1,
         &computePipelineCreateInfo,
         nullptr,
@@ -989,7 +1005,7 @@ bool VulkanOutput::createAccumulateResources()
 
     const VkResult result = vkCreateComputePipelines(
         device,
-        VK_NULL_HANDLE,
+        pipelineCache.Get(),
         1,
         &computePipelineCreateInfo,
         nullptr,

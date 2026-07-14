@@ -771,6 +771,35 @@
 
 検証: 対象blob SHA、target fileの未commit差分、exact anchor、`git diff --check`を確認した。Windows正規入口`.claude\skills\build-mingw-vulkan.bat --jobs 1`が成功し、本見出しを「実装・Windows Vulkanビルド完了」へ更新した。
 
+
+## R25 — 2026-07-14 実装・Windows Vulkanビルド完了
+
+<!-- MELONPRIME_VULKAN_R25_PROGRESS_V1 -->
+
+1. 変更したファイル
+   - `src/VulkanPipelineCache.h`
+   - `src/VulkanReferencePortVersion.h`
+   - `src/GPU3D_Vulkan.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanOutput.h/.cpp`
+   - `src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h/.cpp`
+   - `src/VulkanReferenceManifest.md`
+2. 新しく追加した型、関数、resource
+   - owner別`VulkanPersistentPipelineCache`と3個の独立cache file。
+   - vendor/device/driver、`pipelineCacheUUID`、固定core commit/frontend tag、shader manifest identity、descriptor indexing mode、texture sampling path、owner ABIを含むdisk key。
+   - header/payload hash検証、破損時の空cache再作成、一時ファイル＋atomic replace、10分で回収可能なdirectory lock。
+3. 所有権とlifecycle
+   - 3D cacheはcompute/graphics pipelineを同じ3D owner内だけで共有する。
+   - compositor cacheとpresenter cacheは3D cacheおよび相互に共有しない。
+   - shutdown時にpipelineを破棄してからcache dataを保存し、device loss時は保存を省略する。
+4. 失敗時動作
+   - cache未検出、key不一致、破損、driverによるinitial data拒否、lock競合、保存失敗はいずれもrenderer失敗にしない。
+   - 空payloadは既存cacheを上書きしない。
+5. variant生成
+   - computeの特殊化variantは既存のfirst-use生成を維持し、presenter pipelineはsurface/swapchain確定時に生成する。
+   - cache mutationはpipeline生成時とordered shutdown時だけで、in-flight command/resourceを変更しない。
+
+検証: `git diff --check`、owner cache分離、全pipeline create callへのowner cache接続、legacy raw cache経路除去を静的検証。Windows Vulkanビルド結果は見出しに記録する。
+
 ## Sapphire直接移植方針調査 — 2026-07-14 計画反映
 
 ### 結論

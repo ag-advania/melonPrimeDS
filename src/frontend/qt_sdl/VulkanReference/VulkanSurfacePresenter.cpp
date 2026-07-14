@@ -450,6 +450,21 @@ bool VulkanSurfacePresenter::init()
         return false;
     }
 
+    const auto& pipelineCacheContext = melonDS::VulkanContext::Get();
+    const u32 descriptorIndexingMode =
+        (pipelineCacheContext.SupportsDynamicTextureIndexing() ? 1u : 0u)
+        | (pipelineCacheContext.SupportsNonUniformTextureIndexing() ? 2u : 0u)
+        | (pipelineCacheContext.IsDynamicTextureIndexingForcedOff() ? 4u : 0u);
+    (void)pipelineCache.Create(
+        physicalDevice,
+        device,
+        melonDS::VulkanPipelineCacheOwner::Presenter,
+        "Presenter",
+        "melonprime_vulkan_r25_presenter.cache",
+        MelonPrime::Vulkan::kPresenterPipelineAbiVersion,
+        descriptorIndexingMode,
+        0u);
+
     if (!createCommonResources())
     {
         shutdown();
@@ -487,6 +502,7 @@ void VulkanSurfacePresenter::shutdown()
 
     destroySyncObjects();
     destroyCommonResources();
+    pipelineCache.SaveAndDestroy(deviceLost);
 
     if (contextAcquired)
     {
@@ -1892,7 +1908,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     const VkResult createPipelineResult = vkCreateGraphicsPipelines(
         device,
-        VK_NULL_HANDLE,
+        pipelineCache.Get(),
         1,
         &pipelineInfo,
         nullptr,

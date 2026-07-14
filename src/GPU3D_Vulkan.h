@@ -29,6 +29,7 @@
 #include "GPU3D_TexcacheVulkan.h"
 #include "VulkanPerfStats.h"
 #include "VulkanR24Sync.h"
+#include "VulkanPipelineCache.h"
 
 namespace melonDS
 {
@@ -457,9 +458,6 @@ private:
     bool createGraphicsDescriptorObjects();
     bool createComputePipeline();
     bool createGraphicsPipelines();
-    bool createPipelineCache(TextureSamplingPath samplingPath);
-    void savePipelineCache();
-    std::string buildPipelineCacheFileName(TextureSamplingPath samplingPath) const;
 
     bool ensureRenderTarget(u32 width, u32 height);
     void retireRenderTarget();
@@ -673,8 +671,7 @@ private:
     CapturePathMode ActiveCapturePathMode = CapturePathMode::Disabled;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayout GraphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineCache ComputePipelineCache = VK_NULL_HANDLE;
-    std::string ComputePipelineCacheFile;
+    VulkanPersistentPipelineCache PipelineCache;
     VkPipeline InterpPipeline = VK_NULL_HANDLE;
     VkPipeline BinPipeline = VK_NULL_HANDLE;
     VkPipeline WorkOffsetsPipeline = VK_NULL_HANDLE;
