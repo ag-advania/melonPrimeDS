@@ -298,6 +298,36 @@
 
 検証: context数6、slot別resource、graphics pathのring取得、対象slot以外の通常frame待機不存在、capacity倍増、persistent mapping、descriptor cache分離、timestamp optional、3D timeline signal→VulkanOutput waitのsubmit連鎖を静的監査。通常frameのbuffer resizeに`vkDeviceWaitIdle`を使わないことと`git diff --check`成功を確認。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
 
+## R9 — 2026-07-14 実装完了
+
+1. 変更したファイル
+   - `src/GPU3D_AcceleratedFrontend.h`
+   - `src/GPU3D_AcceleratedFrontend.cpp`
+   - `src/GPU3D_Vulkan.h`
+   - `src/GPU3D_Vulkan.cpp`
+2. 新しく追加した型、関数、resource
+   - `RenderPolygonRAM`とpolygon数、display/alpha/clear/fog/toon/edge/XPos stateを一度に固定する`AcceleratedSceneBuildInput`と`CaptureAcceleratedSceneBuildInput()`。
+   - build結果へ同じscalar/table stateを保持する`AcceleratedSceneRenderState`。
+   - draw単位の`TexParam`/`TexPalette`とcoverage depth bias。
+   - 共通frontend内で2 endpointを1px幅の4 vertex/2 triangleへ変換するline polygon quad。
+3. 削除した旧経路
+   - `SetRenderSettings()`で`HiresCoordinates`を捨てる処理を削除した。
+   - live graphics pathからVulkan独自polygon loopを外し、`GPU3D_AcceleratedFrontend`を常時呼ぶよう固定した。旧非到達builder本体のsource削除はR26 cleanupで行う。
+   - source lineをVulkan側で再quad化する経路を削除し、sceneが生成したtriangleをそのままGPU ABIへ変換する。
+4. 所有権とframe lifecycleの変更
+   - EmuThread上でrender stateとpolygon pointer順をimmutable build inputへ一度captureし、そのinputだけからsceneを構築する。
+   - draw順は`RenderPolygonRAM`順のままappendし、非隣接stateを結合・再sortしない。`FirstTranslucentDraw`は有効drawをpublishする瞬間に確定する。
+   - Vulkan graphics変換区間はsceneのvertex/triangle/draw/texture/render stateだけを読み、source polygonを再dereferenceしない。
+5. 参照実装との差分
+   - desktop側の既存GPU ABI buffer/pipelineは維持し、scene build後の一括packing adapterとして使用する。geometry変換はadapter内で行わない。
+   - alpha-zero polygonのboundary line描画はsource line primitive変換ではなくraster pass生成のため、既存scene triangle boundaryから生成する処理を維持する。
+6. 後続フェーズへ渡すinterface
+   - R10 texture cacheがsource polygon pointerを読まず利用できるdraw単位texture key。
+   - R11～R16が同一frameのclear/fog/toon/edge/capture stateを参照できる`AcceleratedSceneRenderState`。
+   - R24がslot-local upload/synchronizationへ接続できる、live `GPU3D`から分離されたscene build境界。
+
+検証: build input指定13項目のcapture、`HiresCoordinates`伝播、line 4 vertex/2 triangle、draw append順、graphics変換区間のsource polygon dereference 0件、live geometry pathの共通frontend固定を静的監査。`git diff --check`成功。ユーザー指示によりアプリ全体の`build-mingw-vulkan.bat`は実行せず、実装を優先した。
+
 ---
 
 # 1. 目的

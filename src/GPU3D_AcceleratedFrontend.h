@@ -18,6 +18,7 @@ struct AcceleratedCoverageFixConfig
 {
     bool Enabled = false;
     float UserPx = 0.0f;
+    float DepthBias = 0.0f;
     bool ApplyRepeat = true;
     bool ApplyClamp = false;
     float PassiveRepeatPx = 0.0f;
@@ -32,6 +33,7 @@ struct AcceleratedCoverageFixState
     bool ApplyUserFix = false;
     bool ApplyPassiveFix = false;
     float EffectivePx = 0.0f;
+    float DepthBias = 0.0f;
 };
 
 enum AcceleratedPolygonFlags : u32
@@ -105,6 +107,8 @@ struct AcceleratedSceneDraw
 {
     const Polygon* SourcePolygon = nullptr;
     AcceleratedPolygonMeta Meta{};
+    u32 TexParam = 0;
+    u32 TexPalette = 0;
     AcceleratedPrimitiveType PrimitiveType = AcceleratedPrimitiveType::Triangles;
     AcceleratedCoverageFixState CoverageFixState{};
     u32 FirstVertex = 0;
@@ -117,6 +121,28 @@ struct AcceleratedSceneDraw
     u32 TriangleCount = 0;
 };
 
+struct AcceleratedSceneRenderState
+{
+    u32 RenderDispCnt = 0;
+    u8 RenderAlphaRef = 0;
+    u32 RenderClearAttr1 = 0;
+    u32 RenderClearAttr2 = 0;
+    u32 RenderFogColor = 0;
+    u32 RenderFogOffset = 0;
+    u32 RenderFogShift = 0;
+    std::array<u8, 34> RenderFogDensityTable{};
+    std::array<u16, 32> RenderToonTable{};
+    std::array<u16, 8> RenderEdgeTable{};
+    u16 RenderXPos = 0;
+};
+
+struct AcceleratedSceneBuildInput
+{
+    std::array<const Polygon*, 2048> RenderPolygonRAM{};
+    u32 RenderNumPolygons = 0;
+    AcceleratedSceneRenderState RenderState{};
+};
+
 struct AcceleratedScene
 {
     std::vector<AcceleratedSceneVertex> Vertices;
@@ -125,6 +151,7 @@ struct AcceleratedScene
     std::vector<AcceleratedSceneTriangle> Triangles;
     std::vector<AcceleratedSceneDraw> Draws;
     u32 FirstTranslucentDraw = std::numeric_limits<u32>::max();
+    AcceleratedSceneRenderState RenderState{};
 };
 
 struct AcceleratedSceneBuildConfig
@@ -156,8 +183,9 @@ void ComputeAcceleratedCoverageExpandedVerticesFixed(
     float coverageFixPx,
     std::array<u32, 10>& outX,
     std::array<u32, 10>& outY) noexcept;
+AcceleratedSceneBuildInput CaptureAcceleratedSceneBuildInput(const GPU3D& gpu3d) noexcept;
 void BuildAcceleratedScene(
-    const GPU3D& gpu3d,
+    const AcceleratedSceneBuildInput& input,
     const AcceleratedSceneBuildConfig& config,
     AcceleratedScene& outScene);
 

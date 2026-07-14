@@ -175,7 +175,10 @@ AcceleratedCoverageFixState ResolveAcceleratedCoverageFix(
     {
         state.ApplyUserFix = isRepeat ? config.ApplyRepeat : config.ApplyClamp;
         if (state.ApplyUserFix)
+        {
             state.EffectivePx += config.UserPx;
+            state.DepthBias = config.DepthBias;
+        }
     }
 
     if (!config.DisablePassiveRepeat && config.PassiveRepeatPx > 0.0f && isRepeat)
@@ -267,8 +270,34 @@ void ComputeAcceleratedCoverageExpandedVerticesFixed(
     }
 }
 
+AcceleratedSceneBuildInput CaptureAcceleratedSceneBuildInput(const GPU3D& gpu3d) noexcept
+{
+    AcceleratedSceneBuildInput input{};
+    input.RenderNumPolygons = std::min<u32>(
+        gpu3d.RenderNumPolygons,
+        static_cast<u32>(input.RenderPolygonRAM.size()));
+    for (u32 polygonIndex = 0; polygonIndex < input.RenderNumPolygons; polygonIndex++)
+        input.RenderPolygonRAM[polygonIndex] = gpu3d.RenderPolygonRAM[polygonIndex];
+
+    input.RenderState.RenderDispCnt = gpu3d.RenderDispCnt;
+    input.RenderState.RenderAlphaRef = gpu3d.RenderAlphaRef;
+    input.RenderState.RenderClearAttr1 = gpu3d.RenderClearAttr1;
+    input.RenderState.RenderClearAttr2 = gpu3d.RenderClearAttr2;
+    input.RenderState.RenderFogColor = gpu3d.RenderFogColor;
+    input.RenderState.RenderFogOffset = gpu3d.RenderFogOffset;
+    input.RenderState.RenderFogShift = gpu3d.RenderFogShift;
+    std::copy_n(gpu3d.RenderFogDensityTable, input.RenderState.RenderFogDensityTable.size(),
+                input.RenderState.RenderFogDensityTable.begin());
+    std::copy_n(gpu3d.RenderToonTable, input.RenderState.RenderToonTable.size(),
+                input.RenderState.RenderToonTable.begin());
+    std::copy_n(gpu3d.RenderEdgeTable, input.RenderState.RenderEdgeTable.size(),
+                input.RenderState.RenderEdgeTable.begin());
+    input.RenderState.RenderXPos = gpu3d.RenderXPos;
+    return input;
+}
+
 void BuildAcceleratedScene(
-    const GPU3D& gpu3d,
+    const AcceleratedSceneBuildInput& input,
     const AcceleratedSceneBuildConfig& config,
     AcceleratedScene& outScene)
 {
@@ -278,8 +307,11 @@ void BuildAcceleratedScene(
     outScene.Triangles.clear();
     outScene.Draws.clear();
     outScene.FirstTranslucentDraw = std::numeric_limits<u32>::max();
+    outScene.RenderState = input.RenderState;
 
-    const u32 renderPolygonCount = gpu3d.RenderNumPolygons;
+    const u32 renderPolygonCount = std::min<u32>(
+        input.RenderNumPolygons,
+        static_cast<u32>(input.RenderPolygonRAM.size()));
     outScene.Vertices.reserve(static_cast<size_t>(renderPolygonCount) * 9u);
     outScene.Indices.reserve(static_cast<size_t>(renderPolygonCount) * 30u);
     outScene.EdgeIndices.reserve(static_cast<size_t>(renderPolygonCount) * 20u);
@@ -427,7 +459,7 @@ void BuildAcceleratedScene(
 
     for (u32 polygonIndex = 0; polygonIndex < renderPolygonCount; polygonIndex++)
     {
-        const Polygon* polygon = gpu3d.RenderPolygonRAM[polygonIndex];
+        const Polygon* polygon = input.RenderPolygonRAM[polygonIndex];
         if (polygon == nullptr
             || polygon->Degenerate
             || (polygon->Type == 1 ? polygon->NumVertices < 2u : polygon->NumVertices < 3u))
@@ -438,6 +470,8 @@ void BuildAcceleratedScene(
         AcceleratedSceneDraw draw{};
         draw.SourcePolygon = polygon;
         draw.Meta = BuildAcceleratedPolygonMeta(*polygon);
+        draw.TexParam = polygon->TexParam;
+        draw.TexPalette = polygon->TexPalette;
         draw.CoverageFixState = ResolveAcceleratedCoverageFix(*polygon, config.CoverageFix);
         if (draw.CoverageFixState.Apply)
         {
@@ -468,9 +502,6 @@ void BuildAcceleratedScene(
         draw.FirstEdgeIndex = static_cast<u32>(outScene.EdgeIndices.size());
         draw.FirstTriangle = static_cast<u32>(outScene.Triangles.size());
         draw.PrimitiveType = polygon->Type == 1 ? AcceleratedPrimitiveType::Lines : AcceleratedPrimitiveType::Triangles;
-
-        if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
-            outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
 
         u32 vertexAttrBase = BuildAcceleratedVertexAttr(draw.Meta);
         if (draw.CoverageFixState.Apply)
@@ -522,33 +553,77 @@ void BuildAcceleratedScene(
         if (polygon->Type == 1)
         {
             const AcceleratedLineEndpoints lineEndpoints = ResolveAcceleratedLineEndpoints(*polygon);
-            for (u32 endpointIndex = 0; endpointIndex < lineEndpoints.Count; endpointIndex++)
+            if (lineEndpoints.Count != 2u
+                || lineEndpoints.Vertices[0] == nullptr
+                || lineEndpoints.Vertices[1] == nullptr)
             {
-                const Vertex* vertex = lineEndpoints.Vertices[endpointIndex];
-                if (vertex == nullptr)
-                    continue;
-
-                const u32 sourceVertexIndex = lineEndpoints.Indices[endpointIndex];
-                const auto [xFixed, yFixed] = resolveFixedCoords(sourceVertexIndex);
-                const u16 sceneVertexIndex = appendSceneVertex(
-                    xFixed,
-                    yFixed,
-                    polygon->FinalZ[sourceVertexIndex],
-                    std::max<s32>(1, polygon->FinalW[sourceVertexIndex]),
-                    static_cast<u16>(std::clamp(vertex->FinalColor[0], 0, 511)),
-                    static_cast<u16>(std::clamp(vertex->FinalColor[1], 0, 511)),
-                    static_cast<u16>(std::clamp(vertex->FinalColor[2], 0, 511)),
-                    static_cast<u16>(draw.Meta.Alpha5),
-                    static_cast<s16>(vertex->TexCoords[0]),
-                    static_cast<s16>(vertex->TexCoords[1]),
-                    vertexAttrBase);
-                polygonVertexIndices.push_back(sceneVertexIndex);
-                outScene.Indices.push_back(sceneVertexIndex);
-                draw.IndexCount++;
+                continue;
             }
 
-            draw.VertexCount = static_cast<u32>(outScene.Vertices.size()) - draw.FirstVertex;
+            const u32 sourceIndex0 = lineEndpoints.Indices[0];
+            const u32 sourceIndex1 = lineEndpoints.Indices[1];
+            const auto [xFixed0, yFixed0] = resolveFixedCoords(sourceIndex0);
+            const auto [xFixed1, yFixed1] = resolveFixedCoords(sourceIndex1);
+            const float x0 = static_cast<float>(xFixed0) * (1.0f / 16.0f);
+            const float y0 = static_cast<float>(yFixed0) * (1.0f / 16.0f);
+            const float x1 = static_cast<float>(xFixed1) * (1.0f / 16.0f);
+            const float y1 = static_cast<float>(yFixed1) * (1.0f / 16.0f);
+            const float deltaX = x1 - x0;
+            const float deltaY = y1 - y0;
+            const float lineLengthSquared = (deltaX * deltaX) + (deltaY * deltaY);
+            if (lineLengthSquared <= 0.000001f)
+                continue;
+
+            const float inverseLineLength = 1.0f / std::sqrt(lineLengthSquared);
+            const float perpX = -deltaY * inverseLineLength * 0.5f;
+            const float perpY = deltaX * inverseLineLength * 0.5f;
+            const std::array<float, 4> quadX = {x0 + perpX, x0 - perpX, x1 - perpX, x1 + perpX};
+            const std::array<float, 4> quadY = {y0 + perpY, y0 - perpY, y1 - perpY, y1 + perpY};
+
+            for (u32 quadIndex = 0; quadIndex < 4u; quadIndex++)
+            {
+                const u32 endpointIndex = quadIndex < 2u ? 0u : 1u;
+                const u32 sourceVertexIndex = lineEndpoints.Indices[endpointIndex];
+                const Vertex& vertex = *lineEndpoints.Vertices[endpointIndex];
+                const u16 sceneVertexIndex = appendSceneVertex(
+                    static_cast<s32>(std::lround(quadX[quadIndex] * 16.0f)),
+                    static_cast<s32>(std::lround(quadY[quadIndex] * 16.0f)),
+                    polygon->FinalZ[sourceVertexIndex],
+                    std::max<s32>(1, polygon->FinalW[sourceVertexIndex]),
+                    static_cast<u16>(std::clamp(vertex.FinalColor[0], 0, 511)),
+                    static_cast<u16>(std::clamp(vertex.FinalColor[1], 0, 511)),
+                    static_cast<u16>(std::clamp(vertex.FinalColor[2], 0, 511)),
+                    static_cast<u16>(draw.Meta.Alpha5),
+                    static_cast<s16>(vertex.TexCoords[0]),
+                    static_cast<s16>(vertex.TexCoords[1]),
+                    vertexAttrBase,
+                    true);
+                outScene.Vertices[sceneVertexIndex].X = quadX[quadIndex];
+                outScene.Vertices[sceneVertexIndex].Y = quadY[quadIndex];
+                polygonVertexIndices.push_back(sceneVertexIndex);
+            }
+
+            draw.VertexCount = 4u;
+            const std::optional<u32> lineYBounds = packYBounds(polygonVertexIndices, false, *polygon);
+            if (!lineYBounds.has_value())
+                continue;
+            appendTriangle(
+                draw,
+                polygonVertexIndices[0],
+                polygonVertexIndices[1],
+                polygonVertexIndices[2],
+                AcceleratedTriangleBoundaryEdge0 | AcceleratedTriangleBoundaryEdge2,
+                *lineYBounds);
+            appendTriangle(
+                draw,
+                polygonVertexIndices[0],
+                polygonVertexIndices[2],
+                polygonVertexIndices[3],
+                AcceleratedTriangleBoundaryEdge0 | AcceleratedTriangleBoundaryEdge1,
+                *lineYBounds);
             appendEdges(draw, draw.VertexCount);
+            if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
+                outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
             outScene.Draws.push_back(draw);
             continue;
         }
@@ -721,6 +796,8 @@ void BuildAcceleratedScene(
         }
 
         appendEdges(draw, draw.VertexCount);
+        if (outScene.FirstTranslucentDraw == std::numeric_limits<u32>::max() && polygon->Translucent)
+            outScene.FirstTranslucentDraw = static_cast<u32>(outScene.Draws.size());
         outScene.Draws.push_back(draw);
     }
 }

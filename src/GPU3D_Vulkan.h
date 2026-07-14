@@ -127,9 +127,8 @@ public:
 
     void SetRenderSettings(bool threaded, bool betterPolygons, int scale, bool hiresCoordinates) override
     {
-        (void)hiresCoordinates;
         SetRenderSettings(
-            threaded, betterPolygons, scale,
+            threaded, betterPolygons, scale, hiresCoordinates,
             false, false, 0.0f, 0.0f, true, false, false, GPU);
     }
 
@@ -152,6 +151,7 @@ public:
         bool threaded,
         bool betterPolygons,
         int scale,
+        bool hiresCoordinates,
         bool useSimplePipeline,
         bool conservativeCoverageEnabled,
         float conservativeCoveragePx,
@@ -627,6 +627,7 @@ private:
 
     int ScaleFactor = 1;
     bool BetterPolygons = true;
+    bool HiresCoordinates = false;
     bool CoverageFixEnabled = false;
     float CoverageFixPx = 0.0f;
     float CoverageFixDepthBias = 0.0f;

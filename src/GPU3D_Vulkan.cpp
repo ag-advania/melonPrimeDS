@@ -1475,6 +1475,7 @@ void VulkanRenderer3D::SetRenderSettings(
     bool threaded,
     bool betterPolygons,
     int scale,
+    bool hiresCoordinates,
     bool useSimplePipeline,
     bool conservativeCoverageEnabled,
     float conservativeCoveragePx,
@@ -1489,6 +1490,7 @@ void VulkanRenderer3D::SetRenderSettings(
     const int oldScale = ScaleFactor;
     BetterPolygons = betterPolygons;
     ScaleFactor = std::max(1, scale);
+    HiresCoordinates = hiresCoordinates;
     (void)useSimplePipeline;
     UseSimplePipeline = true;
     CoverageFixEnabled = conservativeCoverageEnabled;
@@ -12256,20 +12258,20 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
     const float scale = static_cast<float>(scaleFactor);
     const float maxTargetX = 256.0f * scale;
     const float maxTargetY = 192.0f * scale;
-    const bool textureMapsEnabled = (gpu.GPU3D.RenderDispCnt & (1u << 0u)) != 0u;
-    const bool highlightEnabled = (gpu.GPU3D.RenderDispCnt & (1u << 1u)) != 0u;
+    const AcceleratedSceneBuildInput sceneInput = CaptureAcceleratedSceneBuildInput(gpu.GPU3D);
+    const bool textureMapsEnabled = (sceneInput.RenderState.RenderDispCnt & (1u << 0u)) != 0u;
+    const bool highlightEnabled = (sceneInput.RenderState.RenderDispCnt & (1u << 1u)) != 0u;
     const bool disablePassiveRepeatCoverageExpand =
         (MelonDSAndroid::getVulkanDiagnosticFlags() & kVulkanDiagnosticDisablePassiveRepeatCoverageExpand) != 0u;
-    const float coverageDepthBias = CoverageFixDepthBias * 16777215.0f;
-
     AcceleratedSceneBuildConfig sceneBuildConfig{};
     sceneBuildConfig.Scale = ScaleFactor;
     sceneBuildConfig.BetterPolygons = BetterPolygons;
-    sceneBuildConfig.UseHiresCoordinates = true;
+    sceneBuildConfig.UseHiresCoordinates = HiresCoordinates;
     sceneBuildConfig.MaxFixedX = static_cast<s32>((256u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.MaxFixedY = static_cast<s32>((192u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.CoverageFix.Enabled = CoverageFixEnabled;
     sceneBuildConfig.CoverageFix.UserPx = CoverageFixPx;
+    sceneBuildConfig.CoverageFix.DepthBias = CoverageFixDepthBias;
     sceneBuildConfig.CoverageFix.ApplyRepeat = CoverageFixApplyRepeat;
     sceneBuildConfig.CoverageFix.ApplyClamp = CoverageFixApplyClamp;
     sceneBuildConfig.CoverageFix.PassiveRepeatPx = PassiveCoverageFixRepeatPx;
@@ -12278,8 +12280,9 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
     sceneBuildConfig.CoverageFix.PaletteUiClampPx = 0.5f;
 
     const u64 sceneBuildCpuStartNs = PerfNowNs();
-    BuildAcceleratedScene(gpu.GPU3D, sceneBuildConfig, SharedGraphicsScene);
+    BuildAcceleratedScene(sceneInput, sceneBuildConfig, SharedGraphicsScene);
     GraphicsSceneBuildCpuWindow.Add(PerfNowNs() - sceneBuildCpuStartNs);
+    const AcceleratedSceneRenderState& renderState = SharedGraphicsScene.RenderState;
 
     const size_t estimatedTriangleCount =
         SharedGraphicsScene.Triangles.size() + (SharedGraphicsScene.Draws.size() * 2u);
@@ -12401,10 +12404,6 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
 
     for (const AcceleratedSceneDraw& sceneDraw : SharedGraphicsScene.Draws)
     {
-        const Polygon* polygon = sceneDraw.SourcePolygon;
-        if (polygon == nullptr)
-            continue;
-
         const size_t polygonTriangleBase = Triangles.size();
         const AcceleratedPolygonMeta& polygonMeta = sceneDraw.Meta;
         const u32 alpha5 = polygonMeta.Alpha5;
@@ -12412,9 +12411,8 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             HasAcceleratedPolygonFlag(polygonMeta, AcceleratedPolygonFlagTranslucent);
         const bool isTranslucent = polygonUsesGlTranslucentPass || (alpha5 != 0u && alpha5 < 0x1Fu);
         const u32 blendMode = (polygonMeta.PolyAttr >> 4u) & 0x3u;
-        const float effectiveCoverageDepthBias =
-            sceneDraw.CoverageFixState.ApplyUserFix ? coverageDepthBias : 0.0f;
-        const bool polygonTexturedByRegs = textureMapsEnabled && (((polygon->TexParam >> 26u) & 0x7u) != 0u);
+        const float effectiveCoverageDepthBias = sceneDraw.CoverageFixState.DepthBias * 16777215.0f;
+        const bool polygonTexturedByRegs = textureMapsEnabled && (((sceneDraw.TexParam >> 26u) & 0x7u) != 0u);
 
         if (!Renderer3DDebugShouldDrawPolygon(
                 polygonMeta,
@@ -12441,15 +12439,15 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
         if (polygonTextured)
         {
             Texcache.GetTexture(
-                polygon->TexParam,
-                polygon->TexPalette,
+                sceneDraw.TexParam,
+                sceneDraw.TexPalette,
                 textureHandle,
                 textureLayer,
                 helper
             );
 
-            texWidth = TextureWidth(polygon->TexParam);
-            texHeight = TextureHeight(polygon->TexParam);
+            texWidth = TextureWidth(sceneDraw.TexParam);
+            texHeight = TextureHeight(sceneDraw.TexParam);
             if (texWidth == 0u || texHeight == 0u)
             {
                 polygonTextured = false;
@@ -12532,7 +12530,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             graphicsVertex.texArrayIndex = hasTexture ? textureDescriptorIndex : 0u;
             graphicsVertex.texWidth = hasTexture ? texWidth : 0u;
             graphicsVertex.texHeight = hasTexture ? texHeight : 0u;
-            graphicsVertex.texParam = hasTexture ? polygon->TexParam : 0u;
+            graphicsVertex.texParam = hasTexture ? sceneDraw.TexParam : 0u;
             graphicsVertex.polyAttr = polygonMeta.PolyAttr;
             return graphicsVertex;
         };
@@ -12611,7 +12609,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                 triangle.texArrayIndex = textureDescriptorIndex;
                 triangle.texWidth = texWidth;
                 triangle.texHeight = texHeight;
-                triangle.texParam = polygon->TexParam;
+                triangle.texParam = sceneDraw.TexParam;
             }
             if (sceneDraw.CoverageFixState.Apply)
                 triangle.flags |= kTriangleFlagCoverageFix;
@@ -12813,15 +12811,42 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
 
         if (sceneDraw.PrimitiveType == AcceleratedPrimitiveType::Lines)
         {
-            if (sceneDraw.IndexCount < 2u || (sceneDraw.FirstIndex + 1u) >= SharedGraphicsScene.Indices.size())
-                continue;
+            for (u32 triangleIndex = sceneDraw.FirstTriangle;
+                 triangleIndex < sceneDraw.FirstTriangle + sceneDraw.TriangleCount;
+                 triangleIndex++)
+            {
+                if (triangleIndex >= SharedGraphicsScene.Triangles.size())
+                    break;
 
-            const u16 vertexIndex0 = SharedGraphicsScene.Indices[sceneDraw.FirstIndex];
-            const u16 vertexIndex1 = SharedGraphicsScene.Indices[sceneDraw.FirstIndex + 1u];
-            if (vertexIndex0 >= SharedGraphicsScene.Vertices.size() || vertexIndex1 >= SharedGraphicsScene.Vertices.size())
-                continue;
+                const AcceleratedSceneTriangle& sceneTriangle = SharedGraphicsScene.Triangles[triangleIndex];
+                const u16 vertexIndex0 = sceneTriangle.Indices[0];
+                const u16 vertexIndex1 = sceneTriangle.Indices[1];
+                const u16 vertexIndex2 = sceneTriangle.Indices[2];
+                if (vertexIndex0 >= SharedGraphicsScene.Vertices.size()
+                    || vertexIndex1 >= SharedGraphicsScene.Vertices.size()
+                    || vertexIndex2 >= SharedGraphicsScene.Vertices.size())
+                {
+                    continue;
+                }
 
-            appendLineSegment(vertexIndex0, vertexIndex1);
+                u32 boundaryFlags = 0u;
+                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge0) != 0u)
+                    boundaryFlags |= kTriangleFlagBoundaryEdge0;
+                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge1) != 0u)
+                    boundaryFlags |= kTriangleFlagBoundaryEdge1;
+                if ((sceneTriangle.BoundaryFlags & AcceleratedTriangleBoundaryEdge2) != 0u)
+                    boundaryFlags |= kTriangleFlagBoundaryEdge2;
+
+                const AcceleratedSceneVertex& vertex0 = SharedGraphicsScene.Vertices[vertexIndex0];
+                const AcceleratedSceneVertex& vertex1 = SharedGraphicsScene.Vertices[vertexIndex1];
+                const AcceleratedSceneVertex& vertex2 = SharedGraphicsScene.Vertices[vertexIndex2];
+                appendTriangle(
+                    makeTriangleVertex(vertex0, vertex0.X, vertex0.Y),
+                    makeTriangleVertex(vertex1, vertex1.X, vertex1.Y),
+                    makeTriangleVertex(vertex2, vertex2.X, vertex2.Y),
+                    boundaryFlags,
+                    sceneTriangle.PackedYBounds);
+            }
             enqueueGraphicsDraw(Triangles.size() - polygonTriangleBase);
             continue;
         }
@@ -12893,7 +12918,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                     (polygonMeta.PolyAttr >> 4u) & 0x3u,
                     polygonMeta.Flags,
                     hasTexture ? 1u : 0u,
-                    polygon->TexParam,
+                    sceneDraw.TexParam,
                     sceneDraw.VertexCount,
                     sceneDraw.EdgeIndexCount,
                     sceneDraw.TriangleCount,
@@ -12996,7 +13021,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             LastGraphicsOpaqueTexturedDrawCount++;
             if ((firstTriangleFlags & kTriangleFlagTextureOpaque) != 0u
                 && ((draw.polyAttr >> 16u) & 0x1Fu) == 0x1Fu
-                && gpu.GPU3D.RenderAlphaRef < 0x1Fu)
+                && renderState.RenderAlphaRef < 0x1Fu)
             {
                 LastGraphicsOpaqueFullAlphaDrawCount++;
             }
@@ -13213,8 +13238,8 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                 draw.triangleCount,
                 draw.polyAttr,
                 draw.flags,
-                gpu.GPU3D.RenderDispCnt,
-                gpu.GPU3D.RenderAlphaRef);
+                renderState.RenderDispCnt,
+                renderState.RenderAlphaRef);
         }
         loggedGraphicsTriangleSummary = true;
     }
@@ -13242,12 +13267,12 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
     GraphicsShadowMaskDrawIndices.reserve(static_cast<size_t>(gpu.GPU3D.RenderNumPolygons));
     GraphicsShadowDrawIndices.reserve(static_cast<size_t>(gpu.GPU3D.RenderNumPolygons));
 
-    if (ActiveBackendMode == BackendMode::GraphicsHardware)
-    {
-        buildGraphicsTriangleList(gpu);
-        return;
-    }
+    // GraphicsHardware is the only backend mode. All live geometry conversion
+    // must pass through GPU3D_AcceleratedFrontend before GPU ABI packing.
+    buildGraphicsTriangleList(gpu);
+    return;
 
+    // Kept unreachable until the final R26 legacy-source cleanup.
     struct TextureFrameData
     {
         u32 DescriptorIndex = 0;
@@ -13282,7 +13307,7 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
     const s32 maxTargetFixedY = static_cast<s32>(192u * static_cast<u32>(std::max(1, ScaleFactor)) * 16u);
     // Keep Vulkan geometry in subpixel space even at 1x. Integer-snapped FinalPosition
     // opens visible cracks on repeat-textured floors once the passive coverage expand is disabled.
-    const bool useHiresCoordinates = true;
+    const bool useHiresCoordinates = HiresCoordinates;
     const bool textureMapsEnabled = (gpu.GPU3D.RenderDispCnt & (1u << 0)) != 0;
     const bool disablePassiveRepeatCoverageExpand =
         (MelonDSAndroid::getVulkanDiagnosticFlags() & kVulkanDiagnosticDisablePassiveRepeatCoverageExpand) != 0u;
