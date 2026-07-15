@@ -23,6 +23,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <algorithm>
 #include <cstring>
+#include "SapphireGPU2DSoftAccess.h"
 #endif
 
 namespace melonDS
@@ -31,7 +32,11 @@ namespace melonDS
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     : Renderer(nds.GPU)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const size_t len = kPackedFramebufferPixels;
+#else
     const size_t len = 256 * 192;
+#endif
     Framebuffer[0][0] = new u32[len];
     Framebuffer[0][1] = new u32[len];
     Framebuffer[1][0] = new u32[len];
@@ -53,7 +58,11 @@ SoftRenderer::~SoftRenderer()
 
 void SoftRenderer::Reset()
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const size_t len = kPackedFramebufferPixels * sizeof(u32);
+#else
     const size_t len = 256 * 192 * sizeof(u32);
+#endif
     memset(Framebuffer[0][0], 0, len);
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
@@ -128,8 +137,12 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool writeCpuFinalA = true;
     bool writeCpuFinalB = true;
+    const bool accelerated = GetRenderer3D().UsesStructured2DMetadata();
+    const u32 stride = accelerated ? static_cast<u32>(kPackedStride) : 256u;
+#else
+    const u32 stride = 256u;
 #endif
-    u32 dstoffset = 256 * line;
+    u32 dstoffset = stride * line;
     if (GPU.ScreenSwap)
     {
         dstA = &Framebuffer[BackBuffer][0][dstoffset];
@@ -231,6 +244,18 @@ void SoftRenderer::DrawScanline(u32 line)
                 packet.ForcedBlank = engine2D.ForcedBlank;
                 packet.ScreensEnabled = GPU.ScreensEnabled;
                 SubmitStructured2DLine(packet);
+                if (accelerated)
+                {
+                    UpdateStructuredVulkan2DLine(engine, line);
+                    WriteAcceleratedPackedRow(
+                        engine == 0 ? dstA : dstB,
+                        engine,
+                        line,
+                        packet.MasterBrightness,
+                        packet.DispCnt,
+                        packet.ForcedBlank,
+                        packet.EngineEnabled);
+                }
             }
             if (line == 191)
                 EndStructured2DFrame(
@@ -258,11 +283,13 @@ void SoftRenderer::DrawScanline(u32 line)
 
     if (GPU.ScreensEnabled)
     {
-        // expand the color from 6-bit to 8-bit
+        // convert to 32-bit BGRA
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (writeCpuFinalA)
+        const bool skipExpand =
+            accelerated && GetRenderer3D().UsesStructured2DMetadata();
+        if (writeCpuFinalA && !skipExpand)
             ExpandColor(dstA);
-        if (writeCpuFinalB)
+        if (writeCpuFinalB && !skipExpand)
             ExpandColor(dstB);
 #else
         ExpandColor(dstA);
@@ -366,6 +393,95 @@ bool SoftRenderer::CopyStructured2DFrameSnapshot(
 
     snapshot = published;
     return true;
+}
+
+size_t SoftRenderer::ScreenIndexForEngine(u32 engine) const noexcept
+{
+    if (GPU.ScreenSwap)
+        return engine == 0 ? 0u : 1u;
+    return engine == 0 ? 1u : 0u;
+}
+
+void SoftRenderer::UpdateStructuredVulkan2DLine(u32 engine, u32 line)
+{
+    const size_t screenIndex = ScreenIndexForEngine(engine);
+    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    const size_t screenBase =
+        screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    std::memcpy(
+        StructuredVulkan2DPlanes.data() + screenBase + rowBase,
+        StructuredPlane0[engine],
+        kStructuredScreenWidth * sizeof(u32));
+    std::memcpy(
+        StructuredVulkan2DPlanes.data() + screenBase + kStructuredPixelCount + rowBase,
+        StructuredPlane1[engine],
+        kStructuredScreenWidth * sizeof(u32));
+    std::memcpy(
+        StructuredVulkan2DPlanes.data() + screenBase + (kStructuredPixelCount * 2u) + rowBase,
+        StructuredControl[engine],
+        kStructuredScreenWidth * sizeof(u32));
+    SapphireDebugCaptureStats.StructuredCopyLines++;
+}
+
+void SoftRenderer::WriteAcceleratedPackedRow(
+    u32* dst,
+    u32 engine,
+    u32 line,
+    u16 masterBrightness,
+    u32 dispCnt,
+    bool forcedBlank,
+    bool engineEnabled)
+{
+    if (dst == nullptr || line >= kStructuredScreenHeight)
+        return;
+
+    const size_t rowBase = static_cast<size_t>(line) * kPackedStride;
+    std::memcpy(dst + rowBase, StructuredPlane0[engine], kStructuredScreenWidth * sizeof(u32));
+    std::memcpy(
+        dst + rowBase + kStructuredScreenWidth,
+        StructuredPlane1[engine],
+        kStructuredScreenWidth * sizeof(u32));
+    std::memcpy(
+        dst + rowBase + (kStructuredScreenWidth * 2u),
+        StructuredControl[engine],
+        kStructuredScreenWidth * sizeof(u32));
+
+    const u32 dispmode = (dispCnt >> 16u) & (engine == 0 ? 0x3u : 0x1u);
+    u32 meta = static_cast<u32>(masterBrightness)
+        | (dispCnt & 0x30000u)
+        | (dispmode << 16u);
+    const u32 xpos = static_cast<u32>(GPU.GPU3D.GetRenderXPos()) & 0x1FFu;
+    meta |= (xpos << 24u) | ((xpos & 0x100u) << 15u);
+    if (forcedBlank || !engineEnabled || !GPU.ScreensEnabled)
+        meta = 0u;
+    dst[rowBase + (kPackedStride - 1u)] = meta;
+}
+
+const u32* SoftRenderer::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept
+{
+    if (!GetRenderer3D().UsesStructured2DMetadata() || plane >= kStructuredPlaneCount)
+        return nullptr;
+
+    const size_t screenIndex = topScreen ? 0u : 1u;
+    const size_t offset =
+        ((screenIndex * kStructuredPlaneCount) + static_cast<size_t>(plane)) * kStructuredPixelCount;
+    return StructuredVulkan2DPlanes.data() + offset;
+}
+
+void SoftRenderer::ClearStructuredVulkan2DState() noexcept
+{
+    SapphireDebugCaptureStats = {};
+    StructuredVulkan2DPlanes.fill(0);
+}
+
+void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
+{
+    const int frontbuf = BackBuffer ^ 1;
+    GPU.FrontBuffer = frontbuf;
+    GPU.Framebuffer[0][0] = Framebuffer[frontbuf][0];
+    GPU.Framebuffer[0][1] = Framebuffer[frontbuf][1];
+    GPU.Framebuffer[1][0] = Framebuffer[frontbuf ^ 1][0];
+    GPU.Framebuffer[1][1] = Framebuffer[frontbuf ^ 1][1];
 }
 #endif
 

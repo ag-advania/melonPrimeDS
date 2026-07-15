@@ -29,6 +29,7 @@
 #include "GPU2D.h"
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU2D_Structured.h"
+#include "SapphireGPU2DSoftAccess.h"
 #endif
 #include "GPU3D.h"
 #include "NonStupidBitfield.h"
@@ -240,6 +241,12 @@ public:
     Renderer& GetRenderer() noexcept { return *Rend; }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const;
+    [[nodiscard]] SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() noexcept;
+    [[nodiscard]] const SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() const noexcept;
+    void RefreshSapphireVulkanBindings() noexcept;
+
+    int FrontBuffer = 0;
+    u32* Framebuffer[2][2]{};
 #endif
 
     // return value for GetFramebuffers:
@@ -996,6 +1003,7 @@ private:
     std::unique_ptr<Renderer> Rend = nullptr;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool LastRendererInitSucceeded = true;
+    std::unique_ptr<SapphireGPU2D::SoftRenderer> SapphireVulkan2DAccess;
 #endif
 
     // Core safety fix, intentionally shared with non-MelonPrime builds:

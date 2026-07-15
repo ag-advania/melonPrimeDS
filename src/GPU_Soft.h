@@ -22,6 +22,9 @@
 #include "GPU.h"
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "SapphireGPU2DSoftAccess.h"
+#endif
 
 namespace melonDS
 {
@@ -52,6 +55,23 @@ public:
     bool GetFramebuffers(void** top, void** bottom) override;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const override;
+
+    static constexpr size_t kStructuredScreenWidth = 256u;
+    static constexpr size_t kStructuredScreenHeight = 192u;
+    static constexpr size_t kStructuredPixelCount = kStructuredScreenWidth * kStructuredScreenHeight;
+    static constexpr size_t kStructuredPlaneCount = 3u;
+    static constexpr size_t kStructuredScreenCount = 2u;
+    static constexpr size_t kPackedStride = kStructuredScreenWidth * 3u + 1u;
+    static constexpr size_t kPackedFramebufferPixels = kPackedStride * kStructuredScreenHeight;
+
+    [[nodiscard]] const SapphireGPU2D::SoftRenderer::DebugCaptureStats& GetSapphireDebugCaptureStats() const noexcept
+    {
+        return SapphireDebugCaptureStats;
+    }
+
+    [[nodiscard]] const u32* GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept;
+    void ClearStructuredVulkan2DState() noexcept;
+    void SyncSapphireFramebufferBindings() noexcept;
 #endif
 
 private:
@@ -77,6 +97,20 @@ private:
     void BeginStructured2DFrame(u64 frameSerial, u64 generation);
     void SubmitStructured2DLine(const SapphireStructured2DLine& line);
     void EndStructured2DFrame(u64 frameSerial, u64 generation, bool screenSwap);
+    void WriteAcceleratedPackedRow(
+        u32* dst,
+        u32 engine,
+        u32 line,
+        u16 masterBrightness,
+        u32 dispCnt,
+        bool forcedBlank,
+        bool engineEnabled);
+    size_t ScreenIndexForEngine(u32 engine) const noexcept;
+    void UpdateStructuredVulkan2DLine(u32 engine, u32 line);
+
+    alignas(64) std::array<u32, kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount>
+        StructuredVulkan2DPlanes{};
+    SapphireGPU2D::SoftRenderer::DebugCaptureStats SapphireDebugCaptureStats{};
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

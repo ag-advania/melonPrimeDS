@@ -35,6 +35,7 @@ add_library(core STATIC
     GBACartMotionPak.cpp
     GPU.cpp
     GPU_Soft.cpp
+    SapphireGPU2DSoftAccess.cpp
     GPU2D.cpp
     GPU2D_Soft.cpp
     GPU3D.cpp

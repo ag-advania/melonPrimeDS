@@ -373,6 +373,16 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     LastRendererInitSucceeded = !rendererRequested || good;
+    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+    {
+        SapphireVulkan2DAccess =
+            std::make_unique<SapphireGPU2D::SoftRenderer>(GPU2D_A, *softRenderer);
+        softRenderer->SyncSapphireFramebufferBindings();
+    }
+    else
+    {
+        SapphireVulkan2DAccess.reset();
+    }
 #endif
 
     ResetVRAMCache();
@@ -384,6 +394,22 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 bool GPU::CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const
 {
     return Rend != nullptr && Rend->CopyStructured2DFrameSnapshot(snapshot);
+}
+
+SapphireGPU2D::SoftRenderer& GPU::GetSapphireRenderer2D() noexcept
+{
+    return *SapphireVulkan2DAccess;
+}
+
+const SapphireGPU2D::SoftRenderer& GPU::GetSapphireRenderer2D() const noexcept
+{
+    return *SapphireVulkan2DAccess;
+}
+
+void GPU::RefreshSapphireVulkanBindings() noexcept
+{
+    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+        softRenderer->SyncSapphireFramebufferBindings();
 }
 #endif
 
@@ -1240,6 +1266,9 @@ void GPU::StartHBlank(u32 line) noexcept
 void GPU::FinishFrame(u32 lines) noexcept
 {
     Rend->SwapBuffers();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    RefreshSapphireVulkanBindings();
+#endif
 
     TotalScanlines = lines;
 
