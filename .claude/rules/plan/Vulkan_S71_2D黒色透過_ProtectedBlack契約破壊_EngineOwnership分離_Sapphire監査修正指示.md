@@ -917,6 +917,6 @@ protected opaque black
 | S71-2 | Treat opaque black as present 2D payload in desktop frame caching | **done** | `MelonPrimeDesktop2DBlackContract.h` 追加。cache eligibility を `screenHasPresent2DContent` へ。 |
 | S71-3 | Preserve actual packed 2D source and protected-black metadata during structured merges | **done** | `mergeStructuredDisplayLine` が plane0/plane1 から actual `packed2D` を選択。既存 control の `0x20` を優先保持。 |
 | S71-4 | Validate protected-black invariants before Vulkan composition | **done** | compositor 直前に `measureSoftPackedBlackContract` と `[Vulkan2DBlackContract]` ログ。structured path で `blackWithoutProtectionPixels` を debug assert。 |
-| S71-5 | Add black-over-3D and ownership-transition golden tests | pending | |
+| S71-5 | Add black-over-3D and ownership-transition golden tests | **done** | `tools/test_sapphire_vulkan_lifecycle_s71_parity.py` 追加（ownership 分離、present2D、merge source、contract log の静的検査）。 |
 | S71-6 | Track Sapphire FrameLatch extraction and desktop adapter parity in CI | pending | |
 
