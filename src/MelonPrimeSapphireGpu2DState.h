@@ -16,7 +16,21 @@ public:
     explicit SapphireGpu2DState(GPU& gpu);
     void Reset();
 
+    void Activate(u64 rendererGeneration) noexcept;
+    void Deactivate() noexcept;
+
     [[nodiscard]] bool IsActiveForRendering(const GPU& gpu) const noexcept;
+    [[nodiscard]] bool IsRenderingActive() const noexcept { return SapphireRenderingActive; }
+    [[nodiscard]] u64 ActiveRendererGeneration() const noexcept
+    {
+        return ActiveSapphireRendererGeneration;
+    }
+
+private:
+    bool SapphireRenderingActive = false;
+    u64 ActiveSapphireRendererGeneration = 0;
+
+public:
 
     SapphireGPU2DCore::GPU2D::Unit UnitA;
     SapphireGPU2DCore::GPU2D::Unit UnitB;

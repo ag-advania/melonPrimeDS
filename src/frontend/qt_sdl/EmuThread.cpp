@@ -1501,24 +1501,47 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
     if (activateVulkanFrontend)
     {
         auto& session = emuInstance->vulkanFrontendSession();
-        RomBootTrace("[RomBootTrace] frontend session initialize begin\n");
-        if (!session.initialize(*nds))
+        const u64 rendererGeneration =
+            nds->GPU.GPU3D.GetCurrentRendererGeneration();
+        RomBootTrace("[RomBootTrace] Sapphire Vulkan activation begin\n");
+        if (!nds->GPU.ActivateSapphireVulkan2D(rendererGeneration))
         {
             MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
-                "Vulkan frontend session initialization", -1);
+                "Sapphire Vulkan activation", -1);
             MelonPrime::VideoBackend::RegenerateSoftwareFallback(
                 *nds,
                 result,
-                "Vulkan frontend session initialization",
-                "VulkanOutput or FrameQueue initialization failed");
+                "Sapphire Vulkan activation",
+                "Sapphire GPU2D activation failed after Renderer3D install");
             nds->SetRenderer(std::move(result.OuterRenderer));
             nds->GPU.SetRenderer3D(nullptr);
         }
         else
         {
-            session.beginGeneration(nds->GPU.GPU3D.GetCurrentRendererGeneration());
+            RomBootTrace("[RomBootTrace] frontend session initialize begin\n");
+            if (!session.initialize(*nds))
+            {
+                MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+                    "Vulkan frontend session initialization", -1);
+                MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+                    *nds,
+                    result,
+                    "Vulkan frontend session initialization",
+                    "VulkanOutput or FrameQueue initialization failed");
+                nds->SetRenderer(std::move(result.OuterRenderer));
+                nds->GPU.SetRenderer3D(nullptr);
+            }
+            else
+            {
+                session.beginGeneration(rendererGeneration);
+            }
+            RomBootTrace("[RomBootTrace] frontend session initialize complete\n");
         }
-        RomBootTrace("[RomBootTrace] frontend session initialize complete\n");
+        RomBootTrace("[RomBootTrace] Sapphire Vulkan activation complete\n");
+    }
+    else
+    {
+        nds->GPU.DeactivateSapphireVulkan2D();
     }
 #endif
 

@@ -251,6 +251,8 @@ public:
     [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
     [[nodiscard]] SapphireGpu2DState* TryGetSapphireGpu2DState() noexcept;
     [[nodiscard]] const SapphireGpu2DState* TryGetSapphireGpu2DState() const noexcept;
+    [[nodiscard]] bool ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept;
+    void DeactivateSapphireVulkan2D() noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
     void InvalidateSapphirePublication() noexcept;
     void InvalidateSapphireFramebufferBindings() noexcept;

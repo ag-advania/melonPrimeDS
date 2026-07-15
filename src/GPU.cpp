@@ -365,6 +365,7 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     if (Rend)
         SyncAllVRAMCaptures();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    DeactivateSapphireVulkan2D();
     if (Rend)
         InvalidateSapphireFramebufferBindings();
     else
@@ -449,6 +450,39 @@ SapphireGpu2DState* GPU::TryGetSapphireGpu2DState() noexcept
 const SapphireGpu2DState* GPU::TryGetSapphireGpu2DState() const noexcept
 {
     return Sapphire2D.get();
+}
+
+bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
+{
+    if (Sapphire2D == nullptr || rendererGeneration == 0)
+        return false;
+    if (!GPU3D.HasCurrentRenderer())
+        return false;
+    if (!GPU3D.GetCurrentRenderer().UsesStructured2DMetadata())
+        return false;
+
+    DeactivateSapphireVulkan2D();
+    InvalidateSapphirePublication();
+
+    Sapphire2D->Renderer.ClearStructuredVulkan2DState();
+    SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
+        Sapphire2D->UnitA, GPU2D_A, *this);
+    SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
+        Sapphire2D->UnitB, GPU2D_B, *this);
+
+    auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get());
+    if (softRenderer == nullptr)
+        return false;
+
+    softRenderer->BindSapphirePhysicalTargets();
+    Sapphire2D->Activate(rendererGeneration);
+    return true;
+}
+
+void GPU::DeactivateSapphireVulkan2D() noexcept
+{
+    if (Sapphire2D != nullptr)
+        Sapphire2D->Deactivate();
 }
 
 void GPU::RefreshSapphireVulkanBindings() noexcept
