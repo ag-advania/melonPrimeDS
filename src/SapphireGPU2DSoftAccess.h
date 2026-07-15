@@ -7,6 +7,8 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <array>
+
 #include "GPU2D.h"
 
 namespace melonDS
@@ -63,6 +65,17 @@ public:
     [[nodiscard]] const u32* GetStructuredVulkan2DPlane(
         bool topScreen, u32 plane) const noexcept;
     void ClearStructuredVulkan2DState() noexcept;
+
+    [[nodiscard]] const u32* GetDebugCapture3dSource() const noexcept
+    {
+        return nullptr;
+    }
+
+    [[nodiscard]] const std::array<u8, 192>& GetDebugCaptureLineUses3dMask() const noexcept
+    {
+        static const std::array<u8, 192> empty{};
+        return empty;
+    }
 
 private:
     melonDS::SoftRenderer& Owner;

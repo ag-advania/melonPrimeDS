@@ -11,6 +11,7 @@
 #include "types.h"
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
+#include "SapphireVulkanFrameLatch.h"
 
 namespace melonDS
 {
@@ -70,6 +71,10 @@ public:
         MelonPrimeStructuredSnapshot& snapshot);
     bool submitCompletedFrame(melonDS::VulkanRenderer3D& renderer3D);
 
+    bool beginProducerFrame(melonDS::VulkanRenderer3D& renderer3D);
+    bool completeProducerFrame(melonDS::VulkanRenderer3D& renderer3D);
+    void cancelProducerFrame();
+
     MelonPrimeStructuredSnapshot& producerStructuredSnapshot() { return structuredSnapshot; }
 
     Frame* acquirePresentFrame();
@@ -109,6 +114,12 @@ private:
     static FrameQueuePolicy queuePolicy();
     void clearProducerState();
     void synchronizeFrameReferencesLocked();
+    Frame* acquireProducerRenderFrameLocked();
+    bool latchAndPrepareProducerFrameLocked(
+        Frame* frame,
+        melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::Vulkan3DFrameView& frameView,
+        bool composeOnProducer);
 
     std::mutex presentationCallMutex;
     mutable std::mutex stateMutex;
@@ -119,8 +130,8 @@ private:
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
     MelonDSAndroid::VulkanSurfacePresenter* stagedPresenter = nullptr;
     MelonPrimeStructuredSnapshot structuredSnapshot{};
-    MelonDSAndroid::SoftPackedFrameSnapshot lastSoftPackedFrameSnapshot{};
-    MelonDSAndroid::SoftPackedFrameSnapshot previousSoftPackedFrameSnapshot{};
+    MelonDSAndroid::SapphireVulkanFrameLatch frameLatch;
+    Frame* pendingProducerFrame = nullptr;
     bool hasCompleteStructuredSnapshot_ = false;
     u64 activeGeneration = 0;
     u64 activeSurfaceGeneration = 0;

@@ -54,6 +54,7 @@ bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
     if (initialized)
     {
         nds = &newNds;
+        frameLatch.bindNds(&newNds);
         return true;
     }
 
@@ -61,6 +62,7 @@ bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
         return false;
 
     nds = &newNds;
+    frameLatch.bindNds(&newNds);
     initialized = true;
     return true;
 }
@@ -68,8 +70,8 @@ bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
 void MelonPrimeVulkanFrontendSession::clearProducerState()
 {
     structuredSnapshot = {};
-    lastSoftPackedFrameSnapshot.clear();
-    previousSoftPackedFrameSnapshot.clear();
+    frameLatch.clearLatchedSoftPackedFrameSnapshot();
+    pendingProducerFrame = nullptr;
     hasCompleteStructuredSnapshot_ = false;
     lastPresentedSerial = 0;
     lastPresentedFrameId = 0;
@@ -381,6 +383,187 @@ SoftPackedScreenStats MelonPrimeVulkanFrontendSession::collectStats(
     return stats;
 }
 
+Frame* MelonPrimeVulkanFrontendSession::acquireProducerRenderFrameLocked()
+{
+    const FrameQueuePolicy policy = queuePolicy();
+    synchronizeFrameReferencesLocked();
+    Frame* frame = frameQueue.getRenderFrame(policy);
+    if (frame == nullptr)
+    {
+        output.releaseTemporalFrameReferences();
+        frameQueue.synchronizeHistoryReferences({});
+        synchronizeFrameReferencesLocked();
+        frame = frameQueue.getRenderFrame(policy);
+    }
+    if (frame == nullptr)
+    {
+        const FrameQueueStats stats = frameQueue.takeStatsSnapshotAndReset();
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[VulkanProducer] no render frame backlog=%llu max=%llu "
+            "queued=%llu presented=%llu discarded=%llu "
+            "referenceBlocked=%llu stateFailures=%llu\n",
+            static_cast<unsigned long long>(stats.CurrentBacklogDepth),
+            static_cast<unsigned long long>(stats.MaxBacklogDepth),
+            static_cast<unsigned long long>(stats.RenderFramesQueued),
+            static_cast<unsigned long long>(stats.PresentFramesReturned),
+            static_cast<unsigned long long>(stats.RenderFramesDiscarded),
+            static_cast<unsigned long long>(stats.ReferenceBlockedReuse),
+            static_cast<unsigned long long>(stats.StateTransitionFailures));
+        return nullptr;
+    }
+    frameInputs.erase(frame);
+    return frame;
+}
+
+bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
+    Frame* frame,
+    VulkanRenderer3D& renderer3D,
+    const Vulkan3DFrameView& frameView,
+    bool composeOnProducer)
+{
+    if (frame == nullptr || nds == nullptr || !frameView.Valid
+        || frameView.Generation != activeGeneration)
+    {
+        return false;
+    }
+
+    const int scale = static_cast<int>(frameView.Scale);
+    const int width = 256 * scale;
+    const int height = (192 + 2 + 192) * scale;
+    frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
+    frame->frameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
+
+    const int frontBuffer = nds->GPU.FrontBuffer;
+    const bool preparedFrameScreenSwap = nds->GPU.GPU3D.RenderScreenSwapAt3D;
+    const bool useStructuredVulkan2D =
+        renderer3D.GetActiveBackendMode() == VulkanRenderer3D::BackendMode::GraphicsHardware;
+    if (!frameLatch.latchSoftPackedFrameSnapshot(
+            frame, frontBuffer, preparedFrameScreenSwap, useStructuredVulkan2D))
+    {
+        return false;
+    }
+    if (frameLatch.regularCaptureTransitionResyncPending())
+    {
+        frameLatch.clearRegularCaptureTransitionResyncPending();
+        output.clearStructuredCaptureHistory();
+        nds->GPU.GetSapphireRenderer2D().ClearStructuredVulkan2DState();
+        frameLatch.clearLatchedSoftPackedFrameSnapshot();
+        return false;
+    }
+
+    const SoftPackedFrameSnapshot& latchedSnapshot = frameLatch.lastSnapshot();
+    VulkanCompositionInputs inputs{};
+    bool prepared = output.ensureFrameResources(frame, width, height)
+        && output.prepareFrameForPresentation(
+            frame, nds->GPU, frontBuffer, preparedFrameScreenSwap,
+            frameLatch.mutableLastSnapshot(), renderer3D, frameView);
+    if (prepared && composeOnProducer)
+    {
+        prepared = output.buildCompositionInputs(
+                frame, frameView, scale, VulkanFilterMode::Nearest,
+                false, false, false, inputs)
+            && output.composeAndSubmitFrame(frame, inputs);
+        if (prepared)
+            frameInputs[frame] = inputs;
+    }
+    return prepared;
+}
+
+bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& renderer3D)
+{
+    std::scoped_lock lock(stateMutex);
+    if (!initialized || producerSuspended || nds == nullptr)
+        return false;
+
+    (void)frameLatch.updateVulkanTemporal3dHistoryGate();
+
+    Frame* frame = acquireProducerRenderFrameLocked();
+    if (frame == nullptr)
+        return false;
+
+    const int scale = std::max(renderer3D.GetScaleFactor(), 1);
+    const int width = 256 * scale;
+    const int height = (192 + 2 + 192) * scale;
+    frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
+    frame->renderTimelineValue = 0;
+
+    if (!output.ensureFrameResources(frame, width, height))
+    {
+        frameQueue.discardRenderedFrame(frame);
+        return false;
+    }
+
+    const bool usePreRunSnapshot =
+        renderer3D.GetActiveBackendMode() != VulkanRenderer3D::BackendMode::GraphicsHardware
+        || frameLatch.structuredCaptureGateFrames() > 0;
+    if (usePreRunSnapshot)
+    {
+        const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
+        if (frameView.Valid)
+        {
+            (void)output.captureRenderer3dSnapshot(
+                frame, frameView, nds->GPU.GPU3D.RenderScreenSwapAt3D);
+        }
+    }
+
+    pendingProducerFrame = frame;
+    return true;
+}
+
+bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& renderer3D)
+{
+    std::scoped_lock lock(stateMutex);
+    Frame* frame = pendingProducerFrame;
+    pendingProducerFrame = nullptr;
+    if (!initialized || producerSuspended || nds == nullptr || frame == nullptr)
+        return false;
+
+    const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
+    if (frameView.FrameSerial == 0 || frameView.FrameSerial == lastSubmittedSerial)
+    {
+        frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+            return output.isFrameReferencedAsPendingPreviousSource(candidate);
+        });
+        frameQueue.discardRenderedFrame(frame);
+        return false;
+    }
+
+    const FrameQueuePolicy policy = queuePolicy();
+    const bool composeOnProducer = true;
+    if (!latchAndPrepareProducerFrameLocked(frame, renderer3D, frameView, composeOnProducer))
+    {
+        frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+            return output.isFrameReferencedAsPendingPreviousSource(candidate);
+        });
+        frameQueue.discardRenderedFrame(frame);
+        return false;
+    }
+
+    hasCompleteStructuredSnapshot_ = true;
+    lastSubmittedSerial = frameView.FrameSerial;
+    frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+        return output.isFrameReferencedAsPendingPreviousSource(candidate);
+    });
+    frameQueue.pushRenderedFrame(frame, policy);
+    return true;
+}
+
+void MelonPrimeVulkanFrontendSession::cancelProducerFrame()
+{
+    std::scoped_lock lock(stateMutex);
+    Frame* frame = pendingProducerFrame;
+    pendingProducerFrame = nullptr;
+    if (frame == nullptr)
+        return;
+
+    frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+        return output.isFrameReferencedAsPendingPreviousSource(candidate);
+    });
+    frameQueue.discardRenderedFrame(frame);
+}
+
 bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     VulkanRenderer3D& renderer3D)
 {
@@ -402,58 +585,13 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
         return false;
     }
 
-    const FrameQueuePolicy policy = queuePolicy();
-    synchronizeFrameReferencesLocked();
-    Frame* frame = frameQueue.getRenderFrame(policy);
+    Frame* frame = acquireProducerRenderFrameLocked();
     if (frame == nullptr)
-    {
-        // Sapphire drops temporal ownership and retries once when the fixed
-        // frame pool has no reusable slot. Without this recovery, a previous
-        // source reference can pin all nine desktop slots permanently.
-        output.releaseTemporalFrameReferences();
-        frameQueue.synchronizeHistoryReferences({});
-        synchronizeFrameReferencesLocked();
-        frame = frameQueue.getRenderFrame(policy);
-    }
-    if (frame == nullptr)
-    {
-        const FrameQueueStats stats = frameQueue.takeStatsSnapshotAndReset();
-        Platform::Log(
-            Platform::LogLevel::Warn,
-            "[VulkanProducer] no render frame backlog=%llu max=%llu "
-            "queued=%llu presented=%llu discarded=%llu "
-            "referenceBlocked=%llu stateFailures=%llu\n",
-            static_cast<unsigned long long>(stats.CurrentBacklogDepth),
-            static_cast<unsigned long long>(stats.MaxBacklogDepth),
-            static_cast<unsigned long long>(stats.RenderFramesQueued),
-            static_cast<unsigned long long>(stats.PresentFramesReturned),
-            static_cast<unsigned long long>(stats.RenderFramesDiscarded),
-            static_cast<unsigned long long>(stats.ReferenceBlockedReuse),
-            static_cast<unsigned long long>(stats.StateTransitionFailures));
         return false;
-    }
-    frameInputs.erase(frame);
 
-    const int scale = static_cast<int>(frameView.Scale);
-    const int width = 256 * scale;
-    const int height = (192 + 2 + 192) * scale;
-    frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
-    frame->frameSerial = frameView.FrameSerial;
-    frame->rendererGeneration = frameView.Generation;
-
-    std::swap(previousSoftPackedFrameSnapshot, lastSoftPackedFrameSnapshot);
-    lastSoftPackedFrameSnapshot.clear();
-    buildSoftPackedSnapshot(snapshot, frame->frameId, lastSoftPackedFrameSnapshot);
-    VulkanCompositionInputs inputs{};
-    const bool prepared = output.ensureFrameResources(frame, width, height)
-        && output.prepareFrameForPresentation(
-            frame, nds->GPU, 0, snapshot.screenSwap,
-            lastSoftPackedFrameSnapshot, renderer3D, frameView)
-        && output.buildCompositionInputs(
-            frame, frameView, scale, VulkanFilterMode::Nearest,
-            false, false, false, inputs)
-        && output.composeAndSubmitFrame(frame, inputs);
-    if (!prepared)
+    const FrameQueuePolicy policy = queuePolicy();
+    const bool composeOnProducer = true;
+    if (!latchAndPrepareProducerFrameLocked(frame, renderer3D, frameView, composeOnProducer))
     {
         frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
             return output.isFrameReferencedAsPendingPreviousSource(candidate);
@@ -462,7 +600,6 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
         return false;
     }
 
-    frameInputs[frame] = inputs;
     hasCompleteStructuredSnapshot_ = true;
     lastSubmittedSerial = snapshot.frameSerial;
     frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {

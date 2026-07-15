@@ -59,8 +59,8 @@ Reference root: `app/src/main/cpp/MelonInstance.{h,cpp}` in parent tag `0.7.0.rc
 
 | Sapphire source | MelonPrime destination | Copy status |
 |---|---|---|
-| `MelonInstance.cpp` latch helpers | `SapphireVulkanFramePipeline.cpp` | P5 dependency closure |
-| `MelonInstance.h` latch state | `SapphireVulkanFramePipeline.h` | P5 dependency closure |
+| `MelonInstance.cpp` latch helpers | `SapphireVulkanFrameLatch.cpp` | P5 dependency closure |
+| `MelonInstance.h` latch state | `SapphireVulkanFrameLatch.h` | P5 dependency closure |
 
 ## Copied core files
 
@@ -104,8 +104,8 @@ producer-side composeAndSubmitFrame()
 | P1 | Clean copy directory | **done** (`9d9461153`) |
 | P2 | FrameQueue exact port | **done** (`3cd3bab92`) |
 | P3 | VulkanOutput/shader exact port | **done** (`7a1e36129`) |
-| P4 | Core exact port | **done** (this commit) |
-| P5 | Latch dependency closure | pending |
+| P4 | Core exact port | **done** (`9b62b74ef`) |
+| P5 | Latch dependency closure | **done** (this commit) |
 | P6 | runFrame transaction port | pending |
 | P7 | Presenter ownership port | pending |
 | P8 | Desktop adapters restore | pending |
