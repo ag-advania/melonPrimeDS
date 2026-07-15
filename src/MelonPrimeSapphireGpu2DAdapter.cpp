@@ -2,6 +2,8 @@
 
 #include "MelonPrimeSapphireGpu2DAdapter.h"
 
+#include <cassert>
+
 #include "GPU.h"
 #include "MelonPrimeSapphireGpu2DState.h"
 
@@ -21,24 +23,44 @@ SapphireGPU2DCore::GPU2D::Unit& UnitForEngine(SapphireGpu2DState& state, u32 eng
     return engineNum == 0 ? state.UnitA : state.UnitB;
 }
 
+void AssertEnabledParity(const GPU& gpu, const SapphireGpu2DState& state) noexcept
+{
+#ifndef NDEBUG
+    assert(state.UnitA.Enabled == gpu.GPU2D_A.Enabled);
+    assert(state.UnitB.Enabled == gpu.GPU2D_B.Enabled);
+#else
+    (void)gpu;
+    (void)state;
+#endif
+}
+
 } // namespace
 
 void ForwardRegisterWrite8(GPU& gpu, u32 engineNum, u32 addr, u8 val) noexcept
 {
     if (auto* state = GetState(gpu))
+    {
+        AssertEnabledParity(gpu, *state);
         UnitForEngine(*state, engineNum).Write8(addr, val);
+    }
 }
 
 void ForwardRegisterWrite16(GPU& gpu, u32 engineNum, u32 addr, u16 val) noexcept
 {
     if (auto* state = GetState(gpu))
+    {
+        AssertEnabledParity(gpu, *state);
         UnitForEngine(*state, engineNum).Write16(addr, val);
+    }
 }
 
 void ForwardRegisterWrite32(GPU& gpu, u32 engineNum, u32 addr, u32 val) noexcept
 {
     if (auto* state = GetState(gpu))
+    {
+        AssertEnabledParity(gpu, *state);
         UnitForEngine(*state, engineNum).Write32(addr, val);
+    }
 }
 
 void ForwardWindowCheck(GPU& gpu, u32 line) noexcept

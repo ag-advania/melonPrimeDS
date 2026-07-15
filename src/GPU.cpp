@@ -25,9 +25,7 @@
 #include "GPU_Soft.h"
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DAdapter.h"
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DState.h"
-#endif
 #endif
 
 namespace melonDS
@@ -1179,6 +1177,15 @@ void GPU::SetPowerCnt(u32 val) noexcept
 
     GPU2D_A.SetEnabled(val & (1<<1));
     GPU2D_B.SetEnabled(val & (1<<9));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (Sapphire2D)
+    {
+        const bool engineAEnabled = (val & (1u << 1u)) != 0;
+        const bool engineBEnabled = (val & (1u << 9u)) != 0;
+        Sapphire2D->UnitA.SetEnabled(engineAEnabled);
+        Sapphire2D->UnitB.SetEnabled(engineBEnabled);
+    }
+#endif
     GPU3D.SetEnabled(val & (1<<3), val & (1<<2));
 
     ScreenSwap = !!(val & (1<<15));
