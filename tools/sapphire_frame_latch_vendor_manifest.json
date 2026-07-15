@@ -1,0 +1,12 @@
+{
+  "upstreamTag": "0.7.0.rc4",
+  "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
+  "upstreamRelativeCpp": "app/src/main/cpp/MelonInstance.cpp",
+  "upstreamRelativeHeader": "app/src/main/cpp/MelonInstance.h",
+  "cppRegions": [
+    {"start": 37, "end": 852, "label": "latch_free_function_closure"},
+    {"start": 4737, "end": 8056, "label": "latch_member_methods"}
+  ],
+  "headerStateMemberStart": 236,
+  "headerStateMemberEnd": 268
+}
