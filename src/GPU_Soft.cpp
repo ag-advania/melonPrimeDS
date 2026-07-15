@@ -130,7 +130,8 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* state = GetSapphireState(GPU))
+    if (auto* state = GetSapphireState(GPU);
+        state != nullptr && state->IsActiveForRendering(GPU))
     {
         SyncSapphireUnitsFromGPU2D();
         BindSapphirePhysicalTargets();
@@ -245,6 +246,10 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 
 void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
 {
+    auto* state = GetSapphireState(GPU);
+    if (state == nullptr || !state->IsActiveForRendering(GPU))
+        return;
+
     GPU.FrontBuffer = BackBuffer ^ 1;
 
     for (int buffer = 0; buffer < 2; ++buffer)
@@ -262,6 +267,12 @@ void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
 
 bool SoftRenderer::PublishSapphire2DFrame() noexcept
 {
+    auto* state = GetSapphireState(GPU);
+    if (state == nullptr || !state->IsActiveForRendering(GPU))
+        return false;
+    if (GPU.VulkanFrameSerial == 0)
+        return false;
+
     SapphirePublished2DFrame published{};
     published.frontBuffer = GPU.FrontBuffer;
     published.hardwareScreenSwap = GPU.ScreenSwap;
@@ -283,13 +294,11 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     published.bottom.engine = GPU.ScreenSwap ? 1u : 0u;
 
     const bool structuredReady =
-        GetSapphireState(GPU) != nullptr
-        && GPU.GPU3D.HasCurrentRenderer()
+        GPU.GPU3D.HasCurrentRenderer()
         && GPU.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
 
     if (structuredReady)
     {
-        auto* state = GetSapphireState(GPU);
         published.top.structuredPlane0 =
             state->Renderer.GetStructuredVulkan2DPlane(true, 0);
         published.top.structuredPlane1 =
@@ -375,19 +384,24 @@ void SoftRenderer::ForwardSapphireGpu2DWindowCheck(u32 line) noexcept
 
 SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() noexcept
 {
-    return GetSapphireState(GPU)->Renderer;
+    auto* state = GetSapphireState(GPU);
+    assert(state != nullptr);
+    return state->Renderer;
 }
 
 const SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() const noexcept
 {
-    return GetSapphireState(GPU)->Renderer;
+    auto* state = GetSapphireState(GPU);
+    assert(state != nullptr);
+    return state->Renderer;
 }
 #endif
 
 void SoftRenderer::DrawSprites(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* state = GetSapphireState(GPU))
+    if (auto* state = GetSapphireState(GPU);
+        state != nullptr && state->IsActiveForRendering(GPU))
     {
         SyncSapphireUnitsFromGPU2D();
         BindSapphirePhysicalTargets();

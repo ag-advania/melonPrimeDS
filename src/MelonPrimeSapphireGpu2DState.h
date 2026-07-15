@@ -16,6 +16,8 @@ public:
     explicit SapphireGpu2DState(GPU& gpu);
     void Reset();
 
+    [[nodiscard]] bool IsActiveForRendering(const GPU& gpu) const noexcept;
+
     SapphireGPU2DCore::GPU2D::Unit UnitA;
     SapphireGPU2DCore::GPU2D::Unit UnitB;
     SapphireGPU2DCore::GPU2D::SoftRenderer Renderer;

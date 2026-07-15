@@ -21,6 +21,12 @@ void SapphireGpu2DState::Reset()
     UnitB.Reset();
 }
 
+bool SapphireGpu2DState::IsActiveForRendering(const GPU& gpu) const noexcept
+{
+    return gpu.GPU3D.HasCurrentRenderer()
+        && gpu.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
+}
+
 } // namespace melonDS
 
 #endif

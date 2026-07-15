@@ -347,7 +347,8 @@ void SoftRenderer::ClearStructuredVulkan2DState() noexcept
 
 bool SoftRenderer::UseStructuredVulkan2D() const noexcept
 {
-    return GPU.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
+    return GPU.GPU3D.HasCurrentRenderer()
+        && GPU.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
 }
 
 void SoftRenderer::ClearStructuredVulkan2DLine(u32 line)

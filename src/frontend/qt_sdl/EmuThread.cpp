@@ -1474,7 +1474,8 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
         result.OuterRenderer.reset();
     RomBootTrace("[RomBootTrace] outer SetRenderer complete\n");
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (!nds->GPU.LastRendererInitializationSucceeded())
+    if (result.OuterAction == MelonPrime::VideoBackend::OuterRendererAction::Replace
+        && !nds->GPU.LastRendererInitializationSucceeded())
     {
         if (normalizedRenderer == renderer3D_Vulkan)
         {
