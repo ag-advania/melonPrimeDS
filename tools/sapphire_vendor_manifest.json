@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "frontend_reference": "SapphireRhodonite/melonDS-android@0.7.0.rc4",
   "core_reference": "SapphireRhodonite/melonDS-android-lib@d77944275fa61f9b79cfcead2c3e98993429a023",
   "desktop_adapter_exempt": [
@@ -10,7 +10,8 @@
     "src/frontend/qt_sdl/MelonPrimeVulkanSurfaceHost.cpp",
     "src/frontend/qt_sdl/MelonPrimeVulkanSurfaceHost.h",
     "src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp",
-    "src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.cpp"
+    "src/frontend/qt_sdl/MelonPrimeVulkanFrontendSession.cpp",
+    "src/SapphirePublished2DFrame.h"
   ],
   "vendor_files": [
     {
@@ -20,7 +21,7 @@
       "upstream_sha256": "46fb618998a1fddcddbfbaae94b0759f36386d70384a9fba36ff01f19ba5c617",
       "local_path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.h",
       "local_sha256": "caec95a41ba0822f28bcb3c20e0d7ed6acbf3071c36b2c0e2c38716ad8a93a26",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -30,7 +31,7 @@
       "upstream_sha256": "caf5684e281dc82b98176eea95dabb481648dbc05441e106c7e2bf7b4dbb0096",
       "local_path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp",
       "local_sha256": "79dc444a102998f54112dfdd7e4d0b2bb1417d278ee1f9000595da9baca9f339",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -40,7 +41,7 @@
       "upstream_sha256": "b0b977cdf1e035976bb16ea9b33b4e1fa62a4e97ef679db5c79f8da82b1a7af8",
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h",
       "local_sha256": "dcc1b4292f0f24f2568852d527bbf13dd3e92a2cea6490dd7170406767f7a76b",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -50,7 +51,7 @@
       "upstream_sha256": "b7e4497bceef5360ff8ab141e7e1a217fbf6610ab21a8fdceaa3071ae6b1bd51",
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp",
       "local_sha256": "9501ed267bfd64b944072fbdd88e58679ea7fb7465986c8ba1150e824eff7da3",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -59,8 +60,8 @@
       "upstream_path": "app/src/main/cpp/renderer/VulkanSurfacePresenter.h",
       "upstream_sha256": "7caa3532a8ffc64e32535ce3208db4d26b478b4272a1cda502e8863086a76dad",
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h",
-      "local_sha256": "22d85a850cb9aff11893d5cddb9beed6c99b6675f59f71dc3133fad8c1d6f4fc",
-      "parity_mode": "local_baseline",
+      "local_sha256": "7a7a9d879c677bba3bf695f603c0256666321cf8bdb934dd2a394918f662aa8f",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -69,8 +70,8 @@
       "upstream_path": "app/src/main/cpp/renderer/VulkanSurfacePresenter.cpp",
       "upstream_sha256": "72780d81677a744337b57b25ad1e56555bccd05437443b973e6fb309d0228883",
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp",
-      "local_sha256": "b3f38d462a33933e652e22193452edd4abbd15f5547a2c1332e37ebd90d4c7a5",
-      "parity_mode": "local_baseline",
+      "local_sha256": "97896aa1b689e4730746c9c0959006d29ef139956a4158263cd28c73b94d32a7",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -94,13 +95,33 @@
       "allowed_transform": "none"
     },
     {
+      "upstream_repository": "SapphireRhodonite/melonDS-android",
+      "upstream_commit_or_tag": "0.7.0.rc4",
+      "upstream_path": "app/src/main/cpp/renderer/VulkanCompositorShader.comp",
+      "upstream_sha256": "10ac7ac56ee4024341c6cc0bfc9f5ed6ab206f8a93abc56ce17b5d5ba73fdc7a",
+      "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp",
+      "local_sha256": "10ac7ac56ee4024341c6cc0bfc9f5ed6ab206f8a93abc56ce17b5d5ba73fdc7a",
+      "parity_mode": "exact_upstream",
+      "allowed_transform": "none"
+    },
+    {
+      "upstream_repository": "SapphireRhodonite/melonDS-android",
+      "upstream_commit_or_tag": "0.7.0.rc4",
+      "upstream_path": "app/src/main/cpp/renderer/VulkanAccumulate3dShader.comp",
+      "upstream_sha256": "82d5f53aec024c93be2ed8102323143597ae39e0aaf084a16a311604a5114836",
+      "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp",
+      "local_sha256": "82d5f53aec024c93be2ed8102323143597ae39e0aaf084a16a311604a5114836",
+      "parity_mode": "exact_upstream",
+      "allowed_transform": "none"
+    },
+    {
       "upstream_repository": "SapphireRhodonite/melonDS-android-lib",
       "upstream_commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023",
       "upstream_path": "src/GPU2D_Soft.h",
       "upstream_sha256": "68a4dcd7f45e9056aae0397e8aaa73b636629b0bf7a1b0332aa9371ac87405e8",
       "local_path": "src/SapphireGPU2DCore/GPU2D_Soft.h",
       "local_sha256": "42dd5507adbad267d4fb18b735cb12554a107bc2bdbfb96e41f53c06337fed90",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     },
     {
@@ -110,7 +131,7 @@
       "upstream_sha256": "ca7f7cea0f0c2381f68dc00f4cebacd76aecb244e28c97f93639101f2dcaf08c",
       "local_path": "src/SapphireGPU2DCore/GPU2D_Soft.cpp",
       "local_sha256": "8e16a180a33506de70450a990425e06e5bd543b9eb07702c857a4343d8e8be50",
-      "parity_mode": "local_baseline",
+      "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter"
     }
   ]

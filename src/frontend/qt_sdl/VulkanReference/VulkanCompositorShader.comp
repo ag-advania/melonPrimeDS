@@ -1,26 +1,23 @@
 #version 450
 
-#extension GL_GOOGLE_include_directive : require
-#include "../../../VulkanStructuredControlAbi.inc"
-
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING, rgba8) uniform writeonly image2D outImage;
-layout(set = 0, binding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING, rgba8) uniform readonly image2D image3dInput;
-layout(set = 0, binding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING, rgba8) uniform readonly image2D image3dPreviousTopInput;
-layout(set = 0, binding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING, rgba8) uniform readonly image2D image3dPreviousBottomInput;
+layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outImage;
+layout(set = 0, binding = 1, rgba8) uniform readonly image2D image3dInput;
+layout(set = 0, binding = 4, rgba8) uniform readonly image2D image3dPreviousTopInput;
+layout(set = 0, binding = 6, rgba8) uniform readonly image2D image3dPreviousBottomInput;
 
-layout(set = 0, binding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING, std430) readonly buffer TopPackedBuffer
+layout(set = 0, binding = 2, std430) readonly buffer TopPackedBuffer
 {
     uint topPacked[];
 };
 
-layout(set = 0, binding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING, std430) readonly buffer BottomPackedBuffer
+layout(set = 0, binding = 3, std430) readonly buffer BottomPackedBuffer
 {
     uint bottomPacked[];
 };
 
-layout(set = 0, binding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING, std430) readonly buffer Capture3dBuffer
+layout(set = 0, binding = 5, std430) readonly buffer Capture3dBuffer
 {
     uint capture3dPacked[];
 };
@@ -95,22 +92,22 @@ bool isRegularCaptureBlankPixel(Rgba6 color)
 
 bool hasStructured2D3DSlot(Rgba6 control)
 {
-    return (control.a & int(MP_VK_PACKED_CONTROL_3D_SLOT_FLAG)) != 0;
+    return (control.a & 0x40) != 0;
 }
 
 bool hasStructured2DAbovePlane(Rgba6 control)
 {
-    return (control.a & int(MP_VK_PACKED_CONTROL_ABOVE_3D_FLAG)) != 0;
+    return (control.a & 0x80) != 0;
 }
 
 bool hasStructured2DProtectedBlack(Rgba6 control)
 {
-    return (control.a & int(MP_VK_PACKED_CONTROL_PROTECTED_BLACK_FLAG)) != 0;
+    return (control.a & 0x20) != 0;
 }
 
 bool hasStructured2DNo3DCoverage(Rgba6 control)
 {
-    return (control.a & int(MP_VK_PACKED_CONTROL_NO_3D_COVERAGE_FLAG)) != 0;
+    return (control.a & 0x10) != 0;
 }
 
 bool isStructured2DOnly(Rgba6 control)
@@ -301,12 +298,12 @@ Rgba6 sampleCapture3DColorAtDsPixel(int dsX, int dsY)
 
     if (pc.captureSourceValid == 0u
         || dsX < 0
-        || dsX >= MP_VK_NATIVE_SCREEN_WIDTH
+        || dsX >= 256
         || dsY < 0
-        || dsY >= MP_VK_NATIVE_SCREEN_HEIGHT)
+        || dsY >= 192)
         return zero;
 
-    return unpackColor6(capture3dPacked[uint(dsY) * uint(MP_VK_NATIVE_SCREEN_WIDTH) + uint(dsX)]);
+    return unpackColor6(capture3dPacked[uint(dsY) * 256u + uint(dsX)]);
 }
 
 uint readTopPacked(int y, int x)
@@ -365,12 +362,12 @@ DEFINE_SAMPLE_FILTERED_PACKED_LAYER(sampleBottomFilteredPackedLayer, readBottomP
 #define DEFINE_COMPOSE_SCREEN_PIXEL(FUNC_NAME, READ_PACKED_FN, SCREEN_IS_TOP) \
 Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) \
 { \
-    uint masterBrightness = READ_PACKED_FN(dsY, MP_VK_NATIVE_SCREEN_WIDTH * MP_VK_PACKED_PLANE_COUNT); \
+    uint masterBrightness = READ_PACKED_FN(dsY, 256 * 3); \
     int displayMode = int((masterBrightness >> 16u) & 0x3u); \
     int brightnessMode = int(((masterBrightness >> 8u) & 0xFFu) >> 6u); \
     int brightnessFactor = min(16, int(masterBrightness & 0x1Fu)); \
     int xOffset = int((masterBrightness >> 24u) & 0xFFu) \
-        - ((((masterBrightness >> 16u) & 0x80u) != 0u) ? MP_VK_NATIVE_SCREEN_WIDTH : 0); \
+        - ((((masterBrightness >> 16u) & 0x80u) != 0u) ? 256 : 0); \
     bool regularCaptureUses3d = (masterBrightness & kMetaFlagRegularCaptureUses3d) != 0u; \
     bool vramCaptureUses3d = (masterBrightness & kMetaFlagVramCaptureUses3d) != 0u; \
     bool forceLive3dCompMode7 = (masterBrightness & kMetaFlagForceLive3dCompMode7) != 0u; \
@@ -390,9 +387,9 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
 	    { \
 	        Rgba6 val1 = pixel; \
 	        Rgba6 val2 = SCREEN_IS_TOP \
-                ? sampleTopFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, MP_VK_NATIVE_SCREEN_WIDTH) \
-                : sampleBottomFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, MP_VK_NATIVE_SCREEN_WIDTH); \
-        Rgba6 val3 = unpackColor6(READ_PACKED_FN(dsY, (MP_VK_NATIVE_SCREEN_WIDTH * 2) + sourceX)); \
+                ? sampleTopFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, 256) \
+                : sampleBottomFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, 256); \
+        Rgba6 val3 = unpackColor6(READ_PACKED_FN(dsY, 512 + sourceX)); \
         int compMode = val3.a & 0xF; \
         bool structured2DSlot = hasStructured2D3DSlot(val3); \
         bool structured2DAbove = hasStructured2DAbovePlane(val3); \
@@ -404,17 +401,17 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
         bool packedPlaneHas3DLayerSlot = isPacked3dLayerSlot(val1) || isPacked3dLayerSlot(val2); \
         bool screenHasPrevious3D = SCREEN_IS_TOP ? (pc.previousTopSourceValid != 0u) : (pc.previousBottomSourceValid != 0u); \
         Rgba6 comp4ProbeTopVal1 = unpackColor6(READ_PACKED_FN(8, 128)); \
-        Rgba6 comp4ProbeTopVal2 = unpackColor6(READ_PACKED_FN(8, MP_VK_NATIVE_SCREEN_WIDTH + 128)); \
-        Rgba6 comp4ProbeTopControl = unpackColor6(READ_PACKED_FN(8, (MP_VK_NATIVE_SCREEN_WIDTH * 2) + 128)); \
-        uint topProbeMeta = READ_PACKED_FN(8, MP_VK_NATIVE_SCREEN_WIDTH * MP_VK_PACKED_PLANE_COUNT); \
+        Rgba6 comp4ProbeTopVal2 = unpackColor6(READ_PACKED_FN(8, 256 + 128)); \
+        Rgba6 comp4ProbeTopControl = unpackColor6(READ_PACKED_FN(8, 512 + 128)); \
+        uint topProbeMeta = READ_PACKED_FN(8, 256 * 3); \
         Rgba6 comp4ProbeMiddleVal1 = unpackColor6(READ_PACKED_FN(96, 128)); \
-        Rgba6 comp4ProbeMiddleVal2 = unpackColor6(READ_PACKED_FN(96, MP_VK_NATIVE_SCREEN_WIDTH + 128)); \
-        Rgba6 comp4ProbeMiddleControl = unpackColor6(READ_PACKED_FN(96, (MP_VK_NATIVE_SCREEN_WIDTH * 2) + 128)); \
-        uint middleProbeMeta = READ_PACKED_FN(96, MP_VK_NATIVE_SCREEN_WIDTH * MP_VK_PACKED_PLANE_COUNT); \
+        Rgba6 comp4ProbeMiddleVal2 = unpackColor6(READ_PACKED_FN(96, 256 + 128)); \
+        Rgba6 comp4ProbeMiddleControl = unpackColor6(READ_PACKED_FN(96, 512 + 128)); \
+        uint middleProbeMeta = READ_PACKED_FN(96, 256 * 3); \
         Rgba6 comp4ProbeBottomVal1 = unpackColor6(READ_PACKED_FN(184, 128)); \
-        Rgba6 comp4ProbeBottomVal2 = unpackColor6(READ_PACKED_FN(184, MP_VK_NATIVE_SCREEN_WIDTH + 128)); \
-        Rgba6 comp4ProbeBottomControl = unpackColor6(READ_PACKED_FN(184, (MP_VK_NATIVE_SCREEN_WIDTH * 2) + 128)); \
-        uint bottomProbeMeta = READ_PACKED_FN(184, MP_VK_NATIVE_SCREEN_WIDTH * MP_VK_PACKED_PLANE_COUNT); \
+        Rgba6 comp4ProbeBottomVal2 = unpackColor6(READ_PACKED_FN(184, 256 + 128)); \
+        Rgba6 comp4ProbeBottomControl = unpackColor6(READ_PACKED_FN(184, 512 + 128)); \
+        uint bottomProbeMeta = READ_PACKED_FN(184, 256 * 3); \
         bool topProbeCaptureBackedComp4 = ((comp4ProbeTopControl.a & 0xF) == 4) \
             && isPacked3dPlaceholder(comp4ProbeTopVal1) \
             && isPacked3dPlaceholder(comp4ProbeTopVal2); \
@@ -891,17 +888,17 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 for (int supportDy = -1; supportDy <= 1; supportDy++) \
                 { \
                     int supportY = dsY + supportDy; \
-                    if (supportY < 0 || supportY >= MP_VK_NATIVE_SCREEN_HEIGHT) \
+                    if (supportY < 0 || supportY >= 192) \
                         continue; \
                     for (int supportDx = -1; supportDx <= 1; supportDx++) \
                     { \
                         if (supportDx == 0 && supportDy == 0) \
                             continue; \
                         int supportX = sourceX + supportDx; \
-                        if (supportX < 0 || supportX >= MP_VK_NATIVE_SCREEN_WIDTH) \
+                        if (supportX < 0 || supportX >= 256) \
                             continue; \
                         Rgba6 support0 = unpackColor6(READ_PACKED_FN(supportY, supportX)); \
-                        Rgba6 support1 = unpackColor6(READ_PACKED_FN(supportY, MP_VK_NATIVE_SCREEN_WIDTH + supportX)); \
+                        Rgba6 support1 = unpackColor6(READ_PACKED_FN(supportY, 256 + supportX)); \
                         if (hasPackedVisibleColor(support0) || hasPackedVisibleColor(support1)) \
                             regularCaptureVisibleBlackHasLocalSupport = true; \
                     } \
@@ -997,9 +994,9 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
     else if (displayMode == 2 && vramCaptureUses3d) \
     { \
         Rgba6 val2 = SCREEN_IS_TOP \
-            ? sampleTopFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, MP_VK_NATIVE_SCREEN_WIDTH) \
-            : sampleBottomFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, MP_VK_NATIVE_SCREEN_WIDTH); \
-        Rgba6 val3 = unpackColor6(READ_PACKED_FN(dsY, (MP_VK_NATIVE_SCREEN_WIDTH * 2) + sourceX)); \
+            ? sampleTopFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, 256) \
+            : sampleBottomFilteredPackedLayer(sourceX, dsY, scaledX, scaledY, safeScale, 256); \
+        Rgba6 val3 = unpackColor6(READ_PACKED_FN(dsY, 512 + sourceX)); \
         int compMode = val3.a & 0xF; \
         bool structured2DSlot = hasStructured2D3DSlot(val3); \
         bool structured2DAbove = hasStructured2DAbovePlane(val3); \
@@ -1123,10 +1120,8 @@ void main()
 
     uint safeScale = max(pc.scale, 1u);
     int sourceY = int(gid.y / safeScale);
-    const int bottomScreenStart = MP_VK_NATIVE_SCREEN_HEIGHT + 2;
-    bool isTopScreen = sourceY < MP_VK_NATIVE_SCREEN_HEIGHT;
-    bool isBottomScreen = sourceY >= bottomScreenStart
-        && sourceY < (bottomScreenStart + MP_VK_NATIVE_SCREEN_HEIGHT);
+    bool isTopScreen = sourceY < 192;
+    bool isBottomScreen = sourceY >= 194 && sourceY < 386;
 
     if (!isTopScreen && !isBottomScreen)
     {
@@ -1135,16 +1130,16 @@ void main()
     }
 
     int sourceX = int(gid.x / safeScale);
-    if (sourceX < 0 || sourceX >= MP_VK_NATIVE_SCREEN_WIDTH)
+    if (sourceX < 0 || sourceX >= 256)
     {
         imageStore(outImage, ivec2(gid), vec4(0.0, 0.0, 0.0, 1.0));
         return;
     }
 
-    int dsY = isTopScreen ? sourceY : (sourceY - bottomScreenStart);
+    int dsY = isTopScreen ? sourceY : (sourceY - 194);
     int scaledY = int(gid.y);
     if (isBottomScreen)
-        scaledY -= int((uint(MP_VK_NATIVE_SCREEN_HEIGHT) + 2u) * safeScale);
+        scaledY -= int((192u + 2u) * safeScale);
 
     Rgba6 pixel;
     if (isTopScreen)
