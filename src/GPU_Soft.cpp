@@ -22,12 +22,6 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DAdapter.h"
-#endif
-
-namespace melonDS
-{
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DState.h"
 #endif
 
