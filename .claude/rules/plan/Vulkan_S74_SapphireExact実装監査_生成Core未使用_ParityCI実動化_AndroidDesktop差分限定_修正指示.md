@@ -1825,16 +1825,16 @@ Desktop側をthin input／WSI adapterだけにする
 
 | Phase | Commit | Status | Notes |
 |-------|--------|--------|-------|
-| S74-1 | pending | done | `sapphire_frame_latch_core` OBJECT target + compile script |
-| S74-2 | pending | pending | Line-range vendor manifest + full latch closure generator |
-| S74-3 | pending | pending | `MelonInstance.h` state members in generated header |
-| S74-4 | pending | pending | Read-only `--verify` + byte compare |
-| S74-5 | pending | pending | `SapphireFrameLatchCore.cpp` in production `melonDS` sources |
-| S74-6 | pending | pending | Thin `SapphireVulkanFrameLatch` wrapper |
-| S74-7 | pending | pending | Desktop algorithms removed from wrapper |
-| S74-8 | pending | pending | Diagnostic-only `DesktopSapphireFrameSidecar` |
-| S74-9 | pending | pending | Atomic published/live frame identity validation |
-| S74-10 | pending | pending | VulkanOutput/FrameQueue composition body parity |
-| S74-11 | pending | pending | Golden snapshot fixtures |
-| S74-12 | pending | pending | 120-frame period-2 flicker fixture |
-| S74-13 | pending | pending | Sapphire parity CI: tests + Linux Vulkan build |
+| S74-1 | `f0da47a19` | done | `sapphire_frame_latch_core` OBJECT target + compile script |
+| S74-2 | `67e0777d3` | done | Line-range vendor manifest + full latch closure generator |
+| S74-3 | `a5381f157` | done | `MelonInstance.h` state members in generated header |
+| S74-4 | `339323e03` | done | Read-only `--verify` + byte compare |
+| S74-5 | `c981df7b2` | done | `SapphireFrameLatchCore.cpp` in production `melonDS` sources |
+| S74-6 | `6330c6c48` | done | Thin `SapphireVulkanFrameLatch` wrapper |
+| S74-7 | `1e802d857` | done | Desktop algorithms removed from wrapper |
+| S74-8 | `9db172d72` | done | Diagnostic-only `DesktopSapphireFrameSidecar` |
+| S74-9 | `4a9cb9524` | done | Atomic published/live frame identity validation |
+| S74-10 | `4158b526c` | done | VulkanOutput/FrameQueue composition body parity |
+| S74-11 | `8d694c145` | done | Golden snapshot fixtures |
+| S74-12 | `ae6303cf8` | done | 120-frame period-2 flicker fixture |
+| S74-13 | `58065b990` | done | Sapphire parity CI: tests + Linux Vulkan build |
