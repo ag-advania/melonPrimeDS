@@ -351,6 +351,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanSurfaceHost.h
         MelonPrimeVulkanFrontendSession.cpp
         MelonPrimeVulkanFrontendSession.h
+        MelonPrimeVulkanRuntimePacing.cpp
+        MelonPrimeVulkanRuntimePacing.h
         VulkanPreparedContentStats.cpp
         VulkanPreparedContentStats.h
         SapphireVulkanFrameLatch.cpp

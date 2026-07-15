@@ -1,4 +1,5 @@
 #include "MelonPrimeVulkanFrontendSession.h"
+#include "MelonPrimeVulkanRuntimePacing.h"
 #include "VulkanPreparedContentStats.h"
 
 #include "GPU3D_Vulkan.h"
@@ -173,14 +174,28 @@ void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()
 
 FrameQueuePolicy MelonPrimeVulkanFrontendSession::queuePolicy()
 {
-    FrameQueuePolicy policy{};
-    policy.MaxBacklogDepth = 2;
-    policy.AllowStealPending = false;
-    policy.AllowPreviousFrameReuse = true;
-    policy.AllowDropForDeadline = false;
-    policy.PreferOldestFrame = false;
-    policy.PreserveBacklogOnPresent = false;
-    return policy;
+    int renderScale = 1;
+    bool graphicsHardwareActive = false;
+    bool temporalHistoryRequired = false;
+    if (nds != nullptr && nds->GPU.GPU3D.HasCurrentRenderer())
+    {
+        if (auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(
+                &nds->GPU.GPU3D.GetCurrentRenderer()))
+        {
+            renderScale = std::max(renderer3D->GetScaleFactor(), 1);
+            graphicsHardwareActive =
+                renderer3D->GetActiveBackendMode()
+                == VulkanRenderer3D::BackendMode::GraphicsHardware;
+        }
+    }
+    temporalHistoryRequired = frameLatch.isVulkanTemporal3dHistoryGateActive();
+    const bool presentationLate =
+        GetVulkanRuntimePacingState().presentationLate.load(std::memory_order_acquire);
+    return MakeVulkanFrameQueuePolicy(
+        renderScale,
+        presentationLate,
+        graphicsHardwareActive,
+        temporalHistoryRequired);
 }
 
 Frame* MelonPrimeVulkanFrontendSession::acquireProducerRenderFrameLocked()

@@ -64,7 +64,7 @@ public:
     [[nodiscard]] u64 generation() const;
 
 private:
-    static FrameQueuePolicy queuePolicy();
+    FrameQueuePolicy queuePolicy();
     void clearProducerState();
     void synchronizeFrameReferencesLocked();
     Frame* acquireProducerRenderFrameLocked();

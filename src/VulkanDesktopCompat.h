@@ -2,6 +2,9 @@
 #include "types.h"
 namespace MelonDSAndroid {
 bool isFastForwardActive(); bool areRendererDebugToolsEnabled(); bool areRendererDebugBgObjLogsEnabled();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void PublishVulkanDesktopPacingState(bool fastForward, bool unlimited);
+#endif
 bool areRendererDebugLatchTraceLogsEnabled();
 bool isRenderer3DDebugFeatureEnabled(melonDS::u32); bool areRenderer3DDebugControlsActive(); melonDS::u32 getVulkanDiagnosticFlags();
 int getRenderer2DDebugForcedMode(melonDS::u32); int getRenderer2DDebugForcedCompMode(bool); bool isRenderer2DDebugBgLayerEnabled(melonDS::u32,melonDS::u32);
