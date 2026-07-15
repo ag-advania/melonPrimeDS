@@ -50,6 +50,35 @@ def resolve_reference_root(entry: dict) -> Path | None:
     return None
 
 
+def require_upstream(entry: dict, verify_upstream: bool, errors: list[str]) -> Path | None:
+    if not verify_upstream:
+        return None
+
+    ref_root = resolve_reference_root(entry)
+    if ref_root is None:
+        errors.append(
+            f"{entry['local_path']}: {entry.get('parity_mode')} requires "
+            "SAPPHIRE_ANDROID_ROOT or SAPPHIRE_ANDROID_LIB_ROOT"
+        )
+        return None
+
+    upstream_path = ref_root / entry["upstream_path"]
+    if not upstream_path.is_file():
+        errors.append(f"missing upstream file: {upstream_path}")
+        return None
+
+    return upstream_path
+
+
+def verify_manifest_upstream_hash(entry: dict, upstream_hash: str, errors: list[str]) -> None:
+    expected = entry.get("upstream_sha256")
+    if expected and upstream_hash != expected:
+        errors.append(
+            f"{entry['upstream_path']}: upstream hash drift "
+            f"(manifest {expected}, got {upstream_hash})"
+        )
+
+
 def check_entry(entry: dict, verify_upstream: bool) -> list[str]:
     errors: list[str] = []
     local_path = REPO_ROOT / entry["local_path"]
@@ -59,59 +88,38 @@ def check_entry(entry: dict, verify_upstream: bool) -> list[str]:
     local_hash = sha256_file(local_path)
     mode = entry.get("parity_mode", "local_baseline")
 
-    if mode == "local_baseline" and local_hash != entry["local_sha256"]:
-        errors.append(
-            f"{entry['local_path']}: local hash drift "
-            f"(expected {entry['local_sha256']}, got {local_hash})"
-        )
-
-    if mode in {"exact_upstream", "normalized_upstream"}:
-        ref_root = resolve_reference_root(entry)
-        if ref_root is None:
-            if verify_upstream:
-                errors.append(
-                    f"{entry['local_path']}: exact_upstream requires "
-                    "SAPPHIRE_ANDROID_ROOT or SAPPHIRE_ANDROID_LIB_ROOT"
-                )
-        else:
-            upstream_path = ref_root / entry["upstream_path"]
-            if not upstream_path.is_file():
-                errors.append(f"missing upstream file: {upstream_path}")
-            else:
-                upstream_hash = sha256_file(upstream_path)
-                if upstream_hash != entry["upstream_sha256"]:
-                    errors.append(
-                        f"{entry['upstream_path']}: upstream hash drift "
-                        f"(manifest {entry['upstream_sha256']}, got {upstream_hash})"
-                    )
-                if mode == "exact_upstream" and upstream_hash != local_hash:
-                    errors.append(
-                        f"{entry['local_path']}: exact_upstream mismatch with "
-                        f"{entry['upstream_path']}"
-                    )
-
-    elif mode == "normalized_upstream" and verify_upstream:
-        ref_root = resolve_reference_root(entry)
-        if ref_root is None:
+    if mode == "local_baseline":
+        if local_hash != entry["local_sha256"]:
             errors.append(
-                f"{entry['local_path']}: normalized_upstream requires reference clone env"
+                f"{entry['local_path']}: local hash drift "
+                f"(expected {entry['local_sha256']}, got {local_hash})"
             )
-        else:
-            upstream_path = ref_root / entry["upstream_path"]
-            if upstream_path.is_file():
-                local_norm = sha256_bytes(
-                    normalize_vendor_text(local_path.read_text(encoding="utf-8")).encode("utf-8")
+    elif mode == "exact_upstream":
+        upstream_path = require_upstream(entry, verify_upstream, errors)
+        if upstream_path is not None:
+            upstream_hash = sha256_file(upstream_path)
+            verify_manifest_upstream_hash(entry, upstream_hash, errors)
+            if local_hash != upstream_hash:
+                errors.append(
+                    f"{entry['local_path']}: exact_upstream mismatch with "
+                    f"{entry['upstream_path']}"
                 )
-                upstream_norm = sha256_bytes(
-                    normalize_vendor_text(upstream_path.read_text(encoding="utf-8")).encode(
-                        "utf-8"
-                    )
+    elif mode == "normalized_upstream":
+        upstream_path = require_upstream(entry, verify_upstream, errors)
+        if upstream_path is not None:
+            upstream_hash = sha256_file(upstream_path)
+            verify_manifest_upstream_hash(entry, upstream_hash, errors)
+
+            local_norm = normalize_vendor_text(local_path.read_text(encoding="utf-8"))
+            upstream_norm = normalize_vendor_text(upstream_path.read_text(encoding="utf-8"))
+            if local_norm != upstream_norm:
+                errors.append(
+                    f"{entry['local_path']}: normalized_upstream mismatch "
+                    f"(local {sha256_bytes(local_norm.encode('utf-8'))}, "
+                    f"upstream {sha256_bytes(upstream_norm.encode('utf-8'))})"
                 )
-                if local_norm != upstream_norm:
-                    errors.append(
-                        f"{entry['local_path']}: normalized_upstream mismatch "
-                        f"(local {local_norm}, upstream {upstream_norm})"
-                    )
+    else:
+        errors.append(f"{entry['local_path']}: unknown parity mode: {mode}")
 
     return errors
 

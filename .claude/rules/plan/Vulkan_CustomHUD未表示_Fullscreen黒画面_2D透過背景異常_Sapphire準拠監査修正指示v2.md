@@ -1400,8 +1400,8 @@ Sapphireの実装を最大限そのまま利用できる。
 |---|---|---|---|
 | S64-1 | `668fb2e4c` | done | Sync/Publish分離、HasCurrentRenderer guard |
 | S64-2 | `3ade9a98f` | done | FinishFrame publication、valid contract |
-| S64-3 | — | in progress | renderer swap時pointer invalidate |
-| S64-4 | — | pending | parity checker分岐修正 |
+| S64-3 | `6566944df` | done | renderer swap時pointer invalidate |
+| S64-4 | — | in progress | parity checker分岐修正 |
 | S64-5 | — | pending | vendor generator |
 | S64-6 | — | pending | GPU2D lifecycle adapter |
 
