@@ -1109,6 +1109,19 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
             return surfaceState.configured
                 && IsVulkanPostProcessFilter(surfaceState.config.filtering);
         });
+    const bool surfaceUsesLinearFilter = std::any_of(
+        surfaces.begin(),
+        surfaces.end(),
+        [](const auto& entry) {
+            const SurfaceState& surfaceState = entry.second;
+            return surfaceState.configured
+                && surfaceState.config.filtering == VulkanFilterMode::Linear;
+        });
+    const bool requiresSeparated2dFiltering =
+        inputs.scale > 1
+        && surfaceUsesLinearFilter
+        && inputs.topPackedBuffer != VK_NULL_HANDLE
+        && inputs.bottomPackedBuffer != VK_NULL_HANDLE;
     const bool directPresentRequested = !inputs.needsReadback
         && !inputs.validationMode
         && !postProcessFilterRequested
@@ -1117,7 +1130,8 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
         && hasRequiredDirectHandles
         && !inputs.capture3dSourceValid
         && !inputs.previousTopSourceValid
-        && !inputs.previousBottomSourceValid;
+        && !inputs.previousBottomSourceValid
+        && !requiresSeparated2dFiltering;
 
     if (!directPresentRequested)
     {
@@ -1135,19 +1149,14 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
     VkImageView frameImageView = VK_NULL_HANDLE;
     if (!directPresentRequested)
     {
-        if (!output.composeAndSubmitFrame(frame, inputs))
+        VulkanCompositionInputs composeInputs = inputs;
+        composeInputs.filtering = VulkanFilterMode::Nearest;
+        if (!output.composeAndSubmitFrame(frame, composeInputs))
         {
             composeSubmitFailures++;
             return VulkanPresentResult::ComposeFailed;
         }
-        const bool highResolutionRealtimeFallbackPresent =
-            !fastForwardActive
-            && inputs.scale > 1
-            && !directPresentRequested;
-        const u64 composeWaitTimeoutNs = highResolutionRealtimeFallbackPresent
-            ? UINT64_MAX
-            : timeoutNs;
-        if (!output.waitForFrame(frame, composeWaitTimeoutNs))
+        if (!output.waitForFrame(frame, timeoutNs))
         {
             composeWaitFailures++;
             return VulkanPresentResult::ComposeFailed;
@@ -1292,7 +1301,7 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
         const u64 acquireStartNs = PerfNowNs();
         VkResult acquireResult = vkAcquireNextImageKHR(
             device,
-            surfaceState.swapchain,
+            surfaceState.active.swapchain,
             acquireBudgetNs,
             surfaceState.imageAvailableSemaphore,
             VK_NULL_HANDLE,
@@ -1308,7 +1317,7 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
 
             acquireResult = vkAcquireNextImageKHR(
                 device,
-                surfaceState.swapchain,
+                surfaceState.active.swapchain,
                 acquireBudgetNs,
                 surfaceState.imageAvailableSemaphore,
                 VK_NULL_HANDLE,
@@ -1337,7 +1346,7 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
         const u64 recordStartNs = PerfNowNs();
         if (!recordSurfaceCommands(
                 surfaceState,
-                surfaceState.framebuffers[imageIndex],
+                surfaceState.active.framebuffers[imageIndex],
                 imageIndex,
                 inputs,
                 sampledImage,
@@ -1367,8 +1376,8 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
         presentedAnySurface = true;
         presentedGameFrame = true;
         lastPresentedDirect = directPresent;
-        lastPresentMode = surfaceState.presentMode;
-        lastSwapchainImageCount = static_cast<u32>(surfaceState.swapchainImages.size());
+        lastPresentMode = surfaceState.active.presentMode;
+        lastSwapchainImageCount = static_cast<u32>(surfaceState.active.swapchainImages.size());
         if (directPresent)
             directPresentedFrames++;
         else
@@ -1633,15 +1642,22 @@ void VulkanSurfacePresenter::destroySurfaceStateResources(SurfaceState& surfaceS
 
 bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 {
-    if (!surfaceState.swapchainDirty && surfaceState.swapchain != VK_NULL_HANDLE)
+    if (!surfaceState.swapchainDirty && surfaceState.active.swapchain != VK_NULL_HANDLE)
         return true;
 
-    if (surfaceState.swapchain != VK_NULL_HANDLE)
+    if (surfaceState.active.swapchain != VK_NULL_HANDLE)
     {
         constexpr u64 kSwapchainRecreateWaitNs = 50'000'000ull;
         if (waitForSurfaceIdle(surfaceState, kSwapchainRecreateWaitNs) != VK_SUCCESS)
             return true;
     }
+
+    if (surfaceState.pending)
+        destroySwapchainBundle(*surfaceState.pending);
+
+    surfaceState.pending.emplace();
+    SwapchainBundle& building = *surfaceState.pending;
+    const SwapchainBundle previousActive = surfaceState.active;
 
     VkSurfaceCapabilitiesKHR capabilities{};
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surfaceState.surface, &capabilities) != VK_SUCCESS)
@@ -1681,7 +1697,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         extent.height = std::clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
 
-    VkSwapchainKHR oldSwapchain = surfaceState.swapchain;
+    VkSwapchainKHR oldSwapchain = previousActive.swapchain;
 
     if (surfaceState.hasCachedSwapchainSelection)
     {
@@ -1740,17 +1756,9 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             );
         }
 
-        destroySwapchain(surfaceState);
+        destroySwapchainBundle(building);
+        surfaceState.pending.reset();
         surfaceState.swapchainDirty = true;
-        if (oldSwapchain != VK_NULL_HANDLE)
-        {
-            const VkDevice retireDevice = device;
-            retiredResources.RetireReady(
-                [retireDevice, oldSwapchain]() {
-                    if (oldSwapchain != VK_NULL_HANDLE)
-                        vkDestroySwapchainKHR(retireDevice, oldSwapchain, nullptr);
-                });
-        }
         return false;
     };
     const VkSurfaceTransformFlagBitsKHR preTransform =
@@ -1787,19 +1795,9 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             swapchainInfo.clipped = VK_TRUE;
             swapchainInfo.oldSwapchain = oldSwapchain;
 
-            const VkResult swapchainResult = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &surfaceState.swapchain);
+            const VkResult swapchainResult = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &building.swapchain);
             if (swapchainResult == VK_SUCCESS)
             {
-                if (oldSwapchain != VK_NULL_HANDLE)
-                {
-                    const VkDevice retireDevice = device;
-                    retiredResources.RetireReady(
-                        [retireDevice, oldSwapchain]() {
-                            if (oldSwapchain != VK_NULL_HANDLE)
-                                vkDestroySwapchainKHR(retireDevice, oldSwapchain, nullptr);
-                        });
-                    oldSwapchain = VK_NULL_HANDLE;
-                }
                 surfaceFormat = candidateFormat;
                 presentMode = candidatePresentMode;
                 swapchainCreated = true;
@@ -1834,49 +1832,10 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     if (!swapchainCreated)
     {
+        destroySwapchainBundle(building);
+        surfaceState.pending.reset();
         surfaceState.swapchainDirty = true;
-        return surfaceState.swapchain != VK_NULL_HANDLE;
-    }
-
-    if (oldSwapchain != VK_NULL_HANDLE)
-    {
-        std::vector<VkFramebuffer> framebuffers =
-            std::move(surfaceState.framebuffers);
-        std::vector<VkImageView> imageViews =
-            std::move(surfaceState.swapchainImageViews);
-        const VkPipeline pipeline =
-            std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
-        const VkRenderPass renderPass =
-            std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
-
-        surfaceState.swapchainImages.clear();
-        surfaceState.swapchainImageInitialized.clear();
-        surfaceState.screenDescriptorCache = {};
-        surfaceState.backgroundDescriptorCache = {};
-        surfaceState.cachedDrawCalls.clear();
-
-        const VkDevice retireDevice = device;
-        retiredResources.RetireReady(
-            [retireDevice,
-             framebuffers = std::move(framebuffers),
-             imageViews = std::move(imageViews),
-             pipeline,
-             renderPass]() mutable {
-                for (VkFramebuffer framebuffer : framebuffers)
-                {
-                    if (framebuffer != VK_NULL_HANDLE)
-                        vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
-                }
-                if (pipeline != VK_NULL_HANDLE)
-                    vkDestroyPipeline(retireDevice, pipeline, nullptr);
-                if (renderPass != VK_NULL_HANDLE)
-                    vkDestroyRenderPass(retireDevice, renderPass, nullptr);
-                for (VkImageView imageView : imageViews)
-                {
-                    if (imageView != VK_NULL_HANDLE)
-                        vkDestroyImageView(retireDevice, imageView, nullptr);
-                }
-            });
+        return previousActive.swapchain != VK_NULL_HANDLE;
     }
 
     VkAttachmentDescription attachmentDescription{};
@@ -1912,7 +1871,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDependency;
 
-    const VkResult createRenderPassResult = vkCreateRenderPass(device, &renderPassInfo, nullptr, &surfaceState.renderPass);
+    const VkResult createRenderPassResult = vkCreateRenderPass(device, &renderPassInfo, nullptr, &building.renderPass);
     if (createRenderPassResult != VK_SUCCESS)
         return failSwapchainConfig("vkCreateRenderPass", createRenderPassResult);
 
@@ -1921,8 +1880,8 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         || surfaceState.cachedSurfaceFormat.format != surfaceFormat.format
         || surfaceState.cachedSurfaceFormat.colorSpace != surfaceFormat.colorSpace
         || surfaceState.cachedPresentMode != presentMode
-        || surfaceState.extent.width != extent.width
-        || surfaceState.extent.height != extent.height;
+        || previousActive.extent.width != extent.width
+        || previousActive.extent.height != extent.height;
     if (swapchainSelectionChanged && MelonDSAndroid::areRendererDebugBgObjLogsEnabled())
     {
         melonDS::Platform::Log(
@@ -1943,7 +1902,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     u32 swapchainImageCount = 0;
     const VkResult getSwapchainImageCountResult = vkGetSwapchainImagesKHR(
         device,
-        surfaceState.swapchain,
+        building.swapchain,
         &swapchainImageCount,
         nullptr
     );
@@ -1955,32 +1914,32 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         return failSwapchainConfig("vkGetSwapchainImagesKHR(count)", failureResult);
     }
 
-    surfaceState.swapchainImages.resize(swapchainImageCount);
+    building.swapchainImages.resize(swapchainImageCount);
     const VkResult getSwapchainImagesResult = vkGetSwapchainImagesKHR(
         device,
-        surfaceState.swapchain,
+        building.swapchain,
         &swapchainImageCount,
-        surfaceState.swapchainImages.data()
+        building.swapchainImages.data()
     );
     if (getSwapchainImagesResult != VK_SUCCESS)
         return failSwapchainConfig("vkGetSwapchainImagesKHR(images)", getSwapchainImagesResult);
 
-    surfaceState.swapchainImageViews.resize(swapchainImageCount);
-    surfaceState.framebuffers.resize(swapchainImageCount);
-    surfaceState.swapchainImageInitialized.assign(swapchainImageCount, false);
+    building.swapchainImageViews.resize(swapchainImageCount);
+    building.framebuffers.resize(swapchainImageCount);
+    building.swapchainImageInitialized.assign(swapchainImageCount, false);
 
     for (u32 i = 0; i < swapchainImageCount; i++)
     {
         VkImageViewCreateInfo imageViewInfo{};
         imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewInfo.image = surfaceState.swapchainImages[i];
+        imageViewInfo.image = building.swapchainImages[i];
         imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         imageViewInfo.format = surfaceFormat.format;
         imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         imageViewInfo.subresourceRange.levelCount = 1;
         imageViewInfo.subresourceRange.layerCount = 1;
 
-        const VkResult createImageViewResult = vkCreateImageView(device, &imageViewInfo, nullptr, &surfaceState.swapchainImageViews[i]);
+        const VkResult createImageViewResult = vkCreateImageView(device, &imageViewInfo, nullptr, &building.swapchainImageViews[i]);
         if (createImageViewResult != VK_SUCCESS)
             return failSwapchainConfig("vkCreateImageView", createImageViewResult);
     }
@@ -2078,7 +2037,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = surfaceState.renderPass;
+    pipelineInfo.renderPass = building.renderPass;
     pipelineInfo.subpass = 0;
 
     const VkResult createPipelineResult = vkCreateGraphicsPipelines(
@@ -2087,18 +2046,18 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         1,
         &pipelineInfo,
         nullptr,
-        &surfaceState.pipeline
+        &building.pipeline
     );
     if (createPipelineResult != VK_SUCCESS)
         return failSwapchainConfig("vkCreateGraphicsPipelines", createPipelineResult);
 
     for (u32 i = 0; i < swapchainImageCount; i++)
     {
-        VkImageView attachments[] = {surfaceState.swapchainImageViews[i]};
+        VkImageView attachments[] = {building.swapchainImageViews[i]};
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = surfaceState.renderPass;
+        framebufferInfo.renderPass = building.renderPass;
         framebufferInfo.attachmentCount = 1;
         framebufferInfo.pAttachments = attachments;
         framebufferInfo.width = extent.width;
@@ -2109,30 +2068,120 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             device,
             &framebufferInfo,
             nullptr,
-            &surfaceState.framebuffers[i]
+            &building.framebuffers[i]
         );
         if (createFramebufferResult != VK_SUCCESS)
             return failSwapchainConfig("vkCreateFramebuffer", createFramebufferResult);
     }
 
-    const bool extentChanged = surfaceState.extent.width != extent.width || surfaceState.extent.height != extent.height;
-    surfaceState.swapchainFormat = surfaceFormat.format;
-    surfaceState.colorSpace = surfaceFormat.colorSpace;
-    surfaceState.presentMode = presentMode;
+    building.swapchainFormat = surfaceFormat.format;
+    building.colorSpace = surfaceFormat.colorSpace;
+    building.presentMode = presentMode;
+    building.extent = extent;
+
+    const bool extentChanged =
+        previousActive.extent.width != extent.width
+        || previousActive.extent.height != extent.height;
+
+    const u64 previousTimelineValue = previousActive.lastSubmissionTimelineValue;
+    retireSwapchainBundle(std::move(previousActive), previousTimelineValue);
+    surfaceState.active = std::move(building);
+    surfaceState.pending.reset();
+    surfaceState.screenDescriptorCache = {};
+    surfaceState.backgroundDescriptorCache = {};
+    surfaceState.cachedDrawCalls.clear();
     surfaceState.hasCachedSwapchainSelection = true;
     surfaceState.cachedSurfaceFormat = surfaceFormat;
     surfaceState.cachedPresentMode = presentMode;
-    surfaceState.extent = extent;
     surfaceState.swapchainDirty = false;
     if (extentChanged)
         surfaceState.vertexBufferDirty = true;
     return true;
 }
 
+void VulkanSurfacePresenter::destroySwapchainBundle(SwapchainBundle& bundle)
+{
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    for (VkFramebuffer framebuffer : bundle.framebuffers)
+    {
+        if (framebuffer != VK_NULL_HANDLE)
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    if (bundle.pipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(device, bundle.pipeline, nullptr);
+    if (bundle.renderPass != VK_NULL_HANDLE)
+        vkDestroyRenderPass(device, bundle.renderPass, nullptr);
+    for (VkImageView imageView : bundle.swapchainImageViews)
+    {
+        if (imageView != VK_NULL_HANDLE)
+            vkDestroyImageView(device, imageView, nullptr);
+    }
+    if (bundle.swapchain != VK_NULL_HANDLE)
+        vkDestroySwapchainKHR(device, bundle.swapchain, nullptr);
+
+    bundle = {};
+}
+
+void VulkanSurfacePresenter::retireSwapchainBundle(SwapchainBundle bundle, u64 timelineValue)
+{
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    if (bundle.swapchain == VK_NULL_HANDLE
+        && bundle.renderPass == VK_NULL_HANDLE
+        && bundle.pipeline == VK_NULL_HANDLE
+        && bundle.framebuffers.empty()
+        && bundle.swapchainImageViews.empty())
+    {
+        return;
+    }
+
+    const u64 retireTimelineValue =
+        bundle.lastSubmissionTimelineValue != 0
+            ? bundle.lastSubmissionTimelineValue
+            : timelineValue;
+    const bool hasTimelineRetire =
+        useTimelineSemaphores
+        && timelineSemaphore != VK_NULL_HANDLE
+        && retireTimelineValue != 0;
+
+    const VkDevice retireDevice = device;
+    retiredResources.Retire(
+        hasTimelineRetire ? timelineSemaphore : VK_NULL_HANDLE,
+        hasTimelineRetire ? retireTimelineValue : 0,
+        VK_NULL_HANDLE,
+        [retireDevice, bundle = std::move(bundle)]() mutable {
+            for (VkFramebuffer framebuffer : bundle.framebuffers)
+            {
+                if (framebuffer != VK_NULL_HANDLE)
+                    vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
+            }
+            if (bundle.pipeline != VK_NULL_HANDLE)
+                vkDestroyPipeline(retireDevice, bundle.pipeline, nullptr);
+            if (bundle.renderPass != VK_NULL_HANDLE)
+                vkDestroyRenderPass(retireDevice, bundle.renderPass, nullptr);
+            for (VkImageView imageView : bundle.swapchainImageViews)
+            {
+                if (imageView != VK_NULL_HANDLE)
+                    vkDestroyImageView(retireDevice, imageView, nullptr);
+            }
+            if (bundle.swapchain != VK_NULL_HANDLE)
+                vkDestroySwapchainKHR(retireDevice, bundle.swapchain, nullptr);
+        });
+}
+
 void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
 {
     if (device == VK_NULL_HANDLE)
         return;
+
+    if (surfaceState.pending)
+    {
+        destroySwapchainBundle(*surfaceState.pending);
+        surfaceState.pending.reset();
+    }
 
     if (!melonDS::VulkanContext::Get().IsDeviceLost()
         && surfaceState.presentQueue != VK_NULL_HANDLE)
@@ -2143,51 +2192,14 @@ void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
             "VulkanSurfacePresenter pending present completion");
     }
 
-    const VkDevice retireDevice = device;
-    std::vector<VkFramebuffer> framebuffers =
-        std::move(surfaceState.framebuffers);
-    std::vector<VkImageView> imageViews =
-        std::move(surfaceState.swapchainImageViews);
-    const VkPipeline pipeline =
-        std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
-    const VkRenderPass renderPass =
-        std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
-    const VkSwapchainKHR swapchain =
-        std::exchange(surfaceState.swapchain, VK_NULL_HANDLE);
-
-    surfaceState.swapchainImages.clear();
-    surfaceState.swapchainImageInitialized.clear();
-    surfaceState.extent = {};
-    surfaceState.swapchainFormat = VK_FORMAT_UNDEFINED;
+    SwapchainBundle retiring = std::move(surfaceState.active);
+    surfaceState.active = {};
     surfaceState.swapchainDirty = true;
     surfaceState.screenDescriptorCache = {};
     surfaceState.backgroundDescriptorCache = {};
     surfaceState.cachedDrawCalls.clear();
 
-    retiredResources.RetireReady(
-        [retireDevice,
-         framebuffers = std::move(framebuffers),
-         imageViews = std::move(imageViews),
-         pipeline,
-         renderPass,
-         swapchain]() mutable {
-            for (VkFramebuffer framebuffer : framebuffers)
-            {
-                if (framebuffer != VK_NULL_HANDLE)
-                    vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
-            }
-            if (pipeline != VK_NULL_HANDLE)
-                vkDestroyPipeline(retireDevice, pipeline, nullptr);
-            if (renderPass != VK_NULL_HANDLE)
-                vkDestroyRenderPass(retireDevice, renderPass, nullptr);
-            for (VkImageView imageView : imageViews)
-            {
-                if (imageView != VK_NULL_HANDLE)
-                    vkDestroyImageView(retireDevice, imageView, nullptr);
-            }
-            if (swapchain != VK_NULL_HANDLE)
-                vkDestroySwapchainKHR(retireDevice, swapchain, nullptr);
-        });
+    retireSwapchainBundle(std::move(retiring), retiring.lastSubmissionTimelineValue);
     retiredResources.Collect(
         device,
         melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
@@ -2574,8 +2586,8 @@ void VulkanSurfacePresenter::logRetroArchSizingIfNeeded(
         sizing.outputScale,
         sizing.requestedOutputScale,
         sizing.clamped ? 1 : 0,
-        surfaceState.extent.width,
-        surfaceState.extent.height,
+        surfaceState.active.extent.width,
+        surfaceState.active.extent.height,
         surfaceState.config.retroShaderPassCount);
 }
 
@@ -2704,8 +2716,8 @@ bool VulkanSurfacePresenter::runRetroArchFilter(
             sizing.outputScreenHeight,
             sizing.outputAtlasWidth,
             sizing.outputAtlasHeight,
-            surfaceState.extent.width,
-            surfaceState.extent.height);
+            surfaceState.active.extent.width,
+            surfaceState.active.extent.height);
         return false;
     }
 
@@ -2733,8 +2745,8 @@ bool VulkanSurfacePresenter::runRetroArchFilter(
             sizing.outputScreenHeight,
             sizing.outputAtlasWidth,
             sizing.outputAtlasHeight,
-            surfaceState.extent.width,
-            surfaceState.extent.height);
+            surfaceState.active.extent.width,
+            surfaceState.active.extent.height);
         return false;
     }
 
@@ -3442,8 +3454,8 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         return true;
     }
 
-    const float surfaceWidth = static_cast<float>(std::max(1u, surfaceState.extent.width));
-    const float surfaceHeight = static_cast<float>(std::max(1u, surfaceState.extent.height));
+    const float surfaceWidth = static_cast<float>(std::max(1u, surfaceState.active.extent.width));
+    const float surfaceHeight = static_cast<float>(std::max(1u, surfaceState.active.extent.height));
 
     auto screenXToNdc = [&](int x) -> float {
         return (static_cast<float>(x) / surfaceWidth) * 2.0f - 1.0f;
@@ -3747,8 +3759,8 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
             melonDS::Platform::LogLevel::Info,
             "VulkanPresenter[Config]: surface=%d extent=%ux%u direct=%d topRect=(%d,%d,%d,%d,%d) bottomRect=(%d,%d,%d,%d,%d) hybridTopRect=(%d,%d,%d,%d,%d) hybridBottomRect=(%d,%d,%d,%d,%d) bottomOnTop=%d hybridOnTop=%d drawCalls=%zu",
             surfaceState.id,
-            surfaceState.extent.width,
-            surfaceState.extent.height,
+            surfaceState.active.extent.width,
+            surfaceState.active.extent.height,
             directPresent ? 1 : 0,
             config.topScreen.enabled ? 1 : 0,
             config.topScreen.x,
@@ -3825,13 +3837,13 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     if (vkBeginCommandBuffer(surfaceState.commandBuffer, &beginInfo) != VK_SUCCESS)
         return false;
 
-    if (imageIndex >= surfaceState.swapchainImages.size()
-        || imageIndex >= surfaceState.swapchainImageInitialized.size())
+    if (imageIndex >= surfaceState.active.swapchainImages.size()
+        || imageIndex >= surfaceState.active.swapchainImageInitialized.size())
         return false;
     melonDS::VulkanR24Barrier::PresentToRender(
         surfaceState.commandBuffer,
-        surfaceState.swapchainImages[imageIndex],
-        surfaceState.swapchainImageInitialized[imageIndex],
+        surfaceState.active.swapchainImages[imageIndex],
+        surfaceState.active.swapchainImageInitialized[imageIndex],
         queueFamilyIndex,
         surfaceState.presentQueueFamilyIndex);
 
@@ -3891,26 +3903,26 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = surfaceState.renderPass;
+    renderPassInfo.renderPass = surfaceState.active.renderPass;
     renderPassInfo.framebuffer = framebuffer;
-    renderPassInfo.renderArea.extent = surfaceState.extent;
+    renderPassInfo.renderArea.extent = surfaceState.active.extent;
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearValue;
 
     vkCmdBeginRenderPass(surfaceState.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(surfaceState.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, surfaceState.pipeline);
+    vkCmdBindPipeline(surfaceState.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, surfaceState.active.pipeline);
 
     VkViewport viewport{};
     viewport.x = 0.0f;
-    viewport.y = static_cast<float>(surfaceState.extent.height);
-    viewport.width = static_cast<float>(surfaceState.extent.width);
-    viewport.height = -static_cast<float>(surfaceState.extent.height);
+    viewport.y = static_cast<float>(surfaceState.active.extent.height);
+    viewport.width = static_cast<float>(surfaceState.active.extent.width);
+    viewport.height = -static_cast<float>(surfaceState.active.extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(surfaceState.commandBuffer, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.extent = surfaceState.extent;
+    scissor.extent = surfaceState.active.extent;
     vkCmdSetScissor(surfaceState.commandBuffer, 0, 1, &scissor);
 
     VkDeviceSize vertexOffsets[] = {0};
@@ -3987,9 +3999,9 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     {
         VulkanDesktopOverlayTarget overlayTarget{};
         overlayTarget.commandBuffer = surfaceState.commandBuffer;
-        overlayTarget.renderPass = surfaceState.renderPass;
-        overlayTarget.swapchainFormat = surfaceState.swapchainFormat;
-        overlayTarget.extent = surfaceState.extent;
+        overlayTarget.renderPass = surfaceState.active.renderPass;
+        overlayTarget.swapchainFormat = surfaceState.active.swapchainFormat;
+        overlayTarget.extent = surfaceState.active.extent;
         overlayTarget.surfaceId = surfaceState.id;
         desktopOverlayRecorder(overlayTarget, desktopOverlayUserData);
     }
@@ -3998,10 +4010,10 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     vkCmdEndRenderPass(surfaceState.commandBuffer);
     melonDS::VulkanR24Barrier::RenderToPresent(
         surfaceState.commandBuffer,
-        surfaceState.swapchainImages[imageIndex],
+        surfaceState.active.swapchainImages[imageIndex],
         queueFamilyIndex,
         surfaceState.presentQueueFamilyIndex);
-    surfaceState.swapchainImageInitialized[imageIndex] = true;
+    surfaceState.active.swapchainImageInitialized[imageIndex] = true;
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(surfaceState.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, surfaceState.timestampQueryPool, 1);
@@ -4060,7 +4072,7 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &surfaceState.renderFinishedSemaphore;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &surfaceState.swapchain;
+    presentInfo.pSwapchains = &surfaceState.active.swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
     VkResult submitResult = VK_SUCCESS;
@@ -4102,6 +4114,7 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
         surfaceState.timestampPending = true;
 
     presentTimelineValueOut = signalValue;
+    surfaceState.active.lastSubmissionTimelineValue = signalValue;
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
     {

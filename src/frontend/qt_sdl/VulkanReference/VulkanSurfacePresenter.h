@@ -3,6 +3,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <unordered_map>
@@ -283,16 +284,8 @@ private:
         u32 rendererHeight = 0;
     };
 
-    struct SurfaceState
+    struct SwapchainBundle
     {
-        int id = 0;
-        u32 requestedWidth = 0;
-        u32 requestedHeight = 0;
-        VkQueue presentQueue = VK_NULL_HANDLE;
-        u32 presentQueueFamilyIndex = UINT32_MAX;
-        bool separatePresentQueue = false;
-
-        VkSurfaceKHR surface = VK_NULL_HANDLE; // borrowed
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -306,6 +299,22 @@ private:
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
+
+        u64 lastSubmissionTimelineValue = 0;
+    };
+
+    struct SurfaceState
+    {
+        int id = 0;
+        u32 requestedWidth = 0;
+        u32 requestedHeight = 0;
+        VkQueue presentQueue = VK_NULL_HANDLE;
+        u32 presentQueueFamilyIndex = UINT32_MAX;
+        bool separatePresentQueue = false;
+
+        VkSurfaceKHR surface = VK_NULL_HANDLE; // borrowed
+        SwapchainBundle active;
+        std::optional<SwapchainBundle> pending;
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
         VkFence inFlightFence = VK_NULL_HANDLE;
@@ -351,6 +360,8 @@ private:
     void destroySurfaceStateResources(SurfaceState& surfaceState);
     bool ensureSwapchain(SurfaceState& surfaceState);
     void destroySwapchain(SurfaceState& surfaceState);
+    void destroySwapchainBundle(SwapchainBundle& bundle);
+    void retireSwapchainBundle(SwapchainBundle bundle, u64 timelineValue);
     void recoverSwapchain(SurfaceState& surfaceState, const char* reason);
     bool createInFlightFence(SurfaceState& surfaceState, bool signaled);
     void destroyInFlightFence(SurfaceState& surfaceState);
