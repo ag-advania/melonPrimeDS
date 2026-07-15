@@ -2697,23 +2697,53 @@ void MainWindow::onTitleUpdate(QString title)
     setWindowTitle(title);
 }
 
-void MainWindow::toggleFullscreen()
+void MainWindow::startFullscreenTransition()
 {
-    if (!isFullScreen())
+    if (fullscreenTransitionActive)
+        return;
+
+    fullscreenTransitionActive = true;
+    if (desiredFullscreen)
     {
         showFullScreen();
         if (hasMenu)
-            menuBar()->setFixedHeight(0); // Don't use hide() as menubar actions stop working
+            menuBar()->setFixedHeight(0);
     }
     else
     {
         showNormal();
         if (hasMenu)
         {
-            int menuBarHeight = menuBar()->sizeHint().height();
+            const int menuBarHeight = menuBar()->sizeHint().height();
             menuBar()->setFixedHeight(menuBarHeight);
         }
     }
+}
+
+void MainWindow::syncFullscreenTransitionState()
+{
+    const bool nowFullscreen = isFullScreen();
+    if (nowFullscreen == desiredFullscreen)
+        fullscreenTransitionActive = false;
+    else if (!fullscreenTransitionActive)
+        startFullscreenTransition();
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+    if (event == nullptr)
+        return;
+
+    if (event->type() == QEvent::WindowStateChange)
+        syncFullscreenTransitionState();
+}
+
+void MainWindow::toggleFullscreen()
+{
+    desiredFullscreen = !desiredFullscreen;
+    if (!fullscreenTransitionActive)
+        startFullscreenTransition();
 }
 
 void MainWindow::onFullscreenToggled()

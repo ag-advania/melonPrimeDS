@@ -96,6 +96,7 @@ public:
     //void updateVideoSettings(bool glchange);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
 
@@ -339,6 +340,11 @@ public:
     QAction* actMenuLanguageSystem = nullptr;
     QAction* actMenuLanguageEnglish = nullptr;
 #endif
+
+    bool desiredFullscreen = false;
+    bool fullscreenTransitionActive = false;
+    void startFullscreenTransition();
+    void syncFullscreenTransitionState();
 
     QAction* actAbout;
 };
