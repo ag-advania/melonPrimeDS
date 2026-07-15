@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -3713,6 +3714,16 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     if (surfaceState.mappedVertexMemory == nullptr)
         return false;
 
+#ifndef NDEBUG
+    assert(vertices.size() * sizeof(SurfaceVertex) <= static_cast<size_t>(surfaceState.vertexBufferSize));
+    for (const DrawCall& drawCall : drawCalls)
+    {
+        assert(drawCall.vertexCount == 0
+            || drawCall.firstVertex + drawCall.vertexCount <= vertices.size());
+        assert(drawCall.firstVertex + drawCall.vertexCount <= kMaxSurfaceVertexCount);
+    }
+#endif
+
     if (!vertices.empty())
         std::memcpy(surfaceState.mappedVertexMemory, vertices.data(), vertices.size() * sizeof(SurfaceVertex));
 
@@ -3805,6 +3816,14 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     const std::vector<DrawCall>& drawCalls)
 {
     (void)directPresent;
+
+#ifndef NDEBUG
+    for (const DrawCall& drawCall : drawCalls)
+    {
+        assert(drawCall.vertexCount == 0
+            || drawCall.firstVertex + drawCall.vertexCount <= kMaxSurfaceVertexCount);
+    }
+#endif
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE && resetQueryPool != nullptr)
         resetQueryPool(device, surfaceState.timestampQueryPool, 0, 2);
