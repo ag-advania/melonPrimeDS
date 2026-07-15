@@ -491,7 +491,7 @@ void GPU::RefreshSapphireVulkanBindings() noexcept
         return;
 
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
-        softRenderer->PublishCompletedSapphireFrontBuffer();
+        softRenderer->SyncSapphireFramebufferBindings();
 }
 
 void GPU::InvalidateSapphirePublication() noexcept
