@@ -9,8 +9,10 @@
 #include <QPaintEngine>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QEvent>
 #include <QResizeEvent>
 #include <QThread>
+#include <QTimer>
 #include <QWidget>
 
 #include "EmuInstance.h"
@@ -507,16 +509,16 @@ void ScreenPanelVulkan::presentOnGuiThread()
             }
             else
             {
-                overlayRenderer.clearCompositeRequest();
+                overlayRenderer.hideOverlay();
             }
         }
         else
         {
-            overlayRenderer.clearCompositeRequest();
+            overlayRenderer.hideOverlay();
         }
     }
 #else
-    overlayRenderer.clearCompositeRequest();
+    overlayRenderer.hideOverlay();
 #endif
 
     Frame* frame = session.acquirePresentFrame();
@@ -569,6 +571,7 @@ void ScreenPanelVulkan::presentOnGuiThread()
     if (presentResult == VulkanPresentResult::PresentedGameFrame)
     {
         lastPresentedFrameId = frame->frameId;
+        overlayRenderer.releaseUploadSlots();
         session.commitPresentedFrame(frame);
         if (tracePresenter)
         {
@@ -621,6 +624,39 @@ void ScreenPanelVulkan::syncNoRomSplashOverlay()
     }
     else
         noRomSplashOverlay->hide();
+}
+
+void ScreenPanelVulkan::changeEvent(QEvent* event)
+{
+    ScreenPanel::changeEvent(event);
+
+    if (event == nullptr || !presenter || surfaceId == 0)
+        return;
+
+    switch (event->type())
+    {
+    case QEvent::WindowStateChange:
+    case QEvent::Resize:
+        QTimer::singleShot(0, this, [this]() {
+            if (!presenter || surfaceId == 0 || !isVisible())
+                return;
+
+            if (!surfaceHost.matchesNativeIdentity(*this))
+            {
+                (void)ensureNativeSurface();
+                return;
+            }
+
+            const QSize pixelSize = surfaceHost.pixelSize();
+            presenter->resizeSurface(
+                surfaceId,
+                static_cast<melonDS::u32>(pixelSize.width()),
+                static_cast<melonDS::u32>(pixelSize.height()));
+        });
+        break;
+    default:
+        break;
+    }
 }
 
 void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)

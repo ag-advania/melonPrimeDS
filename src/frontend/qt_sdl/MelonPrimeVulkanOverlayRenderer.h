@@ -4,6 +4,8 @@
 #error "MelonPrimeVulkanOverlayRenderer requires the Vulkan build gate"
 #endif
 
+#include <array>
+
 #include <QImage>
 #include <QRect>
 
@@ -28,9 +30,13 @@ public:
     bool ensureTexture(melonDS::u32 width, melonDS::u32 height);
     bool uploadRegion(const QImage& image, const QRect& rect);
     void setCompositeRect(melonDS::u32 x, melonDS::u32 y, melonDS::u32 width, melonDS::u32 height);
-    void clearCompositeRequest();
+    void hideOverlay() noexcept;
+    void invalidateOverlayTexture() noexcept;
+    void releaseUploadSlots() noexcept;
+    void clearCompositeRequest() noexcept { hideOverlay(); }
 
     bool hasPendingComposite() const noexcept { return compositeRequested; }
+    bool hasValidOverlayTexture() const noexcept { return hasValidUploadedOverlay; }
 
     void recordTransfer(VkCommandBuffer commandBuffer);
     static void RecordTransferCallback(VkCommandBuffer commandBuffer, void* userData);
@@ -49,9 +55,10 @@ private:
 
     bool ensurePipeline(VkRenderPass renderPass, VkFormat format);
     void destroyPipeline();
-    bool ensureStagingCapacity(VkDeviceSize required);
-    void destroyStagingBuffer();
-    bool createMappedStagingBuffer(VkDeviceSize capacity);
+    bool ensureUploadSlotCapacity(melonDS::u32 slotIndex, VkDeviceSize required);
+    void destroyUploadSlot(melonDS::u32 slotIndex);
+    bool createMappedUploadSlot(melonDS::u32 slotIndex, VkDeviceSize capacity);
+    bool acquireUploadSlotForStaging();
     bool stagePendingRegion();
     bool recordPendingTransfer(VkCommandBuffer commandBuffer);
     bool createTexture(melonDS::u32 width, melonDS::u32 height);
@@ -75,10 +82,20 @@ private:
     melonDS::u64 lastUploadedHudGeneration = 0;
     melonDS::u64 uploadFailureLogBudget = 0;
 
-    VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-    void* stagingMapped = nullptr;
-    VkDeviceSize stagingCapacity = 0;
+    struct OverlayUploadSlot
+    {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        void* mapped = nullptr;
+        VkDeviceSize capacity = 0;
+        bool inFlight = false;
+    };
+
+    static constexpr size_t kUploadSlotCount = 3;
+
+    OverlayUploadSlot uploadSlots[kUploadSlotCount]{};
+    melonDS::u32 activeUploadSlot = 0;
+    melonDS::u32 nextUploadSlotIndex = 0;
     VkDeviceSize pendingUploadBytes = 0;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;

@@ -182,45 +182,58 @@ void MelonPrimeVulkanOverlayRenderer::shutdown()
 
 bool MelonPrimeVulkanOverlayRenderer::createTransferResources()
 {
-    stagingCapacity = 0;
+    for (size_t i = 0; i < kUploadSlotCount; ++i)
+        uploadSlots[i] = {};
+    nextUploadSlotIndex = 0;
+    activeUploadSlot = 0;
     return true;
 }
 
-void MelonPrimeVulkanOverlayRenderer::destroyStagingBuffer()
+void MelonPrimeVulkanOverlayRenderer::destroyUploadSlot(melonDS::u32 slotIndex)
 {
-    if (stagingMapped != nullptr && stagingMemory != VK_NULL_HANDLE)
+    if (slotIndex >= kUploadSlotCount)
+        return;
+
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
+    if (slot.mapped != nullptr && slot.memory != VK_NULL_HANDLE)
     {
-        vkUnmapMemory(device, stagingMemory);
-        stagingMapped = nullptr;
+        vkUnmapMemory(device, slot.memory);
+        slot.mapped = nullptr;
     }
-    if (stagingMemory != VK_NULL_HANDLE)
+    if (slot.memory != VK_NULL_HANDLE)
     {
-        vkFreeMemory(device, stagingMemory, nullptr);
-        stagingMemory = VK_NULL_HANDLE;
+        vkFreeMemory(device, slot.memory, nullptr);
+        slot.memory = VK_NULL_HANDLE;
     }
-    if (stagingBuffer != VK_NULL_HANDLE)
+    if (slot.buffer != VK_NULL_HANDLE)
     {
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        stagingBuffer = VK_NULL_HANDLE;
+        vkDestroyBuffer(device, slot.buffer, nullptr);
+        slot.buffer = VK_NULL_HANDLE;
     }
-    stagingCapacity = 0;
+    slot.capacity = 0;
+    slot.inFlight = false;
 }
 
-bool MelonPrimeVulkanOverlayRenderer::createMappedStagingBuffer(VkDeviceSize capacity)
+bool MelonPrimeVulkanOverlayRenderer::createMappedUploadSlot(
+    melonDS::u32 slotIndex,
+    VkDeviceSize capacity)
 {
-    if (capacity == 0)
+    if (slotIndex >= kUploadSlotCount || capacity == 0)
         return false;
+
+    destroyUploadSlot(slotIndex);
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = capacity;
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS)
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &slot.buffer) != VK_SUCCESS)
         return false;
 
     VkMemoryRequirements memReq{};
-    vkGetBufferMemoryRequirements(device, stagingBuffer, &memReq);
+    vkGetBufferMemoryRequirements(device, slot.buffer, &memReq);
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memReq.size;
@@ -228,30 +241,51 @@ bool MelonPrimeVulkanOverlayRenderer::createMappedStagingBuffer(VkDeviceSize cap
         melonDS::VulkanContext::Get().FindMemoryType(
             memReq.memoryTypeBits,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS)
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &slot.memory) != VK_SUCCESS)
         return false;
-    if (vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0) != VK_SUCCESS)
+    if (vkBindBufferMemory(device, slot.buffer, slot.memory, 0) != VK_SUCCESS)
         return false;
-    if (vkMapMemory(device, stagingMemory, 0, capacity, 0, &stagingMapped) != VK_SUCCESS)
+    if (vkMapMemory(device, slot.memory, 0, capacity, 0, &slot.mapped) != VK_SUCCESS)
         return false;
 
-    stagingCapacity = capacity;
+    slot.capacity = capacity;
     return true;
 }
 
-bool MelonPrimeVulkanOverlayRenderer::ensureStagingCapacity(VkDeviceSize required)
+bool MelonPrimeVulkanOverlayRenderer::ensureUploadSlotCapacity(
+    melonDS::u32 slotIndex,
+    VkDeviceSize required)
 {
-    if (required <= stagingCapacity)
+    if (slotIndex >= kUploadSlotCount)
+        return false;
+
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
+    if (required <= slot.capacity && slot.buffer != VK_NULL_HANDLE)
         return true;
 
-    destroyStagingBuffer();
-    return createMappedStagingBuffer(RoundUpToPowerOfTwo(required));
+    return createMappedUploadSlot(slotIndex, RoundUpToPowerOfTwo(required));
+}
+
+bool MelonPrimeVulkanOverlayRenderer::acquireUploadSlotForStaging()
+{
+    for (size_t attempt = 0; attempt < kUploadSlotCount; ++attempt)
+    {
+        const melonDS::u32 slotIndex =
+            static_cast<melonDS::u32>((nextUploadSlotIndex + attempt) % kUploadSlotCount);
+        if (!uploadSlots[slotIndex].inFlight)
+        {
+            activeUploadSlot = slotIndex;
+            nextUploadSlotIndex = (slotIndex + 1u) % static_cast<melonDS::u32>(kUploadSlotCount);
+            return true;
+        }
+    }
+    return false;
 }
 
 void MelonPrimeVulkanOverlayRenderer::destroyTransferResources()
 {
-    destroyStagingBuffer();
-    stagingCapacity = 0;
+    for (size_t i = 0; i < kUploadSlotCount; ++i)
+        destroyUploadSlot(static_cast<melonDS::u32>(i));
     pendingUploadBytes = 0;
 }
 
@@ -393,15 +427,19 @@ bool MelonPrimeVulkanOverlayRenderer::stagePendingRegion()
     const melonDS::u32 rowBytes = static_cast<melonDS::u32>(rect.width()) * 4u;
     const VkDeviceSize uploadBytes =
         static_cast<VkDeviceSize>(rowBytes) * static_cast<VkDeviceSize>(rect.height());
-    if (!ensureStagingCapacity(uploadBytes))
+    if (!acquireUploadSlotForStaging())
+    {
+        return false;
+    }
+    if (!ensureUploadSlotCapacity(activeUploadSlot, uploadBytes))
     {
         if (uploadFailureLogBudget == 0)
         {
             uploadFailureLogBudget = 60;
             melonDS::Platform::Log(
                 melonDS::Platform::LogLevel::Warn,
-                "[VulkanHUD] upload failed: staging capacity=%llu required=%llu rect=%dx%d@%d,%d\n",
-                static_cast<unsigned long long>(stagingCapacity),
+                "[VulkanHUD] upload skipped: no staging slot capacity=%llu required=%llu rect=%dx%d@%d,%d\n",
+                static_cast<unsigned long long>(uploadSlots[activeUploadSlot].capacity),
                 static_cast<unsigned long long>(uploadBytes),
                 rect.width(),
                 rect.height(),
@@ -415,7 +453,8 @@ bool MelonPrimeVulkanOverlayRenderer::stagePendingRegion()
         return false;
     }
 
-    auto* dst = static_cast<melonDS::u8*>(stagingMapped);
+    OverlayUploadSlot& slot = uploadSlots[activeUploadSlot];
+    auto* dst = static_cast<melonDS::u8*>(slot.mapped);
     for (int y = 0; y < rect.height(); ++y)
     {
         const melonDS::u8* src = pendingUploadImage.constScanLine(rect.y() + y)
@@ -429,7 +468,11 @@ bool MelonPrimeVulkanOverlayRenderer::stagePendingRegion()
 
 bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer commandBuffer)
 {
-    if (!pendingUpload || pendingUploadRect.isEmpty() || stagingBuffer == VK_NULL_HANDLE)
+    if (!pendingUpload || pendingUploadRect.isEmpty())
+        return false;
+
+    OverlayUploadSlot& slot = uploadSlots[activeUploadSlot];
+    if (slot.buffer == VK_NULL_HANDLE)
         return false;
 
     const QRect rect = pendingUploadRect.intersected(pendingUploadImage.rect());
@@ -441,11 +484,10 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
     }
 
     const VkDeviceSize uploadBytes = pendingUploadBytes;
-    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
+    melonDS::VulkanR24Barrier::HostWriteToTransferRead(
         commandBuffer,
-        stagingBuffer,
-        uploadBytes,
-        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        slot.buffer,
+        uploadBytes);
 
     const VkImageLayout oldLayout = textureInitialized
         ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -494,7 +536,7 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
         1};
     vkCmdCopyBufferToImage(
         commandBuffer,
-        stagingBuffer,
+        slot.buffer,
         textureImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1,
@@ -510,8 +552,29 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
     textureLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     hasValidUploadedOverlay = true;
     ++lastUploadedHudGeneration;
+    slot.inFlight = true;
     pendingUpload = false;
     pendingUploadBytes = 0;
+
+#ifndef NDEBUG
+    static int hudTransferLogBudget = 120;
+    if (hudTransferLogBudget > 0)
+    {
+        --hudTransferLogBudget;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Debug,
+            "[VulkanHUD] transferBarrier=HostWriteToTransferRead stagingSlot=%u uploadBytes=%llu "
+            "rect=%dx%d@%d,%d textureInitialized=%d hasValidUploadedOverlay=1\n",
+            activeUploadSlot,
+            static_cast<unsigned long long>(uploadBytes),
+            rect.width(),
+            rect.height(),
+            rect.x(),
+            rect.y(),
+            textureInitialized ? 1 : 0);
+    }
+#endif
+
     return true;
 }
 
@@ -522,6 +585,23 @@ void MelonPrimeVulkanOverlayRenderer::recordTransfer(VkCommandBuffer commandBuff
     (void)recordPendingTransfer(commandBuffer);
 }
 
+void MelonPrimeVulkanOverlayRenderer::hideOverlay() noexcept
+{
+    compositeRequested = false;
+}
+
+void MelonPrimeVulkanOverlayRenderer::invalidateOverlayTexture() noexcept
+{
+    compositeRequested = false;
+    hasValidUploadedOverlay = false;
+}
+
+void MelonPrimeVulkanOverlayRenderer::releaseUploadSlots() noexcept
+{
+    for (size_t i = 0; i < kUploadSlotCount; ++i)
+        uploadSlots[i].inFlight = false;
+}
+
 void MelonPrimeVulkanOverlayRenderer::setCompositeRect(
     melonDS::u32 x, melonDS::u32 y, melonDS::u32 width, melonDS::u32 height)
 {
@@ -530,12 +610,6 @@ void MelonPrimeVulkanOverlayRenderer::setCompositeRect(
     compositeWidth = width;
     compositeHeight = height;
     compositeRequested = width > 0 && height > 0;
-}
-
-void MelonPrimeVulkanOverlayRenderer::clearCompositeRequest()
-{
-    compositeRequested = false;
-    hasValidUploadedOverlay = false;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(VkRenderPass renderPass, VkFormat format)
