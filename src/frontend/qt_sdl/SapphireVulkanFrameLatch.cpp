@@ -4190,6 +4190,62 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 
     logLatchTraceStage("after_carry_overlay");
 
+    {
+        const auto topBlackContractStats = measureSoftPackedBlackContract(
+            lastSoftPackedFrameSnapshot.packedTopPlane0,
+            lastSoftPackedFrameSnapshot.packedTopPlane1,
+            lastSoftPackedFrameSnapshot.packedTopControl);
+        const auto bottomBlackContractStats = measureSoftPackedBlackContract(
+            lastSoftPackedFrameSnapshot.packedBottomPlane0,
+            lastSoftPackedFrameSnapshot.packedBottomPlane1,
+            lastSoftPackedFrameSnapshot.packedBottomControl);
+#ifndef NDEBUG
+        if (topBlackContractStats.blackWithoutProtectionPixels != 0
+            && (topBlackContractStats.structuredAbovePixels != 0
+                || topBlackContractStats.structured2DOnlyPixels != 0))
+        {
+            assert(false && "Vulkan2DBlackContract top screen has unprotected structured black");
+        }
+        if (bottomBlackContractStats.blackWithoutProtectionPixels != 0
+            && (bottomBlackContractStats.structuredAbovePixels != 0
+                || bottomBlackContractStats.structured2DOnlyPixels != 0))
+        {
+            assert(false && "Vulkan2DBlackContract bottom screen has unprotected structured black");
+        }
+#endif
+        if (areRendererDebugBgObjLogsEnabled())
+        {
+            auto logBlackContractScreen =
+                [&](const char* physicalScreen, const SoftPackedBlackContractStats& stats) {
+                    Platform::Log(
+                        Platform::LogLevel::Info,
+                        "[Vulkan2DBlackContract] frameId=%u screen=%s topEngine=%u bottomEngine=%u "
+                        "hardwareSwap=%u render3DSwap=%u opaqueBlack=%u protectedBlack=%u "
+                        "blackWithoutProtection=%u protectedFlagWithoutBlack=%u present2D=%u "
+                        "structuredSlot=%u structuredAbove=%u structured2DOnly=%u "
+                        "physicalOwnerChanged=%u render3DOwnerChanged=%u",
+                        static_cast<unsigned>(lastSoftPackedFrameSnapshot.frameId),
+                        physicalScreen,
+                        lastSoftPackedFrameSnapshot.topEngineLatched,
+                        lastSoftPackedFrameSnapshot.bottomEngineLatched,
+                        lastSoftPackedFrameSnapshot.hardwareScreenSwapLatched ? 1u : 0u,
+                        lastSoftPackedFrameSnapshot.renderScreenSwapAt3DLatched ? 1u : 0u,
+                        stats.opaqueBlack2DPixels,
+                        stats.protectedBlackPixels,
+                        stats.blackWithoutProtectionPixels,
+                        stats.protectedFlagWithoutBlackPixels,
+                        stats.present2DPixels,
+                        stats.structuredSlotPixels,
+                        stats.structuredAbovePixels,
+                        stats.structured2DOnlyPixels,
+                        physical2DOwnerChanged ? 1u : 0u,
+                        render3DOwnerChanged ? 1u : 0u);
+                };
+            logBlackContractScreen("top", topBlackContractStats);
+            logBlackContractScreen("bottom", bottomBlackContractStats);
+        }
+    }
+
     lastSoftPackedFrameSnapshot.valid = true;
     return true;
 }
