@@ -249,12 +249,25 @@ void MelonPrimeVulkanSurfaceHost::destroy(VkInstance instance)
 
 bool MelonPrimeVulkanSurfaceHost::matchesWidget(QWidget& candidate) const
 {
-    if (surfaceHandle == VK_NULL_HANDLE || widget != &candidate)
+    if (surfaceHandle == VK_NULL_HANDLE)
+        return false;
+    return matchesNativeIdentity(candidate) && widget == &candidate;
+}
+
+bool MelonPrimeVulkanSurfaceHost::matchesNativeIdentity(QWidget& candidate) const
+{
+    if (surfaceHandle == VK_NULL_HANDLE)
         return false;
     const NativeSurfaceIdentity identity = QueryNativeIdentity(candidate);
     return identity.system == system
         && identity.display == nativeDisplayIdentity
         && identity.window == nativeWindowIdentity;
+}
+
+void MelonPrimeVulkanSurfaceHost::rebindWidget(QWidget& candidate)
+{
+    if (matchesNativeIdentity(candidate))
+        widget = &candidate;
 }
 
 QSize MelonPrimeVulkanSurfaceHost::pixelSize() const

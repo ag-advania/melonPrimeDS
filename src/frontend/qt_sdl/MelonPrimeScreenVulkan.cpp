@@ -181,6 +181,12 @@ bool ScreenPanelVulkan::ensureNativeSurface()
     if (surfaceId != 0 && surfaceHost.matchesWidget(*this))
         return true;
 
+    if (surfaceId != 0 && surfaceHost.matchesNativeIdentity(*this))
+    {
+        surfaceHost.rebindWidget(*this);
+        return true;
+    }
+
     auto& context = melonDS::VulkanContext::Get();
     auto& session = emuInstance->vulkanFrontendSession();
     const bool presenterWasRegistered = sessionPresenterRegistered;
@@ -610,6 +616,14 @@ void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
 {
     ScreenPanel::resizeEvent(event);
     syncNoRomSplashOverlay();
+    if (presenter && surfaceId != 0 && surfaceHost.matchesNativeIdentity(*this))
+    {
+        const QSize pixelSize = surfaceHost.pixelSize();
+        presenter->resizeSurface(
+            surfaceId,
+            static_cast<melonDS::u32>(pixelSize.width()),
+            static_cast<melonDS::u32>(pixelSize.height()));
+    }
 }
 
 void ScreenPanelVulkan::setupScreenLayout()

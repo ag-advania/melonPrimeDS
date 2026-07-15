@@ -34,6 +34,8 @@ public:
     bool createForWidget(QWidget& widget, VkInstance instance);
     void destroy(VkInstance instance);
     [[nodiscard]] bool matchesWidget(QWidget& widget) const;
+    [[nodiscard]] bool matchesNativeIdentity(QWidget& widget) const;
+    void rebindWidget(QWidget& widget);
     [[nodiscard]] VkSurfaceKHR surface() const noexcept { return surfaceHandle; }
     [[nodiscard]] QSize pixelSize() const;
     [[nodiscard]] melonDS::u64 generation() const noexcept { return surfaceGeneration; }

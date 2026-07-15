@@ -1666,7 +1666,50 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         extent.height = std::clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
 
-    destroySwapchain(surfaceState);
+    VkSwapchainKHR oldSwapchain = surfaceState.swapchain;
+    if (oldSwapchain != VK_NULL_HANDLE)
+    {
+        std::vector<VkFramebuffer> framebuffers =
+            std::move(surfaceState.framebuffers);
+        std::vector<VkImageView> imageViews =
+            std::move(surfaceState.swapchainImageViews);
+        const VkPipeline pipeline =
+            std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
+        const VkRenderPass renderPass =
+            std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
+
+        surfaceState.swapchain = VK_NULL_HANDLE;
+        surfaceState.swapchainImages.clear();
+        surfaceState.swapchainImageInitialized.clear();
+        surfaceState.extent = {};
+        surfaceState.swapchainFormat = VK_FORMAT_UNDEFINED;
+        surfaceState.screenDescriptorCache = {};
+        surfaceState.backgroundDescriptorCache = {};
+        surfaceState.cachedDrawCalls.clear();
+
+        const VkDevice retireDevice = device;
+        retiredResources.RetireReady(
+            [retireDevice,
+             framebuffers = std::move(framebuffers),
+             imageViews = std::move(imageViews),
+             pipeline,
+             renderPass]() mutable {
+                for (VkFramebuffer framebuffer : framebuffers)
+                {
+                    if (framebuffer != VK_NULL_HANDLE)
+                        vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
+                }
+                if (pipeline != VK_NULL_HANDLE)
+                    vkDestroyPipeline(retireDevice, pipeline, nullptr);
+                if (renderPass != VK_NULL_HANDLE)
+                    vkDestroyRenderPass(retireDevice, renderPass, nullptr);
+                for (VkImageView imageView : imageViews)
+                {
+                    if (imageView != VK_NULL_HANDLE)
+                        vkDestroyImageView(retireDevice, imageView, nullptr);
+                }
+            });
+    }
 
     if (surfaceState.hasCachedSwapchainSelection)
     {
@@ -1727,6 +1770,15 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
         destroySwapchain(surfaceState);
         surfaceState.swapchainDirty = true;
+        if (oldSwapchain != VK_NULL_HANDLE)
+        {
+            const VkDevice retireDevice = device;
+            retiredResources.RetireReady(
+                [retireDevice, oldSwapchain]() {
+                    if (oldSwapchain != VK_NULL_HANDLE)
+                        vkDestroySwapchainKHR(retireDevice, oldSwapchain, nullptr);
+                });
+        }
         return false;
     };
     const VkSurfaceTransformFlagBitsKHR preTransform =
@@ -1761,11 +1813,21 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
             swapchainInfo.presentMode = candidatePresentMode;
             swapchainInfo.clipped = VK_TRUE;
-            swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
+            swapchainInfo.oldSwapchain = oldSwapchain;
 
             const VkResult swapchainResult = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &surfaceState.swapchain);
             if (swapchainResult == VK_SUCCESS)
             {
+                if (oldSwapchain != VK_NULL_HANDLE)
+                {
+                    const VkDevice retireDevice = device;
+                    retiredResources.RetireReady(
+                        [retireDevice, oldSwapchain]() {
+                            if (oldSwapchain != VK_NULL_HANDLE)
+                                vkDestroySwapchainKHR(retireDevice, oldSwapchain, nullptr);
+                        });
+                    oldSwapchain = VK_NULL_HANDLE;
+                }
                 surfaceFormat = candidateFormat;
                 presentMode = candidatePresentMode;
                 swapchainCreated = true;
@@ -1799,7 +1861,11 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     }
 
     if (!swapchainCreated)
+    {
+        if (oldSwapchain != VK_NULL_HANDLE)
+            vkDestroySwapchainKHR(device, oldSwapchain, nullptr);
         return false;
+    }
 
     VkAttachmentDescription attachmentDescription{};
     attachmentDescription.format = surfaceFormat.format;
