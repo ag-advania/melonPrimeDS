@@ -1403,5 +1403,5 @@ Sapphireの実装を最大限そのまま利用できる。
 | S64-3 | `6566944df` | done | renderer swap時pointer invalidate |
 | S64-4 | `88bb277be` | done | parity checker分岐修正 + unit tests |
 | S64-5 | `bb945189a` | done | vendor generator + upstream snapshots |
-| S64-6 | — | in progress | GPU2D lifecycle adapter |
+| S64-6 | `dbdc7f8d4` | done | register/event forwarding、UnitSync縮小 |
 
