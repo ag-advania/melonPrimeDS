@@ -7,6 +7,9 @@ on:
       - 'src/SapphireGPU2DCore/**'
       - 'tools/sapphire_vendor_manifest.json'
       - 'tools/check_sapphire_vendor_parity.py'
+      - 'tools/vendor_sapphire.py'
+      - 'tools/test_sapphire_vendor_parity.py'
+      - 'src/SapphireVendor/**'
   push:
     branches:
       - highres_fonts_v3
@@ -16,6 +19,9 @@ on:
       - 'src/SapphireGPU2DCore/**'
       - 'tools/sapphire_vendor_manifest.json'
       - 'tools/check_sapphire_vendor_parity.py'
+      - 'tools/vendor_sapphire.py'
+      - 'tools/test_sapphire_vendor_parity.py'
+      - 'src/SapphireVendor/**'
 
 jobs:
   parity:
@@ -38,4 +44,7 @@ jobs:
         env:
           SAPPHIRE_ANDROID_ROOT: ${{ github.workspace }}/sapphire-android
           SAPPHIRE_ANDROID_LIB_ROOT: ${{ github.workspace }}/sapphire-android-lib
-        run: python3 tools/check_sapphire_vendor_parity.py --verify-upstream
+        run: |
+          python3 tools/test_sapphire_vendor_parity.py
+          python3 tools/vendor_sapphire.py --verify-upstream-snapshots
+          python3 tools/check_sapphire_vendor_parity.py --verify-upstream
