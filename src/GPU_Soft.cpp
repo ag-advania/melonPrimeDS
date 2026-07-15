@@ -134,7 +134,7 @@ void SoftRenderer::DrawScanline(u32 line)
         state != nullptr && state->IsActiveForRendering(GPU))
     {
         SyncSapphireUnitsFromGPU2D();
-        BindSapphirePhysicalTargets();
+        AssignSapphireFramebuffers();
 
         line = GPU.VCount;
         if (line < 192)
@@ -221,27 +221,29 @@ void SoftRenderer::SyncSapphireUnitsFromGPU2D()
     SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitB, GPU.GPU2D_B, GPU);
 }
 
-void SoftRenderer::BindSapphirePhysicalTargets() noexcept
+void SoftRenderer::AssignSapphireFramebuffers() noexcept
 {
     auto* state = GetSapphireState(GPU);
     if (!state)
         return;
 
-    u32* const physicalTop = Framebuffer[BackBuffer][0];
-    u32* const physicalBottom = Framebuffer[BackBuffer][1];
-
-    GPU.Framebuffer[BackBuffer][0] = physicalTop;
-    GPU.Framebuffer[BackBuffer][1] = physicalBottom;
-
     if (GPU.ScreenSwap)
-        state->Renderer.SetFramebuffer(physicalTop, physicalBottom);
+    {
+        state->Renderer.SetFramebuffer(
+            Framebuffer[BackBuffer][0],
+            Framebuffer[BackBuffer][1]);
+    }
     else
-        state->Renderer.SetFramebuffer(physicalBottom, physicalTop);
+    {
+        state->Renderer.SetFramebuffer(
+            Framebuffer[BackBuffer][1],
+            Framebuffer[BackBuffer][0]);
+    }
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 {
-    BindSapphirePhysicalTargets();
+    AssignSapphireFramebuffers();
 }
 
 void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
@@ -283,8 +285,12 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     if (published.frontBuffer < 0 || published.frontBuffer > 1)
         return false;
 
-    published.top.packed = GPU.Framebuffer[published.frontBuffer][0];
-    published.bottom.packed = GPU.Framebuffer[published.frontBuffer][1];
+    published.top.packed = GPU.ScreenSwap
+        ? GPU.Framebuffer[published.frontBuffer][0]
+        : GPU.Framebuffer[published.frontBuffer][1];
+    published.bottom.packed = GPU.ScreenSwap
+        ? GPU.Framebuffer[published.frontBuffer][1]
+        : GPU.Framebuffer[published.frontBuffer][0];
     if (published.top.packed == nullptr || published.bottom.packed == nullptr)
         return false;
 
@@ -404,7 +410,7 @@ void SoftRenderer::DrawSprites(u32 line)
         state != nullptr && state->IsActiveForRendering(GPU))
     {
         SyncSapphireUnitsFromGPU2D();
-        BindSapphirePhysicalTargets();
+        AssignSapphireFramebuffers();
         state->Renderer.DrawSprites(line, &state->UnitA);
         state->Renderer.DrawSprites(line, &state->UnitB);
         return;

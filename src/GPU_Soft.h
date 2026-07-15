@@ -63,7 +63,7 @@ public:
     [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() noexcept;
     [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() const noexcept;
     void SyncSapphireFramebufferBindings() noexcept;
-    void BindSapphirePhysicalTargets() noexcept;
+    void AssignSapphireFramebuffers() noexcept;
     void PublishCompletedSapphireFrontBuffer() noexcept;
     void SyncSapphireUnitsFromGPU2D();
     [[nodiscard]] bool PublishSapphire2DFrame() noexcept;
