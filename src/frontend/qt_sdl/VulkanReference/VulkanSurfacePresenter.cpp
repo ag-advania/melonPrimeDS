@@ -1048,7 +1048,8 @@ void VulkanSurfacePresenter::detachSurface(int surfaceId)
     SurfaceState surfaceState = std::move(iterator->second);
     surfaces.erase(iterator);
 
-    (void)waitForSurfaceIdle(surfaceState);
+    constexpr u64 kDetachSurfaceWaitNs = 250'000'000ull;
+    (void)waitForSurfaceIdle(surfaceState, kDetachSurfaceWaitNs);
     destroySurfaceStateResources(surfaceState);
 }
 
@@ -1644,13 +1645,6 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 {
     if (!surfaceState.swapchainDirty && surfaceState.active.swapchain != VK_NULL_HANDLE)
         return true;
-
-    if (surfaceState.active.swapchain != VK_NULL_HANDLE)
-    {
-        constexpr u64 kSwapchainRecreateWaitNs = 50'000'000ull;
-        if (waitForSurfaceIdle(surfaceState, kSwapchainRecreateWaitNs) != VK_SUCCESS)
-            return true;
-    }
 
     if (surfaceState.pending)
         destroySwapchainBundle(*surfaceState.pending);
