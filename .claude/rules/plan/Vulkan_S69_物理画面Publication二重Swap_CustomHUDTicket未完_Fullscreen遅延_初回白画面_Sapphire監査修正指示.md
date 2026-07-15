@@ -2039,4 +2039,4 @@ MelonPrime差分をHUD／Qt surface adapterへ限定する
 | S69-9 | `8c961d55d` | done | Coalesced surface resize scheduling |
 | S69-10 | `20e6188a0` | done | Present path skips identity recheck |
 | S69-11 | `20e6188a0` | done | Format-scoped pipeline cache |
-| S69-12 | pending | in_progress | S69 lifecycle tests + CI |
+| S69-12 | `fbc75ae02` | done | S69 lifecycle tests + CI |
