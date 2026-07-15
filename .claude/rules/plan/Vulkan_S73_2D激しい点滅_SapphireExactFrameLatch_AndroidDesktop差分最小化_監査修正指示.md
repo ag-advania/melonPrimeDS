@@ -1544,7 +1544,7 @@ FrameQueue temporal requirements
 | S73-9 | `6e71cf429` | done | `check_sapphire_vulkan_output_exact.py` |
 | S73-10 | `bc8931c3b` | done | Golden snapshot contract tests |
 | S73-11 | `ad2520013` | done | Period-two flicker contract tests |
-| S73-12 | pending | in progress | Allowed Android/Desktop diff documentation + CI wiring |
+| S73-12 | `4c484e5fe` | done | `S73_ANDROID_DESKTOP_ALLOWED_DIFFS.md` + CI wiring |
 
 ---
 
