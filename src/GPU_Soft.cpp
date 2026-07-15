@@ -132,10 +132,7 @@ void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     SyncSapphireUnitsFromGPU2D();
-
-    Sapphire2DRenderer->SetFramebuffer(
-        Framebuffer[BackBuffer][0],
-        Framebuffer[BackBuffer][1]);
+    BindSapphireBackBufferScreenAliases();
 
     line = GPU.VCount;
     if (line < 192)
@@ -143,8 +140,6 @@ void SoftRenderer::DrawScanline(u32 line)
         Sapphire2DRenderer->DrawScanline(line, &SapphireUnitA);
         Sapphire2DRenderer->DrawScanline(line, &SapphireUnitB);
     }
-
-    SyncSapphireFramebufferBindings();
 #else
     u32 *dstA, *dstB;
     const u32 stride = 256u;
@@ -218,29 +213,55 @@ void SoftRenderer::SyncSapphireUnitsFromGPU2D()
     SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(SapphireUnitB, GPU.GPU2D_B, GPU);
 }
 
+void SoftRenderer::BindSapphireBackBufferScreenAliases() noexcept
+{
+    u32* const unitA = Framebuffer[BackBuffer][0];
+    u32* const unitB = Framebuffer[BackBuffer][1];
+
+    if (GPU.ScreenSwap)
+    {
+        GPU.Framebuffer[BackBuffer][0] = unitA;
+        GPU.Framebuffer[BackBuffer][1] = unitB;
+    }
+    else
+    {
+        GPU.Framebuffer[BackBuffer][0] = unitB;
+        GPU.Framebuffer[BackBuffer][1] = unitA;
+    }
+
+    Sapphire2DRenderer->SetFramebuffer(unitA, unitB);
+}
+
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
+{
+    BindSapphireBackBufferScreenAliases();
+}
+
+void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
 {
     GPU.FrontBuffer = BackBuffer ^ 1;
 
     for (int buffer = 0; buffer < 2; ++buffer)
     {
-        u32* const* unitA = &Framebuffer[buffer][0];
-        u32* const* unitB = &Framebuffer[buffer][1];
+        u32* const unitA = Framebuffer[buffer][0];
+        u32* const unitB = Framebuffer[buffer][1];
         if (GPU.ScreenSwap)
         {
-            GPU.Framebuffer[buffer][0] = *unitA;
-            GPU.Framebuffer[buffer][1] = *unitB;
+            GPU.Framebuffer[buffer][0] = unitA;
+            GPU.Framebuffer[buffer][1] = unitB;
         }
         else
         {
-            GPU.Framebuffer[buffer][0] = *unitB;
-            GPU.Framebuffer[buffer][1] = *unitA;
+            GPU.Framebuffer[buffer][0] = unitB;
+            GPU.Framebuffer[buffer][1] = unitA;
         }
     }
 
 #ifndef NDEBUG
     assert(GPU.FrontBuffer == 0 || GPU.FrontBuffer == 1);
 #endif
+
+    (void)PublishSapphire2DFrame();
 }
 
 bool SoftRenderer::PublishSapphire2DFrame() noexcept
@@ -364,6 +385,7 @@ void SoftRenderer::DrawSprites(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     SyncSapphireUnitsFromGPU2D();
+    BindSapphireBackBufferScreenAliases();
     Sapphire2DRenderer->DrawSprites(line, &SapphireUnitA);
     Sapphire2DRenderer->DrawSprites(line, &SapphireUnitB);
 #else
