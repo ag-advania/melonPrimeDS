@@ -1,0 +1,21 @@
+{
+  "upstreamTag": "0.7.0.rc4",
+  "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
+  "description": "Static 2D background golden metadata for Sapphire latch parity",
+  "compareFields": [
+    "packedTopPlane0",
+    "packedTopPlane1",
+    "packedTopControl",
+    "packedTopLineMeta",
+    "packedBottomPlane0",
+    "packedBottomPlane1",
+    "packedBottomControl",
+    "packedBottomLineMeta",
+    "capture3dSourceDsFrame",
+    "captureLineUses3dMask",
+    "captureFallbackLines",
+    "captureBackedClass4Only",
+    "topScreenStats",
+    "bottomScreenStats"
+  ]
+}
