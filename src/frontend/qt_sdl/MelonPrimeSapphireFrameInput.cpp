@@ -10,7 +10,9 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     Frame* frame,
     const SapphirePublished2DFrame& published,
     const melonDS::Vulkan3DFrameView& frame3d,
-    u64 activeRendererGeneration)
+    u64 activeRendererGeneration,
+    int expectedFrontBuffer,
+    bool expectedScreenSwap)
 {
     DesktopSapphireFrameBuildResult result{};
     if (frame == nullptr || !published.valid)
@@ -25,38 +27,61 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
         result.rejectReason = "invalidFrame3dView";
         return result;
     }
+    if (frame3d.FrameSerial == 0)
+    {
+        result.rejected = true;
+        result.rejectReason = "zeroFrameSerial";
+        return result;
+    }
+    if (frame3d.Generation == 0 || activeRendererGeneration == 0)
+    {
+        result.rejected = true;
+        result.rejectReason = "zeroGeneration";
+        return result;
+    }
     if (published.frontBuffer < 0 || published.frontBuffer > 1)
     {
         result.rejected = true;
         result.rejectReason = "invalidFrontBuffer";
         return result;
     }
-    if (published.emulatedFrameSerial != 0
-        && frame3d.FrameSerial != 0
-        && published.emulatedFrameSerial != frame3d.FrameSerial)
+    if (expectedFrontBuffer < 0 || expectedFrontBuffer > 1)
+    {
+        result.rejected = true;
+        result.rejectReason = "invalidLiveFrontBuffer";
+        return result;
+    }
+    if (published.frontBuffer != expectedFrontBuffer)
+    {
+        result.rejected = true;
+        result.rejectReason = "publishedLiveFrontBufferMismatch";
+        return result;
+    }
+    if (published.renderScreenSwapAt3D != expectedScreenSwap)
+    {
+        result.rejected = true;
+        result.rejectReason = "publishedLiveScreenSwapMismatch";
+        return result;
+    }
+    if (published.emulatedFrameSerial != frame3d.FrameSerial)
     {
         result.rejected = true;
         result.rejectReason = "emulatedSerialMismatch";
         return result;
     }
-    if (published.rendererGeneration != 0
-        && frame3d.Generation != 0
-        && published.rendererGeneration != frame3d.Generation)
+    if (published.rendererGeneration != frame3d.Generation)
     {
         result.rejected = true;
         result.rejectReason = "publishedGenerationMismatch";
         return result;
     }
-    if (frame->rendererGeneration != 0
-        && frame3d.Generation != 0
-        && frame->rendererGeneration != frame3d.Generation)
+    if (frame->rendererGeneration != frame3d.Generation)
     {
         result.rejected = true;
         result.rejectReason = "frameRendererGenerationMismatch";
         return result;
     }
-    if (activeRendererGeneration != 0
-        && frame3d.Generation != activeRendererGeneration)
+    if (frame3d.Generation != activeRendererGeneration)
     {
         result.rejected = true;
         result.rejectReason = "activeGenerationMismatch";
@@ -81,17 +106,17 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     result.input.structuredBottomPlane1 = published.bottom.structuredPlane1;
     result.input.structuredBottomControl = published.bottom.structuredControl;
     result.input.emulatedFrameSerial = published.emulatedFrameSerial;
-    result.input.rendererGeneration =
-        frame3d.Generation != 0
-            ? frame3d.Generation
-            : published.rendererGeneration;
+    result.input.rendererGeneration = frame3d.Generation;
     result.input.valid = true;
 
     result.sidecar.emulatedFrameSerial = published.emulatedFrameSerial;
-    result.sidecar.rendererGeneration = result.input.rendererGeneration;
-    result.sidecar.hardwareScreenSwap = published.hardwareScreenSwap;
-    result.sidecar.physicalTopEngine = published.top.engine;
-    result.sidecar.physicalBottomEngine = published.bottom.engine;
+    result.sidecar.rendererGeneration = frame3d.Generation;
+    result.sidecar.publishedFrontBuffer = published.frontBuffer;
+    result.sidecar.liveFrontBuffer = expectedFrontBuffer;
+    result.sidecar.publishedScreenSwap = published.renderScreenSwapAt3D;
+    result.sidecar.liveScreenSwap = expectedScreenSwap;
+    result.sidecar.packedTopIdentity = static_cast<const void*>(published.top.packed);
+    result.sidecar.packedBottomIdentity = static_cast<const void*>(published.bottom.packed);
     return result;
 }
 

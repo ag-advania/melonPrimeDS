@@ -35,9 +35,6 @@ struct SapphireFrameInput
     const u32* structuredBottomPlane1 = nullptr;
     const u32* structuredBottomControl = nullptr;
 
-    const u32* capture3dSource = nullptr;
-    const u8* captureLineMask = nullptr;
-
     u64 emulatedFrameSerial = 0;
     u64 rendererGeneration = 0;
     bool valid = false;
@@ -55,6 +52,8 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     Frame* frame,
     const SapphirePublished2DFrame& published,
     const melonDS::Vulkan3DFrameView& frame3d,
-    u64 activeRendererGeneration);
+    u64 activeRendererGeneration,
+    int expectedFrontBuffer,
+    bool expectedScreenSwap);
 
 } // namespace MelonDSAndroid

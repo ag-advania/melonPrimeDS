@@ -263,7 +263,7 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
-    const int frontBuffer = frameView.Valid ? nds->GPU.FrontBuffer : -1;
+    const int frontBuffer = nds->GPU.FrontBuffer;
     const bool preparedFrameScreenSwap = nds->GPU.GPU3D.RenderScreenSwapAt3D;
     const bool useStructuredVulkan2D =
         renderer3D.GetActiveBackendMode() == VulkanRenderer3D::BackendMode::GraphicsHardware;
@@ -272,7 +272,9 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
         frame,
         published,
         frameView,
-        activeGeneration);
+        activeGeneration,
+        frontBuffer,
+        preparedFrameScreenSwap);
     if (buildResult.rejected)
     {
         LogVulkanProducerDiscard(buildResult.rejectReason != nullptr
