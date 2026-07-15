@@ -4,6 +4,7 @@
 
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
+#include "MelonPrimeDesktopSapphireFrameSidecar.h"
 #include "SapphirePublished2DFrame.h"
 
 namespace melonDS
@@ -78,6 +79,8 @@ private:
     int vulkanTemporal3dHistoryDebugLogsRemaining = 0;
     SoftPackedFrameSnapshot lastSoftPackedFrameSnapshot;
     SoftPackedFrameSnapshot previousSoftPackedFrameSnapshot;
+    DesktopSapphireFrameSidecar lastFrameSidecar_;
+    DesktopSapphireFrameSidecar previousFrameSidecar_;
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopPlane0{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopPlane1{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopControl{};

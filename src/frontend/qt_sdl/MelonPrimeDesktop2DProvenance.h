@@ -5,18 +5,19 @@
 #include <cstdint>
 
 #include "MelonPrimeDesktop2DBlackContract.h"
+#include "MelonPrimeDesktopSapphireFrameSidecar.h"
 #include "VulkanReference/VulkanOutput.h"
 
 namespace MelonDSAndroid
 {
 
 inline u32 physicalScreenEngine(
-    const SoftPackedFrameSnapshot& snapshot,
+    const DesktopSapphireFrameSidecar& sidecar,
     PhysicalScreen screen) noexcept
 {
     return screen == PhysicalScreen::Top
-        ? snapshot.topEngineLatched
-        : snapshot.bottomEngineLatched;
+        ? sidecar.physicalTopEngine
+        : sidecar.physicalBottomEngine;
 }
 
 inline bool captureSourceMatchesTarget(
@@ -39,17 +40,19 @@ inline bool captureSourceMatchesTarget(
 inline bool canCarryPreviousPhysicalScreen(
     const SoftPackedFrameSnapshot& previous,
     const SoftPackedFrameSnapshot& current,
+    const DesktopSapphireFrameSidecar& previousSidecar,
+    const DesktopSapphireFrameSidecar& currentSidecar,
     PhysicalScreen screen) noexcept
 {
     if (!previous.valid || !current.valid)
         return false;
-    if (previous.rendererGeneration != current.rendererGeneration)
+    if (previousSidecar.rendererGeneration != currentSidecar.rendererGeneration)
         return false;
-    if (previous.sourceFrameSerial + 1 != current.sourceFrameSerial)
+    if (previousSidecar.emulatedFrameSerial + 1 != currentSidecar.emulatedFrameSerial)
         return false;
-    if (previous.hardwareScreenSwapLatched != current.hardwareScreenSwapLatched)
+    if (previousSidecar.hardwareScreenSwap != currentSidecar.hardwareScreenSwap)
         return false;
-    if (physicalScreenEngine(previous, screen) != physicalScreenEngine(current, screen))
+    if (physicalScreenEngine(previousSidecar, screen) != physicalScreenEngine(currentSidecar, screen))
         return false;
     return true;
 }

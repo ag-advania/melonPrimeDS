@@ -1533,7 +1533,7 @@ FrameQueue temporal requirements
 
 | Phase | Commit | Status | Notes |
 |-------|--------|--------|-------|
-| S73-1 | pending | in progress | VulkanOutput.h type ordering + header compile CI |
+| S73-1 | `74400323e` | done | VulkanOutput.h type ordering + `check_vulkan_output_header_compile.py` CI |
 | S73-2 | — | pending | |
 | S73-3 | — | pending | |
 | S73-4 | — | pending | |

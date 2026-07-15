@@ -52,6 +52,27 @@ class VulkanOutputHeaderCompileTests(unittest.TestCase):
         ):
             self.assertIn(field, body, f"missing Sapphire field {field}")
 
+    def test_soft_packed_snapshot_has_no_desktop_only_fields(self):
+        text = read_header()
+        match = re.search(
+            r"struct SoftPackedFrameSnapshot\s*\{([\s\S]*?)\n\s*void clear\(\)",
+            text,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        for field in (
+            "sourceFrameSerial",
+            "rendererGeneration",
+            "hardwareScreenSwapLatched",
+            "renderScreenSwapAt3DLatched",
+            "topEngineLatched",
+            "bottomEngineLatched",
+            "topCapture3dSource",
+            "bottomCapture3dSource",
+            "Capture3DSourceSnapshot",
+        ):
+            self.assertNotIn(field, body, f"desktop-only field still in snapshot: {field}")
+
 
 def main() -> int:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(

@@ -57,47 +57,6 @@ struct SoftPackedScreenStats
     u32 ProtectedBlackPixels = 0;
 };
 
-enum class PhysicalScreen : u8
-{
-    Top,
-    Bottom,
-};
-
-struct Capture3DSourceSnapshot
-{
-    static constexpr size_t kPixelCount =
-        melonDS::VulkanStructuredControlAbi::NativeScreenWidth
-        * melonDS::VulkanStructuredControlAbi::NativeScreenHeight;
-
-    std::array<u32, kPixelCount> pixels{};
-
-    bool valid = false;
-    PhysicalScreen physicalScreen = PhysicalScreen::Top;
-    u32 engine = UINT32_MAX;
-    u64 frameSerial = 0;
-    u64 rendererGeneration = 0;
-    bool hardwareScreenSwap = false;
-    bool renderScreenSwapAt3D = false;
-    u32 captureMode = 0;
-    u32 sourceA = 0;
-    u32 sourceB = 0;
-
-    void clear() noexcept
-    {
-        pixels.fill(0);
-        valid = false;
-        physicalScreen = PhysicalScreen::Top;
-        engine = UINT32_MAX;
-        frameSerial = 0;
-        rendererGeneration = 0;
-        hardwareScreenSwap = false;
-        renderScreenSwapAt3D = false;
-        captureMode = 0;
-        sourceA = 0;
-        sourceB = 0;
-    }
-};
-
 struct SoftPackedFrameSnapshot
 {
     static constexpr size_t kScreenWidth =
@@ -106,20 +65,10 @@ struct SoftPackedFrameSnapshot
         melonDS::VulkanStructuredControlAbi::NativeScreenHeight;
     static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;
     static constexpr size_t kLineCount = kScreenHeight;
-    static_assert(
-        kPixelCount == Capture3DSourceSnapshot::kPixelCount,
-        "Capture3DSourceSnapshot pixel count mismatch");
 
     u64 frameId = 0;
-    u64 sourceFrameSerial = 0;
-    u64 rendererGeneration = 0;
     int frontBufferLatched = -1;
-    // Legacy alias for renderScreenSwapAt3DLatched (3D compositor ownership).
     bool screenSwapLatched = false;
-    bool hardwareScreenSwapLatched = false;
-    bool renderScreenSwapAt3DLatched = false;
-    u32 topEngineLatched = UINT32_MAX;
-    u32 bottomEngineLatched = UINT32_MAX;
     bool valid = false;
     bool hasCapture3dSource = false;
     bool captureBackedClass4Only = false;
@@ -132,8 +81,6 @@ struct SoftPackedFrameSnapshot
     std::array<u32, kPixelCount> packedBottomControl{};
     std::array<u32, kLineCount> packedBottomLineMeta{};
     std::array<u32, kPixelCount> capture3dSourceDsFrame{};
-    Capture3DSourceSnapshot topCapture3dSource{};
-    Capture3DSourceSnapshot bottomCapture3dSource{};
     std::array<u8, kLineCount> captureLineUses3dMask{};
     std::array<u8, kLineCount> captureFallbackLines{};
     std::array<u32, kPixelCount> comp4TopPlaceholder{};
@@ -144,14 +91,8 @@ struct SoftPackedFrameSnapshot
     void clear()
     {
         frameId = 0;
-        sourceFrameSerial = 0;
-        rendererGeneration = 0;
         frontBufferLatched = -1;
         screenSwapLatched = false;
-        hardwareScreenSwapLatched = false;
-        renderScreenSwapAt3DLatched = false;
-        topEngineLatched = UINT32_MAX;
-        bottomEngineLatched = UINT32_MAX;
         valid = false;
         hasCapture3dSource = false;
         captureBackedClass4Only = false;
@@ -164,8 +105,6 @@ struct SoftPackedFrameSnapshot
         packedBottomControl.fill(0);
         packedBottomLineMeta.fill(0);
         capture3dSourceDsFrame.fill(0);
-        topCapture3dSource.clear();
-        bottomCapture3dSource.clear();
         captureLineUses3dMask.fill(0);
         captureFallbackLines.fill(0);
         comp4TopPlaceholder.fill(0);
