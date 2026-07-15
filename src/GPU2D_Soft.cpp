@@ -18,10 +18,8 @@
 
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include "VulkanDesktopCompat.h"
 
-#endif
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
 
 namespace melonDS
 {
@@ -163,6 +161,12 @@ void SoftRenderer2D::DrawScanline(u32 line)
 {
     u32* dst = Parent.Output2D[GPU2D.Num];
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool useStructuredVulkan2D = Parent.UseStructuredVulkan2D();
+    if (useStructuredVulkan2D)
+        Parent.BeginStructuredVulkan2DLine(GPU2D.Num, line);
+#endif
+
     if (!GPU2D.Enabled)
     {
         // if this 2D unit is disabled in POWCNT, the output is a fixed color
@@ -203,11 +207,6 @@ void SoftRenderer2D::DrawScanline(u32 line)
     }
 
     // render BG layers and sprites
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const bool useStructuredVulkan2D = Parent.UseStructuredVulkan2D();
-    if (useStructuredVulkan2D)
-        Parent.BeginStructuredVulkan2DLine(GPU2D.Num, line);
-#endif
     DrawScanline_BGOBJ(line, dst);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (useStructuredVulkan2D && GPU2D.Num == 0 && GPU.CaptureEnable)
@@ -1802,4 +1801,4 @@ void SoftRenderer2D::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos,
     }
 }
 
-}
+#endif // !MELONPRIME_ENABLE_VULKAN
