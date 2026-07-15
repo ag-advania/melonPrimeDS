@@ -1,6 +1,6 @@
 // Source: SapphireRhodonite/melonDS-android
 // app/src/main/cpp/renderer/VulkanOutput.cpp @ tag 0.7.0.rc4
-// P1: unmodified Sapphire copy; desktop adaptation follows in P2+.
+// P3: Sapphire compositor with desktop volk/generated-shader adaptation.
 
 #include "VulkanOutput.h"
 
@@ -18,12 +18,13 @@
 #include "NDS.h"
 #include "Platform.h"
 #include "VulkanContext.h"
-#include "VulkanDispatch.h"
-#include "VulkanCompositorShaderData.h"
-#include "VulkanAccumulate3dShaderData.h"
+#include <volk.h>
+#include <sapphire/VulkanCompositorShaderData.h>
+#include <sapphire/VulkanAccumulate3dShaderData.h>
 
 namespace MelonDSAndroid
 {
+using namespace melonDS::Vulkan::GeneratedShaders;
 bool areRendererDebugToolsEnabled();
 bool areRendererDebugBgObjLogsEnabled();
 bool areRenderer2DDebugControlsActive();
@@ -31,9 +32,9 @@ bool isRenderer2DDebugBackgroundKindEnabled(melonDS::u32 featureFlag);
 
 namespace
 {
-constexpr int kScreenWidth = 256;
-constexpr int kScreenHeight = 192;
-constexpr int kAcceleratedStride = kScreenWidth * 3 + 1;
+constexpr int kScreenWidth = static_cast<int>(melonDS::VulkanStructuredControlAbi::NativeScreenWidth);
+constexpr int kScreenHeight = static_cast<int>(melonDS::VulkanStructuredControlAbi::NativeScreenHeight);
+constexpr int kAcceleratedStride = static_cast<int>(melonDS::VulkanStructuredControlAbi::PackedScreenStride);
 constexpr VkDeviceSize kPackedBufferSize = static_cast<VkDeviceSize>(kScreenHeight) * static_cast<VkDeviceSize>(kAcceleratedStride) * sizeof(melonDS::u32);
 constexpr VkDeviceSize kCapture3dBufferSize = static_cast<VkDeviceSize>(kScreenWidth) * static_cast<VkDeviceSize>(kScreenHeight) * sizeof(melonDS::u32);
 constexpr u64 kValidationWaitTimeoutNs = 2'000'000'000ull;
@@ -436,6 +437,21 @@ bool VulkanOutput::init()
         return false;
     }
 
+    const auto& pipelineCacheContext = melonDS::VulkanContext::Get();
+    const u32 descriptorIndexingMode =
+        (pipelineCacheContext.SupportsDynamicTextureIndexing() ? 1u : 0u)
+        | (pipelineCacheContext.SupportsNonUniformTextureIndexing() ? 2u : 0u)
+        | (pipelineCacheContext.IsDynamicTextureIndexingForcedOff() ? 4u : 0u);
+    (void)pipelineCache.Create(
+        physicalDevice,
+        device,
+        melonDS::VulkanPipelineCacheOwner::Compositor,
+        "Compositor",
+        "melonprime_vulkan_r25_compositor.cache",
+        MelonPrime::Vulkan::kCompositorPipelineAbiVersion,
+        descriptorIndexingMode,
+        0u);
+
     if (!createSyncObjects() || !createCommandObjects() || !createCompositorResources() || !createAccumulateResources())
     {
         shutdown();
@@ -454,12 +470,19 @@ bool VulkanOutput::init()
 
 void VulkanOutput::shutdown()
 {
-    if (device != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(device);
+    const bool deviceLost = melonDS::VulkanContext::Get().IsDeviceLost();
+    if (device != VK_NULL_HANDLE && !deviceLost)
+    {
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            vkDeviceWaitIdle(device),
+            "VulkanOutput shutdown");
+    }
 
     destroyFrameResources();
+    retiredResources.Drain(device, waitSemaphores, deviceLost);
     destroyAccumulateResources();
     destroyCompositorResources();
+    pipelineCache.SaveAndDestroy(deviceLost);
 
     if (timelineSemaphore != VK_NULL_HANDLE)
     {
@@ -678,48 +701,49 @@ void VulkanOutput::destroyTimestampQueryPool(VkQueryPool& queryPool)
 bool VulkanOutput::createCompositorResources()
 {
     VkDescriptorSetLayoutBinding outputBinding{};
-    outputBinding.binding = 0;
+    outputBinding.binding = MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING;
     outputBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     outputBinding.descriptorCount = 1;
     outputBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding input3dBinding{};
-    input3dBinding.binding = 1;
+    input3dBinding.binding = MP_VK_COMPOSITOR_CURRENT_3D_BINDING;
     input3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     input3dBinding.descriptorCount = 1;
     input3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding topPackedBinding{};
-    topPackedBinding.binding = 2;
+    topPackedBinding.binding = MP_VK_COMPOSITOR_TOP_PACKED_BINDING;
     topPackedBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     topPackedBinding.descriptorCount = 1;
     topPackedBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding bottomPackedBinding{};
-    bottomPackedBinding.binding = 3;
+    bottomPackedBinding.binding = MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING;
     bottomPackedBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bottomPackedBinding.descriptorCount = 1;
     bottomPackedBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding previousTopInput3dBinding{};
-    previousTopInput3dBinding.binding = 4;
+    previousTopInput3dBinding.binding = MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING;
     previousTopInput3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     previousTopInput3dBinding.descriptorCount = 1;
     previousTopInput3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding capture3dBinding{};
-    capture3dBinding.binding = 5;
+    capture3dBinding.binding = MP_VK_COMPOSITOR_CAPTURE_3D_BINDING;
     capture3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     capture3dBinding.descriptorCount = 1;
     capture3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutBinding previousBottomInput3dBinding{};
-    previousBottomInput3dBinding.binding = 6;
+    previousBottomInput3dBinding.binding = MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING;
     previousBottomInput3dBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     previousBottomInput3dBinding.descriptorCount = 1;
     previousBottomInput3dBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 7> compositorBindings = {
+    std::array<VkDescriptorSetLayoutBinding,
+        melonDS::VulkanStructuredControlAbi::CompositorBindingCount> compositorBindings = {
         outputBinding,
         input3dBinding,
         topPackedBinding,
@@ -783,13 +807,10 @@ bool VulkanOutput::createCompositorResources()
         return false;
     }
 
-    std::vector<u32> shaderWords((melonDS_android_vulkan_compositor_comp_spv_len + sizeof(u32) - 1u) / sizeof(u32));
-    std::memcpy(shaderWords.data(), melonDS_android_vulkan_compositor_comp_spv, melonDS_android_vulkan_compositor_comp_spv_len);
-
     VkShaderModuleCreateInfo shaderModuleCreateInfo{};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderModuleCreateInfo.codeSize = melonDS_android_vulkan_compositor_comp_spv_len;
-    shaderModuleCreateInfo.pCode = shaderWords.data();
+    shaderModuleCreateInfo.pCode = melonDS_android_vulkan_compositor_comp_spv;
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -811,7 +832,7 @@ bool VulkanOutput::createCompositorResources()
 
     const VkResult pipelineResult = vkCreateComputePipelines(
         device,
-        VK_NULL_HANDLE,
+        pipelineCache.Get(),
         1,
         &computePipelineCreateInfo,
         nullptr,
@@ -963,13 +984,10 @@ bool VulkanOutput::createAccumulateResources()
         return false;
     }
 
-    std::vector<u32> shaderWords((melonDS_android_vulkan_accumulate_3d_comp_spv_len + sizeof(u32) - 1u) / sizeof(u32));
-    std::memcpy(shaderWords.data(), melonDS_android_vulkan_accumulate_3d_comp_spv, melonDS_android_vulkan_accumulate_3d_comp_spv_len);
-
     VkShaderModuleCreateInfo shaderModuleCreateInfo{};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderModuleCreateInfo.codeSize = melonDS_android_vulkan_accumulate_3d_comp_spv_len;
-    shaderModuleCreateInfo.pCode = shaderWords.data();
+    shaderModuleCreateInfo.pCode = melonDS_android_vulkan_accumulate_3d_comp_spv;
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -991,7 +1009,7 @@ bool VulkanOutput::createAccumulateResources()
 
     const VkResult result = vkCreateComputePipelines(
         device,
-        VK_NULL_HANDLE,
+        pipelineCache.Get(),
         1,
         &computePipelineCreateInfo,
         nullptr,
@@ -1758,6 +1776,12 @@ bool VulkanOutput::createFrameResource(Frame* frame, u32 width, u32 height)
     }
 
     frame->backend = FrameBackend::VulkanImage;
+    frame->image = image;
+    frame->imageView = imageView;
+    frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    frame->compositionCompletionSemaphore =
+        useTimelineSemaphores ? timelineSemaphore : VK_NULL_HANDLE;
+    frame->renderFence = submitFence;
     frame->renderTimelineValue = 0;
 
     return true;
@@ -1766,75 +1790,12 @@ bool VulkanOutput::createFrameResource(Frame* frame, u32 width, u32 height)
 void VulkanOutput::destroyFrameResource(Frame* frame)
 {
     std::scoped_lock commandLock(commandPoolLock);
-
     auto iterator = resources.find(frame);
     if (iterator == resources.end())
         return;
 
-    FrameResource& resource = iterator->second;
-
-    if (resource.submitFence != VK_NULL_HANDLE)
-        vkWaitForFences(device, 1, &resource.submitFence, VK_TRUE, UINT64_MAX);
-
-    if (resource.descriptorSet != VK_NULL_HANDLE && compositorDescriptorPool != VK_NULL_HANDLE)
-        vkFreeDescriptorSets(device, compositorDescriptorPool, 1, &resource.descriptorSet);
-
-    destroyTimestampQueryPool(resource.timestampQueryPool);
-
-    if (resource.submitFence != VK_NULL_HANDLE)
-        vkDestroyFence(device, resource.submitFence, nullptr);
-
-    if (resource.commandBuffer != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE)
-        vkFreeCommandBuffers(device, commandPool, 1, &resource.commandBuffer);
-
-    if (resource.topPackedMapped != nullptr)
-    {
-        vkUnmapMemory(device, resource.topPackedMemory);
-        resource.topPackedMapped = nullptr;
-    }
-    if (resource.topPackedBuffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(device, resource.topPackedBuffer, nullptr);
-    if (resource.topPackedMemory != VK_NULL_HANDLE)
-        vkFreeMemory(device, resource.topPackedMemory, nullptr);
-
-    if (resource.bottomPackedMapped != nullptr)
-    {
-        vkUnmapMemory(device, resource.bottomPackedMemory);
-        resource.bottomPackedMapped = nullptr;
-    }
-    if (resource.bottomPackedBuffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(device, resource.bottomPackedBuffer, nullptr);
-    if (resource.bottomPackedMemory != VK_NULL_HANDLE)
-        vkFreeMemory(device, resource.bottomPackedMemory, nullptr);
-
-    if (resource.capture3dMapped != nullptr)
-    {
-        vkUnmapMemory(device, resource.capture3dMemory);
-        resource.capture3dMapped = nullptr;
-    }
-    if (resource.capture3dBuffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(device, resource.capture3dBuffer, nullptr);
-    if (resource.capture3dMemory != VK_NULL_HANDLE)
-        vkFreeMemory(device, resource.capture3dMemory, nullptr);
-
-    destroyRenderer3dSnapshot(resource);
-
-    if (resource.stagingBuffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(device, resource.stagingBuffer, nullptr);
-    if (resource.stagingMemory != VK_NULL_HANDLE)
-        vkFreeMemory(device, resource.stagingMemory, nullptr);
-
-    if (resource.imageView != VK_NULL_HANDLE)
-        vkDestroyImageView(device, resource.imageView, nullptr);
-    if (resource.image != VK_NULL_HANDLE)
-        vkDestroyImage(device, resource.image, nullptr);
-    if (resource.imageMemory != VK_NULL_HANDLE)
-        vkFreeMemory(device, resource.imageMemory, nullptr);
-
-    if (frame != nullptr)
-    {
-        frame->renderTimelineValue = 0;
-    }
+    FrameResource resource = std::move(iterator->second);
+    resources.erase(iterator);
 
     if (lastPreparedFrame == frame)
         lastPreparedFrame = nullptr;
@@ -1847,7 +1808,100 @@ void VulkanOutput::destroyFrameResource(Frame* frame)
     if (lastBottomComposedFrame == frame)
         lastBottomComposedFrame = nullptr;
 
-    resources.erase(iterator);
+    if (frame != nullptr)
+    {
+        frame->image = VK_NULL_HANDLE;
+        frame->imageView = VK_NULL_HANDLE;
+        frame->imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        frame->compositionCompletionSemaphore = VK_NULL_HANDLE;
+        frame->renderFence = VK_NULL_HANDLE;
+        frame->renderTimelineValue = 0;
+    }
+
+    const VkDevice retireDevice = device;
+    const VkCommandPool retireCommandPool = commandPool;
+    const VkDescriptorPool retireDescriptorPool = compositorDescriptorPool;
+    const bool hasTimelineCompletion =
+        useTimelineSemaphores
+        && timelineSemaphore != VK_NULL_HANDLE
+        && resource.submissionValue != 0;
+    const VkSemaphore retireTimeline =
+        hasTimelineCompletion ? timelineSemaphore : VK_NULL_HANDLE;
+    const u64 retireValue =
+        hasTimelineCompletion ? resource.submissionValue : 0;
+    const VkFence retireFence =
+        hasTimelineCompletion ? VK_NULL_HANDLE : resource.submitFence;
+
+    retiredResources.Retire(
+        retireTimeline,
+        retireValue,
+        retireFence,
+        [retireDevice, retireCommandPool, retireDescriptorPool,
+         resource = std::move(resource)]() mutable {
+            if (retireDevice == VK_NULL_HANDLE)
+                return;
+
+            if (resource.topPackedMapped != nullptr)
+                vkUnmapMemory(retireDevice, resource.topPackedMemory);
+            if (resource.bottomPackedMapped != nullptr)
+                vkUnmapMemory(retireDevice, resource.bottomPackedMemory);
+            if (resource.capture3dMapped != nullptr)
+                vkUnmapMemory(retireDevice, resource.capture3dMemory);
+
+            if (resource.descriptorSet != VK_NULL_HANDLE
+                && retireDescriptorPool != VK_NULL_HANDLE)
+            {
+                (void)vkFreeDescriptorSets(
+                    retireDevice,
+                    retireDescriptorPool,
+                    1,
+                    &resource.descriptorSet);
+            }
+            if (resource.timestampQueryPool != VK_NULL_HANDLE)
+                vkDestroyQueryPool(retireDevice, resource.timestampQueryPool, nullptr);
+            if (resource.commandBuffer != VK_NULL_HANDLE
+                && retireCommandPool != VK_NULL_HANDLE)
+            {
+                vkFreeCommandBuffers(
+                    retireDevice,
+                    retireCommandPool,
+                    1,
+                    &resource.commandBuffer);
+            }
+            if (resource.submitFence != VK_NULL_HANDLE)
+                vkDestroyFence(retireDevice, resource.submitFence, nullptr);
+
+            if (resource.renderer3dSnapshotView != VK_NULL_HANDLE)
+                vkDestroyImageView(retireDevice, resource.renderer3dSnapshotView, nullptr);
+            if (resource.renderer3dSnapshot != VK_NULL_HANDLE)
+                vkDestroyImage(retireDevice, resource.renderer3dSnapshot, nullptr);
+            if (resource.renderer3dSnapshotMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.renderer3dSnapshotMemory, nullptr);
+
+            if (resource.topPackedBuffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(retireDevice, resource.topPackedBuffer, nullptr);
+            if (resource.topPackedMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.topPackedMemory, nullptr);
+            if (resource.bottomPackedBuffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(retireDevice, resource.bottomPackedBuffer, nullptr);
+            if (resource.bottomPackedMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.bottomPackedMemory, nullptr);
+            if (resource.capture3dBuffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(retireDevice, resource.capture3dBuffer, nullptr);
+            if (resource.capture3dMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.capture3dMemory, nullptr);
+            if (resource.stagingBuffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(retireDevice, resource.stagingBuffer, nullptr);
+            if (resource.stagingMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.stagingMemory, nullptr);
+
+            if (resource.imageView != VK_NULL_HANDLE)
+                vkDestroyImageView(retireDevice, resource.imageView, nullptr);
+            if (resource.image != VK_NULL_HANDLE)
+                vkDestroyImage(retireDevice, resource.image, nullptr);
+            if (resource.imageMemory != VK_NULL_HANDLE)
+                vkFreeMemory(retireDevice, resource.imageMemory, nullptr);
+        });
 }
 
 void VulkanOutput::destroyFrameResources()
@@ -1861,7 +1915,12 @@ void VulkanOutput::destroyFrameResources()
 
 bool VulkanOutput::ensureFrameResources(Frame* frame, u32 width, u32 height)
 {
-    if (!initialized || frame == nullptr || width == 0 || height == 0)
+    retiredResources.Collect(
+        device,
+        getSemaphoreCounterValue,
+        melonDS::VulkanContext::Get().IsDeviceLost());
+    if (!initialized || frame == nullptr || width == 0 || height == 0
+        || melonDS::VulkanContext::Get().IsDeviceLost())
         return false;
 
     auto iterator = resources.find(frame);
@@ -1871,6 +1930,12 @@ bool VulkanOutput::ensureFrameResources(Frame* frame, u32 width, u32 height)
         if (resource.width == width && resource.height == height)
         {
             frame->backend = FrameBackend::VulkanImage;
+            frame->image = resource.image;
+            frame->imageView = resource.imageView;
+            frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            frame->compositionCompletionSemaphore =
+                useTimelineSemaphores ? timelineSemaphore : VK_NULL_HANDLE;
+            frame->renderFence = resource.submitFence;
             return true;
         }
 
@@ -1883,7 +1948,9 @@ bool VulkanOutput::ensureFrameResources(Frame* frame, u32 width, u32 height)
 bool VulkanOutput::beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs)
 {
     const VkResult waitResult = vkWaitForFences(device, 1, &resource.submitFence, VK_TRUE, waitTimeoutNs);
-    if (waitResult != VK_SUCCESS)
+    if (!melonDS::VulkanContext::Get().CheckResult(
+            waitResult,
+            "VulkanOutput frame-resource fence"))
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
@@ -1924,6 +1991,20 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
     u64 signalValue = resource.submissionValue;
     VkTimelineSemaphoreSubmitInfo timelineSubmitInfo{};
     const bool shouldSignalTimelineSemaphore = signalTimeline && useTimelineSemaphores && timelineSemaphore != VK_NULL_HANDLE;
+    const bool shouldWaitForRenderer3d =
+        resource.renderer3dCompletionSemaphore != VK_NULL_HANDLE
+        && resource.renderer3dCompletionValue != 0;
+    VkPipelineStageFlags rendererWaitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    if (shouldWaitForRenderer3d)
+    {
+        timelineSubmitInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineSubmitInfo.waitSemaphoreValueCount = 1;
+        timelineSubmitInfo.pWaitSemaphoreValues = &resource.renderer3dCompletionValue;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &resource.renderer3dCompletionSemaphore;
+        submitInfo.pWaitDstStageMask = &rendererWaitStage;
+        submitInfo.pNext = &timelineSubmitInfo;
+    }
     if (signalTimeline)
     {
         signalValue = ++timelineValue;
@@ -1941,13 +2022,23 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
 
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
-        if (vkQueueSubmit(queue, 1, &submitInfo, resource.submitFence) != VK_SUCCESS)
+        const VkResult submitResult =
+            vkQueueSubmit(queue, 1, &submitInfo, resource.submitFence);
+        if (!melonDS::VulkanContext::Get().CheckResult(
+                submitResult,
+                "VulkanOutput vkQueueSubmit"))
             return false;
     }
 
     if (frame != nullptr)
     {
         frame->backend = FrameBackend::VulkanImage;
+        frame->image = resource.image;
+        frame->imageView = resource.imageView;
+        frame->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        frame->compositionCompletionSemaphore =
+            shouldSignalTimelineSemaphore ? timelineSemaphore : VK_NULL_HANDLE;
+        frame->renderFence = resource.submitFence;
         if (signalTimeline)
             frame->renderTimelineValue = signalValue;
     }
@@ -1957,6 +2048,12 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
 
     if (signalTimeline && resource.timestampQueryPool != VK_NULL_HANDLE)
         resource.timestampPending = true;
+
+    if (shouldWaitForRenderer3d)
+    {
+        resource.renderer3dCompletionSemaphore = VK_NULL_HANDLE;
+        resource.renderer3dCompletionValue = 0;
+    }
 
     return true;
 }
@@ -2286,11 +2383,16 @@ bool VulkanOutput::prepareFrameForPresentation(
     int frontBuffer,
     bool frameScreenSwap,
     SoftPackedFrameSnapshot& softPackedSnapshot,
-    melonDS::VulkanRenderer3D& renderer3D)
+    melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView)
 {
     (void)gpu;
     (void)frontBuffer;
-    if (!initialized || frame == nullptr || !renderer3D.HasColorTarget())
+    if (!initialized || frame == nullptr || !frameView.Valid
+        || frame->frameSerial != frameView.FrameSerial
+        || frame->rendererGeneration != frameView.Generation
+        || softPackedSnapshot.sourceFrameSerial != frameView.FrameSerial
+        || softPackedSnapshot.rendererGeneration != frameView.Generation)
         return false;
     if (!softPackedSnapshot.valid
         || softPackedSnapshot.frontBufferLatched < 0
@@ -2304,6 +2406,14 @@ bool VulkanOutput::prepareFrameForPresentation(
         return false;
 
     FrameResource& resource = iterator->second;
+
+    // A FrameQueue slot owns its persistently mapped packed buffers. Wait only
+    // for this slot's previous submission before overwriting those buffers.
+    if (frame->renderTimelineValue != 0
+        && !waitForFrame(frame, UINT64_MAX))
+    {
+        return false;
+    }
 
     resource.screenSwap = softPackedSnapshot.valid ? softPackedSnapshot.screenSwapLatched : frameScreenSwap;
     const u64 packedUploadStartNs = PerfNowNs();
@@ -2921,8 +3031,10 @@ bool VulkanOutput::prepareFrameForPresentation(
         && resource.snapshotFromPreRun
         && resource.snapshotFromInitializedTarget
         && resource.snapshotFromGraphicsBackend == currentBackendIsGraphics
-        && resource.snapshotWidth == renderer3D.GetColorTargetWidth()
-        && resource.snapshotHeight == renderer3D.GetColorTargetHeight()
+        && resource.snapshotWidth == frameView.Width
+        && resource.snapshotHeight == frameView.Height
+        && resource.renderer3dFrameSerial == frameView.FrameSerial
+        && resource.renderer3dGeneration == frameView.Generation
         && (!currentBackendIsGraphics || needsDsTimedCaptureBackedComp4Source);
 
     const auto screenCanUseAccumulatedHighres = [&](const SoftPackedScreenStats& stats) {
@@ -2978,6 +3090,7 @@ bool VulkanOutput::prepareFrameForPresentation(
                 frame,
                 resource,
                 renderer3D,
+                frameView,
                 liveSourceScreenSwap,
                 liveSourceScreenSwap,
                 !liveSourceScreenSwap,
@@ -3005,10 +3118,7 @@ bool VulkanOutput::prepareFrameForPresentation(
     }
     else
     {
-        currentSourceImage = renderer3D.GetColorTargetImage();
-        currentSourceImageView = renderer3D.GetColorTargetImageView();
-        currentSourceWidth = renderer3D.GetColorTargetWidth();
-        currentSourceHeight = renderer3D.GetColorTargetHeight();
+        return false;
     }
 
     const bool live3dOwnerIsTop = resource.hasRenderer3dSnapshot
@@ -3959,15 +4069,21 @@ bool VulkanOutput::updatePreparedCapture3dSource(
     return resource.hasPreparedCapture3dSource || !currentFrameNeedsCapture3dSource;
 }
 
-bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool VulkanOutput::captureRenderer3dSnapshot(
+    Frame* frame,
+    const melonDS::Vulkan3DFrameView& frameView,
+    bool snapshotScreenSwap)
 {
     std::scoped_lock commandLock(commandPoolLock);
 
     if (frame != nullptr)
         frame->renderTimelineValue = 0;
 
-    if (!initialized || frame == nullptr || !renderer3D.HasColorTarget())
+    if (!initialized || frame == nullptr || !frameView.Valid)
         return false;
+
+    frame->frameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);
     if (iterator == resources.end())
@@ -3979,19 +4095,15 @@ bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::Vulkan
     resource.snapshotFromInitializedTarget = false;
     resource.snapshotFromGraphicsBackend = false;
 
-    if (!renderer3D.IsColorTargetInitialized())
-        return false;
-
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, frameView, snapshotScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = true;
     resource.snapshotFromInitializedTarget = true;
-    resource.snapshotFromGraphicsBackend =
-        renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
+    resource.snapshotFromGraphicsBackend = true;
     resource.previousTopSourceFrame = nullptr;
     resource.previousTopSourcePending = false;
     resource.previousBottomSourceFrame = nullptr;
@@ -4025,7 +4137,7 @@ bool VulkanOutput::composeAndSubmitFrame(
 
 bool VulkanOutput::buildCompositionInputs(
     const Frame* frame,
-    const melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView,
     int scale,
     VulkanFilterMode filtering,
     bool needsReadback,
@@ -4033,7 +4145,9 @@ bool VulkanOutput::buildCompositionInputs(
     bool validationMode,
     VulkanCompositionInputs& outInputs) const
 {
-    if (!initialized || frame == nullptr || scale < 1)
+    if (!initialized || frame == nullptr || scale < 1
+        || frame->frameSerial != frameView.FrameSerial
+        || frame->rendererGeneration != frameView.Generation)
         return false;
 
     auto iterator = resources.find(const_cast<Frame*>(frame));
@@ -4048,23 +4162,15 @@ bool VulkanOutput::buildCompositionInputs(
         resource.hasRenderer3dSnapshot
         && resource.renderer3dSnapshot != VK_NULL_HANDLE
         && resource.renderer3dSnapshotView != VK_NULL_HANDLE;
-    if (!hasRenderer3dSnapshot && !renderer3D.HasColorTarget())
+    if (!hasRenderer3dSnapshot
+        || resource.renderer3dFrameSerial != frameView.FrameSerial
+        || resource.renderer3dGeneration != frameView.Generation)
         return false;
 
-    if (hasRenderer3dSnapshot)
-    {
-        outInputs.sourceImage = resource.renderer3dSnapshot;
-        outInputs.sourceImageView = resource.renderer3dSnapshotView;
-        outInputs.rendererWidth = resource.snapshotWidth;
-        outInputs.rendererHeight = resource.snapshotHeight;
-    }
-    else
-    {
-        outInputs.sourceImage = renderer3D.GetColorTargetImage();
-        outInputs.sourceImageView = renderer3D.GetColorTargetImageView();
-        outInputs.rendererWidth = renderer3D.GetColorTargetWidth();
-        outInputs.rendererHeight = renderer3D.GetColorTargetHeight();
-    }
+    outInputs.sourceImage = resource.renderer3dSnapshot;
+    outInputs.sourceImageView = resource.renderer3dSnapshotView;
+    outInputs.rendererWidth = resource.snapshotWidth;
+    outInputs.rendererHeight = resource.snapshotHeight;
     outInputs.previousTopSourceValid = resource.previousTopRendererSourceValid;
     outInputs.previousTopSourceImage = outInputs.previousTopSourceValid && resource.previousTopRendererSourceImage != VK_NULL_HANDLE
         ? resource.previousTopRendererSourceImage
@@ -4169,6 +4275,10 @@ void VulkanOutput::destroyRenderer3dSnapshot(FrameResource& resource)
 
     resource.snapshotWidth = 0;
     resource.snapshotHeight = 0;
+    resource.renderer3dFrameSerial = 0;
+    resource.renderer3dGeneration = 0;
+    resource.renderer3dCompletionSemaphore = VK_NULL_HANDLE;
+    resource.renderer3dCompletionValue = 0;
     resource.hasRenderer3dSnapshot = false;
 }
 
@@ -4249,6 +4359,7 @@ bool VulkanOutput::recordDirectPresentationPrep(
     Frame* frame,
     FrameResource& resource,
     const melonDS::VulkanRenderer3D& renderer3D,
+    const melonDS::Vulkan3DFrameView& frameView,
     bool snapshotScreenSwap,
     bool accumulateTopHighres,
     bool accumulateBottomHighres,
@@ -4259,11 +4370,11 @@ bool VulkanOutput::recordDirectPresentationPrep(
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, frameView, snapshotScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = false;
-    resource.snapshotFromInitializedTarget = renderer3D.IsColorTargetInitialized();
+    resource.snapshotFromInitializedTarget = frameView.Valid;
     resource.snapshotFromGraphicsBackend =
         renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
 
@@ -4355,10 +4466,21 @@ bool VulkanOutput::recordDirectPresentationPrep(
     return submitted;
 }
 
-bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool VulkanOutput::recordRenderer3dSnapshotCopy(
+    FrameResource& resource,
+    const melonDS::Vulkan3DFrameView& frameView,
+    bool snapshotScreenSwap)
 {
-    const u32 rendererWidth = renderer3D.GetColorTargetWidth();
-    const u32 rendererHeight = renderer3D.GetColorTargetHeight();
+    if (!frameView.Valid
+        || frameView.ColorImage == VK_NULL_HANDLE
+        || frameView.ColorImageView == VK_NULL_HANDLE
+        || frameView.ColorLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+    {
+        return false;
+    }
+
+    const u32 rendererWidth = frameView.Width;
+    const u32 rendererHeight = frameView.Height;
     if (!ensureRenderer3dSnapshot(resource, rendererWidth, rendererHeight))
         return false;
 
@@ -4370,11 +4492,11 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         VK_ACCESS_TRANSFER_WRITE_BIT |
         VK_ACCESS_TRANSFER_READ_BIT;
     sourceToTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    sourceToTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    sourceToTransferBarrier.oldLayout = frameView.ColorLayout;
     sourceToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     sourceToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     sourceToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceToTransferBarrier.image = renderer3D.GetColorTargetImage();
+    sourceToTransferBarrier.image = frameView.ColorImage;
     sourceToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     sourceToTransferBarrier.subresourceRange.baseMipLevel = 0;
     sourceToTransferBarrier.subresourceRange.levelCount = 1;
@@ -4423,7 +4545,7 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         copyRegion.extent = {rendererWidth, rendererHeight, 1};
         vkCmdCopyImage(
             resource.commandBuffer,
-            renderer3D.GetColorTargetImage(),
+            frameView.ColorImage,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             resource.renderer3dSnapshot,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -4442,7 +4564,7 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         blitRegion.dstOffsets[1] = {static_cast<int32_t>(rendererWidth), static_cast<int32_t>(rendererHeight), 1};
         vkCmdBlitImage(
             resource.commandBuffer,
-            renderer3D.GetColorTargetImage(),
+            frameView.ColorImage,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             resource.renderer3dSnapshot,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -4464,10 +4586,10 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
         VK_ACCESS_SHADER_READ_BIT |
         VK_ACCESS_SHADER_WRITE_BIT;
     sourceBackToGeneralBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    sourceBackToGeneralBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    sourceBackToGeneralBarrier.newLayout = frameView.ColorLayout;
     sourceBackToGeneralBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     sourceBackToGeneralBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceBackToGeneralBarrier.image = renderer3D.GetColorTargetImage();
+    sourceBackToGeneralBarrier.image = frameView.ColorImage;
     sourceBackToGeneralBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     sourceBackToGeneralBarrier.subresourceRange.baseMipLevel = 0;
     sourceBackToGeneralBarrier.subresourceRange.levelCount = 1;
@@ -4508,6 +4630,10 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const m
 
     resource.hasRenderer3dSnapshot = true;
     resource.renderer3dSnapshotScreenSwap = snapshotScreenSwap;
+    resource.renderer3dFrameSerial = frameView.FrameSerial;
+    resource.renderer3dGeneration = frameView.Generation;
+    resource.renderer3dCompletionSemaphore = frameView.CompletionSemaphore;
+    resource.renderer3dCompletionValue = frameView.CompletionValue;
     return true;
 }
 
@@ -4605,54 +4731,21 @@ bool VulkanOutput::dispatchCompositor(
         );
     }
 
-    VkBufferMemoryBarrier topPackedBarrier{};
-    topPackedBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    topPackedBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    topPackedBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    topPackedBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    topPackedBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    topPackedBarrier.buffer = resource.topPackedBuffer;
-    topPackedBarrier.offset = 0;
-    topPackedBarrier.size = resource.packedBufferSize;
-
-    VkBufferMemoryBarrier bottomPackedBarrier{};
-    bottomPackedBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    bottomPackedBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    bottomPackedBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    bottomPackedBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bottomPackedBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bottomPackedBarrier.buffer = resource.bottomPackedBuffer;
-    bottomPackedBarrier.offset = 0;
-    bottomPackedBarrier.size = resource.packedBufferSize;
-
-    VkBufferMemoryBarrier capture3dBarrier{};
-    capture3dBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    capture3dBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    capture3dBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    capture3dBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    capture3dBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    capture3dBarrier.buffer = resource.capture3dBuffer;
-    capture3dBarrier.offset = 0;
-    capture3dBarrier.size = kCapture3dBufferSize;
-
-    std::array<VkBufferMemoryBarrier, 3> compositorBufferBarriers = {
-        topPackedBarrier,
-        bottomPackedBarrier,
-        capture3dBarrier,
-    };
-
-    vkCmdPipelineBarrier(
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
         resource.commandBuffer,
-        VK_PIPELINE_STAGE_HOST_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0,
-        0,
-        nullptr,
-        static_cast<u32>(compositorBufferBarriers.size()),
-        compositorBufferBarriers.data(),
-        0,
-        nullptr
-    );
+        resource.topPackedBuffer,
+        resource.packedBufferSize,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
+        resource.commandBuffer,
+        resource.bottomPackedBuffer,
+        resource.packedBufferSize,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    melonDS::VulkanR24Barrier::HostWriteToShaderRead(
+        resource.commandBuffer,
+        resource.capture3dBuffer,
+        kCapture3dBufferSize,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
     VkDescriptorImageInfo outputImageInfo{};
     outputImageInfo.imageView = resource.imageView;
@@ -4688,14 +4781,15 @@ bool VulkanOutput::dispatchCompositor(
         || resource.cachedPreviousTopRendererImageView != inputs.previousTopSourceImageView
         || resource.cachedPreviousBottomRendererImageView != inputs.previousBottomSourceImageView)
     {
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
-        descriptorWrites[0] = makeImageDescriptorWrite(resource.descriptorSet, 0, &outputImageInfo);
-        descriptorWrites[1] = makeImageDescriptorWrite(resource.descriptorSet, 1, &input3dImageInfo);
-        descriptorWrites[2] = makeBufferDescriptorWrite(resource.descriptorSet, 2, &topPackedBufferInfo);
-        descriptorWrites[3] = makeBufferDescriptorWrite(resource.descriptorSet, 3, &bottomPackedBufferInfo);
-        descriptorWrites[4] = makeImageDescriptorWrite(resource.descriptorSet, 4, &previousTopInput3dImageInfo);
-        descriptorWrites[5] = makeBufferDescriptorWrite(resource.descriptorSet, 5, &capture3dBufferInfo);
-        descriptorWrites[6] = makeImageDescriptorWrite(resource.descriptorSet, 6, &previousBottomInput3dImageInfo);
+        std::array<VkWriteDescriptorSet,
+            melonDS::VulkanStructuredControlAbi::CompositorBindingCount> descriptorWrites{};
+        descriptorWrites[0] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING, &outputImageInfo);
+        descriptorWrites[1] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_CURRENT_3D_BINDING, &input3dImageInfo);
+        descriptorWrites[2] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_TOP_PACKED_BINDING, &topPackedBufferInfo);
+        descriptorWrites[3] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING, &bottomPackedBufferInfo);
+        descriptorWrites[4] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING, &previousTopInput3dImageInfo);
+        descriptorWrites[5] = makeBufferDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_CAPTURE_3D_BINDING, &capture3dBufferInfo);
+        descriptorWrites[6] = makeImageDescriptorWrite(resource.descriptorSet, MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING, &previousBottomInput3dImageInfo);
 
         vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
         resource.descriptorSetReady = true;
@@ -4914,33 +5008,10 @@ bool VulkanOutput::dispatchCompositor(
     if (resource.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(resource.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, resource.timestampQueryPool, 1);
 
-    VkImageMemoryBarrier outputReadableBarrier{};
-    outputReadableBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    outputReadableBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    outputReadableBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    outputReadableBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    outputReadableBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    outputReadableBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    outputReadableBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    outputReadableBarrier.image = resource.image;
-    outputReadableBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    outputReadableBarrier.subresourceRange.baseMipLevel = 0;
-    outputReadableBarrier.subresourceRange.levelCount = 1;
-    outputReadableBarrier.subresourceRange.baseArrayLayer = 0;
-    outputReadableBarrier.subresourceRange.layerCount = 1;
-
-    vkCmdPipelineBarrier(
+    melonDS::VulkanR24Barrier::CompositionWriteToPresenterRead(
         resource.commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &outputReadableBarrier
-    );
+        resource.image,
+        VK_IMAGE_LAYOUT_GENERAL);
 
     if (!submitFrameCommand(frame, resource, true))
         return false;
@@ -4955,12 +5026,22 @@ bool VulkanOutput::dispatchCompositor(
 
 bool VulkanOutput::validateCompositorSubmission(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, int scale, u64 waitTimeoutNs)
 {
-    if (!initialized || frame == nullptr || scale < 1 || !renderer3D.HasColorTarget())
+    const melonDS::Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
+    if (!initialized || frame == nullptr || scale < 1 || !frameView.Valid)
         return false;
+
+    frame->frameSerial = frameView.FrameSerial;
+    frame->rendererGeneration = frameView.Generation;
 
     auto iterator = resources.find(frame);
     if (iterator == resources.end())
         return false;
+
+    if (!captureRenderer3dSnapshot(
+            frame, frameView, renderer3D.GetCurrentRenderScreenSwap()))
+    {
+        return false;
+    }
 
     FrameResource& resource = iterator->second;
     if (resource.topPackedMapped == nullptr || resource.bottomPackedMapped == nullptr || resource.packedBufferSize == 0)
@@ -4970,7 +5051,7 @@ bool VulkanOutput::validateCompositorSubmission(Frame* frame, const melonDS::Vul
     resource.hasPreparedInputs = true;
 
     VulkanCompositionInputs inputs{};
-    if (!buildCompositionInputs(frame, renderer3D, scale, VulkanFilterMode::Nearest, false, false, true, inputs))
+    if (!buildCompositionInputs(frame, frameView, scale, VulkanFilterMode::Nearest, false, false, true, inputs))
         return false;
 
     if (!dispatchCompositor(frame, resource, inputs))
@@ -5132,6 +5213,7 @@ bool VulkanOutput::waitForFrame(const Frame* frame, u64 timeoutNs)
     const u64 waitStartNs = PerfNowNs();
     bool waitSucceeded = false;
 
+    VkResult completionResult = VK_NOT_READY;
     if (useTimelineSemaphores && waitSemaphores != nullptr && timelineSemaphore != VK_NULL_HANDLE)
     {
         VkSemaphoreWaitInfo waitInfo{};
@@ -5139,7 +5221,7 @@ bool VulkanOutput::waitForFrame(const Frame* frame, u64 timeoutNs)
         waitInfo.semaphoreCount = 1;
         waitInfo.pSemaphores = &timelineSemaphore;
         waitInfo.pValues = &frame->renderTimelineValue;
-        waitSucceeded = waitSemaphores(device, &waitInfo, timeoutNs) == VK_SUCCESS;
+        completionResult = waitSemaphores(device, &waitInfo, timeoutNs);
     }
     else
     {
@@ -5149,8 +5231,12 @@ bool VulkanOutput::waitForFrame(const Frame* frame, u64 timeoutNs)
             waitFailureResourceMissing++;
             return false;
         }
-        waitSucceeded = vkWaitForFences(device, 1, &iterator->second.submitFence, VK_TRUE, timeoutNs) == VK_SUCCESS;
+        completionResult = vkWaitForFences(
+            device, 1, &iterator->second.submitFence, VK_TRUE, timeoutNs);
     }
+    waitSucceeded = melonDS::VulkanContext::Get().CheckResult(
+        completionResult,
+        "VulkanOutput frame completion wait");
 
     if (!waitSucceeded)
     {
@@ -5295,8 +5381,13 @@ bool VulkanOutput::isFrameReady(const Frame* frame) const
     if (useTimelineSemaphores && getSemaphoreCounterValue != nullptr && timelineSemaphore != VK_NULL_HANDLE)
     {
         u64 completedValue = 0;
-        if (getSemaphoreCounterValue(device, timelineSemaphore, &completedValue) == VK_SUCCESS)
+        const VkResult counterResult = getSemaphoreCounterValue(
+            device, timelineSemaphore, &completedValue);
+        if (counterResult == VK_SUCCESS)
             return completedValue >= frame->renderTimelineValue;
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            counterResult,
+            "VulkanOutput timeline counter");
     }
 
     auto iterator = resources.find(const_cast<Frame*>(frame));
@@ -5304,7 +5395,15 @@ bool VulkanOutput::isFrameReady(const Frame* frame) const
         return false;
 
     if (iterator->second.submitFence != VK_NULL_HANDLE)
-        return vkGetFenceStatus(device, iterator->second.submitFence) == VK_SUCCESS;
+    {
+        const VkResult fenceResult =
+            vkGetFenceStatus(device, iterator->second.submitFence);
+        if (fenceResult == VK_SUCCESS)
+            return true;
+        (void)melonDS::VulkanContext::Get().CheckResult(
+            fenceResult,
+            "VulkanOutput frame fence status");
+    }
 
     return false;
 }

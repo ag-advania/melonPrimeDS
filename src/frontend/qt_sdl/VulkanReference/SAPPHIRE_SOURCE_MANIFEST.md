@@ -102,8 +102,8 @@ producer-side composeAndSubmitFrame()
 |---|---|---|
 | P0 | Source pin manifest | **done** (`51660830f`) |
 | P1 | Clean copy directory | **done** (`9d9461153`) |
-| P2 | FrameQueue exact port | **done** (this commit) |
-| P3 | VulkanOutput/shader exact port | pending |
+| P2 | FrameQueue exact port | **done** (`3cd3bab92`) |
+| P3 | VulkanOutput/shader exact port | **done** (this commit) |
 | P4 | Core exact port | pending |
 | P5 | Latch dependency closure | pending |
 | P6 | runFrame transaction port | pending |
