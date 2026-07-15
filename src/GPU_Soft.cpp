@@ -334,6 +334,30 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
 
     return true;
 }
+
+void SoftRenderer::ForwardSapphireGpu2DRegisterWrite8(u32 engineNum, u32 addr, u8 val) noexcept
+{
+    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
+    unit.Write8(addr, val);
+}
+
+void SoftRenderer::ForwardSapphireGpu2DRegisterWrite16(u32 engineNum, u32 addr, u16 val) noexcept
+{
+    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
+    unit.Write16(addr, val);
+}
+
+void SoftRenderer::ForwardSapphireGpu2DRegisterWrite32(u32 engineNum, u32 addr, u32 val) noexcept
+{
+    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
+    unit.Write32(addr, val);
+}
+
+void SoftRenderer::ForwardSapphireGpu2DWindowCheck(u32 line) noexcept
+{
+    SapphireUnitA.CheckWindows(line);
+    SapphireUnitB.CheckWindows(line);
+}
 #endif
 
 void SoftRenderer::DrawSprites(u32 line)

@@ -35,6 +35,7 @@ add_library(core STATIC
     GBACartMotionPak.cpp
     GPU.cpp
     GPU_Soft.cpp
+    MelonPrimeSapphireGpu2DAdapter.cpp
     SapphireGPU2DSoftAccess.cpp
     SapphireGPU2DCore/GPU2D_Soft.cpp
     SapphireGPU2DCore/Unit.cpp

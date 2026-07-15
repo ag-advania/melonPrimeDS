@@ -23,6 +23,9 @@
 #include "ARMJIT.h"
 
 #include "GPU_Soft.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeSapphireGpu2DAdapter.h"
+#endif
 
 namespace melonDS
 {
@@ -1358,6 +1361,9 @@ void GPU::StartScanline(u32 line) noexcept
 
     GPU2D_A.UpdateWindows(VCount);
     GPU2D_B.UpdateWindows(VCount);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    MelonPrimeSapphireGpu2DAdapter::ForwardWindowCheck(*this, VCount);
+#endif
 
     if (VCount >= 2 && VCount < 194)
         NDS.CheckDMAs(0, 0x03);

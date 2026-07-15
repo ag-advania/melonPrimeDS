@@ -65,6 +65,10 @@ public:
     void SyncSapphireFramebufferBindings() noexcept;
     void SyncSapphireUnitsFromGPU2D();
     [[nodiscard]] bool PublishSapphire2DFrame() noexcept;
+    void ForwardSapphireGpu2DRegisterWrite8(u32 engineNum, u32 addr, u8 val) noexcept;
+    void ForwardSapphireGpu2DRegisterWrite16(u32 engineNum, u32 addr, u16 val) noexcept;
+    void ForwardSapphireGpu2DRegisterWrite32(u32 engineNum, u32 addr, u32 val) noexcept;
+    void ForwardSapphireGpu2DWindowCheck(u32 line) noexcept;
 #endif
 
 private:
