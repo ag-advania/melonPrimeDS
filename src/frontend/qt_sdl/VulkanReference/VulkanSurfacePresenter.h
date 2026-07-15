@@ -338,6 +338,9 @@ private:
         VulkanSurfaceConfig config{};
         bool configured = false;
         bool swapchainDirty = true;
+        VkExtent2D desiredExtent{};
+        u64 resizeSerial = 0;
+        u64 buildingSerial = 0;
         bool hasCachedSwapchainSelection = false;
         VkSurfaceFormatKHR cachedSurfaceFormat{};
         VkPresentModeKHR cachedPresentMode = VK_PRESENT_MODE_FIFO_KHR;

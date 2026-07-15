@@ -922,6 +922,8 @@ bool VulkanSurfacePresenter::resizeSurface(int surfaceId, u32 width, u32 height)
     SurfaceState& surfaceState = iterator->second;
     surfaceState.requestedWidth = width;
     surfaceState.requestedHeight = height;
+    surfaceState.desiredExtent = {width, height};
+    ++surfaceState.resizeSerial;
     surfaceState.swapchainDirty = true;
     surfaceState.vertexBufferDirty = true;
     return true;
@@ -1682,6 +1684,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     surfaceState.pending.emplace();
     SwapchainBundle& building = *surfaceState.pending;
+    surfaceState.buildingSerial = surfaceState.resizeSerial;
     const SwapchainBundle previousActive = surfaceState.active;
 
     VkSurfaceCapabilitiesKHR capabilities{};
@@ -2103,6 +2106,14 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     building.colorSpace = surfaceFormat.colorSpace;
     building.presentMode = presentMode;
     building.extent = extent;
+
+    if (surfaceState.buildingSerial != surfaceState.resizeSerial)
+    {
+        retireSwapchainBundle(std::move(building), 0);
+        surfaceState.pending.reset();
+        surfaceState.swapchainDirty = true;
+        return ensureSwapchain(surfaceState);
+    }
 
     const bool extentChanged =
         previousActive.extent.width != extent.width
