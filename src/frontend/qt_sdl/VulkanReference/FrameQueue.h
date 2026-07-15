@@ -1,21 +1,18 @@
+#pragma once
+
 // Source: SapphireRhodonite/melonDS-android
 // app/src/main/cpp/renderer/FrameQueue.h @ tag 0.7.0.rc4
-// P1: unmodified Sapphire copy; desktop adaptation follows in P2+.
-
-#ifndef FRAMEQUEUE_H
-#define FRAMEQUEUE_H
+// P2: Sapphire queue semantics with desktop Vk handle adaptation (R19 ownership overlay).
 
 #include <array>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES3/gl3.h>
-#include "OpenGLContext.h"
+#include <volk.h>
 #include "types.h"
 
 using namespace melonDS;
@@ -34,10 +31,19 @@ struct FrameQueuePolicy
     bool TreatBacklogTrimAsFastForwardSkip = false;
     bool UseLegacyOpenGlQueue = false;
 };
-
 enum class FrameBackend : u8 {
     OpenGlTexture = 0,
     VulkanImage = 1,
+};
+
+enum class FrameQueueState : u8
+{
+    Free = 0,
+    Rendering = 1,
+    Ready = 2,
+    AcquiredForPresentation = 3,
+    Previous = 4,
+    HistoryReferenced = 5,
 };
 
 struct FrameQueueStats
@@ -65,19 +71,39 @@ struct FrameQueueStats
     u64 DroppedFrameAgeTotalNs = 0;
     u64 DroppedFrameAgeMaxNs = 0;
     u64 DroppedFrameAgeSamples = 0;
+    u64 GenerationMismatchDropped = 0;
+    u64 ReferenceBlockedReuse = 0;
+    u64 StateTransitionFailures = 0;
 };
 
 struct Frame {
-    FrameBackend backend{FrameBackend::OpenGlTexture};
-    GLuint frameTexture{};
+    FrameBackend backend{FrameBackend::VulkanImage};
+    unsigned int frameTexture{};
     u32 width{};
     u32 height{};
     u64 frameId{};
-    EGLSyncKHR renderFence{};
-    EGLSyncKHR presentFence{};
+    u64 frameSerial{};
+    u64 rendererGeneration{};
+    u64 surfaceGeneration{};
+    VkImage image{VK_NULL_HANDLE};
+    VkImageView imageView{VK_NULL_HANDLE};
+    VkImageLayout imageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+    VkSemaphore compositionCompletionSemaphore{VK_NULL_HANDLE};
+    VkFence renderFence{VK_NULL_HANDLE};
+    VkFence presentFence{VK_NULL_HANDLE};
     u64 renderTimelineValue{};
     u64 presentTimelineValue{};
     u64 queuedAtNs{};
+
+    [[nodiscard]] FrameQueueState queueState() const { return state; }
+    [[nodiscard]] u32 historyReferenceCount() const { return historyReferences; }
+    [[nodiscard]] u32 presentationReferenceCount() const { return presentationReferences; }
+
+private:
+    friend class FrameQueue;
+    FrameQueueState state{FrameQueueState::Free};
+    u32 historyReferences{};
+    u32 presentationReferences{};
 };
 
 class FrameQueue
@@ -96,6 +122,9 @@ public:
     void discardRenderedFrame(Frame* frame);
     void requestPresentationResync();
     void requestFastForwardPresentationTransition();
+    void setActiveGenerations(u64 rendererGeneration, u64 surfaceGeneration);
+    void synchronizeHistoryReferences(const std::function<bool(const Frame*)>& isReferenced);
+    void synchronizePresentationCompletion(u64 completedTimelineValue);
     void clear();
     FrameQueueStats takeStatsSnapshotAndReset();
 
@@ -109,6 +138,11 @@ private:
     };
 
     static FrameQueuePolicy sanitizePolicy(FrameQueuePolicy policy);
+    bool transitionFrameLocked(Frame* frame, FrameQueueState expected, FrameQueueState next);
+    bool frameMatchesActiveGenerationsLocked(const Frame* frame) const;
+    void acquireRenderFrameLocked(Frame* frame);
+    void retireFrameLocked(Frame* frame);
+    void discardGenerationMismatchesLocked();
     void rebuildFreeQueueLocked();
     void dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip);
     void updateBacklogStatsLocked();
@@ -123,9 +157,10 @@ private:
     std::deque<Frame*> presentQueue{};
     Frame* previousFrame = nullptr;
     Frame* pendingPresentFrame = nullptr;
+    bool pendingPresentReusesPrevious = false;
     bool suppressPreviousFrameReuse = false;
+    u64 activeRendererGeneration = 0;
+    u64 activeSurfaceGeneration = 0;
     u64 nextFrameId = 1;
     FrameQueueStats stats{};
 };
-
-#endif //FRAMEQUEUE_H
