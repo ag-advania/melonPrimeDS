@@ -1651,5 +1651,5 @@ Sapphire algorithmへ症状別の例外を追加せず、Sapphireと同じstate 
 | S66-5 | `cccab318a` | done | HUD staging timeline completion |
 | S66-6 | `cccab318a` | done | HUD pipeline timeline retire (same commit as S66-5) |
 | S66-7 | `685f290c7` | done | Non-blocking pending swapchain + bounded detach |
-| S66-8 | `6b4fe9b31` | done | lifecycle parity CI tests + plan §40 |
+| S66-8 | `c847af06d` | done | lifecycle parity CI tests + plan §40 |
 
