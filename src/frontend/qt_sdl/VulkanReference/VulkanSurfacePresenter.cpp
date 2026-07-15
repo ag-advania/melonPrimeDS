@@ -1021,6 +1021,14 @@ void VulkanSurfacePresenter::SetDesktopOverlayRecorder(
     desktopOverlayRecorder = recorder;
     desktopOverlayUserData = userData;
 }
+
+void VulkanSurfacePresenter::SetDesktopOverlayTransferRecorder(
+    VulkanDesktopOverlayTransferFn recorder,
+    void* userData)
+{
+    desktopOverlayTransferRecorder = recorder;
+    desktopOverlayTransferUserData = userData;
+}
 #endif
 
 void VulkanSurfacePresenter::detachSurface(int surfaceId)
@@ -3856,6 +3864,15 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
         surfaceState.vertexBuffer,
         surfaceState.vertexBufferSize,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+
+#if defined(MELONPRIME_DS)
+    if (desktopOverlayTransferRecorder != nullptr)
+    {
+        desktopOverlayTransferRecorder(
+            surfaceState.commandBuffer,
+            desktopOverlayTransferUserData);
+    }
+#endif
 
     VkClearValue clearValue{};
     clearValue.color.float32[0] = 0.0f;

@@ -171,8 +171,13 @@ public:
 
     using VulkanDesktopOverlayRecorderFn =
         void (*)(const VulkanDesktopOverlayTarget& target, void* userData);
+    using VulkanDesktopOverlayTransferFn =
+        void (*)(VkCommandBuffer commandBuffer, void* userData);
 
     void SetDesktopOverlayRecorder(VulkanDesktopOverlayRecorderFn recorder, void* userData);
+    void SetDesktopOverlayTransferRecorder(
+        VulkanDesktopOverlayTransferFn recorder,
+        void* userData);
     // MELONPRIME_DESKTOP_ADAPTER_END
 #endif
 
@@ -482,6 +487,8 @@ private:
 #if defined(MELONPRIME_DS)
     VulkanDesktopOverlayRecorderFn desktopOverlayRecorder = nullptr;
     void* desktopOverlayUserData = nullptr;
+    VulkanDesktopOverlayTransferFn desktopOverlayTransferRecorder = nullptr;
+    void* desktopOverlayTransferUserData = nullptr;
 #endif
 };
 

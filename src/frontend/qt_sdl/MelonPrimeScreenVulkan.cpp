@@ -105,6 +105,7 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     if (presenter)
     {
         presenter->SetDesktopOverlayRecorder(nullptr, nullptr);
+        presenter->SetDesktopOverlayTransferRecorder(nullptr, nullptr);
         if (sessionPresenterRegistered)
             emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
         sessionPresenterRegistered = false;
@@ -167,6 +168,9 @@ bool ScreenPanelVulkan::initVulkan()
     }
     presenter->SetDesktopOverlayRecorder(
         MelonPrimeVulkanOverlayRenderer::RecordCallback,
+        &overlayRenderer);
+    presenter->SetDesktopOverlayTransferRecorder(
+        MelonPrimeVulkanOverlayRenderer::RecordTransferCallback,
         &overlayRenderer);
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info,
         "[MelonPrime] Vulkan frontend session attached to desktop surface generation %llu\n",

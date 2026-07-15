@@ -32,6 +32,8 @@ public:
 
     bool hasPendingComposite() const noexcept { return compositeRequested; }
 
+    void recordTransfer(VkCommandBuffer commandBuffer);
+    static void RecordTransferCallback(VkCommandBuffer commandBuffer, void* userData);
     void record(const MelonDSAndroid::VulkanSurfacePresenter::VulkanDesktopOverlayTarget& target);
     static void RecordCallback(
         const MelonDSAndroid::VulkanSurfacePresenter::VulkanDesktopOverlayTarget& target,
@@ -48,10 +50,10 @@ private:
     bool ensurePipeline(VkRenderPass renderPass, VkFormat format);
     void destroyPipeline();
     bool ensureStagingCapacity(VkDeviceSize required);
-    void waitForLastOverlayTransfer();
     void destroyStagingBuffer();
     bool createMappedStagingBuffer(VkDeviceSize capacity);
-    bool uploadPendingRegion();
+    bool stagePendingRegion();
+    bool recordPendingTransfer(VkCommandBuffer commandBuffer);
     bool createTexture(melonDS::u32 width, melonDS::u32 height);
     void destroyTexture();
     bool createTransferResources();
@@ -77,10 +79,7 @@ private:
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
     void* stagingMapped = nullptr;
     VkDeviceSize stagingCapacity = 0;
-
-    VkCommandPool transferCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer transferCommandBuffer = VK_NULL_HANDLE;
-    VkFence transferFence = VK_NULL_HANDLE;
+    VkDeviceSize pendingUploadBytes = 0;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
