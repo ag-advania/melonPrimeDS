@@ -57,6 +57,12 @@ struct SoftPackedScreenStats
     u32 ProtectedBlackPixels = 0;
 };
 
+enum class PhysicalScreen : u8
+{
+    Top,
+    Bottom,
+};
+
 struct SoftPackedFrameSnapshot
 {
     static constexpr size_t kScreenWidth =
@@ -88,6 +94,8 @@ struct SoftPackedFrameSnapshot
     std::array<u32, kPixelCount> packedBottomControl{};
     std::array<u32, kLineCount> packedBottomLineMeta{};
     std::array<u32, kPixelCount> capture3dSourceDsFrame{};
+    Capture3DSourceSnapshot topCapture3dSource{};
+    Capture3DSourceSnapshot bottomCapture3dSource{};
     std::array<u8, kLineCount> captureLineUses3dMask{};
     std::array<u8, kLineCount> captureFallbackLines{};
     std::array<u32, kPixelCount> comp4TopPlaceholder{};
@@ -118,12 +126,45 @@ struct SoftPackedFrameSnapshot
         packedBottomControl.fill(0);
         packedBottomLineMeta.fill(0);
         capture3dSourceDsFrame.fill(0);
+        topCapture3dSource.clear();
+        bottomCapture3dSource.clear();
         captureLineUses3dMask.fill(0);
         captureFallbackLines.fill(0);
         comp4TopPlaceholder.fill(0);
         comp4BottomPlaceholder.fill(0);
         topScreenStats = {};
         bottomScreenStats = {};
+    }
+};
+
+struct Capture3DSourceSnapshot
+{
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> pixels{};
+
+    bool valid = false;
+    PhysicalScreen physicalScreen = PhysicalScreen::Top;
+    u32 engine = UINT32_MAX;
+    u64 frameSerial = 0;
+    u64 rendererGeneration = 0;
+    bool hardwareScreenSwap = false;
+    bool renderScreenSwapAt3D = false;
+    u32 captureMode = 0;
+    u32 sourceA = 0;
+    u32 sourceB = 0;
+
+    void clear() noexcept
+    {
+        pixels.fill(0);
+        valid = false;
+        physicalScreen = PhysicalScreen::Top;
+        engine = UINT32_MAX;
+        frameSerial = 0;
+        rendererGeneration = 0;
+        hardwareScreenSwap = false;
+        renderScreenSwapAt3D = false;
+        captureMode = 0;
+        sourceA = 0;
+        sourceB = 0;
     }
 };
 
