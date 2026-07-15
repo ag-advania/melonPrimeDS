@@ -4,9 +4,7 @@
 #error "MelonPrimeVulkanFrontendSession requires the Vulkan build gate"
 #endif
 
-#include <array>
 #include <mutex>
-#include <unordered_map>
 
 #include "types.h"
 #include "VulkanReference/FrameQueue.h"
@@ -16,7 +14,6 @@
 namespace melonDS
 {
 class NDS;
-class GPU;
 class VulkanRenderer3D;
 }
 
@@ -25,29 +22,6 @@ namespace MelonDSAndroid
 class VulkanSurfacePresenter;
 struct VulkanSurfaceOverlay;
 }
-
-struct MelonPrimeStructuredSnapshot
-{
-    static constexpr size_t PixelCount = 256u * 192u;
-    static constexpr size_t LineCount = 192u;
-
-    u64 generation = 0;
-    u64 frameSerial = 0;
-    bool screenSwap = false;
-    bool complete = false;
-    std::array<u32, PixelCount> topPlane0{};
-    std::array<u32, PixelCount> topPlane1{};
-    std::array<u32, PixelCount> topControl{};
-    std::array<u32, PixelCount> topNativeFinal{};
-    std::array<u32, LineCount> topLineMeta{};
-    std::array<u32, LineCount> topLineState{};
-    std::array<u32, PixelCount> bottomPlane0{};
-    std::array<u32, PixelCount> bottomPlane1{};
-    std::array<u32, PixelCount> bottomControl{};
-    std::array<u32, PixelCount> bottomNativeFinal{};
-    std::array<u32, LineCount> bottomLineMeta{};
-    std::array<u32, LineCount> bottomLineState{};
-};
 
 class MelonPrimeVulkanFrontendSession
 {
@@ -65,17 +39,9 @@ public:
     void beginGeneration(u64 generation);
     void beginSurfaceGeneration(u64 generation);
 
-    static bool captureCompletedSnapshot(
-        const melonDS::GPU& gpu,
-        u64 generation,
-        MelonPrimeStructuredSnapshot& snapshot);
-    bool submitCompletedFrame(melonDS::VulkanRenderer3D& renderer3D);
-
     bool beginProducerFrame(melonDS::VulkanRenderer3D& renderer3D);
     bool completeProducerFrame(melonDS::VulkanRenderer3D& renderer3D);
     void cancelProducerFrame();
-
-    MelonPrimeStructuredSnapshot& producerStructuredSnapshot() { return structuredSnapshot; }
 
     Frame* acquirePresentFrame();
     bool presentAcquiredFrame(
@@ -93,7 +59,6 @@ public:
     void unregisterPresenter(MelonDSAndroid::VulkanSurfacePresenter* presenter);
 
     [[nodiscard]] bool isInitialized() const;
-    [[nodiscard]] bool hasCompleteStructuredSnapshot() const;
     [[nodiscard]] bool hasCompositedFrame() const;
     [[nodiscard]] bool hasPresentedFrame() const;
     [[nodiscard]] bool hasRegisteredPresenter() const;
@@ -102,15 +67,6 @@ public:
     [[nodiscard]] u64 generation() const;
 
 private:
-    static MelonDSAndroid::SoftPackedScreenStats collectStats(
-        const std::array<u32, MelonPrimeStructuredSnapshot::PixelCount>& plane0,
-        const std::array<u32, MelonPrimeStructuredSnapshot::PixelCount>& plane1,
-        const std::array<u32, MelonPrimeStructuredSnapshot::PixelCount>& control,
-        const std::array<u32, MelonPrimeStructuredSnapshot::LineCount>& lineMeta);
-    static void buildSoftPackedSnapshot(
-        const MelonPrimeStructuredSnapshot& source,
-        u64 frameId,
-        MelonDSAndroid::SoftPackedFrameSnapshot& destination);
     static FrameQueuePolicy queuePolicy();
     void clearProducerState();
     void synchronizeFrameReferencesLocked();
@@ -118,21 +74,17 @@ private:
     bool latchAndPrepareProducerFrameLocked(
         Frame* frame,
         melonDS::VulkanRenderer3D& renderer3D,
-        const melonDS::Vulkan3DFrameView& frameView,
-        bool composeOnProducer);
+        const melonDS::Vulkan3DFrameView& frameView);
 
     std::mutex presentationCallMutex;
     mutable std::mutex stateMutex;
     melonDS::NDS* nds = nullptr;
     MelonDSAndroid::VulkanOutput output;
     FrameQueue frameQueue;
-    std::unordered_map<Frame*, MelonDSAndroid::VulkanCompositionInputs> frameInputs;
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
     MelonDSAndroid::VulkanSurfacePresenter* stagedPresenter = nullptr;
-    MelonPrimeStructuredSnapshot structuredSnapshot{};
     MelonDSAndroid::SapphireVulkanFrameLatch frameLatch;
     Frame* pendingProducerFrame = nullptr;
-    bool hasCompleteStructuredSnapshot_ = false;
     u64 activeGeneration = 0;
     u64 activeSurfaceGeneration = 0;
     u64 lastSubmittedSerial = 0;
