@@ -54,8 +54,6 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const override;
-
     static constexpr size_t kStructuredScreenWidth = 256u;
     static constexpr size_t kStructuredScreenHeight = 192u;
     static constexpr size_t kStructuredPixelCount = kStructuredScreenWidth * kStructuredScreenHeight;
@@ -89,16 +87,9 @@ private:
     alignas(64) u32 StructuredPlane1[2][256];
     alignas(64) u32 StructuredControl[2][256];
     alignas(64) u32 StructuredNativeFinal[2][256];
-    std::array<SapphireStructured2DFrameSnapshot, 2> StructuredFrames{};
-    std::array<u8, SapphireStructured2DFrameSnapshot::EngineCount
-        * SapphireStructured2DFrameSnapshot::LineCount> StructuredLineReceived{};
-    std::size_t StructuredWriteFrame = 0;
-    std::size_t StructuredPublishedFrame = 1;
-    bool HasPublishedStructuredFrame = false;
+    alignas(64) std::array<u32, kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount>
+        StructuredVulkan2DPlanes{};
 
-    void BeginStructured2DFrame(u64 frameSerial, u64 generation);
-    void SubmitStructured2DLine(const SapphireStructured2DLine& line);
-    void EndStructured2DFrame(u64 frameSerial, u64 generation, bool screenSwap);
     void WriteAcceleratedPackedRow(
         u32* dstRow,
         u32 engine,
@@ -110,8 +101,6 @@ private:
     size_t ScreenIndexForEngine(u32 engine) const noexcept;
     void UpdateStructuredVulkan2DLine(u32 engine, u32 line);
 
-    alignas(64) std::array<u32, kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount>
-        StructuredVulkan2DPlanes{};
     SapphireGPU2D::SoftRenderer::DebugCaptureStats SapphireDebugCaptureStats{};
     bool HasLastDebugCapture3dSource = false;
     alignas(8) u32 LastDebugCapture3dSource[kStructuredPixelCount]{};

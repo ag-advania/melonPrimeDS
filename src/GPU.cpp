@@ -391,11 +391,6 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-bool GPU::CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const
-{
-    return Rend != nullptr && Rend->CopyStructured2DFrameSnapshot(snapshot);
-}
-
 SapphireGPU2D::SoftRenderer& GPU::GetSapphireRenderer2D() noexcept
 {
     return *SapphireVulkan2DAccess;

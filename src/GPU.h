@@ -240,7 +240,6 @@ public:
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const;
     [[nodiscard]] SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() noexcept;
     [[nodiscard]] const SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() const noexcept;
     [[nodiscard]] SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() noexcept;
@@ -1083,12 +1082,6 @@ public:
     // a renderer may render to RAM buffers, or to something else (ie. OpenGL)
     // if the renderer uses RAM buffers, they should be 32-bit BGRA, 256x192 for each screen
     virtual bool GetFramebuffers(void** top, void** bottom) = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    virtual bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot&) const
-    {
-        return false;
-    }
-#endif
     virtual RendererOutput GetOutput()
     {
         void* top = nullptr;

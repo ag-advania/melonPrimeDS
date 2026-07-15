@@ -73,17 +73,11 @@ void SoftRenderer::Reset()
     memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
     memset(StructuredControl, 0, sizeof(StructuredControl));
     memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
-    for (SapphireStructured2DFrameSnapshot& frame : StructuredFrames)
-    {
-        frame.FrameSerial = 0;
-        frame.Generation = 0;
-        frame.ScreenSwap = false;
-        frame.Complete = false;
-    }
-    StructuredLineReceived.fill(0);
-    StructuredWriteFrame = 0;
-    StructuredPublishedFrame = 1;
-    HasPublishedStructuredFrame = false;
+    StructuredVulkan2DPlanes.fill(0);
+    HasLastDebugCapture3dSource = false;
+    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
+    CaptureLineUses3d.fill(0);
+    SapphireDebugCaptureStats = {};
 #endif
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -161,10 +155,12 @@ void SoftRenderer::DrawScanline(u32 line)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         const bool structuredSourceActive = GetRenderer3D().UsesStructured2DMetadata();
-        const u64 structuredFrameSerial = GPU.VulkanFrameSerial;
-        const u64 structuredGeneration = GPU.GPU3D.GetCurrentRendererGeneration();
         if (structuredSourceActive && line == 0)
-            BeginStructured2DFrame(structuredFrameSerial, structuredGeneration);
+        {
+            HasLastDebugCapture3dSource = false;
+            std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
+            CaptureLineUses3d.fill(0);
+        }
 #endif
         // retrieve 3D output
         Output3D = GetRenderer3D().GetLine(line);
@@ -210,57 +206,20 @@ void SoftRenderer::DrawScanline(u32 line)
         {
             for (u32 engine = 0; engine < 2; ++engine)
             {
+                if (!accelerated)
+                    continue;
+
                 const GPU2D& engine2D = engine == 0 ? GPU.GPU2D_A : GPU.GPU2D_B;
-                const u32 displayMode = (engine2D.DispCnt >> 16u) & (engine == 0 ? 0x3u : 0x1u);
-                const bool regularStructuredLine = displayMode == 1u
-                    && GPU.ScreensEnabled
-                    && engine2D.Enabled
-                    && !engine2D.ForcedBlank;
-                if (!regularStructuredLine)
-                {
-                    if (!GPU.ScreensEnabled)
-                    {
-                        std::fill_n(StructuredNativeFinal[engine], 256u, 0x20000000u);
-                    }
-                    else
-                    {
-                        const u32* nativeOutput = engine == 0 ? dstA : dstB;
-                        memcpy(
-                            StructuredNativeFinal[engine],
-                            nativeOutput,
-                            sizeof(StructuredNativeFinal[engine]));
-                    }
-                }
-                SapphireStructured2DLine packet{};
-                packet.Plane0 = StructuredPlane0[engine];
-                packet.Plane1 = StructuredPlane1[engine];
-                packet.Control = StructuredControl[engine];
-                packet.NativeFinal = StructuredNativeFinal[engine];
-                packet.Line = line;
-                packet.Engine = engine;
-                packet.DispCnt = engine2D.DispCnt;
-                packet.MasterBrightness = engine == 0
-                    ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
-                packet.EngineEnabled = engine2D.Enabled;
-                packet.ForcedBlank = engine2D.ForcedBlank;
-                packet.ScreensEnabled = GPU.ScreensEnabled;
-                SubmitStructured2DLine(packet);
-                if (accelerated)
-                {
-                    UpdateStructuredVulkan2DLine(engine, line);
-                    WriteAcceleratedPackedRow(
-                        engine == 0 ? dstA : dstB,
-                        engine,
-                        line,
-                        packet.MasterBrightness,
-                        packet.DispCnt,
-                        packet.ForcedBlank,
-                        packet.EngineEnabled);
-                }
+                UpdateStructuredVulkan2DLine(engine, line);
+                WriteAcceleratedPackedRow(
+                    engine == 0 ? dstA : dstB,
+                    engine,
+                    line,
+                    engine == 0 ? GPU.MasterBrightnessA : GPU.MasterBrightnessB,
+                    engine2D.DispCnt,
+                    engine2D.ForcedBlank,
+                    engine2D.Enabled);
             }
-            if (line == 191)
-                EndStructured2DFrame(
-                    structuredFrameSerial, structuredGeneration, GPU.ScreenSwap);
         }
 #endif
 
@@ -309,96 +268,6 @@ void SoftRenderer::DrawScanline(u32 line)
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-void SoftRenderer::BeginStructured2DFrame(u64 frameSerial, u64 generation)
-{
-    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
-    frame.FrameSerial = frameSerial;
-    frame.Generation = generation;
-    frame.ScreenSwap = false;
-    frame.Complete = false;
-    StructuredLineReceived.fill(0);
-    HasLastDebugCapture3dSource = false;
-    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
-    CaptureLineUses3d.fill(0);
-}
-
-void SoftRenderer::SubmitStructured2DLine(const SapphireStructured2DLine& line)
-{
-    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
-    if (frame.FrameSerial == 0
-        || line.Engine >= SapphireStructured2DFrameSnapshot::EngineCount
-        || line.Line >= SapphireStructured2DFrameSnapshot::LineCount
-        || line.Plane0 == nullptr
-        || line.Plane1 == nullptr
-        || line.Control == nullptr
-        || line.NativeFinal == nullptr)
-    {
-        return;
-    }
-
-    const size_t lineIndex = static_cast<size_t>(line.Engine)
-        * SapphireStructured2DFrameSnapshot::LineCount + line.Line;
-    const size_t pixelOffset = lineIndex * 256u;
-    std::memcpy(frame.Plane0.data() + pixelOffset, line.Plane0, 256u * sizeof(u32));
-    std::memcpy(frame.Plane1.data() + pixelOffset, line.Plane1, 256u * sizeof(u32));
-    std::memcpy(frame.Control.data() + pixelOffset, line.Control, 256u * sizeof(u32));
-    std::memcpy(frame.NativeFinal.data() + pixelOffset, line.NativeFinal, 256u * sizeof(u32));
-    frame.LineMeta[lineIndex] = line.DispCnt;
-    frame.LineState[lineIndex] =
-        static_cast<u32>(line.MasterBrightness)
-        | (line.ScreensEnabled ? (1u << 16u) : 0u)
-        | (line.EngineEnabled ? (1u << 17u) : 0u)
-        | (line.ForcedBlank ? (1u << 18u) : 0u);
-    StructuredLineReceived[lineIndex] = 1;
-}
-
-void SoftRenderer::EndStructured2DFrame(
-    u64 frameSerial, u64 generation, bool screenSwap)
-{
-    SapphireStructured2DFrameSnapshot& frame = StructuredFrames[StructuredWriteFrame];
-    bool complete = frameSerial != 0
-        && generation != 0
-        && frame.FrameSerial == frameSerial
-        && frame.Generation == generation;
-    if (complete)
-    {
-        for (u8 received : StructuredLineReceived)
-        {
-            if (!received)
-            {
-                complete = false;
-                break;
-            }
-        }
-    }
-
-    frame.Complete = complete;
-    if (!complete)
-        return;
-
-    frame.ScreenSwap = screenSwap;
-    StructuredPublishedFrame = StructuredWriteFrame;
-    StructuredWriteFrame ^= 1u;
-    HasPublishedStructuredFrame = true;
-}
-
-bool SoftRenderer::CopyStructured2DFrameSnapshot(
-    SapphireStructured2DFrameSnapshot& snapshot) const
-{
-    if (!HasPublishedStructuredFrame)
-        return false;
-
-    const SapphireStructured2DFrameSnapshot& published =
-        StructuredFrames[StructuredPublishedFrame];
-    if (!published.Complete
-        || published.FrameSerial == 0
-        || published.Generation == 0)
-        return false;
-
-    snapshot = published;
-    return true;
-}
-
 size_t SoftRenderer::ScreenIndexForEngine(u32 engine) const noexcept
 {
     if (GPU.ScreenSwap)
