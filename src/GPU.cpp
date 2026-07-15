@@ -414,7 +414,10 @@ const SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() const noexcep
 void GPU::RefreshSapphireVulkanBindings() noexcept
 {
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+    {
         softRenderer->SyncSapphireFramebufferBindings();
+        (void)softRenderer->PublishSapphire2DFrame();
+    }
 }
 #endif
 
@@ -1273,7 +1276,11 @@ void GPU::FinishFrame(u32 lines) noexcept
 {
     Rend->SwapBuffers();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    RefreshSapphireVulkanBindings();
+    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+    {
+        softRenderer->SyncSapphireFramebufferBindings();
+        (void)softRenderer->PublishSapphire2DFrame();
+    }
 #endif
 
     TotalScanlines = lines;

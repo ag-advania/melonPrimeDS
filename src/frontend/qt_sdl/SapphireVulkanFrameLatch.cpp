@@ -926,7 +926,9 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     const SapphirePublished2DFrame& published,
     bool useStructuredVulkan2D)
 {
-    if (frame == nullptr || nds_ == nullptr || published.frontBuffer < 0 || published.frontBuffer > 1)
+    if (frame == nullptr || nds_ == nullptr || !published.valid)
+        return false;
+    if (published.frontBuffer < 0 || published.frontBuffer > 1)
         return false;
 
     const int frontBuffer = published.frontBuffer;

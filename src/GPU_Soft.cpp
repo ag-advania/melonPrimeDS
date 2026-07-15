@@ -308,6 +308,30 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
 #endif
 
     GPU.Published2DFrame = published;
+    GPU.Published2DFrame.valid = true;
+    GPU.Published2DFrame.frameSerial = GPU.VulkanFrameSerial;
+    if (GPU.GPU3D.HasCurrentRenderer())
+        GPU.Published2DFrame.rendererGeneration = GPU.GPU3D.GetCurrentRendererGeneration();
+
+#ifndef NDEBUG
+    static int publishLogBudget = 120;
+    if (publishLogBudget > 0)
+    {
+        --publishLogBudget;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Debug,
+            "[Sapphire2DPublish] reason=finishFrame frontBuffer=%d hardwareSwap=%d "
+            "render3DSwap=%d frameSerial=%llu rendererPresent=%d structured=%d generation=%llu\n",
+            published.frontBuffer,
+            published.hardwareScreenSwap ? 1 : 0,
+            published.renderScreenSwapAt3D ? 1 : 0,
+            static_cast<unsigned long long>(GPU.Published2DFrame.frameSerial),
+            GPU.GPU3D.HasCurrentRenderer() ? 1 : 0,
+            structuredReady ? 1 : 0,
+            static_cast<unsigned long long>(GPU.Published2DFrame.publicationGeneration));
+    }
+#endif
+
     return true;
 }
 #endif

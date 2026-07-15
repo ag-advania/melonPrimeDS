@@ -34,4 +34,7 @@ struct SapphirePublished2DFrame
 
     melonDS::u64 emulatedFrameSerial = 0;
     melonDS::u64 publicationGeneration = 0;
+    melonDS::u64 rendererGeneration = 0;
+    melonDS::u64 frameSerial = 0;
+    bool valid = false;
 };

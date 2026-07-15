@@ -1398,8 +1398,8 @@ Sapphireの実装を最大限そのまま利用できる。
 
 | Phase | Commit | Status | Notes |
 |---|---|---|---|
-| S64-1 | — | in progress | Sync/Publish分離、HasCurrentRenderer guard |
-| S64-2 | — | pending | FinishFrame publication、valid contract |
+| S64-1 | `668fb2e4c` | done | Sync/Publish分離、HasCurrentRenderer guard |
+| S64-2 | — | in progress | FinishFrame publication、valid contract |
 | S64-3 | — | pending | renderer swap時pointer invalidate |
 | S64-4 | — | pending | parity checker分岐修正 |
 | S64-5 | — | pending | vendor generator |
