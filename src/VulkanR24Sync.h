@@ -221,6 +221,34 @@ inline void HostWriteToShaderRead(
         0, nullptr);
 }
 
+inline void HostWriteToTransferRead(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize size)
+{
+    if (commandBuffer == VK_NULL_HANDLE || buffer == VK_NULL_HANDLE || size == 0)
+        return;
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = buffer;
+    barrier.offset = 0;
+    barrier.size = size;
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        1, &barrier,
+        0, nullptr);
+}
+
 inline void TransferWriteToShaderRead(
     VkCommandBuffer commandBuffer,
     VkImage image,
