@@ -25,6 +25,9 @@
 #include "GPU_Soft.h"
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DAdapter.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeSapphireGpu2DState.h"
+#endif
 #endif
 
 namespace melonDS
@@ -87,6 +90,10 @@ GPU::GPU(melonDS::NDS& nds, std::unique_ptr<Renderer>&& renderer) noexcept :
         MakeEventThunk(GPU, FinishFrame)
     });
     NDS.RegisterEventFuncs(Event_DisplayFIFO, this, {MakeEventThunk(GPU, DisplayFIFO)});
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    Sapphire2D = std::make_unique<SapphireGpu2DState>(*this);
+#endif
 
     SetRenderer(std::move(renderer));
 }
@@ -202,6 +209,10 @@ void GPU::Reset() noexcept
     GPU2D_A.Reset();
     GPU2D_B.Reset();
     GPU3D.Reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (Sapphire2D)
+        Sapphire2D->Reset();
+#endif
 
     Rend->Reset();
 
@@ -382,11 +393,12 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     LastRendererInitSucceeded = !rendererRequested || good;
-    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+    if (Sapphire2D)
     {
         SapphireVulkan2DAccess =
-            std::make_unique<SapphireGPU2D::SoftRenderer>(softRenderer->GetSapphire2DRenderer());
-        softRenderer->PublishCompletedSapphireFrontBuffer();
+            std::make_unique<SapphireGPU2D::SoftRenderer>(Sapphire2D->Renderer);
+        if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+            softRenderer->PublishCompletedSapphireFrontBuffer();
     }
     else
     {
@@ -418,6 +430,16 @@ SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() noexcept
 const SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() const noexcept
 {
     return SapphireVulkan2DAccess.get();
+}
+
+SapphireGpu2DState* GPU::TryGetSapphireGpu2DState() noexcept
+{
+    return Sapphire2D.get();
+}
+
+const SapphireGpu2DState* GPU::TryGetSapphireGpu2DState() const noexcept
+{
+    return Sapphire2D.get();
 }
 
 void GPU::RefreshSapphireVulkanBindings() noexcept
@@ -1251,6 +1273,13 @@ void GPU::StartHBlank(u32 line) noexcept
 
     if (VCount < 192)
     {
+        if (line == 0)
+        {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            MelonPrimeSapphireGpu2DAdapter::ForwardVBlankEnd(*this);
+#endif
+        }
+
         // draw
         // note: this should start 48 cycles after the scanline start
         if (line < 192)
@@ -1418,6 +1447,9 @@ void GPU::StartScanline(u32 line) noexcept
 
         GPU3D.VBlank();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(*this);
+#endif
         Rend->VBlank();
 
         if (CaptureEnable)

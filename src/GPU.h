@@ -215,6 +215,10 @@ struct VRAMTrackingSet
 
 class Renderer;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+class SapphireGpu2DState;
+#endif
+
 class GPU
 {
 public:
@@ -245,6 +249,8 @@ public:
     [[nodiscard]] const SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() const noexcept;
     [[nodiscard]] SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() noexcept;
     [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
+    [[nodiscard]] SapphireGpu2DState* TryGetSapphireGpu2DState() noexcept;
+    [[nodiscard]] const SapphireGpu2DState* TryGetSapphireGpu2DState() const noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
     void InvalidateSapphirePublication() noexcept;
     [[nodiscard]] const SapphirePublished2DFrame& GetPublished2DFrame() const noexcept
@@ -1011,6 +1017,7 @@ private:
     std::unique_ptr<Renderer> Rend = nullptr;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool LastRendererInitSucceeded = true;
+    std::unique_ptr<SapphireGpu2DState> Sapphire2D;
     std::unique_ptr<SapphireGPU2D::SoftRenderer> SapphireVulkan2DAccess;
 #endif
 
