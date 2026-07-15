@@ -210,7 +210,6 @@ void SoftRenderer::DrawScanline(u32 line)
                     continue;
 
                 const GPU2D& engine2D = engine == 0 ? GPU.GPU2D_A : GPU.GPU2D_B;
-                UpdateStructuredVulkan2DLine(engine, line);
                 WriteAcceleratedPackedRow(
                     engine == 0 ? dstA : dstB,
                     engine,
@@ -275,27 +274,6 @@ size_t SoftRenderer::ScreenIndexForEngine(u32 engine) const noexcept
     return engine == 0 ? 1u : 0u;
 }
 
-void SoftRenderer::UpdateStructuredVulkan2DLine(u32 engine, u32 line)
-{
-    const size_t screenIndex = ScreenIndexForEngine(engine);
-    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
-    const size_t screenBase =
-        screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
-    std::memcpy(
-        StructuredVulkan2DPlanes.data() + screenBase + rowBase,
-        StructuredPlane0[engine],
-        kStructuredScreenWidth * sizeof(u32));
-    std::memcpy(
-        StructuredVulkan2DPlanes.data() + screenBase + kStructuredPixelCount + rowBase,
-        StructuredPlane1[engine],
-        kStructuredScreenWidth * sizeof(u32));
-    std::memcpy(
-        StructuredVulkan2DPlanes.data() + screenBase + (kStructuredPixelCount * 2u) + rowBase,
-        StructuredControl[engine],
-        kStructuredScreenWidth * sizeof(u32));
-    SapphireDebugCaptureStats.StructuredCopyLines++;
-}
-
 void SoftRenderer::WriteAcceleratedPackedRow(
     u32* dstRow,
     u32 engine,
@@ -312,14 +290,20 @@ void SoftRenderer::WriteAcceleratedPackedRow(
         return;
     }
 
-    std::memcpy(dstRow, StructuredPlane0[engine], kStructuredScreenWidth * sizeof(u32));
+    const size_t screenIndex = ScreenIndexForEngine(engine);
+    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    const size_t screenBase = screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    std::memcpy(
+        dstRow,
+        StructuredVulkan2DPlanes.data() + screenBase + rowBase,
+        kStructuredScreenWidth * sizeof(u32));
     std::memcpy(
         dstRow + kStructuredScreenWidth,
-        StructuredPlane1[engine],
+        StructuredVulkan2DPlanes.data() + screenBase + kStructuredPixelCount + rowBase,
         kStructuredScreenWidth * sizeof(u32));
     std::memcpy(
         dstRow + (kStructuredScreenWidth * 2u),
-        StructuredControl[engine],
+        StructuredVulkan2DPlanes.data() + screenBase + (kStructuredPixelCount * 2u) + rowBase,
         kStructuredScreenWidth * sizeof(u32));
 
     const u32 dispmode = (dispCnt >> 16u) & (engine == 0 ? 0x3u : 0x1u);
@@ -333,17 +317,6 @@ void SoftRenderer::WriteAcceleratedPackedRow(
     dstRow[kPackedStride - 1u] = meta;
 }
 
-const u32* SoftRenderer::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept
-{
-    if (!GetRenderer3D().UsesStructured2DMetadata() || plane >= kStructuredPlaneCount)
-        return nullptr;
-
-    const size_t screenIndex = topScreen ? 0u : 1u;
-    const size_t offset =
-        ((screenIndex * kStructuredPlaneCount) + static_cast<size_t>(plane)) * kStructuredPixelCount;
-    return StructuredVulkan2DPlanes.data() + offset;
-}
-
 const u32* SoftRenderer::GetSapphireDebugCapture3dSource() const noexcept
 {
     return HasLastDebugCapture3dSource ? LastDebugCapture3dSource : nullptr;
@@ -353,15 +326,6 @@ const std::array<u8, SoftRenderer::kStructuredScreenHeight>&
 SoftRenderer::GetSapphireCaptureLineUses3dMask() const noexcept
 {
     return CaptureLineUses3d;
-}
-
-void SoftRenderer::ClearStructuredVulkan2DState() noexcept
-{
-    SapphireDebugCaptureStats = {};
-    StructuredVulkan2DPlanes.fill(0);
-    HasLastDebugCapture3dSource = false;
-    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
-    CaptureLineUses3d.fill(0);
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
@@ -493,6 +457,15 @@ void SoftRenderer::DoCapture(u32 line)
         width = 256;
         height = 64 * sz;
     }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (GetRenderer3D().UsesStructured2DMetadata())
+    {
+        if (line < height)
+            DoCaptureStructured(line, width, line);
+        return;
+    }
+#endif
 
     if (line >= height)
         return;

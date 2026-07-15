@@ -7,6 +7,7 @@
 #include <mutex>
 
 #include "types.h"
+#include "GPU3D_Vulkan.h"
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
 #include "SapphireVulkanFrameLatch.h"

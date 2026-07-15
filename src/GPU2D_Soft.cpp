@@ -18,9 +18,34 @@
 
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "VulkanDesktopCompat.h"
+
+#endif
 
 namespace melonDS
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+u32 StructuredVulkan2DSourceClass(u32 value)
+{
+    const u32 flags = value >> 24u;
+    if (flags == 0u || flags == 0x20u)
+        return 0u;
+    if ((flags & 0xC0u) == 0x40u)
+        return 0u;
+    if ((flags & 0x80u) != 0u || (flags & 0x10u) != 0u)
+        return 0x10u;
+    return flags & 0x0Fu;
+}
+
+bool StructuredVulkan2DHas3DSlot(u32 value)
+{
+    return (value >> 24u & 0xC0u) == 0x40u;
+}
+} // namespace
+#endif
 
 SoftRenderer2D::SoftRenderer2D(melonDS::GPU2D& gpu2D, SoftRenderer& parent)
     : Renderer2D(gpu2D), Parent(parent)
@@ -178,7 +203,16 @@ void SoftRenderer2D::DrawScanline(u32 line)
     }
 
     // render BG layers and sprites
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool useStructuredVulkan2D = Parent.UseStructuredVulkan2D();
+    if (useStructuredVulkan2D)
+        Parent.BeginStructuredVulkan2DLine(GPU2D.Num, line);
+#endif
     DrawScanline_BGOBJ(line, dst);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (useStructuredVulkan2D && GPU2D.Num == 0 && GPU.CaptureEnable)
+        Parent.SaveStructuredVulkan2DCaptureSourceLine(line);
+#endif
 }
 
 #define DoDrawBG(type, line, num) \
@@ -325,6 +359,12 @@ void SoftRenderer2D::DrawScanlineBGMode7(u32 line)
 
 void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool useStructuredVulkan2D = Parent.UseStructuredVulkan2D();
+#else
+    const bool useStructuredVulkan2D = false;
+#endif
+
     u64 backdrop;
     if (GPU2D.Num)
         backdrop = *(u16*)&GPU.Palette[0x400];
@@ -340,9 +380,19 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         backdrop |= (backdrop << 32);
 
         for (int i = 0; i < 256; i+=2)
+        {
             *(u64*)&BGOBJLine[i] = backdrop;
-        for (int i = 256; i < 512; i+=2)
-            *(u64*)&BGOBJLine[i] = 0;
+            if (useStructuredVulkan2D)
+            {
+                *(u64*)&BGOBJLine[256 + i] = 0;
+                *(u64*)&BGOBJLine[512 + i] = 0;
+            }
+        }
+        if (!useStructuredVulkan2D)
+        {
+            for (int i = 256; i < 512; i+=2)
+                *(u64*)&BGOBJLine[i] = 0;
+        }
     }
 
     if (GPU2D.DispCnt & 0xE000)
@@ -353,7 +403,14 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
     ApplySpriteMosaicX();
     CurBGXMosaicTable = MosaicTable[GPU2D.BGMosaicSize[0]].data();
 
-    switch (GPU2D.DispCnt & 0x7)
+    u32 bgMode = GPU2D.DispCnt & 0x7;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const int forcedBgMode = MelonDSAndroid::getRenderer2DDebugForcedMode(GPU2D.Num);
+    if (forcedBgMode >= 0 && forcedBgMode <= 6)
+        bgMode = static_cast<u32>(forcedBgMode);
+#endif
+
+    switch (bgMode)
     {
         case 0: DrawScanlineBGMode<0>(line); break;
         case 1: DrawScanlineBGMode<1>(line); break;
@@ -365,8 +422,180 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         case 7: DrawScanlineBGMode7(line); break;
     }
 
-    // color special effects
-    // can likely be optimized
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (useStructuredVulkan2D && GPU.GPU3D.HasCurrentRenderer())
+    {
+        const u32 displayMode =
+            (GPU2D.DispCnt >> 16u) & (GPU2D.Num ? 0x1u : 0x3u);
+        const bool captureBacked3DLine =
+            GPU2D.Num == 1
+            && displayMode == 1u
+            && line < Parent.CaptureLineUses3d.size()
+            && Parent.CaptureLineUses3d[line] != 0u;
+        u32 captureBacked3DSourceClass = 0u;
+        if (captureBacked3DLine)
+        {
+            Parent.SapphireDebugCaptureStats.CaptureBacked3DLines++;
+            u32 sourceCounts[17] {};
+            bool lineHasExplicit3DSlot = false;
+            for (int i = 0; i < 256; i++)
+            {
+                lineHasExplicit3DSlot =
+                    lineHasExplicit3DSlot
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[i])
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[256 + i])
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[512 + i]);
+                const u32 sourceClass = StructuredVulkan2DSourceClass(BGOBJLine[i]);
+                if (sourceClass <= 16u)
+                    sourceCounts[sourceClass]++;
+            }
+
+            if (!lineHasExplicit3DSlot)
+            {
+                constexpr u32 sourceClasses[] = {1u, 2u, 4u, 8u};
+                u32 bestSourceClass = 0u;
+                u32 bestSourceCount = 0u;
+                for (u32 sourceClass : sourceClasses)
+                {
+                    if (sourceCounts[sourceClass] > bestSourceCount)
+                    {
+                        bestSourceCount = sourceCounts[sourceClass];
+                        bestSourceClass = sourceClass;
+                    }
+                }
+
+                if (bestSourceCount >= 128u)
+                    captureBacked3DSourceClass = bestSourceClass;
+                else
+                    Parent.SapphireDebugCaptureStats.CaptureBacked3DNoBestClassLines++;
+            }
+            else
+            {
+                Parent.SapphireDebugCaptureStats.CaptureBacked3DExplicitSlotLines++;
+            }
+
+            if (captureBacked3DSourceClass
+                < (sizeof(Parent.SapphireDebugCaptureStats.CaptureBacked3DBestClassCounts)
+                    / sizeof(Parent.SapphireDebugCaptureStats.CaptureBacked3DBestClassCounts[0])))
+            {
+                Parent.SapphireDebugCaptureStats.CaptureBacked3DBestClassCounts[captureBacked3DSourceClass]++;
+            }
+        }
+
+        if (GPU2D.Num == 0)
+        {
+            for (int i = 0; i < 256; i++)
+            {
+                const u32 originalVal1 = BGOBJLine[i];
+                const u32 originalVal2 = BGOBJLine[256 + i];
+                const u32 originalVal3 = BGOBJLine[512 + i];
+
+                u32 val1 = originalVal1;
+                u32 val2 = originalVal2;
+                u32 val3 = originalVal3;
+
+                const u32 flag1 = val1 >> 24;
+                const u32 flag2 = val2 >> 24;
+                const u32 bldcnteffect = (GPU2D.BlendCnt >> 6) & 0x3;
+
+                u32 target1;
+                if      (flag1 & 0x80) target1 = 0x0010;
+                else if (flag1 & 0x40) target1 = 0x0001;
+                else                   target1 = flag1;
+
+                u32 target2;
+                if      (flag2 & 0x80) target2 = 0x1000;
+                else if (flag2 & 0x40) target2 = 0x0100;
+                else                   target2 = flag2 << 8;
+
+                if (((flag1 & 0xC0) == 0x40) && (GPU2D.BlendCnt & target2))
+                {
+                    BGOBJLine[i] = val2;
+                    BGOBJLine[256 + i] = ColorComposite(i, val2, val3);
+                    BGOBJLine[512 + i] = 0x04000000;
+                }
+                else if ((flag1 & 0xC0) == 0x40)
+                {
+                    u32 effect = bldcnteffect;
+                    if (effect == 1) effect = 0;
+                    if (!(GPU2D.BlendCnt & 0x0001)) effect = 0;
+                    if (!(WindowMask[i] & 0x20)) effect = 0;
+
+                    BGOBJLine[i] = val2;
+                    BGOBJLine[256 + i] = ColorComposite(i, val2, val3);
+                    BGOBJLine[512 + i] = (effect << 24) | (GPU2D.EVY << 8);
+                }
+                else if (((flag2 & 0xC0) == 0x40) && ((GPU2D.BlendCnt & 0x01C0) == 0x0140))
+                {
+                    u32 effect = bldcnteffect;
+                    u32 eva, evb;
+                    if ((flag1 & 0xC0) == 0xC0)
+                    {
+                        eva = flag1 & 0x1F;
+                        evb = 16 - eva;
+                    }
+                    else if (((GPU2D.BlendCnt & target1) && (WindowMask[i] & 0x20))
+                        || ((flag1 & 0xC0) == 0x80))
+                    {
+                        eva = GPU2D.EVA;
+                        evb = GPU2D.EVB;
+                    }
+                    else
+                        effect = 7;
+
+                    BGOBJLine[i] = val1;
+                    BGOBJLine[256 + i] = ColorComposite(i, val1, val3);
+                    BGOBJLine[512 + i] = (effect << 24) | (GPU2D.EVB << 16) | (GPU2D.EVA << 8);
+                }
+                else
+                {
+                    const u32 flag3 = originalVal3 >> 24;
+                    const bool overlayOver3d = (flag3 & 0x40u) != 0;
+
+                    BGOBJLine[i] = ColorComposite(i, val1, val2);
+                    BGOBJLine[256 + i] = 0;
+                    BGOBJLine[512 + i] = overlayOver3d ? 0x87000000u : 0x07000000u;
+                }
+
+                Parent.StoreStructuredVulkan2DPixel(
+                    line, static_cast<u32>(i),
+                    originalVal1, originalVal2, originalVal3,
+                    BGOBJLine[i], BGOBJLine[256 + i], BGOBJLine[512 + i],
+                    captureBacked3DSourceClass);
+                Parent.StructuredNativeFinal[GPU2D.Num][i] = BGOBJLine[i];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 256; i++)
+            {
+                const u32 originalVal1 = BGOBJLine[i];
+                const u32 originalVal2 = BGOBJLine[256 + i];
+                const u32 originalVal3 = BGOBJLine[512 + i];
+
+                const u32 val1 = originalVal1;
+                const u32 val2 = originalVal2;
+                const u32 flag3 = originalVal3 >> 24;
+                const bool overlayOver3d = (flag3 & 0x40u) != 0;
+
+                BGOBJLine[i] = ColorComposite(i, val1, val2);
+                BGOBJLine[256 + i] = 0;
+                BGOBJLine[512 + i] = overlayOver3d ? 0x87000000u : 0x07000000u;
+
+                Parent.StoreStructuredVulkan2DPixel(
+                    line, static_cast<u32>(i),
+                    originalVal1, originalVal2, originalVal3,
+                    BGOBJLine[i], BGOBJLine[256 + i], BGOBJLine[512 + i],
+                    captureBacked3DSourceClass);
+                Parent.StructuredNativeFinal[GPU2D.Num][i] = BGOBJLine[i];
+            }
+        }
+
+        for (int i = 0; i < 256; i++)
+            dst[i] = Parent.StructuredNativeFinal[GPU2D.Num][i];
+        return;
+    }
+#endif
 
     for (int i = 0; i < 256; i++)
     {
@@ -379,9 +608,6 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         Parent.StructuredPlane0[GPU2D.Num][i] = val1;
         Parent.StructuredPlane1[GPU2D.Num][i] = val2;
         Parent.StructuredControl[GPU2D.Num][i] = structuredControl;
-        // Regular-display 2D-only pixels need the pre-master-brightness
-        // composite. VulkanOutput applies the latched line brightness after
-        // inserting the GPU-resident 3D source.
         Parent.StructuredNativeFinal[GPU2D.Num][i] = dst[i];
 #else
         dst[i] = ColorComposite(i, val1, val2);

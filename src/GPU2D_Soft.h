@@ -27,6 +27,8 @@ class SoftRenderer;
 class SoftRenderer2D : public Renderer2D
 {
 public:
+    friend class SoftRenderer;
+
     SoftRenderer2D(melonDS::GPU2D& gpu2D, SoftRenderer& parent);
     ~SoftRenderer2D() override;
     bool Init() override { return true; }
@@ -51,7 +53,13 @@ private:
         OBJ_Mosaic = (1<<20),
     };
 
-    alignas(8) u32 BGOBJLine[256*2];
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    alignas(8) u32 BGOBJLine[256 * 3];
+
+    [[nodiscard]] u32* BGOBJLineForCapture() noexcept { return BGOBJLine; }
+#else
+    alignas(8) u32 BGOBJLine[256 * 2];
+#endif
 
     alignas(8) u8 WindowMask[256];
 

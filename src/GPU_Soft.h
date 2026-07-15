@@ -90,6 +90,61 @@ private:
     alignas(64) std::array<u32, kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount>
         StructuredVulkan2DPlanes{};
 
+    bool StructuredVulkan2DCurrentLineTargetsTop = false;
+    u32 StructuredVulkan2DCurrentEngine = 0;
+    bool CurrentLineRegularCaptureUses3d = false;
+    std::array<u32, kStructuredPlaneCount * kStructuredScreenWidth> StructuredVulkan2DCaptureSourceLine{};
+    bool StructuredVulkan2DCaptureSourceLineValid = false;
+    u32 StructuredVulkan2DCaptureSourceLineY = 0;
+    alignas(64) std::array<u32, 4 * kStructuredPlaneCount * kStructuredPixelCount>
+        StructuredVulkan2DCapturePlanes{};
+    std::array<u8, 4 * kStructuredScreenHeight> StructuredVulkan2DCaptureLineValid{};
+
+    [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
+    void BeginStructuredVulkan2DLine(u32 engine, u32 line) noexcept;
+    [[nodiscard]] bool CurrentUnitTargetsTopScreen() const noexcept;
+    [[nodiscard]] GPU2D& CaptureUnit() noexcept;
+    [[nodiscard]] const GPU2D& CaptureUnit() const noexcept;
+    [[nodiscard]] u32* GetCaptureBGOBJLine() noexcept;
+
+    void ClearStructuredVulkan2DLine(u32 line);
+    void ClearStructuredVulkan2DCapture(u32 vramBank);
+    void ClearStructuredVulkan2DCaptureRange(u32 vramBank, u32 dstAddress, u32 width);
+    void SaveStructuredVulkan2DCaptureSourceLine(u32 line);
+    void CopyStructuredVulkan2DCaptureSourceLineToCapture(
+        u32 line, u32 vramBank, u32 dstAddress, u32 width);
+    void CopyStructuredVulkan2DCurrentLineToCapture(
+        u32 line, u32 vramBank, u32 dstAddress, u32 width);
+    void CopyStructuredVulkan2DCaptureLineToCurrentScreen(u32 line, u32 vramBank);
+    [[nodiscard]] bool ReadStructuredVulkan2DCapture2DOverlayPixel(
+        u32 vramBank, u32 vramAddress, u32& overlayPixel, u32& overlayControlAlpha) const noexcept;
+    void MergeStructuredVulkan2DCapture2DOverlayPixel(
+        u32 vramBank, u32 vramAddress, u32 overlayPixel, u32 overlayControlAlpha);
+    void StoreStructuredVulkan2DPixel(
+        u32 line,
+        u32 x,
+        u32 originalVal1,
+        u32 originalVal2,
+        u32 originalVal3,
+        u32 legacyVal1,
+        u32 legacyVal2,
+        u32 legacyControl,
+        u32 captureBacked3DSourceClass);
+    void StoreStructuredVulkan2DCapturePixel(
+        u32 vramBank,
+        u32 vramAddress,
+        u32 originalVal1,
+        u32 originalVal2,
+        u32 originalVal3,
+        u32 legacyVal1,
+        u32 legacyVal2,
+        u32 legacyControl,
+        u32 external3DSourceClass,
+        bool external3DSlot,
+        bool external3DCoverage,
+        bool allowUnclassifiedExternal3DSlot);
+    void DoCaptureStructured(u32 line, u32 width, u32 sourceLine);
+
     void WriteAcceleratedPackedRow(
         u32* dstRow,
         u32 engine,
@@ -99,7 +154,6 @@ private:
         bool forcedBlank,
         bool engineEnabled);
     size_t ScreenIndexForEngine(u32 engine) const noexcept;
-    void UpdateStructuredVulkan2DLine(u32 engine, u32 line);
 
     SapphireGPU2D::SoftRenderer::DebugCaptureStats SapphireDebugCaptureStats{};
     bool HasLastDebugCapture3dSource = false;

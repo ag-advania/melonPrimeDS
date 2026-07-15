@@ -36,6 +36,7 @@ add_library(core STATIC
     GPU.cpp
     GPU_Soft.cpp
     SapphireGPU2DSoftAccess.cpp
+    SapphireGPU2DStructuredVulkan.cpp
     GPU2D.cpp
     GPU2D_Soft.cpp
     GPU3D.cpp

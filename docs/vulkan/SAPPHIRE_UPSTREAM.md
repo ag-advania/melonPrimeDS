@@ -63,13 +63,14 @@ Mark desktop-only blocks with:
 
 | Area | Sapphire | MelonPrimeDS | Status |
 |---|---|---|---|
-| `GPU2D::SoftRenderer` capture metadata | in-core `GPU2D_Soft.cpp` | `SoftRenderer` + `SapphireGPU2DSoftAccess` facade | partial: capture 3D source + line mask in `GPU_Soft::DoCapture` |
+| `GPU2D::SoftRenderer` capture metadata | in-core `GPU2D_Soft.cpp` | `SapphireGPU2DStructuredVulkan.cpp` + `SoftRenderer2D` 3-plane path | closed S59-6 |
 | Complete-frame structured ring | not used by Sapphire latch | removed S59-5 | closed |
 | `GetVulkan3DFrameView()` on GUI present | not used | removed S59-3 | closed |
 | `buildCompositionInputs` live serial gate | absent | removed S59-2 | closed |
 
-Full vendor of `GPU2D_Soft.cpp/.h` from the pinned core commit remains the
-next step if capture ownership regressions appear after the splash fix.
+Full vendor of `GPU2D_Soft.cpp/.h` structured Vulkan capture is ported in
+`SapphireGPU2DStructuredVulkan.cpp` with MelonPrime `SoftRenderer` /
+`SoftRenderer2D` integration. Re-audit if capture ownership regressions appear.
 
 ## Verification checklist
 
