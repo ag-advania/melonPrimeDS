@@ -192,14 +192,9 @@ bool ScreenPanelVulkan::ensureNativeSurface()
 bool ScreenPanelVulkan::configureSurface(
     int newWidth, int newHeight, bool managePresenterRegistration)
 {
+    (void)managePresenterRegistration;
     if (!presenter || surfaceId == 0 || newWidth <= 0 || newHeight <= 0)
         return false;
-
-    auto& session = emuInstance->vulkanFrontendSession();
-    const bool presenterWasRegistered =
-        managePresenterRegistration && sessionPresenterRegistered;
-    if (presenterWasRegistered)
-        session.unregisterPresenter(presenter.get());
 
     VulkanSurfaceConfig config{};
     const float dpr = static_cast<float>(devicePixelRatioF());
@@ -219,14 +214,10 @@ bool ScreenPanelVulkan::configureSurface(
         && !presenter->resizeSurface(
             surfaceId, static_cast<u32>(newWidth), static_cast<u32>(newHeight)))
     {
-        if (presenterWasRegistered)
-            session.registerPresenter(presenter.get());
         return false;
     }
     if (!presenter->configureSurface(surfaceId, config, {}))
     {
-        if (presenterWasRegistered)
-            session.registerPresenter(presenter.get());
         return false;
     }
 
@@ -234,8 +225,6 @@ bool ScreenPanelVulkan::configureSurface(
     configuredHeight = newHeight;
     configuredLayoutGeneration = layoutGeneration;
     configuredFilter = filter;
-    if (presenterWasRegistered)
-        session.registerPresenter(presenter.get());
     return true;
 }
 
@@ -560,7 +549,10 @@ void ScreenPanelVulkan::drawScreen()
         this,
         [this]() {
             repaintQueued.store(false, std::memory_order_release);
-            update();
+            // Sapphire presents from a dedicated callback rather than waiting
+            // for a widget paint. Keep desktop presentation on the GUI thread,
+            // but drain the fixed FrameQueue directly from this queued call.
+            presentOnGuiThread();
         },
         Qt::QueuedConnection);
     if (!queued)
@@ -804,8 +796,8 @@ void ScreenPanelVulkan::presentOnGuiThread()
             "[VulkanPresenterTrace] overlay result=%d\n",
             overlayUpdated ? 1 : 0);
     }
-    if (!overlayUpdated)
-        return;
+    // Overlay state is optional metadata. A transient overlay failure must not
+    // prevent acquire/present/commit and exhaust all FrameQueue slots.
 
     Frame* frame = session.acquirePresentFrame();
     if (tracePresenter)
@@ -824,7 +816,10 @@ void ScreenPanelVulkan::presentOnGuiThread()
     if (frame == nullptr)
         return;
 
-    constexpr u64 kPresentTimeoutNs = 16'666'667ull;
+    // Sapphire blocks for realtime presentation when deadline dropping is
+    // disabled. A fixed 16 ms timeout can repeatedly defer the same Win32
+    // FIFO frame and permanently starve the producer.
+    constexpr u64 kPresentTimeoutNs = UINT64_MAX;
     if (frame->surfaceGeneration != surfaceHost.generation())
     {
         if (tracePresenter)

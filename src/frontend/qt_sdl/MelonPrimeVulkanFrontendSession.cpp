@@ -173,7 +173,7 @@ void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()
 {
     frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
         return activePresenter == nullptr
-            || activePresenter->waitForFrameConsumption(frame, 0);
+            || activePresenter->waitForFrameConsumption(frame, UINT64_MAX);
     });
     frameQueue.synchronizeHistoryReferences([&](const Frame* frame) {
         return output.isFrameReferencedAsPendingPreviousSource(frame);
@@ -225,9 +225,11 @@ FrameQueuePolicy MelonPrimeVulkanFrontendSession::queuePolicy()
 {
     FrameQueuePolicy policy{};
     policy.MaxBacklogDepth = 2;
-    policy.AllowStealPending = true;
+    policy.AllowStealPending = false;
     policy.AllowPreviousFrameReuse = true;
+    policy.AllowDropForDeadline = false;
     policy.PreferOldestFrame = false;
+    policy.PreserveBacklogOnPresent = false;
     return policy;
 }
 
@@ -405,16 +407,28 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     Frame* frame = frameQueue.getRenderFrame(policy);
     if (frame == nullptr)
     {
+        // Sapphire drops temporal ownership and retries once when the fixed
+        // frame pool has no reusable slot. Without this recovery, a previous
+        // source reference can pin all nine desktop slots permanently.
+        output.releaseTemporalFrameReferences();
+        frameQueue.synchronizeHistoryReferences({});
+        synchronizeFrameReferencesLocked();
+        frame = frameQueue.getRenderFrame(policy);
+    }
+    if (frame == nullptr)
+    {
         const FrameQueueStats stats = frameQueue.takeStatsSnapshotAndReset();
         Platform::Log(
             Platform::LogLevel::Warn,
             "[VulkanProducer] no render frame backlog=%llu max=%llu "
-            "queued=%llu presented=%llu discarded=%llu stateFailures=%llu\n",
+            "queued=%llu presented=%llu discarded=%llu "
+            "referenceBlocked=%llu stateFailures=%llu\n",
             static_cast<unsigned long long>(stats.CurrentBacklogDepth),
             static_cast<unsigned long long>(stats.MaxBacklogDepth),
             static_cast<unsigned long long>(stats.RenderFramesQueued),
             static_cast<unsigned long long>(stats.PresentFramesReturned),
             static_cast<unsigned long long>(stats.RenderFramesDiscarded),
+            static_cast<unsigned long long>(stats.ReferenceBlockedReuse),
             static_cast<unsigned long long>(stats.StateTransitionFailures));
         return false;
     }
