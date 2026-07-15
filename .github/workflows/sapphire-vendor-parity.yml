@@ -1,0 +1,26 @@
+name: Sapphire vendor parity
+
+on:
+  pull_request:
+    paths:
+      - 'src/frontend/qt_sdl/VulkanReference/**'
+      - 'src/SapphireGPU2DCore/**'
+      - 'tools/sapphire_vendor_manifest.json'
+      - 'tools/check_sapphire_vendor_parity.py'
+  push:
+    branches:
+      - highres_fonts_v3
+      - main
+    paths:
+      - 'src/frontend/qt_sdl/VulkanReference/**'
+      - 'src/SapphireGPU2DCore/**'
+      - 'tools/sapphire_vendor_manifest.json'
+      - 'tools/check_sapphire_vendor_parity.py'
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify local vendor baselines
+        run: python3 tools/check_sapphire_vendor_parity.py
