@@ -59,8 +59,9 @@ Reference root: `app/src/main/cpp/MelonInstance.{h,cpp}` in parent tag `0.7.0.rc
 
 | Sapphire source | MelonPrime destination | Copy status |
 |---|---|---|
-| `MelonInstance.cpp` latch helpers | `SapphireVulkanFrameLatch.cpp` | P5 dependency closure |
-| `MelonInstance.h` latch state | `SapphireVulkanFrameLatch.h` | P5 dependency closure |
+| `MelonInstance.cpp` latch helpers | `SapphireVulkanFrameLatch.cpp` | P5 dependency closure + S71 desktop ownership/black-contract adapter |
+| `MelonInstance.h` latch state | `SapphireVulkanFrameLatch.h` | P5 dependency closure + S71 desktop ownership/black-contract adapter |
+| `MelonPrimeDesktop2DBlackContract.h` | `MelonPrimeDesktop2DBlackContract.h` | S71 desktop-only 2D payload / protected-black helpers |
 
 ## Copied core files
 
@@ -129,3 +130,14 @@ SoftRenderer capture metadata buffers
 | P7 | Presenter ownership port | **done** (this commit) |
 | P8 | Desktop adapters restore | **done** (P4 LegacyCustom presenter + MelonPrimeScreenVulkan overlays retained) |
 | P9 | Legacy custom path removal | **done** (this commit) |
+
+## S71 2D black contract progress
+
+| Phase | Description | Status |
+|---|---|---|
+| S71-1 | Split physical 2D ownership from render-time 3D screen ownership | **done** |
+| S71-2 | Treat opaque black as present 2D payload in desktop frame caching | **done** |
+| S71-3 | Preserve actual packed 2D source and protected-black metadata during structured merges | **done** |
+| S71-4 | Validate protected-black invariants before Vulkan composition | **done** |
+| S71-5 | Add black-over-3D and ownership-transition golden tests | **done** |
+| S71-6 | Track Sapphire FrameLatch extraction and desktop adapter parity in CI | **done** |
