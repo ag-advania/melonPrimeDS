@@ -120,6 +120,44 @@ def apply_desktop_vulkan_adapter(entry: dict, text: str) -> str:
     return text
 
 
+def transform_gpu2d_core(entry: dict, text: str) -> str:
+    return apply_desktop_vulkan_adapter(entry, text)
+
+
+def transform_vulkan_frontend(entry: dict, text: str) -> str:
+    return apply_desktop_vulkan_adapter(entry, text)
+
+
+def transform_exact(_entry: dict, text: str) -> str:
+    return text
+
+
+TRANSFORMS = {
+    "gpu2d_core": transform_gpu2d_core,
+    "vulkan_frontend": transform_vulkan_frontend,
+    "shader_exact": transform_exact,
+}
+
+
+def resolve_transform(entry: dict):
+    transform_id = entry.get("transform_id")
+    if transform_id is None:
+        allowed = entry.get("allowed_transform")
+        if allowed == "desktop_vulkan_adapter":
+            if entry["local_path"].startswith("src/SapphireGPU2DCore/"):
+                transform_id = "gpu2d_core"
+            else:
+                transform_id = "vulkan_frontend"
+        elif entry.get("parity_mode") == "exact_upstream":
+            transform_id = "shader_exact"
+        else:
+            transform_id = "shader_exact"
+    transform = TRANSFORMS.get(transform_id)
+    if transform is None:
+        raise ValueError(f"unknown transform_id: {transform_id}")
+    return transform
+
+
 def generate_local(entry: dict) -> str:
     source = snapshot_path(entry)
     if not source.is_file():
@@ -128,9 +166,7 @@ def generate_local(entry: dict) -> str:
     mode = entry.get("parity_mode", "local_baseline")
     if mode == "exact_upstream":
         return text
-    if entry.get("allowed_transform") == "desktop_vulkan_adapter":
-        return apply_desktop_vulkan_adapter(entry, text)
-    return text
+    return resolve_transform(entry)(entry, text)
 
 
 def verify_generated(manifest: dict) -> list[str]:

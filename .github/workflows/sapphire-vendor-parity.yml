@@ -47,4 +47,5 @@ jobs:
         run: |
           python3 tools/test_sapphire_vendor_parity.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
+          python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream

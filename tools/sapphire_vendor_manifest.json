@@ -22,7 +22,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.h",
       "local_sha256": "caec95a41ba0822f28bcb3c20e0d7ed6acbf3071c36b2c0e2c38716ad8a93a26",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -32,7 +33,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp",
       "local_sha256": "79dc444a102998f54112dfdd7e4d0b2bb1417d278ee1f9000595da9baca9f339",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -42,7 +44,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h",
       "local_sha256": "dcc1b4292f0f24f2568852d527bbf13dd3e92a2cea6490dd7170406767f7a76b",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -52,7 +55,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp",
       "local_sha256": "9501ed267bfd64b944072fbdd88e58679ea7fb7465986c8ba1150e824eff7da3",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -62,7 +66,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.h",
       "local_sha256": "7a7a9d879c677bba3bf695f603c0256666321cf8bdb934dd2a394918f662aa8f",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -72,7 +77,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp",
       "local_sha256": "97896aa1b689e4730746c9c0959006d29ef139956a4158263cd28c73b94d32a7",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "vulkan_frontend"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -82,7 +88,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert",
       "local_sha256": "9a78f1b24b838fa5b133bcf41fe140f7e3c65079743bf2ee366e6556c2a3dd26",
       "parity_mode": "exact_upstream",
-      "allowed_transform": "none"
+      "allowed_transform": "none",
+      "transform_id": "shader_exact"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -92,7 +99,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag",
       "local_sha256": "fda7c4d6ef51f212cb167cdcd8543632dcf54cb258cf4fccc592189b091d4f9d",
       "parity_mode": "exact_upstream",
-      "allowed_transform": "none"
+      "allowed_transform": "none",
+      "transform_id": "shader_exact"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -102,7 +110,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp",
       "local_sha256": "10ac7ac56ee4024341c6cc0bfc9f5ed6ab206f8a93abc56ce17b5d5ba73fdc7a",
       "parity_mode": "exact_upstream",
-      "allowed_transform": "none"
+      "allowed_transform": "none",
+      "transform_id": "shader_exact"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android",
@@ -112,7 +121,8 @@
       "local_path": "src/frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp",
       "local_sha256": "82d5f53aec024c93be2ed8102323143597ae39e0aaf084a16a311604a5114836",
       "parity_mode": "exact_upstream",
-      "allowed_transform": "none"
+      "allowed_transform": "none",
+      "transform_id": "shader_exact"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android-lib",
@@ -122,7 +132,8 @@
       "local_path": "src/SapphireGPU2DCore/GPU2D_Soft.h",
       "local_sha256": "42dd5507adbad267d4fb18b735cb12554a107bc2bdbfb96e41f53c06337fed90",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "gpu2d_core"
     },
     {
       "upstream_repository": "SapphireRhodonite/melonDS-android-lib",
@@ -132,7 +143,8 @@
       "local_path": "src/SapphireGPU2DCore/GPU2D_Soft.cpp",
       "local_sha256": "8e16a180a33506de70450a990425e06e5bd543b9eb07702c857a4343d8e8be50",
       "parity_mode": "normalized_upstream",
-      "allowed_transform": "desktop_vulkan_adapter"
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "gpu2d_core"
     }
   ]
 }
