@@ -35,6 +35,7 @@ private:
     void presentOnGuiThread();
     void syncNoRomSplashOverlay();
     void setupScreenLayout() override;
+    void changeEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     QPaintEngine* paintEngine() const override;
