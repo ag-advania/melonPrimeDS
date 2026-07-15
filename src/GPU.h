@@ -246,6 +246,7 @@ public:
     [[nodiscard]] SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() noexcept;
     [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
+    void InvalidateSapphirePublication() noexcept;
     [[nodiscard]] const SapphirePublished2DFrame& GetPublished2DFrame() const noexcept
     {
         return Published2DFrame;

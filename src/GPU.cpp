@@ -139,6 +139,7 @@ void GPU::Reset() noexcept
     VCount = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     VulkanFrameSerial = 0;
+    InvalidateSapphirePublication();
 #endif
     VCountOverride = false;
     NextVCount = 0;
@@ -209,6 +210,9 @@ void GPU::Reset() noexcept
 
 void GPU::Stop() noexcept
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    InvalidateSapphirePublication();
+#endif
     Rend->Stop();
 }
 
@@ -339,6 +343,8 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     if (Rend)
         SyncAllVRAMCaptures();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    InvalidateSapphirePublication();
+    SapphireVulkan2DAccess.reset();
     GPU3D.SetCurrentRenderer(nullptr);
 #endif
 
@@ -418,6 +424,11 @@ void GPU::RefreshSapphireVulkanBindings() noexcept
         softRenderer->SyncSapphireFramebufferBindings();
         (void)softRenderer->PublishSapphire2DFrame();
     }
+}
+
+void GPU::InvalidateSapphirePublication() noexcept
+{
+    Published2DFrame = {};
 }
 #endif
 
