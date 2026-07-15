@@ -406,6 +406,16 @@ const SapphireGPU2D::SoftRenderer& GPU::GetSapphireRenderer2D() const noexcept
     return *SapphireVulkan2DAccess;
 }
 
+SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() noexcept
+{
+    return SapphireVulkan2DAccess.get();
+}
+
+const SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() const noexcept
+{
+    return SapphireVulkan2DAccess.get();
+}
+
 void GPU::RefreshSapphireVulkanBindings() noexcept
 {
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))

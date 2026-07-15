@@ -953,8 +953,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     }
 
     const auto* renderer2D = useStructuredVulkan2D
-        ? &nds_->GPU.GetSapphireRenderer2D()
+        ? nds_->GPU.TryGetSapphireRenderer2D()
         : nullptr;
+    if (useStructuredVulkan2D && renderer2D == nullptr)
+        return false;
     const melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats captureStats =
         renderer2D != nullptr ? renderer2D->GetDebugCaptureStats() : melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats{};
     const u32* structuredTopPlane0 = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(true, 0) : nullptr;
@@ -3230,7 +3232,7 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         }
     }
 
-    if (const auto* renderer2D = &nds_->GPU.GetSapphireRenderer2D())
+    if (const auto* renderer2D = nds_->GPU.TryGetSapphireRenderer2D())
     {
         if (const u32* capture3dSource = renderer2D->GetDebugCapture3dSource())
         {

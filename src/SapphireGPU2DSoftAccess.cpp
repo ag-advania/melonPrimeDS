@@ -40,6 +40,16 @@ void SoftRenderer::ClearStructuredVulkan2DState() noexcept
     Owner.ClearStructuredVulkan2DState();
 }
 
+const u32* SoftRenderer::GetDebugCapture3dSource() const noexcept
+{
+    return Owner.GetSapphireDebugCapture3dSource();
+}
+
+const std::array<u8, 192>& SoftRenderer::GetDebugCaptureLineUses3dMask() const noexcept
+{
+    return Owner.GetSapphireCaptureLineUses3dMask();
+}
+
 } // namespace melonDS::SapphireGPU2D
 
 #endif

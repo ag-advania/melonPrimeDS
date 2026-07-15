@@ -70,6 +70,8 @@ public:
     }
 
     [[nodiscard]] const u32* GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept;
+    [[nodiscard]] const u32* GetSapphireDebugCapture3dSource() const noexcept;
+    [[nodiscard]] const std::array<u8, kStructuredScreenHeight>& GetSapphireCaptureLineUses3dMask() const noexcept;
     void ClearStructuredVulkan2DState() noexcept;
     void SyncSapphireFramebufferBindings() noexcept;
 #endif
@@ -98,7 +100,7 @@ private:
     void SubmitStructured2DLine(const SapphireStructured2DLine& line);
     void EndStructured2DFrame(u64 frameSerial, u64 generation, bool screenSwap);
     void WriteAcceleratedPackedRow(
-        u32* dst,
+        u32* dstRow,
         u32 engine,
         u32 line,
         u16 masterBrightness,
@@ -111,6 +113,9 @@ private:
     alignas(64) std::array<u32, kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount>
         StructuredVulkan2DPlanes{};
     SapphireGPU2D::SoftRenderer::DebugCaptureStats SapphireDebugCaptureStats{};
+    bool HasLastDebugCapture3dSource = false;
+    alignas(8) u32 LastDebugCapture3dSource[kStructuredPixelCount]{};
+    std::array<u8, kStructuredScreenHeight> CaptureLineUses3d{};
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

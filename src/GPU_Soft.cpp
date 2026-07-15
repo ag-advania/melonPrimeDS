@@ -22,6 +22,7 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include "SapphireGPU2DSoftAccess.h"
 #endif
@@ -316,6 +317,9 @@ void SoftRenderer::BeginStructured2DFrame(u64 frameSerial, u64 generation)
     frame.ScreenSwap = false;
     frame.Complete = false;
     StructuredLineReceived.fill(0);
+    HasLastDebugCapture3dSource = false;
+    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
+    CaptureLineUses3d.fill(0);
 }
 
 void SoftRenderer::SubmitStructured2DLine(const SapphireStructured2DLine& line)
@@ -424,7 +428,7 @@ void SoftRenderer::UpdateStructuredVulkan2DLine(u32 engine, u32 line)
 }
 
 void SoftRenderer::WriteAcceleratedPackedRow(
-    u32* dst,
+    u32* dstRow,
     u32 engine,
     u32 line,
     u16 masterBrightness,
@@ -432,17 +436,20 @@ void SoftRenderer::WriteAcceleratedPackedRow(
     bool forcedBlank,
     bool engineEnabled)
 {
-    if (dst == nullptr || line >= kStructuredScreenHeight)
+    if (dstRow == nullptr
+        || engine >= kStructuredScreenCount
+        || line >= kStructuredScreenHeight)
+    {
         return;
+    }
 
-    const size_t rowBase = static_cast<size_t>(line) * kPackedStride;
-    std::memcpy(dst + rowBase, StructuredPlane0[engine], kStructuredScreenWidth * sizeof(u32));
+    std::memcpy(dstRow, StructuredPlane0[engine], kStructuredScreenWidth * sizeof(u32));
     std::memcpy(
-        dst + rowBase + kStructuredScreenWidth,
+        dstRow + kStructuredScreenWidth,
         StructuredPlane1[engine],
         kStructuredScreenWidth * sizeof(u32));
     std::memcpy(
-        dst + rowBase + (kStructuredScreenWidth * 2u),
+        dstRow + (kStructuredScreenWidth * 2u),
         StructuredControl[engine],
         kStructuredScreenWidth * sizeof(u32));
 
@@ -454,7 +461,7 @@ void SoftRenderer::WriteAcceleratedPackedRow(
     meta |= (xpos << 24u) | ((xpos & 0x100u) << 15u);
     if (forcedBlank || !engineEnabled || !GPU.ScreensEnabled)
         meta = 0u;
-    dst[rowBase + (kPackedStride - 1u)] = meta;
+    dstRow[kPackedStride - 1u] = meta;
 }
 
 const u32* SoftRenderer::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept
@@ -468,20 +475,40 @@ const u32* SoftRenderer::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) c
     return StructuredVulkan2DPlanes.data() + offset;
 }
 
+const u32* SoftRenderer::GetSapphireDebugCapture3dSource() const noexcept
+{
+    return HasLastDebugCapture3dSource ? LastDebugCapture3dSource : nullptr;
+}
+
+const std::array<u8, SoftRenderer::kStructuredScreenHeight>&
+SoftRenderer::GetSapphireCaptureLineUses3dMask() const noexcept
+{
+    return CaptureLineUses3d;
+}
+
 void SoftRenderer::ClearStructuredVulkan2DState() noexcept
 {
     SapphireDebugCaptureStats = {};
     StructuredVulkan2DPlanes.fill(0);
+    HasLastDebugCapture3dSource = false;
+    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
+    CaptureLineUses3d.fill(0);
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 {
-    const int frontbuf = BackBuffer ^ 1;
-    GPU.FrontBuffer = frontbuf;
-    GPU.Framebuffer[0][0] = Framebuffer[frontbuf][0];
-    GPU.Framebuffer[0][1] = Framebuffer[frontbuf][1];
-    GPU.Framebuffer[1][0] = Framebuffer[frontbuf ^ 1][0];
-    GPU.Framebuffer[1][1] = Framebuffer[frontbuf ^ 1][1];
+    GPU.FrontBuffer = BackBuffer ^ 1;
+
+    GPU.Framebuffer[0][0] = Framebuffer[0][0];
+    GPU.Framebuffer[0][1] = Framebuffer[0][1];
+    GPU.Framebuffer[1][0] = Framebuffer[1][0];
+    GPU.Framebuffer[1][1] = Framebuffer[1][1];
+
+#ifndef NDEBUG
+    assert(GPU.FrontBuffer == 0 || GPU.FrontBuffer == 1);
+    assert(GPU.Framebuffer[GPU.FrontBuffer][0] == Framebuffer[BackBuffer ^ 1][0]);
+    assert(GPU.Framebuffer[GPU.FrontBuffer][1] == Framebuffer[BackBuffer ^ 1][1]);
+#endif
 }
 #endif
 
@@ -614,6 +641,24 @@ void SoftRenderer::DoCapture(u32 line)
         srcA = Output3D;
     else
         srcA = Output2D[0];
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (GetRenderer3D().UsesStructured2DMetadata() && line < kStructuredScreenHeight)
+    {
+        CaptureLineUses3d[line] = 0;
+        if ((captureCnt & (1 << 24)) != 0 && srcA != nullptr)
+        {
+            std::memcpy(
+                &LastDebugCapture3dSource[static_cast<size_t>(line) * kStructuredScreenWidth],
+                srcA,
+                kStructuredScreenWidth * sizeof(u32));
+            CaptureLineUses3d[line] = 1;
+            HasLastDebugCapture3dSource = true;
+            SapphireDebugCaptureStats.CaptureLineUses3dLines++;
+        }
+        SapphireDebugCaptureStats.CaptureLines++;
+    }
+#endif
 
     u16* srcB = nullptr;
     if (captureCnt & (1<<25))

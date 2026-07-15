@@ -243,6 +243,8 @@ public:
     bool CopyStructured2DFrameSnapshot(SapphireStructured2DFrameSnapshot& snapshot) const;
     [[nodiscard]] SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() noexcept;
     [[nodiscard]] const SapphireGPU2D::SoftRenderer& GetSapphireRenderer2D() const noexcept;
+    [[nodiscard]] SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() noexcept;
+    [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
 
     int FrontBuffer = 0;

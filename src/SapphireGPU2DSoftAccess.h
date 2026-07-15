@@ -66,16 +66,8 @@ public:
         bool topScreen, u32 plane) const noexcept;
     void ClearStructuredVulkan2DState() noexcept;
 
-    [[nodiscard]] const u32* GetDebugCapture3dSource() const noexcept
-    {
-        return nullptr;
-    }
-
-    [[nodiscard]] const std::array<u8, 192>& GetDebugCaptureLineUses3dMask() const noexcept
-    {
-        static const std::array<u8, 192> empty{};
-        return empty;
-    }
+    [[nodiscard]] const u32* GetDebugCapture3dSource() const noexcept;
+    [[nodiscard]] const std::array<u8, 192>& GetDebugCaptureLineUses3dMask() const noexcept;
 
 private:
     melonDS::SoftRenderer& Owner;

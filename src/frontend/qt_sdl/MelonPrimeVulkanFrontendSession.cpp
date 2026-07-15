@@ -8,6 +8,33 @@
 using namespace melonDS;
 using namespace MelonDSAndroid;
 
+namespace {
+
+void LogVulkanProducerDiscard(const char* reason)
+{
+    Platform::Log(Platform::LogLevel::Info, "[VulkanProducer] discard reason=%s\n", reason);
+}
+
+void LogVulkanProducerFrameContext(
+    Frame* frame,
+    const Vulkan3DFrameView& frameView,
+    u64 activeGeneration,
+    const NDS* nds)
+{
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanProducer] frame=%p valid=%d serial=%llu generation=%llu activeGeneration=%llu frontBuffer=%d screenSwap=%d\n",
+        static_cast<void*>(frame),
+        frameView.Valid ? 1 : 0,
+        static_cast<unsigned long long>(frameView.FrameSerial),
+        static_cast<unsigned long long>(frameView.Generation),
+        static_cast<unsigned long long>(activeGeneration),
+        nds ? nds->GPU.FrontBuffer : -1,
+        nds ? (nds->GPU.GPU3D.RenderScreenSwapAt3D ? 1 : 0) : -1);
+}
+
+} // namespace
+
 MelonPrimeVulkanFrontendSession::~MelonPrimeVulkanFrontendSession()
 {
     shutdown();
@@ -192,9 +219,19 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     VulkanRenderer3D& renderer3D,
     const Vulkan3DFrameView& frameView)
 {
-    if (frame == nullptr || nds == nullptr || !frameView.Valid
-        || frameView.Generation != activeGeneration)
+    if (frame == nullptr || nds == nullptr)
     {
+        LogVulkanProducerDiscard("invalidFrameView");
+        return false;
+    }
+    if (!frameView.Valid)
+    {
+        LogVulkanProducerDiscard("invalidFrameView");
+        return false;
+    }
+    if (frameView.Generation != activeGeneration)
+    {
+        LogVulkanProducerDiscard("generationMismatch");
         return false;
     }
 
@@ -212,21 +249,34 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     if (!frameLatch.latchSoftPackedFrameSnapshot(
             frame, frontBuffer, preparedFrameScreenSwap, useStructuredVulkan2D))
     {
+        LogVulkanProducerDiscard("latchFailed");
         return false;
     }
     if (frameLatch.regularCaptureTransitionResyncPending())
     {
         frameLatch.clearRegularCaptureTransitionResyncPending();
         output.clearStructuredCaptureHistory();
-        nds->GPU.GetSapphireRenderer2D().ClearStructuredVulkan2DState();
+        if (auto* renderer2D = nds->GPU.TryGetSapphireRenderer2D())
+            renderer2D->ClearStructuredVulkan2DState();
         frameLatch.clearLatchedSoftPackedFrameSnapshot();
+        LogVulkanProducerDiscard("resyncRequested");
         return false;
     }
 
-    return output.ensureFrameResources(frame, width, height)
-        && output.prepareFrameForPresentation(
+    if (!output.ensureFrameResources(frame, width, height))
+    {
+        LogVulkanProducerDiscard("ensureResourcesFailed");
+        return false;
+    }
+    if (!output.prepareFrameForPresentation(
             frame, nds->GPU, frontBuffer, preparedFrameScreenSwap,
-            frameLatch.mutableLastSnapshot(), renderer3D, frameView);
+            frameLatch.mutableLastSnapshot(), renderer3D, frameView))
+    {
+        LogVulkanProducerDiscard("prepareFailed");
+        return false;
+    }
+
+    return true;
 }
 
 bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& renderer3D)
@@ -279,8 +329,20 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
         return false;
 
     const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
-    if (frameView.FrameSerial == 0 || frameView.FrameSerial == lastSubmittedSerial)
+    LogVulkanProducerFrameContext(frame, frameView, activeGeneration, nds);
+
+    if (frameView.FrameSerial == 0)
     {
+        LogVulkanProducerDiscard("zeroSerial");
+        frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
+            return output.isFrameReferencedAsPendingPreviousSource(candidate);
+        });
+        frameQueue.discardRenderedFrame(frame);
+        return false;
+    }
+    if (frameView.FrameSerial == lastSubmittedSerial)
+    {
+        LogVulkanProducerDiscard("duplicateSerial");
         frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
             return output.isFrameReferencedAsPendingPreviousSource(candidate);
         });
