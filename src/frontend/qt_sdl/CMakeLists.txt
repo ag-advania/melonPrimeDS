@@ -359,6 +359,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanPreparedContentStats.h
         SapphireVulkanFrameLatch.cpp
         SapphireVulkanFrameLatch.h
+        MelonPrimeSapphireFrameInput.cpp
+        MelonPrimeSapphireFrameInput.h
         SapphireVulkanFramePipeline.cpp
         SapphireVulkanFramePipeline.h
         VulkanReference/VulkanOutput.cpp
