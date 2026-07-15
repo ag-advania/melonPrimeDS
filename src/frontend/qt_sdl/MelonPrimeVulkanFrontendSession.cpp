@@ -1,4 +1,5 @@
 #include "MelonPrimeVulkanFrontendSession.h"
+#include "VulkanPreparedContentStats.h"
 
 #include "GPU3D_Vulkan.h"
 #include "NDS.h"
@@ -360,6 +361,15 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
     }
 
     lastSubmittedSerial = frameView.FrameSerial;
+    const VulkanPreparedContentStats contentStats = CollectVulkanPreparedContentStats(
+        nds->GPU,
+        nds->GPU.FrontBuffer,
+        renderer3D.HasColorTarget());
+    LogVulkanPreparedContentStats(
+        frame->frameId,
+        nds->GPU.FrontBuffer,
+        nds->GPU.GPU3D.RenderScreenSwapAt3D,
+        contentStats);
     Platform::Log(
         Platform::LogLevel::Info,
         "[VulkanProducer] queuePush frameId=%llu frameSerial=%llu rendererGeneration=%llu frontBuffer=%d screenSwap=%d\n",
