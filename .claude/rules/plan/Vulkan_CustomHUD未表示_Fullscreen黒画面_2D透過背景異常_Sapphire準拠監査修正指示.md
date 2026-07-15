@@ -1838,8 +1838,9 @@ MelonPrime差分はdesktop adapter
 | S63-5 | Vendor Sapphire GPU2D dependency closure | `110b17d6a` | done |
 | S63-6 | Restore exact Sapphire Vulkan compositor sources | `006af75ae` | done |
 | S63-7 | Make fullscreen swapchain replacement non-blocking | `11bd5b6d0` | done |
-| S63-8 | Enforce true Sapphire upstream parity in CI | pending | in progress |
+| S63-8 | Enforce true Sapphire upstream parity in CI | `aaff82243` | done |
 
 **Branch:** `highres_fonts_v3`  
-**検証:** Windows MinGW release build 成功（S63-1〜7）。ROM手動検証（§21）は未実施。
+**最新push:** S63-8 `aaff82243`（全フェーズ完遂）  
+**検証:** Windows MinGW release build 成功。ROM手動検証（§21）は未実施。
 
