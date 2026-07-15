@@ -417,16 +417,10 @@ void SoftRenderer::DrawSprites(u32 line)
 
 void SoftRenderer::VBlank()
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(GPU);
-#endif
 }
 
 void SoftRenderer::VBlankEnd()
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardVBlankEnd(GPU);
-#endif
 }
 
 void SoftRenderer::DrawScanlineA(u32 line, u32* dst)

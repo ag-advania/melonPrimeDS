@@ -1283,6 +1283,7 @@ void GPU::StartHBlank(u32 line) noexcept
         if (line == 0)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
             MelonPrimeSapphireGpu2DAdapter::ForwardVBlankEnd(*this);
 #endif
         }
@@ -1455,7 +1456,8 @@ void GPU::StartScanline(u32 line) noexcept
         GPU3D.VBlank();
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(*this);
+        if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
+            MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(*this);
 #endif
         Rend->VBlank();
 

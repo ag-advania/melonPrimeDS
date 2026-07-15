@@ -18,6 +18,12 @@ SapphireGpu2DState* GetState(GPU& gpu) noexcept
     return gpu.TryGetSapphireGpu2DState();
 }
 
+bool IsActiveForRendering(const GPU& gpu) noexcept
+{
+    const SapphireGpu2DState* state = gpu.TryGetSapphireGpu2DState();
+    return state != nullptr && state->IsActiveForRendering(gpu);
+}
+
 SapphireGPU2DCore::GPU2D::Unit& UnitForEngine(SapphireGpu2DState& state, u32 engineNum) noexcept
 {
     return engineNum == 0 ? state.UnitA : state.UnitB;
@@ -65,6 +71,9 @@ void ForwardRegisterWrite32(GPU& gpu, u32 engineNum, u32 addr, u32 val) noexcept
 
 void ForwardWindowCheck(GPU& gpu, u32 line) noexcept
 {
+    if (!IsActiveForRendering(gpu))
+        return;
+
     if (auto* state = GetState(gpu))
     {
         state->UnitA.CheckWindows(line);
@@ -74,6 +83,9 @@ void ForwardWindowCheck(GPU& gpu, u32 line) noexcept
 
 void ForwardVBlank(GPU& gpu) noexcept
 {
+    if (!IsActiveForRendering(gpu))
+        return;
+
     if (auto* state = GetState(gpu))
     {
         state->UnitA.VBlank();
@@ -83,6 +95,9 @@ void ForwardVBlank(GPU& gpu) noexcept
 
 void ForwardVBlankEnd(GPU& gpu) noexcept
 {
+    if (!IsActiveForRendering(gpu))
+        return;
+
     if (auto* state = GetState(gpu))
     {
         state->Renderer.VBlankEnd(&state->UnitA, &state->UnitB);
