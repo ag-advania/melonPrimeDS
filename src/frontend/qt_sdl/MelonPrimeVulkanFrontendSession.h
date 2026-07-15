@@ -68,9 +68,9 @@ public:
         const melonDS::GPU& gpu,
         u64 generation,
         MelonPrimeStructuredSnapshot& snapshot);
-    bool submitCompletedFrame(
-        melonDS::VulkanRenderer3D& renderer3D,
-        const MelonPrimeStructuredSnapshot& snapshot);
+    bool submitCompletedFrame(melonDS::VulkanRenderer3D& renderer3D);
+
+    MelonPrimeStructuredSnapshot& producerStructuredSnapshot() { return structuredSnapshot; }
 
     Frame* acquirePresentFrame();
     bool presentAcquiredFrame(
@@ -105,6 +105,7 @@ private:
         u64 frameId,
         MelonDSAndroid::SoftPackedFrameSnapshot& destination);
     static FrameQueuePolicy queuePolicy();
+    void clearProducerState();
     void synchronizeFrameReferencesLocked();
 
     mutable std::mutex stateMutex;
@@ -114,7 +115,10 @@ private:
     std::unordered_map<Frame*, MelonDSAndroid::VulkanCompositionInputs> frameInputs;
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
     MelonDSAndroid::VulkanSurfacePresenter* stagedPresenter = nullptr;
-    MelonPrimeStructuredSnapshot lastCompleteSnapshot{};
+    MelonPrimeStructuredSnapshot structuredSnapshot{};
+    MelonDSAndroid::SoftPackedFrameSnapshot lastSoftPackedFrameSnapshot{};
+    MelonDSAndroid::SoftPackedFrameSnapshot previousSoftPackedFrameSnapshot{};
+    bool hasCompleteStructuredSnapshot_ = false;
     u64 activeGeneration = 0;
     u64 activeSurfaceGeneration = 0;
     u64 lastSubmittedSerial = 0;

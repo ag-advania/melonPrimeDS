@@ -334,7 +334,8 @@ void EmuInstance::submitVulkanFrontendFrame()
 
     VulkanSubmitTrace("[VulkanSubmitTrace] capture snapshot begin\n");
 
-    MelonPrimeStructuredSnapshot snapshot{};
+    MelonPrimeStructuredSnapshot& snapshot =
+        vulkanFrontendSessionOwner->producerStructuredSnapshot();
     const bool captured = MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
         nds->GPU, rendererGeneration, snapshot);
 
@@ -345,7 +346,7 @@ void EmuInstance::submitVulkanFrontendFrame()
     if (captured)
     {
         const bool submitted =
-            vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D, snapshot);
+            vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D);
 
         VulkanSubmitTrace(
             "[VulkanSubmitTrace] submitCompletedFrame result=%d\n",

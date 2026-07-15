@@ -64,6 +64,14 @@ bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
     return true;
 }
 
+void MelonPrimeVulkanFrontendSession::clearProducerState()
+{
+    structuredSnapshot = {};
+    lastSoftPackedFrameSnapshot.clear();
+    previousSoftPackedFrameSnapshot.clear();
+    hasCompleteStructuredSnapshot_ = false;
+}
+
 void MelonPrimeVulkanFrontendSession::shutdown()
 {
     std::scoped_lock lock(stateMutex);
@@ -78,7 +86,7 @@ void MelonPrimeVulkanFrontendSession::shutdown()
     frameQueue.clear();
     frameInputs.clear();
     output.shutdown();
-    lastCompleteSnapshot = {};
+    clearProducerState();
     activePresenter = nullptr;
     stagedPresenter = nullptr;
     activeGeneration = 0;
@@ -114,7 +122,7 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
 
     activeGeneration = newGeneration;
     lastSubmittedSerial = 0;
-    lastCompleteSnapshot = {};
+    clearProducerState();
     frameInputs.clear();
     output.invalidateTemporalHistory();
     frameQueue.synchronizeHistoryReferences({});
@@ -344,9 +352,9 @@ SoftPackedScreenStats MelonPrimeVulkanFrontendSession::collectStats(
 }
 
 bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
-    VulkanRenderer3D& renderer3D,
-    const MelonPrimeStructuredSnapshot& snapshot)
+    VulkanRenderer3D& renderer3D)
 {
+    const MelonPrimeStructuredSnapshot& snapshot = structuredSnapshot;
     std::scoped_lock lock(stateMutex);
     if (!initialized || producerSuspended || nds == nullptr || !snapshot.complete
         || snapshot.generation != activeGeneration
@@ -378,12 +386,14 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
-    SoftPackedFrameSnapshot packedSnapshot{};
-    buildSoftPackedSnapshot(snapshot, frame->frameId, packedSnapshot);
+    std::swap(previousSoftPackedFrameSnapshot, lastSoftPackedFrameSnapshot);
+    lastSoftPackedFrameSnapshot.clear();
+    buildSoftPackedSnapshot(snapshot, frame->frameId, lastSoftPackedFrameSnapshot);
     VulkanCompositionInputs inputs{};
     const bool prepared = output.ensureFrameResources(frame, width, height)
         && output.prepareFrameForPresentation(
-            frame, nds->GPU, 0, snapshot.screenSwap, packedSnapshot, renderer3D, frameView)
+            frame, nds->GPU, 0, snapshot.screenSwap,
+            lastSoftPackedFrameSnapshot, renderer3D, frameView)
         && output.buildCompositionInputs(
             frame, frameView, scale, VulkanFilterMode::Nearest,
             false, false, false, inputs)
@@ -398,7 +408,7 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     }
 
     frameInputs[frame] = inputs;
-    lastCompleteSnapshot = snapshot;
+    hasCompleteStructuredSnapshot_ = true;
     lastSubmittedSerial = snapshot.frameSerial;
     frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
         return output.isFrameReferencedAsPendingPreviousSource(candidate);
@@ -487,7 +497,7 @@ bool MelonPrimeVulkanFrontendSession::isInitialized() const
 bool MelonPrimeVulkanFrontendSession::hasCompleteStructuredSnapshot() const
 {
     std::scoped_lock lock(stateMutex);
-    return !producerSuspended && lastCompleteSnapshot.complete;
+    return !producerSuspended && hasCompleteStructuredSnapshot_;
 }
 
 bool MelonPrimeVulkanFrontendSession::hasCompositedFrame() const

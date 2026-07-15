@@ -7,6 +7,9 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <QWidget>
+
+class QResizeEvent;
 #include "MelonPrimeVulkanSurfaceHost.h"
 #include "Screen.h"
 
@@ -23,6 +26,7 @@ public:
     void drawScreen() override;
 
 private:
+    class NoRomSplashOverlay;
     struct HudTextCommand
     {
         std::string text;
@@ -69,9 +73,11 @@ private:
     bool configureSurface(
         int width, int height, bool managePresenterRegistration = true);
     void presentOnGuiThread();
+    void syncNoRomSplashOverlay();
     void captureHudSnapshotOnEmuThread();
     MelonDSAndroid::VulkanSurfaceOverlay buildOverlayOnGuiThread();
     void setupScreenLayout() override;
+    void resizeEvent(QResizeEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     QPaintEngine* paintEngine() const override;
 
@@ -89,4 +95,5 @@ private:
     HudSnapshot hudSnapshot;
     std::atomic_bool repaintQueued{false};
     bool sessionPresenterRegistered = false;
+    NoRomSplashOverlay* noRomSplashOverlay = nullptr;
 };

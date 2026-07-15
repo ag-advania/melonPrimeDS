@@ -6,8 +6,12 @@
 
 #include <QDateTime>
 #include <QMetaObject>
+#include <QPaintEngine>
 #include <QPaintEvent>
+#include <QPainter>
+#include <QResizeEvent>
 #include <QThread>
+#include <QWidget>
 
 #include "EmuInstance.h"
 #include "MelonPrime.h"
@@ -39,6 +43,37 @@ u32 PackRgba(int red, int green, int blue, int alpha = 255)
 }
 }
 
+class ScreenPanelVulkan::NoRomSplashOverlay final : public QWidget
+{
+public:
+    explicit NoRomSplashOverlay(ScreenPanelVulkan& owner)
+        : QWidget(&owner), screen(owner)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setFocusPolicy(Qt::NoFocus);
+        setAutoFillBackground(false);
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        event->accept();
+        QPainter painter(this);
+        painter.fillRect(rect(), Qt::black);
+
+        screen.osdMutex.lock();
+        painter.drawPixmap(
+            QRect(screen.splashPos[3], QSize(192, 192)),
+            screen.splashLogo);
+        for (int i = 0; i < 3; i++)
+            painter.drawImage(screen.splashPos[i], screen.splashText[i].bitmap);
+        screen.osdMutex.unlock();
+    }
+
+private:
+    ScreenPanelVulkan& screen;
+};
+
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     : ScreenPanel(parent, false)
 {
@@ -49,6 +84,8 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize(1));
+    noRomSplashOverlay = new NoRomSplashOverlay(*this);
+    noRomSplashOverlay->hide();
 }
 
 ScreenPanelVulkan::~ScreenPanelVulkan()
@@ -758,6 +795,37 @@ void ScreenPanelVulkan::presentOnGuiThread()
     }
     else
         session.deferPresentedFrame(frame);
+
+    syncNoRomSplashOverlay();
+}
+
+void ScreenPanelVulkan::syncNoRomSplashOverlay()
+{
+    if (!noRomSplashOverlay)
+        return;
+
+    osdUpdate();
+    calcSplashLayout();
+    noRomSplashOverlay->setGeometry(rect());
+
+    bool showSplash = (lastPresentedFrameId == 0);
+    if (auto* emuThread = emuInstance->getEmuThread())
+        showSplash = showSplash || !emuThread->emuIsActive();
+
+    if (showSplash)
+    {
+        noRomSplashOverlay->show();
+        noRomSplashOverlay->raise();
+        noRomSplashOverlay->update();
+    }
+    else
+        noRomSplashOverlay->hide();
+}
+
+void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
+{
+    ScreenPanel::resizeEvent(event);
+    syncNoRomSplashOverlay();
 }
 
 void ScreenPanelVulkan::setupScreenLayout()
@@ -772,6 +840,7 @@ void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
     event->accept();
     refreshClipForGameStateChange();
     presentOnGuiThread();
+    syncNoRomSplashOverlay();
 }
 
 QPaintEngine* ScreenPanelVulkan::paintEngine() const
