@@ -53,13 +53,7 @@ private:
         OBJ_Mosaic = (1<<20),
     };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    alignas(8) u32 BGOBJLine[256 * 3];
-
-    [[nodiscard]] u32* BGOBJLineForCapture() noexcept { return BGOBJLine; }
-#else
     alignas(8) u32 BGOBJLine[256 * 2];
-#endif
 
     alignas(8) u8 WindowMask[256];
 
@@ -85,13 +79,7 @@ private:
         return table;
     }();
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    u32 ColorComposite(
-        int i, u32 val1, u32 val2,
-        u32* structuredControl = nullptr) const;
-#else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
-#endif
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);
