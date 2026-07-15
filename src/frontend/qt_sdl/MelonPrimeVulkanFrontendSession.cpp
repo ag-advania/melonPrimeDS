@@ -70,6 +70,8 @@ void MelonPrimeVulkanFrontendSession::clearProducerState()
     lastSoftPackedFrameSnapshot.clear();
     previousSoftPackedFrameSnapshot.clear();
     hasCompleteStructuredSnapshot_ = false;
+    lastPresentedSerial = 0;
+    lastPresentedFrameId = 0;
 }
 
 void MelonPrimeVulkanFrontendSession::shutdown()
@@ -100,18 +102,42 @@ void MelonPrimeVulkanFrontendSession::shutdown()
 void MelonPrimeVulkanFrontendSession::beginBackendSwitch()
 {
     std::scoped_lock lock(stateMutex);
+
+    if (!producerSuspended)
+        stagedPresenter = activePresenter;
+
     producerSuspended = true;
-    stagedPresenter = nullptr;
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanPresenterTrace] begin switch active=%p staged=%p\n",
+        static_cast<void*>(activePresenter),
+        static_cast<void*>(stagedPresenter));
 }
 
 void MelonPrimeVulkanFrontendSession::completeBackendSwitch(
     bool vulkanPresentationActive)
 {
     std::scoped_lock lock(stateMutex);
-    activePresenter = vulkanPresentationActive ? stagedPresenter : nullptr;
+
+    if (vulkanPresentationActive)
+    {
+        if (stagedPresenter != nullptr)
+            activePresenter = stagedPresenter;
+    }
+    else
+        activePresenter = nullptr;
+
     stagedPresenter = nullptr;
     producerSuspended = false;
     frameQueue.requestPresentationResync();
+    output.invalidateTemporalHistory();
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanPresenterTrace] complete switch vulkan=%d active=%p\n",
+        vulkanPresentationActive ? 1 : 0,
+        static_cast<void*>(activePresenter));
 }
 
 void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
@@ -122,6 +148,8 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
 
     activeGeneration = newGeneration;
     lastSubmittedSerial = 0;
+    lastPresentedSerial = 0;
+    lastPresentedFrameId = 0;
     clearProducerState();
     frameInputs.clear();
     output.invalidateTemporalHistory();
@@ -376,7 +404,20 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
     synchronizeFrameReferencesLocked();
     Frame* frame = frameQueue.getRenderFrame(policy);
     if (frame == nullptr)
+    {
+        const FrameQueueStats stats = frameQueue.takeStatsSnapshotAndReset();
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[VulkanProducer] no render frame backlog=%llu max=%llu "
+            "queued=%llu presented=%llu discarded=%llu stateFailures=%llu\n",
+            static_cast<unsigned long long>(stats.CurrentBacklogDepth),
+            static_cast<unsigned long long>(stats.MaxBacklogDepth),
+            static_cast<unsigned long long>(stats.RenderFramesQueued),
+            static_cast<unsigned long long>(stats.PresentFramesReturned),
+            static_cast<unsigned long long>(stats.RenderFramesDiscarded),
+            static_cast<unsigned long long>(stats.StateTransitionFailures));
         return false;
+    }
     frameInputs.erase(frame);
 
     const int scale = static_cast<int>(frameView.Scale);
@@ -454,8 +495,12 @@ bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
 void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
 {
     std::scoped_lock lock(stateMutex);
-    if (frame != nullptr)
-        frameQueue.commitPresentedFrame(frame, queuePolicy());
+    if (frame == nullptr)
+        return;
+
+    lastPresentedSerial = frame->frameSerial;
+    lastPresentedFrameId = frame->frameId;
+    frameQueue.commitPresentedFrame(frame, queuePolicy());
 }
 
 void MelonPrimeVulkanFrontendSession::deferPresentedFrame(Frame* frame)
@@ -472,6 +517,14 @@ void MelonPrimeVulkanFrontendSession::registerPresenter(VulkanSurfacePresenter* 
         stagedPresenter = presenter;
     else
         activePresenter = presenter;
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanPresenterTrace] register presenter=%p suspended=%d active=%p staged=%p\n",
+        static_cast<void*>(presenter),
+        producerSuspended ? 1 : 0,
+        static_cast<void*>(activePresenter),
+        static_cast<void*>(stagedPresenter));
 }
 
 void MelonPrimeVulkanFrontendSession::unregisterPresenter(VulkanSurfacePresenter* presenter)
@@ -504,6 +557,15 @@ bool MelonPrimeVulkanFrontendSession::hasCompositedFrame() const
 {
     std::scoped_lock lock(stateMutex);
     return initialized && !producerSuspended && lastSubmittedSerial != 0;
+}
+
+bool MelonPrimeVulkanFrontendSession::hasPresentedFrame() const
+{
+    std::scoped_lock lock(stateMutex);
+    return initialized
+        && !producerSuspended
+        && activePresenter != nullptr
+        && lastPresentedSerial != 0;
 }
 
 bool MelonPrimeVulkanFrontendSession::hasRegisteredPresenter() const

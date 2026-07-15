@@ -199,7 +199,7 @@ VulkanRuntimeCapabilities QueryCurrentVulkanCapabilities(melonDS::NDS& nds)
     {
         auto& session = emuInstance->vulkanFrontendSession();
         caps.Structured2DReady = session.hasCompleteStructuredSnapshot();
-        caps.FinalCompositorReady = session.hasCompositedFrame();
+        caps.FinalCompositorReady = session.hasPresentedFrame();
         caps.FrameQueueReady = session.isInitialized();
         caps.SurfaceReady = session.hasRegisteredPresenter();
         caps.PresenterReady = session.hasRegisteredPresenter();

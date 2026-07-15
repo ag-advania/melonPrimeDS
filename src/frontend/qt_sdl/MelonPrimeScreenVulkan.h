@@ -95,5 +95,6 @@ private:
     HudSnapshot hudSnapshot;
     std::atomic_bool repaintQueued{false};
     bool sessionPresenterRegistered = false;
+    int presenterTraceBudget = 120;
     NoRomSplashOverlay* noRomSplashOverlay = nullptr;
 };

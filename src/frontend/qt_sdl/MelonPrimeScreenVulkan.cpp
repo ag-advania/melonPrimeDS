@@ -84,6 +84,15 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize(1));
+
+    if (splashLogo.isNull()
+        && !splashLogo.load(QStringLiteral(":/melon-logo")))
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "[MelonPrime] Vulkan no-ROM splash logo resource failed to load\n");
+    }
+
     noRomSplashOverlay = new NoRomSplashOverlay(*this);
     noRomSplashOverlay->hide();
 }
@@ -774,27 +783,100 @@ void ScreenPanelVulkan::presentOnGuiThread()
     }
 
     auto& session = emuInstance->vulkanFrontendSession();
-    if (!session.updatePresenterOverlay(
-            *presenter, surfaceId, buildOverlayOnGuiThread()))
+    const bool tracePresenter = (presenterTraceBudget > 0);
+    if (tracePresenter)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanPresenterTrace] tick panel=%p presenter=%p surface=%d visible=%d\n",
+            static_cast<void*>(this),
+            static_cast<void*>(presenter.get()),
+            surfaceId,
+            isVisible() ? 1 : 0);
+    }
+
+    const bool overlayUpdated = session.updatePresenterOverlay(
+        *presenter, surfaceId, buildOverlayOnGuiThread());
+    if (tracePresenter)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanPresenterTrace] overlay result=%d\n",
+            overlayUpdated ? 1 : 0);
+    }
+    if (!overlayUpdated)
         return;
+
     Frame* frame = session.acquirePresentFrame();
+    if (tracePresenter)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanPresenterTrace] acquire frame=%p id=%llu serial=%llu "
+            "rendererGen=%llu surfaceGen=%llu expectedSurface=%llu\n",
+            static_cast<void*>(frame),
+            frame ? static_cast<unsigned long long>(frame->frameId) : 0ull,
+            frame ? static_cast<unsigned long long>(frame->frameSerial) : 0ull,
+            frame ? static_cast<unsigned long long>(frame->rendererGeneration) : 0ull,
+            frame ? static_cast<unsigned long long>(frame->surfaceGeneration) : 0ull,
+            static_cast<unsigned long long>(surfaceHost.generation()));
+    }
     if (frame == nullptr)
         return;
 
     constexpr u64 kPresentTimeoutNs = 16'666'667ull;
     if (frame->surfaceGeneration != surfaceHost.generation())
     {
+        if (tracePresenter)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Info,
+                "[VulkanPresenterTrace] defer id=%llu reason=surfaceGenMismatch\n",
+                static_cast<unsigned long long>(frame->frameId));
+        }
         session.deferPresentedFrame(frame);
+        if (tracePresenter)
+            --presenterTraceBudget;
         return;
     }
 
-    if (session.presentAcquiredFrame(frame, *presenter, kPresentTimeoutNs))
+    const bool presented =
+        session.presentAcquiredFrame(frame, *presenter, kPresentTimeoutNs);
+    if (tracePresenter)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanPresenterTrace] present id=%llu result=%d\n",
+            static_cast<unsigned long long>(frame->frameId),
+            presented ? 1 : 0);
+    }
+
+    if (presented)
     {
         lastPresentedFrameId = frame->frameId;
         session.commitPresentedFrame(frame);
+        if (tracePresenter)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Info,
+                "[VulkanPresenterTrace] commit id=%llu\n",
+                static_cast<unsigned long long>(frame->frameId));
+        }
     }
     else
+    {
         session.deferPresentedFrame(frame);
+        if (tracePresenter)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Info,
+                "[VulkanPresenterTrace] defer id=%llu\n",
+                static_cast<unsigned long long>(frame->frameId));
+        }
+    }
+
+    if (tracePresenter)
+        --presenterTraceBudget;
 
     syncNoRomSplashOverlay();
 }
@@ -808,9 +890,13 @@ void ScreenPanelVulkan::syncNoRomSplashOverlay()
     calcSplashLayout();
     noRomSplashOverlay->setGeometry(rect());
 
-    bool showSplash = (lastPresentedFrameId == 0);
-    if (auto* emuThread = emuInstance->getEmuThread())
-        showSplash = showSplash || !emuThread->emuIsActive();
+    auto* emuThread = emuInstance->getEmuThread();
+    const bool hasPresentedGameFrame =
+        emuInstance->vulkanFrontendSession().hasPresentedFrame();
+    const bool showSplash =
+        !emuThread
+        || !emuThread->emuIsActive()
+        || !hasPresentedGameFrame;
 
     if (showSplash)
     {

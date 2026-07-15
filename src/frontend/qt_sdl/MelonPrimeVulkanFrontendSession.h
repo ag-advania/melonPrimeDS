@@ -90,6 +90,7 @@ public:
     [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] bool hasCompleteStructuredSnapshot() const;
     [[nodiscard]] bool hasCompositedFrame() const;
+    [[nodiscard]] bool hasPresentedFrame() const;
     [[nodiscard]] bool hasRegisteredPresenter() const;
     [[nodiscard]] bool backendSwitchInProgress() const;
     [[nodiscard]] u64 generation() const;
@@ -122,6 +123,8 @@ private:
     u64 activeGeneration = 0;
     u64 activeSurfaceGeneration = 0;
     u64 lastSubmittedSerial = 0;
+    u64 lastPresentedSerial = 0;
+    u64 lastPresentedFrameId = 0;
     bool initialized = false;
     bool producerSuspended = false;
 };
