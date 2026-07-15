@@ -67,6 +67,9 @@ public:
     void PublishCompletedSapphireFrontBuffer() noexcept;
     void SyncSapphireUnitsFromGPU2D();
     [[nodiscard]] bool PublishSapphire2DFrame() noexcept;
+    [[nodiscard]] SapphirePhysical2DScreenView BuildPhysicalScreenView(
+        int frontBuffer,
+        SapphirePhysicalScreen screen) const noexcept;
     void ForwardSapphireGpu2DRegisterWrite8(u32 engineNum, u32 addr, u8 val) noexcept;
     void ForwardSapphireGpu2DRegisterWrite16(u32 engineNum, u32 addr, u16 val) noexcept;
     void ForwardSapphireGpu2DRegisterWrite32(u32 engineNum, u32 addr, u32 val) noexcept;

@@ -23,6 +23,15 @@ struct SapphirePublished2DScreen
     SapphirePhysicalScreen physicalScreen = SapphirePhysicalScreen::Top;
 };
 
+struct SapphirePhysical2DScreenView
+{
+    const melonDS::u32* packed = nullptr;
+    const melonDS::u32* plane0 = nullptr;
+    const melonDS::u32* plane1 = nullptr;
+    const melonDS::u32* control = nullptr;
+    melonDS::u32 engine = 0;
+};
+
 struct SapphirePublished2DFrame
 {
     SapphirePublished2DScreen top;

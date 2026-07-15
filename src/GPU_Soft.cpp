@@ -254,6 +254,24 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
     AssignSapphireFramebuffers();
 }
 
+SapphirePhysical2DScreenView SoftRenderer::BuildPhysicalScreenView(
+    int frontBuffer,
+    SapphirePhysicalScreen screen) const noexcept
+{
+    SapphirePhysical2DScreenView view{};
+    const bool top = screen == SapphirePhysicalScreen::Top;
+
+    view.packed = Framebuffer[frontBuffer][top ? 0 : 1].get();
+    view.plane0 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 0);
+    view.plane1 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 1);
+    view.control = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 2);
+    view.engine = top
+        ? (GPU.ScreenSwap ? 0u : 1u)
+        : (GPU.ScreenSwap ? 1u : 0u);
+
+    return view;
+}
+
 void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
 {
     auto* state = GetSapphireState(GPU);
@@ -293,15 +311,20 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     if (published.frontBuffer < 0 || published.frontBuffer > 1)
         return false;
 
-    published.top.packed = GPU.Framebuffer[published.frontBuffer][0];
-    published.bottom.packed = GPU.Framebuffer[published.frontBuffer][1];
+    const SapphirePhysical2DScreenView topView =
+        BuildPhysicalScreenView(published.frontBuffer, SapphirePhysicalScreen::Top);
+    const SapphirePhysical2DScreenView bottomView =
+        BuildPhysicalScreenView(published.frontBuffer, SapphirePhysicalScreen::Bottom);
+
+    published.top.packed = topView.packed;
+    published.bottom.packed = bottomView.packed;
     if (published.top.packed == nullptr || published.bottom.packed == nullptr)
         return false;
 
     published.top.physicalScreen = SapphirePhysicalScreen::Top;
     published.bottom.physicalScreen = SapphirePhysicalScreen::Bottom;
-    published.top.engine = GPU.ScreenSwap ? 0u : 1u;
-    published.bottom.engine = GPU.ScreenSwap ? 1u : 0u;
+    published.top.engine = topView.engine;
+    published.bottom.engine = bottomView.engine;
 
     const bool structuredReady =
         GPU.GPU3D.HasCurrentRenderer()
@@ -309,18 +332,12 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
 
     if (structuredReady)
     {
-        published.top.structuredPlane0 =
-            state->Renderer.GetStructuredVulkan2DPlane(true, 0);
-        published.top.structuredPlane1 =
-            state->Renderer.GetStructuredVulkan2DPlane(true, 1);
-        published.top.structuredControl =
-            state->Renderer.GetStructuredVulkan2DPlane(true, 2);
-        published.bottom.structuredPlane0 =
-            state->Renderer.GetStructuredVulkan2DPlane(false, 0);
-        published.bottom.structuredPlane1 =
-            state->Renderer.GetStructuredVulkan2DPlane(false, 1);
-        published.bottom.structuredControl =
-            state->Renderer.GetStructuredVulkan2DPlane(false, 2);
+        published.top.structuredPlane0 = topView.plane0;
+        published.top.structuredPlane1 = topView.plane1;
+        published.top.structuredControl = topView.control;
+        published.bottom.structuredPlane0 = bottomView.plane0;
+        published.bottom.structuredPlane1 = bottomView.plane1;
+        published.bottom.structuredControl = bottomView.control;
 
         if (published.top.structuredPlane0 == nullptr
             || published.top.structuredPlane1 == nullptr
