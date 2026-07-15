@@ -3645,10 +3645,26 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
             return;
 
         const auto mapPoint = [&](float x, float y) {
-            const float px = transform.matrix[0] * x
+            float px = transform.matrix[0] * x
                 + transform.matrix[2] * y + transform.matrix[4];
-            const float py = transform.matrix[1] * x
+            float py = transform.matrix[1] * x
                 + transform.matrix[3] * y + transform.matrix[5];
+
+            const float scaleX = transform.matrix[0];
+            const float scaleY = transform.matrix[3];
+            const bool integerAxisAligned =
+                std::abs(transform.matrix[1]) < 1e-4f
+                && std::abs(transform.matrix[2]) < 1e-4f
+                && std::abs(scaleX - std::round(scaleX)) < 1e-4f
+                && std::abs(scaleY - std::round(scaleY)) < 1e-4f
+                && std::abs(scaleX) >= 1.0f
+                && std::abs(scaleY) >= 1.0f;
+            if (integerAxisAligned)
+            {
+                px = std::round(px);
+                py = std::round(py);
+            }
+
             return std::array<float, 2>{
                 (px / surfaceWidth) * 2.0f - 1.0f,
                 1.0f - (py / surfaceHeight) * 2.0f};
