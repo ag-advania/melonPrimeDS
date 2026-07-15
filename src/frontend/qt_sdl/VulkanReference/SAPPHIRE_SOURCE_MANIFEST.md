@@ -107,6 +107,6 @@ producer-side composeAndSubmitFrame()
 | P4 | Core exact port | **done** (`9b62b74ef`) |
 | P5 | Latch dependency closure | **done** (this commit) |
 | P6 | runFrame transaction port | **done** (this commit) |
-| P7 | Presenter ownership port | pending |
+| P7 | Presenter ownership port | **done** (this commit) |
 | P8 | Desktop adapters restore | pending |
 | P9 | Legacy custom path removal | pending |

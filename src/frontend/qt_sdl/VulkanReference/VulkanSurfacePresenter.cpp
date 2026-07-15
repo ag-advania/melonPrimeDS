@@ -1074,9 +1074,11 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     VkImageView frameImageView = VK_NULL_HANDLE;
     if (!directPresentRequested)
     {
-        // The desktop frontend producer composes before publishing a Ready
-        // frame. Presenting must consume that immutable image and must not
-        // submit composition a second time.
+        if (!output.composeAndSubmitFrame(frame, inputs))
+        {
+            composeSubmitFailures++;
+            return false;
+        }
         const bool highResolutionRealtimeFallbackPresent =
             !fastForwardActive
             && inputs.scale > 1

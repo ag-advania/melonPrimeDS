@@ -531,7 +531,7 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
     }
 
     const FrameQueuePolicy policy = queuePolicy();
-    const bool composeOnProducer = true;
+    const bool composeOnProducer = false;
     if (!latchAndPrepareProducerFrameLocked(frame, renderer3D, frameView, composeOnProducer))
     {
         frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
@@ -590,7 +590,7 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
         return false;
 
     const FrameQueuePolicy policy = queuePolicy();
-    const bool composeOnProducer = true;
+    const bool composeOnProducer = false;
     if (!latchAndPrepareProducerFrameLocked(frame, renderer3D, frameView, composeOnProducer))
     {
         frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
@@ -625,17 +625,39 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
     u64 timeoutNs)
 {
     std::scoped_lock presentationLock(presentationCallMutex);
-    VulkanCompositionInputs inputs{};
+    VulkanRenderer3D* renderer3D = nullptr;
     {
         std::scoped_lock stateLock(stateMutex);
-        const auto iterator = frameInputs.find(frame);
         if (!initialized || producerSuspended
             || activePresenter != &presenter
-            || frame == nullptr || iterator == frameInputs.end())
+            || frame == nullptr || nds == nullptr)
         {
             return false;
         }
-        inputs = iterator->second;
+
+        if (nds->GPU.GPU3D.HasCurrentRenderer())
+        {
+            renderer3D = dynamic_cast<VulkanRenderer3D*>(
+                &nds->GPU.GPU3D.GetCurrentRenderer());
+        }
+    }
+    if (renderer3D == nullptr)
+        return false;
+
+    const Vulkan3DFrameView frameView = renderer3D->GetVulkan3DFrameView();
+    const int scale = frame->width >= 256
+        ? std::max<int>(1, static_cast<int>(frame->width / 256u))
+        : std::max(renderer3D->GetScaleFactor(), 1);
+
+    VulkanCompositionInputs inputs{};
+    {
+        std::scoped_lock stateLock(stateMutex);
+        if (!output.buildCompositionInputs(
+                frame, frameView, scale, VulkanFilterMode::Nearest,
+                false, false, false, inputs))
+        {
+            return false;
+        }
     }
     return presenter.presentFrame(frame, output, inputs, timeoutNs);
 }
