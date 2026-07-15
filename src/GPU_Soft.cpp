@@ -293,12 +293,8 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     if (published.frontBuffer < 0 || published.frontBuffer > 1)
         return false;
 
-    published.top.packed = GPU.ScreenSwap
-        ? GPU.Framebuffer[published.frontBuffer][0]
-        : GPU.Framebuffer[published.frontBuffer][1];
-    published.bottom.packed = GPU.ScreenSwap
-        ? GPU.Framebuffer[published.frontBuffer][1]
-        : GPU.Framebuffer[published.frontBuffer][0];
+    published.top.packed = GPU.Framebuffer[published.frontBuffer][0];
+    published.bottom.packed = GPU.Framebuffer[published.frontBuffer][1];
     if (published.top.packed == nullptr || published.bottom.packed == nullptr)
         return false;
 
