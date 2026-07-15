@@ -914,7 +914,7 @@ protected opaque black
 | Phase | Commit | Status | Notes |
 |---|---|---|---|
 | S71-1 | Split physical 2D ownership from render-time 3D screen ownership | **done** | `SoftPackedFrameSnapshot` に ownership フィールド追加。`engineAOnTop` は公開 engine metadata から判定。`physical2DOwnerChanged` と `render3DOwnerChanged` を分離。 |
-| S71-2 | Treat opaque black as present 2D payload in desktop frame caching | pending | |
+| S71-2 | Treat opaque black as present 2D payload in desktop frame caching | **done** | `MelonPrimeDesktop2DBlackContract.h` 追加。cache eligibility を `screenHasPresent2DContent` へ。 |
 | S71-3 | Preserve actual packed 2D source and protected-black metadata during structured merges | pending | |
 | S71-4 | Validate protected-black invariants before Vulkan composition | pending | |
 | S71-5 | Add black-over-3D and ownership-transition golden tests | pending | |

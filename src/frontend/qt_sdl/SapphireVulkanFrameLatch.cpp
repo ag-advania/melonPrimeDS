@@ -4,6 +4,8 @@
 
 #include "SapphireVulkanFrameLatch.h"
 
+#include "MelonPrimeDesktop2DBlackContract.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -2377,25 +2379,15 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 
     if (!renderer2dDebugControlsActive)
     {
-        const bool engineAOnTop =
-            lastSoftPackedFrameSnapshot.topEngineLatched == 0u
-            && lastSoftPackedFrameSnapshot.bottomEngineLatched == 1u;
+        const bool engineAOnTop = engineAOwnsPhysicalTop(
+            lastSoftPackedFrameSnapshot.topEngineLatched,
+            lastSoftPackedFrameSnapshot.bottomEngineLatched);
 
         auto screenHasMeaningfulContent =
-            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
-                constexpr size_t kMinVisiblePixels =
-                    SoftPackedFrameSnapshot::kPixelCount / 32;
-                size_t visiblePixels = 0;
-                for (size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; i++)
-                {
-                    if (packedPixelHasVisibleColor(plane0[i]))
-                    {
-                        visiblePixels++;
-                        if (visiblePixels >= kMinVisiblePixels)
-                            return true;
-                    }
-                }
-                return false;
+            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) {
+                return screenHasPresent2DContent(plane0, plane1, control);
             };
         auto screenHasExplicitCurrentContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
@@ -2480,19 +2472,21 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         auto screenHasStructured2DOnlyContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) {
-                constexpr size_t kMinVisiblePixels =
+                constexpr size_t kMinPresentPixels =
                     SoftPackedFrameSnapshot::kPixelCount / 128;
-                size_t visiblePixels = 0;
+                size_t presentPixels = 0;
                 for (size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; i++)
                 {
                     const u32 controlAlpha = control[i] >> 24u;
                     const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
                     const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
-                    if (!structured2DOnly || !packedPixelHasVisibleColor(plane0[i]))
+                    const bool present2D = packedPixelIsPresent2D(plane0[i]);
+                    const bool protectedBlack = packedControlMarksProtectedBlack2D(control[i]);
+                    if (!structured2DOnly || (!present2D && !protectedBlack))
                         continue;
 
-                    visiblePixels++;
-                    if (visiblePixels >= kMinVisiblePixels)
+                    presentPixels++;
+                    if (presentPixels >= kMinPresentPixels)
                         return true;
                 }
                 return false;
@@ -2519,7 +2513,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 
         if (engineAOnTop)
         {
-            if (screenHasMeaningfulContent(lastSoftPackedFrameSnapshot.packedTopPlane0)
+            if (screenHasMeaningfulContent(
+                    lastSoftPackedFrameSnapshot.packedTopPlane0,
+                    lastSoftPackedFrameSnapshot.packedTopPlane1,
+                    lastSoftPackedFrameSnapshot.packedTopControl)
                 || screenIsScreenWideCaptureBackedComp4(
                     lastSoftPackedFrameSnapshot.packedTopPlane0,
                     lastSoftPackedFrameSnapshot.packedTopPlane1,
@@ -2590,7 +2587,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         }
         else
         {
-            if (screenHasMeaningfulContent(lastSoftPackedFrameSnapshot.packedBottomPlane0)
+            if (screenHasMeaningfulContent(
+                    lastSoftPackedFrameSnapshot.packedBottomPlane0,
+                    lastSoftPackedFrameSnapshot.packedBottomPlane1,
+                    lastSoftPackedFrameSnapshot.packedBottomControl)
                 || screenIsScreenWideCaptureBackedComp4(
                     lastSoftPackedFrameSnapshot.packedBottomPlane0,
                     lastSoftPackedFrameSnapshot.packedBottomPlane1,
