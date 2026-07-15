@@ -12,6 +12,7 @@ on:
       - 'tools/test_sapphire_gpu2d_lifecycle_parity.py'
       - 'tools/test_sapphire_gpu2d_runtime_gate_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s68_parity.py'
+      - 'tools/test_sapphire_vulkan_lifecycle_s69_parity.py'
       - 'src/SapphireVendor/**'
   push:
     branches:
@@ -27,6 +28,7 @@ on:
       - 'tools/test_sapphire_gpu2d_lifecycle_parity.py'
       - 'tools/test_sapphire_gpu2d_runtime_gate_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s68_parity.py'
+      - 'tools/test_sapphire_vulkan_lifecycle_s69_parity.py'
       - 'src/SapphireVendor/**'
 
 jobs:
@@ -55,6 +57,7 @@ jobs:
           python3 tools/test_sapphire_gpu2d_lifecycle_parity.py
           python3 tools/test_sapphire_gpu2d_runtime_gate_parity.py
           python3 tools/test_sapphire_vulkan_lifecycle_s68_parity.py
+          python3 tools/test_sapphire_vulkan_lifecycle_s69_parity.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream

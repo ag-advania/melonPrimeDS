@@ -100,7 +100,7 @@ class SapphireVulkanLifecycleS68ParityTests(unittest.TestCase):
         self.assertIn("kRecoverSwapchainWaitNs", body)
         self.assertNotRegex(body, r"waitForSurfaceIdle\(surfaceState\)\s*;")
 
-    def test_present_does_not_recreate_surface_each_frame(self):
+    def test_present_skips_native_identity_recheck(self):
         screen = read_repo("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp")
         present = re.search(
             r"void ScreenPanelVulkan::presentOnGuiThread\(\)\s*\{[\s\S]*?^}",
@@ -109,8 +109,8 @@ class SapphireVulkanLifecycleS68ParityTests(unittest.TestCase):
         )
         self.assertIsNotNone(present)
         body = present.group(0)
-        self.assertIn("matchesWidget", body)
-        self.assertNotRegex(body, r"\|\|\s*!ensureNativeSurface\(\)")
+        self.assertNotIn("matchesWidget", body)
+        self.assertNotIn("ensureNativeSurface()", body)
 
     def test_integer_scaling_transform_snaps_to_device_pixels(self):
         presenter = read_repo("src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp")

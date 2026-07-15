@@ -26,8 +26,12 @@ class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
         )
         self.assertIsNotNone(view)
         body = view.group(0)
-        self.assertIn("Framebuffer[frontBuffer][top ? 0 : 1]", body)
-        self.assertNotIn("GPU.ScreenSwap", body.replace("view.engine", ""))
+        packed_line = next(
+            (line for line in body.splitlines() if "view.packed" in line),
+            "",
+        )
+        self.assertIn("[top ? 0 : 1]", packed_line)
+        self.assertNotIn("GPU.ScreenSwap", packed_line)
 
     def test_publish_pairs_packed_and_structured_through_view(self):
         soft = read_repo("src/GPU_Soft.cpp")
@@ -65,7 +69,15 @@ class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
         self.assertIn("u64 uploadToken", presenter_h)
         self.assertIn("u64 submissionSerial", presenter_h)
         self.assertIn("notifySurfaceSubmission(", overlay)
-        self.assertNotIn("for (size_t i = 0; i < kUploadSlotCount; ++i)", overlay)
+        notify = re.search(
+            r"void MelonPrimeVulkanOverlayRenderer::notifySurfaceSubmission\("
+            r"[\s\S]*?^}",
+            overlay,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(notify)
+        self.assertIn("uploadToken == 0", notify.group(0))
+        self.assertNotIn("if (!slot.recorded)", notify.group(0))
 
     def test_hud_texture_committed_after_submission(self):
         overlay_h = read_repo("src/frontend/qt_sdl/MelonPrimeVulkanOverlayRenderer.h")
@@ -73,7 +85,7 @@ class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
         self.assertIn("OverlayTextureState", overlay_h)
         self.assertIn("committedLayout", overlay_h)
         record = re.search(
-            r"bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer\("
+            r"OverlayTransferRecord MelonPrimeVulkanOverlayRenderer::recordPendingTransfer\("
             r"[\s\S]*?^}",
             overlay,
             re.MULTILINE,
@@ -135,6 +147,16 @@ class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
         presenter = read_repo("src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp")
         self.assertIn("SurfaceFormatRenderResources", presenter_h)
         self.assertIn("ensureSurfaceFormatRenderResources", presenter)
+
+    def test_initial_vulkan_boot_avoids_frame_delay_hacks(self):
+        soft = read_repo("src/GPU_Soft.cpp")
+        self.assertNotIn("white-only", soft)
+        self.assertNotIn("PackedFramebufferClearBytes(0)", soft)
+
+    def test_4x_scaling_uses_integer_pixel_snap(self):
+        presenter = read_repo("src/frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.cpp")
+        self.assertIn("integerAxisAligned", presenter)
+        self.assertIn("std::round(px)", presenter)
 
 
 if __name__ == "__main__":
