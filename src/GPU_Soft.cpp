@@ -133,10 +133,9 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     SyncSapphireUnitsFromGPU2D();
 
-    if (GPU.ScreenSwap)
-        Sapphire2DRenderer->SetFramebuffer(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
-    else
-        Sapphire2DRenderer->SetFramebuffer(Framebuffer[BackBuffer][1], Framebuffer[BackBuffer][0]);
+    Sapphire2DRenderer->SetFramebuffer(
+        Framebuffer[BackBuffer][0],
+        Framebuffer[BackBuffer][1]);
 
     line = GPU.VCount;
     if (line < 192)
@@ -223,15 +222,24 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 {
     GPU.FrontBuffer = BackBuffer ^ 1;
 
-    GPU.Framebuffer[0][0] = Framebuffer[0][0];
-    GPU.Framebuffer[0][1] = Framebuffer[0][1];
-    GPU.Framebuffer[1][0] = Framebuffer[1][0];
-    GPU.Framebuffer[1][1] = Framebuffer[1][1];
+    for (int buffer = 0; buffer < 2; ++buffer)
+    {
+        u32* const* unitA = &Framebuffer[buffer][0];
+        u32* const* unitB = &Framebuffer[buffer][1];
+        if (GPU.ScreenSwap)
+        {
+            GPU.Framebuffer[buffer][0] = *unitA;
+            GPU.Framebuffer[buffer][1] = *unitB;
+        }
+        else
+        {
+            GPU.Framebuffer[buffer][0] = *unitB;
+            GPU.Framebuffer[buffer][1] = *unitA;
+        }
+    }
 
 #ifndef NDEBUG
     assert(GPU.FrontBuffer == 0 || GPU.FrontBuffer == 1);
-    assert(GPU.Framebuffer[GPU.FrontBuffer][0] == Framebuffer[BackBuffer ^ 1][0]);
-    assert(GPU.Framebuffer[GPU.FrontBuffer][1] == Framebuffer[BackBuffer ^ 1][1]);
 #endif
 }
 #endif
