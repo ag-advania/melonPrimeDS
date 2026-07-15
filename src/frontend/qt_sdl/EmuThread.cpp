@@ -226,6 +226,15 @@ void EmuThread::run()
         // Combined with P-11 (NtSetTimerResolution 0.5ms): jitter drops from
         // ±15ms to ±0.03ms.
         // =================================================================
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (ConsumeVulkanLimiterPhaseResetRequest())
+        {
+            isFirstLimiterFrame = true;
+            frameLimitError = 0.0;
+            storedFrametimeStep = 1.0 / std::max(emuInstance->targetFPS, 1.0);
+            lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
+        }
+#endif
         if (emuInstance->doLimitFPS && !isFirstLimiterFrame)
         {
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
@@ -618,6 +627,12 @@ void EmuThread::run()
         else if (fastforward) emuInstance->curFPS = emuInstance->fastForwardFPS;
         else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
         else emuInstance->curFPS = emuInstance->targetFPS;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        PublishVulkanRuntimePacingState(
+            fastforward || slowmo,
+            !emuInstance->doLimitFPS && !emuInstance->doAudioSync);
+#endif
 
 #ifndef MELONPRIME_DS
         // P-41: MelonPrime targets NDS (ConsoleType == 0) exclusively.

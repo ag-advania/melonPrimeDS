@@ -86,6 +86,7 @@
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeScreenVulkan.h"
 #include "MelonPrimeVulkanFrontendSession.h"
+#include "MelonPrimeVulkanRuntimePacing.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
@@ -2653,12 +2654,18 @@ void MainWindow::onChangeLimitFramerate(bool checked)
 {
     emuInstance->doLimitFPS = checked;
     globalCfg.SetBool("LimitFPS", emuInstance->doLimitFPS);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ResetVulkanLimiterPhase();
+#endif
 }
 
 void MainWindow::onChangeAudioSync(bool checked)
 {
     emuInstance->doAudioSync = checked;
     globalCfg.SetBool("AudioSync", emuInstance->doAudioSync);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ResetVulkanLimiterPhase();
+#endif
 }
 
 
