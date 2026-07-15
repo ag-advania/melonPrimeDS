@@ -62,6 +62,23 @@ Reference root: `app/src/main/cpp/MelonInstance.{h,cpp}` in parent tag `0.7.0.rc
 | `MelonInstance.cpp` latch helpers | `SapphireVulkanFrameLatch.cpp` | P5 dependency closure + S71 desktop ownership/black-contract adapter |
 | `MelonInstance.h` latch state | `SapphireVulkanFrameLatch.h` | P5 dependency closure + S71 desktop ownership/black-contract adapter |
 | `MelonPrimeDesktop2DBlackContract.h` | `MelonPrimeDesktop2DBlackContract.h` | S71 desktop-only 2D payload / protected-black helpers |
+| `MelonPrimeDesktop2DRepairMode.h` | `MelonPrimeDesktop2DRepairMode.h` | S72 desktop temporal repair mode gate |
+| `MelonPrimeDesktop2DProvenance.h` | `MelonPrimeDesktop2DProvenance.h` | S72 capture / carry provenance validation |
+
+## S72 temporal repair progress
+
+| Phase | Description | Status |
+|---|---|---|
+| S72-1 | CurrentFrameOnly mode disables desktop temporal repairs | **done** |
+| S72-2 | Capture repair preserves present/protected-black 2D lines | **done** |
+| S72-3 | Capture sources tagged with screen/engine provenance | **done** |
+| S72-4 | Previous carries rejected across 2D owner changes | **done** |
+| S72-5 | 2D owner transitions separated from 3D history | **done** |
+| S72-6 | Whole-screen Engine A cache replacement removed (default path) | **done** |
+| S72-7 | Atomic packed line tuple repair | **done** |
+| S72-8 | Hard-coded bottom-row black repair removed | **done** |
+| S72-9 | S72 parity static tests | **done** |
+| S72-10 | CI + manifest tracking | **done** |
 
 ## Copied core files
 
