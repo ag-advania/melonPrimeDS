@@ -83,17 +83,17 @@ Desktop adaptations are isolated in `MELONPRIME_ADAPT_BEGIN` / `MELONPRIME_ADAPT
 - Separate present queue family and timeline semaphore submit fix (retained)
 - Build-generated SPIR-V headers via `tools/vulkan/generate_sapphire_spirv.py`
 
-## Legacy custom path (scheduled removal P9)
+## Legacy custom path (removed P9)
 
-The following MelonPrime-only bridge must not remain after P9:
+The MelonPrime-only frontend bridge listed below has been removed. Core
+`SapphireStructured2DFrameSnapshot` state in `GPU_Soft` remains for packed
+framebuffer export via `GetStructuredVulkan2DPlane()`.
 
 ```text
-src/GPU2D_Structured.h
-MelonPrimeStructuredSnapshot
-captureCompletedSnapshot()
-buildSoftPackedSnapshot()
-GPU::CopyStructured2DFrameSnapshot()
-producer-side composeAndSubmitFrame()
+MelonPrimeStructuredSnapshot (removed)
+captureCompletedSnapshot() (removed)
+buildSoftPackedSnapshot() (removed)
+producer-side composeAndSubmitFrame() (removed)
 ```
 
 ## Phase progress
@@ -108,5 +108,5 @@ producer-side composeAndSubmitFrame()
 | P5 | Latch dependency closure | **done** (this commit) |
 | P6 | runFrame transaction port | **done** (this commit) |
 | P7 | Presenter ownership port | **done** (this commit) |
-| P8 | Desktop adapters restore | pending |
-| P9 | Legacy custom path removal | pending |
+| P8 | Desktop adapters restore | **done** (P4 LegacyCustom presenter + MelonPrimeScreenVulkan overlays retained) |
+| P9 | Legacy custom path removal | **done** (this commit) |
