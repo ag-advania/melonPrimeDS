@@ -813,8 +813,7 @@ void FrameQueue::synchronizeHistoryReferences(
     rebuildFreeQueueLocked();
 }
 
-void FrameQueue::synchronizePresentationCompletion(
-    const std::function<bool(Frame*)>& isComplete)
+void FrameQueue::synchronizePresentationCompletion(u64 completedTimelineValue)
 {
     std::unique_lock lock(frameLock);
     for (auto& frame : frames)
@@ -824,9 +823,13 @@ void FrameQueue::synchronizePresentationCompletion(
         {
             continue;
         }
-        if (!isComplete || !isComplete(&frame))
+        if (frame.presentTimelineValue != 0
+            && frame.presentTimelineValue > completedTimelineValue)
+        {
             continue;
+        }
 
+        frame.presentTimelineValue = 0;
         frame.presentationReferences = 0;
         if (frame.state == FrameQueueState::HistoryReferenced
             && frame.historyReferences == 0)

@@ -49,7 +49,8 @@ MelonPrimeVulkanFrontendSession::~MelonPrimeVulkanFrontendSession()
 
 bool MelonPrimeVulkanFrontendSession::initialize(NDS& newNds)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (initialized)
     {
         nds = &newNds;
@@ -76,15 +77,10 @@ void MelonPrimeVulkanFrontendSession::clearProducerState()
 
 void MelonPrimeVulkanFrontendSession::shutdown()
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     output.releaseTemporalFrameReferences();
     frameQueue.synchronizeHistoryReferences({});
-    if (activePresenter != nullptr)
-    {
-        frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
-            return activePresenter->waitForFrameConsumption(frame, UINT64_MAX);
-        });
-    }
     frameQueue.clear();
     frameInputs.clear();
     output.shutdown();
@@ -101,7 +97,8 @@ void MelonPrimeVulkanFrontendSession::shutdown()
 
 void MelonPrimeVulkanFrontendSession::beginBackendSwitch()
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
 
     if (!producerSuspended)
         stagedPresenter = activePresenter;
@@ -118,7 +115,8 @@ void MelonPrimeVulkanFrontendSession::beginBackendSwitch()
 void MelonPrimeVulkanFrontendSession::completeBackendSwitch(
     bool vulkanPresentationActive)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
 
     if (vulkanPresentationActive)
     {
@@ -142,7 +140,8 @@ void MelonPrimeVulkanFrontendSession::completeBackendSwitch(
 
 void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (activeGeneration == newGeneration)
         return;
 
@@ -160,7 +159,8 @@ void MelonPrimeVulkanFrontendSession::beginGeneration(u64 newGeneration)
 
 void MelonPrimeVulkanFrontendSession::beginSurfaceGeneration(u64 newGeneration)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (newGeneration == 0 || activeSurfaceGeneration == newGeneration)
         return;
     activeSurfaceGeneration = newGeneration;
@@ -171,10 +171,10 @@ void MelonPrimeVulkanFrontendSession::beginSurfaceGeneration(u64 newGeneration)
 
 void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()
 {
-    frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
-        return activePresenter == nullptr
-            || activePresenter->waitForFrameConsumption(frame, UINT64_MAX);
-    });
+    u64 completedTimelineValue = 0;
+    if (activePresenter != nullptr)
+        (void)activePresenter->getCompletedTimelineValue(completedTimelineValue);
+    frameQueue.synchronizePresentationCompletion(completedTimelineValue);
     frameQueue.synchronizeHistoryReferences([&](const Frame* frame) {
         return output.isFrameReferencedAsPendingPreviousSource(frame);
     });
@@ -474,7 +474,8 @@ bool MelonPrimeVulkanFrontendSession::submitCompletedFrame(
 
 Frame* MelonPrimeVulkanFrontendSession::acquirePresentFrame()
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (!initialized || producerSuspended)
         return nullptr;
     synchronizeFrameReferencesLocked();
@@ -486,13 +487,20 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
     VulkanSurfacePresenter& presenter,
     u64 timeoutNs)
 {
-    std::scoped_lock lock(stateMutex);
-    const auto iterator = frameInputs.find(frame);
-    if (!initialized || producerSuspended
-        || activePresenter != &presenter
-        || frame == nullptr || iterator == frameInputs.end())
-        return false;
-    return presenter.presentFrame(frame, output, iterator->second, timeoutNs);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    VulkanCompositionInputs inputs{};
+    {
+        std::scoped_lock stateLock(stateMutex);
+        const auto iterator = frameInputs.find(frame);
+        if (!initialized || producerSuspended
+            || activePresenter != &presenter
+            || frame == nullptr || iterator == frameInputs.end())
+        {
+            return false;
+        }
+        inputs = iterator->second;
+    }
+    return presenter.presentFrame(frame, output, inputs, timeoutNs);
 }
 
 bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
@@ -500,15 +508,19 @@ bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
     int surfaceId,
     const VulkanSurfaceOverlay& overlay)
 {
-    std::scoped_lock lock(stateMutex);
-    if (!initialized || producerSuspended || activePresenter != &presenter)
-        return false;
+    std::scoped_lock presentationLock(presentationCallMutex);
+    {
+        std::scoped_lock stateLock(stateMutex);
+        if (!initialized || producerSuspended || activePresenter != &presenter)
+            return false;
+    }
     return presenter.updateOverlay(surfaceId, overlay);
 }
 
 void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (frame == nullptr)
         return;
 
@@ -519,7 +531,8 @@ void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
 
 void MelonPrimeVulkanFrontendSession::deferPresentedFrame(Frame* frame)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (frame != nullptr)
         frameQueue.deferPresentedFrame(frame, queuePolicy());
 }
@@ -543,14 +556,15 @@ void MelonPrimeVulkanFrontendSession::registerPresenter(VulkanSurfacePresenter* 
 
 void MelonPrimeVulkanFrontendSession::unregisterPresenter(VulkanSurfacePresenter* presenter)
 {
-    std::scoped_lock lock(stateMutex);
+    std::scoped_lock presentationLock(presentationCallMutex);
+    std::scoped_lock stateLock(stateMutex);
     if (stagedPresenter == presenter)
         stagedPresenter = nullptr;
     if (activePresenter == presenter)
     {
-        frameQueue.synchronizePresentationCompletion([&](Frame* frame) {
-            return presenter->waitForFrameConsumption(frame, UINT64_MAX);
-        });
+        u64 completedTimelineValue = 0;
+        (void)presenter->getCompletedTimelineValue(completedTimelineValue);
+        frameQueue.synchronizePresentationCompletion(completedTimelineValue);
         activePresenter = nullptr;
     }
 }
@@ -592,6 +606,15 @@ bool MelonPrimeVulkanFrontendSession::backendSwitchInProgress() const
 {
     std::scoped_lock lock(stateMutex);
     return producerSuspended;
+}
+
+bool MelonPrimeVulkanFrontendSession::isReadyForGeneration(
+    u64 expectedGeneration) const
+{
+    std::scoped_lock lock(stateMutex);
+    return initialized
+        && !producerSuspended
+        && activeGeneration == expectedGeneration;
 }
 
 u64 MelonPrimeVulkanFrontendSession::generation() const

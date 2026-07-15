@@ -93,6 +93,7 @@ public:
     [[nodiscard]] bool hasPresentedFrame() const;
     [[nodiscard]] bool hasRegisteredPresenter() const;
     [[nodiscard]] bool backendSwitchInProgress() const;
+    [[nodiscard]] bool isReadyForGeneration(u64 generation) const;
     [[nodiscard]] u64 generation() const;
 
 private:
@@ -109,6 +110,7 @@ private:
     void clearProducerState();
     void synchronizeFrameReferencesLocked();
 
+    std::mutex presentationCallMutex;
     mutable std::mutex stateMutex;
     melonDS::NDS* nds = nullptr;
     MelonDSAndroid::VulkanOutput output;

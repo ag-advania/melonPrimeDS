@@ -163,6 +163,7 @@ public:
 
     bool presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
+    bool getCompletedTimelineValue(u64& completedValue) const;
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
     static bool prewarmRetroArchFilter(

@@ -125,7 +125,7 @@ public:
     void requestFastForwardPresentationTransition();
     void setActiveGenerations(u64 rendererGeneration, u64 surfaceGeneration);
     void synchronizeHistoryReferences(const std::function<bool(const Frame*)>& isReferenced);
-    void synchronizePresentationCompletion(const std::function<bool(Frame*)>& isComplete);
+    void synchronizePresentationCompletion(u64 completedTimelineValue);
     void clear();
     FrameQueueStats takeStatsSnapshotAndReset();
 

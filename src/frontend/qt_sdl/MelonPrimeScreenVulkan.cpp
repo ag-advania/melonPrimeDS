@@ -816,10 +816,10 @@ void ScreenPanelVulkan::presentOnGuiThread()
     if (frame == nullptr)
         return;
 
-    // Sapphire blocks for realtime presentation when deadline dropping is
-    // disabled. A fixed 16 ms timeout can repeatedly defer the same Win32
-    // FIFO frame and permanently starve the producer.
-    constexpr u64 kPresentTimeoutNs = UINT64_MAX;
+    // Keep the GUI responsive if the driver or swapchain stops progressing.
+    // Teardown may wait indefinitely, but the normal presentation path must
+    // always have a bounded budget.
+    constexpr u64 kPresentTimeoutNs = 50'000'000ull;
     if (frame->surfaceGeneration != surfaceHost.generation())
     {
         if (tracePresenter)

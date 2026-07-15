@@ -319,18 +319,14 @@ void EmuInstance::submitVulkanFrontendFrame()
         return;
     }
 
-    VulkanSubmitTrace("[VulkanSubmitTrace] session initialize begin\n");
-
     const u64 rendererGeneration = gpu3D.GetCurrentRendererGeneration();
-    if (!vulkanFrontendSessionOwner->initialize(*nds))
+    if (!vulkanFrontendSessionOwner->isReadyForGeneration(rendererGeneration))
     {
-        VulkanSubmitTrace("[VulkanSubmitTrace] session initialize failed\n");
+        VulkanSubmitTrace(
+            "[VulkanSubmitTrace] skip: session not ready for generation=%llu\n",
+            static_cast<unsigned long long>(rendererGeneration));
         return;
     }
-
-    VulkanSubmitTrace("[VulkanSubmitTrace] session initialize complete\n");
-
-    vulkanFrontendSessionOwner->beginGeneration(rendererGeneration);
 
     VulkanSubmitTrace("[VulkanSubmitTrace] capture snapshot begin\n");
 

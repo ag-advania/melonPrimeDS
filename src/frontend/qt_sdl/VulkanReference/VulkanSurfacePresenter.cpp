@@ -1342,6 +1342,20 @@ bool VulkanSurfacePresenter::waitForFrameConsumption(Frame* frame, u64 timeoutNs
     return waitOk;
 }
 
+bool VulkanSurfacePresenter::getCompletedTimelineValue(u64& completedValue) const
+{
+    completedValue = 0;
+    if (!initialized
+        || !useTimelineSemaphores
+        || timelineSemaphore == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    return vkGetSemaphoreCounterValue(
+        device, timelineSemaphore, &completedValue) == VK_SUCCESS;
+}
+
 VulkanPresenterPacingStats VulkanSurfacePresenter::takePacingStatsSnapshotAndReset()
 {
     VulkanPresenterPacingStats stats{};
@@ -3879,15 +3893,22 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
     };
     VkTimelineSemaphoreSubmitInfo timelineSubmitInfo{};
     u64 signalValue = 0;
+    std::array<u64, 1> waitValues{0u};
+    std::array<u64, 2> signalValues{0u, 0u};
     if (useTimelineSemaphores && timelineSemaphore != VK_NULL_HANDLE)
     {
         signalValue = ++timelineValue;
-        timelineSubmitInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        timelineSubmitInfo.signalSemaphoreValueCount = 1;
-        timelineSubmitInfo.pSignalSemaphoreValues = &signalValue;
-        submitInfo.pNext = &timelineSubmitInfo;
-        submitInfo.signalSemaphoreCount = 2;
+        submitInfo.signalSemaphoreCount =
+            static_cast<u32>(signalSemaphores.size());
         submitInfo.pSignalSemaphores = signalSemaphores.data();
+
+        signalValues[1] = signalValue;
+        timelineSubmitInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineSubmitInfo.waitSemaphoreValueCount = submitInfo.waitSemaphoreCount;
+        timelineSubmitInfo.pWaitSemaphoreValues = waitValues.data();
+        timelineSubmitInfo.signalSemaphoreValueCount = submitInfo.signalSemaphoreCount;
+        timelineSubmitInfo.pSignalSemaphoreValues = signalValues.data();
+        submitInfo.pNext = &timelineSubmitInfo;
     }
     else
     {
