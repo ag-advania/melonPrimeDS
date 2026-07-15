@@ -942,14 +942,22 @@ bool VulkanSurfacePresenter::configureSurface(int surfaceId, const VulkanSurface
         && surfaceState.background.imageView == VK_NULL_HANDLE
         && surfaceConfigsEqual(surfaceState.config, config))
     {
+        surfaceState.config = config;
+        surfaceState.vertexBufferDirty = true;
         return true;
     }
 
-    if (waitForSurfaceIdle(surfaceState) != VK_SUCCESS)
-        return false;
-
     const bool retroArchConfigChanged =
         surfaceState.configured && !retroArchConfigEqual(surfaceState.config, config);
+    const bool backgroundChanged =
+        backgroundImage.pixels != nullptr && backgroundImage.width > 0 && backgroundImage.height > 0;
+    if (retroArchConfigChanged || backgroundChanged)
+    {
+        constexpr u64 kConfigureSurfaceWaitNs = 50'000'000ull;
+        if (waitForSurfaceIdle(surfaceState, kConfigureSurfaceWaitNs) != VK_SUCCESS)
+            return false;
+    }
+
     if (retroArchConfigChanged)
         destroyRetroArchResources(surfaceState);
 
@@ -1628,8 +1636,12 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     if (!surfaceState.swapchainDirty && surfaceState.swapchain != VK_NULL_HANDLE)
         return true;
 
-    if (surfaceState.swapchain != VK_NULL_HANDLE && waitForSurfaceIdle(surfaceState) != VK_SUCCESS)
-        return false;
+    if (surfaceState.swapchain != VK_NULL_HANDLE)
+    {
+        constexpr u64 kSwapchainRecreateWaitNs = 50'000'000ull;
+        if (waitForSurfaceIdle(surfaceState, kSwapchainRecreateWaitNs) != VK_SUCCESS)
+            return true;
+    }
 
     VkSurfaceCapabilitiesKHR capabilities{};
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surfaceState.surface, &capabilities) != VK_SUCCESS)
@@ -1670,49 +1682,6 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     }
 
     VkSwapchainKHR oldSwapchain = surfaceState.swapchain;
-    if (oldSwapchain != VK_NULL_HANDLE)
-    {
-        std::vector<VkFramebuffer> framebuffers =
-            std::move(surfaceState.framebuffers);
-        std::vector<VkImageView> imageViews =
-            std::move(surfaceState.swapchainImageViews);
-        const VkPipeline pipeline =
-            std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
-        const VkRenderPass renderPass =
-            std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
-
-        surfaceState.swapchain = VK_NULL_HANDLE;
-        surfaceState.swapchainImages.clear();
-        surfaceState.swapchainImageInitialized.clear();
-        surfaceState.extent = {};
-        surfaceState.swapchainFormat = VK_FORMAT_UNDEFINED;
-        surfaceState.screenDescriptorCache = {};
-        surfaceState.backgroundDescriptorCache = {};
-        surfaceState.cachedDrawCalls.clear();
-
-        const VkDevice retireDevice = device;
-        retiredResources.RetireReady(
-            [retireDevice,
-             framebuffers = std::move(framebuffers),
-             imageViews = std::move(imageViews),
-             pipeline,
-             renderPass]() mutable {
-                for (VkFramebuffer framebuffer : framebuffers)
-                {
-                    if (framebuffer != VK_NULL_HANDLE)
-                        vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
-                }
-                if (pipeline != VK_NULL_HANDLE)
-                    vkDestroyPipeline(retireDevice, pipeline, nullptr);
-                if (renderPass != VK_NULL_HANDLE)
-                    vkDestroyRenderPass(retireDevice, renderPass, nullptr);
-                for (VkImageView imageView : imageViews)
-                {
-                    if (imageView != VK_NULL_HANDLE)
-                        vkDestroyImageView(retireDevice, imageView, nullptr);
-                }
-            });
-    }
 
     if (surfaceState.hasCachedSwapchainSelection)
     {
@@ -1865,9 +1834,49 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
 
     if (!swapchainCreated)
     {
-        if (oldSwapchain != VK_NULL_HANDLE)
-            vkDestroySwapchainKHR(device, oldSwapchain, nullptr);
-        return false;
+        surfaceState.swapchainDirty = true;
+        return surfaceState.swapchain != VK_NULL_HANDLE;
+    }
+
+    if (oldSwapchain != VK_NULL_HANDLE)
+    {
+        std::vector<VkFramebuffer> framebuffers =
+            std::move(surfaceState.framebuffers);
+        std::vector<VkImageView> imageViews =
+            std::move(surfaceState.swapchainImageViews);
+        const VkPipeline pipeline =
+            std::exchange(surfaceState.pipeline, VK_NULL_HANDLE);
+        const VkRenderPass renderPass =
+            std::exchange(surfaceState.renderPass, VK_NULL_HANDLE);
+
+        surfaceState.swapchainImages.clear();
+        surfaceState.swapchainImageInitialized.clear();
+        surfaceState.screenDescriptorCache = {};
+        surfaceState.backgroundDescriptorCache = {};
+        surfaceState.cachedDrawCalls.clear();
+
+        const VkDevice retireDevice = device;
+        retiredResources.RetireReady(
+            [retireDevice,
+             framebuffers = std::move(framebuffers),
+             imageViews = std::move(imageViews),
+             pipeline,
+             renderPass]() mutable {
+                for (VkFramebuffer framebuffer : framebuffers)
+                {
+                    if (framebuffer != VK_NULL_HANDLE)
+                        vkDestroyFramebuffer(retireDevice, framebuffer, nullptr);
+                }
+                if (pipeline != VK_NULL_HANDLE)
+                    vkDestroyPipeline(retireDevice, pipeline, nullptr);
+                if (renderPass != VK_NULL_HANDLE)
+                    vkDestroyRenderPass(retireDevice, renderPass, nullptr);
+                for (VkImageView imageView : imageViews)
+                {
+                    if (imageView != VK_NULL_HANDLE)
+                        vkDestroyImageView(retireDevice, imageView, nullptr);
+                }
+            });
     }
 
     VkAttachmentDescription attachmentDescription{};
