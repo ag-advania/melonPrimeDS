@@ -480,8 +480,8 @@ private:
     VkPresentModeKHR lastPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
 #if defined(MELONPRIME_DS)
-    static VulkanDesktopOverlayRecorderFn desktopOverlayRecorder;
-    static void* desktopOverlayUserData;
+    VulkanDesktopOverlayRecorderFn desktopOverlayRecorder = nullptr;
+    void* desktopOverlayUserData = nullptr;
 #endif
 };
 

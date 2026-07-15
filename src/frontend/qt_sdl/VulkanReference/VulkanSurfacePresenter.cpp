@@ -21,11 +21,6 @@ using namespace melonDS::Vulkan::GeneratedShaders;
 bool isFastForwardActive();
 bool areRendererDebugBgObjLogsEnabled();
 
-#if defined(MELONPRIME_DS)
-VulkanSurfacePresenter::VulkanDesktopOverlayRecorderFn VulkanSurfacePresenter::desktopOverlayRecorder = nullptr;
-void* VulkanSurfacePresenter::desktopOverlayUserData = nullptr;
-#endif
-
 namespace
 {
 constexpr u32 kMaxSurfaceVertexCount = 30;
