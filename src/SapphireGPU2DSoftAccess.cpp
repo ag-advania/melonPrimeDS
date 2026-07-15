@@ -2,32 +2,20 @@
 
 #include "SapphireGPU2DSoftAccess.h"
 
-#include "GPU_Soft.h"
+#include "SapphireGPU2DCore/GPU2D_Soft.h"
 
 namespace melonDS::SapphireGPU2D
 {
 
-SoftRenderer::SoftRenderer(melonDS::GPU2D& gpu2D, melonDS::SoftRenderer& owner)
-    : Renderer2D(gpu2D)
-    , Owner(owner)
+SoftRenderer::SoftRenderer(SapphireGPU2DCore::GPU2D::SoftRenderer& owner) noexcept
+    : Owner(owner)
 {
-}
-
-void SoftRenderer::DrawScanline(u32 line)
-{
-    if (GPU2D.Num == 0)
-        Owner.DrawScanline(line);
-}
-
-void SoftRenderer::DrawSprites(u32 line)
-{
-    if (GPU2D.Num == 0)
-        Owner.DrawSprites(line);
 }
 
 const SoftRenderer::DebugCaptureStats& SoftRenderer::GetDebugCaptureStats() const noexcept
 {
-    return Owner.GetSapphireDebugCaptureStats();
+    static_assert(sizeof(DebugCaptureStats) == sizeof(SapphireGPU2DCore::GPU2D::SoftRenderer::DebugCaptureStats));
+    return reinterpret_cast<const DebugCaptureStats&>(Owner.GetDebugCaptureStats());
 }
 
 const u32* SoftRenderer::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept
@@ -42,12 +30,12 @@ void SoftRenderer::ClearStructuredVulkan2DState() noexcept
 
 const u32* SoftRenderer::GetDebugCapture3dSource() const noexcept
 {
-    return Owner.GetSapphireDebugCapture3dSource();
+    return Owner.GetDebugCapture3dSource();
 }
 
 const std::array<u8, 192>& SoftRenderer::GetDebugCaptureLineUses3dMask() const noexcept
 {
-    return Owner.GetSapphireCaptureLineUses3dMask();
+    return Owner.GetDebugCaptureLineUses3dMask();
 }
 
 } // namespace melonDS::SapphireGPU2D

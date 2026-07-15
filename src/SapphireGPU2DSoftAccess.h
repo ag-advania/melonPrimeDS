@@ -9,9 +9,9 @@
 
 #include <array>
 
-#include "GPU2D.h"
+#include "types.h"
 
-namespace melonDS
+namespace melonDS::SapphireGPU2DCore::GPU2D
 {
 class SoftRenderer;
 }
@@ -19,7 +19,7 @@ class SoftRenderer;
 namespace melonDS::SapphireGPU2D
 {
 
-class SoftRenderer : public Renderer2D
+class SoftRenderer
 {
 public:
     struct DebugCaptureStats
@@ -52,14 +52,7 @@ public:
         u32 CompModeCounts[8]{};
     };
 
-    explicit SoftRenderer(melonDS::GPU2D& gpu2D, melonDS::SoftRenderer& owner);
-
-    bool Init() override { return true; }
-    void Reset() override {}
-    void DrawScanline(u32 line) override;
-    void DrawSprites(u32 line) override;
-    void VBlank() override {}
-    void VBlankEnd() override {}
+    explicit SoftRenderer(melonDS::SapphireGPU2DCore::GPU2D::SoftRenderer& owner) noexcept;
 
     [[nodiscard]] const DebugCaptureStats& GetDebugCaptureStats() const noexcept;
     [[nodiscard]] const u32* GetStructuredVulkan2DPlane(
@@ -70,7 +63,7 @@ public:
     [[nodiscard]] const std::array<u8, 192>& GetDebugCaptureLineUses3dMask() const noexcept;
 
 private:
-    melonDS::SoftRenderer& Owner;
+    melonDS::SapphireGPU2DCore::GPU2D::SoftRenderer& Owner;
 };
 
 } // namespace melonDS::SapphireGPU2D

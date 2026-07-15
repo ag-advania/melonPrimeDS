@@ -159,6 +159,18 @@ void GPU3D::SetCurrentRenderer(std::unique_ptr<Renderer3D>&& renderer) noexcept
         CurrentRenderer->Reset();
     ++CurrentRendererGeneration;
 }
+
+bool GPU3D::IsRendererAccelerated() const noexcept
+{
+    return HasCurrentRenderer() && GetCurrentRenderer().UsesStructured2DMetadata();
+}
+
+u32* GPU3D::GetLine(int line) noexcept
+{
+    if (!HasCurrentRenderer())
+        return nullptr;
+    return GetCurrentRenderer().GetLine(line);
+}
 #endif
 
 void Vertex::DoSavestate(Savestate* file) noexcept
@@ -2520,6 +2532,15 @@ void GPU3D::SetRenderXPos(u16 xpos, u16 mask) noexcept
 
     RenderXPos = (RenderXPos & ~mask) | (xpos & mask & 0x01FF);
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void GPU3D::SetRenderXPos(u16 xpos) noexcept
+{
+    if (!RenderingEnabled) return;
+
+    RenderXPos = xpos & 0x01FF;
+}
+#endif
 
 
 void GPU3D::WriteToGXFIFO(u32 val) noexcept

@@ -376,7 +376,7 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
     {
         SapphireVulkan2DAccess =
-            std::make_unique<SapphireGPU2D::SoftRenderer>(GPU2D_A, *softRenderer);
+            std::make_unique<SapphireGPU2D::SoftRenderer>(softRenderer->GetSapphire2DRenderer());
         softRenderer->SyncSapphireFramebufferBindings();
     }
     else

@@ -21,9 +21,8 @@
 #include "GPU_ColorOp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include <algorithm>
+#include "SapphireGPU2DCore/GPU2D_Soft.h"
 #include <cassert>
-#include <cstring>
 #include "SapphireGPU2DSoftAccess.h"
 #endif
 
@@ -32,6 +31,10 @@ namespace melonDS
 
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     : Renderer(nds.GPU)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    , SapphireUnitA(0, nds.GPU)
+    , SapphireUnitB(1, nds.GPU)
+#endif
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const size_t len = kPackedFramebufferPixels;
@@ -44,8 +47,12 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     Framebuffer[1][1] = new u32[len];
     BackBuffer = 0;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    Sapphire2DRenderer = std::make_unique<SapphireGPU2DCore::GPU2D::SoftRenderer>(GPU);
+#else
     Rend2D_A = std::make_unique<SoftRenderer2D>(GPU.GPU2D_A, *this);
     Rend2D_B = std::make_unique<SoftRenderer2D>(GPU.GPU2D_B, *this);
+#endif
     Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D, *this);
 }
 
@@ -69,18 +76,13 @@ void SoftRenderer::Reset()
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    memset(StructuredPlane0, 0, sizeof(StructuredPlane0));
-    memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
-    memset(StructuredControl, 0, sizeof(StructuredControl));
-    memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
-    StructuredVulkan2DPlanes.fill(0);
-    HasLastDebugCapture3dSource = false;
-    std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
-    CaptureLineUses3d.fill(0);
-    SapphireDebugCaptureStats = {};
-#endif
+    Sapphire2DRenderer->ClearStructuredVulkan2DState();
+    SapphireUnitA.Reset();
+    SapphireUnitB.Reset();
+#else
     Rend2D_A->Reset();
     Rend2D_B->Reset();
+#endif
     GetRenderer3D().Reset();
 }
 
@@ -128,15 +130,25 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 
 void SoftRenderer::DrawScanline(u32 line)
 {
-    u32 *dstA, *dstB;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    bool writeCpuFinalA = true;
-    bool writeCpuFinalB = true;
-    const bool accelerated = GetRenderer3D().UsesStructured2DMetadata();
-    const u32 stride = accelerated ? static_cast<u32>(kPackedStride) : 256u;
+    SyncSapphireUnitsFromGPU2D();
+
+    if (GPU.ScreenSwap)
+        Sapphire2DRenderer->SetFramebuffer(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
+    else
+        Sapphire2DRenderer->SetFramebuffer(Framebuffer[BackBuffer][1], Framebuffer[BackBuffer][0]);
+
+    line = GPU.VCount;
+    if (line < 192)
+    {
+        Sapphire2DRenderer->DrawScanline(line, &SapphireUnitA);
+        Sapphire2DRenderer->DrawScanline(line, &SapphireUnitB);
+    }
+
+    SyncSapphireFramebufferBindings();
 #else
+    u32 *dstA, *dstB;
     const u32 stride = 256u;
-#endif
     u32 dstoffset = stride * line;
     if (GPU.ScreenSwap)
     {
@@ -153,74 +165,16 @@ void SoftRenderer::DrawScanline(u32 line)
     line = GPU.VCount;
     if (line < 192)
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const bool structuredSourceActive = GetRenderer3D().UsesStructured2DMetadata();
-        if (structuredSourceActive && line == 0)
-        {
-            HasLastDebugCapture3dSource = false;
-            std::fill_n(LastDebugCapture3dSource, kStructuredPixelCount, 0u);
-            CaptureLineUses3d.fill(0);
-        }
-#endif
         // retrieve 3D output
         Output3D = GetRenderer3D().GetLine(line);
 
         // draw BG/OBJ layers
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        // A line can return early for disabled/forced-blank engines. Clear the
-        // staging pair first so stale metadata can never cross frame boundaries.
-        memset(StructuredPlane0, 0, sizeof(StructuredPlane0));
-        memset(StructuredPlane1, 0, sizeof(StructuredPlane1));
-        memset(StructuredControl, 0, sizeof(StructuredControl));
-        memset(StructuredNativeFinal, 0, sizeof(StructuredNativeFinal));
-#endif
         Rend2D_A->DrawScanline(line);
         Rend2D_B->DrawScanline(line);
 
         // draw the final screen output
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (structuredSourceActive)
-        {
-            const u32 displayModeA = (GPU.GPU2D_A.DispCnt >> 16u) & 0x3u;
-            const u32 displayModeB = (GPU.GPU2D_B.DispCnt >> 16u) & 0x1u;
-            writeCpuFinalA = displayModeA != 1u
-                || !GPU.ScreensEnabled
-                || !GPU.GPU2D_A.Enabled
-                || GPU.GPU2D_A.ForcedBlank;
-            writeCpuFinalB = displayModeB != 1u
-                || !GPU.ScreensEnabled
-                || !GPU.GPU2D_B.Enabled
-                || GPU.GPU2D_B.ForcedBlank;
-        }
-        if (writeCpuFinalA)
-            DrawScanlineA(line, dstA);
-        if (writeCpuFinalB)
-            DrawScanlineB(line, dstB);
-#else
         DrawScanlineA(line, dstA);
         DrawScanlineB(line, dstB);
-#endif
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (structuredSourceActive)
-        {
-            for (u32 engine = 0; engine < 2; ++engine)
-            {
-                if (!accelerated)
-                    continue;
-
-                const GPU2D& engine2D = engine == 0 ? GPU.GPU2D_A : GPU.GPU2D_B;
-                WriteAcceleratedPackedRow(
-                    engine == 0 ? dstA : dstB,
-                    engine,
-                    line,
-                    engine == 0 ? GPU.MasterBrightnessA : GPU.MasterBrightnessB,
-                    engine2D.DispCnt,
-                    engine2D.ForcedBlank,
-                    engine2D.Enabled);
-            }
-        }
-#endif
 
         // perform display capture if enabled
         if (GPU.CaptureEnable)
@@ -243,17 +197,8 @@ void SoftRenderer::DrawScanline(u32 line)
     if (GPU.ScreensEnabled)
     {
         // convert to 32-bit BGRA
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const bool skipExpand =
-            accelerated && GetRenderer3D().UsesStructured2DMetadata();
-        if (writeCpuFinalA && !skipExpand)
-            ExpandColor(dstA);
-        if (writeCpuFinalB && !skipExpand)
-            ExpandColor(dstB);
-#else
         ExpandColor(dstA);
         ExpandColor(dstB);
-#endif
     }
     else
     {
@@ -264,68 +209,14 @@ void SoftRenderer::DrawScanline(u32 line)
             dstB[i] = 0xFF000000;
         }
     }
+#endif
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-size_t SoftRenderer::ScreenIndexForEngine(u32 engine) const noexcept
+void SoftRenderer::SyncSapphireUnitsFromGPU2D()
 {
-    if (GPU.ScreenSwap)
-        return engine == 0 ? 0u : 1u;
-    return engine == 0 ? 1u : 0u;
-}
-
-void SoftRenderer::WriteAcceleratedPackedRow(
-    u32* dstRow,
-    u32 engine,
-    u32 line,
-    u16 masterBrightness,
-    u32 dispCnt,
-    bool forcedBlank,
-    bool engineEnabled)
-{
-    if (dstRow == nullptr
-        || engine >= kStructuredScreenCount
-        || line >= kStructuredScreenHeight)
-    {
-        return;
-    }
-
-    const size_t screenIndex = ScreenIndexForEngine(engine);
-    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
-    const size_t screenBase = screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
-    std::memcpy(
-        dstRow,
-        StructuredVulkan2DPlanes.data() + screenBase + rowBase,
-        kStructuredScreenWidth * sizeof(u32));
-    std::memcpy(
-        dstRow + kStructuredScreenWidth,
-        StructuredVulkan2DPlanes.data() + screenBase + kStructuredPixelCount + rowBase,
-        kStructuredScreenWidth * sizeof(u32));
-    std::memcpy(
-        dstRow + (kStructuredScreenWidth * 2u),
-        StructuredVulkan2DPlanes.data() + screenBase + (kStructuredPixelCount * 2u) + rowBase,
-        kStructuredScreenWidth * sizeof(u32));
-
-    const u32 dispmode = (dispCnt >> 16u) & (engine == 0 ? 0x3u : 0x1u);
-    u32 meta = static_cast<u32>(masterBrightness)
-        | (dispCnt & 0x30000u)
-        | (dispmode << 16u);
-    const u32 xpos = static_cast<u32>(GPU.GPU3D.GetRenderXPos()) & 0x1FFu;
-    meta |= (xpos << 24u) | ((xpos & 0x100u) << 15u);
-    if (forcedBlank || !engineEnabled || !GPU.ScreensEnabled)
-        meta = 0u;
-    dstRow[kPackedStride - 1u] = meta;
-}
-
-const u32* SoftRenderer::GetSapphireDebugCapture3dSource() const noexcept
-{
-    return HasLastDebugCapture3dSource ? LastDebugCapture3dSource : nullptr;
-}
-
-const std::array<u8, SoftRenderer::kStructuredScreenHeight>&
-SoftRenderer::GetSapphireCaptureLineUses3dMask() const noexcept
-{
-    return CaptureLineUses3d;
+    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(SapphireUnitA, GPU.GPU2D_A, GPU);
+    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(SapphireUnitB, GPU.GPU2D_B, GPU);
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
@@ -347,8 +238,21 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 
 void SoftRenderer::DrawSprites(u32 line)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    SyncSapphireUnitsFromGPU2D();
+    Sapphire2DRenderer->DrawSprites(line, &SapphireUnitA);
+    Sapphire2DRenderer->DrawSprites(line, &SapphireUnitB);
+#else
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
+#endif
+}
+
+void SoftRenderer::VBlankEnd()
+{
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    Sapphire2DRenderer->VBlankEnd(&SapphireUnitA, &SapphireUnitB);
+#endif
 }
 
 void SoftRenderer::DrawScanlineA(u32 line, u32* dst)
@@ -439,11 +343,7 @@ void SoftRenderer::DrawScanlineB(u32 line, u32* dst)
 
 void SoftRenderer::DoCapture(u32 line)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const u32 captureCnt = GPU.CaptureFrameCnt;
-#else
     const u32 captureCnt = GPU.CaptureCnt;
-#endif
 
     u32 width, height;
     u32 sz = (captureCnt >> 20) & 0x3;
@@ -457,15 +357,6 @@ void SoftRenderer::DoCapture(u32 line)
         width = 256;
         height = 64 * sz;
     }
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (GetRenderer3D().UsesStructured2DMetadata())
-    {
-        if (line < height)
-            DoCaptureStructured(line, width, line);
-        return;
-    }
-#endif
 
     if (line >= height)
         return;
@@ -484,34 +375,12 @@ void SoftRenderer::DoCapture(u32 line)
     else
         srcA = Output2D[0];
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (GetRenderer3D().UsesStructured2DMetadata() && line < kStructuredScreenHeight)
-    {
-        CaptureLineUses3d[line] = 0;
-        if ((captureCnt & (1 << 24)) != 0 && srcA != nullptr)
-        {
-            std::memcpy(
-                &LastDebugCapture3dSource[static_cast<size_t>(line) * kStructuredScreenWidth],
-                srcA,
-                kStructuredScreenWidth * sizeof(u32));
-            CaptureLineUses3d[line] = 1;
-            HasLastDebugCapture3dSource = true;
-            SapphireDebugCaptureStats.CaptureLineUses3dLines++;
-        }
-        SapphireDebugCaptureStats.CaptureLines++;
-    }
-#endif
-
     u16* srcB = nullptr;
     if (captureCnt & (1<<25))
         srcB = GPU.DispFIFOBuffer;
     else
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const u32 dispcnt = GPU.CaptureFrameDispCntA;
-#else
         const u32 dispcnt = GPU.GPU2D_A.DispCnt;
-#endif
         u32 srcvram = (dispcnt >> 18) & 0x3;
         if (GPU.VRAMMap_LCDC & (1<<srcvram))
         {

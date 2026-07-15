@@ -110,6 +110,8 @@ public:
     [[nodiscard]] Renderer3D& GetCurrentRenderer() noexcept { return *CurrentRenderer; }
     [[nodiscard]] const Renderer3D& GetCurrentRenderer() const noexcept { return *CurrentRenderer; }
     [[nodiscard]] bool HasCurrentRenderer() const noexcept { return CurrentRenderer != nullptr; }
+    [[nodiscard]] bool IsRendererAccelerated() const noexcept;
+    [[nodiscard]] u32* GetLine(int line) noexcept;
     [[nodiscard]] u64 GetCurrentRendererGeneration() const noexcept
     {
         return CurrentRendererGeneration;
@@ -118,6 +120,9 @@ public:
 #endif
 
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void SetRenderXPos(u16 xpos) noexcept;
+#endif
     [[nodiscard]] u16 GetRenderXPos() const noexcept { return RenderXPos; }
 
     void WriteToGXFIFO(u32 val) noexcept;

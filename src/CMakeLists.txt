@@ -36,7 +36,9 @@ add_library(core STATIC
     GPU.cpp
     GPU_Soft.cpp
     SapphireGPU2DSoftAccess.cpp
-    SapphireGPU2DStructuredVulkan.cpp
+    SapphireGPU2DCore/GPU2D_Soft.cpp
+    SapphireGPU2DCore/Unit.cpp
+    SapphireGPU2DCore/UnitSync.cpp
     GPU2D.cpp
     GPU2D_Soft.cpp
     GPU3D.cpp
@@ -291,7 +293,7 @@ if (ENABLE_JIT)
     endif()
 endif()
 
-target_include_directories(core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(core PUBLIC MELONPRIME_DS)
 
 set(MELONDS_VERSION_SUFFIX "$ENV{MELONDS_VERSION_SUFFIX}" CACHE STRING "Suffix to add to displayed melonDS version")
