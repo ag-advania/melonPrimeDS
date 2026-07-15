@@ -241,6 +241,52 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 #ifndef NDEBUG
     assert(GPU.FrontBuffer == 0 || GPU.FrontBuffer == 1);
 #endif
+
+    PublishSapphire2DFrame();
+}
+
+void SoftRenderer::PublishSapphire2DFrame() noexcept
+{
+    SapphirePublished2DFrame published{};
+    published.frontBuffer = GPU.FrontBuffer;
+    published.hardwareScreenSwap = GPU.ScreenSwap;
+    published.renderScreenSwapAt3D = GPU.GPU3D.RenderScreenSwapAt3D;
+    published.emulatedFrameSerial = GPU.VulkanFrameSerial;
+    published.publicationGeneration = GPU.Published2DFrame.publicationGeneration + 1;
+
+    published.top.packed = GPU.Framebuffer[published.frontBuffer][0];
+    published.bottom.packed = GPU.Framebuffer[published.frontBuffer][1];
+    published.top.physicalScreen = SapphirePhysicalScreen::Top;
+    published.bottom.physicalScreen = SapphirePhysicalScreen::Bottom;
+    published.top.engine = GPU.ScreenSwap ? 0u : 1u;
+    published.bottom.engine = GPU.ScreenSwap ? 1u : 0u;
+
+    if (Sapphire2DRenderer != nullptr)
+    {
+        published.top.structuredPlane0 =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 0);
+        published.top.structuredPlane1 =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 1);
+        published.top.structuredControl =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 2);
+        published.bottom.structuredPlane0 =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 0);
+        published.bottom.structuredPlane1 =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 1);
+        published.bottom.structuredControl =
+            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 2);
+    }
+
+#ifndef NDEBUG
+    assert(published.top.packed != nullptr);
+    assert(published.bottom.packed != nullptr);
+    if (published.top.structuredControl != nullptr)
+        assert(published.top.engine == (GPU.ScreenSwap ? 0u : 1u));
+    if (published.bottom.structuredControl != nullptr)
+        assert(published.bottom.engine == (GPU.ScreenSwap ? 1u : 0u));
+#endif
+
+    GPU.Published2DFrame = published;
 }
 #endif
 

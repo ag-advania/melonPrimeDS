@@ -30,6 +30,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU2D_Structured.h"
 #include "SapphireGPU2DSoftAccess.h"
+#include "SapphirePublished2DFrame.h"
 #endif
 #include "GPU3D.h"
 #include "NonStupidBitfield.h"
@@ -245,9 +246,14 @@ public:
     [[nodiscard]] SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() noexcept;
     [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
+    [[nodiscard]] const SapphirePublished2DFrame& GetPublished2DFrame() const noexcept
+    {
+        return Published2DFrame;
+    }
 
     int FrontBuffer = 0;
     u32* Framebuffer[2][2]{};
+    SapphirePublished2DFrame Published2DFrame{};
 #endif
 
     // return value for GetFramebuffers:

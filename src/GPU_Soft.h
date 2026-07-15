@@ -26,6 +26,7 @@
 #include "SapphireGPU2DCore/GPU2D_Soft.h"
 #include "SapphireGPU2DCore/UnitSync.h"
 #include "SapphireGPU2DSoftAccess.h"
+#include "SapphirePublished2DFrame.h"
 #endif
 
 namespace melonDS
@@ -63,6 +64,7 @@ public:
     [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() const noexcept { return *Sapphire2DRenderer; }
     void SyncSapphireFramebufferBindings() noexcept;
     void SyncSapphireUnitsFromGPU2D();
+    void PublishSapphire2DFrame() noexcept;
 #endif
 
 private:

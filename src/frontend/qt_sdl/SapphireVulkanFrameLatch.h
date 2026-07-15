@@ -4,6 +4,7 @@
 
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
+#include "SapphirePublished2DFrame.h"
 
 namespace melonDS
 {
@@ -24,8 +25,7 @@ public:
     [[nodiscard]] bool isVulkanTemporal3dHistoryGateActive() const;
     bool latchSoftPackedFrameSnapshot(
         const Frame* frame,
-        int frontBuffer,
-        bool screenSwap,
+        const SapphirePublished2DFrame& published,
         bool useStructuredVulkan2D);
 
     [[nodiscard]] const SoftPackedFrameSnapshot& lastSnapshot() const

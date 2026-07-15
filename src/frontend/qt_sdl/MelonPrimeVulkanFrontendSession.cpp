@@ -1,5 +1,6 @@
 #include "MelonPrimeVulkanFrontendSession.h"
 #include "MelonPrimeVulkanRuntimePacing.h"
+#include "SapphirePublished2DFrame.h"
 #include "VulkanPreparedContentStats.h"
 
 #include "GPU3D_Vulkan.h"
@@ -262,8 +263,9 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     const bool preparedFrameScreenSwap = nds->GPU.GPU3D.RenderScreenSwapAt3D;
     const bool useStructuredVulkan2D =
         renderer3D.GetActiveBackendMode() == VulkanRenderer3D::BackendMode::GraphicsHardware;
+    const SapphirePublished2DFrame& published = nds->GPU.GetPublished2DFrame();
     if (!frameLatch.latchSoftPackedFrameSnapshot(
-            frame, frontBuffer, preparedFrameScreenSwap, useStructuredVulkan2D))
+            frame, published, useStructuredVulkan2D))
     {
         LogVulkanProducerDiscard("latchFailed");
         return false;

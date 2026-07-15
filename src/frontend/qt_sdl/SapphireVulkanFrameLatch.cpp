@@ -923,17 +923,25 @@ bool SapphireVulkanFrameLatch::isVulkanTemporal3dHistoryGateActive() const
 
 bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     const Frame* frame,
-    int frontBuffer,
-    bool screenSwap,
+    const SapphirePublished2DFrame& published,
     bool useStructuredVulkan2D)
 {
-    if (frame == nullptr || nds_ == nullptr || frontBuffer < 0 || frontBuffer > 1)
+    if (frame == nullptr || nds_ == nullptr || published.frontBuffer < 0 || published.frontBuffer > 1)
         return false;
 
-    const u32* topPackedRaw = nds_->GPU.Framebuffer[frontBuffer][0];
-    const u32* bottomPackedRaw = nds_->GPU.Framebuffer[frontBuffer][1];
+    const int frontBuffer = published.frontBuffer;
+    const bool screenSwap = published.renderScreenSwapAt3D;
+    const u32* topPackedRaw = published.top.packed;
+    const u32* bottomPackedRaw = published.bottom.packed;
     if (topPackedRaw == nullptr || bottomPackedRaw == nullptr)
         return false;
+
+#ifndef NDEBUG
+    assert(published.emulatedFrameSerial == nds_->GPU.VulkanFrameSerial
+        || published.emulatedFrameSerial == 0);
+    assert(published.top.engine == (published.hardwareScreenSwap ? 0u : 1u));
+    assert(published.bottom.engine == (published.hardwareScreenSwap ? 1u : 0u));
+#endif
 
     previousSoftPackedFrameSnapshot = lastSoftPackedFrameSnapshot;
     lastSoftPackedFrameSnapshot.clear();
@@ -952,26 +960,27 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         hasLastValidBottomScreenCapture3dDsFrame = false;
     }
 
-    const auto* renderer2D = useStructuredVulkan2D
-        ? nds_->GPU.TryGetSapphireRenderer2D()
-        : nullptr;
-    if (useStructuredVulkan2D && renderer2D == nullptr)
-        return false;
-    const melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats captureStats =
-        renderer2D != nullptr ? renderer2D->GetDebugCaptureStats() : melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats{};
-    const u32* structuredTopPlane0 = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(true, 0) : nullptr;
-    const u32* structuredTopPlane1 = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(true, 1) : nullptr;
-    const u32* structuredTopControl = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(true, 2) : nullptr;
-    const u32* structuredBottomPlane0 = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(false, 0) : nullptr;
-    const u32* structuredBottomPlane1 = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(false, 1) : nullptr;
-    const u32* structuredBottomControl = renderer2D != nullptr ? renderer2D->GetStructuredVulkan2DPlane(false, 2) : nullptr;
+    const u32* structuredTopPlane0 = published.top.structuredPlane0;
+    const u32* structuredTopPlane1 = published.top.structuredPlane1;
+    const u32* structuredTopControl = published.top.structuredControl;
+    const u32* structuredBottomPlane0 = published.bottom.structuredPlane0;
+    const u32* structuredBottomPlane1 = published.bottom.structuredPlane1;
+    const u32* structuredBottomControl = published.bottom.structuredControl;
     const bool hasStructuredVulkan2D =
-        structuredTopPlane0 != nullptr
+        useStructuredVulkan2D
+        && structuredTopPlane0 != nullptr
         && structuredTopPlane1 != nullptr
         && structuredTopControl != nullptr
         && structuredBottomPlane0 != nullptr
         && structuredBottomPlane1 != nullptr
         && structuredBottomControl != nullptr;
+    if (useStructuredVulkan2D && !hasStructuredVulkan2D)
+        return false;
+    const auto* renderer2D = useStructuredVulkan2D
+        ? nds_->GPU.TryGetSapphireRenderer2D()
+        : nullptr;
+    const melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats captureStats =
+        renderer2D != nullptr ? renderer2D->GetDebugCaptureStats() : melonDS::SapphireGPU2D::SoftRenderer::DebugCaptureStats{};
 
     auto countCaptureUses3dLines =
         [](const u32* packedRaw, u32 flag, u32 requiredDisplayMode) {
