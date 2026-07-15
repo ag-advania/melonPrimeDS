@@ -22,6 +22,15 @@
 namespace MelonDSAndroid
 {
 
+#if defined(MELONPRIME_DS)
+struct OverlayTransferRecord
+{
+    bool recorded = false;
+    u64 uploadToken = 0;
+    u32 slotIndex = UINT32_MAX;
+};
+#endif
+
 struct VulkanPresenterRect
 {
     bool enabled = false;
@@ -156,6 +165,7 @@ public:
     static bool HasDrawableGameScreen(const VulkanSurfaceConfig& config) noexcept;
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
     bool getCompletedTimelineValue(u64& completedValue) const;
+    bool getSurfaceCompletedSubmissionSerial(int surfaceId, u64& completedSerial) const;
     VkSemaphore getTimelineSemaphore() const noexcept { return timelineSemaphore; }
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
@@ -181,9 +191,19 @@ public:
         VulkanDesktopOverlayTransferFn recorder,
         void* userData);
     using VulkanDesktopOverlaySubmissionFn =
-        void (*)(bool submitted, u64 timelineValue, void* userData);
+        void (*)(
+            u64 uploadToken,
+            bool submitted,
+            u64 timelineValue,
+            u64 submissionSerial,
+            void* userData);
     void SetDesktopOverlaySubmissionNotifier(
         VulkanDesktopOverlaySubmissionFn notifier,
+        void* userData);
+    using VulkanDesktopOverlayTransferQueryFn =
+        bool (*)(OverlayTransferRecord* outRecord, void* userData);
+    void SetDesktopOverlayTransferQuery(
+        VulkanDesktopOverlayTransferQueryFn query,
         void* userData);
     // MELONPRIME_DESKTOP_ADAPTER_END
 #endif
@@ -305,9 +325,25 @@ private:
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
+        bool ownsRenderResources = true;
 
         u64 lastSubmissionTimelineValue = 0;
     };
+
+    struct SurfaceFormatRenderResources
+    {
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+    };
+
+#if defined(MELONPRIME_DS)
+    struct SurfaceCommandOverlayState
+    {
+        bool transferRecorded = false;
+        u64 uploadToken = 0;
+    };
+#endif
 
     struct SurfaceState
     {
@@ -341,6 +377,11 @@ private:
         VkExtent2D desiredExtent{};
         u64 resizeSerial = 0;
         u64 buildingSerial = 0;
+        u64 submittedSerial = 0;
+        u64 completedSerial = 0;
+#if defined(MELONPRIME_DS)
+        SurfaceCommandOverlayState overlayCommand{};
+#endif
         bool hasCachedSwapchainSelection = false;
         VkSurfaceFormatKHR cachedSurfaceFormat{};
         VkPresentModeKHR cachedPresentMode = VK_PRESENT_MODE_FIFO_KHR;
@@ -369,6 +410,9 @@ private:
     void destroySurfaceStateResources(SurfaceState& surfaceState);
     bool ensureSwapchain(SurfaceState& surfaceState);
     void destroySwapchain(SurfaceState& surfaceState);
+    bool ensureSurfaceFormatRenderResources(
+        VkFormat format,
+        SurfaceFormatRenderResources& resources);
     void destroySwapchainBundle(SwapchainBundle& bundle);
     void retireSwapchainBundle(SwapchainBundle bundle, u64 timelineValue);
     void recoverSwapchain(SurfaceState& surfaceState, const char* reason);
@@ -503,6 +547,7 @@ private:
     bool lastPresentedDirect = true;
     u32 lastSwapchainImageCount = 0;
     VkPresentModeKHR lastPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    std::unordered_map<VkFormat, SurfaceFormatRenderResources> cachedSurfaceFormatResources;
 
 #if defined(MELONPRIME_DS)
     VulkanDesktopOverlayRecorderFn desktopOverlayRecorder = nullptr;
@@ -511,6 +556,8 @@ private:
     void* desktopOverlayTransferUserData = nullptr;
     VulkanDesktopOverlaySubmissionFn desktopOverlaySubmissionNotifier = nullptr;
     void* desktopOverlaySubmissionUserData = nullptr;
+    VulkanDesktopOverlayTransferQueryFn desktopOverlayTransferQuery = nullptr;
+    void* desktopOverlayTransferQueryUserData = nullptr;
 #endif
 };
 

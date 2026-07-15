@@ -186,9 +186,10 @@ void MelonPrimeVulkanOverlayRenderer::shutdown()
     initialized = false;
     compositeRequested = false;
     pendingUpload = false;
-    hasValidUploadedOverlay = false;
-    textureInitialized = false;
-    textureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    committedTexture = {};
+    pendingTextureTransition = {};
+    lastTransferRecord = {};
+    retiredTextures.clear();
 }
 
 bool MelonPrimeVulkanOverlayRenderer::createTransferResources()
@@ -222,8 +223,10 @@ void MelonPrimeVulkanOverlayRenderer::destroyUploadSlot(melonDS::u32 slotIndex)
         slot.buffer = VK_NULL_HANDLE;
     }
     slot.capacity = 0;
-    slot.recorded = false;
-    slot.completionTimelineValue = 0;
+    slot.state = OverlayUploadState::Free;
+    slot.uploadToken = 0;
+    slot.submitTimelineValue = 0;
+    slot.submitSerial = 0;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::createMappedUploadSlot(
@@ -278,6 +281,24 @@ bool MelonPrimeVulkanOverlayRenderer::ensureUploadSlotCapacity(
     return createMappedUploadSlot(slotIndex, RoundUpToPowerOfTwo(required));
 }
 
+bool MelonPrimeVulkanOverlayRenderer::isUploadSlotCompleted(
+    const OverlayUploadSlot& slot,
+    melonDS::u64 completedTimelineValue) const noexcept
+{
+    return slot.submitTimelineValue != 0
+        && completedTimelineValue != 0
+        && slot.submitTimelineValue <= completedTimelineValue;
+}
+
+bool MelonPrimeVulkanOverlayRenderer::isUploadSlotCompletedBySerial(
+    const OverlayUploadSlot& slot,
+    melonDS::u64 completedSubmissionSerial) const noexcept
+{
+    return slot.submitSerial != 0
+        && completedSubmissionSerial != 0
+        && slot.submitSerial <= completedSubmissionSerial;
+}
+
 bool MelonPrimeVulkanOverlayRenderer::acquireUploadSlotForStaging()
 {
     melonDS::u64 completedTimeline = 0;
@@ -291,9 +312,10 @@ bool MelonPrimeVulkanOverlayRenderer::acquireUploadSlotForStaging()
             static_cast<melonDS::u32>((nextUploadSlotIndex + attempt) % kUploadSlotCount);
         const OverlayUploadSlot& slot = uploadSlots[slotIndex];
         const bool slotAvailable =
-            slot.completionTimelineValue == 0
-            || (completedTimeline != 0
-                && slot.completionTimelineValue <= completedTimeline);
+            slot.state == OverlayUploadState::Free
+            || (slot.state == OverlayUploadState::Submitted
+                && (isUploadSlotCompleted(slot, completedTimeline)
+                    || isUploadSlotCompletedBySerial(slot, lastCompletedSubmissionSerial)));
         if (slotAvailable)
         {
             activeUploadSlot = slotIndex;
@@ -313,7 +335,8 @@ void MelonPrimeVulkanOverlayRenderer::destroyTransferResources()
 
 bool MelonPrimeVulkanOverlayRenderer::createTexture(melonDS::u32 width, melonDS::u32 height)
 {
-    destroyTexture();
+    if (textureImage != VK_NULL_HANDLE)
+        retireCurrentTexture(lastPresentTimelineValue, lastCompletedSubmissionSerial);
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -368,32 +391,79 @@ bool MelonPrimeVulkanOverlayRenderer::createTexture(melonDS::u32 width, melonDS:
 
     textureWidth = width;
     textureHeight = height;
+    committedTexture = {};
+    pendingTextureTransition = {};
     boundRenderPass = VK_NULL_HANDLE;
     return true;
 }
 
-void MelonPrimeVulkanOverlayRenderer::destroyTexture()
+void MelonPrimeVulkanOverlayRenderer::retireCurrentTexture(
+    melonDS::u64 retireAfterTimelineValue,
+    melonDS::u64 retireAfterSubmissionSerial)
 {
-    if (textureView != VK_NULL_HANDLE)
-    {
-        vkDestroyImageView(device, textureView, nullptr);
-        textureView = VK_NULL_HANDLE;
-    }
-    if (textureImage != VK_NULL_HANDLE)
-    {
-        vkDestroyImage(device, textureImage, nullptr);
-        textureImage = VK_NULL_HANDLE;
-    }
-    if (textureMemory != VK_NULL_HANDLE)
-    {
-        vkFreeMemory(device, textureMemory, nullptr);
-        textureMemory = VK_NULL_HANDLE;
-    }
+    if (textureImage == VK_NULL_HANDLE)
+        return;
+
+    OverlayTextureResourceBundle bundle{};
+    bundle.image = textureImage;
+    bundle.memory = textureMemory;
+    bundle.imageView = textureView;
+    bundle.width = textureWidth;
+    bundle.height = textureHeight;
+    bundle.retireAfterTimelineValue = retireAfterTimelineValue;
+    bundle.retireAfterSubmissionSerial = retireAfterSubmissionSerial;
+    retiredTextures.push_back(bundle);
+
+    textureImage = VK_NULL_HANDLE;
+    textureMemory = VK_NULL_HANDLE;
+    textureView = VK_NULL_HANDLE;
     textureWidth = 0;
     textureHeight = 0;
-    textureInitialized = false;
-    textureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    hasValidUploadedOverlay = false;
+    committedTexture = {};
+    pendingTextureTransition = {};
+}
+
+void MelonPrimeVulkanOverlayRenderer::collectRetiredTextures(
+    melonDS::u64 completedTimelineValue,
+    melonDS::u64 completedSubmissionSerial)
+{
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    retiredTextures.erase(
+        std::remove_if(
+            retiredTextures.begin(),
+            retiredTextures.end(),
+            [&](const OverlayTextureResourceBundle& bundle) {
+                const bool timelineReady =
+                    bundle.retireAfterTimelineValue != 0
+                    && completedTimelineValue != 0
+                    && bundle.retireAfterTimelineValue <= completedTimelineValue;
+                const bool serialReady =
+                    bundle.retireAfterSubmissionSerial != 0
+                    && completedSubmissionSerial != 0
+                    && bundle.retireAfterSubmissionSerial <= completedSubmissionSerial;
+                const bool immediateReady =
+                    bundle.retireAfterTimelineValue == 0
+                    && bundle.retireAfterSubmissionSerial == 0;
+                if (!timelineReady && !serialReady && !immediateReady)
+                    return false;
+
+                if (bundle.imageView != VK_NULL_HANDLE)
+                    vkDestroyImageView(device, bundle.imageView, nullptr);
+                if (bundle.image != VK_NULL_HANDLE)
+                    vkDestroyImage(device, bundle.image, nullptr);
+                if (bundle.memory != VK_NULL_HANDLE)
+                    vkFreeMemory(device, bundle.memory, nullptr);
+                return true;
+            }),
+        retiredTextures.end());
+}
+
+void MelonPrimeVulkanOverlayRenderer::destroyTexture()
+{
+    retireCurrentTexture(0, 0);
+    collectRetiredTextures(UINT64_MAX, UINT64_MAX);
 }
 
 bool MelonPrimeVulkanOverlayRenderer::ensureTexture(melonDS::u32 width, melonDS::u32 height)
@@ -485,39 +555,40 @@ bool MelonPrimeVulkanOverlayRenderer::stagePendingRegion()
     }
 
     pendingUploadBytes = uploadBytes;
+    uploadSlots[activeUploadSlot].state = OverlayUploadState::Staged;
     return true;
 }
 
-bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer commandBuffer)
+OverlayTransferRecord MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(
+    VkCommandBuffer commandBuffer)
 {
+    OverlayTransferRecord result{};
+    lastTransferRecord = {};
+
     if (!pendingUpload || pendingUploadRect.isEmpty())
-        return false;
+        return result;
 
     OverlayUploadSlot& slot = uploadSlots[activeUploadSlot];
-    if (slot.buffer == VK_NULL_HANDLE)
-        return false;
+    if (slot.buffer == VK_NULL_HANDLE || slot.state != OverlayUploadState::Staged)
+        return result;
 
     const QRect rect = pendingUploadRect.intersected(pendingUploadImage.rect());
     if (rect.isEmpty())
     {
         pendingUpload = false;
         pendingUploadBytes = 0;
-        return true;
+        slot.state = OverlayUploadState::Free;
+        return result;
     }
 
     const VkDeviceSize uploadBytes = pendingUploadBytes;
-    melonDS::VulkanR24Barrier::HostWriteToTransferRead(
-        commandBuffer,
-        slot.buffer,
-        uploadBytes);
-
-    const VkImageLayout oldLayout = textureInitialized
-        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    const VkImageLayout oldLayout = committedTexture.committedInitialized
+        ? committedTexture.committedLayout
         : VK_IMAGE_LAYOUT_UNDEFINED;
-    const VkPipelineStageFlags srcStage = textureInitialized
+    const VkPipelineStageFlags srcStage = committedTexture.committedInitialized
         ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
         : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    const VkAccessFlags srcAccess = textureInitialized
+    const VkAccessFlags srcAccess = committedTexture.committedInitialized
         ? VK_ACCESS_SHADER_READ_BIT
         : 0;
 
@@ -541,6 +612,11 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
         0, nullptr,
         0, nullptr,
         1, &toTransfer);
+
+    melonDS::VulkanR24Barrier::HostWriteToTransferRead(
+        commandBuffer,
+        slot.buffer,
+        uploadBytes);
 
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
@@ -570,14 +646,21 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    textureInitialized = true;
-    textureLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    hasValidUploadedOverlay = true;
-    ++lastUploadedHudGeneration;
-    slot.recorded = true;
+    pendingTextureTransition.oldLayout = oldLayout;
+    pendingTextureTransition.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pendingTextureTransition.initializedAfter = true;
+    pendingTextureTransition.validAfter = true;
+
+    slot.state = OverlayUploadState::Recorded;
     slot.uploadToken = nextUploadToken++;
     pendingUpload = false;
     pendingUploadBytes = 0;
+    ++lastUploadedHudGeneration;
+
+    result.recorded = true;
+    result.uploadToken = slot.uploadToken;
+    result.slotIndex = activeUploadSlot;
+    lastTransferRecord = result;
 
 #ifndef NDEBUG
     static int hudTransferLogBudget = 120;
@@ -586,26 +669,66 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
         --hudTransferLogBudget;
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Debug,
-            "[VulkanHUD] transferBarrier=HostWriteToTransferRead stagingSlot=%u uploadBytes=%llu "
-            "rect=%dx%d@%d,%d textureInitialized=%d hasValidUploadedOverlay=1\n",
+            "[VulkanHUDTicket] record token=%llu slot=%u uploadBytes=%llu "
+            "rect=%dx%d@%d,%d committedValid=%d\n",
+            static_cast<unsigned long long>(result.uploadToken),
             activeUploadSlot,
             static_cast<unsigned long long>(uploadBytes),
             rect.width(),
             rect.height(),
             rect.x(),
             rect.y(),
-            textureInitialized ? 1 : 0);
+            committedTexture.valid ? 1 : 0);
     }
 #endif
 
-    return true;
+    return result;
 }
 
-void MelonPrimeVulkanOverlayRenderer::recordTransfer(VkCommandBuffer commandBuffer)
+void MelonPrimeVulkanOverlayRenderer::rollbackPendingTransfer(melonDS::u32 slotIndex) noexcept
+{
+    if (slotIndex >= kUploadSlotCount)
+        return;
+
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
+    slot.state = OverlayUploadState::Free;
+    slot.uploadToken = 0;
+    slot.submitTimelineValue = 0;
+    slot.submitSerial = 0;
+    pendingTextureTransition = {};
+}
+
+OverlayTransferRecord MelonPrimeVulkanOverlayRenderer::recordTransfer(VkCommandBuffer commandBuffer)
 {
     if (commandBuffer == VK_NULL_HANDLE)
+        return {};
+    return recordPendingTransfer(commandBuffer);
+}
+
+void MelonPrimeVulkanOverlayRenderer::RecordTransferCallback(
+    VkCommandBuffer commandBuffer,
+    void* userData)
+{
+    if (userData == nullptr)
         return;
-    (void)recordPendingTransfer(commandBuffer);
+    static_cast<MelonPrimeVulkanOverlayRenderer*>(userData)->recordTransfer(commandBuffer);
+}
+
+OverlayTransferRecord MelonPrimeVulkanOverlayRenderer::consumeLastTransferRecord() noexcept
+{
+    const OverlayTransferRecord record = lastTransferRecord;
+    lastTransferRecord = {};
+    return record;
+}
+
+bool MelonPrimeVulkanOverlayRenderer::QueryLastTransferRecordCallback(
+    OverlayTransferRecord* outRecord,
+    void* userData)
+{
+    if (outRecord == nullptr || userData == nullptr)
+        return false;
+    *outRecord = static_cast<MelonPrimeVulkanOverlayRenderer*>(userData)->consumeLastTransferRecord();
+    return outRecord->recorded;
 }
 
 void MelonPrimeVulkanOverlayRenderer::hideOverlay() noexcept
@@ -616,7 +739,17 @@ void MelonPrimeVulkanOverlayRenderer::hideOverlay() noexcept
 void MelonPrimeVulkanOverlayRenderer::invalidateOverlayTexture() noexcept
 {
     compositeRequested = false;
-    hasValidUploadedOverlay = false;
+    committedTexture.valid = false;
+}
+
+void MelonPrimeVulkanOverlayRenderer::notifyCompletedSubmissionSerial(
+    melonDS::u64 completedSerial) noexcept
+{
+    if (completedSerial == 0)
+        return;
+
+    lastCompletedSubmissionSerial = completedSerial;
+    releaseCompletedUploadSlots(0);
 }
 
 void MelonPrimeVulkanOverlayRenderer::bindPresenterTimeline(VkSemaphore semaphore) noexcept
@@ -627,79 +760,115 @@ void MelonPrimeVulkanOverlayRenderer::bindPresenterTimeline(VkSemaphore semaphor
 void MelonPrimeVulkanOverlayRenderer::releaseCompletedUploadSlots(
     melonDS::u64 completedTimelineValue) noexcept
 {
-    if (completedTimelineValue == 0)
-        return;
-
     for (size_t i = 0; i < kUploadSlotCount; ++i)
     {
         OverlayUploadSlot& slot = uploadSlots[i];
-        if (slot.completionTimelineValue != 0
-            && slot.completionTimelineValue <= completedTimelineValue)
+        if (slot.state != OverlayUploadState::Submitted)
+            continue;
+
+        if (isUploadSlotCompleted(slot, completedTimelineValue)
+            || isUploadSlotCompletedBySerial(slot, lastCompletedSubmissionSerial))
         {
-            slot.completionTimelineValue = 0;
-            slot.recorded = false;
+            slot.state = OverlayUploadState::Free;
+            slot.uploadToken = 0;
+            slot.submitTimelineValue = 0;
+            slot.submitSerial = 0;
         }
     }
 }
 
 void MelonPrimeVulkanOverlayRenderer::notifySurfaceSubmission(
+    melonDS::u64 uploadToken,
     bool submitted,
-    melonDS::u64 timelineValue) noexcept
+    melonDS::u64 timelineValue,
+    melonDS::u64 submissionSerial) noexcept
 {
+    if (uploadToken == 0)
+        return;
+
+    melonDS::u32 slotIndex = UINT32_MAX;
     for (size_t i = 0; i < kUploadSlotCount; ++i)
     {
-        OverlayUploadSlot& slot = uploadSlots[i];
-        if (!slot.recorded)
-            continue;
+        if (uploadSlots[i].uploadToken == uploadToken)
+        {
+            slotIndex = static_cast<melonDS::u32>(i);
+            break;
+        }
+    }
+    if (slotIndex >= kUploadSlotCount)
+        return;
 
-        if (submitted && timelineValue != 0)
-            markUploadSubmitted(static_cast<melonDS::u32>(i), timelineValue);
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
+    if (slot.state != OverlayUploadState::Recorded && slot.state != OverlayUploadState::Submitted)
+        return;
+
+    if (submitted)
+    {
+        if (useTimelineSemaphores && timelineValue != 0)
+        {
+            markUploadSubmitted(slotIndex, timelineValue, submissionSerial);
+            committedTexture.committedLayout = pendingTextureTransition.newLayout;
+            committedTexture.committedInitialized = pendingTextureTransition.initializedAfter;
+            committedTexture.valid = pendingTextureTransition.validAfter;
+            pendingTextureTransition = {};
+            lastPresentTimelineValue = timelineValue;
+        }
+        else if (submissionSerial != 0)
+        {
+            markUploadSubmitted(slotIndex, 0, submissionSerial);
+            committedTexture.committedLayout = pendingTextureTransition.newLayout;
+            committedTexture.committedInitialized = pendingTextureTransition.initializedAfter;
+            committedTexture.valid = pendingTextureTransition.validAfter;
+            pendingTextureTransition = {};
+        }
         else
         {
-            slot.recorded = false;
-            slot.uploadToken = 0;
-            slot.completionTimelineValue = 0;
+            rollbackPendingTransfer(slotIndex);
         }
+    }
+    else
+    {
+        rollbackPendingTransfer(slotIndex);
     }
 }
 
 void MelonPrimeVulkanOverlayRenderer::NotifySurfaceSubmissionCallback(
+    melonDS::u64 uploadToken,
     bool submitted,
     melonDS::u64 timelineValue,
+    melonDS::u64 submissionSerial,
     void* userData)
 {
     if (userData == nullptr)
         return;
     static_cast<MelonPrimeVulkanOverlayRenderer*>(userData)->notifySurfaceSubmission(
-        submitted, timelineValue);
+        uploadToken,
+        submitted,
+        timelineValue,
+        submissionSerial);
 }
 
 void MelonPrimeVulkanOverlayRenderer::markUploadSubmitted(
     melonDS::u32 slotIndex,
-    melonDS::u64 completionTimelineValue) noexcept
+    melonDS::u64 completionTimelineValue,
+    melonDS::u64 submissionSerial) noexcept
 {
-    if (slotIndex >= kUploadSlotCount || completionTimelineValue == 0)
+    if (slotIndex >= kUploadSlotCount)
         return;
 
-    uploadSlots[slotIndex].completionTimelineValue = completionTimelineValue;
-    uploadSlots[slotIndex].recorded = false;
-    uploadSlots[slotIndex].uploadToken = 0;
-    lastPresentTimelineValue = completionTimelineValue;
-}
-
-void MelonPrimeVulkanOverlayRenderer::markLastUploadSubmitted(
-    melonDS::u64 completionTimelineValue) noexcept
-{
-    notifySurfaceSubmission(completionTimelineValue != 0, completionTimelineValue);
+    OverlayUploadSlot& slot = uploadSlots[slotIndex];
+    slot.state = OverlayUploadState::Submitted;
+    slot.submitTimelineValue = completionTimelineValue;
+    slot.submitSerial = submissionSerial;
 }
 
 void MelonPrimeVulkanOverlayRenderer::collectRetiredResources(
     melonDS::u64 completedTimelineValue) noexcept
 {
-    (void)completedTimelineValue;
     if (device == VK_NULL_HANDLE)
         return;
 
+    collectRetiredTextures(completedTimelineValue, lastCompletedSubmissionSerial);
     retiredPipelines.Collect(
         device,
         melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
@@ -868,7 +1037,7 @@ void MelonPrimeVulkanOverlayRenderer::record(
 {
     if (!initialized || !compositeRequested || textureView == VK_NULL_HANDLE)
         return;
-    if (!hasValidUploadedOverlay)
+    if (!committedTexture.valid)
         return;
     if (target.commandBuffer == VK_NULL_HANDLE || target.renderPass == VK_NULL_HANDLE)
         return;
@@ -917,15 +1086,6 @@ void MelonPrimeVulkanOverlayRenderer::record(
         sizeof(push),
         &push);
     vkCmdDraw(target.commandBuffer, 6, 1, 0, 0);
-}
-
-void MelonPrimeVulkanOverlayRenderer::RecordTransferCallback(
-    VkCommandBuffer commandBuffer,
-    void* userData)
-{
-    if (userData == nullptr)
-        return;
-    static_cast<MelonPrimeVulkanOverlayRenderer*>(userData)->recordTransfer(commandBuffer);
 }
 
 void MelonPrimeVulkanOverlayRenderer::RecordCallback(

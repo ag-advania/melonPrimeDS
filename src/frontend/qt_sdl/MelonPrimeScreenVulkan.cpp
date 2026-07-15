@@ -106,6 +106,8 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
 {
     if (presenter)
     {
+        presenter->SetDesktopOverlaySubmissionNotifier(nullptr, nullptr);
+        presenter->SetDesktopOverlayTransferQuery(nullptr, nullptr);
         presenter->SetDesktopOverlayRecorder(nullptr, nullptr);
         presenter->SetDesktopOverlayTransferRecorder(nullptr, nullptr);
         if (sessionPresenterRegistered)
@@ -177,6 +179,9 @@ bool ScreenPanelVulkan::initVulkan()
         &overlayRenderer);
     presenter->SetDesktopOverlaySubmissionNotifier(
         MelonPrimeVulkanOverlayRenderer::NotifySurfaceSubmissionCallback,
+        &overlayRenderer);
+    presenter->SetDesktopOverlayTransferQuery(
+        MelonPrimeVulkanOverlayRenderer::QueryLastTransferRecordCallback,
         &overlayRenderer);
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info,
         "[MelonPrime] Vulkan frontend session attached to desktop surface generation %llu\n",
@@ -436,16 +441,46 @@ void ScreenPanelVulkan::drawScreen()
         repaintQueued.store(false, std::memory_order_release);
 }
 
+void ScreenPanelVulkan::scheduleSurfaceResize()
+{
+    if (!presenter || surfaceId == 0)
+        return;
+
+    const QSize pixelSize = surfaceHost.pixelSize();
+    if (pixelSize.width() <= 0 || pixelSize.height() <= 0)
+        return;
+
+    pendingSurfaceWidth = pixelSize.width();
+    pendingSurfaceHeight = pixelSize.height();
+    if (surfaceResizeScheduled)
+        return;
+
+    surfaceResizeScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        surfaceResizeScheduled = false;
+        if (!presenter || surfaceId == 0 || !isVisible())
+            return;
+
+        if (surfaceHost.matchesNativeIdentity(*this))
+            surfaceHost.rebindWidget(*this);
+
+        if (pendingSurfaceWidth <= 0 || pendingSurfaceHeight <= 0)
+            return;
+
+        presenter->resizeSurface(
+            surfaceId,
+            static_cast<melonDS::u32>(pendingSurfaceWidth),
+            static_cast<melonDS::u32>(pendingSurfaceHeight));
+    });
+}
+
 void ScreenPanelVulkan::presentOnGuiThread()
 {
     if (QThread::currentThread() != thread() || !presenter || !isVisible())
         return;
 
-    if (surfaceId == 0 || !surfaceHost.matchesWidget(*this))
-    {
-        if (!ensureNativeSurface())
-            return;
-    }
+    if (surfaceId == 0)
+        return;
 
     const QSize pixelSize = surfaceHost.pixelSize();
     const int currentWidth = pixelSize.width();
@@ -478,6 +513,9 @@ void ScreenPanelVulkan::presentOnGuiThread()
             overlayRenderer.releaseCompletedUploadSlots(completedTimeline);
             overlayRenderer.collectRetiredResources(completedTimeline);
         }
+        melonDS::u64 completedSerial = 0;
+        if (presenter->getSurfaceCompletedSubmissionSerial(surfaceId, completedSerial))
+            overlayRenderer.notifyCompletedSubmissionSerial(completedSerial);
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -655,22 +693,7 @@ void ScreenPanelVulkan::changeEvent(QEvent* event)
     case QEvent::WindowStateChange:
     case QEvent::Resize:
     case QEvent::DevicePixelRatioChange:
-        QTimer::singleShot(0, this, [this]() {
-            if (!presenter || surfaceId == 0 || !isVisible())
-                return;
-
-            if (surfaceHost.matchesNativeIdentity(*this))
-                surfaceHost.rebindWidget(*this);
-
-            const QSize pixelSize = surfaceHost.pixelSize();
-            if (pixelSize.width() <= 0 || pixelSize.height() <= 0)
-                return;
-
-            presenter->resizeSurface(
-                surfaceId,
-                static_cast<melonDS::u32>(pixelSize.width()),
-                static_cast<melonDS::u32>(pixelSize.height()));
-        });
+        scheduleSurfaceResize();
         break;
     default:
         break;
@@ -682,13 +705,7 @@ void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
     ScreenPanel::resizeEvent(event);
     syncNoRomSplashOverlay();
     if (presenter && surfaceId != 0 && surfaceHost.matchesNativeIdentity(*this))
-    {
-        const QSize pixelSize = surfaceHost.pixelSize();
-        presenter->resizeSurface(
-            surfaceId,
-            static_cast<melonDS::u32>(pixelSize.width()),
-            static_cast<melonDS::u32>(pixelSize.height()));
-    }
+        scheduleSurfaceResize();
 }
 
 void ScreenPanelVulkan::setupScreenLayout()
