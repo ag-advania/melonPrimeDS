@@ -1,24 +1,22 @@
-// Source: SapphireRhodonite/melonDS-android
-// app/src/main/cpp/renderer/VulkanSurfacePresenter.h @ tag 0.7.0.rc4
-// P1: unmodified Sapphire copy; desktop adaptation follows in P2+.
-
 #ifndef VULKANSURFACEPRESENTER_H
 #define VULKANSURFACEPRESENTER_H
 
-#include <android/native_window.h>
+#include <array>
 #include <memory>
 #include <string>
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include "VulkanPerfStats.h"
-#include "renderer/FrameQueue.h"
-#include "renderer/VulkanRetroArchFilterChain.h"
-#include "renderer/VulkanFilterMode.h"
+#include "FrameQueue.h"
+#include "VulkanRetroArchFilterChain.h"
+#include "VulkanFilterMode.h"
 #include "types.h"
+#include "VulkanR24Sync.h"
+#include "VulkanPipelineCache.h"
 
 namespace MelonDSAndroid
 {
@@ -30,6 +28,17 @@ struct VulkanPresenterRect
     int y = 0;
     int width = 0;
     int height = 0;
+};
+
+// Desktop Qt layouts are affine transforms, not just axis-aligned rectangles.
+// The six coefficients use the same convention as ScreenPanel::screenMatrix:
+// x' = m0*x + m2*y + m4, y' = m1*x + m3*y + m5.
+struct VulkanPresenterTransform
+{
+    bool enabled = false;
+    bool topScreen = false;
+    std::array<float, 6> matrix{};
+    float alpha = 1.0f;
 };
 
 enum class VulkanPresenterBackgroundMode : u32
@@ -50,6 +59,8 @@ enum class RetroArchSourceResolution : u32
 
 struct VulkanSurfaceConfig
 {
+    std::array<VulkanPresenterTransform, 3> screenTransforms{};
+    u32 screenTransformCount = 0;
     VulkanPresenterRect topScreen;
     VulkanPresenterRect bottomScreen;
     VulkanPresenterRect hybridTopScreen;
@@ -75,6 +86,31 @@ struct VulkanBackgroundImage
     const u32* pixels = nullptr;
     u32 width = 0;
     u32 height = 0;
+};
+
+struct VulkanOverlayQuad
+{
+    // TL, TR, BL, BR in physical surface pixels.
+    std::array<float, 8> points{};
+    std::array<float, 4> color{1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+struct VulkanRadarOverlay
+{
+    bool enabled = false;
+    std::array<float, 8> points{};
+    float sourceCenterX = 128.0f;
+    float sourceCenterY = 96.0f;
+    float sourceRadius = 46.0f;
+    float opacity = 0.85f;
+    std::array<float, 4> frameColor{0.31f, 0.60f, 0.82f, 1.0f};
+};
+
+struct VulkanSurfaceOverlay
+{
+    u64 generation = 0;
+    std::vector<VulkanOverlayQuad> solidQuads;
+    VulkanRadarOverlay radar;
 };
 
 struct VulkanPresenterPacingStats
@@ -117,13 +153,17 @@ public:
     bool init();
     void shutdown();
 
-    int attachSurface(ANativeWindow* window, u32 width, u32 height);
+    // VkSurfaceKHR remains owned by MelonPrimeVulkanSurfaceHost. detachSurface
+    // releases swapchain/presenter resources but never destroys the surface.
+    int attachSurface(VkSurfaceKHR surface, u32 width, u32 height);
     bool resizeSurface(int surfaceId, u32 width, u32 height);
     bool configureSurface(int surfaceId, const VulkanSurfaceConfig& config, const VulkanBackgroundImage& backgroundImage);
+    bool updateOverlay(int surfaceId, const VulkanSurfaceOverlay& overlay);
     void detachSurface(int surfaceId);
 
     bool presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
+    bool getCompletedTimelineValue(u64& completedValue) const;
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
     static bool prewarmRetroArchFilter(
@@ -140,6 +180,10 @@ private:
         float u;
         float v;
         float alpha;
+        float r;
+        float g;
+        float b;
+        float a;
     };
 
     struct DrawCall
@@ -150,6 +194,10 @@ private:
         u32 drawMode = 0;
         float viewportWidth = 0.0f;
         float viewportHeight = 0.0f;
+        float radarSourceCenterX = 128.0f;
+        float radarSourceCenterY = 96.0f;
+        float radarSourceRadius = 46.0f;
+        std::array<float, 4> radarFrameColor{};
     };
 
     struct BackgroundResource
@@ -231,11 +279,13 @@ private:
     struct SurfaceState
     {
         int id = 0;
-        ANativeWindow* window = nullptr;
         u32 requestedWidth = 0;
         u32 requestedHeight = 0;
+        VkQueue presentQueue = VK_NULL_HANDLE;
+        u32 presentQueueFamilyIndex = UINT32_MAX;
+        bool separatePresentQueue = false;
 
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        VkSurfaceKHR surface = VK_NULL_HANDLE; // borrowed
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -245,6 +295,7 @@ private:
         std::vector<VkImage> swapchainImages;
         std::vector<VkImageView> swapchainImageViews;
         std::vector<VkFramebuffer> framebuffers;
+        std::vector<bool> swapchainImageInitialized;
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
@@ -263,6 +314,7 @@ private:
         void* mappedVertexMemory = nullptr;
 
         VulkanSurfaceConfig config{};
+        VulkanSurfaceOverlay overlay{};
         bool configured = false;
         bool swapchainDirty = true;
         bool hasCachedSwapchainSelection = false;
@@ -324,6 +376,7 @@ private:
     bool recordSurfaceCommands(
         SurfaceState& surfaceState,
         VkFramebuffer framebuffer,
+        u32 imageIndex,
         const VulkanCompositionInputs& inputs,
         VkImage sampledImage,
         bool directPresent,
@@ -362,6 +415,8 @@ private:
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
+    // All rendering commands use the shared context's graphics queue. Each
+    // SurfaceState stores the surface-resolved present queue separately.
     VkQueue queue = VK_NULL_HANDLE;
     u32 queueFamilyIndex = 0;
     bool useTimelineSemaphores = false;
@@ -372,6 +427,7 @@ private:
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    melonDS::VulkanPersistentPipelineCache pipelineCache;
     VkShaderModule vertexShaderModule = VK_NULL_HANDLE;
     VkShaderModule fragmentShaderModule = VK_NULL_HANDLE;
     VkSampler nearestSampler = VK_NULL_HANDLE;
@@ -381,6 +437,7 @@ private:
     bool timestampQueriesSupported = false;
 
     std::unordered_map<int, SurfaceState> surfaces;
+    melonDS::VulkanRetireQueue retiredResources;
     PerfSampleWindow<120> descriptorCpuWindow;
     PerfSampleWindow<120> vertexCpuWindow;
     PerfSampleWindow<120> waitCpuWindow;

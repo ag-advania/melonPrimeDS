@@ -100,8 +100,8 @@ producer-side composeAndSubmitFrame()
 
 | Phase | Description | Status |
 |---|---|---|
-| P0 | Source pin manifest | **done** (`51660830f`) |
-| P1 | Clean copy directory | **done** (this commit) |
+| P0 | Source pin manifest | **done** (this commit) |
+| P1 | Clean copy directory | pending |
 | P2 | FrameQueue exact port | pending |
 | P3 | VulkanOutput/shader exact port | pending |
 | P4 | Core exact port | pending |

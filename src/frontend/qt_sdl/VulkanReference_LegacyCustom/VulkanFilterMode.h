@@ -1,7 +1,3 @@
-// Source: SapphireRhodonite/melonDS-android
-// app/src/main/cpp/renderer/VulkanFilterMode.h @ tag 0.7.0.rc4
-// P1: unmodified Sapphire copy; desktop adaptation follows in P2+.
-
 #ifndef VULKANFILTERMODE_H
 #define VULKANFILTERMODE_H
 

@@ -1,7 +1,3 @@
-// Source: SapphireRhodonite/melonDS-android
-// app/src/main/cpp/renderer/VulkanAccumulate3dShader.comp @ tag 0.7.0.rc4
-// P1: unmodified Sapphire copy; desktop adaptation follows in P2+.
-
 #version 450
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
