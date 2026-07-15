@@ -85,16 +85,35 @@ Desktop adaptations are isolated in `MELONPRIME_ADAPT_BEGIN` / `MELONPRIME_ADAPT
 
 ## Legacy custom path (removed P9)
 
-The MelonPrime-only frontend bridge listed below has been removed. Core
-`SapphireStructured2DFrameSnapshot` state in `GPU_Soft` remains for packed
-framebuffer export via `GetStructuredVulkan2DPlane()`.
+The MelonPrime-only frontend bridge listed below has been removed.
 
 ```text
 MelonPrimeStructuredSnapshot (removed)
 captureCompletedSnapshot() (removed)
 buildSoftPackedSnapshot() (removed)
 producer-side composeAndSubmitFrame() (removed)
+SapphireStructured2DFrameSnapshot ring in GPU_Soft (removed S59-5)
+GPU::CopyStructured2DFrameSnapshot() (removed S59-5)
 ```
+
+Structured Vulkan 2D data is exported only through:
+
+```text
+GPU.Framebuffer[frontBuffer] packed rows
+SoftRenderer::GetStructuredVulkan2DPlane()
+SoftRenderer capture metadata buffers
+```
+
+## S59 splash-fix progress
+
+| Phase | Description | Status |
+|---|---|---|
+| S59-1 | Restore Sapphire VulkanOutput public API | **done** |
+| S59-2 | buildCompositionInputs from queued FrameResource snapshot | **done** |
+| S59-3 | GUI presenter stops querying live frame view for acceptance | **done** |
+| S59-4 | VulkanRenderer3D color target accessors | **done** |
+| S59-5 | Remove redundant structured frame snapshot bridge | **done** |
+| S59-6 | Upstream parity tracker + capture metadata path | **done** (see `docs/vulkan/SAPPHIRE_UPSTREAM.md`) |
 
 ## Phase progress
 
