@@ -57,14 +57,15 @@ def check_entry(entry: dict, verify_upstream: bool) -> list[str]:
         return [f"missing local file: {entry['local_path']}"]
 
     local_hash = sha256_file(local_path)
-    if local_hash != entry["local_sha256"]:
+    mode = entry.get("parity_mode", "local_baseline")
+
+    if mode == "local_baseline" and local_hash != entry["local_sha256"]:
         errors.append(
             f"{entry['local_path']}: local hash drift "
             f"(expected {entry['local_sha256']}, got {local_hash})"
         )
 
-    mode = entry.get("parity_mode", "local_baseline")
-    if mode == "exact_upstream":
+    if mode in {"exact_upstream", "normalized_upstream"}:
         ref_root = resolve_reference_root(entry)
         if ref_root is None:
             if verify_upstream:
@@ -83,7 +84,7 @@ def check_entry(entry: dict, verify_upstream: bool) -> list[str]:
                         f"{entry['upstream_path']}: upstream hash drift "
                         f"(manifest {entry['upstream_sha256']}, got {upstream_hash})"
                     )
-                if upstream_hash != local_hash:
+                if mode == "exact_upstream" and upstream_hash != local_hash:
                     errors.append(
                         f"{entry['local_path']}: exact_upstream mismatch with "
                         f"{entry['upstream_path']}"

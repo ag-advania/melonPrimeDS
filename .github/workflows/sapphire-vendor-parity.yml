@@ -22,5 +22,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify local vendor baselines
-        run: python3 tools/check_sapphire_vendor_parity.py
+      - name: Checkout Sapphire Android frontend
+        uses: actions/checkout@v4
+        with:
+          repository: SapphireRhodonite/melonDS-android
+          ref: 0.7.0.rc4
+          path: sapphire-android
+      - name: Checkout Sapphire Android core
+        uses: actions/checkout@v4
+        with:
+          repository: SapphireRhodonite/melonDS-android-lib
+          ref: d77944275fa61f9b79cfcead2c3e98993429a023
+          path: sapphire-android-lib
+      - name: Verify Sapphire parity
+        env:
+          SAPPHIRE_ANDROID_ROOT: ${{ github.workspace }}/sapphire-android
+          SAPPHIRE_ANDROID_LIB_ROOT: ${{ github.workspace }}/sapphire-android-lib
+        run: python3 tools/check_sapphire_vendor_parity.py --verify-upstream
