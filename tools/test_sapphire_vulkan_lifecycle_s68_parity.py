@@ -51,7 +51,12 @@ class SapphireVulkanLifecycleS68ParityTests(unittest.TestCase):
             re.MULTILINE,
         )
         self.assertIsNotNone(publish)
-        self.assertIn("GPU.ScreenSwap", publish.group(0))
+        publish_body = publish.group(0)
+        self.assertIn("BuildPhysicalScreenView", publish_body)
+        self.assertNotRegex(
+            publish_body,
+            r"published\.top\.packed\s*=\s*GPU\.ScreenSwap",
+        )
 
     def test_packed_framebuffer_clear_uses_full_stride(self):
         soft = read_repo("src/GPU_Soft.cpp")
