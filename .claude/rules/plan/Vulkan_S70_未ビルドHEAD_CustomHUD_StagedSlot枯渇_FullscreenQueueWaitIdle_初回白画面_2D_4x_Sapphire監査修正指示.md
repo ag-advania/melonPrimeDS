@@ -1837,18 +1837,18 @@ GPU2Dは長期的にSapphire Unitをcanonical stateへする
 
 | Phase | Commit | Status |
 |---|---|---|
-| S70-1 | (pending push) | BuildIdentity, header/cpp fix, S70 parity CI hook |
-| S70-2 | (pending push) | JIT HUD staging in recordPendingTransfer |
-| S70-3 | (pending push) | SurfaceSubmitResult submit/present separation |
-| S70-4 | (pending push) | Per-generation HUD descriptor sets |
-| S70-5 | (pending push) | Retire textures by last-use serial |
-| S70-6 | (pending push) | Remove vkQueueWaitIdle from destroySwapchain |
-| S70-7 | (pending push) | Non-destructive recoverSwapchain (dirty only) |
-| S70-8 | (pending push) | Destroy cachedSurfaceFormatResources at shutdown |
-| S70-9 | (pending push) | screenIntegerDescriptorSet for integer transforms |
-| S70-10 | (pending push) | test_sapphire_vulkan_lifecycle_s70_parity.py |
-| S70-11 | (pending push) | Recovery contract tests in S70 parity suite |
-| S70-12 | (pending push) | MelonPrimeDesktopVulkanPresenter wrapper |
+| S70-1 | d4bae9670 | BuildIdentity, header/cpp fix, S70 parity CI hook |
+| S70-2 | d4bae9670 | JIT HUD staging in recordPendingTransfer |
+| S70-3 | d4bae9670 | SurfaceSubmitResult submit/present separation |
+| S70-4 | d4bae9670 | Per-generation HUD descriptor sets |
+| S70-5 | d4bae9670 | Retire textures by last-use serial |
+| S70-6 | d4bae9670 | Remove vkQueueWaitIdle from destroySwapchain |
+| S70-7 | d4bae9670 | Non-destructive recoverSwapchain (dirty only) |
+| S70-8 | d4bae9670 | Destroy cachedSurfaceFormatResources at shutdown |
+| S70-9 | d4bae9670 | screenIntegerDescriptorSet for integer transforms |
+| S70-10 | d4bae9670 | test_sapphire_vulkan_lifecycle_s70_parity.py |
+| S70-11 | d4bae9670 | Recovery contract tests in S70 parity suite |
+| S70-12 | d4bae9670 | MelonPrimeDesktopVulkanPresenter wrapper |
 
 
 である。
