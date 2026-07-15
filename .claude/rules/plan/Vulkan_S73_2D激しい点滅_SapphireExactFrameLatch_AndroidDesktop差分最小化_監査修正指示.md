@@ -1534,17 +1534,17 @@ FrameQueue temporal requirements
 | Phase | Commit | Status | Notes |
 |-------|--------|--------|-------|
 | S73-1 | `74400323e` | done | VulkanOutput.h type ordering + `check_vulkan_output_header_compile.py` CI |
-| S73-2 | — | pending | |
-| S73-3 | — | pending | |
-| S73-4 | — | pending | |
-| S73-5 | — | pending | |
-| S73-6 | — | pending | |
-| S73-7 | — | pending | |
-| S73-8 | — | pending | |
-| S73-9 | — | pending | |
-| S73-10 | — | pending | |
-| S73-11 | — | pending | |
-| S73-12 | — | pending | |
+| S73-2 | `cd5b1adb9` | done | Exact `SoftPackedFrameSnapshot` ABI + `DesktopSapphireFrameSidecar` |
+| S73-3 | `5046dd97f` | done | `generate_sapphire_frame_latch.py` + `SapphireGenerated/` core |
+| S73-4 | `7bd8e9a0e` | done | `SapphireFrameInput` + `BuildDesktopSapphireFrameInput` |
+| S73-5 | `7c909ca84` | done | Atomic frame identity in `MelonPrimeVulkanFrontendSession` |
+| S73-6 | `d4fffb0ad` | done | `SapphireExact` default; removed `CurrentFrameOnly` |
+| S73-7 | `c1a74f99a` | done | End-to-end `sapphireTemporalEnabled()` gating |
+| S73-8 | `4a2538855` | done | Removed desktop provenance/repair helpers from production |
+| S73-9 | `6e71cf429` | done | `check_sapphire_vulkan_output_exact.py` |
+| S73-10 | `bc8931c3b` | done | Golden snapshot contract tests |
+| S73-11 | `ad2520013` | done | Period-two flicker contract tests |
+| S73-12 | pending | in progress | Allowed Android/Desktop diff documentation + CI wiring |
 
 ---
 
