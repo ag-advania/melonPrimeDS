@@ -1468,7 +1468,10 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
     // GPU::SetRenderer(), then the outer owner and the explicit Vulkan
     // Renderer3D override are installed before producer generation changes.
     RomBootTrace("[RomBootTrace] outer SetRenderer begin\n");
-    nds->SetRenderer(std::move(result.OuterRenderer));
+    if (result.OuterAction == MelonPrime::VideoBackend::OuterRendererAction::Replace)
+        nds->SetRenderer(std::move(result.OuterRenderer));
+    else
+        result.OuterRenderer.reset();
     RomBootTrace("[RomBootTrace] outer SetRenderer complete\n");
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (!nds->GPU.LastRendererInitializationSucceeded())

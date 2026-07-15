@@ -32,6 +32,7 @@ void RegenerateSoftwareFallback(
 {
     result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
     result.Renderer3D.reset();
+    result.OuterAction = OuterRendererAction::Replace;
     result.Presentation = PresentationBackend::NativeQt;
     result.ActualRenderer = renderer3D_Software;
     result.FailedStage = std::move(failedStage);
@@ -79,7 +80,16 @@ RendererCreationResult CreateRendererForSelection(
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
-        result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
+    {
+        if (dynamic_cast<melonDS::SoftRenderer*>(&nds.GPU.GetRenderer()) != nullptr)
+        {
+            result.OuterAction = OuterRendererAction::KeepCurrent;
+        }
+        else
+        {
+            result.OuterRenderer = std::make_unique<melonDS::SoftRenderer>(nds);
+            result.OuterAction = OuterRendererAction::Replace;
+        }
         result.Renderer3D = CreateRenderer3DForSelection(
             nds, result.NormalizedRenderer, result);
         result.ActualRenderer = renderer3D_Software;
@@ -97,6 +107,7 @@ RendererCreationResult CreateRendererForSelection(
                 nds, result, failedStage, fallbackReason);
         }
         break;
+    }
 #endif
     default:
         result.NormalizedRenderer = renderer3D_Software;

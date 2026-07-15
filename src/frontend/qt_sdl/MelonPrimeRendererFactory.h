@@ -17,6 +17,12 @@ class Renderer3D;
 namespace MelonPrime::VideoBackend
 {
 
+enum class OuterRendererAction
+{
+    KeepCurrent,
+    Replace,
+};
+
 struct RendererCreationResult
 {
     RendererCreationResult();
@@ -28,6 +34,7 @@ struct RendererCreationResult
 
     std::unique_ptr<melonDS::Renderer> OuterRenderer;
     std::unique_ptr<melonDS::Renderer3D> Renderer3D;
+    OuterRendererAction OuterAction = OuterRendererAction::Replace;
     PresentationBackend Presentation = PresentationBackend::NativeQt;
     int RequestedRenderer = 0;
     int NormalizedRenderer = 0;
