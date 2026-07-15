@@ -16,6 +16,7 @@ on:
       - 'tools/test_sapphire_vulkan_lifecycle_s70_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s71_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s72_parity.py'
+      - 'tools/check_vulkan_output_header_compile.py'
       - 'src/SapphireVendor/**'
   push:
     branches:
@@ -35,6 +36,7 @@ on:
       - 'tools/test_sapphire_vulkan_lifecycle_s70_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s71_parity.py'
       - 'tools/test_sapphire_vulkan_lifecycle_s72_parity.py'
+      - 'tools/check_vulkan_output_header_compile.py'
       - 'src/SapphireVendor/**'
 
 jobs:
@@ -67,6 +69,7 @@ jobs:
           python3 tools/test_sapphire_vulkan_lifecycle_s70_parity.py
           python3 tools/test_sapphire_vulkan_lifecycle_s71_parity.py
           python3 tools/test_sapphire_vulkan_lifecycle_s72_parity.py
+          python3 tools/check_vulkan_output_header_compile.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream

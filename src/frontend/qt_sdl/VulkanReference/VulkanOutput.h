@@ -63,6 +63,41 @@ enum class PhysicalScreen : u8
     Bottom,
 };
 
+struct Capture3DSourceSnapshot
+{
+    static constexpr size_t kPixelCount =
+        melonDS::VulkanStructuredControlAbi::NativeScreenWidth
+        * melonDS::VulkanStructuredControlAbi::NativeScreenHeight;
+
+    std::array<u32, kPixelCount> pixels{};
+
+    bool valid = false;
+    PhysicalScreen physicalScreen = PhysicalScreen::Top;
+    u32 engine = UINT32_MAX;
+    u64 frameSerial = 0;
+    u64 rendererGeneration = 0;
+    bool hardwareScreenSwap = false;
+    bool renderScreenSwapAt3D = false;
+    u32 captureMode = 0;
+    u32 sourceA = 0;
+    u32 sourceB = 0;
+
+    void clear() noexcept
+    {
+        pixels.fill(0);
+        valid = false;
+        physicalScreen = PhysicalScreen::Top;
+        engine = UINT32_MAX;
+        frameSerial = 0;
+        rendererGeneration = 0;
+        hardwareScreenSwap = false;
+        renderScreenSwapAt3D = false;
+        captureMode = 0;
+        sourceA = 0;
+        sourceB = 0;
+    }
+};
+
 struct SoftPackedFrameSnapshot
 {
     static constexpr size_t kScreenWidth =
@@ -71,6 +106,9 @@ struct SoftPackedFrameSnapshot
         melonDS::VulkanStructuredControlAbi::NativeScreenHeight;
     static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;
     static constexpr size_t kLineCount = kScreenHeight;
+    static_assert(
+        kPixelCount == Capture3DSourceSnapshot::kPixelCount,
+        "Capture3DSourceSnapshot pixel count mismatch");
 
     u64 frameId = 0;
     u64 sourceFrameSerial = 0;
@@ -134,37 +172,6 @@ struct SoftPackedFrameSnapshot
         comp4BottomPlaceholder.fill(0);
         topScreenStats = {};
         bottomScreenStats = {};
-    }
-};
-
-struct Capture3DSourceSnapshot
-{
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> pixels{};
-
-    bool valid = false;
-    PhysicalScreen physicalScreen = PhysicalScreen::Top;
-    u32 engine = UINT32_MAX;
-    u64 frameSerial = 0;
-    u64 rendererGeneration = 0;
-    bool hardwareScreenSwap = false;
-    bool renderScreenSwapAt3D = false;
-    u32 captureMode = 0;
-    u32 sourceA = 0;
-    u32 sourceB = 0;
-
-    void clear() noexcept
-    {
-        pixels.fill(0);
-        valid = false;
-        physicalScreen = PhysicalScreen::Top;
-        engine = UINT32_MAX;
-        frameSerial = 0;
-        rendererGeneration = 0;
-        hardwareScreenSwap = false;
-        renderScreenSwapAt3D = false;
-        captureMode = 0;
-        sourceA = 0;
-        sourceB = 0;
     }
 };
 

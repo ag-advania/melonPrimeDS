@@ -696,18 +696,6 @@ bool packedPixelHasVisibleColor(u32 pixel)
         && (pixel & 0x00FFFFFFu) != 0u;
 }
 
-bool packedPixelIsOpaqueBlack(u32 pixel)
-{
-    return pixel != 0u
-        && pixel != kPacked3dPlaceholder
-        && (pixel & 0x00FFFFFFu) == 0u;
-}
-
-bool packedControlMarksProtectedBlack2D(u32 control)
-{
-    return ((control >> 24u) & 0x20u) != 0u;
-}
-
 bool packedLineHasAnyVisibleColor(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
     int line)
@@ -3355,8 +3343,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             taggedCapture.hardwareScreenSwap = lastSoftPackedFrameSnapshot.hardwareScreenSwapLatched;
             taggedCapture.renderScreenSwapAt3D = lastSoftPackedFrameSnapshot.renderScreenSwapAt3DLatched;
             taggedCapture.captureMode = captureStats.CaptureMode;
-            taggedCapture.sourceA = captureStats.SourceA;
-            taggedCapture.sourceB = captureStats.SourceB;
+            taggedCapture.sourceA = captureStats.SourceACompositeLines;
+            taggedCapture.sourceB = captureStats.StructuredCopySourceBOverlayPixels;
         }
 
         const auto& captureLineUses3dMask = renderer2D->GetDebugCaptureLineUses3dMask();
