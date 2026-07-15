@@ -28,6 +28,10 @@
 
 #include "VulkanReference/VulkanSurfacePresenter.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudScreenCppHelpers.inc"
+#endif
+
 using namespace MelonDSAndroid;
 
 
@@ -380,6 +384,23 @@ bool ScreenPanelVulkan::configureSurface(
 void ScreenPanelVulkan::drawScreen()
 {
     refreshClipForGameStateChange();
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (QThread::currentThread() != thread())
+    {
+        auto* core = melonPrimeCoreForPolicy();
+        auto* nds = emuInstance ? emuInstance->getNDS() : nullptr;
+        if (core && nds)
+        {
+            MelonPrime::CustomHud_SyncVulkanPatch(
+                core->HudConfigState(),
+                emuInstance,
+                emuInstance->getLocalConfig(),
+                core->GetCurrentRom(),
+                core->GetPlayerPosition(),
+                core->IsInGame());
+        }
+    }
+#endif
     if (!presenter)
         return;
 
@@ -428,6 +449,58 @@ void ScreenPanelVulkan::presentOnGuiThread()
             surfaceId,
             isVisible() ? 1 : 0);
     }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    {
+        const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
+        const int fullLogW = std::max(1, static_cast<int>(currentWidth / dpr));
+        const int fullLogH = std::max(1, static_cast<int>(currentHeight / dpr));
+        auto* mp = melonPrimeCoreForPolicy();
+        const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
+        if (MelonPrimeHud_CanRenderForCore(mp, editMode))
+        {
+            auto& instcfg = emuInstance->getLocalConfig();
+            MelonPrimeHud_RefreshHudEnabledIfNeeded(
+                mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+            MelonPrimeHud_RefreshOverlayFontIfNeeded(
+                mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+            if (MelonPrimeHud_IsHudVisibleOrRestorePatch(
+                    emuInstance, instcfg, mp, m_hudEnabled, editMode))
+            {
+                MelonPrimeHud_PrepareTopOverlay(Overlay[0], fullLogW, fullLogH, m_hudPrevDirty);
+                const QRect curDirty = MelonPrimeHud_RenderTopOverlay(
+                    emuInstance, instcfg, mp,
+                    Overlay[0], overlayFont,
+                    m_topStretchX, m_hudScale,
+                    m_hudOriginX, m_hudOriginY);
+                const QRect uploadRect = m_hudPrevDirty.united(curDirty);
+                m_hudPrevDirty = curDirty;
+                if (!uploadRect.isEmpty()
+                    && overlayRenderer.uploadRegion(Overlay[0], uploadRect))
+                {
+                    overlayRenderer.setCompositeRect(
+                        0, 0,
+                        static_cast<melonDS::u32>(currentWidth),
+                        static_cast<melonDS::u32>(currentHeight));
+                }
+                else
+                {
+                    overlayRenderer.clearCompositeRequest();
+                }
+            }
+            else
+            {
+                overlayRenderer.clearCompositeRequest();
+            }
+        }
+        else
+        {
+            overlayRenderer.clearCompositeRequest();
+        }
+    }
+#else
+    overlayRenderer.clearCompositeRequest();
+#endif
 
     Frame* frame = session.acquirePresentFrame();
     if (tracePresenter)
