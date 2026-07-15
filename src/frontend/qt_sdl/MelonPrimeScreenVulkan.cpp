@@ -122,6 +122,20 @@ bool ScreenPanelVulkan::initVulkan()
     if (!presenter->init())
         return false;
 
+    setupScreenLayout();
+    if (!hasValidGameScreenLayout())
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "[VulkanSurfaceConfig] init rejected: invalid game screen layout "
+            "(numScreens=%d layoutGeneration=%llu)\n",
+            numScreens,
+            static_cast<unsigned long long>(layoutGeneration));
+        presenter->shutdown();
+        presenter.reset();
+        return false;
+    }
+
     if (!ensureNativeSurface())
     {
         if (surfaceId != 0)
@@ -189,11 +203,49 @@ bool ScreenPanelVulkan::ensureNativeSurface()
     return false;
 }
 
+bool ScreenPanelVulkan::hasValidGameScreenLayout() const noexcept
+{
+    if (numScreens <= 0 || numScreens > kMaxScreenTransforms)
+        return false;
+
+    bool hasTopOrBottom = false;
+    for (int i = 0; i < numScreens; ++i)
+    {
+        const float* matrix = screenMatrix[i];
+        for (int coefficient = 0; coefficient < 6; ++coefficient)
+        {
+            if (!std::isfinite(matrix[coefficient]))
+                return false;
+        }
+
+        const float transformedWidth =
+            std::hypot(matrix[0] * 256.0f, matrix[1] * 256.0f);
+        const float transformedHeight =
+            std::hypot(matrix[2] * 192.0f, matrix[3] * 192.0f);
+        const float determinant = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+
+        if (transformedWidth <= 0.5f
+            || transformedHeight <= 0.5f
+            || std::fabs(determinant) <= 1.0e-8f)
+        {
+            return false;
+        }
+
+        if (screenKind[i] == 0 || screenKind[i] == 1)
+            hasTopOrBottom = true;
+    }
+
+    return hasTopOrBottom;
+}
+
 bool ScreenPanelVulkan::configureSurface(
     int newWidth, int newHeight, bool managePresenterRegistration)
 {
     (void)managePresenterRegistration;
     if (!presenter || surfaceId == 0 || newWidth <= 0 || newHeight <= 0)
+        return false;
+
+    if (!hasValidGameScreenLayout())
         return false;
 
     VulkanSurfaceConfig config{};
@@ -209,6 +261,88 @@ bool ScreenPanelVulkan::configureSurface(
             destination.matrix[coefficient] = screenMatrix[index][coefficient] * dpr;
     }
     config.filtering = filter ? VulkanFilterMode::Linear : VulkanFilterMode::Nearest;
+
+    u32 validGameScreens = 0;
+    for (u32 index = 0; index < config.screenTransformCount; ++index)
+    {
+        const auto& transform = config.screenTransforms[index];
+        if (!transform.enabled)
+            continue;
+
+        const float transformedWidth =
+            std::hypot(transform.matrix[0] * 256.0f, transform.matrix[1] * 256.0f);
+        const float transformedHeight =
+            std::hypot(transform.matrix[2] * 192.0f, transform.matrix[3] * 192.0f);
+        const float determinant =
+            transform.matrix[0] * transform.matrix[3] - transform.matrix[1] * transform.matrix[2];
+        const bool finite = std::all_of(
+            transform.matrix.begin(),
+            transform.matrix.end(),
+            [](float value) { return std::isfinite(value); });
+        const bool nonDegenerate =
+            transformedWidth > 0.5f
+            && transformedHeight > 0.5f
+            && std::fabs(determinant) > 1.0e-8f;
+        if (finite && nonDegenerate)
+            ++validGameScreens;
+
+        auto mapPoint = [&](float x, float y) {
+            return std::array<float, 2>{
+                transform.matrix[0] * x + transform.matrix[2] * y + transform.matrix[4],
+                transform.matrix[1] * x + transform.matrix[3] * y + transform.matrix[5]};
+        };
+        const auto topLeft = mapPoint(0.0f, 0.0f);
+        const auto topRight = mapPoint(256.0f, 0.0f);
+        const auto bottomLeft = mapPoint(0.0f, 192.0f);
+        const auto bottomRight = mapPoint(256.0f, 192.0f);
+        float left = topLeft[0];
+        float right = topLeft[0];
+        float top = topLeft[1];
+        float bottom = topLeft[1];
+        for (const auto& point :
+            {topRight, bottomLeft, bottomRight})
+        {
+            left = std::min(left, point[0]);
+            right = std::max(right, point[0]);
+            top = std::min(top, point[1]);
+            bottom = std::max(bottom, point[1]);
+        }
+
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanSurfaceConfig] transform index=%u enabled=%d topScreen=%d "
+            "matrix=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f] mappedBounds=[%.1f,%.1f,%.1f,%.1f] "
+            "determinant=%.6f finite=%d nonDegenerate=%d\n",
+            index,
+            transform.enabled ? 1 : 0,
+            transform.topScreen ? 1 : 0,
+            transform.matrix[0],
+            transform.matrix[1],
+            transform.matrix[2],
+            transform.matrix[3],
+            transform.matrix[4],
+            transform.matrix[5],
+            left,
+            top,
+            right,
+            bottom,
+            determinant,
+            finite ? 1 : 0,
+            nonDegenerate ? 1 : 0);
+    }
+
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "[VulkanSurfaceConfig] surfaceId=%d surfaceWidth=%d surfaceHeight=%d dpr=%.3f "
+        "layoutGeneration=%llu numScreens=%d screenTransformCount=%u validGameScreens=%u\n",
+        surfaceId,
+        newWidth,
+        newHeight,
+        dpr,
+        static_cast<unsigned long long>(layoutGeneration),
+        numScreens,
+        config.screenTransformCount,
+        validGameScreens);
 
     if ((configuredWidth != newWidth || configuredHeight != newHeight)
         && !presenter->resizeSurface(

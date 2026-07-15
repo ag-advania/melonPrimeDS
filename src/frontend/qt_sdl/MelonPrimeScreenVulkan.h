@@ -70,6 +70,7 @@ private:
     };
 
     bool ensureNativeSurface();
+    bool hasValidGameScreenLayout() const noexcept;
     bool configureSurface(
         int width, int height, bool managePresenterRegistration = true);
     void presentOnGuiThread();
