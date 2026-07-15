@@ -21,20 +21,31 @@
 #include "GPU_ColorOp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include "SapphireGPU2DCore/GPU2D_Soft.h"
-#include <cassert>
-#include "SapphireGPU2DSoftAccess.h"
+#include "MelonPrimeSapphireGpu2DAdapter.h"
 #endif
 
 namespace melonDS
 {
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeSapphireGpu2DState.h"
+#endif
+
+namespace melonDS
+{
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+SapphireGpu2DState* GetSapphireState(GPU& gpu) noexcept
+{
+    return gpu.TryGetSapphireGpu2DState();
+}
+} // namespace
+#endif
+
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     : Renderer(nds.GPU)
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    , SapphireUnitA(0, nds.GPU)
-    , SapphireUnitB(1, nds.GPU)
-#endif
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const size_t len = kPackedFramebufferPixels;
@@ -48,7 +59,6 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     BackBuffer = 0;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    Sapphire2DRenderer = std::make_unique<SapphireGPU2DCore::GPU2D::SoftRenderer>(GPU);
 #else
     Rend2D_A = std::make_unique<SoftRenderer2D>(GPU.GPU2D_A, *this);
     Rend2D_B = std::make_unique<SoftRenderer2D>(GPU.GPU2D_B, *this);
@@ -76,9 +86,8 @@ void SoftRenderer::Reset()
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    Sapphire2DRenderer->ClearStructuredVulkan2DState();
-    SapphireUnitA.Reset();
-    SapphireUnitB.Reset();
+    if (auto* state = GetSapphireState(GPU))
+        state->Renderer.ClearStructuredVulkan2DState();
 #else
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -132,13 +141,17 @@ void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     SyncSapphireUnitsFromGPU2D();
-    BindSapphireBackBufferScreenAliases();
+    BindSapphirePhysicalTargets();
 
     line = GPU.VCount;
     if (line < 192)
     {
-        Sapphire2DRenderer->DrawScanline(line, &SapphireUnitA);
-        Sapphire2DRenderer->DrawScanline(line, &SapphireUnitB);
+        auto* state = GetSapphireState(GPU);
+        if (state)
+        {
+            state->Renderer.DrawScanline(line, &state->UnitA);
+            state->Renderer.DrawScanline(line, &state->UnitB);
+        }
     }
 #else
     u32 *dstA, *dstB;
@@ -209,32 +222,35 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 void SoftRenderer::SyncSapphireUnitsFromGPU2D()
 {
-    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(SapphireUnitA, GPU.GPU2D_A, GPU);
-    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(SapphireUnitB, GPU.GPU2D_B, GPU);
+    auto* state = GetSapphireState(GPU);
+    if (!state)
+        return;
+
+    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitA, GPU.GPU2D_A, GPU);
+    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitB, GPU.GPU2D_B, GPU);
 }
 
-void SoftRenderer::BindSapphireBackBufferScreenAliases() noexcept
+void SoftRenderer::BindSapphirePhysicalTargets() noexcept
 {
-    u32* const unitA = Framebuffer[BackBuffer][0];
-    u32* const unitB = Framebuffer[BackBuffer][1];
+    auto* state = GetSapphireState(GPU);
+    if (!state)
+        return;
+
+    u32* const physicalTop = Framebuffer[BackBuffer][0];
+    u32* const physicalBottom = Framebuffer[BackBuffer][1];
+
+    GPU.Framebuffer[BackBuffer][0] = physicalTop;
+    GPU.Framebuffer[BackBuffer][1] = physicalBottom;
 
     if (GPU.ScreenSwap)
-    {
-        GPU.Framebuffer[BackBuffer][0] = unitA;
-        GPU.Framebuffer[BackBuffer][1] = unitB;
-    }
+        state->Renderer.SetFramebuffer(physicalTop, physicalBottom);
     else
-    {
-        GPU.Framebuffer[BackBuffer][0] = unitB;
-        GPU.Framebuffer[BackBuffer][1] = unitA;
-    }
-
-    Sapphire2DRenderer->SetFramebuffer(unitA, unitB);
+        state->Renderer.SetFramebuffer(physicalBottom, physicalTop);
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 {
-    BindSapphireBackBufferScreenAliases();
+    BindSapphirePhysicalTargets();
 }
 
 void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
@@ -243,18 +259,8 @@ void SoftRenderer::PublishCompletedSapphireFrontBuffer() noexcept
 
     for (int buffer = 0; buffer < 2; ++buffer)
     {
-        u32* const unitA = Framebuffer[buffer][0];
-        u32* const unitB = Framebuffer[buffer][1];
-        if (GPU.ScreenSwap)
-        {
-            GPU.Framebuffer[buffer][0] = unitA;
-            GPU.Framebuffer[buffer][1] = unitB;
-        }
-        else
-        {
-            GPU.Framebuffer[buffer][0] = unitB;
-            GPU.Framebuffer[buffer][1] = unitA;
-        }
+        GPU.Framebuffer[buffer][0] = Framebuffer[buffer][0];
+        GPU.Framebuffer[buffer][1] = Framebuffer[buffer][1];
     }
 
 #ifndef NDEBUG
@@ -287,24 +293,25 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     published.bottom.engine = GPU.ScreenSwap ? 1u : 0u;
 
     const bool structuredReady =
-        Sapphire2DRenderer != nullptr
+        GetSapphireState(GPU) != nullptr
         && GPU.GPU3D.HasCurrentRenderer()
         && GPU.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
 
     if (structuredReady)
     {
+        auto* state = GetSapphireState(GPU);
         published.top.structuredPlane0 =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 0);
+            state->Renderer.GetStructuredVulkan2DPlane(true, 0);
         published.top.structuredPlane1 =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 1);
+            state->Renderer.GetStructuredVulkan2DPlane(true, 1);
         published.top.structuredControl =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 2);
+            state->Renderer.GetStructuredVulkan2DPlane(true, 2);
         published.bottom.structuredPlane0 =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 0);
+            state->Renderer.GetStructuredVulkan2DPlane(false, 0);
         published.bottom.structuredPlane1 =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 1);
+            state->Renderer.GetStructuredVulkan2DPlane(false, 1);
         published.bottom.structuredControl =
-            Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 2);
+            state->Renderer.GetStructuredVulkan2DPlane(false, 2);
 
         if (published.top.structuredPlane0 == nullptr
             || published.top.structuredPlane1 == nullptr
@@ -358,26 +365,32 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
 
 void SoftRenderer::ForwardSapphireGpu2DRegisterWrite8(u32 engineNum, u32 addr, u8 val) noexcept
 {
-    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
-    unit.Write8(addr, val);
+    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite8(GPU, engineNum, addr, val);
 }
 
 void SoftRenderer::ForwardSapphireGpu2DRegisterWrite16(u32 engineNum, u32 addr, u16 val) noexcept
 {
-    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
-    unit.Write16(addr, val);
+    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite16(GPU, engineNum, addr, val);
 }
 
 void SoftRenderer::ForwardSapphireGpu2DRegisterWrite32(u32 engineNum, u32 addr, u32 val) noexcept
 {
-    SapphireGPU2DCore::GPU2D::Unit& unit = engineNum == 0 ? SapphireUnitA : SapphireUnitB;
-    unit.Write32(addr, val);
+    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite32(GPU, engineNum, addr, val);
 }
 
 void SoftRenderer::ForwardSapphireGpu2DWindowCheck(u32 line) noexcept
 {
-    SapphireUnitA.CheckWindows(line);
-    SapphireUnitB.CheckWindows(line);
+    MelonPrimeSapphireGpu2DAdapter::ForwardWindowCheck(GPU, line);
+}
+
+SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() noexcept
+{
+    return GetSapphireState(GPU)->Renderer;
+}
+
+const SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() const noexcept
+{
+    return GetSapphireState(GPU)->Renderer;
 }
 #endif
 
@@ -385,9 +398,12 @@ void SoftRenderer::DrawSprites(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     SyncSapphireUnitsFromGPU2D();
-    BindSapphireBackBufferScreenAliases();
-    Sapphire2DRenderer->DrawSprites(line, &SapphireUnitA);
-    Sapphire2DRenderer->DrawSprites(line, &SapphireUnitB);
+    BindSapphirePhysicalTargets();
+    if (auto* state = GetSapphireState(GPU))
+    {
+        state->Renderer.DrawSprites(line, &state->UnitA);
+        state->Renderer.DrawSprites(line, &state->UnitB);
+    }
 #else
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
@@ -397,15 +413,14 @@ void SoftRenderer::DrawSprites(u32 line)
 void SoftRenderer::VBlank()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    SapphireUnitA.VBlank();
-    SapphireUnitB.VBlank();
+    MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(GPU);
 #endif
 }
 
 void SoftRenderer::VBlankEnd()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    Sapphire2DRenderer->VBlankEnd(&SapphireUnitA, &SapphireUnitB);
+    MelonPrimeSapphireGpu2DAdapter::ForwardVBlankEnd(GPU);
 #endif
 }
 

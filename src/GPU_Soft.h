@@ -60,10 +60,10 @@ public:
     static constexpr size_t kPackedStride = 256u * 3u + 1u;
     static constexpr size_t kPackedFramebufferPixels = kPackedStride * 192u;
 
-    [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() noexcept { return *Sapphire2DRenderer; }
-    [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() const noexcept { return *Sapphire2DRenderer; }
+    [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() noexcept;
+    [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() const noexcept;
     void SyncSapphireFramebufferBindings() noexcept;
-    void BindSapphireBackBufferScreenAliases() noexcept;
+    void BindSapphirePhysicalTargets() noexcept;
     void PublishCompletedSapphireFrontBuffer() noexcept;
     void SyncSapphireUnitsFromGPU2D();
     [[nodiscard]] bool PublishSapphire2DFrame() noexcept;
@@ -81,11 +81,6 @@ private:
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    std::unique_ptr<SapphireGPU2DCore::GPU2D::SoftRenderer> Sapphire2DRenderer;
-    SapphireGPU2DCore::GPU2D::Unit SapphireUnitA;
-    SapphireGPU2DCore::GPU2D::Unit SapphireUnitB;
-#endif
 
     void DrawScanlineA(u32 line, u32* dst);
     void DrawScanlineB(u32 line, u32* dst);
