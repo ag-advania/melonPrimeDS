@@ -1686,4 +1686,4 @@ MelonPrime独自処理をQt adapter境界だけへ縮小
 | S68-6 | `18a0594f6` | done | Fullscreen transition coalescing |
 | S68-7 | `a8c9a4861` | done | Stable surface across fullscreen resize |
 | S68-8 | `d027d14ec` | done | Integer transform pixel snap |
-| S68-9 | pending | in_progress | S68 lifecycle regression tests |
+| S68-9 | `39d4c5811` | done | S68 lifecycle regression tests |
