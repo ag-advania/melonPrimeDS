@@ -7,11 +7,15 @@
 #include <array>
 #include <cstdint>
 
-#include "VulkanReference/VulkanStructuredControlAbi.h"
+#include "VulkanStructuredControlAbi.h"
 #include "types.h"
 
 namespace MelonDSAndroid
 {
+
+using melonDS::u32;
+using melonDS::u64;
+using melonDS::u8;
 
 enum class PhysicalScreen : u8
 {
