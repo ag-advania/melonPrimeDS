@@ -123,6 +123,7 @@ struct VulkanPresenterPacingStats
     u64 ComposeWaitFailures = 0;
     u64 MissingFrameImageFailures = 0;
     u64 NoConfiguredSurfaceFrames = 0;
+    u64 NoGameScreenDrawCalls = 0;
     u64 SwapchainUnavailableFrames = 0;
     u64 SurfaceWaitFailures = 0;
     u64 DescriptorUpdateFailures = 0;
@@ -140,6 +141,21 @@ struct VulkanPresenterPacingStats
 
 class VulkanOutput;
 struct VulkanCompositionInputs;
+
+enum class VulkanPresentResult : u8
+{
+    PresentedGameFrame,
+    NoDrawableGameScreen,
+    InvalidFrameInputs,
+    FrameWaitFailed,
+    ComposeFailed,
+    SwapchainUnavailable,
+    AcquireFailed,
+    RecordFailed,
+    SubmitFailed,
+    QueuePresentFailed,
+    NotInitialized,
+};
 
 class VulkanSurfacePresenter
 {
@@ -161,7 +177,8 @@ public:
     bool updateOverlay(int surfaceId, const VulkanSurfaceOverlay& overlay);
     void detachSurface(int surfaceId);
 
-    bool presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
+    VulkanPresentResult presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
+    static bool HasDrawableGameScreen(const VulkanSurfaceConfig& config) noexcept;
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
     bool getCompletedTimelineValue(u64& completedValue) const;
     void invalidateDescriptorCaches();
@@ -326,6 +343,8 @@ private:
         DescriptorSetCacheState backgroundDescriptorCache{};
         bool cachedDirectPresent = false;
         bool cachedRetroArchApplied = false;
+        u32 cachedGameScreenDrawCallCount = 0;
+        u32 cachedOverlayDrawCallCount = 0;
         std::vector<DrawCall> cachedDrawCalls;
         VkQueryPool timestampQueryPool = VK_NULL_HANDLE;
         bool timestampPending = false;
@@ -456,6 +475,7 @@ private:
     u64 composeWaitFailures = 0;
     u64 missingFrameImageFailures = 0;
     u64 noConfiguredSurfaceFrames = 0;
+    u64 noGameScreenDrawCalls = 0;
     u64 swapchainUnavailableFrames = 0;
     u64 surfaceWaitFailures = 0;
     u64 descriptorUpdateFailures = 0;

@@ -835,18 +835,18 @@ void ScreenPanelVulkan::presentOnGuiThread()
         return;
     }
 
-    const bool presented =
+    const VulkanPresentResult presentResult =
         session.presentAcquiredFrame(frame, *presenter, kPresentTimeoutNs);
     if (tracePresenter)
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Info,
-            "[VulkanPresenterTrace] present id=%llu result=%d\n",
+            "[VulkanPresenterTrace] present id=%llu result=%u\n",
             static_cast<unsigned long long>(frame->frameId),
-            presented ? 1 : 0);
+            static_cast<unsigned>(presentResult));
     }
 
-    if (presented)
+    if (presentResult == VulkanPresentResult::PresentedGameFrame)
     {
         lastPresentedFrameId = frame->frameId;
         session.commitPresentedFrame(frame);

@@ -10,6 +10,7 @@
 #include "GPU3D_Vulkan.h"
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
+#include "VulkanReference/VulkanSurfacePresenter.h"
 #include "SapphireVulkanFrameLatch.h"
 
 namespace melonDS
@@ -45,7 +46,7 @@ public:
     void cancelProducerFrame();
 
     Frame* acquirePresentFrame();
-    bool presentAcquiredFrame(
+    MelonDSAndroid::VulkanPresentResult presentAcquiredFrame(
         Frame* frame,
         MelonDSAndroid::VulkanSurfacePresenter& presenter,
         u64 timeoutNs);

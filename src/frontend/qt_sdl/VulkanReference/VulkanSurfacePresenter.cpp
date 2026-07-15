@@ -34,6 +34,27 @@ constexpr u32 kDrawModeFilteredCompositeBottom = 5u;
 constexpr u32 kDrawModeRetroArchCompositeFrame = 6u;
 constexpr u32 kDrawModeSolidOverlay = 7u;
 constexpr u32 kDrawModeRadarOverlay = 8u;
+
+bool IsGameScreenDrawMode(u32 drawMode) noexcept
+{
+    switch (drawMode)
+    {
+    case kDrawModeCompositeFrame:
+    case kDrawModeTopScreen:
+    case kDrawModeBottomScreen:
+    case kDrawModeFilteredCompositeTop:
+    case kDrawModeFilteredCompositeBottom:
+    case kDrawModeRetroArchCompositeFrame:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool IsOverlayDrawMode(u32 drawMode) noexcept
+{
+    return drawMode == kDrawModeSolidOverlay || drawMode == kDrawModeRadarOverlay;
+}
 constexpr u32 kNativeScreenWidth = 256u;
 constexpr u32 kNativeScreenHeight = 192u;
 constexpr u32 kNativeAtlasHeight = 386u;
@@ -925,6 +946,9 @@ bool VulkanSurfacePresenter::configureSurface(int surfaceId, const VulkanSurface
     if (iterator == surfaces.end())
         return false;
 
+    if (!HasDrawableGameScreen(config))
+        return false;
+
     SurfaceState& surfaceState = iterator->second;
     if (surfaceState.configured
         && backgroundImage.pixels == nullptr
@@ -954,6 +978,52 @@ bool VulkanSurfacePresenter::configureSurface(int surfaceId, const VulkanSurface
 
     destroyBackgroundTexture(surfaceState);
     return true;
+}
+
+bool VulkanSurfacePresenter::HasDrawableGameScreen(const VulkanSurfaceConfig& config) noexcept
+{
+    if (config.screenTransformCount > 0)
+    {
+        const u32 transformCount = std::min<u32>(
+            config.screenTransformCount,
+            static_cast<u32>(config.screenTransforms.size()));
+        for (u32 index = 0; index < transformCount; ++index)
+        {
+            const VulkanPresenterTransform& transform = config.screenTransforms[index];
+            if (!transform.enabled)
+                continue;
+
+            for (float coefficient : transform.matrix)
+            {
+                if (!std::isfinite(coefficient))
+                    return false;
+            }
+
+            const float transformedWidth =
+                std::hypot(transform.matrix[0] * 256.0f, transform.matrix[1] * 256.0f);
+            const float transformedHeight =
+                std::hypot(transform.matrix[2] * 192.0f, transform.matrix[3] * 192.0f);
+            const float determinant =
+                transform.matrix[0] * transform.matrix[3] - transform.matrix[1] * transform.matrix[2];
+
+            if (transformedWidth > 0.5f
+                && transformedHeight > 0.5f
+                && std::fabs(determinant) > 1.0e-8f)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const auto rectDrawable = [](const VulkanPresenterRect& rect, float alpha) noexcept {
+        return rect.enabled && rect.width > 0 && rect.height > 0 && alpha > 0.0f;
+    };
+
+    return rectDrawable(config.topScreen, config.topAlpha)
+        || rectDrawable(config.bottomScreen, config.bottomAlpha)
+        || rectDrawable(config.hybridTopScreen, config.hybridAlpha)
+        || rectDrawable(config.hybridBottomScreen, config.hybridAlpha);
 }
 
 bool VulkanSurfacePresenter::updateOverlay(
@@ -986,26 +1056,26 @@ void VulkanSurfacePresenter::detachSurface(int surfaceId)
     destroySurfaceStateResources(surfaceState);
 }
 
-bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs)
+VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs)
 {
     retiredResources.Collect(
         device,
         melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
         melonDS::VulkanContext::Get().IsDeviceLost());
     if (melonDS::VulkanContext::Get().IsDeviceLost())
-        return false;
+        return VulkanPresentResult::QueuePresentFailed;
     if (!initialized)
-        return false;
+        return VulkanPresentResult::NotInitialized;
 
     if (surfaces.empty())
-        return true;
+        return VulkanPresentResult::NoDrawableGameScreen;
 
     const bool fastForwardActive = MelonDSAndroid::isFastForwardActive();
 
     if (frame == nullptr || !output.waitForFrame(frame, timeoutNs))
     {
         frameWaitFailures++;
-        return false;
+        return VulkanPresentResult::FrameWaitFailed;
     }
 
     const bool hasRequiredDirectHandles =
@@ -1077,7 +1147,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (!output.composeAndSubmitFrame(frame, inputs))
         {
             composeSubmitFailures++;
-            return false;
+            return VulkanPresentResult::ComposeFailed;
         }
         const bool highResolutionRealtimeFallbackPresent =
             !fastForwardActive
@@ -1089,7 +1159,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (!output.waitForFrame(frame, composeWaitTimeoutNs))
         {
             composeWaitFailures++;
-            return false;
+            return VulkanPresentResult::ComposeFailed;
         }
 
         frameImage = output.getFrameImage(frame);
@@ -1097,7 +1167,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (frameImage == VK_NULL_HANDLE || frameImageView == VK_NULL_HANDLE)
         {
             missingFrameImageFailures++;
-            return false;
+            return VulkanPresentResult::InvalidFrameInputs;
         }
     }
 
@@ -1111,6 +1181,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
     u64 presentCpuNs = 0;
     u64 framePresentTimelineValue = 0;
     bool presentedAnySurface = false;
+    bool presentedGameFrame = false;
     bool sawConfiguredSurface = false;
     for (auto& [surfaceId, surfaceState] : surfaces)
     {
@@ -1200,6 +1271,23 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         }
         vertexCpuNs += PerfNowNs() - vertexStartNs;
 
+        if (surfaceState.cachedGameScreenDrawCallCount == 0)
+        {
+            noGameScreenDrawCalls++;
+            continue;
+        }
+
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[VulkanSurfaceDraw] frameId=%llu gameDrawCalls=%u overlayDrawCalls=%u "
+            "vertices=%zu directPresent=%d compositePresent=%d\n",
+            static_cast<unsigned long long>(frame->frameId),
+            surfaceState.cachedGameScreenDrawCallCount,
+            surfaceState.cachedOverlayDrawCallCount,
+            drawCalls.size(),
+            directPresent ? 1 : 0,
+            directPresent ? 0 : 1);
+
         u32 imageIndex = 0;
         const u64 acquireBudgetNs = [&]() -> u64 {
             if (fastForwardActive)
@@ -1288,6 +1376,7 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         framePresentTimelineValue = std::max(framePresentTimelineValue, surfacePresentTimelineValue);
 
         presentedAnySurface = true;
+        presentedGameFrame = true;
         lastPresentedDirect = directPresent;
         lastPresentMode = surfaceState.presentMode;
         lastSwapchainImageCount = static_cast<u32>(surfaceState.swapchainImages.size());
@@ -1315,7 +1404,23 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         noConfiguredSurfaceFrames++;
     }
 
-    return presentedAnySurface;
+    if (presentedGameFrame)
+        return VulkanPresentResult::PresentedGameFrame;
+    if (presentedAnySurface)
+        return VulkanPresentResult::NoDrawableGameScreen;
+    if (!sawConfiguredSurface)
+        return VulkanPresentResult::NoDrawableGameScreen;
+    if (acquireFailures > 0 || acquireTimeouts > 0)
+        return VulkanPresentResult::AcquireFailed;
+    if (recordFailures > 0)
+        return VulkanPresentResult::RecordFailed;
+    if (submitFailures > 0)
+        return VulkanPresentResult::SubmitFailed;
+    if (swapchainUnavailableFrames > 0)
+        return VulkanPresentResult::SwapchainUnavailable;
+    if (noGameScreenDrawCalls > 0)
+        return VulkanPresentResult::NoDrawableGameScreen;
+    return VulkanPresentResult::QueuePresentFailed;
 }
 
 bool VulkanSurfacePresenter::waitForFrameConsumption(Frame* frame, u64 timeoutNs)
@@ -1369,6 +1474,7 @@ VulkanPresenterPacingStats VulkanSurfacePresenter::takePacingStatsSnapshotAndRes
     stats.ComposeWaitFailures = composeWaitFailures;
     stats.MissingFrameImageFailures = missingFrameImageFailures;
     stats.NoConfiguredSurfaceFrames = noConfiguredSurfaceFrames;
+    stats.NoGameScreenDrawCalls = noGameScreenDrawCalls;
     stats.SwapchainUnavailableFrames = swapchainUnavailableFrames;
     stats.SurfaceWaitFailures = surfaceWaitFailures;
     stats.DescriptorUpdateFailures = descriptorUpdateFailures;
@@ -1391,6 +1497,7 @@ VulkanPresenterPacingStats VulkanSurfacePresenter::takePacingStatsSnapshotAndRes
     composeWaitFailures = 0;
     missingFrameImageFailures = 0;
     noConfiguredSurfaceFrames = 0;
+    noGameScreenDrawCalls = 0;
     swapchainUnavailableFrames = 0;
     surfaceWaitFailures = 0;
     descriptorUpdateFailures = 0;
@@ -3674,6 +3781,15 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     surfaceState.cachedDrawCalls = drawCalls;
     surfaceState.cachedDirectPresent = directPresent;
     surfaceState.cachedRetroArchApplied = retroArchApplied;
+    surfaceState.cachedGameScreenDrawCallCount = 0;
+    surfaceState.cachedOverlayDrawCallCount = 0;
+    for (const DrawCall& drawCall : drawCalls)
+    {
+        if (IsGameScreenDrawMode(drawCall.drawMode))
+            ++surfaceState.cachedGameScreenDrawCallCount;
+        else if (IsOverlayDrawMode(drawCall.drawMode))
+            ++surfaceState.cachedOverlayDrawCallCount;
+    }
     surfaceState.vertexBufferDirty = false;
 
     return true;

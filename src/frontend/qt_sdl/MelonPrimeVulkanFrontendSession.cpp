@@ -399,7 +399,7 @@ Frame* MelonPrimeVulkanFrontendSession::acquirePresentFrame()
     return frameQueue.getPresentCandidate(queuePolicy(), std::nullopt);
 }
 
-bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
+VulkanPresentResult MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
     Frame* frame,
     VulkanSurfacePresenter& presenter,
     u64 timeoutNs)
@@ -412,7 +412,7 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
             || activePresenter != &presenter
             || frame == nullptr || nds == nullptr)
         {
-            return false;
+            return VulkanPresentResult::InvalidFrameInputs;
         }
 
         if (nds->GPU.GPU3D.HasCurrentRenderer())
@@ -422,7 +422,7 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
         }
     }
     if (renderer3D == nullptr)
-        return false;
+        return VulkanPresentResult::InvalidFrameInputs;
 
     const int scale = frame->width >= 256
         ? std::max<int>(1, static_cast<int>(frame->width / 256u))
@@ -447,15 +447,17 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
             static_cast<unsigned long long>(liveView.Generation),
             buildInputs ? 1 : 0);
         if (!buildInputs)
-            return false;
+            return VulkanPresentResult::InvalidFrameInputs;
     }
-    const bool presented = presenter.presentFrame(frame, output, inputs, timeoutNs);
+    const VulkanPresentResult presentResult =
+        presenter.presentFrame(frame, output, inputs, timeoutNs);
     Platform::Log(
         Platform::LogLevel::Info,
-        "[VulkanPresent] frameId=%llu surfacePresent=%d\n",
+        "[VulkanPresent] frameId=%llu surfacePresent=%d result=%u\n",
         static_cast<unsigned long long>(frame->frameId),
-        presented ? 1 : 0);
-    return presented;
+        presentResult == VulkanPresentResult::PresentedGameFrame ? 1 : 0,
+        static_cast<unsigned>(presentResult));
+    return presentResult;
 }
 
 bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
