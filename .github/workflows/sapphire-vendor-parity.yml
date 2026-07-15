@@ -9,6 +9,7 @@ on:
       - 'tools/check_sapphire_vendor_parity.py'
       - 'tools/vendor_sapphire.py'
       - 'tools/test_sapphire_vendor_parity.py'
+      - 'tools/test_sapphire_gpu2d_lifecycle_parity.py'
       - 'src/SapphireVendor/**'
   push:
     branches:
@@ -21,6 +22,7 @@ on:
       - 'tools/check_sapphire_vendor_parity.py'
       - 'tools/vendor_sapphire.py'
       - 'tools/test_sapphire_vendor_parity.py'
+      - 'tools/test_sapphire_gpu2d_lifecycle_parity.py'
       - 'src/SapphireVendor/**'
 
 jobs:
@@ -46,6 +48,7 @@ jobs:
           SAPPHIRE_ANDROID_LIB_ROOT: ${{ github.workspace }}/sapphire-android-lib
         run: |
           python3 tools/test_sapphire_vendor_parity.py
+          python3 tools/test_sapphire_gpu2d_lifecycle_parity.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream
