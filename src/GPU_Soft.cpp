@@ -302,6 +302,14 @@ void SoftRenderer::DrawSprites(u32 line)
 #endif
 }
 
+void SoftRenderer::VBlank()
+{
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    SapphireUnitA.VBlank();
+    SapphireUnitB.VBlank();
+#endif
+}
+
 void SoftRenderer::VBlankEnd()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)

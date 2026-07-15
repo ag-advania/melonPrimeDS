@@ -49,7 +49,7 @@ public:
     void DrawScanline(u32 line) override;
     void DrawSprites(u32 line) override;
 
-    void VBlank() override {}
+    void VBlank() override;
     void VBlankEnd() override;
 
     void AllocCapture(u32 bank, u32 start, u32 len) override {};

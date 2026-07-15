@@ -60,9 +60,7 @@ void SyncUnitFromGPU2D(Unit& unit, const melonDS::GPU2D& gpu2d, melonDS::GPU& gp
     unit.BGMosaicSize[1] = gpu2d.BGMosaicSize[1];
     unit.OBJMosaicSize[0] = gpu2d.OBJMosaicSize[0];
     unit.OBJMosaicSize[1] = gpu2d.OBJMosaicSize[1];
-    unit.BGMosaicY = gpu2d.BGMosaicY;
-    unit.BGMosaicYMax = gpu2d.BGMosaicYMax;
-    unit.OBJMosaicY = gpu2d.OBJMosaicY;
+    // Mosaic line counters are owned by Sapphire Unit::UpdateMosaicCounters().
 
     unit.BlendCnt = gpu2d.BlendCnt;
     unit.BlendAlpha = gpu2d.BlendAlpha;
