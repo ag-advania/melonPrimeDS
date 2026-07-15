@@ -160,7 +160,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanAccumulate3dShaderData.h
         VulkanCompositorShaderData.h
         VulkanSurfacePresenterVertexShaderData.h
-        VulkanSurfacePresenterFragmentShaderData.h)
+        VulkanSurfacePresenterFragmentShaderData.h
+        MelonPrimeVulkanOverlayVertShaderData.h
+        MelonPrimeVulkanOverlayFragShaderData.h)
     list(TRANSFORM MELONPRIME_SAPPHIRE_SHADER_HEADERS
         PREPEND "${MELONPRIME_SAPPHIRE_SHADER_OUTPUT_DIR}/")
 
@@ -187,7 +189,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         frontend/qt_sdl/VulkanReference/VulkanAccumulate3dShader.comp
         frontend/qt_sdl/VulkanReference/VulkanCompositorShader.comp
         frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.vert
-        frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag)
+        frontend/qt_sdl/VulkanReference/VulkanSurfacePresenter.frag
+        frontend/qt_sdl/MelonPrimeVulkanOverlay.vert
+        frontend/qt_sdl/MelonPrimeVulkanOverlay.frag)
     list(TRANSFORM MELONPRIME_SAPPHIRE_SHADER_SOURCES
         PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
     set(MELONPRIME_SAPPHIRE_SHADER_STAMP

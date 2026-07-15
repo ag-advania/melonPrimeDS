@@ -100,6 +100,7 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
 {
     if (presenter)
     {
+        presenter->SetDesktopOverlayRecorder(nullptr, nullptr);
         if (sessionPresenterRegistered)
             emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
         sessionPresenterRegistered = false;
@@ -107,6 +108,7 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
             presenter->detachSurface(surfaceId);
         surfaceId = 0;
     }
+    overlayRenderer.shutdown();
     surfaceHost.destroy(melonDS::VulkanContext::Get().GetInstance());
     if (presenter)
         presenter->shutdown();
@@ -148,6 +150,20 @@ bool ScreenPanelVulkan::initVulkan()
 
     emuInstance->vulkanFrontendSession().registerPresenter(presenter.get());
     sessionPresenterRegistered = true;
+    if (!overlayRenderer.init())
+    {
+        emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
+        sessionPresenterRegistered = false;
+        presenter->detachSurface(surfaceId);
+        surfaceId = 0;
+        surfaceHost.destroy(melonDS::VulkanContext::Get().GetInstance());
+        presenter->shutdown();
+        presenter.reset();
+        return false;
+    }
+    presenter->SetDesktopOverlayRecorder(
+        MelonPrimeVulkanOverlayRenderer::RecordCallback,
+        &overlayRenderer);
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info,
         "[MelonPrime] Vulkan frontend session attached to desktop surface generation %llu\n",
         static_cast<unsigned long long>(surfaceHost.generation()));

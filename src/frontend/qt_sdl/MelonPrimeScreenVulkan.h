@@ -11,6 +11,7 @@
 
 class QResizeEvent;
 #include "MelonPrimeVulkanSurfaceHost.h"
+#include "MelonPrimeVulkanOverlayRenderer.h"
 #include "Screen.h"
 
 namespace MelonDSAndroid {
@@ -39,6 +40,7 @@ private:
     QPaintEngine* paintEngine() const override;
 
     std::unique_ptr<MelonDSAndroid::VulkanSurfacePresenter> presenter;
+    MelonPrimeVulkanOverlayRenderer overlayRenderer;
     MelonPrimeVulkanSurfaceHost surfaceHost;
     int surfaceId = 0;
     int configuredWidth = 0;

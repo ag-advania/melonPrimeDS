@@ -346,6 +346,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanSettings.h
         MelonPrimeScreenVulkan.cpp
         MelonPrimeScreenVulkan.h
+        MelonPrimeVulkanOverlayRenderer.cpp
+        MelonPrimeVulkanOverlayRenderer.h
         MelonPrimeVulkanSurfaceHost.h
         MelonPrimeVulkanFrontendSession.cpp
         MelonPrimeVulkanFrontendSession.h

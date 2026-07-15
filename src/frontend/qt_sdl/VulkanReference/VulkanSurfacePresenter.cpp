@@ -21,6 +21,11 @@ using namespace melonDS::Vulkan::GeneratedShaders;
 bool isFastForwardActive();
 bool areRendererDebugBgObjLogsEnabled();
 
+#if defined(MELONPRIME_DS)
+VulkanSurfacePresenter::VulkanDesktopOverlayRecorderFn VulkanSurfacePresenter::desktopOverlayRecorder = nullptr;
+void* VulkanSurfacePresenter::desktopOverlayUserData = nullptr;
+#endif
+
 namespace
 {
 constexpr u32 kMaxSurfaceVertexCount = 30;
@@ -1012,6 +1017,16 @@ bool VulkanSurfacePresenter::HasDrawableGameScreen(const VulkanSurfaceConfig& co
         || rectDrawable(config.hybridTopScreen, config.hybridAlpha)
         || rectDrawable(config.hybridBottomScreen, config.hybridAlpha);
 }
+
+#if defined(MELONPRIME_DS)
+void VulkanSurfacePresenter::SetDesktopOverlayRecorder(
+    VulkanDesktopOverlayRecorderFn recorder,
+    void* userData)
+{
+    desktopOverlayRecorder = recorder;
+    desktopOverlayUserData = userData;
+}
+#endif
 
 void VulkanSurfacePresenter::detachSurface(int surfaceId)
 {
@@ -3879,6 +3894,19 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
         );
         vkCmdDraw(surfaceState.commandBuffer, drawCall.vertexCount, 1, drawCall.firstVertex, 0);
     }
+
+#if defined(MELONPRIME_DS)
+    if (desktopOverlayRecorder != nullptr)
+    {
+        VulkanDesktopOverlayTarget overlayTarget{};
+        overlayTarget.commandBuffer = surfaceState.commandBuffer;
+        overlayTarget.renderPass = surfaceState.renderPass;
+        overlayTarget.swapchainFormat = surfaceState.swapchainFormat;
+        overlayTarget.extent = surfaceState.extent;
+        overlayTarget.surfaceId = surfaceState.id;
+        desktopOverlayRecorder(overlayTarget, desktopOverlayUserData);
+    }
+#endif
 
     vkCmdEndRenderPass(surfaceState.commandBuffer);
     melonDS::VulkanR24Barrier::RenderToPresent(

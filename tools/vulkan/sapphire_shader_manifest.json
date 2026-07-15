@@ -215,6 +215,20 @@
       "generated_header": "VulkanSurfacePresenterFragmentShaderData.h",
       "symbol": "melonDS_android_vulkan_surface_presenter_frag_spv", "defines": {},
       "reference": {"repository": "SapphireRhodonite/melonDS-android", "commit_or_tag": "0.7.0.rc4@2c10e59d7209d354e90d9ef4228330bac3f6e794", "path": "app/src/main/cpp/renderer/VulkanSurfacePresenter.frag"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/MelonPrimeVulkanOverlay.vert",
+      "stage": "vert", "entry_point": "main",
+      "generated_header": "MelonPrimeVulkanOverlayVertShaderData.h",
+      "symbol": "melonprime_vulkan_overlay_vert_spv", "defines": {},
+      "reference": {"repository": "ag-advania/melonPrimeDS", "commit_or_tag": "desktop-overlay-v1", "path": "src/frontend/qt_sdl/MelonPrimeVulkanOverlay.vert"}
+    },
+    {
+      "source": "src/frontend/qt_sdl/MelonPrimeVulkanOverlay.frag",
+      "stage": "frag", "entry_point": "main",
+      "generated_header": "MelonPrimeVulkanOverlayFragShaderData.h",
+      "symbol": "melonprime_vulkan_overlay_frag_spv", "defines": {},
+      "reference": {"repository": "ag-advania/melonPrimeDS", "commit_or_tag": "desktop-overlay-v1", "path": "src/frontend/qt_sdl/MelonPrimeVulkanOverlay.frag"}
     }
   ]
 }

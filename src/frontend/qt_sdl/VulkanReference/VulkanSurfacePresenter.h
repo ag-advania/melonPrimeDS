@@ -157,6 +157,25 @@ public:
     bool getCompletedTimelineValue(u64& completedValue) const;
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
+
+#if defined(MELONPRIME_DS)
+    // MELONPRIME_DESKTOP_ADAPTER_BEGIN
+    struct VulkanDesktopOverlayTarget
+    {
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
+        VkExtent2D extent{};
+        int surfaceId = 0;
+    };
+
+    using VulkanDesktopOverlayRecorderFn =
+        void (*)(const VulkanDesktopOverlayTarget& target, void* userData);
+
+    void SetDesktopOverlayRecorder(VulkanDesktopOverlayRecorderFn recorder, void* userData);
+    // MELONPRIME_DESKTOP_ADAPTER_END
+#endif
+
     static bool prewarmRetroArchFilter(
         const VulkanSurfaceConfig& config,
         u32 outputScreenWidth,
@@ -459,6 +478,11 @@ private:
     bool lastPresentedDirect = true;
     u32 lastSwapchainImageCount = 0;
     VkPresentModeKHR lastPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+#if defined(MELONPRIME_DS)
+    static VulkanDesktopOverlayRecorderFn desktopOverlayRecorder;
+    static void* desktopOverlayUserData;
+#endif
 };
 
 }
