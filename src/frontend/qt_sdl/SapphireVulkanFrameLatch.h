@@ -4,8 +4,9 @@
 
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"
+#include "MelonPrimeSapphireFrameInput.h"
+#include "MelonPrimeSapphirePipelineMode.h"
 #include "MelonPrimeDesktopSapphireFrameSidecar.h"
-#include "SapphirePublished2DFrame.h"
 
 namespace melonDS
 {
@@ -21,12 +22,15 @@ class SapphireVulkanFrameLatch
 public:
     void bindNds(melonDS::NDS* newNds) { nds_ = newNds; }
 
+    void setTemporalEnabled(bool enabled) { temporalEnabled_ = enabled; }
+    [[nodiscard]] bool temporalEnabled() const { return temporalEnabled_; }
+
     void clearLatchedSoftPackedFrameSnapshot();
     bool updateVulkanTemporal3dHistoryGate();
     [[nodiscard]] bool isVulkanTemporal3dHistoryGateActive() const;
     bool latchSoftPackedFrameSnapshot(
-        const Frame* frame,
-        const SapphirePublished2DFrame& published,
+        const SapphireFrameInput& input,
+        const DesktopSapphireFrameSidecar& sidecar,
         bool useStructuredVulkan2D);
 
     [[nodiscard]] const SoftPackedFrameSnapshot& lastSnapshot() const
@@ -59,10 +63,16 @@ public:
         vulkanRegularCaptureTransitionResyncPending = false;
     }
 
+    [[nodiscard]] const DesktopSapphireFrameSidecar& lastSidecar() const
+    {
+        return lastFrameSidecar_;
+    }
+
     void invalidateAll2DTemporalSources();
 
 private:
     melonDS::NDS* nds_ = nullptr;
+    bool temporalEnabled_ = true;
 
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidTopScreenCapture3dDsFrame{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidBottomScreenCapture3dDsFrame{};
