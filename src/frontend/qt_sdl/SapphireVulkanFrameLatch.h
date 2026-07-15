@@ -58,6 +58,8 @@ public:
         vulkanRegularCaptureTransitionResyncPending = false;
     }
 
+    void invalidateAll2DTemporalSources();
+
 private:
     melonDS::NDS* nds_ = nullptr;
 
