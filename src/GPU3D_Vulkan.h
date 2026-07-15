@@ -141,6 +141,15 @@ public:
     [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
     [[nodiscard]] bool GetLastValidExactCaptureScreenSwap() const noexcept { return LastValidExactCaptureScreenSwap; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
+    [[nodiscard]] bool HasColorTarget() const noexcept
+    {
+        return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE;
+    }
+    [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
+    [[nodiscard]] VkImage GetColorTargetImage() const noexcept { return ColorImage; }
+    [[nodiscard]] VkImageView GetColorTargetImageView() const noexcept { return ColorImageView; }
+    [[nodiscard]] u32 GetColorTargetWidth() const noexcept { return ColorImageWidth; }
+    [[nodiscard]] u32 GetColorTargetHeight() const noexcept { return ColorImageHeight; }
     [[nodiscard]] Vulkan3DFrameView GetVulkan3DFrameView() const noexcept;
     [[nodiscard]] std::vector<u32> CaptureColorTargetForDebug();
     [[nodiscard]] std::vector<u32> CaptureTopDepthForDebug();

@@ -25,7 +25,6 @@ namespace melonDS
 {
 class GPU;
 class VulkanRenderer3D;
-struct Vulkan3DFrameView;
 }
 
 namespace MelonDSAndroid
@@ -247,7 +246,7 @@ public:
     void releaseTemporalFrameReferences();
     bool captureRenderer3dSnapshot(
         Frame* frame,
-        const melonDS::Vulkan3DFrameView& frameView,
+        const melonDS::VulkanRenderer3D& renderer3D,
         bool snapshotScreenSwap);
     bool prepareFrameForPresentation(
         Frame* frame,
@@ -255,12 +254,11 @@ public:
         int frontBuffer,
         bool frameScreenSwap,
         SoftPackedFrameSnapshot& softPackedSnapshot,
-        melonDS::VulkanRenderer3D& renderer3D,
-        const melonDS::Vulkan3DFrameView& frameView);
+        melonDS::VulkanRenderer3D& renderer3D);
     bool composeAndSubmitFrame(Frame* frame, const VulkanCompositionInputs& inputs);
     bool buildCompositionInputs(
         const Frame* frame,
-        const melonDS::Vulkan3DFrameView& frameView,
+        const melonDS::VulkanRenderer3D& renderer3D,
         int scale,
         VulkanFilterMode filtering,
         bool needsReadback,
@@ -461,7 +459,7 @@ private:
     void destroyRenderer3dSnapshot(FrameResource& resource);
     bool recordRenderer3dSnapshotCopy(
         FrameResource& resource,
-        const melonDS::Vulkan3DFrameView& frameView,
+        const melonDS::VulkanRenderer3D& renderer3D,
         bool snapshotScreenSwap);
 
     bool createAccumulateResources();
@@ -473,7 +471,6 @@ private:
         Frame* frame,
         FrameResource& resource,
         const melonDS::VulkanRenderer3D& renderer3D,
-        const melonDS::Vulkan3DFrameView& frameView,
         bool snapshotScreenSwap,
         bool accumulateTopHighres,
         bool accumulateBottomHighres,

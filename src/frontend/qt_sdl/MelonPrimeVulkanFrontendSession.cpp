@@ -270,7 +270,7 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     }
     if (!output.prepareFrameForPresentation(
             frame, nds->GPU, frontBuffer, preparedFrameScreenSwap,
-            frameLatch.mutableLastSnapshot(), renderer3D, frameView))
+            frameLatch.mutableLastSnapshot(), renderer3D))
     {
         LogVulkanProducerDiscard("prepareFailed");
         return false;
@@ -308,11 +308,10 @@ bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& rende
         || frameLatch.structuredCaptureGateFrames() > 0;
     if (usePreRunSnapshot)
     {
-        const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
-        if (frameView.Valid)
+        if (renderer3D.HasColorTarget() && renderer3D.IsColorTargetInitialized())
         {
             (void)output.captureRenderer3dSnapshot(
-                frame, frameView, nds->GPU.GPU3D.RenderScreenSwapAt3D);
+                frame, renderer3D, nds->GPU.GPU3D.RenderScreenSwapAt3D);
         }
     }
 
@@ -361,6 +360,14 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
     }
 
     lastSubmittedSerial = frameView.FrameSerial;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanProducer] queuePush frameId=%llu frameSerial=%llu rendererGeneration=%llu frontBuffer=%d screenSwap=%d\n",
+        static_cast<unsigned long long>(frame->frameId),
+        static_cast<unsigned long long>(frameView.FrameSerial),
+        static_cast<unsigned long long>(frameView.Generation),
+        nds->GPU.FrontBuffer,
+        nds->GPU.GPU3D.RenderScreenSwapAt3D ? 1 : 0);
     frameQueue.synchronizeHistoryReferences([&](const Frame* candidate) {
         return output.isFrameReferencedAsPendingPreviousSource(candidate);
     });
@@ -417,22 +424,38 @@ bool MelonPrimeVulkanFrontendSession::presentAcquiredFrame(
     if (renderer3D == nullptr)
         return false;
 
-    const Vulkan3DFrameView frameView = renderer3D->GetVulkan3DFrameView();
     const int scale = frame->width >= 256
         ? std::max<int>(1, static_cast<int>(frame->width / 256u))
         : std::max(renderer3D->GetScaleFactor(), 1);
 
     VulkanCompositionInputs inputs{};
+    bool buildInputs = false;
     {
         std::scoped_lock stateLock(stateMutex);
-        if (!output.buildCompositionInputs(
-                frame, frameView, scale, VulkanFilterMode::Nearest,
-                false, false, false, inputs))
-        {
+        const Vulkan3DFrameView liveView = renderer3D->GetVulkan3DFrameView();
+        buildInputs = output.buildCompositionInputs(
+            frame, *renderer3D, scale, VulkanFilterMode::Nearest,
+            false, false, false, inputs);
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[VulkanPresent] frameId=%llu queuedSerial=%llu queuedGeneration=%llu "
+            "liveSerial=%llu liveGeneration=%llu buildInputs=%d\n",
+            static_cast<unsigned long long>(frame->frameId),
+            static_cast<unsigned long long>(frame->frameSerial),
+            static_cast<unsigned long long>(frame->rendererGeneration),
+            static_cast<unsigned long long>(liveView.FrameSerial),
+            static_cast<unsigned long long>(liveView.Generation),
+            buildInputs ? 1 : 0);
+        if (!buildInputs)
             return false;
-        }
     }
-    return presenter.presentFrame(frame, output, inputs, timeoutNs);
+    const bool presented = presenter.presentFrame(frame, output, inputs, timeoutNs);
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanPresent] frameId=%llu surfacePresent=%d\n",
+        static_cast<unsigned long long>(frame->frameId),
+        presented ? 1 : 0);
+    return presented;
 }
 
 bool MelonPrimeVulkanFrontendSession::updatePresenterOverlay(
