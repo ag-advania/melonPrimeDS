@@ -1328,5 +1328,5 @@ MelonPrime adapter側で
 | S67-5 | `81d05ecba` | done | Framebuffer binding invalidation |
 | S67-6 | `2c1724a03` | done | FinishFrame-only publication |
 | S67-7 | `fac349911` | done | SeedCompleteUnitFromNative on load |
-| S67-8 | `c37aeca7d` | done | Runtime gate parity CI tests |
+| S67-8 | `536a926e8` | done | Runtime gate parity CI tests |
 
