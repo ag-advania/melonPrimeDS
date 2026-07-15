@@ -27,10 +27,12 @@ Production Vulkan composition must stay Sapphire-exact. Desktop may differ only 
 ## Verification
 
 ```bash
-python3 tools/check_vulkan_output_header_compile.py
+python3 tools/check_vulkan_output_header_contract.py
 python3 tools/generate_sapphire_frame_latch.py --verify
 python3 tools/check_sapphire_frame_latch_parity.py --upstream-tag 0.7.0.rc4
 python3 tools/check_sapphire_vulkan_output_exact.py
 python3 tools/test_sapphire_vulkan_golden_snapshot_s73.py
 python3 tools/test_sapphire_vulkan_flicker_s73.py
+python3 tools/test_sapphire_latch_golden_fixture.py
+python3 tools/test_sapphire_latch_flicker_fixture.py
 ```

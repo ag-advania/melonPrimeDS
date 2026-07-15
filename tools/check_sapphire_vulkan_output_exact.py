@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify VulkanOutput composition headers match pinned Sapphire (S73-9)."""
+"""Verify VulkanOutput and FrameQueue bodies against pinned Sapphire (S74-10)."""
 
 from __future__ import annotations
 
@@ -11,9 +11,14 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DESKTOP = REPO_ROOT / "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h"
 DEFAULT_ANDROID = Path(r"C:\Users\Admin\Documents\git\melonDS-android")
-ANDROID_REL = "app/src/main/cpp/renderer/VulkanOutput.h"
+
+COMPARE_FILES = (
+    ("app/src/main/cpp/renderer/VulkanOutput.h", "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h"),
+    ("app/src/main/cpp/renderer/VulkanOutput.cpp", "src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp"),
+    ("app/src/main/cpp/renderer/FrameQueue.h", "src/frontend/qt_sdl/VulkanReference/FrameQueue.h"),
+    ("app/src/main/cpp/renderer/FrameQueue.cpp", "src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp"),
+)
 
 STRUCTS = (
     "SoftPackedScreenStats",
@@ -23,44 +28,147 @@ STRUCTS = (
     "VulkanOutputTemporalStats",
 )
 
+ALLOWED_DESKTOP_DIFF_FUNCTIONS = {
+    # Desktop WSI / queue-family / presentation lifecycle (S73-12 / S74-10).
+    "VulkanOutput::init",
+    "VulkanOutput::shutdown",
+    "VulkanOutput::createCompositorResources",
+    "VulkanOutput::createAccumulateResources",
+    "VulkanOutput::createFrameResource",
+    "VulkanOutput::destroyFrameResource",
+    "VulkanOutput::ensureFrameResources",
+    "VulkanOutput::beginFrameCommand",
+    "VulkanOutput::submitFrameCommand",
+    "VulkanOutput::prepareFrameForPresentation",
+    "VulkanOutput::destroyRenderer3dSnapshot",
+    "VulkanOutput::dispatchCompositor",
+    "VulkanOutput::validateCompositorSubmission",
+    "VulkanOutput::waitForFrame",
+    "FrameQueue::clear",
+    "FrameQueue::commitPresentedFrame",
+    "FrameQueue::deferPresentedFrame",
+    "FrameQueue::discardRenderedFrame",
+    "FrameQueue::dropPendingFramesToBacklogLocked",
+    "FrameQueue::pushRenderedFrame",
+    "FrameQueue::rebuildFreeQueueLocked",
+    "FrameQueue::recycleRenderFrame",
+    "FrameQueue::requestFastForwardPresentationTransition",
+    "FrameQueue::requestPresentationResync",
+    "FrameQueue::validateRenderFrame",
+}
+
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def normalize_source(text: str) -> str:
+    text = re.sub(r"\r\n", "\n", text)
+    text = re.sub(r"//.*", "", text)
+    text = re.sub(r"/\*[\s\S]*?\*/", "", text)
+    text = text.replace("#include <vulkan/vulkan.h>", "#include <volk.h>")
+    text = text.replace("renderer/FrameQueue.h", "FrameQueue.h")
+    text = text.replace("renderer/VulkanFilterMode.h", "VulkanFilterMode.h")
+    text = text.replace(
+        "melonDS::VulkanStructuredControlAbi::NativeScreenWidth",
+        "256u",
+    )
+    text = text.replace(
+        "melonDS::VulkanStructuredControlAbi::NativeScreenHeight",
+        "192u",
+    )
+    text = text.replace(
+        "melonDS::VulkanStructuredControlAbi::PackedScreenStride",
+        "(256u * 3u + 1u)",
+    )
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"\s+\)", ")", text)
+    text = re.sub(r",\s+", ",", text)
+    return text.strip()
 
 
 def extract_struct(text: str, name: str) -> str:
     match = re.search(rf"struct {name}\s*\{{([\s\S]*?)\n\s*\}};", text)
     if not match:
         raise AssertionError(f"struct {name} not found")
-    return normalize_struct_body(match.group(1))
-
-
-def normalize_struct_body(body: str) -> str:
+    body = match.group(1)
     body = re.sub(r"\r\n", "\n", body)
     body = re.sub(r"//.*", "", body)
-    body = re.sub(r"static constexpr size_t kScreenWidth =[\s\S]*?kLineCount = kScreenHeight;",
-                  "static constexpr size_t kScreenWidth = 256u;\n    static constexpr size_t kScreenHeight = 192u;\n    static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;\n    static constexpr size_t kLineCount = kScreenHeight;",
-                  body, count=1)
+    body = re.sub(
+        r"static constexpr size_t kScreenWidth =[\s\S]*?kLineCount = kScreenHeight;",
+        "static constexpr size_t kScreenWidth = 256u;\n    static constexpr size_t kScreenHeight = 192u;\n    static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;\n    static constexpr size_t kLineCount = kScreenHeight;",
+        body,
+        count=1,
+    )
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     return "\n".join(lines)
+
+
+def extract_named_function_bodies(text: str) -> dict[str, str]:
+    bodies: dict[str, str] = {}
+    for match in re.finditer(
+        r"(?:bool|void|u32|int|std::[\w:<>,\s]+)\s+([A-Za-z_:][\w:]*)\s*\([^;{]*\)\s*\{",
+        text,
+    ):
+        start = match.start()
+        name = match.group(1)
+        brace = text.find("{", match.end() - 1)
+        if brace == -1:
+            continue
+        depth = 0
+        for index in range(brace, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    bodies[name] = normalize_source(text[start : index + 1])
+                    break
+    return bodies
 
 
 class VulkanOutputExactTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        android_root = Path(__import__("os").environ.get("SAPPHIRE_ANDROID_ROOT", DEFAULT_ANDROID))
-        cls.android_text = read(android_root / ANDROID_REL)
-        cls.desktop_text = read(DESKTOP)
+        import os
+
+        android_root = Path(os.environ.get("SAPPHIRE_ANDROID_ROOT", DEFAULT_ANDROID))
+        cls.pairs = []
+        for upstream_rel, desktop_rel in COMPARE_FILES:
+            cls.pairs.append(
+                (
+                    read(android_root / upstream_rel),
+                    read(REPO_ROOT / desktop_rel),
+                    upstream_rel,
+                )
+            )
+        cls.android_header, cls.desktop_header, _ = cls.pairs[0]
 
     def test_soft_packed_snapshot_exact(self):
         self.assertEqual(
-            extract_struct(self.android_text, "SoftPackedFrameSnapshot"),
-            extract_struct(self.desktop_text, "SoftPackedFrameSnapshot"),
+            extract_struct(self.android_header, "SoftPackedFrameSnapshot"),
+            extract_struct(self.desktop_header, "SoftPackedFrameSnapshot"),
         )
 
     def test_required_structs_present(self):
         for name in STRUCTS:
-            self.assertIn(f"struct {name}", self.desktop_text)
+            self.assertIn(f"struct {name}", self.desktop_header)
+
+    def test_compare_files_have_matching_composition_bodies(self):
+        mismatches: list[str] = []
+        for upstream_text, desktop_text, label in self.pairs:
+            upstream_bodies = extract_named_function_bodies(upstream_text)
+            desktop_bodies = extract_named_function_bodies(desktop_text)
+            for name, upstream_body in sorted(upstream_bodies.items()):
+                if name in ALLOWED_DESKTOP_DIFF_FUNCTIONS:
+                    continue
+                if name not in desktop_bodies:
+                    mismatches.append(f"{label}: missing function {name}")
+                    continue
+                if upstream_body != desktop_bodies[name]:
+                    mismatches.append(f"{label}: body mismatch {name}")
+        self.assertEqual(mismatches, [])
 
 
 def main() -> int:
