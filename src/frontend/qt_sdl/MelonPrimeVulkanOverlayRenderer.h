@@ -47,6 +47,10 @@ private:
 
     bool ensurePipeline(VkRenderPass renderPass, VkFormat format);
     void destroyPipeline();
+    bool ensureStagingCapacity(VkDeviceSize required);
+    void waitForLastOverlayTransfer();
+    void destroyStagingBuffer();
+    bool createMappedStagingBuffer(VkDeviceSize capacity);
     bool uploadPendingRegion();
     bool createTexture(melonDS::u32 width, melonDS::u32 height);
     void destroyTexture();
@@ -63,6 +67,11 @@ private:
     VkImageView textureView = VK_NULL_HANDLE;
     melonDS::u32 textureWidth = 0;
     melonDS::u32 textureHeight = 0;
+    VkImageLayout textureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bool textureInitialized = false;
+    bool hasValidUploadedOverlay = false;
+    melonDS::u64 lastUploadedHudGeneration = 0;
+    melonDS::u64 uploadFailureLogBudget = 0;
 
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;

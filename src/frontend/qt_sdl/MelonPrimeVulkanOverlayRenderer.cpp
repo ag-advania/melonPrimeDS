@@ -1,6 +1,7 @@
 #include "MelonPrimeVulkanOverlayRenderer.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <vector>
 
@@ -9,6 +10,7 @@
 
 #include "VulkanContext.h"
 #include "VulkanR24Sync.h"
+#include "Platform.h"
 
 using namespace melonDS::Vulkan::GeneratedShaders;
 
@@ -37,6 +39,16 @@ void DestroyShaderModule(VkDevice dev, VkShaderModule& module)
         vkDestroyShaderModule(dev, module, nullptr);
         module = VK_NULL_HANDLE;
     }
+}
+
+VkDeviceSize RoundUpToPowerOfTwo(VkDeviceSize value)
+{
+    if (value <= 1)
+        return 1;
+    VkDeviceSize result = 1;
+    while (result < value)
+        result <<= 1;
+    return result;
 }
 } // namespace
 
@@ -163,6 +175,9 @@ void MelonPrimeVulkanOverlayRenderer::shutdown()
     initialized = false;
     compositeRequested = false;
     pendingUpload = false;
+    hasValidUploadedOverlay = false;
+    textureInitialized = false;
+    textureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::createTransferResources()
@@ -187,10 +202,45 @@ bool MelonPrimeVulkanOverlayRenderer::createTransferResources()
     if (vkCreateFence(device, &fenceInfo, nullptr, &transferFence) != VK_SUCCESS)
         return false;
 
-    stagingCapacity = 256u * 256u * 4u;
+    stagingCapacity = 0;
+    return true;
+}
+
+void MelonPrimeVulkanOverlayRenderer::waitForLastOverlayTransfer()
+{
+    if (device == VK_NULL_HANDLE || transferFence == VK_NULL_HANDLE)
+        return;
+    vkWaitForFences(device, 1, &transferFence, VK_TRUE, UINT64_MAX);
+}
+
+void MelonPrimeVulkanOverlayRenderer::destroyStagingBuffer()
+{
+    if (stagingMapped != nullptr && stagingMemory != VK_NULL_HANDLE)
+    {
+        vkUnmapMemory(device, stagingMemory);
+        stagingMapped = nullptr;
+    }
+    if (stagingMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, stagingMemory, nullptr);
+        stagingMemory = VK_NULL_HANDLE;
+    }
+    if (stagingBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        stagingBuffer = VK_NULL_HANDLE;
+    }
+    stagingCapacity = 0;
+}
+
+bool MelonPrimeVulkanOverlayRenderer::createMappedStagingBuffer(VkDeviceSize capacity)
+{
+    if (capacity == 0)
+        return false;
+
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = stagingCapacity;
+    bufferInfo.size = capacity;
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS)
@@ -209,29 +259,27 @@ bool MelonPrimeVulkanOverlayRenderer::createTransferResources()
         return false;
     if (vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0) != VK_SUCCESS)
         return false;
-    if (vkMapMemory(device, stagingMemory, 0, stagingCapacity, 0, &stagingMapped) != VK_SUCCESS)
+    if (vkMapMemory(device, stagingMemory, 0, capacity, 0, &stagingMapped) != VK_SUCCESS)
         return false;
 
+    stagingCapacity = capacity;
     return true;
+}
+
+bool MelonPrimeVulkanOverlayRenderer::ensureStagingCapacity(VkDeviceSize required)
+{
+    if (required <= stagingCapacity)
+        return true;
+
+    waitForLastOverlayTransfer();
+    destroyStagingBuffer();
+    return createMappedStagingBuffer(RoundUpToPowerOfTwo(required));
 }
 
 void MelonPrimeVulkanOverlayRenderer::destroyTransferResources()
 {
-    if (stagingMapped != nullptr && stagingMemory != VK_NULL_HANDLE)
-    {
-        vkUnmapMemory(device, stagingMemory);
-        stagingMapped = nullptr;
-    }
-    if (stagingMemory != VK_NULL_HANDLE)
-    {
-        vkFreeMemory(device, stagingMemory, nullptr);
-        stagingMemory = VK_NULL_HANDLE;
-    }
-    if (stagingBuffer != VK_NULL_HANDLE)
-    {
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        stagingBuffer = VK_NULL_HANDLE;
-    }
+    waitForLastOverlayTransfer();
+    destroyStagingBuffer();
     if (transferFence != VK_NULL_HANDLE)
     {
         vkDestroyFence(device, transferFence, nullptr);
@@ -330,6 +378,9 @@ void MelonPrimeVulkanOverlayRenderer::destroyTexture()
     }
     textureWidth = 0;
     textureHeight = 0;
+    textureInitialized = false;
+    textureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    hasValidUploadedOverlay = false;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::ensureTexture(melonDS::u32 width, melonDS::u32 height)
@@ -365,7 +416,7 @@ bool MelonPrimeVulkanOverlayRenderer::uploadRegion(const QImage& image, const QR
 
 bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
 {
-    if (!pendingUpload || pendingUploadRect.isEmpty() || stagingMapped == nullptr)
+    if (!pendingUpload || pendingUploadRect.isEmpty())
         return false;
 
     const QRect rect = pendingUploadRect.intersected(pendingUploadImage.rect());
@@ -375,10 +426,37 @@ bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
         return true;
     }
 
+#ifndef NDEBUG
+    assert(rect.x() >= 0);
+    assert(rect.y() >= 0);
+    assert(rect.right() < pendingUploadImage.width());
+    assert(rect.bottom() < pendingUploadImage.height());
+#endif
+
     const melonDS::u32 rowBytes = static_cast<melonDS::u32>(rect.width()) * 4u;
-    const melonDS::u32 uploadBytes = rowBytes * static_cast<melonDS::u32>(rect.height());
-    if (uploadBytes > stagingCapacity)
+    const VkDeviceSize uploadBytes =
+        static_cast<VkDeviceSize>(rowBytes) * static_cast<VkDeviceSize>(rect.height());
+    if (!ensureStagingCapacity(uploadBytes))
+    {
+        if (uploadFailureLogBudget == 0)
+        {
+            uploadFailureLogBudget = 60;
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "[VulkanHUD] upload failed: staging capacity=%llu required=%llu rect=%dx%d@%d,%d\n",
+                static_cast<unsigned long long>(stagingCapacity),
+                static_cast<unsigned long long>(uploadBytes),
+                rect.width(),
+                rect.height(),
+                rect.x(),
+                rect.y());
+        }
+        else
+        {
+            --uploadFailureLogBudget;
+        }
         return false;
+    }
 
     auto* dst = static_cast<melonDS::u8*>(stagingMapped);
     for (int y = 0; y < rect.height(); ++y)
@@ -403,11 +481,21 @@ bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
         uploadBytes,
         VK_PIPELINE_STAGE_TRANSFER_BIT);
 
+    const VkImageLayout oldLayout = textureInitialized
+        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        : VK_IMAGE_LAYOUT_UNDEFINED;
+    const VkPipelineStageFlags srcStage = textureInitialized
+        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    const VkAccessFlags srcAccess = textureInitialized
+        ? VK_ACCESS_SHADER_READ_BIT
+        : 0;
+
     VkImageMemoryBarrier toTransfer{};
     toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransfer.srcAccessMask = 0;
+    toTransfer.srcAccessMask = srcAccess;
     toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransfer.oldLayout = oldLayout;
     toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -417,7 +505,7 @@ bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
     toTransfer.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(
         transferCommandBuffer,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        srcStage,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0, nullptr,
@@ -425,8 +513,15 @@ bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
         1, &toTransfer);
 
     VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
+    region.imageOffset = {
+        static_cast<melonDS::u32>(rect.x()),
+        static_cast<melonDS::u32>(rect.y()),
+        0};
     region.imageExtent = {
         static_cast<melonDS::u32>(rect.width()),
         static_cast<melonDS::u32>(rect.height()),
@@ -457,6 +552,10 @@ bool MelonPrimeVulkanOverlayRenderer::uploadPendingRegion()
     if (vkWaitForFences(device, 1, &transferFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
         return false;
 
+    textureInitialized = true;
+    textureLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hasValidUploadedOverlay = true;
+    ++lastUploadedHudGeneration;
     pendingUpload = false;
     return true;
 }
@@ -474,6 +573,7 @@ void MelonPrimeVulkanOverlayRenderer::setCompositeRect(
 void MelonPrimeVulkanOverlayRenderer::clearCompositeRequest()
 {
     compositeRequested = false;
+    hasValidUploadedOverlay = false;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(VkRenderPass renderPass, VkFormat format)
@@ -602,6 +702,8 @@ void MelonPrimeVulkanOverlayRenderer::record(
     const MelonDSAndroid::VulkanSurfacePresenter::VulkanDesktopOverlayTarget& target)
 {
     if (!initialized || !compositeRequested || textureView == VK_NULL_HANDLE)
+        return;
+    if (!hasValidUploadedOverlay)
         return;
     if (target.commandBuffer == VK_NULL_HANDLE || target.renderPass == VK_NULL_HANDLE)
         return;

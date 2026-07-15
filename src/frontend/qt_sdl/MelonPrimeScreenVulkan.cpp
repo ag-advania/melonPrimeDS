@@ -481,17 +481,24 @@ void ScreenPanelVulkan::presentOnGuiThread()
                     m_hudOriginX, m_hudOriginY);
                 const QRect uploadRect = m_hudPrevDirty.united(curDirty);
                 m_hudPrevDirty = curDirty;
-                if (!uploadRect.isEmpty()
-                    && overlayRenderer.uploadRegion(Overlay[0], uploadRect))
+                if (!uploadRect.isEmpty())
+                {
+                    const bool uploaded =
+                        overlayRenderer.uploadRegion(Overlay[0], uploadRect);
+                    if (uploaded || overlayRenderer.hasPendingComposite())
+                    {
+                        overlayRenderer.setCompositeRect(
+                            0, 0,
+                            static_cast<melonDS::u32>(currentWidth),
+                            static_cast<melonDS::u32>(currentHeight));
+                    }
+                }
+                else if (overlayRenderer.hasPendingComposite())
                 {
                     overlayRenderer.setCompositeRect(
                         0, 0,
                         static_cast<melonDS::u32>(currentWidth),
                         static_cast<melonDS::u32>(currentHeight));
-                }
-                else
-                {
-                    overlayRenderer.clearCompositeRequest();
                 }
             }
             else
