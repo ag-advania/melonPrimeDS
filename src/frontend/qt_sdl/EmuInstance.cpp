@@ -33,6 +33,7 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFrontendSession.h"
+#include "SapphireVulkanFramePipeline.h"
 #include "GPU3D_Vulkan.h"
 #endif
 
@@ -192,6 +193,8 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     // The session must pre-exist window construction so ScreenPanelVulkan can
     // register its presenter before the first emulated frame is produced.
     vulkanFrontendSessionOwner = std::make_unique<MelonPrimeVulkanFrontendSession>();
+    vulkanFramePipeline = std::make_unique<SapphireVulkanFramePipeline>(
+        *vulkanFrontendSessionOwner);
 #endif
 
     audioInit();
@@ -254,102 +257,59 @@ MelonPrimeVulkanFrontendSession& EmuInstance::vulkanFrontendSession()
     return *vulkanFrontendSessionOwner;
 }
 
-static void VulkanSubmitTrace(const char* fmt, ...)
+static VulkanRenderer3D* resolveVulkanRenderer3D(
+    melonDS::NDS* nds,
+    MelonPrimeVulkanFrontendSession* session)
 {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-    fflush(stdout);
-}
-
-void EmuInstance::submitVulkanFrontendFrame()
-{
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] entry this=%p nds=%p owner=%p\n",
-        static_cast<void*>(this),
-        static_cast<void*>(nds),
-        static_cast<void*>(vulkanFrontendSessionOwner.get()));
-
-    if (nds == nullptr)
-    {
-        VulkanSubmitTrace("[VulkanSubmitTrace] skip: nds=null\n");
-        return;
-    }
-
-    if (!vulkanFrontendSessionOwner)
-    {
-        VulkanSubmitTrace("[VulkanSubmitTrace] skip: owner=null\n");
-        return;
-    }
+    if (nds == nullptr || session == nullptr)
+        return nullptr;
 
     auto& gpu3D = nds->GPU.GPU3D;
+    if (!gpu3D.HasCurrentRenderer())
+        return nullptr;
 
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] before HasCurrentRenderer generation=%llu\n",
-        static_cast<unsigned long long>(gpu3D.GetCurrentRendererGeneration()));
-
-    const bool hasCurrent = gpu3D.HasCurrentRenderer();
-
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] HasCurrentRenderer=%d\n",
-        hasCurrent ? 1 : 0);
-
-    if (!hasCurrent)
-    {
-        VulkanSubmitTrace("[VulkanSubmitTrace] skip: no override Renderer3D\n");
-        return;
-    }
-
-    auto& current = gpu3D.GetCurrentRenderer();
-
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] current Renderer3D=%p\n",
-        static_cast<void*>(&current));
-
-    auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(&current);
-
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] Vulkan dynamic_cast=%p\n",
-        static_cast<void*>(renderer3D));
-
+    auto* renderer3D = dynamic_cast<VulkanRenderer3D*>(&gpu3D.GetCurrentRenderer());
     if (renderer3D == nullptr)
-    {
-        VulkanSubmitTrace("[VulkanSubmitTrace] skip: current renderer is not Vulkan\n");
-        return;
-    }
+        return nullptr;
 
     const u64 rendererGeneration = gpu3D.GetCurrentRendererGeneration();
-    if (!vulkanFrontendSessionOwner->isReadyForGeneration(rendererGeneration))
+    if (!session->isReadyForGeneration(rendererGeneration))
+        return nullptr;
+
+    return renderer3D;
+}
+
+bool EmuInstance::beginVulkanProducerFrame()
+{
+    if (vulkanFramePipeline == nullptr)
+        return false;
+
+    VulkanRenderer3D* renderer3D = resolveVulkanRenderer3D(nds, vulkanFrontendSessionOwner.get());
+    if (renderer3D == nullptr)
+        return false;
+
+    return vulkanFramePipeline->beginProducerTransaction(*renderer3D);
+}
+
+bool EmuInstance::completeVulkanProducerFrame()
+{
+    if (vulkanFramePipeline == nullptr)
+        return false;
+
+    VulkanRenderer3D* renderer3D = resolveVulkanRenderer3D(nds, vulkanFrontendSessionOwner.get());
+    if (renderer3D == nullptr)
     {
-        VulkanSubmitTrace(
-            "[VulkanSubmitTrace] skip: session not ready for generation=%llu\n",
-            static_cast<unsigned long long>(rendererGeneration));
-        return;
+        vulkanFramePipeline->cancelProducerTransaction();
+        return false;
     }
 
-    VulkanSubmitTrace("[VulkanSubmitTrace] capture snapshot begin\n");
+    return vulkanFramePipeline->completeProducerTransaction(*renderer3D);
+}
 
-    MelonPrimeStructuredSnapshot& snapshot =
-        vulkanFrontendSessionOwner->producerStructuredSnapshot();
-    const bool captured = MelonPrimeVulkanFrontendSession::captureCompletedSnapshot(
-        nds->GPU, rendererGeneration, snapshot);
-
-    VulkanSubmitTrace(
-        "[VulkanSubmitTrace] capture snapshot result=%d\n",
-        captured ? 1 : 0);
-
-    if (captured)
-    {
-        const bool submitted =
-            vulkanFrontendSessionOwner->submitCompletedFrame(*renderer3D);
-
-        VulkanSubmitTrace(
-            "[VulkanSubmitTrace] submitCompletedFrame result=%d\n",
-            submitted ? 1 : 0);
-    }
-
-    VulkanSubmitTrace("[VulkanSubmitTrace] exit\n");
+void EmuInstance::cancelVulkanProducerFrame()
+{
+    if (vulkanFramePipeline != nullptr)
+        vulkanFramePipeline->cancelProducerTransaction();
 }
 
 #endif

@@ -274,6 +274,7 @@ public:
     bool RenderFrameIdentical = false; // not part of the hardware state, don't serialize
 
     u16 RenderXPos = 0;
+    bool RenderScreenSwapAt3D = false;
 
     bool AbortFrame = false;
 

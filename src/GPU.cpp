@@ -1243,6 +1243,7 @@ void GPU::StartHBlank(u32 line) noexcept
     }
     else if (VCount == 215)
     {
+        GPU3D.RenderScreenSwapAt3D = (NDS.PowerControl9 & (1u << 15)) != 0;
         Rend->Start3DRendering();
     }
     else if (VCount == 262)

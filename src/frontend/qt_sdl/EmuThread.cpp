@@ -440,11 +440,36 @@ void EmuThread::run()
 #else
             // Original melonDS path (no hook).
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            bool vulkanProducerBegun = false;
+            if (videoBackend
+                == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+            {
+                vulkanProducerBegun = emuInstance->beginVulkanProducerFrame();
+            }
+#endif
 #ifdef MELONPRIME_DS
             if (romBootTraceFirstRunFrame)
                 RomBootTrace("[RomBootTrace] first RunFrame begin\n");
 #endif
             nlines = emuInstance->nds->RunFrame();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (videoBackend
+                == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+            {
+                if (vulkanProducerBegun)
+                {
+                    const bool submitted = emuInstance->completeVulkanProducerFrame();
+                    Platform::Log(Platform::LogLevel::Info,
+                        "[VulkanSubmitTrace] completeProducerTransaction result=%d\n",
+                        submitted ? 1 : 0);
+                }
+                else
+                {
+                    emuInstance->cancelVulkanProducerFrame();
+                }
+            }
+#endif
 #ifdef MELONPRIME_DS
             if (romBootTraceFirstRunFrame)
             {
@@ -455,38 +480,15 @@ void EmuThread::run()
         }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        // Producer-side snapshot and Vulkan submission stay at the emulation
-        // frame completion point. The GUI/presenter never reads live GPU state.
-        Platform::Log(Platform::LogLevel::Info,
-            "[VulkanSubmitTrace] frame gate backend=%s actual=%s(%d)\n",
-            MelonPrime::VideoBackend::PresentationBackendName(videoBackend),
-            MelonPrime::VideoBackend::RendererName(videoRenderer),
-            videoRenderer);
-        fflush(stdout);
         if (videoBackend
             == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
         {
 #ifdef MELONPRIME_DS
             if (romBootTraceFirstVulkanSubmit)
-                RomBootTrace("[RomBootTrace] first Vulkan frontend submit begin\n");
+                RomBootTrace("[RomBootTrace] first Vulkan producer transaction complete\n");
 #endif
-            Platform::Log(Platform::LogLevel::Info,
-                "[VulkanSubmitTrace] gate accepted\n");
-            fflush(stdout);
-            emuInstance->submitVulkanFrontendFrame();
-#ifdef MELONPRIME_DS
             if (romBootTraceFirstVulkanSubmit)
-            {
-                RomBootTrace("[RomBootTrace] first Vulkan frontend submit complete\n");
                 romBootTraceFirstVulkanSubmit = false;
-            }
-#endif
-        }
-        else
-        {
-            Platform::Log(Platform::LogLevel::Info,
-                "[VulkanSubmitTrace] gate skipped: non-Vulkan presentation\n");
-            fflush(stdout);
         }
 
         Platform::Log(Platform::LogLevel::Info,

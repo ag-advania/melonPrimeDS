@@ -33,6 +33,7 @@
 namespace MelonPrime { class MelonPrimeCore; }
 #if defined(MELONPRIME_ENABLE_VULKAN)
 class MelonPrimeVulkanFrontendSession;
+class SapphireVulkanFramePipeline;
 #endif
 #endif // MELONPRIME_DS
 
@@ -157,7 +158,9 @@ public:
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     MelonPrimeVulkanFrontendSession& vulkanFrontendSession();
-    void submitVulkanFrontendFrame();
+    bool beginVulkanProducerFrame();
+    bool completeVulkanProducerFrame();
+    void cancelVulkanProducerFrame();
 #endif
 
     MainWindow* getMainWindow() { return mainWindow; }
@@ -465,6 +468,7 @@ private:
 #ifdef MELONPRIME_DS
     #if defined(MELONPRIME_ENABLE_VULKAN)
     std::unique_ptr<MelonPrimeVulkanFrontendSession> vulkanFrontendSessionOwner;
+    std::unique_ptr<SapphireVulkanFramePipeline> vulkanFramePipeline;
     #endif
 
     // OPT: QBitArray -> native integers.

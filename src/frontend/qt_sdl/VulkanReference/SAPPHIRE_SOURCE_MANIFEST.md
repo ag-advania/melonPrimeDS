@@ -106,7 +106,7 @@ producer-side composeAndSubmitFrame()
 | P3 | VulkanOutput/shader exact port | **done** (`7a1e36129`) |
 | P4 | Core exact port | **done** (`9b62b74ef`) |
 | P5 | Latch dependency closure | **done** (this commit) |
-| P6 | runFrame transaction port | pending |
+| P6 | runFrame transaction port | **done** (this commit) |
 | P7 | Presenter ownership port | pending |
 | P8 | Desktop adapters restore | pending |
 | P9 | Legacy custom path removal | pending |
