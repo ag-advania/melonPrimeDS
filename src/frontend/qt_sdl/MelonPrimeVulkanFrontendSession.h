@@ -22,7 +22,6 @@ class VulkanRenderer3D;
 namespace MelonDSAndroid
 {
 class VulkanSurfacePresenter;
-struct VulkanSurfaceOverlay;
 }
 
 class MelonPrimeVulkanFrontendSession
@@ -50,10 +49,6 @@ public:
         Frame* frame,
         MelonDSAndroid::VulkanSurfacePresenter& presenter,
         u64 timeoutNs);
-    bool updatePresenterOverlay(
-        MelonDSAndroid::VulkanSurfacePresenter& presenter,
-        int surfaceId,
-        const MelonDSAndroid::VulkanSurfaceOverlay& overlay);
     void commitPresentedFrame(Frame* frame);
     void deferPresentedFrame(Frame* frame);
 

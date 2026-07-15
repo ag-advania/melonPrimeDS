@@ -88,31 +88,6 @@ struct VulkanBackgroundImage
     u32 height = 0;
 };
 
-struct VulkanOverlayQuad
-{
-    // TL, TR, BL, BR in physical surface pixels.
-    std::array<float, 8> points{};
-    std::array<float, 4> color{1.0f, 1.0f, 1.0f, 1.0f};
-};
-
-struct VulkanRadarOverlay
-{
-    bool enabled = false;
-    std::array<float, 8> points{};
-    float sourceCenterX = 128.0f;
-    float sourceCenterY = 96.0f;
-    float sourceRadius = 46.0f;
-    float opacity = 0.85f;
-    std::array<float, 4> frameColor{0.31f, 0.60f, 0.82f, 1.0f};
-};
-
-struct VulkanSurfaceOverlay
-{
-    u64 generation = 0;
-    std::vector<VulkanOverlayQuad> solidQuads;
-    VulkanRadarOverlay radar;
-};
-
 struct VulkanPresenterPacingStats
 {
     u64 AcquireTimeouts = 0;
@@ -174,7 +149,6 @@ public:
     int attachSurface(VkSurfaceKHR surface, u32 width, u32 height);
     bool resizeSurface(int surfaceId, u32 width, u32 height);
     bool configureSurface(int surfaceId, const VulkanSurfaceConfig& config, const VulkanBackgroundImage& backgroundImage);
-    bool updateOverlay(int surfaceId, const VulkanSurfaceOverlay& overlay);
     void detachSurface(int surfaceId);
 
     VulkanPresentResult presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
@@ -197,10 +171,6 @@ private:
         float u;
         float v;
         float alpha;
-        float r;
-        float g;
-        float b;
-        float a;
     };
 
     struct DrawCall
@@ -211,10 +181,6 @@ private:
         u32 drawMode = 0;
         float viewportWidth = 0.0f;
         float viewportHeight = 0.0f;
-        float radarSourceCenterX = 128.0f;
-        float radarSourceCenterY = 96.0f;
-        float radarSourceRadius = 46.0f;
-        std::array<float, 4> radarFrameColor{};
     };
 
     struct BackgroundResource
@@ -331,7 +297,6 @@ private:
         void* mappedVertexMemory = nullptr;
 
         VulkanSurfaceConfig config{};
-        VulkanSurfaceOverlay overlay{};
         bool configured = false;
         bool swapchainDirty = true;
         bool hasCachedSwapchainSelection = false;
@@ -344,7 +309,6 @@ private:
         bool cachedDirectPresent = false;
         bool cachedRetroArchApplied = false;
         u32 cachedGameScreenDrawCallCount = 0;
-        u32 cachedOverlayDrawCallCount = 0;
         std::vector<DrawCall> cachedDrawCalls;
         VkQueryPool timestampQueryPool = VK_NULL_HANDLE;
         bool timestampPending = false;
