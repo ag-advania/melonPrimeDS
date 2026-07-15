@@ -857,6 +857,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         setWindowState(windowState() & ~Qt::WindowFullScreen);
     }
     show();
+    desiredFullscreen = isFullScreen();
 
     createScreenPanel();
 
@@ -2722,11 +2723,16 @@ void MainWindow::startFullscreenTransition()
 
 void MainWindow::syncFullscreenTransitionState()
 {
+    fullscreenTransitionActive = false;
+
     const bool nowFullscreen = isFullScreen();
-    if (nowFullscreen == desiredFullscreen)
-        fullscreenTransitionActive = false;
-    else if (!fullscreenTransitionActive)
-        startFullscreenTransition();
+    if (nowFullscreen != desiredFullscreen)
+    {
+        QTimer::singleShot(0, this, [this]() {
+            if (!fullscreenTransitionActive && isFullScreen() != desiredFullscreen)
+                startFullscreenTransition();
+        });
+    }
 }
 
 void MainWindow::changeEvent(QEvent* event)
