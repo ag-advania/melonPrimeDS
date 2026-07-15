@@ -1,18 +1,20 @@
 {
   "upstreamTag": "0.7.0.rc4",
-  "upstreamRelativePath": "app/src/main/cpp/MelonInstance.cpp",
-  "extractedFunctions": [
-    "packedPixelHasVisibleColor",
-    "packedPixelIsOpaqueBlack",
-    "packedControlMarksProtectedBlack2D",
-    "softPackedFramesAlternate3dOwner",
-    "softPackedFrameNeedsReusablePreviousFrame",
-    "softPackedFrameUsesTemporal3dHistory",
-    "clearLatchedSoftPackedFrameSnapshot",
-    "updateVulkanTemporal3dHistoryGate",
-    "latchSoftPackedFrameSnapshot"
+  "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
+  "generatedHeaderSha256": "0f890e6ab259caade752b901c6a15cb2f0cf1bfc75d6b6d9c0ae3c4373adfb35",
+  "generatedCoreSha256": "7e6e646670f44e2bb8b6a88f9297554dca8a110710eb69aacf099529ad036c83",
+  "cppRegions": [
+    {
+      "start": 37,
+      "end": 852,
+      "label": "latch_free_function_closure"
+    },
+    {
+      "start": 4737,
+      "end": 8056,
+      "label": "latch_member_methods"
+    }
   ],
-  "generatedHeaderSha256": "f25bb19639e29bee4769511b1acbea19d0f521533a7c560bd2fdf1d0c5d4478c",
-  "generatedCoreSha256": "68a3740bb0157bdb5b5e292ce362b60e1e7e2c2080215aa0a5ecfeb4d1c7c42e",
-  "upstreamNormalizedSha256": "845e2486e87a23914350e42f22522bbc6acc5366e61ae17093d7c9e7160b06d9"
+  "headerStateMemberStart": 236,
+  "headerStateMemberEnd": 268
 }
