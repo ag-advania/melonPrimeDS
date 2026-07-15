@@ -62,6 +62,7 @@
 #include "GPU_Vulkan.h"
 #include "GPU3D_Vulkan.h"
 #include "MelonPrimeScreenVulkan.h"
+#include "MelonPrimeDesktopVulkanPresenter.h"
 #endif
 
 #include "Config.h"
@@ -458,6 +459,10 @@ int main(int argc, char** argv)
     printf("melonDS " MELONDS_VERSION "\n");
 #endif
     printf(MELONDS_URL "\n");
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    MelonPrime::DesktopVulkan::LogBuildIdentity();
+#endif
 
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // Metal-plan Phase 2 (.claude/rules/melonprime-metal-backend-plan.md):

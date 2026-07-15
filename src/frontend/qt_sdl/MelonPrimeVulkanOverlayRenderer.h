@@ -106,6 +106,7 @@ private:
         VkImage image = VK_NULL_HANDLE;
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView imageView = VK_NULL_HANDLE;
+        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
         melonDS::u32 width = 0;
         melonDS::u32 height = 0;
         melonDS::u64 retireAfterTimelineValue = 0;
@@ -161,6 +162,7 @@ private:
     melonDS::u64 uploadFailureLogBudget = 0;
 
     static constexpr size_t kUploadSlotCount = 3;
+    static constexpr size_t kOverlayDescriptorSetCapacity = 16;
 
     OverlayUploadSlot uploadSlots[kUploadSlotCount]{};
     melonDS::u32 activeUploadSlot = 0;
@@ -168,6 +170,8 @@ private:
     melonDS::u64 nextUploadToken = 1;
     melonDS::u64 lastPresentTimelineValue = 0;
     melonDS::u64 lastCompletedSubmissionSerial = 0;
+    melonDS::u64 lastTextureUseTimelineValue = 0;
+    melonDS::u64 lastTextureUseSubmissionSerial = 0;
     OverlayTransferRecord lastTransferRecord{};
     std::vector<OverlayTextureResourceBundle> retiredTextures;
     melonDS::VulkanRetireQueue retiredPipelines;

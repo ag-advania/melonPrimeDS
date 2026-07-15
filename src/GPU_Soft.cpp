@@ -21,6 +21,8 @@
 #include "GPU_ColorOp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <cassert>
+
 #include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
 #endif
@@ -261,7 +263,7 @@ SapphirePhysical2DScreenView SoftRenderer::BuildPhysicalScreenView(
     SapphirePhysical2DScreenView view{};
     const bool top = screen == SapphirePhysicalScreen::Top;
 
-    view.packed = Framebuffer[frontBuffer][top ? 0 : 1].get();
+    view.packed = Framebuffer[frontBuffer][top ? 0 : 1];
     view.plane0 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 0);
     view.plane1 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 1);
     view.control = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 2);

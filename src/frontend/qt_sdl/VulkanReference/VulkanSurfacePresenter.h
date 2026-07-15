@@ -127,6 +127,15 @@ struct VulkanPresenterPacingStats
 class VulkanOutput;
 struct VulkanCompositionInputs;
 
+struct SurfaceSubmitResult
+{
+    VkResult submitResult = VK_NOT_READY;
+    VkResult presentResult = VK_NOT_READY;
+    bool commandSubmitted = false;
+    u64 timelineValue = 0;
+    u64 submissionSerial = 0;
+};
+
 enum class VulkanPresentResult : u8
 {
     PresentedGameFrame,
@@ -364,6 +373,7 @@ private:
         VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
 
         VkDescriptorSet screenDescriptorSet = VK_NULL_HANDLE;
+        VkDescriptorSet screenIntegerDescriptorSet = VK_NULL_HANDLE;
         VkDescriptorSet backgroundDescriptorSet = VK_NULL_HANDLE;
 
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
@@ -388,6 +398,7 @@ private:
         bool vertexBufferDirty = true;
         bool backgroundDescriptorDirty = false;
         DescriptorSetCacheState screenDescriptorCache{};
+        DescriptorSetCacheState screenIntegerDescriptorCache{};
         DescriptorSetCacheState backgroundDescriptorCache{};
         bool cachedDirectPresent = false;
         bool cachedRetroArchApplied = false;
@@ -412,7 +423,7 @@ private:
     void destroySwapchain(SurfaceState& surfaceState);
     bool ensureSurfaceFormatRenderResources(
         VkFormat format,
-        SurfaceFormatRenderResources& resources);
+        SwapchainBundle& bundle);
     void destroySwapchainBundle(SwapchainBundle& bundle);
     void retireSwapchainBundle(SwapchainBundle bundle, u64 timelineValue);
     void recoverSwapchain(SurfaceState& surfaceState, const char* reason);
@@ -453,7 +464,10 @@ private:
         bool directPresent,
         const std::vector<DrawCall>& drawCalls
     );
-    bool submitSurfaceCommands(SurfaceState& surfaceState, u32 imageIndex, u64& presentCpuNs, u64& presentTimelineValueOut);
+    SurfaceSubmitResult submitSurfaceCommands(
+        SurfaceState& surfaceState,
+        u32 imageIndex,
+        u64& presentCpuNs);
     bool ensureRetroArchResources(
         SurfaceState& surfaceState,
         u32 sourceScreenWidth,

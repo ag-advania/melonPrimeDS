@@ -816,6 +816,17 @@ bool VulkanSurfacePresenter::createCommonResources()
 
 void VulkanSurfacePresenter::destroyCommonResources()
 {
+    for (auto& [format, resources] : cachedSurfaceFormatResources)
+    {
+        (void)format;
+        if (resources.pipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device, resources.pipeline, nullptr);
+        if (resources.renderPass != VK_NULL_HANDLE)
+            vkDestroyRenderPass(device, resources.renderPass, nullptr);
+        resources = {};
+    }
+    cachedSurfaceFormatResources.clear();
+
     if (nearestSampler != VK_NULL_HANDLE)
     {
         vkDestroySampler(device, nearestSampler, nullptr);
@@ -1395,8 +1406,11 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
 
         const u64 submitStartNs = PerfNowNs();
         u64 surfacePresentCpuNs = 0;
-        u64 surfacePresentTimelineValue = 0;
-        if (!submitSurfaceCommands(surfaceState, imageIndex, surfacePresentCpuNs, surfacePresentTimelineValue))
+        const SurfaceSubmitResult submitResult = submitSurfaceCommands(
+            surfaceState,
+            imageIndex,
+            surfacePresentCpuNs);
+        if (!submitResult.commandSubmitted)
         {
             submitFailures++;
 #if defined(MELONPRIME_DS)
@@ -1422,14 +1436,25 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
             desktopOverlaySubmissionNotifier(
                 surfaceState.overlayCommand.uploadToken,
                 true,
-                surfacePresentTimelineValue,
-                surfaceState.submittedSerial,
+                submitResult.timelineValue,
+                submitResult.submissionSerial,
                 desktopOverlaySubmissionUserData);
         }
 #endif
         submitCpuNs += PerfNowNs() - submitStartNs;
         presentCpuNs += surfacePresentCpuNs;
-        framePresentTimelineValue = std::max(framePresentTimelineValue, surfacePresentTimelineValue);
+        framePresentTimelineValue = std::max(framePresentTimelineValue, submitResult.timelineValue);
+
+        if (submitResult.presentResult == VK_ERROR_OUT_OF_DATE_KHR
+            || submitResult.presentResult == VK_SUBOPTIMAL_KHR)
+        {
+            surfaceState.swapchainDirty = true;
+        }
+        else if (submitResult.presentResult != VK_SUCCESS)
+        {
+            if (!melonDS::VulkanContext::Get().IsDeviceLost())
+                recoverSwapchain(surfaceState, "vkQueuePresentKHR");
+        }
 
         presentedAnySurface = true;
         presentedGameFrame = true;
@@ -1588,6 +1613,7 @@ void VulkanSurfacePresenter::invalidateDescriptorCaches()
     {
         (void)surfaceId;
         surfaceState.screenDescriptorCache = {};
+        surfaceState.screenIntegerDescriptorCache = {};
         surfaceState.backgroundDescriptorCache = {};
         surfaceState.backgroundDescriptorDirty = true;
     }
@@ -1625,19 +1651,21 @@ bool VulkanSurfacePresenter::createSurfaceStateResources(SurfaceState& surfaceSt
     VkDescriptorSetLayout layouts[] = {
         descriptorSetLayout,
         descriptorSetLayout,
+        descriptorSetLayout,
     };
     VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
     descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     descriptorSetAllocateInfo.descriptorPool = descriptorPool;
-    descriptorSetAllocateInfo.descriptorSetCount = 2;
+    descriptorSetAllocateInfo.descriptorSetCount = 3;
     descriptorSetAllocateInfo.pSetLayouts = layouts;
 
-    VkDescriptorSet descriptorSets[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDescriptorSet descriptorSets[3] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
     if (vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, descriptorSets) != VK_SUCCESS)
         return false;
 
     surfaceState.screenDescriptorSet = descriptorSets[0];
-    surfaceState.backgroundDescriptorSet = descriptorSets[1];
+    surfaceState.screenIntegerDescriptorSet = descriptorSets[1];
+    surfaceState.backgroundDescriptorSet = descriptorSets[2];
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1692,6 +1720,8 @@ void VulkanSurfacePresenter::destroySurfaceStateResources(SurfaceState& surfaceS
 
     if (surfaceState.screenDescriptorSet != VK_NULL_HANDLE)
         vkFreeDescriptorSets(device, descriptorPool, 1, &surfaceState.screenDescriptorSet);
+    if (surfaceState.screenIntegerDescriptorSet != VK_NULL_HANDLE)
+        vkFreeDescriptorSets(device, descriptorPool, 1, &surfaceState.screenIntegerDescriptorSet);
     if (surfaceState.backgroundDescriptorSet != VK_NULL_HANDLE)
         vkFreeDescriptorSets(device, descriptorPool, 1, &surfaceState.backgroundDescriptorSet);
 
@@ -2194,6 +2224,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     surfaceState.active = std::move(building);
     surfaceState.pending.reset();
     surfaceState.screenDescriptorCache = {};
+    surfaceState.screenIntegerDescriptorCache = {};
     surfaceState.backgroundDescriptorCache = {};
     surfaceState.cachedDrawCalls.clear();
     surfaceState.hasCachedSwapchainSelection = true;
@@ -2292,19 +2323,11 @@ void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
         surfaceState.pending.reset();
     }
 
-    if (!melonDS::VulkanContext::Get().IsDeviceLost()
-        && surfaceState.presentQueue != VK_NULL_HANDLE)
-    {
-        std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
-        (void)melonDS::VulkanContext::Get().CheckResult(
-            vkQueueWaitIdle(surfaceState.presentQueue),
-            "VulkanSurfacePresenter pending present completion");
-    }
-
     SwapchainBundle retiring = std::move(surfaceState.active);
     surfaceState.active = {};
     surfaceState.swapchainDirty = true;
     surfaceState.screenDescriptorCache = {};
+    surfaceState.screenIntegerDescriptorCache = {};
     surfaceState.backgroundDescriptorCache = {};
     surfaceState.cachedDrawCalls.clear();
 
@@ -2326,17 +2349,7 @@ void VulkanSurfacePresenter::recoverSwapchain(SurfaceState& surfaceState, const 
     );
 
     constexpr u64 kRecoverSwapchainWaitNs = 250'000'000ull;
-    const VkResult waitResult = waitForSurfaceIdle(surfaceState, kRecoverSwapchainWaitNs);
-    if (waitResult == VK_SUCCESS)
-    {
-        destroySwapchain(surfaceState);
-    }
-    else
-    {
-        SwapchainBundle retiring = std::move(surfaceState.active);
-        surfaceState.active = {};
-        retireSwapchainBundle(std::move(retiring), retiring.lastSubmissionTimelineValue);
-    }
+    (void)waitForSurfaceIdle(surfaceState, kRecoverSwapchainWaitNs);
     surfaceState.swapchainDirty = true;
 }
 
@@ -3462,6 +3475,89 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         screenCache.rendererHeight = inputs.rendererHeight;
     }
 
+    if (filtering == VulkanFilterMode::Linear || filtering == VulkanFilterMode::Quilez)
+    {
+        DescriptorSetCacheState& integerCache = surfaceState.screenIntegerDescriptorCache;
+        VkDescriptorImageInfo integerScreenImageInfo = screenImageInfo;
+        integerScreenImageInfo.sampler = nearestSampler;
+
+        if (!integerCache.ready
+            || screenInputShapeChanged
+            || integerCache.sampledImageView != frameImageView
+            || integerCache.sampledImageLayout != integerScreenImageInfo.imageLayout
+            || integerCache.sampledSampler != integerScreenImageInfo.sampler
+            || integerCache.rendererImageView != inputs.sourceImageView
+            || integerCache.previousTopRendererImageView != inputs.previousTopSourceImageView
+            || integerCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView
+            || integerCache.topPackedBuffer != inputs.topPackedBuffer
+            || integerCache.bottomPackedBuffer != inputs.bottomPackedBuffer
+            || integerCache.capture3dBuffer != inputs.capture3dBuffer)
+        {
+            std::array<VkWriteDescriptorSet, 7> integerWrites{};
+            u32 integerWriteCount = 0;
+            auto appendIntegerImageWrite = [&](u32 binding, const VkDescriptorImageInfo* info, VkDescriptorType descriptorType) {
+                VkWriteDescriptorSet& write = integerWrites[integerWriteCount++];
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = surfaceState.screenIntegerDescriptorSet;
+                write.dstBinding = binding;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.pImageInfo = info;
+            };
+            auto appendIntegerBufferWrite = [&](u32 binding, const VkDescriptorBufferInfo* info) {
+                VkWriteDescriptorSet& write = integerWrites[integerWriteCount++];
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = surfaceState.screenIntegerDescriptorSet;
+                write.dstBinding = binding;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                write.pBufferInfo = info;
+            };
+
+            if (!integerCache.ready
+                || screenInputShapeChanged
+                || integerCache.sampledImageView != frameImageView
+                || integerCache.sampledImageLayout != integerScreenImageInfo.imageLayout
+                || integerCache.sampledSampler != integerScreenImageInfo.sampler)
+            {
+                appendIntegerImageWrite(0, &integerScreenImageInfo, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            }
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.rendererImageView != inputs.sourceImageView)
+                appendIntegerImageWrite(1, &rendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.previousTopRendererImageView != inputs.previousTopSourceImageView)
+                appendIntegerImageWrite(4, &previousTopRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView)
+                appendIntegerImageWrite(6, &previousBottomRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.topPackedBuffer != inputs.topPackedBuffer)
+                appendIntegerBufferWrite(2, &topPackedBufferInfo);
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.bottomPackedBuffer != inputs.bottomPackedBuffer)
+                appendIntegerBufferWrite(3, &bottomPackedBufferInfo);
+            if (!integerCache.ready || screenInputShapeChanged || integerCache.capture3dBuffer != inputs.capture3dBuffer)
+                appendIntegerBufferWrite(5, &capture3dBufferInfo);
+
+            if (integerWriteCount > 0)
+                vkUpdateDescriptorSets(device, integerWriteCount, integerWrites.data(), 0, nullptr);
+
+            integerCache.ready = true;
+            integerCache.sampledImageView = frameImageView;
+            integerCache.sampledImageLayout = integerScreenImageInfo.imageLayout;
+            integerCache.sampledSampler = integerScreenImageInfo.sampler;
+            integerCache.rendererImageView = inputs.sourceImageView;
+            integerCache.previousTopRendererImageView = inputs.previousTopSourceImageView;
+            integerCache.previousBottomRendererImageView = inputs.previousBottomSourceImageView;
+            integerCache.topPackedBuffer = inputs.topPackedBuffer;
+            integerCache.bottomPackedBuffer = inputs.bottomPackedBuffer;
+            integerCache.capture3dBuffer = inputs.capture3dBuffer;
+            integerCache.scale = inputs.scale;
+            integerCache.rendererWidth = inputs.rendererWidth;
+            integerCache.rendererHeight = inputs.rendererHeight;
+        }
+    }
+    else
+    {
+        surfaceState.screenIntegerDescriptorCache = {};
+    }
+
     DescriptorSetCacheState& backgroundCache = surfaceState.backgroundDescriptorCache;
     if (surfaceState.background.imageView != VK_NULL_HANDLE
         && (!backgroundCache.ready
@@ -3727,21 +3823,22 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         if (!transform.enabled)
             return;
 
+        const float scaleX = transform.matrix[0];
+        const float scaleY = transform.matrix[3];
+        const bool integerAxisAligned =
+            std::abs(transform.matrix[1]) < 1e-4f
+            && std::abs(transform.matrix[2]) < 1e-4f
+            && std::abs(scaleX - std::round(scaleX)) < 1e-4f
+            && std::abs(scaleY - std::round(scaleY)) < 1e-4f
+            && std::abs(scaleX) >= 1.0f
+            && std::abs(scaleY) >= 1.0f;
+
         const auto mapPoint = [&](float x, float y) {
             float px = transform.matrix[0] * x
                 + transform.matrix[2] * y + transform.matrix[4];
             float py = transform.matrix[1] * x
                 + transform.matrix[3] * y + transform.matrix[5];
 
-            const float scaleX = transform.matrix[0];
-            const float scaleY = transform.matrix[3];
-            const bool integerAxisAligned =
-                std::abs(transform.matrix[1]) < 1e-4f
-                && std::abs(transform.matrix[2]) < 1e-4f
-                && std::abs(scaleX - std::round(scaleX)) < 1e-4f
-                && std::abs(scaleY - std::round(scaleY)) < 1e-4f
-                && std::abs(scaleX) >= 1.0f
-                && std::abs(scaleY) >= 1.0f;
             if (integerAxisAligned)
             {
                 px = std::round(px);
@@ -3776,6 +3873,13 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         const float topVertexUv = directPresent ? uvBottom : uvTop;
         const float bottomVertexUv = directPresent ? uvTop : uvBottom;
         const u32 firstVertex = static_cast<u32>(vertices.size());
+        const bool forceNearestInteger =
+            integerAxisAligned
+            && (config.filtering == VulkanFilterMode::Linear
+                || config.filtering == VulkanFilterMode::Quilez);
+        const VkDescriptorSet drawDescriptorSet = forceNearestInteger
+            ? surfaceState.screenIntegerDescriptorSet
+            : surfaceState.screenDescriptorSet;
 
         vertices.push_back(SurfaceVertex{bottomLeft[0], bottomLeft[1], 0.0f, bottomVertexUv, transform.alpha});
         vertices.push_back(SurfaceVertex{topLeft[0], topLeft[1], 0.0f, topVertexUv, transform.alpha});
@@ -3791,7 +3895,7 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
             transform.matrix[2] * 192.0f,
             transform.matrix[3] * 192.0f);
         drawCalls.push_back(DrawCall{
-            .descriptorSet = surfaceState.screenDescriptorSet,
+            .descriptorSet = drawDescriptorSet,
             .firstVertex = firstVertex,
             .vertexCount = 6,
             .drawMode = drawMode,
@@ -4172,13 +4276,13 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     return vkEndCommandBuffer(surfaceState.commandBuffer) == VK_SUCCESS;
 }
 
-bool VulkanSurfacePresenter::submitSurfaceCommands(
+SurfaceSubmitResult VulkanSurfacePresenter::submitSurfaceCommands(
     SurfaceState& surfaceState,
     u32 imageIndex,
-    u64& presentCpuNs,
-    u64& presentTimelineValueOut)
+    u64& presentCpuNs)
 {
-    presentTimelineValueOut = 0;
+    SurfaceSubmitResult result{};
+    presentCpuNs = 0;
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
     VkSubmitInfo submitInfo{};
@@ -4226,29 +4330,27 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
     presentInfo.pSwapchains = &surfaceState.active.swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
-    VkResult submitResult = VK_SUCCESS;
-    VkResult presentResult = VK_SUCCESS;
 
     if (!resetSurfaceInFlightFence(surfaceState))
-        return false;
+        return result;
 
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
-        submitResult = vkQueueSubmit(queue, 1, &submitInfo, surfaceState.inFlightFence);
-        if (submitResult == VK_SUCCESS)
+        result.submitResult = vkQueueSubmit(queue, 1, &submitInfo, surfaceState.inFlightFence);
+        if (result.submitResult == VK_SUCCESS)
         {
             const u64 presentStartNs = PerfNowNs();
             VkQueue presentQueue = surfaceState.presentQueue != VK_NULL_HANDLE
                 ? surfaceState.presentQueue
                 : queue;
-            presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
+            result.presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
             presentCpuNs += PerfNowNs() - presentStartNs;
         }
     }
-    if (submitResult != VK_SUCCESS)
+    if (result.submitResult != VK_SUCCESS)
     {
         (void)melonDS::VulkanContext::Get().CheckResult(
-            submitResult,
+            result.submitResult,
             "VulkanSurfacePresenter vkQueueSubmit");
         if (!melonDS::VulkanContext::Get().IsDeviceLost())
             (void)createInFlightFence(surfaceState, true);
@@ -4256,42 +4358,41 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
             melonDS::Platform::LogLevel::Error,
             "VulkanSurfacePresenter: vkQueueSubmit failed for surface %d (%d)",
             surfaceState.id,
-            static_cast<int>(submitResult)
+            static_cast<int>(result.submitResult)
         );
-        return false;
+        return result;
     }
 
-    ++surfaceState.submittedSerial;
+    result.commandSubmitted = true;
+    result.submissionSerial = ++surfaceState.submittedSerial;
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         surfaceState.timestampPending = true;
 
-    presentTimelineValueOut = signalValue;
+    result.timelineValue = signalValue;
     surfaceState.active.lastSubmissionTimelineValue = signalValue;
 
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
+    if (result.presentResult == VK_ERROR_OUT_OF_DATE_KHR
+        || result.presentResult == VK_SUBOPTIMAL_KHR)
     {
         surfaceState.swapchainDirty = true;
-        return true;
+        return result;
     }
 
-    if (presentResult == VK_SUBOPTIMAL_KHR)
-        return true;
-
-    if (presentResult != VK_SUCCESS)
+    if (result.presentResult != VK_SUCCESS)
     {
         (void)melonDS::VulkanContext::Get().CheckResult(
-            presentResult,
+            result.presentResult,
             "VulkanSurfacePresenter vkQueuePresentKHR");
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
             "VulkanSurfacePresenter: vkQueuePresentKHR failed for surface %d (%d)",
             surfaceState.id,
-            static_cast<int>(presentResult)
+            static_cast<int>(result.presentResult)
         );
     }
 
-    return presentResult == VK_SUCCESS;
+    return result;
 }
 
 u32 VulkanSurfacePresenter::findMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const

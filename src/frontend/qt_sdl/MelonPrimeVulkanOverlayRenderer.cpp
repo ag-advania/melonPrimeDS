@@ -113,21 +113,14 @@ bool MelonPrimeVulkanOverlayRenderer::init()
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = static_cast<melonDS::u32>(kOverlayDescriptorSetCapacity);
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets = static_cast<melonDS::u32>(kOverlayDescriptorSetCapacity);
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
-        return false;
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout;
-    if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS)
         return false;
 
     if (!createTransferResources())
@@ -336,7 +329,20 @@ void MelonPrimeVulkanOverlayRenderer::destroyTransferResources()
 bool MelonPrimeVulkanOverlayRenderer::createTexture(melonDS::u32 width, melonDS::u32 height)
 {
     if (textureImage != VK_NULL_HANDLE)
-        retireCurrentTexture(lastPresentTimelineValue, lastCompletedSubmissionSerial);
+    {
+        retireCurrentTexture(
+            lastTextureUseTimelineValue,
+            lastTextureUseSubmissionSerial);
+    }
+
+    VkDescriptorSetAllocateInfo descAllocInfo{};
+    descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descAllocInfo.descriptorPool = descriptorPool;
+    descAllocInfo.descriptorSetCount = 1;
+    descAllocInfo.pSetLayouts = &descriptorSetLayout;
+    VkDescriptorSet newDescriptorSet = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(device, &descAllocInfo, &newDescriptorSet) != VK_SUCCESS)
+        return false;
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -376,6 +382,8 @@ bool MelonPrimeVulkanOverlayRenderer::createTexture(melonDS::u32 width, melonDS:
     if (vkCreateImageView(device, &viewInfo, nullptr, &textureView) != VK_SUCCESS)
         return false;
 
+    descriptorSet = newDescriptorSet;
+
     VkDescriptorImageInfo imageInfoDesc{};
     imageInfoDesc.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfoDesc.imageView = textureView;
@@ -408,6 +416,7 @@ void MelonPrimeVulkanOverlayRenderer::retireCurrentTexture(
     bundle.image = textureImage;
     bundle.memory = textureMemory;
     bundle.imageView = textureView;
+    bundle.descriptorSet = descriptorSet;
     bundle.width = textureWidth;
     bundle.height = textureHeight;
     bundle.retireAfterTimelineValue = retireAfterTimelineValue;
@@ -417,6 +426,7 @@ void MelonPrimeVulkanOverlayRenderer::retireCurrentTexture(
     textureImage = VK_NULL_HANDLE;
     textureMemory = VK_NULL_HANDLE;
     textureView = VK_NULL_HANDLE;
+    descriptorSet = VK_NULL_HANDLE;
     textureWidth = 0;
     textureHeight = 0;
     committedTexture = {};
@@ -451,6 +461,8 @@ void MelonPrimeVulkanOverlayRenderer::collectRetiredTextures(
 
                 if (bundle.imageView != VK_NULL_HANDLE)
                     vkDestroyImageView(device, bundle.imageView, nullptr);
+                if (bundle.descriptorSet != VK_NULL_HANDLE)
+                    vkFreeDescriptorSets(device, descriptorPool, 1, &bundle.descriptorSet);
                 if (bundle.image != VK_NULL_HANDLE)
                     vkDestroyImage(device, bundle.image, nullptr);
                 if (bundle.memory != VK_NULL_HANDLE)
@@ -492,9 +504,9 @@ bool MelonPrimeVulkanOverlayRenderer::uploadRegion(const QImage& image, const QR
     }
 
     pendingUploadImage = source;
-    pendingUploadRect = rect;
+    pendingUploadRect = pendingUpload ? pendingUploadRect.united(rect) : rect;
     pendingUpload = true;
-    return stagePendingRegion();
+    return true;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::stagePendingRegion()
@@ -566,6 +578,9 @@ OverlayTransferRecord MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(
     lastTransferRecord = {};
 
     if (!pendingUpload || pendingUploadRect.isEmpty())
+        return result;
+
+    if (!stagePendingRegion())
         return result;
 
     OverlayUploadSlot& slot = uploadSlots[activeUploadSlot];
@@ -804,6 +819,9 @@ void MelonPrimeVulkanOverlayRenderer::notifySurfaceSubmission(
 
     if (submitted)
     {
+        lastTextureUseTimelineValue = timelineValue;
+        lastTextureUseSubmissionSerial = submissionSerial;
+
         if (useTimelineSemaphores && timelineValue != 0)
         {
             markUploadSubmitted(slotIndex, timelineValue, submissionSerial);
@@ -1035,7 +1053,7 @@ void MelonPrimeVulkanOverlayRenderer::retirePipeline(
 void MelonPrimeVulkanOverlayRenderer::record(
     const MelonDSAndroid::VulkanSurfacePresenter::VulkanDesktopOverlayTarget& target)
 {
-    if (!initialized || !compositeRequested || textureView == VK_NULL_HANDLE)
+    if (!initialized || !compositeRequested || textureView == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE)
         return;
     if (!committedTexture.valid)
         return;

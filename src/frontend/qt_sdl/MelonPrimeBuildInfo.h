@@ -100,6 +100,13 @@ namespace detail {
 // "YYYY-MM-DD HH:MM:SS" build timestamp (compile-time, zero runtime cost).
 inline constexpr const char* kBuildStamp = detail::kBuildStamp.text;
 
+#ifndef MELONPRIME_GIT_COMMIT
+#define MELONPRIME_GIT_COMMIT "unknown"
+#endif
+
+inline constexpr const char* kSapphireFrontendPin = "0.7.0.rc4";
+inline constexpr const char* kSapphireCorePin = "d77944275";
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS
