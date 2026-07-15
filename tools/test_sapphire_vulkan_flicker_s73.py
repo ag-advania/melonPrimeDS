@@ -28,7 +28,7 @@ class SapphireFlickerDetectionTests(unittest.TestCase):
         )
         self.assertIn("sapphireTemporalEnabled()", session)
         self.assertIn("frameLatch.setTemporalEnabled(sapphireTemporalEnabled());", session)
-        self.assertIn("if (!temporalEnabled_)", latch)
+        self.assertIn("if (!temporalEnabled_ || !sapphireTemporalEnabled())", latch)
 
     def test_no_partial_current_frame_only_default(self):
         repo = REPO_ROOT / "src/frontend/qt_sdl"
