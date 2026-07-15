@@ -35,6 +35,11 @@ SapphireGpu2DState* GetSapphireState(GPU& gpu) noexcept
 {
     return gpu.TryGetSapphireGpu2DState();
 }
+
+size_t PackedFramebufferClearBytes() noexcept
+{
+    return SoftRenderer::kPackedFramebufferPixels * sizeof(u32);
+}
 } // namespace
 #endif
 
@@ -68,7 +73,7 @@ SoftRenderer::~SoftRenderer()
 void SoftRenderer::Reset()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const size_t len = kPackedFramebufferPixels * sizeof(u32);
+    const size_t len = PackedFramebufferClearBytes();
 #else
     const size_t len = 256 * 192 * sizeof(u32);
 #endif
@@ -90,8 +95,11 @@ void SoftRenderer::Stop()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     GetRenderer3D().StopRenderer();
 #endif
-    // clear framebuffers to black
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const size_t len = PackedFramebufferClearBytes();
+#else
     const size_t len = 256 * 192 * sizeof(u32);
+#endif
     memset(Framebuffer[0][0], 0, len);
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
