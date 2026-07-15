@@ -1845,3 +1845,17 @@ Sapphire algorithmへ個別症状の例外を追加しないこと。
 ```
 
 の順である。
+
+---
+
+# 40. 実装進捗（S65）
+
+| Phase | Commit | Status | Notes |
+|---|---|---|---|
+| S65-1 | `caf417969` | done | HostWriteToTransferRead barrier |
+| S65-2 | `f4be9d1b2` | done | 3-slot HUD staging ring, hide/invalidate split |
+| S65-3 | `a5ad67b5d` | done | BindSapphireBackBufferScreenAliases before 2D draw |
+| S65-4 | `1be7ff7c5` | done | PublishCompletedSapphireFrontBuffer at FinishFrame only |
+| S65-5 | `d39970643` | done | Compositor Nearest, requiresSeparated2dFiltering, bounded compose wait |
+| S65-6 | `d39970643` / `ac0fc1fb9` | done | SwapchainBundle active/pending + timeline retire in presenter; Qt debounce in ScreenVulkan |
+| S65-7 | `e1c08482a` | done | --verify-generated CI + transform_id registry |
