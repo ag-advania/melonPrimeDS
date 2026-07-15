@@ -386,7 +386,7 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     {
         SapphireVulkan2DAccess =
             std::make_unique<SapphireGPU2D::SoftRenderer>(softRenderer->GetSapphire2DRenderer());
-        softRenderer->SyncSapphireFramebufferBindings();
+        softRenderer->PublishCompletedSapphireFrontBuffer();
     }
     else
     {
@@ -423,10 +423,7 @@ const SapphireGPU2D::SoftRenderer* GPU::TryGetSapphireRenderer2D() const noexcep
 void GPU::RefreshSapphireVulkanBindings() noexcept
 {
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
-    {
-        softRenderer->SyncSapphireFramebufferBindings();
-        (void)softRenderer->PublishSapphire2DFrame();
-    }
+        softRenderer->PublishCompletedSapphireFrontBuffer();
 }
 
 void GPU::InvalidateSapphirePublication() noexcept
@@ -1292,8 +1289,7 @@ void GPU::FinishFrame(u32 lines) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
     {
-        softRenderer->SyncSapphireFramebufferBindings();
-        (void)softRenderer->PublishSapphire2DFrame();
+        softRenderer->PublishCompletedSapphireFrontBuffer();
     }
 #endif
 
