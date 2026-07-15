@@ -1250,8 +1250,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     && (structuredControlAlpha & 0x80u) != 0u
                     && structuredP1 != 0u;
                 const bool packedHasCurrent2D =
-                    (packedPlane0 != 0u && packedPlane0 != kPacked3dPlaceholder)
-                    || (packedPlane1 != 0u && packedPlane1 != kPacked3dPlaceholder);
+                    packedPixelIsPresent2D(packedPlane0)
+                    || packedPixelIsPresent2D(packedPlane1);
                 const bool packedCurrent2DOnly = packedHasCurrent2D && !packedNeeds3DSlot;
 
                 if (!structuredHasRenderablePayload && !(packedNeeds3DSlot && structuredHas3DSlot))
@@ -1267,9 +1267,16 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                 plane0[index] = structuredP0;
                 plane1[index] = structuredP1;
                 control[index] = structuredC;
-                if (structuredHas3DSlot && !structuredHasAbove && packedCurrent2DOnly)
+                const bool packedPlane0Is2D = packedPixelIsPresent2D(packedPlane0);
+                const bool packedPlane1Is2D = packedPixelIsPresent2D(packedPlane1);
+                const u32 packed2D = packedPlane0Is2D
+                    ? packedPlane0
+                    : packedPlane1Is2D
+                        ? packedPlane1
+                        : 0u;
+                if (structuredHas3DSlot && !structuredHasAbove && packed2D != 0u)
                 {
-                    plane1[index] = packedPlane0;
+                    plane1[index] = packed2D;
                     const u32 overlayControlRgb =
                         captureBackedClass4Only
                             && screenSwapToggledThisFrame
@@ -1277,8 +1284,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                             ? (packedControl & 0x00FFFFFFu)
                             : (structuredC & 0x00FFFFFFu);
                     const bool protectedBlack =
-                        packedPixelIsOpaqueBlack(packedPlane0)
-                        && !packedPixelHasVisibleColor(packedPlane0);
+                        (((packedControlAlpha | structuredControlAlpha) & 0x20u) != 0u)
+                        || packedPixelIsOpaqueBlack(packed2D);
                     control[index] =
                         overlayControlRgb
                         | ((structuredControlAlpha
