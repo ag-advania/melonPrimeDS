@@ -1,5 +1,7 @@
 #include "MelonPrimeVulkanFrontendSession.h"
 #include "MelonPrimeVulkanRuntimePacing.h"
+#include "MelonPrimeSapphireFrameInput.h"
+#include "MelonPrimeSapphirePipelineMode.h"
 #include "SapphirePublished2DFrame.h"
 #include "VulkanPreparedContentStats.h"
 
@@ -189,7 +191,9 @@ FrameQueuePolicy MelonPrimeVulkanFrontendSession::queuePolicy()
                 == VulkanRenderer3D::BackendMode::GraphicsHardware;
         }
     }
-    temporalHistoryRequired = frameLatch.isVulkanTemporal3dHistoryGateActive();
+    temporalHistoryRequired =
+        sapphireTemporalEnabled()
+        && frameLatch.isVulkanTemporal3dHistoryGateActive();
     const bool presentationLate =
         GetVulkanRuntimePacingState().presentationLate.load(std::memory_order_acquire);
     return MakeVulkanFrameQueuePolicy(
@@ -259,13 +263,32 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
-    const int frontBuffer = nds->GPU.FrontBuffer;
+    const int frontBuffer = frameView.Valid ? nds->GPU.FrontBuffer : -1;
     const bool preparedFrameScreenSwap = nds->GPU.GPU3D.RenderScreenSwapAt3D;
     const bool useStructuredVulkan2D =
         renderer3D.GetActiveBackendMode() == VulkanRenderer3D::BackendMode::GraphicsHardware;
     const SapphirePublished2DFrame& published = nds->GPU.GetPublished2DFrame();
+    const DesktopSapphireFrameBuildResult buildResult = BuildDesktopSapphireFrameInput(
+        frame,
+        published,
+        frameView,
+        activeGeneration);
+    if (buildResult.rejected)
+    {
+        LogVulkanProducerDiscard(buildResult.rejectReason != nullptr
+            ? buildResult.rejectReason
+            : "frameInputRejected");
+        return false;
+    }
+
+    frameLatch.setTemporalEnabled(sapphireTemporalEnabled());
+    if (!sapphireTemporalEnabled())
+        output.invalidateTemporalHistory();
+
     if (!frameLatch.latchSoftPackedFrameSnapshot(
-            frame, published, useStructuredVulkan2D))
+            buildResult.input,
+            buildResult.sidecar,
+            useStructuredVulkan2D))
     {
         LogVulkanProducerDiscard("latchFailed");
         return false;
@@ -287,7 +310,8 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
         return false;
     }
     if (!output.prepareFrameForPresentation(
-            frame, nds->GPU, frontBuffer, preparedFrameScreenSwap,
+            frame, nds->GPU, buildResult.input.frontBuffer,
+            buildResult.input.preparedFrameScreenSwap,
             frameLatch.mutableLastSnapshot(), renderer3D))
     {
         LogVulkanProducerDiscard("prepareFailed");
@@ -303,6 +327,7 @@ bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& rende
     if (!initialized || producerSuspended || nds == nullptr)
         return false;
 
+    frameLatch.setTemporalEnabled(sapphireTemporalEnabled());
     (void)frameLatch.updateVulkanTemporal3dHistoryGate();
 
     Frame* frame = acquireProducerRenderFrameLocked();
