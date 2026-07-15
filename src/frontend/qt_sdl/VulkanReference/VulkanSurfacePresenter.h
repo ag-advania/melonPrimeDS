@@ -180,6 +180,11 @@ public:
     void SetDesktopOverlayTransferRecorder(
         VulkanDesktopOverlayTransferFn recorder,
         void* userData);
+    using VulkanDesktopOverlaySubmissionFn =
+        void (*)(bool submitted, u64 timelineValue, void* userData);
+    void SetDesktopOverlaySubmissionNotifier(
+        VulkanDesktopOverlaySubmissionFn notifier,
+        void* userData);
     // MELONPRIME_DESKTOP_ADAPTER_END
 #endif
 
@@ -501,6 +506,8 @@ private:
     void* desktopOverlayUserData = nullptr;
     VulkanDesktopOverlayTransferFn desktopOverlayTransferRecorder = nullptr;
     void* desktopOverlayTransferUserData = nullptr;
+    VulkanDesktopOverlaySubmissionFn desktopOverlaySubmissionNotifier = nullptr;
+    void* desktopOverlaySubmissionUserData = nullptr;
 #endif
 };
 

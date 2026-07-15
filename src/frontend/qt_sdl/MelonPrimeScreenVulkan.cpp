@@ -175,6 +175,9 @@ bool ScreenPanelVulkan::initVulkan()
     presenter->SetDesktopOverlayTransferRecorder(
         MelonPrimeVulkanOverlayRenderer::RecordTransferCallback,
         &overlayRenderer);
+    presenter->SetDesktopOverlaySubmissionNotifier(
+        MelonPrimeVulkanOverlayRenderer::NotifySurfaceSubmissionCallback,
+        &overlayRenderer);
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info,
         "[MelonPrime] Vulkan frontend session attached to desktop surface generation %llu\n",
         static_cast<unsigned long long>(surfaceHost.generation()));
@@ -435,9 +438,14 @@ void ScreenPanelVulkan::drawScreen()
 
 void ScreenPanelVulkan::presentOnGuiThread()
 {
-    if (QThread::currentThread() != thread() || !presenter || !isVisible()
-        || !ensureNativeSurface())
+    if (QThread::currentThread() != thread() || !presenter || !isVisible())
         return;
+
+    if (surfaceId == 0 || !surfaceHost.matchesWidget(*this))
+    {
+        if (!ensureNativeSurface())
+            return;
+    }
 
     const QSize pixelSize = surfaceHost.pixelSize();
     const int currentWidth = pixelSize.width();
@@ -581,8 +589,6 @@ void ScreenPanelVulkan::presentOnGuiThread()
     if (presentResult == VulkanPresentResult::PresentedGameFrame)
     {
         lastPresentedFrameId = frame->frameId;
-        if (frame->presentTimelineValue != 0)
-            overlayRenderer.markLastUploadSubmitted(frame->presentTimelineValue);
         session.commitPresentedFrame(frame);
         if (tracePresenter)
         {

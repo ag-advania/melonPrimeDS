@@ -575,7 +575,7 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
     hasValidUploadedOverlay = true;
     ++lastUploadedHudGeneration;
     slot.recorded = true;
-    pendingSubmittedUploadSlot = activeUploadSlot;
+    slot.uploadToken = nextUploadToken++;
     pendingUpload = false;
     pendingUploadBytes = 0;
 
@@ -642,6 +642,38 @@ void MelonPrimeVulkanOverlayRenderer::releaseCompletedUploadSlots(
     }
 }
 
+void MelonPrimeVulkanOverlayRenderer::notifySurfaceSubmission(
+    bool submitted,
+    melonDS::u64 timelineValue) noexcept
+{
+    for (size_t i = 0; i < kUploadSlotCount; ++i)
+    {
+        OverlayUploadSlot& slot = uploadSlots[i];
+        if (!slot.recorded)
+            continue;
+
+        if (submitted && timelineValue != 0)
+            markUploadSubmitted(static_cast<melonDS::u32>(i), timelineValue);
+        else
+        {
+            slot.recorded = false;
+            slot.uploadToken = 0;
+            slot.completionTimelineValue = 0;
+        }
+    }
+}
+
+void MelonPrimeVulkanOverlayRenderer::NotifySurfaceSubmissionCallback(
+    bool submitted,
+    melonDS::u64 timelineValue,
+    void* userData)
+{
+    if (userData == nullptr)
+        return;
+    static_cast<MelonPrimeVulkanOverlayRenderer*>(userData)->notifySurfaceSubmission(
+        submitted, timelineValue);
+}
+
 void MelonPrimeVulkanOverlayRenderer::markUploadSubmitted(
     melonDS::u32 slotIndex,
     melonDS::u64 completionTimelineValue) noexcept
@@ -651,17 +683,14 @@ void MelonPrimeVulkanOverlayRenderer::markUploadSubmitted(
 
     uploadSlots[slotIndex].completionTimelineValue = completionTimelineValue;
     uploadSlots[slotIndex].recorded = false;
+    uploadSlots[slotIndex].uploadToken = 0;
     lastPresentTimelineValue = completionTimelineValue;
-    if (pendingSubmittedUploadSlot == slotIndex)
-        pendingSubmittedUploadSlot = UINT32_MAX;
 }
 
 void MelonPrimeVulkanOverlayRenderer::markLastUploadSubmitted(
     melonDS::u64 completionTimelineValue) noexcept
 {
-    if (pendingSubmittedUploadSlot == UINT32_MAX)
-        return;
-    markUploadSubmitted(pendingSubmittedUploadSlot, completionTimelineValue);
+    notifySurfaceSubmission(completionTimelineValue != 0, completionTimelineValue);
 }
 
 void MelonPrimeVulkanOverlayRenderer::collectRetiredResources(

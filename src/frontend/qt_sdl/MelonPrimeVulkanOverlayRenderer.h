@@ -35,6 +35,9 @@ public:
     void invalidateOverlayTexture() noexcept;
     void bindPresenterTimeline(VkSemaphore semaphore) noexcept;
     void releaseCompletedUploadSlots(melonDS::u64 completedTimelineValue) noexcept;
+    void notifySurfaceSubmission(bool submitted, melonDS::u64 timelineValue) noexcept;
+    static void NotifySurfaceSubmissionCallback(
+        bool submitted, melonDS::u64 timelineValue, void* userData);
     void markUploadSubmitted(melonDS::u32 slotIndex, melonDS::u64 completionTimelineValue) noexcept;
     void markLastUploadSubmitted(melonDS::u64 completionTimelineValue) noexcept;
     void collectRetiredResources(melonDS::u64 completedTimelineValue) noexcept;
@@ -94,6 +97,7 @@ private:
         void* mapped = nullptr;
         VkDeviceSize capacity = 0;
         bool recorded = false;
+        melonDS::u64 uploadToken = 0;
         melonDS::u64 completionTimelineValue = 0;
     };
 
@@ -102,7 +106,7 @@ private:
     OverlayUploadSlot uploadSlots[kUploadSlotCount]{};
     melonDS::u32 activeUploadSlot = 0;
     melonDS::u32 nextUploadSlotIndex = 0;
-    melonDS::u32 pendingSubmittedUploadSlot = UINT32_MAX;
+    melonDS::u64 nextUploadToken = 1;
     melonDS::u64 lastPresentTimelineValue = 0;
     melonDS::VulkanRetireQueue retiredPipelines;
     VkSemaphore timelineSemaphore = VK_NULL_HANDLE;

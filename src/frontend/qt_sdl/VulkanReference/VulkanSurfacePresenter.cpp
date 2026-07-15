@@ -1037,6 +1037,14 @@ void VulkanSurfacePresenter::SetDesktopOverlayTransferRecorder(
     desktopOverlayTransferRecorder = recorder;
     desktopOverlayTransferUserData = userData;
 }
+
+void VulkanSurfacePresenter::SetDesktopOverlaySubmissionNotifier(
+    VulkanDesktopOverlaySubmissionFn notifier,
+    void* userData)
+{
+    desktopOverlaySubmissionNotifier = notifier;
+    desktopOverlaySubmissionUserData = userData;
+}
 #endif
 
 void VulkanSurfacePresenter::detachSurface(int surfaceId)
@@ -1355,6 +1363,10 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
                 drawCalls))
         {
             recordFailures++;
+#if defined(MELONPRIME_DS)
+            if (desktopOverlaySubmissionNotifier != nullptr)
+                desktopOverlaySubmissionNotifier(false, 0, desktopOverlaySubmissionUserData);
+#endif
             recoverSwapchain(surfaceState, "recordSurfaceCommands");
             continue;
         }
@@ -1366,10 +1378,23 @@ VulkanPresentResult VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOut
         if (!submitSurfaceCommands(surfaceState, imageIndex, surfacePresentCpuNs, surfacePresentTimelineValue))
         {
             submitFailures++;
+#if defined(MELONPRIME_DS)
+            if (desktopOverlaySubmissionNotifier != nullptr)
+                desktopOverlaySubmissionNotifier(false, 0, desktopOverlaySubmissionUserData);
+#endif
             if (!melonDS::VulkanContext::Get().IsDeviceLost())
                 recoverSwapchain(surfaceState, "submitSurfaceCommands");
             continue;
         }
+#if defined(MELONPRIME_DS)
+        else if (desktopOverlaySubmissionNotifier != nullptr)
+        {
+            desktopOverlaySubmissionNotifier(
+                true,
+                surfacePresentTimelineValue,
+                desktopOverlaySubmissionUserData);
+        }
+#endif
         submitCpuNs += PerfNowNs() - submitStartNs;
         presentCpuNs += surfacePresentCpuNs;
         framePresentTimelineValue = std::max(framePresentTimelineValue, surfacePresentTimelineValue);
@@ -1647,7 +1672,13 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         return true;
 
     if (surfaceState.pending)
-        destroySwapchainBundle(*surfaceState.pending);
+    {
+        SwapchainBundle retiring = std::move(*surfaceState.pending);
+        surfaceState.pending.reset();
+        retireSwapchainBundle(
+            std::move(retiring),
+            retiring.lastSubmissionTimelineValue);
+    }
 
     surfaceState.pending.emplace();
     SwapchainBundle& building = *surfaceState.pending;
@@ -2210,7 +2241,8 @@ void VulkanSurfacePresenter::recoverSwapchain(SurfaceState& surfaceState, const 
         reason != nullptr ? reason : "unknown error"
     );
 
-    (void)waitForSurfaceIdle(surfaceState);
+    constexpr u64 kRecoverSwapchainWaitNs = 250'000'000ull;
+    (void)waitForSurfaceIdle(surfaceState, kRecoverSwapchainWaitNs);
 
     destroySwapchain(surfaceState);
     surfaceState.swapchainDirty = true;
