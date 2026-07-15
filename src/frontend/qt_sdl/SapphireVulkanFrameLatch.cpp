@@ -941,8 +941,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 #ifndef NDEBUG
     assert(published.emulatedFrameSerial == nds_->GPU.VulkanFrameSerial
         || published.emulatedFrameSerial == 0);
-    assert(published.top.engine == (published.hardwareScreenSwap ? 0u : 1u));
-    assert(published.bottom.engine == (published.hardwareScreenSwap ? 1u : 0u));
+    assert(published.top.engine == (published.hardwareScreenSwap ? 1u : 0u));
+    assert(published.bottom.engine == (published.hardwareScreenSwap ? 0u : 1u));
 #endif
 
     previousSoftPackedFrameSnapshot = lastSoftPackedFrameSnapshot;
@@ -2361,7 +2361,7 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 
     if (!renderer2dDebugControlsActive)
     {
-        const bool engineAOnTop = lastSoftPackedFrameSnapshot.screenSwapLatched;
+        const bool engineAOnTop = !lastSoftPackedFrameSnapshot.screenSwapLatched;
 
         auto screenHasMeaningfulContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {

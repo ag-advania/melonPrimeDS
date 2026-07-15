@@ -16,7 +16,7 @@ def read_repo(path: str) -> str:
 
 
 class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
-    def test_physical_publication_uses_fixed_framebuffer_slots(self):
+    def test_physical_publication_uses_fixed_lcd_framebuffer_slots(self):
         soft = read_repo("src/GPU_Soft.cpp")
         view = re.search(
             r"SapphirePhysical2DScreenView SoftRenderer::BuildPhysicalScreenView\("
@@ -30,7 +30,7 @@ class SapphireVulkanLifecycleS69ParityTests(unittest.TestCase):
             (line for line in body.splitlines() if "view.packed" in line),
             "",
         )
-        self.assertIn("[top ? 0 : 1]", packed_line)
+        self.assertRegex(packed_line, r"Framebuffer\[frontBuffer\]\[top\s*\?\s*1u\s*:\s*0u\]")
         self.assertNotIn("GPU.ScreenSwap", packed_line)
 
     def test_publish_pairs_packed_and_structured_through_view(self):

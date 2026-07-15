@@ -263,13 +263,15 @@ SapphirePhysical2DScreenView SoftRenderer::BuildPhysicalScreenView(
     SapphirePhysical2DScreenView view{};
     const bool top = screen == SapphirePhysicalScreen::Top;
 
-    view.packed = Framebuffer[frontBuffer][top ? 0 : 1];
+    // Physical top/bottom LCD content always lands in framebuffer slot 1/0
+    // regardless of GPU.ScreenSwap (swap only retargets engines to slots).
+    view.packed = Framebuffer[frontBuffer][top ? 1u : 0u];
     view.plane0 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 0);
     view.plane1 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 1);
     view.control = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 2);
     view.engine = top
-        ? (GPU.ScreenSwap ? 0u : 1u)
-        : (GPU.ScreenSwap ? 1u : 0u);
+        ? (GPU.ScreenSwap ? 1u : 0u)
+        : (GPU.ScreenSwap ? 0u : 1u);
 
     return view;
 }
@@ -358,9 +360,9 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     assert(GPU.GPU3D.HasCurrentRenderer()
         || published.bottom.structuredControl == nullptr);
     if (published.top.structuredControl != nullptr)
-        assert(published.top.engine == (GPU.ScreenSwap ? 0u : 1u));
+        assert(published.top.engine == (GPU.ScreenSwap ? 1u : 0u));
     if (published.bottom.structuredControl != nullptr)
-        assert(published.bottom.engine == (GPU.ScreenSwap ? 1u : 0u));
+        assert(published.bottom.engine == (GPU.ScreenSwap ? 0u : 1u));
 #endif
 
     GPU.Published2DFrame = published;
