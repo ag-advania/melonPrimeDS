@@ -53,5 +53,10 @@ private:
     std::atomic_bool repaintQueued{false};
     bool sessionPresenterRegistered = false;
     int presenterTraceBudget = 120;
+    bool surfaceResizeScheduled = false;
+    int pendingSurfaceWidth = 0;
+    int pendingSurfaceHeight = 0;
+
+    void scheduleSurfaceResize();
     NoRomSplashOverlay* noRomSplashOverlay = nullptr;
 };
