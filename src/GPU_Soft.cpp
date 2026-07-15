@@ -241,11 +241,9 @@ void SoftRenderer::SyncSapphireFramebufferBindings() noexcept
 #ifndef NDEBUG
     assert(GPU.FrontBuffer == 0 || GPU.FrontBuffer == 1);
 #endif
-
-    PublishSapphire2DFrame();
 }
 
-void SoftRenderer::PublishSapphire2DFrame() noexcept
+bool SoftRenderer::PublishSapphire2DFrame() noexcept
 {
     SapphirePublished2DFrame published{};
     published.frontBuffer = GPU.FrontBuffer;
@@ -254,14 +252,25 @@ void SoftRenderer::PublishSapphire2DFrame() noexcept
     published.emulatedFrameSerial = GPU.VulkanFrameSerial;
     published.publicationGeneration = GPU.Published2DFrame.publicationGeneration + 1;
 
+    if (published.frontBuffer < 0 || published.frontBuffer > 1)
+        return false;
+
     published.top.packed = GPU.Framebuffer[published.frontBuffer][0];
     published.bottom.packed = GPU.Framebuffer[published.frontBuffer][1];
+    if (published.top.packed == nullptr || published.bottom.packed == nullptr)
+        return false;
+
     published.top.physicalScreen = SapphirePhysicalScreen::Top;
     published.bottom.physicalScreen = SapphirePhysicalScreen::Bottom;
     published.top.engine = GPU.ScreenSwap ? 0u : 1u;
     published.bottom.engine = GPU.ScreenSwap ? 1u : 0u;
 
-    if (Sapphire2DRenderer != nullptr)
+    const bool structuredReady =
+        Sapphire2DRenderer != nullptr
+        && GPU.GPU3D.HasCurrentRenderer()
+        && GPU.GPU3D.GetCurrentRenderer().UsesStructured2DMetadata();
+
+    if (structuredReady)
     {
         published.top.structuredPlane0 =
             Sapphire2DRenderer->GetStructuredVulkan2DPlane(true, 0);
@@ -275,11 +284,23 @@ void SoftRenderer::PublishSapphire2DFrame() noexcept
             Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 1);
         published.bottom.structuredControl =
             Sapphire2DRenderer->GetStructuredVulkan2DPlane(false, 2);
+
+        if (published.top.structuredPlane0 == nullptr
+            || published.top.structuredPlane1 == nullptr
+            || published.top.structuredControl == nullptr
+            || published.bottom.structuredPlane0 == nullptr
+            || published.bottom.structuredPlane1 == nullptr
+            || published.bottom.structuredControl == nullptr)
+        {
+            return false;
+        }
     }
 
 #ifndef NDEBUG
-    assert(published.top.packed != nullptr);
-    assert(published.bottom.packed != nullptr);
+    assert(GPU.GPU3D.HasCurrentRenderer()
+        || published.top.structuredControl == nullptr);
+    assert(GPU.GPU3D.HasCurrentRenderer()
+        || published.bottom.structuredControl == nullptr);
     if (published.top.structuredControl != nullptr)
         assert(published.top.engine == (GPU.ScreenSwap ? 0u : 1u));
     if (published.bottom.structuredControl != nullptr)
@@ -287,6 +308,7 @@ void SoftRenderer::PublishSapphire2DFrame() noexcept
 #endif
 
     GPU.Published2DFrame = published;
+    return true;
 }
 #endif
 
