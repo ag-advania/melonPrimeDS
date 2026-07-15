@@ -253,6 +253,7 @@ public:
     [[nodiscard]] const SapphireGpu2DState* TryGetSapphireGpu2DState() const noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
     void InvalidateSapphirePublication() noexcept;
+    void InvalidateSapphireFramebufferBindings() noexcept;
     [[nodiscard]] const SapphirePublished2DFrame& GetPublished2DFrame() const noexcept
     {
         return Published2DFrame;
