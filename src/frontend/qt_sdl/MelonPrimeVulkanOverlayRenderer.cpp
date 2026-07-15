@@ -70,6 +70,7 @@ bool MelonPrimeVulkanOverlayRenderer::init()
     physicalDevice = context.GetPhysicalDevice();
     transferQueue = context.GetGraphicsQueue();
     transferQueueFamilyIndex = context.GetGraphicsQueueFamily();
+    useTimelineSemaphores = context.SupportsTimelineSemaphores();
     if (device == VK_NULL_HANDLE || transferQueue == VK_NULL_HANDLE)
         return false;
 
@@ -141,7 +142,17 @@ void MelonPrimeVulkanOverlayRenderer::shutdown()
     if (device != VK_NULL_HANDLE)
         vkDeviceWaitIdle(device);
 
-    destroyPipeline();
+    if (pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
+    boundRenderPass = VK_NULL_HANDLE;
+    boundSwapchainFormat = VK_FORMAT_UNDEFINED;
+    retiredPipelines.Drain(
+        device,
+        melonDS::VulkanContext::Get().GetWaitSemaphores(),
+        melonDS::VulkanContext::Get().IsDeviceLost());
     destroyTexture();
     destroyTransferResources();
 
@@ -211,7 +222,8 @@ void MelonPrimeVulkanOverlayRenderer::destroyUploadSlot(melonDS::u32 slotIndex)
         slot.buffer = VK_NULL_HANDLE;
     }
     slot.capacity = 0;
-    slot.inFlight = false;
+    slot.recorded = false;
+    slot.completionTimelineValue = 0;
 }
 
 bool MelonPrimeVulkanOverlayRenderer::createMappedUploadSlot(
@@ -268,11 +280,21 @@ bool MelonPrimeVulkanOverlayRenderer::ensureUploadSlotCapacity(
 
 bool MelonPrimeVulkanOverlayRenderer::acquireUploadSlotForStaging()
 {
+    melonDS::u64 completedTimeline = 0;
+    const auto getCounter = melonDS::VulkanContext::Get().GetSemaphoreCounterValue();
+    if (timelineSemaphore != VK_NULL_HANDLE && getCounter != nullptr)
+        (void)getCounter(device, timelineSemaphore, &completedTimeline);
+
     for (size_t attempt = 0; attempt < kUploadSlotCount; ++attempt)
     {
         const melonDS::u32 slotIndex =
             static_cast<melonDS::u32>((nextUploadSlotIndex + attempt) % kUploadSlotCount);
-        if (!uploadSlots[slotIndex].inFlight)
+        const OverlayUploadSlot& slot = uploadSlots[slotIndex];
+        const bool slotAvailable =
+            slot.completionTimelineValue == 0
+            || (completedTimeline != 0
+                && slot.completionTimelineValue <= completedTimeline);
+        if (slotAvailable)
         {
             activeUploadSlot = slotIndex;
             nextUploadSlotIndex = (slotIndex + 1u) % static_cast<melonDS::u32>(kUploadSlotCount);
@@ -552,7 +574,8 @@ bool MelonPrimeVulkanOverlayRenderer::recordPendingTransfer(VkCommandBuffer comm
     textureLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     hasValidUploadedOverlay = true;
     ++lastUploadedHudGeneration;
-    slot.inFlight = true;
+    slot.recorded = true;
+    pendingSubmittedUploadSlot = activeUploadSlot;
     pendingUpload = false;
     pendingUploadBytes = 0;
 
@@ -596,10 +619,62 @@ void MelonPrimeVulkanOverlayRenderer::invalidateOverlayTexture() noexcept
     hasValidUploadedOverlay = false;
 }
 
-void MelonPrimeVulkanOverlayRenderer::releaseUploadSlots() noexcept
+void MelonPrimeVulkanOverlayRenderer::bindPresenterTimeline(VkSemaphore semaphore) noexcept
 {
+    timelineSemaphore = semaphore;
+}
+
+void MelonPrimeVulkanOverlayRenderer::releaseCompletedUploadSlots(
+    melonDS::u64 completedTimelineValue) noexcept
+{
+    if (completedTimelineValue == 0)
+        return;
+
     for (size_t i = 0; i < kUploadSlotCount; ++i)
-        uploadSlots[i].inFlight = false;
+    {
+        OverlayUploadSlot& slot = uploadSlots[i];
+        if (slot.completionTimelineValue != 0
+            && slot.completionTimelineValue <= completedTimelineValue)
+        {
+            slot.completionTimelineValue = 0;
+            slot.recorded = false;
+        }
+    }
+}
+
+void MelonPrimeVulkanOverlayRenderer::markUploadSubmitted(
+    melonDS::u32 slotIndex,
+    melonDS::u64 completionTimelineValue) noexcept
+{
+    if (slotIndex >= kUploadSlotCount || completionTimelineValue == 0)
+        return;
+
+    uploadSlots[slotIndex].completionTimelineValue = completionTimelineValue;
+    uploadSlots[slotIndex].recorded = false;
+    lastPresentTimelineValue = completionTimelineValue;
+    if (pendingSubmittedUploadSlot == slotIndex)
+        pendingSubmittedUploadSlot = UINT32_MAX;
+}
+
+void MelonPrimeVulkanOverlayRenderer::markLastUploadSubmitted(
+    melonDS::u64 completionTimelineValue) noexcept
+{
+    if (pendingSubmittedUploadSlot == UINT32_MAX)
+        return;
+    markUploadSubmitted(pendingSubmittedUploadSlot, completionTimelineValue);
+}
+
+void MelonPrimeVulkanOverlayRenderer::collectRetiredResources(
+    melonDS::u64 completedTimelineValue) noexcept
+{
+    (void)completedTimelineValue;
+    if (device == VK_NULL_HANDLE)
+        return;
+
+    retiredPipelines.Collect(
+        device,
+        melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
+        melonDS::VulkanContext::Get().IsDeviceLost());
 }
 
 void MelonPrimeVulkanOverlayRenderer::setCompositeRect(
@@ -612,7 +687,10 @@ void MelonPrimeVulkanOverlayRenderer::setCompositeRect(
     compositeRequested = width > 0 && height > 0;
 }
 
-bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(VkRenderPass renderPass, VkFormat format)
+bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(
+    VkRenderPass renderPass,
+    VkFormat format,
+    melonDS::u64 retireAfterTimelineValue)
 {
     if (pipeline != VK_NULL_HANDLE
         && boundRenderPass == renderPass
@@ -621,7 +699,7 @@ bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(VkRenderPass renderPass, Vk
         return true;
     }
 
-    destroyPipeline();
+    retirePipeline(retireAfterTimelineValue);
 
     const std::vector<melonDS::u32> vertCode(
         melonprime_vulkan_overlay_vert_spv,
@@ -723,15 +801,37 @@ bool MelonPrimeVulkanOverlayRenderer::ensurePipeline(VkRenderPass renderPass, Vk
     return true;
 }
 
-void MelonPrimeVulkanOverlayRenderer::destroyPipeline()
+void MelonPrimeVulkanOverlayRenderer::retirePipeline(
+    melonDS::u64 retireAfterTimelineValue) noexcept
 {
-    if (pipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(device, pipeline, nullptr);
-        pipeline = VK_NULL_HANDLE;
-    }
+    if (pipeline == VK_NULL_HANDLE)
+        return;
+
+    const VkPipeline retiring = pipeline;
+    pipeline = VK_NULL_HANDLE;
     boundRenderPass = VK_NULL_HANDLE;
     boundSwapchainFormat = VK_FORMAT_UNDEFINED;
+
+    const bool hasTimelineRetire =
+        useTimelineSemaphores
+        && timelineSemaphore != VK_NULL_HANDLE
+        && retireAfterTimelineValue != 0;
+    const VkDevice retireDevice = device;
+
+    if (hasTimelineRetire)
+    {
+        retiredPipelines.Retire(
+            timelineSemaphore,
+            retireAfterTimelineValue,
+            VK_NULL_HANDLE,
+            [retireDevice, retiring]() {
+                vkDestroyPipeline(retireDevice, retiring, nullptr);
+            });
+    }
+    else
+    {
+        vkDestroyPipeline(device, retiring, nullptr);
+    }
 }
 
 void MelonPrimeVulkanOverlayRenderer::record(
@@ -743,7 +843,10 @@ void MelonPrimeVulkanOverlayRenderer::record(
         return;
     if (target.commandBuffer == VK_NULL_HANDLE || target.renderPass == VK_NULL_HANDLE)
         return;
-    if (!ensurePipeline(target.renderPass, target.swapchainFormat))
+    if (!ensurePipeline(
+            target.renderPass,
+            target.swapchainFormat,
+            lastPresentTimelineValue))
         return;
 
     VkViewport viewport{};

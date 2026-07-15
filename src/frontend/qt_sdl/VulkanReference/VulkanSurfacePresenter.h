@@ -156,6 +156,7 @@ public:
     static bool HasDrawableGameScreen(const VulkanSurfaceConfig& config) noexcept;
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
     bool getCompletedTimelineValue(u64& completedValue) const;
+    VkSemaphore getTimelineSemaphore() const noexcept { return timelineSemaphore; }
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
 

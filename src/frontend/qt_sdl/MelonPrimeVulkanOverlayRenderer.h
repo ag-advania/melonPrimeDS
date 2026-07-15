@@ -12,6 +12,7 @@
 #include <volk.h>
 
 #include "types.h"
+#include "VulkanR24Sync.h"
 
 #include "VulkanReference/VulkanSurfacePresenter.h"
 
@@ -32,7 +33,11 @@ public:
     void setCompositeRect(melonDS::u32 x, melonDS::u32 y, melonDS::u32 width, melonDS::u32 height);
     void hideOverlay() noexcept;
     void invalidateOverlayTexture() noexcept;
-    void releaseUploadSlots() noexcept;
+    void bindPresenterTimeline(VkSemaphore semaphore) noexcept;
+    void releaseCompletedUploadSlots(melonDS::u64 completedTimelineValue) noexcept;
+    void markUploadSubmitted(melonDS::u32 slotIndex, melonDS::u64 completionTimelineValue) noexcept;
+    void markLastUploadSubmitted(melonDS::u64 completionTimelineValue) noexcept;
+    void collectRetiredResources(melonDS::u64 completedTimelineValue) noexcept;
     void clearCompositeRequest() noexcept { hideOverlay(); }
 
     bool hasPendingComposite() const noexcept { return compositeRequested; }
@@ -53,8 +58,8 @@ private:
         float drawSize[2]{};
     };
 
-    bool ensurePipeline(VkRenderPass renderPass, VkFormat format);
-    void destroyPipeline();
+    bool ensurePipeline(VkRenderPass renderPass, VkFormat format, melonDS::u64 retireAfterTimelineValue);
+    void retirePipeline(melonDS::u64 retireAfterTimelineValue) noexcept;
     bool ensureUploadSlotCapacity(melonDS::u32 slotIndex, VkDeviceSize required);
     void destroyUploadSlot(melonDS::u32 slotIndex);
     bool createMappedUploadSlot(melonDS::u32 slotIndex, VkDeviceSize capacity);
@@ -88,7 +93,8 @@ private:
         VkDeviceMemory memory = VK_NULL_HANDLE;
         void* mapped = nullptr;
         VkDeviceSize capacity = 0;
-        bool inFlight = false;
+        bool recorded = false;
+        melonDS::u64 completionTimelineValue = 0;
     };
 
     static constexpr size_t kUploadSlotCount = 3;
@@ -96,6 +102,11 @@ private:
     OverlayUploadSlot uploadSlots[kUploadSlotCount]{};
     melonDS::u32 activeUploadSlot = 0;
     melonDS::u32 nextUploadSlotIndex = 0;
+    melonDS::u32 pendingSubmittedUploadSlot = UINT32_MAX;
+    melonDS::u64 lastPresentTimelineValue = 0;
+    melonDS::VulkanRetireQueue retiredPipelines;
+    VkSemaphore timelineSemaphore = VK_NULL_HANDLE;
+    bool useTimelineSemaphores = false;
     VkDeviceSize pendingUploadBytes = 0;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;

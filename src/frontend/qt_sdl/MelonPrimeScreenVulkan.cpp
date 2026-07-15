@@ -168,6 +168,7 @@ bool ScreenPanelVulkan::initVulkan()
         presenter.reset();
         return false;
     }
+    overlayRenderer.bindPresenterTimeline(presenter->getTimelineSemaphore());
     presenter->SetDesktopOverlayRecorder(
         MelonPrimeVulkanOverlayRenderer::RecordCallback,
         &overlayRenderer);
@@ -462,6 +463,15 @@ void ScreenPanelVulkan::presentOnGuiThread()
             isVisible() ? 1 : 0);
     }
 
+    {
+        melonDS::u64 completedTimeline = 0;
+        if (presenter->getCompletedTimelineValue(completedTimeline))
+        {
+            overlayRenderer.releaseCompletedUploadSlots(completedTimeline);
+            overlayRenderer.collectRetiredResources(completedTimeline);
+        }
+    }
+
 #ifdef MELONPRIME_CUSTOM_HUD
     {
         const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
@@ -571,7 +581,8 @@ void ScreenPanelVulkan::presentOnGuiThread()
     if (presentResult == VulkanPresentResult::PresentedGameFrame)
     {
         lastPresentedFrameId = frame->frameId;
-        overlayRenderer.releaseUploadSlots();
+        if (frame->presentTimelineValue != 0)
+            overlayRenderer.markLastUploadSubmitted(frame->presentTimelineValue);
         session.commitPresentedFrame(frame);
         if (tracePresenter)
         {
@@ -637,17 +648,18 @@ void ScreenPanelVulkan::changeEvent(QEvent* event)
     {
     case QEvent::WindowStateChange:
     case QEvent::Resize:
+    case QEvent::DevicePixelRatioChange:
         QTimer::singleShot(0, this, [this]() {
             if (!presenter || surfaceId == 0 || !isVisible())
                 return;
 
-            if (!surfaceHost.matchesNativeIdentity(*this))
-            {
-                (void)ensureNativeSurface();
-                return;
-            }
+            if (surfaceHost.matchesNativeIdentity(*this))
+                surfaceHost.rebindWidget(*this);
 
             const QSize pixelSize = surfaceHost.pixelSize();
+            if (pixelSize.width() <= 0 || pixelSize.height() <= 0)
+                return;
+
             presenter->resizeSurface(
                 surfaceId,
                 static_cast<melonDS::u32>(pixelSize.width()),
