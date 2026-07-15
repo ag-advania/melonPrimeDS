@@ -70,7 +70,12 @@ struct SoftPackedFrameSnapshot
     u64 sourceFrameSerial = 0;
     u64 rendererGeneration = 0;
     int frontBufferLatched = -1;
+    // Legacy alias for renderScreenSwapAt3DLatched (3D compositor ownership).
     bool screenSwapLatched = false;
+    bool hardwareScreenSwapLatched = false;
+    bool renderScreenSwapAt3DLatched = false;
+    u32 topEngineLatched = UINT32_MAX;
+    u32 bottomEngineLatched = UINT32_MAX;
     bool valid = false;
     bool hasCapture3dSource = false;
     bool captureBackedClass4Only = false;
@@ -97,6 +102,10 @@ struct SoftPackedFrameSnapshot
         rendererGeneration = 0;
         frontBufferLatched = -1;
         screenSwapLatched = false;
+        hardwareScreenSwapLatched = false;
+        renderScreenSwapAt3DLatched = false;
+        topEngineLatched = UINT32_MAX;
+        bottomEngineLatched = UINT32_MAX;
         valid = false;
         hasCapture3dSource = false;
         captureBackedClass4Only = false;
