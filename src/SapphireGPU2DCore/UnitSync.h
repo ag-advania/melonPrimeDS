@@ -17,7 +17,13 @@ namespace GPU2D
 {
 class Unit;
 
-void SyncUnitFromGPU2D(Unit& unit, const melonDS::GPU2D& gpu2d, melonDS::GPU& gpu);
+void SyncExternalGpuState(Unit& unit, const melonDS::GPU2D& gpu2d, melonDS::GPU& gpu);
+void SeedCompleteUnitFromNative(Unit& unit, const melonDS::GPU2D& gpu2d, melonDS::GPU& gpu);
+
+inline void SyncUnitFromGPU2D(Unit& unit, const melonDS::GPU2D& gpu2d, melonDS::GPU& gpu)
+{
+    SyncExternalGpuState(unit, gpu2d, gpu);
+}
 }
 
 } // namespace SapphireGPU2DCore

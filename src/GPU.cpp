@@ -26,6 +26,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
+#include "SapphireGPU2DCore/UnitSync.h"
 #endif
 
 namespace melonDS
@@ -341,6 +342,15 @@ void GPU::DoSavestate(Savestate* file) noexcept
         ResetVRAMCache();
         OAMDirty = 0x3;
         PaletteDirty = 0x5F;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (Sapphire2D)
+        {
+            SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
+                Sapphire2D->UnitA, GPU2D_A, *this);
+            SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
+                Sapphire2D->UnitB, GPU2D_B, *this);
+        }
+#endif
     }
 
     Rend->PostSavestate();
