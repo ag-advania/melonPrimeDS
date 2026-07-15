@@ -5,6 +5,8 @@
 #include "SapphireVulkanFrameLatch.h"
 
 #include "MelonPrimeDesktop2DBlackContract.h"
+#include "MelonPrimeDesktop2DProvenance.h"
+#include "MelonPrimeDesktop2DRepairMode.h"
 
 #include <algorithm>
 #include <chrono>
@@ -867,6 +869,28 @@ void SapphireVulkanFrameLatch::clearLatchedSoftPackedFrameSnapshot()
     vulkanTemporal3dHistoryDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 120 : 0;
 }
 
+void SapphireVulkanFrameLatch::invalidateAll2DTemporalSources()
+{
+    cachedEngineATopValid = false;
+    cachedEngineABottomValid = false;
+    cachedAtypicalDisplayTopPrimary.fill(0);
+    cachedAtypicalDisplayBottomPrimary.fill(0);
+    cachedAtypicalDisplayTopPrimaryLines.fill(0);
+    cachedAtypicalDisplayBottomPrimaryLines.fill(0);
+    lastValidTopScreenCapture3dDsFrame.fill(0);
+    lastValidBottomScreenCapture3dDsFrame.fill(0);
+    lastValidTopScreenResolvedPrimary.fill(0);
+    lastValidBottomScreenResolvedPrimary.fill(0);
+    lastValidTopScreenResolvedPrimaryLines.fill(0);
+    lastValidBottomScreenResolvedPrimaryLines.fill(0);
+    hasLastValidTopScreenCapture3dDsFrame = false;
+    hasLastValidBottomScreenCapture3dDsFrame = false;
+    lastSoftPackedFrameSnapshot.topCapture3dSource.clear();
+    lastSoftPackedFrameSnapshot.bottomCapture3dSource.clear();
+    lastSoftPackedFrameSnapshot.hasCapture3dSource = false;
+    lastSoftPackedFrameSnapshot.capture3dSourceDsFrame.fill(0);
+}
+
 bool SapphireVulkanFrameLatch::updateVulkanTemporal3dHistoryGate()
 {
     const bool alternateOwner = softPackedFramesAlternate3dOwner(
@@ -957,6 +981,20 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     lastSoftPackedFrameSnapshot.topEngineLatched = published.top.engine;
     lastSoftPackedFrameSnapshot.bottomEngineLatched = published.bottom.engine;
     lastSoftPackedFrameSnapshot.screenSwapLatched = published.renderScreenSwapAt3D;
+    lastSoftPackedFrameSnapshot.sourceFrameSerial =
+        frame->frameSerial != 0 ? frame->frameSerial : published.frameSerial;
+    lastSoftPackedFrameSnapshot.rendererGeneration =
+        frame->rendererGeneration != 0
+            ? frame->rendererGeneration
+            : published.rendererGeneration;
+    const bool physical2DOwnerChangedEarly =
+        previousSoftPackedFrameSnapshot.valid
+        && (previousSoftPackedFrameSnapshot.topEngineLatched != published.top.engine
+            || previousSoftPackedFrameSnapshot.bottomEngineLatched != published.bottom.engine
+            || previousSoftPackedFrameSnapshot.hardwareScreenSwapLatched
+                != published.hardwareScreenSwap);
+    if (physical2DOwnerChangedEarly)
+        invalidateAll2DTemporalSources();
 #ifndef NDEBUG
     assert(
         (lastSoftPackedFrameSnapshot.topEngineLatched == 0u
@@ -965,6 +1003,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             && lastSoftPackedFrameSnapshot.bottomEngineLatched == 0u));
 #endif
     const bool renderer2dDebugControlsActive = areRenderer2DDebugControlsActive();
+    const bool temporalRepairEnabled = desktop2DTemporalRepairEnabled();
+    const bool legacyHeuristicRepairEnabled = desktop2DLegacyHeuristicRepairEnabled();
     if (renderer2dDebugControlsActive)
     {
         lastValidTopScreenResolvedPrimaryLines.fill(0);
@@ -1103,7 +1143,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         previousSoftPackedFrameSnapshot.valid
         && (previousSoftPackedFrameSnapshot.topEngineLatched
             != lastSoftPackedFrameSnapshot.topEngineLatched);
-    const bool screenSwapToggledThisFrame = render3DOwnerChanged;
+    if (physical2DOwnerChanged)
+        invalidateAll2DTemporalSources();
     if (captureBackedHasStructured2DSource)
         vulkanStructuredCaptureGateFrames = 2;
     else if (vulkanStructuredCaptureGateFrames > 0)
@@ -1279,7 +1320,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     plane1[index] = packed2D;
                     const u32 overlayControlRgb =
                         captureBackedClass4Only
-                            && screenSwapToggledThisFrame
+                            && render3DOwnerChanged
+                            && legacyHeuristicRepairEnabled
                             && (packedControl & 0x00FFFFFFu) != 0u
                             ? (packedControl & 0x00FFFFFFu)
                             : (structuredC & 0x00FFFFFFu);
@@ -1911,8 +1953,18 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+            if (!temporalRepairEnabled)
+                return 0;
             if (!previousSnapshot.valid)
                 return 0;
+            const PhysicalScreen targetScreen = topScreen ? PhysicalScreen::Top : PhysicalScreen::Bottom;
+            if (!canCarryPreviousPhysicalScreen(
+                    previousSnapshot,
+                    lastSoftPackedFrameSnapshot,
+                    targetScreen))
+            {
+                return 0;
+            }
 
             const auto& previousPlane0 = topScreen ? previousSnapshot.packedTopPlane0 : previousSnapshot.packedBottomPlane0;
             const auto& previousPlane1 = topScreen ? previousSnapshot.packedTopPlane1 : previousSnapshot.packedBottomPlane1;
@@ -1980,9 +2032,7 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     control.data() + rowBase,
                     previousControl.data() + rowBase,
                     static_cast<size_t>(kScreenshotScreenWidth) * sizeof(u32));
-                lineMeta[static_cast<size_t>(y)] =
-                    (previousLineMeta[static_cast<size_t>(y)] & 0xFFFF0000u)
-                    | (lineMeta[static_cast<size_t>(y)] & 0x0000FFFFu);
+                lineMeta[static_cast<size_t>(y)] = previousLineMeta[static_cast<size_t>(y)];
                 carriedLines++;
             }
 
@@ -2054,8 +2104,18 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+            if (!temporalRepairEnabled)
+                return 0;
             if (!previousSnapshot.valid)
                 return 0;
+            const PhysicalScreen targetScreen = topScreen ? PhysicalScreen::Top : PhysicalScreen::Bottom;
+            if (!canCarryPreviousPhysicalScreen(
+                    previousSnapshot,
+                    lastSoftPackedFrameSnapshot,
+                    targetScreen))
+            {
+                return 0;
+            }
 
             const auto& previousPlane0 = topScreen ? previousSnapshot.packedTopPlane0 : previousSnapshot.packedBottomPlane0;
             const auto& previousPlane1 = topScreen ? previousSnapshot.packedTopPlane1 : previousSnapshot.packedBottomPlane1;
@@ -2231,8 +2291,18 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+            if (!temporalRepairEnabled)
+                return 0;
             if (!previousSnapshot.valid)
                 return 0;
+            const PhysicalScreen targetScreen = topScreen ? PhysicalScreen::Top : PhysicalScreen::Bottom;
+            if (!canCarryPreviousPhysicalScreen(
+                    previousSnapshot,
+                    lastSoftPackedFrameSnapshot,
+                    targetScreen))
+            {
+                return 0;
+            }
 
             const auto& previousPlane0 = topScreen ? previousSnapshot.packedTopPlane0 : previousSnapshot.packedBottomPlane0;
             const auto& previousPlane1 = topScreen ? previousSnapshot.packedTopPlane1 : previousSnapshot.packedBottomPlane1;
@@ -2376,15 +2446,15 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         framesSinceLastScreenSwapToggle = 0;
     else if (framesSinceLastScreenSwapToggle < 1024)
         framesSinceLastScreenSwapToggle++;
-    const bool isInAlternatingMode = framesSinceLastScreenSwapToggle <= 1;
-    if (isInAlternatingMode != wasInAlternatingMode || physical2DOwnerChanged)
+    const bool isIn3DTemporalAlternatingMode = framesSinceLastScreenSwapToggle <= 1;
+    if (isIn3DTemporalAlternatingMode != wasInAlternatingMode || physical2DOwnerChanged)
     {
         cachedEngineATopValid = false;
         cachedEngineABottomValid = false;
     }
-    wasInAlternatingMode = isInAlternatingMode;
+    wasInAlternatingMode = isIn3DTemporalAlternatingMode;
 
-    if (!renderer2dDebugControlsActive)
+    if (legacyHeuristicRepairEnabled && !renderer2dDebugControlsActive)
     {
         const bool engineAOnTop = engineAOwnsPhysicalTop(
             lastSoftPackedFrameSnapshot.topEngineLatched,
@@ -2508,14 +2578,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& cachedPlane1,
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& cachedControl,
                 const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& cachedLineMeta) {
-                const std::array<u32, SoftPackedFrameSnapshot::kLineCount> currentLineMeta = targetLineMeta;
                 targetPlane0 = cachedPlane0;
                 targetPlane1 = cachedPlane1;
                 targetControl = cachedControl;
                 targetLineMeta = cachedLineMeta;
-
-                for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
-                    targetLineMeta[y] = (targetLineMeta[y] & 0xFFFF0000u) | (currentLineMeta[y] & 0x0000FFFFu);
             };
 
         if (engineAOnTop)
@@ -2543,7 +2609,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     lastSoftPackedFrameSnapshot.packedTopPlane1);
             const bool cachedTopHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(cachedEngineATopPlane0, cachedEngineATopControl);
-            const bool shouldRepairTopFromCachedEngineA = cachedEngineATopValid
+            const bool shouldRepairTopFromCachedEngineA = legacyHeuristicRepairEnabled
+                && cachedEngineATopValid
                 && !currentTopHasExplicitCompositedContent
                 && screenUses3dCaptureMeta(lastSoftPackedFrameSnapshot.packedTopLineMeta)
                 && cachedTopHasStructured2DOnlyContent;
@@ -2573,8 +2640,9 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             const bool cachedBottomHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(cachedEngineABottomPlane0, cachedEngineABottomControl);
             const bool shouldReplaceBottom = cachedEngineABottomValid
-                && ((!isInAlternatingMode && !currentBottomHasExplicitContent)
-                    || (isInAlternatingMode
+                && legacyHeuristicRepairEnabled
+                && ((!isIn3DTemporalAlternatingMode && !currentBottomHasExplicitContent)
+                    || (isIn3DTemporalAlternatingMode
                         && (cachedBottomIsScreenWideCaptureBackedComp4
                             || (!captureBackedHasStructured2DSource
                                 && !currentBottomHasExplicitContent
@@ -2624,8 +2692,9 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             const bool cachedTopHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(cachedEngineATopPlane0, cachedEngineATopControl);
             const bool shouldReplaceTop = cachedEngineATopValid
-                && ((!isInAlternatingMode && !currentTopHasExplicitContent)
-                    || (isInAlternatingMode
+                && legacyHeuristicRepairEnabled
+                && ((!isIn3DTemporalAlternatingMode && !currentTopHasExplicitContent)
+                    || (isIn3DTemporalAlternatingMode
                         && (cachedTopIsScreenWideCaptureBackedComp4
                             || (!captureBackedHasStructured2DSource
                                 && !currentTopHasExplicitContent
@@ -2649,7 +2718,8 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     lastSoftPackedFrameSnapshot.packedBottomPlane1);
             const bool cachedBottomHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(cachedEngineABottomPlane0, cachedEngineABottomControl);
-            const bool shouldRepairBottomFromCachedEngineA = cachedEngineABottomValid
+            const bool shouldRepairBottomFromCachedEngineA = legacyHeuristicRepairEnabled
+                && cachedEngineABottomValid
                 && !currentBottomHasExplicitCompositedContent
                 && screenUses3dCaptureMeta(lastSoftPackedFrameSnapshot.packedBottomLineMeta)
                 && cachedBottomHasStructured2DOnlyContent;
@@ -2669,30 +2739,33 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
 
     }
 
-    promoteLowresCaptureImageToStructuredSlot(
-        lastSoftPackedFrameSnapshot.packedTopPlane0,
-        lastSoftPackedFrameSnapshot.packedTopPlane1,
-        lastSoftPackedFrameSnapshot.packedTopControl,
-        lastSoftPackedFrameSnapshot.packedTopLineMeta,
-        previousSoftPackedFrameSnapshot.valid ? &previousSoftPackedFrameSnapshot.packedTopControl : nullptr,
-        isInAlternatingMode,
-        captureBackedClass4Only && screenSwapToggledThisFrame,
-        partialCapture3dMask,
-        topRegularCaptureLineCount,
-        bottomRegularCaptureLineCount,
-        bottomVramCaptureLineCount);
-    promoteLowresCaptureImageToStructuredSlot(
-        lastSoftPackedFrameSnapshot.packedBottomPlane0,
-        lastSoftPackedFrameSnapshot.packedBottomPlane1,
-        lastSoftPackedFrameSnapshot.packedBottomControl,
-        lastSoftPackedFrameSnapshot.packedBottomLineMeta,
-        previousSoftPackedFrameSnapshot.valid ? &previousSoftPackedFrameSnapshot.packedBottomControl : nullptr,
-        isInAlternatingMode,
-        captureBackedClass4Only && screenSwapToggledThisFrame,
-        partialCapture3dMask,
-        bottomRegularCaptureLineCount,
-        topRegularCaptureLineCount,
-        topVramCaptureLineCount);
+    if (temporalRepairEnabled && legacyHeuristicRepairEnabled)
+    {
+        promoteLowresCaptureImageToStructuredSlot(
+            lastSoftPackedFrameSnapshot.packedTopPlane0,
+            lastSoftPackedFrameSnapshot.packedTopPlane1,
+            lastSoftPackedFrameSnapshot.packedTopControl,
+            lastSoftPackedFrameSnapshot.packedTopLineMeta,
+            previousSoftPackedFrameSnapshot.valid ? &previousSoftPackedFrameSnapshot.packedTopControl : nullptr,
+            isIn3DTemporalAlternatingMode,
+            captureBackedClass4Only && render3DOwnerChanged,
+            partialCapture3dMask,
+            topRegularCaptureLineCount,
+            bottomRegularCaptureLineCount,
+            bottomVramCaptureLineCount);
+        promoteLowresCaptureImageToStructuredSlot(
+            lastSoftPackedFrameSnapshot.packedBottomPlane0,
+            lastSoftPackedFrameSnapshot.packedBottomPlane1,
+            lastSoftPackedFrameSnapshot.packedBottomControl,
+            lastSoftPackedFrameSnapshot.packedBottomLineMeta,
+            previousSoftPackedFrameSnapshot.valid ? &previousSoftPackedFrameSnapshot.packedBottomControl : nullptr,
+            isIn3DTemporalAlternatingMode,
+            captureBackedClass4Only && render3DOwnerChanged,
+            partialCapture3dMask,
+            bottomRegularCaptureLineCount,
+            topRegularCaptureLineCount,
+            topVramCaptureLineCount);
+    }
 
     int preservedTopFullRegularProtectedBlackPixels = 0;
     auto repairTopFullRegularCapture2DBaseFromPrevious =
@@ -2704,9 +2777,11 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& previousLineMeta,
             int regularCaptureLineCount,
             int vramCaptureLineCount) {
+            if (!temporalRepairEnabled || !legacyHeuristicRepairEnabled)
+                return 0;
             if (!previousSoftPackedFrameSnapshot.valid)
                 return 0;
-            if (!isInAlternatingMode)
+            if (!isIn3DTemporalAlternatingMode)
                 return 0;
             if (regularCaptureLineCount != kScreenshotScreenHeight)
                 return 0;
@@ -2806,8 +2881,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         };
 
     const bool topFullRegularCaptureWithBottomCompMode2Slot =
-        !renderer2dDebugControlsActive
-        && isInAlternatingMode
+        temporalRepairEnabled
+        && legacyHeuristicRepairEnabled
+        && !renderer2dDebugControlsActive
+        && isIn3DTemporalAlternatingMode
         && topRegularCaptureLineCount == kScreenshotScreenHeight
         && topVramCaptureLineCount == 0
         && bottomRegularCaptureLineCount == 0
@@ -2836,41 +2913,18 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             lastSoftPackedFrameSnapshot.packedTopLineMeta);
     }
 
-    const bool bottomOnlyRegularCaptureDominant =
-        bottomRegularCaptureLineCount > (kScreenshotScreenHeight / 2)
-        && topRegularCaptureLineCount == 0
-        && topVramCaptureLineCount == 0
-        && bottomVramCaptureLineCount == 0;
-    if (hasStructuredVulkan2D
-        && partialCapture3dMask
-        && bottomOnlyRegularCaptureDominant)
-    {
-        constexpr u32 protectedBlackControl = (0x80u | 0x20u) << 24u;
-        for (int y = 171; y < kScreenshotScreenHeight; y++)
-        {
-            u32& lineMeta = lastSoftPackedFrameSnapshot.packedBottomLineMeta[static_cast<size_t>(y)];
-            lineMeta = (lineMeta & ~0x00030000u) | (1u << 16u);
-
-            const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(kScreenshotScreenWidth);
-            for (int x = 0; x < kScreenshotScreenWidth; x++)
-            {
-                const size_t index = rowBase + static_cast<size_t>(x);
-                lastSoftPackedFrameSnapshot.packedBottomPlane0[index] = 0xFF000000u;
-                lastSoftPackedFrameSnapshot.packedBottomPlane1[index] = 0u;
-                lastSoftPackedFrameSnapshot.packedBottomControl[index] = protectedBlackControl;
-            }
-        }
-    }
-
     int carriedTopVramPairLines = 0;
     int carriedBottomVramPairLines = 0;
     int carriedTopCurrentStructuredVram2DPairLines = 0;
     int carriedBottomCurrentStructuredVram2DPairLines = 0;
-    if (hasStructuredVulkan2D
+    if (temporalRepairEnabled
+        && legacyHeuristicRepairEnabled
+        && hasStructuredVulkan2D
         && captureBackedClass4Only
         && !renderer2dDebugControlsActive
         && previousSoftPackedFrameSnapshot.valid
-        && previousSoftPackedFrameSnapshot.screenSwapLatched == lastSoftPackedFrameSnapshot.screenSwapLatched)
+        && previousSoftPackedFrameSnapshot.renderScreenSwapAt3DLatched
+            == lastSoftPackedFrameSnapshot.renderScreenSwapAt3DLatched)
     {
         auto countSnapshotCaptureLines =
             [](const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
@@ -3108,7 +3162,7 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                 cachedPrimaryLines[static_cast<size_t>(y)] = 1u;
             }
         };
-    if (!renderer2dDebugControlsActive)
+    if (!renderer2dDebugControlsActive && temporalRepairEnabled && legacyHeuristicRepairEnabled)
     {
         updateAtypicalDisplayPrimaryCache(
             lastSoftPackedFrameSnapshot.packedTopPlane0,
@@ -3129,10 +3183,14 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     int carriedTopAtypicalDisplayPrimaryLines = 0;
     int carriedBottomAtypicalDisplayPrimaryLines = 0;
     const bool topDisplayCaptureBottomDisplay =
-        lastSoftPackedFrameSnapshot.topScreenStats.DisplayModeCounts[2] > (kScreenshotScreenHeight / 2u)
+        temporalRepairEnabled
+        && legacyHeuristicRepairEnabled
+        && lastSoftPackedFrameSnapshot.topScreenStats.DisplayModeCounts[2] > (kScreenshotScreenHeight / 2u)
         && lastSoftPackedFrameSnapshot.bottomScreenStats.DisplayModeCounts[1] > (kScreenshotScreenHeight / 2u);
     const bool bottomDisplayCaptureTopDisplay =
-        lastSoftPackedFrameSnapshot.bottomScreenStats.DisplayModeCounts[2] > (kScreenshotScreenHeight / 2u)
+        temporalRepairEnabled
+        && legacyHeuristicRepairEnabled
+        && lastSoftPackedFrameSnapshot.bottomScreenStats.DisplayModeCounts[2] > (kScreenshotScreenHeight / 2u)
         && lastSoftPackedFrameSnapshot.topScreenStats.DisplayModeCounts[1] > (kScreenshotScreenHeight / 2u);
     if (topDisplayCaptureBottomDisplay || bottomDisplayCaptureTopDisplay)
     {
@@ -3145,14 +3203,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& cachedPlane1,
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& cachedControl,
                 const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& cachedLineMeta) {
-                const std::array<u32, SoftPackedFrameSnapshot::kLineCount> currentLineMeta = targetLineMeta;
                 targetPlane0 = cachedPlane0;
                 targetPlane1 = cachedPlane1;
                 targetControl = cachedControl;
                 targetLineMeta = cachedLineMeta;
-
-                for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
-                    targetLineMeta[y] = (targetLineMeta[y] & 0xFFFF0000u) | (currentLineMeta[y] & 0x0000FFFFu);
             };
 
         const bool topEmptyBottom2dOnly =
@@ -3277,6 +3331,32 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                 capture3dSource,
                 SoftPackedFrameSnapshot::kPixelCount * sizeof(u32));
             lastSoftPackedFrameSnapshot.hasCapture3dSource = true;
+
+            const bool topOwnsCapture =
+                lastSoftPackedFrameSnapshot.topScreenStats.VramCaptureUses3dLines
+                    >= lastSoftPackedFrameSnapshot.bottomScreenStats.VramCaptureUses3dLines
+                && lastSoftPackedFrameSnapshot.topScreenStats.RegularCaptureUses3dLines
+                    >= lastSoftPackedFrameSnapshot.bottomScreenStats.RegularCaptureUses3dLines;
+            Capture3DSourceSnapshot& taggedCapture = topOwnsCapture
+                ? lastSoftPackedFrameSnapshot.topCapture3dSource
+                : lastSoftPackedFrameSnapshot.bottomCapture3dSource;
+            taggedCapture.clear();
+            std::memcpy(
+                taggedCapture.pixels.data(),
+                capture3dSource,
+                SoftPackedFrameSnapshot::kPixelCount * sizeof(u32));
+            taggedCapture.valid = true;
+            taggedCapture.physicalScreen = topOwnsCapture ? PhysicalScreen::Top : PhysicalScreen::Bottom;
+            taggedCapture.engine = physicalScreenEngine(
+                lastSoftPackedFrameSnapshot,
+                taggedCapture.physicalScreen);
+            taggedCapture.frameSerial = lastSoftPackedFrameSnapshot.sourceFrameSerial;
+            taggedCapture.rendererGeneration = lastSoftPackedFrameSnapshot.rendererGeneration;
+            taggedCapture.hardwareScreenSwap = lastSoftPackedFrameSnapshot.hardwareScreenSwapLatched;
+            taggedCapture.renderScreenSwapAt3D = lastSoftPackedFrameSnapshot.renderScreenSwapAt3DLatched;
+            taggedCapture.captureMode = captureStats.CaptureMode;
+            taggedCapture.sourceA = captureStats.SourceA;
+            taggedCapture.sourceB = captureStats.SourceB;
         }
 
         const auto& captureLineUses3dMask = renderer2D->GetDebugCaptureLineUses3dMask();
@@ -3287,12 +3367,27 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     }
 
     auto repairVramCapturePrimaryFromCaptureSource =
-        [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+        [&](PhysicalScreen targetScreen,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const SoftPackedScreenStats& screenStats,
             const SoftPackedScreenStats& oppositeStats) {
-            if (!lastSoftPackedFrameSnapshot.hasCapture3dSource)
+            if (!temporalRepairEnabled || !desktop2DExactProvenanceRepairEnabled())
                 return 0;
+            const Capture3DSourceSnapshot& taggedSource =
+                targetScreen == PhysicalScreen::Top
+                    ? lastSoftPackedFrameSnapshot.topCapture3dSource
+                    : lastSoftPackedFrameSnapshot.bottomCapture3dSource;
+            if (!captureSourceMatchesTarget(
+                    taggedSource,
+                    targetScreen,
+                    physicalScreenEngine(lastSoftPackedFrameSnapshot, targetScreen),
+                    lastSoftPackedFrameSnapshot.rendererGeneration))
+            {
+                return 0;
+            }
             if (screenStats.DisplayModeCounts[2] <= (kScreenshotScreenHeight / 2u)
                 || screenStats.VramCaptureUses3dLines <= (kScreenshotScreenHeight / 2u)
                 || screenStats.RegularCaptureUses3dLines != 0u)
@@ -3318,13 +3413,13 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                     && (meta & kSoftPackedMetaFlagRegularCaptureUses3d) == 0u;
                 if (!vramCaptureLine)
                     continue;
-                if (packedLineHasAnyVisibleColor(plane0, y))
+                if (packedLineHasPresent2D(plane0, plane1, control, y))
                     continue;
 
                 const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(kScreenshotScreenWidth);
                 std::memcpy(
                     plane0.data() + rowBase,
-                    lastSoftPackedFrameSnapshot.capture3dSourceDsFrame.data() + rowBase,
+                    taggedSource.pixels.data() + rowBase,
                     static_cast<size_t>(kScreenshotScreenWidth) * sizeof(u32));
                 meta &= ~kSoftPackedMetaFlagVramCaptureUses3d;
                 repairedLines++;
@@ -3334,12 +3429,27 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
         };
 
     auto repairStructured2dOnlyPrimaryFromCaptureSource =
-        [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+        [&](PhysicalScreen targetScreen,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const SoftPackedScreenStats& screenStats,
             const SoftPackedScreenStats& oppositeStats) {
-            if (!lastSoftPackedFrameSnapshot.hasCapture3dSource)
+            if (!temporalRepairEnabled || !desktop2DExactProvenanceRepairEnabled())
                 return 0;
+            const Capture3DSourceSnapshot& taggedSource =
+                targetScreen == PhysicalScreen::Top
+                    ? lastSoftPackedFrameSnapshot.topCapture3dSource
+                    : lastSoftPackedFrameSnapshot.bottomCapture3dSource;
+            if (!captureSourceMatchesTarget(
+                    taggedSource,
+                    targetScreen,
+                    physicalScreenEngine(lastSoftPackedFrameSnapshot, targetScreen),
+                    lastSoftPackedFrameSnapshot.rendererGeneration))
+            {
+                return 0;
+            }
             if (!softPackedScreenUsesMostlyStructured2dOnlyDisplay(screenStats))
                 return 0;
             if (oppositeStats.RegularCaptureUses3dLines <= (kScreenshotScreenHeight / 2u)
@@ -3359,13 +3469,13 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
                         | kSoftPackedMetaFlagForceLive3dCompMode7)) == 0u;
                 if (!structuredOnlyLine)
                     continue;
-                if (packedLineHasAnyVisibleColor(plane0, y))
+                if (packedLineHasPresent2D(plane0, plane1, control, y))
                     continue;
 
                 const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(kScreenshotScreenWidth);
                 std::memcpy(
                     plane0.data() + rowBase,
-                    lastSoftPackedFrameSnapshot.capture3dSourceDsFrame.data() + rowBase,
+                    taggedSource.pixels.data() + rowBase,
                     static_cast<size_t>(kScreenshotScreenWidth) * sizeof(u32));
                 repairedLines++;
             }
@@ -3376,28 +3486,40 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
     const int repairedTopVramCaptureSourceLines = renderer2dDebugControlsActive
         ? 0
         : repairVramCapturePrimaryFromCaptureSource(
+            PhysicalScreen::Top,
             lastSoftPackedFrameSnapshot.packedTopPlane0,
+            lastSoftPackedFrameSnapshot.packedTopPlane1,
+            lastSoftPackedFrameSnapshot.packedTopControl,
             lastSoftPackedFrameSnapshot.packedTopLineMeta,
             lastSoftPackedFrameSnapshot.topScreenStats,
             lastSoftPackedFrameSnapshot.bottomScreenStats);
     const int repairedBottomVramCaptureSourceLines = renderer2dDebugControlsActive
         ? 0
         : repairVramCapturePrimaryFromCaptureSource(
+            PhysicalScreen::Bottom,
             lastSoftPackedFrameSnapshot.packedBottomPlane0,
+            lastSoftPackedFrameSnapshot.packedBottomPlane1,
+            lastSoftPackedFrameSnapshot.packedBottomControl,
             lastSoftPackedFrameSnapshot.packedBottomLineMeta,
             lastSoftPackedFrameSnapshot.bottomScreenStats,
             lastSoftPackedFrameSnapshot.topScreenStats);
     const int repairedTopStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive
         ? 0
         : repairStructured2dOnlyPrimaryFromCaptureSource(
+            PhysicalScreen::Top,
             lastSoftPackedFrameSnapshot.packedTopPlane0,
+            lastSoftPackedFrameSnapshot.packedTopPlane1,
+            lastSoftPackedFrameSnapshot.packedTopControl,
             lastSoftPackedFrameSnapshot.packedTopLineMeta,
             lastSoftPackedFrameSnapshot.topScreenStats,
             lastSoftPackedFrameSnapshot.bottomScreenStats);
     const int repairedBottomStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive
         ? 0
         : repairStructured2dOnlyPrimaryFromCaptureSource(
+            PhysicalScreen::Bottom,
             lastSoftPackedFrameSnapshot.packedBottomPlane0,
+            lastSoftPackedFrameSnapshot.packedBottomPlane1,
+            lastSoftPackedFrameSnapshot.packedBottomControl,
             lastSoftPackedFrameSnapshot.packedBottomLineMeta,
             lastSoftPackedFrameSnapshot.bottomScreenStats,
             lastSoftPackedFrameSnapshot.topScreenStats);
@@ -3430,8 +3552,10 @@ bool SapphireVulkanFrameLatch::latchSoftPackedFrameSnapshot(
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& previousLineMeta,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& oppositeLineMeta,
             int oppositeVramCaptureLineCount) {
-            if (!captureBackedClass4Only
-                || !isInAlternatingMode
+            if (!temporalRepairEnabled
+                || !legacyHeuristicRepairEnabled
+                || !captureBackedClass4Only
+                || !isIn3DTemporalAlternatingMode
                 || renderer2dDebugControlsActive
                 || !previousSoftPackedFrameSnapshot.valid)
             {
