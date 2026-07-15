@@ -1,0 +1,112 @@
+# Sapphire Vulkan source manifest
+
+Pinned provenance for the MelonPrimeDS desktop Vulkan reconstruction.
+This file records the exact Sapphire revision used for file-level ports.
+It is not a runtime capability contract.
+
+## Parent repository
+
+| Field | Value |
+|---|---|
+| Repository | `SapphireRhodonite/melonDS-android` |
+| Tag | `0.7.0.rc4` |
+| Commit | `2c10e59d7209d354e90d9ef4228330bac3f6e794` |
+| Local path | `C:\Users\Admin\Documents\git\melonDS-android` |
+
+## Core repository (submodule gitlink)
+
+| Field | Value |
+|---|---|
+| Repository | `SapphireRhodonite/melonDS-android-lib` |
+| Gitlink commit | `d77944275fa61f9b79cfcead2c3e98993429a023` |
+| Local path | `C:\Users\Admin\Documents\git\melonDS-android-lib` |
+
+Verified on 2026-07-15:
+
+```text
+git -C melonDS-android describe --tags --exact-match HEAD  -> 0.7.0.rc4
+git -C melonDS-android rev-parse HEAD                        -> 2c10e59d7209d354e90d9ef4228330bac3f6e794
+git -C melonDS-android submodule status melonDS-android-lib  -> d77944275fa61f9b79cfcead2c3e98993429a023
+```
+
+Moving branch tips (`master`, `GBARumble_PR` HEAD, post-release commits) must not be used as reference sources.
+
+## Copied frontend renderer files
+
+Reference root: `app/src/main/cpp/renderer/` in parent tag `0.7.0.rc4`.
+
+| Sapphire source | MelonPrime destination | Copy status |
+|---|---|---|
+| `FrameQueue.h` | `VulkanReference/FrameQueue.h` | P1 fresh copy baseline |
+| `FrameQueue.cpp` | `VulkanReference/FrameQueue.cpp` | P1 fresh copy baseline |
+| `VulkanOutput.h` | `VulkanReference/VulkanOutput.h` | P1 fresh copy baseline |
+| `VulkanOutput.cpp` | `VulkanReference/VulkanOutput.cpp` | P1 fresh copy baseline |
+| `VulkanCompositorShader.comp` | `VulkanReference/VulkanCompositorShader.comp` | P1 fresh copy baseline |
+| `VulkanAccumulate3dShader.comp` | `VulkanReference/VulkanAccumulate3dShader.comp` | P1 fresh copy baseline |
+| `VulkanSurfacePresenter.h` | `VulkanReference/VulkanSurfacePresenter.h` | P1 fresh copy baseline |
+| `VulkanSurfacePresenter.cpp` | `VulkanReference/VulkanSurfacePresenter.cpp` | P1 fresh copy baseline |
+| `VulkanSurfacePresenter.vert` | `VulkanReference/VulkanSurfacePresenter.vert` | P1 fresh copy baseline |
+| `VulkanSurfacePresenter.frag` | `VulkanReference/VulkanSurfacePresenter.frag` | P1 fresh copy baseline |
+| `VulkanFilterMode.h` | `VulkanReference/VulkanFilterMode.h` | P1 fresh copy baseline |
+| `VulkanCompositorShaderData.h` | build-generated (`tools/vulkan`) | P3 regenerate from `.comp` |
+| `VulkanAccumulate3dShaderData.h` | build-generated (`tools/vulkan`) | P3 regenerate from `.comp` |
+| `VulkanSurfacePresenterVertexShaderData.h` | build-generated (`tools/vulkan`) | P3 regenerate from `.vert` |
+| `VulkanSurfacePresenterFragmentShaderData.h` | build-generated (`tools/vulkan`) | P3 regenerate from `.frag` |
+
+## Copied producer latch closure (MelonInstance)
+
+Reference root: `app/src/main/cpp/MelonInstance.{h,cpp}` in parent tag `0.7.0.rc4`.
+
+| Sapphire source | MelonPrime destination | Copy status |
+|---|---|---|
+| `MelonInstance.cpp` latch helpers | `SapphireVulkanFramePipeline.cpp` | P5 dependency closure |
+| `MelonInstance.h` latch state | `SapphireVulkanFramePipeline.h` | P5 dependency closure |
+
+## Copied core files
+
+Reference root: `src/` in core gitlink `d77944275fa61f9b79cfcead2c3e98993429a023`.
+
+| Sapphire source | MelonPrime destination | Copy status |
+|---|---|---|
+| `GPU2D_Soft.h/.cpp` structured Vulkan 2D API | `GPU_Soft.h/.cpp` | P4 core port |
+| `GPU.h/.cpp` front buffer / framebuffer | `GPU.h/.cpp` | P4 core port |
+| `GPU3D_Vulkan.h/.cpp` capture export | `GPU3D_Vulkan.h/.cpp` | P4 core port (audit) |
+
+## Local adaptation summary
+
+Desktop adaptations are isolated in `MELONPRIME_ADAPT_BEGIN` / `MELONPRIME_ADAPT_END` blocks or separate adapter files:
+
+- `volk` dispatch instead of direct Vulkan prototypes
+- `VkImage` frame resources instead of EGL/OpenGL textures
+- Win32/Qt surface host (`MelonPrimeVulkanSurfaceHost`) instead of `ANativeWindow`
+- Qt layout affine transforms, HUD, radar, splash overlays (`MelonPrimeScreenVulkan`)
+- Separate present queue family and timeline semaphore submit fix (retained)
+- Build-generated SPIR-V headers via `tools/vulkan/generate_sapphire_spirv.py`
+
+## Legacy custom path (scheduled removal P9)
+
+The following MelonPrime-only bridge must not remain after P9:
+
+```text
+src/GPU2D_Structured.h
+MelonPrimeStructuredSnapshot
+captureCompletedSnapshot()
+buildSoftPackedSnapshot()
+GPU::CopyStructured2DFrameSnapshot()
+producer-side composeAndSubmitFrame()
+```
+
+## Phase progress
+
+| Phase | Description | Status |
+|---|---|---|
+| P0 | Source pin manifest | **done** (this commit) |
+| P1 | Clean copy directory | pending |
+| P2 | FrameQueue exact port | pending |
+| P3 | VulkanOutput/shader exact port | pending |
+| P4 | Core exact port | pending |
+| P5 | Latch dependency closure | pending |
+| P6 | runFrame transaction port | pending |
+| P7 | Presenter ownership port | pending |
+| P8 | Desktop adapters restore | pending |
+| P9 | Legacy custom path removal | pending |
