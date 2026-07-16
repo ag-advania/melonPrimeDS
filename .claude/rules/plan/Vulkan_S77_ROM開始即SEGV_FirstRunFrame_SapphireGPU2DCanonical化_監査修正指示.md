@@ -1440,3 +1440,4 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 |-------|--------|--------|---------|
 | S77-1 | `cc6d45de1` | done | `[FirstVulkanFrame]`/`[VulkanProducerBegin]`/`[FirstGpuFrame]`/`[FirstGpu2D]` trace budget |
 | S77-2 | `42e806b21` | done | DbgHelp minidump + `.crash.txt` stack + `build-mingw-vulkan-debug.bat` |
+| S77-3 | `7692c364a` | done | Tracker recycle/discard no longer double-enqueue freeQueue |
