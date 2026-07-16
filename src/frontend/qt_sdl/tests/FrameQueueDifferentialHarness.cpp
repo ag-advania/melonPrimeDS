@@ -97,6 +97,33 @@ bool test_first_present_failure_injection_recovers()
     return true;
 }
 
+bool test_discard_rendered_frame_has_single_free_queue_entry()
+{
+    FrameQueue wrapper;
+    const FrameQueuePolicy policy = defaultPolicy();
+
+    Frame* render = wrapper.getRenderFrame(policy);
+    if (render == nullptr)
+        return false;
+    wrapper.validateRenderFrame(render, 256, 386, FrameBackend::VulkanImage);
+    wrapper.discardRenderedFrame(render);
+    wrapper.assertMembershipInvariant();
+    return true;
+}
+
+bool test_recycle_render_frame_has_single_free_queue_entry()
+{
+    FrameQueue wrapper;
+    const FrameQueuePolicy policy = defaultPolicy();
+
+    Frame* render = wrapper.getRenderFrame(policy);
+    if (render == nullptr)
+        return false;
+    wrapper.recycleRenderFrame(render);
+    wrapper.assertMembershipInvariant();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -114,6 +141,16 @@ int main()
     if (!test_first_present_failure_injection_recovers())
     {
         std::fprintf(stderr, "FAIL: test_first_present_failure_injection_recovers\n");
+        return 1;
+    }
+    if (!test_discard_rendered_frame_has_single_free_queue_entry())
+    {
+        std::fprintf(stderr, "FAIL: test_discard_rendered_frame_has_single_free_queue_entry\n");
+        return 1;
+    }
+    if (!test_recycle_render_frame_has_single_free_queue_entry())
+    {
+        std::fprintf(stderr, "FAIL: test_recycle_render_frame_has_single_free_queue_entry\n");
         return 1;
     }
     std::fprintf(stdout, "FrameQueue differential harness OK\n");

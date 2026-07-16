@@ -373,7 +373,21 @@ void DesktopFrameLifetimeTracker::onRecycleRender(Frame* frame, SapphireFrameQue
         core.stats.StateTransitionFailures++;
         return;
     }
-    retireFrameLocked(frame, core);
+
+    frame->queuedAtNs = 0;
+    if (frame->historyReferenceCount() != 0 || frame->presentationReferenceCount() != 0)
+    {
+        transitionFrameLocked(
+            frame,
+            FrameQueueState::Rendering,
+            FrameQueueState::HistoryReferenced,
+            core.stats);
+        core.stats.ReferenceBlockedReuse++;
+        return;
+    }
+
+    // SapphireFrameQueueCore owns freeQueue membership on recycle/discard.
+    transitionFrameLocked(frame, FrameQueueState::Rendering, FrameQueueState::Free, core.stats);
 }
 
 void DesktopFrameLifetimeTracker::onDiscardRendered(Frame* frame, SapphireFrameQueueCore& core)
