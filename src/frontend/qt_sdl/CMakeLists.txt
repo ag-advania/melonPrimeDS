@@ -169,6 +169,20 @@ if (USE_QT6)
         set_property(TARGET WrapRt::WrapRt PROPERTY INTERFACE_LINK_LIBRARIES "")
     endif()
     set(QT_LINK_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
+
+    if (NOT WIN32 AND NOT APPLE)
+        # Screen.cpp needs the private QPA qplatformnativeinterface.h header:
+        # unconditionally for X11 on Qt < 6.5, and for native Wayland wl_surface
+        # access (MelonPrime's Wayland pointer lock / GL context creation) on any
+        # Qt6 version when the Wayland EGL backend is enabled. Some distro Qt6
+        # packages (e.g. Arch/CachyOS) only expose that header under a
+        # version-suffixed private include path that isn't reachable without
+        # this target, even though the header file itself is installed.
+        find_package(Qt6GuiPrivate QUIET)
+        if (TARGET Qt6::GuiPrivate)
+            list(APPEND QT_LINK_LIBS Qt6::GuiPrivate)
+        endif()
+    endif()
 else()
     find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia Svg REQUIRED)
     set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Multimedia)
