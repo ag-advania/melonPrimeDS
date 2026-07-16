@@ -27,7 +27,7 @@ class SapphireFrameQueueDifferentialTests(unittest.TestCase):
         self.assertIn("test_first_present_failure_injection_recovers", text)
         self.assertIn("test_core_and_wrapper_agree_when_present_queue_empty", text)
 
-    def test_wrapper_does_not_retry_core_on_render_block(self):
+    def test_wrapper_trusts_core_render_selection(self):
         body = read_repo("src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp")
         get_render = re.search(
             r"Frame\* FrameQueue::getRenderFrame\([\s\S]*?^}",
@@ -37,10 +37,10 @@ class SapphireFrameQueueDifferentialTests(unittest.TestCase):
         self.assertIsNotNone(get_render)
         block = get_render.group(0)
         self.assertEqual(block.count("impl_->core.getRenderFrame"), 1)
-        self.assertIn("undoRenderAcquisition", block)
-        self.assertIn("return nullptr", block)
+        self.assertIn("onRenderAcquired", block)
+        self.assertNotIn("undoRenderAcquisition", block)
 
-    def test_wrapper_does_not_retry_core_on_present_candidate_block(self):
+    def test_wrapper_trusts_core_present_candidate_selection(self):
         body = read_repo("src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp")
         get_candidate = re.search(
             r"Frame\* FrameQueue::getPresentCandidate\([\s\S]*?^}",
@@ -50,8 +50,8 @@ class SapphireFrameQueueDifferentialTests(unittest.TestCase):
         self.assertIsNotNone(get_candidate)
         block = get_candidate.group(0)
         self.assertEqual(block.count("impl_->core.getPresentCandidate"), 1)
-        self.assertIn("allowPresentationAcquisition", block)
-        self.assertIn("return nullptr", block)
+        self.assertIn("onPresentationAcquired", block)
+        self.assertNotIn("allowPresentationAcquisition", block)
 
     def test_generated_core_regions_match_manifest(self):
         proc = subprocess.run(

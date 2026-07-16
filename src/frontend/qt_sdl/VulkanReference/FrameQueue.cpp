@@ -67,11 +67,6 @@ Frame* FrameQueue::getRenderFrame(const FrameQueuePolicy& policy)
     Frame* frame = impl_->core.getRenderFrame(policy);
     if (frame == nullptr)
         return nullptr;
-    if (!impl_->lifetime.allowRenderAcquisition(frame))
-    {
-        impl_->lifetime.undoRenderAcquisition(frame, impl_->core);
-        return nullptr;
-    }
     impl_->lifetime.onRenderAcquired(frame, impl_->core);
     return frame;
 }
@@ -90,8 +85,6 @@ Frame* FrameQueue::getPresentCandidate(
 {
     impl_->lifetime.prepareForSelection(impl_->core);
     Frame* frame = impl_->core.getPresentCandidate(policy, deadline);
-    if (frame != nullptr && !impl_->lifetime.allowPresentationAcquisition(frame))
-        return nullptr;
     if (frame != nullptr)
         impl_->lifetime.onPresentationAcquired(frame, impl_->core);
     return frame;
