@@ -1558,6 +1558,10 @@ void GPU::StartFrame() noexcept
 
 void GPU::StartHBlank(u32 line) noexcept
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool useSapphire2D = UsesSapphireGpu2DPath();
+#endif
+
     DispStat[0] |= (1<<1);
     DispStat[1] |= (1<<1);
 
@@ -1574,7 +1578,7 @@ void GPU::StartHBlank(u32 line) noexcept
         if (line < 192)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (UsesSapphireGpu2DPath())
+            if (useSapphire2D)
             {
                 using MelonPrime::FirstVulkanFrameTrace::log;
                 log("[FirstGpu2D] before UnitA line=%u\n", line);
@@ -1592,7 +1596,7 @@ void GPU::StartHBlank(u32 line) noexcept
         if (line < 191)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (UsesSapphireGpu2DPath())
+            if (useSapphire2D)
             {
                 using MelonPrime::FirstVulkanFrameTrace::log;
                 log("[FirstGpu2D] before UnitA sprites line=%u\n", line + 1);
@@ -1609,10 +1613,9 @@ void GPU::StartHBlank(u32 line) noexcept
                         static_cast<const void*>(Sapphire2D.get()),
                         static_cast<const void*>(GPU2D_Renderer.get()));
                     log("[FirstGpuLine] before path recheck\n");
-                    const bool postSpritePath = UsesSapphireGpu2DPath();
                     log(
                         "[FirstGpuLine] after path recheck result=%d\n",
-                        postSpritePath ? 1 : 0);
+                        useSapphire2D ? 1 : 0);
                 }
             }
             else
@@ -1621,14 +1624,14 @@ void GPU::StartHBlank(u32 line) noexcept
         }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (UsesSapphireGpu2DPath() && line <= 2)
+        if (useSapphire2D && line <= 2)
         {
             Log(LogLevel::Debug, "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
         }
 #endif
         NDS.CheckDMAs(0, 0x02);
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (UsesSapphireGpu2DPath() && line <= 2)
+        if (useSapphire2D && line <= 2)
         {
             Log(LogLevel::Debug, "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
         }
@@ -1642,7 +1645,7 @@ void GPU::StartHBlank(u32 line) noexcept
     else if (VCount == 262)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (UsesSapphireGpu2DPath())
+        if (useSapphire2D)
         {
             GPU2D_Renderer->DrawSprites(0, &GPU2D_A);
             GPU2D_Renderer->DrawSprites(0, &GPU2D_B);
@@ -1658,7 +1661,7 @@ void GPU::StartHBlank(u32 line) noexcept
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath() && line <= 2)
+    if (useSapphire2D && line <= 2)
     {
         Log(LogLevel::Debug, "[FirstGpuLine] before IRQ HBlank VCount=%u line=%u\n", VCount, line);
     }
@@ -1668,16 +1671,16 @@ void GPU::StartHBlank(u32 line) noexcept
     if (DispStat[1] & (1<<4)) NDS.SetIRQ(1, IRQ_HBlank);
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath() && line <= 2)
+    if (useSapphire2D && line <= 2)
     {
         Log(LogLevel::Debug, "[FirstGpuLine] after IRQ HBlank VCount=%u line=%u\n", VCount, line);
     }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath() && line == 0)
+    if (useSapphire2D && line == 0)
         MelonPrime::FirstVulkanFrameTrace::consumeBudget();
-    if (UsesSapphireGpu2DPath() && line <= 2)
+    if (useSapphire2D && line <= 2)
     {
         Log(LogLevel::Debug, "[FirstGpuLine] before ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
     }
@@ -1689,7 +1692,7 @@ void GPU::StartHBlank(u32 line) noexcept
         NDS.ScheduleEvent(Event_LCD, true, (LINE_CYCLES - HBLANK_CYCLES), LCD_StartScanline, line+1);
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath() && line <= 2)
+    if (useSapphire2D && line <= 2)
     {
         Log(LogLevel::Debug, "[FirstGpuLine] after ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
         Log(LogLevel::Debug, "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
@@ -1789,7 +1792,7 @@ void GPU::StartScanline(u32 line) noexcept
         if (line == 0)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (UsesSapphireGpu2DPath())
+            if (useSapphire2D)
             {
                 GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
                 GPU2D_A.VBlankEnd();
