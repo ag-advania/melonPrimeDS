@@ -1148,6 +1148,23 @@ public:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     virtual bool NeedsShaderCompile() { return GetRenderer3D().NeedsShaderCompile(); }
     virtual void ShaderCompileStep(int& current, int& count) { GetRenderer3D().ShaderCompileStep(current, count); }
+
+    // S82-4: every backend constructor still privately constructs its own
+    // Rend3D (SoftRenderer3D / GLRenderer3D / ComputeRenderer3D) exactly as
+    // it always has -- unchanged. GPU::SetRenderer() calls this right after
+    // installing a new outer Renderer, and if GPU3D has no renderer of its
+    // own yet (i.e. this isn't Vulkan, which installs its Renderer3D
+    // separately via GPU::SetRenderer3D()), promotes that privately-built
+    // Rend3D into GPU3D's unified ownership. This makes
+    // GPU3D.HasCurrentRenderer() true for every backend, which is what lets
+    // the single canonical Sapphire GPU2D compositor activate regardless of
+    // which 3D backend is selected -- see GPU::ActivateSapphireVulkan2D().
+    // Rend3D is left null afterward; GetRenderer3D() always resolves through
+    // GPU3D from then on, so nothing else needs to change.
+    [[nodiscard]] std::unique_ptr<Renderer3D> TakeOwnRenderer3D() noexcept
+    {
+        return std::move(Rend3D);
+    }
 #else
     virtual bool NeedsShaderCompile() { return false; }
     virtual void ShaderCompileStep(int& current, int& count) {}

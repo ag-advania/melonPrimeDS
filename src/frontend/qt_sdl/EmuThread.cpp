@@ -1610,7 +1610,13 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
         && result.Presentation == MelonPrime::VideoBackend::PresentationBackend::Vulkan
         && result.Renderer3D != nullptr;
     RomBootTrace("[RomBootTrace] Renderer3D install begin\n");
-    nds->GPU.SetRenderer3D(std::move(result.Renderer3D));
+    // S82-4: only Vulkan provides an explicit Renderer3D here. For every
+    // other backend, GPU::SetRenderer() (called above, via the outer
+    // Rend install) already auto-promoted that backend's own privately
+    // constructed Rend3D into GPU3D -- calling SetRenderer3D(nullptr)
+    // here would wipe that out and leave GPU3D without a renderer again.
+    if (result.Renderer3D != nullptr)
+        nds->GPU.SetRenderer3D(std::move(result.Renderer3D));
     RomBootTrace("[RomBootTrace] Renderer3D install complete\n");
     if (activateVulkanFrontend)
     {
@@ -1632,8 +1638,10 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
                 result,
                 "Sapphire Vulkan activation",
                 "Sapphire GPU2D activation failed after Renderer3D install");
+            // S82-4: no explicit SetRenderer3D(nullptr) needed -- SetRenderer()
+            // above already auto-promoted the fallback SoftRenderer's own
+            // Rend3D into GPU3D.
             nds->SetRenderer(std::move(result.OuterRenderer));
-            nds->GPU.SetRenderer3D(nullptr);
         }
         else if (!sapphire2DEnabled)
         {
@@ -1649,8 +1657,10 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
                     result,
                     "Vulkan frontend session initialization",
                     "VulkanOutput or FrameQueue initialization failed");
+                // S82-4: no explicit SetRenderer3D(nullptr) needed -- SetRenderer()
+                // above already auto-promoted the fallback SoftRenderer's own
+                // Rend3D into GPU3D.
                 nds->SetRenderer(std::move(result.OuterRenderer));
-                nds->GPU.SetRenderer3D(nullptr);
             }
             else
             {
@@ -1670,8 +1680,10 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
                     result,
                     "Vulkan frontend session initialization",
                     "VulkanOutput or FrameQueue initialization failed");
+                // S82-4: no explicit SetRenderer3D(nullptr) needed -- SetRenderer()
+                // above already auto-promoted the fallback SoftRenderer's own
+                // Rend3D into GPU3D.
                 nds->SetRenderer(std::move(result.OuterRenderer));
-                nds->GPU.SetRenderer3D(nullptr);
             }
             else
             {
@@ -1680,6 +1692,25 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
             RomBootTrace("[RomBootTrace] frontend session initialize complete\n");
         }
         RomBootTrace("[RomBootTrace] Sapphire Vulkan activation complete\n");
+    }
+    else if (normalizedRenderer == renderer3D_Software)
+    {
+        // S82-4/S82-5: Software specifically -- activate the same canonical
+        // Sapphire GPU2D compositor it would use for Vulkan, now that
+        // GPU::SetRenderer() has auto-promoted SoftRenderer3D into GPU3D.
+        // GLRenderer2D still doesn't exist in this build (no
+        // Sapphire-Unit-aware port has landed yet -- see S82-6), so OpenGL
+        // and OpenGL Compute deliberately stay on DeactivateSapphireVulkan2D()
+        // below for now: activating Sapphire2D there would produce correct
+        // CPU-composited pixels but through a still-untested codepath
+        // (GLRenderer3D::GetLine() readback, GLRenderer::DrawScanline()'s
+        // dead GL 2D compositing calls still running redundantly alongside
+        // it) that hasn't been reasoned through as carefully as this one.
+        // Falls back to Deactivate only if activation genuinely can't
+        // proceed, matching the prior behavior for that case.
+        const u64 rendererGeneration = nds->GPU.GPU3D.GetCurrentRendererGeneration();
+        if (!nds->GPU.ActivateSapphireVulkan2D(rendererGeneration))
+            nds->GPU.DeactivateSapphireVulkan2D();
     }
     else
     {

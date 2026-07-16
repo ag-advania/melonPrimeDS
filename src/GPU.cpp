@@ -444,6 +444,18 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
         Rend->Reset();
     }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // S82-4: promote the just-installed backend's privately-constructed
+    // Rend3D into GPU3D's unified ownership when nothing has explicitly
+    // registered a Renderer3D with GPU3D yet (the common case for
+    // Software/OpenGL/Compute -- Vulkan instead installs its own
+    // Renderer3D separately via GPU::SetRenderer3D(), called by the
+    // frontend right after this function returns, which correctly
+    // supersedes this promotion). See Renderer::TakeOwnRenderer3D().
+    if (!GPU3D.HasCurrentRenderer())
+    {
+        if (auto owned = Rend->TakeOwnRenderer3D())
+            GPU3D.SetCurrentRenderer(std::move(owned));
+    }
     LastRendererInitSucceeded = !rendererRequested || good;
     if (auto* softRenderer = TryGetGpu2DSoftRenderer())
         SapphireVulkan2DAccess = std::make_unique<SapphireGPU2D::SoftRenderer>(*softRenderer);
@@ -538,11 +550,23 @@ bool GPU::UsesSapphireGpu2DPath() const noexcept
 
 bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
 {
+    // S82-4/S82-5: despite the name (kept for now -- renaming is cosmetic
+    // follow-up, not a behavior change), this activates the single
+    // canonical Sapphire GPU2D compositor for ANY backend with a
+    // registered Renderer3D, not just Vulkan. UsesStructured2DMetadata()
+    // used to be required here, which meant Software/OpenGL (whose
+    // Renderer3D correctly reports false there -- that flag means "provides
+    // GPU-resident structured planes for the Vulkan compositor", not
+    // "any 3D renderer exists") could never activate it, leaving them on
+    // the LegacyOuterRenderer branch -- dead code in this build (no
+    // Rend2D_A/B constructed), producing broken/blank output. The
+    // canonical GPU2D::SoftRenderer already branches internally on
+    // GPU.GPU3D.IsRendererAccelerated() for both cases (GetLine() readback
+    // for non-accelerated, structured planes for accelerated), so it does
+    // not need this precondition to function correctly.
     if (Sapphire2D == nullptr || rendererGeneration == 0 || GPU2D_Renderer == nullptr)
         return false;
     if (!GPU3D.HasCurrentRenderer())
-        return false;
-    if (!GPU3D.GetCurrentRenderer().UsesStructured2DMetadata())
         return false;
 
     DeactivateSapphireVulkan2D();
