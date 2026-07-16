@@ -66,6 +66,65 @@ static void RomBootTrace(const char* fmt, ...)
 #define RomBootTrace(...) ((void)0)
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+struct VulkanColdStartTestState
+{
+    bool configured = false;
+    bool enabled = false;
+    int framesRemaining = 0;
+
+    void configure()
+    {
+        if (configured)
+            return;
+        configured = true;
+
+        const char* env = std::getenv("MELONPRIME_VULKAN_COLD_START_TEST");
+        if (env == nullptr || env[0] != '1')
+            return;
+
+        enabled = true;
+        framesRemaining = 4;
+        if (const char* framesEnv = std::getenv("MELONPRIME_VULKAN_COLD_START_FRAMES"))
+        {
+            const int parsed = std::atoi(framesEnv);
+            if (parsed > 0)
+                framesRemaining = parsed;
+        }
+
+        RomBootTrace("[VulkanColdStartTest] armed frames=%d\n", framesRemaining);
+    }
+
+    void onFrameComplete(
+        EmuInstance* instance,
+        MelonPrime::VideoBackend::PresentationBackend backend)
+    {
+        configure();
+        if (!enabled || framesRemaining <= 0)
+            return;
+        if (backend != MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+            return;
+
+        --framesRemaining;
+        if (framesRemaining > 0)
+            return;
+
+        const bool splashHidden = instance->vulkanFrontendSession().hasPresentedFrame();
+        RomBootTrace(
+            "[VulkanColdStartTest] complete exitCode=0 splashHidden=%d\n",
+            splashHidden ? 1 : 0);
+        enabled = false;
+        if (qApp != nullptr)
+            QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
+    }
+};
+
+VulkanColdStartTestState gVulkanColdStartTestState;
+} // namespace
+#endif
+
 using namespace melonDS;
 
 EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
@@ -556,6 +615,11 @@ void EmuThread::run()
             RomBootTrace("[RomBootTrace] first drawScreen complete\n");
             romBootTraceFirstDrawScreen = false;
         }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (emuActive)
+            gVulkanColdStartTestState.onFrameComplete(emuInstance, videoBackend);
 #endif
 
 #ifdef MELONPRIME_DS

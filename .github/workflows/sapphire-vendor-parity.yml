@@ -80,6 +80,8 @@ jobs:
           python3 tools/test_sapphire_latch_flicker_fixture.py
           python3 tools/test_sapphire_vulkan_lifecycle_source_contract.py
           python3 tools/test_sapphire_vulkan_cold_start_s76.py
+          python3 tools/generate_synthetic_nds_boot_rom.py
+          python3 tools/test_sapphire_vulkan_cold_start_s77.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream
@@ -132,3 +134,11 @@ jobs:
           ./.claude/skills/build-mingw.bat --jobs 1
           cmake --build build/release-mingw-x86_64 --target sapphire_frame_queue_differential_test -j 1
           ./build/release-mingw-x86_64/sapphire_frame_queue_differential_test.exe
+      - name: Generate synthetic cold-start ROM fixture
+        shell: msys2 {0}
+        run: python tools/generate_synthetic_nds_boot_rom.py
+      - name: Run Vulkan ROM cold-start integration test (S77-13)
+        shell: msys2 {0}
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/test_sapphire_vulkan_cold_start_s77.py
