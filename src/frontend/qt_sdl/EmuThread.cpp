@@ -48,6 +48,7 @@
 #include "EmuInstance.h"
 
 #include "MelonPrimeEmuThreadIncludes.inc"
+#include "MelonPrimeFirstVulkanFrameTrace.h"
 
 #ifdef MELONPRIME_DS
 static void RomBootTrace(const char* fmt, ...)
@@ -455,6 +456,9 @@ void EmuThread::run()
                 == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
             {
                 vulkanProducerBegun = emuInstance->beginVulkanProducerFrame();
+                RomBootTrace(
+                    "[FirstVulkanFrame] vulkanProducerBegun=%d\n",
+                    vulkanProducerBegun ? 1 : 0);
             }
 #endif
 #ifdef MELONPRIME_DS

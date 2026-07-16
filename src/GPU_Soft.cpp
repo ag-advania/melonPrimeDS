@@ -25,6 +25,7 @@
 
 #include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
+#include "MelonPrimeFirstVulkanFrameTrace.h"
 #endif
 
 namespace melonDS
@@ -143,15 +144,49 @@ void SoftRenderer::DrawScanline(u32 line)
     if (auto* state = GetSapphireState(GPU);
         state != nullptr && state->IsActiveForRendering(GPU))
     {
+        using MelonPrime::FirstVulkanFrameTrace::log;
+        using MelonPrime::FirstVulkanFrameTrace::consumeBudget;
+
+        log(
+            "[FirstGpu2D] DrawScanline enter VCount=%u line=%u SapphireActive=1 generation=%llu GPU3DGeneration=%llu UnitA=%p UnitB=%p\n",
+            GPU.VCount,
+            line,
+            static_cast<unsigned long long>(state->ActiveRendererGeneration()),
+            static_cast<unsigned long long>(GPU.GPU3D.GetCurrentRendererGeneration()),
+            static_cast<void*>(&state->UnitA),
+            static_cast<void*>(&state->UnitB));
+
         SyncSapphireUnitsFromGPU2D();
+
+        log(
+            "[FirstGpu2D] after SyncUnits UnitA.Num=%u UnitB.Num=%u UnitA.DispCnt=0x%08X UnitB.DispCnt=0x%08X\n",
+            state->UnitA.Num,
+            state->UnitB.Num,
+            state->UnitA.DispCnt,
+            state->UnitB.DispCnt);
+
         AssignSapphireFramebuffers();
+
+        log(
+            "[FirstGpu2D] after Bind Framebuffer0=%p Framebuffer1=%p BackBuffer=%d stride=%d\n",
+            static_cast<void*>(Framebuffer[BackBuffer][0]),
+            static_cast<void*>(Framebuffer[BackBuffer][1]),
+            BackBuffer,
+            GPU.GPU3D.IsRendererAccelerated() ? 769 : 256);
 
         line = GPU.VCount;
         if (line < 192)
         {
+            log("[FirstGpu2D] before UnitA line=%u\n", line);
             state->Renderer.DrawScanline(line, &state->UnitA);
+            log("[FirstGpu2D] after UnitA line=%u\n", line);
+
+            log("[FirstGpu2D] before UnitB line=%u\n", line);
             state->Renderer.DrawScanline(line, &state->UnitB);
+            log("[FirstGpu2D] after UnitB line=%u\n", line);
         }
+
+        consumeBudget();
         return;
     }
 #endif

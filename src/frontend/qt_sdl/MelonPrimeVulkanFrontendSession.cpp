@@ -10,6 +10,7 @@
 #include "NDS.h"
 #include "Platform.h"
 #include "VulkanReference/VulkanSurfacePresenter.h"
+#include "MelonPrimeFirstVulkanFrameTrace.h"
 
 using namespace melonDS;
 using namespace MelonDSAndroid;
@@ -331,16 +332,26 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
 
 bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& renderer3D)
 {
+    using MelonPrime::FirstVulkanFrameTrace::log;
+
+    log("[FirstVulkanFrame] producerBegin enter\n");
+
     std::scoped_lock lock(stateMutex);
     if (!initialized || producerSuspended || nds == nullptr)
+    {
+        log("[VulkanProducerBegin] result=0 frame=null frameId=0 ensureResources=0 queueInvariant=uninitialized\n");
         return false;
+    }
 
     frameLatch.setTemporalEnabled(sapphireTemporalEnabled());
     (void)frameLatch.updateVulkanTemporal3dHistoryGate();
 
     Frame* frame = acquireProducerRenderFrameLocked();
     if (frame == nullptr)
+    {
+        log("[VulkanProducerBegin] result=0 frame=null frameId=0 ensureResources=0 queueInvariant=noRenderSlot\n");
         return false;
+    }
 
     const int scale = std::max(renderer3D.GetScaleFactor(), 1);
     const int width = 256 * scale;
@@ -348,9 +359,14 @@ bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& rende
     frameQueue.validateRenderFrame(frame, width, height, FrameBackend::VulkanImage);
     frame->renderTimelineValue = 0;
 
-    if (!output.ensureFrameResources(frame, width, height))
+    const bool ensureResources = output.ensureFrameResources(frame, width, height);
+    if (!ensureResources)
     {
         frameQueue.discardRenderedFrame(frame);
+        log(
+            "[VulkanProducerBegin] result=0 frame=%p frameId=%llu ensureResources=0 queueInvariant=discarded\n",
+            static_cast<void*>(frame),
+            static_cast<unsigned long long>(frame->frameId));
         return false;
     }
 
@@ -367,6 +383,18 @@ bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& rende
     }
 
     pendingProducerFrame = frame;
+#ifndef NDEBUG
+    frameQueue.assertMembershipInvariant(frame);
+    log(
+        "[VulkanProducerBegin] result=1 frame=%p frameId=%llu ensureResources=1 queueInvariant=checked\n",
+        static_cast<void*>(frame),
+        static_cast<unsigned long long>(frame->frameId));
+#else
+    log(
+        "[VulkanProducerBegin] result=1 frame=%p frameId=%llu ensureResources=1 queueInvariant=release\n",
+        static_cast<void*>(frame),
+        static_cast<unsigned long long>(frame->frameId));
+#endif
     return true;
 }
 

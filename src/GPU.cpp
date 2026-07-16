@@ -27,6 +27,7 @@
 #include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
 #include "SapphireGPU2DCore/UnitSync.h"
+#include "MelonPrimeFirstVulkanFrameTrace.h"
 #endif
 
 namespace melonDS
@@ -1317,6 +1318,14 @@ void GPU::DisplayFIFO(u32 x) noexcept
 
 void GPU::StartFrame() noexcept
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    MelonPrime::FirstVulkanFrameTrace::log(
+        "[FirstGpuFrame] GPU::StartFrame enter VulkanFrameSerial=%llu rendererGeneration=%llu\n",
+        static_cast<unsigned long long>(VulkanFrameSerial),
+        static_cast<unsigned long long>(
+            Sapphire2D ? Sapphire2D->ActiveRendererGeneration() : 0));
+#endif
+
     ScreensEnabled = !!(NDS.PowerControl9 & (1<<0));
 
     // only run the display FIFO if needed:
