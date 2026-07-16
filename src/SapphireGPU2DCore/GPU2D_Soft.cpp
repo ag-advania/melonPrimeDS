@@ -23,6 +23,10 @@
 #include "Platform.h"
 #include "VulkanDesktopCompat.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "../MelonPrimeFirstVulkanFrameTrace.h"
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -993,31 +997,126 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     _3DLine = nullptr;
     CurrentLineRegularCaptureUses3d = false;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool unitB0Trace =
+        unit != nullptr && unit->Num == 1 && MelonPrime::FirstVulkanFrameTrace::budgetActive();
+    auto unitB0Log = [&](const char* stage, u32* dstPtr = nullptr, int strideValue = 0) noexcept
+    {
+        if (!unitB0Trace || GPU.VCount != 0)
+            return;
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[UnitB0] %s CurUnit=%p Num=%u Enabled=%u DispCnt=0x%08X BGCnt0=0x%04X "
+            "Framebuffer0=%p Framebuffer1=%p dst=%p stride=%d VCount=%u POWCNT9=0x%08X ScreenSwap=%u "
+            "VRAMMap_BBG0=0x%02X VRAMMap_BBGExtPal0=0x%02X VRAMMap_BOBJExtPal=0x%02X\n",
+            stage,
+            static_cast<void*>(CurUnit),
+            CurUnit->Num,
+            CurUnit->Enabled,
+            CurUnit->DispCnt,
+            CurUnit->BGCnt[0],
+            static_cast<void*>(Framebuffer[0]),
+            static_cast<void*>(Framebuffer[1]),
+            static_cast<void*>(dstPtr),
+            strideValue,
+            GPU.VCount,
+            GPU.NDS.PowerControl9,
+            GPU.ScreenSwap,
+            GPU.VRAMMap_BBG[0],
+            GPU.VRAMMap_BBGExtPal[0],
+            GPU.VRAMMap_BOBJExtPal);
+    };
+    unitB0Log("enter");
+#endif
+
     int stride = GPU.GPU3D.IsRendererAccelerated() ? (256*3 + 1) : 256;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("framebuffer begin", nullptr, stride);
+#endif
     u32* dst = &Framebuffer[CurUnit->Num][stride * line];
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("framebuffer end", dst, stride);
+#endif
 
     int n3dline = line;
     line = GPU.VCount;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("screenTarget begin", dst, stride);
+#endif
     StructuredVulkan2DCurrentLineTargetsTop = CurrentUnitTargetsTopScreen();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("screenTarget end", dst, stride);
+    unitB0Log("clearStructured begin", dst, stride);
+#endif
     ClearStructuredVulkan2DLine(line);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("clearStructured end", dst, stride);
+#endif
 
     if (CurUnit->Num == 0)
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveABG begin", dst, stride);
+#endif
         auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveABG end", dst, stride);
+        unitB0Log("coherentABG begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentABG end", dst, stride);
+#endif
         auto bgExtPalDirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveABGExt begin", dst, stride);
+        unitB0Log("coherentABGExt begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentABGExt end", dst, stride);
+#endif
         auto objExtPalDirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveAOBJExt begin", dst, stride);
+        unitB0Log("coherentAOBJExt begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentAOBJExt end", dst, stride);
+#endif
     }
     else
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveBBG begin", dst, stride);
+#endif
         auto bgDirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveBBG end", dst, stride);
+        unitB0Log("coherentBBG begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentBBG end", dst, stride);
+#endif
         auto bgExtPalDirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveBBGExt begin", dst, stride);
+        unitB0Log("coherentBBGExt begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentBBGExt end", dst, stride);
+#endif
         auto objExtPalDirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("deriveBOBJExt begin", dst, stride);
+        unitB0Log("coherentBOBJExt begin", dst, stride);
+#endif
         GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("coherentBOBJExt end", dst, stride);
+#endif
     }
 
     bool forceblank = false;
@@ -1029,6 +1128,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     // GPU B can be completely disabled by POWCNT1
     // oddly that's not the case for GPU A
     if (CurUnit->Num && !CurUnit->Enabled) forceblank = true;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("forceblank", dst, stride);
+#endif
 
     const bool useStructuredVulkan2D = UseStructuredVulkan2D();
 
@@ -1055,6 +1158,9 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
         {
             dst[256*3] = 0;
         }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("complete", dst, stride);
+#endif
         return;
     }
 
@@ -1062,11 +1168,24 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     dispmode &= (CurUnit->Num ? 0x1 : 0x3);
 
     // always render regular graphics
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("bgobj begin", dst, stride);
+#endif
     DrawScanline_BGOBJ(line);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("bgobj end", dst, stride);
+    unitB0Log("mosaic begin", dst, stride);
+#endif
     CurUnit->UpdateMosaicCounters(line);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("mosaic end", dst, stride);
+#endif
     if (useStructuredVulkan2D && CurUnit->Num == 0 && CurUnit->CaptureLatch)
         SaveStructuredVulkan2DCaptureSourceLine(line);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("display begin", dst, stride);
+#endif
     switch (dispmode)
     {
     case 0: // screen off
@@ -1128,6 +1247,9 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
         }
         break;
     }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("display end", dst, stride);
+#endif
 
     // capture
     if ((CurUnit->Num == 0) && CurUnit->CaptureLatch)
@@ -1146,6 +1268,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     }
 
     u32 masterBrightness = CurUnit->MasterBrightness;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("brightness begin", dst, stride);
+#endif
 
     if (GPU.GPU3D.IsRendererAccelerated())
     {
@@ -1185,6 +1311,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
                      (CurUnit->DispCnt & 0x30000) |
                      rendererMetaFlags |
                      (xpos << 24) | ((xpos & 0x100) << 15);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        unitB0Log("brightness end", dst, stride);
+        unitB0Log("complete", dst, stride);
+#endif
         return;
     }
 
@@ -1229,6 +1359,10 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
 
         *(u64*)&dst[i] = c | ((c & 0x00C0C0C000C0C0C0) >> 6) | 0xFF000000FF000000;
     }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    unitB0Log("brightness end", dst, stride);
+    unitB0Log("complete", dst, stride);
+#endif
 }
 
 void SoftRenderer::VBlankEnd(Unit* unitA, Unit* unitB)

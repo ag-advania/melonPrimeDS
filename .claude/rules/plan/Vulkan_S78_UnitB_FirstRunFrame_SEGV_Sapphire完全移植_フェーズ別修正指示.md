@@ -1483,7 +1483,8 @@ Unit B first RunFrame SEGVは、
 
 | Phase | Commit | Status | Summary |
 |-------|--------|--------|---------|
-| S78-1 | (pending) | in_progress | Cold-start crash reproduction artifacts + frozen baseline test |
+| S78-1 | `9463e8d3a` | done | Cold-start crash reproduction artifacts + frozen baseline test |
+| S78-2 | (pending) | in_progress | First-frame Unit-B sub-stage crash trace |
 
 安全な修正方針はUnit Bへ例外を足すことではない。
 
