@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include <optional>
+#include <utility>
 #include <cmath>
 #include <algorithm>
 
@@ -1074,12 +1075,16 @@ bool ScreenPanel::event(QEvent * event)
     case QEvent::WindowDeactivate:
     case QEvent::Hide:
     case QEvent::ParentChange:
+        if (getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            fprintf(stderr, "[MelonPrime] ScreenPanel::event: Suspend-triggering type=%d\n", (int)event->type());
         MelonPrime::ScreenCursorPolicy::Suspend(*this);
         break;
     case QEvent::WindowActivate:
     case QEvent::WindowUnblocked:
     case QEvent::Show:
     case QEvent::WindowStateChange:
+        if (getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            fprintf(stderr, "[MelonPrime] ScreenPanel::event: updateClipIfNeeded-triggering type=%d\n", (int)event->type());
         QTimer::singleShot(0, this, [this]() {
             if (!closing && qApp && !qApp->closingDown())
                 updateClipIfNeeded();
@@ -1466,6 +1471,45 @@ void ScreenPanel::calcSplashLayout()
 
 
 
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+namespace {
+
+// Resolves the native wl_display/wl_surface handles MelonPrime's Wayland
+// pointer-lock path needs, given the QWindow that owns the surface. Both
+// ScreenPanelGL and ScreenPanelNative call this with their *top-level*
+// window's handle (never a panel's own Qt::WA_NativeWindow subsurface):
+// locking a child subsurface directly caused KWin to fire WindowDeactivate
+// on the main window in windowed mode, which our own Suspend() path read as
+// focus loss and immediately tore the lock back down (see issue #526).
+std::optional<std::pair<void*, void*>> ResolveMelonPrimeWaylandHandles(QWindow* handle)
+{
+    if (!handle || QGuiApplication::platformName() != QStringLiteral("wayland"))
+        return std::nullopt;
+
+    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+    if (!pni)
+        return std::nullopt;
+
+    void* display = nullptr;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    const QWaylandApplication* wl = qApp->nativeInterface<QWaylandApplication>();
+    if (!wl)
+        return std::nullopt;
+    display = wl->display();
+#else
+    display = pni->nativeResourceForWindow("display", handle);
+#endif
+
+    void* const surface = pni->nativeResourceForWindow("surface", handle);
+    if (!display || !surface)
+        return std::nullopt;
+
+    return std::make_pair(display, surface);
+}
+
+} // namespace
+#endif
+
 ScreenPanelNative::ScreenPanelNative(QWidget * parent) : ScreenPanel(parent)
 {
     hasBuffers = false;
@@ -1475,11 +1519,46 @@ ScreenPanelNative::ScreenPanelNative(QWidget * parent) : ScreenPanel(parent)
 
     screenTrans[0].reset();
     screenTrans[1].reset();
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
+        [this](std::int32_t dx, std::int32_t dy) {
+            addAimMouseDeltaForMelonPrime(dx, dy);
+        });
+#endif
 }
 
 ScreenPanelNative::~ScreenPanelNative()
 {
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    if (waylandPointerLock)
+        waylandPointerLock->setLocked(nullptr, nullptr, false);
+#endif
 }
+
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+bool ScreenPanelNative::setWaylandPointerLockForMelonPrime(bool enabled)
+{
+    if (!waylandPointerLock)
+        return false;
+
+    if (!enabled)
+        return waylandPointerLock->setLocked(nullptr, nullptr, false);
+
+    // Not a Qt::WA_NativeWindow: lock the top-level window's surface instead
+    // of our own (we have none).
+    QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
+    const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
+    if (!handles.has_value())
+        return false;
+
+    return waylandPointerLock->setLocked(handles->first, handles->second, true);
+}
+
+bool ScreenPanelNative::isWaylandPointerLockActiveForMelonPrime() const
+{
+    return waylandPointerLock && waylandPointerLock->isLockActive();
+}
+#endif
 
 void ScreenPanelNative::setupScreenLayout()
 {
@@ -1823,20 +1902,19 @@ bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!enabled)
         return waylandPointerLock->setLocked(nullptr, nullptr, false);
 
-    if (QGuiApplication::platformName() != QStringLiteral("wayland"))
+    // Lock the top-level window's surface, not this panel's own
+    // Qt::WA_NativeWindow subsurface (used by getWindowInfo() for GL context
+    // creation). Locking the child subsurface directly made KWin immediately
+    // fire WindowDeactivate on the main window in windowed (non-fullscreen)
+    // mode, which our own Suspend() path read as focus loss and tore the lock
+    // right back down -- a lock/unlock churn whose brief unlocked gaps let
+    // fast mouse motion escape the window (see issue #526).
+    QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
+    const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
+    if (!handles.has_value())
         return false;
 
-    const std::optional<WindowInfo> info = getWindowInfo();
-    if (!info.has_value()
-        || info->type != WindowInfo::Type::Wayland
-        || !info->display_connection
-        || !info->window_handle)
-    {
-        return false;
-    }
-
-    return waylandPointerLock->setLocked(
-        info->display_connection, info->window_handle, true);
+    return waylandPointerLock->setLocked(handles->first, handles->second, true);
 }
 
 bool ScreenPanelGL::isWaylandPointerLockActiveForMelonPrime() const

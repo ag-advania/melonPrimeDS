@@ -12,7 +12,8 @@
 
 #include <algorithm>
 #include <atomic>
-
+#include <cstdio>
+#include <cstdlib>
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -186,6 +187,29 @@ void ClipCenter1px(ScreenPanel& panel)
         const QPoint c = panel.mapToGlobal(panel.rect().center());
         PlatformInput_WarpCursor(c.x(), c.y());
     }
+    else
+    {
+        // Neither the native Wayland lock nor an X11/XWayland grab is
+        // available: a pure Wayland session either built without
+        // MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK (missing wayland-protocols at
+        // build time), or whose compositor doesn't advertise
+        // zwp_relative_pointer_manager_v1 / zwp_pointer_constraints_v1.
+        // QCursor::setPos is a documented no-op on native Wayland, so there is
+        // no confinement fallback left -- the cursor is free to leave the
+        // game window during aim (see melonprime-aim-input.md and issue #526).
+        // Warn once instead of silently degrading.
+        static bool warnedNoLinuxCursorConfinement = false;
+        if (!warnedNoLinuxCursorConfinement)
+        {
+            warnedNoLinuxCursorConfinement = true;
+            std::fprintf(stderr,
+                "[MelonPrime] Linux cursor containment unavailable: no native "
+                "Wayland pointer lock and not running under X11/XWayland. "
+                "Mouse-look aim may leave the window. Install wayland-protocols "
+                "and rebuild (-DMELONPRIME_WAYLAND_POINTER_LOCK=ON) or run this "
+                "session under Xorg/XWayland.\n");
+        }
+    }
 #elif !defined(_WIN32)
     const QPoint c = panel.mapToGlobal(panel.rect().center());
     PlatformInput_WarpCursor(c.x(), c.y());
@@ -265,6 +289,8 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrimeUiSnapshot{};
     if (core && !ui.focused) {
+        if (std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            std::fprintf(stderr, "[MelonPrime] UpdateClipIfNeeded: !ui.focused -> Suspend\n");
         // Temporary focus loss must not erase the persistent capture request.
         Suspend(panel);
         return;
