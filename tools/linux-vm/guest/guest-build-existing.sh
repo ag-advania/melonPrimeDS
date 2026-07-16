@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build only: skip CMake configure (existing build-linux tree must exist).
-# Linux VM counterpart of .claude/skills/build-mingw-existing.bat
+# Linux VM counterpart of tools/build/windows/build-mingw-existing.bat
 set -euo pipefail
 
 usage() {

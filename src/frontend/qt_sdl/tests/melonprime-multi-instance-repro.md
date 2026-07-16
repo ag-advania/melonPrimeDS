@@ -38,5 +38,5 @@ the default records violations without stopping the emulator.
   instance because it is file-static/process-shared.
 - The sensitivity hotkey reports a GUI-thread ownership violation.
 
-Run `.claude/skills/audit-melonprime-instance-state.ps1 -List` alongside this
+Run `tools/ci/audits/audit-melonprime-instance-state.ps1 -List` alongside this
 harness to retain the static-state inventory for the same revision.

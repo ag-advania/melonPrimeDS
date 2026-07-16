@@ -59,4 +59,4 @@ tools/linux-vm/
   guest/        # scripts executed inside Ubuntu
 ```
 
-Full documentation: [.claude/rules/linux-vm-build.md](../../.claude/rules/linux-vm-build.md)
+Full documentation: [docs/development/build/linux-vm.md](../../docs/development/build/linux-vm.md)

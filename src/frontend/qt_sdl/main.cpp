@@ -358,7 +358,7 @@ int main(int argc, char** argv)
     printf(MELONDS_URL "\n");
 
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
-    // Metal-plan Phase 2 (.claude/rules/melonprime-metal-backend-plan.md):
+    // Metal-plan Phase 2 (docs/plans/rendering/metal/backend-plan.md):
     // startup diagnostic only. No presenter/renderer reads this yet -- Phase
     // 4+ is what actually gates on SupportsRequiredBaseline().
     MelonPrime::Metal::LogFeatureInfoOnce();
