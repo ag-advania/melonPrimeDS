@@ -23,13 +23,17 @@ struct DesktopPresentationLease
 class DesktopVulkanResourceLease
 {
 public:
+    void recordRenderAcquisition(Frame* frame);
+    void releaseRenderLease(Frame* frame);
     void recordPresentationCommit(Frame* frame);
     void releaseCompleted(u64 completedTimelineValue);
     [[nodiscard]] bool isFrameLeased(const Frame* frame) const;
+    [[nodiscard]] bool isRenderLeased(const Frame* frame) const;
     void clear();
 
 private:
     std::deque<DesktopPresentationLease> activeLeases_;
+    std::deque<Frame*> activeRenderLeases_;
 };
 
 } // namespace MelonDSAndroid

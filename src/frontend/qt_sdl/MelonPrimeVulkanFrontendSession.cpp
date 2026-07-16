@@ -383,6 +383,7 @@ bool MelonPrimeVulkanFrontendSession::beginProducerFrame(VulkanRenderer3D& rende
     }
 
     pendingProducerFrame = frame;
+    resourceLease.recordRenderAcquisition(frame);
 #ifndef NDEBUG
     frameQueue.assertMembershipInvariant(frame);
     log(
@@ -406,6 +407,8 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
     if (!initialized || producerSuspended || nds == nullptr || frame == nullptr)
         return false;
 
+    const auto releaseRender = [this, frame]() { resourceLease.releaseRenderLease(frame); };
+
     const Vulkan3DFrameView frameView = renderer3D.GetVulkan3DFrameView();
     LogVulkanProducerFrameContext(frame, frameView, activeGeneration, nds);
 
@@ -416,6 +419,7 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
             return output.isFrameReferencedAsPendingPreviousSource(candidate);
         });
         frameQueue.discardRenderedFrame(frame);
+        releaseRender();
         return false;
     }
     if (frameView.FrameSerial == lastSubmittedSerial)
@@ -425,6 +429,7 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
             return output.isFrameReferencedAsPendingPreviousSource(candidate);
         });
         frameQueue.discardRenderedFrame(frame);
+        releaseRender();
         return false;
     }
 
@@ -435,6 +440,7 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
             return output.isFrameReferencedAsPendingPreviousSource(candidate);
         });
         frameQueue.discardRenderedFrame(frame);
+        releaseRender();
         return false;
     }
 
@@ -460,6 +466,7 @@ bool MelonPrimeVulkanFrontendSession::completeProducerFrame(VulkanRenderer3D& re
         return output.isFrameReferencedAsPendingPreviousSource(candidate);
     });
     frameQueue.pushRenderedFrame(frame, policy);
+    releaseRender();
     return true;
 }
 
@@ -475,6 +482,7 @@ void MelonPrimeVulkanFrontendSession::cancelProducerFrame()
         return output.isFrameReferencedAsPendingPreviousSource(candidate);
     });
     frameQueue.discardRenderedFrame(frame);
+    resourceLease.releaseRenderLease(frame);
 }
 
 Frame* MelonPrimeVulkanFrontendSession::acquirePresentFrame()

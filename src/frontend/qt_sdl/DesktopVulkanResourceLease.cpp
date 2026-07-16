@@ -5,6 +5,27 @@
 namespace MelonDSAndroid
 {
 
+void DesktopVulkanResourceLease::recordRenderAcquisition(Frame* frame)
+{
+    if (frame == nullptr)
+        return;
+
+    activeRenderLeases_.erase(
+        std::remove(activeRenderLeases_.begin(), activeRenderLeases_.end(), frame),
+        activeRenderLeases_.end());
+    activeRenderLeases_.push_back(frame);
+}
+
+void DesktopVulkanResourceLease::releaseRenderLease(Frame* frame)
+{
+    if (frame == nullptr)
+        return;
+
+    activeRenderLeases_.erase(
+        std::remove(activeRenderLeases_.begin(), activeRenderLeases_.end(), frame),
+        activeRenderLeases_.end());
+}
+
 void DesktopVulkanResourceLease::recordPresentationCommit(Frame* frame)
 {
     if (frame == nullptr)
@@ -36,10 +57,22 @@ void DesktopVulkanResourceLease::releaseCompleted(u64 completedTimelineValue)
         activeLeases_.end());
 }
 
+bool DesktopVulkanResourceLease::isRenderLeased(const Frame* frame) const
+{
+    if (frame == nullptr)
+        return false;
+
+    return std::find(activeRenderLeases_.begin(), activeRenderLeases_.end(), frame)
+        != activeRenderLeases_.end();
+}
+
 bool DesktopVulkanResourceLease::isFrameLeased(const Frame* frame) const
 {
     if (frame == nullptr)
         return false;
+
+    if (isRenderLeased(frame))
+        return true;
 
     return std::any_of(
         activeLeases_.begin(),
@@ -50,6 +83,7 @@ bool DesktopVulkanResourceLease::isFrameLeased(const Frame* frame) const
 void DesktopVulkanResourceLease::clear()
 {
     activeLeases_.clear();
+    activeRenderLeases_.clear();
 }
 
 } // namespace MelonDSAndroid
