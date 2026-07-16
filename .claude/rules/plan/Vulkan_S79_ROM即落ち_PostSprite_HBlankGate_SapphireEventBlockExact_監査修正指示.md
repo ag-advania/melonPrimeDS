@@ -1401,8 +1401,8 @@ GPU2D event timingへ持ち込んではならない。
 
 | Phase | 状態 | コミット | 備考 |
 |-------|------|----------|------|
-| S79-1 | 完了 | (this commit) | run ID、git identity、crash artifact pairing |
-| S79-2 | 未着手 | | |
+| S79-1 | 完了 | 50d4649c4 | run ID、git identity、crash artifact pairing |
+| S79-2 | 完了 | (this commit) | post-sprite gate/DMA/IRQ/ScheduleEvent trace |
 | S79-3 | 未着手 | | |
 | S79-4 | 未着手 | | |
 | S79-5 | 未着手 | | |

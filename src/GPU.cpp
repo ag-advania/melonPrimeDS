@@ -1601,6 +1601,19 @@ void GPU::StartHBlank(u32 line) noexcept
                 log("[FirstGpu2D] before UnitB sprites line=%u\n", line + 1);
                 GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
                 log("[FirstGpu2D] after UnitB sprites line=%u\n", line + 1);
+
+                if (line <= 2)
+                {
+                    log(
+                        "[FirstGpuLine] after sprites Sapphire2D=%p GPU2DRenderer=%p\n",
+                        static_cast<const void*>(Sapphire2D.get()),
+                        static_cast<const void*>(GPU2D_Renderer.get()));
+                    log("[FirstGpuLine] before path recheck\n");
+                    const bool postSpritePath = UsesSapphireGpu2DPath();
+                    log(
+                        "[FirstGpuLine] after path recheck result=%d\n",
+                        postSpritePath ? 1 : 0);
+                }
             }
             else
 #endif
@@ -1644,15 +1657,29 @@ void GPU::StartHBlank(u32 line) noexcept
     GPU2D_B.UpdateRegistersPostDraw(VCount == 262);
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath() && line <= 2)
+    {
+        Log(LogLevel::Debug, "[FirstGpuLine] before IRQ HBlank VCount=%u line=%u\n", VCount, line);
+    }
+#endif
+
     if (DispStat[0] & (1<<4)) NDS.SetIRQ(0, IRQ_HBlank);
     if (DispStat[1] & (1<<4)) NDS.SetIRQ(1, IRQ_HBlank);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath() && line <= 2)
+    {
+        Log(LogLevel::Debug, "[FirstGpuLine] after IRQ HBlank VCount=%u line=%u\n", VCount, line);
+    }
+#endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (UsesSapphireGpu2DPath() && line == 0)
         MelonPrime::FirstVulkanFrameTrace::consumeBudget();
     if (UsesSapphireGpu2DPath() && line <= 2)
     {
-        Log(LogLevel::Debug, "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
+        Log(LogLevel::Debug, "[FirstGpuLine] before ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
     }
 #endif
 
@@ -1660,6 +1687,14 @@ void GPU::StartHBlank(u32 line) noexcept
         NDS.ScheduleEvent(Event_LCD, true, (LINE_CYCLES - HBLANK_CYCLES), LCD_FinishFrame, line+1);
     else
         NDS.ScheduleEvent(Event_LCD, true, (LINE_CYCLES - HBLANK_CYCLES), LCD_StartScanline, line+1);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath() && line <= 2)
+    {
+        Log(LogLevel::Debug, "[FirstGpuLine] after ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
+        Log(LogLevel::Debug, "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
+    }
+#endif
 }
 
 void GPU::FinishFrame(u32 lines) noexcept
