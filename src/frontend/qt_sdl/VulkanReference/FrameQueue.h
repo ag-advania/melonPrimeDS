@@ -2,13 +2,14 @@
 
 // Source: SapphireRhodonite/melonDS-android
 // app/src/main/cpp/renderer/FrameQueue.h @ tag 0.7.0.rc4
-// P2: Sapphire queue semantics with desktop Vk handle adaptation (R19 ownership overlay).
+// S75: Sapphire selection core + desktop lifetime tracker.
 
 #include <array>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -17,7 +18,11 @@
 
 using namespace melonDS;
 
-// 9 frames should allow the emulator to run up 8x speed. This includes 8 frames ready to present, plus one frame currently being rendered to.
+namespace MelonDSAndroid
+{
+class DesktopFrameLifetimeTracker;
+}
+
 constexpr std::size_t FRAME_QUEUE_SIZE = 9;
 
 struct FrameQueuePolicy
@@ -31,7 +36,9 @@ struct FrameQueuePolicy
     bool TreatBacklogTrimAsFastForwardSkip = false;
     bool UseLegacyOpenGlQueue = false;
 };
-enum class FrameBackend : u8 {
+
+enum class FrameBackend : u8
+{
     OpenGlTexture = 0,
     VulkanImage = 1,
 };
@@ -76,7 +83,8 @@ struct FrameQueueStats
     u64 StateTransitionFailures = 0;
 };
 
-struct Frame {
+struct Frame
+{
     FrameBackend backend{FrameBackend::VulkanImage};
     unsigned int frameTexture{};
     u32 width{};
@@ -101,6 +109,7 @@ struct Frame {
 
 private:
     friend class FrameQueue;
+    friend class MelonDSAndroid::DesktopFrameLifetimeTracker;
     FrameQueueState state{FrameQueueState::Free};
     u32 historyReferences{};
     u32 presentationReferences{};
@@ -110,9 +119,17 @@ class FrameQueue
 {
 public:
     FrameQueue();
+    ~FrameQueue();
+    FrameQueue(const FrameQueue&) = delete;
+    FrameQueue& operator=(const FrameQueue&) = delete;
+
     Frame* getRenderFrame(const FrameQueuePolicy& policy);
-    Frame* getPresentFrame(const FrameQueuePolicy& policy, std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
-    Frame* getPresentCandidate(const FrameQueuePolicy& policy, std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
+    Frame* getPresentFrame(
+        const FrameQueuePolicy& policy,
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
+    Frame* getPresentCandidate(
+        const FrameQueuePolicy& policy,
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline);
     Frame* getReusablePreviousFrame(const FrameQueuePolicy& policy);
     void recycleRenderFrame(Frame* frame);
     void commitPresentedFrame(Frame* frame, const FrameQueuePolicy& policy);
@@ -129,38 +146,6 @@ public:
     FrameQueueStats takeStatsSnapshotAndReset();
 
 private:
-    enum class PresentDropCause : u8
-    {
-        Stale = 0,
-        StealForRender = 1,
-        Deadline = 2,
-        BacklogTrim = 3,
-    };
-
-    static FrameQueuePolicy sanitizePolicy(FrameQueuePolicy policy);
-    bool transitionFrameLocked(Frame* frame, FrameQueueState expected, FrameQueueState next);
-    bool frameMatchesActiveGenerationsLocked(const Frame* frame) const;
-    void acquireRenderFrameLocked(Frame* frame);
-    void retireFrameLocked(Frame* frame);
-    void discardGenerationMismatchesLocked();
-    void rebuildFreeQueueLocked();
-    void dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip);
-    void updateBacklogStatsLocked();
-    void recordPresentedFrameAgeLocked(Frame* frame, u64 nowNs);
-    void recordDroppedFrameLocked(Frame* frame, PresentDropCause cause, u64 nowNs);
-
-private:
-    std::mutex frameLock;
-    std::condition_variable presentFrameReadyCondition;
-    std::array<Frame, FRAME_QUEUE_SIZE> frames{};
-    std::queue<Frame*> freeQueue{};
-    std::deque<Frame*> presentQueue{};
-    Frame* previousFrame = nullptr;
-    Frame* pendingPresentFrame = nullptr;
-    bool pendingPresentReusesPrevious = false;
-    bool suppressPreviousFrameReuse = false;
-    u64 activeRendererGeneration = 0;
-    u64 activeSurfaceGeneration = 0;
-    u64 nextFrameId = 1;
-    FrameQueueStats stats{};
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };

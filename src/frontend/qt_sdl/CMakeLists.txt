@@ -359,6 +359,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanPreparedContentStats.h
         SapphireVulkanFrameLatch.cpp
         SapphireVulkanFrameLatch.h
+        DesktopFrameLifetimeTracker.cpp
+        DesktopFrameLifetimeTracker.h
         MelonPrimeSapphireFrameInput.cpp
         MelonPrimeSapphireFrameInput.h
         SapphireVulkanFramePipeline.cpp

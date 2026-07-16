@@ -1496,5 +1496,7 @@ Vulkan 2D pipelineをSapphire exactと判断できる。
 | Phase | Commit | Status | Notes |
 |-------|--------|--------|-------|
 | S75-1 | `b510d7f32` | done | Link audited `sapphire_frame_latch_core` object once into melonDS |
-| S75-2 | pending | done | Validate published packed/structured pointer identity against live GPU |
-| S75-3 | pending | done | Remove unused duplicate pointers from `SapphireFrameInput` |
+| S75-2 | `09d45a481` | done | Validate published packed/structured pointer identity against live GPU |
+| S75-3 | `aadb619bf` | done | Remove unused duplicate pointers from `SapphireFrameInput` |
+| S75-4 | `1841c8dbd` | done | Vendor exact Sapphire FrameQueue selection core |
+| S75-5 | pending | in progress | Move Desktop generation/timeline ownership into DesktopFrameLifetimeTracker |
