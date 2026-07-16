@@ -29,6 +29,10 @@ BASELINE_CHECKPOINTS = (
     "[FirstGpu2D] before UnitA line=0",
     "[FirstGpu2D] after UnitA line=0",
     "[FirstGpu2D] before UnitB line=0",
+    "[FirstGpu2D] after UnitB line=0",
+    "[FirstGpu2D] before UnitA sprites line=1",
+    "[FirstGpu2D] after UnitA sprites line=1",
+    "[FirstGpu2D] before UnitB sprites line=1",
 )
 
 WINDOWS_ACCESS_VIOLATION = 0xC0000005
@@ -39,6 +43,9 @@ def find_vulkan_binary() -> Path | None:
         REPO_ROOT / "build" / "release-mingw-x86_64" / "melonPrimeDS.exe",
         REPO_ROOT / "build" / "debug-mingw-x86_64" / "melonPrimeDS.exe",
         REPO_ROOT / "build" / "sapphire-parity-linux-Release" / "melonDS",
+        REPO_ROOT / "build" / "sapphire-parity-linux-Debug" / "melonDS",
+        REPO_ROOT / "build" / "sapphire-parity-linux-sanitizer-asan-ubsan" / "melonDS",
+        REPO_ROOT / "build" / "sapphire-parity-linux-sanitizer-msan" / "melonDS",
     ]
     return next((path for path in candidates if path.is_file()), None)
 
@@ -146,9 +153,9 @@ class SapphireVulkanColdStartReproductionS78Tests(unittest.TestCase):
             ),
         )
         self.assertNotIn(
-            "[FirstGpu2D] after UnitB line=0",
+            "[FirstGpu2D] after UnitB sprites line=1",
             combined,
-            msg="baseline should still crash before Unit B completes",
+            msg="baseline should still crash before first-frame sprite pass completes",
         )
         self.assertTrue(
             metadata.minidump_paths or metadata.crash_report_paths,

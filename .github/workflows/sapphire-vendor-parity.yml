@@ -63,6 +63,7 @@ jobs:
         run: |
           python3 tools/test_sapphire_vendor_parity.py
           python3 tools/test_sapphire_gpu2d_lifecycle_parity.py
+          python3 tools/test_sapphire_gpu2d_lifecycle_differential_s78.py
           python3 tools/test_sapphire_gpu2d_runtime_gate_parity.py
           python3 tools/test_sapphire_vulkan_lifecycle_s68_parity.py
           python3 tools/test_sapphire_vulkan_lifecycle_s69_parity.py
@@ -147,3 +148,67 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
+
+  vulkan-windows-debug-build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            git
+      - name: Build production melonPrimeDS.exe (MinGW Debug)
+        shell: msys2 {0}
+        run: ./.claude/skills/build-mingw-vulkan-debug.bat --jobs 1
+      - name: Generate synthetic cold-start ROM fixture
+        shell: msys2 {0}
+        run: python tools/generate_synthetic_nds_boot_rom.py
+      - name: Run Vulkan ROM cold-start reproduction (Debug symbols)
+        shell: msys2 {0}
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
+
+  vulkan-linux-sanitizer-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        sanitizer: [asan-ubsan, msan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++ clang qt6-base-dev libarchive-dev libsdl2-dev libenet-dev zlib1g-dev
+      - name: Configure Vulkan sanitizer build (${{ matrix.sanitizer }})
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ matrix.sanitizer }}" = "asan-ubsan" ]; then
+            EXTRA_FLAGS="-DMELONPRIME_ENABLE_SANITIZERS=ON"
+          else
+            EXTRA_FLAGS="-DMELONPRIME_ENABLE_MSAN=ON"
+          fi
+          cmake -S . -B build/sapphire-parity-linux-sanitizer-${{ matrix.sanitizer }} \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DMELONPRIME_ENABLE_VULKAN=ON \
+            -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
+            $EXTRA_FLAGS
+      - name: Build production melonDS binary (${{ matrix.sanitizer }})
+        run: cmake --build build/sapphire-parity-linux-sanitizer-${{ matrix.sanitizer }} --target melonDS -j 2
+      - name: Generate synthetic cold-start ROM fixture
+        run: python3 tools/generate_synthetic_nds_boot_rom.py
+      - name: Run Vulkan ROM cold-start reproduction (${{ matrix.sanitizer }})
+        if: matrix.sanitizer == 'asan-ubsan'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ASAN_OPTIONS: detect_leaks=0
+        run: python3 tools/test_sapphire_vulkan_cold_start_reproduction_s78.py

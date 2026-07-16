@@ -48,7 +48,46 @@ class SapphireGpu2DLifecycleParityTests(unittest.TestCase):
         self.assertIn("GPU2D_A.CheckWindows", gpu_cpp)
         self.assertIn("GPU2D_A.VBlank()", gpu_cpp)
         self.assertIn("GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B)", gpu_cpp)
+        self.assertIn("UsesSapphireGpu2DPath()", gpu_cpp)
+        self.assertIn("GPU2D_Renderer->DrawScanline(line, &GPU2D_A)", gpu_cpp)
+        self.assertIn("GPU2D_Renderer->DrawScanline(line, &GPU2D_B)", gpu_cpp)
+        self.assertIn("GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A)", gpu_cpp)
         self.assertNotIn("MelonPrimeSapphireGpu2DAdapter", gpu_cpp)
+
+    def test_sapphire_path_skips_outer_renderer_draw_bridge(self):
+        soft = read_repo("src/GPU_Soft.cpp")
+        draw = re.search(
+            r"void SoftRenderer::DrawScanline\(u32 line\)[\s\S]*?^}",
+            soft,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(draw)
+        body = draw.group(0)
+        self.assertIn("GPU.UsesSapphireGpu2DPath()", body)
+        self.assertNotIn("renderer2D.DrawScanline(line, &GPU.GPU2D_A)", body)
+
+    def test_framebuffer_assignment_uses_powercontrol9_bit15(self):
+        gpu = read_repo("src/GPU.cpp")
+        assign = re.search(
+            r"bool GPU::AssignFramebuffers\(\) noexcept[\s\S]*?^}",
+            gpu,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(assign)
+        body = assign.group(0)
+        self.assertIn("NDS.PowerControl9 & (1<<15)", body)
+        self.assertNotIn("if (ScreenSwap)", body)
+
+    def test_set_powercnt_refreshes_framebuffer_bindings(self):
+        gpu = read_repo("src/GPU.cpp")
+        set_power = re.search(
+            r"void GPU::SetPowerCnt\(u32 val\) noexcept[\s\S]*?^}",
+            gpu,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(set_power)
+        body = set_power.group(0)
+        self.assertIn("AssignFramebuffers()", body)
 
     def test_physical_screen_publication_without_screenswap_remap(self):
         soft = read_repo("src/GPU_Soft.cpp")
