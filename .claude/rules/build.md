@@ -113,13 +113,22 @@ Linux platform notes:
   `ScreenPanel::mouseMoveEvent` — never center-delta + warp-per-event (drift, see above). All
   warps re-seed the baseline via `resetAimMouseDelta()` so jumps are never counted as motion.
 - Linux never warps per-frame in `ProcessAimInputMouse` (`warpCursorAfterAim == false`);
-  containment is the panel's >96px threshold warp. See `melonprime-aim-input.md` §9 for the
-  full design and the three historical failure modes.
+  containment is the panel's >16px threshold warp (`MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2`,
+  tightened from an earlier 96px). See `melonprime-aim-input.md` §9 for the full design and the
+  three historical failure modes.
 - Mouse buttons and keyboard hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
-- Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
-  XInput2, unavailable X11 display, or an XInput2 path that never emits raw motion, the aim path
-  falls back to the Qt previous-position-differencing accumulator. Wayland warp behavior is
-  compositor-dependent; use an Xorg session for reliable Linux FPS aim testing.
+- XInput2 raw motion needs an X11 connection (X11 session or XWayland), so it is unavailable on a
+  native Wayland session (`QGuiApplication::platformName() == "wayland"`). For that case there is
+  a native Wayland pointer lock (`MelonPrimeWaylandPointerLock.{h,cpp}`, `zwp_relative_pointer_v1`
+  + `zwp_pointer_constraints_v1`) that both `ScreenPanelGL` and `ScreenPanelNative` use — it
+  requires `MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK` to be compiled in (CMake `AUTO`/`ON`/`OFF`
+  option `MELONPRIME_WAYLAND_POINTER_LOCK`, needs `wayland-scanner` + the `wayland-protocols` XML
+  package at build time) and a compositor that advertises both protocols (KWin does). Without that
+  feature compiled in, or on a compositor that doesn't support it, there is **no** cursor
+  confinement left on native Wayland — `QCursor::setPos` is a documented no-op there — and aim can
+  visibly leave the window (see issue #526). `MelonPrimeScreenCursorPolicy.cpp::ClipCenter1px`
+  logs a one-shot warning to stderr when this dead end is hit. Use an Xorg/XWayland session for
+  reliable Linux FPS aim testing if the native lock isn't available.
 - **The recenter must use `MelonPrime::LinuxWarpCursorGlobal` (XWarpPointer) on X11, never
   `QCursor::setPos` there**: Qt's setPos can fail under VirtualBox guest mouse integration or
   when called off the GUI thread — a failed recenter re-applies the cursor-minus-center delta

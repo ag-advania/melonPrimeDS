@@ -85,10 +85,11 @@ jobs:
       run: |
         sudo apt update
         sudo apt install --allow-downgrades cmake ninja-build extra-cmake-modules libpcap0.8-dev libsdl2-dev libenet-dev \
-          qt6-{base,base-private,multimedia}-dev qt6-wayland libqt6svg6-dev libarchive-dev libzstd-dev libfuse2 libfaad-dev libxi-dev
+          qt6-{base,base-private,multimedia}-dev qt6-wayland libqt6svg6-dev libarchive-dev libzstd-dev libfuse2 libfaad-dev libxi-dev \
+          wayland-protocols libwayland-bin
 
     - name: Configure
-      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF
+      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON
 
     - name: Build
       run: |
