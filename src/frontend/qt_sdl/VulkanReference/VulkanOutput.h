@@ -443,6 +443,7 @@ private:
 
     bool beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs = UINT64_MAX);
     bool submitFrameCommand(Frame* frame, FrameResource& resource, bool signalTimeline);
+    bool waitBeforePackedBufferOverwrite(Frame* frame, FrameResource& resource);
     bool updateCompositorPackedBuffers(Frame* frame, FrameResource& resource, const SoftPackedFrameSnapshot& softPackedSnapshot);
     bool updatePreparedCapture3dSource(
         FrameResource& resource,

@@ -2058,6 +2058,13 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
     return true;
 }
 
+bool VulkanOutput::waitBeforePackedBufferOverwrite(Frame* frame, FrameResource& resource)
+{
+    (void)resource;
+    return frame != nullptr
+        && (frame->renderTimelineValue == 0 || waitForFrame(frame, UINT64_MAX));
+}
+
 bool VulkanOutput::updateCompositorPackedBuffers(
     Frame* frame,
     FrameResource& resource,
@@ -2402,13 +2409,8 @@ bool VulkanOutput::prepareFrameForPresentation(
 
     FrameResource& resource = iterator->second;
 
-    // A FrameQueue slot owns its persistently mapped packed buffers. Wait only
-    // for this slot's previous submission before overwriting those buffers.
-    if (frame->renderTimelineValue != 0
-        && !waitForFrame(frame, UINT64_MAX))
-    {
+    if (!waitBeforePackedBufferOverwrite(frame, resource))
         return false;
-    }
 
     resource.screenSwap = softPackedSnapshot.valid ? softPackedSnapshot.screenSwapLatched : frameScreenSwap;
     const u64 packedUploadStartNs = PerfNowNs();
