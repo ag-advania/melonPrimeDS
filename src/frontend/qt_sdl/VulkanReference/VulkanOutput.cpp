@@ -3112,7 +3112,10 @@ bool VulkanOutput::prepareFrameForPresentation(
     }
     else
     {
-        return false;
+        currentSourceImage = renderer3D.GetColorTargetImage();
+        currentSourceImageView = renderer3D.GetColorTargetImageView();
+        currentSourceWidth = renderer3D.GetColorTargetWidth();
+        currentSourceHeight = renderer3D.GetColorTargetHeight();
     }
 
     const bool live3dOwnerIsTop = resource.hasRenderer3dSnapshot

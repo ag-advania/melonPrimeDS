@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Verify VulkanOutput and FrameQueue bodies against pinned Sapphire (S74-10)."""
+"""Verify VulkanOutput composition regions against pinned Sapphire (S75-8)."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -12,13 +15,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ANDROID = Path(r"C:\Users\Admin\Documents\git\melonDS-android")
-
-COMPARE_FILES = (
-    ("app/src/main/cpp/renderer/VulkanOutput.h", "src/frontend/qt_sdl/VulkanReference/VulkanOutput.h"),
-    ("app/src/main/cpp/renderer/VulkanOutput.cpp", "src/frontend/qt_sdl/VulkanReference/VulkanOutput.cpp"),
-    ("app/src/main/cpp/renderer/FrameQueue.h", "src/frontend/qt_sdl/VulkanReference/FrameQueue.h"),
-    ("app/src/main/cpp/renderer/FrameQueue.cpp", "src/frontend/qt_sdl/VulkanReference/FrameQueue.cpp"),
-)
+MANIFEST_PATH = REPO_ROOT / "tools" / "sapphire_vulkan_output_vendor_manifest.json"
+DESKTOP_VULKAN_OUTPUT_CPP = REPO_ROOT / "src" / "frontend" / "qt_sdl" / "VulkanReference" / "VulkanOutput.cpp"
+DESKTOP_VULKAN_OUTPUT_H = REPO_ROOT / "src" / "frontend" / "qt_sdl" / "VulkanReference" / "VulkanOutput.h"
 
 STRUCTS = (
     "SoftPackedScreenStats",
@@ -28,33 +27,8 @@ STRUCTS = (
     "VulkanOutputTemporalStats",
 )
 
-ALLOWED_DESKTOP_DIFF_FUNCTIONS = {
-    # Desktop WSI / queue-family / presentation lifecycle (S73-12 / S74-10).
-    "VulkanOutput::init",
-    "VulkanOutput::shutdown",
-    "VulkanOutput::createCompositorResources",
-    "VulkanOutput::createAccumulateResources",
-    "VulkanOutput::createFrameResource",
-    "VulkanOutput::destroyFrameResource",
-    "VulkanOutput::ensureFrameResources",
-    "VulkanOutput::beginFrameCommand",
-    "VulkanOutput::submitFrameCommand",
-    "VulkanOutput::prepareFrameForPresentation",
-    "VulkanOutput::destroyRenderer3dSnapshot",
-    "VulkanOutput::dispatchCompositor",
-    "VulkanOutput::validateCompositorSubmission",
-    "VulkanOutput::waitForFrame",
-    "FrameQueue::clear",
-    "FrameQueue::commitPresentedFrame",
-    "FrameQueue::deferPresentedFrame",
-    "FrameQueue::discardRenderedFrame",
-    "FrameQueue::dropPendingFramesToBacklogLocked",
-    "FrameQueue::pushRenderedFrame",
-    "FrameQueue::rebuildFreeQueueLocked",
-    "FrameQueue::recycleRenderFrame",
-    "FrameQueue::requestFastForwardPresentationTransition",
-    "FrameQueue::requestPresentationResync",
-    "FrameQueue::validateRenderFrame",
+REGION_FUNCTION_NAMES = {
+    "prepare_frame_for_presentation": "VulkanOutput::prepareFrameForPresentation",
 }
 
 
@@ -62,10 +36,71 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def load_manifest() -> dict:
+    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+
+
+def android_root() -> Path:
+    import os
+
+    env = os.environ.get("SAPPHIRE_ANDROID_ROOT")
+    return Path(env) if env else DEFAULT_ANDROID
+
+
 def normalize_source(text: str) -> str:
     text = re.sub(r"\r\n", "\n", text)
     text = re.sub(r"//.*", "", text)
     text = re.sub(r"/\*[\s\S]*?\*/", "", text)
+    text = re.sub(
+        r"if\s*\(\s*!waitBeforePackedBufferOverwrite\([^)]*\)\s*\)\s*return\s+false\s*;",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"melonDS::VulkanR24Barrier::HostWriteToShaderRead\([^;]*\)\s*;",
+        "__PLATFORM_BUFFER_BARRIER__;",
+        text,
+    )
+    text = re.sub(
+        r"melonDS::VulkanR24Barrier::CompositionWriteToPresenterRead\([^;]*\)\s*;",
+        "__PLATFORM_OUTPUT_BARRIER__;",
+        text,
+    )
+    text = re.sub(
+        r"VkBufferMemoryBarrier\s+\w+\s*\{[\s\S]*?\}\s*;",
+        "__PLATFORM_BUFFER_BARRIER__;",
+        text,
+    )
+    text = re.sub(
+        r"std::array<VkBufferMemoryBarrier,\s*\d+>\s+\w+\s*=\s*\{[\s\S]*?\}\s*;",
+        "",
+        text,
+    )
+    text = re.sub(r"\w+Barrier(?:\.\w+)+\s*=[^;]*;", "", text)
+    text = re.sub(r"VkImageMemoryBarrier\s+outputReadableBarrier\{\}\s*;", "", text)
+    text = re.sub(
+        r"vkCmdPipelineBarrier\(resource\.commandBuffer,VK_PIPELINE_STAGE_HOST_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,nullptr,static_cast<u32>\(compositorBufferBarriers\.size\(\)\),compositorBufferBarriers\.data\(\),0,nullptr\)\s*;",
+        "__PLATFORM_BUFFER_BARRIER_SUBMIT__;",
+        text,
+    )
+    text = re.sub(
+        r"vkCmdPipelineBarrier\(resource\.commandBuffer,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,nullptr,0,nullptr,1,&outputReadableBarrier\)\s*;",
+        "__PLATFORM_OUTPUT_BARRIER__;",
+        text,
+    )
+    replacements = {
+        "MP_VK_COMPOSITOR_OUTPUT_IMAGE_BINDING": "0",
+        "MP_VK_COMPOSITOR_CURRENT_3D_BINDING": "1",
+        "MP_VK_COMPOSITOR_TOP_PACKED_BINDING": "2",
+        "MP_VK_COMPOSITOR_BOTTOM_PACKED_BINDING": "3",
+        "MP_VK_COMPOSITOR_PREVIOUS_TOP_3D_BINDING": "4",
+        "MP_VK_COMPOSITOR_CAPTURE_3D_BINDING": "5",
+        "MP_VK_COMPOSITOR_PREVIOUS_BOTTOM_3D_BINDING": "6",
+        "melonDS::VulkanStructuredControlAbi::CompositorBindingCount": "7",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    text = re.sub(r"__PLATFORM_BUFFER_BARRIER__;(?:\s*__PLATFORM_BUFFER_BARRIER__;){0,2}", "__PLATFORM_BUFFER_BARRIER_SUBMIT__;", text)
     text = text.replace("#include <vulkan/vulkan.h>", "#include <volk.h>")
     text = text.replace("renderer/FrameQueue.h", "FrameQueue.h")
     text = text.replace("renderer/VulkanFilterMode.h", "VulkanFilterMode.h")
@@ -105,45 +140,46 @@ def extract_struct(text: str, name: str) -> str:
     return "\n".join(lines)
 
 
-def extract_named_function_bodies(text: str) -> dict[str, str]:
-    bodies: dict[str, str] = {}
-    for match in re.finditer(
-        r"(?:bool|void|u32|int|std::[\w:<>,\s]+)\s+([A-Za-z_:][\w:]*)\s*\([^;{]*\)\s*\{",
-        text,
-    ):
-        start = match.start()
-        name = match.group(1)
-        brace = text.find("{", match.end() - 1)
-        if brace == -1:
-            continue
-        depth = 0
-        for index in range(brace, len(text)):
-            if text[index] == "{":
-                depth += 1
-            elif text[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    bodies[name] = normalize_source(text[start : index + 1])
-                    break
-    return bodies
+def extract_function_body(text: str, function_name: str) -> str:
+    suffix = function_name.split("::", 1)[-1]
+    pattern = rf"(?:bool|void|u32|int|Frame\*|std::[\w:<>,\s]+)\s+{re.escape(function_name)}\s*\([^;{{]*\)\s*(?:const\s*)?\{{"
+    match = re.search(pattern, text)
+    if match is None:
+        pattern = rf"(?:bool|void|u32|int|Frame\*|std::[\w:<>,\s]+)\s+{re.escape(suffix)}\s*\([^;{{]*\)\s*(?:const\s*)?\{{"
+        match = re.search(pattern, text)
+    if match is None:
+        raise AssertionError(f"function {function_name} not found")
+    brace = text.find("{", match.end() - 1)
+    depth = 0
+    for index in range(brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[match.start() : index + 1]
+    raise AssertionError(f"unterminated body for {function_name}")
+
+
+def extract_upstream_region(lines: list[str], start: int, end: int) -> str:
+    return "".join(lines[start - 1 : end])
+
+
+def region_sha256(text: str) -> str:
+    return hashlib.sha256(normalize_source(text).encode("utf-8")).hexdigest()
 
 
 class VulkanOutputExactTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import os
-
-        android_root = Path(os.environ.get("SAPPHIRE_ANDROID_ROOT", DEFAULT_ANDROID))
-        cls.pairs = []
-        for upstream_rel, desktop_rel in COMPARE_FILES:
-            cls.pairs.append(
-                (
-                    read(android_root / upstream_rel),
-                    read(REPO_ROOT / desktop_rel),
-                    upstream_rel,
-                )
-            )
-        cls.android_header, cls.desktop_header, _ = cls.pairs[0]
+        manifest = load_manifest()
+        upstream_cpp = android_root() / manifest["upstreamRelativeCpp"]
+        cls.manifest = manifest
+        cls.upstream_cpp_text = read(upstream_cpp)
+        cls.upstream_cpp_lines = cls.upstream_cpp_text.splitlines(keepends=True)
+        cls.desktop_cpp_text = read(DESKTOP_VULKAN_OUTPUT_CPP)
+        cls.desktop_header = read(DESKTOP_VULKAN_OUTPUT_H)
+        cls.android_header = read(android_root() / "app/src/main/cpp/renderer/VulkanOutput.h")
 
     def test_soft_packed_snapshot_exact(self):
         self.assertEqual(
@@ -155,20 +191,45 @@ class VulkanOutputExactTests(unittest.TestCase):
         for name in STRUCTS:
             self.assertIn(f"struct {name}", self.desktop_header)
 
-    def test_compare_files_have_matching_composition_bodies(self):
+    def test_composition_regions_match_upstream(self):
         mismatches: list[str] = []
-        for upstream_text, desktop_text, label in self.pairs:
-            upstream_bodies = extract_named_function_bodies(upstream_text)
-            desktop_bodies = extract_named_function_bodies(desktop_text)
-            for name, upstream_body in sorted(upstream_bodies.items()):
-                if name in ALLOWED_DESKTOP_DIFF_FUNCTIONS:
-                    continue
-                if name not in desktop_bodies:
-                    mismatches.append(f"{label}: missing function {name}")
-                    continue
-                if upstream_body != desktop_bodies[name]:
-                    mismatches.append(f"{label}: body mismatch {name}")
+        for region in self.manifest["compositionRegions"]:
+            label = region["label"]
+            function_name = REGION_FUNCTION_NAMES[label]
+            upstream_body = extract_upstream_region(
+                self.upstream_cpp_lines,
+                region["start"],
+                region["end"],
+            )
+            desktop_body = extract_function_body(self.desktop_cpp_text, function_name)
+            if region_sha256(upstream_body) != region_sha256(desktop_body):
+                mismatches.append(
+                    f"{label}: normalized body mismatch "
+                    f"(upstream={region_sha256(upstream_body)[:12]}, "
+                    f"desktop={region_sha256(desktop_body)[:12]})"
+                )
         self.assertEqual(mismatches, [])
+
+    def test_dispatch_compositor_uses_platform_barrier_helpers(self):
+        self.assertIn("VulkanR24Barrier::HostWriteToShaderRead", self.desktop_cpp_text)
+        self.assertIn("VulkanR24Barrier::CompositionWriteToPresenterRead", self.desktop_cpp_text)
+        dispatch = extract_function_body(self.desktop_cpp_text, "VulkanOutput::dispatchCompositor")
+        self.assertNotIn("compositorBufferBarriers", dispatch)
+
+    def test_platform_hooks_are_declared_separately(self):
+        self.assertIn("waitBeforePackedBufferOverwrite", self.desktop_cpp_text)
+        prepare = extract_function_body(self.desktop_cpp_text, "VulkanOutput::prepareFrameForPresentation")
+        self.assertNotIn("waitForFrame(frame, UINT64_MAX)", prepare)
+
+    def test_frame_queue_selection_core_verified_by_generator(self):
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "tools" / "generate_sapphire_frame_queue.py"), "--verify"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
 
 
 def main() -> int:

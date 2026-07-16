@@ -1501,4 +1501,5 @@ Vulkan 2D pipelineをSapphire exactと判断できる。
 | S75-4 | `1841c8dbd` | done | Vendor exact Sapphire FrameQueue selection core |
 | S75-5 | `c8da1ed97` | done | Move Desktop generation/timeline ownership into DesktopFrameLifetimeTracker |
 | S75-6 | `862fb2ddd` | done | FrameQueue upstream-vs-Desktop differential sequence tests |
-| S75-7 | pending | in progress | Split VulkanOutput platform sync hooks from composition |
+| S75-7 | `708b01fb3` | done | Split VulkanOutput platform sync hooks from composition |
+| S75-8 | pending | in progress | Replace regex parity with generated regions |

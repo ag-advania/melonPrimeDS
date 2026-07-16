@@ -1,0 +1,24 @@
+{
+  "upstreamTag": "0.7.0.rc4",
+  "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
+  "upstreamRelativeCpp": "app/src/main/cpp/renderer/VulkanOutput.cpp",
+  "compositionRegions": [
+    {"start": 2279, "end": 3543, "label": "prepare_frame_for_presentation"}
+  ],
+  "platformHookFunctions": [
+    "VulkanOutput::waitBeforePackedBufferOverwrite",
+    "VulkanOutput::waitForFrame",
+    "VulkanOutput::init",
+    "VulkanOutput::shutdown",
+    "VulkanOutput::createCompositorResources",
+    "VulkanOutput::createAccumulateResources",
+    "VulkanOutput::createFrameResource",
+    "VulkanOutput::destroyFrameResource",
+    "VulkanOutput::ensureFrameResources",
+    "VulkanOutput::beginFrameCommand",
+    "VulkanOutput::submitFrameCommand",
+    "VulkanOutput::destroyRenderer3dSnapshot",
+    "VulkanOutput::validateCompositorSubmission"
+  ],
+  "frameQueueSelectionVerifiedBy": "tools/generate_sapphire_frame_queue.py --verify"
+}
