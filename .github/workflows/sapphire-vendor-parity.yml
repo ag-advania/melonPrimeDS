@@ -83,7 +83,7 @@ jobs:
           python3 tools/test_sapphire_vulkan_lifecycle_source_contract.py
           python3 tools/test_sapphire_vulkan_cold_start_s76.py
           python3 tools/generate_synthetic_nds_boot_rom.py
-          python3 tools/test_sapphire_vulkan_cold_start_s77.py
+          python3 tools/test_sapphire_vulkan_cold_start_regression_s79.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream
@@ -139,15 +139,17 @@ jobs:
       - name: Generate synthetic cold-start ROM fixture
         shell: msys2 {0}
         run: python tools/generate_synthetic_nds_boot_rom.py
-      - name: Run Vulkan ROM cold-start integration test (S77-13)
+      - name: Run Vulkan ROM cold-start regression gate (S79-8)
         shell: msys2 {0}
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tools/test_sapphire_vulkan_cold_start_s77.py
-      - name: Freeze Unit-B cold-start crash reproduction (S78-1)
+        run: python tools/test_sapphire_vulkan_cold_start_regression_s79.py
+      - name: Archive expected-crash baseline (diagnostic only)
+        if: always()
         shell: msys2 {0}
         env:
           QT_QPA_PLATFORM: offscreen
+        continue-on-error: true
         run: python tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
 
   vulkan-windows-debug-build:
@@ -170,11 +172,11 @@ jobs:
       - name: Generate synthetic cold-start ROM fixture
         shell: msys2 {0}
         run: python tools/generate_synthetic_nds_boot_rom.py
-      - name: Run Vulkan ROM cold-start reproduction (Debug symbols)
+      - name: Run Vulkan ROM cold-start regression gate (Debug)
         shell: msys2 {0}
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
+        run: python tools/test_sapphire_vulkan_cold_start_regression_s79.py
 
   vulkan-linux-sanitizer-build:
     runs-on: ubuntu-latest
@@ -207,9 +209,8 @@ jobs:
         run: cmake --build build/sapphire-parity-linux-sanitizer-${{ matrix.sanitizer }} --target melonDS -j 2
       - name: Generate synthetic cold-start ROM fixture
         run: python3 tools/generate_synthetic_nds_boot_rom.py
-      - name: Run Vulkan ROM cold-start reproduction (${{ matrix.sanitizer }})
-        if: matrix.sanitizer == 'asan-ubsan'
+      - name: Run Vulkan ROM cold-start regression gate (${{ matrix.sanitizer }})
         env:
           QT_QPA_PLATFORM: offscreen
           ASAN_OPTIONS: detect_leaks=0
-        run: python3 tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
+        run: python3 tools/test_sapphire_vulkan_cold_start_regression_s79.py

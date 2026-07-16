@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze and verify Unit-B cold-start crash reproduction (S78-1)."""
+"""Vulkan ROM cold-start regression gate after S79 crash fix."""
 
 from __future__ import annotations
 
@@ -22,21 +22,18 @@ from sapphire_cold_start_artifacts import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROM = REPO_ROOT / "tools" / "fixtures" / "synthetic_vulkan_cold_start.nds"
 GENERATOR = REPO_ROOT / "tools" / "generate_synthetic_nds_boot_rom.py"
-BASELINE_CHECKPOINTS = (
+
+CHECKPOINTS = (
     "[RomBootTrace] Sapphire Vulkan activation complete",
     "[FirstVulkanFrame] producerBegin enter",
     "[RomBootTrace] first RunFrame begin",
-    "[FirstGpu2D] before UnitA line=0",
-    "[FirstGpu2D] after UnitA line=0",
-    "[FirstGpu2D] before UnitB line=0",
-    "[FirstGpu2D] after UnitB line=0",
-    "[FirstGpu2D] before UnitA sprites line=1",
-    "[FirstGpu2D] after UnitA sprites line=1",
-    "[FirstGpu2D] before UnitB sprites line=1",
     "[FirstGpu2D] after UnitB sprites line=1",
+    "[FirstGpuLine] before CheckDMAs HBlank",
+    "[FirstGpuLine] after CheckDMAs HBlank",
+    "[RomBootTrace] first RunFrame complete",
+    "[VulkanProducer] queuePush",
+    "[VulkanColdStartTest] complete exitCode=0",
 )
-
-WINDOWS_ACCESS_VIOLATION = 0xC0000005
 
 
 def find_vulkan_binary() -> Path | None:
@@ -46,7 +43,6 @@ def find_vulkan_binary() -> Path | None:
         REPO_ROOT / "build" / "sapphire-parity-linux-Release" / "melonDS",
         REPO_ROOT / "build" / "sapphire-parity-linux-Debug" / "melonDS",
         REPO_ROOT / "build" / "sapphire-parity-linux-sanitizer-asan-ubsan" / "melonDS",
-        REPO_ROOT / "build" / "sapphire-parity-linux-sanitizer-msan" / "melonDS",
     ]
     return next((path for path in candidates if path.is_file()), None)
 
@@ -61,18 +57,8 @@ def ensure_fixture_rom() -> Path:
     return FIXTURE_ROM
 
 
-def is_crash_exit_code(code: int) -> bool:
-    unsigned = code & 0xFFFFFFFF
-    return unsigned in {
-        WINDOWS_ACCESS_VIOLATION,
-        0x80000003,
-        0xC000001D,
-        0xC0000409,
-    }
-
-
-class SapphireVulkanColdStartReproductionS78Tests(unittest.TestCase):
-    def test_unit_b_line0_crash_is_reproducible_with_frozen_artifacts(self):
+class SapphireVulkanColdStartRegressionS79Tests(unittest.TestCase):
+    def test_vulkan_rom_cold_start_regression_gate(self):
         binary = find_vulkan_binary()
         if binary is None:
             self.skipTest("production Vulkan binary unavailable")
@@ -102,8 +88,8 @@ class SapphireVulkanColdStartReproductionS78Tests(unittest.TestCase):
         env.setdefault("QT_QPA_PLATFORM", "offscreen")
         env["MELONPRIME_FORCE_VULKAN_RENDERER"] = "1"
         env["MELONPRIME_FORCE_VULKAN_PRESENTER"] = "1"
-        env.pop("MELONPRIME_VULKAN_COLD_START_TEST", None)
-        env.pop("MELONPRIME_VULKAN_COLD_START_FRAMES", None)
+        env["MELONPRIME_VULKAN_COLD_START_TEST"] = "1"
+        env["MELONPRIME_VULKAN_COLD_START_FRAMES"] = "4"
 
         try:
             proc = subprocess.run(
@@ -143,27 +129,38 @@ class SapphireVulkanColdStartReproductionS78Tests(unittest.TestCase):
             stderr=proc.stderr,
         )
 
-        for checkpoint in BASELINE_CHECKPOINTS:
-            self.assertIn(checkpoint, combined, msg=f"missing {checkpoint}")
+        build_match = re.search(r"\[BuildIdentity\] commit=(\S+)", combined)
+        self.assertIsNotNone(build_match, msg=combined[-4000:])
+        assert build_match is not None
+        self.assertNotEqual(build_match.group(1), "unknown")
 
-        self.assertTrue(
-            is_crash_exit_code(proc.returncode),
-            msg=(
-                f"expected ACCESS_VIOLATION-like crash, got {proc.returncode}\n"
-                f"artifacts={artifact_dir}\n{combined[-8000:]}"
-            ),
+        self.assertEqual(
+            proc.returncode,
+            0,
+            msg=f"expected cold-start success, got {proc.returncode}\nartifacts={artifact_dir}\n{combined[-8000:]}",
         )
-        self.assertNotIn(
-            "[RomBootTrace] first RunFrame complete",
+
+        missing = [checkpoint for checkpoint in CHECKPOINTS if checkpoint not in combined]
+        self.assertFalse(
+            missing,
+            msg=f"missing checkpoints: {missing}\nartifacts={artifact_dir}\n{combined[-8000:]}",
+        )
+
+        self.assertRegex(
             combined,
-            msg="baseline should still crash before first RunFrame completes",
-        )
-        self.assertTrue(
-            metadata.minidump_paths or metadata.crash_report_paths,
-            msg=f"expected crash artifacts in {artifact_dir}",
+            r"\[VulkanPresent\] frameId=\d+ surfacePresent=1",
+            msg=combined[-4000:],
         )
 
-        print(f"[ColdStartArtifact] bundle={artifact_dir}")
+        splash_match = re.search(
+            r"\[VulkanColdStartTest\] complete exitCode=0 splashHidden=(\d+)",
+            combined,
+        )
+        self.assertIsNotNone(splash_match, msg=combined[-4000:])
+        assert splash_match is not None
+        self.assertEqual(splash_match.group(1), "1")
+
+        print(f"[ColdStartRegression] bundle={artifact_dir}")
 
 
 if __name__ == "__main__":
