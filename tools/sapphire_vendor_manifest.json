@@ -145,6 +145,28 @@
       "parity_mode": "normalized_upstream",
       "allowed_transform": "desktop_vulkan_adapter",
       "transform_id": "gpu2d_core"
+    },
+    {
+      "upstream_repository": "SapphireRhodonite/melonDS-android-lib",
+      "upstream_commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023",
+      "upstream_path": "src/GPU2D.h",
+      "upstream_sha256": "3a84b55d1f3e9967ed09ab40c98f5d19f776b3202f7e4381bad5fea15d37c6bc",
+      "local_path": "src/SapphireGPU2DCore/SapphireGPU2DRenderer2D.h",
+      "local_sha256": "bace19413e8ecac73912c92bfcb7190cb9f1d0205fc1e562138baa56dbf1b4b2",
+      "parity_mode": "normalized_upstream",
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "gpu2d_core"
+    },
+    {
+      "upstream_repository": "SapphireRhodonite/melonDS-android-lib",
+      "upstream_commit_or_tag": "d77944275fa61f9b79cfcead2c3e98993429a023",
+      "upstream_path": "src/GPU2D.cpp",
+      "upstream_sha256": "1bf1996d79bb79160f0f375e2abaa569039450303eccbde6148509451ff06d02",
+      "local_path": "src/SapphireGPU2DCore/Unit.cpp",
+      "local_sha256": "ae4012a7d39fc4598083e30c3081e7866f9bca79c6afcb320bfd11e338efaa3e",
+      "parity_mode": "normalized_upstream",
+      "allowed_transform": "desktop_vulkan_adapter",
+      "transform_id": "gpu2d_core"
     }
   ]
 }
