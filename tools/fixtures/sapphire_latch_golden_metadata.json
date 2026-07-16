@@ -1,10 +1,13 @@
 {
   "upstreamTag": "0.7.0.rc4",
   "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
-  "description": "Deterministic static 2D packed snapshot golden binary",
+  "description": "Deterministic latch snapshot schema golden binary",
+  "fixtureKind": "compiled_latch_snapshot_schema",
   "binaryFixture": "sapphire_static_2d_golden_snapshot.bin",
   "binaryByteLength": 935532,
   "binarySha256": "b2c5b3e9e04a5e0fbd370cdb911faf24a1baee67a901a7a80029dc6344a6d496",
+  "capture3dOffset": 885900,
+  "capture3dBytes": 49152,
   "compareFields": [
     "packedTopPlane0",
     "packedTopPlane1",
