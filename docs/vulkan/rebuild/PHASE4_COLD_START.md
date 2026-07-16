@@ -150,6 +150,44 @@ always-active GPU2D compositor for every backend, instead of a Vulkan-only
 longer exists in this build. See the S82 plan for the full analysis and
 phased fix; work in progress below this section.
 
+### S82-4 (2026-07-16, `d90bc05e8`): GPU3D ownership unified; Software activation wired
+
+`Renderer::TakeOwnRenderer3D()` lets `GPU::SetRenderer()` promote each
+backend's privately-constructed `Rend3D` into `GPU3D`'s unified ownership
+whenever `GPU3D` has no renderer registered yet (the common case for
+Software/OpenGL/Compute — Vulkan's separate `GPU::SetRenderer3D()` call
+still supersedes this for the Vulkan path). `EmuThread.cpp` no longer wipes
+that promotion with an unconditional `SetRenderer3D(nullptr)` on non-Vulkan
+branches, and the Software renderer-selection branch now calls
+`ActivateSapphireVulkan2D()` instead of unconditionally deactivating.
+`GPU::ActivateSapphireVulkan2D()` no longer requires
+`Renderer3D::UsesStructured2DMetadata()` (a Vulkan-only "provides
+GPU-resident structured planes" flag) — only `GPU3D.HasCurrentRenderer()`,
+which S82-4 now guarantees for every backend.
+
+Because `GPU_Soft.cpp`'s `GetFramebuffers()` / `PublishSapphire2DFrame()`
+already source pixels from the same GPU-owned `Framebuffer[][]` array the
+canonical `GPU2D::SoftRenderer` writes into (see `SoftRenderer::DrawScanline`
+early-returning via `GPU.UsesSapphireGpu2DPath()`, and
+`AssignFramebuffers()`/`FramebufferPlane()` binding the same storage for
+both the legacy and canonical write paths), no additional plumbing was
+needed for Software specifically once ownership was unified — the dead
+`Rend2D_A`/`Rend2D_B`/`Output2D` path is simply no longer reached at all.
+OpenGL/Compute deliberately still call `DeactivateSapphireVulkan2D()` for
+now: `GLRenderer3D::IsRendererAccelerated()` reports `true`, which would
+push the canonical compositor into its GPU-resident "structured plane"
+branch instead of the CPU `GetLine()` branch Software uses, and no
+`GLRenderer2D` → canonical-`Unit` adapter exists yet to consume that (S82-6).
+
+Verified: `build/rebuild-mingw-x86_64` links clean;
+`test_sapphire_vulkan_cold_start_regression_s79.py` still reaches exit 0
+with every checkpoint intact (the one remaining failure is the pre-existing
+`surfacePresent=1` gap above, S82-9, not a regression from this change).
+**Not yet verified**: an actual pixel-level check that Software's vertical
+scanline-duplication symptom is gone, since this environment has no
+GPU/display and no fixture existed for it — that is S82-1, tracked next in
+the S82 plan.
+
 ### Original (partial) writeup, 2026-07-16
 
 User report after retesting the fixes above: OpenGL and Software rendering
