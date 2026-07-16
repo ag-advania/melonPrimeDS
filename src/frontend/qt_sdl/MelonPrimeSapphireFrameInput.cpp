@@ -1,13 +1,37 @@
 #include "MelonPrimeSapphireFrameInput.h"
 
+#include "GPU.h"
 #include "GPU3D_Vulkan.h"
+#include "SapphireGPU2DSoftAccess.h"
 #include "SapphirePublished2DFrame.h"
 
 namespace MelonDSAndroid
 {
 
+namespace
+{
+
+bool PointerMatchesLivePacked(
+    const melonDS::u32* published,
+    const melonDS::u32* live)
+{
+    return published != nullptr && live != nullptr && published == live;
+}
+
+bool PointerMatchesLiveStructured(
+    const melonDS::u32* published,
+    const melonDS::u32* live)
+{
+    if (published == nullptr && live == nullptr)
+        return true;
+    return published != nullptr && live != nullptr && published == live;
+}
+
+} // namespace
+
 DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     Frame* frame,
+    const melonDS::GPU& gpu,
     const SapphirePublished2DFrame& published,
     const melonDS::Vulkan3DFrameView& frame3d,
     u64 activeRendererGeneration,
@@ -94,17 +118,53 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
         return result;
     }
 
+    const int frontBuffer = published.frontBuffer;
+    if (!PointerMatchesLivePacked(published.top.packed, gpu.Framebuffer[frontBuffer][0])
+        || !PointerMatchesLivePacked(published.bottom.packed, gpu.Framebuffer[frontBuffer][1]))
+    {
+        result.rejected = true;
+        result.rejectReason = "publishedLivePackedPointerMismatch";
+        return result;
+    }
+
+    const auto* renderer2D = gpu.TryGetSapphireRenderer2D();
+    if (published.top.structuredPlane0 != nullptr
+        || published.top.structuredPlane1 != nullptr
+        || published.top.structuredControl != nullptr
+        || published.bottom.structuredPlane0 != nullptr
+        || published.bottom.structuredPlane1 != nullptr
+        || published.bottom.structuredControl != nullptr)
+    {
+        if (renderer2D == nullptr)
+        {
+            result.rejected = true;
+            result.rejectReason = "structuredPointersWithoutRenderer2D";
+            return result;
+        }
+
+        const melonDS::u32* liveTopPlane0 = renderer2D->GetStructuredVulkan2DPlane(true, 0);
+        const melonDS::u32* liveTopPlane1 = renderer2D->GetStructuredVulkan2DPlane(true, 1);
+        const melonDS::u32* liveTopControl = renderer2D->GetStructuredVulkan2DPlane(true, 2);
+        const melonDS::u32* liveBottomPlane0 = renderer2D->GetStructuredVulkan2DPlane(false, 0);
+        const melonDS::u32* liveBottomPlane1 = renderer2D->GetStructuredVulkan2DPlane(false, 1);
+        const melonDS::u32* liveBottomControl = renderer2D->GetStructuredVulkan2DPlane(false, 2);
+
+        if (!PointerMatchesLiveStructured(published.top.structuredPlane0, liveTopPlane0)
+            || !PointerMatchesLiveStructured(published.top.structuredPlane1, liveTopPlane1)
+            || !PointerMatchesLiveStructured(published.top.structuredControl, liveTopControl)
+            || !PointerMatchesLiveStructured(published.bottom.structuredPlane0, liveBottomPlane0)
+            || !PointerMatchesLiveStructured(published.bottom.structuredPlane1, liveBottomPlane1)
+            || !PointerMatchesLiveStructured(published.bottom.structuredControl, liveBottomControl))
+        {
+            result.rejected = true;
+            result.rejectReason = "publishedLiveStructuredPointerMismatch";
+            return result;
+        }
+    }
+
     result.input.frame = frame;
     result.input.frontBuffer = published.frontBuffer;
     result.input.preparedFrameScreenSwap = published.renderScreenSwapAt3D;
-    result.input.packedTop = published.top.packed;
-    result.input.packedBottom = published.bottom.packed;
-    result.input.structuredTopPlane0 = published.top.structuredPlane0;
-    result.input.structuredTopPlane1 = published.top.structuredPlane1;
-    result.input.structuredTopControl = published.top.structuredControl;
-    result.input.structuredBottomPlane0 = published.bottom.structuredPlane0;
-    result.input.structuredBottomPlane1 = published.bottom.structuredPlane1;
-    result.input.structuredBottomControl = published.bottom.structuredControl;
     result.input.emulatedFrameSerial = published.emulatedFrameSerial;
     result.input.rendererGeneration = frame3d.Generation;
     result.input.valid = true;

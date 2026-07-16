@@ -270,6 +270,7 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     const SapphirePublished2DFrame& published = nds->GPU.GetPublished2DFrame();
     const DesktopSapphireFrameBuildResult buildResult = BuildDesktopSapphireFrameInput(
         frame,
+        nds->GPU,
         published,
         frameView,
         activeGeneration,
