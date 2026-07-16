@@ -313,6 +313,13 @@ struct MetalRenderer::MetalCaptureState
     bool LoggedReady = false;
     bool LoggedFirstCapture = false;
     bool LoggedOnDemandReadback = false;
+    bool LoggedCpuFallbackUpload = false;
+    bool LoggedIncompleteCaptureSync = false;
+    // MELONPRIME_METAL_CAPTURE_CPU_UPLOAD_SCRATCH_V1: reused across
+    // UploadCpuCompletedCaptures() calls instead of a fresh heap allocation
+    // per layer per frame (this hot path fires on every CPU-fallback frame
+    // that has a pending capture write).
+    std::vector<uint32_t> CpuUploadScratch;
 };
 
 bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
@@ -799,7 +806,9 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
             static_cast<NSUInteger>(std::max(1, CaptureState->Scale));
         const NSUInteger width = nativeWidth * scale;
         const NSUInteger height = nativeHeight * scale;
-        std::vector<uint32_t> pixels(width * height);
+        std::vector<uint32_t>& pixels = CaptureState->CpuUploadScratch;
+        if (pixels.size() < width * height)
+            pixels.resize(width * height);
 
         for (NSUInteger y = 0; y < nativeHeight; y++)
         {
@@ -820,7 +829,7 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         id<MTLBuffer> upload =
             [CaptureState->Device
                 newBufferWithBytes:pixels.data()
-                            length:pixels.size() * sizeof(uint32_t)
+                            length:width * height * sizeof(uint32_t)
                            options:MTLResourceStorageModeShared];
         id<MTLCommandBuffer> command =
             [CaptureState->Queue commandBuffer];
@@ -840,9 +849,25 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
             destinationLevel:0
            destinationOrigin:MTLOriginMake(0, 0, 0)];
         [blit endEncoding];
+        // Same-queue command ordering (CaptureState->Queue is the shared
+        // renderer/presenter queue, see MetalContext.h) guarantees any later
+        // command buffer on this queue that reads this texture sees this
+        // write's effects, without a CPU-side wait. This runs on every
+        // CPU-fallback frame with a pending capture write, so a synchronous
+        // GPU stall here was a real, measured hot-path cost.
+        [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status == MTLCommandBufferStatusError)
+            {
+                const char* message = completed.error
+                    ? [[completed.error localizedDescription] UTF8String]
+                    : "unknown Metal error";
+                std::fprintf(stderr,
+                    "[MelonPrime] metal display capture: CPU fallback upload "
+                    "command failed: %s\n", message);
+            }
+        }];
         [command commit];
-        [command waitUntilCompleted];
-        return command.status == MTLCommandBufferStatusCompleted;
+        return true;
     };
 
     for (uint32_t layer = 0; layer < 16; layer++)
@@ -895,9 +920,13 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         }
     }
 
-    std::fprintf(stderr,
-        "[MelonPrime] metal display capture: CPU fallback capture "
-        "uploaded to GPU texture arrays\n");
+    if (!CaptureState->LoggedCpuFallbackUpload)
+    {
+        CaptureState->LoggedCpuFallbackUpload = true;
+        std::fprintf(stderr,
+            "[MelonPrime] metal display capture: CPU fallback capture "
+            "uploaded to GPU texture arrays (further occurrences not logged)\n");
+    }
     return true;
 }
 
@@ -918,11 +947,17 @@ void MetalRenderer::SyncVRAMCapture(
     if (!meta.Valid || meta.Size != static_cast<int>(len))
         return;
 
-    if (!complete)
+    if (!complete && !CaptureState->LoggedIncompleteCaptureSync)
     {
+        // SyncVRAMCapture() runs on every CPU VRAM access that touches a
+        // capture-tracked bank -- this can fire thousands of times per frame
+        // in games that read/write capture-backed VRAM in a loop, so it must
+        // stay rate-limited (see LoggedOnDemandReadback just below for the
+        // established pattern this follows).
+        CaptureState->LoggedIncompleteCaptureSync = true;
         std::fprintf(stderr,
             "[MelonPrime] metal display capture: CPU requested incomplete "
-            "capture bank=%u start=%u size=%u\n",
+            "capture bank=%u start=%u size=%u (further occurrences not logged)\n",
             bank, start, len);
     }
 
