@@ -1445,4 +1445,4 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 | S77-5 | (pending) | pending | Move Vulkan lifetime fully outside queue containers |
 | S77-6 | `1fab5d513` | done | Debug env gates for producer begin / Sapphire 2D |
 | S77-7 | `40a51b45f` | done | `AssignSapphireFramebuffers()` binding validation |
-| S77-8 | (pending) | in progress | Vendor pinned GPU2D.h/cpp upstream snapshots in manifest |
+| S77-8 | `e60059235` | done | Vendor pinned GPU2D.h/cpp upstream snapshots in manifest |
