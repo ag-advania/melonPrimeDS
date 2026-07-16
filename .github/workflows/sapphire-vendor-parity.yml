@@ -142,3 +142,8 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tools/test_sapphire_vulkan_cold_start_s77.py
+      - name: Freeze Unit-B cold-start crash reproduction (S78-1)
+        shell: msys2 {0}
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/test_sapphire_vulkan_cold_start_reproduction_s78.py
