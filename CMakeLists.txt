@@ -114,7 +114,15 @@ cmake_dependent_option(ENABLE_JIT_PROFILING "Enable JIT profiling with VTune" OF
 option(ENABLE_OGLRENDERER "Enable OpenGL renderer" ON)
 
 check_ipo_supported(RESULT IPO_SUPPORTED)
-cmake_dependent_option(ENABLE_LTO_RELEASE "Enable link-time optimizations for release builds" ON "IPO_SUPPORTED" OFF)
+# MELONPRIME_DIAGNOSTIC_SYMBOLS (S80-3) exists specifically so crash RVAs can be
+# resolved back to source. LTO merges/reorders functions across translation
+# units and defeats that purpose (confirmed S81: addr2line/objdump found no
+# usable symbols in an LTO'd release-mingw-x86_64 binary, and the linker map
+# was dominated by opaque "ltrans" partitions), so default LTO off whenever
+# diagnostic symbols are requested. Production (non-diagnostic) builds keep
+# their existing default.
+cmake_dependent_option(ENABLE_LTO_RELEASE "Enable link-time optimizations for release builds" ON
+    "IPO_SUPPORTED;NOT MELONPRIME_DIAGNOSTIC_SYMBOLS" OFF)
 cmake_dependent_option(ENABLE_LTO "Enable link-time optimizations" OFF "IPO_SUPPORTED" OFF)
 
 if (ENABLE_LTO_RELEASE)
@@ -125,7 +133,13 @@ if (ENABLE_LTO)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
-if (NOT APPLE)
+# Same rationale: "-s" strips all symbol/debug sections from the final Release
+# .exe at link time, so even with -g and MELONPRIME_DIAGNOSTIC_SYMBOLS=ON the
+# binary written to disk had nothing left for addr2line to read (confirmed
+# S81: `file melonPrimeDS.exe` reported "stripped to external PDB" with no
+# separate PDB actually produced). Keep stripping for ordinary Release builds;
+# skip it only when diagnostic symbols were explicitly requested.
+if (NOT APPLE AND NOT MELONPRIME_DIAGNOSTIC_SYMBOLS)
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -s")
 endif()
 
