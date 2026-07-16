@@ -220,7 +220,16 @@ void DesktopFrameLifetimeTracker::onPresentationDeferred(
         return;
     if (frame->presentationReferences != 0)
         frame->presentationReferences--;
-    retireFrameLocked(frame, core);
+
+    // Core deferPresentedFrame requeues to presentQueue. Never retire into freeQueue here.
+    if (frame->queueState() == FrameQueueState::AcquiredForPresentation)
+    {
+        transitionFrameLocked(
+            frame,
+            FrameQueueState::AcquiredForPresentation,
+            FrameQueueState::Ready,
+            core.stats);
+    }
 }
 
 void DesktopFrameLifetimeTracker::onPushRendered(Frame* frame, SapphireFrameQueueCore& core)
