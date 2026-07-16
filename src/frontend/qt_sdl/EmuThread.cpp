@@ -117,8 +117,26 @@ struct VulkanColdStartTestState
             "[VulkanColdStartTest] complete exitCode=0 splashHidden=%d\n",
             splashHidden ? 1 : 0);
         enabled = false;
+        // S81: calling qApp->quit() directly here bypassed
+        // MainWindow::closeEvent() -> EmuInstance::deleteWindow()/deleteAllWindows()
+        // -> EmuInstance's synchronous destructor teardown, which is the only path
+        // that destroys vulkanFrontendSessionOwner *after* every window depending on
+        // it (ScreenPanelVulkan) has already been torn down. With a bare quit(), Qt's
+        // own top-level widget cleanup could run ~MainWindow()/~ScreenPanelVulkan()
+        // after main.cpp's post-exec() deleteAllEmuInstances() had already destroyed
+        // the owning EmuInstance, so ScreenPanelVulkan::~ScreenPanelVulkan()'s
+        // emuInstance->vulkanFrontendSession().unregisterPresenter(...) call read
+        // through an already-freed EmuInstance (crash: std::mutex::lock() on a
+        // dangling presentationCallMutex). Route through deleteAllWindows() instead,
+        // the same call a real user's window-close button reaches via closeEvent, so
+        // the cold-start test exercises the same shutdown order production users do.
         if (qApp != nullptr)
-            QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
+        {
+            QMetaObject::invokeMethod(
+                qApp,
+                [instance]() { instance->deleteAllWindows(); },
+                Qt::QueuedConnection);
+        }
     }
 };
 

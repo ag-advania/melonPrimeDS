@@ -24,21 +24,68 @@ tracing was aimed). Fixed by linking those object libraries against `core`
 itself instead of hand-copying its macro list, so future PUBLIC macros on
 `core` can't silently drift out of sync again.
 
-Latest cold-start run after the fix: the emulator boots, produces and
-presents multiple Vulkan frames (`queuePush`, `completeProducerTransaction`,
-`refreshActualRenderer` all succeed repeatedly), and reaches the test
-harness's own `[VulkanColdStartTest] complete exitCode=0` checkpoint. The
-run then crashes during process teardown in
-`MelonPrimeVulkanFrontendSession::unregisterPresenter()` (`std::mutex::lock()`
-on what looks like an already-destroyed mutex, called from
-`ScreenPanelVulkan::~ScreenPanelVulkan()` during `MainWindow::~MainWindow()`)
-— a distinct, later-stage destruction-order bug, not the original
-post-FinishFrame crash. Tracked separately; see the shutdown-crash note below
-once filed.
+## Shutdown crash: also root-caused and fixed (2026-07-16, same session)
+
+After the fix above, the cold-start test still crashed, but during process
+teardown: `MelonPrimeVulkanFrontendSession::unregisterPresenter()`
+(`std::mutex::lock()` on what looked like an already-destroyed mutex),
+called from `ScreenPanelVulkan::~ScreenPanelVulkan()` during
+`MainWindow::~MainWindow()`.
+
+Root cause: `MainWindow` has `Qt::WA_DeleteOnClose`, so `win->close()` only
+*schedules* `~MainWindow()` (and therefore `~ScreenPanelVulkan()`) via
+`deleteLater()` — it does not destroy the object synchronously.
+`EmuInstance::deleteWindow(id, true)` calls `win->close()` and then, in the
+very same call stack (once `numWindows == 0`), calls
+`deleteEmuInstance(instanceID)` -> `delete inst` ->
+`EmuInstance::~EmuInstance()`, which synchronously destroys
+`vulkanFrontendSessionOwner`. By the time Qt's event loop actually processes
+the deferred `deleteLater()` and runs `~ScreenPanelVulkan()`, the
+`EmuInstance` it still held a raw pointer to (and, through it,
+`vulkanFrontendSessionOwner`) was long gone. This is a real, pre-existing
+ordering hazard in the shutdown path, not something introduced by the
+FinishFrame fix or by the test harness — it would affect a real user closing
+the Vulkan-backed window too, not just the cold-start test.
+
+Fixed by making `ScreenPanel::beginClose()` virtual and overriding it in
+`ScreenPanelVulkan` to unregister the presenter there instead of (only) in
+the destructor. `beginClose()` already runs synchronously from
+`MainWindow::closeEvent()`, before `deleteWindow()`/`~EmuInstance()`, so
+`emuInstance` and its `vulkanFrontendSessionOwner` are still guaranteed
+valid at that point. The destructor keeps the same unregister call as a
+safety net for a `ScreenPanelVulkan` destroyed without going through
+`closeEvent()` first, gated on the same `sessionPresenterRegistered` flag so
+it becomes a no-op in the normal (now-fixed) path.
+
+Separately, the cold-start test harness itself was calling
+`QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection)` directly,
+which bypasses `MainWindow::closeEvent()` entirely (`quit()` only stops the
+event loop; it doesn't close any window). Changed it to invoke
+`EmuInstance::deleteAllWindows()` instead, the same call a real user's
+window-close reaches via `closeEvent()`, so the test now exercises the same
+shutdown path production users do rather than a shortcut that happened to
+expose (but did not cause) the ordering hazard above.
+
+## Current status (2026-07-16)
+
+The cold-start regression test **no longer crashes at all** — commit/dirty
+build, ~5 Vulkan frames produced and pushed
+(`queuePush`/`completeProducerTransaction`/`refreshActualRenderer` all
+succeed repeatedly), clean shutdown through `deleteAllWindows()` ->
+`~EmuInstance()` -> `~MainWindow()` -> `~ScreenPanelVulkan()`, process exits
+0. The test still **fails** on a content assertion —
+`self.assertRegex(combined, r"\[VulkanPresent\] frameId=\d+
+surfacePresent=1", ...)` never matches; every acquired frame in this
+`QT_QPA_PLATFORM=offscreen` run logs `defer id=... reason=surfaceGenMismatch`
+instead of presenting. Not yet root-caused: could be a genuine surface-
+generation bug, or could be an artifact of the offscreen/headless Qt
+platform never producing a real swapchain generation bump the way an
+on-screen window does. Needs investigation before the cold-start gate can go
+green.
 
 ## CI
 
 - `python tools/generate_sapphire_vulkan_sources.py --verify` added to `sapphire-vendor-parity.yml`
-- Cold-start gate remains **expected red** until the shutdown crash above is
-  also fixed (the harness's own success checkpoint firing before the crash is
-  a big step, but the process must still exit 0 for the gate to pass)
+- Cold-start gate remains **expected red** until the `surfacePresent=1`
+  assertion above passes, but the blocking crash-on-boot and crash-on-exit
+  bugs that dominated S77 through S81 are both fixed

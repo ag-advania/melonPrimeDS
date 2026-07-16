@@ -97,7 +97,16 @@ public:
 
 #ifdef MELONPRIME_DS
     void unfocus();
-    void beginClose();
+    // S81: virtual so ScreenPanelVulkan can synchronously unregister its
+    // Vulkan presenter from EmuInstance's session here. MainWindow's
+    // WA_DeleteOnClose means close() only schedules ~ScreenPanelVulkan() via
+    // deleteLater(); by the time that deferred deletion actually runs,
+    // EmuInstance::deleteWindow()/~EmuInstance() has typically already
+    // destroyed EmuInstance's vulkanFrontendSessionOwner synchronously in the
+    // same call stack that requested the close, so the destructor is too
+    // late to reach it safely. beginClose() runs synchronously from
+    // MainWindow::closeEvent() before any of that, while it is still valid.
+    virtual void beginClose();
 
 #ifdef MELONPRIME_CUSTOM_HUD
     std::optional<QRect> getTopScreenWidgetRect() const;

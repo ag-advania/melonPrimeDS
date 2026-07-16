@@ -24,6 +24,7 @@ public:
     ~ScreenPanelVulkan() override;
     bool initVulkan();
     void drawScreen() override;
+    void beginClose() override;
 
 private:
     class NoRomSplashOverlay;

@@ -103,6 +103,24 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     noRomSplashOverlay->hide();
 }
 
+void ScreenPanelVulkan::beginClose()
+{
+    // S81: unregister from EmuInstance's Vulkan session here, synchronously,
+    // before ScreenPanel::beginClose() below tears down cursor/thread-bridge
+    // state and before MainWindow::closeEvent() proceeds to
+    // EmuInstance::deleteWindow()/deleteAllWindows(). WA_DeleteOnClose means
+    // this widget's actual C++ destruction is deferred via deleteLater();
+    // EmuInstance (and the vulkanFrontendSessionOwner this call reaches) is
+    // very likely already destroyed by the time that deferred deletion runs,
+    // so the destructor itself must not be the first/only place this runs.
+    if (presenter && sessionPresenterRegistered && emuInstance != nullptr)
+    {
+        emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
+        sessionPresenterRegistered = false;
+    }
+    ScreenPanel::beginClose();
+}
+
 ScreenPanelVulkan::~ScreenPanelVulkan()
 {
     if (presenter)
@@ -111,7 +129,12 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
         presenter->SetDesktopOverlayTransferQuery(nullptr, nullptr);
         presenter->SetDesktopOverlayRecorder(nullptr, nullptr);
         presenter->SetDesktopOverlayTransferRecorder(nullptr, nullptr);
-        if (sessionPresenterRegistered)
+        // Normally already handled by beginClose(), which runs synchronously
+        // while EmuInstance is still guaranteed valid (see beginClose() for
+        // why the destructor itself cannot safely do this). This remains as
+        // a safety net for any ScreenPanelVulkan destroyed without going
+        // through MainWindow::closeEvent() -> beginClose() first.
+        if (sessionPresenterRegistered && emuInstance != nullptr)
             emuInstance->vulkanFrontendSession().unregisterPresenter(presenter.get());
         sessionPresenterRegistered = false;
         if (surfaceId != 0)
