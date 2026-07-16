@@ -110,7 +110,47 @@ neither attempted yet:
    have frame production read from there instead. Matches the rebuild's
    actual intent but is real feature work, not a one-line fix.
 
-## OpenGL/Software rendering broken after touching Vulkan: root-caused and fixed (2026-07-16)
+## OpenGL/Software rendering broken after touching Vulkan: partial fix, REOPENED (2026-07-16, S82)
+
+**Status correction (S82 audit,
+`.claude/rules/plan/Vulkan_S82_OpenGL無表示_Software走査線縦複製_DeadLegacy2DPath_Sapphire単一Ownership_監査修正指示.md`):**
+the `ActiveGPU2DPath` fix below is real and worth keeping, but it does **not**
+fix OpenGL or Software rendering. It only stops the state flag from getting
+stuck; the branch it now correctly falls back to
+(`GPU2DExecutionPath::LegacyOuterRenderer`) is dead code in a
+`MELONPRIME_ENABLE_VULKAN` build: `SoftRenderer`/`GLRenderer` never construct
+`Rend2D_A`/`Rend2D_B` in that configuration (`#if !defined(MELONPRIME_DS) ||
+!defined(MELONPRIME_ENABLE_VULKAN)` guards them out in both `GPU_Soft.cpp`
+and `GPU_OpenGL.cpp`), so the legacy path has no BG/OBJ producer at all.
+Software's `SoftRenderer::DrawScanline()` still unconditionally runs
+`DrawScanlineA`/`DrawScanlineB`, which read from `Output2D[2][256]` — never
+written this frame because the only writer (`Rend2D_A->DrawScanline(line)`)
+is compiled out — producing the reported symptom exactly: one stale
+horizontal line duplicated down all 192 rows, independently per screen (two
+separate `Output2D[screen]` slots). OpenGL's `GLRenderer2D` is compiled out
+the same way, so its `OutputTex2D[0]/[1]` textures are allocated but never
+populated, and the final compositor pass samples them anyway -> blank.
+
+This was not caught before because verification for the earlier fix used
+only the existing Vulkan cold-start regression test, which never selects
+Software or OpenGL — the `ActiveGPU2DPath` transition log line was confirmed
+correct, but "the flag resets correctly" was mistaken for "the target it
+resets to actually renders." The claim "OpenGL/Software rendering broken ...
+root-caused and fixed" below is inaccurate and reopened.
+
+Real fix requires unifying `GPU3D` renderer ownership across backends (today
+only Vulkan calls `GPU::SetRenderer3D()`; Software/OpenGL keep their 3D
+renderer private in the base `Renderer::Rend3D` member, so
+`GPU3D.HasCurrentRenderer()` is false for them) and making the canonical
+`SapphireGPU2DCore::GPU2D::SoftRenderer` (already generic — it branches on
+`GPU.GPU3D.IsRendererAccelerated()`, not on a Vulkan-specific flag, for both
+BG/OBJ composition and 3D-line consumption via `GetLine()`) the single
+always-active GPU2D compositor for every backend, instead of a Vulkan-only
+`ActiveGPU2DPath` selector choosing between it and a legacy path that no
+longer exists in this build. See the S82 plan for the full analysis and
+phased fix; work in progress below this section.
+
+### Original (partial) writeup, 2026-07-16
 
 User report after retesting the fixes above: OpenGL and Software rendering
 were broken (blank/garbled), and Vulkan ROM boot still showed no change from

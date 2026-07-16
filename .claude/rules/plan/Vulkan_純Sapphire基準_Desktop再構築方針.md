@@ -783,7 +783,7 @@ R20 Remove obsolete Desktop Vulkan implementation
 | 1 | 純Sapphire core（vendor/generator/GPU2D） | **partial** — `MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN`の既定値がOFFのまま | `e95b8d40f` |
 | 2 | 最小Desktop WSI + 単色clear | **done** | `b4557998f` |
 | 3 | Sapphire output接続 + atomic input | **partial** — 旧Desktop full pipeline（temporal/runtime pacing/resource lease等）が接続されたまま、atomic inputはborrowed raw pointer契約が未確定 | `c640a33c1` |
-| 4 | ROM cold-start + CI検証 | **partial** — 起動直後クラッシュとシャットダウン時クラッシュの両方を根本原因特定・修正済み（`docs/vulkan/rebuild/PHASE4_POST_FINISHFRAME_CRASH_ROOT_CAUSE.md`、`PHASE4_COLD_START.md`）。テストはクラッシュせずexit 0まで到達。ユーザー報告のOpenGL/Software描画破損（`ActiveGPU2DPath`が`DeactivateSapphireVulkan2D()`でリセットされずSapphireCanonicalに固着するbug）も根本原因特定・修正済み（`PHASE4_COLD_START.md`「OpenGL/Software rendering broken」節）。残りは`surfacePresent=1`アサーション失敗のみ（`DesktopFrameLifetimeTracker.cpp`除外によりsurfaceGenerationが常に0になる、原因特定済み・未修正）。CI gateはまだred | *(see PHASE4_COLD_START.md)* |
+| 4 | ROM cold-start + CI検証 | **partial** — 起動直後クラッシュとシャットダウン時クラッシュの両方を根本原因特定・修正済み（`docs/vulkan/rebuild/PHASE4_POST_FINISHFRAME_CRASH_ROOT_CAUSE.md`、`PHASE4_COLD_START.md`）。テストはクラッシュせずexit 0まで到達。**S82監査でreopen**: `ActiveGPU2DPath`固着修正は真だが、OpenGL/Softwareは未修正——Vulkan buildではLegacy 2D pathがdead code（`Rend2D_A/B`がcompile時に除外）で、Software走査線縦複製・OpenGL無表示が継続（`Vulkan_S82_*.md`、`PHASE4_COLD_START.md`「REOPENED」節）。`surfacePresent=1`アサーション失敗も未修正（`DesktopFrameLifetimeTracker.cpp`除外によりsurfaceGenerationが常に0）。CI gateはまだred | *(see PHASE4_COLD_START.md and Vulkan_S82_*.md)* |
 | 5 | 機能復元 + 旧実装削除 | **not started** — `ARCHIVED.md`追加のみ、CMakeから旧実装は未削除 | `fafad722b`（誤記あり、上記参照） |
 
 **Tag:** `vulkan-pre-sapphire-rebuild` @ `90bf8333a`  
