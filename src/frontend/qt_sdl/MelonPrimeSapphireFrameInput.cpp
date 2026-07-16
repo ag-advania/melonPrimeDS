@@ -2,49 +2,59 @@
 
 #include "GPU.h"
 #include "GPU3D_Vulkan.h"
-#include "SapphireGPU2DSoftAccess.h"
-#include "SapphirePublished2DFrame.h"
 
 namespace MelonDSAndroid
 {
 
-namespace
+CompletedSapphireFrameTuple BuildCompletedSapphireFrameTuple(
+    const melonDS::GPU& gpu,
+    const melonDS::Vulkan3DFrameView& frame3d,
+    u64 activeRendererGeneration)
 {
+    CompletedSapphireFrameTuple tuple{};
+    tuple.published2D = gpu.GetPublished2DFrame();
+    tuple.frame3d = frame3d;
+    if (!tuple.published2D.valid || !frame3d.Valid)
+        return tuple;
+    if (frame3d.FrameSerial == 0 || frame3d.Generation == 0 || activeRendererGeneration == 0)
+        return tuple;
+    if (tuple.published2D.emulatedFrameSerial != frame3d.FrameSerial)
+        return tuple;
+    if (tuple.published2D.rendererGeneration != 0
+        && tuple.published2D.rendererGeneration != frame3d.Generation)
+    {
+        return tuple;
+    }
+    if (frame3d.Generation != activeRendererGeneration)
+        return tuple;
 
-bool PointerMatchesLivePacked(
-    const melonDS::u32* published,
-    const melonDS::u32* live)
-{
-    return published != nullptr && live != nullptr && published == live;
+    tuple.frameSerial = frame3d.FrameSerial;
+    tuple.rendererGeneration = frame3d.Generation;
+    tuple.frontBuffer = tuple.published2D.frontBuffer;
+    tuple.screenSwap = tuple.published2D.renderScreenSwapAt3D;
+    tuple.valid = tuple.frontBuffer >= 0
+        && tuple.frontBuffer <= 1
+        && tuple.published2D.top.packed != nullptr
+        && tuple.published2D.bottom.packed != nullptr;
+    return tuple;
 }
-
-bool PointerMatchesLiveStructured(
-    const melonDS::u32* published,
-    const melonDS::u32* live)
-{
-    if (published == nullptr && live == nullptr)
-        return true;
-    return published != nullptr && live != nullptr && published == live;
-}
-
-} // namespace
 
 DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     Frame* frame,
-    const melonDS::GPU& gpu,
-    const SapphirePublished2DFrame& published,
-    const melonDS::Vulkan3DFrameView& frame3d,
-    u64 activeRendererGeneration,
-    int expectedFrontBuffer,
-    bool expectedScreenSwap)
+    const CompletedSapphireFrameTuple& tuple,
+    u64 activeRendererGeneration)
 {
     DesktopSapphireFrameBuildResult result{};
-    if (frame == nullptr || !published.valid)
+    if (frame == nullptr || !tuple.valid)
     {
         result.rejected = true;
-        result.rejectReason = "invalidPublishedFrame";
+        result.rejectReason = "invalidCompletedTuple";
         return result;
     }
+
+    const SapphirePublished2DFrame& published = tuple.published2D;
+    const melonDS::Vulkan3DFrameView& frame3d = tuple.frame3d;
+
     if (!frame3d.Valid)
     {
         result.rejected = true;
@@ -69,34 +79,10 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
         result.rejectReason = "invalidFrontBuffer";
         return result;
     }
-    if (expectedFrontBuffer < 0 || expectedFrontBuffer > 1)
-    {
-        result.rejected = true;
-        result.rejectReason = "invalidLiveFrontBuffer";
-        return result;
-    }
-    if (published.frontBuffer != expectedFrontBuffer)
-    {
-        result.rejected = true;
-        result.rejectReason = "publishedLiveFrontBufferMismatch";
-        return result;
-    }
-    if (published.renderScreenSwapAt3D != expectedScreenSwap)
-    {
-        result.rejected = true;
-        result.rejectReason = "publishedLiveScreenSwapMismatch";
-        return result;
-    }
-    if (published.emulatedFrameSerial != frame3d.FrameSerial)
+    if (tuple.frameSerial != frame3d.FrameSerial)
     {
         result.rejected = true;
         result.rejectReason = "emulatedSerialMismatch";
-        return result;
-    }
-    if (published.rendererGeneration != frame3d.Generation)
-    {
-        result.rejected = true;
-        result.rejectReason = "publishedGenerationMismatch";
         return result;
     }
     if (frame->rendererGeneration != frame3d.Generation)
@@ -118,63 +104,19 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
         return result;
     }
 
-    const int frontBuffer = published.frontBuffer;
-    if (!PointerMatchesLivePacked(published.top.packed, gpu.Framebuffer[frontBuffer][0])
-        || !PointerMatchesLivePacked(published.bottom.packed, gpu.Framebuffer[frontBuffer][1]))
-    {
-        result.rejected = true;
-        result.rejectReason = "publishedLivePackedPointerMismatch";
-        return result;
-    }
-
-    const auto* renderer2D = gpu.TryGetSapphireRenderer2D();
-    if (published.top.structuredPlane0 != nullptr
-        || published.top.structuredPlane1 != nullptr
-        || published.top.structuredControl != nullptr
-        || published.bottom.structuredPlane0 != nullptr
-        || published.bottom.structuredPlane1 != nullptr
-        || published.bottom.structuredControl != nullptr)
-    {
-        if (renderer2D == nullptr)
-        {
-            result.rejected = true;
-            result.rejectReason = "structuredPointersWithoutRenderer2D";
-            return result;
-        }
-
-        const melonDS::u32* liveTopPlane0 = renderer2D->GetStructuredVulkan2DPlane(true, 0);
-        const melonDS::u32* liveTopPlane1 = renderer2D->GetStructuredVulkan2DPlane(true, 1);
-        const melonDS::u32* liveTopControl = renderer2D->GetStructuredVulkan2DPlane(true, 2);
-        const melonDS::u32* liveBottomPlane0 = renderer2D->GetStructuredVulkan2DPlane(false, 0);
-        const melonDS::u32* liveBottomPlane1 = renderer2D->GetStructuredVulkan2DPlane(false, 1);
-        const melonDS::u32* liveBottomControl = renderer2D->GetStructuredVulkan2DPlane(false, 2);
-
-        if (!PointerMatchesLiveStructured(published.top.structuredPlane0, liveTopPlane0)
-            || !PointerMatchesLiveStructured(published.top.structuredPlane1, liveTopPlane1)
-            || !PointerMatchesLiveStructured(published.top.structuredControl, liveTopControl)
-            || !PointerMatchesLiveStructured(published.bottom.structuredPlane0, liveBottomPlane0)
-            || !PointerMatchesLiveStructured(published.bottom.structuredPlane1, liveBottomPlane1)
-            || !PointerMatchesLiveStructured(published.bottom.structuredControl, liveBottomControl))
-        {
-            result.rejected = true;
-            result.rejectReason = "publishedLiveStructuredPointerMismatch";
-            return result;
-        }
-    }
-
     result.input.frame = frame;
-    result.input.frontBuffer = published.frontBuffer;
-    result.input.preparedFrameScreenSwap = published.renderScreenSwapAt3D;
-    result.input.emulatedFrameSerial = published.emulatedFrameSerial;
+    result.input.frontBuffer = tuple.frontBuffer;
+    result.input.preparedFrameScreenSwap = tuple.screenSwap;
+    result.input.emulatedFrameSerial = tuple.frameSerial;
     result.input.rendererGeneration = frame3d.Generation;
     result.input.valid = true;
 
-    result.sidecar.emulatedFrameSerial = published.emulatedFrameSerial;
+    result.sidecar.emulatedFrameSerial = tuple.frameSerial;
     result.sidecar.rendererGeneration = frame3d.Generation;
-    result.sidecar.publishedFrontBuffer = published.frontBuffer;
-    result.sidecar.liveFrontBuffer = expectedFrontBuffer;
-    result.sidecar.publishedScreenSwap = published.renderScreenSwapAt3D;
-    result.sidecar.liveScreenSwap = expectedScreenSwap;
+    result.sidecar.publishedFrontBuffer = tuple.frontBuffer;
+    result.sidecar.liveFrontBuffer = tuple.frontBuffer;
+    result.sidecar.publishedScreenSwap = tuple.screenSwap;
+    result.sidecar.liveScreenSwap = tuple.screenSwap;
     result.sidecar.packedTopIdentity = static_cast<const void*>(published.top.packed);
     result.sidecar.packedBottomIdentity = static_cast<const void*>(published.bottom.packed);
     return result;

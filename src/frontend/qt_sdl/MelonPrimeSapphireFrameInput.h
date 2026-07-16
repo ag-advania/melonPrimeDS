@@ -5,6 +5,7 @@
 #endif
 
 #include "MelonPrimeDesktopSapphireFrameSidecar.h"
+#include "SapphirePublished2DFrame.h"
 #include "VulkanReference/FrameQueue.h"
 #include "types.h"
 
@@ -15,10 +16,24 @@ class VulkanRenderer3D;
 struct Vulkan3DFrameView;
 }
 
-struct SapphirePublished2DFrame;
-
 namespace MelonDSAndroid
 {
+
+struct CompletedSapphireFrameTuple
+{
+    u64 frameSerial = 0;
+    u64 rendererGeneration = 0;
+    int frontBuffer = -1;
+    bool screenSwap = false;
+    SapphirePublished2DFrame published2D{};
+    melonDS::Vulkan3DFrameView frame3d{};
+    bool valid = false;
+};
+
+CompletedSapphireFrameTuple BuildCompletedSapphireFrameTuple(
+    const melonDS::GPU& gpu,
+    const melonDS::Vulkan3DFrameView& frame3d,
+    u64 activeRendererGeneration);
 
 struct SapphireFrameInput
 {
@@ -41,11 +56,7 @@ struct DesktopSapphireFrameBuildResult
 
 DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     Frame* frame,
-    const melonDS::GPU& gpu,
-    const SapphirePublished2DFrame& published,
-    const melonDS::Vulkan3DFrameView& frame3d,
-    u64 activeRendererGeneration,
-    int expectedFrontBuffer,
-    bool expectedScreenSwap);
+    const CompletedSapphireFrameTuple& tuple,
+    u64 activeRendererGeneration);
 
 } // namespace MelonDSAndroid

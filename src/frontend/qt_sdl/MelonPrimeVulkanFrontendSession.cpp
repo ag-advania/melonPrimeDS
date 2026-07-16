@@ -267,19 +267,14 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
     frame->frameSerial = frameView.FrameSerial;
     frame->rendererGeneration = frameView.Generation;
 
-    const int frontBuffer = nds->GPU.FrontBuffer;
-    const bool preparedFrameScreenSwap = nds->GPU.GPU3D.RenderScreenSwapAt3D;
     const bool useStructuredVulkan2D =
         renderer3D.GetActiveBackendMode() == VulkanRenderer3D::BackendMode::GraphicsHardware;
-    const SapphirePublished2DFrame& published = nds->GPU.GetPublished2DFrame();
+    const CompletedSapphireFrameTuple completedTuple =
+        BuildCompletedSapphireFrameTuple(nds->GPU, frameView, activeGeneration);
     const DesktopSapphireFrameBuildResult buildResult = BuildDesktopSapphireFrameInput(
         frame,
-        nds->GPU,
-        published,
-        frameView,
-        activeGeneration,
-        frontBuffer,
-        preparedFrameScreenSwap);
+        completedTuple,
+        activeGeneration);
     if (buildResult.rejected)
     {
         LogVulkanProducerDiscard(buildResult.rejectReason != nullptr
