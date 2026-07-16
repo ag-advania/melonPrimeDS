@@ -24,7 +24,7 @@ class SapphireFrameQueueDifferentialTests(unittest.TestCase):
     def test_harness_source_defines_complete_and_defer_cases(self):
         text = HARNESS_CPP.read_text(encoding="utf-8")
         self.assertIn("test_complete_lifetime_render_present_parity", text)
-        self.assertIn("test_wrapper_defers_present_candidate_when_reference_active", text)
+        self.assertIn("test_first_present_failure_injection_recovers", text)
         self.assertIn("test_core_and_wrapper_agree_when_present_queue_empty", text)
 
     def test_wrapper_does_not_retry_core_on_render_block(self):

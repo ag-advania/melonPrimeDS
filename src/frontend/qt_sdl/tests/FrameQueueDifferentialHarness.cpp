@@ -1,4 +1,4 @@
-// FrameQueue upstream-vs-Desktop differential harness (S75-6).
+// FrameQueue upstream-vs-Desktop differential harness (S75-6, S76-5).
 
 #include <cstdio>
 #include <optional>
@@ -51,7 +51,18 @@ bool test_complete_lifetime_render_present_parity()
         && framesMatch(corePresent, wrapperPresent);
 }
 
-bool test_wrapper_defers_present_candidate_when_reference_active()
+bool test_core_and_wrapper_agree_when_present_queue_empty()
+{
+    SapphireFrameQueueCore core;
+    FrameQueue wrapper;
+    const FrameQueuePolicy policy = defaultPolicy();
+
+    Frame* corePresent = core.getPresentFrame(policy, std::nullopt);
+    Frame* wrapperPresent = wrapper.getPresentFrame(policy, std::nullopt);
+    return corePresent == nullptr && wrapperPresent == nullptr;
+}
+
+bool test_first_present_failure_injection_recovers()
 {
     FrameQueue wrapper;
     const FrameQueuePolicy policy = defaultPolicy();
@@ -66,19 +77,24 @@ bool test_wrapper_defers_present_candidate_when_reference_active()
     if (firstCandidate == nullptr)
         return false;
 
+    wrapper.assertMembershipInvariant();
+    wrapper.deferPresentedFrame(firstCandidate, policy);
+    wrapper.assertMembershipInvariant();
+
+    Frame* secondRender = wrapper.getRenderFrame(policy);
+    if (secondRender == nullptr)
+        return false;
+    wrapper.validateRenderFrame(secondRender, 256, 192, FrameBackend::VulkanImage);
+    wrapper.pushRenderedFrame(secondRender, policy);
+    wrapper.assertMembershipInvariant();
+
     Frame* secondCandidate = wrapper.getPresentCandidate(policy, std::nullopt);
-    return secondCandidate == nullptr;
-}
+    if (secondCandidate == nullptr)
+        return false;
 
-bool test_core_and_wrapper_agree_when_present_queue_empty()
-{
-    SapphireFrameQueueCore core;
-    FrameQueue wrapper;
-    const FrameQueuePolicy policy = defaultPolicy();
-
-    Frame* corePresent = core.getPresentFrame(policy, std::nullopt);
-    Frame* wrapperPresent = wrapper.getPresentFrame(policy, std::nullopt);
-    return corePresent == nullptr && wrapperPresent == nullptr;
+    wrapper.commitPresentedFrame(secondCandidate, policy);
+    wrapper.assertMembershipInvariant();
+    return true;
 }
 
 } // namespace
@@ -90,14 +106,14 @@ int main()
         std::fprintf(stderr, "FAIL: test_complete_lifetime_render_present_parity\n");
         return 1;
     }
-    if (!test_wrapper_defers_present_candidate_when_reference_active())
-    {
-        std::fprintf(stderr, "FAIL: test_wrapper_defers_present_candidate_when_reference_active\n");
-        return 1;
-    }
     if (!test_core_and_wrapper_agree_when_present_queue_empty())
     {
         std::fprintf(stderr, "FAIL: test_core_and_wrapper_agree_when_present_queue_empty\n");
+        return 1;
+    }
+    if (!test_first_present_failure_injection_recovers())
+    {
+        std::fprintf(stderr, "FAIL: test_first_present_failure_injection_recovers\n");
         return 1;
     }
     std::fprintf(stdout, "FrameQueue differential harness OK\n");
