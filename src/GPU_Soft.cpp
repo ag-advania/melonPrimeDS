@@ -165,7 +165,12 @@ void SoftRenderer::DrawScanline(u32 line)
             state->UnitA.DispCnt,
             state->UnitB.DispCnt);
 
-        AssignSapphireFramebuffers();
+        if (!AssignSapphireFramebuffers())
+        {
+            log("[FirstGpu2D] bind failed Framebuffer null\n");
+            consumeBudget();
+            return;
+        }
 
         log(
             "[FirstGpu2D] after Bind Framebuffer0=%p Framebuffer1=%p BackBuffer=%d stride=%d\n",
@@ -266,24 +271,35 @@ void SoftRenderer::SyncSapphireUnitsFromGPU2D()
     SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitB, GPU.GPU2D_B, GPU);
 }
 
-void SoftRenderer::AssignSapphireFramebuffers() noexcept
+bool SoftRenderer::AssignSapphireFramebuffers() noexcept
 {
     auto* state = GetSapphireState(GPU);
     if (!state)
-        return;
+        return false;
 
+    u32* unitA = nullptr;
+    u32* unitB = nullptr;
     if (GPU.ScreenSwap)
     {
-        state->Renderer.SetFramebuffer(
-            Framebuffer[BackBuffer][0],
-            Framebuffer[BackBuffer][1]);
+        unitA = Framebuffer[BackBuffer][0];
+        unitB = Framebuffer[BackBuffer][1];
     }
     else
     {
-        state->Renderer.SetFramebuffer(
-            Framebuffer[BackBuffer][1],
-            Framebuffer[BackBuffer][0]);
+        unitA = Framebuffer[BackBuffer][1];
+        unitB = Framebuffer[BackBuffer][0];
     }
+
+    if (unitA == nullptr || unitB == nullptr)
+        return false;
+
+    const size_t requiredPixels = GPU.GPU3D.IsRendererAccelerated()
+        ? static_cast<size_t>(769u * 192u)
+        : kPackedFramebufferPixels;
+    (void)requiredPixels;
+
+    state->Renderer.SetFramebuffer(unitA, unitB);
+    return true;
 }
 
 void SoftRenderer::SyncSapphireFramebufferBindings() noexcept

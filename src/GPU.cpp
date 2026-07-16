@@ -475,7 +475,9 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
     if (softRenderer == nullptr)
         return false;
 
-    softRenderer->AssignSapphireFramebuffers();
+    if (!softRenderer->AssignSapphireFramebuffers())
+        return false;
+
     Sapphire2D->Activate(rendererGeneration);
     return true;
 }
