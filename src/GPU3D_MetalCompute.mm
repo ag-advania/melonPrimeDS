@@ -27,6 +27,8 @@
 #import <Metal/Metal.h>
 
 #include "GPU3D_MetalCompute.h"
+#include "GPU_MetalStrictDiagnostics.h"
+#include "MetalContext.h"
 
 #include <algorithm>
 #include <array>
@@ -1157,11 +1159,13 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
 
     id<MTLTexture> rasterTarget =
         (__bridge id<MTLTexture>)RasterReference.GetColorTargetTexture();
-    State->Device = rasterTarget ? rasterTarget.device : MTLCreateSystemDefaultDevice();
+    State->Device = rasterTarget
+        ? rasterTarget.device
+        : (__bridge id<MTLDevice>)MelonPrimeSharedMetalDeviceHandle();
     if (!State->Device)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute: MTLCreateSystemDefaultDevice returned nil\n");
+            "[MelonPrime] metal compute: no Metal device available\n");
         return false;
     }
 
@@ -2586,6 +2590,13 @@ void MetalComputeRenderer3D::RenderFrame()
                     "[MelonPrime] metal compute: failed to resize "
                     "RasterReference to scale=%d; using previous raster target\n",
                     requestedScale);
+                if (State && !State->CpuReadbackRequired)
+                {
+                    MetalStrictGpuOnlyViolation(
+                        "MetalComputeRenderer3D::RenderFrame",
+                        "RasterReference.RenderFrame() fallback after a scale-resize "
+                        "failure while CpuReadbackRequired=false (GPU-only frame)");
+                }
                 RasterReference.RenderFrame();
                 return;
             }
@@ -2635,6 +2646,15 @@ void MetalComputeRenderer3D::RenderFrame()
                             State->FinalPassReady ? 1u : 0u,
                             GPU3D.AbortFrame ? 1u : 0u);
                     }
+                }
+
+                if (!State->CpuReadbackRequired)
+                {
+                    MetalStrictGpuOnlyViolation(
+                        "MetalComputeRenderer3D::RenderFrame",
+                        "RasterReference.RenderFrame() fallback while "
+                        "CpuReadbackRequired=false (GPU-only frame requested but "
+                        "compute pipeline was not eligible)");
                 }
             }
 
@@ -2687,6 +2707,14 @@ void MetalComputeRenderer3D::RenderFrame()
                 "using RasterReference for this frame "
                 "(frame slot or tile memory unavailable)\n");
         }
+
+        // visibleEligible was true above, so CpuReadbackRequired was already
+        // false here: this fallback is a genuine same-frame submission failure,
+        // not an expected ineligibility case.
+        MetalStrictGpuOnlyViolation(
+            "MetalComputeRenderer3D::RenderFrame",
+            "RasterReference.RenderFrame() fallback after an eligible compute "
+            "frame failed to submit a final slot (GPU-only frame)");
 
         RasterReference.RenderFrame();
     }

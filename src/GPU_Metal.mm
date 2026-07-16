@@ -33,6 +33,7 @@
 #include "GPU2D_Metal.h"
 #include "GPU3D_Metal.h"
 #include "GPU3D_MetalCompute.h"
+#include "GPU_MetalStrictDiagnostics.h"
 #include "NDS.h"
 
 namespace melonDS
@@ -48,6 +49,59 @@ bool MetalComputeFoundationEnabled()
         return value && std::strcmp(value, "1") == 0;
     }();
     return enabled;
+}
+
+bool MetalFullGpuStatsEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_METAL_PERF");
+        return value && value[0] == '1';
+    }();
+    return enabled;
+}
+
+// Phase M0 diagnostics: how each VBlank's visible output was actually
+// produced this session, reported every 600 frames. Mirrors the
+// MetalPerfAccumulator pattern already used by GPU3D_Metal.mm/
+// GPU3D_MetalCompute.mm so the three subsystems can be compared side by side
+// in the same log stream.
+struct MetalFullGpuFrameStats
+{
+    uint32_t Frames = 0;
+    uint32_t FullGpuFrames = 0;
+    uint32_t CpuCompositeFrames = 0;
+    uint32_t RetainPreviousFrames = 0;
+    uint32_t BlockedByCaptureFeedbackFrames = 0;
+};
+
+void MetalFullGpuFrameStatsRecord(
+    bool fullGpu, bool cpuComposite, bool retainPrevious, bool blockedByCapture)
+{
+    if (!MetalFullGpuStatsEnabled())
+        return;
+
+    static MetalFullGpuFrameStats stats;
+    stats.Frames++;
+    if (fullGpu) stats.FullGpuFrames++;
+    if (cpuComposite) stats.CpuCompositeFrames++;
+    if (retainPrevious) stats.RetainPreviousFrames++;
+    if (blockedByCapture) stats.BlockedByCaptureFeedbackFrames++;
+
+    constexpr uint32_t kReportFrames = 600;
+    if (stats.Frames < kReportFrames)
+        return;
+
+    std::fprintf(stderr,
+        "[MelonPrime] metal renderer: visible-source mix frames=%u "
+        "fullGpu=%u/%u cpuComposite=%u/%u retainPrevious=%u/%u "
+        "blockedByCaptureFeedback=%u/%u\n",
+        stats.Frames,
+        stats.FullGpuFrames, stats.Frames,
+        stats.CpuCompositeFrames, stats.Frames,
+        stats.RetainPreviousFrames, stats.Frames,
+        stats.BlockedByCaptureFeedbackFrames, stats.Frames);
+
+    stats = {};
 }
 
 void* Metal3DColorTarget(Renderer3D* renderer) noexcept
@@ -1055,8 +1109,23 @@ void MetalRenderer::VBlank()
         else
         {
             FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
+            // MetalCaptureFrameHadCapture() is narrower than "capture is
+            // active this frame" -- it additionally requires the capture
+            // destination bank to be VRAMMap_LCDC-mapped at the moment each
+            // scanline's capture would have recorded, so it can be false even
+            // when GPU.CaptureEnable (and the CaptureCnt start bit our
+            // eligibility check reads) is genuinely true. Use the same signal
+            // eligibility used, not the narrower one, or every capture this
+            // narrower check misses becomes a false "unexpected" rejection.
+            // MetalCaptureResourcesCoherent() is a second, independent known
+            // gap: it can go false mid-frame when a BG/OBJ layer starts
+            // referencing capture-backed VRAM that has never actually been
+            // captured into (Meta[layer].Valid false), which has nothing to
+            // do with whether a capture is active this exact frame.
             FullGpuState->BlockedByCaptureFeedback =
-                MetalCaptureFrameHadCapture();
+                MetalCaptureFrameHadCapture() ||
+                GPU.CaptureEnable ||
+                !MetalCaptureResourcesCoherent();
             if (!FullGpuState->LoggedRejected)
             {
                 FullGpuState->LoggedRejected = true;
@@ -1065,7 +1134,38 @@ void MetalRenderer::VBlank()
                     "retaining previous frame and using CPU fallback while "
                     "same-frame capture feedback remains active\n");
             }
+
+            // Same-frame display-capture feedback is a known, catalogued gap
+            // (Phase M4 of the full-Metal-ification plan is not done yet), so
+            // it does not trip the strict assert. Any other mid-frame
+            // rejection here is unexpected: eligibility already passed in
+            // Start3DRendering (that is why FrameActive is true), so this is
+            // a genuine within-frame regression.
+            if (!FullGpuState->BlockedByCaptureFeedback)
+            {
+                static int loggedDetailCount = 0;
+                if (loggedDetailCount < 10)
+                {
+                    loggedDetailCount++;
+                    std::fprintf(stderr,
+                        "[MelonPrime] metal full-gpu: unexpected rejection detail "
+                        "frameValid=%d captureFrameSupported=%d captureEnable=%d "
+                        "captureCntBit31=%d screensEnabled=%d\n",
+                        FullGpuState->FrameValid ? 1 : 0,
+                        MetalCaptureFrameSupported() ? 1 : 0,
+                        GPU.CaptureEnable ? 1 : 0,
+                        (GPU.CaptureCnt & (1u << 31)) ? 1 : 0,
+                        GPU.ScreensEnabled ? 1 : 0);
+                }
+                MetalStrictGpuOnlyViolation(
+                    "MetalRenderer::VBlank",
+                    "full-gpu frame rejected mid-render for a reason other than "
+                    "known display-capture feedback, despite eligibility having "
+                    "passed in Start3DRendering");
+            }
         }
+        MetalFullGpuFrameStatsRecord(
+            rendered, false, !rendered, FullGpuState->BlockedByCaptureFeedback);
         return;
     }
 
@@ -1081,6 +1181,7 @@ void MetalRenderer::VBlank()
         FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
         FullGpuState->Completed = MetalFullGpuState::CpuComposite;
     }
+    MetalFullGpuFrameStatsRecord(false, true, false, false);
 }
 
 void MetalRenderer::SwapBuffers()
@@ -1147,7 +1248,12 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
 
                 return RendererOutputLease(
                     RendererOutput::MetalTexture(
-                        (__bridge void*)texture, slot.Serial),
+                        (__bridge void*)texture, slot.Serial,
+                        static_cast<u32>(texture.width),
+                        static_cast<u32>(texture.height),
+                        static_cast<u32>(texture.arrayLength),
+                        static_cast<u32>(state->Scale),
+                        slot.Generation),
                     context,
                     release);
             }
@@ -1168,7 +1274,12 @@ RendererOutput MetalRenderer::GetOutput()
             id<MTLTexture> texture = OutputState->Slots[slotIndex].FinalTexture;
             if (texture)
                 return RendererOutput::MetalTexture(
-                    (__bridge void*)texture, OutputState->PublishedSerial);
+                    (__bridge void*)texture, OutputState->PublishedSerial,
+                    static_cast<u32>(texture.width),
+                    static_cast<u32>(texture.height),
+                    static_cast<u32>(texture.arrayLength),
+                    static_cast<u32>(OutputState->Scale),
+                    OutputState->Slots[slotIndex].Generation);
         }
     }
     return SoftRenderer::GetOutput();

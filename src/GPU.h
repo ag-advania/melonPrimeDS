@@ -47,6 +47,15 @@ struct RendererOutput
     void* Bottom = nullptr;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     u64 FrameSerial = 0;
+    // MELONPRIME_METAL_OUTPUT_LEASE_METADATA_V1 (Phase M1)
+    // Populated only for RendererOutputKind::MetalTexture. Lets a consumer
+    // (presenter, diagnostics) validate a texture handle's shape/identity
+    // without querying the Metal object itself.
+    u32 Width = 0;
+    u32 Height = 0;
+    u32 ArrayLength = 0;
+    u32 Scale = 0;
+    u64 Generation = 0;
 #endif
 
     static RendererOutput CpuBgra(void* top, void* bottom) noexcept
@@ -68,9 +77,22 @@ struct RendererOutput
     }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-    static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
+    static RendererOutput MetalTexture(
+        void* texture,
+        u64 frameSerial = 0,
+        u32 width = 0,
+        u32 height = 0,
+        u32 arrayLength = 0,
+        u32 scale = 0,
+        u64 generation = 0) noexcept
     {
-        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+        RendererOutput out { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+        out.Width = width;
+        out.Height = height;
+        out.ArrayLength = arrayLength;
+        out.Scale = scale;
+        out.Generation = generation;
+        return out;
     }
 #endif
 };

@@ -35,6 +35,8 @@
 #include "MelonPrimeHudRender.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"
+#include "GPU_MetalStrictDiagnostics.h"
+#include "MetalContext.h"
 
 namespace {
 
@@ -154,15 +156,6 @@ struct ScreenUniforms
     float pad;
 };
 static_assert(sizeof(ScreenUniforms) == 40, "must match the MSL ScreenUniforms layout exactly");
-
-bool AllowMetalSoftwareFallback()
-{
-    static const bool allow = []() {
-        const char* env = std::getenv("MELONPRIME_METAL_ALLOW_SOFTWARE_FALLBACK");
-        return env && env[0] == '1';
-    }();
-    return allow;
-}
 
 bool MetalDiagEnabled()
 {
@@ -332,6 +325,13 @@ struct ScreenPanelMetal::Impl
     bool loggedLayerReattach = false;
     bool loggedScreenPlacementDiag = false;
     uint64_t lastPresentedFrame = 0;
+    // MELONPRIME_METAL_STRICT_STARTUP_GRACE_V1: the Metal visible-output
+    // pipeline legitimately serves CpuBgra for the first handful of frames
+    // (before its first compose command buffer has completed and published a
+    // slot). Only treat CpuBgra as a strict-mode violation once we've either
+    // already shown a native Metal texture frame, or run past the startup
+    // grace window without ever doing so.
+    uint32_t presentedFrameCount = 0;
 
     // Accessed under layoutMutex. CAMetalLayer itself is updated only through
     // a queued GUI-thread invocation.
@@ -382,10 +382,15 @@ bool ScreenPanelMetal::initMetal()
 
     @autoreleasepool
     {
-        m->device = MTLCreateSystemDefaultDevice();
+        // MELONPRIME_METAL_SHARED_CONTEXT_V1 (Phase M2): pull the same
+        // process-wide device the renderer uses instead of independently
+        // discovering one. On a dual-GPU Mac two separate
+        // MTLCreateSystemDefaultDevice() calls are not guaranteed to agree,
+        // which is exactly what the device-mismatch guard below exists for.
+        m->device = (__bridge id<MTLDevice>)melonDS::MelonPrimeSharedMetalDeviceHandle();
         if (!m->device)
         {
-            fprintf(stderr, "[MelonPrime] metal presenter: MTLCreateSystemDefaultDevice() returned nil\n");
+            fprintf(stderr, "[MelonPrime] metal presenter: shared Metal device is nil\n");
             return false;
         }
 
@@ -719,6 +724,7 @@ void ScreenPanelMetal::drawScreen()
         if (!presenterPermit.acquired())
             return;
 
+        m->presentedFrameCount++;
         const auto presentStart = PresenterClock::now();
 
         if (!m->loggedFirstDraw)
@@ -808,6 +814,23 @@ void ScreenPanelMetal::drawScreen()
                     m->loggedNativeTextureFallback = true;
                     fprintf(stderr,
                             "[MelonPrime] metal presenter: visible source=MetalGetLineCpuComposite softwareFallback=0\n");
+                }
+                // The visible-output pipeline legitimately serves CpuBgra for
+                // the first handful of frames while its own compose command
+                // buffers are still in flight. Only strict-fail once a native
+                // texture frame has already been shown (a real regression) or
+                // the startup grace window has elapsed without ever reaching
+                // one (a real, sustained initialization failure).
+                constexpr uint32_t kStartupGraceFrames = 180;
+                if (metalRendererSelected &&
+                    (m->loggedFirstNativeTextureOutput ||
+                     m->presentedFrameCount > kStartupGraceFrames))
+                {
+                    melonDS::MetalStrictGpuOnlyViolation(
+                        "MelonPrimeScreenMetal::presentFrame",
+                        "presenter accepted RendererOutputKind::CpuBgra while a "
+                        "Metal renderer is selected, past the startup grace "
+                        "window or after a native texture frame was already shown");
                 }
             }
 

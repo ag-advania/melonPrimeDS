@@ -12,6 +12,8 @@
 
 #include "GPU3D_Metal.h"
 #include "GPU3D_TexcacheMetal.h"
+#include "GPU_MetalStrictDiagnostics.h"
+#include "MetalContext.h"
 
 #include <chrono>
 #include <array>
@@ -44,6 +46,7 @@ struct MetalPerfFrame
     uint32_t TargetWidth = 0;
     uint32_t TargetHeight = 0;
     bool CpuRendererFallback = false;
+    uint64_t CpuReadbackBytes = 0;
 };
 
 struct MetalPerfAccumulator
@@ -62,6 +65,8 @@ struct MetalPerfAccumulator
     uint32_t LastTargetWidth = 0;
     uint32_t LastTargetHeight = 0;
     uint32_t SoftwareDelegateFrames = 0;
+    uint64_t CpuReadbackBytes = 0;
+    uint32_t CpuReadbackFrames = 0;
 };
 
 MetalPerfFrame* gCurrentMetalPerfFrame = nullptr;
@@ -198,6 +203,11 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
     acc.LastTargetHeight = frame.TargetHeight;
     if (frame.CpuRendererFallback)
         acc.SoftwareDelegateFrames++;
+    if (frame.CpuReadbackBytes > 0)
+    {
+        acc.CpuReadbackBytes += frame.CpuReadbackBytes;
+        acc.CpuReadbackFrames++;
+    }
 
     constexpr uint32_t kReportFrames = 600;
     if (acc.Frames < kReportFrames)
@@ -208,7 +218,8 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
         "[MelonPrime] metal renderer3D: perf frames=%u scale=%u target=%ux%u "
         "avgFrameMs=%.3f native3dMs=%.3f avgTexcacheMs=%.3f "
         "uploadBytes=%.0f avgGroups=%.2f avgDraws=%.2f avgWaitMs=%.3f "
-        "avgConsideredPolys=%.2f avgTexturedPolys=%.2f softwareDelegate=%u/%u\n",
+        "avgConsideredPolys=%.2f avgTexturedPolys=%.2f softwareDelegate=%u/%u "
+        "cpuReadbackFrames=%u/%u cpuReadbackBytes=%llu\n",
         acc.Frames,
         acc.LastScale,
         acc.LastTargetWidth,
@@ -223,7 +234,10 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
         static_cast<double>(acc.ConsideredPolygons) / frames,
         static_cast<double>(acc.TexturedPolygons) / frames,
         acc.SoftwareDelegateFrames,
-        acc.Frames);
+        acc.Frames,
+        acc.CpuReadbackFrames,
+        acc.Frames,
+        static_cast<unsigned long long>(acc.CpuReadbackBytes));
 
     acc = {};
 }
@@ -1092,6 +1106,14 @@ void MetalRenderer3D::RenderFrame()
         const bool needsSoftwareDelegate = !MetalUseNativeGetLine() || MetalGetLineDiffEnabled();
         if (needsSoftwareDelegate)
         {
+            if (!CpuReadbackRequired)
+            {
+                MetalStrictGpuOnlyViolation(
+                    "MetalRenderer3D::RenderFrame",
+                    "SoftRenderer3D Delegate invoked while CpuReadbackRequired=false "
+                    "(MELONPRIME_METAL_GETLINE_SOURCE=soft or MELONPRIME_METAL_GETLINE_DIFF=1 "
+                    "was requested on a GPU-only frame)");
+            }
             Delegate.RenderFrame();
             perfFrame.CpuRendererFallback = true;
         }
@@ -1131,7 +1153,10 @@ void MetalRenderer3D::RenderFrame()
                     RenderNativeOpaquePolygons();
                 RenderFinalPostPass();
                 if (CpuReadbackRequired)
-                    ReadbackNativeColorTargetToLineBuffer();
+                {
+                    if (ReadbackNativeColorTargetToLineBuffer())
+                        perfFrame.CpuReadbackBytes = 256ull * 192ull * 4ull;
+                }
                 else
                     State->NativeLineReady = false;
                 if (perfEnabled)
@@ -1316,7 +1341,12 @@ void MetalRenderer3D::EnableRenderThread()
 
 bool MetalRenderer3D::CreateDeviceObjects()
 {
-    State->Device = MTLCreateSystemDefaultDevice();
+    // MELONPRIME_METAL_SHARED_CONTEXT_V1 (Phase M2): this is the root Metal
+    // device creator for the whole renderer stack (2D/compute derive their
+    // device from this one's color target). Route it through the shared
+    // process-wide device so it can never disagree with the presenter's
+    // device on a dual-GPU Mac.
+    State->Device = (__bridge id<MTLDevice>)MelonPrimeSharedMetalDeviceHandle();
     if (!State->Device)
     {
         std::fprintf(stderr, "[MelonPrime] metal renderer3D: no Metal device available\n");

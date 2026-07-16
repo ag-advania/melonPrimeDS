@@ -42,6 +42,31 @@ Raw equivalent:
 cd /Users/admin/git/melonPrimeDS && cmake --build build-mac --parallel 4 2>&1
 ```
 
+## Metal Test Build
+
+A separate tree (`build-mac-metal`) for verifying Metal-renderer changes without touching whatever `MELONPRIME_ENABLE_METAL` setting the canonical `build-mac` tree has cached (that tree's cache can be `OFF` even though the CMake default is `ON` for Apple builds — check `build-mac/CMakeCache.txt` before assuming Metal is being exercised there).
+
+```zsh
+./tools/build/macos/build-macos-metal-test.sh
+```
+
+Finder / double-click:
+
+```zsh
+open tools/build/macos/build-macos-metal-test.command
+```
+
+Incremental rebuild only (existing `build-mac-metal` tree):
+
+```zsh
+./tools/build/macos/build-macos-metal-test-existing.sh
+open tools/build/macos/build-macos-metal-test-existing.command
+```
+
+Output: `build-mac-metal/melonPrimeDS.app`. Launch with `open build-mac-metal/melonPrimeDS.app`.
+
+Useful env vars when launching for verification (all default off, no effect unless set): `MELONPRIME_METAL_PERF=1` (600-frame perf/diagnostics log to stderr, including CPU-readback bytes and the visible-source mix breakdown), `MELONPRIME_METAL_DIAG=1` (one-shot diagnostic logs), `MELONPRIME_METAL_ASSERT_GPU_ONLY=1` (logs a clear message on a GPU-only contract violation without aborting — safe to leave on during normal play; set to `MELONPRIME_METAL_ASSERT_GPU_ONLY=abort` instead if you specifically want the process to abort on one, e.g. under a debugger), `MELONPRIME_METAL_FULL_GPU=1` (opt-in GPU-resident 2D/capture path — currently causes visible frame freezes in scenes that use display capture; see `docs/plans/melonPrimeDS_develop_完全Metal化_詳細修正指示書.md` Phase M4).
+
 ## Options Wrapper
 
 For non-default jobs, release builds, or `--open`:

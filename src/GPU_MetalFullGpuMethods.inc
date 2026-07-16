@@ -9,7 +9,11 @@
 namespace
 {
 
-
+// MELONPRIME_METAL_MIDFRAME_INVALIDATION_COOLDOWN_V1: minimum frames a
+// mid-frame full-GPU invalidation blocks retry for. See MetalFullGpuState's
+// MidFrameInvalidationCooldownFrames for why this needs to be a real cooldown
+// rather than an immediate retry.
+constexpr uint32_t kMidFrameInvalidationCooldownFrames = 60;
 
 bool MetalSegmented2DVisibleRequested()
 {
@@ -114,6 +118,19 @@ struct MetalRenderer::MetalFullGpuState
     bool FrameValid = false;
     CompletedKind Completed = RetainPrevious;
     bool BlockedByCaptureFeedback = false;
+    bool BlockedByMidFrameInvalidation = false;
+    // MELONPRIME_METAL_MIDFRAME_INVALIDATION_COOLDOWN_V1
+    // Some game states cause the eligibility signals to look clean at
+    // Start3DRendering() (VCount==215, still in the previous frame's VBlank)
+    // on every single frame, yet break down again during that same frame's
+    // own scanlines every time -- a stable, deterministic oscillation that
+    // clearing BlockedByMidFrameInvalidation right away does not break, since
+    // the reset check re-samples the exact same unreliable snapshot. A
+    // cooldown forces a minimum gap between retry attempts so a persistently
+    // oscillating state fails at most once per cooldown window instead of on
+    // every single frame (which is what a sustained, multi-second freeze
+    // looks like to the user).
+    uint32_t MidFrameInvalidationCooldownFrames = 0;
     bool LoggedEnabled = false;
     bool LoggedRejected = false;
     bool LoggedCompose = false;
@@ -133,8 +150,15 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
     if (!FullGpuState)
         FullGpuState = std::make_unique<MetalFullGpuState>();
 
+    // MELONPRIME_METAL_FULL_GPU_DEFAULT_ON_V1 (Phase M3)
+    // GPU-resident segmented 2D is the production path for the Metal
+    // renderer by default now that the mid-frame invalidation paths are
+    // freeze-free and crash-free (see GPU_Metal.mm's BlockedByCaptureFeedback
+    // / BlockedByMidFrameInvalidation handling and the CaptureCnt-based
+    // eligibility fix). Keep the env var only as an emergency kill switch for
+    // comparison/regression isolation, not as the enablement gate.
     const char* env = std::getenv("MELONPRIME_METAL_FULL_GPU");
-    FullGpuState->Requested = env && env[0] == '1';
+    FullGpuState->Requested = !env || env[0] != '0';
     if (!FullGpuState->Requested)
         return true;
 
@@ -200,6 +224,38 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (!GPU.ScreensEnabled)
         return false;
 
+    // MELONPRIME_METAL_CAPTURE_PROACTIVE_ELIGIBILITY_V1 (Phase M4 partial fix)
+    // Real DS hardware captures scanline-by-scanline as the frame is drawn, so
+    // a BG/OBJ that reads its own frame's capture destination bank sees a
+    // line-precise read/write interleaving this segmented (whole-frame-batch)
+    // 2D renderer cannot reproduce. The existing same-frame hazard check in
+    // RenderSegmentedGpuFrame() (MetalSnapshotUsesCaptureTextures) is correct
+    // to reject that case -- but it fires *after* DrawScanline/DrawSprites for
+    // this entire frame already committed to the full-GPU path (this
+    // function's result at Start3DRendering time), meaning SoftRenderer's
+    // per-scanline compositing was never run for this frame either. VBlank()
+    // then has no valid data source at all, so the frame freezes on the
+    // previous texture instead of falling back to a correct CPU-composited
+    // frame. Checking capture activity here, before that commitment is made,
+    // means a rejection instead correctly runs the mature CPU/Software path
+    // for the whole frame -- exactly like any other ineligible frame -- so
+    // capture-heavy scenes render every frame (via CPU) instead of freezing
+    // on ~90% of them. This does not fix same-frame capture-into-Metal2D; it
+    // only stops the current mechanism from losing a frame's content when
+    // that limitation is hit.
+    //
+    // Start3DRendering() (this function's caller) runs at VCount==215, which
+    // is still inside the *previous* frame's VBlank -- GPU.CaptureEnable only
+    // becomes true later, at VCount==0 of the frame that is about to start.
+    // So GPU.CaptureEnable here always reflects the frame that just ended
+    // (already cleared), never the upcoming one. The upcoming frame's capture
+    // request is already visible now, though: games set CaptureCnt's start
+    // bit (31) during the preceding VBlank, and hardware doesn't clear it
+    // until this same VCount==192..215 window closes. Check that bit
+    // directly instead of the derived, differently-timed CaptureEnable flag.
+    if (GPU.CaptureCnt & (1u << 31))
+        return false;
+
     const uint32_t displayModeA =
         (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
     const uint32_t displayModeB =
@@ -238,8 +294,48 @@ void MetalRenderer::Start3DRendering()
     if (!GPU.CaptureEnable)
         FullGpuState->BlockedByCaptureFeedback = false;
 
+    // MELONPRIME_METAL_MIDFRAME_INVALIDATION_STICKY_V1
+    // Every signal this eligibility check reads (CaptureCnt's start bit,
+    // MetalCaptureResourcesCoherent()'s BG/OBJ capture-layer validity, ...) is
+    // sampled here at VCount==215, still inside the *previous* frame's
+    // VBlank. The game can still write new register state for the upcoming
+    // frame after this point, and DrawScanline()'s own re-check (running
+    // during this frame's actual VCount 0-191) can discover a worse answer
+    // than what was true here. When that happens the frame has already
+    // committed to the full-GPU DrawScanline path, so SoftRenderer's
+    // per-scanline compositing never ran either -- the frame has no valid
+    // 2D data source at all and freezes. Without this flag, a persistent
+    // per-frame register pattern (e.g. a BG/OBJ config that keeps
+    // reintroducing the same conflict every single frame) turns that into a
+    // sustained multi-second freeze, not a single dropped frame, because
+    // eligibility looks clean again at every next Start3DRendering call.
+    // Sticky-blocking after any mid-frame invalidation caps the damage at one
+    // frozen frame per invalidation episode: subsequent frames correctly
+    // predict ineligibility in advance (via this flag) and fall back to the
+    // mature CPU/Software path instead of repeating the same failed attempt.
+    if (FullGpuState->MidFrameInvalidationCooldownFrames > 0)
+        FullGpuState->MidFrameInvalidationCooldownFrames--;
+
+    if (FullGpuState->BlockedByMidFrameInvalidation)
+    {
+        // Only lift the sticky block once the cooldown has fully elapsed AND
+        // this frame's own (already-current) snapshot looks eligible. The
+        // cooldown is what actually breaks a deterministic every-frame
+        // oscillation; without it, a state where this snapshot looks eligible
+        // on every single Start3DRendering call (even though it reliably
+        // breaks down again during that same frame's own scanlines) would
+        // clear the block immediately every time, right back into the same
+        // failing attempt.
+        if (FullGpuState->MidFrameInvalidationCooldownFrames == 0 &&
+            MetalCaptureResourcesCoherent() && IsMetalFullGpuFrameEligible())
+        {
+            FullGpuState->BlockedByMidFrameInvalidation = false;
+        }
+    }
+
     FullGpuState->FrameActive =
         !FullGpuState->BlockedByCaptureFeedback &&
+        !FullGpuState->BlockedByMidFrameInvalidation &&
         MetalCaptureResourcesCoherent() &&
         IsMetalFullGpuFrameEligible();
     FullGpuState->FrameValid = FullGpuState->FrameActive;
@@ -260,6 +356,9 @@ void MetalRenderer::DrawScanline(u32 line)
             (!GPU.CaptureEnable && !MetalCaptureResourcesCoherent()))
         {
             FullGpuState->FrameValid = false;
+            FullGpuState->BlockedByMidFrameInvalidation = true;
+            FullGpuState->MidFrameInvalidationCooldownFrames =
+                kMidFrameInvalidationCooldownFrames;
         }
         if (line < 192)
         {
@@ -270,7 +369,12 @@ void MetalRenderer::DrawScanline(u32 line)
             Metal2D_B->CaptureScanlineState(static_cast<int>(line));
             CaptureMetalDisplayCaptureLine(line);
             if (!MetalCaptureFrameSupported())
+            {
                 FullGpuState->FrameValid = false;
+                FullGpuState->BlockedByMidFrameInvalidation = true;
+                FullGpuState->MidFrameInvalidationCooldownFrames =
+                    kMidFrameInvalidationCooldownFrames;
+            }
         }
         return;
     }

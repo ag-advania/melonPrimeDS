@@ -302,6 +302,7 @@ if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
     target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)
     target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../MetalContext.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
@@ -326,6 +327,7 @@ if (MELONPRIME_METAL_ACTIVE)
         MelonPrimeScreenMetal.mm
     )
     set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../MetalContext.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm

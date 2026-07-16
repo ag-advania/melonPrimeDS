@@ -16,6 +16,7 @@
 
 #include "GPU.h"
 #include "GPU2D_Metal.h"
+#include "MetalContext.h"
 
 #include <algorithm>
 #include <array>
@@ -745,7 +746,9 @@ bool MetalRenderer2D::Configure(void* preferredDevice, void* preferredQueue, int
 
     if (!state.Device)
     {
-        state.Device = preferredMetalDevice ? preferredMetalDevice : MTLCreateSystemDefaultDevice();
+        state.Device = preferredMetalDevice
+            ? preferredMetalDevice
+            : (__bridge id<MTLDevice>)MelonPrimeSharedMetalDeviceHandle();
         if (!state.Device)
         {
             std::fprintf(stderr, "[MelonPrime] metal 2d: failed to create Metal device\n");
