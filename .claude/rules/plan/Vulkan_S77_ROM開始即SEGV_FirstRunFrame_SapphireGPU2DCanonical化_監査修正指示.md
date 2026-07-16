@@ -1441,3 +1441,7 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 | S77-1 | `cc6d45de1` | done | `[FirstVulkanFrame]`/`[VulkanProducerBegin]`/`[FirstGpuFrame]`/`[FirstGpu2D]` trace budget |
 | S77-2 | `42e806b21` | done | DbgHelp minidump + `.crash.txt` stack + `build-mingw-vulkan-debug.bat` |
 | S77-3 | `7692c364a` | done | Tracker recycle/discard no longer double-enqueue freeQueue |
+| S77-4 | `12961dbd6` | done | Core owns freeQueue rebuild/sanitize/reset; pushRendered mismatch guard |
+| S77-5 | (pending) | pending | Move Vulkan lifetime fully outside queue containers |
+| S77-6 | `1fab5d513` | done | Debug env gates for producer begin / Sapphire 2D |
+| S77-7 | `40a51b45f` | done | `AssignSapphireFramebuffers()` binding validation |
