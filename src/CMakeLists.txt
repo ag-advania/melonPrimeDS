@@ -2,6 +2,15 @@ set (CMAKE_CXX_STANDARD 17)
 
 include(FixInterfaceIncludes)
 
+option(MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN
+    "Compile pinned upstream GPU2D_Soft.cpp for Sapphire exact A/B (S80-8)"
+    OFF)
+set(MELONPRIME_GPU2D_SOFT_SOURCE SapphireGPU2DCore/GPU2D_Soft.cpp)
+if (MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN)
+    set(MELONPRIME_GPU2D_SOFT_SOURCE
+        SapphireVendor/upstream/melonDS-android-lib/src/GPU2D_Soft.cpp)
+endif()
+
 add_library(core STATIC
     ARCodeFile.cpp
     ARDatabaseDAT.cpp
@@ -36,9 +45,10 @@ add_library(core STATIC
     GPU.cpp
     GPU_Soft.cpp
     MelonPrimeFirstVulkanFrameTrace.cpp
+    MelonPrimeSapphireFramebufferGuard.cpp
     MelonPrimeSapphireGpu2DState.cpp
     SapphireGPU2DSoftAccess.cpp
-    SapphireGPU2DCore/GPU2D_Soft.cpp
+    ${MELONPRIME_GPU2D_SOFT_SOURCE}
     SapphireGPU2DCore/Unit.cpp
     GPU2D.cpp
     GPU2D_Soft.cpp

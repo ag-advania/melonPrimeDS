@@ -33,6 +33,7 @@
 #include "SapphireGPU2DCore/GPU2D_Soft.h"
 #include "SapphireGPU2DSoftAccess.h"
 #include "SapphirePublished2DFrame.h"
+#include "MelonPrimeSapphireFramebufferGuard.h"
 #endif
 #include "GPU3D.h"
 #include "NonStupidBitfield.h"
@@ -270,6 +271,7 @@ public:
     void InvalidateSapphirePublication() noexcept;
     void InvalidateSapphireFramebufferBindings() noexcept;
     void InitFramebuffers() noexcept;
+    void CheckFramebufferCanaries(const char* site) const noexcept;
     [[nodiscard]] bool AssignFramebuffers() noexcept;
     [[nodiscard]] size_t FramebufferPixelCount() const noexcept;
     [[nodiscard]] int BackBufferIndex() const noexcept { return FrontBuffer ? 0 : 1; }
@@ -280,7 +282,7 @@ public:
     }
 
     int FrontBuffer = 0;
-    std::unique_ptr<u32[]> Framebuffer[2][2]{};
+    MelonPrime::SapphireFramebufferGuard::PlaneAllocation Framebuffer[2][2]{};
     SapphirePublished2DFrame Published2DFrame{};
 #endif
 
