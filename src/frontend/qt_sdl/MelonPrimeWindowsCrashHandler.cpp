@@ -43,13 +43,16 @@ bool writeMiniDump(EXCEPTION_POINTERS* exceptionInfo, const char* dumpPath)
     exceptionParam.ExceptionPointers = exceptionInfo;
     exceptionParam.ClientPointers = FALSE;
 
+    const MINIDUMP_TYPE dumpType = static_cast<MINIDUMP_TYPE>(
+        MiniDumpWithIndirectlyReferencedMemory
+        | MiniDumpScanMemory
+        | MiniDumpWithThreadInfo);
+
     const BOOL ok = MiniDumpWriteDump(
         GetCurrentProcess(),
         GetCurrentProcessId(),
         file,
-        MiniDumpWithIndirectlyReferencedMemory
-            | MiniDumpScanMemory
-            | MiniDumpWithThreadInfo,
+        dumpType,
         exceptionInfo != nullptr ? &exceptionParam : nullptr,
         nullptr,
         nullptr);
