@@ -175,59 +175,8 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* state = GetSapphireState(GPU);
-        state != nullptr && state->IsActiveForRendering(GPU))
-    {
-        using MelonPrime::FirstVulkanFrameTrace::log;
-        using MelonPrime::FirstVulkanFrameTrace::consumeBudget;
-
-        log(
-            "[FirstGpu2D] DrawScanline enter VCount=%u line=%u SapphireActive=1 generation=%llu GPU3DGeneration=%llu UnitA=%p UnitB=%p\n",
-            GPU.VCount,
-            line,
-            static_cast<unsigned long long>(state->ActiveRendererGeneration()),
-            static_cast<unsigned long long>(GPU.GPU3D.GetCurrentRendererGeneration()),
-            static_cast<void*>(&GPU.GPU2D_A),
-            static_cast<void*>(&GPU.GPU2D_B));
-
-        log(
-            "[FirstGpu2D] canonical units UnitA.Num=%u UnitB.Num=%u UnitA.DispCnt=0x%08X UnitB.DispCnt=0x%08X\n",
-            GPU.GPU2D_A.Num,
-            GPU.GPU2D_B.Num,
-            GPU.GPU2D_A.DispCnt,
-            GPU.GPU2D_B.DispCnt);
-
-        if (!GPU.AssignFramebuffers())
-        {
-            log("[FirstGpu2D] bind failed Framebuffer null\n");
-            consumeBudget();
-            return;
-        }
-
-        const int backBuffer = BackBufferIndex(GPU);
-        log(
-            "[FirstGpu2D] after Bind Framebuffer0=%p Framebuffer1=%p BackBuffer=%d stride=%d\n",
-            static_cast<void*>(FramebufferPlane(GPU, backBuffer, 0)),
-            static_cast<void*>(FramebufferPlane(GPU, backBuffer, 1)),
-            backBuffer,
-            GPU.GPU3D.IsRendererAccelerated() ? 769 : 256);
-
-        line = GPU.VCount;
-        if (line < 192)
-        {
-            auto& renderer2D = GetSapphire2DRenderer();
-            log("[FirstGpu2D] before UnitA line=%u\n", line);
-            renderer2D.DrawScanline(line, &GPU.GPU2D_A);
-            log("[FirstGpu2D] after UnitA line=%u\n", line);
-
-            log("[FirstGpu2D] before UnitB line=%u\n", line);
-            renderer2D.DrawScanline(line, &GPU.GPU2D_B);
-            log("[FirstGpu2D] after UnitB line=%u\n", line);
-        }
-
-        consumeBudget();
+    if (GPU.UsesSapphireGpu2DPath())
         return;
-    }
 #endif
 
     u32 *dstA, *dstB;
@@ -324,9 +273,10 @@ SapphirePhysical2DScreenView SoftRenderer::BuildPhysicalScreenView(
     view.plane0 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 0);
     view.plane1 = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 1);
     view.control = GetSapphire2DRenderer().GetStructuredVulkan2DPlane(top, 2);
+    const bool hardwareScreenSwap = (GPU.NDS.PowerControl9 & (1u << 15)) != 0;
     view.engine = top
-        ? (GPU.ScreenSwap ? 1u : 0u)
-        : (GPU.ScreenSwap ? 0u : 1u);
+        ? (hardwareScreenSwap ? 1u : 0u)
+        : (hardwareScreenSwap ? 0u : 1u);
 
     return view;
 }
@@ -347,7 +297,7 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
 
     SapphirePublished2DFrame published{};
     published.frontBuffer = GPU.FrontBuffer;
-    published.hardwareScreenSwap = GPU.ScreenSwap;
+    published.hardwareScreenSwap = (GPU.NDS.PowerControl9 & (1u << 15)) != 0;
     published.renderScreenSwapAt3D = GPU.GPU3D.RenderScreenSwapAt3D;
     published.emulatedFrameSerial = GPU.VulkanFrameSerial;
     published.publicationGeneration = GPU.Published2DFrame.publicationGeneration + 1;
@@ -451,15 +401,8 @@ const SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRendere
 void SoftRenderer::DrawSprites(u32 line)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* state = GetSapphireState(GPU);
-        state != nullptr && state->IsActiveForRendering(GPU))
-    {
-        (void)GPU.AssignFramebuffers();
-        auto& renderer2D = GetSapphire2DRenderer();
-        renderer2D.DrawSprites(line, &GPU.GPU2D_A);
-        renderer2D.DrawSprites(line, &GPU.GPU2D_B);
+    if (GPU.UsesSapphireGpu2DPath())
         return;
-    }
 #endif
 
 #if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)

@@ -1280,7 +1280,7 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
         constexpr u32 kMetaFlagExactRegularCaptureUses3d = 1u << 19u;
         u32 xpos = GPU.GPU3D.GetRenderXPos();
         u32 rendererMetaFlags = 0;
-        const u32 engineACaptureCnt = GPU.CaptureCnt;
+        const u32 engineACaptureCnt = GPU.GPU2D_A.CaptureCnt;
         const bool captureConfiguredFullScreen =
             (engineACaptureCnt & (1u << 31u)) != 0u
             && ((engineACaptureCnt >> 20u) & 0x3u) == 3u;
