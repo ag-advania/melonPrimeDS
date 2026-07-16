@@ -1442,7 +1442,7 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 | S77-2 | `42e806b21` | done | DbgHelp minidump + `.crash.txt` stack + `build-mingw-vulkan-debug.bat` |
 | S77-3 | `7692c364a` | done | Tracker recycle/discard no longer double-enqueue freeQueue |
 | S77-4 | `12961dbd6` | done | Core owns freeQueue rebuild/sanitize/reset; pushRendered mismatch guard |
-| S77-5 | (pending) | pending | Move Vulkan lifetime fully outside queue containers |
+| S77-5 | `57ef1e46c` | done | Render lease tracked outside queue via `DesktopVulkanResourceLease` |
 | S77-6 | `1fab5d513` | done | Debug env gates for producer begin / Sapphire 2D |
 | S77-7 | `40a51b45f` | done | `AssignSapphireFramebuffers()` binding validation |
 | S77-8 | `e60059235` | done | Vendor pinned GPU2D.h/cpp upstream snapshots in manifest |
