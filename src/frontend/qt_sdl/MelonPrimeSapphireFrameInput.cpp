@@ -109,6 +109,8 @@ DesktopSapphireFrameBuildResult BuildDesktopSapphireFrameInput(
     result.input.preparedFrameScreenSwap = tuple.screenSwap;
     result.input.emulatedFrameSerial = tuple.frameSerial;
     result.input.rendererGeneration = frame3d.Generation;
+    result.input.packedTop = published.top.packed;
+    result.input.packedBottom = published.bottom.packed;
     result.input.valid = true;
 
     result.sidecar.emulatedFrameSerial = tuple.frameSerial;

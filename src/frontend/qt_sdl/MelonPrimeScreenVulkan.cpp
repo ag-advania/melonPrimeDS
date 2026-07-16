@@ -538,6 +538,8 @@ void ScreenPanelVulkan::presentOnGuiThread()
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
+    if (!MelonPrime::sapphireRebuildActive()
+        || MelonPrime::sapphireRebuildDesktopFeaturesEnabled())
     {
         const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
         const int fullLogW = std::max(1, static_cast<int>(currentWidth / dpr));
@@ -591,6 +593,10 @@ void ScreenPanelVulkan::presentOnGuiThread()
         {
             overlayRenderer.hideOverlay();
         }
+    }
+    else
+    {
+        overlayRenderer.hideOverlay();
     }
 #else
     overlayRenderer.hideOverlay();

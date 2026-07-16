@@ -43,6 +43,10 @@ struct SapphireFrameInput
 
     u64 emulatedFrameSerial = 0;
     u64 rendererGeneration = 0;
+
+    const u32* packedTop = nullptr;
+    const u32* packedBottom = nullptr;
+
     bool valid = false;
 };
 
