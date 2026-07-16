@@ -77,11 +77,35 @@ succeed repeatedly), clean shutdown through `deleteAllWindows()` ->
 `self.assertRegex(combined, r"\[VulkanPresent\] frameId=\d+
 surfacePresent=1", ...)` never matches; every acquired frame in this
 `QT_QPA_PLATFORM=offscreen` run logs `defer id=... reason=surfaceGenMismatch`
-instead of presenting. Not yet root-caused: could be a genuine surface-
-generation bug, or could be an artifact of the offscreen/headless Qt
-platform never producing a real swapchain generation bump the way an
-on-screen window does. Needs investigation before the cold-start gate can go
-green.
+instead of presenting. Root-caused (not yet fixed): `frame->surfaceGeneration` is written to a real,
+tracked value (`activeSurfaceGeneration_`) in exactly one place,
+`DesktopFrameLifetimeTracker.cpp` — and that file is compiled out entirely
+under `MELONPRIME_SAPPHIRE_REBUILD=ON`
+(`src/frontend/qt_sdl/CMakeLists.txt`'s `if (NOT MELONPRIME_SAPPHIRE_REBUILD)
+target_sources(melonDS PRIVATE DesktopFrameLifetimeTracker.cpp ...)`).
+Every other write site (`VulkanReference/FrameQueue.cpp:252`) just
+initializes it to the literal `0` and never updates it again. So on the
+rebuild branch every produced frame permanently carries `surfaceGeneration =
+0`, while `surfaceHost.generation()` (the live value frames are compared
+against at present time) increments to `1` once the surface actually
+configures — a mismatch on every single frame, forever, regardless of
+platform.
+
+This is exactly the architecture gap the base rebuild plan already flagged
+for Phase 3/5 ("旧Desktop full pipelineが接続されたまま" /
+"旧実装削除...CMakeから旧実装は未削除"): removing
+`DesktopFrameLifetimeTracker.cpp`'s compilation without replacing its
+`surfaceGeneration` bookkeeping with a pure-Sapphire equivalent left this
+responsibility unimplemented rather than migrated. Two real fix directions,
+neither attempted yet:
+1. Re-enable `DesktopFrameLifetimeTracker.cpp` under
+   `MELONPRIME_SAPPHIRE_REBUILD=ON` too (fast, but keeps "Desktop" naming/
+   logic alive in the "pure Sapphire" build, contradicting the rebuild's own
+   stated goal).
+2. Implement the equivalent generation-tracking in the pure-Sapphire path
+   (`SapphireVulkanFrameLatch.cpp` / `SapphireVulkanFramePipeline.cpp`) and
+   have frame production read from there instead. Matches the rebuild's
+   actual intent but is real feature work, not a one-line fix.
 
 ## CI
 
