@@ -1499,4 +1499,5 @@ Vulkan 2D pipelineをSapphire exactと判断できる。
 | S75-2 | `09d45a481` | done | Validate published packed/structured pointer identity against live GPU |
 | S75-3 | `aadb619bf` | done | Remove unused duplicate pointers from `SapphireFrameInput` |
 | S75-4 | `1841c8dbd` | done | Vendor exact Sapphire FrameQueue selection core |
-| S75-5 | pending | in progress | Move Desktop generation/timeline ownership into DesktopFrameLifetimeTracker |
+| S75-5 | `c8da1ed97` | done | Move Desktop generation/timeline ownership into DesktopFrameLifetimeTracker |
+| S75-6 | pending | in progress | FrameQueue upstream-vs-Desktop differential sequence tests |

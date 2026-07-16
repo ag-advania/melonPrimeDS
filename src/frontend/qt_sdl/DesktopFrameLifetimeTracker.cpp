@@ -102,7 +102,11 @@ void DesktopFrameLifetimeTracker::setActiveGenerations(
 
 bool DesktopFrameLifetimeTracker::frameMatchesActiveGenerations(const Frame* frame) const
 {
-    if (frame == nullptr || frame->frameSerial == 0)
+    if (frame == nullptr)
+        return false;
+    if (activeRendererGeneration_ == 0 && activeSurfaceGeneration_ == 0)
+        return true;
+    if (frame->frameSerial == 0)
         return false;
     if (activeRendererGeneration_ != 0
         && frame->rendererGeneration != activeRendererGeneration_)
