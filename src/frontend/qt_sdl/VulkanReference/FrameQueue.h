@@ -144,6 +144,7 @@ public:
     void synchronizePresentationCompletion(u64 completedTimelineValue);
     void clear();
     FrameQueueStats takeStatsSnapshotAndReset();
+    void assertMembershipInvariant(const Frame* renderingFrame = nullptr) const;
 
 private:
     struct Impl;

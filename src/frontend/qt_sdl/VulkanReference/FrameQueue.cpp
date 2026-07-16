@@ -2,11 +2,51 @@
 
 #include "FrameQueue.h"
 
+#include <array>
+#include <cstdio>
 #include <functional>
 #include <memory>
 
 #include "DesktopFrameLifetimeTracker.h"
 #include "SapphireGenerated/SapphireFrameQueueCore.h"
+
+namespace
+{
+
+u32 membershipCountForFrame(
+    const MelonDSAndroid::SapphireFrameQueueCore& core,
+    const Frame* frame,
+    const Frame* renderingFrame)
+{
+    if (frame == nullptr)
+        return 0;
+
+    u32 count = 0;
+    if (core.pendingPresentFrame == frame)
+        ++count;
+    if (core.previousFrame == frame)
+        ++count;
+    if (renderingFrame == frame)
+        ++count;
+
+    for (const Frame* queued : core.presentQueue)
+    {
+        if (queued == frame)
+            ++count;
+    }
+
+    std::queue<Frame*> freeQueueCopy = core.freeQueue;
+    while (!freeQueueCopy.empty())
+    {
+        if (freeQueueCopy.front() == frame)
+            ++count;
+        freeQueueCopy.pop();
+    }
+
+    return count;
+}
+
+} // namespace
 
 struct FrameQueue::Impl
 {
@@ -137,4 +177,68 @@ void FrameQueue::clear()
 FrameQueueStats FrameQueue::takeStatsSnapshotAndReset()
 {
     return impl_->core.takeStatsSnapshotAndReset();
+}
+
+void FrameQueue::assertMembershipInvariant(const Frame* renderingFrame) const
+{
+#ifndef NDEBUG
+    const auto& core = impl_->core;
+    std::array<u32, FRAME_QUEUE_SIZE> freeCounts{};
+    std::array<u32, FRAME_QUEUE_SIZE> presentCounts{};
+
+    std::queue<Frame*> freeQueueCopy = core.freeQueue;
+    while (!freeQueueCopy.empty())
+    {
+        Frame* frame = freeQueueCopy.front();
+        freeQueueCopy.pop();
+        if (frame == nullptr)
+            continue;
+        const std::size_t index = static_cast<std::size_t>(frame - &core.frames_[0]);
+        if (index < FRAME_QUEUE_SIZE)
+            ++freeCounts[index];
+    }
+
+    for (const Frame* frame : core.presentQueue)
+    {
+        if (frame == nullptr)
+            continue;
+        const std::size_t index = static_cast<std::size_t>(frame - &core.frames_[0]);
+        if (index < FRAME_QUEUE_SIZE)
+            ++presentCounts[index];
+    }
+
+    for (const Frame& frame : core.frames_)
+    {
+        if (membershipCountForFrame(core, &frame, renderingFrame) > 1)
+        {
+            std::fprintf(stderr, "FrameQueue membership invariant failed\n");
+            std::abort();
+        }
+    }
+
+    for (std::size_t index = 0; index < FRAME_QUEUE_SIZE; ++index)
+    {
+        if (freeCounts[index] > 1 || presentCounts[index] > 1)
+        {
+            std::fprintf(stderr, "FrameQueue duplicate queue entry invariant failed\n");
+            std::abort();
+        }
+    }
+
+    if (core.pendingPresentFrame != nullptr && presentCounts[
+            static_cast<std::size_t>(core.pendingPresentFrame - &core.frames_[0])] != 0)
+    {
+        std::fprintf(stderr, "FrameQueue pending/present overlap invariant failed\n");
+        std::abort();
+    }
+
+    if (core.previousFrame != nullptr
+        && freeCounts[static_cast<std::size_t>(core.previousFrame - &core.frames_[0])] != 0)
+    {
+        std::fprintf(stderr, "FrameQueue previous/free overlap invariant failed\n");
+        std::abort();
+    }
+#else
+    (void)renderingFrame;
+#endif
 }
