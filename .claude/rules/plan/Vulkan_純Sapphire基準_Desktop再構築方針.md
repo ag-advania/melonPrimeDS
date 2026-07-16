@@ -765,14 +765,26 @@ R20 Remove obsolete Desktop Vulkan implementation
 
 ## 18. 進捗
 
+> **S81監査（2026-07-16）による是正:** commit `fafad722b` "Rebuild Phase 5"
+> はDesktop Vulkan実装ファイル削除を一切行わず、`VulkanReference_LegacyCustom/ARCHIVED.md`
+> を追加しただけだった（`git show --stat fafad722b` で確認、diff 1ファイル
+> +6行のみ）。CMake側でも`MelonPrimeScreenVulkan`/`MelonPrimeVulkanFrontendSession`/
+> `MelonPrimeDesktopVulkanPresenter`等の旧統合実装は`MELONPRIME_SAPPHIRE_REBUILD`の
+> 値に関わらず今も無条件でproduction pathへlinkされている
+> （`src/frontend/qt_sdl/CMakeLists.txt`の`MELONPRIME_VULKAN_ACTIVE`ブロック）。
+> Phase 1も`MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN`の既定値が`OFF`のままで、
+> "純Sapphire core"と称するビルドが実際には正規化GPU2Dソースを使っていなかった。
+> 以下のテーブルはこれらを反映して是正した。詳細:
+> [Vulkan_S81_純Sapphire再構築ブランチ監査](Vulkan_S81_純Sapphire再構築ブランチ監査_PostFinishFrameクラッシュ_フェーズ別修正指示.md)
+
 | Phase | 内容 | 状態 | コミット |
 |---|---|---|---|
 | 0 | 現状凍結（tag/branch/baseline） | **done** | `1360cc76e` |
-| 1 | 純Sapphire core（vendor/generator/GPU2D） | **done** | `e95b8d40f` |
+| 1 | 純Sapphire core（vendor/generator/GPU2D） | **partial** — `MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN`の既定値がOFFのまま | `e95b8d40f` |
 | 2 | 最小Desktop WSI + 単色clear | **done** | `b4557998f` |
-| 3 | Sapphire output接続 + atomic input | **done** | `c640a33c1` |
+| 3 | Sapphire output接続 + atomic input | **partial** — 旧Desktop full pipeline（temporal/runtime pacing/resource lease等）が接続されたまま、atomic inputはborrowed raw pointer契約が未確定 | `c640a33c1` |
 | 4 | ROM cold-start + CI検証 | **blocked** | *(crash post-FinishFrame persists — see PHASE4_COLD_START.md)* |
-| 5 | 機能復元 + 旧実装削除 | **done** | `fafad722b` |
+| 5 | 機能復元 + 旧実装削除 | **not started** — `ARCHIVED.md`追加のみ、CMakeから旧実装は未削除 | `fafad722b`（誤記あり、上記参照） |
 
 **Tag:** `vulkan-pre-sapphire-rebuild` @ `90bf8333a`  
 **Branch:** `vulkan_sapphire_desktop_rebuild`  
