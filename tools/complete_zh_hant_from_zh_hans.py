@@ -44,9 +44,9 @@ LANG_LINE_RE = re.compile(r'^\s*\{MenuLangId::[A-Za-z0-9_]+,')
 # vocabulary that "s2tw" (and especially plain "s2t") can still leave behind.
 # Ordered so longer/more specific keys are replaced before shorter ones that
 # could otherwise be a substring of an already-fixed run.
-# See .claude/rules/notes/ for the audit that produced this list; keep it in
+# See docs/archive/ for the audit that produced this list; keep it in
 # sync with ZH_HANT_TERMINOLOGY_HINTS in
-# .claude/skills/audit-melonprime-localization.py.
+# tools/ci/audits/localization/audit-melonprime-localization.py.
 ZH_HANT_TERMINOLOGY_FIXES: list[tuple[str, str]] = [
     ("以太網", "乙太網路"),
     ("攝像頭", "相機"),
@@ -210,7 +210,7 @@ def main() -> int:
 
     print(f"[PASS] zh-Hant completion finished: inserted={total_inserted}, existing={total_existing}")
     if total_inserted:
-        print("[NEXT] Run: python3 .claude/skills/audit-melonprime-localization.py")
+        print("[NEXT] Run: python3 tools/ci/audits/localization/audit-melonprime-localization.py")
     return 0
 
 

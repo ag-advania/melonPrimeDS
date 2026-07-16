@@ -149,8 +149,8 @@ def main() -> int:
     if obj_not_found:
         sample = ", ".join(sorted({r["key"] for r in obj_not_found})[:10])
         print(f"[WARN] object keys not found: {sample}")
-    print("[NEXT] Run: python3 .claude/skills/audit-melonprime-all-new-language-coverage.py")
-    print("[NEXT] Run: python3 .claude/skills/audit-melonprime-localization.py")
+    print("[NEXT] Run: python3 tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.py")
+    print("[NEXT] Run: python3 tools/ci/audits/localization/audit-melonprime-localization.py")
     return 0
 
 if __name__ == "__main__":

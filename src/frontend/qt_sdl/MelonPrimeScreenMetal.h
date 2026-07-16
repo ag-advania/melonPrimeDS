@@ -1,7 +1,7 @@
 // MelonPrimeDS - Metal screen presenter (experimental, Metal-plan Phase 4)
 //
 // Compiled only when MELONPRIME_METAL_ACTIVE selected MELONPRIME_ENABLE_METAL
-// (see .claude/rules/melonprime-metal-backend-plan.md). Presentation only:
+// (see docs/plans/rendering/metal/backend-plan.md). Presentation only:
 // uploads the same CPU BGRA framebuffers ScreenPanelNative composites via
 // QPainter, but through a CAMetalLayer attached directly to this widget's
 // native NSView (same "own the widget's native surface" model

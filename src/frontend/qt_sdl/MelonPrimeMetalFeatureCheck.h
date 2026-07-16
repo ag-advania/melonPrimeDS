@@ -2,7 +2,7 @@
 //
 // Compiled only when MELONPRIME_METAL_ACTIVE selected MELONPRIME_ENABLE_METAL
 // (see MELONPRIME_ENABLE_METAL / MELONPRIME_FORCE_DISABLE_METAL in
-// CMakeLists.txt and .claude/rules/melonprime-metal-backend-plan.md). Probes
+// CMakeLists.txt and docs/plans/rendering/metal/backend-plan.md). Probes
 // whether this process can construct a usable MTLDevice, command queue, and
 // a minimal render pipeline targeting BGRA8Unorm, without requiring Metal 4,
 // Apple-GPU-family-only features, MetalFX, argument buffer tier 2, or
