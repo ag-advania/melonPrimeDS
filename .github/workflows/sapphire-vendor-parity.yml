@@ -72,6 +72,7 @@ jobs:
           python3 tools/check_vulkan_output_header_contract.py
           python3 tools/generate_sapphire_frame_latch.py --verify
           python3 tools/generate_sapphire_frame_queue.py --verify
+          python3 tools/generate_sapphire_vulkan_sources.py --verify
           python3 tools/test_melonprime_build_identity_contract.py
           python3 tools/test_sapphire_gpu2d_post_sprite_trace_contract_s79.py
           python3 tools/test_sapphire_gpu2d_hblank_path_latch_contract_s79.py
