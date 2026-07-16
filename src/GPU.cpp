@@ -207,12 +207,31 @@ void GPU::Reset() noexcept
     memset(VRAMCBF_BBG, 0, sizeof(VRAMCBF_BBG));
     memset(VRAMCBF_BOBJ, 0, sizeof(VRAMCBF_BOBJ));
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    {
+        const size_t pixelCount = FramebufferPixelCount();
+        for (int buffer = 0; buffer < 2; ++buffer)
+        {
+            for (int plane = 0; plane < 2; ++plane)
+            {
+                if (Framebuffer[buffer][plane])
+                {
+                    u32* planeData = Framebuffer[buffer][plane].get();
+                    for (size_t i = 0; i < pixelCount; ++i)
+                        planeData[i] = 0xFFFFFFFF;
+                }
+            }
+        }
+    }
+#endif
+
     GPU2D_A.Reset();
     GPU2D_B.Reset();
     GPU3D.Reset();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (Sapphire2D)
         Sapphire2D->Reset(*this);
+    (void)AssignFramebuffers();
 #endif
 
     Rend->Reset();
@@ -471,6 +490,13 @@ const SapphireGPU2DCore::GPU2D::SoftRenderer* GPU::TryGetGpu2DSoftRenderer() con
     return dynamic_cast<const SapphireGPU2DCore::GPU2D::SoftRenderer*>(GPU2D_Renderer.get());
 }
 
+bool GPU::UsesSapphireGpu2DPath() const noexcept
+{
+    return Sapphire2D != nullptr
+        && Sapphire2D->IsActiveForRendering(const_cast<GPU&>(*this))
+        && GPU2D_Renderer != nullptr;
+}
+
 bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
 {
     if (Sapphire2D == nullptr || rendererGeneration == 0 || GPU2D_Renderer == nullptr)
@@ -575,7 +601,7 @@ bool GPU::AssignFramebuffers() noexcept
     if (unitA == nullptr || unitB == nullptr)
         return false;
 
-    if (ScreenSwap)
+    if (NDS.PowerControl9 & (1<<15))
         GPU2D_Renderer->SetFramebuffer(unitA, unitB);
     else
         GPU2D_Renderer->SetFramebuffer(unitB, unitA);
@@ -613,6 +639,27 @@ u8 GPU::Read8(u32 addr)
 
 u16 GPU::Read16(u32 addr)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+    {
+        switch (addr)
+        {
+        case 0x04000064:
+        case 0x04000066:
+        case 0x04000068:
+        case 0x0400006A:
+        case 0x0400006C:
+        case 0x0400006E:
+            return GPU2D_A.Read16(addr);
+        case 0x0400106C:
+        case 0x0400106E:
+            return GPU2D_B.Read16(addr);
+        default:
+            break;
+        }
+    }
+#endif
+
     switch (addr)
     {
         case 0x04000064: return CaptureCnt & 0xFFFF;
@@ -628,6 +675,23 @@ u16 GPU::Read16(u32 addr)
 
 u32 GPU::Read32(u32 addr)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+    {
+        switch (addr)
+        {
+        case 0x04000064:
+        case 0x04000068:
+        case 0x0400006C:
+            return GPU2D_A.Read32(addr);
+        case 0x0400106C:
+            return GPU2D_B.Read32(addr);
+        default:
+            break;
+        }
+    }
+#endif
+
     switch (addr)
     {
         case 0x04000064: return CaptureCnt;
@@ -642,6 +706,33 @@ u32 GPU::Read32(u32 addr)
 
 void GPU::Write8(u32 addr, u8 val)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+    {
+        switch (addr)
+        {
+        case 0x04000064:
+        case 0x04000065:
+        case 0x04000066:
+        case 0x04000067:
+        case 0x04000068:
+        case 0x04000069:
+        case 0x0400006A:
+        case 0x0400006B:
+        case 0x0400006C:
+        case 0x0400006D:
+            GPU2D_A.Write8(addr, val);
+            return;
+        case 0x0400106C:
+        case 0x0400106D:
+            GPU2D_B.Write8(addr, val);
+            return;
+        default:
+            break;
+        }
+    }
+#endif
+
     switch (addr)
     {
         case 0x04000004:
@@ -702,6 +793,27 @@ void GPU::Write8(u32 addr, u8 val)
 
 void GPU::Write16(u32 addr, u16 val)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+    {
+        switch (addr)
+        {
+        case 0x04000064:
+        case 0x04000066:
+        case 0x04000068:
+        case 0x0400006A:
+        case 0x0400006C:
+            GPU2D_A.Write16(addr, val);
+            return;
+        case 0x0400106C:
+            GPU2D_B.Write16(addr, val);
+            return;
+        default:
+            break;
+        }
+    }
+#endif
+
     switch (addr)
     {
         case 0x04000004:
@@ -740,6 +852,25 @@ void GPU::Write16(u32 addr, u16 val)
 
 void GPU::Write32(u32 addr, u32 val)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+    {
+        switch (addr)
+        {
+        case 0x04000064:
+        case 0x04000068:
+        case 0x0400006C:
+            GPU2D_A.Write32(addr, val);
+            return;
+        case 0x0400106C:
+            GPU2D_B.Write32(addr, val);
+            return;
+        default:
+            break;
+        }
+    }
+#endif
+
     switch (addr)
     {
         case 0x04000004:
@@ -1312,6 +1443,9 @@ void GPU::SetPowerCnt(u32 val) noexcept
     GPU3D.SetEnabled(val & (1<<3), val & (1<<2));
 
     ScreenSwap = !!(val & (1<<15));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    (void)AssignFramebuffers();
+#endif
 }
 
 
@@ -1333,6 +1467,11 @@ void GPU::SetDispStatIRQ(int cpu, int num)
 
 bool GPU::UsesDisplayFIFO()
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath())
+        return GPU2D_A.UsesFIFO();
+#endif
+
     if (((GPU2D_A.DispCnt >> 16) & 0x3) == 3)
         return true;
     if ((CaptureCnt & (1<<25)) && ((CaptureCnt >> 29) & 0x3) != 0)
@@ -1360,10 +1499,22 @@ void GPU::DisplayFIFO(u32 x) noexcept
     // we aren't aligned to the 8-pixel grid
     if (x > 0)
     {
-        if (x == 8)
-            SampleDisplayFIFO(0, 5);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (UsesSapphireGpu2DPath())
+        {
+            if (x == 8)
+                GPU2D_A.SampleFIFO(0, 5);
+            else
+                GPU2D_A.SampleFIFO(x-11, 8);
+        }
         else
-            SampleDisplayFIFO(x-11, 8);
+#endif
+        {
+            if (x == 8)
+                SampleDisplayFIFO(0, 5);
+            else
+                SampleDisplayFIFO(x-11, 8);
+        }
     }
 
     if (x < 256)
@@ -1373,7 +1524,14 @@ void GPU::DisplayFIFO(u32 x) noexcept
         NDS.ScheduleEvent(Event_DisplayFIFO, true, 6*8, 0, x+8);
     }
     else
-        SampleDisplayFIFO(253, 3); // sample the remaining pixels
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (UsesSapphireGpu2DPath())
+            GPU2D_A.SampleFIFO(253, 3);
+        else
+#endif
+            SampleDisplayFIFO(253, 3); // sample the remaining pixels
+    }
 }
 
 
@@ -1413,26 +1571,55 @@ void GPU::StartHBlank(u32 line) noexcept
 
     if (VCount < 192)
     {
-        if (line == 0)
+        if (line < 192)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
+            if (UsesSapphireGpu2DPath())
             {
-                GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
-                GPU2D_A.VBlankEnd();
-                GPU2D_B.VBlankEnd();
+                using MelonPrime::FirstVulkanFrameTrace::log;
+                log("[FirstGpu2D] before UnitA line=%u\n", line);
+                GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
+                log("[FirstGpu2D] after UnitA line=%u\n", line);
+                log("[FirstGpu2D] before UnitB line=%u\n", line);
+                GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
+                log("[FirstGpu2D] after UnitB line=%u\n", line);
             }
+            else
 #endif
+                Rend->DrawScanline(line);
         }
 
-        // draw
-        // note: this should start 48 cycles after the scanline start
-        if (line < 192)
-            Rend->DrawScanline(line);
         if (line < 191)
-            Rend->DrawSprites(line+1);
+        {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (UsesSapphireGpu2DPath())
+            {
+                using MelonPrime::FirstVulkanFrameTrace::log;
+                log("[FirstGpu2D] before UnitA sprites line=%u\n", line + 1);
+                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
+                log("[FirstGpu2D] after UnitA sprites line=%u\n", line + 1);
+                log("[FirstGpu2D] before UnitB sprites line=%u\n", line + 1);
+                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
+                log("[FirstGpu2D] after UnitB sprites line=%u\n", line + 1);
+            }
+            else
+#endif
+                Rend->DrawSprites(line+1);
+        }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (UsesSapphireGpu2DPath() && line <= 2)
+        {
+            Log(LogLevel::Debug, "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
+        }
+#endif
         NDS.CheckDMAs(0, 0x02);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (UsesSapphireGpu2DPath() && line <= 2)
+        {
+            Log(LogLevel::Debug, "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
+        }
+#endif
     }
     else if (VCount == 215)
     {
@@ -1441,8 +1628,15 @@ void GPU::StartHBlank(u32 line) noexcept
     }
     else if (VCount == 262)
     {
-        // sprites are pre-rendered one scanline in advance
-        Rend->DrawSprites(0);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (UsesSapphireGpu2DPath())
+        {
+            GPU2D_Renderer->DrawSprites(0, &GPU2D_A);
+            GPU2D_Renderer->DrawSprites(0, &GPU2D_B);
+        }
+        else
+#endif
+            Rend->DrawSprites(0);
     }
 
 #if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
@@ -1452,6 +1646,15 @@ void GPU::StartHBlank(u32 line) noexcept
 
     if (DispStat[0] & (1<<4)) NDS.SetIRQ(0, IRQ_HBlank);
     if (DispStat[1] & (1<<4)) NDS.SetIRQ(1, IRQ_HBlank);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (UsesSapphireGpu2DPath() && line == 0)
+        MelonPrime::FirstVulkanFrameTrace::consumeBudget();
+    if (UsesSapphireGpu2DPath() && line <= 2)
+    {
+        Log(LogLevel::Debug, "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
+    }
+#endif
 
     if ((VCount == 262) || (VCount == 511))
         NDS.ScheduleEvent(Event_LCD, true, (LINE_CYCLES - HBLANK_CYCLES), LCD_FinishFrame, line+1);
@@ -1546,8 +1749,23 @@ void GPU::StartScanline(u32 line) noexcept
     else if (VCount == 194)
         NDS.StopDMAs(0, 0x03);
 
-    if ((VCount < 192) && RunFIFO)
-        NDS.ScheduleEvent(Event_DisplayFIFO, false, 32, 0, 0);
+    if (VCount < 192)
+    {
+        if (line == 0)
+        {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (UsesSapphireGpu2DPath())
+            {
+                GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
+                GPU2D_A.VBlankEnd();
+                GPU2D_B.VBlankEnd();
+            }
+#endif
+        }
+
+        if (RunFIFO)
+            NDS.ScheduleEvent(Event_DisplayFIFO, false, 32, 0, 0);
+    }
 
     if (VCount == 0)
     {
