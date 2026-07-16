@@ -2,7 +2,10 @@
 
 Run: `python tools/test_sapphire_vulkan_cold_start_regression_s79.py`
 Binary: `build/rebuild-mingw-x86_64/melonPrimeDS.exe` (preferred; exact-pinned GPU2D
-off, diagnostic symbols on, LTO/strip off — see `.claude/skills/build-mingw-vulkan-
+off — the third of three exact-pin compile errors,
+`melonDS::GPU2D` class-vs-namespace conflict, remains unfixed, see
+`docs/vulkan/rebuild/EXACT_PIN_COMPILE_STATUS.md` — diagnostic symbols on,
+LTO/strip off — see `.claude/skills/build-mingw-vulkan-
 sapphire-rebuild-exact.bat`) with `MELONPRIME_SAPPHIRE_REBUILD=ON`. The test's
 `find_vulkan_binary()` checks this tree first.
 
@@ -106,6 +109,70 @@ neither attempted yet:
    (`SapphireVulkanFrameLatch.cpp` / `SapphireVulkanFramePipeline.cpp`) and
    have frame production read from there instead. Matches the rebuild's
    actual intent but is real feature work, not a one-line fix.
+
+## OpenGL/Software rendering broken after touching Vulkan: root-caused and fixed (2026-07-16)
+
+User report after retesting the fixes above: OpenGL and Software rendering
+were broken (blank/garbled), and Vulkan ROM boot still showed no change from
+the splash screen (the already-documented `surfaceGenMismatch` gap above,
+unrelated).
+
+Root cause, in `src/GPU.cpp`: `GPU::IsSapphireCanonicalGpu2DActive()` is
+gated purely on one flag, `ActiveGPU2DPath == GPU2DExecutionPath::
+SapphireCanonical`, and is consulted at 17+ call sites throughout `GPU.cpp`
+to decide whether GPU2D compositing should take the Sapphire-canonical path
+or the legacy outer-renderer path. `GPU::DeactivateSapphireVulkan2D()`'s
+`#if defined(MELONPRIME_SAPPHIRE_REBUILD)` branch deactivated `Sapphire2D`
+itself but never reset `ActiveGPU2DPath` back to `LegacyOuterRenderer` (the
+non-rebuild fallback path below it does reset it). `GPU::SetRenderer()` calls
+`DeactivateSapphireVulkan2D()` unconditionally on every renderer transaction,
+and `EmuThread.cpp`'s video-transaction code also calls it explicitly
+whenever the selected renderer is not Vulkan
+(`else { nds->GPU.DeactivateSapphireVulkan2D(); }`, EmuThread.cpp:1685-ish).
+So: boot or switch to Vulkan once (`ActivateSapphireVulkan2D()` sets
+`SapphireCanonical`) -> switch to OpenGL or Software -> `DeactivateSapphireVulkan2D()`
+runs but silently leaves `ActiveGPU2DPath` stuck at `SapphireCanonical` ->
+every subsequent `IsSapphireCanonicalGpu2DActive()` check across the file
+still routes 2D compositing down the Sapphire path for a renderer that has
+no active Sapphire2D framebuffer bindings, producing broken/blank output for
+every renderer after the first Vulkan attempt.
+
+`ActiveGPU2DPath` defaults to `LegacyOuterRenderer`
+(`src/GPU.h:1049`), so this bug is dormant on a build that has never
+activated Vulkan in the current process; it manifests the first time Vulkan
+is tried (or is the default) and the user then switches to OpenGL/Software,
+which matches the reported symptom.
+
+Fixed by resetting `ActiveGPU2DPath = GPU2DExecutionPath::LegacyOuterRenderer;`
+unconditionally inside the rebuild branch of `DeactivateSapphireVulkan2D()`,
+matching the non-rebuild fallback path. Added a matching one-shot
+`Platform::Log` line on both `Activate`/`Deactivate` transitions (only logs
+when the flag actually changes) so this state machine is traceable from log
+output without needing to inspect the GUI. Verified the `activate` log line
+fires at the expected point (`[RomBootTrace] Sapphire Vulkan activation
+begin` -> `[MelonPrime] Sapphire2D: activate (rebuild path) ActiveGPU2DPath
+LegacyOuterRenderer -> SapphireCanonical` -> `[RomBootTrace] frontend session
+initialize begin`) in a rebuilt `build/rebuild-mingw-x86_64/melonPrimeDS.exe`
+via `test_sapphire_vulkan_cold_start_regression_s79.py`; that test never
+switches away from Vulkan, so the `deactivate` transition (and therefore full
+end-to-end confirmation that OpenGL/Software render correctly again after
+having used Vulkan) has not been exercised by an automated test in this
+session — no headless test exists for OpenGL/Software content, and this
+agent has no way to visually inspect GUI rendering. The fix is a direct,
+narrowly-scoped correction of an asymmetry against the already-correct
+non-rebuild code path immediately below it, not a new heuristic.
+
+`build-mingw-vulkan-sapphire-rebuild-exact.bat` and the `rebuild-mingw-x86_64`
+CMake preset were also corrected to default
+`MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=OFF` (it previously defaulted to `ON`,
+which does not currently configure/build at all — see
+`EXACT_PIN_COMPILE_STATUS.md` — so every invocation of the script since it
+was added was failing before even reaching this GPU.cpp bug). The cache
+verification loop's exact `KEY:TYPE=VALUE` string match was also loosened to
+`KEY.*=VALUE`, since `ENABLE_LTO_RELEASE` (a `cmake_dependent_option`) can
+legitimately cache as `INTERNAL` instead of `BOOL` depending on its
+dependency condition, which was tripping the verification step as a false
+failure even on a successful build.
 
 ## CI
 

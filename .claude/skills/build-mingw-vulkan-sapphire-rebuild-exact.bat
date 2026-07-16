@@ -3,15 +3,23 @@ setlocal EnableExtensions
 
 rem S81-1: dedicated, clean, symbolizable rebuild tree.
 rem Unlike build-mingw-vulkan-sapphire-rebuild.bat (which reconfigures the
-rem shared build/release-mingw-x86_64 tree in place, with
-rem MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN left OFF), this always configures a
+rem shared build/release-mingw-x86_64 tree in place), this always configures a
 rem dedicated build\rebuild-mingw-x86_64 tree from the "rebuild-mingw-x86_64"
 rem CMake preset: MELONPRIME_SAPPHIRE_REBUILD=ON,
 rem MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=OFF,
 rem MELONPRIME_SAPPHIRE_REBUILD_FEATURES=OFF,
-rem MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=ON, MELONPRIME_DIAGNOSTIC_SYMBOLS=ON,
-rem ENABLE_LTO_RELEASE=OFF. No stale build/release-mingw-x86_64 or
-rem release-mingw-x86_64-sapphire-rebuild tree is ever reused.
+rem MELONPRIME_DIAGNOSTIC_SYMBOLS=ON, ENABLE_LTO_RELEASE=OFF. No stale
+rem build/release-mingw-x86_64 or release-mingw-x86_64-sapphire-rebuild tree
+rem is ever reused.
+rem
+rem MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN is left OFF here. Two of the three
+rem compile errors it exposes were fixed (see
+rem docs/vulkan/rebuild/EXACT_PIN_COMPILE_STATUS.md), but the third --
+rem 'melonDS::GPU2D' redeclared as different kind of entity (class vs.
+rem namespace) between src/GPU2D.h and the vendored
+rem SapphireVendor/upstream/melonDS-android-lib/src/GPU2D.h -- is still
+rem unfixed. Do not flip this ON until that is resolved; doing so makes this
+rem script fail to configure/build at all.
 rem
 rem First-time configure of a brand-new build dir needs three things a bare
 rem "bash.exe -lc" login shell does not provide by default (every other
@@ -107,7 +115,7 @@ echo [melonprime-build-vulkan-sapphire-rebuild-exact] Verifying Sapphire generat
 python "%REPO_ROOT_WIN%\tools\generate_sapphire_vulkan_sources.py" --verify
 if errorlevel 1 exit /b 1
 
-"%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export LOCALAPPDATA='C:\Users\Admin\AppData\Local' && export APPDATA='C:\Users\Admin\AppData\Roaming' && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/rebuild-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/rebuild-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/rebuild-mingw-x86_64 -DUSE_VCPKG=ON -DBUILD_STATIC=ON -DUSE_RECOMMENDED_TRIPLETS=OFF -DVCPKG_TARGET_TRIPLET=x64-mingw-static-release -DVCPKG_HOST_TRIPLET=x64-mingw-static-release -DCMAKE_BUILD_TYPE=Release -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_SAPPHIRE_REBUILD=ON -DMELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=OFF -DMELONPRIME_SAPPHIRE_REBUILD_FEATURES=OFF -DMELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=ON -DMELONPRIME_DIAGNOSTIC_SYMBOLS=ON -DENABLE_LTO_RELEASE=OFF"
+"%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export LOCALAPPDATA='C:\Users\Admin\AppData\Local' && export APPDATA='C:\Users\Admin\AppData\Roaming' && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/rebuild-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/rebuild-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/rebuild-mingw-x86_64 -DUSE_VCPKG=ON -DBUILD_STATIC=ON -DUSE_RECOMMENDED_TRIPLETS=OFF -DVCPKG_TARGET_TRIPLET=x64-mingw-static-release -DVCPKG_HOST_TRIPLET=x64-mingw-static-release -DCMAKE_BUILD_TYPE=Release -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_SAPPHIRE_REBUILD=ON -DMELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=OFF -DMELONPRIME_SAPPHIRE_REBUILD_FEATURES=OFF -DMELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=OFF -DMELONPRIME_DIAGNOSTIC_SYMBOLS=ON -DENABLE_LTO_RELEASE=OFF"
 if errorlevel 1 (
     echo [melonprime-build-vulkan-sapphire-rebuild-exact] Configure failed.
     exit /b 1
@@ -132,21 +140,27 @@ if not exist "%CACHE%" (
     echo [melonprime-build-vulkan-sapphire-rebuild-exact] Build succeeded but CMakeCache.txt is missing.
     exit /b 1
 )
+rem Match KEY.*=VALUE rather than an exact KEY:TYPE=VALUE line: cache_variable
+rem type (BOOL vs. INTERNAL vs. UNINITIALIZED) can legitimately differ between
+rem a plain option() and a cmake_dependent_option() like ENABLE_LTO_RELEASE
+rem without the underlying value being wrong.
 for %%V in (
-    "MELONPRIME_ENABLE_VULKAN:BOOL=ON"
-    "MELONPRIME_SAPPHIRE_REBUILD:BOOL=ON"
-    "MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR:BOOL=OFF"
-    "MELONPRIME_SAPPHIRE_REBUILD_FEATURES:BOOL=OFF"
-    "MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN:BOOL=ON"
-    "MELONPRIME_DIAGNOSTIC_SYMBOLS:BOOL=ON"
-    "ENABLE_LTO_RELEASE:BOOL=OFF"
+    "MELONPRIME_ENABLE_VULKAN=ON"
+    "MELONPRIME_SAPPHIRE_REBUILD=ON"
+    "MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=OFF"
+    "MELONPRIME_SAPPHIRE_REBUILD_FEATURES=OFF"
+    "MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=OFF"
+    "MELONPRIME_DIAGNOSTIC_SYMBOLS=ON"
+    "ENABLE_LTO_RELEASE=OFF"
 ) do (
-    findstr /R /X /C:%%V "%CACHE%" >nul
-    if errorlevel 1 (
-        echo [melonprime-build-vulkan-sapphire-rebuild-exact] ERROR: CMake cache missing expected value %%V
-        exit /b 1
+    for /f "tokens=1,2 delims==" %%K in (%%V) do (
+        findstr /R /C:"^%%K:.*=%%L$" "%CACHE%" >nul
+        if errorlevel 1 (
+            echo [melonprime-build-vulkan-sapphire-rebuild-exact] ERROR: CMake cache missing expected value %%V
+            exit /b 1
+        )
     )
 )
 
-echo [melonprime-build-vulkan-sapphire-rebuild-exact] Verified exact-pinned, symbolizable rebuild configuration.
+echo [melonprime-build-vulkan-sapphire-rebuild-exact] Verified symbolizable rebuild configuration.
 exit /b 0

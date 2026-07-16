@@ -50,15 +50,15 @@
     {
       "name": "rebuild-mingw-x86_64",
       "inherits": "release-mingw-x86_64",
-      "displayName": "Windows MinGW Vulkan Sapphire Rebuild, exact-pinned, symbolizable (x64)",
-      "description": "Dedicated clean tree for vulkan_sapphire_desktop_rebuild (S81-1): exact-pinned GPU2D, no Desktop rebuild heuristics/features, diagnostic symbols with LTO/strip disabled so crash RVAs are addr2line-resolvable.",
+      "displayName": "Windows MinGW Vulkan Sapphire Rebuild, symbolizable (x64)",
+      "description": "Dedicated clean tree for vulkan_sapphire_desktop_rebuild (S81-1): no Desktop rebuild heuristics/features, diagnostic symbols with LTO/strip disabled so crash RVAs are addr2line-resolvable. MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN stays OFF: two of its three compile errors are fixed (docs/vulkan/rebuild/EXACT_PIN_COMPILE_STATUS.md), but the remaining melonDS::GPU2D class-vs-namespace conflict is unfixed, so ON does not currently configure/build.",
       "cacheVariables": {
         "MELONPRIME_ENABLE_VULKAN": "ON",
         "MELONPRIME_ENABLE_DEVELOPER_FEATURES": "ON",
         "MELONPRIME_SAPPHIRE_REBUILD": "ON",
         "MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR": "OFF",
         "MELONPRIME_SAPPHIRE_REBUILD_FEATURES": "OFF",
-        "MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN": "ON",
+        "MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN": "OFF",
         "MELONPRIME_DIAGNOSTIC_SYMBOLS": "ON",
         "ENABLE_LTO_RELEASE": "OFF"
       }

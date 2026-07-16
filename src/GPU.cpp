@@ -555,6 +555,14 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
         return false;
 
     Sapphire2D->Activate(rendererGeneration);
+#if defined(MELONPRIME_SAPPHIRE_REBUILD)
+    if (ActiveGPU2DPath != GPU2DExecutionPath::SapphireCanonical)
+    {
+        Platform::Log(Platform::LogLevel::Info,
+            "[MelonPrime] Sapphire2D: activate (rebuild path) "
+            "ActiveGPU2DPath LegacyOuterRenderer -> SapphireCanonical\n");
+    }
+#endif
     ActiveGPU2DPath = GPU2DExecutionPath::SapphireCanonical;
     return true;
 }
@@ -562,6 +570,23 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
 void GPU::DeactivateSapphireVulkan2D() noexcept
 {
 #if defined(MELONPRIME_SAPPHIRE_REBUILD)
+    // S81 bug fix: this early return skipped resetting ActiveGPU2DPath back
+    // to LegacyOuterRenderer, unlike the non-rebuild path below. Once
+    // Sapphire2D had been activated once (e.g. Vulkan renderer selected),
+    // IsSapphireCanonicalGpu2DActive() kept reporting true for every
+    // subsequent renderer even after switching to OpenGL/Software (whose
+    // Renderer3D::UsesStructured2DMetadata() is false, so
+    // ActivateSapphireVulkan2D() never re-activates it) -- Sapphire2D itself
+    // was deactivated, but GPU2D compositing code paths gated on
+    // IsSapphireCanonicalGpu2DActive() kept believing it was still live,
+    // producing broken/blank OpenGL and Software rendering.
+    if (ActiveGPU2DPath == GPU2DExecutionPath::SapphireCanonical)
+    {
+        Platform::Log(Platform::LogLevel::Info,
+            "[MelonPrime] Sapphire2D: deactivate (rebuild path) "
+            "ActiveGPU2DPath SapphireCanonical -> LegacyOuterRenderer\n");
+    }
+    ActiveGPU2DPath = GPU2DExecutionPath::LegacyOuterRenderer;
     if (Sapphire2D != nullptr)
         Sapphire2D->Deactivate();
     InvalidateSapphirePublication();
