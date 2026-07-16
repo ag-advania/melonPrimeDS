@@ -9,6 +9,7 @@
 #include <ctime>
 
 #include "MelonPrimeBuildInfo.h"
+#include "MelonPrimeFirstVulkanFrameTrace.h"
 #include "MelonPrimeRunIdentity.h"
 #include "MelonPrimeWindowsCrashHandler.h"
 
@@ -29,6 +30,38 @@ void writeBuildIdentity(FILE* out)
     std::fprintf(out, "buildIdentity.binarySha256=%s\n", MelonPrime::binarySha256Hex());
     std::fprintf(out, "buildIdentity.buildTz=%s\n", MELONPRIMEDS_BUILD_TZ);
     std::fprintf(out, "buildIdentity.timestamp=%lld\n", static_cast<long long>(std::time(nullptr)));
+}
+
+void writeAccessViolationDetails(FILE* out, EXCEPTION_RECORD* record)
+{
+    if (record == nullptr)
+        return;
+
+    if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+        return;
+
+    if (record->NumberParameters < 2)
+    {
+        std::fprintf(out, "exception.accessViolationParametersMissing count=%lu\n",
+            record->NumberParameters);
+        return;
+    }
+
+    const char* accessKind = "unknown";
+    switch (record->ExceptionInformation[0])
+    {
+    case 0: accessKind = "read"; break;
+    case 1: accessKind = "write"; break;
+    case 8: accessKind = "execute"; break;
+    default: break;
+    }
+
+    std::fprintf(
+        out,
+        "exception.accessType=%llu exception.accessKind=%s exception.faultAddress=0x%016llX\n",
+        static_cast<unsigned long long>(record->ExceptionInformation[0]),
+        accessKind,
+        static_cast<unsigned long long>(record->ExceptionInformation[1]));
 }
 
 void writeExceptionModuleInfo(FILE* out, EXCEPTION_RECORD* record)
@@ -75,6 +108,32 @@ void writeRegisters(FILE* out, CONTEXT* context)
         static_cast<unsigned long long>(context->Rsp),
         static_cast<unsigned long long>(context->Rbp),
         static_cast<unsigned long long>(context->Rax));
+    std::fprintf(
+        out,
+        "registers.rbx=0x%016llX rcx=0x%016llX rdx=0x%016llX rsi=0x%016llX\n",
+        static_cast<unsigned long long>(context->Rbx),
+        static_cast<unsigned long long>(context->Rcx),
+        static_cast<unsigned long long>(context->Rdx),
+        static_cast<unsigned long long>(context->Rsi));
+    std::fprintf(
+        out,
+        "registers.rdi=0x%016llX r8=0x%016llX r9=0x%016llX r10=0x%016llX\n",
+        static_cast<unsigned long long>(context->Rdi),
+        static_cast<unsigned long long>(context->R8),
+        static_cast<unsigned long long>(context->R9),
+        static_cast<unsigned long long>(context->R10));
+    std::fprintf(
+        out,
+        "registers.r11=0x%016llX r12=0x%016llX r13=0x%016llX r14=0x%016llX r15=0x%016llX\n",
+        static_cast<unsigned long long>(context->R11),
+        static_cast<unsigned long long>(context->R12),
+        static_cast<unsigned long long>(context->R13),
+        static_cast<unsigned long long>(context->R14),
+        static_cast<unsigned long long>(context->R15));
+    std::fprintf(
+        out,
+        "registers.eflags=0x%08lX\n",
+        context->EFlags);
 #elif defined(_M_IX86) || defined(__i386__)
     std::fprintf(
         out,
@@ -83,9 +142,50 @@ void writeRegisters(FILE* out, CONTEXT* context)
         context->Esp,
         context->Ebp,
         context->Eax);
+    std::fprintf(
+        out,
+        "registers.ebx=0x%08lX ecx=0x%08lX edx=0x%08lX esi=0x%08lX edi=0x%08lX eflags=0x%08lX\n",
+        context->Ebx,
+        context->Ecx,
+        context->Edx,
+        context->Esi,
+        context->Edi,
+        context->EFlags);
 #else
     std::fprintf(out, "registers.unsupportedArchitecture\n");
 #endif
+}
+
+bool lookupModuleForAddress(
+    DWORD64 address,
+    HMODULE* moduleOut,
+    char* modulePath,
+    DWORD modulePathCapacity,
+    DWORD64* moduleBaseOut)
+{
+    if (moduleOut == nullptr || moduleBaseOut == nullptr)
+        return false;
+
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(address),
+            &module)
+        || module == nullptr)
+    {
+        return false;
+    }
+
+    *moduleOut = module;
+    *moduleBaseOut = static_cast<DWORD64>(reinterpret_cast<uintptr_t>(module));
+    if (modulePath != nullptr && modulePathCapacity > 0)
+    {
+        const DWORD pathLength = GetModuleFileNameA(module, modulePath, modulePathCapacity);
+        if (pathLength == 0)
+            modulePath[0] = '\0';
+    }
+    return true;
 }
 
 bool writeMiniDump(EXCEPTION_POINTERS* exceptionInfo, const char* dumpPath)
@@ -175,13 +275,35 @@ void writeSymbolizedStack(FILE* out, CONTEXT* context)
         if (frame.AddrPC.Offset == 0)
             break;
 
+        HMODULE module = nullptr;
+        char modulePath[MAX_PATH]{};
+        DWORD64 moduleBase = 0;
+        const bool hasModule = lookupModuleForAddress(
+            frame.AddrPC.Offset,
+            &module,
+            modulePath,
+            MAX_PATH,
+            &moduleBase);
+        const DWORD64 rva = hasModule ? frame.AddrPC.Offset - moduleBase : 0;
+
         char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)]{};
         auto* symbol = reinterpret_cast<PSYMBOL_INFO>(symbolBuffer);
         symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
         symbol->MaxNameLen = MAX_SYM_NAME;
 
         DWORD64 displacement = 0;
-        if (SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol))
+        const bool hasSymbol = SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol) != FALSE;
+
+        std::fprintf(
+            out,
+            "#%02u abs=0x%016llX module=%s moduleBase=0x%016llX rva=0x%llX\n",
+            depth,
+            static_cast<unsigned long long>(frame.AddrPC.Offset),
+            hasModule && modulePath[0] != '\0' ? modulePath : "unknown",
+            static_cast<unsigned long long>(moduleBase),
+            static_cast<unsigned long long>(rva));
+
+        if (hasSymbol)
         {
             IMAGEHLP_LINE64 line{};
             line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
@@ -194,8 +316,7 @@ void writeSymbolizedStack(FILE* out, CONTEXT* context)
             {
                 std::fprintf(
                     out,
-                    "#%02u %s+0x%llX %s:%lu\n",
-                    depth,
+                    "    symbol=%s+0x%llX file=%s line=%lu\n",
                     symbol->Name,
                     static_cast<unsigned long long>(displacement),
                     line.FileName,
@@ -205,19 +326,10 @@ void writeSymbolizedStack(FILE* out, CONTEXT* context)
             {
                 std::fprintf(
                     out,
-                    "#%02u %s+0x%llX\n",
-                    depth,
+                    "    symbol=%s+0x%llX\n",
                     symbol->Name,
                     static_cast<unsigned long long>(displacement));
             }
-        }
-        else
-        {
-            std::fprintf(
-                out,
-                "#%02u 0x%016llX\n",
-                depth,
-                static_cast<unsigned long long>(frame.AddrPC.Offset));
         }
     }
 
@@ -253,6 +365,7 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
                 exceptionInfo->ExceptionRecord->ExceptionCode,
                 exceptionInfo->ExceptionRecord->ExceptionAddress,
                 GetCurrentThreadId());
+            writeAccessViolationDetails(report, exceptionInfo->ExceptionRecord);
             writeExceptionModuleInfo(report, exceptionInfo->ExceptionRecord);
             if (exceptionInfo->ContextRecord != nullptr)
             {
@@ -262,6 +375,8 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
         }
         std::fclose(report);
     }
+
+    MelonPrime::FirstVulkanFrameTrace::dumpRingToCrashReport(reportPath);
 
     if (exceptionInfo != nullptr)
         (void)writeMiniDump(exceptionInfo, dumpPath);

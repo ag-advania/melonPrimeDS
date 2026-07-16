@@ -20,10 +20,10 @@
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| S80-1 | done | (pending push) | consumeBudget moved to EmuThread; rawLog; state in .cpp |
-| S80-2 | pending | | |
+| S80-1 | done | `c70b41579` | consumeBudget moved to EmuThread; rawLog; state in .cpp |
+| S80-2 | done | (pending) | ACCESS_VIOLATION operands, full x64 registers, trace ring dump |
 | S80-3 | pending | | |
-| S80-4 | pending | | |
+| S80-4 | done | (pending) | Per-frame abs/module/base/RVA in crash handler (with S80-2) |
 | S80-5 | pending | | |
 | S80-6 | pending | | |
 | S80-7 | pending | | |
