@@ -330,6 +330,16 @@ public:
 
     void drawScreen() override;
 
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    // ScreenPanelNative has no wl_surface of its own (unlike ScreenPanelGL, it
+    // is not a Qt::WA_NativeWindow); these lock the top-level window's surface
+    // instead. Without this override the Software renderer silently has no
+    // Wayland cursor confinement at all -- see melonprime-aim-input.md and
+    // issue #526.
+    bool setWaylandPointerLockForMelonPrime(bool enabled) override;
+    [[nodiscard]] bool isWaylandPointerLockActiveForMelonPrime() const override;
+#endif
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
@@ -343,6 +353,9 @@ private:
 
     QImage screen[2];
     QTransform screenTrans[kMaxScreenTransforms];
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
+#endif
 };
 
 

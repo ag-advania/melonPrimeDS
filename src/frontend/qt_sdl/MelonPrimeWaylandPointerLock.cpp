@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -219,12 +220,20 @@ struct WaylandPointerLock::Impl
 
     static void Locked(void* data, zwp_locked_pointer_v1*)
     {
-        static_cast<Impl*>(data)->lockActive = true;
+        auto& self = *static_cast<Impl*>(data);
+        self.lockActive = true;
+        if (std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            std::fprintf(stderr, "[MelonPrime] Wayland pointer lock: ENGAGED surface=%p\n",
+                static_cast<void*>(self.lockedSurface));
     }
 
     static void Unlocked(void* data, zwp_locked_pointer_v1*)
     {
-        static_cast<Impl*>(data)->lockActive = false;
+        auto& self = *static_cast<Impl*>(data);
+        self.lockActive = false;
+        if (std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            std::fprintf(stderr, "[MelonPrime] Wayland pointer lock: released (compositor Unlocked event) surface=%p\n",
+                static_cast<void*>(self.lockedSurface));
     }
 
     static const wl_registry_listener RegistryListener;
@@ -235,6 +244,11 @@ struct WaylandPointerLock::Impl
 
     void DestroyLockObjects()
     {
+        if (lockRequested && std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
+            std::fprintf(stderr,
+                "[MelonPrime] Wayland pointer lock: destroying lock objects (was surface=%p active=%d)\n",
+                static_cast<void*>(lockedSurface), lockActive ? 1 : 0);
+
         lockActive = false;
         lockRequested = false;
         lockedSurface = nullptr;
@@ -358,17 +372,36 @@ struct WaylandPointerLock::Impl
 
     bool SetLocked(wl_display* newDisplay, wl_surface* surface, bool enabled)
     {
+        const bool debug = std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG") != nullptr;
+
         if (!enabled)
         {
+            if (debug)
+                std::fprintf(stderr, "[MelonPrime] Wayland pointer lock: SetLocked(false)\n");
             DestroyLockObjects();
             return true;
         }
 
-        if (!newDisplay || !surface || !Initialize(newDisplay))
+        const bool initSupported = newDisplay && surface && Initialize(newDisplay);
+        if (!initSupported)
+        {
+            if (debug)
+                std::fprintf(stderr,
+                    "[MelonPrime] Wayland pointer lock: SetLocked(true) rejected "
+                    "(display=%p surface=%p)\n",
+                    static_cast<void*>(newDisplay), static_cast<void*>(surface));
             return false;
+        }
 
         if (lockRequested && lockedSurface == surface && lockedPointer && relativePointer)
             return true;
+
+        if (debug)
+            std::fprintf(stderr,
+                "[MelonPrime] Wayland pointer lock: SetLocked(true) new request "
+                "surface=%p (previous lockedSurface=%p lockRequested=%d)\n",
+                static_cast<void*>(surface), static_cast<void*>(lockedSurface),
+                lockRequested ? 1 : 0);
 
         DestroyLockObjects();
 
