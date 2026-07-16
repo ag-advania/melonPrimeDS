@@ -648,9 +648,9 @@ bool SoftRenderer::CurrentUnitTargetsTopScreen() const noexcept
     const u32* currentFramebuffer = Framebuffer[CurUnit->Num];
     for (int buffer = 0; buffer < 2; buffer++)
     {
-        if (currentFramebuffer == GPU.Framebuffer[buffer][0])
+        if (currentFramebuffer == GPU.Framebuffer[buffer][0].get())
             return true;
-        if (currentFramebuffer == GPU.Framebuffer[buffer][1])
+        if (currentFramebuffer == GPU.Framebuffer[buffer][1].get())
             return false;
     }
 

@@ -39,13 +39,19 @@ class SapphireVulkanLifecycleS68ParityTests(unittest.TestCase):
         )
         self.assertIsNotNone(refresh)
         body = refresh.group(0)
-        self.assertIn("SyncSapphireFramebufferBindings", body)
+        self.assertIn("AssignFramebuffers", body)
         self.assertNotIn("PublishCompletedSapphireFrontBuffer", body)
 
-    def test_assign_sapphire_framebuffers_matches_sapphire(self):
+    def test_assign_framebuffers_owned_by_gpu(self):
+        gpu_h = read_repo("src/GPU.h")
+        gpu = read_repo("src/GPU.cpp")
         soft = read_repo("src/GPU_Soft.cpp")
-        self.assertIn("AssignSapphireFramebuffers", soft)
-        self.assertNotIn("physicalTop", soft)
+        self.assertIn("InitFramebuffers", gpu_h)
+        self.assertIn("AssignFramebuffers", gpu_h)
+        self.assertIn("std::unique_ptr<u32[]> Framebuffer[2][2]", gpu_h)
+        self.assertIn("void GPU::InitFramebuffers() noexcept", gpu)
+        self.assertIn("bool GPU::AssignFramebuffers() noexcept", gpu)
+        self.assertIn("InitFramebuffers();", gpu)
         publish = re.search(
             r"bool SoftRenderer::PublishSapphire2DFrame\(\) noexcept[\s\S]*?^}",
             soft,

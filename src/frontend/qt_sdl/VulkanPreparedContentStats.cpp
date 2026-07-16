@@ -72,8 +72,8 @@ VulkanPreparedContentStats CollectVulkanPreparedContentStats(
 
     ScreenScanStats top{};
     ScreenScanStats bottom{};
-    ScanPackedScreen(gpu.Framebuffer[frontBuffer][0], top);
-    ScanPackedScreen(gpu.Framebuffer[frontBuffer][1], bottom);
+    ScanPackedScreen(gpu.FramebufferPlane(frontBuffer, 0), top);
+    ScanPackedScreen(gpu.FramebufferPlane(frontBuffer, 1), bottom);
 
     stats.topPlane0NonZero = top.plane0NonZero;
     stats.topPlane1NonZero = top.plane1NonZero;

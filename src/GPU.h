@@ -239,10 +239,7 @@ public:
     }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    void SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept
-    {
-        GPU3D.SetCurrentRenderer(std::move(renderer));
-    }
+    void SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept;
 #endif
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
@@ -264,13 +261,18 @@ public:
     void RefreshSapphireVulkanBindings() noexcept;
     void InvalidateSapphirePublication() noexcept;
     void InvalidateSapphireFramebufferBindings() noexcept;
+    void InitFramebuffers() noexcept;
+    [[nodiscard]] bool AssignFramebuffers() noexcept;
+    [[nodiscard]] size_t FramebufferPixelCount() const noexcept;
+    [[nodiscard]] int BackBufferIndex() const noexcept { return FrontBuffer ? 0 : 1; }
+    [[nodiscard]] u32* FramebufferPlane(int buffer, int plane) const noexcept;
     [[nodiscard]] const SapphirePublished2DFrame& GetPublished2DFrame() const noexcept
     {
         return Published2DFrame;
     }
 
     int FrontBuffer = 0;
-    u32* Framebuffer[2][2]{};
+    std::unique_ptr<u32[]> Framebuffer[2][2]{};
     SapphirePublished2DFrame Published2DFrame{};
 #endif
 

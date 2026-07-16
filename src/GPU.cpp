@@ -93,6 +93,7 @@ GPU::GPU(melonDS::NDS& nds, std::unique_ptr<Renderer>&& renderer) noexcept :
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     Sapphire2D = std::make_unique<SapphireGpu2DState>();
     GPU2D_Renderer = std::make_unique<SapphireGPU2DCore::GPU2D::SoftRenderer>(*this);
+    InitFramebuffers();
 #endif
 
     SetRenderer(std::move(renderer));
@@ -405,6 +406,7 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
         SapphireVulkan2DAccess = std::make_unique<SapphireGPU2D::SoftRenderer>(*softRenderer);
     else
         SapphireVulkan2DAccess.reset();
+    InitFramebuffers();
 #endif
 
     ResetVRAMCache();
@@ -484,11 +486,7 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
     if (auto* softRenderer = TryGetGpu2DSoftRenderer())
         softRenderer->ClearStructuredVulkan2DState();
 
-    auto* outerSoftRenderer = dynamic_cast<SoftRenderer*>(Rend.get());
-    if (outerSoftRenderer == nullptr)
-        return false;
-
-    if (!outerSoftRenderer->AssignSapphireFramebuffers())
+    if (!AssignFramebuffers())
         return false;
 
     Sapphire2D->Activate(rendererGeneration);
@@ -506,8 +504,7 @@ void GPU::RefreshSapphireVulkanBindings() noexcept
     if (Sapphire2D == nullptr || !Sapphire2D->IsActiveForRendering(*this))
         return;
 
-    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
-        softRenderer->SyncSapphireFramebufferBindings();
+    (void)AssignFramebuffers();
 }
 
 void GPU::InvalidateSapphirePublication() noexcept
@@ -518,14 +515,72 @@ void GPU::InvalidateSapphirePublication() noexcept
 void GPU::InvalidateSapphireFramebufferBindings() noexcept
 {
     InvalidateSapphirePublication();
-    Framebuffer[0][0] = nullptr;
-    Framebuffer[0][1] = nullptr;
-    Framebuffer[1][0] = nullptr;
-    Framebuffer[1][1] = nullptr;
+    for (int buffer = 0; buffer < 2; ++buffer)
+    {
+        Framebuffer[buffer][0].reset();
+        Framebuffer[buffer][1].reset();
+    }
     FrontBuffer = 0;
 
     if (GPU2D_Renderer)
         GPU2D_Renderer->SetFramebuffer(nullptr, nullptr);
+}
+
+void GPU::SetRenderer3D(std::unique_ptr<Renderer3D>&& renderer) noexcept
+{
+    GPU3D.SetCurrentRenderer(std::move(renderer));
+    InitFramebuffers();
+}
+
+size_t GPU::FramebufferPixelCount() const noexcept
+{
+    if (GPU3D.IsRendererAccelerated())
+        return static_cast<size_t>((256 * 3 + 1) * 192);
+    return SoftRenderer::kPackedFramebufferPixels;
+}
+
+u32* GPU::FramebufferPlane(int buffer, int plane) const noexcept
+{
+    if (buffer < 0 || buffer > 1 || plane < 0 || plane > 1)
+        return nullptr;
+    return Framebuffer[buffer][plane] ? Framebuffer[buffer][plane].get() : nullptr;
+}
+
+void GPU::InitFramebuffers() noexcept
+{
+    const size_t pixelCount = FramebufferPixelCount();
+    for (int buffer = 0; buffer < 2; ++buffer)
+    {
+        for (int plane = 0; plane < 2; ++plane)
+            Framebuffer[buffer][plane] = std::make_unique<u32[]>(pixelCount);
+    }
+
+    for (int buffer = 0; buffer < 2; ++buffer)
+    {
+        for (int plane = 0; plane < 2; ++plane)
+            memset(Framebuffer[buffer][plane].get(), 0, pixelCount * sizeof(u32));
+    }
+
+    (void)AssignFramebuffers();
+}
+
+bool GPU::AssignFramebuffers() noexcept
+{
+    if (GPU2D_Renderer == nullptr)
+        return false;
+
+    const int backbuf = BackBufferIndex();
+    u32* unitA = FramebufferPlane(backbuf, 0);
+    u32* unitB = FramebufferPlane(backbuf, 1);
+    if (unitA == nullptr || unitB == nullptr)
+        return false;
+
+    if (ScreenSwap)
+        GPU2D_Renderer->SetFramebuffer(unitA, unitB);
+    else
+        GPU2D_Renderer->SetFramebuffer(unitB, unitA);
+
+    return true;
 }
 #endif
 
@@ -1406,14 +1461,17 @@ void GPU::StartHBlank(u32 line) noexcept
 
 void GPU::FinishFrame(u32 lines) noexcept
 {
-    Rend->SwapBuffers();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+    if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
     {
-        if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
-            softRenderer->PublishCompletedSapphireFrontBuffer();
+        FrontBuffer = FrontBuffer ? 0 : 1;
+        (void)AssignFramebuffers();
+        if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+            (void)softRenderer->PublishSapphire2DFrame();
     }
+    else
 #endif
+        Rend->SwapBuffers();
 
     TotalScanlines = lines;
 
@@ -1426,19 +1484,17 @@ void GPU::FinishFrame(u32 lines) noexcept
 
 void GPU::BlankFrame() noexcept
 {
-    /*int backbuf = FrontBuffer ? 0 : 1;
-    int fbsize;
-    if (GPU3D.IsRendererAccelerated())
-        fbsize = (256*3 + 1) * 192;
-    else
-        fbsize = 256 * 192;
-
-    memset(Framebuffer[backbuf][0].get(), 0, fbsize*4);
-    memset(Framebuffer[backbuf][1].get(), 0, fbsize*4);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const int backbuf = BackBufferIndex();
+    const size_t pixelCount = FramebufferPixelCount();
+    if (FramebufferPlane(backbuf, 0) != nullptr)
+        memset(FramebufferPlane(backbuf, 0), 0, pixelCount * sizeof(u32));
+    if (FramebufferPlane(backbuf, 1) != nullptr)
+        memset(FramebufferPlane(backbuf, 1), 0, pixelCount * sizeof(u32));
 
     FrontBuffer = backbuf;
-    AssignFramebuffers();*/
-    // TODO do it on the renderer!!
+    (void)AssignFramebuffers();
+#endif
 
     TotalScanlines = 263;
 }

@@ -56,14 +56,12 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void SwapBuffers() override;
     static constexpr size_t kPackedStride = 256u * 3u + 1u;
     static constexpr size_t kPackedFramebufferPixels = kPackedStride * 192u;
 
     [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() noexcept;
     [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer& GetSapphire2DRenderer() const noexcept;
-    void SyncSapphireFramebufferBindings() noexcept;
-    [[nodiscard]] bool AssignSapphireFramebuffers() noexcept;
-    void PublishCompletedSapphireFrontBuffer() noexcept;
     [[nodiscard]] bool PublishSapphire2DFrame() noexcept;
     [[nodiscard]] SapphirePhysical2DScreenView BuildPhysicalScreenView(
         int frontBuffer,
@@ -74,7 +72,9 @@ private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     u32* Framebuffer[2][2];
+#endif
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];

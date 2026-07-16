@@ -54,13 +54,25 @@ class SapphireGpu2DLifecycleParityTests(unittest.TestCase):
         soft = read_repo("src/GPU_Soft.cpp")
 
         publish = re.search(
-            r"void SoftRenderer::PublishCompletedSapphireFrontBuffer\(\) noexcept\s*\{[^}]+\}",
+            r"bool SoftRenderer::PublishSapphire2DFrame\(\) noexcept[\s\S]*?^}",
             soft,
+            re.MULTILINE,
         )
         self.assertIsNotNone(publish)
         body = publish.group(0)
-        self.assertNotIn("ScreenSwap", body)
-        self.assertIn("Framebuffer[buffer][0] = Framebuffer[buffer][0]", body)
+        self.assertIn("BuildPhysicalScreenView", body)
+        self.assertNotRegex(
+            body,
+            r"published\.top\.packed\s*=\s*GPU\.ScreenSwap",
+        )
+
+    def test_gpu_owns_sapphire_framebuffers(self):
+        gpu_h = read_repo("src/GPU.h")
+        gpu = read_repo("src/GPU.cpp")
+        self.assertIn("InitFramebuffers", gpu_h)
+        self.assertIn("AssignFramebuffers", gpu_h)
+        self.assertIn("SetRenderer3D", gpu)
+        self.assertIn("InitFramebuffers();", gpu)
 
     def test_hud_staging_uses_timeline_completion(self):
         overlay_h = read_repo("src/frontend/qt_sdl/MelonPrimeVulkanOverlayRenderer.h")

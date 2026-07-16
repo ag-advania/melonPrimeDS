@@ -927,12 +927,8 @@ bool SapphireFrameLatchCore::latchSoftPackedFrameSnapshot(
     if (frame == nullptr || nds_ == nullptr || frontBuffer < 0 || frontBuffer > 1)
         return false;
 
-    const u32* topPackedRaw = nds_->GPU.Framebuffer[frontBuffer][0] != nullptr
-        ? nds_->GPU.Framebuffer[frontBuffer][0]
-        : nullptr;
-    const u32* bottomPackedRaw = nds_->GPU.Framebuffer[frontBuffer][1] != nullptr
-        ? nds_->GPU.Framebuffer[frontBuffer][1]
-        : nullptr;
+    const u32* topPackedRaw = nds_->GPU.FramebufferPlane(frontBuffer, 0);
+    const u32* bottomPackedRaw = nds_->GPU.FramebufferPlane(frontBuffer, 1);
     if (topPackedRaw == nullptr || bottomPackedRaw == nullptr)
         return false;
 
