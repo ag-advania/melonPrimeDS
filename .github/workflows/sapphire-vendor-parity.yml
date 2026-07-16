@@ -137,3 +137,21 @@ jobs:
           cmake --build build/sapphire-parity-linux-${{ matrix.build_type }} --target sapphire_frame_latch_core -j 2
           cmake --build build/sapphire-parity-linux-${{ matrix.build_type }} --target sapphire_frame_queue_core -j 2
           cmake --build build/sapphire-parity-linux-${{ matrix.build_type }} --target sapphire_frame_queue_differential_test -j 2
+
+  vulkan-windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            git
+      - name: Build production melonPrimeDS.exe (MinGW Release)
+        shell: msys2 {0}
+        run: ./.claude/skills/build-mingw.bat --jobs 1
