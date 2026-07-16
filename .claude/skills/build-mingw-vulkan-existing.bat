@@ -59,7 +59,8 @@ if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
 
 echo [melonprime-build-vulkan-existing] Vulkan-enabled cache verified.
 echo [melonprime-build-vulkan-existing] Refreshing git build identity via CMake configure.
-cmake -S "%REPO_ROOT_WIN%" -B "%REPO_ROOT_WIN%\build\release-mingw-x86_64" >nul
+set "BASH=C:\msys64\usr\bin\bash.exe"
+"%BASH%" -lc "cd '%REPO_ROOT_WIN%' && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 >/dev/null"
 if errorlevel 1 (
     echo [melonprime-build-vulkan-existing] CMake configure failed while refreshing build identity.
     exit /b 1

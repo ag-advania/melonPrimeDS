@@ -1,0 +1,18 @@
+{
+  "pinnedCoreCommit": "d77944275fa61f9b79cfcead2c3e98993429a023",
+  "normalizedSequence": [
+    "GPU2D_Renderer->DrawScanline(line, &GPU2D_A)",
+    "GPU2D_Renderer->DrawScanline(line, &GPU2D_B)",
+    "GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A)",
+    "GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B)",
+    "NDS.CheckDMAs(0, 0x02)"
+  ],
+  "upstreamNormalizedSequence": [
+    "GPU2D_Renderer->DrawScanline(line, &GPU2D_A)",
+    "GPU2D_Renderer->DrawScanline(line, &GPU2D_B)",
+    "GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A)",
+    "GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B)",
+    "NDS.CheckDMAs(0, 0x02)"
+  ],
+  "generatedIncSha256": "40f19a1d079e0f6e7267ce8b767fbb04aea2b1e9b3faa21940e8b7ae7edfe95e"
+}

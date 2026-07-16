@@ -1575,66 +1575,77 @@ void GPU::StartHBlank(u32 line) noexcept
 
     if (VCount < 192)
     {
-        if (line < 192)
-        {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (useSapphire2D)
-            {
-                using MelonPrime::FirstVulkanFrameTrace::log;
-                log("[FirstGpu2D] before UnitA line=%u\n", line);
-                GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
-                log("[FirstGpu2D] after UnitA line=%u\n", line);
-                log("[FirstGpu2D] before UnitB line=%u\n", line);
-                GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
-                log("[FirstGpu2D] after UnitB line=%u\n", line);
-            }
-            else
-#endif
+        if (useSapphire2D)
+        {
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITA_SCANLINE(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] before UnitA line=%u\n", (LINE))
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITA_SCANLINE(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] after UnitA line=%u\n", (LINE))
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITB_SCANLINE(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] before UnitB line=%u\n", (LINE))
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SCANLINE(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] after UnitB line=%u\n", (LINE))
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITA_SPRITES(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] before UnitA sprites line=%u\n", (LINE) + 1)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITA_SPRITES(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] after UnitA sprites line=%u\n", (LINE) + 1)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITB_SPRITES(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] before UnitB sprites line=%u\n", (LINE) + 1)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SPRITES(LINE) \
+    MelonPrime::FirstVulkanFrameTrace::log("[FirstGpu2D] after UnitB sprites line=%u\n", (LINE) + 1)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SPRITES_DIAG(LINE) \
+    do { \
+        if ((LINE) <= 2) { \
+            MelonPrime::FirstVulkanFrameTrace::log( \
+                "[FirstGpuLine] after sprites Sapphire2D=%p GPU2DRenderer=%p\n", \
+                static_cast<const void*>(Sapphire2D.get()), \
+                static_cast<const void*>(GPU2D_Renderer.get())); \
+            MelonPrime::FirstVulkanFrameTrace::log("[FirstGpuLine] before path recheck\n"); \
+            MelonPrime::FirstVulkanFrameTrace::log( \
+                "[FirstGpuLine] after path recheck result=%d\n", \
+                useSapphire2D ? 1 : 0); \
+        } \
+    } while (0)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_CHECK_DMAS(LINE) \
+    do { \
+        if ((LINE) <= 2) { \
+            Log(LogLevel::Debug, "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE)); \
+        } \
+    } while (0)
+#define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_CHECK_DMAS(LINE) \
+    do { \
+        if ((LINE) <= 2) { \
+            Log(LogLevel::Debug, "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE)); \
+        } \
+    } while (0)
+#include "SapphireGenerated/SapphireGpu2DHBlankCore.inc"
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_CHECK_DMAS
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_CHECK_DMAS
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITA_SCANLINE
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITA_SCANLINE
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITB_SCANLINE
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SCANLINE
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITA_SPRITES
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITA_SPRITES
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_UNITB_SPRITES
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SPRITES
+#undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_UNITB_SPRITES_DIAG
+        }
+        else
+        {
+            if (line < 192)
                 Rend->DrawScanline(line);
-        }
-
-        if (line < 191)
-        {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (useSapphire2D)
-            {
-                using MelonPrime::FirstVulkanFrameTrace::log;
-                log("[FirstGpu2D] before UnitA sprites line=%u\n", line + 1);
-                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
-                log("[FirstGpu2D] after UnitA sprites line=%u\n", line + 1);
-                log("[FirstGpu2D] before UnitB sprites line=%u\n", line + 1);
-                GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
-                log("[FirstGpu2D] after UnitB sprites line=%u\n", line + 1);
-
-                if (line <= 2)
-                {
-                    log(
-                        "[FirstGpuLine] after sprites Sapphire2D=%p GPU2DRenderer=%p\n",
-                        static_cast<const void*>(Sapphire2D.get()),
-                        static_cast<const void*>(GPU2D_Renderer.get()));
-                    log("[FirstGpuLine] before path recheck\n");
-                    log(
-                        "[FirstGpuLine] after path recheck result=%d\n",
-                        useSapphire2D ? 1 : 0);
-                }
-            }
-            else
-#endif
+            if (line < 191)
                 Rend->DrawSprites(line+1);
+            NDS.CheckDMAs(0, 0x02);
         }
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (useSapphire2D && line <= 2)
-        {
-            Log(LogLevel::Debug, "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
-        }
-#endif
+#else
+        if (line < 192)
+            Rend->DrawScanline(line);
+        if (line < 191)
+            Rend->DrawSprites(line+1);
         NDS.CheckDMAs(0, 0x02);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (useSapphire2D && line <= 2)
-        {
-            Log(LogLevel::Debug, "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, line);
-        }
 #endif
     }
     else if (VCount == 215)
