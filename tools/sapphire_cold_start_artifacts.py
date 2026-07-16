@@ -85,7 +85,12 @@ def artifact_paths_for_run_id(
                 paths.append(str(candidate.resolve()))
 
     run_token = f"run-{run_id}"
-    for path in cwd.glob(f"melonPrimeDS-*{glob_suffix}"):
+    # glob_suffix already carries its own leading "*" (e.g. "*.dmp"); a
+    # literal "*" here too produced "melonPrimeDS-**.dmp", which Path.glob()
+    # rejects with ValueError("'**' can only be an entire path component") —
+    # found 2026-07-16 (S81) running this harness directly for the first
+    # time in this session.
+    for path in cwd.glob(f"melonPrimeDS-{glob_suffix}"):
         if run_id != "unknown" and run_token not in path.name:
             continue
         resolved = str(path.resolve())

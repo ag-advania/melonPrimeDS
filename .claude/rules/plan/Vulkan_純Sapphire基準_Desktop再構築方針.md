@@ -783,7 +783,7 @@ R20 Remove obsolete Desktop Vulkan implementation
 | 1 | 純Sapphire core（vendor/generator/GPU2D） | **partial** — `MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN`の既定値がOFFのまま | `e95b8d40f` |
 | 2 | 最小Desktop WSI + 単色clear | **done** | `b4557998f` |
 | 3 | Sapphire output接続 + atomic input | **partial** — 旧Desktop full pipeline（temporal/runtime pacing/resource lease等）が接続されたまま、atomic inputはborrowed raw pointer契約が未確定 | `c640a33c1` |
-| 4 | ROM cold-start + CI検証 | **blocked** | *(crash post-FinishFrame persists — see PHASE4_COLD_START.md)* |
+| 4 | ROM cold-start + CI検証 | **partial** — post-FinishFrameクラッシュは根本原因特定・修正済み（`docs/vulkan/rebuild/PHASE4_POST_FINISHFRAME_CRASH_ROOT_CAUSE.md`）。実機で複数フレームのproduce/present成功、テスト自身の完了チェックポイントに到達。別のシャットダウン時クラッシュ（`unregisterPresenter()`のmutex）が残るためgateはまだred | *(see PHASE4_COLD_START.md)* |
 | 5 | 機能復元 + 旧実装削除 | **not started** — `ARCHIVED.md`追加のみ、CMakeから旧実装は未削除 | `fafad722b`（誤記あり、上記参照） |
 
 **Tag:** `vulkan-pre-sapphire-rebuild` @ `90bf8333a`  

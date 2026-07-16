@@ -342,7 +342,17 @@ if (MELONPRIME_VULKAN_ACTIVE)
     # MELONPRIME_VULKAN_REFERENCE_PORT_V0_V5_V1
     find_package(volk CONFIG REQUIRED)
     add_dependencies(melonDS melonprime_sapphire_shaders)
-    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_VULKAN=1 VK_NO_PROTOTYPES=1)
+    # S81-1: match core's VMA_STATIC_VULKAN_FUNCTIONS/VMA_DYNAMIC_VULKAN_FUNCTIONS
+    # (src/CMakeLists.txt) exactly. melonDS also #includes GPU.h (via
+    # EmuInstance.cpp, Screen.cpp, MelonPrimeVulkanFrontendSession.cpp, ...),
+    # so any macro mismatch here risks the same class-layout ODR violation
+    # that MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES was introduced
+    # below to fix for the two Sapphire generated-core object libraries.
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
     if (MELONPRIME_SAPPHIRE_REBUILD)
         target_compile_definitions(melonDS PRIVATE MELONPRIME_SAPPHIRE_REBUILD=1)
         if (MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR)
@@ -412,6 +422,44 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference")
     target_link_libraries(melonDS PRIVATE volk::volk volk::volk_headers)
 
+    # S81-1: SapphireFrameLatchCore.cpp / SapphireFrameQueueCore.cpp both
+    # #include "GPU.h" transitively, and through it "NDS.h" (Frame stores an
+    # NDS* and these files compute &nds->GPU directly). NDS.h and GPU.h have
+    # dozens of macro-conditional members (JIT_ENABLED's ARMJIT fast-memory
+    # tables alone account for tens of megabytes of NDS's layout; Vulkan/VMA
+    # macros affect GPU.h). Every one of those macros must match core's
+    # compile definitions exactly, or class NDS / class GPU compile to a
+    # different size/layout in this object library than in core -- a real
+    # ODR violation, not a missing-feature gap. Root-caused 2026-07-16 (S81):
+    # these targets never defined JIT_ENABLED at all (core has it PUBLIC, but
+    # these targets never target_link_libraries(... core) to receive it), and
+    # separately were missing VK_USE_PLATFORM_WIN32_KHR /
+    # VMA_STATIC_VULKAN_FUNCTIONS / VMA_DYNAMIC_VULKAN_FUNCTIONS. A probe
+    # compiled with core's flags measured sizeof(NDS)=94135072
+    # offsetof(NDS,GPU)=89937152; the exact same probe with
+    # sapphire_frame_latch_core's (pre-fix) flags measured
+    # sizeof(NDS)=32483816 offsetof(NDS,GPU)=28285896 -- matching the disassembled
+    # "lea 0x1af9bc8(%rax),%rcx" (0x1af9bc8 == 28285896) computing &nds_->GPU at
+    # completely the wrong address. That produced the "this ==
+    # 0xFFFFFFFFFFFFFFFF" crash in SoftRenderer::GetDebugCaptureStats() that
+    # every S79-S81 crash report actually was.
+    #
+    # Link against core itself rather than hand-copying its macro list: core
+    # already exports every layout-relevant macro it owns as PUBLIC
+    # (JIT_ENABLED, OGLRENDERER_ENABLED, MELONPRIME_ENABLE_VULKAN,
+    # MELONPRIME_DS, MELONPRIME_GIT_COMMIT, MELONDS_EMBED_BUILD_INFO), so this
+    # can't silently drift out of sync again the way the hand-copied list did.
+    # A handful of Vulkan macros core defines PRIVATE (so they don't
+    # propagate via target_link_libraries) still need restating here.
+    set(MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES
+        VK_NO_PROTOTYPES=1
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
+    if (WIN32)
+        list(APPEND MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES
+            VK_USE_PLATFORM_WIN32_KHR=1)
+    endif()
+
     add_library(sapphire_frame_latch_core OBJECT
         SapphireGenerated/SapphireFrameLatchCore.cpp)
     target_include_directories(sapphire_frame_latch_core PRIVATE
@@ -420,10 +468,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
         "${CMAKE_SOURCE_DIR}/src")
     target_compile_definitions(sapphire_frame_latch_core PRIVATE
-        MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1
-        VK_NO_PROTOTYPES=1)
-    target_link_libraries(sapphire_frame_latch_core PRIVATE volk::volk volk::volk_headers)
+        ${MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES})
+    target_link_libraries(sapphire_frame_latch_core PRIVATE core volk::volk volk::volk_headers)
     target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_latch_core>)
 
     add_library(sapphire_frame_queue_core OBJECT
@@ -434,10 +480,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
         "${CMAKE_SOURCE_DIR}/src")
     target_compile_definitions(sapphire_frame_queue_core PRIVATE
-        MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1
-        VK_NO_PROTOTYPES=1)
-    target_link_libraries(sapphire_frame_queue_core PRIVATE volk::volk volk::volk_headers)
+        ${MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES})
+    target_link_libraries(sapphire_frame_queue_core PRIVATE core volk::volk volk::volk_headers)
     target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_queue_core>)
 
     if (NOT MELONPRIME_SAPPHIRE_REBUILD)
@@ -451,10 +495,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
             "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(sapphire_frame_queue_differential_test PRIVATE
-            MELONPRIME_DS
-            MELONPRIME_ENABLE_VULKAN=1
-            VK_NO_PROTOTYPES=1)
-        target_link_libraries(sapphire_frame_queue_differential_test PRIVATE volk::volk volk::volk_headers)
+            ${MELONPRIME_SAPPHIRE_GENERATED_CORE_VULKAN_DEFINES})
+        target_link_libraries(sapphire_frame_queue_differential_test PRIVATE core volk::volk volk::volk_headers)
         target_sources(sapphire_frame_queue_differential_test PRIVATE
             $<TARGET_OBJECTS:sapphire_frame_queue_core>)
     endif()
