@@ -39,6 +39,13 @@ option(MELONPRIME_DIAGNOSTIC_SYMBOLS
     "Embed -g, frame pointers, and linker map in release builds (S80-3)"
     OFF)
 
+option(MELONPRIME_SAPPHIRE_REBUILD
+    "Pure Sapphire desktop rebuild: vendor-first production path, no Desktop heuristics"
+    OFF)
+if (MELONPRIME_SAPPHIRE_REBUILD)
+    set(MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN ON CACHE BOOL "" FORCE)
+endif()
+
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)
 if (USE_VCPKG)
 	if (MELONPRIME_VULKAN_ACTIVE)

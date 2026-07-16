@@ -1,7 +1,7 @@
 {
   "upstreamTag": "0.7.0.rc4",
   "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
-  "generatedHeaderSha256": "6df4cab0d9a383b96c07efc2faeaa94785d447ea79bcca41b0d70dae512e45af",
+  "generatedHeaderSha256": "d2afcef217b99f1804347226f42cb497799efbaac8c2c451e5e2bd33a09cf904",
   "generatedCoreSha256": "965011a12a580de262e3f92ac61dc2b417cd0a9e3648fca4640de0becf109683",
   "cppRegions": [
     {

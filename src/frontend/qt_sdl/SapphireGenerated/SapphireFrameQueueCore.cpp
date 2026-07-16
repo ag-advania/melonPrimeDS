@@ -446,63 +446,6 @@ FrameQueueStats SapphireFrameQueueCore::takeStatsSnapshotAndReset()
     return snapshot;
 }
 
-void SapphireFrameQueueCore::rebuildFreeQueueFromStates()
-{
-    std::unique_lock lock(frameLock);
-    std::queue<Frame*> emptyQueue;
-    std::swap(freeQueue, emptyQueue);
-
-    for (auto& frame : frames_)
-    {
-        if (frame.queueState() == FrameQueueState::Free
-            && frame.historyReferenceCount() == 0
-            && frame.presentationReferenceCount() == 0)
-        {
-            freeQueue.push(&frame);
-        }
-    }
-}
-
-void SapphireFrameQueueCore::sanitizeFreeQueueLocked()
-{
-    std::unique_lock lock(frameLock);
-    std::queue<Frame*> sanitized;
-    std::array<bool, FRAME_QUEUE_SIZE> seen{};
-    while (!freeQueue.empty())
-    {
-        Frame* frame = freeQueue.front();
-        freeQueue.pop();
-        if (frame == nullptr)
-            continue;
-
-        const std::size_t index = static_cast<std::size_t>(frame - &frames_[0]);
-        if (index >= FRAME_QUEUE_SIZE || seen[index])
-            continue;
-
-        if (frame->queueState() != FrameQueueState::Free
-            || frame->historyReferenceCount() != 0
-            || frame->presentationReferenceCount() != 0)
-        {
-            continue;
-        }
-
-        seen[index] = true;
-        sanitized.push(frame);
-    }
-    freeQueue = std::move(sanitized);
-}
-
-void SapphireFrameQueueCore::resetQueueContainers()
-{
-    std::unique_lock lock(frameLock);
-    presentQueue.clear();
-    previousFrame = nullptr;
-    pendingPresentFrame = nullptr;
-    suppressPreviousFrameReuse = false;
-    std::queue<Frame*> emptyQueue;
-    std::swap(freeQueue, emptyQueue);
-}
-
 void SapphireFrameQueueCore::updateBacklogStatsLocked()
 {
     const u64 backlogDepth = static_cast<u64>(presentQueue.size());

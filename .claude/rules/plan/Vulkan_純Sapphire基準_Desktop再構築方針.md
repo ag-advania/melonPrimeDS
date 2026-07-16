@@ -767,8 +767,8 @@ R20 Remove obsolete Desktop Vulkan implementation
 
 | Phase | 内容 | 状態 | コミット |
 |---|---|---|---|
-| 0 | 現状凍結（tag/branch/baseline） | **done** | *(this commit)* |
-| 1 | 純Sapphire core（vendor/generator/GPU2D） | pending | |
+| 0 | 現状凍結（tag/branch/baseline） | **done** | `1360cc76e` |
+| 1 | 純Sapphire core（vendor/generator/GPU2D） | **done** | *(this commit)* |
 | 2 | 最小Desktop WSI + 単色clear | pending | |
 | 3 | Sapphire output接続 + atomic input | pending | |
 | 4 | ROM cold-start + CI検証 | pending | |

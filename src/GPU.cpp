@@ -278,6 +278,10 @@ void GPU::DoSavestate(Savestate* file) noexcept
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     u8 activeGpu2DPath = static_cast<u8>(ActiveGPU2DPath);
+#if defined(MELONPRIME_SAPPHIRE_REBUILD)
+    if (file->Saving)
+        activeGpu2DPath = static_cast<u8>(GPU2DExecutionPath::SapphireCanonical);
+#endif
     file->Var8(&activeGpu2DPath);
     if (!file->Saving)
         ActiveGPU2DPath = static_cast<GPU2DExecutionPath>(activeGpu2DPath);
@@ -557,6 +561,12 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
 
 void GPU::DeactivateSapphireVulkan2D() noexcept
 {
+#if defined(MELONPRIME_SAPPHIRE_REBUILD)
+    if (Sapphire2D != nullptr)
+        Sapphire2D->Deactivate();
+    InvalidateSapphirePublication();
+    return;
+#endif
     ActiveGPU2DPath = GPU2DExecutionPath::LegacyOuterRenderer;
     if (Sapphire2D != nullptr)
         Sapphire2D->Deactivate();

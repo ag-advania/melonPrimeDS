@@ -51,6 +51,7 @@
 #include "MelonPrimeFirstVulkanFrameTrace.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanDebugIsolation.h"
+#include "MelonPrimeSapphireRebuildMode.h"
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1600,8 +1601,9 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
             nds->GPU.GPU3D.GetCurrentRendererGeneration();
         RomBootTrace("[RomBootTrace] Sapphire Vulkan activation begin\n");
         const bool sapphire2DEnabled =
-            MelonPrime::VulkanDebugIsolation::sapphire2DGate()
-            == MelonPrime::VulkanDebugIsolation::Sapphire2DGate::Enabled;
+            MelonPrime::sapphireRebuildActive()
+            || MelonPrime::VulkanDebugIsolation::sapphire2DGate()
+                == MelonPrime::VulkanDebugIsolation::Sapphire2DGate::Enabled;
         if (sapphire2DEnabled
             && !nds->GPU.ActivateSapphireVulkan2D(rendererGeneration))
         {
