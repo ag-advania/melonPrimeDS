@@ -353,6 +353,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanSurfaceHost.h
         MelonPrimeVulkanFrontendSession.cpp
         MelonPrimeVulkanFrontendSession.h
+        MelonPrimeVulkanDebugIsolation.cpp
+        MelonPrimeVulkanDebugIsolation.h
         MelonPrimeDesktopVulkanPresenter.cpp
         MelonPrimeDesktopVulkanPresenter.h
         MelonPrimeVulkanRuntimePacing.cpp

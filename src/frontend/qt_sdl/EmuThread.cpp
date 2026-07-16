@@ -49,6 +49,9 @@
 
 #include "MelonPrimeEmuThreadIncludes.inc"
 #include "MelonPrimeFirstVulkanFrameTrace.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanDebugIsolation.h"
+#endif
 
 #ifdef MELONPRIME_DS
 static void RomBootTrace(const char* fmt, ...)
@@ -455,10 +458,18 @@ void EmuThread::run()
             if (videoBackend
                 == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
             {
-                vulkanProducerBegun = emuInstance->beginVulkanProducerFrame();
+                if (MelonPrime::VulkanDebugIsolation::producerBeginGate()
+                    == MelonPrime::VulkanDebugIsolation::ProducerBeginGate::Enabled)
+                {
+                    vulkanProducerBegun = emuInstance->beginVulkanProducerFrame();
+                }
                 RomBootTrace(
-                    "[FirstVulkanFrame] vulkanProducerBegun=%d\n",
-                    vulkanProducerBegun ? 1 : 0);
+                    "[FirstVulkanFrame] vulkanProducerBegun=%d gate=%d\n",
+                    vulkanProducerBegun ? 1 : 0,
+                    MelonPrime::VulkanDebugIsolation::producerBeginGate()
+                        == MelonPrime::VulkanDebugIsolation::ProducerBeginGate::Enabled
+                        ? 1
+                        : 0);
             }
 #endif
 #ifdef MELONPRIME_DS
@@ -1508,7 +1519,11 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
         const u64 rendererGeneration =
             nds->GPU.GPU3D.GetCurrentRendererGeneration();
         RomBootTrace("[RomBootTrace] Sapphire Vulkan activation begin\n");
-        if (!nds->GPU.ActivateSapphireVulkan2D(rendererGeneration))
+        const bool sapphire2DEnabled =
+            MelonPrime::VulkanDebugIsolation::sapphire2DGate()
+            == MelonPrime::VulkanDebugIsolation::Sapphire2DGate::Enabled;
+        if (sapphire2DEnabled
+            && !nds->GPU.ActivateSapphireVulkan2D(rendererGeneration))
         {
             MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
                 "Sapphire Vulkan activation", -1);
@@ -1519,6 +1534,29 @@ MelonPrime::VideoBackend::PresentationBackend EmuThread::applyRendererCreation(
                 "Sapphire GPU2D activation failed after Renderer3D install");
             nds->SetRenderer(std::move(result.OuterRenderer));
             nds->GPU.SetRenderer3D(nullptr);
+        }
+        else if (!sapphire2DEnabled)
+        {
+            RomBootTrace("[RomBootTrace] Sapphire 2D activation skipped by debug gate\n");
+            nds->GPU.DeactivateSapphireVulkan2D();
+            RomBootTrace("[RomBootTrace] frontend session initialize begin\n");
+            if (!session.initialize(*nds))
+            {
+                MelonPrime::VideoBackend::ActivateVulkanRuntimeFallback(
+                    "Vulkan frontend session initialization", -1);
+                MelonPrime::VideoBackend::RegenerateSoftwareFallback(
+                    *nds,
+                    result,
+                    "Vulkan frontend session initialization",
+                    "VulkanOutput or FrameQueue initialization failed");
+                nds->SetRenderer(std::move(result.OuterRenderer));
+                nds->GPU.SetRenderer3D(nullptr);
+            }
+            else
+            {
+                session.beginGeneration(rendererGeneration);
+            }
+            RomBootTrace("[RomBootTrace] frontend session initialize complete\n");
         }
         else
         {
