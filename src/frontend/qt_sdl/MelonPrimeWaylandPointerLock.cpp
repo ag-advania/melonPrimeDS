@@ -63,6 +63,12 @@ struct WaylandPointerLock::Impl
     double residualX = 0.0;
     double residualY = 0.0;
 
+    // Cursor position hint (surface-local, see set_cursor_position_hint in
+    // the pointer-constraints protocol), refreshed on every enabled=true
+    // SetLocked() call and reused as the release hint by DestroyLockObjects().
+    double hintX = 0.0;
+    double hintY = 0.0;
+
     static void RegistryGlobal(
         void* data,
         wl_registry* registryObject,
@@ -246,8 +252,23 @@ struct WaylandPointerLock::Impl
     {
         if (lockRequested && std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG"))
             std::fprintf(stderr,
-                "[MelonPrime] Wayland pointer lock: destroying lock objects (was surface=%p active=%d)\n",
-                static_cast<void*>(lockedSurface), lockActive ? 1 : 0);
+                "[MelonPrime] Wayland pointer lock: destroying lock objects (was surface=%p active=%d hint=%.1f,%.1f)\n",
+                static_cast<void*>(lockedSurface), lockActive ? 1 : 0, hintX, hintY);
+
+        // Tell the compositor where to warp the (invisible) cursor once this
+        // lock releases -- per the protocol, this is the mechanism meant to
+        // "avoid pointer jumps" on unlock. Without it the cursor stays
+        // wherever it was frozen (often near a window edge from before the
+        // lock engaged), so a later re-lock's brief unlocked gap can let it
+        // escape the window on the very next fast motion. Must happen before
+        // lockedPointer/lockedSurface are torn down, and needs a commit on
+        // the locked surface for the double-buffered hint to take effect.
+        if (lockedPointer && lockedSurface)
+        {
+            zwp_locked_pointer_v1_set_cursor_position_hint(
+                lockedPointer, wl_fixed_from_double(hintX), wl_fixed_from_double(hintY));
+            wl_surface_commit(lockedSurface);
+        }
 
         lockActive = false;
         lockRequested = false;
@@ -370,9 +391,16 @@ struct WaylandPointerLock::Impl
         return supported;
     }
 
-    bool SetLocked(wl_display* newDisplay, wl_surface* surface, bool enabled)
+    bool SetLocked(wl_display* newDisplay, wl_surface* surface, bool enabled,
+        int hintSurfaceX, int hintSurfaceY)
     {
         const bool debug = std::getenv("MELONPRIME_WAYLAND_LOCK_DEBUG") != nullptr;
+
+        if (enabled)
+        {
+            hintX = static_cast<double>(hintSurfaceX);
+            hintY = static_cast<double>(hintSurfaceY);
+        }
 
         if (!enabled)
         {
@@ -499,12 +527,16 @@ WaylandPointerLock::~WaylandPointerLock()
 bool WaylandPointerLock::setLocked(
     void* displayHandle,
     void* surfaceHandle,
-    bool enabled)
+    bool enabled,
+    int hintSurfaceX,
+    int hintSurfaceY)
 {
     return m_impl->SetLocked(
         static_cast<wl_display*>(displayHandle),
         static_cast<wl_surface*>(surfaceHandle),
-        enabled);
+        enabled,
+        hintSurfaceX,
+        hintSurfaceY);
 }
 
 bool WaylandPointerLock::isLockRequested() const noexcept
