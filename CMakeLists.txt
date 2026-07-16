@@ -35,6 +35,9 @@ option(MELONPRIME_ENABLE_SANITIZERS
 option(MELONPRIME_ENABLE_MSAN
     "Enable MemorySanitizer (requires fully instrumented dependency tree)"
     OFF)
+option(MELONPRIME_DIAGNOSTIC_SYMBOLS
+    "Embed -g, frame pointers, and linker map in release builds (S80-3)"
+    OFF)
 
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)
 if (USE_VCPKG)

@@ -289,6 +289,17 @@ if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 endif()
 
+if (MELONPRIME_DIAGNOSTIC_SYMBOLS AND WIN32 AND MINGW)
+    target_compile_options(melonDS PRIVATE -g -fno-omit-frame-pointer)
+    target_link_options(melonDS PRIVATE
+        "-Wl,-Map,${CMAKE_BINARY_DIR}/melonPrimeDS.map,--cref")
+    if (MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN)
+        target_compile_definitions(melonDS PRIVATE MELONPRIME_SAPPHIRE_GPU2D_VARIANT=\"exact_pin\")
+    else()
+        target_compile_definitions(melonDS PRIVATE MELONPRIME_SAPPHIRE_GPU2D_VARIANT=\"normalized\")
+    endif()
+endif()
+
 if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_METAL=1)
     target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)

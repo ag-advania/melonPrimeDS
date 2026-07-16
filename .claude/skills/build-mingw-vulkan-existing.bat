@@ -55,6 +55,12 @@ if errorlevel 1 goto cache_off
 findstr /R /X /C:"MELONPRIME_ENABLE_DEVELOPER_FEATURES:BOOL=ON" "%CACHE%" >nul
 if errorlevel 1 goto cache_off
 
+set "BUILD_IDENTITY=%REPO_ROOT_WIN%\build\release-mingw-x86_64\src\MelonPrimeGitBuildIdentity.h"
+python "%REPO_ROOT_WIN%\tools\generate_build_identity.py" --repo "%REPO_ROOT_WIN%" --output "%BUILD_IDENTITY%"
+if errorlevel 1 (
+    echo [melonprime-build-vulkan-existing] WARNING: generate_build_identity.py failed; continuing with existing header.
+)
+
 if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
 
 echo [melonprime-build-vulkan-existing] Vulkan-enabled cache verified.
