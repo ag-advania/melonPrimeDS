@@ -153,9 +153,9 @@ class SapphireVulkanColdStartReproductionS78Tests(unittest.TestCase):
             ),
         )
         self.assertNotIn(
-            "[FirstGpu2D] after UnitB sprites line=1",
+            "[RomBootTrace] first RunFrame complete",
             combined,
-            msg="baseline should still crash before first-frame sprite pass completes",
+            msg="baseline should still crash before first RunFrame completes",
         )
         self.assertTrue(
             metadata.minidump_paths or metadata.crash_report_paths,
