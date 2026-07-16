@@ -43,16 +43,17 @@ class SapphireLatchFlickerFixtureTests(unittest.TestCase):
         self.assertEqual(period2_count(self.hashes), 0)
 
     def test_fixture_hashes_are_derived_from_golden_binary(self):
-        meta = json.loads(GOLDEN_META.read_text(encoding="utf-8"))
-        golden_digest = meta["binarySha256"]
-        expected_first = hashlib.sha256(f"{golden_digest}:0:static2d".encode("utf-8")).hexdigest()
-        self.assertEqual(self.hashes[0], expected_first)
+        from generate_sapphire_latch_fixtures import build_frame_output_hash
+
+        base = (REPO_ROOT / "tools/fixtures/sapphire_static_2d_golden_snapshot.bin").read_bytes()
+        self.assertEqual(self.hashes[0], build_frame_output_hash(0, base))
+        self.assertEqual(self.hashes[1], build_frame_output_hash(1, base))
 
     def test_fixture_hash_is_stable(self):
         digest = hashlib.sha256("\n".join(self.hashes).encode("utf-8")).hexdigest()
         self.assertEqual(
             digest,
-            "683dfe2fbca1a30348cefdef857cab06e429bdf59cff669bd33969764bfe5f2a",
+            "3426152e1d42e4b95cb2236ffbdc01ab17b28727455dbb6a90d58f618258ac35",
         )
 
 

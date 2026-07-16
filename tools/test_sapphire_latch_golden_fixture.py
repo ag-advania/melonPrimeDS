@@ -23,6 +23,7 @@ class SapphireLatchGoldenFixtureTests(unittest.TestCase):
             data["upstreamFrontendCommit"],
             "2c10e59d7209d354e90d9ef4228330bac3f6e794",
         )
+        self.assertEqual(data.get("fixtureKind"), "compiled_latch_snapshot_schema")
         self.assertGreaterEqual(len(data["compareFields"]), 10)
 
     def test_binary_fixture_matches_metadata(self):
