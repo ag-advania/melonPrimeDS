@@ -78,6 +78,7 @@ private:
     melonDS::NDS* nds = nullptr;
     MelonDSAndroid::VulkanOutput output;
     FrameQueue frameQueue;
+    MelonDSAndroid::DesktopVulkanResourceLease resourceLease;
     MelonDSAndroid::VulkanSurfacePresenter* activePresenter = nullptr;
     MelonDSAndroid::VulkanSurfacePresenter* stagedPresenter = nullptr;
     MelonDSAndroid::SapphireVulkanFrameLatch frameLatch;

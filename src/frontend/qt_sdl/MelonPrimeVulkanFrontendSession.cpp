@@ -2,6 +2,7 @@
 #include "MelonPrimeVulkanRuntimePacing.h"
 #include "MelonPrimeSapphireFrameInput.h"
 #include "MelonPrimeSapphirePipelineMode.h"
+#include "DesktopVulkanResourceLease.h"
 #include "SapphirePublished2DFrame.h"
 #include "VulkanPreparedContentStats.h"
 
@@ -78,6 +79,7 @@ void MelonPrimeVulkanFrontendSession::shutdown()
     std::scoped_lock presentationLock(presentationCallMutex);
     std::scoped_lock stateLock(stateMutex);
     output.releaseTemporalFrameReferences();
+    resourceLease.clear();
     frameQueue.synchronizeHistoryReferences({});
     frameQueue.clear();
     output.shutdown();
@@ -170,8 +172,10 @@ void MelonPrimeVulkanFrontendSession::synchronizeFrameReferencesLocked()
     if (activePresenter != nullptr)
         (void)activePresenter->getCompletedTimelineValue(completedTimelineValue);
     frameQueue.synchronizePresentationCompletion(completedTimelineValue);
+    resourceLease.releaseCompleted(completedTimelineValue);
     frameQueue.synchronizeHistoryReferences([&](const Frame* frame) {
-        return output.isFrameReferencedAsPendingPreviousSource(frame);
+        return output.isFrameReferencedAsPendingPreviousSource(frame)
+            || resourceLease.isFrameLeased(frame);
     });
 }
 
@@ -524,6 +528,7 @@ void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
 
     lastPresentedSerial = frame->frameSerial;
     lastPresentedFrameId = frame->frameId;
+    resourceLease.recordPresentationCommit(frame);
     frameQueue.commitPresentedFrame(frame, queuePolicy());
 }
 
