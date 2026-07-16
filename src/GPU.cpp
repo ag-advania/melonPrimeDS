@@ -216,7 +216,7 @@ void GPU::Reset() noexcept
             {
                 if (Framebuffer[buffer][plane])
                 {
-                    u32* planeData = Framebuffer[buffer][plane].get();
+                    u32* planeData = Framebuffer[buffer][plane].data();
                     for (size_t i = 0; i < pixelCount; ++i)
                         planeData[i] = 0xFFFFFFFF;
                 }
@@ -569,8 +569,8 @@ void GPU::InvalidateSapphireFramebufferBindings() noexcept
     InvalidateSapphirePublication();
     for (int buffer = 0; buffer < 2; ++buffer)
     {
-        Framebuffer[buffer][0].reset();
-        Framebuffer[buffer][1].reset();
+        Framebuffer[buffer][0].release();
+        Framebuffer[buffer][1].release();
     }
     FrontBuffer = 0;
 
@@ -595,7 +595,16 @@ u32* GPU::FramebufferPlane(int buffer, int plane) const noexcept
 {
     if (buffer < 0 || buffer > 1 || plane < 0 || plane > 1)
         return nullptr;
-    return Framebuffer[buffer][plane] ? Framebuffer[buffer][plane].get() : nullptr;
+    return Framebuffer[buffer][plane].data();
+}
+
+void GPU::CheckFramebufferCanaries(const char* site) const noexcept
+{
+    for (int buffer = 0; buffer < 2; ++buffer)
+    {
+        for (int plane = 0; plane < 2; ++plane)
+            Framebuffer[buffer][plane].check(site, buffer, plane);
+    }
 }
 
 void GPU::InitFramebuffers() noexcept
@@ -604,13 +613,7 @@ void GPU::InitFramebuffers() noexcept
     for (int buffer = 0; buffer < 2; ++buffer)
     {
         for (int plane = 0; plane < 2; ++plane)
-            Framebuffer[buffer][plane] = std::make_unique<u32[]>(pixelCount);
-    }
-
-    for (int buffer = 0; buffer < 2; ++buffer)
-    {
-        for (int plane = 0; plane < 2; ++plane)
-            memset(Framebuffer[buffer][plane].get(), 0, pixelCount * sizeof(u32));
+            Framebuffer[buffer][plane].reset(pixelCount);
     }
 
     (void)AssignFramebuffers();
@@ -1692,7 +1695,7 @@ void GPU::StartHBlank(u32 line) noexcept
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (useSapphire2D && line <= 2)
+    if (useSapphire2D && line <= 3)
     {
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] before IRQ HBlank VCount=%u line=%u\n", VCount, line);
@@ -1703,7 +1706,7 @@ void GPU::StartHBlank(u32 line) noexcept
     if (DispStat[1] & (1<<4)) NDS.SetIRQ(1, IRQ_HBlank);
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (useSapphire2D && line <= 2)
+    if (useSapphire2D && line <= 3)
     {
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] after IRQ HBlank VCount=%u line=%u\n", VCount, line);
@@ -1711,7 +1714,7 @@ void GPU::StartHBlank(u32 line) noexcept
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (useSapphire2D && line <= 2)
+    if (useSapphire2D && line <= 3)
     {
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] before ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
@@ -1724,12 +1727,13 @@ void GPU::StartHBlank(u32 line) noexcept
         NDS.ScheduleEvent(Event_LCD, true, (LINE_CYCLES - HBLANK_CYCLES), LCD_StartScanline, line+1);
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (useSapphire2D && line <= 2)
+    if (useSapphire2D && line <= 3)
     {
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] after ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
+        CheckFramebufferCanaries("after StartHBlank");
     }
 #endif
 }
@@ -1762,10 +1766,10 @@ void GPU::BlankFrame() noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const int backbuf = BackBufferIndex();
     const size_t pixelCount = FramebufferPixelCount();
-    if (FramebufferPlane(backbuf, 0) != nullptr)
-        memset(FramebufferPlane(backbuf, 0), 0, pixelCount * sizeof(u32));
-    if (FramebufferPlane(backbuf, 1) != nullptr)
-        memset(FramebufferPlane(backbuf, 1), 0, pixelCount * sizeof(u32));
+    if (u32* planeA = FramebufferPlane(backbuf, 0))
+        memset(planeA, 0, pixelCount * sizeof(u32));
+    if (u32* planeB = FramebufferPlane(backbuf, 1))
+        memset(planeB, 0, pixelCount * sizeof(u32));
 
     FrontBuffer = backbuf;
     (void)AssignFramebuffers();
@@ -1776,6 +1780,19 @@ void GPU::BlankFrame() noexcept
 
 void GPU::StartScanline(u32 line) noexcept
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    auto scanlineTrace = [this, line](const char* marker) {
+        if (line > 3)
+            return;
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] %s line=%u VCount=%u\n", marker, line, VCount);
+        MelonPrime::FirstVulkanFrameTrace::record(Event_LCD, line, VCount, marker);
+    };
+    if (line <= 3)
+        CheckFramebufferCanaries("before StartScanline");
+    scanlineTrace("StartScanline enter");
+#endif
+
     /*
      * order of operations on hardware:
      * 1. VCount is incremented
@@ -1808,16 +1825,57 @@ void GPU::StartScanline(u32 line) noexcept
         VCount &= 0x1FF;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] after VCount update line=%u VCount=%u\n", line, VCount);
+        MelonPrime::FirstVulkanFrameTrace::record(
+            Event_LCD, line, VCount, "after VCount update");
+    }
+#endif
+
 #if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     GPU2D_A.UpdateWindows(VCount);
     GPU2D_B.UpdateWindows(VCount);
 #else
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] before CheckWindows Unit A line=%u VCount=%u\n", line, VCount);
+#endif
     GPU2D_A.CheckWindows(VCount);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] after CheckWindows Unit A line=%u VCount=%u\n", line, VCount);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] before CheckWindows Unit B line=%u VCount=%u\n", line, VCount);
+    }
+#endif
     GPU2D_B.CheckWindows(VCount);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] after CheckWindows Unit B line=%u VCount=%u\n", line, VCount);
+#endif
 #endif
 
     if (VCount >= 2 && VCount < 194)
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (line <= 3)
+            MelonPrime::FirstVulkanFrameTrace::log(
+                "[FirstGpuLine] before DMA mode 3 line=%u VCount=%u\n", line, VCount);
+#endif
         NDS.CheckDMAs(0, 0x03);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (line <= 3)
+            MelonPrime::FirstVulkanFrameTrace::log(
+                "[FirstGpuLine] after DMA mode 3 line=%u VCount=%u\n", line, VCount);
+#endif
+    }
     else if (VCount == 194)
         NDS.StopDMAs(0, 0x03);
 
@@ -1828,15 +1886,49 @@ void GPU::StartScanline(u32 line) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
             if (IsSapphireCanonicalGpu2DActive())
             {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (line <= 3)
+                    MelonPrime::FirstVulkanFrameTrace::log(
+                        "[FirstGpuLine] before VBlankEnd renderer line=%u VCount=%u\n",
+                        line,
+                        VCount);
+#endif
                 GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (line <= 3)
+                    MelonPrime::FirstVulkanFrameTrace::log(
+                        "[FirstGpuLine] before Unit A VBlankEnd line=%u VCount=%u\n", line, VCount);
+#endif
                 GPU2D_A.VBlankEnd();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (line <= 3)
+                    MelonPrime::FirstVulkanFrameTrace::log(
+                        "[FirstGpuLine] before Unit B VBlankEnd line=%u VCount=%u\n", line, VCount);
+#endif
                 GPU2D_B.VBlankEnd();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (line <= 3)
+                    MelonPrime::FirstVulkanFrameTrace::log(
+                        "[FirstGpuLine] after Unit B VBlankEnd line=%u VCount=%u\n", line, VCount);
+#endif
             }
 #endif
         }
 
         if (RunFIFO)
+        {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (line <= 3)
+                MelonPrime::FirstVulkanFrameTrace::log(
+                    "[FirstGpuLine] before DisplayFIFO scheduling line=%u VCount=%u\n", line, VCount);
+#endif
             NDS.ScheduleEvent(Event_DisplayFIFO, false, 32, 0, 0);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (line <= 3)
+                MelonPrime::FirstVulkanFrameTrace::log(
+                    "[FirstGpuLine] after DisplayFIFO scheduling line=%u VCount=%u\n", line, VCount);
+#endif
+        }
     }
 
     if (VCount == 0)
@@ -1931,7 +2023,25 @@ void GPU::StartScanline(u32 line) noexcept
     else
         DispStat[1] &= ~(1<<2);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] before HBlank event scheduling line=%u VCount=%u\n", line, VCount);
+    }
+#endif
+
     NDS.ScheduleEvent(Event_LCD, true, HBLANK_CYCLES, LCD_StartHBlank, line);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (line <= 3)
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] StartScanline done line=%u VCount=%u\n", line, VCount);
+        MelonPrime::FirstVulkanFrameTrace::record(
+            Event_LCD, line, VCount, "StartScanline done");
+    }
+#endif
 }
 
 

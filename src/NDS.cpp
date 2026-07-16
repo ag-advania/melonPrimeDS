@@ -23,6 +23,9 @@
 #ifdef MELONPRIME_DS
 #include <algorithm>
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeFirstVulkanFrameTrace.h"
+#endif
 #include "NDS.h"
 #include "ARM.h"
 #include "NDSCart.h"
@@ -864,7 +867,39 @@ void NDS::RunSystem(u64 timestamp)
                 SchedListMask &= ~(1<<i);
 
                 EventFunc func = evt.Funcs[evt.FuncID];
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (MelonPrime::FirstVulkanFrameTrace::budgetActive())
+                {
+                    MelonPrime::FirstVulkanFrameTrace::recordEvent(
+                        i, evt.Param, evt.That, "event-before");
+                    if (i == Event_LCD)
+                    {
+                        MelonPrime::FirstVulkanFrameTrace::log(
+                            "[FirstGpuLine] before event callback id=%u param=%u that=%p ts=%llu\n",
+                            i,
+                            evt.Param,
+                            evt.That,
+                            static_cast<unsigned long long>(SysTimestamp));
+                    }
+                }
+#endif
                 func(evt.That, evt.Param);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (MelonPrime::FirstVulkanFrameTrace::budgetActive())
+                {
+                    MelonPrime::FirstVulkanFrameTrace::recordEvent(
+                        i, evt.Param, evt.That, "event-after");
+                    if (i == Event_LCD)
+                    {
+                        MelonPrime::FirstVulkanFrameTrace::log(
+                            "[FirstGpuLine] after event callback id=%u param=%u that=%p ts=%llu\n",
+                            i,
+                            evt.Param,
+                            evt.That,
+                            static_cast<unsigned long long>(SysTimestamp));
+                    }
+                }
+#endif
             }
         }
 
@@ -1047,6 +1082,17 @@ u32 NDS::RunFrame()
                 }
 
                 RunSystem(target);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                if (MelonPrime::FirstVulkanFrameTrace::budgetActive())
+                {
+                    MelonPrime::FirstVulkanFrameTrace::record(
+                        0xFFFFFFFEu,
+                        GPU.TotalScanlines,
+                        0,
+                        "after-cpu-jit-slice");
+                }
+#endif
 
                 if (CPUStop & CPUStop_Sleep)
                 {
