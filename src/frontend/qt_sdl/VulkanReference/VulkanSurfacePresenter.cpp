@@ -4400,4 +4400,156 @@ u32 VulkanSurfacePresenter::findMemoryType(u32 typeBits, VkMemoryPropertyFlags p
     return melonDS::VulkanContext::Get().FindMemoryType(typeBits, properties);
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_SAPPHIRE_REBUILD)
+
+bool VulkanSurfacePresenter::recordClearOnlyCommands(
+    SurfaceState& surfaceState,
+    VkFramebuffer framebuffer,
+    u32 imageIndex)
+{
+    if (imageIndex >= surfaceState.active.swapchainImages.size()
+        || imageIndex >= surfaceState.active.swapchainImageInitialized.size())
+    {
+        return false;
+    }
+
+    if (vkResetCommandBuffer(surfaceState.commandBuffer, 0) != VK_SUCCESS)
+        return false;
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(surfaceState.commandBuffer, &beginInfo) != VK_SUCCESS)
+        return false;
+
+    melonDS::VulkanR24Barrier::PresentToRender(
+        surfaceState.commandBuffer,
+        surfaceState.active.swapchainImages[imageIndex],
+        surfaceState.active.swapchainImageInitialized[imageIndex],
+        queueFamilyIndex,
+        surfaceState.presentQueueFamilyIndex);
+
+    VkClearValue clearValue{};
+    clearValue.color.float32[0] = 0.08f;
+    clearValue.color.float32[1] = 0.12f;
+    clearValue.color.float32[2] = 0.28f;
+    clearValue.color.float32[3] = 1.0f;
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = surfaceState.active.renderPass;
+    renderPassInfo.framebuffer = framebuffer;
+    renderPassInfo.renderArea.extent = surfaceState.active.extent;
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(surfaceState.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdEndRenderPass(surfaceState.commandBuffer);
+
+    melonDS::VulkanR24Barrier::RenderToPresent(
+        surfaceState.commandBuffer,
+        surfaceState.active.swapchainImages[imageIndex],
+        queueFamilyIndex,
+        surfaceState.presentQueueFamilyIndex);
+    surfaceState.active.swapchainImageInitialized[imageIndex] = true;
+
+    return vkEndCommandBuffer(surfaceState.commandBuffer) == VK_SUCCESS;
+}
+
+VulkanPresentResult VulkanSurfacePresenter::presentSolidColorClear(u64 timeoutNs)
+{
+    retiredResources.Collect(
+        device,
+        melonDS::VulkanContext::Get().GetSemaphoreCounterValue(),
+        melonDS::VulkanContext::Get().IsDeviceLost());
+    if (melonDS::VulkanContext::Get().IsDeviceLost())
+        return VulkanPresentResult::QueuePresentFailed;
+    if (!initialized || surfaces.empty())
+        return VulkanPresentResult::NotInitialized;
+
+    const u64 deadlineNs = timeoutNs == UINT64_MAX
+        ? UINT64_MAX
+        : PerfNowNs() + timeoutNs;
+    bool presentedAny = false;
+
+    for (auto& entry : surfaces)
+    {
+        SurfaceState& surfaceState = entry.second;
+        if (!surfaceState.configured)
+            continue;
+
+        if (!ensureSwapchain(surfaceState))
+        {
+            swapchainUnavailableFrames++;
+            continue;
+        }
+
+        u32 imageIndex = 0;
+        const u64 acquireBudgetNs = deadlineNs == UINT64_MAX
+            ? UINT64_MAX
+            : (deadlineNs > PerfNowNs() ? deadlineNs - PerfNowNs() : 0ull);
+
+        VkResult acquireResult = vkAcquireNextImageKHR(
+            device,
+            surfaceState.active.swapchain,
+            acquireBudgetNs,
+            surfaceState.imageAvailableSemaphore,
+            VK_NULL_HANDLE,
+            &imageIndex);
+
+        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            surfaceState.swapchainDirty = true;
+            if (!ensureSwapchain(surfaceState))
+                continue;
+            acquireResult = vkAcquireNextImageKHR(
+                device,
+                surfaceState.active.swapchain,
+                acquireBudgetNs,
+                surfaceState.imageAvailableSemaphore,
+                VK_NULL_HANDLE,
+                &imageIndex);
+        }
+
+        if (acquireResult == VK_TIMEOUT)
+        {
+            acquireTimeouts++;
+            continue;
+        }
+
+        if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR)
+        {
+            acquireFailures++;
+            continue;
+        }
+
+        if (!recordClearOnlyCommands(
+                surfaceState,
+                surfaceState.active.framebuffers[imageIndex],
+                imageIndex))
+        {
+            recordFailures++;
+            continue;
+        }
+
+        u64 presentCpuNs = 0;
+        const SurfaceSubmitResult submitResult =
+            submitSurfaceCommands(surfaceState, imageIndex, presentCpuNs);
+        if (!submitResult.commandSubmitted
+            || submitResult.presentResult == VK_ERROR_DEVICE_LOST)
+        {
+            submitFailures++;
+            continue;
+        }
+
+        presentedAny = true;
+    }
+
+    return presentedAny
+        ? VulkanPresentResult::PresentedGameFrame
+        : VulkanPresentResult::NoDrawableGameScreen;
+}
+
+#endif
+
 }

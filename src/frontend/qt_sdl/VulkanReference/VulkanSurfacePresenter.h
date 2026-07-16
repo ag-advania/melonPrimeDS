@@ -171,6 +171,9 @@ public:
     void detachSurface(int surfaceId);
 
     VulkanPresentResult presentFrame(Frame* frame, VulkanOutput& output, const VulkanCompositionInputs& inputs, u64 timeoutNs);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_SAPPHIRE_REBUILD)
+    VulkanPresentResult presentSolidColorClear(u64 timeoutNs);
+#endif
     static bool HasDrawableGameScreen(const VulkanSurfaceConfig& config) noexcept;
     bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
     bool getCompletedTimelineValue(u64& completedValue) const;
@@ -468,6 +471,12 @@ private:
         SurfaceState& surfaceState,
         u32 imageIndex,
         u64& presentCpuNs);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_SAPPHIRE_REBUILD)
+    bool recordClearOnlyCommands(
+        SurfaceState& surfaceState,
+        VkFramebuffer framebuffer,
+        u32 imageIndex);
+#endif
     bool ensureRetroArchResources(
         SurfaceState& surfaceState,
         u32 sourceScreenWidth,

@@ -45,6 +45,11 @@ option(MELONPRIME_SAPPHIRE_REBUILD
 if (MELONPRIME_SAPPHIRE_REBUILD)
     set(MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN ON CACHE BOOL "" FORCE)
 endif()
+cmake_dependent_option(MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR
+    "Rebuild phase 2: present solid-color swapchain clears only (no Sapphire frame)"
+    ON
+    "MELONPRIME_SAPPHIRE_REBUILD"
+    OFF)
 
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)
 if (USE_VCPKG)

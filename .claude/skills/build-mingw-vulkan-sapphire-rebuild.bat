@@ -33,7 +33,7 @@ python "%REPO_ROOT_WIN%\tools\generate_sapphire_vulkan_sources.py" --verify
 if errorlevel 1 exit /b 1
 
 echo [melonprime-build-vulkan-sapphire-rebuild] Configuring pure-Sapphire rebuild tree.
-"%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:$PATH' && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64-sapphire-rebuild -DCMAKE_BUILD_TYPE=Release -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_SAPPHIRE_REBUILD=ON -DUSE_VCPKG=ON -DBUILD_STATIC=ON"
+"%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export PATH=$repo'/build/.mingw-make-shim:/mingw64/bin:/usr/bin:$PATH' && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64-sapphire-rebuild -DCMAKE_BUILD_TYPE=Release -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_SAPPHIRE_REBUILD=ON -DMELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=ON -DUSE_VCPKG=ON -DBUILD_STATIC=ON"
 if errorlevel 1 exit /b 1
 
 python "%REPO_ROOT_WIN%\tools\generate_build_identity.py" --repo "%REPO_ROOT_WIN%" --output "%BUILD_DIR%\src\MelonPrimeGitBuildIdentity.h"
@@ -47,5 +47,5 @@ exit /b %ERRORLEVEL%
 echo Usage: .claude\skills\build-mingw-vulkan-sapphire-rebuild.bat
 echo.
 echo Configure and build the pure-Sapphire desktop rebuild tree
-echo (MELONPRIME_SAPPHIRE_REBUILD=ON, exact-pin GPU2D).
+echo (MELONPRIME_SAPPHIRE_REBUILD=ON, exact-pin GPU2D, solid-color phase 2).
 exit /b 0

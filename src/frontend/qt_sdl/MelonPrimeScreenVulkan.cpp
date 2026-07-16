@@ -24,6 +24,7 @@
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeVulkanFrontendSession.h"
+#include "MelonPrimeSapphireRebuildMode.h"
 #include "NDS.h"
 #include "Platform.h"
 #include "VulkanContext.h"
@@ -517,6 +518,24 @@ void ScreenPanelVulkan::presentOnGuiThread()
         if (presenter->getSurfaceCompletedSubmissionSerial(surfaceId, completedSerial))
             overlayRenderer.notifyCompletedSubmissionSerial(completedSerial);
     }
+
+#if defined(MELONPRIME_SAPPHIRE_REBUILD) && defined(MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR)
+    if (MelonPrime::sapphireRebuildSolidColorPresentOnly())
+    {
+        constexpr melonDS::u64 kPresentTimeoutNs = 50'000'000ull;
+        const VulkanPresentResult presentResult =
+            presenter->presentSolidColorClear(kPresentTimeoutNs);
+        if (tracePresenter)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Info,
+                "[VulkanPresenterTrace] solidColorClear result=%u\n",
+                static_cast<unsigned>(presentResult));
+            --presenterTraceBudget;
+        }
+        return;
+    }
+#endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
     {
