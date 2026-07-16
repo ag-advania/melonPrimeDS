@@ -28,7 +28,7 @@
 | S80-6 | done | `34a565e7a` | `generate_build_identity.py` in incremental build |
 | S80-7 | done | `8ba568f19` | Framebuffer canary guard |
 | S80-8 | done | `b0abf6747` | Exact-pin GPU2D A/B build target |
-| S80-9 | in progress | | Defer PublishSapphire2DFrame; fault at RVA ~0xF941 read [-1] after FinishFrame |
+| S80-9 | partial | `277e304aa` | Publish deferred; crash persists at RVA ~0xF941 read [-1] post-FinishFrame |
 | S80-10 | pending | | blocked on cold-start green |
 
 ---
