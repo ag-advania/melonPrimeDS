@@ -29,6 +29,13 @@ if (MELONPRIME_ENABLE_VULKAN AND NOT MELONPRIME_FORCE_DISABLE_VULKAN)
     set(MELONPRIME_VULKAN_ACTIVE ON)
 endif()
 
+option(MELONPRIME_ENABLE_SANITIZERS
+    "Enable AddressSanitizer and UndefinedBehaviorSanitizer (Linux/clang/gcc)"
+    OFF)
+option(MELONPRIME_ENABLE_MSAN
+    "Enable MemorySanitizer (requires fully instrumented dependency tree)"
+    OFF)
+
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)
 if (USE_VCPKG)
 	if (MELONPRIME_VULKAN_ACTIVE)
@@ -130,6 +137,14 @@ if (ENABLE_GDBSTUB)
 endif()
 
 option(BUILD_QT_SDL "Build Qt/SDL frontend" ON)
+
+if (MELONPRIME_ENABLE_MSAN)
+    add_compile_options(-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -g3)
+    add_link_options(-fsanitize=memory)
+elseif (MELONPRIME_ENABLE_SANITIZERS)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g3)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 add_subdirectory(src)
 
