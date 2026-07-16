@@ -41,6 +41,11 @@ CHECKPOINTS = (
 
 def find_vulkan_binary() -> Path | None:
     candidates = [
+        # S81-1: the dedicated exact-pinned/diagnostic-symbols rebuild tree
+        # (build-mingw-vulkan-sapphire-rebuild-exact.bat). Checked first so a
+        # symbolizable build takes priority over the stripped/LTO'd default
+        # release-mingw-x86_64 tree when both exist.
+        REPO_ROOT / "build" / "rebuild-mingw-x86_64" / "melonPrimeDS.exe",
         REPO_ROOT / "build" / "release-mingw-x86_64" / "melonPrimeDS.exe",
         REPO_ROOT / "build" / "debug-mingw-x86_64" / "melonPrimeDS.exe",
         REPO_ROOT / "build" / "sapphire-parity-linux-Release" / "melonDS",

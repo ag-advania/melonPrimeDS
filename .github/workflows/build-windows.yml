@@ -6,6 +6,7 @@ on:
     branches:
       - master
       - ci/*
+      - vulkan_sapphire_desktop_rebuild
   pull_request:
     branches:
       - master
