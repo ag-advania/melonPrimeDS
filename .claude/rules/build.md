@@ -143,7 +143,7 @@ Run from the repository root:
 .\.claude\skills\build-mingw.bat
 ```
 
-Default behavior: configures `build/release-mingw-x86_64` with `-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`, then builds the `release-mingw-x86_64` preset with `--parallel 1` and prints the last 40 build log lines.
+Default behavior: configures `build/release-mingw-x86_64` with `-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`, then builds the `release-mingw-x86_64` preset with `--parallel 1`, streaming the build output to the console live as it runs (via `tee`, not a buffering `tail`) and printing the last 40 log lines as a recap once it finishes. Full output is also saved to `build\release-mingw-x86_64\last-build.log`.
 
 If the build tree is already configured and the normal command gets stuck in a long vcpkg configure/install path, stop stale repo-scoped build processes and use the build-only batch:
 

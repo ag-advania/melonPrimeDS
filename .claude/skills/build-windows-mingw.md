@@ -17,8 +17,10 @@ The batch file:
 - runs MSYS2 bash from `C:\msys64\usr\bin\bash.exe`
 - configures `build/release-mingw-x86_64` with `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`
 - puts `/mingw64/bin`, `/usr/bin`, Python 3.12, and the built vcpkg Qt/bin paths first in `PATH`
-- builds preset `release-mingw-x86_64` with `--parallel 1`
+- builds preset `release-mingw-x86_64` with `--parallel 1`, streaming build output to the console live (via `stdbuf`+`tee`) and saving it to `build\release-mingw-x86_64\last-build.log`, then printing the last `--tail` lines as a recap
 - returns a nonzero exit code on configure or build failure
+
+The non-verbose path used to pipe through `tail -n N`, which buffers all input and prints nothing until the build finishes — the console looked idle the whole time. It now pipes through `tee` (plus `stdbuf -oL -eL` to force line buffering through the pipe) so build progress appears in the console as it happens; the `--tail`-sized recap is printed at the end in addition to the live stream.
 
 ## Existing Build Tree Only
 
