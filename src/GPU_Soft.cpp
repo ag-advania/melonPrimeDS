@@ -23,7 +23,6 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <cassert>
 
-#include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
 #include "MelonPrimeFirstVulkanFrameTrace.h"
 #endif
@@ -60,8 +59,10 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     Framebuffer[1][1] = new u32[len];
     BackBuffer = 0;
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     Rend2D_A = std::make_unique<SoftRenderer2D>(GPU.GPU2D_A, *this);
     Rend2D_B = std::make_unique<SoftRenderer2D>(GPU.GPU2D_B, *this);
+#endif
     Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D, *this);
 }
 
@@ -84,11 +85,13 @@ void SoftRenderer::Reset()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     Rend2D_A->Reset();
     Rend2D_B->Reset();
+#endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (auto* state = GetSapphireState(GPU))
-        state->Renderer.ClearStructuredVulkan2DState();
+    if (auto* renderer = GPU.TryGetGpu2DSoftRenderer())
+        renderer->ClearStructuredVulkan2DState();
 #endif
     GetRenderer3D().Reset();
 }
@@ -153,17 +156,15 @@ void SoftRenderer::DrawScanline(u32 line)
             line,
             static_cast<unsigned long long>(state->ActiveRendererGeneration()),
             static_cast<unsigned long long>(GPU.GPU3D.GetCurrentRendererGeneration()),
-            static_cast<void*>(&state->UnitA),
-            static_cast<void*>(&state->UnitB));
-
-        SyncSapphireUnitsFromGPU2D();
+            static_cast<void*>(&GPU.GPU2D_A),
+            static_cast<void*>(&GPU.GPU2D_B));
 
         log(
-            "[FirstGpu2D] after SyncUnits UnitA.Num=%u UnitB.Num=%u UnitA.DispCnt=0x%08X UnitB.DispCnt=0x%08X\n",
-            state->UnitA.Num,
-            state->UnitB.Num,
-            state->UnitA.DispCnt,
-            state->UnitB.DispCnt);
+            "[FirstGpu2D] canonical units UnitA.Num=%u UnitB.Num=%u UnitA.DispCnt=0x%08X UnitB.DispCnt=0x%08X\n",
+            GPU.GPU2D_A.Num,
+            GPU.GPU2D_B.Num,
+            GPU.GPU2D_A.DispCnt,
+            GPU.GPU2D_B.DispCnt);
 
         if (!AssignSapphireFramebuffers())
         {
@@ -182,12 +183,13 @@ void SoftRenderer::DrawScanline(u32 line)
         line = GPU.VCount;
         if (line < 192)
         {
+            auto& renderer2D = GetSapphire2DRenderer();
             log("[FirstGpu2D] before UnitA line=%u\n", line);
-            state->Renderer.DrawScanline(line, &state->UnitA);
+            renderer2D.DrawScanline(line, &GPU.GPU2D_A);
             log("[FirstGpu2D] after UnitA line=%u\n", line);
 
             log("[FirstGpu2D] before UnitB line=%u\n", line);
-            state->Renderer.DrawScanline(line, &state->UnitB);
+            renderer2D.DrawScanline(line, &GPU.GPU2D_B);
             log("[FirstGpu2D] after UnitB line=%u\n", line);
         }
 
@@ -218,8 +220,10 @@ void SoftRenderer::DrawScanline(u32 line)
         Output3D = GetRenderer3D().GetLine(line);
 
         // draw BG/OBJ layers
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
         Rend2D_A->DrawScanline(line);
         Rend2D_B->DrawScanline(line);
+#endif
 
         // draw the final screen output
         DrawScanlineA(line, dstA);
@@ -261,20 +265,9 @@ void SoftRenderer::DrawScanline(u32 line)
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-void SoftRenderer::SyncSapphireUnitsFromGPU2D()
-{
-    auto* state = GetSapphireState(GPU);
-    if (!state)
-        return;
-
-    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitA, GPU.GPU2D_A, GPU);
-    SapphireGPU2DCore::GPU2D::SyncUnitFromGPU2D(state->UnitB, GPU.GPU2D_B, GPU);
-}
-
 bool SoftRenderer::AssignSapphireFramebuffers() noexcept
 {
-    auto* state = GetSapphireState(GPU);
-    if (!state)
+    if (GPU.TryGetGpu2DSoftRenderer() == nullptr)
         return false;
 
     u32* unitA = nullptr;
@@ -298,7 +291,7 @@ bool SoftRenderer::AssignSapphireFramebuffers() noexcept
         : kPackedFramebufferPixels;
     (void)requiredPixels;
 
-    state->Renderer.SetFramebuffer(unitA, unitB);
+    GPU.GetRenderer2D().SetFramebuffer(unitA, unitB);
     return true;
 }
 
@@ -444,38 +437,18 @@ bool SoftRenderer::PublishSapphire2DFrame() noexcept
     return true;
 }
 
-void SoftRenderer::ForwardSapphireGpu2DRegisterWrite8(u32 engineNum, u32 addr, u8 val) noexcept
-{
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite8(GPU, engineNum, addr, val);
-}
-
-void SoftRenderer::ForwardSapphireGpu2DRegisterWrite16(u32 engineNum, u32 addr, u16 val) noexcept
-{
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite16(GPU, engineNum, addr, val);
-}
-
-void SoftRenderer::ForwardSapphireGpu2DRegisterWrite32(u32 engineNum, u32 addr, u32 val) noexcept
-{
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite32(GPU, engineNum, addr, val);
-}
-
-void SoftRenderer::ForwardSapphireGpu2DWindowCheck(u32 line) noexcept
-{
-    MelonPrimeSapphireGpu2DAdapter::ForwardWindowCheck(GPU, line);
-}
-
 SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() noexcept
 {
-    auto* state = GetSapphireState(GPU);
-    assert(state != nullptr);
-    return state->Renderer;
+    auto* renderer = GPU.TryGetGpu2DSoftRenderer();
+    assert(renderer != nullptr);
+    return *renderer;
 }
 
 const SapphireGPU2DCore::GPU2D::SoftRenderer& SoftRenderer::GetSapphire2DRenderer() const noexcept
 {
-    auto* state = GetSapphireState(GPU);
-    assert(state != nullptr);
-    return state->Renderer;
+    const auto* renderer = GPU.TryGetGpu2DSoftRenderer();
+    assert(renderer != nullptr);
+    return *renderer;
 }
 #endif
 
@@ -485,16 +458,18 @@ void SoftRenderer::DrawSprites(u32 line)
     if (auto* state = GetSapphireState(GPU);
         state != nullptr && state->IsActiveForRendering(GPU))
     {
-        SyncSapphireUnitsFromGPU2D();
         AssignSapphireFramebuffers();
-        state->Renderer.DrawSprites(line, &state->UnitA);
-        state->Renderer.DrawSprites(line, &state->UnitB);
+        auto& renderer2D = GetSapphire2DRenderer();
+        renderer2D.DrawSprites(line, &GPU.GPU2D_A);
+        renderer2D.DrawSprites(line, &GPU.GPU2D_B);
         return;
     }
 #endif
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
+#endif
 }
 
 void SoftRenderer::VBlank()

@@ -29,6 +29,8 @@
 #include "GPU2D.h"
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU2D_Structured.h"
+#include "SapphireGPU2DCore/SapphireGPU2DRenderer2D.h"
+#include "SapphireGPU2DCore/GPU2D_Soft.h"
 #include "SapphireGPU2DSoftAccess.h"
 #include "SapphirePublished2DFrame.h"
 #endif
@@ -251,6 +253,12 @@ public:
     [[nodiscard]] const SapphireGPU2D::SoftRenderer* TryGetSapphireRenderer2D() const noexcept;
     [[nodiscard]] SapphireGpu2DState* TryGetSapphireGpu2DState() noexcept;
     [[nodiscard]] const SapphireGpu2DState* TryGetSapphireGpu2DState() const noexcept;
+    void SetRenderer2D(
+        std::unique_ptr<SapphireGPU2DCore::GPU2D::Renderer2D>&& renderer) noexcept;
+    [[nodiscard]] SapphireGPU2DCore::GPU2D::Renderer2D& GetRenderer2D() noexcept;
+    [[nodiscard]] const SapphireGPU2DCore::GPU2D::Renderer2D& GetRenderer2D() const noexcept;
+    [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer* TryGetGpu2DSoftRenderer() noexcept;
+    [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer* TryGetGpu2DSoftRenderer() const noexcept;
     [[nodiscard]] bool ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept;
     void DeactivateSapphireVulkan2D() noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
@@ -882,8 +890,13 @@ public:
     u8* VRAMPtr_BBG[0x8] {};
     u8* VRAMPtr_BOBJ[0x8] {};
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    SapphireGPU2DCore::GPU2D::Unit GPU2D_A;
+    SapphireGPU2DCore::GPU2D::Unit GPU2D_B;
+#else
     melonDS::GPU2D GPU2D_A;
     melonDS::GPU2D GPU2D_B;
+#endif
     melonDS::GPU3D GPU3D;
 
     NonStupidBitField<128*1024/VRAMDirtyGranularity> VRAMDirty[9] {};
@@ -1021,6 +1034,7 @@ private:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool LastRendererInitSucceeded = true;
     std::unique_ptr<SapphireGpu2DState> Sapphire2D;
+    std::unique_ptr<SapphireGPU2DCore::GPU2D::Renderer2D> GPU2D_Renderer;
     std::unique_ptr<SapphireGPU2D::SoftRenderer> SapphireVulkan2DAccess;
 #endif
 

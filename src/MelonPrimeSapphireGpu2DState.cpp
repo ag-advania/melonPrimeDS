@@ -3,23 +3,16 @@
 #include "MelonPrimeSapphireGpu2DState.h"
 
 #include "GPU.h"
+#include "SapphireGPU2DCore/GPU2D_Soft.h"
 
 namespace melonDS
 {
 
-SapphireGpu2DState::SapphireGpu2DState(GPU& gpu)
-    : UnitA(0, gpu)
-    , UnitB(1, gpu)
-    , Renderer(gpu)
-{
-}
-
-void SapphireGpu2DState::Reset()
+void SapphireGpu2DState::Reset(GPU& gpu)
 {
     Deactivate();
-    Renderer.ClearStructuredVulkan2DState();
-    UnitA.Reset();
-    UnitB.Reset();
+    if (auto* renderer = gpu.TryGetGpu2DSoftRenderer())
+        renderer->ClearStructuredVulkan2DState();
 }
 
 void SapphireGpu2DState::Activate(u64 rendererGeneration) noexcept

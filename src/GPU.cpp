@@ -24,9 +24,8 @@
 
 #include "GPU_Soft.h"
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeSapphireGpu2DAdapter.h"
 #include "MelonPrimeSapphireGpu2DState.h"
-#include "SapphireGPU2DCore/UnitSync.h"
+#include "SapphireGPU2DCore/GPU2D_Soft.h"
 #include "MelonPrimeFirstVulkanFrameTrace.h"
 #endif
 
@@ -92,7 +91,8 @@ GPU::GPU(melonDS::NDS& nds, std::unique_ptr<Renderer>&& renderer) noexcept :
     NDS.RegisterEventFuncs(Event_DisplayFIFO, this, {MakeEventThunk(GPU, DisplayFIFO)});
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    Sapphire2D = std::make_unique<SapphireGpu2DState>(*this);
+    Sapphire2D = std::make_unique<SapphireGpu2DState>();
+    GPU2D_Renderer = std::make_unique<SapphireGPU2DCore::GPU2D::SoftRenderer>(*this);
 #endif
 
     SetRenderer(std::move(renderer));
@@ -211,7 +211,7 @@ void GPU::Reset() noexcept
     GPU3D.Reset();
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (Sapphire2D)
-        Sapphire2D->Reset();
+        Sapphire2D->Reset(*this);
 #endif
 
     Rend->Reset();
@@ -345,12 +345,7 @@ void GPU::DoSavestate(Savestate* file) noexcept
         PaletteDirty = 0x5F;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (Sapphire2D)
-        {
-            SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
-                Sapphire2D->UnitA, GPU2D_A, *this);
-            SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
-                Sapphire2D->UnitB, GPU2D_B, *this);
-        }
+            Sapphire2D->Reset(*this);
 #endif
     }
 
@@ -406,15 +401,10 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
     }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     LastRendererInitSucceeded = !rendererRequested || good;
-    if (Sapphire2D)
-    {
-        SapphireVulkan2DAccess =
-            std::make_unique<SapphireGPU2D::SoftRenderer>(Sapphire2D->Renderer);
-    }
+    if (auto* softRenderer = TryGetGpu2DSoftRenderer())
+        SapphireVulkan2DAccess = std::make_unique<SapphireGPU2D::SoftRenderer>(*softRenderer);
     else
-    {
         SapphireVulkan2DAccess.reset();
-    }
 #endif
 
     ResetVRAMCache();
@@ -453,9 +443,35 @@ const SapphireGpu2DState* GPU::TryGetSapphireGpu2DState() const noexcept
     return Sapphire2D.get();
 }
 
+void GPU::SetRenderer2D(
+    std::unique_ptr<SapphireGPU2DCore::GPU2D::Renderer2D>&& renderer) noexcept
+{
+    GPU2D_Renderer = std::move(renderer);
+}
+
+SapphireGPU2DCore::GPU2D::Renderer2D& GPU::GetRenderer2D() noexcept
+{
+    return *GPU2D_Renderer;
+}
+
+const SapphireGPU2DCore::GPU2D::Renderer2D& GPU::GetRenderer2D() const noexcept
+{
+    return *GPU2D_Renderer;
+}
+
+SapphireGPU2DCore::GPU2D::SoftRenderer* GPU::TryGetGpu2DSoftRenderer() noexcept
+{
+    return dynamic_cast<SapphireGPU2DCore::GPU2D::SoftRenderer*>(GPU2D_Renderer.get());
+}
+
+const SapphireGPU2DCore::GPU2D::SoftRenderer* GPU::TryGetGpu2DSoftRenderer() const noexcept
+{
+    return dynamic_cast<const SapphireGPU2DCore::GPU2D::SoftRenderer*>(GPU2D_Renderer.get());
+}
+
 bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
 {
-    if (Sapphire2D == nullptr || rendererGeneration == 0)
+    if (Sapphire2D == nullptr || rendererGeneration == 0 || GPU2D_Renderer == nullptr)
         return false;
     if (!GPU3D.HasCurrentRenderer())
         return false;
@@ -465,17 +481,14 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
     DeactivateSapphireVulkan2D();
     InvalidateSapphirePublication();
 
-    Sapphire2D->Renderer.ClearStructuredVulkan2DState();
-    SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
-        Sapphire2D->UnitA, GPU2D_A, *this);
-    SapphireGPU2DCore::GPU2D::SeedCompleteUnitFromNative(
-        Sapphire2D->UnitB, GPU2D_B, *this);
+    if (auto* softRenderer = TryGetGpu2DSoftRenderer())
+        softRenderer->ClearStructuredVulkan2DState();
 
-    auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get());
-    if (softRenderer == nullptr)
+    auto* outerSoftRenderer = dynamic_cast<SoftRenderer*>(Rend.get());
+    if (outerSoftRenderer == nullptr)
         return false;
 
-    if (!softRenderer->AssignSapphireFramebuffers())
+    if (!outerSoftRenderer->AssignSapphireFramebuffers())
         return false;
 
     Sapphire2D->Activate(rendererGeneration);
@@ -511,8 +524,8 @@ void GPU::InvalidateSapphireFramebufferBindings() noexcept
     Framebuffer[1][1] = nullptr;
     FrontBuffer = 0;
 
-    if (Sapphire2D)
-        Sapphire2D->Renderer.SetFramebuffer(nullptr, nullptr);
+    if (GPU2D_Renderer)
+        GPU2D_Renderer->SetFramebuffer(nullptr, nullptr);
 }
 #endif
 
@@ -1241,15 +1254,6 @@ void GPU::SetPowerCnt(u32 val) noexcept
 
     GPU2D_A.SetEnabled(val & (1<<1));
     GPU2D_B.SetEnabled(val & (1<<9));
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (Sapphire2D)
-    {
-        const bool engineAEnabled = (val & (1u << 1u)) != 0;
-        const bool engineBEnabled = (val & (1u << 9u)) != 0;
-        Sapphire2D->UnitA.SetEnabled(engineAEnabled);
-        Sapphire2D->UnitB.SetEnabled(engineBEnabled);
-    }
-#endif
     GPU3D.SetEnabled(val & (1<<3), val & (1<<2));
 
     ScreenSwap = !!(val & (1<<15));
@@ -1344,19 +1348,25 @@ void GPU::StartHBlank(u32 line) noexcept
     DispStat[0] |= (1<<1);
     DispStat[1] |= (1<<1);
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     bool resetregs = (VCount == 262);
 
     // note: this should be done around 48 cycles after the scanline start
     GPU2D_A.UpdateRegistersPreDraw(resetregs);
     GPU2D_B.UpdateRegistersPreDraw(resetregs);
+#endif
 
     if (VCount < 192)
     {
         if (line == 0)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
-            MelonPrimeSapphireGpu2DAdapter::ForwardVBlankEnd(*this);
+            if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
+            {
+                GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
+                GPU2D_A.VBlankEnd();
+                GPU2D_B.VBlankEnd();
+            }
 #endif
         }
 
@@ -1380,8 +1390,10 @@ void GPU::StartHBlank(u32 line) noexcept
         Rend->DrawSprites(0);
     }
 
-    GPU2D_A.UpdateRegistersPostDraw(resetregs);
-    GPU2D_B.UpdateRegistersPostDraw(resetregs);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    GPU2D_A.UpdateRegistersPostDraw(VCount == 262);
+    GPU2D_B.UpdateRegistersPostDraw(VCount == 262);
+#endif
 
     if (DispStat[0] & (1<<4)) NDS.SetIRQ(0, IRQ_HBlank);
     if (DispStat[1] & (1<<4)) NDS.SetIRQ(1, IRQ_HBlank);
@@ -1465,10 +1477,12 @@ void GPU::StartScanline(u32 line) noexcept
         VCount &= 0x1FF;
     }
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     GPU2D_A.UpdateWindows(VCount);
     GPU2D_B.UpdateWindows(VCount);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardWindowCheck(*this, VCount);
+#else
+    GPU2D_A.CheckWindows(VCount);
+    GPU2D_B.CheckWindows(VCount);
 #endif
 
     if (VCount >= 2 && VCount < 194)
@@ -1530,7 +1544,10 @@ void GPU::StartScanline(u32 line) noexcept
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
-            MelonPrimeSapphireGpu2DAdapter::ForwardVBlank(*this);
+        {
+            GPU2D_A.VBlank();
+            GPU2D_B.VBlank();
+        }
 #endif
         Rend->VBlank();
 
