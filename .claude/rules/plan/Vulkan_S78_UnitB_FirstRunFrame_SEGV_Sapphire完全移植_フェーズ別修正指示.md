@@ -1484,7 +1484,12 @@ Unit B first RunFrame SEGVは、
 | Phase | Commit | Status | Summary |
 |-------|--------|--------|---------|
 | S78-1 | `9463e8d3a` | done | Cold-start crash reproduction artifacts + frozen baseline test |
-| S78-2 | (pending) | in_progress | First-frame Unit-B sub-stage crash trace |
+| S78-2 | `2966dfaed` | done | First-frame Unit-B sub-stage crash trace |
+| S78-3/4/5 | `7a02bc409` | done | Debug + ASan/UBSan/MSan CMake flags and CI jobs |
+| S78-6 | `df4dd8894` | done | Sapphire GPU2D event lifecycle ported to GPU2D_Renderer |
+| S78-7/8/9/10/11 | `d00cba24a` | done | Canonical Units, POWCNT binding, reset fill, bridge removal |
+| S78-12/13/14 | `c2526efc3` | done | Lifecycle parity/differential tests + CI matrix updates |
+| S78-15 | (pending) | blocked | Golden fixture replacement waits on cold-start green |
 
 安全な修正方針はUnit Bへ例外を足すことではない。
 
