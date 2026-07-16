@@ -4,6 +4,8 @@
 #error "MelonPrimeSapphireGpu2DState requires the Vulkan build gate"
 #endif
 
+#include "types.h"
+
 namespace melonDS
 {
 class GPU;
