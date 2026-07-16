@@ -1525,4 +1525,16 @@ FrameLatch、FrameQueue、VulkanOutputへ
 
 | Phase | Commit | Status | Notes |
 |-------|--------|--------|-------|
-| S76-1 | pending | in progress | Fix presentation defer ownership |
+| S76-1 | `5d98f0e97` | done | Fix presentation defer ownership |
+| S76-2 | `7a8bc2467` | done | Add presentation acquired and committed state transitions |
+| S76-3 | `242b3791a` | done | Route presentation resync through lifetime-safe cleanup |
+| S76-4 | `a4710eef3` | done | Add FrameQueue membership invariant assertions |
+| S76-5 | `68c7b49b1` | done | Add first-present failure injection coverage |
+| S76-6 | `2c9d3059e` | done | Move Vulkan submission lifetime into DesktopPresentationLease |
+| S76-7 | `0e16eed51` | done | Remove queue ref semantics from Sapphire selection |
+| S76-8 | `46b2fc7ed` | done | Publish atomic completed Sapphire 2D/3D frame tuple |
+| S76-9 | `0a4523923` | done | Executable Vulkan cold-start test |
+| S76-10 | `50f7b5a51` | done | Latch snapshot schema golden fixtures |
+| S76-11 | `526d3e974` | done | Real 120-frame snapshot variant hashes |
+| S76-12 | `3192c51ec` | done | Run queue differential and cold-start tests on Linux and Windows CI |
+| S76-13 | `7389c6cd0` | done | Expand VulkanOutput exact regions beyond prepareFrameForPresentation |
