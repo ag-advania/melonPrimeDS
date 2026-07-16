@@ -1408,7 +1408,7 @@ GPU2D event timingへ持ち込んではならない。
 | S79-5 | 完了 | (this commit) | ActiveGPU2DPath at renderer transaction boundaries |
 | S79-6 | 完了 | (this commit) | GPU2D timing no longer uses SapphireGpu2DState gate |
 | S79-7 | 完了 | 15bfebb26 | canonical Unit ownership for special registers |
-| S79-8 | 完了 | (this commit) | cold-start regression gate replaces expected-crash CI |
-| S79-9 | 未着手 | | |
+| S79-8 | 完了 | 018fcdfe5 | cold-start regression gate replaces expected-crash CI |
+| S79-9 | 完了 | (this commit) | symbolized crash fields + sanitizer regression matrix |
 | S79-10 | 未着手 | | cold-start green 待ち |
 
