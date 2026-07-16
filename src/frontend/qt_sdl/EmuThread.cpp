@@ -557,6 +557,19 @@ void EmuThread::run()
             if (romBootTraceFirstRunFrame)
             {
                 RomBootTrace("[RomBootTrace] first RunFrame complete lines=%u\n", nlines);
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                if (videoBackend
+                    == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+                {
+                    MelonPrime::FirstVulkanFrameTrace::log(
+                        "[RomBootTrace] first RunFrame complete lines=%u\n", nlines);
+                    MelonPrime::FirstVulkanFrameTrace::rawLog(
+                        "[FirstGpuLine] before consumeBudget\n");
+                    MelonPrime::FirstVulkanFrameTrace::consumeBudget();
+                    MelonPrime::FirstVulkanFrameTrace::rawLog(
+                        "[FirstGpuLine] after consumeBudget\n");
+                }
+#endif
                 romBootTraceFirstRunFrame = false;
             }
 #endif

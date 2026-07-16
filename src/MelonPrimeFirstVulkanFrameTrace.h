@@ -1,34 +1,46 @@
 #pragma once
 
-// First-frame Vulkan/GPU trace budget (S77-1). Logs only until budget is consumed.
+// First-frame Vulkan/GPU trace budget (S77-1, S80-1/5).
+// State lives in MelonPrimeFirstVulkanFrameTrace.cpp (not inline statics in headers).
 
-#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 
 namespace MelonPrime::FirstVulkanFrameTrace
 {
 
-inline bool& budgetActive() noexcept
+enum class Phase : std::uint8_t
 {
-    static bool active = true;
-    return active;
-}
+    Disabled = 0,
+    Boot,
+    FirstRunFrame,
+};
 
-inline void log(const char* fmt, ...) noexcept
+bool budgetActive() noexcept;
+Phase currentPhase() noexcept;
+
+void log(const char* fmt, ...) noexcept;
+void rawLog(const char* fmt, ...) noexcept;
+void consumeBudget() noexcept;
+
+struct TraceRecord
 {
-    if (!budgetActive())
-        return;
+    std::uint64_t sequence;
+    std::uint32_t threadId;
+    std::uint32_t eventId;
+    std::uint32_t line;
+    std::uint32_t vcount;
+    std::uint64_t cpuTimestamp;
+    const char* marker;
+};
 
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-    fflush(stdout);
-}
-
-inline void consumeBudget() noexcept
-{
-    budgetActive() = false;
-}
+void record(std::uint32_t eventId, std::uint32_t line, std::uint32_t vcount, const char* marker) noexcept;
+void recordEvent(
+    std::uint32_t eventId,
+    std::uint32_t param,
+    const void* that,
+    const char* phaseMarker) noexcept;
+void dumpRing(FILE* out) noexcept;
+void dumpRingToCrashReport(const char* reportPath) noexcept;
 
 } // namespace MelonPrime::FirstVulkanFrameTrace

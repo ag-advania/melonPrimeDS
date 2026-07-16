@@ -1731,8 +1731,6 @@ void GPU::StartHBlank(u32 line) noexcept
         MelonPrime::FirstVulkanFrameTrace::log(
             "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
     }
-    if (useSapphire2D && line == 0)
-        MelonPrime::FirstVulkanFrameTrace::consumeBudget();
 #endif
 }
 
