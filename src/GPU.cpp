@@ -516,6 +516,17 @@ bool GPU::IsSapphireCanonicalGpu2DActive() const noexcept
         && GPU2D_Renderer != nullptr;
 }
 
+bool GPU::PublishSapphire2DFrameIfReady() noexcept
+{
+    if (!IsSapphireCanonicalGpu2DActive())
+        return false;
+
+    if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
+        return softRenderer->PublishSapphire2DFrame();
+
+    return false;
+}
+
 bool GPU::UsesSapphireGpu2DPath() const noexcept
 {
     return IsSapphireCanonicalGpu2DActive();
@@ -1741,18 +1752,36 @@ void GPU::StartHBlank(u32 line) noexcept
 void GPU::FinishFrame(u32 lines) noexcept
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (MelonPrime::FirstVulkanFrameTrace::budgetActive())
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] FinishFrame enter lines=%u\n", lines);
+        MelonPrime::FirstVulkanFrameTrace::record(Event_LCD, lines, VCount, "FinishFrame enter");
+    }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (IsSapphireCanonicalGpu2DActive())
     {
         FrontBuffer = FrontBuffer ? 0 : 1;
         (void)AssignFramebuffers();
-        if (auto* softRenderer = dynamic_cast<SoftRenderer*>(Rend.get()))
-            (void)softRenderer->PublishSapphire2DFrame();
     }
     else
 #endif
         Rend->SwapBuffers();
 
     TotalScanlines = lines;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (MelonPrime::FirstVulkanFrameTrace::budgetActive())
+    {
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] FinishFrame done lines=%u TotalScanlines=%u\n",
+            lines,
+            TotalScanlines);
+        MelonPrime::FirstVulkanFrameTrace::record(Event_LCD, lines, VCount, "FinishFrame done");
+    }
+#endif
 
     if (GPU3D.AbortFrame)
     {

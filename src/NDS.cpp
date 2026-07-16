@@ -872,7 +872,7 @@ void NDS::RunSystem(u64 timestamp)
                 {
                     MelonPrime::FirstVulkanFrameTrace::recordEvent(
                         i, evt.Param, evt.That, "event-before");
-                    if (i == Event_LCD)
+                    if (i == Event_LCD && evt.Param <= 3)
                     {
                         MelonPrime::FirstVulkanFrameTrace::log(
                             "[FirstGpuLine] before event callback id=%u param=%u that=%p ts=%llu\n",
@@ -889,7 +889,7 @@ void NDS::RunSystem(u64 timestamp)
                 {
                     MelonPrime::FirstVulkanFrameTrace::recordEvent(
                         i, evt.Param, evt.That, "event-after");
-                    if (i == Event_LCD)
+                    if (i == Event_LCD && evt.Param <= 3)
                     {
                         MelonPrime::FirstVulkanFrameTrace::log(
                             "[FirstGpuLine] after event callback id=%u param=%u that=%p ts=%llu\n",

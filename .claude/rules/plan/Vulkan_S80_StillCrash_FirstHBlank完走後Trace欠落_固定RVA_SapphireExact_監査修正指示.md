@@ -22,13 +22,13 @@
 |-------|--------|--------|-------|
 | S80-1 | done | `c70b41579` | consumeBudget moved to EmuThread; rawLog; state in .cpp |
 | S80-2 | done | `6703ae47f` | ACCESS_VIOLATION operands, full x64 registers, trace ring dump |
-| S80-3 | in progress | | |
+| S80-3 | done | `34a565e7a` | Diagnostic symbols option + symbolize scripts |
 | S80-4 | done | `6703ae47f` | Per-frame abs/module/base/RVA (with S80-2) |
-| S80-5 | pending | | |
-| S80-6 | pending | | |
-| S80-7 | pending | | |
-| S80-8 | pending | | |
-| S80-9 | pending | | |
+| S80-5 | done | `c3ba3f648` | StartScanline + event ring + CPU slice traces |
+| S80-6 | done | `34a565e7a` | `generate_build_identity.py` in incremental build |
+| S80-7 | done | `8ba568f19` | Framebuffer canary guard |
+| S80-8 | done | `b0abf6747` | Exact-pin GPU2D A/B build target |
+| S80-9 | in progress | | Defer PublishSapphire2DFrame; fault at RVA ~0xF941 read [-1] after FinishFrame |
 | S80-10 | pending | | blocked on cold-start green |
 
 ---

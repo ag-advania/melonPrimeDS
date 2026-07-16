@@ -265,6 +265,7 @@ public:
     [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer* TryGetGpu2DSoftRenderer() const noexcept;
     [[nodiscard]] bool UsesSapphireGpu2DPath() const noexcept;
     [[nodiscard]] bool IsSapphireCanonicalGpu2DActive() const noexcept;
+    [[nodiscard]] bool PublishSapphire2DFrameIfReady() noexcept;
     [[nodiscard]] bool ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept;
     void DeactivateSapphireVulkan2D() noexcept;
     void RefreshSapphireVulkanBindings() noexcept;

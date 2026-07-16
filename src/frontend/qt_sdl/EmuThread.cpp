@@ -540,6 +540,9 @@ void EmuThread::run()
             if (videoBackend
                 == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
             {
+                melonDS::GPU& gpu = emuInstance->nds->GPU;
+                (void)gpu.PublishSapphire2DFrameIfReady();
+
                 if (vulkanProducerBegun)
                 {
                     const bool submitted = emuInstance->completeVulkanProducerFrame();
