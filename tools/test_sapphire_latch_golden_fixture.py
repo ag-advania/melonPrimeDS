@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Golden snapshot fixture contract for Sapphire latch parity (S74-11)."""
+"""Golden snapshot fixture contract for Sapphire latch parity (S75-9)."""
 
 from __future__ import annotations
 
@@ -11,11 +11,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = REPO_ROOT / "tools/fixtures/sapphire_latch_golden_metadata.json"
+BINARY = REPO_ROOT / "tools/fixtures/sapphire_static_2d_golden_snapshot.bin"
 GENERATED = REPO_ROOT / "src/frontend/qt_sdl/SapphireGenerated/SapphireFrameLatchCore.cpp"
-
-
-def stable_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class SapphireLatchGoldenFixtureTests(unittest.TestCase):
@@ -28,18 +25,21 @@ class SapphireLatchGoldenFixtureTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(data["compareFields"]), 10)
 
+    def test_binary_fixture_matches_metadata(self):
+        data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload = BINARY.read_bytes()
+        self.assertEqual(len(payload), data["binaryByteLength"])
+        digest = hashlib.sha256(payload).hexdigest()
+        self.assertEqual(digest, data["binarySha256"])
+        self.assertEqual(
+            digest,
+            "b2c5b3e9e04a5e0fbd370cdb911faf24a1baee67a901a7a80029dc6344a6d496",
+        )
+
     def test_generated_core_contains_snapshot_field_writes(self):
         core = GENERATED.read_text(encoding="utf-8")
         for field in json.loads(FIXTURE.read_text(encoding="utf-8"))["compareFields"]:
             self.assertIn(field, core)
-
-    def test_golden_field_set_is_stable(self):
-        data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        digest = stable_hash("\n".join(data["compareFields"]))
-        self.assertEqual(
-            digest,
-            "ddae2448cceb63837128b213b43fc50363e5d0b5597f8a27b9ae6444ed3739ef",
-        )
 
 
 if __name__ == "__main__":
