@@ -34,43 +34,51 @@ jobs:
       with:
         fetch-depth: 1
 
+    - name: Check compact Claude layout
+      shell: pwsh
+      run: python .\tools\maintenance\check-claude-layout.py
+
+    - name: Check Markdown links
+      shell: pwsh
+      run: python .\tools\maintenance\check-doc-links.py
+
     - name: Audit config defaults
       shell: pwsh
-      run: .\.claude\skills\audit-config-defaults.ps1
+      run: .\tools\ci\audits\audit-config-defaults.ps1
 
     - name: Audit HUD key parity
       shell: pwsh
-      run: .\.claude\skills\audit-hud-key-parity.ps1 -Strict
+      run: .\tools\ci\audits\audit-hud-key-parity.ps1 -Strict
 
     - name: Check inc ownership
       shell: pwsh
-      run: .\.claude\skills\check-inc-ownership.ps1
+      run: .\tools\ci\audits\check-inc-ownership.ps1
 
     - name: Audit Metroid literal budget
       shell: pwsh
-      run: .\.claude\skills\audit-metroid-literal-budget.ps1 -Budget 1
+      run: .\tools\ci\audits\audit-metroid-literal-budget.ps1 -Budget 1
 
     - name: Audit platform scatter budget
       shell: pwsh
-      run: .\.claude\skills\audit-platform-scatter-budget.ps1 -Budget 22
+      run: .\tools\ci\audits\audit-platform-scatter-budget.ps1 -Budget 22
 
     - name: Audit color dialog prefs
       shell: pwsh
-      run: .\.claude\skills\audit-color-dialog-prefs.ps1
+      run: .\tools\ci\audits\audit-color-dialog-prefs.ps1
 
     - name: Audit MelonPrime SRP performance
       shell: pwsh
-      run: .\.claude\skills\audit-melonprime-srp-performance.ps1
+      run: .\tools\ci\audits\audit-melonprime-srp-performance.ps1
 
     - name: Verify generated HUD schema
       shell: pwsh
       run: |
-        python .\.claude\skills\generate-hud-prop-schema.py
+        python .\tools\codegen\hud\generate-hud-prop-schema.py
         git diff --exit-code -- `
           src/frontend/qt_sdl/MelonPrimeHudPropSchema.inc `
           src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc `
           src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEditProps.inc `
-          .claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md
+          docs/generated/hud/MelonPrimeHudPropSchemaPhase2a.md
 
     - name: Cache MSYS2 packages
       uses: actions/cache@v4
