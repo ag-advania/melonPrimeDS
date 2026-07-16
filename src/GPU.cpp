@@ -276,15 +276,32 @@ void GPU::DoSavestate(Savestate* file) noexcept
     file->Var16(&VMatch[0]);
     file->Var16(&VMatch[1]);
 
-    file->VarArray(DispFIFO, sizeof(DispFIFO));
-    file->Var8(&DispFIFOReadPtr);
-    file->Var8(&DispFIFOWritePtr);
-    file->VarArray(DispFIFOBuffer, sizeof(DispFIFOBuffer));
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    u8 activeGpu2DPath = static_cast<u8>(ActiveGPU2DPath);
+    file->Var8(&activeGpu2DPath);
+    if (!file->Saving)
+        ActiveGPU2DPath = static_cast<GPU2DExecutionPath>(activeGpu2DPath);
 
-    file->Var16(&MasterBrightnessA);
-    file->Var16(&MasterBrightnessB);
+    const bool legacyGpuSpecialRegs =
+        file->Saving
+            ? !IsSapphireCanonicalGpu2DActive()
+            : (activeGpu2DPath != static_cast<u8>(GPU2DExecutionPath::SapphireCanonical));
+#else
+    const bool legacyGpuSpecialRegs = true;
+#endif
 
-    file->Var32(&CaptureCnt);
+    if (legacyGpuSpecialRegs)
+    {
+        file->VarArray(DispFIFO, sizeof(DispFIFO));
+        file->Var8(&DispFIFOReadPtr);
+        file->Var8(&DispFIFOWritePtr);
+        file->VarArray(DispFIFOBuffer, sizeof(DispFIFOBuffer));
+
+        file->Var16(&MasterBrightnessA);
+        file->Var16(&MasterBrightnessB);
+
+        file->Var32(&CaptureCnt);
+    }
     file->VarBool(&CaptureEnable);
 
     file->VarArray(Palette, 2*1024);
@@ -352,7 +369,10 @@ void GPU::DoSavestate(Savestate* file) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (!file->Saving)
     {
-        CaptureFrameCnt = CaptureEnable ? CaptureCnt : 0u;
+        if (IsSapphireCanonicalGpu2DActive())
+            CaptureFrameCnt = CaptureEnable ? GPU2D_A.CaptureCnt : 0u;
+        else
+            CaptureFrameCnt = CaptureEnable ? CaptureCnt : 0u;
         CaptureFrameDispCntA = GPU2D_A.DispCnt;
         CaptureFrameScreenSwap = ScreenSwap;
     }
@@ -490,11 +510,15 @@ const SapphireGPU2DCore::GPU2D::SoftRenderer* GPU::TryGetGpu2DSoftRenderer() con
     return dynamic_cast<const SapphireGPU2DCore::GPU2D::SoftRenderer*>(GPU2D_Renderer.get());
 }
 
+bool GPU::IsSapphireCanonicalGpu2DActive() const noexcept
+{
+    return ActiveGPU2DPath == GPU2DExecutionPath::SapphireCanonical
+        && GPU2D_Renderer != nullptr;
+}
+
 bool GPU::UsesSapphireGpu2DPath() const noexcept
 {
-    return Sapphire2D != nullptr
-        && Sapphire2D->IsActiveForRendering(const_cast<GPU&>(*this))
-        && GPU2D_Renderer != nullptr;
+    return IsSapphireCanonicalGpu2DActive();
 }
 
 bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
@@ -516,18 +540,20 @@ bool GPU::ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept
         return false;
 
     Sapphire2D->Activate(rendererGeneration);
+    ActiveGPU2DPath = GPU2DExecutionPath::SapphireCanonical;
     return true;
 }
 
 void GPU::DeactivateSapphireVulkan2D() noexcept
 {
+    ActiveGPU2DPath = GPU2DExecutionPath::LegacyOuterRenderer;
     if (Sapphire2D != nullptr)
         Sapphire2D->Deactivate();
 }
 
 void GPU::RefreshSapphireVulkanBindings() noexcept
 {
-    if (Sapphire2D == nullptr || !Sapphire2D->IsActiveForRendering(*this))
+    if (!IsSapphireCanonicalGpu2DActive())
         return;
 
     (void)AssignFramebuffers();
@@ -640,7 +666,7 @@ u8 GPU::Read8(u32 addr)
 u16 GPU::Read16(u32 addr)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
     {
         switch (addr)
         {
@@ -676,7 +702,7 @@ u16 GPU::Read16(u32 addr)
 u32 GPU::Read32(u32 addr)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
     {
         switch (addr)
         {
@@ -707,7 +733,7 @@ u32 GPU::Read32(u32 addr)
 void GPU::Write8(u32 addr, u8 val)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
     {
         switch (addr)
         {
@@ -794,7 +820,7 @@ void GPU::Write8(u32 addr, u8 val)
 void GPU::Write16(u32 addr, u16 val)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
     {
         switch (addr)
         {
@@ -853,7 +879,7 @@ void GPU::Write16(u32 addr, u16 val)
 void GPU::Write32(u32 addr, u32 val)
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
     {
         switch (addr)
         {
@@ -1468,7 +1494,7 @@ void GPU::SetDispStatIRQ(int cpu, int num)
 bool GPU::UsesDisplayFIFO()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (UsesSapphireGpu2DPath())
+    if (IsSapphireCanonicalGpu2DActive())
         return GPU2D_A.UsesFIFO();
 #endif
 
@@ -1500,7 +1526,7 @@ void GPU::DisplayFIFO(u32 x) noexcept
     if (x > 0)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (UsesSapphireGpu2DPath())
+        if (IsSapphireCanonicalGpu2DActive())
         {
             if (x == 8)
                 GPU2D_A.SampleFIFO(0, 5);
@@ -1526,7 +1552,7 @@ void GPU::DisplayFIFO(u32 x) noexcept
     else
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (UsesSapphireGpu2DPath())
+        if (IsSapphireCanonicalGpu2DActive())
             GPU2D_A.SampleFIFO(253, 3);
         else
 #endif
@@ -1559,7 +1585,7 @@ void GPU::StartFrame() noexcept
 void GPU::StartHBlank(u32 line) noexcept
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const bool useSapphire2D = UsesSapphireGpu2DPath();
+    const bool useSapphire2D = IsSapphireCanonicalGpu2DActive();
 #endif
 
     DispStat[0] |= (1<<1);
@@ -1714,7 +1740,7 @@ void GPU::StartHBlank(u32 line) noexcept
 void GPU::FinishFrame(u32 lines) noexcept
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
+    if (IsSapphireCanonicalGpu2DActive())
     {
         FrontBuffer = FrontBuffer ? 0 : 1;
         (void)AssignFramebuffers();
@@ -1803,7 +1829,7 @@ void GPU::StartScanline(u32 line) noexcept
         if (line == 0)
         {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (useSapphire2D)
+            if (IsSapphireCanonicalGpu2DActive())
             {
                 GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B);
                 GPU2D_A.VBlankEnd();
@@ -1866,7 +1892,7 @@ void GPU::StartScanline(u32 line) noexcept
         GPU3D.VBlank();
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (Sapphire2D && Sapphire2D->IsActiveForRendering(*this))
+        if (IsSapphireCanonicalGpu2DActive())
         {
             GPU2D_A.VBlank();
             GPU2D_B.VBlank();

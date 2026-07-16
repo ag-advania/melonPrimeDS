@@ -219,6 +219,12 @@ class Renderer;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 class SapphireGpu2DState;
+
+enum class GPU2DExecutionPath : u8
+{
+    LegacyOuterRenderer,
+    SapphireCanonical,
+};
 #endif
 
 class GPU
@@ -257,6 +263,7 @@ public:
     [[nodiscard]] SapphireGPU2DCore::GPU2D::SoftRenderer* TryGetGpu2DSoftRenderer() noexcept;
     [[nodiscard]] const SapphireGPU2DCore::GPU2D::SoftRenderer* TryGetGpu2DSoftRenderer() const noexcept;
     [[nodiscard]] bool UsesSapphireGpu2DPath() const noexcept;
+    [[nodiscard]] bool IsSapphireCanonicalGpu2DActive() const noexcept;
     [[nodiscard]] bool ActivateSapphireVulkan2D(u64 rendererGeneration) noexcept;
     void DeactivateSapphireVulkan2D() noexcept;
     void RefreshSapphireVulkanBindings() noexcept;
@@ -1036,6 +1043,7 @@ private:
     std::unique_ptr<Renderer> Rend = nullptr;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     bool LastRendererInitSucceeded = true;
+    GPU2DExecutionPath ActiveGPU2DPath = GPU2DExecutionPath::LegacyOuterRenderer;
     std::unique_ptr<SapphireGpu2DState> Sapphire2D;
     std::unique_ptr<SapphireGPU2DCore::GPU2D::Renderer2D> GPU2D_Renderer;
     std::unique_ptr<SapphireGPU2D::SoftRenderer> SapphireVulkan2DAccess;

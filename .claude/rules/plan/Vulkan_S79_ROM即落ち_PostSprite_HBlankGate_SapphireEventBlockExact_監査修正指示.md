@@ -1404,10 +1404,10 @@ GPU2D event timingへ持ち込んではならない。
 | S79-1 | 完了 | 50d4649c4 | run ID、git identity、crash artifact pairing |
 | S79-2 | 完了 | ea461f08b | post-sprite gate/DMA/IRQ/ScheduleEvent trace |
 | S79-3 | 完了 | acace9d63 | HBlank path latch once per entry |
-| S79-4 | 完了 | (this commit) | generated Sapphire GPU2D HBlank event block |
-| S79-5 | 未着手 | | |
-| S79-6 | 未着手 | | |
-| S79-7 | 未着手 | | |
+| S79-4 | 完了 | ce85fefa6 | generated Sapphire GPU2D HBlank event block |
+| S79-5 | 完了 | (this commit) | ActiveGPU2DPath at renderer transaction boundaries |
+| S79-6 | 完了 | (this commit) | GPU2D timing no longer uses SapphireGpu2DState gate |
+| S79-7 | 完了 | (this commit) | canonical Unit ownership for special registers |
 | S79-8 | 未着手 | | |
 | S79-9 | 未着手 | | |
 | S79-10 | 未着手 | | cold-start green 待ち |
