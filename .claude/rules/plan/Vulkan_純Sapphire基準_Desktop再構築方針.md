@@ -772,7 +772,7 @@ R20 Remove obsolete Desktop Vulkan implementation
 | 2 | 最小Desktop WSI + 単色clear | **done** | `b4557998f` |
 | 3 | Sapphire output接続 + atomic input | **done** | `c640a33c1` |
 | 4 | ROM cold-start + CI検証 | **blocked** | *(crash post-FinishFrame persists — see PHASE4_COLD_START.md)* |
-| 5 | 機能復元 + 旧実装削除 | **done** | *(pending commit)* |
+| 5 | 機能復元 + 旧実装削除 | **done** | `fafad722b` |
 
 **Tag:** `vulkan-pre-sapphire-rebuild` @ `90bf8333a`  
 **Branch:** `vulkan_sapphire_desktop_rebuild`  
