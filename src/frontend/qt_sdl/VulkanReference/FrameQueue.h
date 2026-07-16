@@ -21,6 +21,7 @@ using namespace melonDS;
 namespace MelonDSAndroid
 {
 class DesktopFrameLifetimeTracker;
+class SapphireFrameQueueCore;
 }
 
 constexpr std::size_t FRAME_QUEUE_SIZE = 9;
@@ -147,6 +148,11 @@ public:
     void assertMembershipInvariant(const Frame* renderingFrame = nullptr) const;
 
 private:
+    static u32 membershipCountForFrame(
+        const MelonDSAndroid::SapphireFrameQueueCore& core,
+        const Frame* frame,
+        const Frame* renderingFrame);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

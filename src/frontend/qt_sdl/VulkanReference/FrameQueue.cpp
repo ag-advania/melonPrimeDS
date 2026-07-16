@@ -10,10 +10,7 @@
 #include "DesktopFrameLifetimeTracker.h"
 #include "SapphireGenerated/SapphireFrameQueueCore.h"
 
-namespace
-{
-
-u32 membershipCountForFrame(
+u32 FrameQueue::membershipCountForFrame(
     const MelonDSAndroid::SapphireFrameQueueCore& core,
     const Frame* frame,
     const Frame* renderingFrame)
@@ -45,8 +42,6 @@ u32 membershipCountForFrame(
 
     return count;
 }
-
-} // namespace
 
 struct FrameQueue::Impl
 {
@@ -202,7 +197,7 @@ void FrameQueue::assertMembershipInvariant(const Frame* renderingFrame) const
 
     for (const Frame& frame : core.frames_)
     {
-        if (membershipCountForFrame(core, &frame, renderingFrame) > 1)
+        if (FrameQueue::membershipCountForFrame(core, &frame, renderingFrame) > 1)
         {
             std::fprintf(stderr, "FrameQueue membership invariant failed\n");
             std::abort();

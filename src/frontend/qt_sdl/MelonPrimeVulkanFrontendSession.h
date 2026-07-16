@@ -7,6 +7,7 @@
 #include <mutex>
 
 #include "types.h"
+#include "DesktopVulkanResourceLease.h"
 #include "GPU3D_Vulkan.h"
 #include "VulkanReference/FrameQueue.h"
 #include "VulkanReference/VulkanOutput.h"

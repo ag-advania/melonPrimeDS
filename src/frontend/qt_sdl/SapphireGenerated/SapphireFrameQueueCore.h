@@ -17,7 +17,7 @@ namespace MelonDSAndroid
 class SapphireFrameQueueCore
 {
     friend class DesktopFrameLifetimeTracker;
-    friend class FrameQueue;
+    friend class ::FrameQueue;
 
 public:
     SapphireFrameQueueCore();

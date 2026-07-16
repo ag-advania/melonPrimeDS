@@ -6,6 +6,7 @@
 
 #include "MelonPrimeDesktopSapphireFrameSidecar.h"
 #include "SapphirePublished2DFrame.h"
+#include "GPU3D_Vulkan.h"
 #include "VulkanReference/FrameQueue.h"
 #include "types.h"
 
@@ -13,7 +14,6 @@ namespace melonDS
 {
 class GPU;
 class VulkanRenderer3D;
-struct Vulkan3DFrameView;
 }
 
 namespace MelonDSAndroid
