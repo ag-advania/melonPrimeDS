@@ -205,11 +205,50 @@ void DesktopFrameLifetimeTracker::undoRenderAcquisition(
     retireFrameLocked(frame, core);
 }
 
-void DesktopFrameLifetimeTracker::onPresentationAcquired(Frame* frame)
+void DesktopFrameLifetimeTracker::onPresentationAcquired(
+    Frame* frame,
+    SapphireFrameQueueCore& core)
 {
     if (frame == nullptr)
         return;
+
+    if (frame == core.previousFrame)
+    {
+        transitionFrameLocked(
+            frame,
+            FrameQueueState::Previous,
+            FrameQueueState::AcquiredForPresentation,
+            core.stats);
+    }
+    else if (frame->queueState() == FrameQueueState::Ready)
+    {
+        transitionFrameLocked(
+            frame,
+            FrameQueueState::Ready,
+            FrameQueueState::AcquiredForPresentation,
+            core.stats);
+    }
+
     frame->presentationReferences++;
+}
+
+void DesktopFrameLifetimeTracker::onPresentationCommitted(
+    Frame* frame,
+    SapphireFrameQueueCore& core)
+{
+    if (frame == nullptr)
+        return;
+
+    if (frame->queueState() == FrameQueueState::AcquiredForPresentation)
+    {
+        transitionFrameLocked(
+            frame,
+            FrameQueueState::AcquiredForPresentation,
+            FrameQueueState::Previous,
+            core.stats);
+    }
+
+    frame->presentationReferences = frame->presentTimelineValue != 0 ? 1u : 0u;
 }
 
 void DesktopFrameLifetimeTracker::onPresentationDeferred(

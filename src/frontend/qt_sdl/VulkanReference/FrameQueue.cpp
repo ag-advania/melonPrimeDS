@@ -53,7 +53,7 @@ Frame* FrameQueue::getPresentCandidate(
     if (frame != nullptr && !impl_->lifetime.allowPresentationAcquisition(frame))
         return nullptr;
     if (frame != nullptr)
-        impl_->lifetime.onPresentationAcquired(frame);
+        impl_->lifetime.onPresentationAcquired(frame, impl_->core);
     return frame;
 }
 
@@ -71,6 +71,7 @@ void FrameQueue::recycleRenderFrame(Frame* frame)
 
 void FrameQueue::commitPresentedFrame(Frame* frame, const FrameQueuePolicy& policy)
 {
+    impl_->lifetime.onPresentationCommitted(frame, impl_->core);
     impl_->core.commitPresentedFrame(frame, policy);
 }
 

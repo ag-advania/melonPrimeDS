@@ -26,7 +26,8 @@ public:
     bool allowPresentationAcquisition(const Frame* frame) const;
     void onRenderAcquired(Frame* frame, SapphireFrameQueueCore& core);
     void undoRenderAcquisition(Frame* frame, SapphireFrameQueueCore& core);
-    void onPresentationAcquired(Frame* frame);
+    void onPresentationAcquired(Frame* frame, SapphireFrameQueueCore& core);
+    void onPresentationCommitted(Frame* frame, SapphireFrameQueueCore& core);
     void onPresentationDeferred(Frame* frame, SapphireFrameQueueCore& core);
     void onPushRendered(Frame* frame, SapphireFrameQueueCore& core);
     void onRecycleRender(Frame* frame, SapphireFrameQueueCore& core);
