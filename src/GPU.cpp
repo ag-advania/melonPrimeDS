@@ -1634,17 +1634,11 @@ void GPU::StartHBlank(u32 line) noexcept
         } \
     } while (0)
 #define SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_CHECK_DMAS(LINE) \
-    do { \
-        if ((LINE) <= 2) { \
-            Log(LogLevel::Debug, "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE)); \
-        } \
-    } while (0)
+    MelonPrime::FirstVulkanFrameTrace::log( \
+        "[FirstGpuLine] before CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE))
 #define SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_CHECK_DMAS(LINE) \
-    do { \
-        if ((LINE) <= 2) { \
-            Log(LogLevel::Debug, "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE)); \
-        } \
-    } while (0)
+    MelonPrime::FirstVulkanFrameTrace::log( \
+        "[FirstGpuLine] after CheckDMAs HBlank VCount=%u line=%u\n", VCount, (LINE))
 #include "SapphireGenerated/SapphireGpu2DHBlankCore.inc"
 #undef SAPPHIRE_GPU2D_HBLANK_TRACE_BEFORE_CHECK_DMAS
 #undef SAPPHIRE_GPU2D_HBLANK_TRACE_AFTER_CHECK_DMAS
@@ -1700,7 +1694,8 @@ void GPU::StartHBlank(u32 line) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (useSapphire2D && line <= 2)
     {
-        Log(LogLevel::Debug, "[FirstGpuLine] before IRQ HBlank VCount=%u line=%u\n", VCount, line);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] before IRQ HBlank VCount=%u line=%u\n", VCount, line);
     }
 #endif
 
@@ -1710,16 +1705,16 @@ void GPU::StartHBlank(u32 line) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (useSapphire2D && line <= 2)
     {
-        Log(LogLevel::Debug, "[FirstGpuLine] after IRQ HBlank VCount=%u line=%u\n", VCount, line);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] after IRQ HBlank VCount=%u line=%u\n", VCount, line);
     }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (useSapphire2D && line == 0)
-        MelonPrime::FirstVulkanFrameTrace::consumeBudget();
     if (useSapphire2D && line <= 2)
     {
-        Log(LogLevel::Debug, "[FirstGpuLine] before ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] before ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
     }
 #endif
 
@@ -1731,9 +1726,13 @@ void GPU::StartHBlank(u32 line) noexcept
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (useSapphire2D && line <= 2)
     {
-        Log(LogLevel::Debug, "[FirstGpuLine] after ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
-        Log(LogLevel::Debug, "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] after ScheduleEvent HBlank VCount=%u line=%u\n", VCount, line);
+        MelonPrime::FirstVulkanFrameTrace::log(
+            "[FirstGpuLine] StartHBlank done VCount=%u line=%u\n", VCount, line);
     }
+    if (useSapphire2D && line == 0)
+        MelonPrime::FirstVulkanFrameTrace::consumeBudget();
 #endif
 }
 

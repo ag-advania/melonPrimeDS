@@ -22,7 +22,7 @@ constexpr DWORD kMaxStackFrames = 64;
 void writeBuildIdentity(FILE* out)
 {
     std::fprintf(out, "buildIdentity.runId=%llu\n", static_cast<unsigned long long>(MelonPrime::runId()));
-    std::fprintf(out, "buildIdentity.gitCommit=%s\n", MELONPRIME_GIT_COMMIT);
+    std::fprintf(out, "buildIdentity.gitCommit=%s\n", MelonPrime::effectiveGitCommitShort());
     std::fprintf(out, "buildIdentity.gitCommitFull=%s\n", MELONPRIME_GIT_COMMIT_FULL);
     std::fprintf(out, "buildIdentity.gitBranch=%s\n", MELONPRIME_GIT_BRANCH);
     std::fprintf(out, "buildIdentity.gitDirty=%d\n", MELONPRIME_GIT_DIRTY);
@@ -232,13 +232,13 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
         dumpPath,
         sizeof(dumpPath),
         "melonPrimeDS-%s-run-%llu.dmp",
-        MELONPRIME_GIT_COMMIT,
+        MelonPrime::effectiveGitCommitShort(),
         static_cast<unsigned long long>(MelonPrime::runId()));
     std::snprintf(
         reportPath,
         sizeof(reportPath),
         "melonPrimeDS-%s-run-%llu.crash.txt",
-        MELONPRIME_GIT_COMMIT,
+        MelonPrime::effectiveGitCommitShort(),
         static_cast<unsigned long long>(MelonPrime::runId()));
 
     FILE* report = std::fopen(reportPath, "w");
@@ -270,7 +270,7 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
         stderr,
         "[MelonPrimeCrash] runId=%llu buildIdentity=%s minidump=%s report=%s\n",
         static_cast<unsigned long long>(MelonPrime::runId()),
-        MELONPRIME_GIT_COMMIT,
+        MelonPrime::effectiveGitCommitShort(),
         dumpPath,
         reportPath);
     std::fflush(stderr);

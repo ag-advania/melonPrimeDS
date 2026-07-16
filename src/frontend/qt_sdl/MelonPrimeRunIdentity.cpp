@@ -1,7 +1,12 @@
+#include "MelonPrimeBuildInfo.h"
 #include "MelonPrimeRunIdentity.h"
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -19,6 +24,84 @@ namespace
 std::atomic<std::uint64_t> g_nextRunSequence{0};
 std::uint64_t g_runId = 0;
 char g_binarySha256Hex[65]{};
+char g_runtimeGitCommitShort[13]{};
+
+bool readTextFile(const std::filesystem::path& path, std::string& out)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+        return false;
+    out.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    return true;
+}
+
+bool resolveGitCommitShortFromRepo(const std::filesystem::path& startDir, char* out, size_t outSize)
+{
+    if (outSize < 13)
+        return false;
+
+    std::filesystem::path dir = startDir;
+    for (int depth = 0; depth < 8; ++depth)
+    {
+        const auto gitDir = dir / ".git";
+        const auto headPath = gitDir / "HEAD";
+        if (!std::filesystem::exists(headPath))
+        {
+            if (!dir.has_parent_path() || dir.parent_path() == dir)
+                break;
+            dir = dir.parent_path();
+            continue;
+        }
+
+        std::string headText;
+        if (!readTextFile(headPath, headText))
+            return false;
+
+        while (!headText.empty() && (headText.back() == '\n' || headText.back() == '\r'))
+            headText.pop_back();
+
+        std::string commitFull;
+        if (headText.rfind("ref: ", 0) == 0)
+        {
+            const auto refRel = headText.substr(5);
+            const auto refPath = gitDir / refRel;
+            if (!readTextFile(refPath, commitFull))
+                return false;
+        }
+        else
+        {
+            commitFull = headText;
+        }
+
+        while (!commitFull.empty() && (commitFull.back() == '\n' || commitFull.back() == '\r'))
+            commitFull.pop_back();
+        if (commitFull.size() < 12)
+            return false;
+
+        std::snprintf(out, outSize, "%.12s", commitFull.c_str());
+        return true;
+    }
+
+    return false;
+}
+
+void resolveRuntimeGitCommitShort()
+{
+    std::snprintf(g_runtimeGitCommitShort, sizeof(g_runtimeGitCommitShort), "%s", MELONPRIME_GIT_COMMIT);
+    if (std::strcmp(g_runtimeGitCommitShort, "unknown") != 0)
+        return;
+
+    std::filesystem::path start = std::filesystem::current_path();
+#ifdef _WIN32
+    wchar_t modulePath[MAX_PATH]{};
+    if (GetModuleFileNameW(nullptr, modulePath, MAX_PATH) > 0)
+        start = std::filesystem::path(modulePath).parent_path();
+#endif
+
+    char resolved[13]{};
+    if (resolveGitCommitShortFromRepo(start, resolved, sizeof(resolved)))
+        std::snprintf(g_runtimeGitCommitShort, sizeof(g_runtimeGitCommitShort), "%s", resolved);
+}
 
 std::uint64_t makeRunId() noexcept
 {
@@ -112,6 +195,7 @@ void computeBinarySha256() noexcept
 
 void initRunIdentity()
 {
+    resolveRuntimeGitCommitShort();
     g_runId = makeRunId();
     computeBinarySha256();
     std::printf(
@@ -129,6 +213,11 @@ std::uint64_t runId() noexcept
 const char* binarySha256Hex() noexcept
 {
     return g_binarySha256Hex;
+}
+
+const char* effectiveGitCommitShort() noexcept
+{
+    return g_runtimeGitCommitShort;
 }
 
 } // namespace MelonPrime
