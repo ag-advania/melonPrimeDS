@@ -1447,4 +1447,4 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 | S77-7 | `40a51b45f` | done | `AssignSapphireFramebuffers()` binding validation |
 | S77-8 | `e60059235` | done | Vendor pinned GPU2D.h/cpp upstream snapshots in manifest |
 | S77-9 | `0f00273c1` | done | GPU owns `SapphireGPU2DCore::Unit` A/B + `GPU2D_Renderer` |
-| S77-10 | (pending) | in progress | Remove UnitSync, adapter, and register forwarding |
+| S77-10 | `4d145096b` | done | Deleted adapter/UnitSync; draw uses canonical GPU units only |
