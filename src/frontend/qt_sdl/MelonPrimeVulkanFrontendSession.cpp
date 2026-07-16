@@ -277,6 +277,12 @@ bool MelonPrimeVulkanFrontendSession::latchAndPrepareProducerFrameLocked(
         activeGeneration);
     if (buildResult.rejected)
     {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[VulkanColdStart] reject reason=%s serial=%llu generation=%llu\n",
+            buildResult.rejectReason != nullptr ? buildResult.rejectReason : "unknown",
+            static_cast<unsigned long long>(frameView.FrameSerial),
+            static_cast<unsigned long long>(activeGeneration));
         LogVulkanProducerDiscard(buildResult.rejectReason != nullptr
             ? buildResult.rejectReason
             : "frameInputRejected");
@@ -525,6 +531,13 @@ void MelonPrimeVulkanFrontendSession::commitPresentedFrame(Frame* frame)
     lastPresentedFrameId = frame->frameId;
     resourceLease.recordPresentationCommit(frame);
     frameQueue.commitPresentedFrame(frame, queuePolicy());
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[VulkanColdStart] commit frameId=%llu serial=%llu generation=%llu surfaceGeneration=%llu\n",
+        static_cast<unsigned long long>(frame->frameId),
+        static_cast<unsigned long long>(frame->frameSerial),
+        static_cast<unsigned long long>(frame->rendererGeneration),
+        static_cast<unsigned long long>(frame->surfaceGeneration));
 }
 
 void MelonPrimeVulkanFrontendSession::deferPresentedFrame(Frame* frame)
@@ -532,7 +545,16 @@ void MelonPrimeVulkanFrontendSession::deferPresentedFrame(Frame* frame)
     std::scoped_lock presentationLock(presentationCallMutex);
     std::scoped_lock stateLock(stateMutex);
     if (frame != nullptr)
+    {
         frameQueue.deferPresentedFrame(frame, queuePolicy());
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[VulkanColdStart] defer frameId=%llu serial=%llu generation=%llu surfaceGeneration=%llu\n",
+            static_cast<unsigned long long>(frame->frameId),
+            static_cast<unsigned long long>(frame->frameSerial),
+            static_cast<unsigned long long>(frame->rendererGeneration),
+            static_cast<unsigned long long>(frame->surfaceGeneration));
+    }
 }
 
 void MelonPrimeVulkanFrontendSession::registerPresenter(VulkanSurfacePresenter* presenter)
