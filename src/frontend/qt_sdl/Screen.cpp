@@ -1551,7 +1551,12 @@ bool ScreenPanelNative::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!handles.has_value())
         return false;
 
-    return waylandPointerLock->setLocked(handles->first, handles->second, true);
+    // Hint the panel's own center, expressed in the locked (top-level)
+    // surface's local coordinates, so the compositor recenters the cursor
+    // away from any edge whenever this lock later releases.
+    const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    return waylandPointerLock->setLocked(
+        handles->first, handles->second, true, hint.x(), hint.y());
 }
 
 bool ScreenPanelNative::isWaylandPointerLockActiveForMelonPrime() const
@@ -1914,7 +1919,12 @@ bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!handles.has_value())
         return false;
 
-    return waylandPointerLock->setLocked(handles->first, handles->second, true);
+    // Hint the panel's own center, expressed in the locked (top-level)
+    // surface's local coordinates, so the compositor recenters the cursor
+    // away from any edge whenever this lock later releases.
+    const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    return waylandPointerLock->setLocked(
+        handles->first, handles->second, true, hint.x(), hint.y());
 }
 
 bool ScreenPanelGL::isWaylandPointerLockActiveForMelonPrime() const
