@@ -359,7 +359,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanPreparedContentStats.h
         SapphireVulkanFrameLatch.cpp
         SapphireVulkanFrameLatch.h
-        SapphireGenerated/SapphireFrameLatchCore.cpp
         MelonPrimeSapphireFrameInput.cpp
         MelonPrimeSapphireFrameInput.h
         SapphireVulkanFramePipeline.cpp
@@ -389,8 +388,10 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${CMAKE_SOURCE_DIR}/src")
     target_compile_definitions(sapphire_frame_latch_core PRIVATE
         MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1)
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
     target_link_libraries(sapphire_frame_latch_core PRIVATE volk::volk volk::volk_headers)
+    target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_latch_core>)
 endif()
 
 add_subdirectory("../../net"
