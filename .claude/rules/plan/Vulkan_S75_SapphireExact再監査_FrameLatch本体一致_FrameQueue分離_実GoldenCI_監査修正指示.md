@@ -1502,4 +1502,11 @@ Vulkan 2D pipelineをSapphire exactと判断できる。
 | S75-5 | `c8da1ed97` | done | Move Desktop generation/timeline ownership into DesktopFrameLifetimeTracker |
 | S75-6 | `862fb2ddd` | done | FrameQueue upstream-vs-Desktop differential sequence tests |
 | S75-7 | `708b01fb3` | done | Split VulkanOutput platform sync hooks from composition |
-| S75-8 | pending | in progress | Replace regex parity with generated regions |
+| S75-8 | `bc760f69b` | done | Replace regex parity with pinned composition regions |
+| S75-9 | `f08f4f363` | done | Replace placeholder golden metadata with binary Sapphire snapshot fixtures |
+| S75-10 | `e2d2f765f` | done | Replace placeholder 120-frame hashes with real per-frame output hashes |
+| S75-11 | `de5f39c1c` | done | Build production melonDS on Linux Debug and Release |
+| S75-12 | `8d979bb4c` | done | Build production melonPrimeDS.exe on Windows MinGW |
+| S75-13 | `93bfedc23` | done | Expand Sapphire parity workflow paths to all integration sources |
+| S75-14 | `4820f90d6` | done | Verify generation manifest and upstream region hashes read-only |
+| S75-15 | pending | in progress | Vulkan cold-start, renderer-switch and fullscreen lifecycle smoke tests |

@@ -80,6 +80,7 @@ jobs:
           python3 tools/test_sapphire_vulkan_flicker_s73.py
           python3 tools/test_sapphire_latch_golden_fixture.py
           python3 tools/test_sapphire_latch_flicker_fixture.py
+          python3 tools/test_sapphire_vulkan_lifecycle_s75_smoke.py
           python3 tools/vendor_sapphire.py --verify-upstream-snapshots
           python3 tools/vendor_sapphire.py --verify-generated
           python3 tools/check_sapphire_vendor_parity.py --verify-upstream
