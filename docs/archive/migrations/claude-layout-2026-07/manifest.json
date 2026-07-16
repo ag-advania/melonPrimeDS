@@ -1,0 +1,1842 @@
+{
+  "schema_version": 1,
+  "source_archive_sha256": "d16d55d052337fd5116b262baf67521a6d7c80e1053e7ec4bb1f1e3adc45ac81",
+  "source_file_count": 154,
+  "source_bytes": 1907333,
+  "generated_from": "_melonPrimeDocs/melonPrimeDS_develop_claude_完全対応表_154ファイル.md",
+  "entries": [
+    {
+      "source": ".claude/agents/README.md",
+      "bytes": 185,
+      "lines": 5,
+      "phase": "P7",
+      "action": "削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/hooks/README.md",
+      "bytes": 197,
+      "lines": 5,
+      "phase": "P7",
+      "action": "削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/settings.local.json",
+      "bytes": 5674,
+      "lines": 27,
+      "phase": "P0",
+      "action": "移行対象外・ローカル保持",
+      "destination": "なし（未追跡の.claude/settings.local.jsonとして保持）",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/README.md",
+      "bytes": 801,
+      "lines": 19,
+      "phase": "P7",
+      "action": "移動・再生成",
+      "destination": "docs/features/README.md",
+      "destinations": [
+        "docs/features/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/README.md",
+      "bytes": 1521,
+      "lines": 23,
+      "phase": "P5",
+      "action": "移動・再生成",
+      "destination": "docs/archive/features/srp-v3/README.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime-srp-refactor-v3-progress.md",
+      "bytes": 32209,
+      "lines": 639,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime-srp-refactor-v3-progress.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime-srp-refactor-v3-progress.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime-srp-v3-completion-summary.md",
+      "bytes": 9947,
+      "lines": 157,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime-srp-v3-completion-summary.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime-srp-v3-completion-summary.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime_aim_config_reload_paths_audit.md",
+      "bytes": 7422,
+      "lines": 119,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime_aim_config_reload_paths_audit.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime_aim_config_reload_paths_audit.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime_aim_reload_outcome_c_design_note.md",
+      "bytes": 5964,
+      "lines": 144,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime_aim_reload_outcome_c_design_note.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime_aim_reload_outcome_c_design_note.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime_patch_lifecycle_gateway_site_d_plan.md",
+      "bytes": 10552,
+      "lines": 192,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime_patch_lifecycle_gateway_site_d_plan.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime_patch_lifecycle_gateway_site_d_plan.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/completed/melonprime_patch_lifecycle_gateway_step3_plan.md",
+      "bytes": 10501,
+      "lines": 148,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/features/srp-v3/melonprime_patch_lifecycle_gateway_step3_plan.md",
+      "destinations": [
+        "docs/archive/features/srp-v3/melonprime_patch_lifecycle_gateway_step3_plan.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/custom-hud-color-dialog-prefs.md",
+      "bytes": 9360,
+      "lines": 248,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/custom-hud-color-dialog-prefs.md",
+      "destinations": [
+        "docs/features/custom-hud-color-dialog-prefs.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/custom-hud-zoom-crosshair.md",
+      "bytes": 6845,
+      "lines": 129,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/custom-hud-zoom-crosshair.md",
+      "destinations": [
+        "docs/features/custom-hud-zoom-crosshair.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/morph-ball-boost.md",
+      "bytes": 10342,
+      "lines": 191,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/morph-ball-boost.md",
+      "destinations": [
+        "docs/features/morph-ball-boost.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/sf-reticle-effects-reference.md",
+      "bytes": 1555,
+      "lines": 34,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/sf-reticle-effects-reference.md",
+      "destinations": [
+        "docs/features/sf-reticle-effects-reference.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/zoom-aim-sensitivity.md",
+      "bytes": 2080,
+      "lines": 49,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/zoom-aim-sensitivity.md",
+      "destinations": [
+        "docs/features/zoom-aim-sensitivity.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/features/zoom-status-performance.md",
+      "bytes": 2825,
+      "lines": 77,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/zoom-status-performance.md",
+      "destinations": [
+        "docs/features/zoom-status-performance.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/Double-Tap Jump Disable patch.txt",
+      "bytes": 465,
+      "lines": 43,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/patches/Double-Tap Jump Disable patch.txt",
+      "destinations": [
+        "docs/reverse-engineering/mph/patches/Double-Tap Jump Disable patch.txt"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-COLOR-PATCH.md",
+      "bytes": 37114,
+      "lines": 1209,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-COLOR-PATCH.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-COLOR-PATCH.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-EU1_0.md",
+      "bytes": 13047,
+      "lines": 211,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-EU1_0.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-EU1_0.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-EU1_1.md",
+      "bytes": 13047,
+      "lines": 211,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-EU1_1.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-EU1_1.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-JP1_0.md",
+      "bytes": 28882,
+      "lines": 491,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-JP1_0.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-JP1_0.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-JP1_1.md",
+      "bytes": 12026,
+      "lines": 210,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-JP1_1.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-JP1_1.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-KR1_0.md",
+      "bytes": 13001,
+      "lines": 210,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-KR1_0.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-KR1_0.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-US1_0.md",
+      "bytes": 11762,
+      "lines": 189,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-US1_0.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-US1_0.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/mphKnowledge/In-Game-OSD-Struct-US1_1.md",
+      "bytes": 13260,
+      "lines": 222,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mph/In-Game-OSD-Struct-US1_1.md",
+      "destinations": [
+        "docs/reverse-engineering/mph/In-Game-OSD-Struct-US1_1.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/proposals/crosshair-smooth.md",
+      "bytes": 6411,
+      "lines": 130,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/proposals/crosshair-smooth.md",
+      "destinations": [
+        "docs/proposals/crosshair-smooth.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/README.md",
+      "bytes": 2007,
+      "lines": 28,
+      "phase": "P7",
+      "action": "削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/build.md",
+      "bytes": 15299,
+      "lines": 212,
+      "phase": "P3",
+      "action": "分割・移動",
+      "destination": "docs/development/build/overview.md",
+      "destinations": [
+        "docs/development/build/overview.md"
+      ],
+      "distill": ".claude/rules/20-build-validation.md"
+    },
+    {
+      "source": ".claude/rules/compute-renderer-mosaic-bug.md",
+      "bytes": 16794,
+      "lines": 218,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/investigations/rendering/compute-renderer-mosaic-bug.md",
+      "destinations": [
+        "docs/archive/investigations/rendering/compute-renderer-mosaic-bug.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/git-workflow.md",
+      "bytes": 649,
+      "lines": 30,
+      "phase": "P7",
+      "action": "統合後削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": ".claude/rules/00-core.md"
+    },
+    {
+      "source": ".claude/rules/linux-vm-build.md",
+      "bytes": 8291,
+      "lines": 206,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "docs/development/build/linux-vm.md",
+      "destinations": [
+        "docs/development/build/linux-vm.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/macos-window-rounded-corners.md",
+      "bytes": 8619,
+      "lines": 125,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/investigations/macos/window-rounded-corners.md",
+      "destinations": [
+        "docs/archive/investigations/macos/window-rounded-corners.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/melonprime-aim-input.md",
+      "bytes": 21208,
+      "lines": 343,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/input/aim-input.md",
+      "destinations": [
+        "docs/architecture/input/aim-input.md"
+      ],
+      "distill": ".claude/rules/40-platform-safety.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-click-handling.md",
+      "bytes": 17068,
+      "lines": 296,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/investigations/input/click-handling.md",
+      "destinations": [
+        "docs/archive/investigations/input/click-handling.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/melonprime-developer-only-section.md",
+      "bytes": 6230,
+      "lines": 158,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/development/developer-features.md",
+      "destinations": [
+        "docs/development/developer-features.md"
+      ],
+      "distill": ".claude/rules/20-build-validation.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-full-refactor-plan-v6.md",
+      "bytes": 38880,
+      "lines": 446,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v6.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v6.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/melonprime-full-refactor-plan-v7.md",
+      "bytes": 38834,
+      "lines": 403,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/plans/refactoring/melonprime-full-refactor-plan-v7.md",
+      "destinations": [
+        "docs/plans/refactoring/melonprime-full-refactor-plan-v7.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/melonprime-gameplay-runtime.md",
+      "bytes": 9861,
+      "lines": 158,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/gameplay/runtime.md",
+      "destinations": [
+        "docs/architecture/gameplay/runtime.md"
+      ],
+      "distill": ".claude/rules/30-performance-threading.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-localization-refactor-audit.md",
+      "bytes": 20107,
+      "lines": 709,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/localization-refactor-audit-2026-07-04.md",
+      "destinations": [
+        "docs/archive/audits/localization/localization-refactor-audit-2026-07-04.md"
+      ],
+      "distill": ".claude/rules/50-localization-ui.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-localization-refactor-plan.md",
+      "bytes": 29879,
+      "lines": 1162,
+      "phase": "P7",
+      "action": "移動",
+      "destination": "docs/plans/localization/localization-refactor-plan.md",
+      "destinations": [
+        "docs/plans/localization/localization-refactor-plan.md"
+      ],
+      "distill": ".claude/rules/50-localization-ui.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-metal-backend-plan.md",
+      "bytes": 127176,
+      "lines": 1778,
+      "phase": "P7",
+      "action": "移動",
+      "destination": "docs/plans/rendering/metal/backend-plan.md",
+      "destinations": [
+        "docs/plans/rendering/metal/backend-plan.md"
+      ],
+      "distill": ".claude/rules/40-platform-safety.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-patch-system.md",
+      "bytes": 29898,
+      "lines": 564,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/gameplay/patch-system.md",
+      "destinations": [
+        "docs/architecture/gameplay/patch-system.md"
+      ],
+      "distill": ".claude/rules/10-code-boundaries.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-performance.md",
+      "bytes": 8890,
+      "lines": 124,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/performance.md",
+      "destinations": [
+        "docs/architecture/performance.md"
+      ],
+      "distill": ".claude/rules/30-performance-threading.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-refactoring.md",
+      "bytes": 110631,
+      "lines": 1849,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/history/melonprime-refactoring.md",
+      "destinations": [
+        "docs/architecture/history/melonprime-refactoring.md"
+      ],
+      "distill": ".claude/rules/30-performance-threading.md"
+    },
+    {
+      "source": ".claude/rules/melonprime-srp-performance-contract.md",
+      "bytes": 3526,
+      "lines": 113,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/srp-performance-contract.md",
+      "destinations": [
+        "docs/architecture/srp-performance-contract.md"
+      ],
+      "distill": ".claude/rules/30-performance-threading.md"
+    },
+    {
+      "source": ".claude/rules/melonprime_macos_compute_renderer_restriction.md",
+      "bytes": 3060,
+      "lines": 61,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/features/rendering/macos-compute-renderer-restriction.md",
+      "destinations": [
+        "docs/features/rendering/macos-compute-renderer-restriction.md"
+      ],
+      "distill": ".claude/rules/40-platform-safety.md"
+    },
+    {
+      "source": ".claude/rules/mphcodex-reference.md",
+      "bytes": 6253,
+      "lines": 150,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/reverse-engineering/mphcodex-workflow.md",
+      "destinations": [
+        "docs/reverse-engineering/mphcodex-workflow.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/non-melonprime-upstream-diff.md",
+      "bytes": 10593,
+      "lines": 133,
+      "phase": "P6",
+      "action": "分割・アーカイブ",
+      "destination": "docs/archive/audits/upstream/non-melonprime-upstream-diff-2026-06-11.md",
+      "destinations": [
+        "docs/archive/audits/upstream/non-melonprime-upstream-diff-2026-06-11.md"
+      ],
+      "distill": ".claude/rules/10-code-boundaries.md"
+    },
+    {
+      "source": ".claude/rules/project-context.md",
+      "bytes": 5613,
+      "lines": 92,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/project-context.md",
+      "destinations": [
+        "docs/architecture/project-context.md"
+      ],
+      "distill": ".claude/rules/00-core.md"
+    },
+    {
+      "source": ".claude/rules/repo-architecture.md",
+      "bytes": 25727,
+      "lines": 354,
+      "phase": "P7",
+      "action": "分割・移動",
+      "destination": "docs/architecture/repository.md",
+      "destinations": [
+        "docs/architecture/repository.md"
+      ],
+      "distill": ".claude/rules/10-code-boundaries.md ＋ .claude/rules/40-platform-safety.md"
+    },
+    {
+      "source": ".claude/rules/completed/README.md",
+      "bytes": 1060,
+      "lines": 12,
+      "phase": "P5",
+      "action": "移動・再生成",
+      "destination": "docs/archive/plans/refactoring/README.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-phase-2a-implementation-results.md",
+      "bytes": 2675,
+      "lines": 71,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-phase-2a-implementation-results.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-phase-2a-implementation-results.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-v2.md",
+      "bytes": 38983,
+      "lines": 411,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v2.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v2.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-v2_.md",
+      "bytes": 1514,
+      "lines": 28,
+      "phase": "P6",
+      "action": "V2本文へ統合後削除",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v2.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v2.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-v3.md",
+      "bytes": 34094,
+      "lines": 402,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v3.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v3.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-v4.md",
+      "bytes": 30127,
+      "lines": 401,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v4.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v4.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan-v5.md",
+      "bytes": 36760,
+      "lines": 410,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v5.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan-v5.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/completed/melonprime-full-refactor-plan.md",
+      "bytes": 40939,
+      "lines": 427,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-full-refactor-plan.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-full-refactor-plan.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/CHANGELOG.md",
+      "bytes": 797,
+      "lines": 17,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/CHANGELOG.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/CHANGELOG.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/CURRENT_STATE_BASELINE.json",
+      "bytes": 831,
+      "lines": 13,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/current-state-baseline-develop_fixed.json",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/current-state-baseline-develop_fixed.json"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/CustomHudHelmetSpawnFlash.md",
+      "bytes": 2834,
+      "lines": 37,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/hud/custom-hud-helmet-spawn-flash.md",
+      "destinations": [
+        "docs/features/hud/custom-hud-helmet-spawn-flash.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeBattleFlowState.md",
+      "bytes": 4994,
+      "lines": 91,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/battle-flow-state.md",
+      "destinations": [
+        "docs/architecture/gameplay/battle-flow-state.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeDeclutterPhase5.md",
+      "bytes": 2474,
+      "lines": 43,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/refactoring/MelonPrimeDeclutterPhase5.md",
+      "destinations": [
+        "docs/archive/audits/refactoring/MelonPrimeDeclutterPhase5.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeHudPreviewDriftPhase3a.md",
+      "bytes": 4262,
+      "lines": 53,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/refactoring/MelonPrimeHudPreviewDriftPhase3a.md",
+      "destinations": [
+        "docs/archive/audits/refactoring/MelonPrimeHudPreviewDriftPhase3a.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md",
+      "bytes": 27989,
+      "lines": 718,
+      "phase": "P1",
+      "action": "生成先移動",
+      "destination": "docs/generated/hud/MelonPrimeHudPropSchemaPhase2a.md",
+      "destinations": [
+        "docs/generated/hud/MelonPrimeHudPropSchemaPhase2a.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeLiteralClassificationPhase2a.md",
+      "bytes": 1079,
+      "lines": 27,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/refactoring/MelonPrimeLiteralClassificationPhase2a.md",
+      "destinations": [
+        "docs/archive/audits/refactoring/MelonPrimeLiteralClassificationPhase2a.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeMigrationLedgerPhase4.md",
+      "bytes": 4446,
+      "lines": 50,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/refactoring/MelonPrimeMigrationLedgerPhase4.md",
+      "destinations": [
+        "docs/archive/audits/refactoring/MelonPrimeMigrationLedgerPhase4.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimePatchImmediateInputEdgeOverlay.md",
+      "bytes": 14649,
+      "lines": 395,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/patches/immediate-input-edge-overlay.md",
+      "destinations": [
+        "docs/architecture/gameplay/patches/immediate-input-edge-overlay.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimePatchInstantAimFollow.md",
+      "bytes": 1447,
+      "lines": 31,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/patches/instant-aim-follow.md",
+      "destinations": [
+        "docs/architecture/gameplay/patches/instant-aim-follow.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.md",
+      "bytes": 3590,
+      "lines": 123,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/patches/native-aim-delta-register-injection.md",
+      "destinations": [
+        "docs/architecture/gameplay/patches/native-aim-delta-register-injection.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimePatchNoPickingUpSpecificItems.md",
+      "bytes": 4305,
+      "lines": 140,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/patches/no-picking-up-specific-items.md",
+      "destinations": [
+        "docs/architecture/gameplay/patches/no-picking-up-specific-items.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimePatchShadowFreezeRuntimeHook.md",
+      "bytes": 3363,
+      "lines": 156,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/architecture/gameplay/patches/shadow-freeze-runtime-hook.md",
+      "destinations": [
+        "docs/architecture/gameplay/patches/shadow-freeze-runtime-hook.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeUpstreamIntegrationPhase6.md",
+      "bytes": 1378,
+      "lines": 38,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/refactoring/MelonPrimeUpstreamIntegrationPhase6.md",
+      "destinations": [
+        "docs/archive/audits/refactoring/MelonPrimeUpstreamIntegrationPhase6.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/MelonPrimeZoomInputMethods.md",
+      "bytes": 8721,
+      "lines": 264,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/features/input/zoom-input-methods.md",
+      "destinations": [
+        "docs/features/input/zoom-input-methods.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/README.md",
+      "bytes": 2655,
+      "lines": 20,
+      "phase": "P7",
+      "action": "削除・索引再生成",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/README_監査MD更新内容.md",
+      "bytes": 2954,
+      "lines": 69,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/audit-pack-index.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/audit-pack-index.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/melonprime-highres-fonts-v3-refactor-roadmap.md",
+      "bytes": 37138,
+      "lines": 927,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/refactoring/melonprime-highres-fonts-v3-refactor-roadmap.md",
+      "destinations": [
+        "docs/archive/plans/refactoring/melonprime-highres-fonts-v3-refactor-roadmap.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/melonprime-i18n-50lang-quality-audit.md",
+      "bytes": 12324,
+      "lines": 197,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/melonprime-i18n-50lang-quality-audit.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/melonprime-i18n-50lang-quality-audit.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/melonprime-translation-quality-audit.md",
+      "bytes": 4340,
+      "lines": 202,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/melonprime-translation-quality-audit.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/melonprime-translation-quality-audit.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/multilanguage_inc_audit.md",
+      "bytes": 3961,
+      "lines": 158,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/multilanguage_inc_audit.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/multilanguage_inc_audit.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/portuguese_menu_audit_report.md",
+      "bytes": 2477,
+      "lines": 109,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/portuguese_menu_audit_report.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/portuguese_menu_audit_report.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/release_quality_final_report.md",
+      "bytes": 2114,
+      "lines": 103,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/release_quality_final_report.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/release_quality_final_report.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/notes/toml_aim_sensitivity_shootscan_fix_report.md",
+      "bytes": 2919,
+      "lines": 111,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/audits/localization/2026-07/toml_aim_sensitivity_shootscan_fix_report.md",
+      "destinations": [
+        "docs/archive/audits/localization/2026-07/toml_aim_sensitivity_shootscan_fix_report.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/MelonPrime固有コード限定_修正計画.md",
+      "bytes": 34179,
+      "lines": 1192,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/plans/refactoring/melonprime-owned-code-only-plan.md",
+      "destinations": [
+        "docs/plans/refactoring/melonprime-owned-code-only-plan.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_compute_internal_resolution_msl_fix_instructions.md",
+      "bytes": 15244,
+      "lines": 261,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_compute_internal_resolution_msl_fix_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_compute_internal_resolution_msl_fix_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_flicker_black3d_full_fix_phased_plan.md",
+      "bytes": 68242,
+      "lines": 653,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_flicker_black3d_full_fix_phased_plan.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_flicker_black3d_full_fix_phased_plan.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_flicker_black3d_srp_best_practices_instructions.md",
+      "bytes": 31226,
+      "lines": 1047,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_flicker_black3d_srp_best_practices_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_flicker_black3d_srp_best_practices_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_internal_resolution_audit_and_next_instructions.md",
+      "bytes": 13638,
+      "lines": 403,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_internal_resolution_audit_and_next_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_internal_resolution_audit_and_next_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_internal_resolution_visibility_fix_instructions.md",
+      "bytes": 14689,
+      "lines": 472,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_internal_resolution_visibility_fix_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_internal_resolution_visibility_fix_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_phase8_execution_instructions.md",
+      "bytes": 13296,
+      "lines": 438,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_phase8_execution_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_phase8_execution_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_real_renderer_compute_reference_instructions.md",
+      "bytes": 13366,
+      "lines": 370,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_real_renderer_compute_reference_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_real_renderer_compute_reference_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_screen_layer_orientation_fix_instructions.md",
+      "bytes": 18487,
+      "lines": 461,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_screen_layer_orientation_fix_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_screen_layer_orientation_fix_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_tester_ui_exposure_audit_and_execution_instructions.md",
+      "bytes": 17565,
+      "lines": 629,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_tester_ui_exposure_audit_and_execution_instructions.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_tester_ui_exposure_audit_and_execution_instructions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/done/metal_tester_ui_perf_audit_and_execution_instructions_v2.md",
+      "bytes": 15085,
+      "lines": 428,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/done/metal_tester_ui_perf_audit_and_execution_instructions_v2.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/done/metal_tester_ui_perf_audit_and_execution_instructions_v2.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/kakuri/melonprime_metal_backend_implementation_guide_final_killswitch_separate_metal_preset.md",
+      "bytes": 56412,
+      "lines": 1950,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/plans/rendering/metal/specs/melonprime_metal_backend_implementation_guide_final_killswitch_separate_metal_preset.md",
+      "destinations": [
+        "docs/archive/plans/rendering/metal/specs/melonprime_metal_backend_implementation_guide_final_killswitch_separate_metal_preset.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/rules/plan/melonPrimeDS_upstream_ifdef_audit.md",
+      "bytes": 19029,
+      "lines": 666,
+      "phase": "P6",
+      "action": "分割・アーカイブ",
+      "destination": "docs/archive/audits/upstream/melonprime-ifdef-audit.md",
+      "destinations": [
+        "docs/archive/audits/upstream/melonprime-ifdef-audit.md"
+      ],
+      "distill": ".claude/rules/10-code-boundaries.md"
+    },
+    {
+      "source": ".claude/rules/plan/metal_compute_shader_phase7_execution.md",
+      "bytes": 33886,
+      "lines": 511,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/plans/rendering/metal/compute-shader-phase7-execution.md",
+      "destinations": [
+        "docs/plans/rendering/metal/compute-shader-phase7-execution.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/README.md",
+      "bytes": 2959,
+      "lines": 36,
+      "phase": "P7",
+      "action": "分割・旧ファイル削除",
+      "destination": "tools/README.md ＋ docs/development/README.md",
+      "destinations": [
+        "tools/README.md",
+        "docs/development/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/add-menu-language.md",
+      "bytes": 13492,
+      "lines": 220,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/localization/add-menu-language.md",
+      "destinations": [
+        "docs/development/localization/add-menu-language.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/apply-perf-baseline.py",
+      "bytes": 6814,
+      "lines": 201,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/perf/apply-perf-baseline.py",
+      "destinations": [
+        "tools/archive/perf/apply-perf-baseline.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-color-dialog-prefs.ps1",
+      "bytes": 2296,
+      "lines": 73,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-color-dialog-prefs.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-color-dialog-prefs.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-config-defaults.ps1",
+      "bytes": 5103,
+      "lines": 115,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-config-defaults.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-config-defaults.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-hud-key-parity.ps1",
+      "bytes": 15216,
+      "lines": 431,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-hud-key-parity.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-hud-key-parity.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-melonprime-all-new-language-coverage.py",
+      "bytes": 2300,
+      "lines": 56,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.py",
+      "destinations": [
+        "tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-melonprime-instance-state.ps1",
+      "bytes": 2104,
+      "lines": 55,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-melonprime-instance-state.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-melonprime-instance-state.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-melonprime-localization.py",
+      "bytes": 22202,
+      "lines": 614,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/ci/audits/localization/audit-melonprime-localization.py",
+      "destinations": [
+        "tools/ci/audits/localization/audit-melonprime-localization.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-melonprime-srp-performance.ps1",
+      "bytes": 2212,
+      "lines": 65,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-melonprime-srp-performance.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-melonprime-srp-performance.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-melonprime-thread-boundary.ps1",
+      "bytes": 1669,
+      "lines": 47,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-melonprime-thread-boundary.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-melonprime-thread-boundary.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-metroid-literal-budget.ps1",
+      "bytes": 2304,
+      "lines": 68,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-metroid-literal-budget.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-metroid-literal-budget.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/audit-platform-scatter-budget.ps1",
+      "bytes": 8964,
+      "lines": 224,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/audit-platform-scatter-budget.ps1",
+      "destinations": [
+        "tools/ci/audits/audit-platform-scatter-budget.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-linux-existing.sh",
+      "bytes": 249,
+      "lines": 5,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/linux/build-linux-existing.sh",
+      "destinations": [
+        "tools/build/linux/build-linux-existing.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos-dev-existing.command",
+      "bytes": 178,
+      "lines": 4,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/macos/build-macos-dev-existing.command",
+      "destinations": [
+        "tools/build/macos/build-macos-dev-existing.command"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos-dev-existing.sh",
+      "bytes": 465,
+      "lines": 17,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/macos/build-macos-dev-existing.sh",
+      "destinations": [
+        "tools/build/macos/build-macos-dev-existing.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos-dev.command",
+      "bytes": 162,
+      "lines": 4,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/macos/build-macos-dev.command",
+      "destinations": [
+        "tools/build/macos/build-macos-dev.command"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos-dev.sh",
+      "bytes": 599,
+      "lines": 17,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/macos/build-macos-dev.sh",
+      "destinations": [
+        "tools/build/macos/build-macos-dev.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos.md",
+      "bytes": 1971,
+      "lines": 82,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "docs/development/build/macos.md",
+      "destinations": [
+        "docs/development/build/macos.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-macos.sh",
+      "bytes": 2786,
+      "lines": 99,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/macos/build-macos.sh",
+      "destinations": [
+        "tools/build/macos/build-macos.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-mingw-existing.bat",
+      "bytes": 3743,
+      "lines": 101,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/windows/build-mingw-existing.bat",
+      "destinations": [
+        "tools/build/windows/build-mingw-existing.bat"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-mingw-existing_noCmakeRebuild.bat",
+      "bytes": 3347,
+      "lines": 98,
+      "phase": "P3",
+      "action": "重複削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-mingw.bat",
+      "bytes": 3448,
+      "lines": 93,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "tools/build/windows/build-mingw.bat",
+      "destinations": [
+        "tools/build/windows/build-mingw.bat"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/build-windows-mingw.md",
+      "bytes": 5822,
+      "lines": 115,
+      "phase": "P3",
+      "action": "移動",
+      "destination": "docs/development/build/windows-mingw.md",
+      "destinations": [
+        "docs/development/build/windows-mingw.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/check-inc-ownership.ps1",
+      "bytes": 6383,
+      "lines": 159,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/ci/audits/check-inc-ownership.ps1",
+      "destinations": [
+        "tools/ci/audits/check-inc-ownership.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/collect-perf-baseline.ps1",
+      "bytes": 1765,
+      "lines": 48,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/perf/collect-perf-baseline.ps1",
+      "destinations": [
+        "tools/perf/collect-perf-baseline.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/collect-perf-baseline.sh",
+      "bytes": 3657,
+      "lines": 120,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/perf/collect-perf-baseline.sh",
+      "destinations": [
+        "tools/perf/collect-perf-baseline.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/compare-perf-repro.py",
+      "bytes": 2829,
+      "lines": 89,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/perf/compare-perf-repro.py",
+      "destinations": [
+        "tools/perf/compare-perf-repro.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/custom-hud-runtime.md",
+      "bytes": 28539,
+      "lines": 332,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/hud/custom-hud-runtime.md",
+      "destinations": [
+        "docs/development/hud/custom-hud-runtime.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/generate-hud-prop-schema.py",
+      "bytes": 65556,
+      "lines": 1550,
+      "phase": "P1",
+      "action": "移動",
+      "destination": "tools/codegen/hud/generate-hud-prop-schema.py",
+      "destinations": [
+        "tools/codegen/hud/generate-hud-prop-schema.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/melonprime-i18n-handoff/SKILL.md",
+      "bytes": 1070,
+      "lines": 51,
+      "phase": "P6",
+      "action": "アーカイブ移動",
+      "destination": "docs/archive/i18n/melonprime-i18n-handoff.md",
+      "destinations": [
+        "docs/archive/i18n/melonprime-i18n-handoff.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/merge-upstream-melonds.md",
+      "bytes": 7412,
+      "lines": 159,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/git/merge-upstream-melonds.md",
+      "destinations": [
+        "docs/development/git/merge-upstream-melonds.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/perf-baseline-procedure.md",
+      "bytes": 5842,
+      "lines": 154,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/performance/baseline-procedure.md",
+      "destinations": [
+        "docs/development/performance/baseline-procedure.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/qt-menu-actions.md",
+      "bytes": 6430,
+      "lines": 135,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/ui/qt-menu-actions.md",
+      "destinations": [
+        "docs/development/ui/qt-menu-actions.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/release-notes.md",
+      "bytes": 7006,
+      "lines": 202,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/release/release-notes.md",
+      "destinations": [
+        "docs/development/release/release-notes.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/run-hud-golden.ps1",
+      "bytes": 544,
+      "lines": 16,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/testing/hud-golden/run-hud-golden.ps1",
+      "destinations": [
+        "tools/testing/hud-golden/run-hud-golden.ps1"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/run-hud-golden.sh",
+      "bytes": 389,
+      "lines": 11,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/testing/hud-golden/run-hud-golden.sh",
+      "destinations": [
+        "tools/testing/hud-golden/run-hud-golden.sh"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/settings-ui-and-edit-mode.md",
+      "bytes": 20591,
+      "lines": 303,
+      "phase": "P5",
+      "action": "移動",
+      "destination": "docs/development/ui/settings-and-edit-mode.md",
+      "destinations": [
+        "docs/development/ui/settings-and-edit-mode.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/summarize-melonprime-perf.py",
+      "bytes": 14120,
+      "lines": 385,
+      "phase": "P4",
+      "action": "移動",
+      "destination": "tools/perf/summarize-melonprime-perf.py",
+      "destinations": [
+        "tools/perf/summarize-melonprime-perf.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/README.md",
+      "bytes": 2173,
+      "lines": 42,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/README.md",
+      "destinations": [
+        "tools/archive/i18n/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-he-coverage.py",
+      "bytes": 2198,
+      "lines": 42,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-he-coverage.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-he-coverage.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase10.py",
+      "bytes": 5088,
+      "lines": 133,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase10.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase10.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase5a.py",
+      "bytes": 4242,
+      "lines": 107,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase5a.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase5a.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase5b.py",
+      "bytes": 4323,
+      "lines": 112,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase5b.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase5b.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase6.py",
+      "bytes": 5420,
+      "lines": 141,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase6.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase6.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase7.py",
+      "bytes": 4728,
+      "lines": 119,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase7.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase7.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase8.py",
+      "bytes": 4889,
+      "lines": 135,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase8.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase8.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-phase9.py",
+      "bytes": 5421,
+      "lines": 139,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-phase9.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-phase9.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass1.py",
+      "bytes": 3883,
+      "lines": 94,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass1.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass1.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass2.py",
+      "bytes": 5096,
+      "lines": 112,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass2.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass2.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass3.py",
+      "bytes": 6818,
+      "lines": 146,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass3.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass3.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass4.py",
+      "bytes": 5659,
+      "lines": 126,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass4.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass4.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass5.py",
+      "bytes": 5599,
+      "lines": 126,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass5.py",
+      "destinations": [
+        "tools/archive/i18n/audit-melonprime-i18n-qualityfix-pass5.py"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/i18n/audit-melonprime-i18n-qualityfix-pass6.py",
+      "bytes": 5599,
+      "lines": 126,
+      "phase": "P6",
+      "action": "重複削除",
+      "destination": "なし",
+      "destinations": [],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/v7-phase2/README.md",
+      "bytes": 1129,
+      "lines": 20,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/v7-phase2/README.md",
+      "destinations": [
+        "tools/archive/v7-phase2/README.md"
+      ],
+      "distill": "なし"
+    },
+    {
+      "source": ".claude/skills/archive/v7-phase2/verify-hud-side-panel-rows-migration.py",
+      "bytes": 11905,
+      "lines": 345,
+      "phase": "P6",
+      "action": "archive tool移動",
+      "destination": "tools/archive/v7-phase2/verify-hud-side-panel-rows-migration.py",
+      "destinations": [
+        "tools/archive/v7-phase2/verify-hud-side-panel-rows-migration.py"
+      ],
+      "distill": "なし"
+    }
+  ]
+}
