@@ -1,0 +1,45 @@
+{
+  "created_at": "2026-07-12T04:28:22.345019+00:00",
+  "entries": [
+    {
+      "path": ".claude/rules/notes/multilanguage_inc_audit.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/melonprime-translation-quality-audit.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/toml_aim_sensitivity_shootscan_fix_report.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/release_quality_final_report.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/portuguese_menu_audit_report.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/README_監査MD更新内容.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/CHANGELOG.md",
+      "existed": false,
+      "sha256": null
+    },
+    {
+      "path": ".claude/rules/notes/CURRENT_STATE_BASELINE.json",
+      "existed": false,
+      "sha256": null
+    }
+  ]
+}
