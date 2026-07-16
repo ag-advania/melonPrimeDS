@@ -392,6 +392,20 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VK_NO_PROTOTYPES=1)
     target_link_libraries(sapphire_frame_latch_core PRIVATE volk::volk volk::volk_headers)
     target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_latch_core>)
+
+    add_library(sapphire_frame_queue_core OBJECT
+        SapphireGenerated/SapphireFrameQueueCore.cpp)
+    target_include_directories(sapphire_frame_queue_core PRIVATE
+        "${CMAKE_BINARY_DIR}/generated"
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
+        "${CMAKE_SOURCE_DIR}/src")
+    target_compile_definitions(sapphire_frame_queue_core PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    target_link_libraries(sapphire_frame_queue_core PRIVATE volk::volk volk::volk_headers)
+    target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_queue_core>)
 endif()
 
 add_subdirectory("../../net"

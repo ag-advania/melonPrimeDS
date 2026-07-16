@@ -1,0 +1,80 @@
+{
+  "upstreamTag": "0.7.0.rc4",
+  "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
+  "generatedHeaderSha256": "6df4cab0d9a383b96c07efc2faeaa94785d447ea79bcca41b0d70dae512e45af",
+  "generatedCoreSha256": "965011a12a580de262e3f92ac61dc2b417cd0a9e3648fca4640de0becf109683",
+  "cppRegions": [
+    {
+      "start": 16,
+      "end": 20,
+      "label": "sanitize_policy"
+    },
+    {
+      "start": 22,
+      "end": 72,
+      "label": "get_render_frame"
+    },
+    {
+      "start": 74,
+      "end": 167,
+      "label": "get_present_frame"
+    },
+    {
+      "start": 169,
+      "end": 235,
+      "label": "get_present_candidate"
+    },
+    {
+      "start": 237,
+      "end": 246,
+      "label": "get_reusable_previous_frame"
+    },
+    {
+      "start": 248,
+      "end": 256,
+      "label": "recycle_render_frame"
+    },
+    {
+      "start": 258,
+      "end": 310,
+      "label": "commit_presented_frame"
+    },
+    {
+      "start": 312,
+      "end": 351,
+      "label": "defer_presented_frame"
+    },
+    {
+      "start": 421,
+      "end": 442,
+      "label": "push_rendered_frame"
+    },
+    {
+      "start": 444,
+      "end": 450,
+      "label": "discard_rendered_frame"
+    },
+    {
+      "start": 452,
+      "end": 483,
+      "label": "request_presentation_resync"
+    },
+    {
+      "start": 485,
+      "end": 505,
+      "label": "request_fast_forward_transition"
+    },
+    {
+      "start": 554,
+      "end": 561,
+      "label": "take_stats_snapshot"
+    },
+    {
+      "start": 563,
+      "end": 642,
+      "label": "queue_helpers"
+    }
+  ],
+  "headerStateMemberStart": 115,
+  "headerStateMemberEnd": 124
+}
