@@ -1509,4 +1509,4 @@ Vulkan 2D pipelineをSapphire exactと判断できる。
 | S75-12 | `8d979bb4c` | done | Build production melonPrimeDS.exe on Windows MinGW |
 | S75-13 | `93bfedc23` | done | Expand Sapphire parity workflow paths to all integration sources |
 | S75-14 | `4820f90d6` | done | Verify generation manifest and upstream region hashes read-only |
-| S75-15 | pending | in progress | Vulkan cold-start, renderer-switch and fullscreen lifecycle smoke tests |
+| S75-15 | `46c090060` | done | Vulkan cold-start, renderer-switch and fullscreen lifecycle smoke tests |
