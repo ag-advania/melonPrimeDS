@@ -1,5 +1,10 @@
 # 変更履歴
 
+## 2026-07-16
+
+- `develop_fixed` 向けに `CURRENT_STATE_BASELINE.json` を更新
+- `AllLanguagesNaturalTranslation` / `AllLanguagesNaturalTranslation_Phase2` 適用後の3翻訳ファイル blob SHA を反映
+
 ## 2026-07-12
 
 - 古い中間ZIPの監査結果を現行ブランチの状態と分離
