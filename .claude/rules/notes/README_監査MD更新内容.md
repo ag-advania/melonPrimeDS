@@ -1,8 +1,8 @@
 # MelonPrimeDS ローカライズ監査MD 改訂版インデックス
 
-改訂日: 2026-07-12
+改訂日: 2026-07-16
 対象リポジトリ: `ag-advania/melonPrimeDS`
-対象ブランチ: `highres_fonts_v3`
+対象ブランチ: `develop_fixed`
 
 ## 目的
 
@@ -25,13 +25,13 @@
 
 ```text
 MelonPrimeTranslations.inc
-89d99dfb0b268e6d470bafe41cc9fa80a81b1eff
+51ebc321f2819d3c4b32d234da957f267b59fb5c
 
 MelonPrimeObjectTranslations.inc
-ed0ebe46f34c9c320836ab1e22882b87624a1e98
+6e7b1be2f40029d084346e70de2406a1c2077fbe
 
 MelonPrimeLocalizationMelondsDialogs.inc
-bf982d3d4333c9acfc8dec3a14ace98f139d8e49
+d4b67028e6f51b3c3680c5ddcf9605fefc515603
 ```
 
 ## 改訂対象
