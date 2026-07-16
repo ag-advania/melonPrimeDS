@@ -39,21 +39,16 @@ class SapphireGpu2DLifecycleParityTests(unittest.TestCase):
         self.assertIn("TryGetSapphireGpu2DState", gpu_h)
         self.assertIn("Sapphire2D", gpu_h)
         self.assertIn("Sapphire2D = std::make_unique<SapphireGpu2DState>", gpu_cpp)
+        self.assertIn("SapphireGPU2DCore::GPU2D::Unit GPU2D_A", gpu_h)
+        self.assertIn("GPU2D_Renderer", gpu_h)
 
-    def test_gpu2d_events_forwarded_via_adapter(self):
-        adapter = read_repo("src/MelonPrimeSapphireGpu2DAdapter.cpp")
+    def test_gpu2d_events_use_canonical_units(self):
         gpu_cpp = read_repo("src/GPU.cpp")
 
-        for symbol in (
-            "ForwardRegisterWrite8",
-            "ForwardWindowCheck",
-            "ForwardVBlank",
-            "ForwardVBlankEnd",
-        ):
-            self.assertIn(symbol, adapter)
-
-        self.assertIn("ForwardVBlankEnd", gpu_cpp)
-        self.assertIn("ForwardVBlank", gpu_cpp)
+        self.assertIn("GPU2D_A.CheckWindows", gpu_cpp)
+        self.assertIn("GPU2D_A.VBlank()", gpu_cpp)
+        self.assertIn("GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B)", gpu_cpp)
+        self.assertNotIn("MelonPrimeSapphireGpu2DAdapter", gpu_cpp)
 
     def test_physical_screen_publication_without_screenswap_remap(self):
         soft = read_repo("src/GPU_Soft.cpp")

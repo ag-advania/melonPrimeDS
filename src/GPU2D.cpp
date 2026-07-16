@@ -21,9 +21,6 @@
 #include "NDS.h"
 #include "GPU.h"
 #include "GPU3D.h"
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include "MelonPrimeSapphireGpu2DAdapter.h"
-#endif
 
 namespace melonDS
 {
@@ -263,9 +260,6 @@ u32 GPU2D::Read32(u32 addr)
 
 void GPU2D::Write8(u32 addr, u8 val)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite8(GPU, Num, addr, val);
-#endif
     switch (addr & 0x00000FFF)
     {
     case 0x000:
@@ -370,9 +364,6 @@ void GPU2D::Write8(u32 addr, u8 val)
 
 void GPU2D::Write16(u32 addr, u16 val)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite16(GPU, Num, addr, val);
-#endif
     switch (addr & 0x00000FFF)
     {
     case 0x000:
@@ -506,9 +497,6 @@ void GPU2D::Write16(u32 addr, u16 val)
 
 void GPU2D::Write32(u32 addr, u32 val)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    MelonPrimeSapphireGpu2DAdapter::ForwardRegisterWrite32(GPU, Num, addr, val);
-#endif
     switch (addr & 0x00000FFF)
     {
     case 0x000:

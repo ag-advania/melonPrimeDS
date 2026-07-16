@@ -39,8 +39,10 @@ GLRenderer::GLRenderer(melonDS::NDS& nds, bool compute)
     AuxInputBuffer[0] = new u16[256 * 256];
     AuxInputBuffer[1] = new u16[256 * 192];
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     Rend2D_A = std::make_unique<GLRenderer2D>(GPU.GPU2D_A, *this);
     Rend2D_B = std::make_unique<GLRenderer2D>(GPU.GPU2D_B, *this);
+#endif
 
     // TODO, eventually: figure out a nicer way to support different 3D renderers?
     IsCompute = compute;
@@ -229,6 +231,7 @@ bool GLRenderer::Init()
     CapDownInputLayerULoc = glGetUniformLocation(CapDownShader, "uInputLayer");
 
 
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     auto rend2DA = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
     if (!rend2DA->InitShaders()) return false;
     auto rend2DB = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
@@ -236,6 +239,7 @@ bool GLRenderer::Init()
 
     if (!Rend2D_A->Init()) return false;
     if (!Rend2D_B->Init()) return false;
+#endif
     if (!Rend3D->Init()) return false;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -275,8 +279,13 @@ GLRenderer::~GLRenderer()
     glDeleteBuffers(1, &FPConfigUBO);
     glDeleteBuffers(1, &CaptureConfigUBO);
 
-    auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
-    rend2D->DeleteShaders();
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
+        rend2D->DeleteShaders();
+    }
+#endif
 }
 
 void GLRenderer::Reset()
@@ -297,8 +306,13 @@ void GLRenderer::Reset()
     LastCapLine = 0;
     Aux0VRAMCap = -1;
 
-    Rend2D_A->Reset();
-    Rend2D_B->Reset();
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        Rend2D_A->Reset();
+        Rend2D_B->Reset();
+    }
+#endif
     Rend3D->Reset();
 }
 
@@ -312,10 +326,15 @@ void GLRenderer::PostSavestate()
 {
     Reset();
 
-    auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
-    rend2D->PostSavestate();
-    rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
-    rend2D->PostSavestate();
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
+        rend2D->PostSavestate();
+        rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
+        rend2D->PostSavestate();
+    }
+#endif
 }
 
 
@@ -323,11 +342,16 @@ void GLRenderer::SetRenderSettings(RendererSettings& settings)
 {
     SetScaleFactor(settings.ScaleFactor);
 
-    auto rend2d = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
-    rend2d->SetScaleFactor(settings.ScaleFactor);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        auto rend2d = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
+        rend2d->SetScaleFactor(settings.ScaleFactor);
 
-    rend2d = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
-    rend2d->SetScaleFactor(settings.ScaleFactor);
+        rend2d = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
+        rend2d->SetScaleFactor(settings.ScaleFactor);
+    }
+#endif
 
     if (IsCompute)
     {
@@ -420,8 +444,13 @@ void GLRenderer::DrawScanline(u32 line)
     }
 
     NeedPartialRender = need_render;
-    Rend2D_A->DrawScanline(line);
-    Rend2D_B->DrawScanline(line);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        Rend2D_A->DrawScanline(line);
+        Rend2D_B->DrawScanline(line);
+    }
+#endif
 
     if (need_render && (line > 0))
     {
@@ -515,8 +544,13 @@ void GLRenderer::DrawScanline(u32 line)
 
 void GLRenderer::DrawSprites(u32 line)
 {
-    Rend2D_A->DrawSprites(line);
-    Rend2D_B->DrawSprites(line);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        Rend2D_A->DrawSprites(line);
+        Rend2D_B->DrawSprites(line);
+    }
+#endif
 }
 
 
@@ -614,8 +648,13 @@ void GLRenderer::RenderScreen(int ystart, int yend)
 
 void GLRenderer::VBlank()
 {
-    Rend2D_A->VBlank();
-    Rend2D_B->VBlank();
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        Rend2D_A->VBlank();
+        Rend2D_B->VBlank();
+    }
+#endif
 
     RenderScreen(LastLine, 192);
 
@@ -832,12 +871,20 @@ void GLRenderer::DoCapture(int ystart, int yend)
 
 void GLRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
-    auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
-    rend2D->LayerConfigDirty = true;
-    rend2D->SpriteConfigDirty = true;
-    rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
-    rend2D->LayerConfigDirty = true;
-    rend2D->SpriteConfigDirty = true;
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+    if (Rend2D_A)
+    {
+        auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
+        rend2D->LayerConfigDirty = true;
+        rend2D->SpriteConfigDirty = true;
+        rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_B.get());
+        rend2D->LayerConfigDirty = true;
+        rend2D->SpriteConfigDirty = true;
+    }
+#endif
+    (void)bank;
+    (void)start;
+    (void)len;
 }
 
 void GLRenderer::DownscaleCapture(int width, int height, int layer)

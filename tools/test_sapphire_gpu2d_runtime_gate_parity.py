@@ -16,7 +16,7 @@ def read_repo(path: str) -> str:
 
 
 class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
-    def test_native_rend2d_created_in_vulkan_build(self):
+    def test_vulkan_build_skips_native_rend2d(self):
         soft = read_repo("src/GPU_Soft.cpp")
 
         constructor = re.search(
@@ -27,11 +27,13 @@ class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
         )
         self.assertIsNotNone(constructor)
         body = constructor.group(0)
-        self.assertIn("Rend2D_A = std::make_unique<SoftRenderer2D>", body)
-        self.assertIn("Rend2D_B = std::make_unique<SoftRenderer2D>", body)
-        self.assertNotRegex(body, r"#else\s*\n\s*Rend2D_A")
+        self.assertRegex(
+            body,
+            r"#if !defined\(MELONPRIME_DS\) \|\| !defined\(MELONPRIME_ENABLE_VULKAN\)"
+            r"[\s\S]*Rend2D_A = std::make_unique<SoftRenderer2D>",
+        )
 
-    def test_sapphire_drawscanline_gated_by_active_renderer(self):
+    def test_sapphire_drawscanline_uses_canonical_gpu_units(self):
         soft = read_repo("src/GPU_Soft.cpp")
 
         draw = re.search(
@@ -43,7 +45,9 @@ class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
         self.assertIsNotNone(draw)
         body = draw.group(0)
         self.assertIn("IsActiveForRendering", body)
-        self.assertIn("Rend2D_A->DrawScanline", body)
+        self.assertIn("&GPU.GPU2D_A", body)
+        self.assertIn("&GPU.GPU2D_B", body)
+        self.assertNotIn("SyncUnitFromGPU2D", body)
 
     def test_use_structured_vulkan2d_is_null_safe(self):
         sapphire = read_repo("src/SapphireGPU2DCore/GPU2D_Soft.cpp")
@@ -53,7 +57,7 @@ class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
             sapphire,
         )
 
-    def test_set_power_cnt_syncs_sapphire_units(self):
+    def test_set_power_cnt_updates_canonical_units_only(self):
         gpu = read_repo("src/GPU.cpp")
         set_power = re.search(
             r"void GPU::SetPowerCnt\(u32 val\) noexcept\s*\{[\s\S]*?^}",
@@ -62,20 +66,16 @@ class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
         )
         self.assertIsNotNone(set_power)
         body = set_power.group(0)
-        self.assertIn("Sapphire2D->UnitA.SetEnabled", body)
-        self.assertIn("Sapphire2D->UnitB.SetEnabled", body)
+        self.assertIn("GPU2D_A.SetEnabled", body)
+        self.assertIn("GPU2D_B.SetEnabled", body)
+        self.assertNotIn("Sapphire2D->UnitA", body)
 
-    def test_vblank_forwarded_once_from_gpu(self):
-        soft = read_repo("src/GPU_Soft.cpp")
-        adapter = read_repo("src/MelonPrimeSapphireGpu2DAdapter.cpp")
+    def test_vblank_routed_on_canonical_gpu_units(self):
+        gpu = read_repo("src/GPU.cpp")
 
-        vblank = re.search(
-            r"void SoftRenderer::VBlank\(\)\s*\{[^}]*\}",
-            soft,
-        )
-        self.assertIsNotNone(vblank)
-        self.assertNotIn("ForwardVBlank", vblank.group(0))
-        self.assertIn("IsActiveForRendering", adapter)
+        self.assertIn("GPU2D_A.VBlank()", gpu)
+        self.assertIn("GPU2D_B.VBlank()", gpu)
+        self.assertIn("GPU2D_Renderer->VBlankEnd(&GPU2D_A, &GPU2D_B)", gpu)
 
     def test_renderer_replacement_invalidates_framebuffer_bindings(self):
         gpu_h = read_repo("src/GPU.h")
@@ -116,12 +116,14 @@ class SapphireGpu2DRuntimeGateParityTests(unittest.TestCase):
         self.assertIn("IsActiveForRendering", body)
         self.assertIn("VulkanFrameSerial == 0", body)
 
-    def test_savestate_load_seeds_complete_unit_state(self):
+    def test_gpu_owns_gpu2d_renderer_and_unit_types(self):
+        gpu_h = read_repo("src/GPU.h")
         gpu = read_repo("src/GPU.cpp")
-        unit_sync = read_repo("src/SapphireGPU2DCore/UnitSync.h")
 
-        self.assertIn("SeedCompleteUnitFromNative", unit_sync)
-        self.assertIn("SeedCompleteUnitFromNative", gpu)
+        self.assertIn("SapphireGPU2DCore::GPU2D::Unit GPU2D_A", gpu_h)
+        self.assertIn("GPU2D_Renderer", gpu_h)
+        self.assertIn("std::make_unique<SapphireGPU2DCore::GPU2D::SoftRenderer>", gpu)
+        self.assertNotIn("UnitSync", gpu)
 
     def test_keep_current_skips_stale_init_failure_check(self):
         emu = read_repo("src/frontend/qt_sdl/EmuThread.cpp")

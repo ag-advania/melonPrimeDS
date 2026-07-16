@@ -24,7 +24,8 @@ class SapphireVulkanLifecycleS68ParityTests(unittest.TestCase):
 
         self.assertIn("ActivateSapphireVulkan2D", gpu_h)
         self.assertIn("DeactivateSapphireVulkan2D", gpu_h)
-        self.assertIn("SeedCompleteUnitFromNative", gpu)
+        self.assertIn("GPU2D_Renderer", gpu_h)
+        self.assertIn("TryGetGpu2DSoftRenderer", gpu_h)
         self.assertIn("SapphireRenderingActive", state)
         self.assertIn("ActiveSapphireRendererGeneration", state)
         self.assertIn("ActivateSapphireVulkan2D(rendererGeneration)", emu)
