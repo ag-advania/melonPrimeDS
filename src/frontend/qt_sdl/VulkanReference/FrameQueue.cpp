@@ -8,7 +8,9 @@
 #include <functional>
 #include <memory>
 
+#if !defined(MELONPRIME_SAPPHIRE_REBUILD)
 #include "DesktopFrameLifetimeTracker.h"
+#endif
 #include "SapphireGenerated/SapphireFrameQueueCore.h"
 
 u32 FrameQueue::membershipCountForFrame(

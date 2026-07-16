@@ -89,8 +89,8 @@ def transform_upstream_body(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"nds_->GPU\.Framebuffer\[([^\]]+)\]\[([^\]]+)\]\.get\(\)",
-        r"nds_->GPU.Framebuffer[\1][\2]",
+        r"nds_->GPU\.Framebuffer\[([^\]]+)\]\[([^\]]+)\](?!\.get\(\))",
+        r"nds_->GPU.Framebuffer[\1][\2].get()",
         text,
     )
     text = text.replace(

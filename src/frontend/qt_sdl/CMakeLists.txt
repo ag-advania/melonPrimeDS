@@ -348,6 +348,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         if (MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR)
             target_compile_definitions(melonDS PRIVATE MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR=1)
         endif()
+        if (MELONPRIME_SAPPHIRE_REBUILD_FEATURES)
+            target_compile_definitions(melonDS PRIVATE MELONPRIME_SAPPHIRE_REBUILD_FEATURES=1)
+        endif()
     endif()
     if (WIN32)
         target_compile_definitions(melonDS PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
@@ -382,8 +385,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanPreparedContentStats.h
         SapphireVulkanFrameLatch.cpp
         SapphireVulkanFrameLatch.h
-        DesktopFrameLifetimeTracker.cpp
-        DesktopFrameLifetimeTracker.h
         DesktopVulkanResourceLease.cpp
         DesktopVulkanResourceLease.h
         MelonPrimeSapphireFrameInput.cpp
@@ -393,6 +394,11 @@ if (MELONPRIME_VULKAN_ACTIVE)
         VulkanReference/VulkanOutput.cpp
         VulkanReference/VulkanSurfacePresenter.cpp
         VulkanReference/FrameQueue.cpp)
+    if (NOT MELONPRIME_SAPPHIRE_REBUILD)
+        target_sources(melonDS PRIVATE
+            DesktopFrameLifetimeTracker.cpp
+            DesktopFrameLifetimeTracker.h)
+    endif()
     if (APPLE)
         target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceHost.mm)
         set_source_files_properties(
@@ -434,22 +440,24 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_link_libraries(sapphire_frame_queue_core PRIVATE volk::volk volk::volk_headers)
     target_sources(melonDS PRIVATE $<TARGET_OBJECTS:sapphire_frame_queue_core>)
 
-    add_executable(sapphire_frame_queue_differential_test
-        tests/FrameQueueDifferentialHarness.cpp
-        VulkanReference/FrameQueue.cpp
-        DesktopFrameLifetimeTracker.cpp)
-    target_include_directories(sapphire_frame_queue_differential_test PRIVATE
-        "${CMAKE_BINARY_DIR}/generated"
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
-        "${CMAKE_SOURCE_DIR}/src")
-    target_compile_definitions(sapphire_frame_queue_differential_test PRIVATE
-        MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1
-        VK_NO_PROTOTYPES=1)
-    target_link_libraries(sapphire_frame_queue_differential_test PRIVATE volk::volk volk::volk_headers)
-    target_sources(sapphire_frame_queue_differential_test PRIVATE
-        $<TARGET_OBJECTS:sapphire_frame_queue_core>)
+    if (NOT MELONPRIME_SAPPHIRE_REBUILD)
+        add_executable(sapphire_frame_queue_differential_test
+            tests/FrameQueueDifferentialHarness.cpp
+            VulkanReference/FrameQueue.cpp
+            DesktopFrameLifetimeTracker.cpp)
+        target_include_directories(sapphire_frame_queue_differential_test PRIVATE
+            "${CMAKE_BINARY_DIR}/generated"
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/VulkanReference"
+            "${CMAKE_SOURCE_DIR}/src")
+        target_compile_definitions(sapphire_frame_queue_differential_test PRIVATE
+            MELONPRIME_DS
+            MELONPRIME_ENABLE_VULKAN=1
+            VK_NO_PROTOTYPES=1)
+        target_link_libraries(sapphire_frame_queue_differential_test PRIVATE volk::volk volk::volk_headers)
+        target_sources(sapphire_frame_queue_differential_test PRIVATE
+            $<TARGET_OBJECTS:sapphire_frame_queue_core>)
+    endif()
 endif()
 
 add_subdirectory("../../net"

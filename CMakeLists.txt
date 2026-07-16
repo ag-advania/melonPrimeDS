@@ -42,11 +42,11 @@ option(MELONPRIME_DIAGNOSTIC_SYMBOLS
 option(MELONPRIME_SAPPHIRE_REBUILD
     "Pure Sapphire desktop rebuild: vendor-first production path, no Desktop heuristics"
     OFF)
-if (MELONPRIME_SAPPHIRE_REBUILD)
-    set(MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN ON CACHE BOOL "" FORCE)
-endif()
 option(MELONPRIME_SAPPHIRE_REBUILD_SOLID_COLOR
     "Rebuild phase 2: present solid-color swapchain clears only (no Sapphire frame)"
+    OFF)
+option(MELONPRIME_SAPPHIRE_REBUILD_FEATURES
+    "Rebuild phase 5: re-enable Desktop HUD/layout/features on rebuild path"
     OFF)
 
 option(USE_VCPKG "Use vcpkg for dependency packages" OFF)

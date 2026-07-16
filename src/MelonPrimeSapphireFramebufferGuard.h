@@ -18,6 +18,7 @@ public:
     void reset(std::size_t pixelCount);
     void release() noexcept;
     explicit operator bool() const noexcept { return payload_ != nullptr; }
+    operator std::uint32_t*() const noexcept { return payload_; }
     std::uint32_t* data() const noexcept { return payload_; }
     std::uint32_t* get() const noexcept { return payload_; }
     void check(const char* site, int bufferIndex, int planeIndex) const noexcept;

@@ -1,12 +1,60 @@
 #include "DesktopFrameLifetimeTracker.h"
 
 #include <algorithm>
+#include <array>
+#include <mutex>
+#include <queue>
 
 #include "SapphireGenerated/SapphireFrameQueueCore.h"
 #include "VulkanPerfStats.h"
 
 namespace MelonDSAndroid
 {
+
+namespace
+{
+
+void resetQueueContainersLocked(SapphireFrameQueueCore& core)
+{
+    std::unique_lock lock(core.frameLock);
+    core.presentQueue.clear();
+    core.previousFrame = nullptr;
+    core.pendingPresentFrame = nullptr;
+    core.suppressPreviousFrameReuse = false;
+    std::queue<Frame*> emptyQueue;
+    std::swap(core.freeQueue, emptyQueue);
+}
+
+void sanitizeCoreFreeQueueLocked(SapphireFrameQueueCore& core)
+{
+    std::unique_lock lock(core.frameLock);
+    std::queue<Frame*> sanitized;
+    std::array<bool, FRAME_QUEUE_SIZE> seen{};
+    while (!core.freeQueue.empty())
+    {
+        Frame* frame = core.freeQueue.front();
+        core.freeQueue.pop();
+        if (frame == nullptr)
+            continue;
+
+        const std::size_t index = static_cast<std::size_t>(frame - &core.frames_[0]);
+        if (index >= FRAME_QUEUE_SIZE || seen[index])
+            continue;
+
+        if (frame->queueState() != FrameQueueState::Free
+            || frame->historyReferenceCount() != 0
+            || frame->presentationReferenceCount() != 0)
+        {
+            continue;
+        }
+
+        seen[index] = true;
+        sanitized.push(frame);
+    }
+    core.freeQueue = std::move(sanitized);
+}
+
+} // namespace
 
 bool DesktopFrameLifetimeTracker::transitionFrameLocked(
     Frame* frame,
@@ -88,7 +136,7 @@ void DesktopFrameLifetimeTracker::enqueueRetiredFrameLocked(
 
 void DesktopFrameLifetimeTracker::sanitizeFreeQueueLocked(SapphireFrameQueueCore& core)
 {
-    core.sanitizeFreeQueueLocked();
+    sanitizeCoreFreeQueueLocked(core);
 }
 
 void DesktopFrameLifetimeTracker::detachPresentationOwnershipLocked(
@@ -143,7 +191,7 @@ void DesktopFrameLifetimeTracker::onFastForwardPresentationTransition(
 
 void DesktopFrameLifetimeTracker::rebuildFreeQueueLocked(SapphireFrameQueueCore& core)
 {
-    core.rebuildFreeQueueFromStates();
+    core.rebuildFreeQueueLocked();
 }
 
 void DesktopFrameLifetimeTracker::setActiveGenerations(
@@ -421,7 +469,7 @@ void DesktopFrameLifetimeTracker::onValidateRender(
 
 void DesktopFrameLifetimeTracker::onClear(SapphireFrameQueueCore& core)
 {
-    core.resetQueueContainers();
+    resetQueueContainersLocked(core);
     core.stats = FrameQueueStats{};
 
     for (auto& frame : core.frames_)
