@@ -28,6 +28,8 @@ public:
     void undoRenderAcquisition(Frame* frame, SapphireFrameQueueCore& core);
     void onPresentationAcquired(Frame* frame, SapphireFrameQueueCore& core);
     void onPresentationCommitted(Frame* frame, SapphireFrameQueueCore& core);
+    void onPresentationResync(SapphireFrameQueueCore& core);
+    void onFastForwardPresentationTransition(SapphireFrameQueueCore& core);
     void onPresentationDeferred(Frame* frame, SapphireFrameQueueCore& core);
     void onPushRendered(Frame* frame, SapphireFrameQueueCore& core);
     void onRecycleRender(Frame* frame, SapphireFrameQueueCore& core);
@@ -43,6 +45,8 @@ private:
         FrameQueueStats& stats);
     void retireFrameLocked(Frame* frame, SapphireFrameQueueCore& core);
     void rebuildFreeQueueLocked(SapphireFrameQueueCore& core);
+    void sanitizeFreeQueueLocked(SapphireFrameQueueCore& core);
+    void detachPresentationOwnershipLocked(SapphireFrameQueueCore& core);
     bool frameMatchesActiveGenerations(const Frame* frame) const;
     void discardGenerationMismatches(SapphireFrameQueueCore& core);
 

@@ -104,12 +104,12 @@ void FrameQueue::discardRenderedFrame(Frame* frame)
 
 void FrameQueue::requestPresentationResync()
 {
-    impl_->core.requestPresentationResync();
+    impl_->lifetime.onPresentationResync(impl_->core);
 }
 
 void FrameQueue::requestFastForwardPresentationTransition()
 {
-    impl_->core.requestFastForwardPresentationTransition();
+    impl_->lifetime.onFastForwardPresentationTransition(impl_->core);
 }
 
 void FrameQueue::setActiveGenerations(u64 rendererGeneration, u64 surfaceGeneration)

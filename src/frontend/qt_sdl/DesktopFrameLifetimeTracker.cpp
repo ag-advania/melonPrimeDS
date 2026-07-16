@@ -76,6 +76,84 @@ void DesktopFrameLifetimeTracker::retireFrameLocked(Frame* frame, SapphireFrameQ
         core.freeQueue.push(frame);
 }
 
+void DesktopFrameLifetimeTracker::sanitizeFreeQueueLocked(SapphireFrameQueueCore& core)
+{
+    std::queue<Frame*> sanitized;
+    std::array<bool, FRAME_QUEUE_SIZE> seen{};
+    while (!core.freeQueue.empty())
+    {
+        Frame* frame = core.freeQueue.front();
+        core.freeQueue.pop();
+        if (frame == nullptr)
+            continue;
+
+        const std::size_t index = static_cast<std::size_t>(frame - &core.frames_[0]);
+        if (index >= FRAME_QUEUE_SIZE || seen[index])
+            continue;
+
+        if (frame->queueState() != FrameQueueState::Free
+            || frame->historyReferenceCount() != 0
+            || frame->presentationReferenceCount() != 0)
+        {
+            continue;
+        }
+
+        seen[index] = true;
+        sanitized.push(frame);
+    }
+    core.freeQueue = std::move(sanitized);
+}
+
+void DesktopFrameLifetimeTracker::detachPresentationOwnershipLocked(
+    SapphireFrameQueueCore& core)
+{
+    auto detachFrame = [&](Frame* frame)
+    {
+        if (frame == nullptr)
+            return;
+
+        frame->queuedAtNs = 0;
+        if (frame->historyReferenceCount() != 0
+            || frame->presentationReferenceCount() != 0)
+        {
+            if (frame->queueState() != FrameQueueState::HistoryReferenced)
+            {
+                transitionFrameLocked(
+                    frame,
+                    frame->queueState(),
+                    FrameQueueState::HistoryReferenced,
+                    core.stats);
+            }
+            return;
+        }
+
+        if (frame->queueState() != FrameQueueState::Free)
+            transitionFrameLocked(frame, frame->queueState(), FrameQueueState::Free, core.stats);
+    };
+
+    for (Frame* frame : core.presentQueue)
+        detachFrame(frame);
+    detachFrame(core.pendingPresentFrame);
+    detachFrame(core.previousFrame);
+}
+
+void DesktopFrameLifetimeTracker::onPresentationResync(SapphireFrameQueueCore& core)
+{
+    detachPresentationOwnershipLocked(core);
+    core.requestPresentationResync();
+    sanitizeFreeQueueLocked(core);
+    core.updateBacklogStatsLocked();
+}
+
+void DesktopFrameLifetimeTracker::onFastForwardPresentationTransition(
+    SapphireFrameQueueCore& core)
+{
+    detachPresentationOwnershipLocked(core);
+    core.requestFastForwardPresentationTransition();
+    sanitizeFreeQueueLocked(core);
+    core.updateBacklogStatsLocked();
+}
+
 void DesktopFrameLifetimeTracker::rebuildFreeQueueLocked(SapphireFrameQueueCore& core)
 {
     std::queue<Frame*> emptyQueue;
