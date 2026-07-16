@@ -29,6 +29,8 @@ STRUCTS = (
 
 REGION_FUNCTION_NAMES = {
     "prepare_frame_for_presentation": "VulkanOutput::prepareFrameForPresentation",
+    "update_prepared_capture3d_source": "VulkanOutput::updatePreparedCapture3dSource",
+    "build_composition_inputs": "VulkanOutput::buildCompositionInputs",
 }
 
 

@@ -3,7 +3,9 @@
   "upstreamFrontendCommit": "2c10e59d7209d354e90d9ef4228330bac3f6e794",
   "upstreamRelativeCpp": "app/src/main/cpp/renderer/VulkanOutput.cpp",
   "compositionRegions": [
-    {"start": 2279, "end": 3543, "label": "prepare_frame_for_presentation"}
+    {"start": 2279, "end": 3543, "label": "prepare_frame_for_presentation"},
+    {"start": 3544, "end": 3957, "label": "update_prepared_capture3d_source"},
+    {"start": 4022, "end": 4147, "label": "build_composition_inputs"}
   ],
   "platformHookFunctions": [
     "VulkanOutput::waitBeforePackedBufferOverwrite",
