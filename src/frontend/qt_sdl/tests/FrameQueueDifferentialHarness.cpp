@@ -36,7 +36,8 @@ bool test_complete_lifetime_render_present_parity()
     if (coreRender == nullptr)
         return false;
     lifetime.onRenderAcquired(coreRender, core);
-    lifetime.onPushRendered(coreRender, core);
+    if (!lifetime.onPushRendered(coreRender, core))
+        return false;
     core.pushRenderedFrame(coreRender, policy);
     Frame* corePresent = core.getPresentCandidate(policy, std::nullopt);
 

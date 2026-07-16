@@ -120,7 +120,8 @@ void FrameQueue::validateRenderFrame(
 
 void FrameQueue::pushRenderedFrame(Frame* frame, const FrameQueuePolicy& policy)
 {
-    impl_->lifetime.onPushRendered(frame, impl_->core);
+    if (!impl_->lifetime.onPushRendered(frame, impl_->core))
+        return;
     impl_->core.pushRenderedFrame(frame, policy);
 }
 

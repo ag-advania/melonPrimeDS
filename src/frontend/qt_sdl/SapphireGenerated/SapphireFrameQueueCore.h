@@ -38,6 +38,9 @@ public:
     void requestPresentationResync();
     void requestFastForwardPresentationTransition();
     FrameQueueStats takeStatsSnapshotAndReset();
+    void rebuildFreeQueueFromStates();
+    void sanitizeFreeQueueLocked();
+    void resetQueueContainers();
 
     [[nodiscard]] std::array<Frame, FRAME_QUEUE_SIZE>& frames() { return frames_; }
     [[nodiscard]] const std::array<Frame, FRAME_QUEUE_SIZE>& frames() const { return frames_; }

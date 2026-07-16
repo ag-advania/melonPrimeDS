@@ -73,35 +73,22 @@ void DesktopFrameLifetimeTracker::retireFrameLocked(Frame* frame, SapphireFrameQ
     }
 
     if (transitionFrameLocked(frame, frame->queueState(), FrameQueueState::Free, core.stats))
-        core.freeQueue.push(frame);
+        return;
+}
+
+void DesktopFrameLifetimeTracker::enqueueRetiredFrameLocked(
+    Frame* frame,
+    SapphireFrameQueueCore& core)
+{
+    if (frame == nullptr || frame->queueState() != FrameQueueState::Free)
+        return;
+
+    core.discardRenderedFrame(frame);
 }
 
 void DesktopFrameLifetimeTracker::sanitizeFreeQueueLocked(SapphireFrameQueueCore& core)
 {
-    std::queue<Frame*> sanitized;
-    std::array<bool, FRAME_QUEUE_SIZE> seen{};
-    while (!core.freeQueue.empty())
-    {
-        Frame* frame = core.freeQueue.front();
-        core.freeQueue.pop();
-        if (frame == nullptr)
-            continue;
-
-        const std::size_t index = static_cast<std::size_t>(frame - &core.frames_[0]);
-        if (index >= FRAME_QUEUE_SIZE || seen[index])
-            continue;
-
-        if (frame->queueState() != FrameQueueState::Free
-            || frame->historyReferenceCount() != 0
-            || frame->presentationReferenceCount() != 0)
-        {
-            continue;
-        }
-
-        seen[index] = true;
-        sanitized.push(frame);
-    }
-    core.freeQueue = std::move(sanitized);
+    core.sanitizeFreeQueueLocked();
 }
 
 void DesktopFrameLifetimeTracker::detachPresentationOwnershipLocked(
@@ -156,18 +143,7 @@ void DesktopFrameLifetimeTracker::onFastForwardPresentationTransition(
 
 void DesktopFrameLifetimeTracker::rebuildFreeQueueLocked(SapphireFrameQueueCore& core)
 {
-    std::queue<Frame*> emptyQueue;
-    std::swap(core.freeQueue, emptyQueue);
-
-    for (auto& frame : core.frames_)
-    {
-        if (frame.queueState() == FrameQueueState::Free
-            && frame.historyReferenceCount() == 0
-            && frame.presentationReferenceCount() == 0)
-        {
-            core.freeQueue.push(&frame);
-        }
-    }
+    core.rebuildFreeQueueFromStates();
 }
 
 void DesktopFrameLifetimeTracker::setActiveGenerations(
@@ -211,6 +187,7 @@ void DesktopFrameLifetimeTracker::discardGenerationMismatches(SapphireFrameQueue
         core.pendingPresentFrame = nullptr;
         core.stats.GenerationMismatchDropped++;
         retireFrameLocked(frame, core);
+        enqueueRetiredFrameLocked(frame, core);
     }
 
     if (core.previousFrame != nullptr
@@ -220,6 +197,7 @@ void DesktopFrameLifetimeTracker::discardGenerationMismatches(SapphireFrameQueue
         core.previousFrame = nullptr;
         core.stats.GenerationMismatchDropped++;
         retireFrameLocked(frame, core);
+        enqueueRetiredFrameLocked(frame, core);
     }
 
     auto iterator = core.presentQueue.begin();
@@ -235,6 +213,7 @@ void DesktopFrameLifetimeTracker::discardGenerationMismatches(SapphireFrameQueue
         iterator = core.presentQueue.erase(iterator);
         core.stats.GenerationMismatchDropped++;
         retireFrameLocked(frame, core);
+        enqueueRetiredFrameLocked(frame, core);
     }
     core.updateBacklogStatsLocked();
 }
@@ -281,6 +260,7 @@ void DesktopFrameLifetimeTracker::undoRenderAcquisition(
     core.stats.ReferenceBlockedReuse++;
     core.stats.RenderFramesDroppedByPolicy++;
     retireFrameLocked(frame, core);
+    enqueueRetiredFrameLocked(frame, core);
 }
 
 void DesktopFrameLifetimeTracker::onPresentationAcquired(
@@ -349,21 +329,23 @@ void DesktopFrameLifetimeTracker::onPresentationDeferred(
     }
 }
 
-void DesktopFrameLifetimeTracker::onPushRendered(Frame* frame, SapphireFrameQueueCore& core)
+bool DesktopFrameLifetimeTracker::onPushRendered(Frame* frame, SapphireFrameQueueCore& core)
 {
     if (frame == nullptr || frame->queueState() != FrameQueueState::Rendering)
     {
         core.stats.StateTransitionFailures++;
-        return;
+        return false;
     }
     if (!frameMatchesActiveGenerations(frame))
     {
         core.stats.GenerationMismatchDropped++;
         core.stats.RenderFramesDiscarded++;
         retireFrameLocked(frame, core);
-        return;
+        enqueueRetiredFrameLocked(frame, core);
+        return false;
     }
     transitionFrameLocked(frame, FrameQueueState::Rendering, FrameQueueState::Ready, core.stats);
+    return true;
 }
 
 void DesktopFrameLifetimeTracker::onRecycleRender(Frame* frame, SapphireFrameQueueCore& core)
@@ -439,10 +421,7 @@ void DesktopFrameLifetimeTracker::onValidateRender(
 
 void DesktopFrameLifetimeTracker::onClear(SapphireFrameQueueCore& core)
 {
-    core.presentQueue.clear();
-    core.previousFrame = nullptr;
-    core.pendingPresentFrame = nullptr;
-    core.suppressPreviousFrameReuse = false;
+    core.resetQueueContainers();
     core.stats = FrameQueueStats{};
 
     for (auto& frame : core.frames_)

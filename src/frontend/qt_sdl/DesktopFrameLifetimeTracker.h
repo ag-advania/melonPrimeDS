@@ -31,7 +31,7 @@ public:
     void onPresentationResync(SapphireFrameQueueCore& core);
     void onFastForwardPresentationTransition(SapphireFrameQueueCore& core);
     void onPresentationDeferred(Frame* frame, SapphireFrameQueueCore& core);
-    void onPushRendered(Frame* frame, SapphireFrameQueueCore& core);
+    bool onPushRendered(Frame* frame, SapphireFrameQueueCore& core);
     void onRecycleRender(Frame* frame, SapphireFrameQueueCore& core);
     void onDiscardRendered(Frame* frame, SapphireFrameQueueCore& core);
     void onValidateRender(Frame* frame, int requiredWidth, int requiredHeight, FrameBackend backend);
@@ -44,6 +44,7 @@ private:
         FrameQueueState next,
         FrameQueueStats& stats);
     void retireFrameLocked(Frame* frame, SapphireFrameQueueCore& core);
+    void enqueueRetiredFrameLocked(Frame* frame, SapphireFrameQueueCore& core);
     void rebuildFreeQueueLocked(SapphireFrameQueueCore& core);
     void sanitizeFreeQueueLocked(SapphireFrameQueueCore& core);
     void detachPresentationOwnershipLocked(SapphireFrameQueueCore& core);
