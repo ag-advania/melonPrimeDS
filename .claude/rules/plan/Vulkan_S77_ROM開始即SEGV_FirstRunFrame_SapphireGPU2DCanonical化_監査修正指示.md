@@ -1438,4 +1438,5 @@ Sapphire GPU2D dependency closureをそのまま採用する方が、
 
 | Phase | Commit | Status | Summary |
 |-------|--------|--------|---------|
-| S77-1 | (pending) | in progress | First-frame trace logging |
+| S77-1 | `cc6d45de1` | done | `[FirstVulkanFrame]`/`[VulkanProducerBegin]`/`[FirstGpuFrame]`/`[FirstGpu2D]` trace budget |
+| S77-2 | (pending) | in progress | Windows minidump + symbolized stack |

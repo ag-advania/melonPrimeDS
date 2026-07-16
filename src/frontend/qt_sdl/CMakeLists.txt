@@ -7,6 +7,8 @@ set(MELONPRIME_WINDOWS_ONLY_SOURCES
     MelonPrimeRawHotkeyVkBinding.cpp
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
+    MelonPrimeWindowsCrashHandler.cpp
+    MelonPrimeWindowsCrashHandler.h
 )
 
 set(MELONPRIME_MACOS_ONLY_SOURCES
@@ -435,7 +437,7 @@ add_subdirectory("../../net"
 target_link_libraries(melonDS PRIVATE net-utils)
 
 if (WIN32)
-    target_link_libraries(melonDS PUBLIC opengl32)
+    target_link_libraries(melonDS PUBLIC opengl32 dbghelp)
 
 
     target_sources(melonDS PRIVATE

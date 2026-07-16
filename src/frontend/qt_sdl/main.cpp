@@ -75,6 +75,9 @@
 
 #include "EmuInstance.h"
 #include "ArchiveUtil.h"
+#ifdef _WIN32
+#include "MelonPrimeWindowsCrashHandler.h"
+#endif
 #include "CameraManager.h"
 #include "MPInterface.h"
 #include "Net.h"
@@ -400,6 +403,9 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 
 int main(int argc, char** argv)
 {
+#ifdef _WIN32
+    MelonPrime::installWindowsCrashHandler();
+#endif
     sysTimer.start();
     srand(time(nullptr));
 
