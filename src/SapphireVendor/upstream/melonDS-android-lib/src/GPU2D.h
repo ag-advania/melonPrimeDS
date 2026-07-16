@@ -16,8 +16,23 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
-#ifndef GPU2D_H
-#define GPU2D_H
+// S81-1: renamed from the upstream guard "GPU2D_H" to
+// MELONPRIME_SAPPHIRE_VENDOR_UPSTREAM_GPU2D_H. This file is not tracked by
+// sapphire_vendor_manifest.json (no SHA pin), so the rename is safe, but the
+// reason it exists is load-bearing: the upstream guard name collided
+// byte-for-byte with src/GPU2D.h's own "GPU2D_H", so whichever header a given
+// translation unit happened to include first silently suppressed the other
+// via the preprocessor's include-guard mechanism. Because src/GPU2D.h
+// declares Renderer2D directly under "namespace melonDS" while this upstream
+// copy nests it one level deeper under "namespace melonDS::GPU2D", losing
+// src/GPU2D.h to the guard collision broke unqualified "Renderer2D" lookup
+// in src/GPU.h wherever this exact-pinned GPU2D_Soft.cpp was compiled
+// (MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=ON) — confirmed via a full clean
+// build (S81-1): "error: 'Renderer2D' was not declared in this scope" at
+// GPU.h:1161-1162. Purely a preprocessor-token rename; the actual C++ code
+// below is unchanged from upstream.
+#ifndef MELONPRIME_SAPPHIRE_VENDOR_UPSTREAM_GPU2D_H
+#define MELONPRIME_SAPPHIRE_VENDOR_UPSTREAM_GPU2D_H
 
 #include "types.h"
 #include "Savestate.h"

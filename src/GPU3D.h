@@ -378,6 +378,29 @@ public:
     virtual bool NeedsShaderCompile() { return false; }
     virtual void ShaderCompileStep(int& current, int& count) {}
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Upstream Sapphire's Renderer3D exposes a stored `const bool Accelerated`
+    // set via constructor injection (see GPU2D_Soft.cpp's
+    // `renderer3d.Accelerated` read). This repo's Renderer3D instead derives
+    // the same concept from the virtual UsesStructured2DMetadata() override
+    // (GPU3D::IsRendererAccelerated() already does exactly this). Exposing it
+    // as a lazily-evaluated field-like proxy — instead of adding a bool
+    // constructor parameter to every Renderer3D subclass (SoftRenderer,
+    // GLRenderer3D, MetalRenderer3D, the Vulkan renderers, ...) — lets the
+    // exact-pinned vendor GPU2D_Soft.cpp
+    // (MELONPRIME_SAPPHIRE_GPU2D_EXACT_PIN=ON) read `renderer3d.Accelerated`
+    // completely unmodified while still reflecting the most-derived
+    // renderer's override. It must stay lazy (evaluated at use, not at
+    // Renderer3D's own constructor) because virtual dispatch during base
+    // construction would only ever reach this base class's own definition.
+    struct AcceleratedProxy
+    {
+        const Renderer3D* Owner;
+        operator bool() const noexcept { return Owner->UsesStructured2DMetadata(); }
+    };
+    AcceleratedProxy Accelerated { this };
+#endif
+
 protected:
     melonDS::GPU& GPU;
     melonDS::GPU3D& GPU3D;
