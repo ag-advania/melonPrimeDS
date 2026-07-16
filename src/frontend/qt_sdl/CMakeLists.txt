@@ -21,6 +21,8 @@ set(MELONPRIME_LINUX_ONLY_SOURCES
 
 set(SOURCES_QT_SDL
     main.cpp
+    MelonPrimeRunIdentity.cpp
+    MelonPrimeRunIdentity.h
     main_shaders.h
     Screen.cpp
     Window.cpp
@@ -439,7 +441,7 @@ add_subdirectory("../../net"
 target_link_libraries(melonDS PRIVATE net-utils)
 
 if (WIN32)
-    target_link_libraries(melonDS PUBLIC opengl32 dbghelp)
+    target_link_libraries(melonDS PUBLIC opengl32 dbghelp advapi32)
 
 
     target_sources(melonDS PRIVATE

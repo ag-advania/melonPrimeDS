@@ -9,6 +9,7 @@
 #include <ctime>
 
 #include "MelonPrimeBuildInfo.h"
+#include "MelonPrimeRunIdentity.h"
 #include "MelonPrimeWindowsCrashHandler.h"
 
 #pragma comment(lib, "dbghelp.lib")
@@ -20,9 +21,71 @@ constexpr DWORD kMaxStackFrames = 64;
 
 void writeBuildIdentity(FILE* out)
 {
+    std::fprintf(out, "buildIdentity.runId=%llu\n", static_cast<unsigned long long>(MelonPrime::runId()));
     std::fprintf(out, "buildIdentity.gitCommit=%s\n", MELONPRIME_GIT_COMMIT);
+    std::fprintf(out, "buildIdentity.gitCommitFull=%s\n", MELONPRIME_GIT_COMMIT_FULL);
+    std::fprintf(out, "buildIdentity.gitBranch=%s\n", MELONPRIME_GIT_BRANCH);
+    std::fprintf(out, "buildIdentity.gitDirty=%d\n", MELONPRIME_GIT_DIRTY);
+    std::fprintf(out, "buildIdentity.binarySha256=%s\n", MelonPrime::binarySha256Hex());
     std::fprintf(out, "buildIdentity.buildTz=%s\n", MELONPRIMEDS_BUILD_TZ);
     std::fprintf(out, "buildIdentity.timestamp=%lld\n", static_cast<long long>(std::time(nullptr)));
+}
+
+void writeExceptionModuleInfo(FILE* out, EXCEPTION_RECORD* record)
+{
+    if (record == nullptr || record->ExceptionAddress == nullptr)
+        return;
+
+    HMODULE module = nullptr;
+    char modulePath[MAX_PATH]{};
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(record->ExceptionAddress),
+            &module)
+        || module == nullptr)
+    {
+        std::fprintf(out, "exception.moduleLookupFailed address=%p\n", record->ExceptionAddress);
+        return;
+    }
+
+    const DWORD pathLength = GetModuleFileNameA(module, modulePath, MAX_PATH);
+    const auto moduleBase = reinterpret_cast<uintptr_t>(module);
+    const auto exceptionAddress = reinterpret_cast<uintptr_t>(record->ExceptionAddress);
+    const uintptr_t exceptionRva = exceptionAddress - moduleBase;
+
+    std::fprintf(
+        out,
+        "exception.moduleBase=0x%p exceptionRva=0x%llX modulePath=%s\n",
+        module,
+        static_cast<unsigned long long>(exceptionRva),
+        pathLength > 0 ? modulePath : "unknown");
+}
+
+void writeRegisters(FILE* out, CONTEXT* context)
+{
+    if (context == nullptr)
+        return;
+
+#if defined(_M_X64) || defined(__x86_64__)
+    std::fprintf(
+        out,
+        "registers.rip=0x%016llX rsp=0x%016llX rbp=0x%016llX rax=0x%016llX\n",
+        static_cast<unsigned long long>(context->Rip),
+        static_cast<unsigned long long>(context->Rsp),
+        static_cast<unsigned long long>(context->Rbp),
+        static_cast<unsigned long long>(context->Rax));
+#elif defined(_M_IX86) || defined(__i386__)
+    std::fprintf(
+        out,
+        "registers.eip=0x%08lX esp=0x%08lX ebp=0x%08lX eax=0x%08lX\n",
+        context->Eip,
+        context->Esp,
+        context->Ebp,
+        context->Eax);
+#else
+    std::fprintf(out, "registers.unsupportedArchitecture\n");
+#endif
 }
 
 bool writeMiniDump(EXCEPTION_POINTERS* exceptionInfo, const char* dumpPath)
@@ -163,21 +226,20 @@ void writeSymbolizedStack(FILE* out, CONTEXT* context)
 
 void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
 {
-    const std::time_t now = std::time(nullptr);
     char dumpPath[MAX_PATH]{};
     char reportPath[MAX_PATH]{};
     std::snprintf(
         dumpPath,
         sizeof(dumpPath),
-        "melonPrimeDS-%s-%lld.dmp",
+        "melonPrimeDS-%s-run-%llu.dmp",
         MELONPRIME_GIT_COMMIT,
-        static_cast<long long>(now));
+        static_cast<unsigned long long>(MelonPrime::runId()));
     std::snprintf(
         reportPath,
         sizeof(reportPath),
-        "melonPrimeDS-%s-%lld.crash.txt",
+        "melonPrimeDS-%s-run-%llu.crash.txt",
         MELONPRIME_GIT_COMMIT,
-        static_cast<long long>(now));
+        static_cast<unsigned long long>(MelonPrime::runId()));
 
     FILE* report = std::fopen(reportPath, "w");
     if (report != nullptr)
@@ -191,8 +253,12 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
                 exceptionInfo->ExceptionRecord->ExceptionCode,
                 exceptionInfo->ExceptionRecord->ExceptionAddress,
                 GetCurrentThreadId());
+            writeExceptionModuleInfo(report, exceptionInfo->ExceptionRecord);
             if (exceptionInfo->ContextRecord != nullptr)
+            {
+                writeRegisters(report, exceptionInfo->ContextRecord);
                 writeSymbolizedStack(report, exceptionInfo->ContextRecord);
+            }
         }
         std::fclose(report);
     }
@@ -202,7 +268,8 @@ void writeCrashArtifacts(EXCEPTION_POINTERS* exceptionInfo)
 
     std::fprintf(
         stderr,
-        "[MelonPrimeCrash] buildIdentity=%s minidump=%s report=%s\n",
+        "[MelonPrimeCrash] runId=%llu buildIdentity=%s minidump=%s report=%s\n",
+        static_cast<unsigned long long>(MelonPrime::runId()),
         MELONPRIME_GIT_COMMIT,
         dumpPath,
         reportPath);

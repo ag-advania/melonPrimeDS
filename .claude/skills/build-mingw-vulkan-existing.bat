@@ -58,6 +58,12 @@ if errorlevel 1 goto cache_off
 if not exist "%TEMP%" mkdir "%TEMP%" >nul 2>&1
 
 echo [melonprime-build-vulkan-existing] Vulkan-enabled cache verified.
+echo [melonprime-build-vulkan-existing] Refreshing git build identity via CMake configure.
+cmake -S "%REPO_ROOT_WIN%" -B "%REPO_ROOT_WIN%\build\release-mingw-x86_64" >nul
+if errorlevel 1 (
+    echo [melonprime-build-vulkan-existing] CMake configure failed while refreshing build identity.
+    exit /b 1
+)
 echo [melonprime-build-vulkan-existing] GCC LTO make: %MAKE%
 call "%BASE_SCRIPT%" %*
 exit /b %ERRORLEVEL%

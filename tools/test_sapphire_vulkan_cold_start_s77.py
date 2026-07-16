@@ -116,6 +116,17 @@ class SapphireVulkanColdStartS77Tests(unittest.TestCase):
                 shutil.rmtree(backup_portable)
 
         combined = proc.stdout + proc.stderr
+        build_match = re.search(r"\[BuildIdentity\] commit=(\S+)", combined)
+        self.assertIsNotNone(build_match, msg="missing [BuildIdentity] log line")
+        assert build_match is not None
+        self.assertNotEqual(
+            build_match.group(1),
+            "unknown",
+            msg="build identity commit must not be unknown",
+        )
+        run_match = re.search(r"\[RunIdentity\] runId=(\d+)", combined)
+        self.assertIsNotNone(run_match, msg="missing [RunIdentity] log line")
+
         if proc.returncode != 0:
             if is_crash_exit_code(proc.returncode):
                 self.fail(

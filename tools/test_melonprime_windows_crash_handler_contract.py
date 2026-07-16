@@ -19,7 +19,9 @@ class MelonPrimeWindowsCrashHandlerContract(unittest.TestCase):
         self.assertIn("MiniDumpWriteDump", text)
         self.assertIn("StackWalk64", text)
         self.assertIn("MELONPRIME_GIT_COMMIT", text)
-        self.assertIn(".crash.txt", text)
+        self.assertIn("runId=", text)
+        self.assertIn("exception.moduleBase=", text)
+        self.assertIn("-run-%llu.crash.txt", text)
 
     def test_main_installs_handler(self) -> None:
         text = MAIN_CPP.read_text(encoding="utf-8")

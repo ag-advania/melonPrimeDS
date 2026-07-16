@@ -78,6 +78,7 @@
 #ifdef _WIN32
 #include "MelonPrimeWindowsCrashHandler.h"
 #endif
+#include "MelonPrimeRunIdentity.h"
 #include "CameraManager.h"
 #include "MPInterface.h"
 #include "Net.h"
@@ -403,6 +404,7 @@ static int runMelonPrimeOutputLeaseTest(const QString& outputPath)
 
 int main(int argc, char** argv)
 {
+    MelonPrime::initRunIdentity();
 #ifdef _WIN32
     MelonPrime::installWindowsCrashHandler();
 #endif
