@@ -197,7 +197,18 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def write_outputs(header_text: str, cpp_text: str, vendor_manifest: dict) -> dict:
+def upstream_region_hashes(vendor_manifest: dict, android_root_path: Path) -> dict[str, str]:
+    cpp_path = android_root_path / vendor_manifest["upstreamRelativeCpp"]
+    cpp_lines = read_lines(cpp_path)
+    return {
+        region["label"]: sha256_bytes(
+            extract_line_range(cpp_lines, region["start"], region["end"]).encode("utf-8")
+        )
+        for region in vendor_manifest["cppRegions"]
+    }
+
+
+def write_outputs(header_text: str, cpp_text: str, vendor_manifest: dict, android_root_path: Path) -> dict:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     GENERATED_H.write_text(header_text, encoding="utf-8", newline="\n")
     GENERATED_CPP.write_text(cpp_text, encoding="utf-8", newline="\n")
@@ -207,6 +218,7 @@ def write_outputs(header_text: str, cpp_text: str, vendor_manifest: dict) -> dic
         "generatedHeaderSha256": sha256_bytes(header_text.encode("utf-8")),
         "generatedCoreSha256": sha256_bytes(cpp_text.encode("utf-8")),
         "cppRegions": vendor_manifest["cppRegions"],
+        "upstreamRegionSha256s": upstream_region_hashes(vendor_manifest, android_root_path),
         "headerStateMemberStart": vendor_manifest["headerStateMemberStart"],
         "headerStateMemberEnd": vendor_manifest["headerStateMemberEnd"],
     }
@@ -240,7 +252,7 @@ def generate_to_directory(
     output_dir: Path,
     vendor_manifest: dict,
     android_root_path: Path,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     header_path = android_root_path / vendor_manifest["upstreamRelativeHeader"]
     header_lines = read_lines(header_path)
     state_members = extract_state_members(
@@ -254,7 +266,21 @@ def generate_to_directory(
     out_cpp = output_dir / "SapphireFrameLatchCore.cpp"
     out_h.write_text(header_text, encoding="utf-8", newline="\n")
     out_cpp.write_text(cpp_text, encoding="utf-8", newline="\n")
-    return header_text, cpp_text
+    manifest = {
+        "upstreamTag": vendor_manifest["upstreamTag"],
+        "upstreamFrontendCommit": vendor_manifest["upstreamFrontendCommit"],
+        "generatedHeaderSha256": sha256_bytes(header_text.encode("utf-8")),
+        "generatedCoreSha256": sha256_bytes(cpp_text.encode("utf-8")),
+        "cppRegions": vendor_manifest["cppRegions"],
+        "upstreamRegionSha256s": upstream_region_hashes(vendor_manifest, android_root_path),
+        "headerStateMemberStart": vendor_manifest["headerStateMemberStart"],
+        "headerStateMemberEnd": vendor_manifest["headerStateMemberEnd"],
+    }
+    (output_dir / "GENERATION_MANIFEST.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return header_text, cpp_text, manifest
 
 
 def verify_read_only() -> int:
@@ -264,13 +290,19 @@ def verify_read_only() -> int:
 
     with tempfile.TemporaryDirectory(prefix="sapphire-latch-verify-") as temp_name:
         temp_dir = Path(temp_name)
-        header_text, cpp_text = generate_to_directory(
+        header_text, cpp_text, manifest = generate_to_directory(
             temp_dir,
             vendor_manifest,
             android_root_path,
         )
         compare_bytes(temp_dir / "SapphireFrameLatchCore.h", GENERATED_H)
         compare_bytes(temp_dir / "SapphireFrameLatchCore.cpp", GENERATED_CPP)
+        compare_bytes(temp_dir / "GENERATION_MANIFEST.json", GENERATION_MANIFEST)
+        if manifest["upstreamRegionSha256s"] != upstream_region_hashes(
+            vendor_manifest,
+            android_root_path,
+        ):
+            raise RuntimeError("upstream region sha256 mismatch")
 
     proc = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "diff", "--exit-code", "--", str(GENERATED_H), str(GENERATED_CPP)],
@@ -312,7 +344,7 @@ def main() -> int:
     )
     header_text = build_header(state_members)
     cpp_text = build_core_cpp(vendor_manifest, android_root_path)
-    manifest = write_outputs(header_text, cpp_text, vendor_manifest)
+    manifest = write_outputs(header_text, cpp_text, vendor_manifest, android_root_path)
     print(f"Wrote {OUTPUT_DIR}")
     print(f"generatedCoreSha256={manifest['generatedCoreSha256']}")
     return 0

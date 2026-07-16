@@ -15,6 +15,10 @@
       "label": "latch_member_methods"
     }
   ],
+  "upstreamRegionSha256s": {
+    "latch_free_function_closure": "8bcefb740602da5d2f48e02256df6b8aa732145a853a39c0e06622490ab9531b",
+    "latch_member_methods": "f3c328232591ed59f5659880a0ffa2242c17747d1f6885759467f74d1208b389"
+  },
   "headerStateMemberStart": 236,
   "headerStateMemberEnd": 268
 }
