@@ -36,6 +36,10 @@
 #include "MelonPrimeHudPropSchema.inc"
 #endif
 
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+#include "MelonPrimeMetalFeatureCheck.h"
+#endif
+
 using namespace std::string_literals;
 
 
@@ -65,7 +69,11 @@ namespace Config
         {"Instance*.Window*.Height", 384},
         {"Screen.VSyncInterval", 1},
     #ifdef MELONPRIME_DS
-        {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
+        {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults. macOS
+                                             // Metal builds override this
+                                             // first-run default in GetInt()
+                                             // below (PR-13) once the Metal
+                                             // baseline feature check passes.
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
     #else
         {"3D.Renderer", renderer3D_Software},
@@ -870,8 +878,23 @@ namespace Config
     int Table::GetInt(const std::string& path)
     {
         toml::value& tval = ResolvePath(path);
-        if (!tval.is_integer())
+        bool wasUnset = !tval.is_integer();
+        if (wasUnset)
             tval = FindDefault(path, 0, DefaultInts);
+
+    #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+        // PR-13: first-run-only override. Existing saved configs already
+        // took the tval.is_integer() branch above and are never touched
+        // here. New configs on a Metal-capable Mac start on Metal Raster
+        // (not MetalCompute); devices that fail the baseline feature probe
+        // stay on the regular melonPrimeDS OpenGL default.
+        if (wasUnset && PathPrefix.empty() && path == "3D.Renderer")
+        {
+            tval = MelonPrime::Metal::SupportsRequiredBaseline()
+                ? (int)renderer3D_Metal
+                : (int)renderer3D_OpenGL;
+        }
+    #endif
 
         int ret = (int)tval.as_integer();
 
@@ -897,8 +920,21 @@ namespace Config
     bool Table::GetBool(const std::string& path)
     {
         toml::value& tval = ResolvePath(path);
-        if (!tval.is_boolean())
+        bool wasUnset = !tval.is_boolean();
+        if (wasUnset)
             tval = FindDefault(path, false, DefaultBools);
+
+    #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+        // PR-13: mirrors the "3D.Renderer" override in GetInt() above --
+        // first-run only, and only when the Metal baseline probe passes.
+        // Metal doesn't use the GL context path, so new macOS Metal configs
+        // default Screen.UseGL to false alongside 3D.Renderer=renderer3D_Metal.
+        if (wasUnset && PathPrefix.empty() && path == "Screen.UseGL" &&
+            MelonPrime::Metal::SupportsRequiredBaseline())
+        {
+            tval = false;
+        }
+    #endif
 
         return tval.as_boolean();
     }

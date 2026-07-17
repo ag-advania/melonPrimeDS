@@ -18,7 +18,7 @@
 | PR-10 | radar native Metal | **完了（部分）** | （本コミット） | GL-native btmOverlay相当のcircle-mask fragment shaderでMetalTexture layer 1を直接sample。bottomImage memcpy撤廃。実ROM未実施 |
 | PR-11 | HUD primitive renderer | **完了（transitional tier）** | （本コミット） | 固定長Metal draw-command list導入（HUD/OSD/splash/radar quadを1つのencode loopで発行）。QPainterはHUD/OSD/splashのCPUラスタライズには残存（真のprimitive/glyph atlasは未実装、指示書の「at least」tierとして明示的にdocumented） |
 | PR-12 | glyph atlas／OSD／splash | **完了（部分: OSD／splashのみ）** | （本コミット） | splash logo／splashText／OSD toastを各々専用MetalTextureへキャッシュ化し、PR-11のHUD command list経由で個別quad描画。uiOverlayへのQPainter compositingは撤廃。custom HUD本体（ゲージ／クロスヘア等）のglyph atlas化は未着手（指示書の「splash+OSD at minimum」フォールバックを採用） |
-| PR-13 | macOS 初回 Metal 既定 | 未着手 | — | 完了A後 |
+| PR-13 | macOS 初回 Metal 既定 | **完了（部分）** | （本コミット） | 新規configのみ `3D.Renderer`/`Screen.UseGL` 既定をMetal probe結果でMetal Rasterへ切替。既存config・Compute既定・Soft/OpenGLビルドは不変。実ROM未実施 |
 | PR-14 | MSL asset／metallib | 未着手 | — | |
 | PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。ROM／TSan gate未 |
 
@@ -393,6 +393,47 @@ Metal textureへ移行する（フォールバックの「at minimum」を満た
   サイズ・タイミングが実際に正しいこと）
 - custom HUD本体のglyph atlas化（QPainter完全撤廃）— 別PRとして継続予定
 - TSan／Windows／Linux rebuild
+
+## PR-13 要約（2026-07-17）
+
+変更:
+
+- `Config.cpp`: `Table::GetInt("3D.Renderer")`／`Table::GetBool("Screen.UseGL")`に
+  `#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)`ブロックを追加。
+  既存の`tval.is_integer()`/`tval.is_boolean()`判定（＝既存保存済みconfigは
+  この分岐を通らない）はそのまま維持し、"今回初めて値が未設定だった"
+  （`wasUnset`）場合のみ`MelonPrime::Metal::SupportsRequiredBaseline()`を
+  参照して既定を上書きする
+  - probe PASS: `3D.Renderer = renderer3D_Metal`／`Screen.UseGL = false`
+  - probe FAIL（unsupported device）: 既存のmelonPrimeDS既定
+    （`renderer3D_OpenGL`／`Screen.UseGL`はそのまま）を維持
+- `DefaultInts`の`"3D.Renderer"`静的既定値自体は`renderer3D_OpenGL`のまま
+  （コメントでGetInt側のoverrideを明記）。Metal probe（`MTLCreateSystemDefaultDevice`
+  ＋pipeline smoke test）を静的初期化時に走らせないための意図的な選択
+  （probeの最初の呼び出しは`main.cpp`の`LogFeatureInfoOnce()`または
+  `Config::GetInt`/`GetBool`の実際の呼び出し時点＝`main()`開始後）
+- `renderer3D_MetalCompute`への既定変更は対象外（指示書どおり別判断）
+- Soft/OpenGLビルド（`MELONPRIME_ENABLE_METAL`未定義）は`#if`ガードにより
+  この分岐自体がコンパイルされず、挙動は完全に不変
+
+未変更（意図的）:
+
+- `MelonPrimeMetalFeatureCheck`の`SupportsRequiredBaseline()`ロジック自体
+  （既存のunsupported device→false判定をそのまま利用）
+- metallib／HUD／SoftRenderer
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF）PASS
+- `cmake --build build-mac-metal-force-disabled -j8` PASS
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 10/10 PASS
+
+未実施:
+
+- 実ROM／実機での新規config初回起動確認（Metal対応Mac／非対応Mac双方）
+- 既存configファイルを変更しないことの実機・自動テストでの確認
+  （コードレベルの`wasUnset`ガードのみで検証、実ファイルI/Oテスト未追加）
 
 ## PR-0 証拠要約（2026-07-17）
 
