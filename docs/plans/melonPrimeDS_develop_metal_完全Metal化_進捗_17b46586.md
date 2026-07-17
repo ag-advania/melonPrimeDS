@@ -8,8 +8,8 @@
 | PR-0 | 最新修正 validation gate | **完了（部分）** | `69993462` | macOS Intel Metal ON／OFF／FORCE_DISABLE PASS。TSan／Windows／Linux／実ROM未実施 |
 | PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
 | PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
-| PR-3 | native canonical capture storage | **完了（部分）** | （本コミット） | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
-| PR-4 | per-scanline／segment capture | 未着手 | — | |
+| PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
+| PR-4 | per-scanline／segment capture | **完了（部分）** | （本コミット） | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
 | PR-5 | capture Full-GPU cutover | 未着手 | — | |
 | PR-6 | normal readback 0 | 未着手 | — | |
 | PR-7 | SoftRenderer 継承撤廃 | 未着手 | — | M4/M5 後 |
@@ -52,6 +52,20 @@
 - EnhancedCaptureCache LRU
 - 実ROM／scale matrix pixel diff
 - PR-4 segment scheduler
+
+## PR-4 要約（2026-07-17）
+
+追加:
+
+- `RenderMetalFullGpuFrameSegmented`（A→B→Capture per segment）
+- line-range encode／2D render
+- CaptureCnt exclusion は維持（PR-5）
+
+未実施:
+
+- generation ticket／ping-pong
+- 実ROM same-frame feedback diff 0
+- CaptureCnt exclusion 撤廃
 
 ## PR-0 証拠要約（2026-07-17）
 

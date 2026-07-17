@@ -26,7 +26,8 @@ struct CaptureLineConfig
 struct CaptureDispatchConfig
 {
     uint scale;
-    uint3 pad0;
+    uint lineOffset;
+    uint2 pad0;
 };
 
 static inline float4 mp_unpack_rgba8(uint packed)
@@ -124,7 +125,7 @@ kernel void mp_metal_display_capture(
 {
     uint scale = max(dispatchConfig.scale, 1u);
     uint nativeX = gid.x;
-    uint nativeLine = gid.y;
+    uint nativeLine = gid.y + dispatchConfig.lineOffset;
     if (nativeX >= 256u || nativeLine >= 192u)
         return;
 
@@ -229,7 +230,8 @@ static_assert(sizeof(MetalCaptureLineConfigCpu) == 32);
 struct MetalCaptureDispatchConfigCpu
 {
     uint32_t Scale = 1;
-    uint32_t Pad[3] = {};
+    uint32_t LineOffset = 0;
+    uint32_t Pad[2] = {};
 };
 static_assert(sizeof(MetalCaptureDispatchConfigCpu) == 16);
 
@@ -700,8 +702,14 @@ void MetalRenderer::CaptureMetalDisplayCaptureLine(u32 line)
 
 bool MetalRenderer::EncodeMetalDisplayCapture(
     void* engineA2DTexture,
-    void* high3DTexture)
+    void* high3DTexture,
+    int startLine,
+    int endLine)
 {
+    if (startLine < 0) startLine = 0;
+    if (endLine > 192) endLine = 192;
+    if (startLine >= endLine)
+        return true;
     if (!CaptureState || !CaptureState->Ready)
         return false;
     if (!CaptureState->FrameSupported)
@@ -724,7 +732,7 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         [CaptureState->LineConfigBuffer contents]);
     uint32_t snapshot128Mask = 0;
     uint32_t snapshot256Mask = 0;
-    for (int line = 0; line < 192; line++)
+    for (int line = startLine; line < endLine; line++)
     {
         const auto& config = lines[line];
         if (!config.Enabled || config.SrcBCaptureLayer < 0)
@@ -791,6 +799,7 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
     MetalCaptureDispatchConfigCpu dispatchConfig = {};
     dispatchConfig.Scale =
         static_cast<uint32_t>(std::max(1, CaptureState->Scale));
+    dispatchConfig.LineOffset = static_cast<uint32_t>(startLine);
 
     [encoder setComputePipelineState:CaptureState->CapturePipeline];
     [encoder setBuffer:CaptureState->LineConfigBuffer offset:0 atIndex:0];
@@ -812,9 +821,11 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         1,
         CaptureState->CapturePipeline.maxTotalThreadsPerThreadgroup /
             threadWidth);
-    // Native-resolution dispatch; Scale is only used inside the kernel when
-    // sampling hi-res Engine A / 3D sources into RGB5551 authority.
-    [encoder dispatchThreads:MTLSizeMake(256, 192, 1)
+    // Native-resolution dispatch for [startLine, endLine).
+    [encoder dispatchThreads:MTLSizeMake(
+                256,
+                static_cast<NSUInteger>(endLine - startLine),
+                1)
            threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
     [encoder endEncoding];
 
@@ -841,7 +852,7 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
         std::array<int, 16> pendingIndex;
         pendingIndex.fill(-1);
-        for (int line = 0; line < 192; line++)
+        for (int line = startLine; line < endLine; line++)
         {
             const auto& config = lines[line];
             if (!config.Enabled)

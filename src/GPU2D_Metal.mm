@@ -549,6 +549,7 @@ struct MetalRenderer2D::Metal2DState
     uint32_t SnapshotFrameEpoch = 0xFFFFFFFFu;
     bool SnapshotBuffersReady = false;
     bool SegmentedRenderReady = false;
+    bool SegmentedFrameOutputCleared = false;
     bool LoggedSnapshotAllocation = false;
     // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: was a function-static in
     // GPU2D_MetalFullGpuMethods.inc's same-frame capture-hazard diagnostic,

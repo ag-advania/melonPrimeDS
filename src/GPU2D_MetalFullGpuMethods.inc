@@ -180,6 +180,7 @@ void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
         State->SpriteSnapshotValid.fill(0);
         State->LayerSnapshotLastLine = -1;
         State->SpriteSnapshotLastLine = -1;
+        State->SegmentedFrameOutputCleared = false;
         State->SnapshotFrameEpoch = frameEpoch;
     }
 
@@ -568,6 +569,21 @@ bool MetalSnapshotUsesCaptureTextures(
     }
     return false;
 }
+} // namespace
+
+std::array<uint8_t, 192> MetalRenderer2D::BuildSegmentBoundaryMask() const noexcept
+{
+    std::array<uint8_t, 192> mask {};
+    if (!State)
+        return mask;
+    const Metal2DSegmentList segments = MetalBuild2DSegments(*State);
+    for (uint32_t i = 0; i < segments.Count; i++)
+    {
+        const int start = segments.Items[i].Start;
+        if (start >= 0 && start < 192)
+            mask[static_cast<size_t>(start)] = 1;
+    }
+    return mask;
 }
 
 bool MetalRenderer2D::SegmentedFrameComplete() const noexcept
@@ -601,10 +617,16 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     void* high3DTexture,
     void* capture128Texture,
     void* capture256Texture,
-    bool allowCaptureTextures) noexcept
+    bool allowCaptureTextures,
+    int startLine,
+    int endLine) noexcept
 {
     if (!SegmentedRenderReady())
         return false;
+    if (startLine < 0) startLine = 0;
+    if (endLine > kScreenH) endLine = kScreenH;
+    if (startLine >= endLine)
+        return true;
 
     id<MTLTexture> high3D =
         (__bridge id<MTLTexture>)high3DTexture;
@@ -634,10 +656,29 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
             [State->SpriteScanlineMetaBuffer contents]);
 
-    const Metal2DSegmentList segments =
+    const Metal2DSegmentList allSegments =
         MetalBuild2DSegments(*State);
-    if (segments.Count == 0)
+    if (allSegments.Count == 0)
         return false;
+
+    // MELONPRIME_METAL_CAPTURE_SEGMENT_SCHEDULER_V1: clip internal 2D
+    // segments to the scheduler's [startLine, endLine) window.
+    Metal2DSegmentList segments;
+    for (uint32_t i = 0; i < allSegments.Count; i++)
+    {
+        Metal2DSegmentRange range = allSegments.Items[i];
+        if (range.End <= startLine || range.Start >= endLine)
+            continue;
+        if (range.Start < startLine)
+            range.Start = startLine;
+        if (range.End > endLine)
+            range.End = endLine;
+        if (range.Start >= range.End)
+            continue;
+        segments.Items[segments.Count++] = range;
+    }
+    if (segments.Count == 0)
+        return true;
 
     const MetalSegmentedUploadLayout uploadLayout =
         MetalMakeSegmentedUploadLayout(
@@ -721,21 +762,24 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         @"MelonPrime Metal Phase 8P Segmented 2D";
 
     {
-        MTLRenderPassDescriptor* pass =
-            [MTLRenderPassDescriptor renderPassDescriptor];
-        pass.colorAttachments[0].texture =
-            State->OutputTex;
-        pass.colorAttachments[0].loadAction =
-            MTLLoadActionClear;
-        pass.colorAttachments[0].storeAction =
-            MTLStoreActionStore;
-        pass.colorAttachments[0].clearColor =
-            MTLClearColorMake(0, 0, 0, 1);
-        id<MTLRenderCommandEncoder> encoder =
-            [command renderCommandEncoderWithDescriptor:pass];
-        if (!encoder)
-            return false;
-        [encoder endEncoding];
+        if (!State->SegmentedFrameOutputCleared)
+        {
+            MTLRenderPassDescriptor* pass =
+                [MTLRenderPassDescriptor renderPassDescriptor];
+            pass.colorAttachments[0].texture =
+                State->OutputTex;
+            pass.colorAttachments[0].loadAction =
+                MTLLoadActionClear;
+            pass.colorAttachments[0].storeAction =
+                MTLStoreActionStore;
+            pass.colorAttachments[0].clearColor =
+                MTLClearColorMake(0, 0, 0, 1);
+            id<MTLRenderCommandEncoder> encoder =
+                [command renderCommandEncoderWithDescriptor:pass];
+            if (!encoder)
+                return false;
+            [encoder endEncoding];
+        }
     }
 
     auto makeOBJPass = [&](MTLLoadAction loadAction) {
@@ -767,12 +811,16 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     };
 
     {
-        id<MTLRenderCommandEncoder> encoder =
-            [command renderCommandEncoderWithDescriptor:
-                makeOBJPass(MTLLoadActionClear)];
-        if (!encoder)
-            return false;
-        [encoder endEncoding];
+        if (!State->SegmentedFrameOutputCleared)
+        {
+            id<MTLRenderCommandEncoder> encoder =
+                [command renderCommandEncoderWithDescriptor:
+                    makeOBJPass(MTLLoadActionClear)];
+            if (!encoder)
+                return false;
+            [encoder endEncoding];
+            State->SegmentedFrameOutputCleared = true;
+        }
     }
 
     const uint32_t scale =

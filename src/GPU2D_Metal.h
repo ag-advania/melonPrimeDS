@@ -5,6 +5,7 @@
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
+#include <array>
 #include <memory>
 
 #include "GPU2D.h"
@@ -31,11 +32,14 @@ public:
     [[nodiscard]] bool SegmentedSnapshotReady() const noexcept;
     [[nodiscard]] bool SegmentedFrameComplete() const noexcept;
     [[nodiscard]] bool SegmentedRenderReady() const noexcept;
+    [[nodiscard]] std::array<uint8_t, 192> BuildSegmentBoundaryMask() const noexcept;
     bool RenderSegmentedGpuFrame(
         void* high3DTexture,
         void* capture128Texture,
         void* capture256Texture,
-        bool allowCaptureTextures) noexcept;
+        bool allowCaptureTextures,
+        int startLine,
+        int endLine) noexcept;
     // MELONPRIME_METAL_2D_SCANLINE_SNAPSHOT_V1
     // MELONPRIME_METAL_2D_SHADOW_PATH_REMOVAL_V1
     // MELONPRIME_METAL_2D_LEGACY_FULL_FRAME_REMOVAL_V1

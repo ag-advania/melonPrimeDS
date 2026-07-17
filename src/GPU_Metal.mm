@@ -467,6 +467,7 @@ struct MetalRenderer::MetalOutputState
 #include "GPU_MetalFullGpuMethods.inc"
 #include "GPU_MetalCaptureMethods.inc"
 #include "GPU_MetalCaptureExperiment.inc"
+#include "GPU_MetalSegmentScheduler.inc"
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
     : SoftRenderer(nds)
@@ -1150,36 +1151,10 @@ void MetalRenderer::VBlank()
         if (FullGpuState->FrameValid &&
             MetalCaptureFrameSupported())
         {
-            void* high3D = Metal3DColorTarget(Rend3D.get());
-            void* capture128 = GetMetalCapture128Texture();
-            void* capture256 = GetMetalCapture256Texture();
-            const bool allowCaptureTextures =
-                !MetalCaptureFrameHadCapture();
-
-            if (!Metal2D_A || !Metal2D_B)
-                rejectionStage = "2d-renderers-missing";
-            else if (!capture128 || !capture256)
-                rejectionStage = "capture-textures-missing";
-            else if (!Metal2D_A->SegmentedFrameComplete())
-                rejectionStage = "segment-snapshot-A-incomplete";
-            else if (!Metal2D_B->SegmentedFrameComplete())
-                rejectionStage = "segment-snapshot-B-incomplete";
-            else if (!Metal2D_A->RenderSegmentedGpuFrame(
-                         high3D,
-                         capture128,
-                         capture256,
-                         allowCaptureTextures))
-                rejectionStage = "render-segmented-A";
-            else if (!Metal2D_B->RenderSegmentedGpuFrame(
-                         high3D,
-                         capture128,
-                         capture256,
-                         allowCaptureTextures))
-                rejectionStage = "render-segmented-B";
-            else if (!EncodeMetalDisplayCapture(
-                         Metal2D_A->GetOutputTexture(),
-                         high3D))
-                rejectionStage = "encode-display-capture";
+            if (!RenderMetalFullGpuFrameSegmented(&rejectionStage))
+            {
+                // rejectionStage already set by the segmented path
+            }
             else
                 rendered = true;
         }

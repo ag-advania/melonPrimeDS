@@ -50,6 +50,12 @@ private:
     struct MetalFullGpuState;
     struct MetalCaptureState;
     struct MetalCaptureExperimentState;
+    struct MetalScanlineSegment
+    {
+        int StartLine = 0;
+        int EndLine = 0;
+        bool CaptureEnabled = false;
+    };
 
     std::unique_ptr<MetalRenderer2D> Metal2D_A;
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
@@ -113,7 +119,13 @@ private:
     void CaptureMetalDisplayCaptureLine(u32 line);
     bool EncodeMetalDisplayCapture(
         void* engineA2DTexture,
-        void* high3DTexture);
+        void* high3DTexture,
+        int startLine,
+        int endLine);
+    bool BuildFullGpuCaptureSegments(
+        std::array<MetalScanlineSegment, 192>& segments,
+        int& count) const;
+    bool RenderMetalFullGpuFrameSegmented(const char** rejectionStage);
     bool UploadCpuCompletedCaptures();
     // Ordinary member function (not a lambda) so the completion-handler block
     // it defines captures capturedState/layerSerials directly out of a real
