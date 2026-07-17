@@ -11,16 +11,16 @@
 | PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
 | PR-4 | per-scanline／segment capture | **完了（部分）** | `87c79f76` | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
 | PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
-| PR-6 | normal readback 0 | **完了（部分）** | （本コミット） | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
-| PR-7 | SoftRenderer 継承撤廃 | 未着手 | — | M4/M5 後 |
-| PR-8 | Compute RasterReference 撤廃 | 未着手 | — | |
-| PR-9 | presenter MetalTexture-only | 未着手 | — | |
+| PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
+| PR-7 | SoftRenderer 継承撤廃 | **準備のみ（ブロック）** | （本コミット） | dependency map 作成。§13.1 により M4/M5 実機受け入れ前は継承 flip しない |
+| PR-8 | Compute RasterReference 撤廃 | 未着手 | — | PR-7 後 |
+| PR-9 | presenter MetalTexture-only | 未着手 | — | PR-7 後 |
 | PR-10 | radar native Metal | 未着手 | — | |
 | PR-11 | HUD primitive renderer | 未着手 | — | |
 | PR-12 | glyph atlas／OSD／splash | 未着手 | — | |
 | PR-13 | macOS 初回 Metal 既定 | 未着手 | — | 完了A後 |
 | PR-14 | MSL asset／metallib | 未着手 | — | |
-| PR-15 | CI／release gate | 未着手 | — | |
+| PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。ROM／TSan gate未 |
 
 ## PR-2 要約（2026-07-17）
 
@@ -91,6 +91,25 @@
 未削除（PR-7）:
 
 - Soft VBlank／GetLine／ComposeMetalVisibleOutput CPU upload
+
+## PR-7 要約（2026-07-17）
+
+準備のみ:
+
+- SoftRenderer 依存マップを `docs/plans/evidence/pr7-softrenderer-dependency-map-2026-07-17.md` に固定
+- §13.1 により継承 flip は M4/M5 実機受け入れ後
+
+## PR-15 要約（2026-07-17）
+
+追加:
+
+- `tools/ci/audits/run-metal-fullgpu-audits.sh`
+- macOS GitHub Actions で checkout 直後に metal audits 実行
+
+未:
+
+- Windows／Linux metal audit job
+- ROM／TSan／release gate
 
 ## PR-0 証拠要約（2026-07-17）
 

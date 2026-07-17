@@ -33,6 +33,10 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@v6
 
+      - name: Metal full-Metal-ification static audits
+        shell: bash
+        run: bash tools/ci/audits/run-metal-fullgpu-audits.sh
+
       - name: Install dependencies for package building
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools
