@@ -25,6 +25,11 @@ const Result& Probe()
         return gResult;
 
     gProbed = true;
+#if defined(__APPLE__) // scatter-budget-exempt: Vulkan surface availability, not input dispatch
+    gResult.Available = false;
+    gResult.Reason = "A desktop Vulkan surface adapter is not available for macOS";
+    return gResult;
+#endif
     auto& context = melonDS::VulkanContext::Get();
     if (!context.Acquire())
     {
@@ -68,7 +73,7 @@ void ReportRuntimeFailure(std::string reason)
     std::scoped_lock lock(gProbeMutex);
     gResult.Available = false;
     const std::string diagnostic = reason.empty() ? "unspecified runtime failure" : std::move(reason);
-    gResult.Reason = "Vulkan initialization failed";
+    gResult.Reason = "Vulkan initialization failed: " + diagnostic;
     gProbed = true;
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Error,

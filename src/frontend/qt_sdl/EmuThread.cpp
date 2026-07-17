@@ -50,6 +50,7 @@
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
+#include "MelonPrimeLocalization.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
 
@@ -1316,7 +1317,9 @@ void EmuThread::updateRenderer()
                 Platform::Log(
                     Platform::LogLevel::Error,
                     "Renderer fallback requested=Vulkan actual=Software stage=3D-renderer-init");
-                emuInstance->osdAddMessage(0, "Vulkan initialization failed; using Software renderer");
+                const QByteArray vulkanFailureText =
+                    MelonPrime::UiText::Tr("Vulkan initialization failed").toUtf8();
+                emuInstance->osdAddMessage(0, "%s", vulkanFailureText.constData());
                 videoRenderer = renderer3D_Software;
                 emit rendererRuntimeFallback();
             }

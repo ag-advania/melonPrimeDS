@@ -249,6 +249,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // A runtime failure is cached so renderer normalization can fall back
+    // without changing the persisted selection.  Reopening this dialog is
+    // the explicit retry boundary: probe the loader/device again before
+    // deciding whether the Vulkan choice remains disabled.
+    MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
     const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
     rb3DVulkan->setEnabled(vulkanProbe.Available);
     rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
@@ -323,8 +328,19 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 
 void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool hasVSyncControl = hasOGL;
+    const bool vulkanRenderer =
+        emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Vulkan;
+    hasVSyncControl = hasVSyncControl || vulkanRenderer;
+    ui->cbVSync->setEnabled(hasVSyncControl);
+    // The Qt Vulkan presenter supports FIFO versus MAILBOX/IMMEDIATE, but
+    // Vulkan swapchains do not expose the OpenGL swap-interval setting.
+    ui->sbVSyncInterval->setEnabled(hasOGL && ui->cbVSync->isChecked());
+#else
     ui->cbVSync->setEnabled(hasOGL);
     ui->sbVSyncInterval->setEnabled(hasOGL);
+#endif
 }
 
 void VideoSettingsDialog::onChange3DRenderer(int renderer)
@@ -340,6 +356,7 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
     cfg.SetInt("3D.Renderer", renderer);
 
     setEnabled();
+    setVsyncControlEnable(UsesGL());
 
     const auto newBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
         cfg.GetBool("Screen.UseGL"), renderer);
@@ -371,10 +388,15 @@ void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
 void VideoSettingsDialog::on_cbVSync_stateChanged(int state)
 {
     bool vsync = (state != 0);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     ui->sbVSyncInterval->setEnabled(vsync);
+#endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.VSync", vsync);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    setVsyncControlEnable(UsesGL());
+#endif
 
     emit updateVideoSettings(false);
 }
