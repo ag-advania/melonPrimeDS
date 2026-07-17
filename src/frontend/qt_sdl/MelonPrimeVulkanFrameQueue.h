@@ -70,6 +70,7 @@ struct VulkanFrame {
     u32 width{};
     u32 height{};
     u64 frameId{};
+    u64 sourceGeneration{};
     VkFence renderFence{VK_NULL_HANDLE};
     VkFence presentFence{VK_NULL_HANDLE};
     u64 renderTimelineValue{};

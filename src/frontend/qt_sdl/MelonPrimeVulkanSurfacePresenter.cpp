@@ -142,6 +142,9 @@ void MelonPrimeVulkanSurfacePresenter::Shutdown()
     if (surface != VK_NULL_HANDLE && instance != VK_NULL_HANDLE)
         vkDestroySurfaceKHR(instance, surface, nullptr);
     surface = VK_NULL_HANDLE;
+    if (submittedFrame != nullptr)
+        submittedFrame->presentTimelineValue = 0;
+    submittedFrame = nullptr;
 
     if (contextAcquired)
         melonDS::VulkanContext::Get().Release();
@@ -954,6 +957,9 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
 
     if (vkWaitForFences(device, 1, &submitFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
         return false;
+    if (submittedFrame != nullptr)
+        submittedFrame->presentTimelineValue = 0;
+    submittedFrame = nullptr;
     if (!UpdateOverlayBuffer(overlay))
         return false;
 
@@ -1153,6 +1159,8 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
         if (vkQueueSubmit(queue, 1, &submitInfo, submitFence) != VK_SUCCESS)
             return false;
     }
+    submittedFrame = frame;
+    frame->presentTimelineValue = 1;
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1170,6 +1178,24 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
         return RecoverSwapchain("present/recreate");
     if (presentResult != VK_SUCCESS)
         return RecoverSwapchain("present/failure");
+    return true;
+}
+
+bool MelonPrimeVulkanSurfacePresenter::WaitForFrameConsumption(
+    VulkanFrame* frame,
+    std::uint64_t timeoutNs)
+{
+    if (!initialized || frame == nullptr || frame != submittedFrame)
+        return true;
+    if (device == VK_NULL_HANDLE || submitFence == VK_NULL_HANDLE)
+        return false;
+
+    const VkResult waitResult = vkWaitForFences(device, 1, &submitFence, VK_TRUE, timeoutNs);
+    if (waitResult != VK_SUCCESS)
+        return false;
+
+    frame->presentTimelineValue = 0;
+    submittedFrame = nullptr;
     return true;
 }
 

@@ -1180,6 +1180,9 @@ void GPU::StartHBlank(u32 line) noexcept
     }
     else if (VCount == 215)
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        GPU3D.LatchRenderScreenSwapAt3D(ScreenSwap);
+#endif
         Rend->Start3DRendering();
     }
     else if (VCount == 262)

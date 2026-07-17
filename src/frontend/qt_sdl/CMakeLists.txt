@@ -346,6 +346,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanFeatureCheck.cpp
         MelonPrimeVulkanFrameQueue.cpp
         MelonPrimeVulkanOutput.cpp
+        MelonPrimeVulkanSnapshotBuilder.cpp
         MelonPrimeVulkanSurfacePresenter.cpp
         MelonPrimeVulkanSurfaceWin32.cpp
         MelonPrimeVulkanSurfaceLinux.cpp

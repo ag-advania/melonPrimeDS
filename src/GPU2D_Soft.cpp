@@ -42,18 +42,10 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata) const
-#else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
-#endif
 {
     u32 coloreffect = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    u32 eva = 0, evb = 0;
-#else
     u32 eva, evb;
-#endif
 
     u32 flag1 = val1 >> 24;
     u32 flag2 = val2 >> 24;
@@ -110,15 +102,6 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    if (metadata != nullptr)
-    {
-        metadata->Mode = coloreffect;
-        metadata->Eva = (coloreffect == 2 || coloreffect == 3) ? GPU2D.EVY : eva;
-        metadata->Evb = evb;
-    }
-#endif
-
     switch (coloreffect)
     {
         case 0: return val1;
@@ -145,7 +128,9 @@ void SoftRenderer2D::DrawScanline(u32 line)
         {
             dst[i] = fillcolor;
             if (Parent.UseStructuredVulkan2D())
-                Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), fillcolor, 0, fillcolor, 7, 0, 0);
+                Parent.StoreStructuredEnginePixel(
+                    GPU2D.Num, line, static_cast<u32>(i),
+                    fillcolor, 0, 0, fillcolor, 0, 0x07000000u);
         }
 #else
         for (int i = 0; i < 256; i++)
@@ -163,7 +148,9 @@ void SoftRenderer2D::DrawScanline(u32 line)
         {
             dst[i] = 0xFF3F3F3F;
             if (Parent.UseStructuredVulkan2D())
-                Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), dst[i], 0, dst[i], 7, 0, 0);
+                Parent.StoreStructuredEnginePixel(
+                    GPU2D.Num, line, static_cast<u32>(i),
+                    dst[i], 0, 0, dst[i], 0, 0x07000000u);
         }
 #else
         for (int i = 0; i < 256; i++)
@@ -358,6 +345,13 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
             *(u64*)&BGOBJLine[i] = backdrop;
         for (int i = 256; i < 512; i+=2)
             *(u64*)&BGOBJLine[i] = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (Parent.UseStructuredVulkan2D())
+        {
+            for (int i = 512; i < 768; i+=2)
+                *(u64*)&BGOBJLine[i] = 0;
+        }
+#endif
     }
 
     if (GPU2D.DispCnt & 0xE000)
@@ -389,20 +383,76 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val2 = BGOBJLine[256+i];
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        CompositeMetadata metadata{};
-        dst[i] = ColorComposite(i, val1, val2, &metadata);
+        const u32 val3 = Parent.UseStructuredVulkan2D() ? BGOBJLine[512+i] : 0u;
+        dst[i] = ColorComposite(i, val1, val2);
         if (Parent.UseStructuredVulkan2D())
         {
+            u32 legacyVal1 = dst[i];
+            u32 legacyVal2 = 0u;
+            u32 legacyControl = 0x07000000u;
+            const u32 flag1 = val1 >> 24u;
+            const u32 flag2 = val2 >> 24u;
+            u32 blendEffect = (GPU2D.BlendCnt >> 6u) & 0x3u;
+
+            u32 target1;
+            if      ((flag1 & 0x80u) != 0u) target1 = 0x0010u;
+            else if ((flag1 & 0x40u) != 0u) target1 = 0x0001u;
+            else                            target1 = flag1;
+
+            u32 target2;
+            if      ((flag2 & 0x80u) != 0u) target2 = 0x1000u;
+            else if ((flag2 & 0x40u) != 0u) target2 = 0x0100u;
+            else                            target2 = flag2 << 8u;
+
+            if ((flag1 & 0xC0u) == 0x40u && (GPU2D.BlendCnt & target2) != 0u)
+            {
+                // 3D above 2D with polygon-alpha blending.
+                legacyVal1 = val2;
+                legacyVal2 = ColorComposite(i, val2, val3);
+                legacyControl = 0x04000000u;
+            }
+            else if ((flag1 & 0xC0u) == 0x40u)
+            {
+                // 3D above 2D with normal/master brightness composition.
+                if (blendEffect == 1u) blendEffect = 0u;
+                if ((GPU2D.BlendCnt & 0x0001u) == 0u) blendEffect = 0u;
+                if ((WindowMask[i] & 0x20u) == 0u) blendEffect = 0u;
+                legacyVal1 = val2;
+                legacyVal2 = ColorComposite(i, val2, val3);
+                legacyControl = (blendEffect << 24u) | (GPU2D.EVY << 8u);
+            }
+            else if ((flag2 & 0xC0u) == 0x40u
+                && (GPU2D.BlendCnt & 0x01C0u) == 0x0140u)
+            {
+                // 2D above 3D. Preserve the third layer for transparent 3D.
+                if (!(((GPU2D.BlendCnt & target1) != 0u && (WindowMask[i] & 0x20u) != 0u)
+                    || (flag1 & 0xC0u) == 0x80u
+                    || (flag1 & 0xC0u) == 0xC0u))
+                {
+                    blendEffect = 7u;
+                }
+                legacyVal1 = val1;
+                legacyVal2 = ColorComposite(i, val1, val3);
+                legacyControl = (blendEffect << 24u)
+                    | (GPU2D.EVB << 16u)
+                    | (GPU2D.EVA << 8u);
+            }
+            else
+            {
+                const bool overlayOver3D = ((val3 >> 24u) & 0x40u) != 0u;
+                legacyControl = overlayOver3D ? 0x87000000u : 0x07000000u;
+            }
+
             Parent.StoreStructuredEnginePixel(
                 GPU2D.Num,
                 line,
                 static_cast<u32>(i),
                 val1,
                 val2,
-                dst[i],
-                metadata.Mode,
-                metadata.Eva,
-                metadata.Evb);
+                val3,
+                legacyVal1,
+                legacyVal2,
+                legacyControl);
         }
 #else
         dst[i] = ColorComposite(i, val1, val2);
@@ -417,6 +467,10 @@ void SoftRenderer2D::DrawPixel(u32* dst, u16 color, u32 flag)
     u8 g = ((color & 0x03E0) >> 4) | ((color & 0x8000) >> 15);
     u8 b = (color & 0x7C00) >> 9;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (Parent.UseStructuredVulkan2D())
+        *(dst+512) = *(dst+256);
+#endif
     *(dst+256) = *dst;
     *dst = r | (g << 8) | (b << 16) | flag;
 }
@@ -430,6 +484,10 @@ void SoftRenderer2D::DrawBG_3D()
         if ((c >> 24) == 0) continue;
         if (!(WindowMask[i] & 0x01)) continue;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (Parent.UseStructuredVulkan2D())
+            BGOBJLine[i+512] = BGOBJLine[i+256];
+#endif
         BGOBJLine[i+256] = BGOBJLine[i];
         BGOBJLine[i] = c | 0x40000000;
     }

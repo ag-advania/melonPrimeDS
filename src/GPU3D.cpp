@@ -177,6 +177,9 @@ void GPU3D::ResetRenderingState() noexcept
 
     RenderClearAttr1 = 0x3F000000;
     RenderClearAttr2 = 0x00007FFF;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    RenderScreenSwapAt3D = false;
+#endif
 }
 
 void GPU3D::Reset() noexcept

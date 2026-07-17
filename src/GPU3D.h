@@ -105,6 +105,17 @@ public:
 
     void VBlank() noexcept;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void LatchRenderScreenSwapAt3D(bool screenSwap) noexcept
+    {
+        RenderScreenSwapAt3D = screenSwap;
+    }
+    [[nodiscard]] bool GetRenderScreenSwapAt3D() const noexcept
+    {
+        return RenderScreenSwapAt3D;
+    }
+#endif
+
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
     [[nodiscard]] u16 GetRenderXPos() const noexcept { return RenderXPos; }
 
@@ -260,6 +271,12 @@ public:
     u32 RenderClearAttr2 = 0;
 
     bool RenderFrameIdentical = false; // not part of the hardware state, don't serialize
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // POWCNT1 ownership captured at the exact 3D render boundary. This mirrors
+    // Sapphire's GPU3D::RenderScreenSwapAt3D without changing other builds.
+    bool RenderScreenSwapAt3D = false;
+#endif
 
     u16 RenderXPos = 0;
 

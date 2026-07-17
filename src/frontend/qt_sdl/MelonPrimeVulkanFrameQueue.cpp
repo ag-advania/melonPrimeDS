@@ -35,6 +35,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFr
         VulkanFrame* frame = freeQueue.front();
         freeQueue.pop();
         frame->frameId = nextFrameId++;
+        frame->sourceGeneration = 0;
         frame->queuedAtNs = 0;
         frame->presentTimelineValue = 0;
         return frame;
@@ -51,6 +52,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFr
         VulkanFrame* frame = presentQueue.back();
         presentQueue.pop_back();
         frame->frameId = nextFrameId++;
+        frame->sourceGeneration = 0;
         frame->queuedAtNs = 0;
         frame->presentTimelineValue = 0;
         stats.PendingFramesStolenForRender++;
@@ -64,6 +66,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFr
         VulkanFrame* frame = presentQueue.back();
         presentQueue.pop_back();
         frame->frameId = nextFrameId++;
+        frame->sourceGeneration = 0;
         frame->presentTimelineValue = 0;
         stats.PendingFramesStolenForRender++;
         stats.PresentFramesDroppedByPolicy++;
@@ -370,6 +373,7 @@ void MelonPrimeVulkanFrameQueue::validateRenderFrame(VulkanFrame* frame, int req
         frame->width = 0;
         frame->height = 0;
         frame->frameId = 0;
+        frame->sourceGeneration = 0;
         frame->renderTimelineValue = 0;
         frame->presentTimelineValue = 0;
         frame->queuedAtNs = 0;
@@ -489,6 +493,7 @@ void MelonPrimeVulkanFrameQueue::clear()
         frame.width = 0;
         frame.height = 0;
         frame.frameId = 0;
+        frame.sourceGeneration = 0;
         frame.renderFence = 0;
         frame.presentFence = 0;
         frame.renderTimelineValue = 0;

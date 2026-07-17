@@ -1899,3 +1899,52 @@ SoftwareとOpenGLを既存経路のまま残す。
 最終出力までVulkanで接続し、CPU readback bootstrapで完成扱いしない。
 設定値ではなくactual renderer、actual presenter、actual image sizeを検証する。
 ```
+
+---
+
+# 36. develop_vulkan 実装完遂記録（2026-07-17）
+
+この指示書のV0〜V12に対応する実装は`develop_vulkan`へ統合した。特にV6の移植境界は、Sapphireの可変配列をQt側から直接読む方式ではなく、現在のmelonDSコア構造に合わせて次の不変契約へ適応した。
+
+```text
+completed generation
+  = actual SoftRenderer front buffer
+  = GPU3D.RenderScreenSwapAt3D
+  = Top/Bottom structured planes[3]
+  = line metadata[2]
+  = capture 3D source + line mask
+  = capture-backed source-class cadence
+  = one VulkanFrame sourceGeneration
+```
+
+実装上の完了項目:
+
+- V0: frontend/core/target SHAとSPIR-V source/header hashを固定
+- V1: `MELONPRIME_VULKAN_ACTIVE`によるsource・define・includeの完全gate
+- V2: desktop loader、共有`VulkanContext`、device profile、validation messenger、queue lock
+- V3: pinned core shader/pipeline、graphics/compute backend、capture exportを移植
+- V4: renderer factory、reset/stop/reopen、requested/actual renderer診断とSoftware fallback
+- V5: readback bootstrapを通常表示経路から除外
+- V6: 3層2D source、protected black、Display Capture lineage、ScreenSwap/frame generation snapshot
+- V7: Win32/Xlib/Wayland surface、swapchain、resize、present mode、out-of-date recovery
+- V8: 1x〜16x 3D targetと高解像度compositor sampling
+- V9: frame queue、timeline/fence、presenter消費確認、temporal参照保護、pipeline cache
+- V10: renderer UI、availability/retry、理由表示、翻訳catalog
+- V11: Windows/Linux Vulkan ON/OFF、shader sync、Debug validation CI
+- V12: Android surface/AHB/adrenotools依存なし、silent fallbackなし、source attribution
+
+2D不具合修正では、実front buffer、VCount 215でラッチしたScreenSwap、完成世代の排他コピー、pending/retryフレーム固有のdescriptor入力を同一世代へ固定した。Software/OpenGLの既存処理は、共有ファイル内の`MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN`分岐外では変更しない。
+
+最終検証結果（2026-07-17）:
+
+- Windows MinGW Release / Vulkan ON: 標準`tools/build/windows/build-mingw.bat --jobs 1`で成功
+- Windows MinGW Release / Vulkan OFF: 独立build tree、`MELONPRIME_ENABLE_VULKAN=OFF`、`MELONPRIME_FORCE_DISABLE_VULKAN=ON`でフルビルド成功
+- Vulkan OFF build graph: `GPU3D_Vulkan`、`VulkanContext`、`MelonPrimeVulkan*` source参照 0件
+- SPIR-V: 29 shaderを検証、28 pinned headerの差はnon-semantic generator wordのみ、target SPIR-V 1.0
+- Android専用symbol scan: `ANativeWindow`、`vulkan_android.h`、`AHardwareBuffer`、adrenotools、librashader混入 0件
+- thread boundary strict audit: findings 0
+- SRP/performance audit: pass
+- platform scatter audit: 21 / 22でpass
+- `git diff --check`: error 0（作業treeの改行変換warningのみ）
+
+ROM実機の2D/menu/map/fade/Display Capture、renderer切替、stop/reopen、fullscreen、validation layerについてはcompile/static検証とは別の手動受け入れ項目として扱う。実装側では、これらに必要なcompleted-generation、ScreenSwap latch、present fence、resource lifecycleの契約をV6/V7/V9へ接続済みである。
