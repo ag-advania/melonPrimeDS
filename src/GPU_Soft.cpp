@@ -1294,6 +1294,15 @@ void SoftRenderer::BuildStructuredScreenLine(
     const std::size_t sourceBase = static_cast<std::size_t>(engine) * 3u * StructuredPixelCount;
     const std::size_t destinationBase = static_cast<std::size_t>(screen) * 3u * StructuredPixelCount;
 
+    // Authoritative physical destination: Sapphire packed stride line.
+    auto& packedScreen =
+        VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][screen];
+    const std::size_t packedRowBase =
+        static_cast<std::size_t>(screenLine) * VulkanPackedStride;
+    u32* const packedPlane0 = packedScreen.data() + packedRowBase;
+    u32* const packedPlane1 = packedScreen.data() + packedRowBase + 256u;
+    u32* const packedControl = packedScreen.data() + packedRowBase + 512u;
+
     auto engineLineHasStructuredPayload = [&]() {
         for (std::size_t x = 0; x < 256u; ++x)
         {
@@ -1312,13 +1321,21 @@ void SoftRenderer::BuildStructuredScreenLine(
     u32 lineMeta = 0u;
     if (!forcePlain && displayMode == 1u)
     {
-        for (std::size_t plane = 0; plane < 3u; ++plane)
-        {
-            std::memcpy(
-                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
-                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + engineRowBase,
-                256u * sizeof(u32));
-        }
+        std::memcpy(
+            packedPlane0,
+            StructuredEnginePlanes.data() + sourceBase + engineRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedPlane1,
+            StructuredEnginePlanes.data() + sourceBase + StructuredPixelCount + engineRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedControl,
+            StructuredEnginePlanes.data()
+                + sourceBase
+                + (2u * StructuredPixelCount)
+                + engineRowBase,
+            256u * sizeof(u32));
         const u16 brightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
         lineMeta =
             (1u << 16u)
@@ -1335,13 +1352,21 @@ void SoftRenderer::BuildStructuredScreenLine(
         if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u && StructuredCaptureLineValid[validIndex] != 0u)
         {
             const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
-            for (std::size_t plane = 0; plane < 3u; ++plane)
-            {
-                std::memcpy(
-                    StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
-                    StructuredCapturePlanes.data() + captureBase + (plane * StructuredPixelCount) + engineRowBase,
-                    256u * sizeof(u32));
-            }
+            std::memcpy(
+                packedPlane0,
+                StructuredCapturePlanes.data() + captureBase + engineRowBase,
+                256u * sizeof(u32));
+            std::memcpy(
+                packedPlane1,
+                StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + engineRowBase,
+                256u * sizeof(u32));
+            std::memcpy(
+                packedControl,
+                StructuredCapturePlanes.data()
+                    + captureBase
+                    + (2u * StructuredPixelCount)
+                    + engineRowBase,
+                256u * sizeof(u32));
             const u16 brightness = GPU.MasterBrightnessA;
             lineMeta =
                 (2u << 16u)
@@ -1358,13 +1383,21 @@ void SoftRenderer::BuildStructuredScreenLine(
         // Prefer Engine provenance over flattened BGRA. Filling forcePlain-style
         // 2D-only content here marks the whole LCD "explicit" and blocks Engine A
         // phase-cache restore on alternating ScreenSwap scenes.
-        for (std::size_t plane = 0; plane < 3u; ++plane)
-        {
-            std::memcpy(
-                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
-                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + engineRowBase,
-                256u * sizeof(u32));
-        }
+        std::memcpy(
+            packedPlane0,
+            StructuredEnginePlanes.data() + sourceBase + engineRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedPlane1,
+            StructuredEnginePlanes.data() + sourceBase + StructuredPixelCount + engineRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedControl,
+            StructuredEnginePlanes.data()
+                + sourceBase
+                + (2u * StructuredPixelCount)
+                + engineRowBase,
+            256u * sizeof(u32));
         lineMeta = (displayMode << 16u);
         if (StructuredEngineLineUsesCapture3D[(static_cast<std::size_t>(engine) * 192u) + engineLine] != 0u)
             lineMeta |= 1u << 21u;
@@ -1375,42 +1408,34 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         for (std::size_t x = 0; x < 256u; ++x)
         {
-            const std::size_t pixelIndex = screenRowBase + x;
-            StructuredScreenPlanes[destinationBase + pixelIndex] =
-                (output[x] & 0x00FFFFFFu) | 0x01000000u;
-            StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0;
+            packedPlane0[x] = (output[x] & 0x00FFFFFFu) | 0x01000000u;
+            packedPlane1[x] = 0;
             const bool protectedBlack = StructuredVulkan2DSourceClass(output[x]) != 0u
                 && StructuredVulkan2DIsOpaqueBlack(output[x]);
-            StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] =
-                protectedBlack ? 0xA7000000u : 0x87000000u;
+            packedControl[x] = protectedBlack ? 0xA7000000u : 0x87000000u;
         }
         lineMeta = (forcePlain ? 0u : displayMode) << 16u;
     }
-    StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + screenLine] = lineMeta;
+    packedScreen[packedRowBase + 768u] = lineMeta;
 
-    // Same generation / same physical identity: also write Sapphire packed line.
-    {
-        auto& packedScreen =
-            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][screen];
-        const std::size_t packedRowBase =
-            static_cast<std::size_t>(screenLine) * VulkanPackedStride;
-        std::memcpy(
-            packedScreen.data() + packedRowBase,
-            StructuredScreenPlanes.data() + destinationBase + screenRowBase,
-            256u * sizeof(u32));
-        std::memcpy(
-            packedScreen.data() + packedRowBase + 256u,
-            StructuredScreenPlanes.data() + destinationBase + StructuredPixelCount + screenRowBase,
-            256u * sizeof(u32));
-        std::memcpy(
-            packedScreen.data() + packedRowBase + 512u,
-            StructuredScreenPlanes.data()
-                + destinationBase
-                + (2u * StructuredPixelCount)
-                + screenRowBase,
-            256u * sizeof(u32));
-        packedScreen[packedRowBase + 768u] = lineMeta;
-    }
+    // Plane-major ScreenPlanes / LineMeta are derived views of the packed
+    // physical line — never the other way around.
+    std::memcpy(
+        StructuredScreenPlanes.data() + destinationBase + screenRowBase,
+        packedPlane0,
+        256u * sizeof(u32));
+    std::memcpy(
+        StructuredScreenPlanes.data() + destinationBase + StructuredPixelCount + screenRowBase,
+        packedPlane1,
+        256u * sizeof(u32));
+    std::memcpy(
+        StructuredScreenPlanes.data()
+            + destinationBase
+            + (2u * StructuredPixelCount)
+            + screenRowBase,
+        packedControl,
+        256u * sizeof(u32));
+    StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + screenLine] = lineMeta;
 
     // Vote Engine A physical target from the destination pointer used this line.
     if (engine == 0u)
@@ -1464,12 +1489,54 @@ void SoftRenderer::SwapBuffers()
         if (completedFrame.Completed3DReference.Valid)
             Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
         completedFrame.Completed3DReference = {};
-        completedFrame.ScreenPlanes = StructuredScreenPlanes;
-        completedFrame.ScreenLineMeta = StructuredScreenLineMeta;
+        // Packed physical buffers are the authoritative producer output.
         completedFrame.PackedTop =
             VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][0];
         completedFrame.PackedBottom =
             VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][1];
+        // Derive plane-major ScreenPlanes / LineMeta from packed so consumers
+        // always see the same generation as PackedTop/Bottom.
+        for (std::size_t y = 0; y < 192u; ++y)
+        {
+            const std::size_t packedRow = y * VulkanPackedStride;
+            const std::size_t planeRow = y * 256u;
+            std::memcpy(
+                completedFrame.ScreenPlanes.data() + planeRow,
+                completedFrame.PackedTop.data() + packedRow,
+                256u * sizeof(u32));
+            std::memcpy(
+                completedFrame.ScreenPlanes.data() + StructuredPixelCount + planeRow,
+                completedFrame.PackedTop.data() + packedRow + 256u,
+                256u * sizeof(u32));
+            std::memcpy(
+                completedFrame.ScreenPlanes.data() + (2u * StructuredPixelCount) + planeRow,
+                completedFrame.PackedTop.data() + packedRow + 512u,
+                256u * sizeof(u32));
+            completedFrame.ScreenLineMeta[y] =
+                completedFrame.PackedTop[packedRow + 768u];
+
+            constexpr std::size_t bottomPlaneBase = 3u * StructuredPixelCount;
+            std::memcpy(
+                completedFrame.ScreenPlanes.data() + bottomPlaneBase + planeRow,
+                completedFrame.PackedBottom.data() + packedRow,
+                256u * sizeof(u32));
+            std::memcpy(
+                completedFrame.ScreenPlanes.data()
+                    + bottomPlaneBase
+                    + StructuredPixelCount
+                    + planeRow,
+                completedFrame.PackedBottom.data() + packedRow + 256u,
+                256u * sizeof(u32));
+            std::memcpy(
+                completedFrame.ScreenPlanes.data()
+                    + bottomPlaneBase
+                    + (2u * StructuredPixelCount)
+                    + planeRow,
+                completedFrame.PackedBottom.data() + packedRow + 512u,
+                256u * sizeof(u32));
+            completedFrame.ScreenLineMeta[192u + y] =
+                completedFrame.PackedBottom[packedRow + 768u];
+        }
         completedFrame.EnginePlanes = StructuredEnginePlanes;
         completedFrame.EngineLineUsesCapture3D = StructuredEngineLineUsesCapture3D;
         completedFrame.Capture3DSource = StructuredCapture3DSource;
@@ -1478,9 +1545,9 @@ void SoftRenderer::SwapBuffers()
         for (std::size_t line = 0; line < 192u; ++line)
         {
             completedFrame.TopScreenNeedsCapture3D[line] =
-                (StructuredScreenLineMeta[line] & captureUseMetaMask) != 0u ? 1u : 0u;
+                (completedFrame.ScreenLineMeta[line] & captureUseMetaMask) != 0u ? 1u : 0u;
             completedFrame.BottomScreenNeedsCapture3D[line] =
-                (StructuredScreenLineMeta[192u + line] & captureUseMetaMask) != 0u ? 1u : 0u;
+                (completedFrame.ScreenLineMeta[192u + line] & captureUseMetaMask) != 0u ? 1u : 0u;
         }
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
