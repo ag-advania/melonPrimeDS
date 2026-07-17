@@ -17,6 +17,7 @@
 #include "GPU.h"
 #include "GPU2D_Metal.h"
 #include "MetalContext.h"
+#include "NDS.h"
 
 #include <algorithm>
 #include <array>
@@ -536,9 +537,26 @@ struct MetalRenderer2D::Metal2DState
     size_t SpriteSnapshotStride = 0;
     int LayerSnapshotLastLine = -1;
     int SpriteSnapshotLastLine = -1;
+    // MELONPRIME_METAL_SNAPSHOT_FRAME_EPOCH_V1: NDS::NumFrames value the
+    // current ring-slot reservation belongs to (see
+    // BeginSegmentSnapshotFrameIfNeeded in GPU2D_MetalFullGpuMethods.inc).
+    // Distinguishes "the previous frame ended after line 0" (LastLine>0, the
+    // prior heuristic) from "the previous frame never advanced past line 0"
+    // (RestartFrame/abort/savestate/pause -- LastLine stays 0, which the
+    // prior heuristic could not tell apart from the *same* frame's second
+    // line-0 caller (DrawScanline/DrawSprites can each reach line 0 first)).
+    // An actual frame-boundary counter distinguishes both cases correctly.
+    uint32_t SnapshotFrameEpoch = 0xFFFFFFFFu;
     bool SnapshotBuffersReady = false;
     bool SegmentedRenderReady = false;
     bool LoggedSnapshotAllocation = false;
+    // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: was a function-static in
+    // GPU2D_MetalFullGpuMethods.inc's same-frame capture-hazard diagnostic,
+    // which mixed counts across MetalRenderer2D instances (and raced if two
+    // instances' emu threads hit it concurrently). See
+    // RenderSegmentedGpuFrame()'s !allowCaptureTextures branch.
+    uint32_t SameFrameCaptureHazardEnteredCount = 0;
+    bool LoggedSameFrameCaptureHazard = false;
     uint32_t BGVRAMRange[4][4] = {};
     int NumSprites = 0;
     bool SpriteUseMosaic = false;

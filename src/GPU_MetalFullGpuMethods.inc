@@ -137,6 +137,13 @@ struct MetalRenderer::MetalFullGpuState
     bool LoggedMixed3D2DFallback = false;
     bool LoggedMixed3D2DOverride = false;
     bool LoggedSegmentedVisible = false;
+    // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: these two used to be
+    // function-statics shared by every MetalRenderer instance in the
+    // process, which mixes counts across instances (and is a plain C++
+    // data race if two instances' emu threads record concurrently). Moving
+    // them here makes each instance's diagnostics its own.
+    int LoggedRejectionDetailCount = 0;
+    MetalFullGpuFrameStats FrameStats;
     std::array<uint32_t, 192> ScreenSwap {};
     std::array<uint32_t, 192> BrightnessA {};
     std::array<uint32_t, 192> BrightnessB {};

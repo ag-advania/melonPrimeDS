@@ -2683,13 +2683,31 @@ void MetalComputeRenderer3D::RenderFrame()
         if (finalSubmitted)
         {
             State->LastFrameComputeVisible = true;
+            // MELONPRIME_METAL_COMPUTE_GETLINE_FRESHNESS_FIX_V1: GetLine()
+            // (below) unconditionally reads from RasterReference, because
+            // the CPU-composite/SoftRenderer 2D-compositor path consumes 3D
+            // content only through GetLine(), never through
+            // GetComputeFinalTexture() directly -- that texture-based path
+            // is only consumed by the GPU-resident full-gpu compositor,
+            // which real gameplay routes through only rarely today (Phase M4
+            // is not done; mid-render eligibility loss is common). Skipping
+            // RasterReference.RenderFrame() here (as the removed
+            // "rasterReference=stopped" comment/log implied) left its
+            // scanline buffer stale on every frame this cutover succeeded,
+            // so GetLine() served stale-or-never-rendered (all-black) lines
+            // into the CPU-composite picture on exactly those frames --
+            // observed as a black 3D layer while independent overlays
+            // (HUD/radar) kept rendering fine on top. Until M5 removes
+            // GetLine()'s CPU-scanline dependency, RasterReference must keep
+            // rendering every frame regardless of whether compute's own
+            // cutover also succeeds.
+            RasterReference.RenderFrame();
             if (!State->LoggedVisibleCutover)
             {
                 State->LoggedVisibleCutover = true;
                 std::fprintf(stderr,
                     "[MelonPrime] metal compute visible: CUTOVER active "
-                    "scale=%d size=%ux%u serial=%llu "
-                    "rasterReference=stopped\n",
+                    "scale=%d size=%ux%u serial=%llu\n",
                     requestedScale,
                     State->ScreenWidth,
                     State->ScreenHeight,
@@ -2722,8 +2740,11 @@ void MetalComputeRenderer3D::RenderFrame()
 
 void MetalComputeRenderer3D::FinishRendering()
 {
-    if (!State || !State->LastFrameComputeVisible)
-        RasterReference.FinishRendering();
+    // RasterReference.RenderFrame() now always runs (see the
+    // MELONPRIME_METAL_COMPUTE_GETLINE_FRESHNESS_FIX_V1 comment above), so
+    // its FinishRendering() must always be paired with it too, regardless of
+    // whether compute's own cutover was also visible this frame.
+    RasterReference.FinishRendering();
 }
 
 void MetalComputeRenderer3D::RestartFrame()

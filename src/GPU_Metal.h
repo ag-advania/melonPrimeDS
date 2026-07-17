@@ -11,6 +11,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 namespace melonDS
 {
@@ -59,7 +60,11 @@ private:
     // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
     std::shared_ptr<MetalOutputState> OutputState;
     std::unique_ptr<MetalFullGpuState> FullGpuState;
-    std::unique_ptr<MetalCaptureState> CaptureState;
+    // shared_ptr (not unique_ptr): capture-upload completion handlers capture
+    // this by value so a reconfigure (scale change) mid-flight can never
+    // leave a handler writing through a dangling pointer -- see
+    // UploadCpuCompletedCaptures() in GPU_MetalCaptureMethods.inc.
+    std::shared_ptr<MetalCaptureState> CaptureState;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
     // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 
@@ -76,6 +81,28 @@ private:
         void* engineA2DTexture,
         void* high3DTexture);
     bool UploadCpuCompletedCaptures();
+    // Ordinary member function (not a lambda) so the completion-handler block
+    // it defines captures capturedState/layerSerials directly out of a real
+    // function parameter/local, rather than through a C++ lambda's own
+    // reference capture -- nesting an Objective-C block's capture behind a
+    // lambda's capture-by-reference produced a reproducible use-after-scope
+    // crash (EXC_BAD_ACCESS in the async completion callback). textureRaw is
+    // an id<MTLTexture> passed as void* so this declaration stays usable from
+    // non-Objective-C++ includers of this header; see the .inc definition.
+    bool UploadCaptureTexture(
+        std::shared_ptr<MetalCaptureState> capturedState,
+        void* textureRaw,
+        unsigned long slice,
+        const uint16_t* source,
+        unsigned long nativeWidth,
+        unsigned long nativeHeight,
+        std::vector<int> affectedLayers);
+    // Returns an idle MetalCaptureState::StagingBuffer* (opaque here so this
+    // header stays free of the nested type's Objective-C members), or
+    // nullptr if every ring slot is busy. Declared as a member (rather than
+    // a free function) because MetalCaptureState is a private nested type;
+    // see the .inc definition for the concrete return type.
+    void* AcquireStagingSlot(MetalCaptureState& state, unsigned long requiredBytes);
     [[nodiscard]] bool MetalCaptureReady() const;
     [[nodiscard]] bool MetalCaptureFrameHadCapture() const;
     [[nodiscard]] bool MetalCaptureFrameSupported() const;

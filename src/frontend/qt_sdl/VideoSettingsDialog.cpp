@@ -144,7 +144,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DMetalCompute->setObjectName(QStringLiteral("rb3DMetalCompute"));
     rb3DMetalCompute->setText(MelonPrime::UiText::Tr("Metal Compute Shader"));
     rb3DMetalCompute->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Experimental native Metal compute-shader renderer. The validated Metal raster renderer remains the visible fallback until compute rendering reaches full parity.</p></body></html>"));
+        "<html><head/><body><p>Native Metal compute-shader renderer. Its own output is the visible source; the internal Metal raster renderer is used only as an automatic fallback if compute rendering is unavailable for a frame.</p></body></html>"));
     ui->gridLayout_2->addWidget(rb3DMetalCompute, 5, 0, 1, 2);
     grp3DRenderer->addButton(rb3DMetalCompute, renderer3D_MetalCompute);
 
@@ -199,7 +199,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DMetalCompute->setEnabled(metalSupported);
     rb3DMetalCompute->setToolTip(MelonPrime::UiText::Tr(
         metalSupported
-            ? QStringLiteral("Experimental Metal compute-shader renderer. Compute stages run natively while the validated Metal raster output remains the safe visible source.")
+            ? QStringLiteral("Native Metal compute-shader renderer. Compute output is the visible source; the Metal raster renderer is only an automatic per-frame fallback.")
             : metalTooltip));
 #endif
 

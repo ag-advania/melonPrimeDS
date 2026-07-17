@@ -158,11 +158,17 @@ void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
     if (!State || line != 0)
         return;
 
-    // DrawSprites(0) and DrawScanline(0) can arrive in either order. The first
-    // recorder entering a new frame releases an unsubmitted prior reservation,
-    // resets validity, and reserves one immutable ring slot for direct writes.
-    if (State->LayerSnapshotLastLine > 0 ||
-        State->SpriteSnapshotLastLine > 0)
+    // DrawSprites(0) and DrawScanline(0) can arrive in either order, and both
+    // call this every frame. NDS::NumFrames (bumped once per real DS frame in
+    // NDS::RunFrame(), independent of scanline progress) is the actual frame
+    // boundary: comparing it against the epoch the current reservation was
+    // made for correctly distinguishes "a new frame started" from "this is
+    // the second line-0 caller of the frame already in progress", which the
+    // prior `LastLine > 0` heuristic could not: a frame that restarts,
+    // aborts, or is interrupted by a savestate load/pause right after line 0
+    // leaves LastLine at 0 too, indistinguishable from mid-frame re-entry.
+    const uint32_t frameEpoch = GPU.NDS.NumFrames;
+    if (State->SnapshotFrameEpoch != frameEpoch)
     {
         MetalReleaseSegmentedUploadSlot(
             State->SegmentedCaptureRing,
@@ -174,6 +180,7 @@ void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
         State->SpriteSnapshotValid.fill(0);
         State->LayerSnapshotLastLine = -1;
         State->SpriteSnapshotLastLine = -1;
+        State->SnapshotFrameEpoch = frameEpoch;
     }
 
     if (!State->SegmentedCaptureAttempted &&
@@ -674,13 +681,10 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
         // code shape alone.
         if (MetalPerfLikeDiagEnabled())
         {
-            static uint32_t enteredCount = 0;
-            static uint32_t rejectedCount = 0;
-            static bool loggedFirst = false;
-            enteredCount++;
-            if (!loggedFirst)
+            State->SameFrameCaptureHazardEnteredCount++;
+            if (!State->LoggedSameFrameCaptureHazard)
             {
-                loggedFirst = true;
+                State->LoggedSameFrameCaptureHazard = true;
                 std::fprintf(stderr,
                     "[MelonPrime] metal 2d: same-frame capture-hazard branch "
                     "entered (expected to be unreachable post-eligibility-fix; "

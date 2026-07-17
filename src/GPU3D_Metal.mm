@@ -242,23 +242,6 @@ void MetalPerfSubmitFrame(const MetalPerfFrame& frame)
     acc = {};
 }
 
-void MetalPerfLogTargetResize(int scale, NSUInteger width, NSUInteger height)
-{
-    static int lastScale = 0;
-    static NSUInteger lastWidth = 0;
-    static NSUInteger lastHeight = 0;
-    if (scale == lastScale && width == lastWidth && height == lastHeight)
-        return;
-
-    lastScale = scale;
-    lastWidth = width;
-    lastHeight = height;
-    std::fprintf(stderr,
-        "[MelonPrime] metal renderer3D: native 3D source scale=%d size=%zux%zu\n",
-        scale,
-        static_cast<size_t>(width),
-        static_cast<size_t>(height));
-}
 
 struct MetalTextureReadbackSummary
 {
@@ -409,6 +392,28 @@ struct MetalRenderer3D::MetalState
     std::unique_ptr<TexcacheMetal> Texcache; // constructed once Device exists
     Metal3DDiagnostics LastDiagnostics;
     bool LoggedNativeZeroAfterDraw = false;
+    // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: was three function-
+    // statics in MetalPerfLogTargetResize(), which mixed dedup state across
+    // MetalRenderer3D instances (each could suppress the other's resize log
+    // depending on call order/timing).
+    int LoggedLastTargetScale = 0;
+    NSUInteger LoggedLastTargetWidth = 0;
+    NSUInteger LoggedLastTargetHeight = 0;
+    // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: were function-statics in
+    // GetLine()'s MELONPRIME_METAL_GETLINE_DIFF diagnostic (env-var gated,
+    // off by default); moved here for the same per-instance-ownership
+    // reason as the fields above.
+    uint64_t GetLineDiffPixels = 0;
+    uint64_t GetLineDiffReversePixels = 0;
+    uint64_t GetLineDiffTotalPixels = 0;
+    uint64_t GetLineDiffFrames = 0;
+    bool LoggedFirstRenderFrame = false;
+    bool LoggedIdenticalReuse = false;
+    uint64_t OrientationDiagFrames = 0;
+    uint64_t SolidDiagFrames = 0;
+    bool LoggedFirstOpaquePass = false;
+    bool LoggedFirstNonEmptyOpaquePass = false;
+    uint64_t DiagFrames = 0;
 
     // MELONPRIME_METAL_COMPUTE_HIRES_LATCH_V1
     bool LastFrameUseHiRes3D = false;
@@ -1096,10 +1101,9 @@ void MetalRenderer3D::RenderFrame()
         // updateRenderer() -> GPU3D::RenderFrame()) actually reaches this native
         // path, as distinct from the standalone-harness verification in §3j/3k
         // (which only ever exercised the shader/pipeline logic in isolation).
-        static bool loggedFirstRenderFrame = false;
-        if (!loggedFirstRenderFrame)
+        if (!State->LoggedFirstRenderFrame)
         {
-            loggedFirstRenderFrame = true;
+            State->LoggedFirstRenderFrame = true;
             std::fprintf(stderr, "[MelonPrime] metal renderer3D: first integrated RenderFrame\n");
         }
 
@@ -1164,10 +1168,9 @@ void MetalRenderer3D::RenderFrame()
             }
             else
             {
-                static bool loggedIdenticalReuse = false;
-                if (!loggedIdenticalReuse)
+                if (!State->LoggedIdenticalReuse)
                 {
-                    loggedIdenticalReuse = true;
+                    State->LoggedIdenticalReuse = true;
                     std::fprintf(stderr,
                         "[MelonPrime] metal renderer3D: identical-frame reuse active; "
                         "skipping render/readback for unchanged frames\n");
@@ -1216,9 +1219,9 @@ u32* MetalRenderer3D::GetLine(int line)
 
     if (MetalGetLineDiffEnabled() && softLine)
     {
-        static uint64_t diffPixels = 0;
-        static uint64_t reverseDiffPixels = 0;
-        static uint64_t totalPixels = 0;
+        uint64_t& diffPixels = State->GetLineDiffPixels;
+        uint64_t& reverseDiffPixels = State->GetLineDiffReversePixels;
+        uint64_t& totalPixels = State->GetLineDiffTotalPixels;
         const u32* reverseRawLine =
             &State->NativeLineBuffer[static_cast<size_t>(191 - line) * 256u];
         for (int x = 0; x < 256; x++)
@@ -1231,7 +1234,7 @@ u32* MetalRenderer3D::GetLine(int line)
         totalPixels += 256;
         if (line == 191)
         {
-            static uint64_t frames = 0;
+            uint64_t& frames = State->GetLineDiffFrames;
             frames++;
             if (frames <= 3 || (frames % 60) == 0)
             {
@@ -2019,7 +2022,22 @@ bool MetalRenderer3D::ResizeTargets()
         State->NativeReadbackBuffer = newReadbackBuffer;
         State->NativeLineReady = false;
 
-        MetalPerfLogTargetResize(scale, width, height);
+        // MELONPRIME_METAL_PER_INSTANCE_DIAGNOSTICS_V1: dedup state lives on
+        // State (per MetalRenderer3D instance) instead of a function-static,
+        // which used to mix/race across instances.
+        if (scale != State->LoggedLastTargetScale ||
+            width != State->LoggedLastTargetWidth ||
+            height != State->LoggedLastTargetHeight)
+        {
+            State->LoggedLastTargetScale = scale;
+            State->LoggedLastTargetWidth = width;
+            State->LoggedLastTargetHeight = height;
+            std::fprintf(stderr,
+                "[MelonPrime] metal renderer3D: native 3D source scale=%d size=%zux%zu\n",
+                scale,
+                static_cast<size_t>(width),
+                static_cast<size_t>(height));
+        }
         std::fprintf(stderr,
             "[MelonPrime] metal renderer3D: internal target scale=%d size=%zux%zu resolve=256x192\n",
             scale, static_cast<size_t>(width), static_cast<size_t>(height));
@@ -2289,7 +2307,7 @@ bool MetalRenderer3D::ReadbackNativeColorTargetToLineBuffer()
                     bottomRowNonzero++;
             }
 
-            static uint64_t orientationFrames = 0;
+            uint64_t& orientationFrames = State->OrientationDiagFrames;
             orientationFrames++;
             if (orientationFrames <= 3 || (orientationFrames % 60) == 0)
             {
@@ -2369,7 +2387,7 @@ bool MetalRenderer3D::DrawSolidNative3DDiagnostic()
             static_cast<uint64_t>(State->ColorTarget.width) * static_cast<uint64_t>(State->ColorTarget.height);
     }
 
-    static uint64_t solidFrames = 0;
+    uint64_t& solidFrames = State->SolidDiagFrames;
     solidFrames++;
     if (solidFrames <= 3 || (solidFrames % 60) == 0)
     {
@@ -2491,7 +2509,6 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     // this path is actually traversing real GPU3D::RenderPolygonRAM state
     // from an integrated ROM run, with counts to sanity-check against what
     // the scene should contain -- not just "it didn't crash".
-    static bool loggedFirstOpaquePass = false;
     u32 consideredPolygons = 0;
     u32 texturedPolygons = 0;
     u32 captureTexturedPolygons = 0;
@@ -2761,9 +2778,9 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         }
     }
 
-    if (!loggedFirstOpaquePass)
+    if (!State->LoggedFirstOpaquePass)
     {
-        loggedFirstOpaquePass = true;
+        State->LoggedFirstOpaquePass = true;
         std::fprintf(stderr,
             "[MelonPrime] metal renderer3D: first visible pass polygons=%u considered=%u textured=%u captureTextured=%u groups=%zu vertexWords=%zu\n",
             numPolygons, consideredPolygons, texturedPolygons, captureTexturedPolygons, groups.size(), vertexWords.size());
@@ -2774,10 +2791,9 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
     // first time a frame actually has opaque geometry to render, so the
     // integrated-ROM verification has a second, more representative data
     // point once the game's own content (title screen, gameplay) is reached.
-    static bool loggedFirstNonEmptyOpaquePass = false;
-    if (!loggedFirstNonEmptyOpaquePass && consideredPolygons > 0)
+    if (!State->LoggedFirstNonEmptyOpaquePass && consideredPolygons > 0)
     {
-        loggedFirstNonEmptyOpaquePass = true;
+        State->LoggedFirstNonEmptyOpaquePass = true;
         std::fprintf(stderr,
             "[MelonPrime] metal renderer3D: first non-empty visible pass polygons=%u considered=%u textured=%u captureTextured=%u groups=%zu vertexWords=%zu\n",
             numPolygons, consideredPolygons, texturedPolygons, captureTexturedPolygons, groups.size(), vertexWords.size());
@@ -3059,7 +3075,7 @@ void MetalRenderer3D::RenderNativeOpaquePolygons()
         State->LastDiagnostics.Groups = static_cast<uint32_t>(groups.size());
         State->LastDiagnostics.Draws = drawCount;
 
-        static uint64_t diagFrames = 0;
+        uint64_t& diagFrames = State->DiagFrames;
         diagFrames++;
         const bool zeroAfterDraw = drawCount > 0 && summary.Valid && summary.NonzeroPixels == 0;
         if (diagFrames <= 3 || (diagFrames % 60) == 0 || (zeroAfterDraw && !State->LoggedNativeZeroAfterDraw))

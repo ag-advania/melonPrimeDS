@@ -22,11 +22,13 @@ namespace melonDS
 
 class SoftRenderer;
 
-// Phase 7F. The renderer executes real-frame span preparation, Metal
-// InterpSpans/BinCombined, work sorting, and writes no-texture polygons into
-// the canonical per-work-item Color/Depth/Attr tile memories consumed by the
-// non-visible DepthBlend pass. Visible output remains the validated MetalRenderer3D
-// reference until the complete texture/depth/blend/final-pass chain reaches parity.
+// Phase 7F+ (MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1). The renderer
+// executes real-frame span preparation, Metal InterpSpans/BinCombined, work
+// sorting, texture/depth/blend, and the final pass, writing the visible
+// output into GetComputeFinalTexture(). RasterReference (the validated Metal
+// raster renderer) is kept only as a per-frame fallback for when compute
+// output is not ready/valid (see RenderFrame()), not as the normal visible
+// source -- do not read comments elsewhere as implying otherwise.
 class MetalComputeRenderer3D final : public Renderer3D
 {
 public:

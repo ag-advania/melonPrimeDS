@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
@@ -75,12 +76,12 @@ struct MetalFullGpuFrameStats
 };
 
 void MetalFullGpuFrameStatsRecord(
+    MetalFullGpuFrameStats& stats,
     bool fullGpu, bool cpuComposite, bool retainPrevious, bool blockedByCapture)
 {
     if (!MetalFullGpuStatsEnabled())
         return;
 
-    static MetalFullGpuFrameStats stats;
     stats.Frames++;
     if (fullGpu) stats.FullGpuFrames++;
     if (cpuComposite) stats.CpuCompositeFrames++;
@@ -1075,6 +1076,11 @@ void MetalRenderer::VBlank()
     if (FullGpuState && FullGpuState->FrameActive)
     {
         bool rendered = false;
+        // Same evaluation order and short-circuiting as the original single
+        // boolean expression -- broken out only so a rejection can name the
+        // stage that failed instead of leaving "unexpected rejection" with
+        // nothing to act on.
+        const char* rejectionStage = "none";
         if (FullGpuState->FrameValid &&
             MetalCaptureFrameSupported())
         {
@@ -1084,27 +1090,38 @@ void MetalRenderer::VBlank()
             const bool allowCaptureTextures =
                 !MetalCaptureFrameHadCapture();
 
-            rendered = Metal2D_A && Metal2D_B &&
-                capture128 && capture256 &&
-                Metal2D_A->SegmentedFrameComplete() &&
-                Metal2D_B->SegmentedFrameComplete() &&
-                Metal2D_A->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures) &&
-                Metal2D_B->RenderSegmentedGpuFrame(
-                    high3D,
-                    capture128,
-                    capture256,
-                    allowCaptureTextures);
-
-            if (rendered)
-            {
-                rendered = EncodeMetalDisplayCapture(
-                    Metal2D_A->GetOutputTexture(),
-                    high3D);
-            }
+            if (!Metal2D_A || !Metal2D_B)
+                rejectionStage = "2d-renderers-missing";
+            else if (!capture128 || !capture256)
+                rejectionStage = "capture-textures-missing";
+            else if (!Metal2D_A->SegmentedFrameComplete())
+                rejectionStage = "segment-snapshot-A-incomplete";
+            else if (!Metal2D_B->SegmentedFrameComplete())
+                rejectionStage = "segment-snapshot-B-incomplete";
+            else if (!Metal2D_A->RenderSegmentedGpuFrame(
+                         high3D,
+                         capture128,
+                         capture256,
+                         allowCaptureTextures))
+                rejectionStage = "render-segmented-A";
+            else if (!Metal2D_B->RenderSegmentedGpuFrame(
+                         high3D,
+                         capture128,
+                         capture256,
+                         allowCaptureTextures))
+                rejectionStage = "render-segmented-B";
+            else if (!EncodeMetalDisplayCapture(
+                         Metal2D_A->GetOutputTexture(),
+                         high3D))
+                rejectionStage = "encode-display-capture";
+            else
+                rendered = true;
+        }
+        else
+        {
+            rejectionStage = FullGpuState->FrameValid
+                ? "capture-frame-unsupported"
+                : "frame-invalidated-mid-render";
         }
 
         if (rendered)
@@ -1155,14 +1172,14 @@ void MetalRenderer::VBlank()
             if (!FullGpuState->BlockedByCaptureFeedback &&
                 !FullGpuState->BlockedByMidFrameInvalidation)
             {
-                static int loggedDetailCount = 0;
-                if (loggedDetailCount < 10)
+                if (FullGpuState->LoggedRejectionDetailCount < 10)
                 {
-                    loggedDetailCount++;
+                    FullGpuState->LoggedRejectionDetailCount++;
                     std::fprintf(stderr,
                         "[MelonPrime] metal full-gpu: unexpected rejection detail "
-                        "frameValid=%d captureFrameSupported=%d captureEnable=%d "
-                        "captureCntBit31=%d screensEnabled=%d\n",
+                        "stage=%s frameValid=%d captureFrameSupported=%d "
+                        "captureEnable=%d captureCntBit31=%d screensEnabled=%d\n",
+                        rejectionStage,
                         FullGpuState->FrameValid ? 1 : 0,
                         MetalCaptureFrameSupported() ? 1 : 0,
                         GPU.CaptureEnable ? 1 : 0,
@@ -1174,9 +1191,25 @@ void MetalRenderer::VBlank()
                     "full-gpu frame rejected mid-render for a reason other than "
                     "known display-capture feedback, despite eligibility having "
                     "passed in Start3DRendering");
+                // MELONPRIME_METAL_VBLANK_REJECTION_COOLDOWN_V1: engage the
+                // same sticky cooldown DrawScanline-detected invalidations
+                // use. Without it, a state that passes every Start3DRendering
+                // eligibility check yet fails again at this VBlank stage on
+                // every single frame retries (and RetainPrevious-freezes the
+                // visible picture) indefinitely -- observed in practice as a
+                // sustained retainPrevious=600/600 freeze with thousands of
+                // the strict-violation lines above, frozen on the last
+                // composed frame. With the cooldown, the damage is bounded to
+                // one retained frame per episode; the next frames correctly
+                // predict ineligibility and take the mature CPU path, which
+                // keeps the picture updating.
+                FullGpuState->BlockedByMidFrameInvalidation = true;
+                FullGpuState->MidFrameInvalidationCooldownFrames =
+                    kMidFrameInvalidationCooldownFrames;
             }
         }
         MetalFullGpuFrameStatsRecord(
+            FullGpuState->FrameStats,
             rendered, false, !rendered, FullGpuState->BlockedByCaptureFeedback);
         return;
     }
@@ -1192,8 +1225,8 @@ void MetalRenderer::VBlank()
         FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
         FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
         FullGpuState->Completed = MetalFullGpuState::CpuComposite;
+        MetalFullGpuFrameStatsRecord(FullGpuState->FrameStats, false, true, false, false);
     }
-    MetalFullGpuFrameStatsRecord(false, true, false, false);
 }
 
 void MetalRenderer::SwapBuffers()

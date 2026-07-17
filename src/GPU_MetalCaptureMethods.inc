@@ -290,6 +290,14 @@ struct MetalRenderer::MetalCaptureState
         int Size = -1;
         bool Valid = false;
         bool PendingCpuUpload = false;
+        // MELONPRIME_METAL_CAPTURE_UPLOAD_COMPLETION_SERIAL_V1: bumped every
+        // time a new CPU-fallback upload is dispatched for this layer. A
+        // completion handler only applies its result if this still matches
+        // the serial it captured -- otherwise a newer upload has already
+        // superseded it (or reconfigure changed what this layer means) and
+        // touching Valid/PendingCpuUpload here would race with that newer
+        // upload's own completion. See UploadCpuCompletedCaptures().
+        uint64_t PendingUploadSerial = 0;
     };
 
     id<MTLDevice> Device = nil;
@@ -320,7 +328,60 @@ struct MetalRenderer::MetalCaptureState
     // per layer per frame (this hot path fires on every CPU-fallback frame
     // that has a pending capture write).
     std::vector<uint32_t> CpuUploadScratch;
+
+    // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: a small ring of reusable
+    // MTLBuffers so the common case needs no per-upload
+    // newBufferWithBytes: call. Sized generously above the worst case
+    // (16 128-layers + 4 256-banks could all need upload in one frame,
+    // but in practice only a handful do); AcquireStagingSlot() falls back
+    // to a one-off allocation if every slot is genuinely busy, so
+    // correctness never depends on this size being exactly right. Busy is
+    // a shared_ptr<atomic<bool>> (not a plain bool on the slot) so a
+    // completion handler can flip it after this MetalCaptureState's ring
+    // itself may have been reconfigured -- see UploadCaptureTexture().
+    struct StagingBuffer
+    {
+        id<MTLBuffer> Buffer = nil;
+        NSUInteger Capacity = 0;
+        std::shared_ptr<std::atomic<bool>> Busy =
+            std::make_shared<std::atomic<bool>>(false);
+    };
+    static constexpr int kStagingRingSize = 8;
+    std::array<StagingBuffer, kStagingRingSize> StagingRing;
+    int StagingRingCursor = 0;
+    bool LoggedStagingRingExhausted = false;
 };
+
+// Returns an idle ring slot with enough capacity, growing it in place if
+// needed, or nullptr if every slot is currently busy (caller falls back to
+// a one-off allocation). Never resizes the ring itself, so indices and the
+// Busy shared_ptr identity stay stable across calls. A member function (not
+// a free function in an anonymous namespace) because MetalCaptureState is
+// private; the header only sees this through an opaque void*.
+void* MetalRenderer::AcquireStagingSlot(MetalCaptureState& state, unsigned long requiredBytesArg)
+{
+    const NSUInteger requiredBytes = static_cast<NSUInteger>(requiredBytesArg);
+    for (int i = 0; i < MetalCaptureState::kStagingRingSize; i++)
+    {
+        const int idx = (state.StagingRingCursor + i) % MetalCaptureState::kStagingRingSize;
+        auto& slot = state.StagingRing[idx];
+        if (slot.Busy->load(std::memory_order_acquire))
+            continue;
+        if (slot.Capacity < requiredBytes)
+        {
+            id<MTLBuffer> grown =
+                [state.Device newBufferWithLength:requiredBytes
+                                           options:MTLResourceStorageModeShared];
+            if (!grown)
+                continue;
+            slot.Buffer = grown;
+            slot.Capacity = requiredBytes;
+        }
+        state.StagingRingCursor = (idx + 1) % MetalCaptureState::kStagingRingSize;
+        return &slot;
+    }
+    return nullptr;
+}
 
 bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
 {
@@ -369,7 +430,7 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         }
     }
 
-    auto next = std::make_unique<MetalCaptureState>();
+    auto next = std::make_shared<MetalCaptureState>();
     next->Meta = recoveredMeta;
     for (auto& meta : next->Meta)
     {
@@ -790,6 +851,153 @@ void MetalRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     meta.PendingCpuUpload = true;
 }
 
+bool MetalRenderer::UploadCaptureTexture(
+    std::shared_ptr<MetalCaptureState> capturedState,
+    void* textureRaw,
+    unsigned long slice,
+    const uint16_t* source,
+    unsigned long nativeWidth,
+    unsigned long nativeHeight,
+    std::vector<int> affectedLayers)
+{
+    // capturedState and affectedLayers are genuine by-value function
+    // parameters (not accessed through a C++ lambda's capture-by-reference),
+    // and layerSerials below is a genuine local of this function -- so the
+    // Objective-C completion-handler block nested in this function body
+    // captures them the same well-supported way every other completion
+    // handler in this codebase does. An earlier version of this routine
+    // built the block inside a capturing C++ lambda (itself a local of
+    // UploadCpuCompletedCaptures()); that nesting produced a reproducible
+    // EXC_BAD_ACCESS in the async completion callback under real gameplay.
+    id<MTLTexture> texture = (__bridge id<MTLTexture>)textureRaw;
+    const NSUInteger scale =
+        static_cast<NSUInteger>(std::max(1, capturedState->Scale));
+    const NSUInteger width = static_cast<NSUInteger>(nativeWidth) * scale;
+    const NSUInteger height = static_cast<NSUInteger>(nativeHeight) * scale;
+    std::vector<uint32_t>& pixels = capturedState->CpuUploadScratch;
+    if (pixels.size() < width * height)
+        pixels.resize(width * height);
+
+    for (NSUInteger y = 0; y < nativeHeight; y++)
+    {
+        for (NSUInteger x = 0; x < nativeWidth; x++)
+        {
+            const uint32_t packed =
+                MetalPackRgb5551AsRgba8(source[y * nativeWidth + x]);
+            for (NSUInteger sy = 0; sy < scale; sy++)
+            {
+                uint32_t* row = pixels.data() +
+                    (y * scale + sy) * width + x * scale;
+                for (NSUInteger sx = 0; sx < scale; sx++)
+                    row[sx] = packed;
+            }
+        }
+    }
+
+    const NSUInteger requiredBytes = width * height * sizeof(uint32_t);
+    // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: reuse a persistent MTLBuffer
+    // instead of newBufferWithBytes: on every fallback-upload frame -- this
+    // hot path fires on every CPU-fallback frame with a pending capture
+    // write, and per-frame Metal buffer allocation was a measured hot-path
+    // cost the same way the CpuUploadScratch vector allocation was. Falls
+    // back to a one-off allocation (rare: every ring slot genuinely busy, or
+    // the growth allocation itself failed) so correctness never depends on
+    // the ring being sized exactly right.
+    id<MTLBuffer> upload = nil;
+    std::shared_ptr<std::atomic<bool>> stagingSlotBusy;
+    if (auto* slot = static_cast<MetalCaptureState::StagingBuffer*>(
+            AcquireStagingSlot(*capturedState, static_cast<unsigned long>(requiredBytes))))
+    {
+        std::memcpy([slot->Buffer contents], pixels.data(), requiredBytes);
+        upload = slot->Buffer;
+        stagingSlotBusy = slot->Busy;
+        stagingSlotBusy->store(true, std::memory_order_release);
+    }
+    else
+    {
+        upload = [capturedState->Device
+            newBufferWithBytes:pixels.data()
+                        length:requiredBytes
+                       options:MTLResourceStorageModeShared];
+        if (!capturedState->LoggedStagingRingExhausted)
+        {
+            capturedState->LoggedStagingRingExhausted = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal display capture: staging buffer ring "
+                "exhausted, falling back to a one-off buffer allocation "
+                "(further occurrences not logged)\n");
+        }
+    }
+    id<MTLCommandBuffer> command =
+        [capturedState->Queue commandBuffer];
+    id<MTLBlitCommandEncoder> blit =
+        command ? [command blitCommandEncoder] : nil;
+    if (!upload || !command || !blit)
+    {
+        if (stagingSlotBusy)
+            stagingSlotBusy->store(false, std::memory_order_release);
+        return false;
+    }
+
+    const NSUInteger bytesPerRow = width * sizeof(uint32_t);
+    [blit copyFromBuffer:upload
+            sourceOffset:0
+       sourceBytesPerRow:bytesPerRow
+     sourceBytesPerImage:bytesPerRow * height
+              sourceSize:MTLSizeMake(width, height, 1)
+               toTexture:texture
+        destinationSlice:static_cast<NSUInteger>(slice)
+        destinationLevel:0
+       destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [blit endEncoding];
+
+    // This layer's PendingUploadSerial is captured by value now, before
+    // commit, so the handler can detect a newer upload superseding this
+    // one (dispatched between this commit and that later completion).
+    std::vector<std::pair<int, uint64_t>> layerSerials;
+    layerSerials.reserve(affectedLayers.size());
+    for (int layer : affectedLayers)
+        layerSerials.emplace_back(layer, capturedState->Meta[layer].PendingUploadSerial);
+
+    // Same-queue command ordering (capturedState->Queue is the
+    // renderer-side queue shared by 3D, 2D, capture and final
+    // composition -- NOT the presenter's queue, which is separate and
+    // synchronized only through RendererOutputLease) guarantees any
+    // later command buffer on this queue that reads this texture sees
+    // this write's effects, without a CPU-side wait for the common
+    // (success) case. This runs on every CPU-fallback frame with a
+    // pending capture write, so a synchronous GPU stall here was a real,
+    // measured hot-path cost. What we do need to wait for is knowing
+    // whether the write actually landed, so metadata reflects reality.
+    [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+        // The blit above only reads `upload` while the GPU executes this
+        // command buffer, so completion (success or failure) is exactly
+        // when it's safe to hand the staging slot back to the ring.
+        if (stagingSlotBusy)
+            stagingSlotBusy->store(false, std::memory_order_release);
+        const bool ok = completed.status == MTLCommandBufferStatusCompleted;
+        if (!ok)
+        {
+            const char* message = completed.error
+                ? [[completed.error localizedDescription] UTF8String]
+                : "unknown Metal error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal display capture: CPU fallback upload "
+                "command failed: %s\n", message);
+        }
+        for (const auto& entry : layerSerials)
+        {
+            auto& meta = capturedState->Meta[entry.first];
+            if (meta.PendingUploadSerial != entry.second)
+                continue; // a newer upload for this layer already landed or is in flight
+            meta.Valid = ok;
+            meta.PendingCpuUpload = !ok;
+        }
+    }];
+    [command commit];
+    return true;
+}
+
 bool MetalRenderer::UploadCpuCompletedCaptures()
 {
     if (!CaptureState || !CaptureState->Ready)
@@ -811,78 +1019,13 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     if (!upload128Mask && !upload256Mask)
         return true;
 
-    auto uploadTexture = [&](id<MTLTexture> texture,
-                             NSUInteger slice,
-                             const uint16_t* source,
-                             NSUInteger nativeWidth,
-                             NSUInteger nativeHeight) -> bool {
-        const NSUInteger scale =
-            static_cast<NSUInteger>(std::max(1, CaptureState->Scale));
-        const NSUInteger width = nativeWidth * scale;
-        const NSUInteger height = nativeHeight * scale;
-        std::vector<uint32_t>& pixels = CaptureState->CpuUploadScratch;
-        if (pixels.size() < width * height)
-            pixels.resize(width * height);
-
-        for (NSUInteger y = 0; y < nativeHeight; y++)
-        {
-            for (NSUInteger x = 0; x < nativeWidth; x++)
-            {
-                const uint32_t packed =
-                    MetalPackRgb5551AsRgba8(source[y * nativeWidth + x]);
-                for (NSUInteger sy = 0; sy < scale; sy++)
-                {
-                    uint32_t* row = pixels.data() +
-                        (y * scale + sy) * width + x * scale;
-                    for (NSUInteger sx = 0; sx < scale; sx++)
-                        row[sx] = packed;
-                }
-            }
-        }
-
-        id<MTLBuffer> upload =
-            [CaptureState->Device
-                newBufferWithBytes:pixels.data()
-                            length:width * height * sizeof(uint32_t)
-                           options:MTLResourceStorageModeShared];
-        id<MTLCommandBuffer> command =
-            [CaptureState->Queue commandBuffer];
-        id<MTLBlitCommandEncoder> blit =
-            command ? [command blitCommandEncoder] : nil;
-        if (!upload || !command || !blit)
-            return false;
-
-        const NSUInteger bytesPerRow = width * sizeof(uint32_t);
-        [blit copyFromBuffer:upload
-                sourceOffset:0
-           sourceBytesPerRow:bytesPerRow
-         sourceBytesPerImage:bytesPerRow * height
-                  sourceSize:MTLSizeMake(width, height, 1)
-                   toTexture:texture
-            destinationSlice:slice
-            destinationLevel:0
-           destinationOrigin:MTLOriginMake(0, 0, 0)];
-        [blit endEncoding];
-        // Same-queue command ordering (CaptureState->Queue is the shared
-        // renderer/presenter queue, see MetalContext.h) guarantees any later
-        // command buffer on this queue that reads this texture sees this
-        // write's effects, without a CPU-side wait. This runs on every
-        // CPU-fallback frame with a pending capture write, so a synchronous
-        // GPU stall here was a real, measured hot-path cost.
-        [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            if (completed.status == MTLCommandBufferStatusError)
-            {
-                const char* message = completed.error
-                    ? [[completed.error localizedDescription] UTF8String]
-                    : "unknown Metal error";
-                std::fprintf(stderr,
-                    "[MelonPrime] metal display capture: CPU fallback upload "
-                    "command failed: %s\n", message);
-            }
-        }];
-        [command commit];
-        return true;
-    };
+    // Kept alive by the completion handlers below (captured by value), so a
+    // ConfigureMetalCaptureState() reconfigure racing with an in-flight
+    // upload can never leave a handler writing through a dangling
+    // MetalCaptureState. See MetalCaptureState::CaptureMeta::PendingUploadSerial
+    // for how a handler tells whether it is still the authoritative result
+    // for its layer once it does run.
+    std::shared_ptr<MetalCaptureState> capturedState = CaptureState;
 
     for (uint32_t layer = 0; layer < 16; layer++)
     {
@@ -893,18 +1036,18 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         const uint16_t* source =
             reinterpret_cast<const uint16_t*>(GPU.VRAM[bank]) +
             start * 64u * 256u;
-        if (!uploadTexture(
-                CaptureState->Capture128,
+        CaptureState->Meta[layer].PendingUploadSerial++;
+        if (!UploadCaptureTexture(
+                capturedState,
+                (__bridge void*)CaptureState->Capture128,
                 layer,
                 source,
                 128u,
-                128u))
+                128u,
+                std::vector<int>{static_cast<int>(layer)}))
         {
             return false;
         }
-        auto& meta = CaptureState->Meta[layer];
-        meta.Valid = true;
-        meta.PendingCpuUpload = false;
     }
 
     for (uint32_t bank = 0; bank < 4; bank++)
@@ -913,24 +1056,27 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
             continue;
         const uint16_t* source =
             reinterpret_cast<const uint16_t*>(GPU.VRAM[bank]);
-        if (!uploadTexture(
-                CaptureState->Capture256,
+        std::vector<int> affectedLayers;
+        for (uint32_t start = 0; start < 4; start++)
+        {
+            const int layer = static_cast<int>((bank << 2u) | start);
+            auto& meta = CaptureState->Meta[layer];
+            if (meta.PendingCpuUpload && meta.Size > 0)
+            {
+                meta.PendingUploadSerial++;
+                affectedLayers.push_back(layer);
+            }
+        }
+        if (!UploadCaptureTexture(
+                capturedState,
+                (__bridge void*)CaptureState->Capture256,
                 bank,
                 source,
                 256u,
-                256u))
+                256u,
+                std::move(affectedLayers)))
         {
             return false;
-        }
-
-        for (uint32_t start = 0; start < 4; start++)
-        {
-            auto& meta = CaptureState->Meta[(bank << 2u) | start];
-            if (meta.PendingCpuUpload && meta.Size > 0)
-            {
-                meta.Valid = true;
-                meta.PendingCpuUpload = false;
-            }
         }
     }
 
