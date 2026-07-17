@@ -169,7 +169,7 @@ struct VulkanCompositionInputs
     bool capture3dSourceValid{};
     bool capture3dSourceScreenSwapValid{};
     bool capture3dSourceScreenSwap{};
-    bool liveSourceScreenSwap{};
+    bool compositionCurrentSourceScreenSwap{};
     bool class4VramStructuredPair{};
     bool class4NoAboveVramStructuredPair{};
     bool class4PreservePackedVramValid{};
@@ -255,7 +255,7 @@ public:
     void invalidateTemporalHistory();
     void clearStructuredCaptureHistory();
     void releaseTemporalFrameReferences();
-    bool captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+    bool captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap);
     bool prepareFrameForPresentation(
         VulkanFrame* frame,
         const melonDS::GPU& gpu,
@@ -464,7 +464,7 @@ private:
         melonDS::VulkanRenderer3D& renderer3D);
     bool ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height);
     void destroyRenderer3dSnapshot(FrameResource& resource);
-    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap);
 
     bool createAccumulateResources();
     void destroyAccumulateResources();
@@ -475,7 +475,7 @@ private:
         VulkanFrame* frame,
         FrameResource& resource,
         const melonDS::VulkanRenderer3D& renderer3D,
-        bool snapshotScreenSwap,
+        bool rendererTargetScreenSwap,
         bool accumulateTopHighres,
         bool accumulateBottomHighres,
         bool replaceAccumulatedHighres);
@@ -488,7 +488,7 @@ private:
         bool topAccumulatorAvailable,
         bool bottomAccumulatorAvailable,
         bool packedScreenSwap,
-        bool liveSourceScreenSwap,
+        bool compositionCurrentSourceScreenSwap,
         bool hasRenderer3dSnapshot,
         bool renderer3dSnapshotScreenSwap);
     void consumeFrameGpuTiming(FrameResource& resource);
@@ -535,11 +535,19 @@ private:
     VkDeviceMemory accumulatedTopHighresMemory{VK_NULL_HANDLE};
     bool accumulatedTopHighresValid{false};
     bool accumulatedTopHighresLayoutReady{false};
+    bool accumulatedTopOwnerValid{false};
+    bool accumulatedTopOwnerScreenSwap{true};
+    u64 accumulatedTopStructuredGeneration{};
+    u64 accumulatedTopRendererSerial{};
     VkImage accumulatedBottomHighresImage{VK_NULL_HANDLE};
     VkImageView accumulatedBottomHighresView{VK_NULL_HANDLE};
     VkDeviceMemory accumulatedBottomHighresMemory{VK_NULL_HANDLE};
     bool accumulatedBottomHighresValid{false};
     bool accumulatedBottomHighresLayoutReady{false};
+    bool accumulatedBottomOwnerValid{false};
+    bool accumulatedBottomOwnerScreenSwap{false};
+    u64 accumulatedBottomStructuredGeneration{};
+    u64 accumulatedBottomRendererSerial{};
     u32 accumulatedHighresWidth{0};
     u32 accumulatedHighresHeight{0};
 

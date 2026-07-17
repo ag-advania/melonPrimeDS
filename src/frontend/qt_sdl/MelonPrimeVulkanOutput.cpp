@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -591,6 +592,12 @@ void MelonPrimeVulkanOutput::invalidateTemporalHistory()
     releaseTemporalFrameReferences();
     accumulatedTopHighresValid = false;
     accumulatedBottomHighresValid = false;
+    accumulatedTopOwnerValid = false;
+    accumulatedBottomOwnerValid = false;
+    accumulatedTopStructuredGeneration = 0;
+    accumulatedBottomStructuredGeneration = 0;
+    accumulatedTopRendererSerial = 0;
+    accumulatedBottomRendererSerial = 0;
     lastValidTopPackedAvailable = false;
     lastValidBottomPackedAvailable = false;
     lastPackedScreenSwapValid = false;
@@ -1066,6 +1073,12 @@ void MelonPrimeVulkanOutput::destroyAccumulateResources()
         accumulatedBottomHighresLayoutReady);
     accumulatedHighresWidth = 0;
     accumulatedHighresHeight = 0;
+    accumulatedTopOwnerValid = false;
+    accumulatedBottomOwnerValid = false;
+    accumulatedTopStructuredGeneration = 0;
+    accumulatedBottomStructuredGeneration = 0;
+    accumulatedTopRendererSerial = 0;
+    accumulatedBottomRendererSerial = 0;
     cachedAccumulateTopSourceView = VK_NULL_HANDLE;
     cachedAccumulateBottomSourceView = VK_NULL_HANDLE;
     accumulateTopDescriptorReady = false;
@@ -1118,6 +1131,12 @@ bool MelonPrimeVulkanOutput::ensureAccumulatedHighresImages(u32 width, u32 heigh
         accumulatedBottomHighresMemory,
         accumulatedBottomHighresValid,
         accumulatedBottomHighresLayoutReady);
+    accumulatedTopOwnerValid = false;
+    accumulatedBottomOwnerValid = false;
+    accumulatedTopStructuredGeneration = 0;
+    accumulatedBottomStructuredGeneration = 0;
+    accumulatedTopRendererSerial = 0;
+    accumulatedBottomRendererSerial = 0;
     cachedAccumulateTopSourceView = VK_NULL_HANDLE;
     cachedAccumulateBottomSourceView = VK_NULL_HANDLE;
     accumulateTopDescriptorReady = false;
@@ -1213,6 +1232,21 @@ bool MelonPrimeVulkanOutput::recordAccumulateMerge(FrameResource& resource, bool
         || resource.renderer3dSnapshotView == VK_NULL_HANDLE
         || resource.snapshotWidth == 0 || resource.snapshotHeight == 0)
         return false;
+    if (resource.renderer3dSnapshotScreenSwap != topLcd)
+    {
+        accumulatedTopHighresValid = false;
+        accumulatedBottomHighresValid = false;
+        accumulatedTopOwnerValid = false;
+        accumulatedBottomOwnerValid = false;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanOwnerInvariant: rejected cross-LCD accumulator write snapshotOwner=%u destinationTop=%u generation=%llu serial=%llu",
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            topLcd ? 1u : 0u,
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            static_cast<unsigned long long>(resource.renderer3dSnapshotSerial));
+        return false;
+    }
     if (resource.topPackedBuffer == VK_NULL_HANDLE
         || resource.bottomPackedBuffer == VK_NULL_HANDLE
         || resource.packedBufferSize == 0)
@@ -1398,6 +1432,20 @@ bool MelonPrimeVulkanOutput::recordAccumulateMerge(FrameResource& resource, bool
     );
 
     destValid = true;
+    if (topLcd)
+    {
+        accumulatedTopOwnerValid = true;
+        accumulatedTopOwnerScreenSwap = resource.renderer3dSnapshotScreenSwap;
+        accumulatedTopStructuredGeneration = resource.structuredGeneration;
+        accumulatedTopRendererSerial = resource.renderer3dSnapshotSerial;
+    }
+    else
+    {
+        accumulatedBottomOwnerValid = true;
+        accumulatedBottomOwnerScreenSwap = resource.renderer3dSnapshotScreenSwap;
+        accumulatedBottomStructuredGeneration = resource.structuredGeneration;
+        accumulatedBottomRendererSerial = resource.renderer3dSnapshotSerial;
+    }
     return true;
 }
 
@@ -2199,7 +2247,7 @@ void MelonPrimeVulkanOutput::recordTemporalStats(
     bool topAccumulatorAvailable,
     bool bottomAccumulatorAvailable,
     bool packedScreenSwap,
-    bool liveSourceScreenSwap,
+    bool compositionCurrentSourceScreenSwap,
     bool hasRenderer3dSnapshot,
     bool renderer3dSnapshotScreenSwap)
 {
@@ -2273,11 +2321,11 @@ void MelonPrimeVulkanOutput::recordTemporalStats(
         temporalStats.PackedTopOwner++;
     else
         temporalStats.PackedBottomOwner++;
-    if (liveSourceScreenSwap)
+    if (compositionCurrentSourceScreenSwap)
         temporalStats.LiveTopOwner++;
     else
         temporalStats.LiveBottomOwner++;
-    if (packedScreenSwap != liveSourceScreenSwap)
+    if (packedScreenSwap != compositionCurrentSourceScreenSwap)
         temporalStats.LiveOwnerOverride++;
     if (hasRenderer3dSnapshot)
     {
@@ -2286,7 +2334,7 @@ void MelonPrimeVulkanOutput::recordTemporalStats(
             temporalStats.SnapshotTopOwner++;
         else
             temporalStats.SnapshotBottomOwner++;
-        if (renderer3dSnapshotScreenSwap != liveSourceScreenSwap)
+        if (renderer3dSnapshotScreenSwap != compositionCurrentSourceScreenSwap)
             temporalStats.SnapshotOwnerDiffersFromLive++;
     }
     temporalStats.TopPlane0UsefulPixels += softPackedSnapshot.topScreenStats.Plane0UsefulPixels;
@@ -2341,6 +2389,51 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     if (!updateCompositorPackedBuffers(frame, resource, softPackedSnapshot))
         return false;
     packedUploadCpuWindow.Add(PerfNowNs() - packedUploadStartNs);
+    const bool rendererTargetScreenSwap = resource.screenSwap;
+    const bool preRunSnapshotOwnerMismatch = resource.hasRenderer3dSnapshot
+        && resource.snapshotFromPreRun
+        && frame->renderTimelineValue != 0u
+        && resource.renderer3dSnapshotScreenSwap != rendererTargetScreenSwap;
+    const auto accumulatorContractMatches = [&](bool topLcd) {
+        const bool highresValid = topLcd
+            ? accumulatedTopHighresValid
+            : accumulatedBottomHighresValid;
+        if (!highresValid)
+            return true;
+        const bool ownerValid = topLcd
+            ? accumulatedTopOwnerValid
+            : accumulatedBottomOwnerValid;
+        const bool ownerScreenSwap = topLcd
+            ? accumulatedTopOwnerScreenSwap
+            : accumulatedBottomOwnerScreenSwap;
+        const u64 generation = topLcd
+            ? accumulatedTopStructuredGeneration
+            : accumulatedBottomStructuredGeneration;
+        const u64 serial = topLcd
+            ? accumulatedTopRendererSerial
+            : accumulatedBottomRendererSerial;
+        return ownerValid
+            && ownerScreenSwap == topLcd
+            && generation != 0u
+            && generation <= resource.structuredGeneration
+            && serial != 0u
+            && (resource.renderer3dRenderSerial == 0u || serial <= resource.renderer3dRenderSerial);
+    };
+    const bool accumulatedOwnerMismatch =
+        !accumulatorContractMatches(true) || !accumulatorContractMatches(false);
+    if (preRunSnapshotOwnerMismatch || accumulatedOwnerMismatch)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanOwnerInvariant: invalidating temporal history snapshotMismatch=%u accumulatorMismatch=%u rendererTargetOwner=%u snapshotOwner=%u generation=%llu renderSerial=%llu",
+            preRunSnapshotOwnerMismatch ? 1u : 0u,
+            accumulatedOwnerMismatch ? 1u : 0u,
+            rendererTargetScreenSwap ? 1u : 0u,
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            static_cast<unsigned long long>(resource.renderer3dRenderSerial));
+        invalidateTemporalHistory();
+    }
     const bool currentBackendIsGraphics =
         renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
     const FrameResource* previousResource = nullptr;
@@ -2729,48 +2822,48 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines == 0u
         && softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines == 0u
         && softPackedSnapshot.bottomScreenStats.ForceLive3dCompMode7Lines == 0u;
-    bool liveSourceScreenSwap = resource.screenSwap;
+    bool handoffHeuristicScreenSwap = rendererTargetScreenSwap;
     if (topStructuredSlotUsesPreviousWhileBottom2dOnly)
     {
-        liveSourceScreenSwap = false;
+        handoffHeuristicScreenSwap = false;
     }
     else if (bottomStructuredSlotUsesPreviousWhileTop2dOnly)
     {
-        liveSourceScreenSwap = true;
+        handoffHeuristicScreenSwap = true;
     }
     else if (preservePackedOwnerForTopVramBottomPlainStructuredComp7)
     {
-        liveSourceScreenSwap = resource.screenSwap;
+        handoffHeuristicScreenSwap = rendererTargetScreenSwap;
     }
     else if (class4VramStructuredPair)
     {
-        liveSourceScreenSwap = topUsesVramCapture3d;
+        handoffHeuristicScreenSwap = topUsesVramCapture3d;
     }
     else if (preservePackedOwnerForAlternatingPlainStructuredComp7)
     {
-        liveSourceScreenSwap = resource.screenSwap;
+        handoffHeuristicScreenSwap = rendererTargetScreenSwap;
     }
     else if (asymmetricFullRegularComp7
         && !preservePackedOwnerForPlainRegularComp7Pair)
     {
-        liveSourceScreenSwap = topUsesFullRegularComp7;
+        handoffHeuristicScreenSwap = topUsesFullRegularComp7;
     }
     else if (topUsesCurrentCapture3d != bottomUsesCurrentCapture3d
         && !preservePackedOwnerForPlainRegularComp7Pair)
     {
-        liveSourceScreenSwap = topUsesCurrentCapture3d;
+        handoffHeuristicScreenSwap = topUsesCurrentCapture3d;
     }
     else if (topUsesVramCapture3d
         && !topUsesRegularCapture3d
         && bottomUsesRegularCapture3d)
     {
-        liveSourceScreenSwap = false;
+        handoffHeuristicScreenSwap = false;
     }
     else if (bottomUsesVramCapture3d
         && !bottomUsesRegularCapture3d
         && topUsesRegularCapture3d)
     {
-        liveSourceScreenSwap = true;
+        handoffHeuristicScreenSwap = true;
     }
     const bool exactCaptureOwnerApplies =
         softPackedSnapshot.captureScreenSwapValid
@@ -2782,20 +2875,21 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 softPackedSnapshot.bottomScreenNeedsCapture3dMask.begin(),
                 softPackedSnapshot.bottomScreenNeedsCapture3dMask.end(),
                 [](u8 value) { return value != 0u; }));
-    if (exactCaptureOwnerApplies)
-        liveSourceScreenSwap = softPackedSnapshot.captureScreenSwap;
+    // CaptureScreenSwap belongs exclusively to the DS-timed capture buffer.
+    // It must never relabel the current renderer target or choose an LCD
+    // accumulator for that target.
     const bool topPlainStructuredComp7UsesOppositeLive3d =
         currentBackendIsGraphics
         && topUsesPlainStructuredComp7Slot
         && !topUsesCurrentCapture3d
         && bottomUsesCurrentCapture3d
-        && !liveSourceScreenSwap;
+        && !handoffHeuristicScreenSwap;
     const bool bottomPlainStructuredComp7UsesOppositeLive3d =
         currentBackendIsGraphics
         && bottomUsesPlainStructuredComp7Slot
         && !bottomUsesCurrentCapture3d
         && topUsesCurrentCapture3d
-        && liveSourceScreenSwap;
+        && handoffHeuristicScreenSwap;
     const bool topPlainStructuredComp7PureAlternatingVramPair =
         topPlainStructuredComp7UsesOppositeLive3d
         && preservePackedOwnerForAlternatingPlainStructuredComp7
@@ -2834,7 +2928,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     if (needsDsTimedCaptureBackedComp4Source
         && topUsesScreenWideCaptureBackedComp4 != bottomUsesScreenWideCaptureBackedComp4)
     {
-        liveSourceScreenSwap = topUsesScreenWideCaptureBackedComp4;
+        handoffHeuristicScreenSwap = topUsesScreenWideCaptureBackedComp4;
     }
     u32 class4AsymmetricCadencePhaseForFrame = class4AsymmetricCadencePhase & 3u;
     bool class4AsymmetricCadenceAllowsTop = true;
@@ -2870,7 +2964,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             !topUsesVramCapture3d || ((class4AsymmetricCadencePhaseForFrame & 1u) == 0u);
         if (topUsesVramCapture3d && !class4AsymmetricCadenceAllowsTop)
         {
-            liveSourceScreenSwap = false;
+            handoffHeuristicScreenSwap = false;
             class4AsymmetricCadenceSuppressesTop = true;
         }
         if (topUsesVramCapture3d)
@@ -2888,7 +2982,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
                 class4VramStructuredPair ? 1u : 0u,
                 resource.screenSwap ? 1u : 0u,
-                liveSourceScreenSwap ? 1u : 0u,
+                handoffHeuristicScreenSwap ? 1u : 0u,
                 backendRenderScreenSwap ? 1u : 0u,
                 softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines,
                 softPackedSnapshot.topScreenStats.VramCaptureUses3dLines,
@@ -2906,59 +3000,10 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         class4AsymmetricCadencePhase = 0;
     }
 
-    const u64 renderer3dSnapshotSerialForTrace = resource.hasRenderer3dSnapshot
-        ? resource.renderer3dSnapshotSerial
-        : renderer3D.GetRenderSerial();
-    const bool rendererSerialMismatch =
-        resource.renderer3dRenderSerial != 0u
-        && renderer3dSnapshotSerialForTrace != 0u
-        && resource.renderer3dRenderSerial != renderer3dSnapshotSerialForTrace;
-    if (rendererSerialMismatch || vulkan2dTraceEnabled())
-    {
-        melonDS::Platform::Log(
-            rendererSerialMismatch
-                ? melonDS::Platform::LogLevel::Warn
-                : melonDS::Platform::LogLevel::Info,
-            "Vulkan2DTrace frameId=%llu sourceGeneration=%llu frontBuffer=%d screenSwapAt3D=%u captureOwnerValid=%u captureOwner=%u captureUseTopHash=%016llX captureUseBottomHash=%016llX captureSourceValidHash=%016llX captureSourceValid=%u topRegular=%u bottomRegular=%u topVram=%u bottomVram=%u topStructured=%u bottomStructured=%u computedOwner=%u exactOwner=%u rendererSnapshotOwner=%u renderer3dRenderSerial=%llu renderer3dSnapshotSerial=%llu serialMismatch=%u class4Pair=%u cadencePhase=%u cadenceSuppressed=%u previousTopFrameId=%llu previousBottomFrameId=%llu replayTop=%u replayBottom=%u",
-            frame != nullptr ? static_cast<unsigned long long>(frame->frameId) : 0ull,
-            static_cast<unsigned long long>(resource.structuredGeneration),
-            resource.frontBufferLatched,
-            resource.screenSwap ? 1u : 0u,
-            resource.captureScreenSwapValid ? 1u : 0u,
-            resource.captureScreenSwap ? 1u : 0u,
-            static_cast<unsigned long long>(hashLineMask(resource.topScreenNeedsCapture3dMask)),
-            static_cast<unsigned long long>(hashLineMask(resource.bottomScreenNeedsCapture3dMask)),
-            static_cast<unsigned long long>(hashLineMask(resource.capture3dSourceLineValidMask)),
-            softPackedSnapshot.hasCapture3dSource ? 1u : 0u,
-            softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines,
-            softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines,
-            softPackedSnapshot.topScreenStats.VramCaptureUses3dLines,
-            softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines,
-            softPackedSnapshot.topScreenStats.StructuredSlotPixels,
-            softPackedSnapshot.bottomScreenStats.StructuredSlotPixels,
-            liveSourceScreenSwap ? 1u : 0u,
-            resource.captureScreenSwap ? 1u : 0u,
-            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
-            static_cast<unsigned long long>(resource.renderer3dRenderSerial),
-            static_cast<unsigned long long>(renderer3dSnapshotSerialForTrace),
-            rendererSerialMismatch ? 1u : 0u,
-            class4VramStructuredPair ? 1u : 0u,
-            class4AsymmetricCadencePhaseForFrame,
-            class4AsymmetricCadenceSuppressesTop ? 1u : 0u,
-            resource.previousTopSourceFrame != nullptr
-                ? static_cast<unsigned long long>(resource.previousTopSourceFrame->frameId)
-                : 0ull,
-            resource.previousBottomSourceFrame != nullptr
-                ? static_cast<unsigned long long>(resource.previousBottomSourceFrame->frameId)
-                : 0ull,
-            resource.replayTopComposedFromPrevious ? 1u : 0u,
-            resource.replayBottomComposedFromPrevious ? 1u : 0u);
-    }
-
     resource.topStructuredHandoffSuppress3d = topStructuredHandoffSuppress3d;
     resource.bottomStructuredHandoffSuppress3d = bottomStructuredHandoffSuppress3d;
 
-    if (liveSourceScreenSwap != resource.screenSwap
+    if (handoffHeuristicScreenSwap != rendererTargetScreenSwap
         && areRendererDebugBgObjLogsEnabled()
         && packedDebugLogsRemaining > 0)
     {
@@ -2967,7 +3012,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             "VulkanLive3D[OwnerOverride]: frameId=%u packedScreenSwap=%u liveSourceScreenSwap=%u backendRenderScreenSwap=%u class4Only=%u preserveValid=%u preserveTop=%u topCurrentCapture=%u bottomCurrentCapture=%u topReg=%u topVram=%u topStruct=%u bottomReg=%u bottomVram=%u bottomStruct=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
-            liveSourceScreenSwap ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
             backendRenderScreenSwap ? 1u : 0u,
             softPackedSnapshot.captureBackedClass4Only ? 1u : 0u,
             resource.class4PreservePackedVramValid ? 1u : 0u,
@@ -2993,7 +3038,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             "VulkanLive3D[RegularComp7PackedOwner]: frameId=%u packedScreenSwap=%u liveSourceScreenSwap=%u topReg=%u topComp7=%u topAboveVisible=%u top2DOnly=%u bottomComp4=%u bottomStruct=%u bottomAboveVisible=%u bottom2DOnly=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
-            liveSourceScreenSwap ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
             softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines,
             softPackedSnapshot.topScreenStats.CompModeCounts[7],
             softPackedSnapshot.topScreenStats.StructuredAboveVisiblePixels,
@@ -3015,6 +3060,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && resource.snapshotFromGraphicsBackend == currentBackendIsGraphics
         && resource.snapshotWidth == renderer3D.GetColorTargetWidth()
         && resource.snapshotHeight == renderer3D.GetColorTargetHeight()
+        && resource.renderer3dSnapshotScreenSwap == rendererTargetScreenSwap
         && (!currentBackendIsGraphics || needsDsTimedCaptureBackedComp4Source);
 
     const auto screenCanUseAccumulatedHighres = [&](const SoftPackedScreenStats& stats) {
@@ -3034,29 +3080,26 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     const bool bottomCanUseAccumulatedHighres =
         screenCanUseAccumulatedHighres(softPackedSnapshot.bottomScreenStats);
     bool replaceAccumulatedHighres = false;
+    bool accumulateTopThisFrame = false;
+    bool accumulateBottomThisFrame = false;
     if (canReusePreRunSnapshot)
     {
-        if (needsDsTimedCaptureBackedComp4Source
-            && topUsesScreenWideCaptureBackedComp4 != bottomUsesScreenWideCaptureBackedComp4)
-        {
-            resource.renderer3dSnapshotScreenSwap = liveSourceScreenSwap;
-        }
         resource.hasPreparedInputs = true;
         resource.hasContent = false;
     }
     else
     {
-        const bool live3dOwnerWasSameLcdLastFrame = liveSourceScreenSwap
+        const bool live3dOwnerWasSameLcdLastFrame = handoffHeuristicScreenSwap
             ? framesSinceTopLive3D == 0u
             : framesSinceBottomLive3D == 0u;
         const bool liveOwnerUsesScreenWideRegularCapture =
-            liveSourceScreenSwap
+            handoffHeuristicScreenSwap
                 ? softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines > (kScreenHeight / 2u)
                 : softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines > (kScreenHeight / 2u);
         const bool structuredHandoffLiveOwnerNeedsReplace =
             !softPackedSnapshot.hasCapture3dSource
-            && ((topStructuredHandoffNoCurrent3d && liveSourceScreenSwap)
-                || (bottomStructuredHandoffNoCurrent3d && !liveSourceScreenSwap));
+            && ((topStructuredHandoffNoCurrent3d && handoffHeuristicScreenSwap)
+                || (bottomStructuredHandoffNoCurrent3d && !handoffHeuristicScreenSwap));
         replaceAccumulatedHighres =
             currentBackendIsGraphics
             && ((class4VramStructuredPair
@@ -3070,9 +3113,9 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 frame,
                 resource,
                 renderer3D,
-                liveSourceScreenSwap,
-                liveSourceScreenSwap,
-                !liveSourceScreenSwap,
+                rendererTargetScreenSwap,
+                rendererTargetScreenSwap,
+                !rendererTargetScreenSwap,
                 replaceAccumulatedHighres))
         {
             return false;
@@ -3080,6 +3123,32 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
 
         resource.hasPreparedInputs = true;
         resource.hasContent = false;
+        accumulateTopThisFrame = currentBackendIsGraphics
+            && rendererTargetScreenSwap
+            && accumulatedTopOwnerValid
+            && accumulatedTopStructuredGeneration == resource.structuredGeneration
+            && accumulatedTopRendererSerial == resource.renderer3dSnapshotSerial;
+        accumulateBottomThisFrame = currentBackendIsGraphics
+            && !rendererTargetScreenSwap
+            && accumulatedBottomOwnerValid
+            && accumulatedBottomStructuredGeneration == resource.structuredGeneration
+            && accumulatedBottomRendererSerial == resource.renderer3dSnapshotSerial;
+    }
+
+    const bool rendererSnapshotOwnerMismatch = resource.hasRenderer3dSnapshot
+        && resource.renderer3dSnapshotScreenSwap != rendererTargetScreenSwap;
+    assert(!rendererSnapshotOwnerMismatch);
+    if (rendererSnapshotOwnerMismatch)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanOwnerInvariant: renderer snapshot owner mismatch target=%u snapshot=%u generation=%llu serial=%llu",
+            rendererTargetScreenSwap ? 1u : 0u,
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            static_cast<unsigned long long>(resource.renderer3dSnapshotSerial));
+        invalidateTemporalHistory();
+        resource.renderer3dSnapshotScreenSwap = rendererTargetScreenSwap;
     }
 
     VkImage currentSourceImage = VK_NULL_HANDLE;
@@ -3105,7 +3174,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
 
     const bool live3dOwnerIsTop = resource.hasRenderer3dSnapshot
         ? resource.renderer3dSnapshotScreenSwap
-        : liveSourceScreenSwap;
+        : rendererTargetScreenSwap;
     if (resource.hasRenderer3dSnapshot
         && resource.renderer3dSnapshot != VK_NULL_HANDLE
         && resource.renderer3dSnapshotView != VK_NULL_HANDLE)
@@ -3191,7 +3260,13 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             && previousResource.renderer3dSnapshot != VK_NULL_HANDLE
             && previousResource.renderer3dSnapshotView != VK_NULL_HANDLE
             && previousResource.snapshotWidth == currentSourceWidth
-            && previousResource.snapshotHeight == currentSourceHeight;
+            && previousResource.snapshotHeight == currentSourceHeight
+            && previousResource.renderer3dSnapshotScreenSwap == topLcd
+            && previousResource.structuredGeneration != 0u
+            && previousResource.structuredGeneration <= resource.structuredGeneration
+            && previousResource.renderer3dSnapshotSerial != 0u
+            && (resource.renderer3dRenderSerial == 0u
+                || previousResource.renderer3dSnapshotSerial <= resource.renderer3dRenderSerial);
         if (!previousSnapshotCompatible)
             return;
 
@@ -3223,10 +3298,24 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && accumulatedHighresHeight == currentSourceHeight;
     const bool topAccumulatorAvailable = useAccumulators
         && accumulatedTopHighresValid
+        && accumulatedTopOwnerValid
+        && accumulatedTopOwnerScreenSwap
+        && accumulatedTopStructuredGeneration != 0u
+        && accumulatedTopStructuredGeneration <= resource.structuredGeneration
+        && accumulatedTopRendererSerial != 0u
+        && (resource.renderer3dRenderSerial == 0u
+            || accumulatedTopRendererSerial <= resource.renderer3dRenderSerial)
         && accumulatedTopHighresImage != VK_NULL_HANDLE
         && accumulatedTopHighresView != VK_NULL_HANDLE;
     const bool bottomAccumulatorAvailable = useAccumulators
         && accumulatedBottomHighresValid
+        && accumulatedBottomOwnerValid
+        && !accumulatedBottomOwnerScreenSwap
+        && accumulatedBottomStructuredGeneration != 0u
+        && accumulatedBottomStructuredGeneration <= resource.structuredGeneration
+        && accumulatedBottomRendererSerial != 0u
+        && (resource.renderer3dRenderSerial == 0u
+            || accumulatedBottomRendererSerial <= resource.renderer3dRenderSerial)
         && accumulatedBottomHighresImage != VK_NULL_HANDLE
         && accumulatedBottomHighresView != VK_NULL_HANDLE;
     const bool ownershipIntroDebugRelevant =
@@ -3251,7 +3340,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             "VulkanOwnershipIntro[VulkanFrame]: frameId=%u packedSwap=%u liveSwap=%u backendSwap=%u prevSwap=%u toggled=%u snapshot=%u snapshotSwap=%u capSrc=%u capHintValid=%u capHint=%u exactValid=%u exactSwap=%u class4Pair=%u preserveTopVramBottomPlain=%u preserveAltPlain=%u topSlotHold=%u bottomSlotHold=%u topCurrent=%u bottomCurrent=%u topPlain=%u bottomPlain=%u topOpp=%u bottomOpp=%u topCan=%u bottomCan=%u topNeed=%u bottomNeed=%u topAcc=%u bottomAcc=%u sinceTop=%u sinceBottom=%u topPrevValid=%u bottomPrevValid=%u topDM=%u/%u/%u/%u topReg=%u topVram=%u topForce=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomDM=%u/%u/%u/%u bottomReg=%u bottomVram=%u bottomForce=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
-            liveSourceScreenSwap ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
             backendRenderScreenSwap ? 1u : 0u,
             previousResource != nullptr && previousResource->screenSwap ? 1u : 0u,
             resource.screenSwapToggledFromPrevious ? 1u : 0u,
@@ -3317,7 +3406,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             "VulkanLive3D[Class4Pair]: frameId=%u packedSwap=%u liveSwap=%u backendSwap=%u capHintValid=%u capHint=%u exactValid=%u exactSwap=%u snapshot=%u snapshotSwap=%u preserveValid=%u preserveTop=%u noAbove=%u smallAboveMarker=%u noAboveActive=%u cadence=%u cadenceMarker=%u cadenceCarry=%u topPackedVisible=%u bottomAboveSampled=%u bottomAboveChanged=%u bottomAboveStable=%u bottomAboveMotion=%u bottomAboveTransition=%u cadencePhase=%u cadenceTop=%u cadenceSuppressTop=%u topDM=%u/%u/%u/%u bottomDM=%u/%u/%u/%u topVram=%u topStruct=%u topAbove=%u bottomVram=%u bottomStruct=%u bottomAbove=%u bottomAboveVisible=%u bottomAboveBlack=%u topCan=%u bottomCan=%u topNeed=%u bottomNeed=%u topAcc=%u bottomAcc=%u sinceTop=%u sinceBottom=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
-            liveSourceScreenSwap ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
             backendRenderScreenSwap ? 1u : 0u,
             renderer3D.IsCurrentCaptureScreenSwapHintValid() ? 1u : 0u,
             renderer3D.GetCurrentCaptureScreenSwapHint() ? 1u : 0u,
@@ -3570,7 +3659,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             "VulkanLive3D[StructuredComp7Handoff]: frameId=%u packedSwap=%u liveSwap=%u prevSwap=%u swapToggled=%u topNoCurrent=%u bottomNoCurrent=%u topSuppress3d=%u bottomSuppress3d=%u replaceAcc=%u topOverlayNo3d=%u bottomOverlayNo3d=%u topBlankCarry=%u bottomBlankCarry=%u topPlainOpposite=%u bottomPlainOpposite=%u topPureAltVram=%u bottomPureAltVram=%u topCarryPureVram=%u bottomCarryPureVram=%u bottomRegularTopHistory=%u topRegularBottomComp2Replay=%u topNoAboveCarry=%u topPlainOppositeNoCurrent=%u bottomPlainOppositeNoCurrent=%u topCarrySource=%u bottomCarrySource=%u topReplayComposed=%u bottomReplayComposed=%u topAcc=%u bottomAcc=%u topPrev=%u bottomPrev=%u topComp7=%u topStruct=%u topAbove=%u top2DOnly=%u bottomComp7=%u bottomStruct=%u bottomAbove=%u bottom2DOnly=%u remaining=%u",
             frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
             resource.screenSwap ? 1u : 0u,
-            liveSourceScreenSwap ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
             previousResource != nullptr && previousResource->screenSwap ? 1u : 0u,
             resource.screenSwapToggledFromPrevious ? 1u : 0u,
             topStructuredHandoffNoCurrent3d ? 1u : 0u,
@@ -3620,7 +3709,9 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         topAccumulatorAvailable,
         bottomAccumulatorAvailable,
         resource.screenSwap,
-        liveSourceScreenSwap,
+        resource.hasRenderer3dSnapshot
+            ? resource.renderer3dSnapshotScreenSwap
+            : rendererTargetScreenSwap,
         resource.hasRenderer3dSnapshot,
         resource.renderer3dSnapshotScreenSwap);
     if (resource.hasRenderer3dSnapshot
@@ -3631,6 +3722,90 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
             lastTopRendererSourceFrame = frame;
         else
             lastBottomRendererSourceFrame = frame;
+    }
+
+    const bool compositionCurrentOwner = resource.hasRenderer3dSnapshot
+        ? resource.renderer3dSnapshotScreenSwap
+        : rendererTargetScreenSwap;
+    const u64 renderer3dSnapshotSerialForTrace = resource.hasRenderer3dSnapshot
+        ? resource.renderer3dSnapshotSerial
+        : renderer3D.GetRenderSerial();
+    const bool rendererSerialMismatch =
+        resource.renderer3dRenderSerial != 0u
+        && renderer3dSnapshotSerialForTrace != 0u
+        && resource.renderer3dRenderSerial != renderer3dSnapshotSerialForTrace;
+    const bool rendererOwnerInvariantFailed = resource.hasRenderer3dSnapshot
+        && resource.renderer3dSnapshotScreenSwap != rendererTargetScreenSwap;
+    const bool captureOwnerInvariantFailed = resource.captureScreenSwapValid
+        && (!softPackedSnapshot.captureScreenSwapValid
+            || resource.captureScreenSwap != softPackedSnapshot.captureScreenSwap);
+    assert(!rendererOwnerInvariantFailed);
+    assert(!captureOwnerInvariantFailed);
+    if (rendererOwnerInvariantFailed || captureOwnerInvariantFailed)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanOwnerInvariant: failed renderer=%u capture=%u target=%u snapshot=%u captureOwner=%u sourceCaptureOwner=%u generation=%llu",
+            rendererOwnerInvariantFailed ? 1u : 0u,
+            captureOwnerInvariantFailed ? 1u : 0u,
+            rendererTargetScreenSwap ? 1u : 0u,
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            softPackedSnapshot.captureScreenSwap ? 1u : 0u,
+            resource.captureScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(resource.structuredGeneration));
+        invalidateTemporalHistory();
+    }
+    if (rendererSerialMismatch || vulkan2dTraceEnabled())
+    {
+        melonDS::Platform::Log(
+            rendererSerialMismatch
+                ? melonDS::Platform::LogLevel::Warn
+                : melonDS::Platform::LogLevel::Info,
+            "Vulkan2DTrace frameId=%llu sourceGeneration=%llu frontBuffer=%d screenSwapAt3D=%u rendererTargetOwner=%u rendererSnapshotOwner=%u rendererOwnerMismatch=%u captureOwnerValid=%u captureOwner=%u captureUseTopHash=%016llX captureUseBottomHash=%016llX captureSourceValidHash=%016llX captureSourceValid=%u exactCaptureOwnerApplies=%u heuristicOwner=%u compositionCurrentSourceOwner=%u accumulateTop=%u accumulateBottom=%u topAccumulatorValid=%u bottomAccumulatorValid=%u topAccumulatorGeneration=%llu bottomAccumulatorGeneration=%llu topAccumulatorSerial=%llu bottomAccumulatorSerial=%llu renderer3dRenderSerial=%llu renderer3dSnapshotSerial=%llu serialMismatch=%u lastTopRendererSourceFrameId=%llu lastBottomRendererSourceFrameId=%llu previousTopFrameId=%llu previousBottomFrameId=%llu replayTop=%u replayBottom=%u class4Pair=%u cadencePhase=%u cadenceSuppressed=%u",
+            frame != nullptr ? static_cast<unsigned long long>(frame->frameId) : 0ull,
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            resource.frontBufferLatched,
+            resource.screenSwap ? 1u : 0u,
+            rendererTargetScreenSwap ? 1u : 0u,
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            rendererOwnerInvariantFailed ? 1u : 0u,
+            resource.captureScreenSwapValid ? 1u : 0u,
+            resource.captureScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(hashLineMask(resource.topScreenNeedsCapture3dMask)),
+            static_cast<unsigned long long>(hashLineMask(resource.bottomScreenNeedsCapture3dMask)),
+            static_cast<unsigned long long>(hashLineMask(resource.capture3dSourceLineValidMask)),
+            softPackedSnapshot.hasCapture3dSource ? 1u : 0u,
+            exactCaptureOwnerApplies ? 1u : 0u,
+            handoffHeuristicScreenSwap ? 1u : 0u,
+            compositionCurrentOwner ? 1u : 0u,
+            accumulateTopThisFrame ? 1u : 0u,
+            accumulateBottomThisFrame ? 1u : 0u,
+            topAccumulatorAvailable ? 1u : 0u,
+            bottomAccumulatorAvailable ? 1u : 0u,
+            static_cast<unsigned long long>(accumulatedTopStructuredGeneration),
+            static_cast<unsigned long long>(accumulatedBottomStructuredGeneration),
+            static_cast<unsigned long long>(accumulatedTopRendererSerial),
+            static_cast<unsigned long long>(accumulatedBottomRendererSerial),
+            static_cast<unsigned long long>(resource.renderer3dRenderSerial),
+            static_cast<unsigned long long>(renderer3dSnapshotSerialForTrace),
+            rendererSerialMismatch ? 1u : 0u,
+            lastTopRendererSourceFrame != nullptr
+                ? static_cast<unsigned long long>(lastTopRendererSourceFrame->frameId)
+                : 0ull,
+            lastBottomRendererSourceFrame != nullptr
+                ? static_cast<unsigned long long>(lastBottomRendererSourceFrame->frameId)
+                : 0ull,
+            resource.previousTopSourceFrame != nullptr
+                ? static_cast<unsigned long long>(resource.previousTopSourceFrame->frameId)
+                : 0ull,
+            resource.previousBottomSourceFrame != nullptr
+                ? static_cast<unsigned long long>(resource.previousBottomSourceFrame->frameId)
+                : 0ull,
+            resource.replayTopComposedFromPrevious ? 1u : 0u,
+            resource.replayBottomComposedFromPrevious ? 1u : 0u,
+            class4VramStructuredPair ? 1u : 0u,
+            class4AsymmetricCadencePhaseForFrame,
+            class4AsymmetricCadenceSuppressesTop ? 1u : 0u);
     }
 
     lastPreparedFrame = frame;
@@ -4052,7 +4227,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     return resource.hasPreparedCapture3dSource || !currentFrameNeedsCapture3dSource;
 }
 
-bool MelonPrimeVulkanOutput::captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool MelonPrimeVulkanOutput::captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap)
 {
     std::scoped_lock commandLock(commandPoolLock);
 
@@ -4078,7 +4253,7 @@ bool MelonPrimeVulkanOutput::captureRenderer3dSnapshot(VulkanFrame* frame, const
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, rendererTargetScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = true;
@@ -4172,7 +4347,7 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     outInputs.previousBottomSourceImageView = outInputs.previousBottomSourceValid && resource.previousBottomRendererSourceImageView != VK_NULL_HANDLE
         ? resource.previousBottomRendererSourceImageView
         : outInputs.sourceImageView;
-    outInputs.liveSourceScreenSwap = resource.hasRenderer3dSnapshot
+    outInputs.compositionCurrentSourceScreenSwap = resource.hasRenderer3dSnapshot
         ? resource.renderer3dSnapshotScreenSwap
         : resource.screenSwap;
     constexpr u32 currentCaptureLineThreshold = kScreenHeight / 2u;
@@ -4351,7 +4526,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     VulkanFrame* frame,
     FrameResource& resource,
     const melonDS::VulkanRenderer3D& renderer3D,
-    bool snapshotScreenSwap,
+    bool rendererTargetScreenSwap,
     bool accumulateTopHighres,
     bool accumulateBottomHighres,
     bool replaceAccumulatedHighres)
@@ -4361,7 +4536,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, rendererTargetScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = false;
@@ -4457,8 +4632,23 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     return submitted;
 }
 
-bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap)
 {
+    assert(rendererTargetScreenSwap == resource.screenSwap);
+    if (rendererTargetScreenSwap != resource.screenSwap)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanOwnerInvariant: snapshot copy requested with non-target owner requested=%u actual=%u generation=%llu",
+            rendererTargetScreenSwap ? 1u : 0u,
+            resource.screenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(resource.structuredGeneration));
+        accumulatedTopHighresValid = false;
+        accumulatedBottomHighresValid = false;
+        accumulatedTopOwnerValid = false;
+        accumulatedBottomOwnerValid = false;
+        rendererTargetScreenSwap = resource.screenSwap;
+    }
     const u32 rendererWidth = renderer3D.GetColorTargetWidth();
     const u32 rendererHeight = renderer3D.GetColorTargetHeight();
     if (!ensureRenderer3dSnapshot(resource, rendererWidth, rendererHeight))
@@ -4611,7 +4801,7 @@ bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resourc
     );
 
     resource.hasRenderer3dSnapshot = true;
-    resource.renderer3dSnapshotScreenSwap = snapshotScreenSwap;
+    resource.renderer3dSnapshotScreenSwap = rendererTargetScreenSwap;
     resource.renderer3dSnapshotSerial = renderer3D.GetRenderSerial();
     return true;
 }
@@ -4835,7 +5025,7 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
     pushConstants.captureSourceValid = inputs.capture3dSourceValid ? 1u : 0u;
     pushConstants.captureSourceScreenSwapValid = inputs.capture3dSourceScreenSwapValid ? 1u : 0u;
     pushConstants.captureSourceScreenSwap = inputs.capture3dSourceScreenSwap ? 1u : 0u;
-    pushConstants.liveSourceScreenSwap = inputs.liveSourceScreenSwap ? 1u : 0u;
+    pushConstants.liveSourceScreenSwap = inputs.compositionCurrentSourceScreenSwap ? 1u : 0u;
     pushConstants.class4VramStructuredPair = inputs.class4VramStructuredPair ? 1u : 0u;
     pushConstants.class4NoAboveVramStructuredPair = inputs.class4NoAboveVramStructuredPair ? 1u : 0u;
     pushConstants.class4PreservePackedVramValid = inputs.class4PreservePackedVramValid ? 1u : 0u;
