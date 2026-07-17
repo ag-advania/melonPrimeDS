@@ -70,6 +70,7 @@ public:
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
         bool CaptureScreenSwapValid = false;
+        bool PhysicalScreenSwap = false;
         bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
         int FrontBuffer = -1;
@@ -114,6 +115,7 @@ private:
     bool StructuredCapture3DSourceValid = false;
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureScreenSwapValid = false;
+    bool StructuredPhysicalScreenSwap = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};

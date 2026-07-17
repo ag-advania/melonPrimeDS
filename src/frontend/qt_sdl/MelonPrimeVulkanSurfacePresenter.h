@@ -139,6 +139,7 @@ private:
         std::uint32_t captureSourceValid;
         std::uint32_t capture3dOwnerValid;
         std::uint32_t capture3dOwnerIsTop;
+        std::uint32_t renderer3dOwnerValid;
         std::uint32_t renderer3dOwnerIsTop;
         std::uint32_t class4VramStructuredPair;
         std::uint32_t class4NoAboveVramStructuredPair;
@@ -154,8 +155,9 @@ private:
         std::uint32_t overlayHeight;
     };
     static_assert(offsetof(PresenterPushConstants, filtering) == 5u * sizeof(std::uint32_t));
-    static_assert(offsetof(PresenterPushConstants, renderer3dOwnerIsTop) == 11u * sizeof(std::uint32_t));
-    static_assert(sizeof(PresenterPushConstants) == 24u * sizeof(std::uint32_t));
+    static_assert(offsetof(PresenterPushConstants, renderer3dOwnerValid) == 11u * sizeof(std::uint32_t));
+    static_assert(offsetof(PresenterPushConstants, renderer3dOwnerIsTop) == 12u * sizeof(std::uint32_t));
+    static_assert(sizeof(PresenterPushConstants) == 25u * sizeof(std::uint32_t));
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;

@@ -22,6 +22,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "Platform.h"
 
+#include <cassert>
 #include <cstdlib>
 #endif
 
@@ -102,6 +103,7 @@ void SoftRenderer::Reset()
     StructuredCapture3DSourceValid = false;
     StructuredCaptureScreenSwap = false;
     StructuredCaptureScreenSwapValid = false;
+    StructuredPhysicalScreenSwap = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
@@ -111,6 +113,7 @@ void SoftRenderer::Reset()
         completedFrame.Completed3DReference = {};
         completedFrame.Valid = false;
         completedFrame.Renderer3DOwnerIsTop = false;
+        completedFrame.PhysicalScreenSwap = false;
         completedFrame.FrontBuffer = -1;
         completedFrame.Generation = 0;
     }
@@ -211,6 +214,7 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCapture3DSourceLineValid.fill(0);
             StructuredCapture3DSourceValid = false;
             StructuredCaptureScreenSwapValid = false;
+            StructuredPhysicalScreenSwap = GPU.ScreenSwap;
             StructuredCaptureCompositeLineValid = false;
             StructuredCapturePreparedThisFrame = false;
             StructuredCaptureBackedSourceClassPixels.fill(0);
@@ -306,8 +310,18 @@ void SoftRenderer::DrawScanline(u32 line)
     if (GPU.ScreensEnabled)
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
+        // Physical LCD index must follow the actual framebuffer destination
+        // pointers, not a second independent ScreenSwap decode.
+        const u32* const topLine = &Framebuffer[BackBuffer][0][dstoffset];
+        const u32 screenA = dstA == topLine ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
+#ifndef NDEBUG
+        const u32* const bottomLine = &Framebuffer[BackBuffer][1][dstoffset];
+        assert(dstA == topLine || dstA == bottomLine);
+        assert(dstB == topLine || dstB == bottomLine);
+        assert(dstB == (screenB == 0u ? topLine : bottomLine));
+        assert(screenA == (GPU.ScreenSwap ? 0u : 1u));
+#endif
         BuildStructuredScreenLine(0, screenA, outputLine, dstA, line >= 192u);
         BuildStructuredScreenLine(1, screenB, outputLine, dstB, line >= 192u);
 #endif
@@ -324,8 +338,16 @@ void SoftRenderer::DrawScanline(u32 line)
             dstB[i] = 0xFF000000;
         }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
+        const u32* const topLine = &Framebuffer[BackBuffer][0][dstoffset];
+        const u32 screenA = dstA == topLine ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
+#ifndef NDEBUG
+        const u32* const bottomLine = &Framebuffer[BackBuffer][1][dstoffset];
+        assert(dstA == topLine || dstA == bottomLine);
+        assert(dstB == topLine || dstB == bottomLine);
+        assert(dstB == (screenB == 0u ? topLine : bottomLine));
+        assert(screenA == (GPU.ScreenSwap ? 0u : 1u));
+#endif
         BuildStructuredScreenLine(0, screenA, outputLine, dstA, true);
         BuildStructuredScreenLine(1, screenB, outputLine, dstB, true);
 #endif
@@ -1284,6 +1306,7 @@ void SoftRenderer::SwapBuffers()
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
         completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
+        completedFrame.PhysicalScreenSwap = StructuredPhysicalScreenSwap;
         Renderer3DCompletedFrameReference completed3DReference{};
         if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
             completedFrame.Completed3DReference = completed3DReference;

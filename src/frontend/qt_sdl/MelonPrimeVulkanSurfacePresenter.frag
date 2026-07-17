@@ -38,6 +38,7 @@ layout(push_constant) uniform PresenterPushConstants
     uint captureSourceValid;
     uint capture3dOwnerValid;
     uint capture3dOwnerIsTop;
+    uint renderer3dOwnerValid;
     uint renderer3dOwnerIsTop;
     uint class4VramStructuredPair;
     uint class4NoAboveVramStructuredPair;
@@ -423,7 +424,8 @@ vec4 FUNC_NAME() \
     bool forceLive3dCompMode7 = (masterBrightness & kMetaFlagForceLive3dCompMode7) != 0u; \
     bool structuredAboveDominant = (masterBrightness & kMetaFlagStructuredAboveDominant) != 0u; \
     bool compMode2StructuredPair = (masterBrightness & kMetaFlagCompMode2StructuredPair) != 0u; \
-        bool screenOwnsLive3D = SCREEN_IS_TOP ? (pushConstants.renderer3dOwnerIsTop != 0u) : (pushConstants.renderer3dOwnerIsTop == 0u); \
+        bool screenOwnsLive3D = (pushConstants.renderer3dOwnerValid != 0u) \
+            && (SCREEN_IS_TOP ? (pushConstants.renderer3dOwnerIsTop != 0u) : (pushConstants.renderer3dOwnerIsTop == 0u)); \
         bool structuredHandoffNoCurrent3D = SCREEN_IS_TOP ? (pushConstants.topStructuredHandoffNoCurrent3d != 0u) : (pushConstants.bottomStructuredHandoffNoCurrent3d != 0u); \
         bool oppositeStructuredHandoffNoCurrent3D = SCREEN_IS_TOP ? (pushConstants.bottomStructuredHandoffNoCurrent3d != 0u) : (pushConstants.topStructuredHandoffNoCurrent3d != 0u); \
         bool structuredHandoffSuppress3D = SCREEN_IS_TOP ? (pushConstants.topStructuredHandoffSuppress3d != 0u) : (pushConstants.bottomStructuredHandoffSuppress3d != 0u); \

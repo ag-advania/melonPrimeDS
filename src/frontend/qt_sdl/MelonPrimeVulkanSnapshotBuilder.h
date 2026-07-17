@@ -21,6 +21,7 @@ struct StructuredVulkanSnapshotSource
     bool hasCapture3dSource{};
     bool captureScreenSwap{};
     bool captureScreenSwapValid{};
+    bool physicalScreenSwap{};
     bool captureBackedClass4Only{};
     int frontBuffer{-1};
     bool renderer3dOwnerIsTop{};
@@ -48,9 +49,14 @@ private:
         bool valid{};
     };
 
-    // Packed Top/Bottom are already physical LCD planes. Their recovery
-    // history must not be partitioned by the unrelated 3D-owner phase.
-    PhaseHistory packedHistory{};
+    // Two renderer-owner-only phases plus four exact
+    // (renderer owner, capture owner) phases.
+    //
+    // A ScreenSwap-toggling title alternates ownership every frame. Packed
+    // line recovery must use the last snapshot from the SAME ownership phase;
+    // recovering from the immediately previous opposite phase fills Top with
+    // the other engine's content and looks like a complete Top/Bottom swap.
+    std::array<PhaseHistory, 6> phaseHistory{};
     std::array<PhaseHistory, 2> capturePhaseHistory{};
 };
 

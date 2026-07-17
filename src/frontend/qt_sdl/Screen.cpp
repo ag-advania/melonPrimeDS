@@ -2099,6 +2099,8 @@ void ScreenPanelVulkan::drawScreen()
 
         auto& snapshot = vulkan->snapshot;
         MelonPrime::StructuredVulkanSnapshotSource snapshotSource{};
+        // Keep plane[0/1], lineMeta, and capture masks on the same physical LCD
+        // indices as Renderer3DOwnerIsTop. Do not XOR-remap screens here.
         for (std::size_t screen = 0; screen < 2u; ++screen)
         {
             const std::size_t screenBase = screen * 3u * SoftRenderer::StructuredPixelCount;
@@ -2118,6 +2120,7 @@ void ScreenPanelVulkan::drawScreen()
         snapshotSource.hasCapture3dSource = structuredSource.HasCapture3DSource;
         snapshotSource.captureScreenSwap = structuredSource.CaptureScreenSwap;
         snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
+        snapshotSource.physicalScreenSwap = structuredSource.PhysicalScreenSwap;
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
         snapshotSource.frontBuffer = structuredSource.FrontBuffer;
         snapshotSource.renderer3dOwnerIsTop = structuredSource.Renderer3DOwnerIsTop;
