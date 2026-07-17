@@ -1,12 +1,18 @@
 // MelonPrimeDS - Metal screen presenter (experimental, Metal-plan Phase 4)
 //
 // Compiled only when MELONPRIME_METAL_ACTIVE selected MELONPRIME_ENABLE_METAL
-// (see docs/plans/rendering/metal/backend-plan.md). Presentation only:
-// uploads the same CPU BGRA framebuffers ScreenPanelNative composites via
-// QPainter, but through a CAMetalLayer attached directly to this widget's
-// native NSView (same "own the widget's native surface" model
-// ScreenPanelGL already uses for its NSOpenGLContext). No 3D renderer
-// integration, no OSD/HUD/splash yet -- those are later phases.
+// (see docs/plans/rendering/metal/backend-plan.md). Presents through a
+// CAMetalLayer attached directly to this widget's native NSView (same "own
+// the widget's native surface" model ScreenPanelGL already uses for its
+// NSOpenGLContext).
+//
+// MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): the DS top/bottom
+// screens are sourced exclusively from the renderer-owned MetalTexture
+// obtained through GPU::AcquireRendererOutputLease() -- there is no CPU
+// framebuffer upload for DS screen content in this presenter at all. Custom
+// HUD/OSD/splash still composite through a CPU QImage overlay (`uiOverlay`)
+// blended over that texture; that is unrelated UI-layer content, not a DS
+// screen fallback, and is expected to move onto Metal in PR-10..PR-12.
 //
 // Threading: initMetal()/setupScreenLayout() (layer creation, drawable size)
 // run on the GUI thread. drawScreen() runs on the emu thread, matching

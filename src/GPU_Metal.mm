@@ -1393,8 +1393,13 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
     // removes the SoftRenderer CPU-composite fallback entirely -- hand back
     // an empty/None lease so the presenter retains its last known-good
     // Metal texture (RetainPrevious) instead of presenting a stale or
-    // uninitialized SoftRenderer CpuBgra buffer. PR-9 owns any further
-    // presenter-side cleanup of this fallback path.
+    // uninitialized SoftRenderer CpuBgra buffer.
+    // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): this is the only
+    // other value AcquireOutputLease() ever returns besides the MetalTexture
+    // lease above -- never RendererOutputKind::CpuBgra. The presenter
+    // (MelonPrimeScreenMetal.mm) is written to that same MetalTexture-only
+    // contract: it treats any CpuBgra reaching it while Metal is selected as
+    // a strict-mode violation rather than displayable content.
     return RendererOutputLease({}, nullptr, nullptr);
 }
 
@@ -1408,6 +1413,8 @@ RendererOutput MetalRenderer::GetOutput()
     // returns false, so this returns an empty/None output. Screen.cpp still
     // calls GetRendererOutput() for non-Metal presenters; Metal consumers
     // use Acquire*OutputLease() instead.
+    // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): never
+    // RendererOutputKind::CpuBgra -- an empty/None output only.
     return {};
 }
 

@@ -388,7 +388,6 @@ struct ScreenPanelMetal::Impl
     id<MTLSamplerState> linearSampler = nil;
     id<MTLBuffer> vertexBuffer = nil;
     id<MTLBuffer> uiVertexBuffer = nil;
-    id<MTLTexture> screenTex[2] = { nil, nil }; // [0]=top, [1]=bottom
     id<MTLTexture> uiTex = nil;
     int uiTexW = 0;
     int uiTexH = 0;
@@ -416,16 +415,16 @@ struct ScreenPanelMetal::Impl
     bool loggedFirstDraw = false;
     bool loggedFirstUiOverlay = false;
     bool loggedFirstNativeTextureOutput = false;
-    bool loggedNativeTextureFallback = false;
     bool loggedLayerReattach = false;
     bool loggedScreenPlacementDiag = false;
     uint64_t lastPresentedFrame = 0;
-    // MELONPRIME_METAL_STRICT_STARTUP_GRACE_V1: the Metal visible-output
-    // pipeline legitimately serves CpuBgra for the first handful of frames
-    // (before its first compose command buffer has completed and published a
-    // slot). Only treat CpuBgra as a strict-mode violation once we've either
-    // already shown a native Metal texture frame, or run past the startup
-    // grace window without ever doing so.
+    // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): "no output of any
+    // kind yet" is still legitimate for the first handful of frames, before
+    // the visible-output pipeline's own compose command buffers have
+    // completed once. This is a short, generic startup window -- it has
+    // nothing to do with CpuBgra (which this presenter never accepts as
+    // displayable content; see the CpuBgra branch below) and is not extended
+    // just because a CpuBgra frame happens to be arriving.
     uint32_t presentedFrameCount = 0;
     // MELONPRIME_METAL_OUTPUT_METADATA_VALIDATION_V1: holds the ring-slot
     // lease of the last frame that passed ValidateMetalRendererOutput(). Kept
@@ -450,20 +449,15 @@ struct ScreenPanelMetal::Impl
     bool loggedFrameSerialRollback = false;
     bool loggedMetalNeverProduced = false;
     bool loggedInvalidOutputMetadata = false;
-    // MELONPRIME_METAL_CPU_FALLBACK_VISIBLE_FIX_V1: sustained CpuBgra
-    // fallback is the *normal* operating mode today (Phase M4's GPU-resident
-    // display capture is not implemented yet, so real gameplay routinely
-    // never produces a MetalTexture output at all -- see fullGpu=0/N in the
-    // "visible-source mix" diagnostic). An earlier version of this presenter
-    // treated any such frame as if nothing were available and either
-    // substituted a stale retained texture or, once none had ever existed,
-    // cleared the screen to black -- turning routine CPU-fallback operation
-    // into a black 3D layer while independent overlays (HUD/radar) kept
-    // rendering on top of it. A fresh CpuBgra frame is real, valid,
-    // just-composited screen content and must always be shown when
-    // available; this flag only gates a log-once diagnostic surfacing the
-    // sustained-fallback fact, never the presented content.
-    bool loggedSustainedCpuFallback = false;
+    // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): a Metal-selected
+    // renderer's own AcquireOutputLease() (GPU_Metal.mm) never returns
+    // CpuBgra -- only MetalTexture or an empty/None lease. A CpuBgra output
+    // reaching this presenter while Metal is selected therefore means `Rend`
+    // is not actually the MetalRenderer instance the config expects (e.g. a
+    // renderer construction/switch race), which is a strict-mode violation:
+    // logged once here, never displayed, never uploaded to any CPU-backed
+    // screen texture (that path no longer exists in this presenter at all).
+    bool loggedCpuBgraRejected = false;
 
     // Accessed under layoutMutex. CAMetalLayer itself is updated only through
     // a queued GUI-thread invocation.
@@ -654,23 +648,15 @@ bool ScreenPanelMetal::initMetal()
         linearDesc.magFilter = MTLSamplerMinMagFilterLinear;
         m->linearSampler = [m->device newSamplerStateWithDescriptor:linearDesc];
 
-        // Developer-only software fallback texture. Normal Metal mode binds
-        // the renderer-owned final texture array instead.
-        MTLTextureDescriptor* texDesc =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                width:256
-                                                               height:192
-                                                            mipmapped:NO];
-        texDesc.textureType = MTLTextureType2DArray;
-        texDesc.arrayLength = 2;
-        texDesc.usage = MTLTextureUsageShaderRead;
-        texDesc.storageMode = MTLStorageModeShared;
-        m->screenTex[0] = [m->device newTextureWithDescriptor:texDesc];
-        m->screenTex[1] = m->screenTex[0];
-
+        // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): this
+        // presenter used to also own a CPU-upload BGRA8 2D-array texture
+        // (`screenTex`) for a software-composite fallback path. That path is
+        // removed: the Metal presenter now only ever binds the
+        // renderer-owned MetalTexture obtained through
+        // AcquireRendererOutputLease(); it never uploads a DS top/bottom CPU
+        // framebuffer of its own.
         m->resourcesReady = (m->pipeline != nil && m->uiPipeline != nil &&
                               m->vertexBuffer != nil && m->uiVertexBuffer != nil &&
-                              m->screenTex[0] != nil && m->screenTex[1] != nil &&
                               m->nearestSampler != nil && m->linearSampler != nil);
     }
 
@@ -866,7 +852,6 @@ void ScreenPanelMetal::drawScreen()
                     w, h, static_cast<double>(scale), emuThread->emuIsActive() ? 1 : 0);
         }
 
-        bool hasCpuBaseFallbackForFrame = false;
         bool hasHudCpuBuffersForFrame = false;
         void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
@@ -899,11 +884,14 @@ void ScreenPanelMetal::drawScreen()
                 m->lastGoodFrameSerial = 0;
             }
 
-            // Legitimate only during the first handful of frames, before the
-            // visible-output pipeline's own compose command buffers have
-            // completed once: see the fallback chain below for what happens
-            // once this window has elapsed.
-            constexpr uint32_t kStartupGraceFrames = 180;
+            // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): short
+            // "still initializing" window -- legitimate only for the first
+            // handful of frames, before the visible-output pipeline's own
+            // compose command buffers have completed once. Once elapsed with
+            // no MetalTexture ever produced, that is an explicit renderer
+            // selection failure (see the fallback chain below), not a
+            // transient to keep waiting through.
+            constexpr uint32_t kStartupGraceFrames = 60;
 
             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {
@@ -1035,31 +1023,42 @@ void ScreenPanelMetal::drawScreen()
             }
             else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
             {
-                // Fresh CpuBgra is always preferred over a retained Metal
-                // texture while the production capture fallback remains
-                // enabled (Phase M4 is not done) -- see the unconditional
-                // "finalMetalTextureForFrame || hasCpuBaseFallbackForFrame"
-                // presentation check below. The retained last-good Metal
-                // texture is used only when neither a fresh Metal texture
-                // nor a fresh CpuBgra frame exists this frame at all.
-                hasCpuBaseFallbackForFrame = true;
-                topCpuBufForFrame = output.Top;
-                bottomCpuBufForFrame = output.Bottom;
-                hasHudCpuBuffersForFrame = topCpuBufForFrame && bottomCpuBufForFrame;
-                if (metalRendererSelected && !m->loggedNativeTextureFallback)
+                // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): this
+                // presenter accepts MetalTexture (or an empty/None lease)
+                // only. A Metal-selected renderer's own AcquireOutputLease()
+                // (GPU_Metal.mm) never returns CpuBgra -- reaching here with
+                // metalRendererSelected true means `Rend` was not actually a
+                // MetalRenderer this frame (construction/switch race), a
+                // strict-mode violation. There is no longer any CPU-backed
+                // screen texture to upload this content into; it is dropped,
+                // never displayed, and the fallback chain below decides what
+                // to show instead (last known-good MetalTexture, or nothing).
+                rendererOutputLease.ReleaseNow();
+                if (metalRendererSelected)
                 {
-                    m->loggedNativeTextureFallback = true;
-                    fprintf(stderr,
-                            "[MelonPrime] metal presenter: visible source=MetalGetLineCpuComposite "
-                            "softwareFallback=0 fallbackReason=%u\n",
-                            static_cast<unsigned>(output.FallbackReason));
+                    if (!m->loggedCpuBgraRejected)
+                    {
+                        m->loggedCpuBgraRejected = true;
+                        fprintf(stderr,
+                                "[MelonPrime] metal presenter: STRICT VIOLATION rejected "
+                                "CpuBgra output while Metal renderer selected -- this "
+                                "presenter is MetalTexture-only (PR-9); fallbackReason=%u "
+                                "(further occurrences not logged individually)\n",
+                                static_cast<unsigned>(output.FallbackReason));
+                    }
+                    melonDS::MetalStrictGpuOnlyViolation(
+                        "MelonPrimeScreenMetal::presentFrame",
+                        "Metal renderer selected but AcquireOutputLease produced a "
+                        "CpuBgra output; the presenter accepts MetalTexture (or "
+                        "empty/None) only and never uploads it to a screen texture");
                 }
             }
 
-            if (metalRendererSelected && !finalMetalTextureForFrame && !hasCpuBaseFallbackForFrame)
+            if (!finalMetalTextureForFrame)
             {
-                // No valid new Metal texture AND no CpuBgra frame this frame
-                // either -- genuinely nothing new to show (e.g. very early
+                // No valid new Metal texture this frame (CpuBgra, if any,
+                // was just rejected above without becoming displayable
+                // content) -- genuinely nothing new to show (e.g. very early
                 // startup, before the first frame of any kind has completed).
                 // Prefer the last known-good Metal frame over blanking, but
                 // only when that lease still belongs to a tracked producer
@@ -1080,50 +1079,32 @@ void ScreenPanelMetal::drawScreen()
                                 "(further occurrences not logged individually)\n");
                     }
                 }
-                else if (m->presentedFrameCount > kStartupGraceFrames)
+                else if (metalRendererSelected && m->presentedFrameCount > kStartupGraceFrames)
                 {
-                    // Never produced a single valid frame of any kind, and
+                    // Never produced a single valid MetalTexture frame, and
                     // the startup grace window has elapsed: a genuine,
                     // sustained initialization failure, not a transient.
+                    // Fail closed: return below without presenting a new
+                    // drawable at all (never substitute stale or
+                    // CPU-composited content for a real MetalTexture frame).
                     if (!m->loggedMetalNeverProduced)
                     {
                         m->loggedMetalNeverProduced = true;
                         fprintf(stderr,
-                                "[MelonPrime] metal presenter: ERROR no valid output "
-                                "of any kind produced within the startup grace "
-                                "window\n");
+                                "[MelonPrime] metal presenter: ERROR no valid MetalTexture "
+                                "output produced within the startup grace window; failing "
+                                "closed to black\n");
                     }
                     melonDS::MetalStrictGpuOnlyViolation(
                         "MelonPrimeScreenMetal::presentFrame",
-                        "Metal renderer selected but no valid output of any kind was "
+                        "Metal renderer selected but no valid MetalTexture output was "
                         "ever produced within the startup grace window");
                 }
                 // else: still within the startup grace window and nothing
                 // retained either -- nothing to present this frame.
             }
-            else if (metalRendererSelected && !finalMetalTextureForFrame &&
-                     m->presentedFrameCount > kStartupGraceFrames &&
-                     !m->loggedSustainedCpuFallback)
-            {
-                // A fresh, valid CpuBgra frame IS available and will be
-                // presented as-is below -- CPU BGRA is real, just-composited
-                // screen content, never a reason to substitute a stale
-                // texture or blank the screen. Surface the sustained-
-                // fallback fact in logs only (M4/M5 remaining work), without
-                // touching what gets shown.
-                m->loggedSustainedCpuFallback = true;
-                fprintf(stderr,
-                        "[MelonPrime] metal presenter: WARNING Metal renderer selected "
-                        "but sustained on CPU BGRA composite beyond the startup grace "
-                        "window; no Metal texture output produced (expected until "
-                        "Phase M4 GPU-resident display capture lands)\n");
-                melonDS::MetalStrictGpuOnlyViolation(
-                    "MelonPrimeScreenMetal::presentFrame",
-                    "Metal renderer selected but sustained on CPU BGRA fallback beyond "
-                    "the startup grace window");
-            }
 
-            if (!finalMetalTextureForFrame && !hasCpuBaseFallbackForFrame)
+            if (!finalMetalTextureForFrame)
                 return;
 
             if (MetalDiagEnabled() && !m->loggedScreenPlacementDiag)
@@ -1181,65 +1162,42 @@ void ScreenPanelMetal::drawScreen()
             return;
         [encoder setViewport:(MTLViewport){0.0, 0.0, static_cast<double>(w), static_cast<double>(h), 0.0, 1.0}];
 
-        if (emuThread->emuIsActive())
+        // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): the only
+        // source this presenter ever binds for the DS screens is the
+        // renderer-owned MetalTexture from AcquireRendererOutputLease() (or
+        // its retained last known-good). There is no CPU-upload path left
+        // here at all -- if `finalMetalTextureForFrame` is nil the function
+        // already returned above, before the drawable/encoder were created.
+        if (emuThread->emuIsActive() && finalMetalTextureForFrame)
         {
-            if (hasCpuBaseFallbackForFrame && topCpuBufForFrame && bottomCpuBufForFrame)
+            [encoder setRenderPipelineState:m->pipeline];
+            [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
+            const bool highResolutionSource =
+                finalMetalTextureForFrame.width > 256 &&
+                finalMetalTextureForFrame.height > 192;
+            // A scaled Metal final texture is a supersampled source. Use
+            // linear downsampling even when the user disables ordinary
+            // 1x screen filtering; nearest downsampling can make 2x/3x/4x
+            // appear indistinguishable from native resolution.
+            id<MTLSamplerState> sampler =
+                (filter || highResolutionSource) ? m->linearSampler : m->nearestSampler;
+            [encoder setFragmentSamplerState:sampler atIndex:0];
+            [encoder setFragmentTexture:finalMetalTextureForFrame atIndex:0];
+
+            ScreenUniforms uniforms{};
+            uniforms.screenSize[0] = static_cast<float>(w) / static_cast<float>(scale);
+            uniforms.screenSize[1] = static_cast<float>(h) / static_cast<float>(scale);
+            uniforms.yFlipSign = yFlipSign;
+
+            for (int i = 0; i < numScreens; i++)
             {
-                [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
-                                    mipmapLevel:0
-                                          slice:0
-                                      withBytes:topCpuBufForFrame
-                                    bytesPerRow:256 * 4
-                                  bytesPerImage:256 * 192 * 4];
-                [m->screenTex[0] replaceRegion:MTLRegionMake2D(0, 0, 256, 192)
-                                    mipmapLevel:0
-                                          slice:1
-                                      withBytes:bottomCpuBufForFrame
-                                    bytesPerRow:256 * 4
-                                  bytesPerImage:256 * 192 * 4];
-            }
-            else
-            {
-                hasCpuBaseFallbackForFrame = false;
-            }
+                for (int c = 0; c < 6; c++)
+                    uniforms.m[c] = screenMatrix[i][c];
 
-            if (finalMetalTextureForFrame || hasCpuBaseFallbackForFrame)
-            {
-                [encoder setRenderPipelineState:m->pipeline];
-                [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
-                id<MTLTexture> sourceTexture =
-                    finalMetalTextureForFrame ? finalMetalTextureForFrame : m->screenTex[0];
-                const bool highResolutionSource =
-                    finalMetalTextureForFrame &&
-                    finalMetalTextureForFrame.width > 256 &&
-                    finalMetalTextureForFrame.height > 192;
-                // A scaled Metal final texture is a supersampled source. Use
-                // linear downsampling even when the user disables ordinary
-                // 1x screen filtering; nearest downsampling can make 2x/3x/4x
-                // appear indistinguishable from native resolution.
-                id<MTLSamplerState> sampler =
-                    (filter || highResolutionSource) ? m->linearSampler : m->nearestSampler;
-                [encoder setFragmentSamplerState:sampler atIndex:0];
-                [encoder setFragmentTexture:sourceTexture atIndex:0];
-
-                ScreenUniforms uniforms{};
-                uniforms.screenSize[0] = static_cast<float>(w) / static_cast<float>(scale);
-                uniforms.screenSize[1] = static_cast<float>(h) / static_cast<float>(scale);
-                uniforms.yFlipSign = yFlipSign;
-
-                for (int i = 0; i < numScreens; i++)
-                {
-                    for (int c = 0; c < 6; c++)
-                        uniforms.m[c] = screenMatrix[i][c];
-
-                    [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
-                    if (!sourceTexture)
-                        continue;
-
-                    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                                 vertexStart:(screenKind[i] == 0 ? 0 : 6)
-                                 vertexCount:6];
-                }
+                [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+                [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                             vertexStart:(screenKind[i] == 0 ? 0 : 6)
+                             vertexCount:6];
             }
         }
 
@@ -1472,15 +1430,14 @@ void ScreenPanelMetal::drawScreen()
         [cmdBuffer presentDrawable:drawable];
         [cmdBuffer commit];
 
-        if (emuThread->emuIsActive() && (finalMetalTextureForFrame || hasCpuBaseFallbackForFrame))
+        if (emuThread->emuIsActive() && finalMetalTextureForFrame)
         {
-            const bool softwareFallback = !finalMetalTextureForFrame && hasCpuBaseFallbackForFrame;
-            const NSUInteger sourceW = finalMetalTextureForFrame ? finalMetalTextureForFrame.width : 256;
-            const NSUInteger sourceH = finalMetalTextureForFrame ? finalMetalTextureForFrame.height : 192;
+            const NSUInteger sourceW = finalMetalTextureForFrame.width;
+            const NSUInteger sourceH = finalMetalTextureForFrame.height;
             const int sourceScale = static_cast<int>(std::max<NSUInteger>(1, sourceW / 256));
             SubmitPresenterPerf(sourceScale, sourceW, sourceH,
                 PresenterElapsedMs(presentStart, PresenterClock::now()),
-                softwareFallback);
+                /*softwareFallback=*/false);
         }
     }
 }

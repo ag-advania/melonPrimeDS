@@ -14,7 +14,7 @@
 | PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
 | PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer : public Renderer, public MetalRendererHost` へ flip。GPU_Metal* の `SoftRenderer::` 呼び出しは 0。§13.1 の実機受け入れ gate は明示的指示により先行実施（ビルド／audit のみ検証、実ROM未実施） |
 | PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer3D RasterReference` メンバーを削除。Init／RenderFrame／GetLine／texture getter は fail-closed（no raster fallback）。実ROM未実施 |
-| PR-9 | presenter MetalTexture-only | 未着手 | — | PR-7 後 |
+| PR-9 | presenter MetalTexture-only | **完了（部分）** | （本コミット） | AcquireOutputLease／presenter を MetalTexture／None のみに限定。screenTex CPU upload 撤廃。実ROM未実施 |
 | PR-10 | radar native Metal | 未着手 | — | |
 | PR-11 | HUD primitive renderer | 未着手 | — | |
 | PR-12 | glyph atlas／OSD／splash | 未着手 | — | |
@@ -149,6 +149,44 @@
 - 実ROM／実機での目視・スクリーンショット検証（compute foundation self-test 失敗時に Software renderer へ正しく fallback するかを含む）
 - `MELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE=1` での Init 失敗→Software fallback の実機確認
 - TSan／Windows／Linux rebuild
+
+## PR-9 要約（2026-07-17）
+
+変更:
+
+- `GPU_Metal.mm`: `AcquireOutputLease()`／`GetOutput()` は元々 `MetalTexture` か空／None のみを返す実装済み（PR-7）。`MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1` マーカーを追加し、`RendererOutputKind::CpuBgra` を返さないという契約を明文化
+- `MelonPrimeScreenMetal.mm`:
+  - developer-only の CPU アップロード用 `screenTex`（BGRA8 2D-array texture、top/bottom `replaceRegion`）を完全削除。DS top/bottom 画面の描画元は `AcquireRendererOutputLease()` が返す `MetalTexture` のみ
+  - `CpuBgra` 出力を受けた場合、Metal renderer 選択中は strict violation（`MetalStrictGpuOnlyViolation` + log-once）として扱い、`finalMetalTextureForFrame` には絶対に代入しない（displayしない、stale textureへの無期限fallbackもしない）。以前の「fresh CpuBgraは常にMetalTextureより優先して表示する」ロジックを削除
+  - 180 frame の「CpuBgraはlegitimateな起動フォールバック」grace window を撤廃。残る grace window（60 frame、`kStartupGraceFrames`）は「まだ何の出力も無い」起動直後だけに適用される汎用の短い初期化猶予で、CpuBgra とは無関係
+  - `hasCpuBaseFallbackForFrame`／`loggedSustainedCpuFallback`／`loggedNativeTextureFallback` を削除。perf submission の `softwareFallback` は常に `false`
+  - uiOverlay（HUD／OSD／splash の QPainter 合成）はそのまま維持（PR-10～12 の対象。DS screenTex ではなく UI overlay のため PR-9 の対象外）
+- `MelonPrimeScreenMetal.h`: ヘッダコメントを「CPU BGRA framebufferをアップロードする」という記述から MetalTexture-only の記述へ更新
+- 新規 audit `audit-metal-presenter-metaltexture-only.py` を `run-metal-fullgpu-audits.sh` に追加（`GPU_Metal.mm`／presenter の live code に `CpuBgra` 系シンボルが再出現しないこと、`screenTex`／`hasCpuBaseFallbackForFrame` が残っていないこと、CpuBgra 分岐が `finalMetalTextureForFrame` へ代入しないこと、strict violation を報告することを検証）
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF; 対象ファイルはビルド対象外のため no-op）
+- `cmake --build build-mac-metal-force-disabled -j8`（同様に no-op）
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 7/7 PASS
+
+acceptance（コード上）:
+
+```text
+CpuBgra accepted=0   (Metal選択中、AcquireOutputLease は CpuBgra を返さず、presenterもCpuBgra分岐でfinalMetalTextureForFrameへ代入しない)
+screenTex upload=0   (screenTexメンバー自体を削除)
+MetalTexture presented>0 (finalMetalTextureForFrameが有効な場合のみdraw)
+None sustained=0     (grace window超過でMetalStrictGpuOnlyViolationを報告)
+```
+
+未実施:
+
+- 実ROM／実機での目視・スクリーンショット検証
+- TSan／Windows／Linux rebuild
+- 「Software rendererをMetal presenterで表示するdebug mode」の再導入（別pathへ隔離する設計は別PR。PR-9では単純に削除のみ）
+
+**完了A（emulator GPU pathの完全Metal化）ノート**: PR-5（capture Full-GPU）／PR-6（normal readback 0）／PR-7（SoftRenderer継承撤廃）／PR-8（Compute RasterReference撤廃）／PR-9（presenter MetalTexture-only）が揃ったことで、指示書 §28 の完了A チェックリスト（`Metal Raster: MetalTexture-only／Display Capture Full-GPU／normal readback 0／SoftRenderer dependency 0／CpuBgra 0`、`Metal Compute: Compute final texture-only／RasterReference 0／...`、`Presenter: lease付きMetalTexture-only／CPU screen upload 0`）はコードレベルでは全項目が実装済み。**エミュレータ GPU path は code-complete** と言える状態だが、各PRの備考にある通り実ROM／実機検証・TSan・Windows/Linux rebuild は未実施のため、完了A の受け入れ gate（§13.1）自体は依然オープン。
 
 ## PR-15 要約（2026-07-17）
 
