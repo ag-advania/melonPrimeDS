@@ -131,6 +131,12 @@ struct MetalRenderer::MetalFullGpuState
     // every single frame (which is what a sustained, multi-second freeze
     // looks like to the user).
     uint32_t MidFrameInvalidationCooldownFrames = 0;
+    // MELONPRIME_METAL_CAPTURE_FEEDBACK_COOLDOWN_V1: BlockedByCaptureFeedback
+    // must outlive CaptureEnable. CaptureEnable is already cleared by the
+    // time Start3DRendering runs (VCount==215), so clearing the block solely
+    // on !CaptureEnable re-armed Full-GPU every frame and caused repeated
+    // RetainPrevious freezes after PR-5.
+    uint32_t CaptureFeedbackCooldownFrames = 0;
     bool LoggedEnabled = false;
     bool LoggedRejected = false;
     bool LoggedCompose = false;
@@ -233,12 +239,19 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (!GPU.ScreensEnabled)
         return false;
 
-    // MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1 (PR-5):
-    // Capture-start frames (CaptureCnt bit 31) stay on the Full-GPU path.
-    // Same-frame feedback is handled by the per-segment scheduler
-    // (GPU_MetalSegmentScheduler.inc): Engine A → Engine B → Capture encode
-    // per merged segment, with Capture→Snapshot blit before each encode.
-    // Unsupported display modes / mixed-3D gating below still apply.
+    // MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2:
+    // PR-5 removed this gate and routed capture-write frames through the
+    // segmented Full-GPU path. In capture-heavy scenes (MPH radar etc.)
+    // CaptureMetalDisplayCaptureLine() commonly sets FrameSupported=false
+    // (capture-backed source B with Meta.Valid=false), VBlank then
+    // RetainPrevious-freezes the presenter, and BlockedByCaptureFeedback was
+    // cleared again at the next Start3DRendering once CaptureEnable had
+    // already dropped -- so every capture frame retried Full-GPU and froze
+    // again. Keep capture-start frames on Soft until same-frame capture
+    // feedback is production-ready; the segment scheduler remains in place
+    // for the eventual cutover.
+    if (GPU.CaptureCnt & (1u << 31))
+        return false;
 
     const uint32_t displayModeA =
         (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
@@ -275,8 +288,16 @@ void MetalRenderer::Start3DRendering()
     if (!FullGpuState)
         FullGpuState = std::make_unique<MetalFullGpuState>();
 
-    if (!GPU.CaptureEnable)
+    if (FullGpuState->CaptureFeedbackCooldownFrames > 0)
+        FullGpuState->CaptureFeedbackCooldownFrames--;
+    // Only clear capture-feedback blocking once the sticky cooldown has
+    // elapsed. CaptureEnable is already false here (cleared at VCount==192),
+    // so gating solely on !CaptureEnable re-armed Full-GPU every frame.
+    if (FullGpuState->CaptureFeedbackCooldownFrames == 0 &&
+        !GPU.CaptureEnable)
+    {
         FullGpuState->BlockedByCaptureFeedback = false;
+    }
 
     // MELONPRIME_METAL_MIDFRAME_INVALIDATION_STICKY_V1
     // Every signal this eligibility check reads (CaptureCnt's start bit,

@@ -33,10 +33,10 @@ def main() -> int:
             issues.append("segment loop must order A → B → Capture")
 
     full = (ROOT / "src/GPU_MetalFullGpuMethods.inc").read_text(encoding="utf-8")
-    if "if (GPU.CaptureCnt & (1u << 31))" in full:
-        issues.append("CaptureCnt exclusion must be removed (PR-5 cutover)")
-    if "MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1" not in full:
-        issues.append("missing PR-5 cutover marker")
+    if "if (GPU.CaptureCnt & (1u << 31))" not in full:
+        issues.append("CaptureCnt Soft gate missing (freeze fix)")
+    if "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" not in full:
+        issues.append("missing CAPTURE_FULLGPU_GATED_V2 marker")
 
     mm = (ROOT / "src/GPU_Metal.mm").read_text(encoding="utf-8")
     if "GPU_MetalSegmentScheduler.inc" not in mm:
