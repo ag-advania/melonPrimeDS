@@ -12,6 +12,7 @@
 #import <AppKit/NSWindow.h>
 #import <dispatch/dispatch.h>
 
+#include <array>
 #include <cmath>
 #include <algorithm>
 #include <chrono>
@@ -287,6 +288,55 @@ struct RadarUniforms
     float opacity;
 };
 static_assert(sizeof(RadarUniforms) == 16, "must match the MSL RadarUniforms layout exactly");
+
+// MELONPRIME_METAL_HUD_COMMAND_LIST_V1 (PR-11): custom HUD/OSD/splash/radar
+// content flows through a small, fixed-size (no per-frame heap allocation)
+// list of Metal quad draw commands, encoded by a single loop right before
+// [encoder endEncoding] instead of the ad hoc "build this one draw call
+// inline at this specific point in drawScreen()" pattern PR-9/PR-10 used.
+// This is the real, buildable-today seam for a genuine Metal HUD
+// draw-command path: each command already names an explicit
+// pipeline/texture/sampler/uniform tuple (a textured quad), so future work
+// can push additional primitive kinds (solid-fill quads for gauges, glyph-
+// atlas quads for text) through the same list without another drawScreen()
+// control-flow change. It does not yet replace QPainter as the HUD/OSD/
+// splash *rasterizer* -- that content is still composited into `uiOverlay`
+// by QPainter (MelonPrimeHudRender.cpp) and uploaded once per dirty region
+// (see MELONPRIME_METAL_UI_OVERLAY_DIRTY_RECT_V1 above); this list is what
+// actually issues the GPU draw calls that put HUD/OSD/splash/radar pixels on
+// screen, and is the transitional "single HUD texture through Metal textured
+// quads" tier documented in the PR-11 progress note.
+constexpr int kMaxMetalHudCommands = 4;
+
+struct MetalHudDrawCommand
+{
+    id<MTLRenderPipelineState> pipeline = nil;
+    id<MTLTexture> texture = nil;
+    id<MTLSamplerState> sampler = nil;
+    UiUniforms vertexUniforms{};
+    RadarUniforms fragmentUniforms{};
+    bool hasFragmentUniforms = false;
+};
+
+void EncodeMetalHudCommand(id<MTLRenderCommandEncoder> encoder,
+                            id<MTLBuffer> quadVertexBuffer,
+                            const MetalHudDrawCommand& cmd)
+{
+    if (!cmd.pipeline || !cmd.texture)
+        return;
+    [encoder setRenderPipelineState:cmd.pipeline];
+    [encoder setVertexBuffer:quadVertexBuffer offset:0 atIndex:0];
+    UiUniforms vertexUniforms = cmd.vertexUniforms;
+    [encoder setVertexBytes:&vertexUniforms length:sizeof(vertexUniforms) atIndex:1];
+    if (cmd.hasFragmentUniforms)
+    {
+        RadarUniforms fragmentUniforms = cmd.fragmentUniforms;
+        [encoder setFragmentBytes:&fragmentUniforms length:sizeof(fragmentUniforms) atIndex:0];
+    }
+    [encoder setFragmentTexture:cmd.texture atIndex:0];
+    [encoder setFragmentSamplerState:cmd.sampler atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+}
 
 // OpenEmu deliberately permits only one display command buffer at a time.
 // CAMetalLayer::nextDrawable() can otherwise block the emulation/render thread
@@ -1336,6 +1386,13 @@ void ScreenPanelMetal::drawScreen()
         UiUniforms metalRadarRectUniforms{};
         RadarUniforms metalRadarFragUniforms{};
 
+        // MELONPRIME_METAL_HUD_COMMAND_LIST_V1 (PR-11): fixed-size (no
+        // per-frame heap allocation), populated below by the UI overlay and
+        // radar draw sites, encoded by one loop right before
+        // [encoder endEncoding].
+        std::array<MetalHudDrawCommand, kMaxMetalHudCommands> hudCommands{};
+        int hudCommandCount = 0;
+
 #ifdef MELONPRIME_CUSTOM_HUD
         if (emuThread->emuIsActive())
         {
@@ -1564,12 +1621,18 @@ void ScreenPanelMetal::drawScreen()
                 uiUniforms.screenSize[1] = static_cast<float>(logicalH);
                 uiUniforms.yFlipSign = yFlipSign;
 
-                [encoder setRenderPipelineState:m->uiPipeline];
-                [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
-                [encoder setVertexBytes:&uiUniforms length:sizeof(uiUniforms) atIndex:1];
-                [encoder setFragmentTexture:m->uiTex atIndex:0];
-                [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
-                [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+                // MELONPRIME_METAL_HUD_COMMAND_LIST_V1 (PR-11): push instead
+                // of encoding directly here -- see the command list comment
+                // near MetalHudDrawCommand's definition.
+                if (hudCommandCount < static_cast<int>(hudCommands.size()))
+                {
+                    MetalHudDrawCommand& cmd = hudCommands[hudCommandCount++];
+                    cmd.pipeline = m->uiPipeline;
+                    cmd.texture = m->uiTex;
+                    cmd.sampler = m->nearestSampler;
+                    cmd.vertexUniforms = uiUniforms;
+                    cmd.hasFragmentUniforms = false;
+                }
             }
         }
 
@@ -1578,19 +1641,26 @@ void ScreenPanelMetal::drawScreen()
         // quad (matching the GL-native path's draw order -- overlay HUD quad,
         // then btmOverlayShader on top), sampling finalMetalTextureForFrame
         // directly. No CPU bottom-screen buffer or memcpy is involved.
-        if (metalRadarDrawThisFrame && m->radarPipeline && finalMetalTextureForFrame)
+        if (metalRadarDrawThisFrame && m->radarPipeline && finalMetalTextureForFrame &&
+            hudCommandCount < static_cast<int>(hudCommands.size()))
         {
-            [encoder setRenderPipelineState:m->radarPipeline];
-            [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
-            [encoder setVertexBytes:&metalRadarRectUniforms length:sizeof(metalRadarRectUniforms) atIndex:1];
-            [encoder setFragmentBytes:&metalRadarFragUniforms length:sizeof(metalRadarFragUniforms) atIndex:0];
-            [encoder setFragmentTexture:finalMetalTextureForFrame atIndex:0];
+            MetalHudDrawCommand& cmd = hudCommands[hudCommandCount++];
+            cmd.pipeline = m->radarPipeline;
+            cmd.texture = finalMetalTextureForFrame;
             // OPT-RL1 (GL path) always forces GL_LINEAR for the radar sample;
             // mirror that here regardless of the user's screen-filter setting.
-            [encoder setFragmentSamplerState:m->linearSampler atIndex:0];
-            [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+            cmd.sampler = m->linearSampler;
+            cmd.vertexUniforms = metalRadarRectUniforms;
+            cmd.fragmentUniforms = metalRadarFragUniforms;
+            cmd.hasFragmentUniforms = true;
         }
 #endif
+
+        // MELONPRIME_METAL_HUD_COMMAND_LIST_V1 (PR-11): single encode loop
+        // for every queued HUD/OSD/splash/radar quad, in push order (UI
+        // overlay, then radar -- matching the GL-native draw order).
+        for (int i = 0; i < hudCommandCount; i++)
+            EncodeMetalHudCommand(encoder, m->uiVertexBuffer, hudCommands[i]);
 
         [encoder endEncoding];
 

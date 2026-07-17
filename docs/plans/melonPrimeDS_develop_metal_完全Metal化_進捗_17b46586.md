@@ -16,7 +16,7 @@
 | PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer3D RasterReference` メンバーを削除。Init／RenderFrame／GetLine／texture getter は fail-closed（no raster fallback）。実ROM未実施 |
 | PR-9 | presenter MetalTexture-only | **完了（部分）** | （本コミット） | AcquireOutputLease／presenter を MetalTexture／None のみに限定。screenTex CPU upload 撤廃。実ROM未実施 |
 | PR-10 | radar native Metal | **完了（部分）** | （本コミット） | GL-native btmOverlay相当のcircle-mask fragment shaderでMetalTexture layer 1を直接sample。bottomImage memcpy撤廃。実ROM未実施 |
-| PR-11 | HUD primitive renderer | 未着手 | — | |
+| PR-11 | HUD primitive renderer | **完了（transitional tier）** | （本コミット） | 固定長Metal draw-command list導入（HUD/OSD/splash/radar quadを1つのencode loopで発行）。QPainterはHUD/OSD/splashのCPUラスタライズには残存（真のprimitive/glyph atlasは未実装、指示書の「at least」tierとして明示的にdocumented） |
 | PR-12 | glyph atlas／OSD／splash | 未着手 | — | |
 | PR-13 | macOS 初回 Metal 既定 | 未着手 | — | 完了A後 |
 | PR-14 | MSL asset／metallib | 未着手 | — | |
@@ -250,6 +250,67 @@ None sustained=0     (grace window超過でMetalStrictGpuOnlyViolationを報告)
 
 - 実ROM／実機での目視・スクリーンショット検証（radar circleの位置・サイズ・
   パレットフィルタが実際のゲームプレイで正しいこと）
+- TSan／Windows／Linux rebuild
+
+## PR-11 要約（2026-07-17） -- transitional tier（指示書の "at least" fallbackを明示採用）
+
+**スコープ判断**: 指示書は「full MelonPrimeHudRender → Metal command listが
+1セッションに大きすぎる場合」の優先順位として、"(2) at least route main
+MelonPrimeHudRender output through Metal textured quads... document as
+transitional" を明示的に許可している。`MelonPrimeHudRenderDraw.inc` の実装
+（DrawHP/DrawWeaponAmmo/DrawWeaponInventory/DrawCrosshair、12種類のzoom
+transition FXスタイル、outlineスタンプキャッシュ等、数千行）を調査した結果、
+テキストグリフ・ゲージ・クロスヘアFXをQPainterなしの真のMetal primitiveへ
+安全に書き換えるのは本セッションの範囲を明確に超えると判断した（実ROM検証
+なしでゲームプレイに直結するクロスヘア位置/スケーリングを変更するリスクが
+高すぎる）。よって本PRは明示的にtransitional tierを採用する。
+
+変更:
+
+- `MelonPrimeScreenMetal.mm`:
+  - 新規 `MetalHudDrawCommand`（pipeline/texture/sampler/vertex uniforms/
+    fragment uniforms）+ `EncodeMetalHudCommand()`。固定長
+    `std::array<MetalHudDrawCommand, kMaxMetalHudCommands>`（per-frameヒープ
+    割り当てなし）で、HUD/OSD/splash（uiOverlay textured quad）とPR-10の
+    radar quadを、drawScreen()内の個別のインラインdraw call箇所ではなく、
+    共通の「push → 1つのencode loop」経路に統一
+  - `[encoder endEncoding]`直前の1箇所のencode loopが、それまでdrawScreen()
+    の複数箇所に分散していた`setRenderPipelineState`/`drawPrimitives`呼び出し
+    を置き換え。将来、solid-fill quad（ゲージ）やglyph-atlas quad（テキスト）
+    等の新しいprimitive種別を追加する際、drawScreen()の制御フローを再度
+    変更せずにこのcommand listへ追加できる土台となる
+- 新規 audit `audit-metal-hud-command-list.py`（`run-metal-fullgpu-audits.sh`
+  に登録): `MetalHudDrawCommand`/`EncodeMetalHudCommand`の存在、command list
+  が`std::array`（`std::vector`不可）であること、draw箇所が
+  `hudCommands[hudCommandCount++]`へpushしていること、encode loop呼び出しが
+  ちょうど1箇所であること、単位quadの`drawPrimitives`呼び出しが
+  `EncodeMetalHudCommand`内の1箇所のみであることを検証
+
+**明示的に未達（次回以降の作業として残存）**:
+
+- QPainterはHUD/OSD/splashの**CPUラスタライズ**（`uiOverlay`への描画）には
+  引き続き使用される。本PRが変えたのは「そのラスタライズ結果をどうGPUへ
+  出すか」（command list経由のMetal textured quad）のみで、「どうラスタ
+  ライズするか」ではない。Metal frameでの「custom HUDにQPainterを一切
+  使わない」という完全な要件は未達
+  - HP/ammo/weapon inventory/crosshair FX/match status等の実描画コードは
+    `MelonPrimeHudRenderDraw.inc`のQPainter呼び出しのまま
+  - テキストはビットマップキャッシュ経由だが、キャッシュされたビットマップ
+    自体もQPainterで生成される（グリフをMetal atlasへ焼くPR-12以降の作業）
+- Edit modeのオーバーレイボックス（`DrawEditOverlay`）もQPainterのまま
+  （指示書は "or only debug" として明示的に許容）
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF; no-op）
+- `cmake --build build-mac-metal-force-disabled -j8`（no-op）
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 9/9 PASS
+
+未実施:
+
+- 実ROM／実機での目視確認
+- 真のMetal primitive HUD（QPainter完全撤廃）— 別PRとして継続予定
 - TSan／Windows／Linux rebuild
 
 ## PR-0 証拠要約（2026-07-17）

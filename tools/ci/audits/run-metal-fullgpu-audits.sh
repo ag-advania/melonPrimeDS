@@ -13,6 +13,7 @@ audits=(
   tools/ci/audits/audit-metal-compute-raster-reference-removal.py
   tools/ci/audits/audit-metal-presenter-metaltexture-only.py
   tools/ci/audits/audit-metal-radar-native.py
+  tools/ci/audits/audit-metal-hud-command-list.py
 )
 
 failed=0
