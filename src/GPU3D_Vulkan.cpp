@@ -724,7 +724,7 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 {
     refreshActiveBackendMode();
-    CurrentRenderScreenSwap = gpu.ScreenSwap;
+    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
 
     if (SkipRenderAtVCount215 && gpu.VCount == 215u)
     {
@@ -1338,7 +1338,7 @@ void VulkanRenderer3D::Blit(const melonDS::GPU& gpu)
 
 void VulkanRenderer3D::BlitActiveBackend(const melonDS::GPU& gpu)
 {
-    CurrentRenderScreenSwap = gpu.ScreenSwap;
+    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
 
     if (ActiveBackendMode != BackendMode::GraphicsHardware
         || !Initialized

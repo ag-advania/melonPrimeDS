@@ -445,6 +445,7 @@ bool MelonPrimeVulkanOutput::init()
 
     initialized = true;
     timelineValue = 0;
+    invalidateTemporalHistory();
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Warn,
         "MelonPrimeVulkanOutput: sync path initialized (timeline=%d)",

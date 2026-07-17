@@ -51,7 +51,13 @@ private:
         OBJ_Mosaic = (1<<20),
     };
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Sapphire's accelerated 2D contract keeps the layer below a 3D slot.
+    // The third plane is only needed by the guarded Vulkan compositor path.
+    alignas(8) u32 BGOBJLine[256*3];
+#else
     alignas(8) u32 BGOBJLine[256*2];
+#endif
 
     alignas(8) u8 WindowMask[256];
 
@@ -77,24 +83,18 @@ private:
         return table;
     }();
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    struct CompositeMetadata
-    {
-        u32 Mode = 0;
-        u32 Eva = 0;
-        u32 Evb = 0;
-    };
-    u32 ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata = nullptr) const;
-#else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
-#endif
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);
     void DrawScanlineBGMode7(u32 line);
     void DrawScanline_BGOBJ(u32 line, u32* dst);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void DrawPixel(u32* dst, u16 color, u32 flag);
+#else
     static void DrawPixel(u32* dst, u16 color, u32 flag);
+#endif
 
     void DrawBG_3D();
     template<bool mosaic> void DrawBG_Text(u32 line, u32 bgnum);

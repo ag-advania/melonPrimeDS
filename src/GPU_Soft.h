@@ -23,6 +23,10 @@
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <mutex>
+#endif
+
 namespace melonDS
 {
 
@@ -52,18 +56,28 @@ public:
     bool GetFramebuffers(void** top, void** bottom) override;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    struct StructuredVulkanFrameView
+    void SwapBuffers() override;
+
+    static constexpr std::size_t StructuredPixelCount = 256u * 192u;
+    struct StructuredVulkanFrameSnapshot
     {
-        const u32* Plane[2][3]{};
-        const u32* LineMeta[2]{};
-        const u32* Capture3DSource = nullptr;
-        const u8* CaptureLineUses3D = nullptr;
+        std::array<u32, 2u * 3u * StructuredPixelCount> ScreenPlanes{};
+        std::array<u32, 2u * 192u> ScreenLineMeta{};
+        std::array<u32, StructuredPixelCount> Capture3DSource{};
+        std::array<u8, 192u> CaptureLineUses3D{};
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
+        bool ScreenSwapAt3D = false;
+        bool CaptureBackedClass4Only = false;
+        int FrontBuffer = -1;
+        u64 Generation = 0;
         bool Valid = false;
     };
 
-    [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    // Copies a single completed generation while the producer lock is held.
+    // The Qt presentation thread never observes a ring slot while the
+    // emulation thread is recycling it for a newer frame.
+    [[nodiscard]] bool CopyStructuredVulkanFrame(StructuredVulkanFrameSnapshot& snapshot) const;
 #endif
 
 private:
@@ -76,7 +90,6 @@ private:
     alignas(8) u32 Output2D[2][256];
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    static constexpr std::size_t StructuredPixelCount = 256u * 192u;
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
@@ -84,6 +97,10 @@ private:
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
+    std::array<u32, 192u * 17u> StructuredCaptureBackedSourceClassPixels{};
+    std::array<u8, 192u> StructuredCaptureBackedExplicitSlot{};
+    std::array<u32, 17u> StructuredCaptureBackedBestClassLines{};
+    u32 StructuredCaptureBacked3DLines = 0;
     std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
     std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
@@ -93,18 +110,21 @@ private:
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
+    std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};
+    mutable std::mutex CompletedStructuredVulkanFrameMutex;
+    u64 StructuredVulkanGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     void StoreStructuredEnginePixel(
         u32 engine,
         u32 line,
         u32 x,
-        u32 val1,
-        u32 val2,
-        u32 composed,
-        u32 compositionMode,
-        u32 eva,
-        u32 evb);
+        u32 originalVal1,
+        u32 originalVal2,
+        u32 originalVal3,
+        u32 legacyVal1,
+        u32 legacyVal2,
+        u32 legacyControl);
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
     void StoreStructuredCaptureLine(
         u32 line,

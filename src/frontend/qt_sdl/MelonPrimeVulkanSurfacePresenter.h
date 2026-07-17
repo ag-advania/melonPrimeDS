@@ -68,6 +68,7 @@ public:
         std::uint32_t sourceHeight,
         const std::vector<VulkanPresentRegion>& regions,
         const VulkanOverlayFrame* overlay);
+    bool WaitForFrameConsumption(VulkanFrame* frame, std::uint64_t timeoutNs = UINT64_MAX);
 
     [[nodiscard]] bool IsInitialized() const noexcept { return initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return lastError; }
@@ -184,6 +185,7 @@ private:
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence submitFence = VK_NULL_HANDLE;
+    VulkanFrame* submittedFrame = nullptr;
 };
 
 } // namespace MelonPrime
