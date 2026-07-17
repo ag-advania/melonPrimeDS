@@ -51,6 +51,21 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    struct StructuredVulkanFrameView
+    {
+        const u32* Plane[2][3]{};
+        const u32* LineMeta[2]{};
+        const u32* Capture3DSource = nullptr;
+        const u8* CaptureLineUses3D = nullptr;
+        bool HasCapture3DSource = false;
+        bool CaptureScreenSwap = false;
+        bool Valid = false;
+    };
+
+    [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+#endif
+
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
@@ -59,6 +74,50 @@ private:
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    static constexpr std::size_t StructuredPixelCount = 256u * 192u;
+    std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
+    std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
+    std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
+    std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
+    std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
+    std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
+    std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
+    alignas(8) u32 Structured3DPlaceholderLine[256]{};
+    alignas(8) u32 StructuredCaptureCompositeLine[256]{};
+    bool StructuredFrameValid = false;
+    bool StructuredCapture3DSourceValid = false;
+    bool StructuredCaptureScreenSwap = false;
+    bool StructuredCaptureCompositeLineValid = false;
+    bool StructuredCapturePreparedThisFrame = false;
+
+    [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
+    void StoreStructuredEnginePixel(
+        u32 engine,
+        u32 line,
+        u32 x,
+        u32 val1,
+        u32 val2,
+        u32 composed,
+        u32 compositionMode,
+        u32 eva,
+        u32 evb);
+    void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
+    void StoreStructuredCaptureLine(
+        u32 line,
+        u32 width,
+        u32 destinationBank,
+        u32 destinationAddress,
+        u32 sourceBAddress,
+        u32 sourceBBank,
+        bool sourceBFromVram,
+        const u16* captureOutput);
+    [[nodiscard]] bool DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress);
+    void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
+#endif
 
     void DrawScanlineA(u32 line, u32* dst);
     void DrawScanlineB(u32 line, u32* dst);

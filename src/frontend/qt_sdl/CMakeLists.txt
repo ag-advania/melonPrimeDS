@@ -133,6 +133,31 @@ set(SOURCES_QT_SDL
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
+# --- MelonPrime Vulkan backend build switch ---------------------------------
+# This is a complete build gate. When inactive, no Vulkan source, include path,
+# compile definition, or loader dependency is added to either target.
+option(MELONPRIME_ENABLE_VULKAN
+    "Build the MelonPrime Vulkan renderer and native presenter"
+    ON)
+option(MELONPRIME_FORCE_DISABLE_VULKAN
+    "Completely exclude all MelonPrime Vulkan code"
+    OFF)
+
+set(MELONPRIME_VULKAN_ACTIVE OFF)
+if (MELONPRIME_FORCE_DISABLE_VULKAN)
+    set(MELONPRIME_VULKAN_ACTIVE OFF)
+elseif (MELONPRIME_ENABLE_VULKAN)
+    find_path(MELONPRIME_VULKAN_INCLUDE_DIR
+        NAMES vulkan/vulkan.h
+        DOC "Directory containing the Vulkan headers")
+    if (MELONPRIME_VULKAN_INCLUDE_DIR)
+        set(MELONPRIME_VULKAN_ACTIVE ON)
+    else()
+        message(WARNING
+            "Vulkan headers were not found; MelonPrime Vulkan is excluded from this build")
+    endif()
+endif()
+
 # --- MelonPrime native Metal backend build switch ----------------------------
 # MELONPRIME_METAL_DEFAULT_ON_MAC_V1
 # Native Metal is part of normal macOS builds. Both disable paths below are
@@ -296,6 +321,72 @@ target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+endif()
+
+if (MELONPRIME_VULKAN_ACTIVE)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    target_compile_definitions(core PUBLIC
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    target_compile_definitions(core PRIVATE
+        $<$<CONFIG:Debug>:MELONDS_VULKAN_ENABLE_VALIDATION=1>)
+    target_include_directories(melonDS PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+
+    target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanContext.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_AcceleratedFrontend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)
+    target_sources(melonDS PRIVATE
+        MelonPrimeVulkanFeatureCheck.cpp
+        MelonPrimeVulkanFrameQueue.cpp
+        MelonPrimeVulkanOutput.cpp
+        MelonPrimeVulkanSurfacePresenter.cpp
+        MelonPrimeVulkanSurfaceWin32.cpp
+        MelonPrimeVulkanSurfaceLinux.cpp
+        MelonPrimeVulkanSurfaceStub.cpp)
+
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if (Python3_Interpreter_FOUND)
+        find_program(MELONPRIME_GLSLC_EXECUTABLE
+            NAMES glslc glslc.exe
+            HINTS ENV VULKAN_SDK
+            PATH_SUFFIXES Bin bin)
+        set(_melonprime_spirv_command
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tools/vulkan_spirv.py")
+        if (MELONPRIME_GLSLC_EXECUTABLE)
+            list(APPEND _melonprime_spirv_command
+                --glslc "${MELONPRIME_GLSLC_EXECUTABLE}")
+        endif()
+
+        add_custom_target(melonprime_regenerate_vulkan_spirv
+            COMMAND ${_melonprime_spirv_command} regenerate
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            COMMENT "Regenerating MelonPrime Vulkan SPIR-V headers"
+            USES_TERMINAL
+            VERBATIM)
+        add_custom_target(melonprime_check_vulkan_spirv
+            COMMAND ${_melonprime_spirv_command} check
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            COMMENT "Checking MelonPrime Vulkan SPIR-V headers"
+            USES_TERMINAL
+            VERBATIM)
+        unset(_melonprime_spirv_command)
+    else()
+        message(WARNING
+            "Python 3 was not found; MelonPrime Vulkan SPIR-V developer targets are unavailable")
+    endif()
+
+    message(STATUS
+        "MelonPrime Vulkan backend: enabled (headers: ${MELONPRIME_VULKAN_INCLUDE_DIR})")
+else()
+    message(STATUS "MelonPrime Vulkan backend: disabled")
 endif()
 
 if (MELONPRIME_METAL_ACTIVE)

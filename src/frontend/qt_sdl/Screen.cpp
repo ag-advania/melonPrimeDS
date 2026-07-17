@@ -46,6 +46,15 @@
 #include "Platform.h"
 #include "Config.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "GPU_Vulkan.h"
+#include "GPU3D_Vulkan.h"
+#include "MelonPrimeVulkanFilterMode.h"
+#include "MelonPrimeVulkanFrameQueue.h"
+#include "MelonPrimeVulkanOutput.h"
+#include "MelonPrimeVulkanSurfacePresenter.h"
+#endif
+
 #include "main_shaders.h"
 #include "OSD_shaders.h"
 #include "font.h"
@@ -1665,6 +1674,501 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 }
 
 
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+struct ScreenPanelVulkan::VulkanState
+{
+    MelonPrime::MelonPrimeVulkanFrameQueue frameQueue;
+    MelonPrime::MelonPrimeVulkanFrameQueuePolicy framePolicy;
+    MelonPrime::MelonPrimeVulkanOutput output;
+    MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
+    MelonPrime::SoftPackedFrameSnapshot snapshot;
+    QMutex layoutLock;
+    std::vector<MelonPrime::VulkanPresentRegion> regions;
+    std::uint32_t surfaceWidth = 0;
+    std::uint32_t surfaceHeight = 0;
+    QImage overlayFrame;
+    bool initialized = false;
+    unsigned consecutiveFailures = 0;
+};
+
+namespace
+{
+
+void FillStructuredPackedScreen(
+    const u32* sourcePlane0,
+    const u32* sourcePlane1,
+    const u32* sourceControl,
+    const u32* sourceLineMeta,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane1,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kLineCount>& lineMeta,
+    MelonPrime::SoftPackedScreenStats& stats)
+{
+    constexpr std::size_t pixelCount = MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
+    std::memcpy(plane0.data(), sourcePlane0, pixelCount * sizeof(u32));
+    std::memcpy(plane1.data(), sourcePlane1, pixelCount * sizeof(u32));
+    std::memcpy(control.data(), sourceControl, pixelCount * sizeof(u32));
+    std::memcpy(lineMeta.data(), sourceLineMeta, lineMeta.size() * sizeof(u32));
+    stats = {};
+    for (std::size_t y = 0; y < lineMeta.size(); ++y)
+    {
+        const u32 meta = lineMeta[y];
+        const u32 displayMode = (meta >> 16u) & 0x3u;
+        stats.DisplayModeCounts[displayMode]++;
+        if ((meta & (1u << 21u)) != 0)
+            stats.RegularCaptureUses3dLines++;
+        if (displayMode == 2u && (meta & (1u << 22u)) != 0)
+            stats.VramCaptureUses3dLines++;
+        if ((meta & (1u << 18u)) != 0)
+            stats.ForceLive3dCompMode7Lines++;
+        const int xOffset = static_cast<int>((meta >> 24u) & 0xFFu)
+            - ((((meta >> 16u) & 0x80u) != 0u) ? 256 : 0);
+        if (!stats.HasOffsets)
+        {
+            stats.MinXOffset = xOffset;
+            stats.MaxXOffset = xOffset;
+            stats.HasOffsets = true;
+        }
+        else
+        {
+            stats.MinXOffset = std::min(stats.MinXOffset, xOffset);
+            stats.MaxXOffset = std::max(stats.MaxXOffset, xOffset);
+        }
+    }
+    for (std::size_t index = 0; index < pixelCount; ++index)
+    {
+        const bool plane0Useful = plane0[index] != 0u && plane0[index] != 0x20000000u;
+        const bool plane1Useful = plane1[index] != 0u && plane1[index] != 0x20000000u;
+        if (plane0Useful)
+        {
+            stats.Plane0UsefulPixels++;
+            if ((plane0[index] & 0x00FFFFFFu) != 0u)
+                stats.Plane0VisiblePixels++;
+            else
+                stats.Plane0OpaqueBlackPixels++;
+        }
+        if (plane1Useful)
+        {
+            stats.Plane1UsefulPixels++;
+            if ((plane1[index] & 0x00FFFFFFu) != 0u)
+                stats.Plane1VisiblePixels++;
+            else
+                stats.Plane1OpaqueBlackPixels++;
+        }
+        const u32 controlAlpha = control[index] >> 24u;
+        const u32 compositionMode = controlAlpha & 0xFu;
+        if (compositionMode < stats.CompModeCounts.size())
+            stats.CompModeCounts[compositionMode]++;
+        const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
+        const bool structuredAbove = structuredSlot && (controlAlpha & 0x80u) != 0u;
+        const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
+        if ((controlAlpha & 0x20u) != 0u)
+            stats.ProtectedBlackPixels++;
+        if (structuredSlot)
+            stats.StructuredSlotPixels++;
+        if (structuredAbove)
+        {
+            stats.StructuredAbovePixels++;
+            if (plane1Useful && (plane1[index] & 0x00FFFFFFu) != 0u)
+                stats.StructuredAboveVisiblePixels++;
+            else if (plane1Useful)
+                stats.StructuredAboveBlackPixels++;
+        }
+        if (structured2DOnly)
+        {
+            stats.Structured2DOnlyPixels++;
+            if (plane0Useful && (plane0[index] & 0x00FFFFFFu) != 0u)
+                stats.Structured2DOnlyVisiblePixels++;
+        }
+        if (compositionMode == 4u
+            && plane0[index] == 0x20000000u
+            && plane1[index] == 0x20000000u)
+            stats.CaptureBackedComp4Pixels++;
+    }
+}
+}
+
+ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
+    : ScreenPanel(parent), vulkan(std::make_unique<VulkanState>())
+{
+    setAutoFillBackground(false);
+    setAttribute(Qt::WA_NativeWindow, true);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_PaintOnScreen, true);
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
+    setAttribute(Qt::WA_KeyCompression, false);
+    setFocusPolicy(Qt::StrongFocus);
+    setMinimumSize(screenGetMinSize());
+
+    vulkan->framePolicy.MaxBacklogDepth = 1;
+    vulkan->framePolicy.AllowStealPending = true;
+    vulkan->framePolicy.AllowPreviousFrameReuse = true;
+    vulkan->framePolicy.PreferOldestFrame = false;
+}
+
+ScreenPanelVulkan::~ScreenPanelVulkan()
+{
+    if (!vulkan)
+        return;
+    vulkan->presenter.Shutdown();
+    vulkan->output.shutdown();
+    vulkan->frameQueue.clear();
+}
+
+QPaintEngine* ScreenPanelVulkan::paintEngine() const
+{
+    return nullptr;
+}
+
+bool ScreenPanelVulkan::initVulkan()
+{
+    if (!vulkan || !vulkan->output.init())
+        return false;
+
+    MelonPrime::VulkanNativeWindowInfo nativeWindow{};
+#if defined(_WIN32)
+    nativeWindow.type = MelonPrime::VulkanNativeWindowType::Win32;
+    nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
+#elif defined(__linux__)
+    const QString platformName = QGuiApplication::platformName();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    if (platformName == QStringLiteral("xcb"))
+    {
+        const QX11Application* x11 = qApp->nativeInterface<QX11Application>();
+        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Xlib;
+        nativeWindow.display = x11 != nullptr ? x11->display() : nullptr;
+        nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
+    }
+#if defined(WAYLAND_ENABLED)
+    else if (platformName == QStringLiteral("wayland"))
+    {
+        const QWaylandApplication* wayland = qApp->nativeInterface<QWaylandApplication>();
+        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Wayland;
+        nativeWindow.display = wayland != nullptr ? wayland->display() : nullptr;
+        nativeWindow.window = pni != nullptr && windowHandle() != nullptr
+            ? pni->nativeResourceForWindow("surface", windowHandle())
+            : nullptr;
+    }
+#endif
+#else
+    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+    if (platformName == QStringLiteral("xcb"))
+    {
+        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Xlib;
+        nativeWindow.display = pni != nullptr
+            ? pni->nativeResourceForWindow("display", windowHandle())
+            : nullptr;
+        nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
+    }
+    else if (platformName == QStringLiteral("wayland"))
+    {
+        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Wayland;
+        nativeWindow.display = pni != nullptr
+            ? pni->nativeResourceForWindow("display", windowHandle())
+            : nullptr;
+        nativeWindow.window = pni != nullptr
+            ? pni->nativeResourceForWindow("surface", windowHandle())
+            : nullptr;
+    }
+#endif
+#endif
+
+    setupScreenLayout();
+    std::uint32_t surfaceWidth = 0;
+    std::uint32_t surfaceHeight = 0;
+    {
+        QMutexLocker lock(&vulkan->layoutLock);
+        surfaceWidth = vulkan->surfaceWidth;
+        surfaceHeight = vulkan->surfaceHeight;
+    }
+
+    if (!vulkan->presenter.Init(
+            nativeWindow,
+            surfaceWidth,
+            surfaceHeight,
+            emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
+    {
+        vulkan->output.shutdown();
+        return false;
+    }
+
+    vulkan->initialized = true;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "Vulkan presentation initialized requested=Vulkan actual=Vulkan path=Qt-native-swapchain");
+    return true;
+}
+
+void ScreenPanelVulkan::setupScreenLayout()
+{
+    ScreenPanel::setupScreenLayout();
+    if (!vulkan)
+        return;
+
+    const qreal dpr = devicePixelRatioF();
+    std::vector<MelonPrime::VulkanPresentRegion> regions;
+    regions.reserve(static_cast<std::size_t>(numScreens));
+    for (int index = 0; index < numScreens; ++index)
+    {
+        const float* matrix = screenMatrix[index];
+        QTransform transform(
+            matrix[0], matrix[1],
+            matrix[2], matrix[3],
+            matrix[4], matrix[5]);
+        const QRectF bounds = transform.mapRect(QRectF(0.0, 0.0, 256.0, 192.0));
+        MelonPrime::VulkanPresentRegion region;
+        region.enabled = bounds.width() > 0.0 && bounds.height() > 0.0;
+        region.bottomScreen = screenKind[index] != 0;
+        region.x = qRound(bounds.left() * dpr);
+        region.y = qRound(bounds.top() * dpr);
+        region.width = qRound(bounds.width() * dpr);
+        region.height = qRound(bounds.height() * dpr);
+        const std::array<QPointF, 4> corners = {
+            transform.map(QPointF(0.0, 0.0)),
+            transform.map(QPointF(256.0, 0.0)),
+            transform.map(QPointF(0.0, 192.0)),
+            transform.map(QPointF(256.0, 192.0)),
+        };
+        for (std::size_t corner = 0; corner < corners.size(); ++corner)
+        {
+            region.corners[corner * 2u] = static_cast<float>(corners[corner].x() * dpr);
+            region.corners[(corner * 2u) + 1u] = static_cast<float>(corners[corner].y() * dpr);
+        }
+        region.hasTransformedCorners = true;
+        regions.push_back(region);
+    }
+
+    QMutexLocker lock(&vulkan->layoutLock);
+    vulkan->surfaceWidth = static_cast<std::uint32_t>(std::max<qreal>(0.0, width() * dpr));
+    vulkan->surfaceHeight = static_cast<std::uint32_t>(std::max<qreal>(0.0, height() * dpr));
+    vulkan->regions = std::move(regions);
+}
+
+void ScreenPanelVulkan::drawScreen()
+{
+    refreshClipForGameStateChange();
+    if (!vulkan || !vulkan->initialized)
+        return;
+
+    auto* emuThread = emuInstance->getEmuThread();
+    osdUpdate();
+    if (!emuThread->emuIsActive())
+        return;
+
+    auto* nds = emuInstance->getNDS();
+    if (!nds)
+        return;
+
+    auto* renderer = dynamic_cast<VulkanRenderer*>(&nds->GPU.GetRenderer());
+    VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
+    SoftRenderer::StructuredVulkanFrameView structuredView{};
+    if (!renderer3D || !renderer || !renderer->GetStructuredVulkanFrame(structuredView)
+        || !structuredView.Valid)
+    {
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
+        return;
+    }
+
+    const int configuredScale = std::clamp(
+        emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
+    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
+        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
+        : static_cast<u32>(configuredScale);
+    const u32 outputWidth = 256u * rendererScale;
+    const u32 outputHeight = 386u * rendererScale;
+
+    MelonPrime::VulkanFrame* renderFrame = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
+    if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
+    {
+        if (renderFrame)
+            vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        ++vulkan->consecutiveFailures;
+        return;
+    }
+
+    auto& snapshot = vulkan->snapshot;
+    snapshot.clear();
+    snapshot.frameId = renderFrame->frameId;
+    snapshot.frontBufferLatched = 0;
+    snapshot.screenSwapLatched = nds->GPU.ScreenSwap;
+    snapshot.valid = true;
+    FillStructuredPackedScreen(
+        structuredView.Plane[0][0],
+        structuredView.Plane[0][1],
+        structuredView.Plane[0][2],
+        structuredView.LineMeta[0],
+        snapshot.packedTopPlane0,
+        snapshot.packedTopPlane1,
+        snapshot.packedTopControl,
+        snapshot.packedTopLineMeta,
+        snapshot.topScreenStats);
+    FillStructuredPackedScreen(
+        structuredView.Plane[1][0],
+        structuredView.Plane[1][1],
+        structuredView.Plane[1][2],
+        structuredView.LineMeta[1],
+        snapshot.packedBottomPlane0,
+        snapshot.packedBottomPlane1,
+        snapshot.packedBottomControl,
+        snapshot.packedBottomLineMeta,
+        snapshot.bottomScreenStats);
+    if (structuredView.HasCapture3DSource
+        && structuredView.Capture3DSource != nullptr
+        && structuredView.CaptureLineUses3D != nullptr)
+    {
+        std::memcpy(
+            snapshot.capture3dSourceDsFrame.data(),
+            structuredView.Capture3DSource,
+            snapshot.capture3dSourceDsFrame.size() * sizeof(u32));
+        std::memcpy(
+            snapshot.captureLineUses3dMask.data(),
+            structuredView.CaptureLineUses3D,
+            snapshot.captureLineUses3dMask.size() * sizeof(u8));
+        snapshot.hasCapture3dSource = true;
+    }
+
+    MelonPrime::VulkanCompositionInputs inputs{};
+    const MelonPrime::VulkanFilterMode filtering = filter
+        ? MelonPrime::VulkanFilterMode::Linear
+        : MelonPrime::VulkanFilterMode::Nearest;
+    const bool composed = vulkan->output.prepareFrameForPresentation(
+            renderFrame, nds->GPU, 0, snapshot.screenSwapLatched, snapshot, *renderer3D)
+        && vulkan->output.buildCompositionInputs(
+            renderFrame,
+            *renderer3D,
+            static_cast<int>(rendererScale),
+            filtering,
+            false,
+            false,
+            false,
+            inputs)
+        && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
+    if (!composed)
+    {
+        vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
+        return;
+    }
+
+    vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
+    MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(
+        vulkan->framePolicy, std::nullopt);
+    if (!presentFrame)
+        return;
+
+    std::vector<MelonPrime::VulkanPresentRegion> regions;
+    std::uint32_t surfaceWidth = 0;
+    std::uint32_t surfaceHeight = 0;
+    {
+        QMutexLocker lock(&vulkan->layoutLock);
+        regions = vulkan->regions;
+        surfaceWidth = vulkan->surfaceWidth;
+        surfaceHeight = vulkan->surfaceHeight;
+    }
+    vulkan->presenter.Resize(
+        surfaceWidth,
+        surfaceHeight,
+        emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
+
+    bool hasOverlay = false;
+    const qreal dpr = devicePixelRatioF();
+    const int logicalWidth = width();
+    const int logicalHeight = height();
+    if (surfaceWidth > 0 && surfaceHeight > 0 && logicalWidth > 0 && logicalHeight > 0)
+    {
+        if (vulkan->overlayFrame.width() != static_cast<int>(surfaceWidth)
+            || vulkan->overlayFrame.height() != static_cast<int>(surfaceHeight)
+            || vulkan->overlayFrame.format() != QImage::Format_ARGB32_Premultiplied)
+        {
+            vulkan->overlayFrame = QImage(
+                static_cast<int>(surfaceWidth),
+                static_cast<int>(surfaceHeight),
+                QImage::Format_ARGB32_Premultiplied);
+        }
+        vulkan->overlayFrame.fill(Qt::transparent);
+        QPainter overlayPainter(&vulkan->overlayFrame);
+        overlayPainter.scale(dpr, dpr);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
+            if (MelonPrimeHud_CanRenderForCore(mp, editMode))
+            {
+                auto& instcfg = emuInstance->getLocalConfig();
+                MelonPrimeHud_RefreshHudEnabledIfNeeded(
+                    mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+                MelonPrimeHud_RefreshOverlayFontIfNeeded(
+                    mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+                if (MelonPrimeHud_IsHudVisibleOrRestorePatch(
+                        emuInstance, instcfg, mp, m_hudEnabled, editMode))
+                {
+                    MelonPrimeHud_PrepareTopOverlay(
+                        Overlay[0], logicalWidth, logicalHeight, m_hudPrevDirty);
+                    const QRect currentDirty = MelonPrimeHud_RenderTopOverlay(
+                        emuInstance,
+                        instcfg,
+                        mp,
+                        Overlay[0],
+                        overlayFont,
+                        m_topStretchX,
+                        m_hudScale,
+                        m_hudOriginX,
+                        m_hudOriginY);
+                    overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
+                    m_hudPrevDirty = currentDirty;
+                    hasOverlay = true;
+                }
+            }
+        }
+#endif
+
+        if (osdEnabled && !osdItems.empty())
+        {
+            QMutexLocker osdLock(&osdMutex);
+            int y = kOSDMargin;
+            for (const OSDItem& item : osdItems)
+            {
+                overlayPainter.drawImage(kOSDMargin, y, item.bitmap);
+                y += item.bitmap.height();
+            }
+            hasOverlay = true;
+        }
+    }
+
+    MelonPrime::VulkanOverlayFrame overlay{};
+    if (hasOverlay)
+    {
+        overlay.pixels = vulkan->overlayFrame.constBits();
+        overlay.width = static_cast<std::uint32_t>(vulkan->overlayFrame.width());
+        overlay.height = static_cast<std::uint32_t>(vulkan->overlayFrame.height());
+        overlay.rowBytes = static_cast<std::size_t>(vulkan->overlayFrame.bytesPerLine());
+    }
+    if (vulkan->presenter.Present(
+            presentFrame,
+            vulkan->output,
+            inputs,
+            outputWidth,
+            outputHeight,
+            regions,
+            hasOverlay ? &overlay : nullptr))
+    {
+        vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
+        vulkan->consecutiveFailures = 0;
+    }
+    else
+    {
+        vulkan->frameQueue.deferPresentedFrame(presentFrame, vulkan->framePolicy);
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Warn, "Vulkan swapchain presentation failed; retrying after resync");
+    }
+}
+#endif
 
 ScreenPanelGL::ScreenPanelGL(QWidget * parent) : ScreenPanel(parent)
 {

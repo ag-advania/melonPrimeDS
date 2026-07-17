@@ -154,6 +154,9 @@ public:
 
 signals:
     void windowUpdate();
+#ifdef MELONPRIME_DS
+    void rendererRuntimeFallback();
+#endif
     void windowTitleChange(QString title);
 
     void windowEmuStart();

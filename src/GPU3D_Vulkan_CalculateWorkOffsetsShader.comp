@@ -1,0 +1,99 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 4, std430) readonly buffer BinMaskBuffer
+{
+    uint binMaskValues[];
+};
+
+layout(set = 0, binding = 8, std430) buffer WorkOffsetBuffer
+{
+    uint workOffsetValues[];
+};
+
+layout(push_constant) uniform PushConsts
+{
+    uint width;
+    uint height;
+    uint clearColor;
+    uint clearDepth;
+    uint triangleCount;
+    uint dispCnt;
+    uint alphaRef;
+    uint fogColor;
+    uint fogOffset;
+    uint fogShift;
+    uint clearAttr;
+    uint fogDensityPacked[9];
+    uint edgeColorPacked[8];
+    uint variantKey;
+    uint passIndex;
+    uint triangleBase;
+    uint depthBlendMode;
+} pc;
+
+const uint WORK_SORT_DISPATCH_X = 0u;
+const uint WORK_SORT_DISPATCH_Y = 1u;
+const uint WORK_SORT_DISPATCH_Z = 2u;
+const uint WORK_RASTER_DISPATCH_X = 3u;
+const uint WORK_RASTER_DISPATCH_Y = 4u;
+const uint WORK_RASTER_DISPATCH_Z = 5u;
+const uint WORK_ACTIVE_TILE_COUNT = 6u;
+const uint WORK_ACTIVE_GROUP_COUNT = 7u;
+const uint WORK_TILE_OFFSETS_BASE = 8u;
+
+void main()
+{
+    if (gl_GlobalInvocationID.x != 0u)
+        return;
+
+    const uint tileSize = 8u;
+    uint tileCountX = max(1u, (pc.width + (tileSize - 1u)) / tileSize);
+    uint tileCountY = max(1u, (pc.height + (tileSize - 1u)) / tileSize);
+    uint tileCount = max(1u, tileCountX * tileCountY);
+    uint groupCount = max(1u, (pc.triangleCount + 31u) / 32u);
+
+    uint activeTileListBase = WORK_TILE_OFFSETS_BASE + tileCount + 1u;
+
+    uint runningOffset = 0u;
+    uint activeTileCount = 0u;
+    for (uint tileIndex = 0u; tileIndex < tileCount; tileIndex++)
+    {
+        workOffsetValues[WORK_TILE_OFFSETS_BASE + tileIndex] = runningOffset;
+
+        bool hasWork = false;
+        uint activeGroups = 0u;
+        uint base = tileIndex * groupCount;
+        for (uint groupIndex = 0u; groupIndex < groupCount; groupIndex++)
+        {
+            if (binMaskValues[base + groupIndex] != 0u)
+            {
+                hasWork = true;
+                activeGroups++;
+            }
+        }
+
+        if (hasWork)
+        {
+            workOffsetValues[activeTileListBase + activeTileCount] = tileIndex;
+            activeTileCount++;
+        }
+
+        runningOffset += activeGroups;
+    }
+    workOffsetValues[WORK_TILE_OFFSETS_BASE + tileCount] = runningOffset;
+
+    // Indirect dispatch for SortWork (local_size_x = 64).
+    workOffsetValues[WORK_SORT_DISPATCH_X] = max(1u, (activeTileCount + 63u) / 64u);
+    workOffsetValues[WORK_SORT_DISPATCH_Y] = 1u;
+    workOffsetValues[WORK_SORT_DISPATCH_Z] = 1u;
+
+    // Indirect dispatch for TriRaster (local_size = 8x8), one workgroup per active tile.
+    workOffsetValues[WORK_RASTER_DISPATCH_X] = max(1u, activeTileCount);
+    workOffsetValues[WORK_RASTER_DISPATCH_Y] = 1u;
+    workOffsetValues[WORK_RASTER_DISPATCH_Z] = 1u;
+
+    workOffsetValues[WORK_ACTIVE_TILE_COUNT] = activeTileCount;
+    workOffsetValues[WORK_ACTIVE_GROUP_COUNT] = runningOffset;
+}

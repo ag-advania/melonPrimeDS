@@ -358,6 +358,27 @@ private:
 #endif
 };
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+class ScreenPanelVulkan final : public ScreenPanel
+{
+public:
+    explicit ScreenPanelVulkan(QWidget* parent);
+    ~ScreenPanelVulkan() override;
+
+    bool initVulkan();
+    void drawScreen() override;
+
+protected:
+    QPaintEngine* paintEngine() const override;
+
+private:
+    void setupScreenLayout() override;
+
+    struct VulkanState;
+    std::unique_ptr<VulkanState> vulkan;
+};
+#endif
+
 
 class ScreenPanelGL : public ScreenPanel
 {
