@@ -25,10 +25,12 @@ def main() -> int:
         ):
             if token not in text:
                 issues.append(f"scheduler missing {token}")
-        # Ordering: A then B then capture inside the loop.
-        a = text.find("Metal2D_A->RenderSegmentedGpuFrame")
-        b = text.find("Metal2D_B->RenderSegmentedGpuFrame")
-        c = text.find("EncodeMetalDisplayCapture")
+        # Ordering: A then B then capture inside the render loop body.
+        fn = text.find("bool MetalRenderer::RenderMetalFullGpuFrameSegmented")
+        body = text[fn:] if fn >= 0 else text
+        a = body.find("Metal2D_A->RenderSegmentedGpuFrame")
+        b = body.find("Metal2D_B->RenderSegmentedGpuFrame")
+        c = body.find("EncodeMetalDisplayCapture(")
         if not (0 <= a < b < c):
             issues.append("segment loop must order A → B → Capture")
 
@@ -52,6 +54,19 @@ def main() -> int:
         # tolerate formatting
         if "startLine" not in capture or "endLine" not in capture:
             issues.append("EncodeMetalDisplayCapture must take line range")
+    if "MELONPRIME_METAL_CAPTURE_PINGPONG_V1" not in capture:
+        issues.append("missing CAPTURE_PINGPONG_V1 marker")
+    if "MELONPRIME_METAL_CAPTURE_WRITE_TICKET_V1" not in capture:
+        issues.append("missing CAPTURE_WRITE_TICKET_V1 marker")
+    if "struct CaptureWriteTicket" not in capture:
+        issues.append("CaptureWriteTicket struct missing")
+    if "Snapshot128" in capture or "Snapshot256" in capture:
+        issues.append("Snapshot textures must be replaced by ping-pong faces")
+    if "Capture128[2]" not in capture:
+        issues.append("Capture128 ping-pong array missing")
+
+    if "MELONPRIME_METAL_CAPTURE_PINGPONG_V1" not in sched.read_text(encoding="utf-8"):
+        issues.append("segment scheduler must document ping-pong")
 
     if issues:
         print("FAIL: metal capture segment scheduler audit")

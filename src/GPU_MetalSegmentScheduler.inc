@@ -1,10 +1,10 @@
 // Included after GPU_MetalCaptureMethods.inc / CaptureExperiment.
 // MELONPRIME_METAL_CAPTURE_SEGMENT_SCHEDULER_V1
+// MELONPRIME_METAL_CAPTURE_PINGPONG_V1
 //
-// Minimal PR-4 segment loop: for each merged capture/2D boundary segment,
-// render Engine A, Engine B, then encode display capture for that line range.
-// Same-queue ordering + Capture→Snapshot blit per segment provides same-frame
-// feedback at segment granularity. CaptureCnt Full-GPU exclusion stays until PR-5.
+// Per-segment: Engine A → Engine B → EncodeMetalDisplayCapture. Ping-pong
+// publish after each encode lets later segments sample prior writes.
+// CaptureCnt Full-GPU Soft gate is lifted in a later phase.
 
 namespace
 {
@@ -129,9 +129,15 @@ bool MetalRenderer::RenderMetalFullGpuFrameSegmented(
             segments[static_cast<size_t>(i)];
         // MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1: segment ordering
         // (2D then capture encode) lets later segments sample prior writes.
-        // Allow capture textures even on capture-writing segments; 2D runs
-        // before that segment's encode, so it sees previous-segment state.
+        // Re-query published ping-pong face after each encode.
         const bool allowCaptureTextures = true;
+        capture128 = GetMetalCapture128Texture();
+        capture256 = GetMetalCapture256Texture();
+        if (!capture128 || !capture256)
+        {
+            *rejectionStage = "capture-textures-missing";
+            return false;
+        }
 
         if (!Metal2D_A->RenderSegmentedGpuFrame(
                 high3D,
@@ -159,7 +165,8 @@ bool MetalRenderer::RenderMetalFullGpuFrameSegmented(
                 Metal2D_A->GetOutputTexture(),
                 high3D,
                 seg.StartLine,
-                seg.EndLine))
+                seg.EndLine,
+                static_cast<uint32_t>(i)))
         {
             *rejectionStage = "encode-display-capture";
             return false;

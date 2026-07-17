@@ -304,6 +304,26 @@ struct MetalRenderer::MetalCaptureState
         // for this layer. Stale completions (token != LatestGpuSubmittedToken)
         // only decrement GpuWritesInFlight and must not touch Valid/Dirty.
         uint64_t LatestGpuSubmittedToken = 0;
+        // MELONPRIME_METAL_CAPTURE_WRITE_TICKET_V1: published generation for
+        // this layer. Bumped on AllocCapture and when a write is accepted.
+        // Old operation completions must not finalize a newer Generation.
+        uint64_t Generation = 0;
+        // Expected Generation of the latest in-flight GPU write (snapshotted
+        // into CaptureWriteTicket at dispatch).
+        uint64_t LatestGpuSubmittedGeneration = 0;
+    };
+
+    // MELONPRIME_METAL_CAPTURE_WRITE_TICKET_V1 (§10.11): per-operation token
+    // so an old completion cannot finalize a newer generation.
+    struct CaptureWriteTicket
+    {
+        uint64_t FrameSerial = 0;
+        uint32_t SegmentIndex = 0;
+        uint32_t Layer = 0;
+        uint64_t DirtySerial = 0;
+        uint64_t Generation = 0;
+        uint64_t Token = 0;
+        int Size = -1;
     };
 
     // Guards every field of every Meta[] entry. Never held across GPU command
@@ -320,10 +340,14 @@ struct MetalRenderer::MetalCaptureState
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
     id<MTLComputePipelineState> CapturePipeline = nil;
-    id<MTLTexture> Capture128 = nil;
-    id<MTLTexture> Capture256 = nil;
-    id<MTLTexture> Snapshot128 = nil;
-    id<MTLTexture> Snapshot256 = nil;
+    // MELONPRIME_METAL_CAPTURE_PINGPONG_V1 (§10.6 A): read/write faces per
+    // size class. PublishedIndex is what 2D/3D/Source-B sample; encode writes
+    // the opposite face then publishes it after commit.
+    id<MTLTexture> Capture128[2] = {nil, nil};
+    id<MTLTexture> Capture256[2] = {nil, nil};
+    uint8_t PublishedIndex = 0;
+    uint64_t FrameSerial = 0;
+    uint32_t NextSegmentIndex = 0;
     id<MTLBuffer> LineConfigBuffer = nil;
     id<MTLBuffer> AuxVramBuffer = nil;
     id<MTLBuffer> AuxFifoBuffer = nil;
@@ -516,19 +540,21 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         return [device newTextureWithDescriptor:desc];
     };
 
-    // Canonical native RGB5551 authority (~1 MiB + snapshots ~2 MiB total).
-    next->Capture128 = makeArrayTexture(
+    // MELONPRIME_METAL_CAPTURE_PINGPONG_V1: two R16Uint faces per size.
+    // Memory ~2 MiB total (replaces Capture+Snapshot pair).
+    next->Capture128[0] = makeArrayTexture(
         128u, 128u, 16u,
         MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
-    next->Capture256 = makeArrayTexture(
+    next->Capture128[1] = makeArrayTexture(
+        128u, 128u, 16u,
+        MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
+    next->Capture256[0] = makeArrayTexture(
         256u, 256u, 4u,
         MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
-    next->Snapshot128 = makeArrayTexture(
-        128u, 128u, 16u,
-        MTLTextureUsageShaderRead);
-    next->Snapshot256 = makeArrayTexture(
+    next->Capture256[1] = makeArrayTexture(
         256u, 256u, 4u,
-        MTLTextureUsageShaderRead);
+        MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
+    next->PublishedIndex = 0;
 
     next->LineConfigBuffer =
         [device newBufferWithLength:
@@ -547,8 +573,8 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
                     sizeof(uint16_t) * 256u * 256u
                          options:MTLResourceStorageModeShared];
 
-    if (!next->Capture128 || !next->Capture256 ||
-        !next->Snapshot128 || !next->Snapshot256 ||
+    if (!next->Capture128[0] || !next->Capture128[1] ||
+        !next->Capture256[0] || !next->Capture256[1] ||
         !next->LineConfigBuffer || !next->AuxVramBuffer ||
         !next->AuxFifoBuffer || !next->ReadbackBuffer)
     {
@@ -569,13 +595,13 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     next->LoggedReady = true;
     std::fprintf(stderr,
         "[MelonPrime] metal display capture: configured native R16Uint "
-        "scaleSample=%d capture128=%zux%zux16 capture256=%zux%zux4 "
+        "ping-pong scaleSample=%d capture128=%zux%zux16 capture256=%zux%zux4 "
         "(scale-independent canonical storage)\n",
         scale,
-        static_cast<size_t>(next->Capture128.width),
-        static_cast<size_t>(next->Capture128.height),
-        static_cast<size_t>(next->Capture256.width),
-        static_cast<size_t>(next->Capture256.height));
+        static_cast<size_t>(next->Capture128[0].width),
+        static_cast<size_t>(next->Capture128[0].height),
+        static_cast<size_t>(next->Capture256[0].width),
+        static_cast<size_t>(next->Capture256[0].height));
 
     CaptureState = std::move(next);
 
@@ -599,6 +625,8 @@ void MetalRenderer::BeginMetalCaptureFrame()
         return;
     CaptureState->FrameHadCapture = false;
     CaptureState->FrameSupported = true;
+    CaptureState->FrameSerial++;
+    CaptureState->NextSegmentIndex = 0;
     auto* lines = static_cast<MetalCaptureLineConfigCpu*>(
         [CaptureState->LineConfigBuffer contents]);
     for (int line = 0; line < 192; line++)
@@ -704,7 +732,8 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
     void* engineA2DTexture,
     void* high3DTexture,
     int startLine,
-    int endLine)
+    int endLine,
+    uint32_t segmentIndex)
 {
     if (startLine < 0) startLine = 0;
     if (endLine > 192) endLine = 192;
@@ -730,63 +759,61 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
 
     auto* lines = static_cast<MetalCaptureLineConfigCpu*>(
         [CaptureState->LineConfigBuffer contents]);
-    uint32_t snapshot128Mask = 0;
-    uint32_t snapshot256Mask = 0;
-    for (int line = startLine; line < endLine; line++)
-    {
-        const auto& config = lines[line];
-        if (!config.Enabled || config.SrcBCaptureLayer < 0)
-            continue;
-        if (config.SrcBCaptureSize == 0)
-            snapshot128Mask |= 1u << config.SrcBCaptureLayer;
-        else
-            snapshot256Mask |= 1u << (config.SrcBCaptureLayer >> 2);
-    }
+
+    const uint8_t readFace = CaptureState->PublishedIndex;
+    const uint8_t writeFace = static_cast<uint8_t>(1u - readFace);
+    id<MTLTexture> read128 = CaptureState->Capture128[readFace];
+    id<MTLTexture> read256 = CaptureState->Capture256[readFace];
+    id<MTLTexture> write128 = CaptureState->Capture128[writeFace];
+    id<MTLTexture> write256 = CaptureState->Capture256[writeFace];
+    if (!read128 || !read256 || !write128 || !write256)
+        return false;
 
     id<MTLCommandBuffer> command = [CaptureState->Queue commandBuffer];
     if (!command)
         return false;
     command.label = @"MelonPrime Metal GPU Display Capture";
 
-    if (snapshot128Mask || snapshot256Mask)
+    // MELONPRIME_METAL_CAPTURE_PINGPONG_V1: keep write face complete by
+    // copying published read face, then overwrite written layers via compute.
+    // Source B samples the read face (same-frame prior writes).
     {
         id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
         if (!blit)
             return false;
-
-        for (uint32_t layer = 0; layer < 16; layer++)
+        [blit copyFromTexture:read128
+                  sourceSlice:0
+                  sourceLevel:0
+                 sourceOrigin:MTLOriginMake(0, 0, 0)
+                   sourceSize:MTLSizeMake(read128.width, read128.height, 1)
+                    toTexture:write128
+             destinationSlice:0
+             destinationLevel:0
+            destinationOrigin:MTLOriginMake(0, 0, 0)];
+        // Full array: copy remaining slices.
+        for (NSUInteger slice = 1; slice < read128.arrayLength; slice++)
         {
-            if ((snapshot128Mask & (1u << layer)) == 0u)
-                continue;
-            [blit copyFromTexture:CaptureState->Capture128
-                     sourceSlice:layer
-                     sourceLevel:0
-                    sourceOrigin:MTLOriginMake(0, 0, 0)
-                      sourceSize:MTLSizeMake(
-                          CaptureState->Capture128.width,
-                          CaptureState->Capture128.height,
-                          1)
-                       toTexture:CaptureState->Snapshot128
-                destinationSlice:layer
-                destinationLevel:0
-               destinationOrigin:MTLOriginMake(0, 0, 0)];
+            [blit copyFromTexture:read128
+                      sourceSlice:slice
+                      sourceLevel:0
+                     sourceOrigin:MTLOriginMake(0, 0, 0)
+                       sourceSize:MTLSizeMake(read128.width, read128.height, 1)
+                        toTexture:write128
+                 destinationSlice:slice
+                 destinationLevel:0
+                destinationOrigin:MTLOriginMake(0, 0, 0)];
         }
-        for (uint32_t layer = 0; layer < 4; layer++)
+        for (NSUInteger slice = 0; slice < read256.arrayLength; slice++)
         {
-            if ((snapshot256Mask & (1u << layer)) == 0u)
-                continue;
-            [blit copyFromTexture:CaptureState->Capture256
-                     sourceSlice:layer
-                     sourceLevel:0
-                    sourceOrigin:MTLOriginMake(0, 0, 0)
-                      sourceSize:MTLSizeMake(
-                          CaptureState->Capture256.width,
-                          CaptureState->Capture256.height,
-                          1)
-                       toTexture:CaptureState->Snapshot256
-                destinationSlice:layer
-                destinationLevel:0
-               destinationOrigin:MTLOriginMake(0, 0, 0)];
+            [blit copyFromTexture:read256
+                      sourceSlice:slice
+                      sourceLevel:0
+                     sourceOrigin:MTLOriginMake(0, 0, 0)
+                       sourceSize:MTLSizeMake(read256.width, read256.height, 1)
+                        toTexture:write256
+                 destinationSlice:slice
+                 destinationLevel:0
+                destinationOrigin:MTLOriginMake(0, 0, 0)];
         }
         [blit endEncoding];
     }
@@ -810,10 +837,10 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
     [encoder setBuffer:CaptureState->AuxFifoBuffer offset:0 atIndex:3];
     [encoder setTexture:engineA2D atIndex:0];
     [encoder setTexture:high3D atIndex:1];
-    [encoder setTexture:CaptureState->Snapshot128 atIndex:2];
-    [encoder setTexture:CaptureState->Snapshot256 atIndex:3];
-    [encoder setTexture:CaptureState->Capture128 atIndex:4];
-    [encoder setTexture:CaptureState->Capture256 atIndex:5];
+    [encoder setTexture:read128 atIndex:2];
+    [encoder setTexture:read256 atIndex:3];
+    [encoder setTexture:write128 atIndex:4];
+    [encoder setTexture:write256 atIndex:5];
 
     const NSUInteger threadWidth =
         std::max<NSUInteger>(1, CaptureState->CapturePipeline.threadExecutionWidth);
@@ -821,7 +848,6 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         1,
         CaptureState->CapturePipeline.maxTotalThreadsPerThreadgroup /
             threadWidth);
-    // Native-resolution dispatch for [startLine, endLine).
     [encoder dispatchThreads:MTLSizeMake(
                 256,
                 static_cast<NSUInteger>(endLine - startLine),
@@ -829,25 +855,9 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
            threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
     [encoder endEncoding];
 
-    // MELONPRIME_METAL_GPU_CAPTURE_COMPLETION_V1: collect unique (layer, size)
-    // pairs written this dispatch and snapshot each one's DirtySerial as
-    // GpuSubmittedSerial *before* commit, under the same mutex the completion
-    // handler below and the CPU-fallback path both use. Finalizing Valid=true
-    // here (queue-ordering guarantees success, but not GPU-error-free
-    // success) let a failed command buffer leave stale/garbage texture
-    // contents marked Valid -- any subsequent read (BG/OBJ sampling this
-    // frame, or an on-demand CPU readback) would then treat that garbage as
-    // authoritative. Layer entries are deduplicated: a destination layer can
-    // appear on many scanlines, but metadata is per-layer (last enabled
-    // scanline's size wins, matching the previous implicit "last write wins"
-    // behaviour without O(lines) completion work).
-    struct PendingCaptureWrite {
-        int Layer;
-        int Size;
-        uint64_t SubmittedSerial;
-        uint64_t Token;
-    };
-    std::vector<PendingCaptureWrite> pendingWrites;
+    // MELONPRIME_METAL_CAPTURE_WRITE_TICKET_V1
+    std::vector<MetalCaptureState::CaptureWriteTicket> pendingWrites;
+    const uint64_t frameSerial = CaptureState->FrameSerial;
     {
         std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
         std::array<int, 16> pendingIndex;
@@ -862,35 +872,38 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
             const int size = static_cast<int>((config.CaptureCnt >> 20) & 3u);
             const int layer = (bank << 2) | start;
             auto& meta = CaptureState->Meta[layer];
-            // Always record the GPU write. If a CPU upload is also in flight,
-            // same-queue ordering means this compute dispatch runs after that
-            // blit; the CPU completion will see GpuWritesInFlight>0 and refuse
-            // to claim Valid, while the latest GPU completion finalizes.
             const int existing = pendingIndex[layer];
             if (existing >= 0)
             {
-                // Same layer again in *this* command buffer: refresh size only.
-                // Do not mint a new token or bump GpuWritesInFlight -- there is
-                // still exactly one in-flight GPU capture command for this
-                // layer from this EncodeMetalDisplayCapture() call.
                 pendingWrites[static_cast<size_t>(existing)].Size = size;
-                pendingWrites[static_cast<size_t>(existing)].SubmittedSerial =
+                pendingWrites[static_cast<size_t>(existing)].DirtySerial =
                     meta.DirtySerial;
                 meta.GpuSubmittedSerial = meta.DirtySerial;
             }
             else
             {
                 const uint64_t token = CaptureState->NextGpuWriteToken++;
+                const uint64_t generation = meta.Generation + 1;
                 meta.LatestGpuSubmittedToken = token;
+                meta.LatestGpuSubmittedGeneration = generation;
                 meta.GpuWritesInFlight++;
                 meta.GpuSubmittedSerial = meta.DirtySerial;
                 pendingIndex[layer] = static_cast<int>(pendingWrites.size());
-                pendingWrites.push_back({layer, size, meta.DirtySerial, token});
+                MetalCaptureState::CaptureWriteTicket ticket;
+                ticket.FrameSerial = frameSerial;
+                ticket.SegmentIndex = segmentIndex;
+                ticket.Layer = static_cast<uint32_t>(layer);
+                ticket.DirtySerial = meta.DirtySerial;
+                ticket.Generation = generation;
+                ticket.Token = token;
+                ticket.Size = size;
+                pendingWrites.push_back(ticket);
             }
         }
     }
 
     std::shared_ptr<MetalCaptureState> capturedState = CaptureState;
+    const uint8_t publishFace = writeFace;
     [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
         const bool ok = completed.status == MTLCommandBufferStatusCompleted;
         if (!ok)
@@ -903,14 +916,14 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
                 "failed: %s\n", message);
         }
         std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
-        for (const auto& write : pendingWrites)
+        for (const auto& ticket : pendingWrites)
         {
-            auto& meta = capturedState->Meta[write.Layer];
+            auto& meta = capturedState->Meta[ticket.Layer];
             if (meta.GpuWritesInFlight > 0)
                 meta.GpuWritesInFlight--;
-            // Stale completion from a superseded GPU capture for this layer:
-            // only the count changes; Valid/Dirty belong to the latest token.
-            if (write.Token != meta.LatestGpuSubmittedToken)
+            if (ticket.Token != meta.LatestGpuSubmittedToken)
+                continue;
+            if (ticket.Generation != meta.LatestGpuSubmittedGeneration)
                 continue;
             if (!ok)
             {
@@ -918,24 +931,21 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
                 meta.Dirty = true;
                 continue;
             }
-            // A CPU upload started after we dispatched owns the texture now.
             if (meta.CpuUploadInFlight)
             {
                 meta.Valid = false;
                 meta.Dirty = true;
                 continue;
             }
-            if (meta.DirtySerial == write.SubmittedSerial)
+            if (meta.DirtySerial == ticket.DirtySerial)
             {
-                meta.Size = write.Size;
+                meta.Size = ticket.Size;
                 meta.Valid = true;
                 meta.Dirty = false;
+                meta.Generation = ticket.Generation;
             }
             else
             {
-                // The destination changed again (AllocCapture) while this
-                // write was in flight -- this result is stale, leave Dirty
-                // so a later write (GPU capture or CPU fallback) finalizes it.
                 meta.Valid = false;
                 meta.Dirty = true;
             }
@@ -943,12 +953,20 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
     }];
     [command commit];
 
+    // Publish write face for subsequent segments on the same queue.
+    CaptureState->PublishedIndex = publishFace;
+    CaptureState->NextSegmentIndex = segmentIndex + 1;
+    Metal3DSetCaptureTextures(
+        Rend3D.get(),
+        GetMetalCapture128Texture(),
+        GetMetalCapture256Texture());
+
     if (!CaptureState->LoggedFirstCapture)
     {
         CaptureState->LoggedFirstCapture = true;
         std::fprintf(stderr,
             "[MelonPrime] metal display capture: first GPU capture submitted "
-            "scale=%d readback=0\n",
+            "scale=%d readback=0 ping-pong=1\n",
             CaptureState->Scale);
     }
     return true;
@@ -970,6 +988,7 @@ void MetalRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     meta.Size = static_cast<int>(len);
     meta.Dirty = true;
     meta.DirtySerial++;
+    meta.Generation++;
 }
 
 bool MetalRenderer::UploadCaptureTexture(
@@ -1198,12 +1217,23 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         }
         if (!UploadCaptureTexture(
                 capturedState,
-                (__bridge void*)CaptureState->Capture128,
+                (__bridge void*)CaptureState->Capture128[0],
                 layer,
                 source,
                 128u,
                 128u,
                 std::vector<int>{static_cast<int>(layer)}))
+        {
+            return false;
+        }
+        if (!UploadCaptureTexture(
+                capturedState,
+                (__bridge void*)CaptureState->Capture128[1],
+                layer,
+                source,
+                128u,
+                128u,
+                std::vector<int>{}))
         {
             return false;
         }
@@ -1235,12 +1265,23 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
             continue;
         if (!UploadCaptureTexture(
                 capturedState,
-                (__bridge void*)CaptureState->Capture256,
+                (__bridge void*)CaptureState->Capture256[0],
                 bank,
                 source,
                 256u,
                 256u,
                 std::move(affectedLayers)))
+        {
+            return false;
+        }
+        if (!UploadCaptureTexture(
+                capturedState,
+                (__bridge void*)CaptureState->Capture256[1],
+                bank,
+                source,
+                256u,
+                256u,
+                std::vector<int>{}))
         {
             return false;
         }
@@ -1301,8 +1342,8 @@ void MetalRenderer::SyncVRAMCapture(
         ? static_cast<NSUInteger>(metadataLayer)
         : static_cast<NSUInteger>(bank);
     id<MTLTexture> source = use128
-        ? CaptureState->Capture128
-        : CaptureState->Capture256;
+        ? CaptureState->Capture128[CaptureState->PublishedIndex]
+        : CaptureState->Capture256[CaptureState->PublishedIndex];
 
     id<MTLCommandBuffer> command = [CaptureState->Queue commandBuffer];
     id<MTLBlitCommandEncoder> blit =
@@ -1445,14 +1486,14 @@ bool MetalRenderer::MetalCaptureResourcesCoherent() const
 
 void* MetalRenderer::GetMetalCapture128Texture() const
 {
-    return CaptureState && CaptureState->Capture128
-        ? (__bridge void*)CaptureState->Capture128
+    return CaptureState && CaptureState->Capture128[CaptureState->PublishedIndex]
+        ? (__bridge void*)CaptureState->Capture128[CaptureState->PublishedIndex]
         : nullptr;
 }
 
 void* MetalRenderer::GetMetalCapture256Texture() const
 {
-    return CaptureState && CaptureState->Capture256
-        ? (__bridge void*)CaptureState->Capture256
+    return CaptureState && CaptureState->Capture256[CaptureState->PublishedIndex]
+        ? (__bridge void*)CaptureState->Capture256[CaptureState->PublishedIndex]
         : nullptr;
 }

@@ -9,7 +9,7 @@
 | PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
 | PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
 | PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
-| PR-4 | per-scanline／segment capture | **完了（部分）** | `87c79f76` | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
+| PR-4 | per-scanline／segment capture | **完了（部分）** | （本コミット） | segment loop + ping-pong + CaptureWriteTicket。実ROM same-frame feedback はユーザー検証前提 |
 | PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
 | PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
 | PR-7 | SoftRenderer 継承撤廃 | **準備のみ（ブロック）** | （本コミット） | dependency map 作成。§13.1 により M4/M5 実機受け入れ前は継承 flip しない |
@@ -59,13 +59,13 @@
 
 - `RenderMetalFullGpuFrameSegmented`（A→B→Capture per segment）
 - line-range encode／2D render
-- CaptureCnt exclusion は維持（PR-5）
+- `MELONPRIME_METAL_CAPTURE_PINGPONG_V1`: R16Uint Capture128/256[2] + PublishedIndex
+- `CaptureWriteTicket`（FrameSerial／SegmentIndex／Layer／DirtySerial／Generation／Token）
+- stale completion は新 Generation を finalize しない
 
 未実施:
 
-- generation ticket／ping-pong
-- 実ROM same-frame feedback diff 0
-- CaptureCnt exclusion 撤廃
+- 実ROM same-frame feedback 自動 diff CI
 
 ## PR-5 要約（2026-07-17）
 

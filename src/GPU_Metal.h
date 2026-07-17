@@ -121,7 +121,8 @@ private:
         void* engineA2DTexture,
         void* high3DTexture,
         int startLine,
-        int endLine);
+        int endLine,
+        uint32_t segmentIndex = 0);
     bool BuildFullGpuCaptureSegments(
         std::array<MetalScanlineSegment, 192>& segments,
         int& count) const;
