@@ -38,12 +38,10 @@ def main() -> int:
         issues.append("scale change must update Scale without texture recreate")
 
     full_gpu = FULL_GPU.read_text(encoding="utf-8")
-    if "if (GPU.CaptureCnt & (1u << 31))" not in full_gpu:
-        issues.append(
-            "CaptureCnt Full-GPU Soft gate missing (freeze fix)"
-        )
-    if "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" not in full_gpu:
-        issues.append("missing CAPTURE_FULLGPU_GATED_V2 marker")
+    if "if (GPU.CaptureCnt & (1u << 31))" in full_gpu:
+        issues.append("CaptureCnt Soft gate must stay removed after cutover")
+    if "MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V2" not in full_gpu:
+        issues.append("missing CAPTURE_FULLGPU_CUTOVER_V2 marker")
 
     s2 = SHADER_2D.read_text(encoding="utf-8")
     if "texture2d_array<ushort, access::read> capture128" not in s2:

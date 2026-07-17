@@ -67,10 +67,8 @@ def main() -> int:
         issues.append("GPU_Metal.h missing MetalCaptureExperimentState")
 
     full_gpu = FULL_GPU.read_text(encoding="utf-8")
-    if "if (GPU.CaptureCnt & (1u << 31))" not in full_gpu:
-        issues.append(
-            "CaptureCnt Soft gate missing (freeze fix)"
-        )
+    if "if (GPU.CaptureCnt & (1u << 31))" in full_gpu:
+        issues.append("CaptureCnt Soft gate must stay removed after cutover")
     if "MetalCaptureExperimentRecordLine" not in full_gpu:
         issues.append("DrawScanline Soft path missing experiment record hook")
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture Full-GPU gate + no silent Soft mid-frame escape."""
+"""PR-5: capture Full-GPU cutover — Soft CaptureCnt gate must stay removed."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ ROOT = Path(__file__).resolve().parents[3]
 def main() -> int:
     issues: list[str] = []
     full = (ROOT / "src/GPU_MetalFullGpuMethods.inc").read_text(encoding="utf-8")
-    if "if (GPU.CaptureCnt & (1u << 31))" not in full:
-        issues.append("CaptureCnt bit31 eligibility Soft gate missing")
-    if "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" not in full:
-        issues.append("missing CAPTURE_FULLGPU_GATED_V2 marker")
+    if "if (GPU.CaptureCnt & (1u << 31))" in full:
+        issues.append("CaptureCnt bit31 Soft gate must be removed (cutover)")
+    if "MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V2" not in full:
+        issues.append("missing CAPTURE_FULLGPU_CUTOVER_V2 marker")
+    if "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" in full:
+        issues.append("stale CAPTURE_FULLGPU_GATED_V2 Soft gate marker")
     if "CaptureFeedbackCooldownFrames" in full:
         issues.append(
             "CaptureFeedbackCooldownFrames Soft-escape cooldown must not exist "
@@ -27,7 +29,6 @@ def main() -> int:
         issues.append("VBlank rejection log must state no silent Soft escape")
     if "CaptureFeedbackCooldownFrames" in mm:
         issues.append("VBlank must not arm CaptureFeedback Soft-escape cooldown")
-    # Must not always Soft-block on every rejection.
     if "Always sticky-block Full-GPU retries after any rejection" in mm:
         issues.append("must not always Soft-escape after Full-GPU rejection")
 

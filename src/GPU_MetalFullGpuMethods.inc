@@ -233,15 +233,10 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (!GPU.ScreensEnabled)
         return false;
 
-    // MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2:
-    // Do NOT enter Full-GPU for capture-start frames until same-frame
-    // capture-backed feedback is production-ready. This is eligibility Soft
-    // for the whole frame (Soft DrawScanline runs from the start) -- not a
-    // mid-frame silent Software escape after FrameActive=true, which the
-    // plan forbids (§11.4 / "Metal failure時に黙ってSoftwareへ戻さない").
-    // Segment scheduler stays ready for the eventual cutover.
-    if (GPU.CaptureCnt & (1u << 31))
-        return false;
+    // MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V2:
+    // Capture-start frames stay on Full-GPU via the segment scheduler +
+    // ping-pong CaptureWriteTicket path. Soft eligibility escape for
+    // CaptureCnt bit31 is removed (plan §11 / user-tested cutover).
 
     const uint32_t displayModeA =
         (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
@@ -250,18 +245,11 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (displayModeA != 1u || displayModeB != 1u)
         return false;
 
-    // OpenGL renders BG/OBJ and the final compositor in scanline segments.
-    // The current Metal full-GPU path rebuilds BG/OBJ once at VBlank from the
-    // last register/OAM state and applies it to all 192 lines. Mixed 3D+2D
-    // gameplay frames therefore cannot yet be considered OpenGL-equivalent.
-    //
-    // Keep the selected Metal 3D renderer, but route final DS 2D composition
-    // through the mature Software compositor until segmented Metal 2D is done.
+    // Mixed 3D+2D overlays use segmented Metal 2D snapshots (production).
+    // If snapshots are not ready, fail eligibility -- Soft mid-frame escape
+    // is forbidden (§11.4); the sticky mid-frame block handles retries.
     if (MetalEngineAUsesMixed3DAnd2DOverlay(GPU))
     {
-        if (!MetalAllowExperimentalMixed3D2DGpuPath())
-            return false;
-
         if (MetalSegmented2DVisibleRequested() &&
             (!Metal2D_A->SegmentedSnapshotReady() ||
              !Metal2D_B->SegmentedSnapshotReady()))
@@ -282,37 +270,15 @@ void MetalRenderer::Start3DRendering()
         FullGpuState->BlockedByCaptureFeedback = false;
 
     // MELONPRIME_METAL_MIDFRAME_INVALIDATION_STICKY_V1
-    // Every signal this eligibility check reads (CaptureCnt's start bit,
-    // MetalCaptureResourcesCoherent()'s BG/OBJ capture-layer validity, ...) is
-    // sampled here at VCount==215, still inside the *previous* frame's
-    // VBlank. The game can still write new register state for the upcoming
-    // frame after this point, and DrawScanline()'s own re-check (running
-    // during this frame's actual VCount 0-191) can discover a worse answer
-    // than what was true here. When that happens the frame has already
-    // committed to the full-GPU DrawScanline path, so SoftRenderer's
-    // per-scanline compositing never ran either -- the frame has no valid
-    // 2D data source at all and freezes. Without this flag, a persistent
-    // per-frame register pattern (e.g. a BG/OBJ config that keeps
-    // reintroducing the same conflict every single frame) turns that into a
-    // sustained multi-second freeze, not a single dropped frame, because
-    // eligibility looks clean again at every next Start3DRendering call.
-    // Sticky-blocking after any mid-frame invalidation caps the damage at one
-    // frozen frame per invalidation episode: subsequent frames correctly
-    // predict ineligibility in advance (via this flag) and fall back to the
-    // mature CPU/Software path instead of repeating the same failed attempt.
+    // Mid-frame invalidation after FrameActive must not silently return to
+    // Soft. Sticky-block subsequent frames at eligibility (fail-closed /
+    // RetainPrevious) until the cooldown elapses and the snapshot looks
+    // eligible again -- not a Soft DrawScanline escape (§11.4).
     if (FullGpuState->MidFrameInvalidationCooldownFrames > 0)
         FullGpuState->MidFrameInvalidationCooldownFrames--;
 
     if (FullGpuState->BlockedByMidFrameInvalidation)
     {
-        // Only lift the sticky block once the cooldown has fully elapsed AND
-        // this frame's own (already-current) snapshot looks eligible. The
-        // cooldown is what actually breaks a deterministic every-frame
-        // oscillation; without it, a state where this snapshot looks eligible
-        // on every single Start3DRendering call (even though it reliably
-        // breaks down again during that same frame's own scanlines) would
-        // clear the block immediately every time, right back into the same
-        // failing attempt.
         if (FullGpuState->MidFrameInvalidationCooldownFrames == 0 &&
             MetalCaptureResourcesCoherent() && IsMetalFullGpuFrameEligible())
         {
