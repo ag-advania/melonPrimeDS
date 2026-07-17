@@ -317,6 +317,33 @@ bool ValidateMetalRendererOutput(
             *outReason = reason;
         return false;
     };
+
+    // MELONPRIME_METAL_OUTPUT_FAULT_INJECTION_V1 (developer builds): force a
+    // named validation failure so fail-closed presenter behaviour can be
+    // exercised without hand-corrupting renderer state.
+    //   MELONPRIME_METAL_FAULT_INJECT=nil_texture|wrong_device|wrong_type|
+    //     wrong_array|wrong_format|sample_count|mipmap|depth|width|height|
+    //     scale|generation|serial|producer|pixel_format_meta
+    if (const char* fault = std::getenv("MELONPRIME_METAL_FAULT_INJECT"))
+    {
+        if (std::strcmp(fault, "nil_texture") == 0) return fail("fault:nil_texture");
+        if (std::strcmp(fault, "wrong_device") == 0) return fail("fault:wrong_device");
+        if (std::strcmp(fault, "wrong_type") == 0) return fail("fault:wrong_type");
+        if (std::strcmp(fault, "wrong_array") == 0) return fail("fault:wrong_array");
+        if (std::strcmp(fault, "wrong_format") == 0) return fail("fault:wrong_format");
+        if (std::strcmp(fault, "sample_count") == 0) return fail("fault:sample_count");
+        if (std::strcmp(fault, "mipmap") == 0) return fail("fault:mipmap");
+        if (std::strcmp(fault, "depth") == 0) return fail("fault:depth");
+        if (std::strcmp(fault, "width") == 0) return fail("fault:width");
+        if (std::strcmp(fault, "height") == 0) return fail("fault:height");
+        if (std::strcmp(fault, "scale") == 0) return fail("fault:scale");
+        if (std::strcmp(fault, "generation") == 0) return fail("fault:generation");
+        if (std::strcmp(fault, "serial") == 0) return fail("fault:serial");
+        if (std::strcmp(fault, "producer") == 0) return fail("fault:producer");
+        if (std::strcmp(fault, "pixel_format_meta") == 0)
+            return fail("fault:pixel_format_meta");
+    }
+
     if (!texture) return fail("texture is nil");
     if (texture.device != expectedDevice) return fail("texture.device != presenter device");
     if (texture.textureType != MTLTextureType2DArray) return fail("textureType is not 2DArray");
@@ -326,6 +353,11 @@ bool ValidateMetalRendererOutput(
     if (texture.sampleCount != 1) return fail("texture.sampleCount != 1");
     if (texture.mipmapLevelCount != 1) return fail("texture.mipmapLevelCount != 1");
     if (texture.depth != 1) return fail("texture.depth != 1");
+    if (output.PixelFormat != melonDS::RendererPixelFormat::Bgra8Unorm)
+        return fail("output.PixelFormat != Bgra8Unorm");
+    if (output.PixelFormat == melonDS::RendererPixelFormat::Bgra8Unorm &&
+        texture.pixelFormat != MTLPixelFormatBGRA8Unorm)
+        return fail("output.PixelFormat metadata mismatches texture.pixelFormat");
     if (output.ArrayLength != 2) return fail("output.ArrayLength != 2");
     if (output.Width == 0) return fail("output.Width == 0");
     if (output.Height == 0) return fail("output.Height == 0");
@@ -1018,7 +1050,9 @@ void ScreenPanelMetal::drawScreen()
                 {
                     m->loggedNativeTextureFallback = true;
                     fprintf(stderr,
-                            "[MelonPrime] metal presenter: visible source=MetalGetLineCpuComposite softwareFallback=0\n");
+                            "[MelonPrime] metal presenter: visible source=MetalGetLineCpuComposite "
+                            "softwareFallback=0 fallbackReason=%u\n",
+                            static_cast<unsigned>(output.FallbackReason));
                 }
             }
 

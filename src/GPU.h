@@ -40,6 +40,29 @@ enum class RendererOutputKind
     None,
 };
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+// MELONPRIME_METAL_OUTPUT_PIXEL_FORMAT_METADATA_V1: C++-side pixel format
+// identifier (not an Objective-C MTLPixelFormat). Presenter checks this
+// against the live MTLTexture.pixelFormat.
+enum class RendererPixelFormat : u32
+{
+    Unknown = 0,
+    Bgra8Unorm = 1,
+};
+
+// Why a Metal-selected renderer handed out CpuBgra instead of MetalTexture.
+// Kept for diagnostics until M4 removes the production fallback path.
+enum class RendererOutputFallbackReason : u32
+{
+    None = 0,
+    Startup = 1,
+    CaptureFrame = 2,
+    FullGpuInvalidated = 3,
+    MetalCommandFailure = 4,
+    ResourceUnavailable = 5,
+};
+#endif
+
 struct RendererOutput
 {
     RendererOutputKind Kind = RendererOutputKind::None;
@@ -63,12 +86,23 @@ struct RendererOutput
     // a retained last-known-good lease can outlive its producer and be
     // presented after the producing renderer has been destroyed.
     u64 ProducerId = 0;
+    RendererPixelFormat PixelFormat = RendererPixelFormat::Unknown;
+    RendererOutputFallbackReason FallbackReason = RendererOutputFallbackReason::None;
 #endif
 
-    static RendererOutput CpuBgra(void* top, void* bottom) noexcept
+    static RendererOutput CpuBgra(
+        void* top,
+        void* bottom
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+        ,
+        RendererOutputFallbackReason fallbackReason = RendererOutputFallbackReason::None
+#endif
+        ) noexcept
     {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
+        RendererOutput out { RendererOutputKind::CpuBgra, top, bottom, 0 };
+        out.FallbackReason = fallbackReason;
+        return out;
 #else
         return { RendererOutputKind::CpuBgra, top, bottom };
 #endif
@@ -92,7 +126,8 @@ struct RendererOutput
         u32 arrayLength = 0,
         u32 scale = 0,
         u64 generation = 0,
-        u64 producerId = 0) noexcept
+        u64 producerId = 0,
+        RendererPixelFormat pixelFormat = RendererPixelFormat::Bgra8Unorm) noexcept
     {
         RendererOutput out { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
         out.Width = width;
@@ -101,6 +136,8 @@ struct RendererOutput
         out.Scale = scale;
         out.Generation = generation;
         out.ProducerId = producerId;
+        out.PixelFormat = pixelFormat;
+        out.FallbackReason = RendererOutputFallbackReason::None;
         return out;
     }
 #endif

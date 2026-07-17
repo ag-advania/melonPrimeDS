@@ -1373,7 +1373,22 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
         }
     }
 
-    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
+    // No published MetalTexture slot yet (startup, capture fallback, all
+    // slots busy, compose not Ready). Hand out CpuBgra with an explicit
+    // reason so the presenter/diagnostics can count fallbacks without
+    // treating them as an unlabeled SoftRenderer path.
+    const RendererOutput soft = SoftRenderer::GetOutput();
+    if (soft.Kind == RendererOutputKind::CpuBgra)
+    {
+        return RendererOutputLease(
+            RendererOutput::CpuBgra(
+                soft.Top,
+                soft.Bottom,
+                RendererOutputFallbackReason::ResourceUnavailable),
+            nullptr,
+            nullptr);
+    }
+    return RendererOutputLease(soft, nullptr, nullptr);
 }
 
 RendererOutput MetalRenderer::GetOutput()
