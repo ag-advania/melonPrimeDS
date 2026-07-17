@@ -369,9 +369,10 @@ public:
     void drawScreen() override;
 
 protected:
-    QPaintEngine* paintEngine() const override;
+    void paintEvent(QPaintEvent* event) override;
 
 private:
+    bool initVulkanPresenter();
     void setupScreenLayout() override;
 
     struct VulkanState;

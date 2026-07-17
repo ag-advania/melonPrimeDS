@@ -1688,7 +1688,9 @@ struct ScreenPanelVulkan::VulkanState
     std::uint32_t surfaceWidth = 0;
     std::uint32_t surfaceHeight = 0;
     QImage overlayFrame;
+    MelonPrime::VulkanNativeWindowInfo nativeWindow;
     bool initialized = false;
+    bool presenterInitialized = false;
     unsigned consecutiveFailures = 0;
 };
 
@@ -1796,7 +1798,6 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAutoFillBackground(false);
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_PaintOnScreen, true);
     setAttribute(Qt::WA_OpaquePaintEvent, true);
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
@@ -1817,9 +1818,21 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->frameQueue.clear();
 }
 
-QPaintEngine* ScreenPanelVulkan::paintEngine() const
+void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
 {
-    return nullptr;
+    auto* emuThread = emuInstance->getEmuThread();
+    if (emuThread != nullptr && emuThread->emuIsActive())
+        return;
+
+    QPainter painter(this);
+    painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
+
+    osdUpdate();
+    osdMutex.lock();
+    painter.drawPixmap(QRect(splashPos[3], QSize(kLogoWidth, kLogoWidth)), splashLogo);
+    for (int index = 0; index < 3; ++index)
+        painter.drawImage(splashPos[index], splashText[index].bitmap);
+    osdMutex.unlock();
 }
 
 bool ScreenPanelVulkan::initVulkan()
@@ -1827,7 +1840,7 @@ bool ScreenPanelVulkan::initVulkan()
     if (!vulkan || !vulkan->output.init())
         return false;
 
-    MelonPrime::VulkanNativeWindowInfo nativeWindow{};
+    auto& nativeWindow = vulkan->nativeWindow;
 #if defined(_WIN32)
     nativeWindow.type = MelonPrime::VulkanNativeWindowType::Win32;
     nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
@@ -1876,6 +1889,23 @@ bool ScreenPanelVulkan::initVulkan()
 #endif
 #endif
 
+    // Keep the native HWND owned exclusively by Qt while no game is active so
+    // the normal melonDS splash can be painted without competing with a
+    // swapchain.  The presenter is created on the first valid game frame.
+    vulkan->initialized = true;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "Vulkan output initialized; native presentation deferred until emulation starts");
+    return true;
+}
+
+bool ScreenPanelVulkan::initVulkanPresenter()
+{
+    if (!vulkan || !vulkan->initialized)
+        return false;
+    if (vulkan->presenterInitialized)
+        return true;
+
     setupScreenLayout();
     std::uint32_t surfaceWidth = 0;
     std::uint32_t surfaceHeight = 0;
@@ -1886,16 +1916,15 @@ bool ScreenPanelVulkan::initVulkan()
     }
 
     if (!vulkan->presenter.Init(
-            nativeWindow,
+            vulkan->nativeWindow,
             surfaceWidth,
             surfaceHeight,
             emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
     {
-        vulkan->output.shutdown();
         return false;
     }
 
-    vulkan->initialized = true;
+    vulkan->presenterInitialized = true;
     Platform::Log(
         Platform::LogLevel::Info,
         "Vulkan presentation initialized requested=Vulkan actual=Vulkan path=Qt-native-swapchain");
@@ -1956,7 +1985,23 @@ void ScreenPanelVulkan::drawScreen()
     auto* emuThread = emuInstance->getEmuThread();
     osdUpdate();
     if (!emuThread->emuIsActive())
+    {
+        if (vulkan->presenterInitialized)
+        {
+            vulkan->presenter.Shutdown();
+            vulkan->presenterInitialized = false;
+            vulkan->frameQueue.clear();
+            QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
+        }
         return;
+    }
+
+    if (!initVulkanPresenter())
+    {
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
+        return;
+    }
 
     auto* nds = emuInstance->getNDS();
     if (!nds)
