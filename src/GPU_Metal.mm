@@ -914,6 +914,14 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         {
             const int candidate =
                 (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
+            // Never reuse the currently published slot. It is the only frame
+            // AcquireOutputLease() can hand to the presenter; overwriting it
+            // (InFlight=true + a new serial) between publish and lease-acquire
+            // makes the lease fail and the presenter fall back to a one-frame
+            // CPU BGRA flash. PresenterRefs==0 alone does not protect that
+            // window because the presenter has not taken its ref yet.
+            if (candidate == OutputState->PublishedSlot)
+                continue;
             if (!OutputState->Slots[candidate].InFlight &&
                 OutputState->Slots[candidate].PresenterRefs == 0)
             {

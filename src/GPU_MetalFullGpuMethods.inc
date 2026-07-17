@@ -445,6 +445,10 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
     {
         const int candidate =
             (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
+        // Never reuse the currently published slot; see the matching guard in
+        // ComposeMetalVisibleOutput for the presenter-lease race this closes.
+        if (candidate == OutputState->PublishedSlot)
+            continue;
         if (!OutputState->Slots[candidate].InFlight &&
             OutputState->Slots[candidate].PresenterRefs == 0)
         {

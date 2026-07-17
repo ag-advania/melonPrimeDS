@@ -359,6 +359,15 @@ bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept
 
 namespace
 {
+bool MetalPerfLikeDiagEnabled()
+{
+    static const bool enabled = []() {
+        const char* env = std::getenv("MELONPRIME_METAL_PERF");
+        return env && env[0] == '1';
+    }();
+    return enabled;
+}
+
 struct Metal2DSegmentRange
 {
     int Start = 0;
@@ -655,6 +664,29 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
 
     if (!allowCaptureTextures)
     {
+        // MELONPRIME_METAL_SAMEFRAME_HAZARD_DIAGNOSTIC_V1
+        // GPU_MetalFullGpuMethods.inc's eligibility checks (CaptureCnt bit 31,
+        // sticky mid-frame invalidation) now exclude any frame with active
+        // capture from FrameActive before it can reach here, so
+        // allowCaptureTextures should always be true for a frame that gets
+        // this far -- meaning this branch may now be unreachable in practice.
+        // Log if that assumption is ever wrong instead of assuming it from
+        // code shape alone.
+        if (MetalPerfLikeDiagEnabled())
+        {
+            static uint32_t enteredCount = 0;
+            static uint32_t rejectedCount = 0;
+            static bool loggedFirst = false;
+            enteredCount++;
+            if (!loggedFirst)
+            {
+                loggedFirst = true;
+                std::fprintf(stderr,
+                    "[MelonPrime] metal 2d: same-frame capture-hazard branch "
+                    "entered (expected to be unreachable post-eligibility-fix; "
+                    "further occurrences counted, not logged individually)\n");
+            }
+        }
         for (uint32_t segmentIndex = 0;
              segmentIndex < segments.Count;
              segmentIndex++)
