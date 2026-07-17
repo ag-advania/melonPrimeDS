@@ -10,6 +10,7 @@ audits=(
   tools/ci/audits/audit-metal-native-capture-storage.py
   tools/ci/audits/audit-metal-capture-segment-scheduler.py
   tools/ci/audits/audit-metal-capture-fullgpu-cutover.py
+  tools/ci/audits/audit-metal-compute-raster-reference-removal.py
 )
 
 failed=0

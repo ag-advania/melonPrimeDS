@@ -1,4 +1,4 @@
-// MelonPrimeDS - Metal compute renderer texture-variant contract stage and raster-reference bridge
+// MelonPrimeDS - Metal compute renderer texture-variant contract stage
 
 #ifndef GPU3D_METAL_COMPUTE_H
 #define GPU3D_METAL_COMPUTE_H
@@ -9,24 +9,27 @@
 // MELONPRIME_METAL_COMPUTE_FINAL_PASS_V1
 // MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1
 // MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
+// MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
 #include <cstdint>
 #include <memory>
 
-#include "GPU3D_Metal.h"
+#include "GPU3D_Metal.h" // Metal3DDiagnostics only -- no MetalRenderer3D member below.
 
 namespace melonDS
 {
 
-// Phase 7F+ (MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1). The renderer
-// executes real-frame span preparation, Metal InterpSpans/BinCombined, work
-// sorting, texture/depth/blend, and the final pass, writing the visible
-// output into GetComputeFinalTexture(). RasterReference (the validated Metal
-// raster renderer) is kept only as a per-frame fallback for when compute
-// output is not ready/valid (see RenderFrame()), not as the normal visible
-// source -- do not read comments elsewhere as implying otherwise.
+// Phase 8 (MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1). The
+// renderer executes real-frame span preparation, Metal InterpSpans/BinCombined,
+// work sorting, texture/depth/blend, and the final pass, writing the visible
+// output into GetComputeFinalTexture(). There is no nested Metal raster
+// renderer kept in lockstep as a per-frame fallback anymore: if compute
+// output is not ready/valid for a frame, the texture/line getters fail
+// closed (nullptr/no-op) instead of silently substituting a raster-rendered
+// image, and the presenter's existing RetainPrevious path keeps showing the
+// last known-good frame.
 class MetalComputeRenderer3D final : public Renderer3D
 {
 public:
@@ -75,7 +78,6 @@ public:
 private:
     struct MetalComputeState;
 
-    MetalRenderer3D RasterReference;
     std::unique_ptr<MetalComputeState> State;
 
     bool CreateComputeFoundation();

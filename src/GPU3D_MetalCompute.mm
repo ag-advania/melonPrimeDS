@@ -21,6 +21,7 @@
 // MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // MELONPRIME_METAL_COMPUTE_FRAME_BOOKKEEPING_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_CHANGE_DRIVEN_SNAPSHOTS_V1
+// MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -62,16 +63,20 @@ constexpr size_t kTileMemoryBudgetBytes = 192u * 1024u * 1024u;
 bool MetalComputeVisibleEnabled()
 {
     // Metal Compute Shader is an explicitly selected renderer. Its completed
-    // compute final texture is therefore the production visible source by
-    // default. Keep runtime kill switches for emergency comparison/fallback.
+    // compute final texture is the only production visible source -- there is
+    // no nested Metal raster renderer kept in lockstep to fall back to
+    // (MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1). These env vars
+    // are debug-only escape hatches that force the compute path unavailable
+    // (Init() fails closed; see Init() below) rather than switching to a
+    // raster renderer.
     static const bool enabled = []() {
         const char* disable =
             std::getenv("MELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE");
         if (disable && disable[0] == '1')
             return false;
 
-        // Preserve the old variable as a compatibility override: unset/1 means
-        // normal default-visible operation, while 0 forces RasterReference.
+        // Preserve the old variable as a compatibility override: unset/1
+        // means normal operation, while 0 forces the debug-only disabled path.
         const char* legacy =
             std::getenv("MELONPRIME_METAL_COMPUTE_VISIBLE");
         return !legacy || legacy[0] != '0';
@@ -1043,9 +1048,12 @@ MetalComputeRenderer3D::MetalComputeRenderer3D(
     melonDS::GPU3D& gpu3D,
     MetalRendererHost& parent) noexcept
     : Renderer3D(gpu3D),
-      RasterReference(gpu3D, parent),
       State(std::make_unique<MetalComputeState>())
 {
+    // `parent` is kept only for constructor-signature parity with
+    // MetalRenderer3D (see GPU_MetalHost.h); Compute no longer constructs a
+    // nested raster renderer that needs it.
+    (void)parent;
 }
 
 MetalComputeRenderer3D::~MetalComputeRenderer3D()
@@ -1065,76 +1073,49 @@ MetalComputeRenderer3D::~MetalComputeRenderer3D()
 
 bool MetalComputeRenderer3D::Init()
 {
-    const int requestedScale = State
-        ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
-        : 1;
-    RasterReference.SetScaleFactor(requestedScale);
-    if (!RasterReference.Init())
+    // MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1: there is no
+    // nested Metal raster renderer to fall back to anymore. Any failure below
+    // fails Init() closed; GPU::SetRenderer() already has an explicit, logged
+    // top-level fallback to the Software renderer for a renderer whose
+    // Init() returns false (see GPU.cpp), which is the correct place for
+    // this to be visible -- not a silent internal raster renderer here.
+    if (!State)
         return false;
-    // Re-assert after device/targets exist. This closes the pre-init settings
-    // ordering gap and makes the visible fallback target deterministic.
-    RasterReference.SetScaleFactor(requestedScale);
-    if (RasterReference.GetScaleFactor() != requestedScale ||
-        RasterReference.GetTargetWidth() != 256 * requestedScale ||
-        RasterReference.GetTargetHeight() != 192 * requestedScale)
-    {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute scale sync: init mismatch requested=%d actualScale=%d target=%dx%d\n",
-            requestedScale, RasterReference.GetScaleFactor(),
-            RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight());
-        return false;
-    }
+
+    const int requestedScale =
+        std::max(1, static_cast<int>(State->RequestedScaleFactor));
 
     const bool visibleCutoverRequested = MetalComputeVisibleEnabled();
     if (!visibleCutoverRequested)
     {
-        if (State)
-        {
-            State->Ready = false;
-            State->SpanBinReady = false;
-            State->TileRasterReady = false;
-            State->DepthBlendReady = false;
-            State->TextureVariantReady = false;
-            State->FinalPassReady = false;
-            State->TileMemoryInFlight.store(false, std::memory_order_release);
-        }
         std::fprintf(stderr,
-            "[MelonPrime] metal compute visible: disabled by runtime fallback; "
-            "using Metal raster renderer only\n");
-        return true;
+            "[MelonPrime] metal compute: visible cutover disabled by debug "
+            "env; Init fails closed (no Metal raster fallback)\n");
+        return false;
     }
 
-    auto continueWithRasterOnly = [this](const char* failedStage) -> bool {
-        if (State)
-        {
-            State->Ready = false;
-            State->SpanBinReady = false;
-            State->TileRasterReady = false;
-            State->DepthBlendReady = false;
-            State->TextureVariantReady = false;
-            State->FinalPassReady = false;
-            State->TileMemoryInFlight.store(false, std::memory_order_release);
-        }
+    auto failClosed = [](const char* failedStage) -> bool {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute: foundation unavailable at %s; continuing with Metal raster visible source only\n",
+            "[MelonPrime] metal compute: foundation unavailable at %s; "
+            "Init fails closed (no Metal raster fallback)\n",
             failedStage);
-        return true;
+        return false;
     };
 
     if (!CreateComputeFoundation())
-        return continueWithRasterOnly("CreateComputeFoundation");
+        return failClosed("CreateComputeFoundation");
     if (!ConfigureSpanBinResources(requestedScale))
-        return continueWithRasterOnly("ConfigureSpanBinResources");
+        return failClosed("ConfigureSpanBinResources");
     if (!RunFoundationSelfTest())
-        return continueWithRasterOnly("RunFoundationSelfTest");
+        return failClosed("RunFoundationSelfTest");
     if (!RunSpanBinSelfTest())
-        return continueWithRasterOnly("RunSpanBinSelfTest");
+        return failClosed("RunSpanBinSelfTest");
     if (!RunTextureVariantTileSelfTest())
-        return continueWithRasterOnly("RunTextureVariantTileSelfTest");
+        return failClosed("RunTextureVariantTileSelfTest");
     if (!RunCompleteDepthBlendSelfTest())
-        return continueWithRasterOnly("RunCompleteDepthBlendSelfTest");
+        return failClosed("RunCompleteDepthBlendSelfTest");
     if (!RunFinalPassSelfTest())
-        return continueWithRasterOnly("RunFinalPassSelfTest");
+        return failClosed("RunFinalPassSelfTest");
 
     State->Ready = true;
     State->SpanBinReady = true;
@@ -1144,11 +1125,10 @@ bool MetalComputeRenderer3D::Init()
     State->FinalPassReady = true;
     std::fprintf(stderr,
         "[MelonPrime] metal compute: complete pipeline ready scale=%d "
-        "target=%dx%d visibleCutover=%u diagnostics=production\n",
+        "target=%ux%u diagnostics=production\n",
         requestedScale,
-        RasterReference.GetTargetWidth(),
-        RasterReference.GetTargetHeight(),
-        visibleCutoverRequested ? 1u : 0u);
+        State->ScreenWidth,
+        State->ScreenHeight);
     return true;
 }
 
@@ -1157,11 +1137,12 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
     if (!State)
         return false;
 
-    id<MTLTexture> rasterTarget =
-        (__bridge id<MTLTexture>)RasterReference.GetColorTargetTexture();
-    State->Device = rasterTarget
-        ? rasterTarget.device
-        : (__bridge id<MTLDevice>)MelonPrimeSharedMetalDeviceHandle();
+    // MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1: own the device
+    // and command queue directly instead of borrowing them from a nested
+    // Metal raster renderer. The shared device handle keeps this consistent
+    // with every other Metal-owning translation unit in the process (see
+    // MetalContext.h).
+    State->Device = (__bridge id<MTLDevice>)MelonPrimeSharedMetalDeviceHandle();
     if (!State->Device)
     {
         std::fprintf(stderr,
@@ -1169,12 +1150,11 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         return false;
     }
 
-    State->Queue =
-        (__bridge id<MTLCommandQueue>)RasterReference.GetCommandQueue();
-    if (!State->Queue || State->Queue.device != State->Device)
+    State->Queue = [State->Device newCommandQueue];
+    if (!State->Queue)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute: RasterReference command queue unavailable\n");
+            "[MelonPrime] metal compute: failed to create command queue\n");
         return false;
     }
 
@@ -1809,7 +1789,6 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
 
 void MetalComputeRenderer3D::Reset()
 {
-    RasterReference.Reset();
     if (!State)
         return;
     State->LoggedOverflow = false;
@@ -1822,12 +1801,15 @@ void MetalComputeRenderer3D::Reset()
 
 void MetalComputeRenderer3D::SetThreaded(bool threaded) noexcept
 {
-    RasterReference.SetThreaded(threaded);
+    // Compute has no embedded CPU worker/render thread to pause for
+    // savestates (unlike the Soft-delegate-backed Metal raster renderer) --
+    // see IsThreaded() below. No-op.
+    (void)threaded;
 }
 
 bool MetalComputeRenderer3D::IsThreaded() const noexcept
 {
-    return RasterReference.IsThreaded();
+    return false;
 }
 
 void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
@@ -1836,79 +1818,53 @@ void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
     if (State)
         State->RequestedScaleFactor = static_cast<uint32_t>(scale);
 
-    // Metal Compute is the only path with a nested visible raster renderer.
-    // Verify and force the physical target, not only the cached scale integer.
-    if (!RasterReference.ForceScaleFactor(scale))
-    {
-        if (State)
-        {
-            State->SpanBinReady = false;
-            State->FinalPassReady = false;
-            State->LastFrameComputeVisible = false;
-        }
-        return;
-    }
-
-    // Raster-only degraded mode must keep scaling the visible target without
-    // accidentally re-enabling partially initialized compute resources.
     if (!State || !State->Ready)
         return;
 
-    const int expectedWidth = 256 * scale;
-    const int expectedHeight = 192 * scale;
-    if (RasterReference.GetScaleFactor() != scale ||
-        RasterReference.GetTargetWidth() != expectedWidth ||
-        RasterReference.GetTargetHeight() != expectedHeight)
+    if (static_cast<uint32_t>(scale) == State->ScaleFactor)
+        return;
+
+    if (!ConfigureSpanBinResources(scale))
     {
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute scale sync: forced mismatch requested=%d actualScale=%d target=%dx%d expected=%dx%d\n",
-            scale, RasterReference.GetScaleFactor(),
-            RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
-            expectedWidth, expectedHeight);
         State->SpanBinReady = false;
+        State->FinalPassReady = false;
+        State->LastFrameComputeVisible = false;
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute scale sync: failed to resize to "
+            "scale=%d; frame produces no visible output until a resize "
+            "succeeds (no Metal raster fallback)\n",
+            scale);
         return;
     }
-
-    if (static_cast<uint32_t>(scale) != State->ScaleFactor)
-    {
-        if (!ConfigureSpanBinResources(scale))
-        {
-            State->SpanBinReady = false;
-            return;
-        }
-        State->SpanBinReady = true;
-        State->TileRasterReady = true;
-        State->DepthBlendReady = true;
-        State->TextureVariantReady = true;
-        State->FinalPassReady = true;
-    }
+    State->SpanBinReady = true;
+    State->TileRasterReady = true;
+    State->DepthBlendReady = true;
+    State->TextureVariantReady = true;
+    State->FinalPassReady = true;
 
     std::fprintf(stderr,
-        "[MelonPrime] metal compute scale sync: applied forced scale=%d target=%dx%d compute=%ux%u\n",
-        scale, RasterReference.GetTargetWidth(), RasterReference.GetTargetHeight(),
-        State->ScreenWidth, State->ScreenHeight);
+        "[MelonPrime] metal compute scale sync: applied scale=%d compute=%ux%u\n",
+        scale, State->ScreenWidth, State->ScreenHeight);
 }
 
 void MetalComputeRenderer3D::SetHighResolutionCoordinates(bool enabled) noexcept
 {
     if (State)
         State->HiresCoordinates = enabled;
-
-    // MELONPRIME_METAL_RENDER_OPTIONS_V1: the compute mirror and its currently visible Metal raster
-    // reference must use the same coordinate mode.
-    RasterReference.SetHighResolutionCoordinates(enabled);
 }
 
 void MetalComputeRenderer3D::SetBetterPolygons(bool betterPolygons) noexcept
 {
-    RasterReference.SetBetterPolygons(betterPolygons);
+    // Compute's own rasterizer kernels have no BetterPolygons center-fan
+    // implementation (that only ever existed in the now-removed nested
+    // Metal raster renderer's triangulator). No-op.
+    (void)betterPolygons;
 }
 
 void MetalComputeRenderer3D::SetCpuReadbackRequired(bool required) noexcept
 {
     if (State)
         State->CpuReadbackRequired = required;
-    RasterReference.SetCpuReadbackRequired(required);
 }
 
 bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
@@ -2557,54 +2513,54 @@ void MetalComputeRenderer3D::RenderFrame()
 {
     @autoreleasepool
     {
-        const int requestedScale = State
-            ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
-            : 1;
+        if (!State)
+            return;
 
-        if (State)
-        {
-            State->LastFrameEngineALayer = GPU.ScreenSwap ? 0u : 1u;
-            State->LastFrameRenderedScale = requestedScale;
-            const uint32_t displayModeA =
-                (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
-            const bool engineA3DEnabled =
-                (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
-            State->LastFrameUseHiRes3D =
-                requestedScale > 1 &&
-                GPU.ScreensEnabled &&
-                displayModeA == 1u &&
-                engineA3DEnabled &&
-                GPU3D.RenderNumPolygons > 0 &&
-                !GPU3D.AbortFrame;
-        }
+        const int requestedScale =
+            std::max(1, static_cast<int>(State->RequestedScaleFactor));
 
-        if (RasterReference.GetScaleFactor() != requestedScale ||
-            RasterReference.GetTargetWidth() != 256 * requestedScale ||
-            RasterReference.GetTargetHeight() != 192 * requestedScale)
+        State->LastFrameEngineALayer = GPU.ScreenSwap ? 0u : 1u;
+        State->LastFrameRenderedScale = requestedScale;
+        const uint32_t displayModeA =
+            (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;
+        const bool engineA3DEnabled =
+            (GPU.GPU2D_A.DispCnt & (1u << 3)) != 0u;
+        State->LastFrameUseHiRes3D =
+            requestedScale > 1 &&
+            GPU.ScreensEnabled &&
+            displayModeA == 1u &&
+            engineA3DEnabled &&
+            GPU3D.RenderNumPolygons > 0 &&
+            !GPU3D.AbortFrame;
+
+        // MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1: self-heal the
+        // compute resource sizing directly (no nested raster renderer to
+        // resize/fall back to). SetScaleFactor() already does this on a
+        // settings change; this is a defensive re-check in case a frame
+        // observes a scale that was requested but never successfully applied.
+        if (static_cast<uint32_t>(requestedScale) != State->ScaleFactor &&
+            !ConfigureSpanBinResources(requestedScale))
         {
-            if (!RasterReference.ForceScaleFactor(requestedScale))
+            State->LastFrameComputeVisible = false;
+            State->SpanBinReady = false;
+            State->FinalPassReady = false;
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute: failed to resize compute "
+                "resources to scale=%d; frame produces no visible output "
+                "(no Metal raster fallback)\n",
+                requestedScale);
+            if (!State->CpuReadbackRequired)
             {
-                if (State)
-                    State->LastFrameComputeVisible = false;
-                std::fprintf(stderr,
-                    "[MelonPrime] metal compute: failed to resize "
-                    "RasterReference to scale=%d; using previous raster target\n",
-                    requestedScale);
-                if (State && !State->CpuReadbackRequired)
-                {
-                    MetalStrictGpuOnlyViolation(
-                        "MetalComputeRenderer3D::RenderFrame",
-                        "RasterReference.RenderFrame() fallback after a scale-resize "
-                        "failure while CpuReadbackRequired=false (GPU-only frame)");
-                }
-                RasterReference.RenderFrame();
-                return;
+                MetalStrictGpuOnlyViolation(
+                    "MetalComputeRenderer3D::RenderFrame",
+                    "compute resize failure produced no visible output while "
+                    "CpuReadbackRequired=false (GPU-only frame, no raster "
+                    "fallback)");
             }
-            // MELONPRIME_METAL_COMPUTE_FORCE_SCALE_CHECK_V1
+            return;
         }
 
-        if (State &&
-            State->ComputeVisibleFault.exchange(
+        if (State->ComputeVisibleFault.exchange(
                 false, std::memory_order_acq_rel))
         {
             State->VisibleCutoverDisabled = true;
@@ -2615,9 +2571,7 @@ void MetalComputeRenderer3D::RenderFrame()
         }
 
         const bool visibleRequested =
-            MetalComputeVisibleEnabled() &&
-            State &&
-            !State->VisibleCutoverDisabled;
+            MetalComputeVisibleEnabled() && !State->VisibleCutoverDisabled;
         const bool visibleEligible =
             visibleRequested &&
             State->Ready &&
@@ -2630,35 +2584,27 @@ void MetalComputeRenderer3D::RenderFrame()
             !GPU3D.AbortFrame;
         if (!visibleEligible)
         {
-            if (State)
+            State->LastFrameComputeVisible = false;
+            if (visibleRequested && !State->LoggedVisibleFallback)
             {
-                State->LastFrameComputeVisible = false;
-                if (visibleRequested)
-                {
-                    if (!State->LoggedVisibleFallback)
-                    {
-                        State->LoggedVisibleFallback = true;
-                        std::fprintf(stderr,
-                            "[MelonPrime] metal compute visible: frame uses "
-                            "RasterReference fallback "
-                            "(cpuReadback=%u ready=%u abort=%u)\n",
-                            State->CpuReadbackRequired ? 1u : 0u,
-                            State->FinalPassReady ? 1u : 0u,
-                            GPU3D.AbortFrame ? 1u : 0u);
-                    }
-                }
-
-                if (!State->CpuReadbackRequired)
-                {
-                    MetalStrictGpuOnlyViolation(
-                        "MetalComputeRenderer3D::RenderFrame",
-                        "RasterReference.RenderFrame() fallback while "
-                        "CpuReadbackRequired=false (GPU-only frame requested but "
-                        "compute pipeline was not eligible)");
-                }
+                State->LoggedVisibleFallback = true;
+                std::fprintf(stderr,
+                    "[MelonPrime] metal compute visible: frame produces no "
+                    "visible output (cpuReadback=%u ready=%u abort=%u); no "
+                    "Metal raster fallback\n",
+                    State->CpuReadbackRequired ? 1u : 0u,
+                    State->FinalPassReady ? 1u : 0u,
+                    GPU3D.AbortFrame ? 1u : 0u);
             }
 
-            RasterReference.RenderFrame();
+            if (!State->CpuReadbackRequired)
+            {
+                MetalStrictGpuOnlyViolation(
+                    "MetalComputeRenderer3D::RenderFrame",
+                    "compute pipeline not eligible while CpuReadbackRequired="
+                    "false (GPU-only frame produced no visible output, no "
+                    "raster fallback)");
+            }
             return;
         }
 
@@ -2668,18 +2614,11 @@ void MetalComputeRenderer3D::RenderFrame()
             previousFrameWasCompute &&
             ComputeFinalReady())
         {
+            // MELONPRIME_METAL_COMPUTE_RASTER_REFERENCE_REMOVAL_V1: the
+            // previously submitted final slot is still the valid visible
+            // source; there is no nested raster renderer to keep in
+            // lockstep, so a repeat frame needs no extra work.
             State->LastFrameComputeVisible = true;
-            // MELONPRIME_METAL_COMPUTE_IDENTICAL_RASTER_KEEPALIVE_V1:
-            // Reusing the previous compute final texture must NOT skip
-            // RasterReference.RenderFrame(). FinishRendering() always pairs
-            // with RasterReference, and Soft/GetLine fallback (still used when
-            // Full-GPU is mid-frame invalidated, and more often after PR-5
-            // capture cutover enables CpuReadbackRequired=false → compute
-            // visible on capture-heavy scenes) needs a fresh scanline buffer.
-            // Skipping RenderFrame here left RasterReference unpaired/stale and
-            // showed up as unstable compute-visible sessions while the compute
-            // 3D texture itself still looked fine when presented.
-            RasterReference.RenderFrame();
             return;
         }
 
@@ -2694,20 +2633,6 @@ void MetalComputeRenderer3D::RenderFrame()
         if (finalSubmitted)
         {
             State->LastFrameComputeVisible = true;
-            // MELONPRIME_METAL_COMPUTE_GETLINE_FRESHNESS_FIX_V1: GetLine()
-            // (below) unconditionally reads from RasterReference, because
-            // the CPU-composite/SoftRenderer 2D-compositor path consumes 3D
-            // content only through GetLine(), never through
-            // GetComputeFinalTexture() directly -- that texture-based path
-            // is consumed by the GPU-resident full-gpu compositor. After
-            // PR-5 capture Full-GPU cutover, compute-visible frames are
-            // common in capture-heavy scenes, and mid-render eligibility
-            // loss can still fall back to Soft/GetLine. Skipping
-            // RasterReference.RenderFrame() leaves its scanline buffer stale
-            // (black/glitchy 3D on Soft fallback) while compute's own final
-            // texture can still look correct -- matching "3D OK, session
-            // unstable". Always keep RasterReference rendering in lockstep.
-            RasterReference.RenderFrame();
             if (!State->LoggedVisibleCutover)
             {
                 State->LoggedVisibleCutover = true;
@@ -2728,116 +2653,122 @@ void MetalComputeRenderer3D::RenderFrame()
             State->LoggedVisibleFallback = true;
             std::fprintf(stderr,
                 "[MelonPrime] metal compute visible: no final slot submitted; "
-                "using RasterReference for this frame "
-                "(frame slot or tile memory unavailable)\n");
+                "frame produces no visible output (frame slot or tile memory "
+                "unavailable, no Metal raster fallback)\n");
         }
 
         // visibleEligible was true above, so CpuReadbackRequired was already
-        // false here: this fallback is a genuine same-frame submission failure,
-        // not an expected ineligibility case.
+        // false here: this is a genuine same-frame submission failure, not
+        // an expected ineligibility case.
         MetalStrictGpuOnlyViolation(
             "MetalComputeRenderer3D::RenderFrame",
-            "RasterReference.RenderFrame() fallback after an eligible compute "
-            "frame failed to submit a final slot (GPU-only frame)");
-
-        RasterReference.RenderFrame();
+            "eligible compute frame failed to submit a final slot and "
+            "produced no visible output (GPU-only frame, no raster "
+            "fallback)");
     }
 }
 
 void MetalComputeRenderer3D::FinishRendering()
 {
-    // RasterReference.RenderFrame() now always runs (see the
-    // MELONPRIME_METAL_COMPUTE_GETLINE_FRESHNESS_FIX_V1 comment above), so
-    // its FinishRendering() must always be paired with it too, regardless of
-    // whether compute's own cutover was also visible this frame.
-    RasterReference.FinishRendering();
+    // No nested Metal raster renderer to pair a finish step with (PR-8);
+    // compute's own frame submission in RenderFrame() is already complete
+    // (or intentionally produced no visible output) by the time this runs.
 }
 
 void MetalComputeRenderer3D::RestartFrame()
 {
-    RasterReference.RestartFrame();
+    // No nested Metal raster renderer to restart; compute resubmits fully
+    // from scratch each RenderFrame() call (matches OpenGL ComputeRenderer3D,
+    // which is also a no-op here).
 }
 
 u32* MetalComputeRenderer3D::GetLine(int line)
 {
-    return RasterReference.GetLine(line);
+    // Metal Compute keeps no nested Metal raster renderer to draw a scanline
+    // on demand (PR-8). The Soft/CPU 2D compositor never calls GetLine() on
+    // the Metal 3D renderer after PR-7 (see GPU_Metal.mm's
+    // ComposeMetalVisibleOutput()/GetFramebuffers() -- always false); this
+    // matches GLRenderer3D/ComputeRenderer3D's OpenGL-Compute GetLine(),
+    // which also always returns nullptr.
+    (void)line;
+    return nullptr;
 }
 
 void* MetalComputeRenderer3D::GetColorTargetTexture() const noexcept
 {
-    if (State && State->LastFrameComputeVisible)
-    {
-        if (void* texture = GetComputeFinalTexture())
-            return texture;
-    }
-    return RasterReference.GetColorTargetTexture();
+    // Compute final texture only -- fail closed (nullptr) if this frame's
+    // compute output was not visible/ready. No nested Metal raster renderer
+    // to silently substitute (PR-8); callers already treat nullptr as "no
+    // texture this frame" (e.g. Metal3DColorTarget() in GPU_Metal.mm).
+    if (!State || !State->LastFrameComputeVisible)
+        return nullptr;
+    return GetComputeFinalTexture();
 }
 
 void* MetalComputeRenderer3D::GetNativeResolveTexture() const noexcept
 {
-    return RasterReference.GetNativeResolveTexture();
+    // Compute's final pass writes the requested scale directly and has no
+    // separate native-resolution resolve texture; fail closed rather than
+    // return a stale Raster texture (PR-8). The only production caller
+    // (GPU_Metal.mm's CaptureMetalVisible3DFrame(), reached only when
+    // Full-GPU is inactive) already treats a null high/low pair as
+    // "nothing to capture this frame" and its consumer,
+    // ComposeMetalVisibleOutput(), is unconditionally a no-op since PR-7
+    // (GetFramebuffers() always returns false).
+    return nullptr;
 }
 
 void* MetalComputeRenderer3D::GetCommandQueue() const noexcept
 {
-    return RasterReference.GetCommandQueue();
+    return State ? (__bridge void*)State->Queue : nullptr;
 }
 
 int MetalComputeRenderer3D::GetTargetWidth() const noexcept
 {
-    return State && State->Ready
-        ? static_cast<int>(State->ScreenWidth)
-        : RasterReference.GetTargetWidth();
+    return State ? static_cast<int>(State->ScreenWidth) : 256;
 }
 
 int MetalComputeRenderer3D::GetTargetHeight() const noexcept
 {
-    return State && State->Ready
-        ? static_cast<int>(State->ScreenHeight)
-        : RasterReference.GetTargetHeight();
+    return State ? static_cast<int>(State->ScreenHeight) : 192;
 }
 
 int MetalComputeRenderer3D::GetScaleFactor() const noexcept
 {
-    return State
-        ? std::max(1, static_cast<int>(State->RequestedScaleFactor))
-        : RasterReference.GetScaleFactor();
+    return State ? std::max(1, static_cast<int>(State->RequestedScaleFactor)) : 1;
 }
 
 bool MetalComputeRenderer3D::LastFrameUsesHighResolution3D() const noexcept
 {
-    return State
-        ? State->LastFrameUseHiRes3D
-        : RasterReference.LastFrameUsesHighResolution3D();
+    return State && State->LastFrameUseHiRes3D;
 }
 
 uint32_t MetalComputeRenderer3D::GetLastFrameEngineALayer() const noexcept
 {
-    return State
-        ? State->LastFrameEngineALayer
-        : RasterReference.GetLastFrameEngineALayer();
+    return State ? State->LastFrameEngineALayer : 1u;
 }
 
 int MetalComputeRenderer3D::GetLastFrameRenderedScale() const noexcept
 {
-    return State
-        ? State->LastFrameRenderedScale
-        : RasterReference.GetLastFrameRenderedScale();
+    return State ? State->LastFrameRenderedScale : 1;
 }
 
 Metal3DDiagnostics MetalComputeRenderer3D::GetLastDiagnostics() const noexcept
 {
-    return RasterReference.GetLastDiagnostics();
+    // Dead API on this class (no production caller dynamic_casts to it for
+    // MetalComputeRenderer3D); kept only for interface parity with
+    // MetalRenderer3D. No nested raster renderer to source it from anymore.
+    return Metal3DDiagnostics {};
 }
 
 void MetalComputeRenderer3D::SetupRenderThread()
 {
-    RasterReference.SetupRenderThread();
+    // No embedded CPU worker/render thread (see IsThreaded()). No-op.
 }
 
 void MetalComputeRenderer3D::EnableRenderThread()
 {
-    RasterReference.EnableRenderThread();
+    // No embedded CPU worker/render thread (see IsThreaded()). No-op.
 }
 
 bool MetalComputeRenderer3D::FoundationReady() const noexcept

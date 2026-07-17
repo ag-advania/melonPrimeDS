@@ -13,7 +13,7 @@
 | PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
 | PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
 | PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer : public Renderer, public MetalRendererHost` へ flip。GPU_Metal* の `SoftRenderer::` 呼び出しは 0。§13.1 の実機受け入れ gate は明示的指示により先行実施（ビルド／audit のみ検証、実ROM未実施） |
-| PR-8 | Compute RasterReference 撤廃 | 未着手 | — | PR-7 後 |
+| PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer3D RasterReference` メンバーを削除。Init／RenderFrame／GetLine／texture getter は fail-closed（no raster fallback）。実ROM未実施 |
 | PR-9 | presenter MetalTexture-only | 未着手 | — | PR-7 後 |
 | PR-10 | radar native Metal | 未着手 | — | |
 | PR-11 | HUD primitive renderer | 未着手 | — | |
@@ -119,6 +119,35 @@
 - 実ROM／実機での目視・スクリーンショット検証
 - `normalReadbackBytes == 0` 6000 frame strict counter
 - capture Full-GPU strict counters green
+- TSan／Windows／Linux rebuild
+
+## PR-8 要約（2026-07-17）
+
+変更:
+
+- `GPU3D_MetalCompute.h`／`.mm`: `MetalRenderer3D RasterReference` メンバーを完全削除（GetLine を必要とする呼び出し元が本番経路に存在しないため、debug env gating ではなく削除を選択）
+- `CreateComputeFoundation()`: device／command queue を `RasterReference` から借用せず、`MelonPrimeSharedMetalDeviceHandle()` と自前の `newCommandQueue` で直接取得
+- `Init()`: foundation／self-test 失敗、または debug env（`MELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE`／`MELONPRIME_METAL_COMPUTE_VISIBLE=0`）による無効化は `false` を返して fail-closed。`GPU::SetRenderer()` の既存の明示的・ログ付き Software renderer フォールバック（`GPU.cpp`）に委ねる。raster-only での「成功したことにする」経路を削除
+- `RenderFrame()`: 非 eligible フレーム／identical-frame keepalive／final slot 未送出の全ケースで `RasterReference.RenderFrame()` 呼び出しを削除。フレームは visible output なしのまま return し、presenter 側の既存 RetainPrevious 経路がそのまま前フレームを保持する
+- `GetLine()`: 常に `nullptr`（`GLRenderer3D`／OpenGL `ComputeRenderer3D` と同型）。PR-7 以降、本番経路で Metal 3D renderer の `GetLine()` を呼ぶ箇所は存在しない（`ComposeMetalVisibleOutput()` は `GetFramebuffers()` が常に false のため恒久 no-op）
+- `GetColorTargetTexture()`: compute final texture のみ、フレームが visible でなければ `nullptr`（fail closed）
+- `GetNativeResolveTexture()`: 常に `nullptr`（fail closed）。唯一の本番呼び出し元 `CaptureMetalVisible3DFrame()` は null pair を「このフレームは capture しない」として扱い、その消費者 `ComposeMetalVisibleOutput()` も PR-7 以降恒久 no-op
+- `SetThreaded`／`IsThreaded`／`SetupRenderThread`／`EnableRenderThread`: compute には embedded CPU worker thread が存在しないため no-op／`false`（`RasterReference` 経由の Soft delegate thread 管理を削除）
+- `SetBetterPolygons`: no-op（compute 自身の rasterizer kernel に BetterPolygons 実装はなく、これまでも `RasterReference` 経由の raster-only 実装への転送だった）
+- `VideoSettingsDialog.cpp`: `rb3DMetalCompute` の `whatsThis`／`toolTip` から "raster renderer ... automatic fallback" 文言を削除し、fail-closed／RetainPrevious を明記
+- 新規 audit `audit-metal-compute-raster-reference-removal.py` を `run-metal-fullgpu-audits.sh` に追加（`RasterReference` 症状／raster fallback tooltip 文言の再出現を検出）
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF）PASS
+- `cmake --build build-mac-metal-force-disabled -j8` PASS
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 6/6 PASS
+
+未実施:
+
+- 実ROM／実機での目視・スクリーンショット検証（compute foundation self-test 失敗時に Software renderer へ正しく fallback するかを含む）
+- `MELONPRIME_METAL_COMPUTE_DISABLE_VISIBLE=1` での Init 失敗→Software fallback の実機確認
 - TSan／Windows／Linux rebuild
 
 ## PR-15 要約（2026-07-17）
