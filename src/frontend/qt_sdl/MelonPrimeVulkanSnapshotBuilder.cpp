@@ -256,9 +256,13 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         ? 2u + (source.screenSwap ? 2u : 0u) + (source.captureScreenSwap ? 1u : 0u)
         : (source.screenSwap ? 1u : 0u);
     PhaseHistory& matchingHistory = phaseHistory[phaseIndex];
-    if (matchingHistory.valid && source.generation < matchingHistory.generation)
+    if (source.renderer3dReferenceValid
+        && matchingHistory.valid
+        && source.generation < matchingHistory.generation)
         return false;
-    if (matchingHistory.valid && source.generation == matchingHistory.generation)
+    if (source.renderer3dReferenceValid
+        && matchingHistory.valid
+        && source.generation == matchingHistory.generation)
     {
         destination = matchingHistory.snapshot;
         destination.frameId = frameId;
@@ -267,13 +271,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     PhaseHistory& matchingCaptureHistory = source.captureScreenSwapValid
         ? capturePhaseHistory[source.captureScreenSwap ? 1u : 0u]
         : matchingHistory;
-    const bool matchingCaptureHistoryEligible = matchingCaptureHistory.valid
+    const bool matchingCaptureHistoryEligible = source.renderer3dReferenceValid
+        && matchingCaptureHistory.valid
         && matchingCaptureHistory.generation <= source.generation;
 
     destination.clear();
     destination.frameId = frameId;
     destination.sourceGeneration = source.generation;
     destination.renderer3dRenderSerial = source.renderer3dRenderSerial;
+    destination.renderer3dCompletionValue = source.renderer3dCompletionValue;
+    destination.renderer3dImageSlot = source.renderer3dImageSlot;
+    destination.renderer3dReferenceValid = source.renderer3dReferenceValid;
     destination.frontBufferLatched = source.frontBuffer;
     destination.screenSwapLatched = source.screenSwap;
     destination.captureScreenSwap = source.captureScreenSwap;
@@ -327,7 +335,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     // using the immediately previous opposite phase is what swaps the screens.
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
-        if (matchingHistory.valid)
+        if (source.renderer3dReferenceValid && matchingHistory.valid)
         {
             auto recoverScreenLine = [&](bool top) {
                 auto& plane0 = top ? destination.packedTopPlane0 : destination.packedBottomPlane0;
@@ -395,7 +403,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     const SoftPackedFrameSnapshot* phaseSnapshot = source.captureScreenSwapValid
         ? (matchingCaptureHistoryEligible ? &matchingCaptureHistory.snapshot : nullptr)
-        : (matchingHistory.valid ? &matchingHistory.snapshot : nullptr);
+        : (source.renderer3dReferenceValid && matchingHistory.valid
+            ? &matchingHistory.snapshot
+            : nullptr);
     populateComp4Placeholder(
         destination.packedTopPlane0,
         destination.packedTopPlane1,
@@ -413,10 +423,15 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination,
         destination.comp4BottomPlaceholder);
 
-    matchingHistory.snapshot = destination;
-    matchingHistory.generation = source.generation;
-    matchingHistory.valid = true;
-    if (destination.captureScreenSwapValid && destination.hasCapture3dSource)
+    if (source.renderer3dReferenceValid)
+    {
+        matchingHistory.snapshot = destination;
+        matchingHistory.generation = source.generation;
+        matchingHistory.valid = true;
+    }
+    if (source.renderer3dReferenceValid
+        && destination.captureScreenSwapValid
+        && destination.hasCapture3dSource)
     {
         PhaseHistory& completedCaptureHistory =
             capturePhaseHistory[destination.captureScreenSwap ? 1u : 0u];

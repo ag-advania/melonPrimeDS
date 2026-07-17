@@ -19,9 +19,22 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "Platform.h"
+
+#include <cstdlib>
+#endif
 
 namespace melonDS
 {
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+static bool VulkanStructuredPhaseTraceEnabled() noexcept
+{
+    const char* value = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+#endif
 
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     : Renderer(nds.GPU)
@@ -40,6 +53,17 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
 
 SoftRenderer::~SoftRenderer()
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    {
+        const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
+        for (auto& completedFrame : CompletedStructuredVulkanFrames)
+        {
+            if (completedFrame.Completed3DReference.Valid)
+                Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
+            completedFrame.Completed3DReference = {};
+        }
+    }
+#endif
     delete[] Framebuffer[0][0];
     delete[] Framebuffer[0][1];
     delete[] Framebuffer[1][0];
@@ -82,6 +106,9 @@ void SoftRenderer::Reset()
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
     {
+        if (completedFrame.Completed3DReference.Valid)
+            Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
+        completedFrame.Completed3DReference = {};
         completedFrame.Valid = false;
         completedFrame.ScreenSwapAt3D = false;
         completedFrame.FrontBuffer = -1;
@@ -97,7 +124,12 @@ void SoftRenderer::Stop()
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
         for (auto& completedFrame : CompletedStructuredVulkanFrames)
+        {
+            if (completedFrame.Completed3DReference.Valid)
+                Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
+            completedFrame.Completed3DReference = {};
             completedFrame.Valid = false;
+        }
     }
 #endif
     // clear framebuffers to black
@@ -158,6 +190,18 @@ void SoftRenderer::DrawScanline(u32 line)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
         if (structuredVulkan2D && outputLine == 0u)
         {
+            if (VulkanStructuredPhaseTraceEnabled())
+            {
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "Vulkan2DPhase event=Visible2DStart VCount=%u physicalScreenSwap=%u structuredGenerationCandidate=%llu backBuffer=%d rendererSerialAtLine0=%llu rendererOwnerAtLine0=%u",
+                    GPU.VCount,
+                    GPU.ScreenSwap ? 1u : 0u,
+                    static_cast<unsigned long long>(StructuredVulkanGeneration + 1u),
+                    BackBuffer,
+                    static_cast<unsigned long long>(Rend3D->GetRenderSerial()),
+                    GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u);
+            }
             // A completed snapshot is published only by SwapBuffers after all
             // 192 physical output lines have been produced.  Clear validity at
             // the next frame boundary so VCOUNT overrides cannot publish a
@@ -1206,6 +1250,12 @@ bool SoftRenderer::CopyStructuredVulkanFrame(StructuredVulkanFrameSnapshot& snap
         return false;
 
     snapshot = *completedFrame;
+    if (snapshot.Completed3DReference.Valid
+        && !Rend3D->RetainCompletedFrameReference(snapshot.Completed3DReference))
+    {
+        snapshot.Completed3DReference = {};
+        snapshot.Renderer3DRenderSerial = 0u;
+    }
     return true;
 }
 
@@ -1216,6 +1266,9 @@ void SoftRenderer::SwapBuffers()
         const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
         StructuredVulkanFrameSnapshot& completedFrame =
             CompletedStructuredVulkanFrames[static_cast<std::size_t>(BackBuffer & 1)];
+        if (completedFrame.Completed3DReference.Valid)
+            Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
+        completedFrame.Completed3DReference = {};
         completedFrame.ScreenPlanes = StructuredScreenPlanes;
         completedFrame.ScreenLineMeta = StructuredScreenLineMeta;
         completedFrame.Capture3DSource = StructuredCapture3DSource;
@@ -1231,7 +1284,12 @@ void SoftRenderer::SwapBuffers()
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
         completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
-        completedFrame.ScreenSwapAt3D = GPU.GPU3D.GetRenderScreenSwapAt3D();
+        Renderer3DCompletedFrameReference completed3DReference{};
+        if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
+            completedFrame.Completed3DReference = completed3DReference;
+        completedFrame.ScreenSwapAt3D = completedFrame.Completed3DReference.Valid
+            ? completedFrame.Completed3DReference.OwnerScreenSwap
+            : false;
         completedFrame.CaptureBackedClass4Only =
             StructuredCaptureBacked3DLines > 0u
             && StructuredCaptureBackedBestClassLines[4] == StructuredCaptureBacked3DLines
@@ -1242,8 +1300,24 @@ void SoftRenderer::SwapBuffers()
             && StructuredCaptureBackedBestClassLines[16] == 0u;
         completedFrame.FrontBuffer = BackBuffer & 1;
         completedFrame.Generation = ++StructuredVulkanGeneration;
-        completedFrame.Renderer3DRenderSerial = Rend3D->GetRenderSerial();
+        completedFrame.Renderer3DRenderSerial = completedFrame.Completed3DReference.Valid
+            ? completedFrame.Completed3DReference.Serial
+            : 0u;
         completedFrame.Valid = true;
+        if (VulkanStructuredPhaseTraceEnabled())
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu publishedReferenced3dSerial=%llu publishedReferenced3dOwner=%u publishedReferencedImageSlot=%u publishedTimelineValue=%llu currentRendererSerial=%llu currentRendererOwner=%u currentColorImageSlot=mutable exactReference=%u",
+                static_cast<unsigned long long>(completedFrame.Generation),
+                static_cast<unsigned long long>(completedFrame.Renderer3DRenderSerial),
+                completedFrame.ScreenSwapAt3D ? 1u : 0u,
+                completedFrame.Completed3DReference.ImageSlot,
+                static_cast<unsigned long long>(completedFrame.Completed3DReference.CompletionValue),
+                static_cast<unsigned long long>(Rend3D->GetRenderSerial()),
+                GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u,
+                completedFrame.Completed3DReference.Valid ? 1u : 0u);
+        }
     }
 
     Renderer::SwapBuffers();

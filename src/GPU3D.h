@@ -335,6 +335,17 @@ public:
     u32 FlushAttributes = 0;
 };
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+struct Renderer3DCompletedFrameReference
+{
+    u64 Serial = 0;
+    u64 CompletionValue = 0;
+    u32 ImageSlot = 0;
+    bool OwnerScreenSwap = false;
+    bool Valid = false;
+};
+#endif
+
 class Renderer3D
 {
 public:
@@ -360,6 +371,23 @@ public:
     virtual void SetCaptureScreenSwapHint(bool screenSwap) { (void)screenSwap; }
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
     [[nodiscard]] virtual u64 GetRenderSerial() const noexcept { return 0; }
+    [[nodiscard]] virtual bool AcquireCompletedFrameForStructured(
+        Renderer3DCompletedFrameReference& reference)
+    {
+        reference = {};
+        return false;
+    }
+    [[nodiscard]] virtual bool RetainCompletedFrameReference(
+        const Renderer3DCompletedFrameReference& reference)
+    {
+        (void)reference;
+        return false;
+    }
+    virtual void ReleaseCompletedFrameReference(
+        const Renderer3DCompletedFrameReference& reference)
+    {
+        (void)reference;
+    }
 #endif
 
     // return one scanline of the framebuffer, with X scroll applied

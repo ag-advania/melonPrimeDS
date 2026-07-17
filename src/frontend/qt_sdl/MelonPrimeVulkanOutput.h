@@ -23,6 +23,7 @@ namespace melonDS
 {
 class GPU;
 class VulkanRenderer3D;
+struct VulkanCompletedFrameView;
 }
 
 namespace MelonPrime
@@ -65,6 +66,9 @@ struct SoftPackedFrameSnapshot
     u64 frameId = 0;
     u64 sourceGeneration = 0;
     u64 renderer3dRenderSerial = 0;
+    u64 renderer3dCompletionValue = 0;
+    u32 renderer3dImageSlot = 0;
+    bool renderer3dReferenceValid = false;
     int frontBufferLatched = -1;
     bool screenSwapLatched = false;
     bool valid = false;
@@ -95,6 +99,9 @@ struct SoftPackedFrameSnapshot
         frameId = 0;
         sourceGeneration = 0;
         renderer3dRenderSerial = 0;
+        renderer3dCompletionValue = 0;
+        renderer3dImageSlot = 0;
+        renderer3dReferenceValid = false;
         frontBufferLatched = -1;
         screenSwapLatched = false;
         valid = false;
@@ -255,14 +262,14 @@ public:
     void invalidateTemporalHistory();
     void clearStructuredCaptureHistory();
     void releaseTemporalFrameReferences();
-    bool captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap);
     bool prepareFrameForPresentation(
         VulkanFrame* frame,
         const melonDS::GPU& gpu,
         int frontBuffer,
         bool frameScreenSwap,
         SoftPackedFrameSnapshot& softPackedSnapshot,
-        melonDS::VulkanRenderer3D& renderer3D);
+        melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::VulkanCompletedFrameView& completed3DView);
     bool composeAndSubmitFrame(VulkanFrame* frame, const VulkanCompositionInputs& inputs);
     bool buildCompositionInputs(
         const VulkanFrame* frame,
@@ -388,6 +395,8 @@ private:
         u64 structuredGeneration{};
         u64 renderer3dRenderSerial{};
         u64 renderer3dSnapshotSerial{};
+        u64 renderer3dCompletionValue{};
+        u32 renderer3dImageSlot{};
         int frontBufferLatched{-1};
         bool captureScreenSwap{};
         bool captureScreenSwapValid{};
@@ -428,6 +437,7 @@ private:
         VulkanFrame* previousBottomComposedFrame{};
         bool hasRenderer3dSnapshot{};
         bool renderer3dSnapshotScreenSwap{};
+        bool exactRenderer3dPairValid{};
         bool hasPreparedCapture3dSource{};
         bool snapshotFromPreRun{};
         bool snapshotFromInitializedTarget{};
@@ -482,7 +492,10 @@ private:
         melonDS::VulkanRenderer3D& renderer3D);
     bool ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height);
     void destroyRenderer3dSnapshot(FrameResource& resource);
-    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool rendererTargetScreenSwap);
+    bool recordRenderer3dSnapshotCopy(
+        FrameResource& resource,
+        const melonDS::VulkanCompletedFrameView& completed3DView,
+        bool rendererTargetScreenSwap);
 
     bool createAccumulateResources();
     void destroyAccumulateResources();
@@ -493,6 +506,7 @@ private:
         VulkanFrame* frame,
         FrameResource& resource,
         const melonDS::VulkanRenderer3D& renderer3D,
+        const melonDS::VulkanCompletedFrameView& completed3DView,
         bool rendererTargetScreenSwap,
         bool accumulateTopHighres,
         bool accumulateBottomHighres,
