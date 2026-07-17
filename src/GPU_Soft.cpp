@@ -87,6 +87,11 @@ void SoftRenderer::Reset()
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
     StructuredScreenLineMeta.fill(0);
+    for (auto& bufferPair : VulkanPackedFramebuffer)
+    {
+        bufferPair[0].fill(0);
+        bufferPair[1].fill(0);
+    }
     StructuredCapturePlanes.fill(0);
     StructuredCaptureLineValid.fill(0);
     StructuredCaptureLineUses3D.fill(0);
@@ -104,6 +109,11 @@ void SoftRenderer::Reset()
     StructuredCaptureScreenSwap = false;
     StructuredCaptureScreenSwapValid = false;
     StructuredPhysicalScreenSwap = false;
+    StructuredPhysicalScreenSwapStable = true;
+    StructuredScreenSwapAtLine0 = false;
+    StructuredScreenSwapChangedMidFrame = false;
+    StructuredEngineAOnTopLines = 0;
+    StructuredEngineAOnBottomLines = 0;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
@@ -114,6 +124,7 @@ void SoftRenderer::Reset()
         completedFrame.Valid = false;
         completedFrame.Renderer3DOwnerIsTop = false;
         completedFrame.PhysicalScreenSwap = false;
+        completedFrame.PhysicalScreenSwapStable = true;
         completedFrame.FrontBuffer = -1;
         completedFrame.Generation = 0;
     }
@@ -214,7 +225,15 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCapture3DSourceLineValid.fill(0);
             StructuredCapture3DSourceValid = false;
             StructuredCaptureScreenSwapValid = false;
-            StructuredPhysicalScreenSwap = GPU.ScreenSwap;
+            // Do NOT latch PhysicalScreenSwap from line 0 alone. Phase key is
+            // derived at SwapBuffers from where Engine A actually wrote.
+            StructuredScreenSwapAtLine0 = GPU.ScreenSwap;
+            StructuredScreenSwapChangedMidFrame = false;
+            StructuredEngineAOnTopLines = 0;
+            StructuredEngineAOnBottomLines = 0;
+            StructuredPhysicalScreenSwapStable = true;
+            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][0].fill(0);
+            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][1].fill(0);
             StructuredCaptureCompositeLineValid = false;
             StructuredCapturePreparedThisFrame = false;
             StructuredCaptureBackedSourceClassPixels.fill(0);
@@ -239,6 +258,11 @@ void SoftRenderer::DrawScanline(u32 line)
                 Rend3D->PrepareCaptureFrame();
                 StructuredCapturePreparedThisFrame = true;
             }
+        }
+        else if (structuredVulkan2D
+            && GPU.ScreenSwap != StructuredScreenSwapAtLine0)
+        {
+            StructuredScreenSwapChangedMidFrame = true;
         }
         Output3D = structuredVulkan2D ? Structured3DPlaceholderLine : Rend3D->GetLine(line);
         if (structuredVulkan2D)
@@ -1304,6 +1328,40 @@ void SoftRenderer::BuildStructuredScreenLine(
         lineMeta = (forcePlain ? 0u : displayMode) << 16u;
     }
     StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + screenLine] = lineMeta;
+
+    // Same generation / same physical identity: also write Sapphire packed line.
+    {
+        auto& packedScreen =
+            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][screen];
+        const std::size_t packedRowBase =
+            static_cast<std::size_t>(screenLine) * VulkanPackedStride;
+        std::memcpy(
+            packedScreen.data() + packedRowBase,
+            StructuredScreenPlanes.data() + destinationBase + screenRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedScreen.data() + packedRowBase + 256u,
+            StructuredScreenPlanes.data() + destinationBase + StructuredPixelCount + screenRowBase,
+            256u * sizeof(u32));
+        std::memcpy(
+            packedScreen.data() + packedRowBase + 512u,
+            StructuredScreenPlanes.data()
+                + destinationBase
+                + (2u * StructuredPixelCount)
+                + screenRowBase,
+            256u * sizeof(u32));
+        packedScreen[packedRowBase + 768u] = lineMeta;
+    }
+
+    // Vote Engine A physical target from the destination pointer used this line.
+    if (engine == 0u)
+    {
+        if (screen == 0u)
+            ++StructuredEngineAOnTopLines;
+        else
+            ++StructuredEngineAOnBottomLines;
+    }
+
     if (screenLine == 191u)
         StructuredFrameValid = true;
 }
@@ -1349,6 +1407,10 @@ void SoftRenderer::SwapBuffers()
         completedFrame.Completed3DReference = {};
         completedFrame.ScreenPlanes = StructuredScreenPlanes;
         completedFrame.ScreenLineMeta = StructuredScreenLineMeta;
+        completedFrame.PackedTop =
+            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][0];
+        completedFrame.PackedBottom =
+            VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][1];
         completedFrame.EnginePlanes = StructuredEnginePlanes;
         completedFrame.EngineLineUsesCapture3D = StructuredEngineLineUsesCapture3D;
         completedFrame.Capture3DSource = StructuredCapture3DSource;
@@ -1364,7 +1426,19 @@ void SoftRenderer::SwapBuffers()
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
         completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
+        // Phase key matches this generation's actual Engine A physical targets.
+        if (StructuredEngineAOnTopLines != StructuredEngineAOnBottomLines)
+        {
+            StructuredPhysicalScreenSwap =
+                StructuredEngineAOnTopLines > StructuredEngineAOnBottomLines;
+        }
+        else
+        {
+            StructuredPhysicalScreenSwap = StructuredScreenSwapAtLine0;
+        }
+        StructuredPhysicalScreenSwapStable = !StructuredScreenSwapChangedMidFrame;
         completedFrame.PhysicalScreenSwap = StructuredPhysicalScreenSwap;
+        completedFrame.PhysicalScreenSwapStable = StructuredPhysicalScreenSwapStable;
         Renderer3DCompletedFrameReference completed3DReference{};
         if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
             completedFrame.Completed3DReference = completed3DReference;

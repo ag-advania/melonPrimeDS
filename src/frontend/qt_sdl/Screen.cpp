@@ -2128,6 +2128,9 @@ void ScreenPanelVulkan::drawScreen()
         snapshotSource.captureScreenSwap = structuredSource.CaptureScreenSwap;
         snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
         snapshotSource.physicalScreenSwap = structuredSource.PhysicalScreenSwap;
+        snapshotSource.physicalScreenSwapStable = structuredSource.PhysicalScreenSwapStable;
+        snapshotSource.packedTop = structuredSource.PackedTop.data();
+        snapshotSource.packedBottom = structuredSource.PackedBottom.data();
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
         snapshotSource.captureBackedHasStructured2DSource =
             structuredSource.CaptureBackedHasStructured2DSource;
