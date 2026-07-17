@@ -1293,6 +1293,8 @@ void SoftRenderer::SwapBuffers()
         completedFrame.Completed3DReference = {};
         completedFrame.ScreenPlanes = StructuredScreenPlanes;
         completedFrame.ScreenLineMeta = StructuredScreenLineMeta;
+        completedFrame.EnginePlanes = StructuredEnginePlanes;
+        completedFrame.EngineLineUsesCapture3D = StructuredEngineLineUsesCapture3D;
         completedFrame.Capture3DSource = StructuredCapture3DSource;
         completedFrame.Capture3DSourceLineValid = StructuredCapture3DSourceLineValid;
         constexpr u32 captureUseMetaMask = (1u << 21u) | (1u << 22u);
@@ -1321,6 +1323,19 @@ void SoftRenderer::SwapBuffers()
             && StructuredCaptureBackedBestClassLines[2] == 0u
             && StructuredCaptureBackedBestClassLines[8] == 0u
             && StructuredCaptureBackedBestClassLines[16] == 0u;
+        u32 captureBackedDominantStructured2DLines = StructuredCaptureBackedBestClassLines[1];
+        if (StructuredCaptureBackedBestClassLines[2] > captureBackedDominantStructured2DLines)
+            captureBackedDominantStructured2DLines = StructuredCaptureBackedBestClassLines[2];
+        if (StructuredCaptureBackedBestClassLines[4] > captureBackedDominantStructured2DLines)
+            captureBackedDominantStructured2DLines = StructuredCaptureBackedBestClassLines[4];
+        if (StructuredCaptureBackedBestClassLines[8] > captureBackedDominantStructured2DLines)
+            captureBackedDominantStructured2DLines = StructuredCaptureBackedBestClassLines[8];
+        if (StructuredCaptureBackedBestClassLines[16] > captureBackedDominantStructured2DLines)
+            captureBackedDominantStructured2DLines = StructuredCaptureBackedBestClassLines[16];
+        completedFrame.CaptureBackedHasStructured2DSource =
+            StructuredCaptureBacked3DLines > 0u
+            && captureBackedDominantStructured2DLines > (StructuredCaptureBacked3DLines / 2u)
+            && captureBackedDominantStructured2DLines > StructuredCaptureBackedBestClassLines[0];
         completedFrame.FrontBuffer = BackBuffer & 1;
         completedFrame.Generation = ++StructuredVulkanGeneration;
         completedFrame.Renderer3DRenderSerial = completedFrame.Completed3DReference.Valid

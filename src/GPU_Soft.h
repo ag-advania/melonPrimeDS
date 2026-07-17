@@ -63,6 +63,10 @@ public:
     {
         std::array<u32, 2u * 3u * StructuredPixelCount> ScreenPlanes{};
         std::array<u32, 2u * 192u> ScreenLineMeta{};
+        // Engine A/B provenance before physical Top/Bottom routing. Required for
+        // ScreenSwap-alternating capture reconstruction (Sapphire contract).
+        std::array<u32, 2u * 3u * StructuredPixelCount> EnginePlanes{};
+        std::array<u8, 2u * 192u> EngineLineUsesCapture3D{};
         std::array<u32, StructuredPixelCount> Capture3DSource{};
         std::array<u8, 192u> Capture3DSourceLineValid{};
         std::array<u8, 192u> TopScreenNeedsCapture3D{};
@@ -73,6 +77,7 @@ public:
         bool PhysicalScreenSwap = false;
         bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
+        bool CaptureBackedHasStructured2DSource = false;
         int FrontBuffer = -1;
         u64 Generation = 0;
         u64 Renderer3DRenderSerial = 0;

@@ -2104,12 +2104,19 @@ void ScreenPanelVulkan::drawScreen()
         for (std::size_t screen = 0; screen < 2u; ++screen)
         {
             const std::size_t screenBase = screen * 3u * SoftRenderer::StructuredPixelCount;
+            const std::size_t engineBase = screen * 3u * SoftRenderer::StructuredPixelCount;
             snapshotSource.lineMeta[screen] = structuredSource.ScreenLineMeta.data() + (screen * 192u);
+            snapshotSource.engineLineUsesCapture3d[screen] =
+                structuredSource.EngineLineUsesCapture3D.data() + (screen * 192u);
             for (std::size_t plane = 0; plane < 3u; ++plane)
             {
                 snapshotSource.plane[screen][plane] =
                     structuredSource.ScreenPlanes.data()
                     + screenBase
+                    + (plane * SoftRenderer::StructuredPixelCount);
+                snapshotSource.enginePlane[screen][plane] =
+                    structuredSource.EnginePlanes.data()
+                    + engineBase
                     + (plane * SoftRenderer::StructuredPixelCount);
             }
         }
@@ -2122,6 +2129,8 @@ void ScreenPanelVulkan::drawScreen()
         snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
         snapshotSource.physicalScreenSwap = structuredSource.PhysicalScreenSwap;
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
+        snapshotSource.captureBackedHasStructured2DSource =
+            structuredSource.CaptureBackedHasStructured2DSource;
         snapshotSource.frontBuffer = structuredSource.FrontBuffer;
         snapshotSource.renderer3dOwnerIsTop = structuredSource.Renderer3DOwnerIsTop;
         snapshotSource.generation = structuredSource.Generation;
