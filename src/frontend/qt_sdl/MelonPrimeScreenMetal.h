@@ -21,6 +21,14 @@
 // btmOverlay shader. There is no CPU bottom-screen buffer or memcpy anywhere
 // on this path.
 //
+// MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): the splash logo/text and OSD
+// toast items no longer composite into `uiOverlay` at all. Each item gets
+// its own Metal texture (osdRenderItem() override below, mirroring
+// ScreenPanelGL's per-item GL texture cache), drawn as an individual
+// textured quad through the PR-11 HUD command list. Only the custom HUD
+// (gauges/crosshair/etc. from MelonPrimeHudRender*) still rasterizes through
+// QPainter into `uiOverlay`.
+//
 // Threading: initMetal()/setupScreenLayout() (layer creation, drawable size)
 // run on the GUI thread. drawScreen() runs on the emu thread, matching
 // ScreenPanelGL::drawScreen() (also called from the emu thread's
@@ -62,6 +70,12 @@ private:
     bool attachLayerToCurrentViewGuiThread();
     void updateDrawableSizeGuiThread();
     qreal devicePixelRatioFromScreenLocal() const;
+
+    // MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): per-item Metal texture
+    // cache for OSD/splash-text content, mirroring ScreenPanelGL's overrides
+    // of the same two ScreenPanel virtuals.
+    void osdRenderItem(OSDItem* item) override;
+    void osdDeleteItem(OSDItem* item) override;
 
     struct Impl;
     std::unique_ptr<Impl> m;

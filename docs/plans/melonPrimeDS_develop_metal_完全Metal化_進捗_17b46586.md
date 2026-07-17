@@ -17,7 +17,7 @@
 | PR-9 | presenter MetalTexture-only | **完了（部分）** | （本コミット） | AcquireOutputLease／presenter を MetalTexture／None のみに限定。screenTex CPU upload 撤廃。実ROM未実施 |
 | PR-10 | radar native Metal | **完了（部分）** | （本コミット） | GL-native btmOverlay相当のcircle-mask fragment shaderでMetalTexture layer 1を直接sample。bottomImage memcpy撤廃。実ROM未実施 |
 | PR-11 | HUD primitive renderer | **完了（transitional tier）** | （本コミット） | 固定長Metal draw-command list導入（HUD/OSD/splash/radar quadを1つのencode loopで発行）。QPainterはHUD/OSD/splashのCPUラスタライズには残存（真のprimitive/glyph atlasは未実装、指示書の「at least」tierとして明示的にdocumented） |
-| PR-12 | glyph atlas／OSD／splash | 未着手 | — | |
+| PR-12 | glyph atlas／OSD／splash | **完了（部分: OSD／splashのみ）** | （本コミット） | splash logo／splashText／OSD toastを各々専用MetalTextureへキャッシュ化し、PR-11のHUD command list経由で個別quad描画。uiOverlayへのQPainter compositingは撤廃。custom HUD本体（ゲージ／クロスヘア等）のglyph atlas化は未着手（指示書の「splash+OSD at minimum」フォールバックを採用） |
 | PR-13 | macOS 初回 Metal 既定 | 未着手 | — | 完了A後 |
 | PR-14 | MSL asset／metallib | 未着手 | — | |
 | PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。ROM／TSan gate未 |
@@ -311,6 +311,87 @@ transition FXスタイル、outlineスタンプキャッシュ等、数千行）
 
 - 実ROM／実機での目視確認
 - 真のMetal primitive HUD（QPainter完全撤廃）— 別PRとして継続予定
+- TSan／Windows／Linux rebuild
+
+## PR-12 要約（2026-07-17） -- 「splash+OSD at minimum」フォールバックを採用
+
+**スコープ判断**: 指示書のフォールバック優先順位は「3. PR-12: splash+OSD at
+minimum」。custom HUD本体（ゲージ／クロスヘア／HP/ammo等、
+`MelonPrimeHudRenderDraw.inc`）のテキストをMetal glyph atlasへ焼き直す作業は
+PR-11で明示した通り本セッション範囲外（実ROM検証なしでゲームプレイに直結する
+描画を変更するリスクが高すぎる）。よって本PRはOSD toast／splashロゴ／
+splashテキストのみをQPainter/uiOverlay compositingから撤廃し、真のPer-item
+Metal textureへ移行する（フォールバックの「at minimum」を満たす）。
+
+変更:
+
+- `MelonPrimeScreenMetal.h`/`.mm`:
+  - `ScreenPanel::osdRenderItem`/`osdDeleteItem`（`virtual`、`Screen.h`）を
+    `ScreenPanelGL`と同じパターンでoverride: `ScreenPanel::osdRenderItem`
+    （QPainterでの`item->bitmap`ラスタライズ）を呼んだ後、その`bitmap`を
+    新規`id<MTLTexture>`へ`replaceRegion`でupload、`OSDItem::id`をキーにした
+    `std::unordered_map<unsigned int, MetalOsdTexture> osdTextures`
+    （`Impl`メンバー）へキャッシュ。両overrideは`ScreenPanel::osdUpdate()`/
+    `osdAddMessage()`が`osdMutex`を保持している間にのみ呼ばれるため
+    （GLの`osdTextures`と同じ契約）、追加のlockは不要。`osdDeleteItem`は
+    該当エントリを`erase`するのみ（ARCが`id<MTLTexture>`を解放。GLの
+    `glDeleteTextures`ループに相当する明示的破棄処理は不要）
+  - `initMetal()`に splash logo（`splashLogo`）専用の一回限りの
+    `logoTex`アップロードを追加。GLの`initOpenGL()`の
+    "splash logo texture" ブロック（2倍supersample→`kLogoWidth`論理サイズで
+    描画、`GL_NEAREST`相当）と同一のソース処理・フィルタ設定
+  - `drawScreen()`: splash（ロゴ＋3行の`splashText`）とOSD toast
+    （`osdItems`）の描画を、`overlayPainter.drawPixmap`/`drawImage`による
+    `uiOverlay`への合成から、`pushMetalTexturedQuad()`ヘルパー
+    （`m->uiPipeline`/`m->nearestSampler`を再利用し、PR-11の
+    `hudCommands`固定長command listへpush）に置き換え。GL-nativeの描画順序
+    （`MelonPrimeHudScreenCppOverlayOfGl.inc`のoverlay+radarパス→
+    `ScreenPanelGL::drawScreen()`の2つの`osdShader`パス、Screen.cpp）に
+    合わせ、UI overlay quad／radar quadのpush箇所より後にpushして最前面に
+    描画
+  - `kMaxMetalHudCommands`を4→32に拡張（uiOverlay＋radar＋splash logo＋
+    splashText×3＋同時表示OSD toast分の余裕。上限超過分は既存の
+    `hudCommandCount < hudCommands.size()`ガードにより黒フレームなどの
+    未定義動作ではなく単純に描画skipされる）
+- 新規 audit `audit-metal-osd-splash-native.py`（`run-metal-fullgpu-audits.sh`
+  に登録）: `MetalOsdTexture`／`osdRenderItem`／`osdDeleteItem`
+  override（`.h`/`.mm`双方）の存在、`overlayPainter.drawPixmap(`/
+  `overlayPainter.drawImage(`がpresenterのlive codeに存在しないこと、
+  splash logo／OSD/splashテキストが`pushMetalTexturedQuad(...)`経由でpush
+  されていること、splash/OSD quadのpush箇所がUI overlay quad／radar quadの
+  push箇所より後（描画順が正しい）であることを検証
+
+**明示的に未達（次回以降の作業として残存）**:
+
+- custom HUD本体（HP/ammo/weapon inventory/crosshair FX/match status等）は
+  `MelonPrimeHudRenderDraw.inc`のQPainter呼び出しのまま、`uiOverlay`への
+  ラスタライズも継続（Metal frameでの「custom HUDにQPainterを一切使わない」
+  という完全な要件は未達 -- PR-11で明示した通り）
+- グリフをフォントアトラスとして事前に焼き、CPU baseは font/language変更時
+  のみ行うという「glyph atlas」要件は未実装。現状のtext bitmap cacheは
+  `MelonPrimeHudRenderDraw.inc`側のQImageキャッシュのままで、Metal atlasへの
+  統合は行っていない
+- Edit modeのオーバーレイボックス（`DrawEditOverlay`）もQPainterのまま
+  （指示書は "or only debug" として明示的に許容）
+- 「Metal normal frameでuiOverlay CPU replaceRegion = 0」は custom HUDが
+  非表示（メインメニュー／ROM未検出時など、splashのみ表示）の場合には
+  達成済み（splash/OSDが`uiOverlay`を一切使わなくなったため）。custom HUDが
+  表示されるゲームプレイ中フレームでは、custom HUD自体のQPainter
+  ラスタライズが残っているため未達
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF; 対象ファイルはビルド対象外の
+  ため no-op）
+- `cmake --build build-mac-metal-force-disabled -j8`（同様に no-op）
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 10/10 PASS
+
+未実施:
+
+- 実ROM／実機での目視確認（splashロゴ／テキスト／OSD toastの表示位置・
+  サイズ・タイミングが実際に正しいこと）
+- custom HUD本体のglyph atlas化（QPainter完全撤廃）— 別PRとして継続予定
 - TSan／Windows／Linux rebuild
 
 ## PR-0 証拠要約（2026-07-17）

@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 
 #include <QGuiApplication>
 #include <QEvent>
@@ -306,7 +307,19 @@ static_assert(sizeof(RadarUniforms) == 16, "must match the MSL RadarUniforms lay
 // actually issues the GPU draw calls that put HUD/OSD/splash/radar pixels on
 // screen, and is the transitional "single HUD texture through Metal textured
 // quads" tier documented in the PR-11 progress note.
-constexpr int kMaxMetalHudCommands = 4;
+//
+// MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): the splash logo/text and OSD
+// toast items no longer flow through that QPainter/uiOverlay path at all --
+// each item is its own small Metal texture (see MetalOsdTexture /
+// ScreenPanelMetal::osdRenderItem below), pushed into this same command list
+// as an individual textured quad. The cap below accounts for the fixed UI
+// overlay + radar quads (custom HUD only, still QPainter-rasterized) plus a
+// generous allowance for splash (logo + 3 lines) and simultaneously-visible
+// OSD toasts (which expire after ~2.5s -- see ScreenPanel::osdUpdate --  so
+// this is far more headroom than practice needs); any excess items are
+// silently dropped by the `hudCommandCount < hudCommands.size()` guard at
+// each push site rather than growing the array.
+constexpr int kMaxMetalHudCommands = 32;
 
 struct MetalHudDrawCommand
 {
@@ -316,6 +329,18 @@ struct MetalHudDrawCommand
     UiUniforms vertexUniforms{};
     RadarUniforms fragmentUniforms{};
     bool hasFragmentUniforms = false;
+};
+
+// MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): one cached Metal texture per
+// OSD/splash-text OSDItem, keyed by OSDItem::id exactly like the GL path's
+// `std::map<unsigned int, GLuint> osdTextures` (Screen.h/.cpp). Uploaded once
+// in ScreenPanelMetal::osdRenderItem() (called from ScreenPanel::osdUpdate()
+// only when the item's bitmap actually changes), not per frame.
+struct MetalOsdTexture
+{
+    id<MTLTexture> texture = nil;
+    int width = 0;
+    int height = 0;
 };
 
 void EncodeMetalHudCommand(id<MTLRenderCommandEncoder> encoder,
@@ -499,6 +524,21 @@ struct ScreenPanelMetal::Impl
     id<MTLTexture> uiTex = nil;
     int uiTexW = 0;
     int uiTexH = 0;
+
+    // MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): splash logo texture,
+    // created once in initMetal() from the ScreenPanel-owned `splashLogo`
+    // QPixmap (never changes at runtime, so no per-frame or on-demand
+    // re-upload is needed -- unlike osdTextures below).
+    id<MTLTexture> logoTex = nil;
+    int logoTexW = 0;
+    int logoTexH = 0;
+    // Per-OSDItem::id cache, populated by ScreenPanelMetal::osdRenderItem()
+    // and erased by ScreenPanelMetal::osdDeleteItem(); both are only ever
+    // called while ScreenPanel::osdMutex is held (see ScreenPanel::osdUpdate
+    // / osdAddMessage), so this map never needs its own lock. ARC releases
+    // each id<MTLTexture> automatically on erase/destruction -- no manual
+    // teardown loop is needed the way GL's deinitOpenGL() needs one.
+    std::unordered_map<unsigned int, MetalOsdTexture> osdTextures;
 
     QImage uiOverlay;
     // MELONPRIME_METAL_UI_OVERLAY_DIRTY_RECT_V1 (mirrors the GL path's
@@ -788,6 +828,39 @@ bool ScreenPanelMetal::initMetal()
         linearDesc.magFilter = MTLSamplerMinMagFilterLinear;
         m->linearSampler = [m->device newSamplerStateWithDescriptor:linearDesc];
 
+        // MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): splash logo texture,
+        // mirroring ScreenPanelGL::initOpenGL()'s "splash logo texture"
+        // block (Screen.cpp) exactly -- same 2x-oversampled source (drawn at
+        // logical kMetalLogoWidth so the extra resolution only sharpens
+        // downsampling, matching GL's uOSDTexScale=2.0 trick without needing
+        // a separate uniform) and the same NEAREST-filtered, one-shot (never
+        // re-uploaded) texture lifetime.
+        {
+            const QImage logo = splashLogo.scaled(kMetalLogoWidth * 2, kMetalLogoWidth * 2)
+                                     .toImage()
+                                     .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            if (logo.width() > 0 && logo.height() > 0)
+            {
+                MTLTextureDescriptor* logoDesc =
+                    [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                        width:logo.width()
+                                                                       height:logo.height()
+                                                                    mipmapped:NO];
+                logoDesc.usage = MTLTextureUsageShaderRead;
+                logoDesc.storageMode = MTLStorageModeShared;
+                m->logoTex = [m->device newTextureWithDescriptor:logoDesc];
+                if (m->logoTex)
+                {
+                    [m->logoTex replaceRegion:MTLRegionMake2D(0, 0, logo.width(), logo.height())
+                                   mipmapLevel:0
+                                     withBytes:logo.constBits()
+                                   bytesPerRow:logo.bytesPerLine()];
+                    m->logoTexW = logo.width();
+                    m->logoTexH = logo.height();
+                }
+            }
+        }
+
         // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): this
         // presenter used to also own a CPU-upload BGRA8 2D-array texture
         // (`screenTex`) for a software-composite fallback path. That path is
@@ -906,6 +979,57 @@ void ScreenPanelMetal::updateDrawableSizeGuiThread()
     // paths (ScreenPanel::resizeEvent() -> setupScreenLayout()).
     m->layer.contentsScale = scale;
     m->layer.drawableSize = CGSizeMake(w, h);
+}
+
+// MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): Metal equivalent of
+// ScreenPanelGL::osdRenderItem()/osdDeleteItem() (Screen.cpp) -- base class
+// still does the actual QPainter rasterization into item->bitmap (that is
+// the OSD/splash-text CPU *rasterizer*, unrelated to how the result reaches
+// the screen), then this override uploads that bitmap into its own
+// per-item Metal texture exactly once (only when ScreenPanel::osdUpdate()
+// decides the item needs (re)rendering), never per frame. Both overrides are
+// only ever called from ScreenPanel::osdUpdate()/osdAddMessage() while
+// ScreenPanel::osdMutex is held, so m->osdTextures needs no separate lock.
+void ScreenPanelMetal::osdRenderItem(OSDItem* item)
+{
+    ScreenPanel::osdRenderItem(item);
+
+    if (!m || !m->device || item->bitmap.isNull())
+        return;
+
+    const QImage img = item->bitmap.format() == QImage::Format_ARGB32_Premultiplied
+        ? item->bitmap
+        : item->bitmap.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    if (img.width() <= 0 || img.height() <= 0)
+        return;
+
+    MTLTextureDescriptor* desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                            width:img.width()
+                                                           height:img.height()
+                                                        mipmapped:NO];
+    desc.usage = MTLTextureUsageShaderRead;
+    desc.storageMode = MTLStorageModeShared;
+    id<MTLTexture> tex = [m->device newTextureWithDescriptor:desc];
+    if (!tex)
+        return;
+    [tex replaceRegion:MTLRegionMake2D(0, 0, img.width(), img.height())
+            mipmapLevel:0
+              withBytes:img.constBits()
+            bytesPerRow:img.bytesPerLine()];
+
+    MetalOsdTexture entry;
+    entry.texture = tex;
+    entry.width = img.width();
+    entry.height = img.height();
+    m->osdTextures[item->id] = entry;
+}
+
+void ScreenPanelMetal::osdDeleteItem(OSDItem* item)
+{
+    if (m)
+        m->osdTextures.erase(item->id);
+    ScreenPanel::osdDeleteItem(item);
 }
 
 void ScreenPanelMetal::drawScreen()
@@ -1516,44 +1640,6 @@ void ScreenPanelMetal::drawScreen()
         }
 #endif
 
-        if (!emuThread->emuIsActive())
-        {
-            osdMutex.lock();
-            const QRect logoRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth));
-            overlayPainter.drawPixmap(logoRect, splashLogo);
-            overlayCurPainted = overlayCurPainted.united(logoRect);
-            for (int i = 0; i < 3; i++)
-            {
-                overlayPainter.drawImage(splashPos[i], splashText[i].bitmap);
-                overlayCurPainted = overlayCurPainted.united(
-                    QRect(splashPos[i], splashText[i].bitmap.size()));
-            }
-            osdMutex.unlock();
-            overlayHasContent = true;
-        }
-
-#ifdef MELONPRIME_DS
-        if (osdEnabled && !osdItems.empty())
-#else
-        if (osdEnabled)
-#endif
-        {
-            osdMutex.lock();
-            uint32_t y = kMetalOSDMargin;
-            for (auto it = osdItems.begin(); it != osdItems.end(); )
-            {
-                OSDItem& item = *it;
-                overlayPainter.drawImage(kMetalOSDMargin, y, item.bitmap);
-                overlayCurPainted = overlayCurPainted.united(QRect(
-                    kMetalOSDMargin, static_cast<int>(y),
-                    item.bitmap.width(), item.bitmap.height()));
-                y += item.bitmap.height();
-                it++;
-            }
-            osdMutex.unlock();
-            overlayHasContent = true;
-        }
-
         overlayPainter.end();
 
         // Clamp before any texture work: an out-of-bounds replaceRegion is a
@@ -1656,9 +1742,90 @@ void ScreenPanelMetal::drawScreen()
         }
 #endif
 
+        // MELONPRIME_METAL_OSD_SPLASH_NATIVE_V1 (PR-12): splash logo/text and
+        // OSD toast items are each their own cached Metal texture (uploaded
+        // once in osdRenderItem(), never per frame), pushed here -- after the
+        // custom HUD overlay and radar quads -- as individual textured quads
+        // through the same PR-11 HUD command list. Pushed last so they draw
+        // on top, matching the GL-native path's draw order (MelonPrimeHud
+        // ScreenCppOverlayOfGl.inc's overlay+radar pass runs before
+        // ScreenPanelGL::drawScreen()'s two osdShader passes in Screen.cpp).
+        // This does not touch uiOverlay/QPainter at all, unlike the generic
+        // Software-renderer compositing path those GL draw calls replace on
+        // this backend.
+        UiUniforms metalItemUniforms{};
+        metalItemUniforms.screenSize[0] = static_cast<float>(logicalW);
+        metalItemUniforms.screenSize[1] = static_cast<float>(logicalH);
+        metalItemUniforms.yFlipSign = yFlipSign;
+
+        auto pushMetalTexturedQuad = [&](id<MTLTexture> tex, float x, float y, float width, float height)
+        {
+            if (!tex || width <= 0.0f || height <= 0.0f ||
+                hudCommandCount >= static_cast<int>(hudCommands.size()))
+                return;
+            MetalHudDrawCommand& cmd = hudCommands[hudCommandCount++];
+            cmd.pipeline = m->uiPipeline;
+            cmd.texture = tex;
+            cmd.sampler = m->nearestSampler;
+            cmd.vertexUniforms = metalItemUniforms;
+            cmd.vertexUniforms.rect[0] = x;
+            cmd.vertexUniforms.rect[1] = y;
+            cmd.vertexUniforms.rect[2] = width;
+            cmd.vertexUniforms.rect[3] = height;
+            cmd.hasFragmentUniforms = false;
+        };
+
+        if (!emuThread->emuIsActive())
+        {
+            osdMutex.lock();
+            pushMetalTexturedQuad(m->logoTex,
+                                   static_cast<float>(splashPos[3].x()),
+                                   static_cast<float>(splashPos[3].y()),
+                                   static_cast<float>(kMetalLogoWidth),
+                                   static_cast<float>(kMetalLogoWidth));
+            for (int i = 0; i < 3; i++)
+            {
+                const auto texIt = m->osdTextures.find(splashText[i].id);
+                if (texIt != m->osdTextures.end())
+                {
+                    pushMetalTexturedQuad(texIt->second.texture,
+                                          static_cast<float>(splashPos[i].x()),
+                                          static_cast<float>(splashPos[i].y()),
+                                          static_cast<float>(texIt->second.width),
+                                          static_cast<float>(texIt->second.height));
+                }
+            }
+            osdMutex.unlock();
+        }
+
+#ifdef MELONPRIME_DS
+        if (osdEnabled && !osdItems.empty())
+#else
+        if (osdEnabled)
+#endif
+        {
+            osdMutex.lock();
+            float y = static_cast<float>(kMetalOSDMargin);
+            for (auto it = osdItems.begin(); it != osdItems.end(); it++)
+            {
+                OSDItem& item = *it;
+                const auto texIt = m->osdTextures.find(item.id);
+                if (texIt != m->osdTextures.end())
+                {
+                    pushMetalTexturedQuad(texIt->second.texture,
+                                          static_cast<float>(kMetalOSDMargin), y,
+                                          static_cast<float>(texIt->second.width),
+                                          static_cast<float>(texIt->second.height));
+                }
+                y += static_cast<float>(item.bitmap.height());
+            }
+            osdMutex.unlock();
+        }
+
         // MELONPRIME_METAL_HUD_COMMAND_LIST_V1 (PR-11): single encode loop
         // for every queued HUD/OSD/splash/radar quad, in push order (UI
-        // overlay, then radar -- matching the GL-native draw order).
+        // overlay, then radar, then splash/OSD -- matching the GL-native
+        // draw order).
         for (int i = 0; i < hudCommandCount; i++)
             EncodeMetalHudCommand(encoder, m->uiVertexBuffer, hudCommands[i]);
 
