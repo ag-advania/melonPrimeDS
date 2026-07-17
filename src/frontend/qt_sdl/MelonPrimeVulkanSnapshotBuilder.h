@@ -49,15 +49,17 @@ private:
         bool valid{};
     };
 
-    // Two renderer-owner-only phases plus four exact
-    // (renderer owner, capture owner) phases.
+    // Two physical-only phases plus four exact
+    // (physical ScreenSwap, capture owner) phases for packed recovery.
+    // Capture history is four phases of (physicalScreenSwap, captureScreenSwap)
+    // so opposite PhysicalScreenSwap frames never share one capture bucket.
     //
     // A ScreenSwap-toggling title alternates ownership every frame. Packed
     // line recovery must use the last snapshot from the SAME ownership phase;
     // recovering from the immediately previous opposite phase fills Top with
     // the other engine's content and looks like a complete Top/Bottom swap.
     std::array<PhaseHistory, 6> phaseHistory{};
-    std::array<PhaseHistory, 2> capturePhaseHistory{};
+    std::array<PhaseHistory, 4> capturePhaseHistory{};
 };
 
 } // namespace MelonPrime

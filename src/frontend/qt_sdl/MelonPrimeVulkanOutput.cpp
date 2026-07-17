@@ -3935,6 +3935,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     {
         None,
         CurrentExact2D,
+        TemporalComp4,
         SameOwnerHistory,
         SameOwnerPreviousFrame,
         SameOwnerRendererFallback,
@@ -4029,34 +4030,42 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         || softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines > 0u;
     const bool preferTopComp4Placeholder =
         !topUsesCurrentRegularCapture3d
-        &&
-        softPackedSnapshot.topScreenStats.CaptureBackedComp4Lines > 0u
+        && softPackedSnapshot.topScreenStats.CaptureBackedComp4Lines > 0u
         && softPackedSnapshot.bottomScreenStats.CaptureBackedComp4Lines == 0u;
     const bool preferBottomComp4Placeholder =
         !bottomUsesCurrentRegularCapture3d
-        &&
-        softPackedSnapshot.bottomScreenStats.CaptureBackedComp4Lines > 0u
+        && softPackedSnapshot.bottomScreenStats.CaptureBackedComp4Lines > 0u
         && softPackedSnapshot.topScreenStats.CaptureBackedComp4Lines == 0u;
+    const bool preferredComp4SourceValid =
+        preferTopComp4Placeholder || preferBottomComp4Placeholder;
+    const bool preferredComp4SourceIsTop = preferTopComp4Placeholder;
+    // Comp4 pixels belong to a physical LCD. Never inject them into the single
+    // capture3dBuffer unless that LCD is also the capture owner the shader will
+    // route the buffer to; otherwise Top 2D appears on Bottom (and vice versa).
+    const bool preferredComp4OwnerMatches =
+        preferredComp4SourceValid
+        && captureOwnerValid
+        && captureOwner == preferredComp4SourceIsTop;
     const u32* preferredComp4Placeholder = nullptr;
     bool preferredComp4PlaceholderIsTemporal = false;
     CaptureSourceHistory* selectedComp4History = nullptr;
-    if (preferTopComp4Placeholder)
+    if (preferredComp4OwnerMatches && preferTopComp4Placeholder)
     {
         preferredComp4Placeholder = renderer2dDebug3dBackgroundEnabled
             ? softPackedSnapshot.comp4TopPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        selectedComp4History = !renderer2dDebugControlsActive && captureOwnerValid
+        selectedComp4History = !renderer2dDebugControlsActive
             ? &topComp4HistoryByOwner[captureOwnerIndex]
             : nullptr;
     }
-    else if (preferBottomComp4Placeholder)
+    else if (preferredComp4OwnerMatches && preferBottomComp4Placeholder)
     {
         preferredComp4Placeholder = renderer2dDebug3dBackgroundEnabled
             ? softPackedSnapshot.comp4BottomPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        selectedComp4History = !renderer2dDebugControlsActive && captureOwnerValid
+        selectedComp4History = !renderer2dDebugControlsActive
             ? &bottomComp4HistoryByOwner[captureOwnerIndex]
             : nullptr;
     }
@@ -4088,6 +4097,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     u32 crossOwnerLatchedRejected = 0;
     u32 crossOwnerPreviousRejected = 0;
     u32 crossOwnerRendererFallbackRejected = 0;
+    u32 crossScreenComp4Rejected = 0;
     bool needsRenderer3dFallback = false;
     std::array<u8, kScreenHeight> resolvedLines{};
     std::array<CaptureLineSource, kScreenHeight> lineSources{};
@@ -4182,8 +4192,16 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         const bool preferredComp4LineIsSolidOpaqueBlack =
             preferredComp4PlaceholderIsTemporal
             && capture3dSourceLineIsSolidOpaqueBlack(preferredComp4Placeholder, y);
+        if (preferredComp4SourceValid
+            && preferredComp4LineHasPixels
+            && !preferredComp4OwnerMatches)
+        {
+            crossScreenComp4Rejected++;
+        }
         const bool acceptPreferredComp4Line =
-            preferredComp4LineHasPixels
+            lineUsesCapture3d(y)
+            && preferredComp4OwnerMatches
+            && preferredComp4LineHasPixels
             && !(preferredComp4LineIsSolidOpaqueBlack && latchedComp4LineHasPixels);
         const bool lineSourceValid =
             preparedCapture3dSource != nullptr
@@ -4243,7 +4261,11 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                 storeHistoryLine(currentCaptureHistory, preparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
-            markLineSource(y, CaptureLineSource::CurrentExact2D, captureOwnerValid, captureOwner);
+            markLineSource(
+                y,
+                CaptureLineSource::TemporalComp4,
+                true,
+                preferredComp4SourceIsTop);
             if (preferredComp4PlaceholderIsTemporal)
                 linesFromPreviousFrame++;
             else
@@ -4251,7 +4273,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             continue;
         }
 
-        if (latchedComp4LineHasPixels)
+        if (lineUses3d && preferredComp4OwnerMatches && latchedComp4LineHasPixels)
         {
             std::array<u32, kScreenWidth> mergedLine{};
             for (int x = 0; x < kScreenWidth; x++)
@@ -4275,7 +4297,11 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                     expandPackedColor6ToRgba8(mergedLine[static_cast<size_t>(x)]);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
-            markLineSource(y, CaptureLineSource::SameOwnerHistory, captureOwnerValid, captureOwner);
+            markLineSource(
+                y,
+                CaptureLineSource::TemporalComp4,
+                true,
+                preferredComp4SourceIsTop);
             linesFromLatchedValid++;
             continue;
         }
@@ -4395,11 +4421,14 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Info,
-            "VulkanCaptureTrace generation=%llu rendererSerial=%llu captureOwnerValid=%u captureOwner=%u previousOwnerValid=%u previousOwner=%u previousOwnerMatches=%u previousTemporalMatches=%u lastValidOwnerValid=%u lastValidOwner=%u lastValidOwnerMatches=%u rendererTargetOwner=%u rendererFallbackCompatible=%u renderer2dLines=%u latchedLines=%u previousLines=%u renderer3dLines=%u emptyLines=%u unresolvedProvenance=%u crossOwnerLatchedRejected=%u crossOwnerPreviousRejected=%u crossOwnerRendererFallbackRejected=%u",
+            "VulkanCaptureTrace generation=%llu rendererSerial=%llu captureOwnerValid=%u captureOwner=%u preferredComp4Valid=%u preferredComp4IsTop=%u preferredComp4OwnerMatches=%u previousOwnerValid=%u previousOwner=%u previousOwnerMatches=%u previousTemporalMatches=%u lastValidOwnerValid=%u lastValidOwner=%u lastValidOwnerMatches=%u rendererTargetOwner=%u rendererFallbackCompatible=%u renderer2dLines=%u latchedLines=%u previousLines=%u renderer3dLines=%u emptyLines=%u unresolvedProvenance=%u crossOwnerLatchedRejected=%u crossOwnerPreviousRejected=%u crossOwnerRendererFallbackRejected=%u crossScreenComp4Rejected=%u",
             static_cast<unsigned long long>(resource.structuredGeneration),
             static_cast<unsigned long long>(resource.renderer3dRenderSerial),
             captureOwnerValid ? 1u : 0u,
             captureOwner ? 1u : 0u,
+            preferredComp4SourceValid ? 1u : 0u,
+            preferredComp4SourceIsTop ? 1u : 0u,
+            preferredComp4OwnerMatches ? 1u : 0u,
             previousResource != nullptr && previousResource->captureScreenSwapValid ? 1u : 0u,
             previousResource != nullptr && previousResource->captureScreenSwap ? 1u : 0u,
             previousCaptureOwnerMatches ? 1u : 0u,
@@ -4417,7 +4446,8 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             unresolvedProvenanceLines,
             crossOwnerLatchedRejected,
             crossOwnerPreviousRejected,
-            crossOwnerRendererFallbackRejected);
+            crossOwnerRendererFallbackRejected,
+            crossScreenComp4Rejected);
     }
     if (areRendererDebugBgObjLogsEnabled() && packedDebugLogsRemaining > 0)
     {

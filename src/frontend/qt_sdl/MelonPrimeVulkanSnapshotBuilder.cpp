@@ -180,14 +180,16 @@ void populateComp4Placeholder(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const SoftPackedFrameSnapshot* physicalHistory,
     bool top,
     SoftPackedFrameSnapshot& snapshot,
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& placeholder)
 {
-    const auto* historyPlane0 = physicalHistory == nullptr
-        ? nullptr
-        : (top ? &physicalHistory->packedTopPlane0 : &physicalHistory->packedBottomPlane0);
+    // Only promote exact capture-source pixels that already belong to this
+    // physical LCD. Historical Plane0 is ordinary 2D and must not be elevated
+    // into Comp4 capture placeholders (cross-screen injection risk).
+    const bool captureSourceMatchesPhysicalScreen =
+        snapshot.captureScreenSwapValid
+        && snapshot.captureScreenSwap == top;
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
         const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
@@ -209,10 +211,12 @@ void populateComp4Placeholder(
                 continue;
 
             u32 value = 0u;
-            if (currentCaptureLine && currentCaptureSourceValid)
+            if (currentCaptureLine
+                && currentCaptureSourceValid
+                && captureSourceMatchesPhysicalScreen)
+            {
                 value = snapshot.capture3dSourceDsFrame[index];
-            if (!packedPixelIsUseful(value) && historyPlane0 != nullptr)
-                value = (*historyPlane0)[index];
+            }
             if (packedPixelIsUseful(value))
                 placeholder[index] = value;
         }
@@ -274,8 +278,11 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.frameId = frameId;
         return true;
     }
+    const std::size_t capturePhaseIndex =
+        (source.physicalScreenSwap ? 2u : 0u)
+        + (source.captureScreenSwap ? 1u : 0u);
     PhaseHistory& matchingCaptureHistory = source.captureScreenSwapValid
-        ? capturePhaseHistory[source.captureScreenSwap ? 1u : 0u]
+        ? capturePhaseHistory[capturePhaseIndex]
         : matchingHistory;
     const bool matchingCaptureHistoryEligible = source.renderer3dReferenceValid
         && matchingCaptureHistory.valid
@@ -417,16 +424,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.packedBottomLineMeta,
         destination.bottomScreenStats);
 
-    const SoftPackedFrameSnapshot* phaseSnapshot = source.captureScreenSwapValid
-        ? (matchingCaptureHistoryEligible ? &matchingCaptureHistory.snapshot : nullptr)
-        : (source.renderer3dReferenceValid && matchingHistory.valid
-            ? &matchingHistory.snapshot
-            : nullptr);
     populateComp4Placeholder(
         destination.packedTopPlane0,
         destination.packedTopPlane1,
         destination.packedTopControl,
-        phaseSnapshot,
         true,
         destination,
         destination.comp4TopPlaceholder);
@@ -434,7 +435,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.packedBottomPlane0,
         destination.packedBottomPlane1,
         destination.packedBottomControl,
-        phaseSnapshot,
         false,
         destination,
         destination.comp4BottomPlaceholder);
@@ -449,8 +449,11 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         && destination.captureScreenSwapValid
         && destination.hasCapture3dSource)
     {
+        const std::size_t completedCapturePhaseIndex =
+            (source.physicalScreenSwap ? 2u : 0u)
+            + (destination.captureScreenSwap ? 1u : 0u);
         PhaseHistory& completedCaptureHistory =
-            capturePhaseHistory[destination.captureScreenSwap ? 1u : 0u];
+            capturePhaseHistory[completedCapturePhaseIndex];
         if (!completedCaptureHistory.valid || source.generation >= completedCaptureHistory.generation)
         {
             completedCaptureHistory.snapshot = destination;
