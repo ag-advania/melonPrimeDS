@@ -149,7 +149,13 @@ private:
         bool sourceBFromVram,
         const u16* captureOutput);
     [[nodiscard]] bool DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress);
-    void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
+    void BuildStructuredScreenLine(
+        u32 engine,
+        u32 screen,
+        u32 screenLine,
+        u32 engineLine,
+        const u32* output,
+        bool forcePlain = false);
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);
