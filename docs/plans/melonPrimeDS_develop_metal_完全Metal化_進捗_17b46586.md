@@ -20,7 +20,7 @@
 | PR-12 | glyph atlas／OSD／splash | **完了（部分: OSD／splashのみ）** | （本コミット） | splash logo／splashText／OSD toastを各々専用MetalTextureへキャッシュ化し、PR-11のHUD command list経由で個別quad描画。uiOverlayへのQPainter compositingは撤廃。custom HUD本体（ゲージ／クロスヘア等）のglyph atlas化は未着手（指示書の「splash+OSD at minimum」フォールバックを採用） |
 | PR-13 | macOS 初回 Metal 既定 | **完了（部分）** | （本コミット） | 新規configのみ `3D.Renderer`/`Screen.UseGL` 既定をMetal probe結果でMetal Rasterへ切替。既存config・Compute既定・Soft/OpenGLビルドは不変。実ROM未実施 |
 | PR-14 | MSL asset／metallib | **完了（部分）** | （本コミット） | 8箇所のembedded MSLをsrc/shaders/metal/へ移動、metallib build＋bundle化、release fallback禁止。GPU3D_Metal.mm/GPU2D_Metal.mm layer/compute主kernel/feature probe/capture experimentは対象外（下記） |
-| PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。ROM／TSan gate未 |
+| PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。forbidden-path audit（SoftRenderer継承／GPU_Metal\* live SoftRenderer::／GPU3D_MetalCompute\* RasterReference／AcquireOutputLease・GetOutputのCpuBgra／CaptureFeedbackCooldownFrames）を追加し PR-7/8/9 の後退を静的に gate。ROM／TSan gate、Windows／Linux job未 |
 
 ## PR-2 要約（2026-07-17）
 
@@ -195,9 +195,36 @@ None sustained=0     (grace window超過でMetalStrictGpuOnlyViolationを報告)
 - `tools/ci/audits/run-metal-fullgpu-audits.sh`
 - macOS GitHub Actions で checkout 直後に metal audits 実行
 
+## PR-15 追加分要約（2026-07-18）
+
+追加:
+
+- `tools/ci/audits/audit-metal-forbidden-paths.py`: 完了A（PR-7／PR-8／PR-9）で
+  確立された「なくなったはずのpath」が後退で復活しないことを静的に固定する
+  forbidden-path audit。
+  - `class MetalRenderer : public SoftRenderer` の全文不在（コメント含め0件）
+  - `src/GPU_Metal*` 内の live（非コメント）`SoftRenderer::`呼び出し0件
+    （歴史的経緯を説明するコメントは許容）
+  - `src/GPU3D_MetalCompute*` 内の `RasterReference` 全文不在
+  - `GPU_Metal.mm`の`MetalRenderer::AcquireOutputLease()`／`GetOutput()`本体
+    （brace-balanced抽出）に live `CpuBgra`参照が無いこと、かつ
+    `MELONPRIME_METAL_HOST_V1`／`MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1`
+    マーカーが両関数内に存在すること（`audit-metal-presenter-metaltexture-only.py`
+    のfile-wide CpuBgra checkとは役割を分離し、二重チェックを避けつつ
+    AcquireOutputLease／GetOutputの2エントリポイントをpinする）
+  - `CaptureFeedbackCooldownFrames`（撤廃済みSoft-escapeカウンタ）の
+    `src/`全体での不在
+  - （best-effort）PR-14の`MelonPrimeMetalDefaultLibrary`ヘルパーの存在
+  - 全チェックはテキスト／正規表現ベースの純Pythonで、Metal SDK／Xcodeを
+    要求しない（Windows／Linux CI runnerでも`python3`があれば
+    `run-metal-fullgpu-audits.sh`をそのまま実行可能。macOS実ビルドは別ステップ）
+- `run-metal-fullgpu-audits.sh` に上記を追加登録。フルセット12個の
+  audit全てPASSを確認。`cmake --build build-mac-metal -j8`でのビルドも確認済み
+
 未:
 
-- Windows／Linux metal audit job
+- Windows／Linux metal audit job（スクリプト自体はplatform非依存だが、
+  CI workflow側の実配線は未実施）
 - ROM／TSan／release gate
 
 ## PR-10 要約（2026-07-17）

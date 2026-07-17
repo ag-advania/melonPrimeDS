@@ -16,7 +16,14 @@ audits=(
   tools/ci/audits/audit-metal-hud-command-list.py
   tools/ci/audits/audit-metal-osd-splash-native.py
   tools/ci/audits/audit-metal-shader-asset-metallib.py
+  tools/ci/audits/audit-metal-forbidden-paths.py
 )
+
+# All of the above are pure-Python static text/regex checks over tracked
+# source files (no compilation, no Metal.framework, no `xcrun`), so this
+# script has no macOS/Metal-SDK dependency itself and can run unmodified on
+# Windows/Linux CI runners with `python3` and `bash` on PATH -- only the
+# actual Metal build (a separate CI step) requires macOS.
 
 failed=0
 for audit in "${audits[@]}"; do
