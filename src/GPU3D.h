@@ -336,13 +336,24 @@ public:
 };
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+enum class Renderer3DPhysicalLcd : u8
+{
+    Bottom = 0,
+    Top = 1,
+};
+
 struct Renderer3DCompletedFrameReference
 {
     u64 Serial = 0;
     u64 CompletionValue = 0;
     u32 ImageSlot = 0;
-    bool OwnerScreenSwap = false;
+    Renderer3DPhysicalLcd OwnerLcd = Renderer3DPhysicalLcd::Bottom;
     bool Valid = false;
+
+    [[nodiscard]] bool OwnerIsTop() const noexcept
+    {
+        return OwnerLcd == Renderer3DPhysicalLcd::Top;
+    }
 };
 #endif
 

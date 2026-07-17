@@ -3,6 +3,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 
 namespace MelonPrime
@@ -179,14 +180,14 @@ void populateComp4Placeholder(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const SoftPackedFrameSnapshot* phaseHistory,
+    const SoftPackedFrameSnapshot* physicalHistory,
     bool top,
     SoftPackedFrameSnapshot& snapshot,
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& placeholder)
 {
-    const auto* historyPlane0 = phaseHistory == nullptr
+    const auto* historyPlane0 = physicalHistory == nullptr
         ? nullptr
-        : (top ? &phaseHistory->packedTopPlane0 : &phaseHistory->packedBottomPlane0);
+        : (top ? &physicalHistory->packedTopPlane0 : &physicalHistory->packedBottomPlane0);
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
         const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
@@ -222,16 +223,15 @@ void populateComp4Placeholder(
 
 void MelonPrimeVulkanSnapshotBuilder::reset() noexcept
 {
-    const auto clearHistories = [](auto& histories) {
-        for (PhaseHistory& history : histories)
-        {
-            history.snapshot.clear();
-            history.generation = 0;
-            history.valid = false;
-        }
-    };
-    clearHistories(phaseHistory);
-    clearHistories(capturePhaseHistory);
+    packedHistory.snapshot.clear();
+    packedHistory.generation = 0;
+    packedHistory.valid = false;
+    for (PhaseHistory& history : capturePhaseHistory)
+    {
+        history.snapshot.clear();
+        history.generation = 0;
+        history.valid = false;
+    }
 }
 
 bool MelonPrimeVulkanSnapshotBuilder::build(
@@ -252,25 +252,21 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         }
     }
 
-    const std::size_t phaseIndex = source.captureScreenSwapValid
-        ? 2u + (source.screenSwap ? 2u : 0u) + (source.captureScreenSwap ? 1u : 0u)
-        : (source.screenSwap ? 1u : 0u);
-    PhaseHistory& matchingHistory = phaseHistory[phaseIndex];
     if (source.renderer3dReferenceValid
-        && matchingHistory.valid
-        && source.generation < matchingHistory.generation)
+        && packedHistory.valid
+        && source.generation < packedHistory.generation)
         return false;
     if (source.renderer3dReferenceValid
-        && matchingHistory.valid
-        && source.generation == matchingHistory.generation)
+        && packedHistory.valid
+        && source.generation == packedHistory.generation)
     {
-        destination = matchingHistory.snapshot;
+        destination = packedHistory.snapshot;
         destination.frameId = frameId;
         return true;
     }
     PhaseHistory& matchingCaptureHistory = source.captureScreenSwapValid
         ? capturePhaseHistory[source.captureScreenSwap ? 1u : 0u]
-        : matchingHistory;
+        : packedHistory;
     const bool matchingCaptureHistoryEligible = source.renderer3dReferenceValid
         && matchingCaptureHistory.valid
         && matchingCaptureHistory.generation <= source.generation;
@@ -283,7 +279,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     destination.renderer3dImageSlot = source.renderer3dImageSlot;
     destination.renderer3dReferenceValid = source.renderer3dReferenceValid;
     destination.frontBufferLatched = source.frontBuffer;
-    destination.screenSwapLatched = source.screenSwap;
+    destination.renderer3dOwnerIsTop = source.renderer3dOwnerIsTop;
     destination.captureScreenSwap = source.captureScreenSwap;
     destination.captureScreenSwapValid = source.captureScreenSwapValid;
     destination.captureBackedClass4Only = source.captureBackedClass4Only;
@@ -299,6 +295,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     std::memcpy(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes);
     std::memcpy(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes);
     std::memcpy(destination.packedBottomLineMeta.data(), source.lineMeta[1], metaBytes);
+
+#ifndef NDEBUG
+    // Physical LCD identity is carried by the buffer itself. Renderer-owner
+    // metadata must never select or exchange these planes.
+    assert(std::memcmp(destination.packedTopPlane0.data(), source.plane[0][0], pixelBytes) == 0);
+    assert(std::memcmp(destination.packedTopPlane1.data(), source.plane[0][1], pixelBytes) == 0);
+    assert(std::memcmp(destination.packedTopControl.data(), source.plane[0][2], pixelBytes) == 0);
+    assert(std::memcmp(destination.packedBottomPlane0.data(), source.plane[1][0], pixelBytes) == 0);
+    assert(std::memcmp(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes) == 0);
+    assert(std::memcmp(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes) == 0);
+#endif
 
     protectOpaqueBlack(
         destination.packedTopPlane0,
@@ -330,12 +337,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         source.screenNeedsCapture3d[1],
         destination.bottomScreenNeedsCapture3dMask.size() * sizeof(u8));
 
-    // A ScreenSwap-toggling title alternates ownership every frame. Only the
-    // last snapshot from the same ownership phase is eligible for recovery;
-    // using the immediately previous opposite phase is what swaps the screens.
+    // Top and Bottom are physical LCD identities at this boundary. Recovery
+    // always copies Top->Top and Bottom->Bottom; renderer ownership is not a
+    // key for packed 2D history.
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
-        if (source.renderer3dReferenceValid && matchingHistory.valid)
+        if (source.renderer3dReferenceValid && packedHistory.valid)
         {
             auto recoverScreenLine = [&](bool top) {
                 auto& plane0 = top ? destination.packedTopPlane0 : destination.packedBottomPlane0;
@@ -351,7 +358,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     || lineHasUsefulPixel(plane1, y)
                     || lineHasStructuredSlot(control, y);
                 if (!hasPayload)
-                    copyLine(matchingHistory.snapshot, top, y, destination);
+                    copyLine(packedHistory.snapshot, top, y, destination);
             };
             recoverScreenLine(true);
             recoverScreenLine(false);
@@ -403,8 +410,8 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     const SoftPackedFrameSnapshot* phaseSnapshot = source.captureScreenSwapValid
         ? (matchingCaptureHistoryEligible ? &matchingCaptureHistory.snapshot : nullptr)
-        : (source.renderer3dReferenceValid && matchingHistory.valid
-            ? &matchingHistory.snapshot
+        : (source.renderer3dReferenceValid && packedHistory.valid
+            ? &packedHistory.snapshot
             : nullptr);
     populateComp4Placeholder(
         destination.packedTopPlane0,
@@ -425,9 +432,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     if (source.renderer3dReferenceValid)
     {
-        matchingHistory.snapshot = destination;
-        matchingHistory.generation = source.generation;
-        matchingHistory.valid = true;
+        packedHistory.snapshot = destination;
+        packedHistory.generation = source.generation;
+        packedHistory.valid = true;
     }
     if (source.renderer3dReferenceValid
         && destination.captureScreenSwapValid

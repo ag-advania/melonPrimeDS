@@ -703,7 +703,7 @@ private:
         u64 Serial = 0;
         u64 CompletionValue = 0;
         u32 HoldCount = 0;
-        bool OwnerScreenSwap = false;
+        Renderer3DPhysicalLcd OwnerLcd = Renderer3DPhysicalLcd::Bottom;
         bool LayoutReady = false;
         bool Valid = false;
         bool CopyInProgress = false;

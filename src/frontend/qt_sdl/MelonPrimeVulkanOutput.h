@@ -70,7 +70,7 @@ struct SoftPackedFrameSnapshot
     u32 renderer3dImageSlot = 0;
     bool renderer3dReferenceValid = false;
     int frontBufferLatched = -1;
-    bool screenSwapLatched = false;
+    bool renderer3dOwnerIsTop = false;
     bool valid = false;
     bool hasCapture3dSource = false;
     bool captureScreenSwap = false;
@@ -103,7 +103,7 @@ struct SoftPackedFrameSnapshot
         renderer3dImageSlot = 0;
         renderer3dReferenceValid = false;
         frontBufferLatched = -1;
-        screenSwapLatched = false;
+        renderer3dOwnerIsTop = false;
         valid = false;
         hasCapture3dSource = false;
         captureScreenSwap = false;
@@ -136,7 +136,7 @@ struct PreparedSoftPackedFrameDebugView
     u64 renderer3dRenderSerial = 0;
     u64 renderer3dSnapshotSerial = 0;
     int frontBufferLatched = -1;
-    bool screenSwapLatched = false;
+    bool renderer3dOwnerIsTop = false;
     bool captureScreenSwap = false;
     bool captureScreenSwapValid = false;
     bool captureBackedClass4Only = false;
@@ -166,7 +166,6 @@ struct VulkanCompositionInputs
     VkDeviceSize packedBufferSize{};
     VkDeviceSize capture3dBufferSize{};
     u32 packedStride{};
-    u32 screenSwap{};
     u32 scale{};
     u32 rendererWidth{};
     u32 rendererHeight{};
@@ -174,9 +173,9 @@ struct VulkanCompositionInputs
     bool previousTopSourceValid{};
     bool previousBottomSourceValid{};
     bool capture3dSourceValid{};
-    bool capture3dSourceScreenSwapValid{};
-    bool capture3dSourceScreenSwap{};
-    bool compositionCurrentSourceScreenSwap{};
+    bool capture3dOwnerValid{};
+    bool capture3dOwnerIsTop{};
+    bool renderer3dOwnerIsTop{};
     bool class4VramStructuredPair{};
     bool class4NoAboveVramStructuredPair{};
     bool class4PreservePackedVramValid{};
@@ -266,7 +265,7 @@ public:
         VulkanFrame* frame,
         const melonDS::GPU& gpu,
         int frontBuffer,
-        bool frameScreenSwap,
+        bool frameRenderer3dOwnerIsTop,
         SoftPackedFrameSnapshot& softPackedSnapshot,
         melonDS::VulkanRenderer3D& renderer3D,
         const melonDS::VulkanCompletedFrameView& completed3DView);
@@ -306,7 +305,7 @@ public:
         const u32*& outBottomPacked,
         u32& outPackedStride,
         u32& outPackedHeight,
-        bool& outScreenSwap) const;
+        bool& outRenderer3dOwnerIsTop) const;
     bool getPreparedSoftPackedFrameDebugView(
         const VulkanFrame* frame,
         PreparedSoftPackedFrameDebugView& outView) const;
@@ -327,14 +326,13 @@ private:
         u32 rendererWidth;
         u32 rendererHeight;
         u32 packedStride;
-        u32 screenSwap;
         u32 filtering;
         u32 previousTopSourceValid;
         u32 previousBottomSourceValid;
         u32 captureSourceValid;
-        u32 captureSourceScreenSwapValid;
-        u32 captureSourceScreenSwap;
-        u32 liveSourceScreenSwap;
+        u32 capture3dOwnerValid;
+        u32 capture3dOwnerIsTop;
+        u32 renderer3dOwnerIsTop;
         u32 class4VramStructuredPair;
         u32 class4NoAboveVramStructuredPair;
         u32 class4PreservePackedVramValid;
@@ -344,6 +342,9 @@ private:
         u32 topStructuredHandoffSuppress3d;
         u32 bottomStructuredHandoffSuppress3d;
     };
+    static_assert(offsetof(CompositorPushConstants, filtering) == 6u * sizeof(u32));
+    static_assert(offsetof(CompositorPushConstants, renderer3dOwnerIsTop) == 12u * sizeof(u32));
+    static_assert(sizeof(CompositorPushConstants) == 21u * sizeof(u32));
 
     struct AccumulatePushConstants
     {
@@ -426,8 +427,8 @@ private:
         u64 submissionValue{};
         u32 width{};
         u32 height{};
-        bool screenSwap{};
-        bool screenSwapToggledFromPrevious{};
+        bool renderer3dOwnerIsTop{};
+        bool renderer3dOwnerChangedFromPrevious{};
         bool hasContent{};
         bool hasPreparedInputs{};
         bool replayTopComposedFromPrevious{};
@@ -519,8 +520,8 @@ private:
         bool bottomNeedsAccumulatedHighres,
         bool topAccumulatorAvailable,
         bool bottomAccumulatorAvailable,
-        bool packedScreenSwap,
-        bool compositionCurrentSourceScreenSwap,
+        bool packedRenderer3dOwnerIsTop,
+        bool renderer3dOwnerIsTop,
         bool hasRenderer3dSnapshot,
         bool renderer3dSnapshotScreenSwap);
     void consumeFrameGpuTiming(FrameResource& resource);
@@ -605,8 +606,8 @@ private:
     std::vector<u32> lastValidBottomPacked;
     bool lastValidTopPackedAvailable{false};
     bool lastValidBottomPackedAvailable{false};
-    bool lastPackedScreenSwapValid{false};
-    bool lastPackedScreenSwap{false};
+    bool lastRenderer3dOwnerValid{false};
+    bool lastRenderer3dOwnerIsTop{false};
     u32 framesSinceTopLive3D{1024};
     u32 framesSinceBottomLive3D{1024};
     bool class4AsymmetricCadenceActive{};

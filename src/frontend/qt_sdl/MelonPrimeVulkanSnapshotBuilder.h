@@ -23,7 +23,7 @@ struct StructuredVulkanSnapshotSource
     bool captureScreenSwapValid{};
     bool captureBackedClass4Only{};
     int frontBuffer{-1};
-    bool screenSwap{};
+    bool renderer3dOwnerIsTop{};
     u64 generation{};
     u64 renderer3dRenderSerial{};
     u64 renderer3dCompletionValue{};
@@ -48,9 +48,9 @@ private:
         bool valid{};
     };
 
-    // Two renderer-owner-only phases plus four exact
-    // (renderer owner, capture owner) phases.
-    std::array<PhaseHistory, 6> phaseHistory{};
+    // Packed Top/Bottom are already physical LCD planes. Their recovery
+    // history must not be partitioned by the unrelated 3D-owner phase.
+    PhaseHistory packedHistory{};
     std::array<PhaseHistory, 2> capturePhaseHistory{};
 };
 
