@@ -1145,11 +1145,15 @@ void MetalRenderer::VBlank()
 
             // Same-frame display-capture feedback is a known, catalogued gap
             // (Phase M4 of the full-Metal-ification plan is not done yet), so
-            // it does not trip the strict assert. Any other mid-frame
-            // rejection here is unexpected: eligibility already passed in
-            // Start3DRendering (that is why FrameActive is true), so this is
-            // a genuine within-frame regression.
-            if (!FullGpuState->BlockedByCaptureFeedback)
+            // it does not trip the strict assert. Likewise a mid-frame
+            // eligibility loss that DrawScanline already detected and
+            // sticky-blocked (BlockedByMidFrameInvalidation): that event is
+            // handled by design -- one RetainPrevious frame, then the CPU
+            // path under cooldown -- so it is a bounded scene-transition
+            // artifact, not a GPU-only contract violation. Only a rejection
+            // with NEITHER known cause is a genuine within-frame regression.
+            if (!FullGpuState->BlockedByCaptureFeedback &&
+                !FullGpuState->BlockedByMidFrameInvalidation)
             {
                 static int loggedDetailCount = 0;
                 if (loggedDetailCount < 10)

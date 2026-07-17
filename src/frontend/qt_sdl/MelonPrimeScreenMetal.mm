@@ -308,6 +308,14 @@ struct ScreenPanelMetal::Impl
 
     QImage uiOverlay;
     QImage bottomImage;
+    // MELONPRIME_METAL_UI_OVERLAY_DIRTY_RECT_V1 (mirrors the GL path's
+    // OPT-DR1 contract in MelonPrimeHudScreenCppOverlayOfGl.inc):
+    // overlayPrevPainted = region painted into uiOverlay last frame (the only
+    // region that needs CPU-side clearing this frame); uiTexContentRect =
+    // region of uiTex still holding non-transparent texels (the region a new
+    // upload must cover to erase stale content before the quad is drawn).
+    QRect overlayPrevPainted;
+    QRect uiTexContentRect;
 
     void* attachedView = nullptr; // weak NSView*, owned by Qt
     QMutex layoutMutex;
@@ -949,10 +957,38 @@ void ScreenPanelMetal::drawScreen()
         const int logicalW = std::max(1, static_cast<int>(std::ceil(static_cast<double>(w) / static_cast<double>(scale))));
         const int logicalH = std::max(1, static_cast<int>(std::ceil(static_cast<double>(h) / static_cast<double>(scale))));
         bool overlayHasContent = false;
+        QRect overlayCurPainted;
 
         if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
+        {
             m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
-        m->uiOverlay.fill(Qt::transparent);
+            // QImage's constructor leaves the pixels uninitialized; one full
+            // clear at (re)allocation replaces the previous per-frame clear.
+            m->uiOverlay.fill(Qt::transparent);
+            m->overlayPrevPainted = QRect();
+        }
+        else if (!m->overlayPrevPainted.isEmpty())
+        {
+            // Mirrors the GL path's OPT-DR1/OPT-HUD-1: only the region painted
+            // last frame can hold non-transparent pixels, so a scanline memset
+            // of that rect replaces the full-image fill (which is a multi-MB
+            // memset per frame at Retina window sizes). Premultiplied
+            // transparent is all-zero bytes, so memset(0) is exact.
+            const QRect clearRect = m->overlayPrevPainted.intersected(
+                QRect(0, 0, m->uiOverlay.width(), m->uiOverlay.height()));
+            if (!clearRect.isEmpty())
+            {
+                const std::size_t clearBytes =
+                    static_cast<std::size_t>(clearRect.width()) * 4u;
+                for (int y = clearRect.top(); y <= clearRect.bottom(); y++)
+                {
+                    std::memset(
+                        m->uiOverlay.scanLine(y) +
+                            static_cast<std::size_t>(clearRect.left()) * 4u,
+                        0, clearBytes);
+                }
+            }
+        }
 
         QPainter overlayPainter(&m->uiOverlay);
 
@@ -1004,6 +1040,7 @@ void ScreenPanelMetal::drawScreen()
                         (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
                         (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
                     overlayHasContent = overlayHasContent || !dirty.isEmpty();
+                    overlayCurPainted = overlayCurPainted.united(dirty);
                 }
             }
         }
@@ -1012,9 +1049,15 @@ void ScreenPanelMetal::drawScreen()
         if (!emuThread->emuIsActive())
         {
             osdMutex.lock();
-            overlayPainter.drawPixmap(QRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth)), splashLogo);
+            const QRect logoRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth));
+            overlayPainter.drawPixmap(logoRect, splashLogo);
+            overlayCurPainted = overlayCurPainted.united(logoRect);
             for (int i = 0; i < 3; i++)
+            {
                 overlayPainter.drawImage(splashPos[i], splashText[i].bitmap);
+                overlayCurPainted = overlayCurPainted.united(
+                    QRect(splashPos[i], splashText[i].bitmap.size()));
+            }
             osdMutex.unlock();
             overlayHasContent = true;
         }
@@ -1031,6 +1074,9 @@ void ScreenPanelMetal::drawScreen()
             {
                 OSDItem& item = *it;
                 overlayPainter.drawImage(kMetalOSDMargin, y, item.bitmap);
+                overlayCurPainted = overlayCurPainted.united(QRect(
+                    kMetalOSDMargin, static_cast<int>(y),
+                    item.bitmap.width(), item.bitmap.height()));
                 y += item.bitmap.height();
                 it++;
             }
@@ -1040,7 +1086,13 @@ void ScreenPanelMetal::drawScreen()
 
         overlayPainter.end();
 
-        if (overlayHasContent)
+        // Clamp before any texture work: an out-of-bounds replaceRegion is a
+        // Metal validation failure, not a silent no-op.
+        overlayCurPainted = overlayCurPainted.intersected(
+            QRect(0, 0, logicalW, logicalH));
+        m->overlayPrevPainted = overlayCurPainted;
+
+        if (overlayHasContent && !overlayCurPainted.isEmpty())
         {
             if (!m->loggedFirstUiOverlay)
             {
@@ -1049,6 +1101,7 @@ void ScreenPanelMetal::drawScreen()
                         logicalW, logicalH, emuThread->emuIsActive() ? 1 : 0);
             }
 
+            bool uiTexRealloc = false;
             if (m->uiTexW != logicalW || m->uiTexH != logicalH || !m->uiTex)
             {
                 MTLTextureDescriptor* uiDesc =
@@ -1061,13 +1114,32 @@ void ScreenPanelMetal::drawScreen()
                 m->uiTex = [m->device newTextureWithDescriptor:uiDesc];
                 m->uiTexW = logicalW;
                 m->uiTexH = logicalH;
+                uiTexRealloc = true;
             }
 
             if (m->uiTex)
             {
-                [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
+                // Partial upload, mirroring the GL path's OPT-DR1 contract:
+                // cover this frame's painted region plus whatever stale
+                // texels the texture still holds (the CPU image is already
+                // transparent there, so the same upload erases them). A fresh
+                // texture has undefined contents and needs one full upload.
+                QRect uploadRect = overlayCurPainted.united(
+                    m->uiTexContentRect.intersected(
+                        QRect(0, 0, logicalW, logicalH)));
+                if (uiTexRealloc)
+                    uploadRect = QRect(0, 0, logicalW, logicalH);
+                m->uiTexContentRect = overlayCurPainted;
+
+                const uchar* uploadPtr = m->uiOverlay.constBits() +
+                    static_cast<std::size_t>(uploadRect.y()) *
+                        static_cast<std::size_t>(m->uiOverlay.bytesPerLine()) +
+                    static_cast<std::size_t>(uploadRect.x()) * 4u;
+                [m->uiTex replaceRegion:MTLRegionMake2D(
+                                            uploadRect.x(), uploadRect.y(),
+                                            uploadRect.width(), uploadRect.height())
                              mipmapLevel:0
-                               withBytes:m->uiOverlay.constBits()
+                               withBytes:uploadPtr
                              bytesPerRow:m->uiOverlay.bytesPerLine()];
 
                 UiUniforms uiUniforms{};
