@@ -45,7 +45,9 @@ private:
         bool valid{};
     };
 
-    std::array<PhaseHistory, 2> phaseHistory{};
+    // Two renderer-owner-only phases plus four exact
+    // (renderer owner, capture owner) phases.
+    std::array<PhaseHistory, 6> phaseHistory{};
     std::array<PhaseHistory, 2> capturePhaseHistory{};
 };
 

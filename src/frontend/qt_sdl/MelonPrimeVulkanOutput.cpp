@@ -531,12 +531,12 @@ void MelonPrimeVulkanOutput::shutdown()
     class4BottomAboveStableFrames = 0;
     class4BottomAboveMotionActive = false;
     class4NoAboveVramStructuredActive = false;
-    lastValidCapture3dSource.fill(0);
-    lastValidCapture3dSourceLines.fill(0);
-    lastValidTopComp4Placeholder.fill(0);
-    lastValidTopComp4PlaceholderLines.fill(0);
-    lastValidBottomComp4Placeholder.fill(0);
-    lastValidBottomComp4PlaceholderLines.fill(0);
+    for (CaptureSourceHistory& history : captureHistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : topComp4HistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : bottomComp4HistoryByOwner)
+        history.clear();
     packedDebugLogsRemaining = 0;
     class4PairDebugLogsRemaining = 0;
     regularComp7PackedOwnerDebugLogsRemaining = 0;
@@ -602,12 +602,12 @@ void MelonPrimeVulkanOutput::invalidateTemporalHistory()
     lastValidBottomPackedAvailable = false;
     lastPackedScreenSwapValid = false;
     lastPackedScreenSwap = false;
-    lastValidCapture3dSource.fill(0);
-    lastValidCapture3dSourceLines.fill(0);
-    lastValidTopComp4Placeholder.fill(0);
-    lastValidTopComp4PlaceholderLines.fill(0);
-    lastValidBottomComp4Placeholder.fill(0);
-    lastValidBottomComp4PlaceholderLines.fill(0);
+    for (CaptureSourceHistory& history : captureHistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : topComp4HistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : bottomComp4HistoryByOwner)
+        history.clear();
     packedDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 48u : 0u;
     class4PairDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 240u : 0u;
     regularComp7PackedOwnerDebugLogsRemaining = areRendererDebugBgObjLogsEnabled() ? 12u : 0u;
@@ -627,12 +627,12 @@ void MelonPrimeVulkanOutput::invalidateTemporalHistory()
 
 void MelonPrimeVulkanOutput::clearStructuredCaptureHistory()
 {
-    lastValidCapture3dSource.fill(0);
-    lastValidCapture3dSourceLines.fill(0);
-    lastValidTopComp4Placeholder.fill(0);
-    lastValidTopComp4PlaceholderLines.fill(0);
-    lastValidBottomComp4Placeholder.fill(0);
-    lastValidBottomComp4PlaceholderLines.fill(0);
+    for (CaptureSourceHistory& history : captureHistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : topComp4HistoryByOwner)
+        history.clear();
+    for (CaptureSourceHistory& history : bottomComp4HistoryByOwner)
+        history.clear();
 }
 
 bool MelonPrimeVulkanOutput::createSyncObjects()
@@ -2465,9 +2465,19 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
 
     if (previousResource != nullptr)
     {
+        const bool previousCaptureOwnerMatches =
+            resource.captureScreenSwapValid
+            && previousResource->captureScreenSwapValid
+            && resource.captureScreenSwap == previousResource->captureScreenSwap;
+        const bool previousCaptureTemporalMatches = previousCaptureOwnerMatches
+            && resource.structuredGeneration != 0u
+            && previousResource->structuredGeneration != 0u
+            && previousResource->structuredGeneration <= resource.structuredGeneration
+            && previousResource->renderer3dRenderSerial <= resource.renderer3dRenderSerial;
         const bool shouldCarryPreviousCapture3d =
             previousResource->hasPreparedCapture3dSource
             && previousResource->capture3dMapped != nullptr
+            && previousCaptureTemporalMatches
             && !currentBackendIsGraphics;
         if (shouldCarryPreviousCapture3d)
         {
@@ -3820,6 +3830,15 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     bool currentFrameNeedsCapture3dSource,
     melonDS::VulkanRenderer3D& renderer3D)
 {
+    enum class CaptureLineSource : u8
+    {
+        None,
+        CurrentExact2D,
+        SameOwnerHistory,
+        SameOwnerPreviousFrame,
+        SameOwnerRendererFallback,
+    };
+
     resource.hasPreparedCapture3dSource = false;
     resource.preparedCapture3dSource.fill(0);
     resource.captureFallbackLines.fill(0);
@@ -3830,24 +3849,72 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     const bool renderer2dDebugControlsActive = areRenderer2DDebugControlsActive();
     if (renderer2dDebugControlsActive)
     {
-        lastValidCapture3dSourceLines.fill(0);
-        lastValidTopComp4PlaceholderLines.fill(0);
-        lastValidBottomComp4PlaceholderLines.fill(0);
+        for (CaptureSourceHistory& history : captureHistoryByOwner)
+            history.clear();
+        for (CaptureSourceHistory& history : topComp4HistoryByOwner)
+            history.clear();
+        for (CaptureSourceHistory& history : bottomComp4HistoryByOwner)
+            history.clear();
     }
     const bool renderer2dDebug3dBackgroundEnabled =
         !renderer2dDebugControlsActive
         || isRenderer2DDebugBackgroundKindEnabled(kRenderer2DDebugFeature3DBackground);
+    const bool captureOwnerValid = resource.captureScreenSwapValid;
+    const bool captureOwner = resource.captureScreenSwap;
+    const size_t captureOwnerIndex = captureOwner ? 1u : 0u;
+    const bool rendererFallbackCompatible =
+        !captureOwnerValid || captureOwner == resource.screenSwap;
+
+    const auto historyTemporallyEligible = [&](const CaptureSourceHistory& history) {
+        return history.valid
+            && resource.structuredGeneration != 0u
+            && history.structuredGeneration != 0u
+            && history.structuredGeneration <= resource.structuredGeneration
+            && history.rendererSerial <= resource.renderer3dRenderSerial;
+    };
+    const auto historyCanAdvance = [&](const CaptureSourceHistory& history) {
+        return captureOwnerValid
+            && resource.structuredGeneration != 0u
+            && (!history.valid
+                || (history.structuredGeneration <= resource.structuredGeneration
+                    && history.rendererSerial <= resource.renderer3dRenderSerial));
+    };
+    CaptureSourceHistory* currentCaptureHistory =
+        !renderer2dDebugControlsActive && captureOwnerValid
+        ? &captureHistoryByOwner[captureOwnerIndex]
+        : nullptr;
+    const CaptureSourceHistory* eligibleCaptureHistory =
+        currentCaptureHistory != nullptr && historyTemporallyEligible(*currentCaptureHistory)
+        ? currentCaptureHistory
+        : nullptr;
+    const CaptureSourceHistory* oppositeCaptureHistory =
+        !renderer2dDebugControlsActive && captureOwnerValid
+        ? &captureHistoryByOwner[captureOwnerIndex ^ 1u]
+        : nullptr;
+
     const u32* preparedCapture3dSource = softPackedSnapshot.hasCapture3dSource
         ? softPackedSnapshot.capture3dSourceDsFrame.data()
         : nullptr;
-    const u32* previousPreparedCapture3dSource =
-        !renderer2dDebugControlsActive && previousResource != nullptr && previousResource->hasPreparedCapture3dSource
+    const bool previousHasPreparedCapture =
+        !renderer2dDebugControlsActive
+        && previousResource != nullptr
+        && previousResource->hasPreparedCapture3dSource;
+    const bool previousCaptureOwnerMatches = previousHasPreparedCapture
+        && captureOwnerValid
+        && previousResource->captureScreenSwapValid
+        && previousResource->captureScreenSwap == captureOwner;
+    const bool previousCaptureTemporallyCompatible = previousCaptureOwnerMatches
+        && resource.structuredGeneration != 0u
+        && previousResource->structuredGeneration != 0u
+        && previousResource->structuredGeneration <= resource.structuredGeneration
+        && previousResource->renderer3dRenderSerial <= resource.renderer3dRenderSerial;
+    const u32* previousPreparedCapture3dSource = previousCaptureTemporallyCompatible
         ? (previousResource->capture3dMapped != nullptr
             ? static_cast<const u32*>(previousResource->capture3dMapped)
             : previousResource->preparedCapture3dSource.data())
         : nullptr;
     const u32* lastValidPreparedCapture3dSource =
-        renderer2dDebugControlsActive ? nullptr : lastValidCapture3dSource.data();
+        eligibleCaptureHistory != nullptr ? eligibleCaptureHistory->pixels.data() : nullptr;
     const bool topUsesCurrentRegularCapture3d =
         softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines > 0u
         || softPackedSnapshot.topScreenStats.VramCaptureUses3dLines > 0u;
@@ -3866,16 +3933,16 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         && softPackedSnapshot.topScreenStats.CaptureBackedComp4Lines == 0u;
     const u32* preferredComp4Placeholder = nullptr;
     bool preferredComp4PlaceholderIsTemporal = false;
-    u32* lastValidComp4Placeholder = nullptr;
-    u8* lastValidComp4PlaceholderLines = nullptr;
+    CaptureSourceHistory* selectedComp4History = nullptr;
     if (preferTopComp4Placeholder)
     {
         preferredComp4Placeholder = renderer2dDebug3dBackgroundEnabled
             ? softPackedSnapshot.comp4TopPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidTopComp4Placeholder.data();
-        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidTopComp4PlaceholderLines.data();
+        selectedComp4History = !renderer2dDebugControlsActive && captureOwnerValid
+            ? &topComp4HistoryByOwner[captureOwnerIndex]
+            : nullptr;
     }
     else if (preferBottomComp4Placeholder)
     {
@@ -3883,9 +3950,18 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             ? softPackedSnapshot.comp4BottomPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4Placeholder.data();
-        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4PlaceholderLines.data();
+        selectedComp4History = !renderer2dDebugControlsActive && captureOwnerValid
+            ? &bottomComp4HistoryByOwner[captureOwnerIndex]
+            : nullptr;
     }
+    const CaptureSourceHistory* eligibleComp4History =
+        selectedComp4History != nullptr && historyTemporallyEligible(*selectedComp4History)
+        ? selectedComp4History
+        : nullptr;
+    const u32* lastValidComp4Placeholder =
+        eligibleComp4History != nullptr ? eligibleComp4History->pixels.data() : nullptr;
+    const u8* lastValidComp4PlaceholderLines =
+        eligibleComp4History != nullptr ? eligibleComp4History->validLines.data() : nullptr;
     const bool renderer2dCapture3dSourceAvailable =
         renderer2dDebug3dBackgroundEnabled
         && preparedCapture3dSource != nullptr
@@ -3903,8 +3979,90 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     u32 linesFromPreviousFrame = 0;
     u32 linesFromRenderer3d = 0;
     u32 emptyLines = 0;
+    u32 crossOwnerLatchedRejected = 0;
+    u32 crossOwnerPreviousRejected = 0;
+    u32 crossOwnerRendererFallbackRejected = 0;
     bool needsRenderer3dFallback = false;
     std::array<u8, kScreenHeight> resolvedLines{};
+    std::array<CaptureLineSource, kScreenHeight> lineSources{};
+
+    const auto markLineSource = [&](int y, CaptureLineSource source, bool sourceOwnerValid, bool sourceOwner) {
+        const bool ownerMismatch = captureOwnerValid && sourceOwnerValid && captureOwner != sourceOwner;
+        assert(!ownerMismatch);
+        if (ownerMismatch)
+            return false;
+        lineSources[static_cast<size_t>(y)] = source;
+        return true;
+    };
+    const auto storeHistoryLine = [&](CaptureSourceHistory* history, const u32* pixels, int y) {
+        if (history == nullptr || pixels == nullptr || !historyCanAdvance(*history))
+            return;
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
+        std::memcpy(
+            history->pixels.data() + rowOffset,
+            pixels + rowOffset,
+            static_cast<size_t>(kScreenWidth) * sizeof(u32));
+        history->validLines[static_cast<size_t>(y)] = 1u;
+        history->structuredGeneration = resource.structuredGeneration;
+        history->rendererSerial = resource.renderer3dRenderSerial;
+        history->valid = true;
+    };
+    const auto writePackedLine = [&](const u32* pixels, int y) {
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
+        auto* capture3dMapped = static_cast<u32*>(resource.capture3dMapped);
+        if (capture3dMapped != nullptr)
+        {
+            std::memcpy(
+                capture3dMapped + rowOffset,
+                pixels + rowOffset,
+                static_cast<size_t>(kScreenWidth) * sizeof(u32));
+        }
+        for (int x = 0; x < kScreenWidth; x++)
+        {
+            const size_t index = rowOffset + static_cast<size_t>(x);
+            resource.preparedCapture3dSource[index] = expandPackedColor6ToRgba8(pixels[index]);
+        }
+    };
+    const auto storeHistoryRow = [&](CaptureSourceHistory* history, const u32* row, int y) {
+        if (history == nullptr || row == nullptr || !historyCanAdvance(*history))
+            return;
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
+        std::memcpy(
+            history->pixels.data() + rowOffset,
+            row,
+            static_cast<size_t>(kScreenWidth) * sizeof(u32));
+        history->validLines[static_cast<size_t>(y)] = 1u;
+        history->structuredGeneration = resource.structuredGeneration;
+        history->rendererSerial = resource.renderer3dRenderSerial;
+        history->valid = true;
+    };
+    const auto writePackedRow = [&](const u32* row, int y) {
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
+        auto* mapped = static_cast<u32*>(resource.capture3dMapped);
+        if (mapped != nullptr)
+        {
+            std::memcpy(
+                mapped + rowOffset,
+                row,
+                static_cast<size_t>(kScreenWidth) * sizeof(u32));
+        }
+        for (int x = 0; x < kScreenWidth; x++)
+        {
+            resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
+                expandPackedColor6ToRgba8(row[x]);
+        }
+    };
+    const auto lineUsesCapture3d = [&](int y) {
+        const size_t lineIndex = static_cast<size_t>(y);
+        if (captureOwnerValid)
+        {
+            return captureOwner
+                ? softPackedSnapshot.topScreenNeedsCapture3dMask[lineIndex] != 0u
+                : softPackedSnapshot.bottomScreenNeedsCapture3dMask[lineIndex] != 0u;
+        }
+        return softPackedSnapshot.topScreenNeedsCapture3dMask[lineIndex] != 0u
+            || softPackedSnapshot.bottomScreenNeedsCapture3dMask[lineIndex] != 0u;
+    };
 
     auto* capture3dMapped = static_cast<u32*>(resource.capture3dMapped);
     for (int y = 0; y < kScreenHeight; y++)
@@ -3926,56 +4084,26 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             && softPackedSnapshot.capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u;
         const bool lineHasPixels = lineSourceValid;
         const bool latchedLineHasPixels =
-            !renderer2dDebugControlsActive
-            && lastValidCapture3dSourceLines[static_cast<size_t>(y)] != 0u
+            eligibleCaptureHistory != nullptr
+            && eligibleCaptureHistory->validLines[static_cast<size_t>(y)] != 0u
             && capture3dSourceLineHasAnyUsefulPixel(lastValidPreparedCapture3dSource, y);
+        const bool oppositeLatchedLineRejected = oppositeCaptureHistory != nullptr
+            && oppositeCaptureHistory->valid
+            && oppositeCaptureHistory->validLines[static_cast<size_t>(y)] != 0u
+            && capture3dSourceLineHasAnyUsefulPixel(oppositeCaptureHistory->pixels.data(), y);
         const bool previousLineHasPixels = previousPreparedCapture3dSource != nullptr
             && previousResource != nullptr
             && (previousResource->capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u
                 || previousResource->captureFallbackLines[static_cast<size_t>(y)] != 0u);
-        const bool lineUses3d =
-            softPackedSnapshot.topScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u
-            || softPackedSnapshot.bottomScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u;
+        const bool rejectedPreviousLine = previousHasPreparedCapture
+            && !previousCaptureOwnerMatches
+            && (previousResource->capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u
+                || previousResource->captureFallbackLines[static_cast<size_t>(y)] != 0u);
+        const bool lineUses3d = lineUsesCapture3d(y);
         const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
         if (acceptPreferredComp4Line)
         {
-            if (capture3dMapped != nullptr)
-            {
-                if (lineHasPixels)
-                {
-                    for (int x = 0; x < kScreenWidth; x++)
-                    {
-                        const size_t index = rowOffset + static_cast<size_t>(x);
-                        u32 preferredPixel = preferredComp4Placeholder[index];
-                        if (preferredComp4PlaceholderIsTemporal
-                            && capture3dSourcePixelIsOpaqueBlack(preferredPixel)
-                            && latchedLineHasPixels
-                            && capture3dSourcePixelIsNonBlackUseful(lastValidPreparedCapture3dSource[index]))
-                        {
-                            preferredPixel = lastValidPreparedCapture3dSource[index];
-                        }
-                        capture3dMapped[index] = capture3dSourcePixelIsUseful(preferredPixel)
-                            ? preferredPixel
-                            : preparedCapture3dSource[index];
-                    }
-                }
-                else
-                {
-                    for (int x = 0; x < kScreenWidth; x++)
-                    {
-                        const size_t index = rowOffset + static_cast<size_t>(x);
-                        u32 preferredPixel = preferredComp4Placeholder[index];
-                        if (preferredComp4PlaceholderIsTemporal
-                            && capture3dSourcePixelIsOpaqueBlack(preferredPixel)
-                            && latchedLineHasPixels
-                            && capture3dSourcePixelIsNonBlackUseful(lastValidPreparedCapture3dSource[index]))
-                        {
-                            preferredPixel = lastValidPreparedCapture3dSource[index];
-                        }
-                        capture3dMapped[index] = preferredPixel;
-                    }
-                }
-            }
+            std::array<u32, kScreenWidth> mergedLine{};
             for (int x = 0; x < kScreenWidth; x++)
             {
                 const size_t index = rowOffset + static_cast<size_t>(x);
@@ -3987,31 +4115,29 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                 {
                     preferredPixel = lastValidPreparedCapture3dSource[index];
                 }
-                const u32 pixel = lineHasPixels && !capture3dSourcePixelIsUseful(preferredPixel)
+                mergedLine[static_cast<size_t>(x)] = lineHasPixels
+                    && !capture3dSourcePixelIsUseful(preferredPixel)
                     ? preparedCapture3dSource[index]
                     : preferredPixel;
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(pixel);
             }
-            if (lastValidComp4Placeholder != nullptr && lastValidComp4PlaceholderLines != nullptr)
+            if (capture3dMapped != nullptr)
             {
-                for (int x = 0; x < kScreenWidth; x++)
-                {
-                    const size_t index = rowOffset + static_cast<size_t>(x);
-                    u32 preferredPixel = preferredComp4Placeholder[index];
-                    if (preferredComp4PlaceholderIsTemporal
-                        && capture3dSourcePixelIsOpaqueBlack(preferredPixel)
-                        && latchedLineHasPixels
-                        && capture3dSourcePixelIsNonBlackUseful(lastValidPreparedCapture3dSource[index]))
-                    {
-                        preferredPixel = lastValidPreparedCapture3dSource[index];
-                    }
-                    lastValidComp4Placeholder[index] = preferredPixel;
-                }
-                lastValidComp4PlaceholderLines[static_cast<size_t>(y)] = 1u;
+                std::memcpy(
+                    capture3dMapped + rowOffset,
+                    mergedLine.data(),
+                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
             }
+            for (int x = 0; x < kScreenWidth; x++)
+            {
+                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
+                    expandPackedColor6ToRgba8(mergedLine[static_cast<size_t>(x)]);
+            }
+            storeHistoryRow(selectedComp4History, mergedLine.data(), y);
+            if (lineHasPixels)
+                storeHistoryLine(currentCaptureHistory, preparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(y, CaptureLineSource::CurrentExact2D, captureOwnerValid, captureOwner);
             if (preferredComp4PlaceholderIsTemporal)
                 linesFromPreviousFrame++;
             else
@@ -4021,133 +4147,95 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
 
         if (latchedComp4LineHasPixels)
         {
-            if (capture3dMapped != nullptr)
-            {
-                if (lineHasPixels)
-                {
-                    for (int x = 0; x < kScreenWidth; x++)
-                    {
-                        const size_t index = rowOffset + static_cast<size_t>(x);
-                        const u32 latchedPixel = lastValidComp4Placeholder[index];
-                        capture3dMapped[index] = capture3dSourcePixelIsUseful(latchedPixel)
-                            ? latchedPixel
-                            : preparedCapture3dSource[index];
-                    }
-                }
-                else
-                {
-                    std::memcpy(
-                        capture3dMapped + rowOffset,
-                        lastValidComp4Placeholder + rowOffset,
-                        static_cast<size_t>(kScreenWidth) * sizeof(u32));
-                }
-            }
+            std::array<u32, kScreenWidth> mergedLine{};
             for (int x = 0; x < kScreenWidth; x++)
             {
                 const size_t index = rowOffset + static_cast<size_t>(x);
                 const u32 latchedPixel = lastValidComp4Placeholder[index];
-                const u32 pixel = lineHasPixels && !capture3dSourcePixelIsUseful(latchedPixel)
+                mergedLine[static_cast<size_t>(x)] = lineHasPixels
+                    && !capture3dSourcePixelIsUseful(latchedPixel)
                     ? preparedCapture3dSource[index]
                     : latchedPixel;
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(pixel);
             }
+            if (capture3dMapped != nullptr)
+            {
+                std::memcpy(
+                    capture3dMapped + rowOffset,
+                    mergedLine.data(),
+                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
+            }
+            for (int x = 0; x < kScreenWidth; x++)
+                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
+                    expandPackedColor6ToRgba8(mergedLine[static_cast<size_t>(x)]);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(y, CaptureLineSource::SameOwnerHistory, captureOwnerValid, captureOwner);
             linesFromLatchedValid++;
             continue;
         }
 
         if (lineHasPixels)
         {
-            if (capture3dMapped != nullptr)
-            {
-                std::memcpy(
-                    capture3dMapped + rowOffset,
-                    preparedCapture3dSource + rowOffset,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-            }
-            for (int x = 0; x < kScreenWidth; x++)
-            {
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(preparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
-            }
-            if (!renderer2dDebugControlsActive)
-            {
-                std::memcpy(
-                    lastValidCapture3dSource.data() + rowOffset,
-                    preparedCapture3dSource + rowOffset,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-                lastValidCapture3dSourceLines[static_cast<size_t>(y)] = 1u;
-            }
+            writePackedLine(preparedCapture3dSource, y);
+            storeHistoryLine(currentCaptureHistory, preparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(y, CaptureLineSource::CurrentExact2D, captureOwnerValid, captureOwner);
             linesFromRenderer2d++;
             continue;
         }
 
         if (latchedLineHasPixels)
         {
-            if (capture3dMapped != nullptr)
-            {
-                std::memcpy(
-                    capture3dMapped + rowOffset,
-                    lastValidPreparedCapture3dSource + rowOffset,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-            }
-            for (int x = 0; x < kScreenWidth; x++)
-            {
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(lastValidPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
-            }
+            writePackedLine(lastValidPreparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(y, CaptureLineSource::SameOwnerHistory, captureOwnerValid, captureOwner);
             linesFromLatchedValid++;
             continue;
         }
 
+        if (oppositeLatchedLineRejected)
+            crossOwnerLatchedRejected++;
+        if (rejectedPreviousLine)
+            crossOwnerPreviousRejected++;
+
         if (currentBackendIsGraphics && lineUses3d && previousLineHasPixels)
         {
-            if (capture3dMapped != nullptr)
-            {
-                std::memcpy(
-                    capture3dMapped + rowOffset,
-                    previousPreparedCapture3dSource + rowOffset,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-            }
-            for (int x = 0; x < kScreenWidth; x++)
-            {
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(previousPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
-            }
+            writePackedLine(previousPreparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(
+                y,
+                CaptureLineSource::SameOwnerPreviousFrame,
+                previousResource->captureScreenSwapValid,
+                previousResource->captureScreenSwap);
             linesFromPreviousFrame++;
             continue;
         }
 
         if (currentBackendIsGraphics && lineUses3d)
         {
-            needsRenderer3dFallback = true;
+            if (rendererFallbackCompatible)
+                needsRenderer3dFallback = true;
+            else
+            {
+                crossOwnerRendererFallbackRejected++;
+                emptyLines++;
+            }
             continue;
         }
 
         if (previousLineHasPixels)
         {
-            if (capture3dMapped != nullptr)
-            {
-                std::memcpy(
-                    capture3dMapped + rowOffset,
-                    previousPreparedCapture3dSource + rowOffset,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-            }
-            for (int x = 0; x < kScreenWidth; x++)
-            {
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] =
-                    expandPackedColor6ToRgba8(previousPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
-            }
+            writePackedLine(previousPreparedCapture3dSource, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
+            markLineSource(
+                y,
+                CaptureLineSource::SameOwnerPreviousFrame,
+                previousResource->captureScreenSwapValid,
+                previousResource->captureScreenSwap);
             linesFromPreviousFrame++;
             continue;
         }
@@ -4155,16 +4243,17 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         emptyLines++;
     }
 
-    if (currentBackendIsGraphics && currentFrameNeedsCapture3dSource && (needsRenderer3dFallback || !renderer2dCapture3dSourceAvailable))
+    if (currentBackendIsGraphics
+        && currentFrameNeedsCapture3dSource
+        && rendererFallbackCompatible
+        && (needsRenderer3dFallback || !renderer2dCapture3dSourceAvailable))
     {
         renderer3D.PrepareCaptureFrame();
         for (int y = 0; y < kScreenHeight; y++)
         {
             const bool renderer2dLineHasPixels = preparedCapture3dSource != nullptr
                 && softPackedSnapshot.capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u;
-            const bool lineUses3d =
-                softPackedSnapshot.topScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u
-                || softPackedSnapshot.bottomScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u;
+            const bool lineUses3d = lineUsesCapture3d(y);
             if (resolvedLines[static_cast<size_t>(y)] != 0u)
                 continue;
             if (renderer2dLineHasPixels)
@@ -4176,29 +4265,54 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             if (line == nullptr)
                 return false;
 
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
-            if (capture3dMapped != nullptr)
-                std::memcpy(capture3dMapped + rowOffset, line, static_cast<size_t>(kScreenWidth) * sizeof(u32));
-
-            for (int x = 0; x < kScreenWidth; x++)
-                resource.preparedCapture3dSource[rowOffset + static_cast<size_t>(x)] = expandPackedColor6ToRgba8(line[x]);
-            if (!renderer2dDebugControlsActive)
-            {
-                std::memcpy(
-                    lastValidCapture3dSource.data() + rowOffset,
-                    line,
-                    static_cast<size_t>(kScreenWidth) * sizeof(u32));
-                lastValidCapture3dSourceLines[static_cast<size_t>(y)] = 1u;
-            }
+            writePackedRow(line, y);
+            storeHistoryRow(currentCaptureHistory, line, y);
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.captureFallbackLines[static_cast<size_t>(y)] = 1u;
             resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             softPackedSnapshot.captureFallbackLines[static_cast<size_t>(y)] = 1u;
+            markLineSource(
+                y,
+                CaptureLineSource::SameOwnerRendererFallback,
+                true,
+                resource.screenSwap);
             linesFromRenderer3d++;
         }
     }
 
     resource.hasPreparedCapture3dSource = (linesFromRenderer2d + linesFromLatchedValid + linesFromPreviousFrame + linesFromRenderer3d) > 0u;
+    const u32 unresolvedProvenanceLines = static_cast<u32>(std::count(
+        lineSources.begin(),
+        lineSources.end(),
+        CaptureLineSource::None));
+    if (vulkan2dTraceEnabled())
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "VulkanCaptureTrace generation=%llu rendererSerial=%llu captureOwnerValid=%u captureOwner=%u previousOwnerValid=%u previousOwner=%u previousOwnerMatches=%u previousTemporalMatches=%u lastValidOwnerValid=%u lastValidOwner=%u lastValidOwnerMatches=%u rendererTargetOwner=%u rendererFallbackCompatible=%u renderer2dLines=%u latchedLines=%u previousLines=%u renderer3dLines=%u emptyLines=%u unresolvedProvenance=%u crossOwnerLatchedRejected=%u crossOwnerPreviousRejected=%u crossOwnerRendererFallbackRejected=%u",
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            static_cast<unsigned long long>(resource.renderer3dRenderSerial),
+            captureOwnerValid ? 1u : 0u,
+            captureOwner ? 1u : 0u,
+            previousResource != nullptr && previousResource->captureScreenSwapValid ? 1u : 0u,
+            previousResource != nullptr && previousResource->captureScreenSwap ? 1u : 0u,
+            previousCaptureOwnerMatches ? 1u : 0u,
+            previousCaptureTemporallyCompatible ? 1u : 0u,
+            eligibleCaptureHistory != nullptr ? 1u : 0u,
+            captureOwner ? 1u : 0u,
+            eligibleCaptureHistory != nullptr ? 1u : 0u,
+            resource.screenSwap ? 1u : 0u,
+            rendererFallbackCompatible ? 1u : 0u,
+            linesFromRenderer2d,
+            linesFromLatchedValid,
+            linesFromPreviousFrame,
+            linesFromRenderer3d,
+            emptyLines,
+            unresolvedProvenanceLines,
+            crossOwnerLatchedRejected,
+            crossOwnerPreviousRejected,
+            crossOwnerRendererFallbackRejected);
+    }
     if (areRendererDebugBgObjLogsEnabled() && packedDebugLogsRemaining > 0)
     {
         const auto* capture3dSource = capture3dMapped != nullptr

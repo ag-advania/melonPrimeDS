@@ -440,6 +440,24 @@ private:
         std::array<u32, 256 * 192> preparedCapture3dSource{};
     };
 
+    struct CaptureSourceHistory
+    {
+        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> pixels{};
+        std::array<u8, SoftPackedFrameSnapshot::kLineCount> validLines{};
+        u64 structuredGeneration{};
+        u64 rendererSerial{};
+        bool valid{};
+
+        void clear() noexcept
+        {
+            pixels.fill(0);
+            validLines.fill(0);
+            structuredGeneration = 0;
+            rendererSerial = 0;
+            valid = false;
+        }
+    };
+
 private:
     bool createSyncObjects();
     bool createCommandObjects();
@@ -584,12 +602,9 @@ private:
     u32 class4BottomAboveStableFrames{};
     bool class4BottomAboveMotionActive{};
     bool class4NoAboveVramStructuredActive{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidCapture3dSource{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidCapture3dSourceLines{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidTopComp4Placeholder{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidTopComp4PlaceholderLines{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidBottomComp4Placeholder{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidBottomComp4PlaceholderLines{};
+    std::array<CaptureSourceHistory, 2> captureHistoryByOwner{};
+    std::array<CaptureSourceHistory, 2> topComp4HistoryByOwner{};
+    std::array<CaptureSourceHistory, 2> bottomComp4HistoryByOwner{};
     u32 packedDebugLogsRemaining{};
     u32 class4PairDebugLogsRemaining{};
     u32 regularComp7PackedOwnerDebugLogsRemaining{};
