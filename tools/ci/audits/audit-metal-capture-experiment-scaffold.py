@@ -60,17 +60,38 @@ def main() -> int:
                         "must not construct presenter output"
                     )
 
+        # PR-7: MetalRenderer no longer inherits SoftRenderer, so this
+        # scaffold must not read SoftRenderer's Output2D/Output3D anymore.
+        for i, line in live_lines(exp):
+            if re.search(r"\bOutput2D\b|\bOutput3D\b", line):
+                issues.append(
+                    f"GPU_MetalCaptureExperiment.inc:{i}: "
+                    "live SoftRenderer Output2D/Output3D reference (PR-7 flip)"
+                )
+
     header = HEADER.read_text(encoding="utf-8")
-    if "class MetalRenderer : public SoftRenderer" not in header:
-        issues.append("MetalRenderer SoftRenderer inheritance removed")
+    if "class MetalRenderer : public SoftRenderer" in header:
+        issues.append("MetalRenderer SoftRenderer inheritance must be gone (PR-7 flip)")
     if "MetalCaptureExperimentState" not in header:
         issues.append("GPU_Metal.h missing MetalCaptureExperimentState")
 
     full_gpu = FULL_GPU.read_text(encoding="utf-8")
     if "if (GPU.CaptureCnt & (1u << 31))" in full_gpu:
         issues.append("CaptureCnt Soft gate must stay removed after cutover")
-    if "MetalCaptureExperimentRecordLine" not in full_gpu:
-        issues.append("DrawScanline Soft path missing experiment record hook")
+    # PR-7: DrawScanline's Soft path (and its experiment record hook) is
+    # gone along with SoftRenderer inheritance -- the hook must not be
+    # live-called from here anymore (MetalCaptureExperimentRecordLine still
+    # exists as a function in GPU_MetalCaptureExperiment.inc, just unused).
+    for i, line in live_lines(full_gpu):
+        if "MetalCaptureExperimentRecordLine" in line:
+            issues.append(
+                f"GPU_MetalFullGpuMethods.inc:{i}: DrawScanline must not call "
+                "MetalCaptureExperimentRecordLine (Soft hook removed, PR-7)"
+            )
+        if "SoftRenderer::" in line:
+            issues.append(
+                f"GPU_MetalFullGpuMethods.inc:{i}: live SoftRenderer:: call (PR-7 flip)"
+            )
 
     mm = MM.read_text(encoding="utf-8")
     if "GPU_MetalCaptureExperiment.inc" not in mm:

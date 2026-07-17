@@ -33,8 +33,23 @@ def main() -> int:
         issues.append("must not always Soft-escape after Full-GPU rejection")
 
     header = (ROOT / "src/GPU_Metal.h").read_text(encoding="utf-8")
-    if "class MetalRenderer : public SoftRenderer" not in header:
-        issues.append("SoftRenderer inheritance must remain until PR-7")
+    if "class MetalRenderer : public SoftRenderer" in header:
+        issues.append("SoftRenderer inheritance must be gone (PR-7 flip)")
+
+    # PR-7: MetalRenderer must not call into SoftRenderer at all anymore.
+    for relpath in (
+        "src/GPU_Metal.h",
+        "src/GPU_Metal.mm",
+        "src/GPU_MetalFullGpuMethods.inc",
+        "src/GPU_MetalCaptureExperiment.inc",
+    ):
+        path = ROOT / relpath
+        text = path.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith("//"):
+                continue
+            if "SoftRenderer::" in line:
+                issues.append(f"{relpath}:{i}: live SoftRenderer:: call (PR-7 flip)")
 
     if issues:
         print("FAIL: metal capture full-gpu cutover audit")

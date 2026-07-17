@@ -78,8 +78,10 @@ def main() -> int:
         body = "\n".join(body_lines)
         if "MetalTexture" in body:
             issues.append("GetOutput live body returns/constructs MetalTexture")
-        if "SoftRenderer::GetOutput" not in body:
-            issues.append("GetOutput must fall back to SoftRenderer::GetOutput")
+        # PR-7: MetalRenderer no longer inherits SoftRenderer -- GetOutput()
+        # must not fall back to it anymore (empty/None output instead).
+        if "SoftRenderer" in body:
+            issues.append("GetOutput must not reference SoftRenderer (PR-7 flip)")
 
     # Every non-helper OutputState use should go through Load/Exchange/Store.
     # Helper implementations themselves may touch &OutputState.

@@ -10,11 +10,10 @@
 
 #include "GPU3D.h"
 #include "GPU3D_Soft.h"
+#include "GPU_MetalHost.h"
 
 namespace melonDS
 {
-
-class SoftRenderer;
 
 struct Metal3DDiagnostics
 {
@@ -32,7 +31,7 @@ struct Metal3DDiagnostics
 class MetalRenderer3D final : public Renderer3D
 {
 public:
-    MetalRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;
+    MetalRenderer3D(melonDS::GPU3D& gpu3D, MetalRendererHost& parent) noexcept;
     ~MetalRenderer3D() override;
 
     bool Init() override;

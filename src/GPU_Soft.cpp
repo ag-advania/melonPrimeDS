@@ -35,7 +35,7 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
 
     Rend2D_A = std::make_unique<SoftRenderer2D>(GPU.GPU2D_A, *this);
     Rend2D_B = std::make_unique<SoftRenderer2D>(GPU.GPU2D_B, *this);
-    Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D, *this);
+    Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D);
 }
 
 SoftRenderer::~SoftRenderer()

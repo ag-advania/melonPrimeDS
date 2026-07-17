@@ -12,7 +12,7 @@
 | PR-4 | per-scanline／segment capture | **完了（部分）** | （本コミット） | segment loop + ping-pong + CaptureWriteTicket。実ROM same-frame feedback はユーザー検証前提 |
 | PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
 | PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
-| PR-7 | SoftRenderer 継承撤廃 | **準備のみ（ブロック）** | （本コミット） | dependency map 作成。§13.1 により M4/M5 実機受け入れ前は継承 flip しない |
+| PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer : public Renderer, public MetalRendererHost` へ flip。GPU_Metal* の `SoftRenderer::` 呼び出しは 0。§13.1 の実機受け入れ gate は明示的指示により先行実施（ビルド／audit のみ検証、実ROM未実施） |
 | PR-8 | Compute RasterReference 撤廃 | 未着手 | — | PR-7 後 |
 | PR-9 | presenter MetalTexture-only | 未着手 | — | PR-7 後 |
 | PR-10 | radar native Metal | 未着手 | — | |
@@ -94,10 +94,32 @@
 
 ## PR-7 要約（2026-07-17）
 
-準備のみ:
+変更:
 
-- SoftRenderer 依存マップを `docs/plans/evidence/pr7-softrenderer-dependency-map-2026-07-17.md` に固定
-- §13.1 により継承 flip は M4/M5 実機受け入れ後
+- `GPU_MetalHost.h` 新規追加（`MetalRendererHost`: 仮想デストラクタのみの最小ホスト interface）
+- `MetalRenderer : public SoftRenderer` → `class MetalRenderer : public Renderer, public MetalRendererHost`
+- ctor: `SoftRenderer(nds)` → `Renderer(nds.GPU)`。`Reset()`／`Stop()`／`GetFramebuffers()`（常に `false`）を新規実装
+- `MetalRenderer3D` / `MetalComputeRenderer3D` ctor: `SoftRenderer&` → `MetalRendererHost&`
+- `SoftRenderer3D` の未使用 `SoftRenderer& Parent` を削除（ctor は `GPU3D&` のみ）。Soft 側 `Rend3D` 生成も追従
+- `GPU_MetalFullGpuMethods.inc`: 非 FrameActive の `DrawScanline`／`DrawSprites`／`VBlankEnd` は Soft 呼び出しなしの no-op（§11.4: Soft への無言 mid-frame escape 禁止、presenter は RetainPrevious）
+- `GPU_Metal.mm`: `VBlank`／`GetOutput`／`AcquireOutputLease` から `SoftRenderer::` 呼び出しを全撤廃。フォールバックは CpuBgra ではなく空／None output（presenter は既存の RetainPrevious 経路でそのまま last-known-good texture を保持）
+- `ComposeMetalVisibleOutput` は Soft CPU composite 取得ではなく自前の `GetFramebuffers()`（常に false）を参照する恒常 no-op に変更（Full-GPU compose のみが実質パス）
+- `GPU_MetalCaptureExperiment.inc`: `Output2D`/`Output3D` 参照を削除（source A は zero-fill。hook 呼び出し元が無くなったため実質常に unreachable）
+- audit 更新: `audit-metal-capture-fullgpu-cutover.py`／`audit-metal-capture-experiment-scaffold.py`／`audit-metal-output-state-publication.py` を「継承なし」「`SoftRenderer::` 呼び出し 0」を要求する方向に反転
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF）PASS
+- `cmake --build build-mac-metal-force-disabled -j8` PASS
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 5/5 PASS
+
+未実施（§13.1 の元の gate。今回は明示的なユーザー指示によりビルド／audit 検証のみで先行実施）:
+
+- 実ROM／実機での目視・スクリーンショット検証
+- `normalReadbackBytes == 0` 6000 frame strict counter
+- capture Full-GPU strict counters green
+- TSan／Windows／Linux rebuild
 
 ## PR-15 要約（2026-07-17）
 

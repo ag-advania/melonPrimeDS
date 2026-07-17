@@ -471,7 +471,7 @@ struct MetalRenderer::MetalOutputState
 #include "GPU_MetalSegmentScheduler.inc"
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
-    : SoftRenderer(nds)
+    : Renderer(nds.GPU)
 {
     ComputeRendererSelected = useComputeRenderer;
     Metal2D_A = std::make_unique<MetalRenderer2D>(GPU.GPU2D_A);
@@ -492,6 +492,36 @@ MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcep
 }
 
 MetalRenderer::~MetalRenderer() = default;
+
+void MetalRenderer::Reset()
+{
+    // MELONPRIME_METAL_HOST_V1 (PR-7): SoftRenderer::Reset() used to also
+    // memset SoftRenderer's own CPU Framebuffer[][] arrays; Metal never had
+    // those (Rend2D_A/Rend2D_B stay null -- Metal2D_A/Metal2D_B are the
+    // Metal-native equivalents), so only the 3D renderer needs resetting.
+    if (Rend3D)
+        Rend3D->Reset();
+}
+
+void MetalRenderer::Stop()
+{
+    // SoftRenderer::Stop() cleared its CPU framebuffers to black; Metal has
+    // no CPU framebuffers to clear (GetFramebuffers() always returns false
+    // below). The presenter already blanks the screen itself once
+    // emulation is no longer active.
+}
+
+bool MetalRenderer::GetFramebuffers(void** top, void** bottom)
+{
+    // MELONPRIME_METAL_HOST_V1 (PR-7): Metal never produces a CPU BGRA
+    // composite anymore (that was SoftRenderer's job). Visible output is a
+    // MetalTexture obtained through AcquireOutputLease(); callers that
+    // still expect a CPU framebuffer (HUD overlay, GetOutput() fallback)
+    // must treat "false" as "no CPU buffers available this frame".
+    if (top) *top = nullptr;
+    if (bottom) *bottom = nullptr;
+    return false;
+}
 
 bool MetalRenderer::Init()
 {
@@ -912,9 +942,15 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         if (!early || !early->Ready)
             return;
 
+        // MELONPRIME_METAL_HOST_V1 (PR-7): there is no SoftRenderer CPU
+        // composite to upload anymore -- GetFramebuffers() always returns
+        // false now, so this CPU-composite visible-output path is
+        // permanently a no-op. ComposeMetalFullGpuOutput() is the only live
+        // compose path; this is kept only as inert scaffolding rather than
+        // deleting the shared MetalOutputState slot machinery it uses.
         void* top = nullptr;
         void* bottom = nullptr;
-        if (!SoftRenderer::GetFramebuffers(&top, &bottom) || !top || !bottom)
+        if (!GetFramebuffers(&top, &bottom) || !top || !bottom)
             return;
 
         id<MTLTexture> liveHigh3D =
@@ -1231,7 +1267,8 @@ void MetalRenderer::VBlank()
                     "known display-capture feedback, despite eligibility having "
                     "passed in Start3DRendering");
                 // MELONPRIME_METAL_VBLANK_REJECTION_COOLDOWN_V1: next frames
-                // become Soft at eligibility (not a mid-frame Soft escape).
+                // fail eligibility up-front (RetainPrevious), not a
+                // mid-frame Soft escape -- there is no Soft to escape to.
                 FullGpuState->BlockedByMidFrameInvalidation = true;
                 FullGpuState->MidFrameInvalidationCooldownFrames =
                     kMidFrameInvalidationCooldownFrames;
@@ -1244,11 +1281,17 @@ void MetalRenderer::VBlank()
         return;
     }
 
-    SoftRenderer::VBlank();
+    // MELONPRIME_METAL_HOST_V1 (PR-7): MetalRenderer no longer inherits
+    // SoftRenderer, and plan §11.4 forbids a silent Soft mid-frame escape.
+    // This frame was never Full-GPU eligible (Start3DRendering already
+    // decided that), so there is nothing new to compose -- leave the
+    // previously published output in place (presenter RetainPrevious)
+    // instead of drawing anything.
     UploadCpuCompletedCaptures();
-    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: compare Soft CPU reference
-    // against the side-channel Metal candidate. Never publishes candidate
-    // textures into the presenter lease path.
+    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: permanently a no-op now --
+    // its only trigger (the Soft DrawScanline hook) is gone along with
+    // SoftRenderer -- kept wired in case a future non-Soft source replaces
+    // it. Never publishes candidate textures into the presenter lease path.
     FinishMetalCaptureExperimentFrame();
 
     if (FullGpuState)
@@ -1256,8 +1299,8 @@ void MetalRenderer::VBlank()
         FullGpuState->CompletedScreenSwap = FullGpuState->ScreenSwap;
         FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
         FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
-        FullGpuState->Completed = MetalFullGpuState::CpuComposite;
-        MetalFullGpuFrameStatsRecord(FullGpuState->FrameStats, false, true, false, false);
+        FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
+        MetalFullGpuFrameStatsRecord(FullGpuState->FrameStats, false, false, true, false);
     }
     MetalReadbackStatsNoteFrame();
 }
@@ -1346,31 +1389,26 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
     }
 
     // No published MetalTexture slot yet (startup, capture fallback, all
-    // slots busy, compose not Ready). Hand out CpuBgra with an explicit
-    // reason so the presenter/diagnostics can count fallbacks without
-    // treating them as an unlabeled SoftRenderer path.
-    const RendererOutput soft = SoftRenderer::GetOutput();
-    if (soft.Kind == RendererOutputKind::CpuBgra)
-    {
-        return RendererOutputLease(
-            RendererOutput::CpuBgra(
-                soft.Top,
-                soft.Bottom,
-                RendererOutputFallbackReason::ResourceUnavailable),
-            nullptr,
-            nullptr);
-    }
-    return RendererOutputLease(soft, nullptr, nullptr);
+    // slots busy, compose not Ready). MELONPRIME_METAL_HOST_V1 (PR-7)
+    // removes the SoftRenderer CPU-composite fallback entirely -- hand back
+    // an empty/None lease so the presenter retains its last known-good
+    // Metal texture (RetainPrevious) instead of presenting a stale or
+    // uninitialized SoftRenderer CpuBgra buffer. PR-9 owns any further
+    // presenter-side cleanup of this fallback path.
+    return RendererOutputLease({}, nullptr, nullptr);
 }
 
 RendererOutput MetalRenderer::GetOutput()
 {
     // MELONPRIME_METAL_GETOUTPUT_NO_RAW_LEASE_V1: Metal final textures live in
     // a ring slot that must be held via AcquireOutputLease(). Returning a raw
-    // MetalTexture here would race slot reuse / OutputState swap. Screen.cpp
-    // still calls GetRendererOutput() for non-Metal presenters; for Metal,
-    // fall back to SoftRenderer CpuBgra (lease consumers use Acquire*).
-    return SoftRenderer::GetOutput();
+    // MetalTexture here would race slot reuse / OutputState swap.
+    // MELONPRIME_METAL_HOST_V1 (PR-7): there is no SoftRenderer CPU
+    // composite to fall back to anymore -- GetFramebuffers() always
+    // returns false, so this returns an empty/None output. Screen.cpp still
+    // calls GetRendererOutput() for non-Metal presenters; Metal consumers
+    // use Acquire*OutputLease() instead.
+    return {};
 }
 
 } // namespace melonDS

@@ -957,11 +957,15 @@ fragment float4 mp3d_resolve_fs(
 }
 )";
 
-MetalRenderer3D::MetalRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept
+MetalRenderer3D::MetalRenderer3D(melonDS::GPU3D& gpu3D, MetalRendererHost& parent) noexcept
     : Renderer3D(gpu3D),
-      Delegate(gpu3D, parent),
+      Delegate(gpu3D),
       State(std::make_unique<MetalState>())
 {
+    // MELONPRIME_METAL_HOST_V1 (PR-7): parent is unused today (Delegate no
+    // longer needs a SoftRenderer&); kept as a constructor parameter so a
+    // future PR can wire host callbacks without another signature change.
+    (void)parent;
 }
 
 MetalRenderer3D::~MetalRenderer3D() = default;

@@ -332,12 +332,10 @@ void MetalRenderer::DrawScanline(u32 line)
         return;
     }
 
-    SoftRenderer::DrawScanline(line);
-    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: SoftRenderer remains display
-    // authority. When the experiment flag is on, also record this capture
-    // line for a side-channel Metal candidate comparison.
-    if (GPU.CaptureEnable)
-        MetalCaptureExperimentRecordLine(GPU.VCount);
+    // MELONPRIME_METAL_HOST_V1 (PR-7): MetalRenderer no longer inherits
+    // SoftRenderer. Plan §11.4 forbids a silent Soft mid-frame escape --
+    // this scanline is simply left untouched (presenter RetainPrevious)
+    // when the frame is not Full-GPU eligible.
 }
 
 void MetalRenderer::DrawSprites(u32 line)
@@ -352,13 +350,15 @@ void MetalRenderer::DrawSprites(u32 line)
         return;
     }
 
-    SoftRenderer::DrawSprites(line);
+    // MELONPRIME_METAL_HOST_V1 (PR-7): no SoftRenderer to draw sprites into
+    // when the frame is not Full-GPU eligible; see DrawScanline() above.
 }
 
 void MetalRenderer::VBlankEnd()
 {
-    if (!(FullGpuState && FullGpuState->FrameActive))
-        SoftRenderer::VBlankEnd();
+    // MELONPRIME_METAL_HOST_V1 (PR-7): SoftRenderer::VBlankEnd() was
+    // already a no-op ({} in GPU_Soft.h) -- nothing to forward to now that
+    // MetalRenderer no longer inherits SoftRenderer.
 }
 
 bool MetalRenderer::ComposeMetalFullGpuOutput()

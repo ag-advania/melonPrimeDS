@@ -28,9 +28,6 @@ namespace melonDS
 
 class SoftRenderer2D;
 class SoftRenderer3D;
-#if defined(MELONPRIME_ENABLE_METAL)
-class MetalRenderer;
-#endif
 
 class SoftRenderer : public Renderer
 {
@@ -60,12 +57,10 @@ public:
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
-#if defined(MELONPRIME_ENABLE_METAL)
-    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: MetalRenderer records Soft
-    // Output2D/Output3D as capture differential source A without changing
-    // SoftRenderer::DoCapture production behavior.
-    friend class MetalRenderer;
-#endif
+    // MELONPRIME_METAL_HOST_V1 (PR-7): MetalRenderer used to friend into
+    // Output2D/Output3D as a capture differential source A while it
+    // inherited SoftRenderer. It no longer inherits SoftRenderer (or holds
+    // an instance of it at all), so that friendship is gone too.
 
     u32* Framebuffer[2][2];
 

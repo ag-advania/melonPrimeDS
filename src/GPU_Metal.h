@@ -6,8 +6,12 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 
 // MELONPRIME_METAL_HIRES_VISIBLE_OUTPUT_V1
+// MELONPRIME_METAL_HOST_V1 (PR-7): MetalRenderer no longer inherits
+// SoftRenderer. See docs/plans/evidence/pr7-softrenderer-dependency-map-
+// 2026-07-17.md for the removed dependency inventory.
 
-#include "GPU_Soft.h"
+#include "GPU.h"
+#include "GPU_MetalHost.h"
 
 #include <array>
 #include <atomic>
@@ -19,13 +23,15 @@ namespace melonDS
 
 class MetalRenderer2D;
 
-class MetalRenderer : public SoftRenderer
+class MetalRenderer : public Renderer, public MetalRendererHost
 {
 public:
     explicit MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer = false) noexcept;
     ~MetalRenderer() override;
 
     bool Init() override;
+    void Reset() override;
+    void Stop() override;
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
@@ -41,6 +47,7 @@ public:
         u32 start,
         u32 len,
         bool complete) override;
+    bool GetFramebuffers(void** top, void** bottom) override;
     void SwapBuffers() override;
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;

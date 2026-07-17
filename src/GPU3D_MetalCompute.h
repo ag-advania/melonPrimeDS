@@ -20,8 +20,6 @@
 namespace melonDS
 {
 
-class SoftRenderer;
-
 // Phase 7F+ (MELONPRIME_METAL_COMPUTE_VISIBLE_CUTOVER_V1). The renderer
 // executes real-frame span preparation, Metal InterpSpans/BinCombined, work
 // sorting, texture/depth/blend, and the final pass, writing the visible
@@ -32,7 +30,7 @@ class SoftRenderer;
 class MetalComputeRenderer3D final : public Renderer3D
 {
 public:
-    MetalComputeRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;
+    MetalComputeRenderer3D(melonDS::GPU3D& gpu3D, MetalRendererHost& parent) noexcept;
     ~MetalComputeRenderer3D() override;
 
     bool Init() override;

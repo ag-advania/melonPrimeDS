@@ -1041,7 +1041,7 @@ struct MetalComputeRenderer3D::MetalComputeState
 
 MetalComputeRenderer3D::MetalComputeRenderer3D(
     melonDS::GPU3D& gpu3D,
-    SoftRenderer& parent) noexcept
+    MetalRendererHost& parent) noexcept
     : Renderer3D(gpu3D),
       RasterReference(gpu3D, parent),
       State(std::make_unique<MetalComputeState>())

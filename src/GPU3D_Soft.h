@@ -26,12 +26,15 @@
 
 namespace melonDS
 {
-class SoftRenderer;
 
 class SoftRenderer3D : public Renderer3D
 {
 public:
-    SoftRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;
+    // MELONPRIME_METAL_HOST_V1 (PR-7): no longer takes a SoftRenderer&
+    // parent -- it was stored but never used, and MetalRenderer3D's
+    // Delegate (also a SoftRenderer3D) no longer has a SoftRenderer
+    // instance to pass once MetalRenderer stops inheriting SoftRenderer.
+    explicit SoftRenderer3D(melonDS::GPU3D& gpu3D) noexcept;
     ~SoftRenderer3D() override;
     void Reset() override;
 
@@ -49,8 +52,6 @@ public:
     void StopRenderThread();
 
 private:
-    SoftRenderer& Parent;
-
     friend void GPU3D::DoSavestate(Savestate* file) noexcept;
 
     // Notes on the interpolator:

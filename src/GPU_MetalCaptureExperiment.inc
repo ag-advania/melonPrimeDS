@@ -432,13 +432,16 @@ void MetalRenderer::MetalCaptureExperimentRecordLine(u32 line)
     config.SrcBCaptureLayer = -1;
     config.SrcBNativeY = line;
 
+    // MELONPRIME_METAL_HOST_V1 (PR-7): this scaffold's source-A capture used
+    // to read SoftRenderer's Output2D/Output3D CPU composite buffers via
+    // friend access. MetalRenderer no longer inherits SoftRenderer (and no
+    // longer has any Soft instance to read from at all) -- this call site
+    // is unreachable in practice since DrawScanline() no longer invokes
+    // MetalCaptureExperimentRecordLine(), but source A is left zeroed here
+    // rather than referencing a removed member, in case a future non-Soft
+    // caller re-enables this hook.
     auto* srcA = static_cast<uint32_t*>([state.SrcABuffer contents]) + line * 256u;
-    const u32* softSrcA =
-        (captureCnt & (1u << 24)) ? Output3D : Output2D[0];
-    if (softSrcA)
-        std::memcpy(srcA, softSrcA, 256u * sizeof(uint32_t));
-    else
-        std::memset(srcA, 0, 256u * sizeof(uint32_t));
+    std::memset(srcA, 0, 256u * sizeof(uint32_t));
 
     const u32 dstMode = meta.DstMode;
     const u32 evb = std::min(meta.EVB, 16u);
