@@ -12,6 +12,7 @@ audits=(
   tools/ci/audits/audit-metal-capture-fullgpu-cutover.py
   tools/ci/audits/audit-metal-compute-raster-reference-removal.py
   tools/ci/audits/audit-metal-presenter-metaltexture-only.py
+  tools/ci/audits/audit-metal-radar-native.py
 )
 
 failed=0

@@ -15,7 +15,7 @@
 | PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer : public Renderer, public MetalRendererHost` へ flip。GPU_Metal* の `SoftRenderer::` 呼び出しは 0。§13.1 の実機受け入れ gate は明示的指示により先行実施（ビルド／audit のみ検証、実ROM未実施） |
 | PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer3D RasterReference` メンバーを削除。Init／RenderFrame／GetLine／texture getter は fail-closed（no raster fallback）。実ROM未実施 |
 | PR-9 | presenter MetalTexture-only | **完了（部分）** | （本コミット） | AcquireOutputLease／presenter を MetalTexture／None のみに限定。screenTex CPU upload 撤廃。実ROM未実施 |
-| PR-10 | radar native Metal | 未着手 | — | |
+| PR-10 | radar native Metal | **完了（部分）** | （本コミット） | GL-native btmOverlay相当のcircle-mask fragment shaderでMetalTexture layer 1を直接sample。bottomImage memcpy撤廃。実ROM未実施 |
 | PR-11 | HUD primitive renderer | 未着手 | — | |
 | PR-12 | glyph atlas／OSD／splash | 未着手 | — | |
 | PR-13 | macOS 初回 Metal 既定 | 未着手 | — | 完了A後 |
@@ -199,6 +199,58 @@ None sustained=0     (grace window超過でMetalStrictGpuOnlyViolationを報告)
 
 - Windows／Linux metal audit job
 - ROM／TSan／release gate
+
+## PR-10 要約（2026-07-17）
+
+変更:
+
+- `MelonPrimeScreenMetal.mm`:
+  - 新規 `mp_radar_fs` MSLフラグメント関数（`kRadarShaderSource`）: GL-native
+    `kBtmOverlayFS`（main_shaders.h）と同一のcircle-mask（`dist > 1.0` discard）
+    + smoothstepフェード + 15色パレットフィルタを、`texture2d_array<float>`の
+    layer 1（bottom screen）に対して直接sample。頂点stageは既存の`mp_ui_vs`
+    （UI overlay quadと同じrect/screenSize/yFlipSign uniform layout）を再利用
+  - 新規 `radarPipeline`（GLの`glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)`
+    と同じstraight-alpha blend。UI overlay quadのpremultiplied blendとは別設定）
+  - `Impl::bottomImage`（QImage, 256x192 CPU buffer）を完全削除。
+    `hasHudCpuBuffersForFrame`/`topCpuBufForFrame`/`bottomCpuBufForFrame`と
+    それらを埋めていた`nds->GPU.GetFramebuffers(...)`呼び出しも削除
+    （PR-7以降 `MetalRenderer::GetFramebuffers()` は常に`false`を返すため、
+    この経路は実質常にdead codeだった）
+  - `CustomHud_Render(...)`呼び出しの`btmBuffer`引数を`&m->bottomImage`から
+    `nullptr`に変更（GL-nativeパスの`MelonPrimeHud_RenderTopOverlay`と同じ
+    契約。`DrawBottomScreenOverlay()`内のQPainter+CPUバッファのcrop-circle
+    描画がSoftware専用パスになる）
+  - radar config（enable/anchor/dstX/Y/size/opacity/srcRadius）を
+    `MelonPrime::CustomHud_GetCacheEpoch()`でepoch-cache付きで直接読み込み。
+    `MelonPrimeHud_RefreshRadarConfigIfNeeded`（Screen.cppのunity-build内部
+    static関数）とロジックは同一だが、別TUのため直接呼べず複製 -- コメントで
+    同期を明記
+  - dst rect計算（`m_hudTopMatrix`/`m_hudOriginX,Y`/`m_hudScale`からwindow
+    pixel座標を導出）は`MelonPrimeHudScreenCppOverlayOfGl.inc`のGL版と同一
+  - radar quadはUI overlay quad描画の直後、`[encoder endEncoding]`の直前に
+    描画（GL-nativeパスの描画順序: overlay HUD quad → radar circle、と一致）
+  - `MelonPrimeScreenMetal.h`のヘッダコメントに`MELONPRIME_METAL_RADAR_NATIVE_V1`
+    セクションを追加
+- 新規 audit `audit-metal-radar-native.py`（`run-metal-fullgpu-audits.sh`に登録）:
+  `bottomImage`/`hasHudCpuBuffersForFrame`/`GetFramebuffers(`がpresenterの
+  live codeに存在しないこと、`mp_radar_fs`がtexture2d_arrayのlayer 1を
+  sampleすること、circle-mask discardが存在すること、radar draw callが
+  `finalMetalTextureForFrame`を直接bindすること、`CustomHud_Render`が
+  `btmBuffer=nullptr`で呼ばれることを検証
+
+検証:
+
+- `cmake --build build-mac-metal -j8` PASS
+- `cmake --build build-mac -j8`（Metal OFF; 対象ファイルはビルド対象外のため no-op）
+- `cmake --build build-mac-metal-force-disabled -j8`（同様に no-op）
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 8/8 PASS
+
+未実施:
+
+- 実ROM／実機での目視・スクリーンショット検証（radar circleの位置・サイズ・
+  パレットフィルタが実際のゲームプレイで正しいこと）
+- TSan／Windows／Linux rebuild
 
 ## PR-0 証拠要約（2026-07-17）
 

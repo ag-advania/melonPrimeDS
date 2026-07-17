@@ -14,6 +14,13 @@
 // blended over that texture; that is unrelated UI-layer content, not a DS
 // screen fallback, and is expected to move onto Metal in PR-10..PR-12.
 //
+// MELONPRIME_METAL_RADAR_NATIVE_V1 (PR-10): the custom-HUD radar overlay
+// (bottom-screen crop-circle drawn onto the top screen) is sampled natively
+// in Metal from that same renderer-owned MetalTexture's bottom array layer,
+// with a fragment-shader circle mask + palette filter mirroring the GL-native
+// btmOverlay shader. There is no CPU bottom-screen buffer or memcpy anywhere
+// on this path.
+//
 // Threading: initMetal()/setupScreenLayout() (layer creation, drawable size)
 // run on the GUI thread. drawScreen() runs on the emu thread, matching
 // ScreenPanelGL::drawScreen() (also called from the emu thread's
