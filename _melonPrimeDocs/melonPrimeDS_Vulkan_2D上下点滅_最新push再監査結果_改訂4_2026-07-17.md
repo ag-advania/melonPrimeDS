@@ -1408,18 +1408,112 @@ Vulkan2DSource screen=Bottom
 
 Software rendererとOpenGL rendererの非Vulkan経路は変更していない。
 
-## 23.8 検証結果
+## 23.8 指示書末尾までのfrontend配線
 
-検証は実装完了後にまとめて実施する。
+frame pairing修正だけで止めず、移植指示書の残作業もdesktop frontendへ接続した。
 
 ```text
-Windows MinGW build: PASS（tools/build/windows/build-mingw.bat --jobs 1、134/134）
-git diff --check: PASS
-thread boundary strict audit: PASS（findings 0）
-instance state strict audit: PASS（既存22 findings、exit 0）
-inc ownership audit: PASS（57 files）
-platform scatter audit: PASS（21 / 22）
-Linux build: 未実施
-Vulkan validation layer: ROM runtime未実施
-Top／Bottom実機症状: ROM runtime未実施
+fast-forward開始／終了
+    queue transitionを要求
+    temporal historyを破棄
+    VSyncを一時解除
+    backlog／pending steal／previous reuseをSapphire相当に切替
+
+内部解像度のlive変更
+    presentation resync
+    temporal historyとSnapshotBuilderを破棄
+    旧generationのqueue／present状態を破棄
+
+native presenterの遅延初期化失敗
+    presenterの詳細診断を保持
+    OSDへ通知
+    drawScreenのstackを抜けてからSoftware rendererへfallback
+    保存済みrenderer設定は書き換えない
+
+Video Settings再表示
+    Vulkan probeを明示的に再試行
+    VulkanでもVSync checkboxを使用可能
+    OpenGL固有のswap intervalはVulkanでは無効
+
+macOS
+    native Vulkan surface adapter未実装をprobe段階で明示
+```
+
+これらの共有frontend変更も`MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN`で隔離した。Software／OpenGLの既存分岐はguard外では変更していない。
+
+## 23.9 最終検証結果
+
+実装を最後まで完了した後に、まとめて次を実施した。
+
+```text
+Windows MinGW Release / Vulkan ON:
+    PASS（tools/build/windows/build-mingw.bat --jobs 1）
+
+Windows MinGW Release / Vulkan OFF:
+    PASS（tools/build/windows/build-mingw-existing.bat
+          --build-dir build\release-mingw-vulkan-off3 --jobs 1）
+
+Windows MinGW Debug / Vulkan validation:
+    PASS（tools/build/windows/build-mingw-existing.bat
+          --build-dir build\debug-mingw-vulkan-validation2 --jobs 1）
+
+SPIR-V embedded header一致:
+    PASS（29 headers、glslc、target SPIR-V 1.0）
+
+git diff --check:
+    PASS
+
+thread boundary strict audit:
+    PASS（findings 0）
+
+instance state strict audit:
+    PASS（既存22 findings、exit 0）
+
+inc ownership audit:
+    PASS（57 files）
+
+platform scatter audit:
+    PASS（21 / 22。macOS surface availability分岐は適用外注記済み）
+```
+
+Khronos validation layerを有効にし、ローカルの代表ROMを約20秒実行した結果は次のとおり。
+
+```text
+PresentationSnapshot総数: 1437
+cold-start safe black:       1
+exact completed 3D pair:     1436
+serial mismatch:             0
+owner mismatch:              0
+image slot mismatch:         0
+presentation順序逆行:        0
+
+completed owner分布:
+    owner 0: 695
+    owner 1: 741
+
+completed slot分布:
+    slot 0: 359
+    slot 1: 359
+    slot 2: 359
+    slot 3: 359
+
+Validation Error:            0
+Validation Warning:          0
+VUID:                        0
+UNASSIGNED validation:       0
+VK_ERROR_VALIDATION_FAILED:  0
+```
+
+最初の1 frameはcompleted 3Dがまだ存在しないcold startであり、仕様どおり不透明黒へ安全にdegradeした。2 frame目以降は要求したserial／owner／slotとcopy元が全件一致した。
+
+## 23.10 残る手動確認
+
+自動runtimeではimmutable frame pairing、owner、slot、validation error不在まで確認した。点滅の見た目そのものと全ゲーム互換性は自動判定できないため、次だけは実機での最終確認対象とする。
+
+```text
+2D menuでTop／Bottomの配置が安定していること
+Bottomの緑化／高速点滅が消えていること
+黒がQt背景を透過しないこと
+Software／OpenGLを選択した既存ゲームの表示
+Linux build／Linux surface runtime
 ```

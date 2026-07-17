@@ -51,6 +51,7 @@
 #include "GPU3D_Vulkan.h"
 #include "MelonPrimeVulkanFilterMode.h"
 #include "MelonPrimeVulkanFrameQueue.h"
+#include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanOutput.h"
 #include "MelonPrimeVulkanSnapshotBuilder.h"
 #include "MelonPrimeVulkanSurfacePresenter.h"
@@ -1715,6 +1716,9 @@ struct ScreenPanelVulkan::VulkanState
     MelonPrime::VulkanNativeWindowInfo nativeWindow;
     bool initialized = false;
     bool presenterInitialized = false;
+    bool speedOverride = false;
+    bool runtimeFailureReported = false;
+    u32 rendererScale = 0;
     u64 lastQueuedStructuredGeneration = 0;
     u64 lastPresentedStructuredGeneration = 0;
     unsigned consecutiveFailures = 0;
@@ -1848,7 +1852,8 @@ bool ScreenPanelVulkan::initVulkanPresenter()
             vulkan->nativeWindow,
             surfaceWidth,
             surfaceHeight,
-            emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
+            emuInstance->getGlobalConfig().GetBool("Screen.VSync")
+                && !vulkan->speedOverride))
     {
         return false;
     }
@@ -1858,6 +1863,37 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         Platform::LogLevel::Info,
         "Vulkan presentation initialized requested=Vulkan actual=Vulkan path=Qt-native-swapchain");
     return true;
+}
+
+void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
+{
+    if (!vulkan || vulkan->runtimeFailureReported)
+        return;
+
+    vulkan->runtimeFailureReported = true;
+    const char* diagnostic = reason != nullptr && reason[0] != '\0'
+        ? reason
+        : "Vulkan presentation failed";
+    MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(diagnostic);
+    const QByteArray vulkanFailureText =
+        MelonPrime::UiText::Tr("Vulkan initialization failed").toUtf8();
+    emuInstance->osdAddMessage(
+        0,
+        "%s: %s",
+        vulkanFailureText.constData(),
+        diagnostic);
+
+    // EmuThread owns renderer replacement.  Queue its existing fallback
+    // signal so this widget is not deleted while drawScreen() is still on the
+    // stack.  NormalizeRendererForPlatform() observes the recorded runtime
+    // failure and selects Software without modifying the persisted setting.
+    if (auto* emuThread = emuInstance->getEmuThread(); emuThread != nullptr)
+    {
+        QMetaObject::invokeMethod(
+            emuThread,
+            [emuThread]() { emit emuThread->rendererRuntimeFallback(); },
+            Qt::QueuedConnection);
+    }
 }
 
 void ScreenPanelVulkan::setupScreenLayout()
@@ -1922,6 +1958,8 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->frameQueue.clear();
             vulkan->snapshotBuilder.reset();
             vulkan->structuredSource.Valid = false;
+            vulkan->speedOverride = false;
+            vulkan->rendererScale = 0;
             vulkan->lastQueuedStructuredGeneration = 0;
             vulkan->lastPresentedStructuredGeneration = 0;
             QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
@@ -1929,10 +1967,25 @@ void ScreenPanelVulkan::drawScreen()
         return;
     }
 
+    const auto* melonPrimeCore = emuThread->GetMelonPrimeCore();
+    const bool speedOverride = melonPrimeCore != nullptr
+        && melonPrimeCore->ThreadBridge().ReadForGui().fastForward;
+    if (vulkan->speedOverride != speedOverride)
+    {
+        vulkan->speedOverride = speedOverride;
+        vulkan->frameQueue.requestFastForwardPresentationTransition();
+        vulkan->output.invalidateTemporalHistory();
+    }
+
     if (!initVulkanPresenter())
     {
         if (vulkan->consecutiveFailures++ == 0)
             Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
+        const std::string& presenterReason = vulkan->presenter.LastError();
+        reportVulkanRuntimeFailure(
+            presenterReason.empty()
+                ? "Vulkan native presenter initialization failed"
+                : presenterReason.c_str());
         return;
     }
 
@@ -1979,11 +2032,32 @@ void ScreenPanelVulkan::drawScreen()
     const u32 rendererScale = completed3DWidth >= 256
         ? std::max<u32>(1, completed3DWidth / 256u)
         : static_cast<u32>(configuredScale);
+    if (vulkan->rendererScale != 0u && vulkan->rendererScale != rendererScale)
+    {
+        vulkan->frameQueue.requestPresentationResync();
+        vulkan->output.invalidateTemporalHistory();
+        vulkan->snapshotBuilder.reset();
+        vulkan->lastQueuedStructuredGeneration = 0;
+        vulkan->lastPresentedStructuredGeneration = 0;
+    }
+    vulkan->rendererScale = rendererScale;
     const u32 outputWidth = 256u * rendererScale;
     const u32 outputHeight = 386u * rendererScale;
     const MelonPrime::VulkanFilterMode filtering = filter
         ? MelonPrime::VulkanFilterMode::Linear
         : MelonPrime::VulkanFilterMode::Nearest;
+
+    // Match Sapphire's Vulkan fast-forward queue policy.  A speed override
+    // must neither retain a stale previous frame nor block emulation behind a
+    // FIFO swapchain.  Returning to real-time restores the user's VSync
+    // preference and the normal one-frame presentation queue.
+    vulkan->framePolicy.MaxBacklogDepth = speedOverride && rendererScale > 1u ? 2u : 1u;
+    vulkan->framePolicy.AllowStealPending = speedOverride;
+    vulkan->framePolicy.AllowPreviousFrameReuse = !speedOverride;
+    vulkan->framePolicy.AllowDropForDeadline = false;
+    vulkan->framePolicy.PreferOldestFrame = false;
+    vulkan->framePolicy.PreserveBacklogOnPresent = false;
+    vulkan->framePolicy.TreatBacklogTrimAsFastForwardSkip = speedOverride;
 
     MelonPrime::VulkanFrame* renderFrame = nullptr;
     if (structuredSource.Generation != vulkan->lastQueuedStructuredGeneration)
@@ -2128,7 +2202,8 @@ void ScreenPanelVulkan::drawScreen()
     vulkan->presenter.Resize(
         surfaceWidth,
         surfaceHeight,
-        emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
+        emuInstance->getGlobalConfig().GetBool("Screen.VSync")
+            && !speedOverride);
 
     bool hasOverlay = false;
     const qreal dpr = devicePixelRatioF();

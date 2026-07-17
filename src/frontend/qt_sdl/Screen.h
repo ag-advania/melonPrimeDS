@@ -373,6 +373,7 @@ protected:
 
 private:
     bool initVulkanPresenter();
+    void reportVulkanRuntimeFailure(const char* reason);
     void setupScreenLayout() override;
 
     struct VulkanState;
