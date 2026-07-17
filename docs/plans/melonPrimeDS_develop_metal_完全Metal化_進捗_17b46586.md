@@ -9,18 +9,18 @@
 | PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
 | PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
 | PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
-| PR-4 | per-scanline／segment capture | **完了（部分）** | （本コミット） | segment loop + ping-pong + CaptureWriteTicket。実ROM same-frame feedback はユーザー検証前提 |
-| PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
-| PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
-| PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer : public Renderer, public MetalRendererHost` へ flip。GPU_Metal* の `SoftRenderer::` 呼び出しは 0。§13.1 の実機受け入れ gate は明示的指示により先行実施（ビルド／audit のみ検証、実ROM未実施） |
-| PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | （本コミット） | `MetalRenderer3D RasterReference` メンバーを削除。Init／RenderFrame／GetLine／texture getter は fail-closed（no raster fallback）。実ROM未実施 |
-| PR-9 | presenter MetalTexture-only | **完了（部分）** | （本コミット） | AcquireOutputLease／presenter を MetalTexture／None のみに限定。screenTex CPU upload 撤廃。実ROM未実施 |
-| PR-10 | radar native Metal | **完了（部分）** | （本コミット） | GL-native btmOverlay相当のcircle-mask fragment shaderでMetalTexture layer 1を直接sample。bottomImage memcpy撤廃。実ROM未実施 |
-| PR-11 | HUD primitive renderer | **完了（transitional tier）** | （本コミット） | 固定長Metal draw-command list導入（HUD/OSD/splash/radar quadを1つのencode loopで発行）。QPainterはHUD/OSD/splashのCPUラスタライズには残存（真のprimitive/glyph atlasは未実装、指示書の「at least」tierとして明示的にdocumented） |
-| PR-12 | glyph atlas／OSD／splash | **完了（部分: OSD／splashのみ）** | （本コミット） | splash logo／splashText／OSD toastを各々専用MetalTextureへキャッシュ化し、PR-11のHUD command list経由で個別quad描画。uiOverlayへのQPainter compositingは撤廃。custom HUD本体（ゲージ／クロスヘア等）のglyph atlas化は未着手（指示書の「splash+OSD at minimum」フォールバックを採用） |
-| PR-13 | macOS 初回 Metal 既定 | **完了（部分）** | （本コミット） | 新規configのみ `3D.Renderer`/`Screen.UseGL` 既定をMetal probe結果でMetal Rasterへ切替。既存config・Compute既定・Soft/OpenGLビルドは不変。実ROM未実施 |
-| PR-14 | MSL asset／metallib | **完了（部分）** | （本コミット） | 8箇所のembedded MSLをsrc/shaders/metal/へ移動、metallib build＋bundle化、release fallback禁止。GPU3D_Metal.mm/GPU2D_Metal.mm layer/compute主kernel/feature probe/capture experimentは対象外（下記） |
-| PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。forbidden-path audit（SoftRenderer継承／GPU_Metal\* live SoftRenderer::／GPU3D_MetalCompute\* RasterReference／AcquireOutputLease・GetOutputのCpuBgra／CaptureFeedbackCooldownFrames）を追加し PR-7/8/9 の後退を静的に gate。ROM／TSan gate、Windows／Linux job未 |
+| PR-4 | per-scanline／segment capture | **完了（部分）** | `8b4a3bef` | segment loop + ping-pong + CaptureWriteTicket。実ROM same-frame feedback はユーザー検証前提 |
+| PR-5 | capture Full-GPU cutover | **完了（部分）** | `04fed81b` | CaptureCnt Soft gate 再撤廃＋mixed 3D+2D 本番化。実ROM／strict counter未 |
+| PR-6 | normal readback 0 | **完了（部分）** | `e3d6b47f` | reason／counter。Soft GetLine 本番削除は PR-7 で達成 |
+| PR-7 | SoftRenderer 継承撤廃 | **完了（部分）** | `35828c6e` | `MetalRenderer : public Renderer, public MetalRendererHost`。実ROM未 |
+| PR-8 | Compute RasterReference 撤廃 | **完了（部分）** | `3410644f` | RasterReference 削除・fail-closed。実ROM未 |
+| PR-9 | presenter MetalTexture-only | **完了（部分）** | `052ccb32` | MetalTexture／None のみ・screenTex 撤廃。実ROM未 |
+| PR-10 | radar native Metal | **完了（部分）** | `94889cd8` | MetalTexture layer1 circle-mask。bottomImage 撤廃。実ROM未 |
+| PR-11 | HUD primitive renderer | **完了（transitional）** | `881203f5` | Metal draw-command list。custom HUD 本体はまだ QPainter→uiOverlay |
+| PR-12 | glyph atlas／OSD／splash | **完了（部分）** | `8f8b04de` | OSD／splash は Metal texture quad。custom HUD glyph atlas 未 |
+| PR-13 | macOS 初回 Metal 既定 | **完了（部分）** | `6c1d491d` | 新規configのみ Metal Raster。既存config非上書き |
+| PR-14 | MSL asset／metallib | **完了（部分）** | `674715ca` | 8 shaders → metallib。本機は Metal Toolchain 無しで fallback 検証のみ |
+| PR-15 | CI／release gate | **完了（部分）** | `b8524ac1` | forbidden-path 含む 12 audits。ROM／TSan／Win／Linux job未 |
 
 ## PR-2 要約（2026-07-17）
 
