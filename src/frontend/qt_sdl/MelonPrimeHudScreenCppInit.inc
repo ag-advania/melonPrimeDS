@@ -20,15 +20,13 @@ m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(
     emuInstance,
     emuInstance->getEmuThread()->GetMelonPrimeCore()->HudConfigState());
 auto& hudState = emuInstance->getEmuThread()->GetMelonPrimeCore()->HudConfigState();
-MelonPrime::CustomHud_SetEditSelectionCallback(hudState, [this](int idx) {
-    auto* core = melonPrimeCore();
-    if (!core || !MelonPrime::CustomHud_IsEditMode(core->HudConfigState()) || idx < 0) {
-        m_hudEditPanel->clear();
-    } else {
-        m_hudEditPanel->populateForElement(idx);
-        MelonPrimeHud_PositionEditPanel(this, m_hudEditPanel, true, true);
-        m_hudEditPanel->show();
-        m_hudEditPanel->raise();
-    }
+MelonPrime::CustomHud_SetEditSelectionCallback(hudState, [this](int) {
+    // Every HUD element is edited through the retro on-screen panel drawn
+    // directly on the DS overlay (DrawElemPropsPanel / kShowDsEditPropsPanel
+    // in MelonPrimeHudConfigOnScreenDraw.inc) -- the same style Crosshair has
+    // always used. The floating native Qt side panel stays allocated (its
+    // widget factories are still reused elsewhere) but is intentionally
+    // never shown anymore, so only one panel style ever appears in-game.
+    m_hudEditPanel->clear();
 });
 #endif

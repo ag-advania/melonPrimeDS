@@ -93,7 +93,7 @@ static constexpr float kAnchorGridCellW = (kPropPanelW - 4.0f) / 3.0f;
 static constexpr float kAnchorGridCellH = 9.0f;
 static constexpr float kAnchorGridH = kAnchorGridCellH * 3 + 4.0f;
 static constexpr int kPropMaxVisible = 8;
-static constexpr bool kShowDsEditPropsPanel = false;
+static constexpr bool kShowDsEditPropsPanel = true;
 
 // ── Modern dark theme ────────────────────────────────────────────────────────
 static const QColor kPanelBg        (10, 12, 24, 225);
