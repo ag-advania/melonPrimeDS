@@ -344,13 +344,21 @@ kernel void mp_compute_depth_blend_complete(
                 }
                 else
                 {
+                    // The bool results of mpd_plot_translucent only fed the
+                    // retired summary counters (secondLayerWrites /
+                    // translucentLayers, see the Phase 8V/8W cleanup); the
+                    // plots themselves work through the in-out layer
+                    // parameters. The counter removal left a dangling
+                    // `if (secondAccepted)` here, which made this whole MSL
+                    // source fail to compile -- silently forcing every
+                    // "Metal Compute Shader" session onto the raster
+                    // reference path at CreateComputeFoundation.
                     const bool writeDepth =
                         (polygonAttr & (1u << 11u)) != 0u;
-                    bool accepted = false;
 
                     if (!writeSecondLayer)
                     {
-                        accepted |= mpd_plot_translucent(
+                        mpd_plot_translucent(
                             color0,
                             depth0,
                             attr0,
@@ -365,23 +373,16 @@ kernel void mp_compute_depth_blend_complete(
                     if (writeSecondLayer ||
                         (destinationAttr & 0x3u) != 0u)
                     {
-                        const bool secondAccepted =
-                            mpd_plot_translucent(
-                                color1,
-                                depth1,
-                                attr1,
-                                isShadow,
-                                tileColor,
-                                sourceAlpha,
-                                tileDepth,
-                                sourceAttr,
-                                writeDepth);
-                        accepted |= secondAccepted;
-                        if (secondAccepted)
-                    }
-
-                    if (accepted)
-                    {
+                        mpd_plot_translucent(
+                            color1,
+                            depth1,
+                            attr1,
+                            isShadow,
+                            tileColor,
+                            sourceAlpha,
+                            tileDepth,
+                            sourceAttr,
+                            writeDepth);
                     }
                 }
             }

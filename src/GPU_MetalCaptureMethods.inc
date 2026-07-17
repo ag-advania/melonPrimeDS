@@ -507,6 +507,20 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         static_cast<size_t>(next->Capture256.height));
 
     CaptureState = std::move(next);
+
+    // MELONPRIME_METAL_COMPUTE_CAPTURE_TEXTURE_WIRE_V1: hand the (re)created
+    // capture texture arrays to the compute 3D renderer. Its capture-backed
+    // texture sampler (GPU3D_MetalComputeTexturedMethods.inc) otherwise stays
+    // on the 16x16/4x4 dummy textures it was initialized with, so any 3D
+    // polygon textured from display-capture VRAM would sample the dummy. The
+    // setter itself validates device/type and is a no-op for the raster
+    // renderer. Must re-run after every reconfigure -- the textures are
+    // recreated on scale changes.
+    Metal3DSetCaptureTextures(
+        Rend3D.get(),
+        GetMetalCapture128Texture(),
+        GetMetalCapture256Texture());
+
     if (!UploadCpuCompletedCaptures())
         return false;
     return true;
