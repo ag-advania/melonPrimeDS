@@ -175,27 +175,32 @@ static inline MPTexel mp_palette_texel(
 }
 
 static inline MPTexel mp_sample_capture(
-    texture2d_array<float, access::read> capture,
+    texture2d_array<ushort, access::read> capture,
     uint layer,
     int x,
     int y,
     uint logicalWidth,
     uint logicalHeight)
 {
+    // MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1: direct RGB5551 -> MPTexel.
+    (void)logicalWidth;
+    (void)logicalHeight;
     if (layer >= capture.get_array_size()) return mp_zero_texel();
     const uint physicalWidth = max(capture.get_width(), 1u);
     const uint physicalHeight = max(capture.get_height(), 1u);
-    const uint scaleX = max(physicalWidth / max(logicalWidth, 1u), 1u);
-    const uint scaleY = max(physicalHeight / max(logicalHeight, 1u), 1u);
     const uint2 coord = uint2(
-        min(uint(max(x, 0)) * scaleX + scaleX / 2u, physicalWidth - 1u),
-        min(uint(max(y, 0)) * scaleY + scaleY / 2u, physicalHeight - 1u));
-    const float4 sampled = capture.read(coord, layer);
+        min(uint(max(x, 0)), physicalWidth - 1u),
+        min(uint(max(y, 0)), physicalHeight - 1u));
+    const ushort value = capture.read(coord, layer).r;
+    const uint r5 = value & 0x1Fu;
+    const uint g5 = (value >> 5u) & 0x1Fu;
+    const uint b5 = (value >> 10u) & 0x1Fu;
+    const uint a1 = (value >> 15u) & 1u;
     MPTexel out;
-    out.r = min(uint(sampled.r * 63.0f + 0.5f), 63u);
-    out.g = min(uint(sampled.g * 63.0f + 0.5f), 63u);
-    out.b = min(uint(sampled.b * 63.0f + 0.5f), 63u);
-    out.a = min(uint(sampled.a * 31.0f + 0.5f), 31u);
+    out.r = (r5 << 1u) | (r5 >> 4u);
+    out.g = (g5 << 1u) | (g5 >> 4u);
+    out.b = (b5 << 1u) | (b5 >> 4u);
+    out.a = a1 * 31u;
     return out;
 }
 
@@ -205,8 +210,8 @@ static inline MPTexel mp_decode_texture(
     int rawY,
     device const uchar* textureMemory,
     device const uchar* texturePalette,
-    texture2d_array<float, access::read> capture128,
-    texture2d_array<float, access::read> capture256)
+    texture2d_array<ushort, access::read> capture128,
+    texture2d_array<ushort, access::read> capture256)
 {
     const uint texParam = variant.TexParam;
     const uint format = (texParam >> 26u) & 0x7u;
@@ -319,8 +324,8 @@ kernel void mp_compute_rasterise_texture_variants(
     device const uchar* textureMemory [[buffer(10)]],
     device const uchar* texturePalette [[buffer(11)]],
     device const uint* toonTable [[buffer(12)]],
-    texture2d_array<float, access::read> capture128 [[texture(0)]],
-    texture2d_array<float, access::read> capture256 [[texture(1)]],
+    texture2d_array<ushort, access::read> capture128 [[texture(0)]],
+    texture2d_array<ushort, access::read> capture256 [[texture(1)]],
     uint gid [[thread_position_in_grid]])
 {
     const uint rawWorkCount = atomic_load_explicit(

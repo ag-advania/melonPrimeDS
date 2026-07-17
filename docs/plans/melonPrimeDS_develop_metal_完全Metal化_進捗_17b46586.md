@@ -7,8 +7,8 @@
 |---|---|---|---|---|
 | PR-0 | 最新修正 validation gate | **完了（部分）** | `69993462` | macOS Intel Metal ON／OFF／FORCE_DISABLE PASS。TSan／Windows／Linux／実ROM未実施 |
 | PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
-| PR-2 | capture differential scaffold | **完了（部分）** | （本コミット） | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
-| PR-3 | native canonical capture storage | 未着手 | — | |
+| PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
+| PR-3 | native canonical capture storage | **完了（部分）** | （本コミット） | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
 | PR-4 | per-scanline／segment capture | 未着手 | — | |
 | PR-5 | capture Full-GPU cutover | 未着手 | — | |
 | PR-6 | normal readback 0 | 未着手 | — | |
@@ -37,6 +37,21 @@
 - capture-backed source B の candidate 比較（PR-3 以降）
 - PNG（PPM で代替）
 - 実ROM／homebrew 自動 checksum CI
+
+## PR-3 要約（2026-07-17）
+
+追加／変更:
+
+- canonical capture = native `R16Uint` RGB5551（~2 MiB with snapshots）
+- scale 変更で capture texture 再生成不要
+- CPU upload／readback は native 直結（16 MiB staging 撤廃）
+- 2D／Compute3D は `.read()` + unpack
+
+未実施:
+
+- EnhancedCaptureCache LRU
+- 実ROM／scale matrix pixel diff
+- PR-4 segment scheduler
 
 ## PR-0 証拠要約（2026-07-17）
 

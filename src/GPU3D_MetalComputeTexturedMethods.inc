@@ -15,7 +15,8 @@ void MetalComputeRenderer3D::SetCaptureTextures(
         capture256Texture ? (__bridge id<MTLTexture>)capture256Texture : nil;
 
     if (capture128 && capture128.device == State->Device &&
-        capture128.textureType == MTLTextureType2DArray)
+        capture128.textureType == MTLTextureType2DArray &&
+        capture128.pixelFormat == MTLPixelFormatR16Uint)
     {
         State->Capture128Texture = capture128;
     }
@@ -25,7 +26,8 @@ void MetalComputeRenderer3D::SetCaptureTextures(
     }
 
     if (capture256 && capture256.device == State->Device &&
-        capture256.textureType == MTLTextureType2DArray)
+        capture256.textureType == MTLTextureType2DArray &&
+        capture256.pixelFormat == MTLPixelFormatR16Uint)
     {
         State->Capture256Texture = capture256;
     }

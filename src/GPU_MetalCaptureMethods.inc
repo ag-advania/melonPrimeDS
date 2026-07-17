@@ -7,6 +7,10 @@ static constexpr const char* kMetalDisplayCaptureShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
+// MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1
+// Canonical capture authority is DS-native RGB5551 in R16Uint textures.
+// Scale-expanded RGBA8 arrays are no longer the storage format.
+
 struct CaptureLineConfig
 {
     uint enabled;
@@ -25,16 +29,6 @@ struct CaptureDispatchConfig
     uint3 pad0;
 };
 
-struct CaptureReadbackConfig
-{
-    uint scale;
-    uint width;
-    uint height;
-    uint layer;
-    uint use128;
-    uint3 pad0;
-};
-
 static inline float4 mp_unpack_rgba8(uint packed)
 {
     return float4(
@@ -44,16 +38,45 @@ static inline float4 mp_unpack_rgba8(uint packed)
         float((packed >> 24u) & 0xFFu)) / 255.0;
 }
 
+static inline float4 mp_unpack_rgb5551(ushort value)
+{
+    uint r5 = value & 0x1Fu;
+    uint g5 = (value >> 5u) & 0x1Fu;
+    uint b5 = (value >> 10u) & 0x1Fu;
+    uint a1 = (value >> 15u) & 1u;
+    float r = float((r5 << 3u) | (r5 >> 2u)) / 255.0;
+    float g = float((g5 << 3u) | (g5 >> 2u)) / 255.0;
+    float b = float((b5 << 3u) | (b5 >> 2u)) / 255.0;
+    return float4(r, g, b, float(a1));
+}
+
+static inline ushort mp_pack_rgb5551_components(uint3 rgb5, uint a1)
+{
+    return ushort(
+        (rgb5.x & 0x1Fu) |
+        ((rgb5.y & 0x1Fu) << 5u) |
+        ((rgb5.z & 0x1Fu) << 10u) |
+        ((a1 & 1u) << 15u));
+}
+
+static inline uint3 mp_float_to_rgb5(float4 color)
+{
+    uint4 a8 = uint4(clamp(color, 0.0, 1.0) * 255.0);
+    return a8.rgb >> 3u;
+}
+
+static inline uint mp_float_to_a1(float4 color)
+{
+    return uint4(clamp(color, 0.0, 1.0) * 255.0).a > 0u ? 1u : 0u;
+}
+
 static inline float4 mp_capture_source_b(
     constant CaptureLineConfig& lineConfig,
     uint nativeX,
-    uint subX,
-    uint subY,
-    uint scale,
     device const uint* auxVram,
     device const uint* auxFifo,
-    texture2d_array<float, access::read> snapshot128,
-    texture2d_array<float, access::read> snapshot256)
+    texture2d_array<ushort, access::read> snapshot128,
+    texture2d_array<ushort, access::read> snapshot256)
 {
     const bool fifo = (lineConfig.captureCnt & (1u << 25u)) != 0u;
     if (fifo)
@@ -74,22 +97,16 @@ static inline float4 mp_capture_source_b(
         if (capY >= 128u)
             return float4(0.0);
 
-        uint2 coord = uint2(
-            capX * scale + subX,
-            capY * scale + subY);
-        coord = min(coord, uint2(
+        uint2 coord = min(uint2(capX, capY), uint2(
             max(snapshot128.get_width(), 1u) - 1u,
             max(snapshot128.get_height(), 1u) - 1u));
-        return snapshot128.read(coord, layer);
+        return mp_unpack_rgb5551(snapshot128.read(coord, layer).r);
     }
 
-    uint2 coord = uint2(
-        nativeX * scale + subX,
-        lineConfig.srcBNativeY * scale + subY);
-    coord = min(coord, uint2(
+    uint2 coord = min(uint2(nativeX, lineConfig.srcBNativeY), uint2(
         max(snapshot256.get_width(), 1u) - 1u,
         max(snapshot256.get_height(), 1u) - 1u));
-    return snapshot256.read(coord, layer >> 2u);
+    return mp_unpack_rgb5551(snapshot256.read(coord, layer >> 2u).r);
 }
 
 kernel void mp_metal_display_capture(
@@ -99,15 +116,15 @@ kernel void mp_metal_display_capture(
     device const uint* auxFifo [[buffer(3)]],
     texture2d<float, access::read> engineA2D [[texture(0)]],
     texture2d<float, access::read> engineA3D [[texture(1)]],
-    texture2d_array<float, access::read> snapshot128 [[texture(2)]],
-    texture2d_array<float, access::read> snapshot256 [[texture(3)]],
-    texture2d_array<float, access::write> capture128 [[texture(4)]],
-    texture2d_array<float, access::write> capture256 [[texture(5)]],
+    texture2d_array<ushort, access::read> snapshot128 [[texture(2)]],
+    texture2d_array<ushort, access::read> snapshot256 [[texture(3)]],
+    texture2d_array<ushort, access::write> capture128 [[texture(4)]],
+    texture2d_array<ushort, access::write> capture256 [[texture(5)]],
     uint2 gid [[thread_position_in_grid]])
 {
     uint scale = max(dispatchConfig.scale, 1u);
-    uint nativeX = gid.x / scale;
-    uint nativeLine = gid.y / scale;
+    uint nativeX = gid.x;
+    uint nativeLine = gid.y;
     if (nativeX >= 256u || nativeLine >= 192u)
         return;
 
@@ -121,14 +138,14 @@ kernel void mp_metal_display_capture(
     if (nativeX >= dstWidth || nativeLine >= dstHeight)
         return;
 
-    uint subX = gid.x - nativeX * scale;
-    uint subY = gid.y - nativeLine * scale;
-
     uint srcA = (config.captureCnt >> 24u) & 1u;
     float4 colorA = float4(0.0);
     if (srcA == 0u)
     {
-        uint2 coord = min(gid, uint2(
+        uint2 coord = uint2(
+            nativeX * scale + scale / 2u,
+            nativeLine * scale + scale / 2u);
+        coord = min(coord, uint2(
             max(engineA2D.get_width(), 1u) - 1u,
             max(engineA2D.get_height(), 1u) - 1u));
         colorA = engineA2D.read(coord);
@@ -139,8 +156,8 @@ kernel void mp_metal_display_capture(
         if (sourceX >= 0 && sourceX < 256)
         {
             uint2 coord = uint2(
-                uint(sourceX) * scale + subX,
-                nativeLine * scale + subY);
+                uint(sourceX) * scale + scale / 2u,
+                nativeLine * scale + scale / 2u);
             coord = min(coord, uint2(
                 max(engineA3D.get_width(), 1u) - 1u,
                 max(engineA3D.get_height(), 1u) - 1u));
@@ -149,93 +166,50 @@ kernel void mp_metal_display_capture(
     }
 
     float4 colorB = mp_capture_source_b(
-        config, nativeX, subX, subY, scale,
-        auxVram, auxFifo, snapshot128, snapshot256);
+        config, nativeX, auxVram, auxFifo, snapshot128, snapshot256);
 
     uint dstMode = (config.captureCnt >> 29u) & 3u;
-    float4 output;
+    ushort output;
     if (dstMode == 0u)
     {
-        output = colorA;
+        output = mp_pack_rgb5551_components(
+            mp_float_to_rgb5(colorA), mp_float_to_a1(colorA));
     }
     else if (dstMode == 1u)
     {
-        output = colorB;
+        output = mp_pack_rgb5551_components(
+            mp_float_to_rgb5(colorB), mp_float_to_a1(colorB));
     }
     else
     {
         uint eva = min(config.captureCnt & 0x1Fu, 16u);
         uint evb = min((config.captureCnt >> 8u) & 0x1Fu, 16u);
-        uint4 a8 = uint4(clamp(colorA, 0.0, 1.0) * 255.0);
-        uint4 b8 = uint4(clamp(colorB, 0.0, 1.0) * 255.0);
-        uint3 a5 = a8.rgb >> 3u;
-        uint3 b5 = b8.rgb >> 3u;
-        uint alphaA = a8.a > 0u ? 1u : 0u;
-        uint alphaB = b8.a > 0u ? 1u : 0u;
+        uint3 a5 = mp_float_to_rgb5(colorA);
+        uint3 b5 = mp_float_to_rgb5(colorB);
+        uint alphaA = mp_float_to_a1(colorA);
+        uint alphaB = mp_float_to_a1(colorB);
         uint3 out5 = min(
             ((a5 * alphaA * eva) + (b5 * alphaB * evb) + 8u) >> 4u,
             uint3(31u));
         uint outAlpha =
             ((eva > 0u) ? alphaA : 0u) |
             ((evb > 0u) ? alphaB : 0u);
-        output = float4(float3(out5 << 3u) / 255.0, float(outAlpha));
+        output = mp_pack_rgb5551_components(out5, outAlpha);
     }
 
+    ushort4 packed = ushort4(output, 0u, 0u, 0u);
     uint dstBank = (config.captureCnt >> 16u) & 3u;
     uint dstOffset = (config.captureCnt >> 18u) & 3u;
     if (captureSize == 0u)
     {
         uint layer = (dstBank << 2u) | dstOffset;
-        capture128.write(output, gid, layer);
+        capture128.write(packed, uint2(nativeX, nativeLine), layer);
     }
     else
     {
         uint dstNativeY = (dstOffset * 64u + nativeLine) & 0xFFu;
-        uint2 dstCoord = uint2(
-            nativeX * scale + subX,
-            dstNativeY * scale + subY);
-        capture256.write(output, dstCoord, dstBank);
+        capture256.write(packed, uint2(nativeX, dstNativeY), dstBank);
     }
-}
-
-kernel void mp_metal_capture_readback(
-    constant CaptureReadbackConfig& config [[buffer(0)]],
-    device ushort* output [[buffer(1)]],
-    texture2d_array<float, access::read> capture128 [[texture(0)]],
-    texture2d_array<float, access::read> capture256 [[texture(1)]],
-    uint2 gid [[thread_position_in_grid]])
-{
-    if (gid.x >= config.width || gid.y >= config.height)
-        return;
-
-    uint scale = max(config.scale, 1u);
-    uint2 sampleCoord = uint2(
-        gid.x * scale + scale / 2u,
-        gid.y * scale + scale / 2u);
-
-    float4 color;
-    if (config.use128 != 0u)
-    {
-        sampleCoord = min(sampleCoord, uint2(
-            max(capture128.get_width(), 1u) - 1u,
-            max(capture128.get_height(), 1u) - 1u));
-        color = capture128.read(sampleCoord, config.layer);
-    }
-    else
-    {
-        sampleCoord = min(sampleCoord, uint2(
-            max(capture256.get_width(), 1u) - 1u,
-            max(capture256.get_height(), 1u) - 1u));
-        color = capture256.read(sampleCoord, config.layer);
-    }
-
-    uint4 rgba = uint4(clamp(color, 0.0, 1.0) * 255.0);
-    uint r = min((rgba.r * 31u + 127u) / 255u, 31u);
-    uint g = min((rgba.g * 31u + 127u) / 255u, 31u);
-    uint b = min((rgba.b * 31u + 127u) / 255u, 31u);
-    uint a = rgba.a > 0u ? 0x8000u : 0u;
-    output[gid.y * config.width + gid.x] =
-        ushort(r | (g << 5u) | (b << 10u) | a);
 }
 )MSL";
 
@@ -258,17 +232,6 @@ struct MetalCaptureDispatchConfigCpu
     uint32_t Pad[3] = {};
 };
 static_assert(sizeof(MetalCaptureDispatchConfigCpu) == 16);
-
-struct MetalCaptureReadbackConfigCpu
-{
-    uint32_t Scale = 1;
-    uint32_t Width = 0;
-    uint32_t Height = 0;
-    uint32_t Layer = 0;
-    uint32_t Use128 = 0;
-    uint32_t Pad[3] = {};
-};
-static_assert(sizeof(MetalCaptureReadbackConfigCpu) == 32);
 
 static uint32_t MetalPackRgb5551AsRgba8(uint16_t color)
 {
@@ -355,7 +318,6 @@ struct MetalRenderer::MetalCaptureState
     id<MTLCommandQueue> Queue = nil;
     id<MTLLibrary> Library = nil;
     id<MTLComputePipelineState> CapturePipeline = nil;
-    id<MTLComputePipelineState> ReadbackPipeline = nil;
     id<MTLTexture> Capture128 = nil;
     id<MTLTexture> Capture256 = nil;
     id<MTLTexture> Snapshot128 = nil;
@@ -374,32 +336,13 @@ struct MetalRenderer::MetalCaptureState
     bool LoggedOnDemandReadback = false;
     bool LoggedCpuFallbackUpload = false;
     bool LoggedIncompleteCaptureSync = false;
-    // MELONPRIME_METAL_CAPTURE_CPU_UPLOAD_SCRATCH_V1: reused across
-    // UploadCpuCompletedCaptures() calls instead of a fresh heap allocation
-    // per layer per frame (this hot path fires on every CPU-fallback frame
-    // that has a pending capture write).
-    std::vector<uint32_t> CpuUploadScratch;
+    // MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1 /
+    // MELONPRIME_METAL_CAPTURE_CPU_UPLOAD_SCRATCH_V1: native RGB5551 upload
+    // scratch (max 256x256x2 = 128 KiB). Scale-expanded RGBA8 staging is gone.
+    std::vector<uint16_t> CpuUploadScratch;
 
-    // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: a small ring of reusable
-    // MTLBuffers so the common case needs no per-upload
-    // newBufferWithBytes: call. AcquireStagingSlot() falls back to a one-off
-    // allocation if every slot is genuinely busy, so correctness never
-    // depends on this size being exactly right. Busy is a
-    // shared_ptr<atomic<bool>> (not a plain bool on the slot) so a
-    // completion handler can flip it after this MetalCaptureState's ring
-    // itself may have been reconfigured -- see UploadCaptureTexture().
-    //
-    // Each slot holds a scale-expanded RGBA8 buffer (up to 256*scale square,
-    // 4 bytes/pixel), so ring size trades memory against one-off-allocation
-    // frequency at high internal-resolution scale factors. Correct sizes:
-    //   256@8x  = 2048x2048x4 = 16 MiB/slot
-    //   256@16x = 4096x4096x4 = 64 MiB/slot
-    // This ring plus the (also scale-expanded) Capture/Snapshot texture
-    // arrays can otherwise reach roughly 1.1+ GiB combined on an 8/16x
-    // build -- a real risk on 8 GB integrated-GPU Macs. Kept small (a
-    // realistic frame has only a handful of layers needing CPU-fallback
-    // upload at once, not all 16+4) rather than sized for the theoretical
-    // worst case of every layer needing upload the same frame.
+    // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: reusable shared MTLBuffers for
+    // native RGB5551 uploads. Cap is 128 KiB (one full 256x256 layer).
     struct StagingBuffer
     {
         id<MTLBuffer> Buffer = nil;
@@ -408,12 +351,7 @@ struct MetalRenderer::MetalCaptureState
             std::make_shared<std::atomic<bool>>(false);
     };
     static constexpr int kStagingRingSize = 4;
-    // Persistent ring slots refuse to grow past this. At 16x a single 256x256
-    // capture is 64 MiB; keeping that out of the reusable ring bounds the
-    // worst-case resident footprint of the ring itself to 4 * 16 MiB = 64 MiB
-    // (vs 4 * 64 MiB = 256 MiB, or the earlier 8-slot * 64 MiB = 512 MiB).
-    // Oversized uploads still succeed via a one-off buffer for that frame.
-    static constexpr NSUInteger kMaxCaptureStagingBytes = 16u * 1024u * 1024u;
+    static constexpr NSUInteger kMaxCaptureStagingBytes = 256u * 256u * sizeof(uint16_t);
     std::array<StagingBuffer, kStagingRingSize> StagingRing;
     int StagingRingCursor = 0;
     bool LoggedStagingRingExhausted = false;
@@ -428,12 +366,7 @@ struct MetalRenderer::MetalCaptureState
 void* MetalRenderer::AcquireStagingSlot(MetalCaptureState& state, unsigned long requiredBytesArg)
 {
     const NSUInteger requiredBytes = static_cast<NSUInteger>(requiredBytesArg);
-    // Cap persistent ring growth so an 8x/16x session cannot pin hundreds of
-    // MiB in reusable slots. Oversized requests return nullptr and the caller
-    // falls back to a one-off allocation for that upload only -- the ring
-    // itself stays bounded to common scales (256@8x = 16 MiB fits under the
-    // 16 MiB cap only at the boundary; 256@16x = 64 MiB does not and never
-    // permanently occupies a ring slot).
+    // Cap persistent ring growth to one native 256x256 RGB5551 layer.
     if (requiredBytes > MetalCaptureState::kMaxCaptureStagingBytes)
         return nullptr;
     for (int i = 0; i < MetalCaptureState::kStagingRingSize; i++)
@@ -474,11 +407,14 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         return false;
 
     const int scale = std::max(1, ScaleFactor);
+    // MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1: canonical capture textures
+    // are native-resolution and scale-independent. Scale only affects how
+    // hi-res Engine A / 3D sources are sampled when encoding capture.
     if (CaptureState && CaptureState->Ready &&
         CaptureState->Device == device &&
-        CaptureState->Queue == queue &&
-        CaptureState->Scale == scale)
+        CaptureState->Queue == queue)
     {
+        CaptureState->Scale = scale;
         return true;
     }
 
@@ -545,9 +481,7 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
 
     id<MTLFunction> captureFunction =
         [next->Library newFunctionWithName:@"mp_metal_display_capture"];
-    id<MTLFunction> readbackFunction =
-        [next->Library newFunctionWithName:@"mp_metal_capture_readback"];
-    if (!captureFunction || !readbackFunction)
+    if (!captureFunction)
         return false;
 
     next->CapturePipeline =
@@ -562,18 +496,6 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         return false;
     }
 
-    next->ReadbackPipeline =
-        [device newComputePipelineStateWithFunction:readbackFunction error:&error];
-    if (!next->ReadbackPipeline)
-    {
-        const char* message =
-            error ? [[error localizedDescription] UTF8String] : "unknown error";
-        std::fprintf(stderr,
-            "[MelonPrime] metal display capture: readback pipeline failed: %s\n",
-            message);
-        return false;
-    }
-
     auto makeArrayTexture = [&](NSUInteger width,
                                 NSUInteger height,
                                 NSUInteger layers,
@@ -581,7 +503,7 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         -> id<MTLTexture> {
         MTLTextureDescriptor* desc =
             [MTLTextureDescriptor
-                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Uint
                                              width:width
                                             height:height
                                          mipmapped:NO];
@@ -592,18 +514,18 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         return [device newTextureWithDescriptor:desc];
     };
 
-    const NSUInteger scaleU = static_cast<NSUInteger>(scale);
+    // Canonical native RGB5551 authority (~1 MiB + snapshots ~2 MiB total).
     next->Capture128 = makeArrayTexture(
-        128u * scaleU, 128u * scaleU, 16u,
+        128u, 128u, 16u,
         MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     next->Capture256 = makeArrayTexture(
-        256u * scaleU, 256u * scaleU, 4u,
+        256u, 256u, 4u,
         MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
     next->Snapshot128 = makeArrayTexture(
-        128u * scaleU, 128u * scaleU, 16u,
+        128u, 128u, 16u,
         MTLTextureUsageShaderRead);
     next->Snapshot256 = makeArrayTexture(
-        256u * scaleU, 256u * scaleU, 4u,
+        256u, 256u, 4u,
         MTLTextureUsageShaderRead);
 
     next->LineConfigBuffer =
@@ -644,8 +566,9 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     next->Ready = true;
     next->LoggedReady = true;
     std::fprintf(stderr,
-        "[MelonPrime] metal display capture: configured scale=%d "
-        "capture128=%zux%zux16 capture256=%zux%zux4\n",
+        "[MelonPrime] metal display capture: configured native R16Uint "
+        "scaleSample=%d capture128=%zux%zux16 capture256=%zux%zux4 "
+        "(scale-independent canonical storage)\n",
         scale,
         static_cast<size_t>(next->Capture128.width),
         static_cast<size_t>(next->Capture128.height),
@@ -655,13 +578,9 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     CaptureState = std::move(next);
 
     // MELONPRIME_METAL_COMPUTE_CAPTURE_TEXTURE_WIRE_V1: hand the (re)created
-    // capture texture arrays to the compute 3D renderer. Its capture-backed
-    // texture sampler (GPU3D_MetalComputeTexturedMethods.inc) otherwise stays
-    // on the 16x16/4x4 dummy textures it was initialized with, so any 3D
-    // polygon textured from display-capture VRAM would sample the dummy. The
-    // setter itself validates device/type and is a no-op for the raster
-    // renderer. Must re-run after every reconfigure -- the textures are
-    // recreated on scale changes.
+    // native R16Uint capture texture arrays to the compute 3D renderer.
+    // Recreate only on device/queue change -- scale changes keep these
+    // textures (canonical storage is scale-independent).
     Metal3DSetCaptureTextures(
         Rend3D.get(),
         GetMetalCapture128Texture(),
@@ -893,10 +812,9 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         1,
         CaptureState->CapturePipeline.maxTotalThreadsPerThreadgroup /
             threadWidth);
-    [encoder dispatchThreads:MTLSizeMake(
-                256u * static_cast<NSUInteger>(CaptureState->Scale),
-                192u * static_cast<NSUInteger>(CaptureState->Scale),
-                1)
+    // Native-resolution dispatch; Scale is only used inside the kernel when
+    // sampling hi-res Engine A / 3D sources into RGB5551 authority.
+    [encoder dispatchThreads:MTLSizeMake(256, 192, 1)
            threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
     [encoder endEncoding];
 
@@ -1062,39 +980,16 @@ bool MetalRenderer::UploadCaptureTexture(
     // UploadCpuCompletedCaptures()); that nesting produced a reproducible
     // EXC_BAD_ACCESS in the async completion callback under real gameplay.
     id<MTLTexture> texture = (__bridge id<MTLTexture>)textureRaw;
-    const NSUInteger scale =
-        static_cast<NSUInteger>(std::max(1, capturedState->Scale));
-    const NSUInteger width = static_cast<NSUInteger>(nativeWidth) * scale;
-    const NSUInteger height = static_cast<NSUInteger>(nativeHeight) * scale;
-    std::vector<uint32_t>& pixels = capturedState->CpuUploadScratch;
+    // MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1: upload native RGB5551
+    // directly into R16Uint canonical textures (no scale² RGBA8 expand).
+    const NSUInteger width = static_cast<NSUInteger>(nativeWidth);
+    const NSUInteger height = static_cast<NSUInteger>(nativeHeight);
+    const NSUInteger requiredBytes = width * height * sizeof(uint16_t);
+    std::vector<uint16_t>& pixels = capturedState->CpuUploadScratch;
     if (pixels.size() < width * height)
         pixels.resize(width * height);
+    std::memcpy(pixels.data(), source, requiredBytes);
 
-    for (NSUInteger y = 0; y < nativeHeight; y++)
-    {
-        for (NSUInteger x = 0; x < nativeWidth; x++)
-        {
-            const uint32_t packed =
-                MetalPackRgb5551AsRgba8(source[y * nativeWidth + x]);
-            for (NSUInteger sy = 0; sy < scale; sy++)
-            {
-                uint32_t* row = pixels.data() +
-                    (y * scale + sy) * width + x * scale;
-                for (NSUInteger sx = 0; sx < scale; sx++)
-                    row[sx] = packed;
-            }
-        }
-    }
-
-    const NSUInteger requiredBytes = width * height * sizeof(uint32_t);
-    // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: reuse a persistent MTLBuffer
-    // instead of newBufferWithBytes: on every fallback-upload frame -- this
-    // hot path fires on every CPU-fallback frame with a pending capture
-    // write, and per-frame Metal buffer allocation was a measured hot-path
-    // cost the same way the CpuUploadScratch vector allocation was. Falls
-    // back to a one-off allocation (rare: every ring slot genuinely busy, or
-    // the growth allocation itself failed) so correctness never depends on
-    // the ring being sized exactly right.
     id<MTLBuffer> upload = nil;
     std::shared_ptr<std::atomic<bool>> stagingSlotBusy;
     if (auto* slot = static_cast<MetalCaptureState::StagingBuffer*>(
@@ -1143,7 +1038,7 @@ bool MetalRenderer::UploadCaptureTexture(
         return false;
     }
 
-    const NSUInteger bytesPerRow = width * sizeof(uint32_t);
+    const NSUInteger bytesPerRow = width * sizeof(uint16_t);
     [blit copyFromBuffer:upload
             sourceOffset:0
        sourceBytesPerRow:bytesPerRow
@@ -1386,35 +1281,35 @@ void MetalRenderer::SyncVRAMCapture(
             bank, start, len);
     }
 
-    MetalCaptureReadbackConfigCpu config = {};
-    config.Scale = static_cast<uint32_t>(
-        std::max(1, CaptureState->Scale));
-    config.Use128 = len == 0 ? 1u : 0u;
-    config.Width = len == 0 ? 128u : 256u;
-    config.Height = len == 0 ? 128u : 256u;
-    config.Layer = len == 0 ? metadataLayer : bank;
+    // MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1: direct blit from canonical
+    // R16Uint texture into a native RGB5551 readback buffer (no decode kernel).
+    const bool use128 = len == 0;
+    const NSUInteger width = use128 ? 128u : 256u;
+    const NSUInteger height = use128 ? 128u : 256u;
+    const NSUInteger slice = use128
+        ? static_cast<NSUInteger>(metadataLayer)
+        : static_cast<NSUInteger>(bank);
+    id<MTLTexture> source = use128
+        ? CaptureState->Capture128
+        : CaptureState->Capture256;
 
     id<MTLCommandBuffer> command = [CaptureState->Queue commandBuffer];
-    id<MTLComputeCommandEncoder> encoder =
-        command ? [command computeCommandEncoder] : nil;
-    if (!command || !encoder)
+    id<MTLBlitCommandEncoder> blit =
+        command ? [command blitCommandEncoder] : nil;
+    if (!command || !blit || !source)
         return;
 
-    [encoder setComputePipelineState:CaptureState->ReadbackPipeline];
-    [encoder setBytes:&config length:sizeof(config) atIndex:0];
-    [encoder setBuffer:CaptureState->ReadbackBuffer offset:0 atIndex:1];
-    [encoder setTexture:CaptureState->Capture128 atIndex:0];
-    [encoder setTexture:CaptureState->Capture256 atIndex:1];
-
-    const NSUInteger threadWidth =
-        std::max<NSUInteger>(1, CaptureState->ReadbackPipeline.threadExecutionWidth);
-    const NSUInteger threadHeight = std::max<NSUInteger>(
-        1,
-        CaptureState->ReadbackPipeline.maxTotalThreadsPerThreadgroup /
-            threadWidth);
-    [encoder dispatchThreads:MTLSizeMake(config.Width, config.Height, 1)
-           threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
-    [encoder endEncoding];
+    const NSUInteger bytesPerRow = width * sizeof(uint16_t);
+    [blit copyFromTexture:source
+              sourceSlice:slice
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(width, height, 1)
+                 toBuffer:CaptureState->ReadbackBuffer
+        destinationOffset:0
+      destinationBytesPerRow:bytesPerRow
+    destinationBytesPerImage:bytesPerRow * height];
+    [blit endEncoding];
     [command commit];
     [command waitUntilCompleted];
     if (command.status != MTLCommandBufferStatusCompleted)
@@ -1423,7 +1318,7 @@ void MetalRenderer::SyncVRAMCapture(
     const uint16_t* pixels = static_cast<const uint16_t*>(
         [CaptureState->ReadbackBuffer contents]);
     uint16_t* vram = reinterpret_cast<uint16_t*>(GPU.VRAM[bank]);
-    if (len == 0)
+    if (use128)
     {
         std::memcpy(
             vram + start * 64u * 256u,

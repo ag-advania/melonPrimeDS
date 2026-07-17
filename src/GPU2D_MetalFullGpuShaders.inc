@@ -3,9 +3,46 @@
 // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 // MELONPRIME_METAL_2D_HUD_PARITY_V1
 // MELONPRIME_METAL_2D_SCANLINE_COORD_PARITY_V1
+// MELONPRIME_METAL_CAPTURE_NATIVE_R16UINT_V1
 static constexpr const char* kMetal2DFullGpuShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
+
+
+static inline float4 mp_unpack_rgb5551(ushort value)
+{
+    uint r5 = value & 0x1Fu;
+    uint g5 = (value >> 5u) & 0x1Fu;
+    uint b5 = (value >> 10u) & 0x1Fu;
+    uint a1 = (value >> 15u) & 1u;
+    float r = float((r5 << 3u) | (r5 >> 2u)) / 255.0;
+    float g = float((g5 << 3u) | (g5 >> 2u)) / 255.0;
+    float b = float((b5 << 3u) | (b5 >> 2u)) / 255.0;
+    return float4(r, g, b, float(a1));
+}
+
+static inline float4 mp_sample_capture_native(
+    texture2d_array<ushort, access::read> capture,
+    float2 uv,
+    uint layer,
+    float2 logicalSize,
+    bool clampEdges)
+{
+    if (clampEdges &&
+        (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0))
+        return float4(0.0);
+    float2 wrapped = fract(uv);
+    if (wrapped.x < 0.0) wrapped.x += 1.0;
+    if (wrapped.y < 0.0) wrapped.y += 1.0;
+    uint2 coord = uint2(min(uint(wrapped.x * logicalSize.x), uint(logicalSize.x) - 1u),
+                        min(uint(wrapped.y * logicalSize.y), uint(logicalSize.y) - 1u));
+    coord = min(coord, uint2(
+        max(capture.get_width(), 1u) - 1u,
+        max(capture.get_height(), 1u) - 1u));
+    if (layer >= capture.get_array_size())
+        return float4(0.0);
+    return mp_unpack_rgb5551(capture.read(coord, layer).r);
+}
 
 struct BGConfig
 {
@@ -201,9 +238,8 @@ static inline float4 mp_sprite_pixel(
     constant SpriteConfig& config,
     texture2d<uint, access::read> vram,
     texture2d<uint, access::read> palette,
-    texture2d_array<float> capture128,
-    texture2d_array<float> capture256,
-    sampler repeatSampler)
+    texture2d_array<ushort, access::read> capture128,
+    texture2d_array<ushort, access::read> capture256)
 {
     constant OAMConfig& oam = config.oam[sprite];
     if (coord.x < 0 || coord.y < 0 ||
@@ -251,10 +287,12 @@ static inline float4 mp_sprite_pixel(
         captureCoord += float2(
             float((oam.tileOffset >> 1u) & 0x7Fu),
             float((oam.tileOffset >> 8u) & 0x7Fu));
-        return capture128.sample(
-            repeatSampler,
+        return mp_sample_capture_native(
+            capture128,
             fract(captureCoord / 128.0),
-            oam.tileStride);
+            oam.tileStride,
+            float2(128.0),
+            false);
     }
     if (oam.type == 4u)
     {
@@ -263,10 +301,12 @@ static inline float4 mp_sprite_pixel(
         captureCoord += float2(
             float((oam.tileOffset >> 1u) & 0xFFu),
             float((oam.tileOffset >> 9u) & 0xFFu));
-        return capture256.sample(
-            repeatSampler,
+        return mp_sample_capture_native(
+            capture256,
             fract(captureCoord / 256.0),
-            oam.tileStride);
+            oam.tileStride,
+            float2(256.0),
+            false);
     }
     return float4(0.0);
 }
@@ -284,8 +324,8 @@ fragment SpriteFragmentOut mp2d_sprite_fs(
     constant uint& passMode [[buffer(2)]],
     texture2d<uint, access::read> vram [[texture(0)]],
     texture2d<uint, access::read> palette [[texture(1)]],
-    texture2d_array<float> capture128 [[texture(2)]],
-    texture2d_array<float> capture256 [[texture(3)]],
+    texture2d_array<ushort, access::read> capture128 [[texture(2)]],
+    texture2d_array<ushort, access::read> capture256 [[texture(3)]],
     sampler repeatSampler [[sampler(0)]])
 {
     SpriteFragmentOut out;
@@ -329,7 +369,7 @@ fragment SpriteFragmentOut mp2d_sprite_fs(
     float4 color = mp_sprite_pixel(
         sprite, int2(floor(coord)),
         config, vram, palette,
-        capture128, capture256, repeatSampler);
+        capture128, capture256);
     if (color.a <= 0.0)
         discard_fragment();
 
@@ -421,8 +461,8 @@ static inline float4 mp_calculate_bg(
     texture2d<float> bg2,
     texture2d<float> bg3,
     texture2d<float, access::read> high3D,
-    texture2d_array<float> capture128,
-    texture2d_array<float> capture256,
+    texture2d_array<ushort, access::read> capture128,
+    texture2d_array<ushort, access::read> capture256,
     sampler repeatSampler,
     int mosaicX)
 {
@@ -483,8 +523,10 @@ static inline float4 mp_calculate_bg(
         }
 
         if (bg.type == 7u)
-            return capture128.sample(repeatSampler, uv, bg.tileOffset);
-        return capture256.sample(repeatSampler, uv, bg.tileOffset);
+            return mp_sample_capture_native(
+                capture128, uv, bg.tileOffset, float2(bg.size), bg.clamp != 0u);
+        return mp_sample_capture_native(
+            capture256, uv, bg.tileOffset, float2(bg.size), bg.clamp != 0u);
     }
 
     return mp_sample_bg(
@@ -505,8 +547,8 @@ fragment float4 mp2d_composite_fs(
     texture2d<float, access::read> high3D [[texture(4)]],
     texture2d_array<float, access::read> objLayer [[texture(5)]],
     texture2d<int, access::read> mosaicTexture [[texture(6)]],
-    texture2d_array<float> capture128 [[texture(7)]],
-    texture2d_array<float> capture256 [[texture(8)]],
+    texture2d_array<ushort, access::read> capture128 [[texture(7)]],
+    texture2d_array<ushort, access::read> capture256 [[texture(8)]],
     sampler repeatSampler [[sampler(0)]])
 {
     const uint safeScale = max(scale, 1u);

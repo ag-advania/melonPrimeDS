@@ -1295,7 +1295,7 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
     auto makeDummyCapture = [&](NSUInteger layers) -> id<MTLTexture> {
         MTLTextureDescriptor* descriptor =
             [MTLTextureDescriptor
-                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Uint
                                              width:1
                                             height:1
                                          mipmapped:NO];
@@ -1305,7 +1305,7 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         descriptor.storageMode = MTLStorageModeShared;
         id<MTLTexture> texture =
             [State->Device newTextureWithDescriptor:descriptor];
-        const uint32_t zero = 0;
+        const uint16_t zero = 0;
         for (NSUInteger layer = 0; texture && layer < layers; layer++)
         {
             [texture replaceRegion:MTLRegionMake2D(0, 0, 1, 1)
