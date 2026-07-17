@@ -75,6 +75,7 @@ public:
         int FrontBuffer = -1;
         u64 Generation = 0;
         u64 Renderer3DRenderSerial = 0;
+        Renderer3DCompletedFrameReference Completed3DReference{};
         bool Valid = false;
     };
 

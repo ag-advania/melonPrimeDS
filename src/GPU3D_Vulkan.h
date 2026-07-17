@@ -22,6 +22,7 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -34,6 +35,16 @@
 namespace melonDS
 {
 class GPU;
+
+struct VulkanCompletedFrameView
+{
+    Renderer3DCompletedFrameReference Reference{};
+    VkImage Image = VK_NULL_HANDLE;
+    VkImageView ImageView = VK_NULL_HANDLE;
+    u32 Width = 0;
+    u32 Height = 0;
+    bool Valid = false;
+};
 
 class VulkanRenderer3D : public Renderer3D
 {
@@ -51,6 +62,7 @@ public:
     bool Init() override;
     void Reset() override;
     void RenderFrame() override;
+    void FinishRendering() override;
     void RestartFrame() override;
     u32* GetLine(int line) override;
 
@@ -96,6 +108,16 @@ public:
     [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
     [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
     [[nodiscard]] u64 GetRenderSerial() const noexcept override { return RenderSerial; }
+    [[nodiscard]] bool AcquireCompletedFrameForStructured(
+        Renderer3DCompletedFrameReference& reference) override;
+    [[nodiscard]] bool RetainCompletedFrameReference(
+        const Renderer3DCompletedFrameReference& reference) override;
+    void ReleaseCompletedFrameReference(
+        const Renderer3DCompletedFrameReference& reference) override;
+    [[nodiscard]] bool AcquireCompletedFrameView(
+        const Renderer3DCompletedFrameReference& reference,
+        VulkanCompletedFrameView& view);
+    void ReleaseCompletedFrameView(const VulkanCompletedFrameView& view);
     [[nodiscard]] bool IsCurrentCaptureScreenSwapHintValid() const noexcept { return HasCurrentCaptureScreenSwapHint; }
     [[nodiscard]] bool GetCurrentCaptureScreenSwapHint() const noexcept { return CurrentCaptureScreenSwapHint; }
     [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
@@ -381,6 +403,9 @@ private:
 
     bool ensureRenderTarget(u32 width, u32 height);
     void destroyRenderTarget();
+    bool ensureCompletedFrameSlot(u32 slot, u32 width, u32 height);
+    void destroyCompletedFrameSlots();
+    bool snapshotCompletedFrameAtVBlank();
     bool ensureTriangleBuffer(RenderContext* context, size_t triangleCount);
     void destroyTriangleBuffer(RenderContext* context);
     bool ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount);
@@ -667,6 +692,28 @@ private:
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
 
+    static constexpr u32 CompletedFrameSlotCount = 4;
+    struct CompletedFrameSlot
+    {
+        VkImage Image = VK_NULL_HANDLE;
+        VkDeviceMemory Memory = VK_NULL_HANDLE;
+        VkImageView ImageView = VK_NULL_HANDLE;
+        u32 Width = 0;
+        u32 Height = 0;
+        u64 Serial = 0;
+        u64 CompletionValue = 0;
+        u32 HoldCount = 0;
+        bool OwnerScreenSwap = false;
+        bool LayoutReady = false;
+        bool Valid = false;
+        bool CopyInProgress = false;
+    };
+    std::array<CompletedFrameSlot, CompletedFrameSlotCount> CompletedFrameSlots{};
+    std::mutex CompletedFrameMutex;
+    int PendingCompletedFrameSlot = -1;
+    u32 NextCompletedFrameSlot = 0;
+    u64 CompletedFrameCompletionValue = 0;
+
     VkBuffer ReadbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ReadbackMemory = VK_NULL_HANDLE;
     VkDeviceSize ReadbackSize = 0;
@@ -775,6 +822,8 @@ private:
     bool HasCurrentCaptureScreenSwapHint = false;
     bool CurrentRenderScreenSwap = false;
     u64 RenderSerial = 0;
+    u64 LastSuccessfulRenderSerial = 0;
+    bool LastSuccessfulRenderScreenSwap = false;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
     float TimestampPeriodNs = 0.0f;
     bool TimestampQueriesSupported = false;

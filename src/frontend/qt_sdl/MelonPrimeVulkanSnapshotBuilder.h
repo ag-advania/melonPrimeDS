@@ -26,6 +26,9 @@ struct StructuredVulkanSnapshotSource
     bool screenSwap{};
     u64 generation{};
     u64 renderer3dRenderSerial{};
+    u64 renderer3dCompletionValue{};
+    u32 renderer3dImageSlot{};
+    bool renderer3dReferenceValid{};
 };
 
 class MelonPrimeVulkanSnapshotBuilder

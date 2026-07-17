@@ -1677,6 +1677,27 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+class MelonPrimeCompleted3DViewLease
+{
+public:
+    MelonPrimeCompleted3DViewLease(
+        VulkanRenderer3D* renderer,
+        const melonDS::VulkanCompletedFrameView* view) noexcept
+        : Renderer(renderer), View(view)
+    {
+    }
+
+    ~MelonPrimeCompleted3DViewLease()
+    {
+        if (Renderer != nullptr && View != nullptr && View->Valid)
+            Renderer->ReleaseCompletedFrameView(*View);
+    }
+
+private:
+    VulkanRenderer3D* Renderer;
+    const melonDS::VulkanCompletedFrameView* View;
+};
+
 struct ScreenPanelVulkan::VulkanState
 {
     MelonPrime::MelonPrimeVulkanFrameQueue frameQueue;
@@ -1931,6 +1952,20 @@ void ScreenPanelVulkan::drawScreen()
             Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
         return;
     }
+    melonDS::VulkanCompletedFrameView completed3DView{};
+    if (structuredSource.Completed3DReference.Valid)
+    {
+        (void)renderer3D->AcquireCompletedFrameView(
+            structuredSource.Completed3DReference,
+            completed3DView);
+        renderer3D->ReleaseCompletedFrameReference(structuredSource.Completed3DReference);
+    }
+    if (!completed3DView.Valid)
+    {
+        completed3DView.Width = renderer3D->GetColorTargetWidth();
+        completed3DView.Height = renderer3D->GetColorTargetHeight();
+    }
+    MelonPrimeCompleted3DViewLease completed3DViewLease(renderer3D, &completed3DView);
     if (structuredSource.Generation == vulkan->lastQueuedStructuredGeneration
         && structuredSource.Generation == vulkan->lastPresentedStructuredGeneration)
     {
@@ -1938,8 +1973,11 @@ void ScreenPanelVulkan::drawScreen()
     }
     const int configuredScale = std::clamp(
         emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
-    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
-        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
+    const u32 completed3DWidth = completed3DView.Valid
+        ? completed3DView.Width
+        : renderer3D->GetColorTargetWidth();
+    const u32 rendererScale = completed3DWidth >= 256
+        ? std::max<u32>(1, completed3DWidth / 256u)
         : static_cast<u32>(configuredScale);
     const u32 outputWidth = 256u * rendererScale;
     const u32 outputHeight = 386u * rendererScale;
@@ -2011,6 +2049,10 @@ void ScreenPanelVulkan::drawScreen()
         snapshotSource.screenSwap = structuredSource.ScreenSwapAt3D;
         snapshotSource.generation = structuredSource.Generation;
         snapshotSource.renderer3dRenderSerial = structuredSource.Renderer3DRenderSerial;
+        snapshotSource.renderer3dCompletionValue = structuredSource.Completed3DReference.CompletionValue;
+        snapshotSource.renderer3dImageSlot = structuredSource.Completed3DReference.ImageSlot;
+        snapshotSource.renderer3dReferenceValid = structuredSource.Completed3DReference.Valid
+            && completed3DView.Valid;
         if (!vulkan->snapshotBuilder.build(snapshotSource, renderFrame->frameId, snapshot))
         {
             vulkan->frameQueue.discardRenderedFrame(renderFrame);
@@ -2026,7 +2068,8 @@ void ScreenPanelVulkan::drawScreen()
                 snapshot.frontBufferLatched,
                 snapshot.screenSwapLatched,
                 snapshot,
-                *renderer3D)
+                *renderer3D,
+                completed3DView)
             && vulkan->output.buildCompositionInputs(
                 renderFrame,
                 *renderer3D,
