@@ -2669,6 +2669,17 @@ void MetalComputeRenderer3D::RenderFrame()
             ComputeFinalReady())
         {
             State->LastFrameComputeVisible = true;
+            // MELONPRIME_METAL_COMPUTE_IDENTICAL_RASTER_KEEPALIVE_V1:
+            // Reusing the previous compute final texture must NOT skip
+            // RasterReference.RenderFrame(). FinishRendering() always pairs
+            // with RasterReference, and Soft/GetLine fallback (still used when
+            // Full-GPU is mid-frame invalidated, and more often after PR-5
+            // capture cutover enables CpuReadbackRequired=false → compute
+            // visible on capture-heavy scenes) needs a fresh scanline buffer.
+            // Skipping RenderFrame here left RasterReference unpaired/stale and
+            // showed up as unstable compute-visible sessions while the compute
+            // 3D texture itself still looked fine when presented.
+            RasterReference.RenderFrame();
             return;
         }
 
@@ -2688,19 +2699,14 @@ void MetalComputeRenderer3D::RenderFrame()
             // the CPU-composite/SoftRenderer 2D-compositor path consumes 3D
             // content only through GetLine(), never through
             // GetComputeFinalTexture() directly -- that texture-based path
-            // is only consumed by the GPU-resident full-gpu compositor,
-            // which real gameplay routes through only rarely today (Phase M4
-            // is not done; mid-render eligibility loss is common). Skipping
-            // RasterReference.RenderFrame() here (as the removed
-            // "rasterReference=stopped" comment/log implied) left its
-            // scanline buffer stale on every frame this cutover succeeded,
-            // so GetLine() served stale-or-never-rendered (all-black) lines
-            // into the CPU-composite picture on exactly those frames --
-            // observed as a black 3D layer while independent overlays
-            // (HUD/radar) kept rendering fine on top. Until M5 removes
-            // GetLine()'s CPU-scanline dependency, RasterReference must keep
-            // rendering every frame regardless of whether compute's own
-            // cutover also succeeds.
+            // is consumed by the GPU-resident full-gpu compositor. After
+            // PR-5 capture Full-GPU cutover, compute-visible frames are
+            // common in capture-heavy scenes, and mid-render eligibility
+            // loss can still fall back to Soft/GetLine. Skipping
+            // RasterReference.RenderFrame() leaves its scanline buffer stale
+            // (black/glitchy 3D on Soft fallback) while compute's own final
+            // texture can still look correct -- matching "3D OK, session
+            // unstable". Always keep RasterReference rendering in lockstep.
             RasterReference.RenderFrame();
             if (!State->LoggedVisibleCutover)
             {
