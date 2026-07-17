@@ -2120,7 +2120,7 @@ void ScreenPanelVulkan::drawScreen()
         snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
         snapshotSource.frontBuffer = structuredSource.FrontBuffer;
-        snapshotSource.screenSwap = structuredSource.ScreenSwapAt3D;
+        snapshotSource.renderer3dOwnerIsTop = structuredSource.Renderer3DOwnerIsTop;
         snapshotSource.generation = structuredSource.Generation;
         snapshotSource.renderer3dRenderSerial = structuredSource.Renderer3DRenderSerial;
         snapshotSource.renderer3dCompletionValue = structuredSource.Completed3DReference.CompletionValue;
@@ -2140,7 +2140,7 @@ void ScreenPanelVulkan::drawScreen()
                 renderFrame,
                 nds->GPU,
                 snapshot.frontBufferLatched,
-                snapshot.screenSwapLatched,
+                snapshot.renderer3dOwnerIsTop,
                 snapshot,
                 *renderer3D,
                 completed3DView)

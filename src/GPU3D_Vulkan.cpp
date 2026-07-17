@@ -2403,7 +2403,7 @@ bool VulkanRenderer3D::AcquireCompletedFrameForStructured(
     reference.Serial = slot.Serial;
     reference.CompletionValue = slot.CompletionValue;
     reference.ImageSlot = slotIndex;
-    reference.OwnerScreenSwap = slot.OwnerScreenSwap;
+    reference.OwnerLcd = slot.OwnerLcd;
     reference.Valid = true;
     PendingCompletedFrameSlot = -1;
     return true;
@@ -2421,7 +2421,7 @@ bool VulkanRenderer3D::RetainCompletedFrameReference(
         || slot.CopyInProgress
         || slot.Serial != reference.Serial
         || slot.CompletionValue != reference.CompletionValue
-        || slot.OwnerScreenSwap != reference.OwnerScreenSwap)
+        || slot.OwnerLcd != reference.OwnerLcd)
     {
         return false;
     }
@@ -2441,7 +2441,7 @@ void VulkanRenderer3D::ReleaseCompletedFrameReference(
     if (slot.Valid
         && slot.Serial == reference.Serial
         && slot.CompletionValue == reference.CompletionValue
-        && slot.OwnerScreenSwap == reference.OwnerScreenSwap
+        && slot.OwnerLcd == reference.OwnerLcd
         && slot.HoldCount > 0u)
     {
         --slot.HoldCount;
@@ -2641,7 +2641,9 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         CompletedFrameSlot& slot = CompletedFrameSlots[selectedSlot];
         slot.Serial = LastSuccessfulRenderSerial;
         slot.CompletionValue = ++CompletedFrameCompletionValue;
-        slot.OwnerScreenSwap = LastSuccessfulRenderScreenSwap;
+        slot.OwnerLcd = LastSuccessfulRenderScreenSwap
+            ? Renderer3DPhysicalLcd::Top
+            : Renderer3DPhysicalLcd::Bottom;
         slot.LayoutReady = true;
         slot.Valid = true;
         slot.CopyInProgress = false;
@@ -2651,7 +2653,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         Log(Vulkan2DPhaseTraceEnabled() ? LogLevel::Info : LogLevel::Debug,
             "Vulkan2DPhase event=Completed3D VCount=192 completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
             static_cast<unsigned long long>(slot.Serial),
-            slot.OwnerScreenSwap ? 1u : 0u,
+            slot.OwnerLcd == Renderer3DPhysicalLcd::Top ? 1u : 0u,
             selectedSlot,
             static_cast<unsigned long long>(slot.CompletionValue),
             slot.Width,

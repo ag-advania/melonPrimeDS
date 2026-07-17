@@ -70,7 +70,7 @@ public:
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
         bool CaptureScreenSwapValid = false;
-        bool ScreenSwapAt3D = false;
+        bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
         int FrontBuffer = -1;
         u64 Generation = 0;

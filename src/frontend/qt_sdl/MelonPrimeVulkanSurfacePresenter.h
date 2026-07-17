@@ -133,14 +133,13 @@ private:
         std::uint32_t rendererWidth;
         std::uint32_t rendererHeight;
         std::uint32_t packedStride;
-        std::uint32_t screenSwap;
         std::uint32_t filtering;
         std::uint32_t previousTopSourceValid;
         std::uint32_t previousBottomSourceValid;
         std::uint32_t captureSourceValid;
-        std::uint32_t captureSourceScreenSwapValid;
-        std::uint32_t captureSourceScreenSwap;
-        std::uint32_t liveSourceScreenSwap;
+        std::uint32_t capture3dOwnerValid;
+        std::uint32_t capture3dOwnerIsTop;
+        std::uint32_t renderer3dOwnerIsTop;
         std::uint32_t class4VramStructuredPair;
         std::uint32_t class4NoAboveVramStructuredPair;
         std::uint32_t class4PreservePackedVramValid;
@@ -154,6 +153,9 @@ private:
         std::uint32_t overlayWidth;
         std::uint32_t overlayHeight;
     };
+    static_assert(offsetof(PresenterPushConstants, filtering) == 5u * sizeof(std::uint32_t));
+    static_assert(offsetof(PresenterPushConstants, renderer3dOwnerIsTop) == 11u * sizeof(std::uint32_t));
+    static_assert(sizeof(PresenterPushConstants) == 24u * sizeof(std::uint32_t));
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;

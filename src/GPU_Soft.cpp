@@ -110,7 +110,7 @@ void SoftRenderer::Reset()
             Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
         completedFrame.Completed3DReference = {};
         completedFrame.Valid = false;
-        completedFrame.ScreenSwapAt3D = false;
+        completedFrame.Renderer3DOwnerIsTop = false;
         completedFrame.FrontBuffer = -1;
         completedFrame.Generation = 0;
     }
@@ -1287,8 +1287,8 @@ void SoftRenderer::SwapBuffers()
         Renderer3DCompletedFrameReference completed3DReference{};
         if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
             completedFrame.Completed3DReference = completed3DReference;
-        completedFrame.ScreenSwapAt3D = completedFrame.Completed3DReference.Valid
-            ? completedFrame.Completed3DReference.OwnerScreenSwap
+        completedFrame.Renderer3DOwnerIsTop = completedFrame.Completed3DReference.Valid
+            ? completedFrame.Completed3DReference.OwnerIsTop()
             : false;
         completedFrame.CaptureBackedClass4Only =
             StructuredCaptureBacked3DLines > 0u
@@ -1311,7 +1311,7 @@ void SoftRenderer::SwapBuffers()
                 "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu publishedReferenced3dSerial=%llu publishedReferenced3dOwner=%u publishedReferencedImageSlot=%u publishedTimelineValue=%llu currentRendererSerial=%llu currentRendererOwner=%u currentColorImageSlot=mutable exactReference=%u",
                 static_cast<unsigned long long>(completedFrame.Generation),
                 static_cast<unsigned long long>(completedFrame.Renderer3DRenderSerial),
-                completedFrame.ScreenSwapAt3D ? 1u : 0u,
+                completedFrame.Renderer3DOwnerIsTop ? 1u : 0u,
                 completedFrame.Completed3DReference.ImageSlot,
                 static_cast<unsigned long long>(completedFrame.Completed3DReference.CompletionValue),
                 static_cast<unsigned long long>(Rend3D->GetRenderSerial()),
