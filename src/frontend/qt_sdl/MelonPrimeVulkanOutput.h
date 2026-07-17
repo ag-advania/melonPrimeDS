@@ -175,6 +175,7 @@ struct VulkanCompositionInputs
     bool capture3dSourceValid{};
     bool capture3dOwnerValid{};
     bool capture3dOwnerIsTop{};
+    bool renderer3dOwnerValid{};
     bool renderer3dOwnerIsTop{};
     bool class4VramStructuredPair{};
     bool class4NoAboveVramStructuredPair{};
@@ -332,6 +333,7 @@ private:
         u32 captureSourceValid;
         u32 capture3dOwnerValid;
         u32 capture3dOwnerIsTop;
+        u32 renderer3dOwnerValid;
         u32 renderer3dOwnerIsTop;
         u32 class4VramStructuredPair;
         u32 class4NoAboveVramStructuredPair;
@@ -343,8 +345,9 @@ private:
         u32 bottomStructuredHandoffSuppress3d;
     };
     static_assert(offsetof(CompositorPushConstants, filtering) == 6u * sizeof(u32));
-    static_assert(offsetof(CompositorPushConstants, renderer3dOwnerIsTop) == 12u * sizeof(u32));
-    static_assert(sizeof(CompositorPushConstants) == 21u * sizeof(u32));
+    static_assert(offsetof(CompositorPushConstants, renderer3dOwnerValid) == 12u * sizeof(u32));
+    static_assert(offsetof(CompositorPushConstants, renderer3dOwnerIsTop) == 13u * sizeof(u32));
+    static_assert(sizeof(CompositorPushConstants) == 22u * sizeof(u32));
 
     struct AccumulatePushConstants
     {

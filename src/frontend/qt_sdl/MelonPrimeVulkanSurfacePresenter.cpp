@@ -1087,6 +1087,7 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     pushConstants.captureSourceValid = inputs.capture3dSourceValid ? 1u : 0u;
     pushConstants.capture3dOwnerValid = inputs.capture3dOwnerValid ? 1u : 0u;
     pushConstants.capture3dOwnerIsTop = inputs.capture3dOwnerIsTop ? 1u : 0u;
+    pushConstants.renderer3dOwnerValid = inputs.renderer3dOwnerValid ? 1u : 0u;
     pushConstants.renderer3dOwnerIsTop = inputs.renderer3dOwnerIsTop ? 1u : 0u;
     pushConstants.class4VramStructuredPair = inputs.class4VramStructuredPair ? 1u : 0u;
     pushConstants.class4NoAboveVramStructuredPair = inputs.class4NoAboveVramStructuredPair ? 1u : 0u;

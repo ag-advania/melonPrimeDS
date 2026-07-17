@@ -4514,6 +4514,7 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     outInputs.previousBottomSourceImageView = outInputs.previousBottomSourceValid && resource.previousBottomRendererSourceImageView != VK_NULL_HANDLE
         ? resource.previousBottomRendererSourceImageView
         : outInputs.sourceImageView;
+    outInputs.renderer3dOwnerValid = resource.exactRenderer3dPairValid;
     outInputs.renderer3dOwnerIsTop = resource.hasRenderer3dSnapshot
         ? resource.renderer3dSnapshotScreenSwap
         : resource.renderer3dOwnerIsTop;
@@ -5274,6 +5275,7 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
     pushConstants.captureSourceValid = inputs.capture3dSourceValid ? 1u : 0u;
     pushConstants.capture3dOwnerValid = inputs.capture3dOwnerValid ? 1u : 0u;
     pushConstants.capture3dOwnerIsTop = inputs.capture3dOwnerIsTop ? 1u : 0u;
+    pushConstants.renderer3dOwnerValid = inputs.renderer3dOwnerValid ? 1u : 0u;
     pushConstants.renderer3dOwnerIsTop = inputs.renderer3dOwnerIsTop ? 1u : 0u;
     pushConstants.class4VramStructuredPair = inputs.class4VramStructuredPair ? 1u : 0u;
     pushConstants.class4NoAboveVramStructuredPair = inputs.class4NoAboveVramStructuredPair ? 1u : 0u;

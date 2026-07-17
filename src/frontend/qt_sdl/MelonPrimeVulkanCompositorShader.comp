@@ -36,6 +36,7 @@ layout(push_constant) uniform PushConsts
     uint captureSourceValid;
     uint capture3dOwnerValid;
     uint capture3dOwnerIsTop;
+    uint renderer3dOwnerValid;
     uint renderer3dOwnerIsTop;
     uint class4VramStructuredPair;
     uint class4NoAboveVramStructuredPair;
@@ -371,7 +372,8 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
     bool forceLive3dCompMode7 = (masterBrightness & kMetaFlagForceLive3dCompMode7) != 0u; \
     bool structuredAboveDominant = (masterBrightness & kMetaFlagStructuredAboveDominant) != 0u; \
     bool compMode2StructuredPair = (masterBrightness & kMetaFlagCompMode2StructuredPair) != 0u; \
-    bool screenOwnsLive3D = SCREEN_IS_TOP ? (pc.renderer3dOwnerIsTop != 0u) : (pc.renderer3dOwnerIsTop == 0u); \
+    bool screenOwnsLive3D = (pc.renderer3dOwnerValid != 0u) \
+        && (SCREEN_IS_TOP ? (pc.renderer3dOwnerIsTop != 0u) : (pc.renderer3dOwnerIsTop == 0u)); \
     bool structuredHandoffNoCurrent3D = SCREEN_IS_TOP ? (pc.topStructuredHandoffNoCurrent3d != 0u) : (pc.bottomStructuredHandoffNoCurrent3d != 0u); \
     bool oppositeStructuredHandoffNoCurrent3D = SCREEN_IS_TOP ? (pc.bottomStructuredHandoffNoCurrent3d != 0u) : (pc.topStructuredHandoffNoCurrent3d != 0u); \
     bool structuredHandoffSuppress3D = SCREEN_IS_TOP ? (pc.topStructuredHandoffSuppress3d != 0u) : (pc.bottomStructuredHandoffSuppress3d != 0u); \
