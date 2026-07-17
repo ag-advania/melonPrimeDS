@@ -95,6 +95,7 @@ public:
     [[nodiscard]] size_t GetAsyncRenderContextCount() const noexcept { return AsyncRenderContextCount; }
     [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
     [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
+    [[nodiscard]] u64 GetRenderSerial() const noexcept override { return RenderSerial; }
     [[nodiscard]] bool IsCurrentCaptureScreenSwapHintValid() const noexcept { return HasCurrentCaptureScreenSwapHint; }
     [[nodiscard]] bool GetCurrentCaptureScreenSwapHint() const noexcept { return CurrentCaptureScreenSwapHint; }
     [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
@@ -773,6 +774,7 @@ private:
     bool CurrentCaptureScreenSwapHint = false;
     bool HasCurrentCaptureScreenSwapHint = false;
     bool CurrentRenderScreenSwap = false;
+    u64 RenderSerial = 0;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
     float TimestampPeriodNs = 0.0f;
     bool TimestampQueriesSupported = false;

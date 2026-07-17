@@ -359,6 +359,7 @@ public:
     virtual void BeginCaptureFrame() {}
     virtual void SetCaptureScreenSwapHint(bool screenSwap) { (void)screenSwap; }
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+    [[nodiscard]] virtual u64 GetRenderSerial() const noexcept { return 0; }
 #endif
 
     // return one scanline of the framebuffer, with X scroll applied

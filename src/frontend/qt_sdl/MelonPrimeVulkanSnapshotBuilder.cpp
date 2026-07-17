@@ -14,11 +14,6 @@ constexpr u32 kPacked3dPlaceholder = 0x20000000u;
 constexpr u32 kMetaRegularCaptureUses3d = 1u << 21u;
 constexpr u32 kMetaVramCaptureUses3d = 1u << 22u;
 constexpr u32 kMetaForceLive3dCompMode7 = 1u << 18u;
-constexpr u32 kCaptureMetaMask =
-    kMetaRegularCaptureUses3d
-    | kMetaVramCaptureUses3d
-    | kMetaForceLive3dCompMode7;
-
 bool packedPixelIsOpaqueBlack(u32 pixel) noexcept
 {
     return pixel != 0u
@@ -195,8 +190,13 @@ void populateComp4Placeholder(
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
         const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
-        const bool currentCaptureLine = snapshot.hasCapture3dSource
-            && snapshot.captureLineUses3dMask[y] != 0u;
+        const auto& screenNeedsCapture3d = top
+            ? snapshot.topScreenNeedsCapture3dMask
+            : snapshot.bottomScreenNeedsCapture3dMask;
+        const bool currentCaptureLine = screenNeedsCapture3d[y] != 0u;
+        const bool currentCaptureSourceValid =
+            snapshot.hasCapture3dSource
+            && snapshot.capture3dSourceLineValidMask[y] != 0u;
         for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
         {
             const std::size_t index = rowBase + x;
@@ -208,7 +208,7 @@ void populateComp4Placeholder(
                 continue;
 
             u32 value = 0u;
-            if (currentCaptureLine)
+            if (currentCaptureLine && currentCaptureSourceValid)
                 value = snapshot.capture3dSourceDsFrame[index];
             if (!packedPixelIsUseful(value) && historyPlane0 != nullptr)
                 value = (*historyPlane0)[index];
@@ -222,12 +222,16 @@ void populateComp4Placeholder(
 
 void MelonPrimeVulkanSnapshotBuilder::reset() noexcept
 {
-    for (PhaseHistory& history : phaseHistory)
-    {
-        history.snapshot.clear();
-        history.generation = 0;
-        history.valid = false;
-    }
+    const auto clearHistories = [](auto& histories) {
+        for (PhaseHistory& history : histories)
+        {
+            history.snapshot.clear();
+            history.generation = 0;
+            history.valid = false;
+        }
+    };
+    clearHistories(phaseHistory);
+    clearHistories(capturePhaseHistory);
 }
 
 bool MelonPrimeVulkanSnapshotBuilder::build(
@@ -239,7 +243,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         return false;
     for (std::size_t screen = 0; screen < 2u; ++screen)
     {
-        if (source.lineMeta[screen] == nullptr)
+        if (source.lineMeta[screen] == nullptr || source.screenNeedsCapture3d[screen] == nullptr)
             return false;
         for (std::size_t plane = 0; plane < 3u; ++plane)
         {
@@ -257,11 +261,18 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.frameId = frameId;
         return true;
     }
+    PhaseHistory& matchingCaptureHistory = source.captureScreenSwapValid
+        ? capturePhaseHistory[source.captureScreenSwap ? 1u : 0u]
+        : matchingHistory;
 
     destination.clear();
     destination.frameId = frameId;
+    destination.sourceGeneration = source.generation;
+    destination.renderer3dRenderSerial = source.renderer3dRenderSerial;
     destination.frontBufferLatched = source.frontBuffer;
     destination.screenSwapLatched = source.screenSwap;
+    destination.captureScreenSwap = source.captureScreenSwap;
+    destination.captureScreenSwapValid = source.captureScreenSwapValid;
     destination.captureBackedClass4Only = source.captureBackedClass4Only;
     destination.valid = true;
 
@@ -290,13 +301,21 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         std::memcpy(destination.capture3dSourceDsFrame.data(), source.capture3dSource, pixelBytes);
         destination.hasCapture3dSource = true;
     }
-    if (source.captureLineUses3d != nullptr)
+    if (source.capture3dSourceLineValid != nullptr)
     {
         std::memcpy(
-            destination.captureLineUses3dMask.data(),
-            source.captureLineUses3d,
-            destination.captureLineUses3dMask.size() * sizeof(u8));
+            destination.capture3dSourceLineValidMask.data(),
+            source.capture3dSourceLineValid,
+            destination.capture3dSourceLineValidMask.size() * sizeof(u8));
     }
+    std::memcpy(
+        destination.topScreenNeedsCapture3dMask.data(),
+        source.screenNeedsCapture3d[0],
+        destination.topScreenNeedsCapture3dMask.size() * sizeof(u8));
+    std::memcpy(
+        destination.bottomScreenNeedsCapture3dMask.data(),
+        source.screenNeedsCapture3d[1],
+        destination.bottomScreenNeedsCapture3dMask.size() * sizeof(u8));
 
     // A ScreenSwap-toggling title alternates ownership every frame. Only the
     // last snapshot from the same ownership phase is eligible for recovery;
@@ -309,8 +328,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 auto& plane0 = top ? destination.packedTopPlane0 : destination.packedBottomPlane0;
                 auto& plane1 = top ? destination.packedTopPlane1 : destination.packedBottomPlane1;
                 auto& control = top ? destination.packedTopControl : destination.packedBottomControl;
-                auto& lineMeta = top ? destination.packedTopLineMeta : destination.packedBottomLineMeta;
-                const bool captureLine = (lineMeta[y] & kCaptureMetaMask) != 0u;
+                const auto& screenNeedsCapture3d = top
+                    ? destination.topScreenNeedsCapture3dMask
+                    : destination.bottomScreenNeedsCapture3dMask;
+                const bool captureLine = screenNeedsCapture3d[y] != 0u;
                 if (!captureLine)
                     return;
                 const bool hasPayload = lineHasUsefulPixel(plane0, y)
@@ -322,20 +343,31 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             recoverScreenLine(true);
             recoverScreenLine(false);
 
-            const bool currentCaptureLine = destination.captureLineUses3dMask[y] != 0u;
-            const bool currentCaptureUseful = destination.hasCapture3dSource
-                && lineHasUsefulPixel(destination.capture3dSourceDsFrame, y);
-            if (currentCaptureLine && !currentCaptureUseful
-                && matchingHistory.snapshot.hasCapture3dSource
-                && lineHasUsefulPixel(matchingHistory.snapshot.capture3dSourceDsFrame, y))
+            const bool currentCaptureLine =
+                destination.topScreenNeedsCapture3dMask[y] != 0u
+                || destination.bottomScreenNeedsCapture3dMask[y] != 0u;
+            const bool currentCaptureSourceValid = destination.hasCapture3dSource
+                && destination.capture3dSourceLineValidMask[y] != 0u;
+            const bool historyCaptureSourceValid = matchingCaptureHistory.snapshot.hasCapture3dSource
+                && matchingCaptureHistory.snapshot.capture3dSourceLineValidMask[y] != 0u;
+            if (currentCaptureLine && !currentCaptureSourceValid
+                && matchingCaptureHistory.snapshot.hasCapture3dSource
+                && historyCaptureSourceValid)
             {
                 const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
                 std::memcpy(
                     destination.capture3dSourceDsFrame.data() + rowBase,
-                    matchingHistory.snapshot.capture3dSourceDsFrame.data() + rowBase,
+                    matchingCaptureHistory.snapshot.capture3dSourceDsFrame.data() + rowBase,
                     SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
                 destination.captureFallbackLines[y] = 1u;
+                destination.capture3dSourceLineValidMask[y] = 1u;
                 destination.hasCapture3dSource = true;
+                if (!destination.captureScreenSwapValid
+                    && matchingCaptureHistory.snapshot.captureScreenSwapValid)
+                {
+                    destination.captureScreenSwap = matchingCaptureHistory.snapshot.captureScreenSwap;
+                    destination.captureScreenSwapValid = true;
+                }
             }
         }
     }
@@ -376,6 +408,14 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     matchingHistory.snapshot = destination;
     matchingHistory.generation = source.generation;
     matchingHistory.valid = true;
+    if (destination.captureScreenSwapValid && destination.hasCapture3dSource)
+    {
+        PhaseHistory& completedCaptureHistory =
+            capturePhaseHistory[destination.captureScreenSwap ? 1u : 0u];
+        completedCaptureHistory.snapshot = destination;
+        completedCaptureHistory.generation = source.generation;
+        completedCaptureHistory.valid = true;
+    }
     return true;
 }
 

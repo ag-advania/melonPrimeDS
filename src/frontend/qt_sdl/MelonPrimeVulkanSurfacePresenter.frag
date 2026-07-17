@@ -859,11 +859,10 @@ vec4 FUNC_NAME() \
             } \
             else if (structuredHandoffNoCurrent3D) \
             { \
-                bool aboveVisibleNonBlack = structured2DAbove \
-                    && isStructured2DVisible(above2D) \
-                    && ((above2D.r | above2D.g | above2D.b) != 0); \
+                bool aboveUsable2D = structured2DAbove \
+                    && structuredPlane1Usable2D; \
                 bool belowVisible = isStructured2DVisible(below2D); \
-                if (aboveVisibleNonBlack) \
+                if (aboveUsable2D) \
                     composed = above2D; \
                 else if (belowVisible) \
                     composed = below2D; \

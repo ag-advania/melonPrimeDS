@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -45,6 +46,23 @@ constexpr melonDS::u32 kMetaFlagStructuredAboveDominant = 1u << 19u;
 constexpr melonDS::u32 kPacked3dPlaceholder = 0x20000000u;
 constexpr melonDS::u32 kRenderer2DDebugFeature3DBackground = 1u << 6u;
 constexpr melonDS::u32 kClass4StructuredAboveStableSamplesFor30Fps = 2u;
+
+bool vulkan2dTraceEnabled() noexcept
+{
+    static const bool enabled = std::getenv("MELONPRIME_VULKAN_2D_TRACE") != nullptr;
+    return enabled;
+}
+
+u64 hashLineMask(const std::array<u8, SoftPackedFrameSnapshot::kLineCount>& mask) noexcept
+{
+    u64 hash = 1469598103934665603ull;
+    for (const u8 value : mask)
+    {
+        hash ^= static_cast<u64>(value);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
 
 bool screenUsesFullRegularComp7(const SoftPackedScreenStats& stats)
 {
@@ -1701,6 +1719,11 @@ bool MelonPrimeVulkanOutput::createFrameResource(VulkanFrame* frame, u32 width, 
     resource->previousBottomSourceFrame = nullptr;
     resource->previousBottomSourcePending = false;
     resource->captureBackedClass4Only = false;
+    resource->structuredGeneration = 0;
+    resource->renderer3dRenderSerial = 0;
+    resource->renderer3dSnapshotSerial = 0;
+    resource->captureScreenSwap = false;
+    resource->captureScreenSwapValid = false;
     resource->class4NoAboveVramStructuredPair = false;
     resource->class4PreservePackedVramValid = false;
     resource->class4PreservePackedVramScreenSwap = false;
@@ -2110,13 +2133,19 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
     }
 
     resource.softPackedFrameId = softPackedSnapshot.frameId;
+    resource.structuredGeneration = softPackedSnapshot.sourceGeneration;
+    resource.renderer3dRenderSerial = softPackedSnapshot.renderer3dRenderSerial;
     resource.frontBufferLatched = softPackedSnapshot.frontBufferLatched;
+    resource.captureScreenSwap = softPackedSnapshot.captureScreenSwap;
+    resource.captureScreenSwapValid = softPackedSnapshot.captureScreenSwapValid;
     resource.captureBackedClass4Only = softPackedSnapshot.captureBackedClass4Only;
     resource.hasSoftPackedDebugData = true;
     resource.topScreenStats = softPackedSnapshot.topScreenStats;
     resource.bottomScreenStats = softPackedSnapshot.bottomScreenStats;
     resource.capture3dSourceDsFrame = softPackedSnapshot.capture3dSourceDsFrame;
-    resource.captureLineUses3dMask = softPackedSnapshot.captureLineUses3dMask;
+    resource.capture3dSourceLineValidMask = softPackedSnapshot.capture3dSourceLineValidMask;
+    resource.topScreenNeedsCapture3dMask = softPackedSnapshot.topScreenNeedsCapture3dMask;
+    resource.bottomScreenNeedsCapture3dMask = softPackedSnapshot.bottomScreenNeedsCapture3dMask;
     resource.captureFallbackLines.fill(0);
     resource.comp4TopPlaceholder = softPackedSnapshot.comp4TopPlaceholder;
     resource.comp4BottomPlaceholder = softPackedSnapshot.comp4BottomPlaceholder;
@@ -2743,6 +2772,18 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     {
         liveSourceScreenSwap = true;
     }
+    const bool exactCaptureOwnerApplies =
+        softPackedSnapshot.captureScreenSwapValid
+        && (std::any_of(
+                softPackedSnapshot.topScreenNeedsCapture3dMask.begin(),
+                softPackedSnapshot.topScreenNeedsCapture3dMask.end(),
+                [](u8 value) { return value != 0u; })
+            || std::any_of(
+                softPackedSnapshot.bottomScreenNeedsCapture3dMask.begin(),
+                softPackedSnapshot.bottomScreenNeedsCapture3dMask.end(),
+                [](u8 value) { return value != 0u; }));
+    if (exactCaptureOwnerApplies)
+        liveSourceScreenSwap = softPackedSnapshot.captureScreenSwap;
     const bool topPlainStructuredComp7UsesOppositeLive3d =
         currentBackendIsGraphics
         && topUsesPlainStructuredComp7Slot
@@ -2817,7 +2858,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     {
         regularComp7PackedOwnerDebugActive = false;
     }
-    if (class4AsymmetricBottomDominantPair)
+    if (class4AsymmetricBottomDominantPair && !exactCaptureOwnerApplies)
     {
         if (!class4AsymmetricCadenceActive)
         {
@@ -2863,6 +2904,55 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         }
         class4AsymmetricCadenceActive = false;
         class4AsymmetricCadencePhase = 0;
+    }
+
+    const u64 renderer3dSnapshotSerialForTrace = resource.hasRenderer3dSnapshot
+        ? resource.renderer3dSnapshotSerial
+        : renderer3D.GetRenderSerial();
+    const bool rendererSerialMismatch =
+        resource.renderer3dRenderSerial != 0u
+        && renderer3dSnapshotSerialForTrace != 0u
+        && resource.renderer3dRenderSerial != renderer3dSnapshotSerialForTrace;
+    if (rendererSerialMismatch || vulkan2dTraceEnabled())
+    {
+        melonDS::Platform::Log(
+            rendererSerialMismatch
+                ? melonDS::Platform::LogLevel::Warn
+                : melonDS::Platform::LogLevel::Info,
+            "Vulkan2DTrace frameId=%llu sourceGeneration=%llu frontBuffer=%d screenSwapAt3D=%u captureOwnerValid=%u captureOwner=%u captureUseTopHash=%016llX captureUseBottomHash=%016llX captureSourceValidHash=%016llX captureSourceValid=%u topRegular=%u bottomRegular=%u topVram=%u bottomVram=%u topStructured=%u bottomStructured=%u computedOwner=%u exactOwner=%u rendererSnapshotOwner=%u renderer3dRenderSerial=%llu renderer3dSnapshotSerial=%llu serialMismatch=%u class4Pair=%u cadencePhase=%u cadenceSuppressed=%u previousTopFrameId=%llu previousBottomFrameId=%llu replayTop=%u replayBottom=%u",
+            frame != nullptr ? static_cast<unsigned long long>(frame->frameId) : 0ull,
+            static_cast<unsigned long long>(resource.structuredGeneration),
+            resource.frontBufferLatched,
+            resource.screenSwap ? 1u : 0u,
+            resource.captureScreenSwapValid ? 1u : 0u,
+            resource.captureScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(hashLineMask(resource.topScreenNeedsCapture3dMask)),
+            static_cast<unsigned long long>(hashLineMask(resource.bottomScreenNeedsCapture3dMask)),
+            static_cast<unsigned long long>(hashLineMask(resource.capture3dSourceLineValidMask)),
+            softPackedSnapshot.hasCapture3dSource ? 1u : 0u,
+            softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines,
+            softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines,
+            softPackedSnapshot.topScreenStats.VramCaptureUses3dLines,
+            softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines,
+            softPackedSnapshot.topScreenStats.StructuredSlotPixels,
+            softPackedSnapshot.bottomScreenStats.StructuredSlotPixels,
+            liveSourceScreenSwap ? 1u : 0u,
+            resource.captureScreenSwap ? 1u : 0u,
+            resource.renderer3dSnapshotScreenSwap ? 1u : 0u,
+            static_cast<unsigned long long>(resource.renderer3dRenderSerial),
+            static_cast<unsigned long long>(renderer3dSnapshotSerialForTrace),
+            rendererSerialMismatch ? 1u : 0u,
+            class4VramStructuredPair ? 1u : 0u,
+            class4AsymmetricCadencePhaseForFrame,
+            class4AsymmetricCadenceSuppressesTop ? 1u : 0u,
+            resource.previousTopSourceFrame != nullptr
+                ? static_cast<unsigned long long>(resource.previousTopSourceFrame->frameId)
+                : 0ull,
+            resource.previousBottomSourceFrame != nullptr
+                ? static_cast<unsigned long long>(resource.previousBottomSourceFrame->frameId)
+                : 0ull,
+            resource.replayTopComposedFromPrevious ? 1u : 0u,
+            resource.replayBottomComposedFromPrevious ? 1u : 0u);
     }
 
     resource.topStructuredHandoffSuppress3d = topStructuredHandoffSuppress3d;
@@ -3583,11 +3673,6 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         : nullptr;
     const u32* lastValidPreparedCapture3dSource =
         renderer2dDebugControlsActive ? nullptr : lastValidCapture3dSource.data();
-    const bool frameUsesCurrentRegularCapture3d =
-        softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines > 0u
-        || softPackedSnapshot.topScreenStats.VramCaptureUses3dLines > 0u
-        || softPackedSnapshot.bottomScreenStats.RegularCaptureUses3dLines > 0u
-        || softPackedSnapshot.bottomScreenStats.VramCaptureUses3dLines > 0u;
     const bool topUsesCurrentRegularCapture3d =
         softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines > 0u
         || softPackedSnapshot.topScreenStats.VramCaptureUses3dLines > 0u;
@@ -3626,9 +3711,13 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4Placeholder.data();
         lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4PlaceholderLines.data();
     }
-    const auto* captureLineUses3dMask = &softPackedSnapshot.captureLineUses3dMask;
-    const bool renderer2dCapture3dSourceHasPixels =
-        renderer2dDebug3dBackgroundEnabled && capture3dSourceHasAnyUsefulPixel(preparedCapture3dSource);
+    const bool renderer2dCapture3dSourceAvailable =
+        renderer2dDebug3dBackgroundEnabled
+        && preparedCapture3dSource != nullptr
+        && std::any_of(
+            softPackedSnapshot.capture3dSourceLineValidMask.begin(),
+            softPackedSnapshot.capture3dSourceLineValidMask.end(),
+            [](u8 valid) { return valid != 0u; });
     if (!currentFrameNeedsCapture3dSource)
         return true;
     if (!renderer2dDebug3dBackgroundEnabled)
@@ -3657,21 +3746,21 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         const bool acceptPreferredComp4Line =
             preferredComp4LineHasPixels
             && !(preferredComp4LineIsSolidOpaqueBlack && latchedComp4LineHasPixels);
-        const bool lineHasPixels = capture3dSourceLineHasAnyUsefulPixel(preparedCapture3dSource, y);
+        const bool lineSourceValid =
+            preparedCapture3dSource != nullptr
+            && softPackedSnapshot.capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u;
+        const bool lineHasPixels = lineSourceValid;
         const bool latchedLineHasPixels =
             !renderer2dDebugControlsActive
             && lastValidCapture3dSourceLines[static_cast<size_t>(y)] != 0u
             && capture3dSourceLineHasAnyUsefulPixel(lastValidPreparedCapture3dSource, y);
-        const bool previousLineHasPixels = capture3dSourceLineHasAnyUsefulPixel(previousPreparedCapture3dSource, y);
-        const u32 topLineMeta = softPackedSnapshot.packedTopLineMeta[static_cast<size_t>(y)];
-        const u32 bottomLineMeta = softPackedSnapshot.packedBottomLineMeta[static_cast<size_t>(y)];
-        const bool lineMetaUses3d =
-            ((topLineMeta | bottomLineMeta) & (kMetaFlagRegularCaptureUses3d | kMetaFlagVramCaptureUses3d)) != 0u;
+        const bool previousLineHasPixels = previousPreparedCapture3dSource != nullptr
+            && previousResource != nullptr
+            && (previousResource->capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u
+                || previousResource->captureFallbackLines[static_cast<size_t>(y)] != 0u);
         const bool lineUses3d =
-            frameUsesCurrentRegularCapture3d
-            || lineMetaUses3d
-            || (captureLineUses3dMask != nullptr
-                && (*captureLineUses3dMask)[static_cast<size_t>(y)] != 0u);
+            softPackedSnapshot.topScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u
+            || softPackedSnapshot.bottomScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u;
         const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
         if (acceptPreferredComp4Line)
         {
@@ -3747,6 +3836,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                 lastValidComp4PlaceholderLines[static_cast<size_t>(y)] = 1u;
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             if (preferredComp4PlaceholderIsTemporal)
                 linesFromPreviousFrame++;
             else
@@ -3788,6 +3878,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                     expandPackedColor6ToRgba8(pixel);
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             linesFromLatchedValid++;
             continue;
         }
@@ -3815,6 +3906,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                 lastValidCapture3dSourceLines[static_cast<size_t>(y)] = 1u;
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             linesFromRenderer2d++;
             continue;
         }
@@ -3834,6 +3926,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                     expandPackedColor6ToRgba8(lastValidPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             linesFromLatchedValid++;
             continue;
         }
@@ -3853,6 +3946,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                     expandPackedColor6ToRgba8(previousPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             linesFromPreviousFrame++;
             continue;
         }
@@ -3878,6 +3972,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                     expandPackedColor6ToRgba8(previousPreparedCapture3dSource[rowOffset + static_cast<size_t>(x)]);
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             linesFromPreviousFrame++;
             continue;
         }
@@ -3885,26 +3980,21 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         emptyLines++;
     }
 
-    if (currentBackendIsGraphics && currentFrameNeedsCapture3dSource && (needsRenderer3dFallback || !renderer2dCapture3dSourceHasPixels))
+    if (currentBackendIsGraphics && currentFrameNeedsCapture3dSource && (needsRenderer3dFallback || !renderer2dCapture3dSourceAvailable))
     {
         renderer3D.PrepareCaptureFrame();
         for (int y = 0; y < kScreenHeight; y++)
         {
-            const bool renderer2dLineHasPixels = capture3dSourceLineHasAnyUsefulPixel(preparedCapture3dSource, y);
-            const u32 topLineMeta = softPackedSnapshot.packedTopLineMeta[static_cast<size_t>(y)];
-            const u32 bottomLineMeta = softPackedSnapshot.packedBottomLineMeta[static_cast<size_t>(y)];
-            const bool lineMetaUses3d =
-                ((topLineMeta | bottomLineMeta) & (kMetaFlagRegularCaptureUses3d | kMetaFlagVramCaptureUses3d)) != 0u;
+            const bool renderer2dLineHasPixels = preparedCapture3dSource != nullptr
+                && softPackedSnapshot.capture3dSourceLineValidMask[static_cast<size_t>(y)] != 0u;
             const bool lineUses3d =
-                frameUsesCurrentRegularCapture3d
-                || lineMetaUses3d
-                || (captureLineUses3dMask != nullptr
-                    && (*captureLineUses3dMask)[static_cast<size_t>(y)] != 0u);
+                softPackedSnapshot.topScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u
+                || softPackedSnapshot.bottomScreenNeedsCapture3dMask[static_cast<size_t>(y)] != 0u;
             if (resolvedLines[static_cast<size_t>(y)] != 0u)
                 continue;
             if (renderer2dLineHasPixels)
                 continue;
-            if (preparedCapture3dSource != nullptr && !lineUses3d && renderer2dCapture3dSourceHasPixels)
+            if (preparedCapture3dSource != nullptr && !lineUses3d && renderer2dCapture3dSourceAvailable)
                 continue;
 
             const u32* line = renderer3D.GetLine(y);
@@ -3927,6 +4017,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             }
             resolvedLines[static_cast<size_t>(y)] = 1u;
             resource.captureFallbackLines[static_cast<size_t>(y)] = 1u;
+            resource.capture3dSourceLineValidMask[static_cast<size_t>(y)] = 1u;
             softPackedSnapshot.captureFallbackLines[static_cast<size_t>(y)] = 1u;
             linesFromRenderer3d++;
         }
@@ -3948,7 +4039,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
                 linesFromPreviousFrame,
                 linesFromRenderer3d,
                 emptyLines,
-            renderer2dCapture3dSourceHasPixels ? 1u : 0u,
+            renderer2dCapture3dSourceAvailable ? 1u : 0u,
             capture3dSource[0],
             capture3dSource[centerIndex],
             capture3dSource[(256u * 192u) - 1u],
@@ -4132,11 +4223,19 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
         topUsesRegularCapture3d != bottomUsesRegularCapture3d
         && !topUsesVramCapture3d
         && !bottomUsesVramCapture3d;
-    outInputs.capture3dSourceScreenSwapValid =
-        asymmetricRegularCapture3d || (topUsesCurrentCapture3d != bottomUsesCurrentCapture3d);
-    outInputs.capture3dSourceScreenSwap = asymmetricRegularCapture3d
-        ? topUsesRegularCapture3d
-        : topUsesCurrentCapture3d;
+    if (resource.captureScreenSwapValid)
+    {
+        outInputs.capture3dSourceScreenSwapValid = true;
+        outInputs.capture3dSourceScreenSwap = resource.captureScreenSwap;
+    }
+    else
+    {
+        outInputs.capture3dSourceScreenSwapValid =
+            asymmetricRegularCapture3d || (topUsesCurrentCapture3d != bottomUsesCurrentCapture3d);
+        outInputs.capture3dSourceScreenSwap = asymmetricRegularCapture3d
+            ? topUsesRegularCapture3d
+            : topUsesCurrentCapture3d;
+    }
     outInputs.needsReadback = needsReadback;
     outInputs.multiSurface = multiSurface;
     outInputs.validationMode = validationMode;
@@ -4172,6 +4271,7 @@ void MelonPrimeVulkanOutput::destroyRenderer3dSnapshot(FrameResource& resource)
     resource.snapshotWidth = 0;
     resource.snapshotHeight = 0;
     resource.hasRenderer3dSnapshot = false;
+    resource.renderer3dSnapshotSerial = 0;
 }
 
 bool MelonPrimeVulkanOutput::ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height)
@@ -4512,6 +4612,7 @@ bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resourc
 
     resource.hasRenderer3dSnapshot = true;
     resource.renderer3dSnapshotScreenSwap = snapshotScreenSwap;
+    resource.renderer3dSnapshotSerial = renderer3D.GetRenderSerial();
     return true;
 }
 
@@ -5274,11 +5375,18 @@ bool MelonPrimeVulkanOutput::getPreparedSoftPackedFrameDebugView(
         return false;
 
     outView.frameId = resource.softPackedFrameId;
+    outView.sourceGeneration = resource.structuredGeneration;
+    outView.renderer3dRenderSerial = resource.renderer3dRenderSerial;
+    outView.renderer3dSnapshotSerial = resource.renderer3dSnapshotSerial;
     outView.frontBufferLatched = resource.frontBufferLatched;
     outView.screenSwapLatched = resource.screenSwap;
+    outView.captureScreenSwap = resource.captureScreenSwap;
+    outView.captureScreenSwapValid = resource.captureScreenSwapValid;
     outView.captureBackedClass4Only = resource.captureBackedClass4Only;
     outView.capture3dSourceDsFrame = resource.capture3dSourceDsFrame.data();
-    outView.captureLineUses3dMask = resource.captureLineUses3dMask.data();
+    outView.capture3dSourceLineValidMask = resource.capture3dSourceLineValidMask.data();
+    outView.topScreenNeedsCapture3dMask = resource.topScreenNeedsCapture3dMask.data();
+    outView.bottomScreenNeedsCapture3dMask = resource.bottomScreenNeedsCapture3dMask.data();
     outView.captureFallbackLines = resource.captureFallbackLines.data();
     outView.comp4TopPlaceholder = resource.comp4TopPlaceholder.data();
     outView.comp4BottomPlaceholder = resource.comp4BottomPlaceholder.data();
