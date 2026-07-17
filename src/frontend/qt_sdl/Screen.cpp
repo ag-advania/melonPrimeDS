@@ -2000,12 +2000,17 @@ void ScreenPanelVulkan::drawScreen()
             }
         }
         snapshotSource.capture3dSource = structuredSource.Capture3DSource.data();
-        snapshotSource.captureLineUses3d = structuredSource.CaptureLineUses3D.data();
+        snapshotSource.capture3dSourceLineValid = structuredSource.Capture3DSourceLineValid.data();
+        snapshotSource.screenNeedsCapture3d[0] = structuredSource.TopScreenNeedsCapture3D.data();
+        snapshotSource.screenNeedsCapture3d[1] = structuredSource.BottomScreenNeedsCapture3D.data();
         snapshotSource.hasCapture3dSource = structuredSource.HasCapture3DSource;
+        snapshotSource.captureScreenSwap = structuredSource.CaptureScreenSwap;
+        snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
         snapshotSource.frontBuffer = structuredSource.FrontBuffer;
         snapshotSource.screenSwap = structuredSource.ScreenSwapAt3D;
         snapshotSource.generation = structuredSource.Generation;
+        snapshotSource.renderer3dRenderSerial = structuredSource.Renderer3DRenderSerial;
         if (!vulkan->snapshotBuilder.build(snapshotSource, renderFrame->frameId, snapshot))
         {
             vulkan->frameQueue.discardRenderedFrame(renderFrame);
@@ -2156,14 +2161,25 @@ void ScreenPanelVulkan::drawScreen()
         overlay.height = static_cast<std::uint32_t>(vulkan->overlayFrame.height());
         overlay.rowBytes = static_cast<std::size_t>(vulkan->overlayFrame.bytesPerLine());
     }
-    if (vulkan->presenter.Present(
+    const bool presentSucceeded = vulkan->presenter.Present(
             presentFrame,
             vulkan->output,
             presentInputs,
             presentFrame->width,
             presentFrame->height,
             regions,
-            hasOverlay ? &overlay : nullptr))
+            hasOverlay ? &overlay : nullptr);
+    if (std::getenv("MELONPRIME_VULKAN_2D_TRACE") != nullptr)
+    {
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "Vulkan2DPresentTrace frameId=%llu sourceGeneration=%llu submissionValue=%llu presentResult=%u",
+            static_cast<unsigned long long>(presentFrame->frameId),
+            static_cast<unsigned long long>(presentFrame->sourceGeneration),
+            static_cast<unsigned long long>(presentFrame->renderTimelineValue),
+            presentSucceeded ? 1u : 0u);
+    }
+    if (presentSucceeded)
     {
         vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
         vulkan->lastPresentedStructuredGeneration = presentFrame->sourceGeneration;

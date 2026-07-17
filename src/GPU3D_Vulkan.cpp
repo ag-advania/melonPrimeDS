@@ -667,6 +667,7 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
+    RenderSerial = 0;
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
     EarlySubmitHitCount = 0;
@@ -732,6 +733,10 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         EarlySubmitSkipVCount215Count++;
         return;
     }
+
+    // One serial per emulated 3D frame. Early-submit frames skip the later
+    // VCount 215 call, so this remains a single increment for either path.
+    ++RenderSerial;
 
     const u64 renderStartNs = PerfNowNs();
     auto renderPerfScope = MakeScopeExit([&]() {

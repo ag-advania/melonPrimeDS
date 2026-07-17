@@ -64,13 +64,17 @@ public:
         std::array<u32, 2u * 3u * StructuredPixelCount> ScreenPlanes{};
         std::array<u32, 2u * 192u> ScreenLineMeta{};
         std::array<u32, StructuredPixelCount> Capture3DSource{};
-        std::array<u8, 192u> CaptureLineUses3D{};
+        std::array<u8, 192u> Capture3DSourceLineValid{};
+        std::array<u8, 192u> TopScreenNeedsCapture3D{};
+        std::array<u8, 192u> BottomScreenNeedsCapture3D{};
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
+        bool CaptureScreenSwapValid = false;
         bool ScreenSwapAt3D = false;
         bool CaptureBackedClass4Only = false;
         int FrontBuffer = -1;
         u64 Generation = 0;
+        u64 Renderer3DRenderSerial = 0;
         bool Valid = false;
     };
 
@@ -108,6 +112,7 @@ private:
     bool StructuredFrameValid = false;
     bool StructuredCapture3DSourceValid = false;
     bool StructuredCaptureScreenSwap = false;
+    bool StructuredCaptureScreenSwapValid = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};

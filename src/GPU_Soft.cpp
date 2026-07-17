@@ -77,6 +77,7 @@ void SoftRenderer::Reset()
     StructuredFrameValid = false;
     StructuredCapture3DSourceValid = false;
     StructuredCaptureScreenSwap = false;
+    StructuredCaptureScreenSwapValid = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
@@ -165,6 +166,7 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCapture3DSource.fill(0);
             StructuredCapture3DSourceLineValid.fill(0);
             StructuredCapture3DSourceValid = false;
+            StructuredCaptureScreenSwapValid = false;
             StructuredCaptureCompositeLineValid = false;
             StructuredCapturePreparedThisFrame = false;
             StructuredCaptureBackedSourceClassPixels.fill(0);
@@ -183,6 +185,7 @@ void SoftRenderer::DrawScanline(u32 line)
             if (captureNeeds3D)
             {
                 StructuredCaptureScreenSwap = GPU.ScreenSwap;
+                StructuredCaptureScreenSwapValid = true;
                 Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
                 Rend3D->BeginCaptureFrame();
                 Rend3D->PrepareCaptureFrame();
@@ -224,6 +227,7 @@ void SoftRenderer::DrawScanline(u32 line)
                 if (!StructuredCapturePreparedThisFrame)
                 {
                     StructuredCaptureScreenSwap = GPU.ScreenSwap;
+                    StructuredCaptureScreenSwapValid = true;
                     Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
                     Rend3D->BeginCaptureFrame();
                     Rend3D->PrepareCaptureFrame();
@@ -1215,9 +1219,18 @@ void SoftRenderer::SwapBuffers()
         completedFrame.ScreenPlanes = StructuredScreenPlanes;
         completedFrame.ScreenLineMeta = StructuredScreenLineMeta;
         completedFrame.Capture3DSource = StructuredCapture3DSource;
-        completedFrame.CaptureLineUses3D = StructuredCapture3DSourceLineValid;
+        completedFrame.Capture3DSourceLineValid = StructuredCapture3DSourceLineValid;
+        constexpr u32 captureUseMetaMask = (1u << 21u) | (1u << 22u);
+        for (std::size_t line = 0; line < 192u; ++line)
+        {
+            completedFrame.TopScreenNeedsCapture3D[line] =
+                (StructuredScreenLineMeta[line] & captureUseMetaMask) != 0u ? 1u : 0u;
+            completedFrame.BottomScreenNeedsCapture3D[line] =
+                (StructuredScreenLineMeta[192u + line] & captureUseMetaMask) != 0u ? 1u : 0u;
+        }
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
+        completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
         completedFrame.ScreenSwapAt3D = GPU.GPU3D.GetRenderScreenSwapAt3D();
         completedFrame.CaptureBackedClass4Only =
             StructuredCaptureBacked3DLines > 0u
@@ -1229,6 +1242,7 @@ void SoftRenderer::SwapBuffers()
             && StructuredCaptureBackedBestClassLines[16] == 0u;
         completedFrame.FrontBuffer = BackBuffer & 1;
         completedFrame.Generation = ++StructuredVulkanGeneration;
+        completedFrame.Renderer3DRenderSerial = Rend3D->GetRenderSerial();
         completedFrame.Valid = true;
     }
 

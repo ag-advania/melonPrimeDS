@@ -16,12 +16,16 @@ struct StructuredVulkanSnapshotSource
     const u32* plane[2][3]{};
     const u32* lineMeta[2]{};
     const u32* capture3dSource{};
-    const u8* captureLineUses3d{};
+    const u8* capture3dSourceLineValid{};
+    const u8* screenNeedsCapture3d[2]{};
     bool hasCapture3dSource{};
+    bool captureScreenSwap{};
+    bool captureScreenSwapValid{};
     bool captureBackedClass4Only{};
     int frontBuffer{-1};
     bool screenSwap{};
     u64 generation{};
+    u64 renderer3dRenderSerial{};
 };
 
 class MelonPrimeVulkanSnapshotBuilder
@@ -42,6 +46,7 @@ private:
     };
 
     std::array<PhaseHistory, 2> phaseHistory{};
+    std::array<PhaseHistory, 2> capturePhaseHistory{};
 };
 
 } // namespace MelonPrime

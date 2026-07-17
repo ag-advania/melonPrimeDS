@@ -63,10 +63,14 @@ struct SoftPackedFrameSnapshot
     static constexpr size_t kLineCount = kScreenHeight;
 
     u64 frameId = 0;
+    u64 sourceGeneration = 0;
+    u64 renderer3dRenderSerial = 0;
     int frontBufferLatched = -1;
     bool screenSwapLatched = false;
     bool valid = false;
     bool hasCapture3dSource = false;
+    bool captureScreenSwap = false;
+    bool captureScreenSwapValid = false;
     bool captureBackedClass4Only = false;
     std::array<u32, kPixelCount> packedTopPlane0{};
     std::array<u32, kPixelCount> packedTopPlane1{};
@@ -77,7 +81,9 @@ struct SoftPackedFrameSnapshot
     std::array<u32, kPixelCount> packedBottomControl{};
     std::array<u32, kLineCount> packedBottomLineMeta{};
     std::array<u32, kPixelCount> capture3dSourceDsFrame{};
-    std::array<u8, kLineCount> captureLineUses3dMask{};
+    std::array<u8, kLineCount> capture3dSourceLineValidMask{};
+    std::array<u8, kLineCount> topScreenNeedsCapture3dMask{};
+    std::array<u8, kLineCount> bottomScreenNeedsCapture3dMask{};
     std::array<u8, kLineCount> captureFallbackLines{};
     std::array<u32, kPixelCount> comp4TopPlaceholder{};
     std::array<u32, kPixelCount> comp4BottomPlaceholder{};
@@ -87,10 +93,14 @@ struct SoftPackedFrameSnapshot
     void clear()
     {
         frameId = 0;
+        sourceGeneration = 0;
+        renderer3dRenderSerial = 0;
         frontBufferLatched = -1;
         screenSwapLatched = false;
         valid = false;
         hasCapture3dSource = false;
+        captureScreenSwap = false;
+        captureScreenSwapValid = false;
         captureBackedClass4Only = false;
         packedTopPlane0.fill(0);
         packedTopPlane1.fill(0);
@@ -101,7 +111,9 @@ struct SoftPackedFrameSnapshot
         packedBottomControl.fill(0);
         packedBottomLineMeta.fill(0);
         capture3dSourceDsFrame.fill(0);
-        captureLineUses3dMask.fill(0);
+        capture3dSourceLineValidMask.fill(0);
+        topScreenNeedsCapture3dMask.fill(0);
+        bottomScreenNeedsCapture3dMask.fill(0);
         captureFallbackLines.fill(0);
         comp4TopPlaceholder.fill(0);
         comp4BottomPlaceholder.fill(0);
@@ -113,11 +125,18 @@ struct SoftPackedFrameSnapshot
 struct PreparedSoftPackedFrameDebugView
 {
     u64 frameId = 0;
+    u64 sourceGeneration = 0;
+    u64 renderer3dRenderSerial = 0;
+    u64 renderer3dSnapshotSerial = 0;
     int frontBufferLatched = -1;
     bool screenSwapLatched = false;
+    bool captureScreenSwap = false;
+    bool captureScreenSwapValid = false;
     bool captureBackedClass4Only = false;
     const u32* capture3dSourceDsFrame = nullptr;
-    const u8* captureLineUses3dMask = nullptr;
+    const u8* capture3dSourceLineValidMask = nullptr;
+    const u8* topScreenNeedsCapture3dMask = nullptr;
+    const u8* bottomScreenNeedsCapture3dMask = nullptr;
     const u8* captureFallbackLines = nullptr;
     const u32* comp4TopPlaceholder = nullptr;
     const u32* comp4BottomPlaceholder = nullptr;
@@ -366,7 +385,12 @@ private:
         VulkanFrame* previousBottomSourceFrame{};
         bool previousBottomSourcePending{};
         u64 softPackedFrameId{};
+        u64 structuredGeneration{};
+        u64 renderer3dRenderSerial{};
+        u64 renderer3dSnapshotSerial{};
         int frontBufferLatched{-1};
+        bool captureScreenSwap{};
+        bool captureScreenSwapValid{};
         bool captureBackedClass4Only{};
         bool class4NoAboveVramStructuredPair{};
         bool class4PreservePackedVramValid{};
@@ -383,7 +407,9 @@ private:
         SoftPackedScreenStats topScreenStats{};
         SoftPackedScreenStats bottomScreenStats{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> capture3dSourceDsFrame{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureLineUses3dMask{};
+        std::array<u8, SoftPackedFrameSnapshot::kLineCount> capture3dSourceLineValidMask{};
+        std::array<u8, SoftPackedFrameSnapshot::kLineCount> topScreenNeedsCapture3dMask{};
+        std::array<u8, SoftPackedFrameSnapshot::kLineCount> bottomScreenNeedsCapture3dMask{};
         std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureFallbackLines{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4TopPlaceholder{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4BottomPlaceholder{};
