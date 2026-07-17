@@ -258,223 +258,8 @@ CaptureLineCounts countCaptureLineCounts(
     return counts;
 }
 
-// --- Structured merge from engine planes (Sapphire copyStructuredLine /
-// mergeStructuredDisplayLine). Engine planes are already at native
-// kScreenWidth stride, unlike Sapphire's stride-769 packed framebuffer.
-
-bool structuredLineHasPayload(
-    const u32* structuredPlane0,
-    const u32* structuredPlane1,
-    const u32* structuredControl,
-    std::size_t rowBase) noexcept
-{
-    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
-    {
-        const std::size_t index = rowBase + x;
-        if (structuredControl[index] != 0u || structuredPlane1[index] != 0u || structuredPlane0[index] != 0u)
-            return true;
-    }
-    return false;
-}
-
-bool packedLineHas3dSlot(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    std::size_t rowBase) noexcept
-{
-    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
-    {
-        const std::size_t index = rowBase + x;
-        const u32 plane0Alpha = plane0[index] >> 24u;
-        const u32 plane1Alpha = plane1[index] >> 24u;
-        const u32 controlAlpha = control[index] >> 24u;
-        if ((plane0Alpha & 0xC0u) == 0x40u
-            || (plane1Alpha & 0xC0u) == 0x40u
-            || (controlAlpha & 0x40u) != 0u)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-void copyStructuredLineFromEngine(
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const u32* structuredPlane0,
-    const u32* structuredPlane1,
-    const u32* structuredControl,
-    std::size_t rowBase) noexcept
-{
-    constexpr std::size_t rowBytes = SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32);
-    std::memcpy(plane0.data() + rowBase, structuredPlane0 + rowBase, rowBytes);
-    std::memcpy(plane1.data() + rowBase, structuredPlane1 + rowBase, rowBytes);
-    std::memcpy(control.data() + rowBase, structuredControl + rowBase, rowBytes);
-}
-
-void mergeStructuredDisplayLineFromEngine(
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& baselinePlane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& baselinePlane1,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& baselineControl,
-    const u32* structuredPlane0,
-    const u32* structuredPlane1,
-    const u32* structuredControl,
-    std::size_t rowBase,
-    bool captureBackedClass4Only,
-    bool screenSwapToggledThisFrame) noexcept
-{
-    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
-    {
-        const std::size_t index = rowBase + x;
-        const u32 packedPlane0 = baselinePlane0[index];
-        const u32 packedPlane1 = baselinePlane1[index];
-        const u32 packedControl = baselineControl[index];
-        const u32 packedPlane0Alpha = packedPlane0 >> 24u;
-        const u32 packedPlane1Alpha = packedPlane1 >> 24u;
-        const u32 packedControlAlpha = packedControl >> 24u;
-        const bool packedNeeds3DSlot =
-            (packedPlane0Alpha & 0xC0u) == 0x40u
-            || (packedPlane1Alpha & 0xC0u) == 0x40u
-            || (packedControlAlpha & 0x40u) != 0u;
-        const u32 structuredP0 = structuredPlane0[index];
-        const u32 structuredP1 = structuredPlane1[index];
-        const u32 structuredC = structuredControl[index];
-        const bool structuredHasRenderablePayload =
-            (structuredP0 != 0u && structuredP0 != kPacked3dPlaceholder)
-            || (structuredP1 != 0u && structuredP1 != kPacked3dPlaceholder);
-        const u32 structuredControlAlpha = structuredC >> 24u;
-        const bool structuredHas3DSlot =
-            ((structuredP0 >> 24u) & 0xC0u) == 0x40u
-            || ((structuredP1 >> 24u) & 0xC0u) == 0x40u
-            || (structuredControlAlpha & 0x40u) != 0u;
-        const bool structuredHasAbove =
-            (structuredControlAlpha & 0x40u) != 0u
-            && (structuredControlAlpha & 0x80u) != 0u
-            && structuredP1 != 0u;
-        const bool packedHasCurrent2D =
-            (packedPlane0 != 0u && packedPlane0 != kPacked3dPlaceholder)
-            || (packedPlane1 != 0u && packedPlane1 != kPacked3dPlaceholder);
-        const bool packedCurrent2DOnly = packedHasCurrent2D && !packedNeeds3DSlot;
-
-        if (!structuredHasRenderablePayload && !(packedNeeds3DSlot && structuredHas3DSlot))
-        {
-            if (structuredHas3DSlot && packedCurrent2DOnly)
-            {
-                control[index] = (packedControl & 0x00FFFFFFu)
-                    | ((packedControlAlpha | 0x80u) << 24u);
-            }
-            continue;
-        }
-
-        plane0[index] = structuredP0;
-        plane1[index] = structuredP1;
-        control[index] = structuredC;
-        if (structuredHas3DSlot && !structuredHasAbove && packedCurrent2DOnly)
-        {
-            plane1[index] = packedPlane0;
-            const u32 overlayControlRgb =
-                captureBackedClass4Only
-                    && screenSwapToggledThisFrame
-                    && (packedControl & 0x00FFFFFFu) != 0u
-                    ? (packedControl & 0x00FFFFFFu)
-                    : (structuredC & 0x00FFFFFFu);
-            const bool protectedBlack =
-                packedPixelIsOpaqueBlack(packedPlane0)
-                && !packedPixelHasVisibleColor(packedPlane0);
-            control[index] =
-                overlayControlRgb
-                | ((structuredControlAlpha
-                    | 0x40u
-                    | 0x80u
-                    | (protectedBlack ? 0x20u : 0u)) << 24u);
-        }
-    }
-}
-
-void mergeStructuredScreenPlanes(
-    const u32* structuredPlane0,
-    const u32* structuredPlane1,
-    const u32* structuredControl,
-    bool captureBackedHasStructured2DSource,
-    bool captureBackedClass4Only,
-    bool screenSwapToggledThisFrame,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta)
-{
-    if (structuredPlane0 == nullptr || structuredPlane1 == nullptr || structuredControl == nullptr)
-        return;
-
-    // Sapphire reads the merge source from the raw framebuffer (distinct
-    // memory from the destination it writes). Melon overlays in place, so
-    // take an explicit baseline snapshot before any pixel gets rewritten.
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount> baselinePlane0 = plane0;
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount> baselinePlane1 = plane1;
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount> baselineControl = control;
-
-    const CaptureLineCounts ownCounts = countCaptureLineCounts(lineMeta);
-    const bool hasPartialRegularCapture =
-        ownCounts.regularCaptureLines > 0
-        && ownCounts.regularCaptureLines < static_cast<int>(SoftPackedFrameSnapshot::kLineCount);
-
-    for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
-    {
-        const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
-        const u32 meta = lineMeta[y];
-        const u32 displayMode = (meta >> 16u) & 0x3u;
-        const bool partialRegularCaptureLine =
-            hasPartialRegularCapture && (meta & kMetaRegularCaptureUses3d) != 0u;
-
-        bool structuredPayloadKnown = false;
-        bool structuredPayload = false;
-        const auto hasStructuredPayload = [&]() {
-            if (!structuredPayloadKnown)
-            {
-                structuredPayload = structuredLineHasPayload(
-                    structuredPlane0, structuredPlane1, structuredControl, rowBase);
-                structuredPayloadKnown = true;
-            }
-            return structuredPayload;
-        };
-
-        const bool lineNeedsStructured3d =
-            !captureBackedHasStructured2DSource
-            || (meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d | kMetaForceLive3dCompMode7)) != 0u
-            || packedLineHas3dSlot(baselinePlane0, baselinePlane1, baselineControl, rowBase);
-        const bool structuredDisplayLine =
-            displayMode == 1u
-            && lineNeedsStructured3d
-            && (!partialRegularCaptureLine || hasStructuredPayload());
-        const bool structuredVramCapture =
-            displayMode == 2u
-            && (meta & kMetaVramCaptureUses3d) != 0u
-            && hasStructuredPayload();
-
-        if (structuredDisplayLine && captureBackedHasStructured2DSource)
-        {
-            mergeStructuredDisplayLineFromEngine(
-                plane0, plane1, control,
-                baselinePlane0, baselinePlane1, baselineControl,
-                structuredPlane0, structuredPlane1, structuredControl,
-                rowBase,
-                captureBackedClass4Only,
-                screenSwapToggledThisFrame);
-        }
-        else if (structuredDisplayLine || structuredVramCapture)
-        {
-            copyStructuredLineFromEngine(
-                plane0, plane1, control,
-                structuredPlane0, structuredPlane1, structuredControl,
-                rowBase);
-        }
-    }
-}
+// Engine A/B shadow planes must not be merged back onto physical Top/Bottom
+// via frame-level physicalScreenSwap. source.plane[0/1] is already routed.
 
 // --- Capture metadata normalization (Sapphire clearBroadPartialRegularCapture
 // / clearBroadRegularCaptureAgainstOppositeVram).
@@ -1221,9 +1006,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         }
     }
 
-    // Hoisted ahead of the Engine A phase cache: the structured-merge and
-    // temporal-carry passes below also need screenSwapToggledThisFrame /
-    // isInAlternatingMode, and must run before Engine A restores planes.
+    // Hoisted ahead of the Engine A phase cache: temporal-carry and the
+    // phase-cache repair below need screenSwapToggledThisFrame /
+    // isInAlternatingMode before Engine A restores planes.
     const bool screenSwapToggledThisFrame =
         previousSnapshot.valid
         && previousSnapshot.physicalScreenSwap != destination.physicalScreenSwap;
@@ -1239,46 +1024,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     }
     wasInAlternatingMode = isInAlternatingMode;
 
-    // Selective structured merge from the engine that currently targets each
-    // physical screen (Sapphire copyStructuredLine / mergeStructuredDisplayLine).
-    // Top/Bottom routing follows physicalScreenSwap the same way the Engine A
-    // phase cache below does.
-    const std::size_t topEngineIndex = destination.physicalScreenSwap ? 0u : 1u;
-    const std::size_t bottomEngineIndex = destination.physicalScreenSwap ? 1u : 0u;
-    mergeStructuredScreenPlanes(
-        source.enginePlane[topEngineIndex][0],
-        source.enginePlane[topEngineIndex][1],
-        source.enginePlane[topEngineIndex][2],
-        destination.captureBackedHasStructured2DSource,
-        destination.captureBackedClass4Only,
-        screenSwapToggledThisFrame,
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    mergeStructuredScreenPlanes(
-        source.enginePlane[bottomEngineIndex][0],
-        source.enginePlane[bottomEngineIndex][1],
-        source.enginePlane[bottomEngineIndex][2],
-        destination.captureBackedHasStructured2DSource,
-        destination.captureBackedClass4Only,
-        screenSwapToggledThisFrame,
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
+    // source.plane[0/1] is already physical Top/Bottom from GPU_Soft scanline
+    // routing. Do NOT merge Engine A/B shadow planes back onto Top/Bottom using
+    // the frame-level physicalScreenSwap bit — that second routing swaps whole
+    // 2D screens. Keep physical planes authoritative (Sapphire contract).
 
-    // Capture metadata normalization (Sapphire clearBroadPartialRegularCapture
-    // / clearBroadRegularCaptureAgainstOppositeVram), gated on the engine
-    // planes actually being present for both screens this frame.
-    const bool hasEnginePlanesForNormalization =
-        source.enginePlane[topEngineIndex][0] != nullptr
-        && source.enginePlane[topEngineIndex][1] != nullptr
-        && source.enginePlane[topEngineIndex][2] != nullptr
-        && source.enginePlane[bottomEngineIndex][0] != nullptr
-        && source.enginePlane[bottomEngineIndex][1] != nullptr
-        && source.enginePlane[bottomEngineIndex][2] != nullptr;
-    if (hasEnginePlanesForNormalization)
+    // Capture metadata normalization on physical lineMeta only.
     {
         int combinedCaptureMaskLines = 0;
         for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
@@ -1353,29 +1104,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.packedBottomControl,
         destination.packedBottomLineMeta);
 
-    // Sapphire Engine A Top/Bottom phase cache. physicalScreenSwap == true means
-    // Engine A is currently routed to physical Top. Prefer live EnginePlanes[0]
-    // as the Engine A identity source; physical destination planes alone are a
-    // post-routing approximation and can already be the swapped content.
+    // Sapphire Engine A Top/Bottom phase cache. physicalScreenSwap is only the
+    // phase key (which physical LCD currently hosts Engine A). Cache stores
+    // completed physical snapshots from that phase — never Engine A shadow planes.
     {
         const bool engineAOnTop = destination.physicalScreenSwap;
         const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
-        const bool hasEngineAPlanes =
-            source.enginePlane[0][0] != nullptr
-            && source.enginePlane[0][1] != nullptr
-            && source.enginePlane[0][2] != nullptr;
-
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> engineAPlane0{};
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> engineAPlane1{};
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> engineAControl{};
-        if (hasEngineAPlanes)
-        {
-            constexpr std::size_t pixelBytes =
-                SoftPackedFrameSnapshot::kPixelCount * sizeof(u32);
-            std::memcpy(engineAPlane0.data(), source.enginePlane[0][0], pixelBytes);
-            std::memcpy(engineAPlane1.data(), source.enginePlane[0][1], pixelBytes);
-            std::memcpy(engineAControl.data(), source.enginePlane[0][2], pixelBytes);
-        }
 
         auto screenHasMeaningfulContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
@@ -1478,20 +1212,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 }
                 return false;
             };
-        auto plane0MatchesEngineA =
-            [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
-                if (!hasEngineAPlanes)
-                    return true;
-                std::size_t compared = 0;
-                std::size_t matches = 0;
-                for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; i += 16u)
-                {
-                    ++compared;
-                    if (plane0[i] == engineAPlane0[i])
-                        ++matches;
-                }
-                return compared == 0u || (matches * 4u) >= (compared * 3u);
-            };
         auto applyCachedEngineASnapshot =
             [](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane0,
                 std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane1,
@@ -1506,14 +1226,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
                     targetLineMeta[y] = (targetLineMeta[y] & 0xFFFF0000u) | (currentLineMeta[y] & 0x0000FFFFu);
             };
-        auto applyLiveEngineAPlanes =
-            [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane0,
-                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane1,
-                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetControl) {
-                targetPlane0 = engineAPlane0;
-                targetPlane1 = engineAPlane1;
-                targetControl = engineAControl;
-            };
         auto storeEngineACache =
             [](EnginePhaseCache& cache,
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
@@ -1527,45 +1239,20 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 cache.valid = true;
             };
 
-        // Re-anchor the LCD that currently hosts Engine A to live EnginePlanes[0].
-        if (hasEngineAPlanes && screenHasMeaningfulContent(engineAPlane0))
-        {
-            if (engineAOnTop)
-            {
-                if (!plane0MatchesEngineA(destination.packedTopPlane0))
-                {
-                    applyLiveEngineAPlanes(
-                        destination.packedTopPlane0,
-                        destination.packedTopPlane1,
-                        destination.packedTopControl);
-                }
-            }
-            else if (!plane0MatchesEngineA(destination.packedBottomPlane0))
-            {
-                applyLiveEngineAPlanes(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1,
-                    destination.packedBottomControl);
-            }
-        }
-
         if (engineAOnTop)
         {
-            const auto& storePlane0 = hasEngineAPlanes ? engineAPlane0 : destination.packedTopPlane0;
-            const auto& storePlane1 = hasEngineAPlanes ? engineAPlane1 : destination.packedTopPlane1;
-            const auto& storeControl = hasEngineAPlanes ? engineAControl : destination.packedTopControl;
-            if (screenHasMeaningfulContent(storePlane0)
+            if (screenHasMeaningfulContent(destination.packedTopPlane0)
                 || screenIsScreenWideCaptureBackedComp4(
-                    storePlane0,
-                    storePlane1,
-                    storeControl,
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
                     destination.packedTopLineMeta))
             {
                 storeEngineACache(
                     engineATop,
-                    storePlane0,
-                    storePlane1,
-                    storeControl,
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
                     destination.packedTopLineMeta);
             }
 
@@ -1575,15 +1262,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     destination.packedTopPlane1);
             const bool cachedTopHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
-            const bool shouldRepairTopFromCache = engineATop.valid
-                && cachedTopHasStructured2DOnlyContent
-                && (
-                    (!currentTopHasExplicitCompositedContent
-                        && screenUses3dCaptureMeta(destination.packedTopLineMeta))
-                    || (isInAlternatingMode
-                        && screenUses3dCaptureMeta(destination.packedTopLineMeta)
-                        && !plane0MatchesEngineA(destination.packedTopPlane0)));
-            if (shouldRepairTopFromCache)
+            if (engineATop.valid
+                && !currentTopHasExplicitCompositedContent
+                && screenUses3dCaptureMeta(destination.packedTopLineMeta)
+                && cachedTopHasStructured2DOnlyContent)
             {
                 applyCachedEngineASnapshot(
                     destination.packedTopPlane0,
@@ -1606,14 +1288,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const bool cachedBottomHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
             const bool shouldReplaceBottom = engineABottom.valid
-                && (
-                    (!isInAlternatingMode && !currentBottomHasExplicitContent)
+                && ((!isInAlternatingMode && !currentBottomHasExplicitContent)
                     || (isInAlternatingMode
                         && (cachedBottomIsScreenWideCaptureBackedComp4
                             || (!captureBackedHasStructured2DSource
-                                && cachedBottomHasStructured2DOnlyContent
-                                && (!currentBottomHasExplicitContent
-                                    || screenUses3dCaptureMeta(destination.packedBottomLineMeta))))));
+                                && !currentBottomHasExplicitContent
+                                && cachedBottomHasStructured2DOnlyContent))));
             if (shouldReplaceBottom)
             {
                 applyCachedEngineASnapshot(
@@ -1626,21 +1306,18 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         }
         else
         {
-            const auto& storePlane0 = hasEngineAPlanes ? engineAPlane0 : destination.packedBottomPlane0;
-            const auto& storePlane1 = hasEngineAPlanes ? engineAPlane1 : destination.packedBottomPlane1;
-            const auto& storeControl = hasEngineAPlanes ? engineAControl : destination.packedBottomControl;
-            if (screenHasMeaningfulContent(storePlane0)
+            if (screenHasMeaningfulContent(destination.packedBottomPlane0)
                 || screenIsScreenWideCaptureBackedComp4(
-                    storePlane0,
-                    storePlane1,
-                    storeControl,
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
                     destination.packedBottomLineMeta))
             {
                 storeEngineACache(
                     engineABottom,
-                    storePlane0,
-                    storePlane1,
-                    storeControl,
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
                     destination.packedBottomLineMeta);
             }
 
@@ -1657,14 +1334,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const bool cachedTopHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
             const bool shouldReplaceTop = engineATop.valid
-                && (
-                    (!isInAlternatingMode && !currentTopHasExplicitContent)
+                && ((!isInAlternatingMode && !currentTopHasExplicitContent)
                     || (isInAlternatingMode
                         && (cachedTopIsScreenWideCaptureBackedComp4
                             || (!captureBackedHasStructured2DSource
-                                && cachedTopHasStructured2DOnlyContent
-                                && (!currentTopHasExplicitContent
-                                    || screenUses3dCaptureMeta(destination.packedTopLineMeta))))));
+                                && !currentTopHasExplicitContent
+                                && cachedTopHasStructured2DOnlyContent))));
             if (shouldReplaceTop)
             {
                 applyCachedEngineASnapshot(
@@ -1681,15 +1356,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     destination.packedBottomPlane1);
             const bool cachedBottomHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
-            const bool shouldRepairBottomFromCache = engineABottom.valid
-                && cachedBottomHasStructured2DOnlyContent
-                && (
-                    (!currentBottomHasExplicitCompositedContent
-                        && screenUses3dCaptureMeta(destination.packedBottomLineMeta))
-                    || (isInAlternatingMode
-                        && screenUses3dCaptureMeta(destination.packedBottomLineMeta)
-                        && !plane0MatchesEngineA(destination.packedBottomPlane0)));
-            if (shouldRepairBottomFromCache)
+            if (engineABottom.valid
+                && !currentBottomHasExplicitCompositedContent
+                && screenUses3dCaptureMeta(destination.packedBottomLineMeta)
+                && cachedBottomHasStructured2DOnlyContent)
             {
                 applyCachedEngineASnapshot(
                     destination.packedBottomPlane0,
