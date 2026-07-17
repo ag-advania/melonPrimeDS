@@ -389,6 +389,11 @@ void MetalRenderer::DrawScanline(u32 line)
     }
 
     SoftRenderer::DrawScanline(line);
+    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: SoftRenderer remains display
+    // authority. When the experiment flag is on, also record this capture
+    // line for a side-channel Metal candidate comparison.
+    if (GPU.CaptureEnable)
+        MetalCaptureExperimentRecordLine(GPU.VCount);
 }
 
 void MetalRenderer::DrawSprites(u32 line)

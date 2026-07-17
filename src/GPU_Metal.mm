@@ -466,6 +466,7 @@ struct MetalRenderer::MetalOutputState
 
 #include "GPU_MetalFullGpuMethods.inc"
 #include "GPU_MetalCaptureMethods.inc"
+#include "GPU_MetalCaptureExperiment.inc"
 
 MetalRenderer::MetalRenderer(melonDS::NDS& nds, bool useComputeRenderer) noexcept
     : SoftRenderer(nds)
@@ -514,6 +515,10 @@ bool MetalRenderer::Init()
         std::fprintf(stderr,
             "[MelonPrime] metal display capture: initialization failed; "
             "capture frames remain on the CPU path\n");
+    }
+    if (EnsureMetalCaptureExperimentState(preferredDevice))
+    {
+        // Logged inside EnsureMetalCaptureExperimentState on first success.
     }
     return true;
 }
@@ -1277,8 +1282,10 @@ void MetalRenderer::VBlank()
 
     SoftRenderer::VBlank();
     UploadCpuCompletedCaptures();
-
-
+    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: compare Soft CPU reference
+    // against the side-channel Metal candidate. Never publishes candidate
+    // textures into the presenter lease path.
+    FinishMetalCaptureExperimentFrame();
 
     if (FullGpuState)
     {

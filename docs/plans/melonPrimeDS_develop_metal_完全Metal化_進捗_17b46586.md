@@ -6,8 +6,8 @@
 | PR | 内容 | 状態 | Commit | 備考 |
 |---|---|---|---|---|
 | PR-0 | 最新修正 validation gate | **完了（部分）** | `69993462` | macOS Intel Metal ON／OFF／FORCE_DISABLE PASS。TSan／Windows／Linux／実ROM未実施 |
-| PR-1 | output contract 最終仕上げ | **完了（部分）** | （本コミット） | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
-| PR-2 | capture differential scaffold | 未着手 | — | |
+| PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
+| PR-2 | capture differential scaffold | **完了（部分）** | （本コミット） | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
 | PR-3 | native canonical capture storage | 未着手 | — | |
 | PR-4 | per-scanline／segment capture | 未着手 | — | |
 | PR-5 | capture Full-GPU cutover | 未着手 | — | |
@@ -22,21 +22,21 @@
 | PR-14 | MSL asset／metallib | 未着手 | — | |
 | PR-15 | CI／release gate | 未着手 | — | |
 
-## PR-1 要約（2026-07-17）
+## PR-2 要約（2026-07-17）
 
 追加:
 
-- `RendererPixelFormat` / `RendererOutputFallbackReason`（`GPU.h`、ObjC enum 非公開）
-- MetalTexture metadata に `PixelFormat=Bgra8Unorm`
-- presenter が metadata と `MTLPixelFormatBGRA8Unorm` の両方が一致することを検証
-- `AcquireOutputLease` の CpuBgra fallback に `ResourceUnavailable` reason
-- `MELONPRIME_METAL_FAULT_INJECT=<name>` で validation fail-closed を強制
+- `MELONPRIME_METAL_CAPTURE_EXPERIMENT=1`（表示は Soft のまま、Metal candidate は side-channel）
+- `MELONPRIME_METAL_CAPTURE_EXPERIMENT_DIR` で rgb5551／PPM／CSV／JSON artifact
+- `tools/ci/audits/audit-metal-capture-experiment-scaffold.py`
+- homebrew test 設計書
 
-未実施（意図的に分離）:
+意図的に未着手／スキップ:
 
-- lease context allocation pool（指示書 §7.5: contract と混ぜない）
-- CI workflow
-- fault injection の自動テストバイナリ
+- CaptureCnt exclusion 撤廃（PR-5）
+- capture-backed source B の candidate 比較（PR-3 以降）
+- PNG（PPM で代替）
+- 実ROM／homebrew 自動 checksum CI
 
 ## PR-0 証拠要約（2026-07-17）
 

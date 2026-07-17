@@ -26,6 +26,12 @@
 namespace melonDS
 {
 
+class SoftRenderer2D;
+class SoftRenderer3D;
+#if defined(MELONPRIME_ENABLE_METAL)
+class MetalRenderer;
+#endif
+
 class SoftRenderer : public Renderer
 {
 public:
@@ -54,6 +60,12 @@ public:
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
+#if defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: MetalRenderer records Soft
+    // Output2D/Output3D as capture differential source A without changing
+    // SoftRenderer::DoCapture production behavior.
+    friend class MetalRenderer;
+#endif
 
     u32* Framebuffer[2][2];
 

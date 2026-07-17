@@ -49,6 +49,7 @@ private:
     struct MetalOutputState;
     struct MetalFullGpuState;
     struct MetalCaptureState;
+    struct MetalCaptureExperimentState;
 
     std::unique_ptr<MetalRenderer2D> Metal2D_A;
     std::unique_ptr<MetalRenderer2D> Metal2D_B;
@@ -76,6 +77,9 @@ private:
     // CaptureState is only mutated on the emulation/render thread today, so
     // it does not need atomic publication (unlike OutputState).
     std::shared_ptr<MetalCaptureState> CaptureState;
+    // MELONPRIME_METAL_CAPTURE_EXPERIMENT_V1: debug-only differential scaffold.
+    // Never published through RendererOutput / AcquireOutputLease.
+    std::unique_ptr<MetalCaptureExperimentState> CaptureExperimentState;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
     // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
 
@@ -139,6 +143,14 @@ private:
     [[nodiscard]] bool MetalCaptureResourcesCoherent() const;
     [[nodiscard]] void* GetMetalCapture128Texture() const;
     [[nodiscard]] void* GetMetalCapture256Texture() const;
+
+    bool EnsureMetalCaptureExperimentState(void* preferredDevice);
+    void BeginMetalCaptureExperimentFrame();
+    void MetalCaptureExperimentRecordLine(u32 line);
+    void FinishMetalCaptureExperimentFrame();
+    void MetalCaptureExperimentWriteArtifacts(
+        const MetalCaptureExperimentState& state,
+        uint32_t frameMismatchPixels) const;
 
     void CaptureMetalVisible3DFrame();
     void ComposeMetalVisibleOutput();
