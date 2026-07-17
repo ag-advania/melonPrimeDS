@@ -713,13 +713,9 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
     if (!allowCaptureTextures)
     {
         // MELONPRIME_METAL_SAMEFRAME_HAZARD_DIAGNOSTIC_V1
-        // GPU_MetalFullGpuMethods.inc's eligibility checks (CaptureCnt bit 31,
-        // sticky mid-frame invalidation) now exclude any frame with active
-        // capture from FrameActive before it can reach here, so
-        // allowCaptureTextures should always be true for a frame that gets
-        // this far -- meaning this branch may now be unreachable in practice.
-        // Log if that assumption is ever wrong instead of assuming it from
-        // code shape alone.
+        // allowCaptureTextures=false remains a defensive gate for callers that
+        // still request it. PR-5 Full-GPU cutover normally passes true and
+        // relies on per-segment A→B→Capture ordering for feedback.
         if (MetalPerfLikeDiagEnabled())
         {
             State->SameFrameCaptureHazardEnteredCount++;
@@ -728,7 +724,7 @@ bool MetalRenderer2D::RenderSegmentedGpuFrame(
                 State->LoggedSameFrameCaptureHazard = true;
                 std::fprintf(stderr,
                     "[MelonPrime] metal 2d: same-frame capture-hazard branch "
-                    "entered (expected to be unreachable post-eligibility-fix; "
+                    "entered (defensive allowCaptureTextures=false path; "
                     "further occurrences counted, not logged individually)\n");
             }
         }

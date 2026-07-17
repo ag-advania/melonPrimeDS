@@ -9,8 +9,8 @@
 | PR-1 | output contract 最終仕上げ | **完了（部分）** | `cf962615` | PixelFormat metadata、FallbackReason、fault inject env。lease pool／CI未着手 |
 | PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
 | PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
-| PR-4 | per-scanline／segment capture | **完了（部分）** | （本コミット） | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
-| PR-5 | capture Full-GPU cutover | 未着手 | — | |
+| PR-4 | per-scanline／segment capture | **完了（部分）** | `87c79f76` | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
+| PR-5 | capture Full-GPU cutover | **完了（部分）** | （本コミット） | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
 | PR-6 | normal readback 0 | 未着手 | — | |
 | PR-7 | SoftRenderer 継承撤廃 | 未着手 | — | M4/M5 後 |
 | PR-8 | Compute RasterReference 撤廃 | 未着手 | — | |
@@ -66,6 +66,19 @@
 - generation ticket／ping-pong
 - 実ROM same-frame feedback diff 0
 - CaptureCnt exclusion 撤廃
+
+## PR-5 要約（2026-07-17）
+
+変更:
+
+- CaptureCnt bit31 Full-GPU 除外を削除
+- capture frame は segment scheduler 経由で Full-GPU 継続
+- allowCaptureTextures=true（segment 内は 2D→encode 順）
+
+未実施:
+
+- 6000 frame strict counter
+- 実ROM／homebrew／scale matrix
 
 ## PR-0 証拠要約（2026-07-17）
 

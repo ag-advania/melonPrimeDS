@@ -233,37 +233,12 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (!GPU.ScreensEnabled)
         return false;
 
-    // MELONPRIME_METAL_CAPTURE_PROACTIVE_ELIGIBILITY_V1 (Phase M4 partial fix)
-    // Real DS hardware captures scanline-by-scanline as the frame is drawn, so
-    // a BG/OBJ that reads its own frame's capture destination bank sees a
-    // line-precise read/write interleaving this segmented (whole-frame-batch)
-    // 2D renderer cannot reproduce. The existing same-frame hazard check in
-    // RenderSegmentedGpuFrame() (MetalSnapshotUsesCaptureTextures) is correct
-    // to reject that case -- but it fires *after* DrawScanline/DrawSprites for
-    // this entire frame already committed to the full-GPU path (this
-    // function's result at Start3DRendering time), meaning SoftRenderer's
-    // per-scanline compositing was never run for this frame either. VBlank()
-    // then has no valid data source at all, so the frame freezes on the
-    // previous texture instead of falling back to a correct CPU-composited
-    // frame. Checking capture activity here, before that commitment is made,
-    // means a rejection instead correctly runs the mature CPU/Software path
-    // for the whole frame -- exactly like any other ineligible frame -- so
-    // capture-heavy scenes render every frame (via CPU) instead of freezing
-    // on ~90% of them. This does not fix same-frame capture-into-Metal2D; it
-    // only stops the current mechanism from losing a frame's content when
-    // that limitation is hit.
-    //
-    // Start3DRendering() (this function's caller) runs at VCount==215, which
-    // is still inside the *previous* frame's VBlank -- GPU.CaptureEnable only
-    // becomes true later, at VCount==0 of the frame that is about to start.
-    // So GPU.CaptureEnable here always reflects the frame that just ended
-    // (already cleared), never the upcoming one. The upcoming frame's capture
-    // request is already visible now, though: games set CaptureCnt's start
-    // bit (31) during the preceding VBlank, and hardware doesn't clear it
-    // until this same VCount==192..215 window closes. Check that bit
-    // directly instead of the derived, differently-timed CaptureEnable flag.
-    if (GPU.CaptureCnt & (1u << 31))
-        return false;
+    // MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1 (PR-5):
+    // Capture-start frames (CaptureCnt bit 31) stay on the Full-GPU path.
+    // Same-frame feedback is handled by the per-segment scheduler
+    // (GPU_MetalSegmentScheduler.inc): Engine A → Engine B → Capture encode
+    // per merged segment, with Capture→Snapshot blit before each encode.
+    // Unsupported display modes / mixed-3D gating below still apply.
 
     const uint32_t displayModeA =
         (GPU.GPU2D_A.DispCnt >> 16) & 0x3u;

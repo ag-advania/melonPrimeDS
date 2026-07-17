@@ -67,10 +67,9 @@ def main() -> int:
         issues.append("GPU_Metal.h missing MetalCaptureExperimentState")
 
     full_gpu = FULL_GPU.read_text(encoding="utf-8")
-    if "if (GPU.CaptureCnt & (1u << 31))" not in full_gpu:
+    if "if (GPU.CaptureCnt & (1u << 31))" in full_gpu:
         issues.append(
-            "CaptureCnt start-bit Full-GPU exclusion missing "
-            "(must remain until PR-5)"
+            "CaptureCnt start-bit Full-GPU exclusion must be removed (PR-5)"
         )
     if "MetalCaptureExperimentRecordLine" not in full_gpu:
         issues.append("DrawScanline Soft path missing experiment record hook")

@@ -127,7 +127,11 @@ bool MetalRenderer::RenderMetalFullGpuFrameSegmented(
     {
         const MetalScanlineSegment& seg =
             segments[static_cast<size_t>(i)];
-        const bool allowCaptureTextures = !seg.CaptureEnabled;
+        // MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1: segment ordering
+        // (2D then capture encode) lets later segments sample prior writes.
+        // Allow capture textures even on capture-writing segments; 2D runs
+        // before that segment's encode, so it sees previous-segment state.
+        const bool allowCaptureTextures = true;
 
         if (!Metal2D_A->RenderSegmentedGpuFrame(
                 high3D,
