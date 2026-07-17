@@ -16,6 +16,7 @@
 
 #include "GPU.h"
 #include "GPU2D_Metal.h"
+#include "MelonPrimeMetalLibrary.h"
 #include "MetalContext.h"
 #include "NDS.h"
 

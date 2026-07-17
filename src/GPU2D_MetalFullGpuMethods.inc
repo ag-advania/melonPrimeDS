@@ -25,22 +25,47 @@ bool MetalRenderer2D::BuildFullGpuPipelines() noexcept
         return true;
     }
 
+    // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): production shaders load
+    // from the ahead-of-time-compiled melonPrimeDS.metallib bundled in the
+    // app's Contents/Resources. See MelonPrimeMetalLibrary.h.
     NSError* error = nil;
-    NSString* source = [[NSString alloc] initWithUTF8String:kMetal2DFullGpuShaderSource];
-    state.FullGpuLibrary = [state.Device newLibraryWithSource:source options:nil error:&error];
-    if (!state.FullGpuLibrary)
+    state.FullGpuLibrary = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(state.Device);
+    id<MTLFunction> spriteVS = state.FullGpuLibrary ? [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_vs"] : nil;
+    id<MTLFunction> spriteFS = state.FullGpuLibrary ? [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_fs"] : nil;
+    id<MTLFunction> compositeVS = state.FullGpuLibrary ? [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_vs"] : nil;
+    id<MTLFunction> compositeFS = state.FullGpuLibrary ? [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_fs"] : nil;
+
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
+    if (!spriteVS || !spriteFS || !compositeVS || !compositeFS)
     {
-        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
-        std::fprintf(stderr, "[MelonPrime] metal full-gpu 2d: shader compile failed: %s\n", message);
+        // Debug-only fallback: compile the embedded MSL source directly when
+        // the bundled metallib is missing or stale. Release builds must not
+        // reach this branch for production shaders.
+        NSError* sourceError = nil;
+        NSString* source = [[NSString alloc] initWithUTF8String:kMetal2DFullGpuShaderSource];
+        state.FullGpuLibrary = [state.Device newLibraryWithSource:source options:nil error:&sourceError];
+        if (state.FullGpuLibrary)
+        {
+            spriteVS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_vs"];
+            spriteFS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_fs"];
+            compositeVS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_vs"];
+            compositeFS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_fs"];
+        }
+        else
+        {
+            const char* message = sourceError ? [[sourceError localizedDescription] UTF8String] : "unknown error";
+            std::fprintf(stderr, "[MelonPrime] metal full-gpu 2d: source fallback compile failed: %s\n", message);
+        }
+    }
+#endif
+
+    if (!spriteVS || !spriteFS || !compositeVS || !compositeFS)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal full-gpu 2d: shader functions unavailable "
+            "(bundled metallib missing or stale?)\n");
         return false;
     }
-
-    id<MTLFunction> spriteVS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_vs"];
-    id<MTLFunction> spriteFS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_sprite_fs"];
-    id<MTLFunction> compositeVS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_vs"];
-    id<MTLFunction> compositeFS = [state.FullGpuLibrary newFunctionWithName:@"mp2d_composite_fs"];
-    if (!spriteVS || !spriteFS || !compositeVS || !compositeFS)
-        return false;
 
     auto buildSpritePipeline = [&](NSString* label,
                                    MTLColorWriteMask colorMask,

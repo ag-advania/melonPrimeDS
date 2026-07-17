@@ -29,6 +29,7 @@
 
 #include "GPU3D_MetalCompute.h"
 #include "GPU_MetalStrictDiagnostics.h"
+#include "MelonPrimeMetalLibrary.h"
 #include "MetalContext.h"
 
 #include <algorithm>
@@ -1170,50 +1171,81 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         return false;
     }
 
-    NSString* texturedSource =
-        [NSString stringWithUTF8String:kMetalComputeTexturedSource];
-    State->TexturedLibrary =
-        [State->Device newLibraryWithSource:texturedSource options:nil error:&error];
+    // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): the textured-raster,
+    // complete-depth-blend, and final-pass compute kernels load from the
+    // ahead-of-time-compiled melonPrimeDS.metallib bundled in the app's
+    // Contents/Resources instead of compiling embedded MSL source at
+    // runtime. The main compute kernel library (kMetalComputeSource, just
+    // above) is not migrated in this PR and remains on
+    // -newLibraryWithSource: unconditionally -- see MelonPrimeMetalLibrary.h
+    // for the release/debug contract that does apply to the three kernels
+    // below.
+    id<MTLLibrary> sharedLibrary = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(State->Device);
+    State->TexturedLibrary = sharedLibrary;
+    State->CompleteDepthBlendLibrary = sharedLibrary;
+    State->FinalPassLibrary = sharedLibrary;
+
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
     if (!State->TexturedLibrary)
     {
-        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute textured raster: MSL compile failed: %s\n",
-            message);
-        return false;
+        // Debug-only fallback: compile the embedded MSL source directly when
+        // the bundled metallib is missing or stale. Release builds must not
+        // reach this branch for production shaders.
+        NSString* texturedSource =
+            [NSString stringWithUTF8String:kMetalComputeTexturedSource];
+        State->TexturedLibrary =
+            [State->Device newLibraryWithSource:texturedSource options:nil error:&error];
+        if (!State->TexturedLibrary)
+        {
+            const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute textured raster: source fallback compile failed: %s\n",
+                message);
+        }
     }
-
-    NSString* completeDepthBlendSource =
-        [NSString stringWithUTF8String:kMetalComputeCompleteDepthBlendSource];
-    State->CompleteDepthBlendLibrary =
-        [State->Device
-            newLibraryWithSource:completeDepthBlendSource
-                         options:nil
-                           error:&error];
     if (!State->CompleteDepthBlendLibrary)
     {
-        const char* message = error
-            ? [[error localizedDescription] UTF8String]
-            : "unknown error";
-        std::fprintf(stderr,
-            "[MelonPrime] metal compute complete depth blend: "
-            "MSL compile failed: %s\n",
-            message);
-        return false;
+        NSString* completeDepthBlendSource =
+            [NSString stringWithUTF8String:kMetalComputeCompleteDepthBlendSource];
+        State->CompleteDepthBlendLibrary =
+            [State->Device
+                newLibraryWithSource:completeDepthBlendSource
+                             options:nil
+                               error:&error];
+        if (!State->CompleteDepthBlendLibrary)
+        {
+            const char* message = error
+                ? [[error localizedDescription] UTF8String]
+                : "unknown error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute complete depth blend: "
+                "source fallback compile failed: %s\n",
+                message);
+        }
     }
-
-    NSString* finalPassSource =
-        [NSString stringWithUTF8String:kMetalComputeFinalPassSource];
-    State->FinalPassLibrary = [State->Device
-        newLibraryWithSource:finalPassSource options:nil error:&error];
     if (!State->FinalPassLibrary)
     {
-        const char* message = error
-            ? [[error localizedDescription] UTF8String]
-            : "unknown error";
+        NSString* finalPassSource =
+            [NSString stringWithUTF8String:kMetalComputeFinalPassSource];
+        State->FinalPassLibrary = [State->Device
+            newLibraryWithSource:finalPassSource options:nil error:&error];
+        if (!State->FinalPassLibrary)
+        {
+            const char* message = error
+                ? [[error localizedDescription] UTF8String]
+                : "unknown error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal compute final pass: source fallback compile failed: %s\n",
+                message);
+        }
+    }
+#endif
+
+    if (!State->TexturedLibrary || !State->CompleteDepthBlendLibrary || !State->FinalPassLibrary)
+    {
         std::fprintf(stderr,
-            "[MelonPrime] metal compute final pass: MSL compile failed: %s\n",
-            message);
+            "[MelonPrime] metal compute: textured/depth-blend/final-pass "
+            "libraries unavailable (bundled metallib missing or stale?)\n");
         return false;
     }
 

@@ -37,6 +37,7 @@
 #include "GPU3D_MetalCompute.h"
 #include "GPU_MetalStrictDiagnostics.h"
 #include "GPU_MetalReadback.h"
+#include "MelonPrimeMetalLibrary.h"
 #include "NDS.h"
 
 namespace melonDS
@@ -698,23 +699,53 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         }
         else
         {
+            // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): production
+            // shaders load from the ahead-of-time-compiled
+            // melonPrimeDS.metallib bundled in the app's Contents/Resources.
+            // See MelonPrimeMetalLibrary.h.
             NSError* error = nil;
-            NSString* source = [[NSString alloc] initWithUTF8String:kMetalVisibleOutputShaderSource];
-            next->Library = [device newLibraryWithSource:source options:nil error:&error];
-            if (!next->Library)
+            next->Library = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(device);
+            id<MTLFunction> vertex = next->Library
+                ? [next->Library newFunctionWithName:@"mp_visible_output_vs"]
+                : nil;
+            id<MTLFunction> fragment = next->Library
+                ? [next->Library newFunctionWithName:@"mp_visible_output_fs"]
+                : nil;
+
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
+            if (!vertex || !fragment)
             {
-                const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+                // Debug-only fallback: compile the embedded MSL source
+                // directly when the bundled metallib is missing or stale.
+                // Release builds must not reach this branch for production
+                // shaders.
+                NSError* sourceError = nil;
+                NSString* source = [[NSString alloc] initWithUTF8String:kMetalVisibleOutputShaderSource];
+                next->Library = [device newLibraryWithSource:source options:nil error:&sourceError];
+                if (next->Library)
+                {
+                    vertex = [next->Library newFunctionWithName:@"mp_visible_output_vs"];
+                    fragment = [next->Library newFunctionWithName:@"mp_visible_output_fs"];
+                }
+                else
+                {
+                    const char* message = sourceError
+                        ? [[sourceError localizedDescription] UTF8String]
+                        : "unknown error";
+                    std::fprintf(stderr,
+                        "[MelonPrime] metal visible output: source fallback compile failed: %s\n",
+                        message);
+                }
+            }
+#endif
+
+            if (!vertex || !fragment)
+            {
                 std::fprintf(stderr,
-                    "[MelonPrime] metal visible output: shader compile failed: %s\n", message);
+                    "[MelonPrime] metal visible output: shader functions "
+                    "unavailable (bundled metallib missing or stale?)\n");
                 return false;
             }
-
-            id<MTLFunction> vertex =
-                [next->Library newFunctionWithName:@"mp_visible_output_vs"];
-            id<MTLFunction> fragment =
-                [next->Library newFunctionWithName:@"mp_visible_output_fs"];
-            if (!vertex || !fragment)
-                return false;
 
             MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
             desc.label = @"MelonPrime Metal Visible HiRes Output Pipeline";

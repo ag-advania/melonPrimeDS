@@ -175,24 +175,52 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
     if (FullGpuState->Pipeline)
         return true;
 
+    // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): production shaders load
+    // from the ahead-of-time-compiled melonPrimeDS.metallib bundled in the
+    // app's Contents/Resources. See MelonPrimeMetalLibrary.h.
     NSError* error = nil;
-    NSString* source = [[NSString alloc] initWithUTF8String:kMetalFullGpuOutputShaderSource];
-    FullGpuState->Library =
-        [outputState->Device newLibraryWithSource:source options:nil error:&error];
-    if (!FullGpuState->Library)
+    FullGpuState->Library = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(outputState->Device);
+    id<MTLFunction> vertex = FullGpuState->Library
+        ? [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_vs"]
+        : nil;
+    id<MTLFunction> fragment = FullGpuState->Library
+        ? [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_fs"]
+        : nil;
+
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
+    if (!vertex || !fragment)
     {
-        const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
+        // Debug-only fallback: compile the embedded MSL source directly when
+        // the bundled metallib is missing or stale. Release builds must not
+        // reach this branch for production shaders.
+        NSError* sourceError = nil;
+        NSString* source = [[NSString alloc] initWithUTF8String:kMetalFullGpuOutputShaderSource];
+        FullGpuState->Library =
+            [outputState->Device newLibraryWithSource:source options:nil error:&sourceError];
+        if (FullGpuState->Library)
+        {
+            vertex = [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_vs"];
+            fragment = [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_fs"];
+        }
+        else
+        {
+            const char* message = sourceError
+                ? [[sourceError localizedDescription] UTF8String]
+                : "unknown error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal full-gpu output: source fallback compile failed: %s\n",
+                message);
+        }
+    }
+#endif
+
+    if (!vertex || !fragment)
+    {
         std::fprintf(stderr,
-            "[MelonPrime] metal full-gpu output: shader compile failed: %s\n", message);
+            "[MelonPrime] metal full-gpu output: shader functions unavailable "
+            "(bundled metallib missing or stale?)\n");
         return false;
     }
-
-    id<MTLFunction> vertex =
-        [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_vs"];
-    id<MTLFunction> fragment =
-        [FullGpuState->Library newFunctionWithName:@"mp_full_gpu_output_fs"];
-    if (!vertex || !fragment)
-        return false;
 
     MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
     desc.label = @"MelonPrime Metal Full GPU Final Output";

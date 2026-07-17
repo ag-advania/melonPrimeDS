@@ -19,7 +19,7 @@
 | PR-11 | HUD primitive renderer | **完了（transitional tier）** | （本コミット） | 固定長Metal draw-command list導入（HUD/OSD/splash/radar quadを1つのencode loopで発行）。QPainterはHUD/OSD/splashのCPUラスタライズには残存（真のprimitive/glyph atlasは未実装、指示書の「at least」tierとして明示的にdocumented） |
 | PR-12 | glyph atlas／OSD／splash | **完了（部分: OSD／splashのみ）** | （本コミット） | splash logo／splashText／OSD toastを各々専用MetalTextureへキャッシュ化し、PR-11のHUD command list経由で個別quad描画。uiOverlayへのQPainter compositingは撤廃。custom HUD本体（ゲージ／クロスヘア等）のglyph atlas化は未着手（指示書の「splash+OSD at minimum」フォールバックを採用） |
 | PR-13 | macOS 初回 Metal 既定 | **完了（部分）** | （本コミット） | 新規configのみ `3D.Renderer`/`Screen.UseGL` 既定をMetal probe結果でMetal Rasterへ切替。既存config・Compute既定・Soft/OpenGLビルドは不変。実ROM未実施 |
-| PR-14 | MSL asset／metallib | 未着手 | — | |
+| PR-14 | MSL asset／metallib | **完了（部分）** | （本コミット） | 8箇所のembedded MSLをsrc/shaders/metal/へ移動、metallib build＋bundle化、release fallback禁止。GPU3D_Metal.mm/GPU2D_Metal.mm layer/compute主kernel/feature probe/capture experimentは対象外（下記） |
 | PR-15 | CI／release gate | **完了（部分）** | （本コミット） | macOS CI に metal audit runner。ROM／TSan gate未 |
 
 ## PR-2 要約（2026-07-17）
@@ -434,6 +434,127 @@ Metal textureへ移行する（フォールバックの「at minimum」を満た
 - 実ROM／実機での新規config初回起動確認（Metal対応Mac／非対応Mac双方）
 - 既存configファイルを変更しないことの実機・自動テストでの確認
   （コードレベルの`wasUnset`ガードのみで検証、実ファイルI/Oテスト未追加）
+
+## PR-14 要約（2026-07-17）
+
+**スコープ判断**: 指示書§20の対象（capture／Full-GPU 2D／visible
+output／presenter HUD・radar／compute final-pass・textured・depth-blend）を
+実装範囲とし、raster 3D本体（`GPU3D_Metal.mm`の3shader）・Metal 2D
+`kMetal2DLayerShaderSource`・Compute主kernel（`kMetalComputeSource`）・feature
+probe・capture experiment scaffoldは指示書どおり「残件として明示的にdocument」
+する側に回した（下記「対象外」）。
+
+変更:
+
+- 新規 `src/shaders/metal/`（8ファイル）: 既存の`R"MSL(...)MSL"`／`NSString`
+  concatenationから**内容無変更**で物理移動
+  - `DisplayCapture.metal`（← `GPU_MetalCaptureMethods.inc`
+    `kMetalDisplayCaptureShaderSource`）
+  - `GPU2DFullGpu.metal`（← `GPU2D_MetalFullGpuShaders.inc`
+    `kMetal2DFullGpuShaderSource`）
+  - `FullGpuOutput.metal`（← `GPU_MetalFullGpuMethods.inc`
+    `kMetalFullGpuOutputShaderSource`）
+  - `VisibleOutput.metal`（← `GPU_Metal.mm`
+    `kMetalVisibleOutputShaderSource`）
+  - `ComputeFinalPass.metal`（← `GPU3D_MetalComputeFinalPassShaders.inc`
+    `kMetalComputeFinalPassSource`）
+  - `ComputeTextured.metal`（← `GPU3D_MetalComputeTexturedShaders.inc`
+    `kMetalComputeTexturedSource`）
+  - `ComputeDepthBlend.metal`（← `GPU3D_MetalComputeDepthBlendShaders.inc`
+    `kMetalComputeCompleteDepthBlendSource`）
+  - `Presenter.metal`（← `MelonPrimeScreenMetal.mm`の
+    `kScreenShaderSource`/`kUiShaderSource`/`kRadarShaderSource`
+    NSString literalを平文MSLへ復元。diffで内容一致を確認済み）
+  - diff検証: 抽出7ファイルは元の埋め込みブロックとバイト単位で一致
+    （`diff`で確認）。Presenterのみ元がNSString逐次concat文字列だったため
+    手動復元だが、生成MSLはmp_screen_vs/fs・mp_ui_vs/fs・mp_radar_fsの
+    ロジックを変更していない
+- 新規 `src/MelonPrimeMetalLibrary.h`/`.mm`
+  （`MELONPRIME_METAL_BUNDLED_METALLIB_V1`）: app bundle
+  `Contents/Resources/melonPrimeDS.metallib`をdeviceごとにcacheしてロードする
+  `MelonPrimeMetalDefaultLibrary(device)`。`newLibraryWithURL:`経由（ソース
+  コンパイルは一切行わない）。`MelonPrimeMetalDefaultLibraryLoadAttempted()`/
+  `LoadSucceeded()`をaudit／診断用に公開
+- `src/frontend/qt_sdl/CMakeLists.txt`: `MELONPRIME_METAL_ACTIVE`内に
+  `xcrun -sdk macosx metal`（各`.metal`→`.air`）＋
+  `xcrun -sdk macosx metallib`（`.air`群→`melonPrimeDS.metallib`）の
+  `add_custom_command`を追加し、`MACOSX_PACKAGE_LOCATION "Resources"`で
+  `melonDS`ターゲットのbundleへ埋め込む。`MelonPrimeMetalLibrary.mm`を
+  `core`ターゲット（ARC付き）へ追加
+  - **toolchain可用性検出**: `xcrun -sdk macosx -f metal`/`-f metallib`で
+    実際にツールが存在するかを検出（`find_program(xcrun)`だけでは
+    Command Line Tools単体でも常に真になるため不十分）。
+    - 検出成功 → metallib構築＋bundle化（本来の本番経路）
+    - 検出失敗 かつ `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` → `WARNING`
+      を出し`core`へ`MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK=1`を定義。
+      全移行済み呼び出し箇所はPR-14以前と同じ`-newLibraryWithSource:`実行時
+      コンパイルへfallback（このセッションの実機はCommand Line Tools単体で
+      Xcode本体のMetal Toolchainが存在しないため、この分岐を実際に
+      通している）
+    - 検出失敗 かつ developer features OFF（本当のrelease構成）→
+      `FATAL_ERROR`。releaseはmetallibなしでconfigureを完了させない
+- 8箇所の生成site（`GPU_MetalCaptureMethods.inc`／
+  `GPU_MetalFullGpuMethods.inc`／`GPU_Metal.mm`／
+  `GPU2D_MetalFullGpuMethods.inc`／`GPU3D_MetalCompute.mm`
+  （textured/depth-blend/final-passの3ライブラリ）／
+  `MelonPrimeScreenMetal.mm`）: `MelonPrimeMetalDefaultLibrary(device)`を
+  最初に呼び、成功時はそのまま`newFunctionWithName:`。失敗時のみ
+  `#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)`
+  で囲った既存の`-newLibraryWithSource:`へfallback（guardの外に出た
+  release buildではfallbackコード自体がコンパイルされない）
+- 新規 audit `audit-metal-shader-asset-metallib.py`（`run-metal-fullgpu-audits.sh`
+  に登録): 8 `.metal`アセットの存在／entry point名一致、
+  `MelonPrimeMetalLibrary.h/.mm`のmarker／`newLibraryWithURL`実装／
+  source-compileしないこと、CMakeLists.txtのmetallib断片、8箇所の
+  埋め込みshader定数が上記guard外で`initWithUTF8String`/
+  `stringWithUTF8String`されていないことを検証
+
+**対象外（release/production経路でも`-newLibraryWithSource:`が残る、
+指示書どおり明示document）**:
+
+- `GPU3D_Metal.mm`: `kMetal3DShaderSource`／`kMetal3DOpaqueShaderSource`／
+  `kMetal3DFinalPassShaderSource`（Metal Raster 3Dの本体shader、3箇所）
+- `GPU2D_Metal.mm`: `kMetal2DLayerShaderSource`（layer合成shader）
+- `GPU3D_MetalCompute.mm`: `kMetalComputeSource`（compute主kernel、
+  `CreateComputeFoundation()`内のコメントで明示）
+- `MelonPrimeMetalFeatureCheck.mm`: probe shader 2種（feature-detection用の
+  smoke testであり本番描画shaderではないため対象外）
+- `GPU_MetalCaptureExperiment.inc`: `kMetalCaptureExperimentShaderSource`
+  （`MELONPRIME_METAL_CAPTURE_EXPERIMENT`環境変数gatedのdebug scaffold）
+
+検証:
+
+- `cmake --build build-mac-metal -j4` PASS（本機はCommand Line Tools単体
+  でXcode本体のMetal Toolchainがなく、`xcrun -sdk macosx -f metal`が失敗する
+  ため、`MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`のCMake WARNING分岐を
+  実際に経由してビルド。metallibはbundleへ含まれず
+  `MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK`で全箇所が旧来のsource
+  compileへfallbackしていることをビルドログで確認）
+- `cmake --build build-mac -j4`（Metal OFF）PASS
+- `cmake --build build-mac-metal-force-disabled -j4` PASS
+- release構成（`-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF
+  -DMELONPRIME_ENABLE_METAL=ON`）のconfigureが本機ではtoolchain不在のため
+  意図どおり`FATAL_ERROR`で停止することを確認（`/tmp`の使い捨てbuild
+  ディレクトリで検証、コミット対象外）
+- `bash tools/ci/audits/run-metal-fullgpu-audits.sh` 11/11 PASS
+
+未実施:
+
+- **実機でのmetallib構築自体**: 本セッションの実機にはXcode本体（Metal
+  Toolchainコンポーネント）が入っておらず、`xcrun metal`/`xcrun metallib`
+  が存在しない。そのため`build-mac-metal`のapp bundleに実際に
+  `melonPrimeDS.metallib`が入った状態のビルド・起動は未検証。フルXcode
+  （またはXcode 16+の`xcodebuild -downloadComponent MetalToolchain`）が
+  入ったmacOS機（想定: GitHub Actions macOSランナー）での
+  `cmake --build build-mac-metal`実行と、生成された
+  `melonPrimeDS.app/Contents/Resources/melonPrimeDS.metallib`の存在確認が
+  次の検証必須項目
+- 実ROM／実機での目視・スクリーンショット検証（bundled metallib経由の
+  描画が旧来のsource compile経路と画面上ビット一致すること）
+- ABI static_assert（sizeof/alignof/offsetof、指示書§20.4）は本PRでは
+  追加していない（既存の`static_assert(sizeof(ScreenUniforms) == 40, ...)`
+  等の個別assertは既存のまま維持のみ）
+- TSan／Windows／Linux rebuild
 
 ## PR-0 証拠要約（2026-07-17）
 

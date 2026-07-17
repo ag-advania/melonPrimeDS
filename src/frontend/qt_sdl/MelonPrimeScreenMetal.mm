@@ -39,6 +39,7 @@
 #include "MelonPrimeHudPropSchema.inc"
 
 #include "MelonPrimeMetalFeatureCheck.h"
+#include "MelonPrimeMetalLibrary.h"
 #include "GPU_MetalStrictDiagnostics.h"
 #include "MetalContext.h"
 
@@ -699,22 +700,44 @@ bool ScreenPanelMetal::initMetal()
         if (!attachLayerToCurrentViewGuiThread())
             return false;
 
+        // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): production shaders
+        // load from the ahead-of-time-compiled melonPrimeDS.metallib bundled
+        // in the app's Contents/Resources instead of compiling the embedded
+        // kScreenShaderSource/kUiShaderSource/kRadarShaderSource MSL at
+        // runtime. See MelonPrimeMetalLibrary.h for the release/debug
+        // contract.
         NSError* error = nil;
-        NSMutableString* shaderSource = [NSMutableString stringWithString:kScreenShaderSource];
-        [shaderSource appendString:kUiShaderSource];
-        [shaderSource appendString:kRadarShaderSource];
-        id<MTLLibrary> library = [m->device newLibraryWithSource:shaderSource options:nil error:&error];
-        if (!library)
-        {
-            fprintf(stderr, "[MelonPrime] metal presenter: screen shader compile failed\n");
-            return false;
-        }
+        id<MTLLibrary> library = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(m->device);
+        id<MTLFunction> vertexFn = library ? [library newFunctionWithName:@"mp_screen_vs"] : nil;
+        id<MTLFunction> fragmentFn = library ? [library newFunctionWithName:@"mp_screen_fs"] : nil;
 
-        id<MTLFunction> vertexFn = [library newFunctionWithName:@"mp_screen_vs"];
-        id<MTLFunction> fragmentFn = [library newFunctionWithName:@"mp_screen_fs"];
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
         if (!vertexFn || !fragmentFn)
         {
-            fprintf(stderr, "[MelonPrime] metal presenter: screen shader functions missing after compile\n");
+            // Debug-only fallback: compile the embedded MSL source directly
+            // when the bundled metallib is missing or stale. Release builds
+            // must not reach this branch for production shaders.
+            NSMutableString* shaderSource = [NSMutableString stringWithString:kScreenShaderSource];
+            [shaderSource appendString:kUiShaderSource];
+            [shaderSource appendString:kRadarShaderSource];
+            library = [m->device newLibraryWithSource:shaderSource options:nil error:&error];
+            if (library)
+            {
+                vertexFn = [library newFunctionWithName:@"mp_screen_vs"];
+                fragmentFn = [library newFunctionWithName:@"mp_screen_fs"];
+            }
+            else
+            {
+                fprintf(stderr, "[MelonPrime] metal presenter: screen shader source fallback compile failed\n");
+            }
+        }
+#endif
+
+        if (!vertexFn || !fragmentFn)
+        {
+            fprintf(stderr,
+                "[MelonPrime] metal presenter: screen shader functions "
+                "unavailable (bundled metallib missing or stale?)\n");
             return false;
         }
 

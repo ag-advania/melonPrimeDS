@@ -15,6 +15,7 @@ audits=(
   tools/ci/audits/audit-metal-radar-native.py
   tools/ci/audits/audit-metal-hud-command-list.py
   tools/ci/audits/audit-metal-osd-splash-native.py
+  tools/ci/audits/audit-metal-shader-asset-metallib.py
 )
 
 failed=0

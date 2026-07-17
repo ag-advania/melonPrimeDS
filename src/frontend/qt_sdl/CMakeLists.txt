@@ -303,6 +303,7 @@ if (MELONPRIME_METAL_ACTIVE)
     target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_METAL=1)
     target_sources(core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../MetalContext.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../MelonPrimeMetalLibrary.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
@@ -328,6 +329,7 @@ if (MELONPRIME_METAL_ACTIVE)
     )
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/../../MetalContext.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../MelonPrimeMetalLibrary.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU2D_Metal.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Metal.mm
@@ -336,6 +338,119 @@ if (MELONPRIME_METAL_ACTIVE)
         MelonPrimeScreenMetal.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
     )
+
+    # --- melonPrimeDS.metallib: ahead-of-time compiled production shaders --
+    # MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14: MSL asset/metallib).
+    # Physical .metal sources live under src/shaders/metal/ (moved out of
+    # the embedded R"MSL(...)MSL" / NSString literals that used to be
+    # compiled at runtime via -newLibraryWithSource:). They are compiled
+    # ahead-of-time with `xcrun metal`/`xcrun metallib` (Xcode's separate
+    # Metal Toolchain component -- not part of the standalone Command Line
+    # Tools package) into melonPrimeDS.metallib and copied into the app
+    # bundle's Contents/Resources, then loaded at runtime by
+    # MelonPrimeMetalDefaultLibrary() (MelonPrimeMetalLibrary.h/.mm).
+    #
+    # A machine with only the standalone Command Line Tools (no Xcode.app /
+    # no Metal Toolchain component) cannot run `xcrun metal`, even though it
+    # can still build and run every other part of the Metal renderer (all
+    # runtime Metal API usage only needs Metal.framework itself, which is
+    # always present). Detect that case explicitly:
+    #   - MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON (the documented "development
+    #     build" flag): warn and keep every migrated call site on its
+    #     existing -newLibraryWithSource: fallback via
+    #     MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK, i.e. unchanged pre-PR-14
+    #     runtime behavior on this machine.
+    #   - MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF (a real release/
+    #     distribution build): fail the configure step. A release build must
+    #     not silently ship without its production metallib.
+    find_program(MELONPRIME_XCRUN_EXECUTABLE xcrun)
+    set(MELONPRIME_METAL_TOOLCHAIN_AVAILABLE FALSE)
+    if (MELONPRIME_XCRUN_EXECUTABLE)
+        execute_process(
+            COMMAND "${MELONPRIME_XCRUN_EXECUTABLE}" -sdk macosx -f metal
+            RESULT_VARIABLE _mp_metal_tool_result
+            OUTPUT_QUIET ERROR_QUIET)
+        execute_process(
+            COMMAND "${MELONPRIME_XCRUN_EXECUTABLE}" -sdk macosx -f metallib
+            RESULT_VARIABLE _mp_metallib_tool_result
+            OUTPUT_QUIET ERROR_QUIET)
+        if (_mp_metal_tool_result EQUAL 0 AND _mp_metallib_tool_result EQUAL 0)
+            set(MELONPRIME_METAL_TOOLCHAIN_AVAILABLE TRUE)
+        endif()
+        unset(_mp_metal_tool_result)
+        unset(_mp_metallib_tool_result)
+    endif()
+
+    if (MELONPRIME_METAL_TOOLCHAIN_AVAILABLE)
+        set(MELONPRIME_METAL_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../shaders/metal")
+        set(MELONPRIME_METAL_SHADER_SOURCES
+            "${MELONPRIME_METAL_SHADER_DIR}/DisplayCapture.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/GPU2DFullGpu.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/FullGpuOutput.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/VisibleOutput.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/ComputeFinalPass.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/ComputeTextured.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/ComputeDepthBlend.metal"
+            "${MELONPRIME_METAL_SHADER_DIR}/Presenter.metal"
+        )
+
+        set(MELONPRIME_METAL_AIR_DIR "${CMAKE_CURRENT_BINARY_DIR}/melonprime-metal-air")
+        file(MAKE_DIRECTORY "${MELONPRIME_METAL_AIR_DIR}")
+
+        set(MELONPRIME_METAL_AIR_FILES "")
+        foreach(_mp_metal_src ${MELONPRIME_METAL_SHADER_SOURCES})
+            get_filename_component(_mp_metal_name "${_mp_metal_src}" NAME_WE)
+            set(_mp_metal_air "${MELONPRIME_METAL_AIR_DIR}/${_mp_metal_name}.air")
+            add_custom_command(
+                OUTPUT "${_mp_metal_air}"
+                COMMAND "${MELONPRIME_XCRUN_EXECUTABLE}" -sdk macosx metal
+                    -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}
+                    -Wall
+                    -o "${_mp_metal_air}"
+                    -c "${_mp_metal_src}"
+                DEPENDS "${_mp_metal_src}"
+                COMMENT "MelonPrime metal: compiling ${_mp_metal_name}.metal"
+                VERBATIM)
+            list(APPEND MELONPRIME_METAL_AIR_FILES "${_mp_metal_air}")
+        endforeach()
+
+        set(MELONPRIME_METALLIB_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/melonPrimeDS.metallib")
+        add_custom_command(
+            OUTPUT "${MELONPRIME_METALLIB_OUTPUT}"
+            COMMAND "${MELONPRIME_XCRUN_EXECUTABLE}" -sdk macosx metallib
+                ${MELONPRIME_METAL_AIR_FILES}
+                -o "${MELONPRIME_METALLIB_OUTPUT}"
+            DEPENDS ${MELONPRIME_METAL_AIR_FILES}
+            COMMENT "MelonPrime metal: linking melonPrimeDS.metallib"
+            VERBATIM)
+
+        target_sources(melonDS PRIVATE "${MELONPRIME_METALLIB_OUTPUT}")
+        set_source_files_properties("${MELONPRIME_METALLIB_OUTPUT}" PROPERTIES
+            GENERATED TRUE
+            MACOSX_PACKAGE_LOCATION "Resources")
+        message(STATUS "MelonPrime metal: melonPrimeDS.metallib will be built and bundled")
+    elseif (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        target_compile_definitions(core PUBLIC MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK=1)
+        message(WARNING
+            "MelonPrime metal: `xcrun metal`/`xcrun metallib` (Xcode's Metal "
+            "Toolchain component) were not found. melonPrimeDS.metallib will "
+            "NOT be built; every migrated shader call site falls back to its "
+            "existing -newLibraryWithSource: runtime compile "
+            "(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK), matching pre-PR-14 "
+            "behavior on this machine. This is only permitted because "
+            "MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON; a release build "
+            "requires the real toolchain.")
+    else()
+        message(FATAL_ERROR
+            "MELONPRIME_ENABLE_METAL release build (MELONPRIME_ENABLE_"
+            "DEVELOPER_FEATURES=OFF) requires `xcrun metal`/`xcrun metallib` "
+            "(Xcode's Metal Toolchain component, not the standalone Command "
+            "Line Tools package) to build melonPrimeDS.metallib from "
+            "src/shaders/metal/*.metal. Install Xcode (or "
+            "`xcodebuild -downloadComponent MetalToolchain`) or configure "
+            "with -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON for a "
+            "development build that keeps the source-compile fallback.")
+    endif()
 endif()
 
 add_subdirectory("../../net"

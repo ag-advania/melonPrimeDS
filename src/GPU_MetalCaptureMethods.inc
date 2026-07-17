@@ -491,24 +491,50 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     next->Queue = queue;
     next->Scale = scale;
 
+    // MELONPRIME_METAL_BUNDLED_METALLIB_V1 (PR-14): production shaders load
+    // from the ahead-of-time-compiled melonPrimeDS.metallib bundled in the
+    // app's Contents/Resources instead of compiling embedded MSL source at
+    // runtime. See MelonPrimeMetalLibrary.h for the release/debug contract.
     NSError* error = nil;
-    NSString* source =
-        [[NSString alloc] initWithUTF8String:kMetalDisplayCaptureShaderSource];
-    next->Library = [device newLibraryWithSource:source options:nil error:&error];
-    if (!next->Library)
+    next->Library = MelonPrime::Metal::MelonPrimeMetalDefaultLibrary(device);
+    id<MTLFunction> captureFunction = next->Library
+        ? [next->Library newFunctionWithName:@"mp_metal_display_capture"]
+        : nil;
+
+#if !defined(NDEBUG) || defined(MELONPRIME_METAL_ALLOW_SOURCE_FALLBACK)
+    if (!captureFunction)
     {
-        const char* message =
-            error ? [[error localizedDescription] UTF8String] : "unknown error";
+        // Debug-only fallback: compile the embedded MSL source directly when
+        // the bundled metallib is missing or stale (e.g. a build tree that
+        // skipped the app-bundle Resources copy step). Release builds must
+        // not reach this branch for production shaders.
+        NSError* sourceError = nil;
+        NSString* source =
+            [[NSString alloc] initWithUTF8String:kMetalDisplayCaptureShaderSource];
+        next->Library = [device newLibraryWithSource:source options:nil error:&sourceError];
+        if (next->Library)
+        {
+            captureFunction = [next->Library newFunctionWithName:@"mp_metal_display_capture"];
+        }
+        else
+        {
+            const char* message = sourceError
+                ? [[sourceError localizedDescription] UTF8String]
+                : "unknown error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal display capture: source fallback compile failed: %s\n",
+                message);
+        }
+    }
+#endif
+
+    if (!captureFunction)
+    {
         std::fprintf(stderr,
-            "[MelonPrime] metal display capture: shader compile failed: %s\n",
-            message);
+            "[MelonPrime] metal display capture: shader function unavailable "
+            "(bundled metallib missing or stale?)\n");
         return false;
     }
-
-    id<MTLFunction> captureFunction =
-        [next->Library newFunctionWithName:@"mp_metal_display_capture"];
-    if (!captureFunction)
-        return false;
 
     next->CapturePipeline =
         [device newComputePipelineStateWithFunction:captureFunction error:&error];
