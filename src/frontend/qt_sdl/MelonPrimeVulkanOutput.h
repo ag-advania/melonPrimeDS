@@ -75,7 +75,9 @@ struct SoftPackedFrameSnapshot
     bool hasCapture3dSource = false;
     bool captureScreenSwap = false;
     bool captureScreenSwapValid = false;
+    bool physicalScreenSwap = false;
     bool captureBackedClass4Only = false;
+    bool captureBackedHasStructured2DSource = false;
     std::array<u32, kPixelCount> packedTopPlane0{};
     std::array<u32, kPixelCount> packedTopPlane1{};
     std::array<u32, kPixelCount> packedTopControl{};
@@ -108,7 +110,9 @@ struct SoftPackedFrameSnapshot
         hasCapture3dSource = false;
         captureScreenSwap = false;
         captureScreenSwapValid = false;
+        physicalScreenSwap = false;
         captureBackedClass4Only = false;
+        captureBackedHasStructured2DSource = false;
         packedTopPlane0.fill(0);
         packedTopPlane1.fill(0);
         packedTopControl.fill(0);

@@ -237,6 +237,11 @@ void MelonPrimeVulkanSnapshotBuilder::reset() noexcept
     };
     clearHistories(phaseHistory);
     clearHistories(capturePhaseHistory);
+    previousSnapshot.clear();
+    engineATop = {};
+    engineABottom = {};
+    framesSinceLastScreenSwapToggle = 1024;
+    wasInAlternatingMode = false;
 }
 
 bool MelonPrimeVulkanSnapshotBuilder::build(
@@ -299,7 +304,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     destination.renderer3dOwnerIsTop = source.renderer3dOwnerIsTop;
     destination.captureScreenSwap = source.captureScreenSwap;
     destination.captureScreenSwapValid = source.captureScreenSwapValid;
+    destination.physicalScreenSwap = source.physicalScreenSwap;
     destination.captureBackedClass4Only = source.captureBackedClass4Only;
+    destination.captureBackedHasStructured2DSource = source.captureBackedHasStructured2DSource;
     destination.valid = true;
 
     constexpr std::size_t pixelBytes = SoftPackedFrameSnapshot::kPixelCount * sizeof(u32);
@@ -411,6 +418,288 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         }
     }
 
+    // Sapphire Engine A Top/Bottom phase cache. physicalScreenSwap == true means
+    // Engine A is currently routed to physical Top. Alternating ScreenSwap scenes
+    // must restore by Engine A identity, not by physical LCD history alone.
+    const bool screenSwapToggledThisFrame =
+        previousSnapshot.valid
+        && previousSnapshot.physicalScreenSwap != destination.physicalScreenSwap;
+    if (screenSwapToggledThisFrame)
+        framesSinceLastScreenSwapToggle = 0;
+    else if (framesSinceLastScreenSwapToggle < 1024)
+        framesSinceLastScreenSwapToggle++;
+    const bool isInAlternatingMode = framesSinceLastScreenSwapToggle <= 1;
+    if (isInAlternatingMode != wasInAlternatingMode)
+    {
+        engineATop.valid = false;
+        engineABottom.valid = false;
+    }
+    wasInAlternatingMode = isInAlternatingMode;
+
+    {
+        const bool engineAOnTop = destination.physicalScreenSwap;
+        const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
+
+        auto screenHasMeaningfulContent =
+            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
+                constexpr std::size_t kMinVisiblePixels =
+                    SoftPackedFrameSnapshot::kPixelCount / 32u;
+                std::size_t visiblePixels = 0;
+                for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
+                {
+                    if (packedPixelHasVisibleColor(plane0[i]))
+                    {
+                        ++visiblePixels;
+                        if (visiblePixels >= kMinVisiblePixels)
+                            return true;
+                    }
+                }
+                return false;
+            };
+        auto screenHasExplicitCurrentContent =
+            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
+                constexpr std::size_t kMinUsefulPixels =
+                    SoftPackedFrameSnapshot::kPixelCount / 32u;
+                std::size_t usefulPixels = 0;
+                for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
+                {
+                    const u32 pixel = plane0[i];
+                    if (pixel != 0u && pixel != kPacked3dPlaceholder)
+                    {
+                        ++usefulPixels;
+                        if (usefulPixels >= kMinUsefulPixels)
+                            return true;
+                    }
+                }
+                return false;
+            };
+        auto screenHasExplicitCompositedContent =
+            [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1) {
+                return screenHasExplicitCurrentContent(plane0)
+                    || screenHasExplicitCurrentContent(plane1);
+            };
+        auto screenUses3dCaptureMeta =
+            [](const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+                for (u32 meta : lineMeta)
+                {
+                    if ((meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) != 0u)
+                        return true;
+                }
+                return false;
+            };
+        auto screenIsScreenWideCaptureBackedComp4 =
+            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+                const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+                int captureBackedComp4Lines = 0;
+                for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
+                {
+                    const u32 meta = lineMeta[y];
+                    if ((meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) != 0u)
+                        return false;
+                    const u32 displayMode = (meta >> 16u) & 0x3u;
+                    if (displayMode != 1u)
+                        continue;
+                    bool lineHasCaptureBackedComp4 = false;
+                    const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+                    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+                    {
+                        const std::size_t index = rowBase + x;
+                        const u32 compMode = (control[index] >> 24u) & 0xFu;
+                        if (compMode == 4u
+                            && plane0[index] == kPacked3dPlaceholder
+                            && plane1[index] == kPacked3dPlaceholder)
+                        {
+                            lineHasCaptureBackedComp4 = true;
+                            break;
+                        }
+                    }
+                    if (lineHasCaptureBackedComp4)
+                        ++captureBackedComp4Lines;
+                }
+                return captureBackedComp4Lines
+                    > static_cast<int>(SoftPackedFrameSnapshot::kLineCount / 2u);
+            };
+        auto screenHasStructured2DOnlyContent =
+            [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) {
+                constexpr std::size_t kMinVisiblePixels =
+                    SoftPackedFrameSnapshot::kPixelCount / 128u;
+                std::size_t visiblePixels = 0;
+                for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
+                {
+                    const u32 controlAlpha = control[i] >> 24u;
+                    const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
+                    const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
+                    if (!structured2DOnly || !packedPixelHasVisibleColor(plane0[i]))
+                        continue;
+                    ++visiblePixels;
+                    if (visiblePixels >= kMinVisiblePixels)
+                        return true;
+                }
+                return false;
+            };
+        auto applyCachedEngineASnapshot =
+            [](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane0,
+                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetPlane1,
+                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& targetControl,
+                std::array<u32, SoftPackedFrameSnapshot::kLineCount>& targetLineMeta,
+                const EnginePhaseCache& cached) {
+                const std::array<u32, SoftPackedFrameSnapshot::kLineCount> currentLineMeta = targetLineMeta;
+                targetPlane0 = cached.plane0;
+                targetPlane1 = cached.plane1;
+                targetControl = cached.control;
+                targetLineMeta = cached.lineMeta;
+                for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
+                    targetLineMeta[y] = (targetLineMeta[y] & 0xFFFF0000u) | (currentLineMeta[y] & 0x0000FFFFu);
+            };
+        auto storeEngineACache =
+            [](EnginePhaseCache& cache,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+                const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+                const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+                cache.plane0 = plane0;
+                cache.plane1 = plane1;
+                cache.control = control;
+                cache.lineMeta = lineMeta;
+                cache.valid = true;
+            };
+
+        if (engineAOnTop)
+        {
+            if (screenHasMeaningfulContent(destination.packedTopPlane0)
+                || screenIsScreenWideCaptureBackedComp4(
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
+                    destination.packedTopLineMeta))
+            {
+                storeEngineACache(
+                    engineATop,
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
+                    destination.packedTopLineMeta);
+            }
+
+            const bool currentTopHasExplicitCompositedContent =
+                screenHasExplicitCompositedContent(
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1);
+            const bool cachedTopHasStructured2DOnlyContent =
+                screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
+            if (engineATop.valid
+                && !currentTopHasExplicitCompositedContent
+                && screenUses3dCaptureMeta(destination.packedTopLineMeta)
+                && cachedTopHasStructured2DOnlyContent)
+            {
+                applyCachedEngineASnapshot(
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
+                    destination.packedTopLineMeta,
+                    engineATop);
+            }
+
+            const bool cachedBottomIsScreenWideCaptureBackedComp4 =
+                screenIsScreenWideCaptureBackedComp4(
+                    engineABottom.plane0,
+                    engineABottom.plane1,
+                    engineABottom.control,
+                    engineABottom.lineMeta);
+            const bool currentBottomHasExplicitContent =
+                screenHasExplicitCompositedContent(
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1);
+            const bool cachedBottomHasStructured2DOnlyContent =
+                screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
+            const bool shouldReplaceBottom = engineABottom.valid
+                && ((!isInAlternatingMode && !currentBottomHasExplicitContent)
+                    || (isInAlternatingMode
+                        && (cachedBottomIsScreenWideCaptureBackedComp4
+                            || (!captureBackedHasStructured2DSource
+                                && !currentBottomHasExplicitContent
+                                && cachedBottomHasStructured2DOnlyContent))));
+            if (shouldReplaceBottom)
+            {
+                applyCachedEngineASnapshot(
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
+                    destination.packedBottomLineMeta,
+                    engineABottom);
+            }
+        }
+        else
+        {
+            if (screenHasMeaningfulContent(destination.packedBottomPlane0)
+                || screenIsScreenWideCaptureBackedComp4(
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
+                    destination.packedBottomLineMeta))
+            {
+                storeEngineACache(
+                    engineABottom,
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
+                    destination.packedBottomLineMeta);
+            }
+
+            const bool cachedTopIsScreenWideCaptureBackedComp4 =
+                screenIsScreenWideCaptureBackedComp4(
+                    engineATop.plane0,
+                    engineATop.plane1,
+                    engineATop.control,
+                    engineATop.lineMeta);
+            const bool currentTopHasExplicitContent =
+                screenHasExplicitCompositedContent(
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1);
+            const bool cachedTopHasStructured2DOnlyContent =
+                screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
+            const bool shouldReplaceTop = engineATop.valid
+                && ((!isInAlternatingMode && !currentTopHasExplicitContent)
+                    || (isInAlternatingMode
+                        && (cachedTopIsScreenWideCaptureBackedComp4
+                            || (!captureBackedHasStructured2DSource
+                                && !currentTopHasExplicitContent
+                                && cachedTopHasStructured2DOnlyContent))));
+            if (shouldReplaceTop)
+            {
+                applyCachedEngineASnapshot(
+                    destination.packedTopPlane0,
+                    destination.packedTopPlane1,
+                    destination.packedTopControl,
+                    destination.packedTopLineMeta,
+                    engineATop);
+            }
+
+            const bool currentBottomHasExplicitCompositedContent =
+                screenHasExplicitCompositedContent(
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1);
+            const bool cachedBottomHasStructured2DOnlyContent =
+                screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
+            if (engineABottom.valid
+                && !currentBottomHasExplicitCompositedContent
+                && screenUses3dCaptureMeta(destination.packedBottomLineMeta)
+                && cachedBottomHasStructured2DOnlyContent)
+            {
+                applyCachedEngineASnapshot(
+                    destination.packedBottomPlane0,
+                    destination.packedBottomPlane1,
+                    destination.packedBottomControl,
+                    destination.packedBottomLineMeta,
+                    engineABottom);
+            }
+        }
+    }
+
     collectStats(
         destination.packedTopPlane0,
         destination.packedTopPlane1,
@@ -461,6 +750,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             completedCaptureHistory.valid = true;
         }
     }
+    previousSnapshot = destination;
     return true;
 }
 
