@@ -59,12 +59,19 @@ public:
     void SwapBuffers() override;
 
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
+    // Sapphire accelerated layout: Plane0|Plane1|Control|Meta per physical line.
+    static constexpr std::size_t VulkanPackedStride = 256u * 3u + 1u;
+    static constexpr std::size_t VulkanPackedPixelCount = VulkanPackedStride * 192u;
     struct StructuredVulkanFrameSnapshot
     {
         std::array<u32, 2u * 3u * StructuredPixelCount> ScreenPlanes{};
         std::array<u32, 2u * 192u> ScreenLineMeta{};
-        // Engine A/B provenance before physical Top/Bottom routing. Required for
-        // ScreenSwap-alternating capture reconstruction (Sapphire contract).
+        // Authoritative physical Top/Bottom packed buffers for this generation.
+        // Plane/meta arrays above are derived views of the same write.
+        std::array<u32, VulkanPackedPixelCount> PackedTop{};
+        std::array<u32, VulkanPackedPixelCount> PackedBottom{};
+        // Engine A/B provenance before physical Top/Bottom routing. Diagnostics /
+        // capture only — not a presentation re-routing source.
         std::array<u32, 2u * 3u * StructuredPixelCount> EnginePlanes{};
         std::array<u8, 2u * 192u> EngineLineUsesCapture3D{};
         std::array<u32, StructuredPixelCount> Capture3DSource{};
@@ -74,7 +81,10 @@ public:
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
         bool CaptureScreenSwapValid = false;
+        // Phase key derived at publish from where Engine A actually wrote this
+        // generation — never an independent line-0 ScreenSwap side channel.
         bool PhysicalScreenSwap = false;
+        bool PhysicalScreenSwapStable = true;
         bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
         bool CaptureBackedHasStructured2DSource = false;
@@ -104,6 +114,8 @@ private:
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
+    // [backBuffer][physicalScreen 0=Top / 1=Bottom], Sapphire packed stride.
+    std::array<u32, VulkanPackedPixelCount> VulkanPackedFramebuffer[2][2]{};
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
@@ -121,6 +133,11 @@ private:
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureScreenSwapValid = false;
     bool StructuredPhysicalScreenSwap = false;
+    bool StructuredPhysicalScreenSwapStable = true;
+    bool StructuredScreenSwapAtLine0 = false;
+    bool StructuredScreenSwapChangedMidFrame = false;
+    u32 StructuredEngineAOnTopLines = 0;
+    u32 StructuredEngineAOnBottomLines = 0;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};

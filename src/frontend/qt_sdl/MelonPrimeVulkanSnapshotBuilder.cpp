@@ -920,24 +920,74 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     constexpr std::size_t pixelBytes = SoftPackedFrameSnapshot::kPixelCount * sizeof(u32);
     constexpr std::size_t metaBytes = SoftPackedFrameSnapshot::kLineCount * sizeof(u32);
-    std::memcpy(destination.packedTopPlane0.data(), source.plane[0][0], pixelBytes);
-    std::memcpy(destination.packedTopPlane1.data(), source.plane[0][1], pixelBytes);
-    std::memcpy(destination.packedTopControl.data(), source.plane[0][2], pixelBytes);
-    std::memcpy(destination.packedTopLineMeta.data(), source.lineMeta[0], metaBytes);
-    std::memcpy(destination.packedBottomPlane0.data(), source.plane[1][0], pixelBytes);
-    std::memcpy(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes);
-    std::memcpy(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes);
-    std::memcpy(destination.packedBottomLineMeta.data(), source.lineMeta[1], metaBytes);
+    constexpr std::size_t kPackedStride = SoftPackedFrameSnapshot::kScreenWidth * 3u + 1u;
+    const bool hasPackedPhysical =
+        source.packedTop != nullptr && source.packedBottom != nullptr;
+    if (hasPackedPhysical)
+    {
+        // Latch authoritative packed physical buffers (Sapphire contract).
+        auto unpackPackedScreen =
+            [](const u32* packed,
+                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+                std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+                for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
+                {
+                    const std::size_t packedRow = y * kPackedStride;
+                    const std::size_t snapshotRow = y * SoftPackedFrameSnapshot::kScreenWidth;
+                    std::memcpy(
+                        plane0.data() + snapshotRow,
+                        packed + packedRow,
+                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                    std::memcpy(
+                        plane1.data() + snapshotRow,
+                        packed + packedRow + SoftPackedFrameSnapshot::kScreenWidth,
+                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                    std::memcpy(
+                        control.data() + snapshotRow,
+                        packed + packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
+                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                    lineMeta[y] = packed[packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 3u)];
+                }
+            };
+        unpackPackedScreen(
+            source.packedTop,
+            destination.packedTopPlane0,
+            destination.packedTopPlane1,
+            destination.packedTopControl,
+            destination.packedTopLineMeta);
+        unpackPackedScreen(
+            source.packedBottom,
+            destination.packedBottomPlane0,
+            destination.packedBottomPlane1,
+            destination.packedBottomControl,
+            destination.packedBottomLineMeta);
+    }
+    else
+    {
+        std::memcpy(destination.packedTopPlane0.data(), source.plane[0][0], pixelBytes);
+        std::memcpy(destination.packedTopPlane1.data(), source.plane[0][1], pixelBytes);
+        std::memcpy(destination.packedTopControl.data(), source.plane[0][2], pixelBytes);
+        std::memcpy(destination.packedTopLineMeta.data(), source.lineMeta[0], metaBytes);
+        std::memcpy(destination.packedBottomPlane0.data(), source.plane[1][0], pixelBytes);
+        std::memcpy(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes);
+        std::memcpy(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes);
+        std::memcpy(destination.packedBottomLineMeta.data(), source.lineMeta[1], metaBytes);
+    }
 
 #ifndef NDEBUG
     // Physical LCD identity is carried by the buffer itself. Renderer-owner
     // metadata must never select or exchange these planes.
-    assert(std::memcmp(destination.packedTopPlane0.data(), source.plane[0][0], pixelBytes) == 0);
-    assert(std::memcmp(destination.packedTopPlane1.data(), source.plane[0][1], pixelBytes) == 0);
-    assert(std::memcmp(destination.packedTopControl.data(), source.plane[0][2], pixelBytes) == 0);
-    assert(std::memcmp(destination.packedBottomPlane0.data(), source.plane[1][0], pixelBytes) == 0);
-    assert(std::memcmp(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes) == 0);
-    assert(std::memcmp(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes) == 0);
+    if (!hasPackedPhysical)
+    {
+        assert(std::memcmp(destination.packedTopPlane0.data(), source.plane[0][0], pixelBytes) == 0);
+        assert(std::memcmp(destination.packedTopPlane1.data(), source.plane[0][1], pixelBytes) == 0);
+        assert(std::memcmp(destination.packedTopControl.data(), source.plane[0][2], pixelBytes) == 0);
+        assert(std::memcmp(destination.packedBottomPlane0.data(), source.plane[1][0], pixelBytes) == 0);
+        assert(std::memcmp(destination.packedBottomPlane1.data(), source.plane[1][1], pixelBytes) == 0);
+        assert(std::memcmp(destination.packedBottomControl.data(), source.plane[1][2], pixelBytes) == 0);
+    }
 #endif
 
     protectOpaqueBlack(
@@ -1107,6 +1157,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     // Sapphire Engine A Top/Bottom phase cache. physicalScreenSwap is only the
     // phase key (which physical LCD currently hosts Engine A). Cache stores
     // completed physical snapshots from that phase — never Engine A shadow planes.
+    // Skip entirely when ScreenSwap changed mid-generation: a single frame-level
+    // phase key cannot describe mixed physical routing.
+    if (source.physicalScreenSwapStable)
     {
         const bool engineAOnTop = destination.physicalScreenSwap;
         const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;

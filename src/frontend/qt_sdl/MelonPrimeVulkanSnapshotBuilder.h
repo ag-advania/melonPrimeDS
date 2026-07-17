@@ -15,6 +15,10 @@ struct StructuredVulkanSnapshotSource
 {
     const u32* plane[2][3]{};
     const u32* lineMeta[2]{};
+    // Optional Sapphire packed physical buffers (stride 256*3+1). When set,
+    // these are the authoritative Top/Bottom source for latch.
+    const u32* packedTop{};
+    const u32* packedBottom{};
     const u32* enginePlane[2][3]{};
     const u8* engineLineUsesCapture3d[2]{};
     const u32* capture3dSource{};
@@ -24,6 +28,7 @@ struct StructuredVulkanSnapshotSource
     bool captureScreenSwap{};
     bool captureScreenSwapValid{};
     bool physicalScreenSwap{};
+    bool physicalScreenSwapStable{true};
     bool captureBackedClass4Only{};
     bool captureBackedHasStructured2DSource{};
     int frontBuffer{-1};
