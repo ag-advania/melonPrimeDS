@@ -322,8 +322,20 @@ void SoftRenderer::DrawScanline(u32 line)
         assert(dstB == (screenB == 0u ? topLine : bottomLine));
         assert(screenA == (GPU.ScreenSwap ? 0u : 1u));
 #endif
-        BuildStructuredScreenLine(0, screenA, outputLine, dstA, line >= 192u);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, line >= 192u);
+        BuildStructuredScreenLine(
+            0,
+            screenA,
+            outputLine,
+            line < 192u ? line : outputLine,
+            dstA,
+            line >= 192u);
+        BuildStructuredScreenLine(
+            1,
+            screenB,
+            outputLine,
+            line < 192u ? line : outputLine,
+            dstB,
+            line >= 192u);
 #endif
         // expand the color from 6-bit to 8-bit
         ExpandColor(dstA);
@@ -348,8 +360,8 @@ void SoftRenderer::DrawScanline(u32 line)
         assert(dstB == (screenB == 0u ? topLine : bottomLine));
         assert(screenA == (GPU.ScreenSwap ? 0u : 1u));
 #endif
-        BuildStructuredScreenLine(0, screenA, outputLine, dstA, true);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, true);
+        BuildStructuredScreenLine(0, screenA, outputLine, outputLine, dstA, true);
+        BuildStructuredScreenLine(1, screenB, outputLine, outputLine, dstB, true);
 #endif
     }
 }
@@ -1173,19 +1185,45 @@ bool SoftRenderer::DrawStructuredCapturePixel(u32 engine, u32* destination, u32 
 void SoftRenderer::BuildStructuredScreenLine(
     u32 engine,
     u32 screen,
-    u32 line,
+    u32 screenLine,
+    u32 engineLine,
     const u32* output,
     bool forcePlain)
 {
-    if (!UseStructuredVulkan2D() || engine >= 2u || screen >= 2u || line >= 192u || output == nullptr)
+    if (!UseStructuredVulkan2D()
+        || engine >= 2u
+        || screen >= 2u
+        || screenLine >= 192u
+        || engineLine >= 192u
+        || output == nullptr)
+    {
         return;
+    }
 
     const u32 displayMode = engine == 0u
         ? ((GPU.GPU2D_A.DispCnt >> 16u) & 0x3u)
         : ((GPU.GPU2D_B.DispCnt >> 16u) & 0x1u);
-    const std::size_t rowBase = static_cast<std::size_t>(line) * 256u;
+    // Engine pixels are stored by VCount (engineLine). Physical screen rows
+    // follow the scheduler output line (screenLine). Mixing them copies the
+    // wrong Engine row into the published snapshot.
+    const std::size_t screenRowBase = static_cast<std::size_t>(screenLine) * 256u;
+    const std::size_t engineRowBase = static_cast<std::size_t>(engineLine) * 256u;
     const std::size_t sourceBase = static_cast<std::size_t>(engine) * 3u * StructuredPixelCount;
     const std::size_t destinationBase = static_cast<std::size_t>(screen) * 3u * StructuredPixelCount;
+
+    auto engineLineHasStructuredPayload = [&]() {
+        for (std::size_t x = 0; x < 256u; ++x)
+        {
+            const std::size_t index = engineRowBase + x;
+            if (StructuredEnginePlanes[sourceBase + index] != 0u
+                || StructuredEnginePlanes[sourceBase + StructuredPixelCount + index] != 0u
+                || StructuredEnginePlanes[sourceBase + (2u * StructuredPixelCount) + index] != 0u)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
 
     bool copiedStructured = false;
     u32 lineMeta = 0u;
@@ -1194,8 +1232,8 @@ void SoftRenderer::BuildStructuredScreenLine(
         for (std::size_t plane = 0; plane < 3u; ++plane)
         {
             std::memcpy(
-                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + rowBase,
-                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + rowBase,
+                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
+                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + engineRowBase,
                 256u * sizeof(u32));
         }
         const u16 brightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
@@ -1203,22 +1241,22 @@ void SoftRenderer::BuildStructuredScreenLine(
             (1u << 16u)
             | (static_cast<u32>(brightness >> 14u) << 8u)
             | static_cast<u32>(brightness & 0x1Fu);
-        if (StructuredEngineLineUsesCapture3D[(static_cast<std::size_t>(engine) * 192u) + line] != 0u)
+        if (StructuredEngineLineUsesCapture3D[(static_cast<std::size_t>(engine) * 192u) + engineLine] != 0u)
             lineMeta |= 1u << 21u;
         copiedStructured = true;
     }
     else if (!forcePlain && engine == 0u && displayMode == 2u)
     {
         const u32 bank = (GPU.GPU2D_A.DispCnt >> 18u) & 0x3u;
-        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
+        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + engineLine;
         if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u && StructuredCaptureLineValid[validIndex] != 0u)
         {
             const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
             for (std::size_t plane = 0; plane < 3u; ++plane)
             {
                 std::memcpy(
-                    StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + rowBase,
-                    StructuredCapturePlanes.data() + captureBase + (plane * StructuredPixelCount) + rowBase,
+                    StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
+                    StructuredCapturePlanes.data() + captureBase + (plane * StructuredPixelCount) + engineRowBase,
                     256u * sizeof(u32));
             }
             const u16 brightness = GPU.MasterBrightnessA;
@@ -1232,11 +1270,29 @@ void SoftRenderer::BuildStructuredScreenLine(
         }
     }
 
+    if (!copiedStructured && !forcePlain && engineLineHasStructuredPayload())
+    {
+        // Prefer Engine provenance over flattened BGRA. Filling forcePlain-style
+        // 2D-only content here marks the whole LCD "explicit" and blocks Engine A
+        // phase-cache restore on alternating ScreenSwap scenes.
+        for (std::size_t plane = 0; plane < 3u; ++plane)
+        {
+            std::memcpy(
+                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + screenRowBase,
+                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + engineRowBase,
+                256u * sizeof(u32));
+        }
+        lineMeta = (displayMode << 16u);
+        if (StructuredEngineLineUsesCapture3D[(static_cast<std::size_t>(engine) * 192u) + engineLine] != 0u)
+            lineMeta |= 1u << 21u;
+        copiedStructured = true;
+    }
+
     if (!copiedStructured)
     {
         for (std::size_t x = 0; x < 256u; ++x)
         {
-            const std::size_t pixelIndex = rowBase + x;
+            const std::size_t pixelIndex = screenRowBase + x;
             StructuredScreenPlanes[destinationBase + pixelIndex] =
                 (output[x] & 0x00FFFFFFu) | 0x01000000u;
             StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0;
@@ -1247,8 +1303,8 @@ void SoftRenderer::BuildStructuredScreenLine(
         }
         lineMeta = (forcePlain ? 0u : displayMode) << 16u;
     }
-    StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + line] = lineMeta;
-    if (line == 191u)
+    StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + screenLine] = lineMeta;
+    if (screenLine == 191u)
         StructuredFrameValid = true;
 }
 
