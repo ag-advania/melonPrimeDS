@@ -3,6 +3,10 @@
 #include "MelonPrimeVideoBackend.h"
 #include "EmuInstance.h" // renderer3D_* enum
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
+
 #if defined(MELONPRIME_ENABLE_METAL)
 #include <cstdlib>
 #endif
@@ -70,6 +74,12 @@ int NormalizeRendererForPlatform(int requested)
     case renderer3D_MetalCompute:
         return requested;
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    case renderer3D_Vulkan:
+        return MelonPrime::VulkanFeatureCheck::IsRuntimeAvailable()
+            ? requested
+            : renderer3D_Software;
+#endif
     default:
         return renderer3D_Software;
     }
@@ -99,6 +109,10 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #endif
 
     const int normalized = NormalizeRendererForPlatform(requestedRenderer);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (normalized == renderer3D_Vulkan)
+        return PresentationBackend::Vulkan;
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
     if (normalized == renderer3D_Metal || normalized == renderer3D_MetalCompute)
         return PresentationBackend::Metal;

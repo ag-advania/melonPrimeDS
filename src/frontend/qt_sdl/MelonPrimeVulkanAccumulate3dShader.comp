@@ -1,0 +1,209 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D newSnapshot;
+layout(binding = 1, rgba8) uniform image2D accumulated;
+
+layout(binding = 2, std430) readonly buffer TopPackedBuffer
+{
+    uint topPacked[];
+};
+
+layout(binding = 3, std430) readonly buffer BottomPackedBuffer
+{
+    uint bottomPacked[];
+};
+
+layout(push_constant) uniform PushConsts
+{
+    uint scale;
+    uint packedStride;
+    uint topLcd;
+} pc;
+
+const uint kMetaFlagRegularCaptureUses3d = 1u << 21u;
+const uint kMetaFlagVramCaptureUses3d = 1u << 22u;
+
+struct Rgba6
+{
+    int r;
+    int g;
+    int b;
+    int a;
+};
+
+Rgba6 unpackColor6(uint packedColor)
+{
+    Rgba6 color;
+    color.r = int(packedColor & 0xFFu);
+    color.g = int((packedColor >> 8u) & 0xFFu);
+    color.b = int((packedColor >> 16u) & 0xFFu);
+    color.a = int((packedColor >> 24u) & 0xFFu);
+    return color;
+}
+
+uint readPacked(int y, int x)
+{
+    uint offset = uint(y) * pc.packedStride + uint(x);
+    return pc.topLcd != 0u ? topPacked[offset] : bottomPacked[offset];
+}
+
+bool isOpaqueBlack2D(Rgba6 color)
+{
+    return color.a != 0
+        && color.a != 0x20
+        && color.a != 0x40
+        && ((color.r | color.g | color.b) == 0);
+}
+
+bool isPacked3dPlaceholder(Rgba6 color)
+{
+    return color.r == 0
+        && color.g == 0
+        && color.b == 0
+        && color.a == 0x20;
+}
+
+bool isPacked3dLayerSlot(Rgba6 color)
+{
+    return color.a == 0x40;
+}
+
+bool isVisiblePackedSupport(Rgba6 color)
+{
+    return color.a != 0
+        && color.a != 0x20
+        && color.a != 0x40
+        && ((color.r | color.g | color.b) != 0);
+}
+
+bool lineUses3dCapture(int dsY)
+{
+    uint meta = readPacked(dsY, 256 * 3);
+    return (meta & (kMetaFlagRegularCaptureUses3d | kMetaFlagVramCaptureUses3d)) != 0u;
+}
+
+bool hasLocalVisiblePackedSupport(int dsX, int dsY)
+{
+    int support = 0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        int sampleY = dsY + dy;
+        if (sampleY < 0 || sampleY >= 192)
+            continue;
+
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            if (dx == 0 && dy == 0)
+                continue;
+
+            int sampleX = dsX + dx;
+            if (sampleX < 0 || sampleX >= 256)
+                continue;
+
+            Rgba6 plane0 = unpackColor6(readPacked(sampleY, sampleX));
+            Rgba6 plane1 = unpackColor6(readPacked(sampleY, sampleX + 256));
+            if (isVisiblePackedSupport(plane0) || isVisiblePackedSupport(plane1))
+            {
+                support++;
+                if (support >= 1)
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool hasProtectedBlack2D(int dsX, int dsY)
+{
+    Rgba6 plane0 = unpackColor6(readPacked(dsY, dsX));
+    Rgba6 plane1 = unpackColor6(readPacked(dsY, dsX + 256));
+    Rgba6 control = unpackColor6(readPacked(dsY, dsX + 512));
+
+    bool structuredSlot = (control.a & 0x40) != 0;
+    bool structuredAbove = (control.a & 0x80) != 0;
+    bool protectedBlack = (control.a & 0x20) != 0;
+    if (!protectedBlack)
+        return false;
+
+    return (structuredSlot && structuredAbove && isOpaqueBlack2D(plane1))
+        || (!structuredSlot && structuredAbove && isOpaqueBlack2D(plane0));
+}
+
+bool hasLegacyRegularCaptureBlack2D(int dsX, int dsY)
+{
+    uint meta = readPacked(dsY, 256 * 3);
+    if ((meta & kMetaFlagRegularCaptureUses3d) == 0u)
+        return false;
+
+    Rgba6 plane0 = unpackColor6(readPacked(dsY, dsX));
+    Rgba6 control = unpackColor6(readPacked(dsY, dsX + 512));
+    int compMode = control.a & 0xF;
+    bool structuredSidecar = (control.a & 0xE0) != 0;
+    bool protectedBlackBand =
+        (pc.topLcd != 0u && dsY <= 20)
+        || (pc.topLcd == 0u && dsY >= 171);
+
+    return compMode == 7
+        && !structuredSidecar
+        && !protectedBlackBand
+        && !isPacked3dPlaceholder(plane0)
+        && !isPacked3dLayerSlot(plane0)
+        && isOpaqueBlack2D(plane0)
+        && hasLocalVisiblePackedSupport(dsX, dsY);
+}
+
+bool packedAllowsOpaqueBlackAccumulator(int dsX, int dsY)
+{
+    Rgba6 plane0 = unpackColor6(readPacked(dsY, dsX));
+    Rgba6 plane1 = unpackColor6(readPacked(dsY, dsX + 256));
+    Rgba6 control = unpackColor6(readPacked(dsY, dsX + 512));
+
+    if (hasProtectedBlack2D(dsX, dsY) || hasLegacyRegularCaptureBlack2D(dsX, dsY))
+        return true;
+
+    bool structuredSlot = (control.a & 0x40) != 0;
+    bool structuredAbove = (control.a & 0x80) != 0;
+    if (structuredSlot)
+    {
+        if (lineUses3dCapture(dsY))
+            return hasProtectedBlack2D(dsX, dsY);
+        return true;
+    }
+
+    if (lineUses3dCapture(dsY))
+        return false;
+
+    return isOpaqueBlack2D(plane0);
+}
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(accumulated);
+    if (coord.x >= size.x || coord.y >= size.y)
+        return;
+
+    vec4 newPixel = imageLoad(newSnapshot, coord);
+    uint safeScale = max(pc.scale, 1u);
+    int dsX = int(uint(coord.x) / safeScale);
+    int dsY = int(uint(coord.y) / safeScale);
+    if (dsX < 0 || dsX >= 256 || dsY < 0 || dsY >= 192)
+        return;
+
+    bool newPixelOpaque = newPixel.a > 0.0;
+    if (newPixelOpaque)
+    {
+        imageStore(accumulated, coord, newPixel);
+    }
+    if (newPixel.a > 0.0 && hasProtectedBlack2D(dsX, dsY))
+        imageStore(accumulated, coord, vec4(0.0, 0.0, 0.0, 1.0));
+    else if (newPixel.a > 0.0
+        && any(greaterThan(newPixel.rgb, vec3(0.0)))
+        && hasLegacyRegularCaptureBlack2D(dsX, dsY))
+    {
+        imageStore(accumulated, coord, vec4(0.0, 0.0, 0.0, 1.0));
+    }
+}

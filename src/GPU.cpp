@@ -1304,6 +1304,9 @@ void GPU::StartScanline(u32 line) noexcept
         // texture memory anyway and only update it before the start
         // of the next frame.
         // So we can give the rasteriser a bit more headroom
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        Rend->VCount144();
+#endif
         Rend->Finish3DRendering();
 
         DispStat[0] |= (1<<0);

@@ -48,6 +48,11 @@ public:
         : GPU(gpu), TexLoader(texloader) // probably better if this would be a move constructor???
     {}
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    TexLoaderT& GetLoader() { return TexLoader; }
+    const TexLoaderT& GetLoader() const { return TexLoader; }
+#endif
+
     u64 MaskedHash(u8* vram, u32 vramSize, u32 addr, u32 size)
     {
         u64 hash = 0;
@@ -162,6 +167,69 @@ public:
 
         return false;
     }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // The pinned Vulkan renderer must wait until its in-flight command buffers
+    // stop referencing cached VkImages before the cache deletes those images.
+    // Keep this overload isolated from the Software/OpenGL update path.
+    template <typename BeforeMutationT>
+    bool Update(melonDS::GPU& gpu, BeforeMutationT&& beforeMutation)
+    {
+        (void)gpu;
+        auto textureDirty = GPU.VRAMDirty_Texture.DeriveState(GPU.VRAMMap_Texture, GPU);
+        auto texPalDirty = GPU.VRAMDirty_TexPal.DeriveState(GPU.VRAMMap_TexPal, GPU);
+
+        const bool textureChanged = GPU.MakeVRAMFlat_TextureCoherent(textureDirty);
+        const bool texPalChanged = GPU.MakeVRAMFlat_TexPalCoherent(texPalDirty);
+        if (!textureChanged && !texPalChanged)
+            return false;
+
+        beforeMutation();
+        for (auto it = Cache.begin(); it != Cache.end();)
+        {
+            TexCacheEntry& entry = it->second;
+            if (textureChanged)
+            {
+                for (u32 i = 0; i < 2; i++)
+                {
+                    if (CheckInvalid(
+                            entry.TextureRAMStart[i],
+                            entry.TextureRAMSize[i],
+                            entry.TextureHash[i],
+                            textureDirty.Data,
+                            GPU.VRAMFlat_Texture,
+                            sizeof(GPU.VRAMFlat_Texture)))
+                        goto invalidateVulkanTexture;
+                }
+            }
+
+            if (texPalChanged && entry.TexPalSize > 0
+                && CheckInvalid(
+                    entry.TexPalStart,
+                    entry.TexPalSize,
+                    entry.TexPalHash,
+                    texPalDirty.Data,
+                    GPU.VRAMFlat_TexPal,
+                    sizeof(GPU.VRAMFlat_TexPal)))
+            {
+                goto invalidateVulkanTexture;
+            }
+
+            ++it;
+            continue;
+
+        invalidateVulkanTexture:
+            FreeTextures[entry.WidthLog2][entry.HeightLog2].push_back(entry.Texture);
+            it = Cache.erase(it);
+        }
+        return true;
+    }
+
+    bool Update(melonDS::GPU& gpu)
+    {
+        return Update(gpu, []() {});
+    }
+#endif
 
     void GetTexture(u32 texParam, u32 palBase, TexHandleT& textureHandle, u32& layer, u32*& helper)
     {
@@ -301,6 +369,20 @@ public:
         layer = storagePlace.Layer;
         helper = &Cache.emplace(std::make_pair(key, entry)).first->second.LastVariant;
     }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void GetTexture(
+        melonDS::GPU& gpu,
+        u32 texParam,
+        u32 palBase,
+        TexHandleT& textureHandle,
+        u32& layer,
+        u32*& helper)
+    {
+        (void)gpu;
+        GetTexture(texParam, palBase, textureHandle, layer, helper);
+    }
+#endif
 
     void Reset()
     {

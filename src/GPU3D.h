@@ -333,6 +333,17 @@ public:
     virtual void FinishRendering() {}
     virtual void RestartFrame() {};
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Optional accelerated-renderer lifecycle hooks. Existing Software and
+    // OpenGL renderers intentionally retain the no-op defaults.
+    virtual void VCount144() {}
+    virtual void SetupAccelFrame() {}
+    virtual void PrepareCaptureFrame() {}
+    virtual void BeginCaptureFrame() {}
+    virtual void SetCaptureScreenSwapHint(bool screenSwap) { (void)screenSwap; }
+    [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+#endif
+
     // return one scanline of the framebuffer, with X scroll applied
     // this is used in software renderers
     virtual u32* GetLine(int line) = 0;

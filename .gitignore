@@ -13,6 +13,8 @@ compile_commands.json
 .idea
 .cache
 artifacts/
+__pycache__/
+*.py[cod]
 
 *.exe
 

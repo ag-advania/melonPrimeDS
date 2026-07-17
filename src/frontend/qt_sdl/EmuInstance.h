@@ -119,6 +119,9 @@ enum
     renderer3D_Metal,
     renderer3D_MetalCompute,
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    renderer3D_Vulkan,
+#endif
     // MELONPRIME_METAL_COMPUTE_UI_V1
     renderer3D_Max,
 };

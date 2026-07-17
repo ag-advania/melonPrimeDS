@@ -212,6 +212,9 @@ private:
     void updateCartInserted(bool gba);
 
     void createScreenPanel();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    void onVulkanRuntimeFallback();
+#endif
 #ifdef MELONPRIME_DS
     void localizeMenuText();
     void applyMenuLanguageSelection(int configValue);

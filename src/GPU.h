@@ -961,6 +961,9 @@ public:
     virtual void Start3DRendering() { Rend3D->RenderFrame(); }
     virtual void Finish3DRendering() { Rend3D->FinishRendering(); }
     virtual void Restart3DRendering() { Rend3D->RestartFrame(); }
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void VCount144() { Rend3D->VCount144(); }
+#endif
 
     virtual void VBlank() = 0;
     virtual void VBlankEnd() = 0;

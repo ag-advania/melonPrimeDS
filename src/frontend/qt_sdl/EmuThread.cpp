@@ -48,6 +48,10 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "GPU_Vulkan.h"
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -1297,6 +1301,25 @@ void EmuThread::updateRenderer()
             break;
         case renderer3D_MetalCompute:
             nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
+            break;
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        case renderer3D_Vulkan:
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "Renderer selection requested=Vulkan presentation=Vulkan");
+            nds->SetRenderer(std::make_unique<VulkanRenderer>(*nds));
+            if (dynamic_cast<VulkanRenderer*>(&nds->GetRenderer()) == nullptr)
+            {
+                MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
+                    "Vulkan 3D renderer initialization failed");
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "Renderer fallback requested=Vulkan actual=Software stage=3D-renderer-init");
+                emuInstance->osdAddMessage(0, "Vulkan initialization failed; using Software renderer");
+                videoRenderer = renderer3D_Software;
+                emit rendererRuntimeFallback();
+            }
             break;
 #endif
         default: __builtin_unreachable();

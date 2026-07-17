@@ -83,6 +83,9 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
 #endif
@@ -1100,6 +1103,14 @@ void MainWindow::closeEvent(QCloseEvent* event)
 
 void MainWindow::createScreenPanel()
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    connect(
+        emuThread,
+        &EmuThread::rendererRuntimeFallback,
+        this,
+        &MainWindow::onVulkanRuntimeFallback,
+        Qt::UniqueConnection);
+#endif
     auto oldpanel = panel;
     panel = nullptr;
     if (oldpanel) delete oldpanel;
@@ -1144,6 +1155,27 @@ void MainWindow::createScreenPanel()
     }
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+    {
+        ScreenPanelVulkan* panelVulkan = new ScreenPanelVulkan(this);
+        panelVulkan->show();
+        if (panelVulkan->initVulkan())
+        {
+            panel = panelVulkan;
+        }
+        else
+        {
+            MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
+                "Vulkan surface or swapchain initialization failed");
+            Log(
+                Platform::LogLevel::Error,
+                "Failed to init Vulkan presenter; falling back to NativeQt presentation without changing the saved renderer.\n");
+            delete panelVulkan;
+        }
+    }
+#endif
+
     if (!panel && hasOGL)
     {
         ScreenPanelGL* panelGL = new ScreenPanelGL(this);
@@ -1181,8 +1213,14 @@ void MainWindow::createScreenPanel()
     }
     setCentralWidget(panel);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (hasMenu)
+        actScreenFiltering->setEnabled(
+            hasOGL || presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan);
+#else
     if (hasMenu)
         actScreenFiltering->setEnabled(hasOGL);
+#endif
     panel->osdSetEnabled(showOSD);
 
     connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(repaint()));
@@ -2783,3 +2821,12 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
         emuThread->emuUnpause();
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void MainWindow::onVulkanRuntimeFallback()
+{
+    if (!emuInstance)
+        return;
+    onUpdateVideoSettings(true);
+}
+#endif

@@ -84,6 +84,9 @@ private:
     QRadioButton* rb3DMetal = nullptr;
     QRadioButton* rb3DMetalCompute = nullptr;
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    QRadioButton* rb3DVulkan = nullptr;
+#endif
 
     int oldRenderer;
     int oldGLDisplay;

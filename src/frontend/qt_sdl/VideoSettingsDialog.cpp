@@ -37,6 +37,9 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 #endif // MELONPRIME_DS
 
 
@@ -78,6 +81,9 @@ void VideoSettingsDialog::setEnabled()
     const bool metalComputeRenderer = false;
     const bool metalRenderer = false;
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool vulkanRenderer = renderer == renderer3D_Vulkan;
+#endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
@@ -87,12 +93,20 @@ void VideoSettingsDialog::setEnabled()
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
+#else
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+#endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
     // BetterPolygons is implemented by classic OpenGL and both visible Metal
     // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRenderer);
+#else
     ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+#endif
 
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
@@ -157,6 +171,37 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->activate();
     adjustSize();
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Keep the upstream .ui renderer IDs/layout untouched. Vulkan is appended
+    // after every existing renderer so persisted numeric IDs remain stable.
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    constexpr int vulkanRow = 6;
+#else
+    constexpr int vulkanRow = 4;
+#endif
+    rb3DVulkan = new QRadioButton(ui->groupBox);
+    rb3DVulkan->setObjectName(QStringLiteral("rb3DVulkan"));
+    rb3DVulkan->setText(MelonPrime::UiText::Tr("Vulkan"));
+    rb3DVulkan->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Native Vulkan renderer. Uses the pinned SapphireRhodonite 0.7.0.rc4 implementation.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DVulkan, vulkanRow, 0, 1, 2);
+    grp3DRenderer->addButton(rb3DVulkan, renderer3D_Vulkan);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, vulkanRow + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, vulkanRow + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, vulkanRow + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 4, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #else
@@ -201,6 +246,15 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         metalSupported
             ? QStringLiteral("Experimental Metal compute-shader renderer. Compute stages run natively while the validated Metal raster output remains the safe visible source.")
             : metalTooltip));
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+    rb3DVulkan->setEnabled(vulkanProbe.Available);
+    rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
+        vulkanProbe.Available
+            ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+            : QString::fromStdString(vulkanProbe.Reason)));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -275,6 +329,22 @@ void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 
 void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
+#ifdef MELONPRIME_DS
+    auto& cfg = emuInstance->getGlobalConfig();
+    const auto oldBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (renderer == renderer3D_Vulkan)
+        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+#endif
+    cfg.SetInt("3D.Renderer", renderer);
+
+    setEnabled();
+
+    const auto newBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), renderer);
+    emit updateVideoSettings(oldBackend != newBackend);
+#else
     bool old_gl = UsesGL();
 
     auto& cfg = emuInstance->getGlobalConfig();
@@ -283,6 +353,7 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
     setEnabled();
 
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 }
 
 void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
