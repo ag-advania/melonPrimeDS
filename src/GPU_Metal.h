@@ -10,6 +10,7 @@
 #include "GPU_Soft.h"
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -58,15 +59,44 @@ private:
     // MELONPRIME_METAL_HIRES_SCALE_AUTHORITY_V2
     // MELONPRIME_METAL_OUTPUT_LEASE_V1
     // MELONPRIME_METAL_MASTER_BRIGHTNESS_V1
+    // MELONPRIME_METAL_OUTPUT_STATE_ATOMIC_PUBLICATION_V1: OutputState is
+    // published from the emulation/render thread (scale reconfigure swap) and
+    // loaded from the presenter thread (AcquireOutputLease). The same
+    // shared_ptr object must only be accessed via std::atomic_load/store/
+    // exchange -- plain copy/assign is a C++ data race even though the
+    // control block's refcount is itself atomic. Use Load/Store/Exchange
+    // helpers below; never touch OutputState with operator= or copy except
+    // through those helpers.
     std::shared_ptr<MetalOutputState> OutputState;
     std::unique_ptr<MetalFullGpuState> FullGpuState;
     // shared_ptr (not unique_ptr): capture-upload completion handlers capture
     // this by value so a reconfigure (scale change) mid-flight can never
     // leave a handler writing through a dangling pointer -- see
     // UploadCpuCompletedCaptures() in GPU_MetalCaptureMethods.inc.
+    // CaptureState is only mutated on the emulation/render thread today, so
+    // it does not need atomic publication (unlike OutputState).
     std::shared_ptr<MetalCaptureState> CaptureState;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
     // MELONPRIME_METAL_GPU_DISPLAY_CAPTURE_V1
+
+    [[nodiscard]] std::shared_ptr<MetalOutputState> LoadOutputState() const
+    {
+        return std::atomic_load_explicit(
+            &OutputState, std::memory_order_acquire);
+    }
+
+    void StoreOutputState(std::shared_ptr<MetalOutputState> state)
+    {
+        std::atomic_store_explicit(
+            &OutputState, std::move(state), std::memory_order_release);
+    }
+
+    std::shared_ptr<MetalOutputState> ExchangeOutputState(
+        std::shared_ptr<MetalOutputState> next)
+    {
+        return std::atomic_exchange_explicit(
+            &OutputState, std::move(next), std::memory_order_acq_rel);
+    }
 
     void ConfigureMetal2DMirror(void* preferredDevice);
     bool ConfigureMetalVisibleOutput(void* preferredDevice);

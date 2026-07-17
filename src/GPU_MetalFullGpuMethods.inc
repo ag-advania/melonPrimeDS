@@ -169,7 +169,8 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
     if (!FullGpuState->Requested)
         return true;
 
-    if (!OutputState || !OutputState->Device)
+    std::shared_ptr<MetalOutputState> outputState = LoadOutputState();
+    if (!outputState || !outputState->Device)
         return false;
     if (FullGpuState->Pipeline)
         return true;
@@ -177,7 +178,7 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
     NSError* error = nil;
     NSString* source = [[NSString alloc] initWithUTF8String:kMetalFullGpuOutputShaderSource];
     FullGpuState->Library =
-        [OutputState->Device newLibraryWithSource:source options:nil error:&error];
+        [outputState->Device newLibraryWithSource:source options:nil error:&error];
     if (!FullGpuState->Library)
     {
         const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
@@ -199,7 +200,7 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
     desc.fragmentFunction = fragment;
     desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
     FullGpuState->Pipeline =
-        [OutputState->Device newRenderPipelineStateWithDescriptor:desc error:&error];
+        [outputState->Device newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!FullGpuState->Pipeline)
     {
         const char* message = error ? [[error localizedDescription] UTF8String] : "unknown error";
@@ -220,8 +221,9 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
 
 bool MetalRenderer::IsMetalFullGpuFrameEligible() const
 {
+    std::shared_ptr<MetalOutputState> outputState = LoadOutputState();
     if (!FullGpuState || !FullGpuState->Requested ||
-        !FullGpuState->Pipeline || !OutputState || !OutputState->Ready ||
+        !FullGpuState->Pipeline || !outputState || !outputState->Ready ||
         !Metal2D_A || !Metal2D_B ||
         !Metal2D_A->FullGpuReady() || !Metal2D_B->FullGpuReady() ||
         !MetalCaptureReady())
@@ -412,8 +414,9 @@ void MetalRenderer::VBlankEnd()
 
 bool MetalRenderer::ComposeMetalFullGpuOutput()
 {
+    std::shared_ptr<MetalOutputState> state = LoadOutputState();
     if (!FullGpuState || !FullGpuState->Pipeline ||
-        !OutputState || !OutputState->Ready ||
+        !state || !state->Ready ||
         !Metal2D_A || !Metal2D_B)
     {
         return false;
@@ -424,12 +427,12 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
     id<MTLTexture> engineB =
         (__bridge id<MTLTexture>)Metal2D_B->GetOutputTexture();
     if (!engineA || !engineB ||
-        engineA.device != OutputState->Device ||
-        engineB.device != OutputState->Device ||
-        engineA.width != OutputState->Width ||
-        engineA.height != OutputState->Height ||
-        engineB.width != OutputState->Width ||
-        engineB.height != OutputState->Height)
+        engineA.device != state->Device ||
+        engineB.device != state->Device ||
+        engineA.width != state->Width ||
+        engineA.height != state->Height ||
+        engineB.width != state->Width ||
+        engineB.height != state->Height)
     {
         return false;
     }
@@ -446,18 +449,18 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
     static_assert(sizeof(FullGpuOutputConfigCpu) == 2320,
         "FullGpuOutputConfigCpu must match MSL");
 
-    std::unique_lock<std::mutex> lock(OutputState->Mutex);
+    std::unique_lock<std::mutex> lock(state->Mutex);
     int slotIndex = -1;
     for (int attempt = 0; attempt < MetalOutputState::SlotCount; attempt++)
     {
         const int candidate =
-            (OutputState->NextSlot + attempt) % MetalOutputState::SlotCount;
+            (state->NextSlot + attempt) % MetalOutputState::SlotCount;
         // Never reuse the currently published slot; see the matching guard in
         // ComposeMetalVisibleOutput for the presenter-lease race this closes.
-        if (candidate == OutputState->PublishedSlot)
+        if (candidate == state->PublishedSlot)
             continue;
-        if (!OutputState->Slots[candidate].InFlight &&
-            OutputState->Slots[candidate].PresenterRefs == 0)
+        if (!state->Slots[candidate].InFlight &&
+            state->Slots[candidate].PresenterRefs == 0)
         {
             slotIndex = candidate;
             break;
@@ -466,11 +469,11 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
     if (slotIndex < 0)
         return false;
 
-    MetalOutputState::Slot& slot = OutputState->Slots[slotIndex];
-    OutputState->NextSlot =
+    MetalOutputState::Slot& slot = state->Slots[slotIndex];
+    state->NextSlot =
         (slotIndex + 1) % MetalOutputState::SlotCount;
 
-    id<MTLCommandBuffer> command = [OutputState->Queue commandBuffer];
+    id<MTLCommandBuffer> command = [state->Queue commandBuffer];
     if (!command)
         return false;
     command.label = @"MelonPrime Metal Full GPU Final Output";
@@ -490,9 +493,9 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
             return false;
 
         FullGpuOutputConfigCpu config = {};
-        config.outputSize[0] = static_cast<uint32_t>(OutputState->Width);
-        config.outputSize[1] = static_cast<uint32_t>(OutputState->Height);
-        config.scale = static_cast<uint32_t>(OutputState->Scale);
+        config.outputSize[0] = static_cast<uint32_t>(state->Width);
+        config.outputSize[1] = static_cast<uint32_t>(state->Height);
+        config.scale = static_cast<uint32_t>(state->Scale);
         config.outputLayer = layer;
         std::memcpy(config.screenSwap,
                     FullGpuState->CompletedScreenSwap.data(),
@@ -510,8 +513,8 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
         [encoder setFragmentTexture:engineB atIndex:1];
         [encoder setViewport:(MTLViewport){
             0.0, 0.0,
-            static_cast<double>(OutputState->Width),
-            static_cast<double>(OutputState->Height),
+            static_cast<double>(state->Width),
+            static_cast<double>(state->Height),
             0.0, 1.0 }];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                     vertexStart:0
@@ -519,28 +522,28 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
         [encoder endEncoding];
     }
 
-    const uint64_t generation = OutputState->Generation;
-    const uint64_t serial = OutputState->NextSerial++;
+    const uint64_t generation = state->Generation;
+    const uint64_t serial = state->NextSerial++;
     slot.InFlight = true;
     slot.Generation = generation;
     slot.Serial = serial;
-    OutputState->InFlightCount++;
-    MetalOutputState* state = OutputState.get();
+    state->InFlightCount++;
 
     [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-        std::lock_guard<std::mutex> completionLock(state->Mutex);
-        MetalOutputState::Slot& completedSlot = state->Slots[slotIndex];
+        std::shared_ptr<MetalOutputState> completedState = state;
+        std::lock_guard<std::mutex> completionLock(completedState->Mutex);
+        MetalOutputState::Slot& completedSlot = completedState->Slots[slotIndex];
         if (completed.status == MTLCommandBufferStatusCompleted &&
-            generation == state->Generation &&
+            generation == completedState->Generation &&
             completedSlot.Generation == generation &&
             completedSlot.Serial == serial)
         {
-            state->PublishedSlot = slotIndex;
-            state->PublishedSerial = serial;
+            completedState->PublishedSlot = slotIndex;
+            completedState->PublishedSerial = serial;
         }
         completedSlot.InFlight = false;
-        state->InFlightCount--;
-        state->Completion.notify_all();
+        completedState->InFlightCount--;
+        completedState->Completion.notify_all();
     }];
     [command commit];
 
@@ -550,9 +553,9 @@ bool MetalRenderer::ComposeMetalFullGpuOutput()
         std::fprintf(stderr,
             "[MelonPrime] metal full-gpu: first GPU-resident frame published "
             "scale=%d size=%zux%zu readback=0\n",
-            OutputState->Scale,
-            static_cast<size_t>(OutputState->Width),
-            static_cast<size_t>(OutputState->Height));
+            state->Scale,
+            static_cast<size_t>(state->Width),
+            static_cast<size_t>(state->Height));
     }
     return true;
 }

@@ -443,10 +443,24 @@ struct MetalRenderer::MetalOutputState
 
     ~MetalOutputState()
     {
-        std::unique_lock<std::mutex> lock(Mutex);
-        Completion.wait(lock, [this]() {
-            return InFlightCount == 0 && PresenterRefCount == 0;
-        });
+        // MELONPRIME_METAL_OUTPUT_STATE_NONBLOCKING_DTOR_V1: under the
+        // shared_ptr ownership contract, InFlightCount>0 implies a
+        // completion handler still holds a shared_ptr, and
+        // PresenterRefCount>0 implies a LeaseContext does -- so reaching
+        // the destructor with non-zero counts means accounting is already
+        // broken. An unbounded wait here would hang the last releasing
+        // thread (often a Metal callback). Prefer leak-over-hang: log and
+        // return without waiting.
+        std::lock_guard<std::mutex> lock(Mutex);
+        if (InFlightCount != 0 || PresenterRefCount != 0)
+        {
+            std::fprintf(stderr,
+                "[MelonPrime] metal visible output: destroying OutputState "
+                "producerId=%llu with InFlightCount=%d PresenterRefCount=%d "
+                "(accounting mismatch; skipping blocking wait)\n",
+                static_cast<unsigned long long>(ProducerId),
+                InFlightCount, PresenterRefCount);
+        }
     }
 };
 
@@ -610,12 +624,13 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         }
 
         // Fast path: already configured for this device/queue/scale.
-        if (OutputState && OutputState->Ready &&
-            OutputState->Device == device &&
-            OutputState->Queue == rendererQueue &&
-            OutputState->Scale == scale &&
-            OutputState->Width == width &&
-            OutputState->Height == height)
+        std::shared_ptr<MetalOutputState> current = LoadOutputState();
+        if (current && current->Ready &&
+            current->Device == device &&
+            current->Queue == rendererQueue &&
+            current->Scale == scale &&
+            current->Width == width &&
+            current->Height == height)
         {
             return true;
         }
@@ -627,6 +642,10 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         // permanent deadlock on every internal-resolution change. Build a fresh
         // state (new ProducerId), swap the shared_ptr, and let leases /
         // completion handlers drain the previous state naturally.
+        //
+        // H-02 note: old+new states briefly coexist (scale-expanded textures).
+        // Allocation failure below returns false *without* swapping, so the
+        // previous Ready state remains published.
         auto next = std::make_shared<MetalOutputState>();
         next->Device = device;
         // Use the renderer's queue. Output composition then sits between
@@ -634,11 +653,11 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         // or a cross-queue resource race.
         next->Queue = rendererQueue;
 
-        if (OutputState && OutputState->Device == device &&
-            OutputState->Library && OutputState->Pipeline)
+        if (current && current->Device == device &&
+            current->Library && current->Pipeline)
         {
-            next->Library = OutputState->Library;
-            next->Pipeline = OutputState->Pipeline;
+            next->Library = current->Library;
+            next->Pipeline = current->Pipeline;
         }
         else
         {
@@ -754,20 +773,23 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
         next->LoggedVisibleOutput = false;
         next->LoggedNoFreeSlot = false;
 
+        const uint64_t newProducerId = next->ProducerId;
         const uint64_t previousProducerId =
-            OutputState ? OutputState->ProducerId : 0;
+            current ? current->ProducerId : 0;
+        // Atomic publication: presenter threads load via LoadOutputState().
         std::shared_ptr<MetalOutputState> previous =
-            std::exchange(OutputState, std::move(next));
+            ExchangeOutputState(std::move(next));
         // Drop the local previous reference without blocking. In-flight compose
         // completions and presenter leases keep the old state alive via their
         // own shared_ptr until PresenterRefCount/InFlightCount drain.
         (void)previous;
+        (void)current;
 
         std::fprintf(stderr,
             "[MelonPrime] metal visible output: configured scale=%d textureArray=%zux%zux2 "
             "producerId=%llu previousProducerId=%llu (swap-reconfigure, no presenter wait)\n",
             scale, static_cast<size_t>(width), static_cast<size_t>(height),
-            static_cast<unsigned long long>(OutputState->ProducerId),
+            static_cast<unsigned long long>(newProducerId),
             static_cast<unsigned long long>(previousProducerId));
         return true;
     }
@@ -784,7 +806,7 @@ void MetalRenderer::CaptureMetalVisible3DFrame()
 {
     @autoreleasepool
     {
-        std::shared_ptr<MetalOutputState> state = OutputState;
+        std::shared_ptr<MetalOutputState> state = LoadOutputState();
         if (!state || !state->Ready)
             return;
 
@@ -879,7 +901,8 @@ void MetalRenderer::ComposeMetalVisibleOutput()
 {
     @autoreleasepool
     {
-        if (!OutputState || !OutputState->Ready)
+        std::shared_ptr<MetalOutputState> early = LoadOutputState();
+        if (!early || !early->Ready)
             return;
 
         void* top = nullptr;
@@ -889,7 +912,7 @@ void MetalRenderer::ComposeMetalVisibleOutput()
 
         id<MTLTexture> liveHigh3D =
             (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
-        if (!liveHigh3D || liveHigh3D.device != OutputState->Device)
+        if (!liveHigh3D || liveHigh3D.device != early->Device)
             return;
 
         const NSUInteger expectedWidth =
@@ -898,9 +921,9 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             static_cast<NSUInteger>(192 * std::max(1, ScaleFactor));
         if (liveHigh3D.width != expectedWidth ||
             liveHigh3D.height != expectedHeight ||
-            OutputState->Width != expectedWidth ||
-            OutputState->Height != expectedHeight ||
-            OutputState->Scale != std::max(1, ScaleFactor))
+            early->Width != expectedWidth ||
+            early->Height != expectedHeight ||
+            early->Scale != std::max(1, ScaleFactor))
         {
             // Self-heal if the target was resized after the previous output
             // configuration. This path is reached before taking OutputState's
@@ -909,6 +932,13 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             if (!ConfigureMetalVisibleOutput(preferredDevice))
                 return;
         }
+
+        // Pin the active state for the rest of this compose. Scale reconfigure
+        // may swap OutputState concurrently; completions and slot mutation must
+        // stay on the state we started composing into.
+        std::shared_ptr<MetalOutputState> state = LoadOutputState();
+        if (!state || !state->Ready)
+            return;
 
         struct VisibleOutputConfigCpu
         {
@@ -922,14 +952,6 @@ void MetalRenderer::ComposeMetalVisibleOutput()
         };
         static_assert(sizeof(VisibleOutputConfigCpu) == 32,
             "VisibleOutputConfigCpu must match MSL layout");
-
-
-        // Pin the active state for the rest of this compose. Scale reconfigure
-        // may swap OutputState concurrently; completions and slot mutation must
-        // stay on the state we started composing into.
-        std::shared_ptr<MetalOutputState> state = OutputState;
-        if (!state || !state->Ready)
-            return;
 
         std::unique_lock<std::mutex> lock(state->Mutex);
         id<MTLTexture> high3D = state->CapturedHigh3D;
@@ -1281,9 +1303,9 @@ void MetalRenderer::SwapBuffers()
 
 RendererOutputLease MetalRenderer::AcquireOutputLease()
 {
-    if (OutputState)
+    std::shared_ptr<MetalOutputState> state = LoadOutputState();
+    if (state)
     {
-        std::shared_ptr<MetalOutputState> state = OutputState;
         std::lock_guard<std::mutex> lock(state->Mutex);
         if (state->Ready && state->PublishedSlot >= 0)
         {
@@ -1323,6 +1345,12 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
                     }
                     else
                     {
+                        // Accounting mismatch: still drop the global count we
+                        // took so a broken lease cannot leave PresenterRefCount
+                        // stuck >0 forever (destructor no longer blocks, but
+                        // drain telemetry still relies on this counter).
+                        if (lease->State->PresenterRefCount > 0)
+                            lease->State->PresenterRefCount--;
                         std::fprintf(stderr,
                             "[MelonPrime] metal visible output: stale presenter lease serial=%llu\n",
                             static_cast<unsigned long long>(lease->Serial));
@@ -1350,24 +1378,11 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
 
 RendererOutput MetalRenderer::GetOutput()
 {
-    if (OutputState)
-    {
-        std::lock_guard<std::mutex> lock(OutputState->Mutex);
-        if (OutputState->Ready && OutputState->PublishedSlot >= 0)
-        {
-            const int slotIndex = OutputState->PublishedSlot;
-            id<MTLTexture> texture = OutputState->Slots[slotIndex].FinalTexture;
-            if (texture)
-                return RendererOutput::MetalTexture(
-                    (__bridge void*)texture, OutputState->PublishedSerial,
-                    static_cast<u32>(texture.width),
-                    static_cast<u32>(texture.height),
-                    static_cast<u32>(texture.arrayLength),
-                    static_cast<u32>(OutputState->Scale),
-                    OutputState->Slots[slotIndex].Generation,
-                    OutputState->ProducerId);
-        }
-    }
+    // MELONPRIME_METAL_GETOUTPUT_NO_RAW_LEASE_V1: Metal final textures live in
+    // a ring slot that must be held via AcquireOutputLease(). Returning a raw
+    // MetalTexture here would race slot reuse / OutputState swap. Screen.cpp
+    // still calls GetRendererOutput() for non-Metal presenters; for Metal,
+    // fall back to SoftRenderer CpuBgra (lease consumers use Acquire*).
     return SoftRenderer::GetOutput();
 }
 

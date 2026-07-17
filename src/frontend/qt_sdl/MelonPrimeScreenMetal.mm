@@ -321,6 +321,11 @@ bool ValidateMetalRendererOutput(
     if (texture.device != expectedDevice) return fail("texture.device != presenter device");
     if (texture.textureType != MTLTextureType2DArray) return fail("textureType is not 2DArray");
     if (texture.arrayLength != 2) return fail("texture.arrayLength != 2");
+    if (texture.pixelFormat != MTLPixelFormatBGRA8Unorm)
+        return fail("texture.pixelFormat != BGRA8Unorm");
+    if (texture.sampleCount != 1) return fail("texture.sampleCount != 1");
+    if (texture.mipmapLevelCount != 1) return fail("texture.mipmapLevelCount != 1");
+    if (texture.depth != 1) return fail("texture.depth != 1");
     if (output.ArrayLength != 2) return fail("output.ArrayLength != 2");
     if (output.Width == 0) return fail("output.Width == 0");
     if (output.Height == 0) return fail("output.Height == 0");
@@ -874,6 +879,7 @@ void ScreenPanelMetal::drawScreen()
                 // producer, Generation and FrameSerial are monotonic.
                 // A rollback is rejected (lease released, last-good kept) --
                 // never accepted as a new last-good after clearing trackers.
+                bool rejectedByOrdering = false;
                 if (m->lastGoodProducerId != 0 &&
                     output.ProducerId == m->lastGoodProducerId)
                 {
@@ -881,6 +887,7 @@ void ScreenPanelMetal::drawScreen()
                         output.Generation < m->lastGoodGeneration)
                     {
                         rendererOutputLease.ReleaseNow();
+                        rejectedByOrdering = true;
                         if (!m->loggedGenerationRollback)
                         {
                             m->loggedGenerationRollback = true;
@@ -898,6 +905,7 @@ void ScreenPanelMetal::drawScreen()
                              output.FrameSerial < m->lastGoodFrameSerial)
                     {
                         rendererOutputLease.ReleaseNow();
+                        rejectedByOrdering = true;
                         if (!m->loggedFrameSerialRollback)
                         {
                             m->loggedFrameSerialRollback = true;
@@ -910,27 +918,35 @@ void ScreenPanelMetal::drawScreen()
                         }
                     }
                 }
-                else if (m->lastGoodProducerId != 0 &&
-                         output.ProducerId != m->lastGoodProducerId)
-                {
-                    // Different producer (scale swap-reconfigure, renderer
-                    // rebuild). Drop the old lease before considering the new
-                    // output so PresenterRefCount on the retired OutputState
-                    // can drain.
-                    m->lastGoodMetalLease.ReleaseNow();
-                    m->lastGoodProducerId = 0;
-                    m->lastGoodGeneration = 0;
-                    m->lastGoodFrameSerial = 0;
-                    m->loggedRetainedLastGoodFrame = false;
-                }
 
                 id<MTLTexture> candidateTexture = (__bridge id<MTLTexture>)output.Top;
                 const char* invalidReason = nullptr;
-                // Skip validation if the lease was already released above
-                // (rollback path cleared Context; Output is empty).
-                if (rendererOutputLease.Context &&
-                    ValidateMetalRendererOutput(output, candidateTexture, m->device, &invalidReason))
+                const bool validated =
+                    !rejectedByOrdering &&
+                    rendererOutputLease.Context &&
+                    ValidateMetalRendererOutput(
+                        output, candidateTexture, m->device, &invalidReason);
+
+                if (validated)
                 {
+                    // Capture metadata before the lease move clears Output on
+                    // the source (ReleaseNow / move both zero Output).
+                    const uint64_t acceptedProducerId = output.ProducerId;
+                    const uint64_t acceptedGeneration = output.Generation;
+                    const uint64_t acceptedFrameSerial = output.FrameSerial;
+
+                    // Producer changed: only drop the old lease *after* the new
+                    // output has validated, so an invalid first frame from the
+                    // new producer does not leave us with neither last-good nor
+                    // a usable new texture this frame (M-04).
+                    if (m->lastGoodProducerId != 0 &&
+                        acceptedProducerId != m->lastGoodProducerId)
+                    {
+                        m->lastGoodMetalLease.ReleaseNow();
+                        m->loggedRetainedLastGoodFrame = false;
+                        m->lastPresentedFrame = 0;
+                    }
+
                     // A new valid frame supersedes whatever lease we were
                     // retaining. Safe to release that old one synchronously
                     // right here: NonblockingPresenterPermit above only lets
@@ -938,9 +954,9 @@ void ScreenPanelMetal::drawScreen()
                     // presenter command buffer has completed, so nothing can
                     // still be sampling the texture that lease was guarding.
                     m->lastGoodMetalLease = std::move(rendererOutputLease);
-                    m->lastGoodProducerId = output.ProducerId;
-                    m->lastGoodGeneration = output.Generation;
-                    m->lastGoodFrameSerial = output.FrameSerial;
+                    m->lastGoodProducerId = acceptedProducerId;
+                    m->lastGoodGeneration = acceptedGeneration;
+                    m->lastGoodFrameSerial = acceptedFrameSerial;
                     finalMetalTextureForFrame = candidateTexture;
                     m->loggedRetainedLastGoodFrame = false;
 
@@ -958,15 +974,15 @@ void ScreenPanelMetal::drawScreen()
                                 numScreens,
                                 static_cast<size_t>(std::max<NSUInteger>(1, finalMetalTextureForFrame.width / 256)));
                     }
-                    if (output.FrameSerial != 0 &&
-                        output.FrameSerial != m->lastPresentedFrame)
+                    if (acceptedFrameSerial != 0 &&
+                        acceptedFrameSerial != m->lastPresentedFrame)
                     {
-                        m->lastPresentedFrame = output.FrameSerial;
-                        if (output.FrameSerial <= 3 || (output.FrameSerial % 600) == 0)
+                        m->lastPresentedFrame = acceptedFrameSerial;
+                        if (acceptedFrameSerial <= 3 || (acceptedFrameSerial % 600) == 0)
                         {
                             fprintf(stderr,
                                     "[MelonPrime] metal frame: present frame=%llu front texture=%p\n",
-                                    static_cast<unsigned long long>(output.FrameSerial),
+                                    static_cast<unsigned long long>(acceptedFrameSerial),
                                     (__bridge void*)finalMetalTextureForFrame);
                         }
                     }
@@ -974,7 +990,7 @@ void ScreenPanelMetal::drawScreen()
                     hasHudCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame) &&
                                                topCpuBufForFrame && bottomCpuBufForFrame;
                 }
-                else if (!m->loggedInvalidOutputMetadata)
+                else if (!rejectedByOrdering && !m->loggedInvalidOutputMetadata)
                 {
                     m->loggedInvalidOutputMetadata = true;
                     fprintf(stderr,
