@@ -285,20 +285,48 @@ static uint32_t MetalPackRgb5551AsRgba8(uint16_t color)
 
 struct MetalRenderer::MetalCaptureState
 {
+    // MELONPRIME_METAL_CAPTURE_METADATA_STATE_MACHINE_V1: Meta is read and
+    // written from two different threads -- the emulation/render thread
+    // (every function below except the completion handlers) and Metal's own
+    // completion-queue dispatch thread (UploadCaptureTexture's and
+    // EncodeMetalDisplayCapture's completion handlers) -- so every access
+    // must go through MetaMutex. Dirty/UploadInFlight/DirtySerial/
+    // SubmittedSerial replace the old single PendingCpuUpload+
+    // PendingUploadSerial pair so that (a) a write already in flight is never
+    // resubmitted every frame just because it has not completed yet within
+    // one frame (the old design's livelock under GPU backpressure), and
+    // (b) a completion can tell a merely-superseded write (fine, some other
+    // write will finalize this layer) apart from data that changed again
+    // after this particular write was dispatched (must NOT be marked valid).
     struct CaptureMeta
     {
         int Size = -1;
         bool Valid = false;
-        bool PendingCpuUpload = false;
-        // MELONPRIME_METAL_CAPTURE_UPLOAD_COMPLETION_SERIAL_V1: bumped every
-        // time a new CPU-fallback upload is dispatched for this layer. A
-        // completion handler only applies its result if this still matches
-        // the serial it captured -- otherwise a newer upload has already
-        // superseded it (or reconfigure changed what this layer means) and
-        // touching Valid/PendingCpuUpload here would race with that newer
-        // upload's own completion. See UploadCpuCompletedCaptures().
-        uint64_t PendingUploadSerial = 0;
+        // This layer's destination data (VRAM contents or capture
+        // configuration) has changed since the last write that completed
+        // successfully, so it needs a fresh write (GPU capture or CPU
+        // fallback) before Valid can be trusted again.
+        bool Dirty = false;
+        // A write for this layer has been dispatched and its completion
+        // has not yet run. While true, a new write for the *same* DirtySerial
+        // must not be dispatched again -- that is what produced the
+        // resubmit-every-frame livelock under sustained GPU backpressure.
+        bool UploadInFlight = false;
+        // Bumped whenever the underlying data actually changes (AllocCapture,
+        // a capture-destination reconfigure). A write dispatch snapshots the
+        // current value into SubmittedSerial; a completion only trusts its
+        // own result if DirtySerial still equals the SubmittedSerial it
+        // snapshotted -- otherwise something changed the data again while
+        // the write was in flight and the result must not be applied.
+        uint64_t DirtySerial = 0;
+        uint64_t SubmittedSerial = 0;
     };
+
+    // Guards every field of every Meta[] entry. Never held across GPU command
+    // encoding/submission -- only around the metadata reads/writes
+    // themselves, both on the emulation thread and inside completion
+    // handlers.
+    std::mutex MetaMutex;
 
     id<MTLDevice> Device = nil;
     id<MTLCommandQueue> Queue = nil;
@@ -331,14 +359,22 @@ struct MetalRenderer::MetalCaptureState
 
     // MELONPRIME_METAL_CAPTURE_STAGING_RING_V1: a small ring of reusable
     // MTLBuffers so the common case needs no per-upload
-    // newBufferWithBytes: call. Sized generously above the worst case
-    // (16 128-layers + 4 256-banks could all need upload in one frame,
-    // but in practice only a handful do); AcquireStagingSlot() falls back
-    // to a one-off allocation if every slot is genuinely busy, so
-    // correctness never depends on this size being exactly right. Busy is
-    // a shared_ptr<atomic<bool>> (not a plain bool on the slot) so a
+    // newBufferWithBytes: call. AcquireStagingSlot() falls back to a one-off
+    // allocation if every slot is genuinely busy, so correctness never
+    // depends on this size being exactly right. Busy is a
+    // shared_ptr<atomic<bool>> (not a plain bool on the slot) so a
     // completion handler can flip it after this MetalCaptureState's ring
     // itself may have been reconfigured -- see UploadCaptureTexture().
+    //
+    // Each slot holds a scale-expanded RGBA8 buffer (up to 256*scale square,
+    // 4 bytes/pixel), so ring size trades memory against one-off-allocation
+    // frequency at high internal-resolution scale factors: at 16x that is 64
+    // MiB/slot, and this ring plus the (also scale-expanded) Capture/Snapshot
+    // texture arrays can otherwise reach roughly 1.5 GiB combined on an 8/16x
+    // build -- a real risk on 8 GB integrated-GPU Macs. Kept small (a
+    // realistic frame has only a handful of layers needing CPU-fallback
+    // upload at once, not all 16+4) rather than sized for the theoretical
+    // worst case of every layer needing upload the same frame.
     struct StagingBuffer
     {
         id<MTLBuffer> Buffer = nil;
@@ -346,7 +382,13 @@ struct MetalRenderer::MetalCaptureState
         std::shared_ptr<std::atomic<bool>> Busy =
             std::make_shared<std::atomic<bool>>(false);
     };
-    static constexpr int kStagingRingSize = 8;
+    static constexpr int kStagingRingSize = 4;
+    // Persistent ring slots refuse to grow past this. At 16x a single 256x256
+    // capture is 64 MiB; keeping that out of the reusable ring bounds the
+    // worst-case resident footprint of the ring itself to 4 * 16 MiB = 64 MiB
+    // (vs 4 * 64 MiB = 256 MiB, or the earlier 8-slot * 64 MiB = 512 MiB).
+    // Oversized uploads still succeed via a one-off buffer for that frame.
+    static constexpr NSUInteger kMaxCaptureStagingBytes = 16u * 1024u * 1024u;
     std::array<StagingBuffer, kStagingRingSize> StagingRing;
     int StagingRingCursor = 0;
     bool LoggedStagingRingExhausted = false;
@@ -361,6 +403,13 @@ struct MetalRenderer::MetalCaptureState
 void* MetalRenderer::AcquireStagingSlot(MetalCaptureState& state, unsigned long requiredBytesArg)
 {
     const NSUInteger requiredBytes = static_cast<NSUInteger>(requiredBytesArg);
+    // Cap persistent ring growth so an 8x/16x session cannot pin hundreds of
+    // MiB in reusable slots. Oversized requests return nullptr and the caller
+    // falls back to a one-off allocation for that upload only -- the ring
+    // itself stays bounded to common scales (256@8x = 8 MiB fits; 256@16x =
+    // 64 MiB does not and never permanently occupies a ring slot).
+    if (requiredBytes > MetalCaptureState::kMaxCaptureStagingBytes)
+        return nullptr;
     for (int i = 0; i < MetalCaptureState::kStagingRingSize; i++)
     {
         const int idx = (state.StagingRingCursor + i) % MetalCaptureState::kStagingRingSize;
@@ -409,10 +458,15 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     std::array<MetalCaptureState::CaptureMeta, 16> recoveredMeta {};
     if (CaptureState && CaptureState->Ready)
     {
-        recoveredMeta = CaptureState->Meta;
+        {
+            // Locked snapshot: an in-flight completion on this (about to be
+            // replaced) CaptureState can still be writing Meta concurrently.
+            std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+            recoveredMeta = CaptureState->Meta;
+        }
         for (int layer = 0; layer < 16; layer++)
         {
-            const auto& meta = CaptureState->Meta[layer];
+            const auto& meta = recoveredMeta[layer];
             if (!meta.Valid || meta.Size < 0)
                 continue;
             const int bank = layer >> 2;
@@ -437,7 +491,9 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         if (meta.Size >= 0)
         {
             meta.Valid = false;
-            meta.PendingCpuUpload = true;
+            meta.Dirty = true;
+            meta.DirtySerial++;
+            meta.UploadInFlight = false;
         }
     }
     next->Device = device;
@@ -662,14 +718,20 @@ void MetalRenderer::CaptureMetalDisplayCaptureLine(u32 line)
         (srcBank << 17u) | (srcBlock << 15u));
     if (captureLayer >= 0)
     {
-        const auto& meta = CaptureState->Meta[captureLayer];
-        if (!meta.Valid || meta.Size < 0)
+        bool valid;
+        int size;
+        {
+            std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+            valid = CaptureState->Meta[captureLayer].Valid;
+            size = CaptureState->Meta[captureLayer].Size;
+        }
+        if (!valid || size < 0)
         {
             CaptureState->FrameSupported = false;
             return;
         }
         config.SrcBCaptureLayer = captureLayer;
-        config.SrcBCaptureSize = static_cast<uint32_t>(meta.Size);
+        config.SrcBCaptureSize = static_cast<uint32_t>(size);
         return;
     }
 
@@ -808,21 +870,76 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
                 1)
            threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
     [encoder endEncoding];
-    [command commit];
 
-    for (int line = 0; line < 192; line++)
+    // MELONPRIME_METAL_GPU_CAPTURE_COMPLETION_V1: collect (layer, size) pairs
+    // written this dispatch and snapshot each one's DirtySerial as
+    // SubmittedSerial *before* commit, under the same mutex the completion
+    // handler below and the CPU-fallback path both use. Finalizing Valid=true
+    // here (queue-ordering guarantees success, but not GPU-error-free
+    // success) let a failed command buffer leave stale/garbage texture
+    // contents marked Valid -- any subsequent read (BG/OBJ sampling this
+    // frame, or an on-demand CPU readback) would then treat that garbage as
+    // authoritative.
+    struct PendingCaptureWrite { int Layer; int Size; uint64_t SubmittedSerial; };
+    std::vector<PendingCaptureWrite> pendingWrites;
     {
-        const auto& config = lines[line];
-        if (!config.Enabled)
-            continue;
-        const int bank = static_cast<int>((config.CaptureCnt >> 16) & 3u);
-        const int start = static_cast<int>((config.CaptureCnt >> 18) & 3u);
-        const int size = static_cast<int>((config.CaptureCnt >> 20) & 3u);
-        const int layer = (bank << 2) | start;
-        CaptureState->Meta[layer].Size = size;
-        CaptureState->Meta[layer].Valid = true;
-        CaptureState->Meta[layer].PendingCpuUpload = false;
+        std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+        for (int line = 0; line < 192; line++)
+        {
+            const auto& config = lines[line];
+            if (!config.Enabled)
+                continue;
+            const int bank = static_cast<int>((config.CaptureCnt >> 16) & 3u);
+            const int start = static_cast<int>((config.CaptureCnt >> 18) & 3u);
+            const int size = static_cast<int>((config.CaptureCnt >> 20) & 3u);
+            const int layer = (bank << 2) | start;
+            auto& meta = CaptureState->Meta[layer];
+            meta.UploadInFlight = true;
+            meta.SubmittedSerial = meta.DirtySerial;
+            pendingWrites.push_back({layer, size, meta.DirtySerial});
+        }
     }
+
+    std::shared_ptr<MetalCaptureState> capturedState = CaptureState;
+    [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+        const bool ok = completed.status == MTLCommandBufferStatusCompleted;
+        if (!ok)
+        {
+            const char* message = completed.error
+                ? [[completed.error localizedDescription] UTF8String]
+                : "unknown Metal error";
+            std::fprintf(stderr,
+                "[MelonPrime] metal display capture: GPU capture command "
+                "failed: %s\n", message);
+        }
+        std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
+        for (const auto& write : pendingWrites)
+        {
+            auto& meta = capturedState->Meta[write.Layer];
+            meta.UploadInFlight = false;
+            if (!ok)
+            {
+                meta.Valid = false;
+                meta.Dirty = true;
+                continue;
+            }
+            if (meta.DirtySerial == write.SubmittedSerial)
+            {
+                meta.Size = write.Size;
+                meta.Valid = true;
+                meta.Dirty = false;
+            }
+            else
+            {
+                // The destination changed again (AllocCapture) while this
+                // write was in flight -- this result is stale, leave Dirty
+                // so a later write (GPU capture or CPU fallback) finalizes it.
+                meta.Valid = false;
+                meta.Dirty = true;
+            }
+        }
+    }];
+    [command commit];
 
     if (!CaptureState->LoggedFirstCapture)
     {
@@ -844,11 +961,13 @@ void MetalRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     }
 
     const int layer = static_cast<int>((bank << 2) | start);
+    std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
     auto& meta = CaptureState->Meta[layer];
     if (meta.Size != static_cast<int>(len))
         meta.Valid = false;
     meta.Size = static_cast<int>(len);
-    meta.PendingCpuUpload = true;
+    meta.Dirty = true;
+    meta.DirtySerial++;
 }
 
 bool MetalRenderer::UploadCaptureTexture(
@@ -924,8 +1043,10 @@ bool MetalRenderer::UploadCaptureTexture(
             capturedState->LoggedStagingRingExhausted = true;
             std::fprintf(stderr,
                 "[MelonPrime] metal display capture: staging buffer ring "
-                "exhausted, falling back to a one-off buffer allocation "
-                "(further occurrences not logged)\n");
+                "unavailable (busy or above kMaxCaptureStagingBytes=%zu), "
+                "falling back to a one-off buffer allocation "
+                "(further occurrences not logged)\n",
+                static_cast<size_t>(MetalCaptureState::kMaxCaptureStagingBytes));
         }
     }
     id<MTLCommandBuffer> command =
@@ -936,6 +1057,16 @@ bool MetalRenderer::UploadCaptureTexture(
     {
         if (stagingSlotBusy)
             stagingSlotBusy->store(false, std::memory_order_release);
+        // The caller already set UploadInFlight=true for these layers before
+        // calling this function (so a concurrent dispatch could not double-
+        // submit them); since no command was committed, no completion
+        // handler will ever run to clear it. Without this, a command/blit
+        // allocation failure here would permanently strand these layers with
+        // UploadInFlight stuck true, and UploadCpuCompletedCaptures() would
+        // never retry them again.
+        std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
+        for (int layer : affectedLayers)
+            capturedState->Meta[layer].UploadInFlight = false;
         return false;
     }
 
@@ -951,13 +1082,18 @@ bool MetalRenderer::UploadCaptureTexture(
        destinationOrigin:MTLOriginMake(0, 0, 0)];
     [blit endEncoding];
 
-    // This layer's PendingUploadSerial is captured by value now, before
-    // commit, so the handler can detect a newer upload superseding this
-    // one (dispatched between this commit and that later completion).
+    // This layer's SubmittedSerial was snapshotted by the caller (under
+    // MetaMutex, before UploadInFlight was set) before dispatch, so the
+    // handler can tell a merely-superseded write (some other write will
+    // finalize this layer) apart from data that changed again while this
+    // particular write was in flight (must not be marked valid).
     std::vector<std::pair<int, uint64_t>> layerSerials;
     layerSerials.reserve(affectedLayers.size());
-    for (int layer : affectedLayers)
-        layerSerials.emplace_back(layer, capturedState->Meta[layer].PendingUploadSerial);
+    {
+        std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
+        for (int layer : affectedLayers)
+            layerSerials.emplace_back(layer, capturedState->Meta[layer].SubmittedSerial);
+    }
 
     // Same-queue command ordering (capturedState->Queue is the
     // renderer-side queue shared by 3D, 2D, capture and final
@@ -985,13 +1121,29 @@ bool MetalRenderer::UploadCaptureTexture(
                 "[MelonPrime] metal display capture: CPU fallback upload "
                 "command failed: %s\n", message);
         }
+        std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
         for (const auto& entry : layerSerials)
         {
             auto& meta = capturedState->Meta[entry.first];
-            if (meta.PendingUploadSerial != entry.second)
-                continue; // a newer upload for this layer already landed or is in flight
-            meta.Valid = ok;
-            meta.PendingCpuUpload = !ok;
+            meta.UploadInFlight = false;
+            if (!ok)
+            {
+                meta.Valid = false;
+                meta.Dirty = true;
+                continue;
+            }
+            if (meta.DirtySerial == entry.second)
+            {
+                meta.Valid = true;
+                meta.Dirty = false;
+            }
+            else
+            {
+                // Data changed again (AllocCapture) after this upload was
+                // dispatched -- stale result, leave Dirty for the next write.
+                meta.Valid = false;
+                meta.Dirty = true;
+            }
         }
     }];
     [command commit];
@@ -1003,17 +1155,28 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     if (!CaptureState || !CaptureState->Ready)
         return true;
 
+    // MELONPRIME_METAL_CAPTURE_UPLOAD_INFLIGHT_GATING_V1: only a layer that
+    // is Dirty *and not already UploadInFlight* is eligible for a new
+    // dispatch this frame. Without the UploadInFlight check, a GPU that
+    // takes longer than one frame to complete a write caused a new upload to
+    // be (re)dispatched every single frame for the same still-pending data,
+    // permanently superseding the previous in-flight write's completion
+    // before it could ever land -- Dirty/Valid then never settled, and the
+    // renderer could never consider capture resources coherent again.
     uint32_t upload128Mask = 0;
     uint32_t upload256Mask = 0;
-    for (int layer = 0; layer < 16; layer++)
     {
-        const auto& meta = CaptureState->Meta[layer];
-        if (!meta.PendingCpuUpload || meta.Size < 0)
-            continue;
-        if (meta.Size == 0)
-            upload128Mask |= 1u << layer;
-        else
-            upload256Mask |= 1u << (layer >> 2);
+        std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+        for (int layer = 0; layer < 16; layer++)
+        {
+            const auto& meta = CaptureState->Meta[layer];
+            if (!meta.Dirty || meta.UploadInFlight || meta.Size < 0)
+                continue;
+            if (meta.Size == 0)
+                upload128Mask |= 1u << layer;
+            else
+                upload256Mask |= 1u << (layer >> 2);
+        }
     }
 
     if (!upload128Mask && !upload256Mask)
@@ -1022,7 +1185,7 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     // Kept alive by the completion handlers below (captured by value), so a
     // ConfigureMetalCaptureState() reconfigure racing with an in-flight
     // upload can never leave a handler writing through a dangling
-    // MetalCaptureState. See MetalCaptureState::CaptureMeta::PendingUploadSerial
+    // MetalCaptureState. See MetalCaptureState::CaptureMeta::SubmittedSerial
     // for how a handler tells whether it is still the authoritative result
     // for its layer once it does run.
     std::shared_ptr<MetalCaptureState> capturedState = CaptureState;
@@ -1036,7 +1199,12 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         const uint16_t* source =
             reinterpret_cast<const uint16_t*>(GPU.VRAM[bank]) +
             start * 64u * 256u;
-        CaptureState->Meta[layer].PendingUploadSerial++;
+        {
+            std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+            auto& meta = CaptureState->Meta[layer];
+            meta.UploadInFlight = true;
+            meta.SubmittedSerial = meta.DirtySerial;
+        }
         if (!UploadCaptureTexture(
                 capturedState,
                 (__bridge void*)CaptureState->Capture128,
@@ -1057,16 +1225,22 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         const uint16_t* source =
             reinterpret_cast<const uint16_t*>(GPU.VRAM[bank]);
         std::vector<int> affectedLayers;
-        for (uint32_t start = 0; start < 4; start++)
         {
-            const int layer = static_cast<int>((bank << 2u) | start);
-            auto& meta = CaptureState->Meta[layer];
-            if (meta.PendingCpuUpload && meta.Size > 0)
+            std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+            for (uint32_t start = 0; start < 4; start++)
             {
-                meta.PendingUploadSerial++;
-                affectedLayers.push_back(layer);
+                const int layer = static_cast<int>((bank << 2u) | start);
+                auto& meta = CaptureState->Meta[layer];
+                if (meta.Dirty && !meta.UploadInFlight && meta.Size > 0)
+                {
+                    meta.UploadInFlight = true;
+                    meta.SubmittedSerial = meta.DirtySerial;
+                    affectedLayers.push_back(layer);
+                }
             }
         }
+        if (affectedLayers.empty())
+            continue;
         if (!UploadCaptureTexture(
                 capturedState,
                 (__bridge void*)CaptureState->Capture256,
@@ -1084,8 +1258,9 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     {
         CaptureState->LoggedCpuFallbackUpload = true;
         std::fprintf(stderr,
-            "[MelonPrime] metal display capture: CPU fallback capture "
-            "uploaded to GPU texture arrays (further occurrences not logged)\n");
+            "[MelonPrime] metal display capture: CPU fallback capture upload "
+            "submitted to GPU texture arrays (further occurrences not "
+            "logged)\n");
     }
     return true;
 }
@@ -1103,7 +1278,11 @@ void MetalRenderer::SyncVRAMCapture(
     }
 
     const int metadataLayer = static_cast<int>((bank << 2) | start);
-    const auto meta = CaptureState->Meta[metadataLayer];
+    MetalCaptureState::CaptureMeta meta;
+    {
+        std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+        meta = CaptureState->Meta[metadataLayer];
+    }
     if (!meta.Valid || meta.Size != static_cast<int>(len))
         return;
 
@@ -1212,9 +1391,20 @@ bool MetalRenderer::MetalCaptureResourcesCoherent() const
     if (!CaptureState || !CaptureState->Ready)
         return false;
 
+    // Single locked snapshot rather than a lock per validLayer() call below:
+    // this function calls validLayer() dozens of times per invocation, and a
+    // per-layer lock/unlock would let a completion handler flip Valid on one
+    // layer mid-scan while another layer in the same scan is still being
+    // read, mixing two different points in time into one coherency verdict.
+    std::array<MetalCaptureState::CaptureMeta, 16> metaSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+        metaSnapshot = CaptureState->Meta;
+    }
+
     auto validLayer = [&](int layer) {
         return layer < 0 ||
-            (layer < 16 && CaptureState->Meta[layer].Valid);
+            (layer < 16 && metaSnapshot[layer].Valid);
     };
 
     for (u32 bank = 0; bank < 4; bank++)

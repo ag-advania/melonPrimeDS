@@ -294,43 +294,46 @@ private:
 // texture, then the draw proceeded anyway. Reject here instead so a shader
 // never reads a slice that does not exist and a stale/mismatched texture
 // never reaches the screen silently.
+// MELONPRIME_METAL_OUTPUT_VALIDATION_FAIL_CLOSED_V1: the current (and only)
+// producer, GPU_Metal.mm's GetOutput()/AcquireOutputLease(), always
+// populates every one of these fields for a MetalTexture output (Width/
+// Height/Scale from the live texture, ArrayLength fixed at 2, Generation and
+// FrameSerial both starting from 1, never 0). Treating all-zero metadata as
+// "not populated yet" (as an earlier version of this function did) is a
+// fail-open hole: it accepts exactly the kind of malformed/uninitialized
+// output that this validator exists to reject. A future producer that
+// legitimately cannot populate one of these fields must be updated alongside
+// this check, not accommodated by loosening it back to fail-open.
 bool ValidateMetalRendererOutput(
     const melonDS::RendererOutput& output,
     id<MTLTexture> texture,
     id<MTLDevice> expectedDevice,
     const char** outReason)
 {
-    *outReason = nullptr;
-    if (!texture) { *outReason = "texture is nil"; return false; }
-    if (texture.device != expectedDevice) { *outReason = "texture.device != presenter device"; return false; }
-    if (texture.textureType != MTLTextureType2DArray) { *outReason = "textureType is not 2DArray"; return false; }
-    if (texture.arrayLength < 2) { *outReason = "texture.arrayLength < 2"; return false; }
-    if (output.ArrayLength != 0 && output.ArrayLength != static_cast<uint32_t>(texture.arrayLength))
-    {
-        *outReason = "output.ArrayLength != texture.arrayLength";
+    if (outReason)
+        *outReason = nullptr;
+    auto fail = [&](const char* reason) -> bool {
+        if (outReason)
+            *outReason = reason;
         return false;
-    }
-    if (output.Width != 0 && output.Width != static_cast<uint32_t>(texture.width))
-    {
-        *outReason = "output.Width != texture.width";
-        return false;
-    }
-    if (output.Height != 0 && output.Height != static_cast<uint32_t>(texture.height))
-    {
-        *outReason = "output.Height != texture.height";
-        return false;
-    }
-    // Scale/Generation are populated by every current producer (GPU_Metal.mm),
-    // so treat all-zero as "metadata not populated" rather than fail closed
-    // against a texture that is otherwise structurally fine -- producers that
-    // do not populate them yet (if any are added later) must not be silently
-    // broken by this check.
-    if (output.Width != 0 || output.Height != 0)
-    {
-        if (output.Scale == 0) { *outReason = "output.Scale == 0"; return false; }
-        if (output.Width != 256u * output.Scale) { *outReason = "output.Width != 256*Scale"; return false; }
-        if (output.Height != 192u * output.Scale) { *outReason = "output.Height != 192*Scale"; return false; }
-    }
+    };
+    if (!texture) return fail("texture is nil");
+    if (texture.device != expectedDevice) return fail("texture.device != presenter device");
+    if (texture.textureType != MTLTextureType2DArray) return fail("textureType is not 2DArray");
+    if (texture.arrayLength != 2) return fail("texture.arrayLength != 2");
+    if (output.ArrayLength != 2) return fail("output.ArrayLength != 2");
+    if (output.Width == 0) return fail("output.Width == 0");
+    if (output.Height == 0) return fail("output.Height == 0");
+    if (output.Scale == 0) return fail("output.Scale == 0");
+    if (output.Generation == 0) return fail("output.Generation == 0");
+    if (output.FrameSerial == 0) return fail("output.FrameSerial == 0");
+    if (output.ProducerId == 0) return fail("output.ProducerId == 0");
+    if (output.Width != static_cast<uint32_t>(texture.width))
+        return fail("output.Width != texture.width");
+    if (output.Height != static_cast<uint32_t>(texture.height))
+        return fail("output.Height != texture.height");
+    if (output.Width != 256u * output.Scale) return fail("output.Width != 256*Scale");
+    if (output.Height != 192u * output.Scale) return fail("output.Height != 192*Scale");
     return true;
 }
 
@@ -397,6 +400,12 @@ struct ScreenPanelMetal::Impl
     // renderer with no CpuBgra fallback in production means "retain the
     // previous good frame" needs a real held reference, not a raw pointer.
     melonDS::RendererOutputLease lastGoodMetalLease;
+    // MELONPRIME_METAL_OUTPUT_PRODUCER_ID_V1: identity of the producer that
+    // created the currently retained lease. Cleared together with the lease
+    // whenever the active Metal producer changes or its generation regresses
+    // (see drawRect lifecycle checks below).
+    uint64_t lastGoodProducerId = 0;
+    uint64_t lastGoodGeneration = 0;
     bool loggedRetainedLastGoodFrame = false;
     bool loggedMetalNeverProduced = false;
     bool loggedInvalidOutputMetadata = false;
@@ -834,6 +843,19 @@ void ScreenPanelMetal::drawScreen()
             const bool metalRendererSelected =
                 selectedRenderer == renderer3D_Metal ||
                 selectedRenderer == renderer3D_MetalCompute;
+            // MELONPRIME_METAL_LEASE_LIFECYCLE_V1: a retained last-known-good
+            // texture is only meaningful while Metal is the active renderer.
+            // Without this, switching away from Metal (Software/OpenGL) and
+            // back, or reconstructing the renderer at a new scale, could
+            // present a stale texture from a previous renderer instance the
+            // moment Metal becomes selected again, before that instance has
+            // produced its own first frame.
+            if (!metalRendererSelected)
+            {
+                m->lastGoodMetalLease.ReleaseNow();
+                m->lastGoodProducerId = 0;
+                m->lastGoodGeneration = 0;
+            }
 
             // Legitimate only during the first handful of frames, before the
             // visible-output pipeline's own compose command buffers have
@@ -843,6 +865,23 @@ void ScreenPanelMetal::drawScreen()
 
             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {
+                // A MetalTexture from a different producer (new renderer
+                // instance) or with a generation that went backwards relative
+                // to the retained lease means the old lease is no longer a
+                // valid "last known good" for this session -- drop it before
+                // deciding whether the new output itself is displayable.
+                if (m->lastGoodProducerId != 0 &&
+                    (output.ProducerId != m->lastGoodProducerId ||
+                     (output.ProducerId == m->lastGoodProducerId &&
+                      output.Generation != 0 &&
+                      output.Generation < m->lastGoodGeneration)))
+                {
+                    m->lastGoodMetalLease.ReleaseNow();
+                    m->lastGoodProducerId = 0;
+                    m->lastGoodGeneration = 0;
+                    m->loggedRetainedLastGoodFrame = false;
+                }
+
                 id<MTLTexture> candidateTexture = (__bridge id<MTLTexture>)output.Top;
                 const char* invalidReason = nullptr;
                 if (ValidateMetalRendererOutput(output, candidateTexture, m->device, &invalidReason))
@@ -854,6 +893,8 @@ void ScreenPanelMetal::drawScreen()
                     // presenter command buffer has completed, so nothing can
                     // still be sampling the texture that lease was guarding.
                     m->lastGoodMetalLease = std::move(rendererOutputLease);
+                    m->lastGoodProducerId = output.ProducerId;
+                    m->lastGoodGeneration = output.Generation;
                     finalMetalTextureForFrame = candidateTexture;
                     m->loggedRetainedLastGoodFrame = false;
 
@@ -900,9 +941,13 @@ void ScreenPanelMetal::drawScreen()
             }
             else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
             {
-                // Only actually used below if there is no retained
-                // last-good Metal frame to fall back to either -- see the
-                // output-selection chain right after this if/else.
+                // Fresh CpuBgra is always preferred over a retained Metal
+                // texture while the production capture fallback remains
+                // enabled (Phase M4 is not done) -- see the unconditional
+                // "finalMetalTextureForFrame || hasCpuBaseFallbackForFrame"
+                // presentation check below. The retained last-good Metal
+                // texture is used only when neither a fresh Metal texture
+                // nor a fresh CpuBgra frame exists this frame at all.
                 hasCpuBaseFallbackForFrame = true;
                 topCpuBufForFrame = output.Top;
                 bottomCpuBufForFrame = output.Bottom;
@@ -920,9 +965,13 @@ void ScreenPanelMetal::drawScreen()
                 // No valid new Metal texture AND no CpuBgra frame this frame
                 // either -- genuinely nothing new to show (e.g. very early
                 // startup, before the first frame of any kind has completed).
-                // Prefer the last known-good Metal frame over blanking.
+                // Prefer the last known-good Metal frame over blanking, but
+                // only when that lease still belongs to a tracked producer
+                // (ProducerId cleared on renderer switch / emu stop).
                 id<MTLTexture> retained =
-                    (__bridge id<MTLTexture>)m->lastGoodMetalLease.Output.Top;
+                    (m->lastGoodProducerId != 0)
+                        ? (__bridge id<MTLTexture>)m->lastGoodMetalLease.Output.Top
+                        : nil;
                 if (retained)
                 {
                     finalMetalTextureForFrame = retained;
@@ -1005,6 +1054,15 @@ void ScreenPanelMetal::drawScreen()
                         numScreens > 1 ? screenMatrix[1][4] : 0.0f,
                         numScreens > 1 ? screenMatrix[1][5] : 0.0f);
             }
+        }
+        else
+        {
+            // Emulation is not active (ROM closed, stopped) -- a retained
+            // texture from the previous ROM/session must never be shown once
+            // a new one starts. See MELONPRIME_METAL_LEASE_LIFECYCLE_V1 above.
+            m->lastGoodMetalLease.ReleaseNow();
+            m->lastGoodProducerId = 0;
+            m->lastGoodGeneration = 0;
         }
 
         id<CAMetalDrawable> drawable = [layer nextDrawable];

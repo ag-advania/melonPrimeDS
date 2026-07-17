@@ -56,6 +56,13 @@ struct RendererOutput
     u32 ArrayLength = 0;
     u32 Scale = 0;
     u64 Generation = 0;
+    // MELONPRIME_METAL_OUTPUT_PRODUCER_ID_V1: unique per MetalOutputState
+    // instance so a presenter can tell "same renderer, new generation"
+    // (scale reconfigure) apart from "different renderer instance"
+    // (Metal↔MetalCompute, Soft→Metal, ROM/NDS recreate). Without this,
+    // a retained last-known-good lease can outlive its producer and be
+    // presented after the producing renderer has been destroyed.
+    u64 ProducerId = 0;
 #endif
 
     static RendererOutput CpuBgra(void* top, void* bottom) noexcept
@@ -84,7 +91,8 @@ struct RendererOutput
         u32 height = 0,
         u32 arrayLength = 0,
         u32 scale = 0,
-        u64 generation = 0) noexcept
+        u64 generation = 0,
+        u64 producerId = 0) noexcept
     {
         RendererOutput out { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
         out.Width = width;
@@ -92,6 +100,7 @@ struct RendererOutput
         out.ArrayLength = arrayLength;
         out.Scale = scale;
         out.Generation = generation;
+        out.ProducerId = producerId;
         return out;
     }
 #endif

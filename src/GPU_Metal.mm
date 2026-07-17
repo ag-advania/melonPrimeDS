@@ -424,12 +424,21 @@ struct MetalRenderer::MetalOutputState
     uint64_t PublishedSerial = 0;
     uint64_t NextSerial = 1;
     uint64_t Generation = 1;
+    // Assigned once at construction; never reused across OutputState
+    // instances. See MELONPRIME_METAL_OUTPUT_PRODUCER_ID_V1 on RendererOutput.
+    uint64_t ProducerId = 0;
     int Scale = 0;
     NSUInteger Width = 0;
     NSUInteger Height = 0;
     bool Ready = false;
     bool LoggedVisibleOutput = false;
     bool LoggedNoFreeSlot = false;
+
+    MetalOutputState()
+    {
+        static std::atomic<uint64_t> nextProducerId { 1 };
+        ProducerId = nextProducerId.fetch_add(1, std::memory_order_relaxed);
+    }
 
     ~MetalOutputState()
     {
@@ -1298,7 +1307,8 @@ RendererOutputLease MetalRenderer::AcquireOutputLease()
                         static_cast<u32>(texture.height),
                         static_cast<u32>(texture.arrayLength),
                         static_cast<u32>(state->Scale),
-                        slot.Generation),
+                        slot.Generation,
+                        state->ProducerId),
                     context,
                     release);
             }
@@ -1324,7 +1334,8 @@ RendererOutput MetalRenderer::GetOutput()
                     static_cast<u32>(texture.height),
                     static_cast<u32>(texture.arrayLength),
                     static_cast<u32>(OutputState->Scale),
-                    OutputState->Slots[slotIndex].Generation);
+                    OutputState->Slots[slotIndex].Generation,
+                    OutputState->ProducerId);
         }
     }
     return SoftRenderer::GetOutput();
