@@ -402,11 +402,15 @@ struct ScreenPanelMetal::Impl
     melonDS::RendererOutputLease lastGoodMetalLease;
     // MELONPRIME_METAL_OUTPUT_PRODUCER_ID_V1: identity of the producer that
     // created the currently retained lease. Cleared together with the lease
-    // whenever the active Metal producer changes or its generation regresses
-    // (see drawRect lifecycle checks below).
+    // whenever the active Metal producer changes. Generation/FrameSerial
+    // rollbacks from the same producer are rejected without clearing these
+    // (the retained lease remains the last known-good).
     uint64_t lastGoodProducerId = 0;
     uint64_t lastGoodGeneration = 0;
+    uint64_t lastGoodFrameSerial = 0;
     bool loggedRetainedLastGoodFrame = false;
+    bool loggedGenerationRollback = false;
+    bool loggedFrameSerialRollback = false;
     bool loggedMetalNeverProduced = false;
     bool loggedInvalidOutputMetadata = false;
     // MELONPRIME_METAL_CPU_FALLBACK_VISIBLE_FIX_V1: sustained CpuBgra
@@ -855,6 +859,7 @@ void ScreenPanelMetal::drawScreen()
                 m->lastGoodMetalLease.ReleaseNow();
                 m->lastGoodProducerId = 0;
                 m->lastGoodGeneration = 0;
+                m->lastGoodFrameSerial = 0;
             }
 
             // Legitimate only during the first handful of frames, before the
@@ -865,26 +870,66 @@ void ScreenPanelMetal::drawScreen()
 
             if (output.Kind == melonDS::RendererOutputKind::MetalTexture)
             {
-                // A MetalTexture from a different producer (new renderer
-                // instance) or with a generation that went backwards relative
-                // to the retained lease means the old lease is no longer a
-                // valid "last known good" for this session -- drop it before
-                // deciding whether the new output itself is displayable.
+                // MELONPRIME_METAL_OUTPUT_ORDERING_CONTRACT_V1: within one
+                // producer, Generation and FrameSerial are monotonic.
+                // A rollback is rejected (lease released, last-good kept) --
+                // never accepted as a new last-good after clearing trackers.
                 if (m->lastGoodProducerId != 0 &&
-                    (output.ProducerId != m->lastGoodProducerId ||
-                     (output.ProducerId == m->lastGoodProducerId &&
-                      output.Generation != 0 &&
-                      output.Generation < m->lastGoodGeneration)))
+                    output.ProducerId == m->lastGoodProducerId)
                 {
+                    if (output.Generation != 0 &&
+                        output.Generation < m->lastGoodGeneration)
+                    {
+                        rendererOutputLease.ReleaseNow();
+                        if (!m->loggedGenerationRollback)
+                        {
+                            m->loggedGenerationRollback = true;
+                            fprintf(stderr,
+                                    "[MelonPrime] metal presenter: rejected Metal output "
+                                    "(generation rollback %llu -> %llu); keeping last "
+                                    "known-good (further occurrences not logged)\n",
+                                    static_cast<unsigned long long>(m->lastGoodGeneration),
+                                    static_cast<unsigned long long>(output.Generation));
+                        }
+                    }
+                    else if (output.Generation == m->lastGoodGeneration &&
+                             output.FrameSerial != 0 &&
+                             m->lastGoodFrameSerial != 0 &&
+                             output.FrameSerial < m->lastGoodFrameSerial)
+                    {
+                        rendererOutputLease.ReleaseNow();
+                        if (!m->loggedFrameSerialRollback)
+                        {
+                            m->loggedFrameSerialRollback = true;
+                            fprintf(stderr,
+                                    "[MelonPrime] metal presenter: rejected Metal output "
+                                    "(frame serial rollback %llu -> %llu); keeping last "
+                                    "known-good (further occurrences not logged)\n",
+                                    static_cast<unsigned long long>(m->lastGoodFrameSerial),
+                                    static_cast<unsigned long long>(output.FrameSerial));
+                        }
+                    }
+                }
+                else if (m->lastGoodProducerId != 0 &&
+                         output.ProducerId != m->lastGoodProducerId)
+                {
+                    // Different producer (scale swap-reconfigure, renderer
+                    // rebuild). Drop the old lease before considering the new
+                    // output so PresenterRefCount on the retired OutputState
+                    // can drain.
                     m->lastGoodMetalLease.ReleaseNow();
                     m->lastGoodProducerId = 0;
                     m->lastGoodGeneration = 0;
+                    m->lastGoodFrameSerial = 0;
                     m->loggedRetainedLastGoodFrame = false;
                 }
 
                 id<MTLTexture> candidateTexture = (__bridge id<MTLTexture>)output.Top;
                 const char* invalidReason = nullptr;
-                if (ValidateMetalRendererOutput(output, candidateTexture, m->device, &invalidReason))
+                // Skip validation if the lease was already released above
+                // (rollback path cleared Context; Output is empty).
+                if (rendererOutputLease.Context &&
+                    ValidateMetalRendererOutput(output, candidateTexture, m->device, &invalidReason))
                 {
                     // A new valid frame supersedes whatever lease we were
                     // retaining. Safe to release that old one synchronously
@@ -895,6 +940,7 @@ void ScreenPanelMetal::drawScreen()
                     m->lastGoodMetalLease = std::move(rendererOutputLease);
                     m->lastGoodProducerId = output.ProducerId;
                     m->lastGoodGeneration = output.Generation;
+                    m->lastGoodFrameSerial = output.FrameSerial;
                     finalMetalTextureForFrame = candidateTexture;
                     m->loggedRetainedLastGoodFrame = false;
 
@@ -1063,6 +1109,7 @@ void ScreenPanelMetal::drawScreen()
             m->lastGoodMetalLease.ReleaseNow();
             m->lastGoodProducerId = 0;
             m->lastGoodGeneration = 0;
+            m->lastGoodFrameSerial = 0;
         }
 
         id<CAMetalDrawable> drawable = [layer nextDrawable];

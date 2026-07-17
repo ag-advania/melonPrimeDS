@@ -290,14 +290,18 @@ struct MetalRenderer::MetalCaptureState
     // (every function below except the completion handlers) and Metal's own
     // completion-queue dispatch thread (UploadCaptureTexture's and
     // EncodeMetalDisplayCapture's completion handlers) -- so every access
-    // must go through MetaMutex. Dirty/UploadInFlight/DirtySerial/
-    // SubmittedSerial replace the old single PendingCpuUpload+
-    // PendingUploadSerial pair so that (a) a write already in flight is never
-    // resubmitted every frame just because it has not completed yet within
-    // one frame (the old design's livelock under GPU backpressure), and
+    // must go through MetaMutex. Dirty/CpuUploadInFlight/GpuCaptureInFlight/
+    // DirtySerial/CpuSubmittedSerial/GpuSubmittedSerial replace the old single
+    // PendingCpuUpload+PendingUploadSerial pair (and the later shared
+    // UploadInFlight+SubmittedSerial) so that (a) a write already in flight is
+    // never resubmitted every frame just because it has not completed yet
+    // within one frame (the old design's livelock under GPU backpressure),
     // (b) a completion can tell a merely-superseded write (fine, some other
     // write will finalize this layer) apart from data that changed again
-    // after this particular write was dispatched (must NOT be marked valid).
+    // after this particular write was dispatched (must NOT be marked valid),
+    // and (c) CPU-fallback upload and GPU Display Capture can be in flight
+    // for different DirtySerial generations without one writer's completion
+    // clearing the other writer's in-flight bit.
     struct CaptureMeta
     {
         int Size = -1;
@@ -307,19 +311,24 @@ struct MetalRenderer::MetalCaptureState
         // successfully, so it needs a fresh write (GPU capture or CPU
         // fallback) before Valid can be trusted again.
         bool Dirty = false;
-        // A write for this layer has been dispatched and its completion
-        // has not yet run. While true, a new write for the *same* DirtySerial
-        // must not be dispatched again -- that is what produced the
-        // resubmit-every-frame livelock under sustained GPU backpressure.
-        bool UploadInFlight = false;
+        // A CPU-fallback upload for this layer has been dispatched and its
+        // completion has not yet run. While true, neither a new CPU upload
+        // nor a GPU-capture metadata finalize for the same DirtySerial may
+        // claim this layer.
+        bool CpuUploadInFlight = false;
+        // A GPU Display Capture write for this layer has been dispatched and
+        // its completion has not yet run.
+        bool GpuCaptureInFlight = false;
         // Bumped whenever the underlying data actually changes (AllocCapture,
         // a capture-destination reconfigure). A write dispatch snapshots the
-        // current value into SubmittedSerial; a completion only trusts its
-        // own result if DirtySerial still equals the SubmittedSerial it
-        // snapshotted -- otherwise something changed the data again while
-        // the write was in flight and the result must not be applied.
+        // current value into the writer-specific SubmittedSerial; a
+        // completion only trusts its own result if DirtySerial still equals
+        // the SubmittedSerial it snapshotted -- otherwise something changed
+        // the data again while the write was in flight and the result must
+        // not be applied.
         uint64_t DirtySerial = 0;
-        uint64_t SubmittedSerial = 0;
+        uint64_t CpuSubmittedSerial = 0;
+        uint64_t GpuSubmittedSerial = 0;
     };
 
     // Guards every field of every Meta[] entry. Never held across GPU command
@@ -368,9 +377,11 @@ struct MetalRenderer::MetalCaptureState
     //
     // Each slot holds a scale-expanded RGBA8 buffer (up to 256*scale square,
     // 4 bytes/pixel), so ring size trades memory against one-off-allocation
-    // frequency at high internal-resolution scale factors: at 16x that is 64
-    // MiB/slot, and this ring plus the (also scale-expanded) Capture/Snapshot
-    // texture arrays can otherwise reach roughly 1.5 GiB combined on an 8/16x
+    // frequency at high internal-resolution scale factors. Correct sizes:
+    //   256@8x  = 2048x2048x4 = 16 MiB/slot
+    //   256@16x = 4096x4096x4 = 64 MiB/slot
+    // This ring plus the (also scale-expanded) Capture/Snapshot texture
+    // arrays can otherwise reach roughly 1.1+ GiB combined on an 8/16x
     // build -- a real risk on 8 GB integrated-GPU Macs. Kept small (a
     // realistic frame has only a handful of layers needing CPU-fallback
     // upload at once, not all 16+4) rather than sized for the theoretical
@@ -406,8 +417,9 @@ void* MetalRenderer::AcquireStagingSlot(MetalCaptureState& state, unsigned long 
     // Cap persistent ring growth so an 8x/16x session cannot pin hundreds of
     // MiB in reusable slots. Oversized requests return nullptr and the caller
     // falls back to a one-off allocation for that upload only -- the ring
-    // itself stays bounded to common scales (256@8x = 8 MiB fits; 256@16x =
-    // 64 MiB does not and never permanently occupies a ring slot).
+    // itself stays bounded to common scales (256@8x = 16 MiB fits under the
+    // 16 MiB cap only at the boundary; 256@16x = 64 MiB does not and never
+    // permanently occupies a ring slot).
     if (requiredBytes > MetalCaptureState::kMaxCaptureStagingBytes)
         return nullptr;
     for (int i = 0; i < MetalCaptureState::kStagingRingSize; i++)
@@ -493,7 +505,8 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
             meta.Valid = false;
             meta.Dirty = true;
             meta.DirtySerial++;
-            meta.UploadInFlight = false;
+            meta.CpuUploadInFlight = false;
+            meta.GpuCaptureInFlight = false;
         }
     }
     next->Device = device;
@@ -871,19 +884,23 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
            threadsPerThreadgroup:MTLSizeMake(threadWidth, threadHeight, 1)];
     [encoder endEncoding];
 
-    // MELONPRIME_METAL_GPU_CAPTURE_COMPLETION_V1: collect (layer, size) pairs
-    // written this dispatch and snapshot each one's DirtySerial as
-    // SubmittedSerial *before* commit, under the same mutex the completion
+    // MELONPRIME_METAL_GPU_CAPTURE_COMPLETION_V1: collect unique (layer, size)
+    // pairs written this dispatch and snapshot each one's DirtySerial as
+    // GpuSubmittedSerial *before* commit, under the same mutex the completion
     // handler below and the CPU-fallback path both use. Finalizing Valid=true
     // here (queue-ordering guarantees success, but not GPU-error-free
     // success) let a failed command buffer leave stale/garbage texture
     // contents marked Valid -- any subsequent read (BG/OBJ sampling this
     // frame, or an on-demand CPU readback) would then treat that garbage as
-    // authoritative.
+    // authoritative. Layer entries are deduplicated: a destination layer can
+    // appear on many scanlines, but metadata is per-layer (last enabled
+    // scanline's size wins, matching the previous implicit "last write wins"
+    // behaviour without O(lines) completion work).
     struct PendingCaptureWrite { int Layer; int Size; uint64_t SubmittedSerial; };
     std::vector<PendingCaptureWrite> pendingWrites;
     {
         std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
+        bool layerSeen[16] = {};
         for (int line = 0; line < 192; line++)
         {
             const auto& config = lines[line];
@@ -894,9 +911,31 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
             const int size = static_cast<int>((config.CaptureCnt >> 20) & 3u);
             const int layer = (bank << 2) | start;
             auto& meta = CaptureState->Meta[layer];
-            meta.UploadInFlight = true;
-            meta.SubmittedSerial = meta.DirtySerial;
-            pendingWrites.push_back({layer, size, meta.DirtySerial});
+            // Always record the GPU write. If a CPU upload is also in flight,
+            // same-queue ordering means this compute dispatch runs after that
+            // blit; the CPU completion will see GpuCaptureInFlight and refuse
+            // to claim Valid, while this completion finalizes the layer.
+            meta.GpuCaptureInFlight = true;
+            meta.GpuSubmittedSerial = meta.DirtySerial;
+            if (layerSeen[layer])
+            {
+                // Same layer again this frame: refresh size on the existing
+                // pending entry (last enabled scanline wins).
+                for (auto& write : pendingWrites)
+                {
+                    if (write.Layer == layer)
+                    {
+                        write.Size = size;
+                        write.SubmittedSerial = meta.DirtySerial;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                layerSeen[layer] = true;
+                pendingWrites.push_back({layer, size, meta.DirtySerial});
+            }
         }
     }
 
@@ -916,8 +955,16 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
         for (const auto& write : pendingWrites)
         {
             auto& meta = capturedState->Meta[write.Layer];
-            meta.UploadInFlight = false;
+            meta.GpuCaptureInFlight = false;
             if (!ok)
+            {
+                meta.Valid = false;
+                meta.Dirty = true;
+                continue;
+            }
+            // A CPU upload started after we dispatched (or was already
+            // racing) owns the texture now -- do not claim Valid.
+            if (meta.CpuUploadInFlight)
             {
                 meta.Valid = false;
                 meta.Dirty = true;
@@ -1057,16 +1104,16 @@ bool MetalRenderer::UploadCaptureTexture(
     {
         if (stagingSlotBusy)
             stagingSlotBusy->store(false, std::memory_order_release);
-        // The caller already set UploadInFlight=true for these layers before
+        // The caller already set CpuUploadInFlight=true for these layers before
         // calling this function (so a concurrent dispatch could not double-
         // submit them); since no command was committed, no completion
         // handler will ever run to clear it. Without this, a command/blit
         // allocation failure here would permanently strand these layers with
-        // UploadInFlight stuck true, and UploadCpuCompletedCaptures() would
+        // CpuUploadInFlight stuck true, and UploadCpuCompletedCaptures() would
         // never retry them again.
         std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
         for (int layer : affectedLayers)
-            capturedState->Meta[layer].UploadInFlight = false;
+            capturedState->Meta[layer].CpuUploadInFlight = false;
         return false;
     }
 
@@ -1082,8 +1129,8 @@ bool MetalRenderer::UploadCaptureTexture(
        destinationOrigin:MTLOriginMake(0, 0, 0)];
     [blit endEncoding];
 
-    // This layer's SubmittedSerial was snapshotted by the caller (under
-    // MetaMutex, before UploadInFlight was set) before dispatch, so the
+    // This layer's CpuSubmittedSerial was snapshotted by the caller (under
+    // MetaMutex, before CpuUploadInFlight was set) before dispatch, so the
     // handler can tell a merely-superseded write (some other write will
     // finalize this layer) apart from data that changed again while this
     // particular write was in flight (must not be marked valid).
@@ -1092,7 +1139,7 @@ bool MetalRenderer::UploadCaptureTexture(
     {
         std::lock_guard<std::mutex> lock(capturedState->MetaMutex);
         for (int layer : affectedLayers)
-            layerSerials.emplace_back(layer, capturedState->Meta[layer].SubmittedSerial);
+            layerSerials.emplace_back(layer, capturedState->Meta[layer].CpuSubmittedSerial);
     }
 
     // Same-queue command ordering (capturedState->Queue is the
@@ -1125,8 +1172,16 @@ bool MetalRenderer::UploadCaptureTexture(
         for (const auto& entry : layerSerials)
         {
             auto& meta = capturedState->Meta[entry.first];
-            meta.UploadInFlight = false;
+            meta.CpuUploadInFlight = false;
             if (!ok)
+            {
+                meta.Valid = false;
+                meta.Dirty = true;
+                continue;
+            }
+            // A GPU capture write started for this layer while we were in
+            // flight -- that write owns the texture now.
+            if (meta.GpuCaptureInFlight)
             {
                 meta.Valid = false;
                 meta.Dirty = true;
@@ -1156,13 +1211,16 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         return true;
 
     // MELONPRIME_METAL_CAPTURE_UPLOAD_INFLIGHT_GATING_V1: only a layer that
-    // is Dirty *and not already UploadInFlight* is eligible for a new
-    // dispatch this frame. Without the UploadInFlight check, a GPU that
-    // takes longer than one frame to complete a write caused a new upload to
-    // be (re)dispatched every single frame for the same still-pending data,
-    // permanently superseding the previous in-flight write's completion
-    // before it could ever land -- Dirty/Valid then never settled, and the
-    // renderer could never consider capture resources coherent again.
+    // is Dirty *and not already CpuUploadInFlight or GpuCaptureInFlight* is
+    // eligible for a new CPU dispatch this frame. Without the in-flight
+    // check, a GPU that takes longer than one frame to complete a write
+    // caused a new upload to be (re)dispatched every single frame for the
+    // same still-pending data, permanently superseding the previous
+    // in-flight write's completion before it could ever land -- Dirty/Valid
+    // then never settled, and the renderer could never consider capture
+    // resources coherent again. Skipping while GpuCaptureInFlight also
+    // prevents a CPU blit from racing a live GPU Display Capture write to
+    // the same texture slice.
     uint32_t upload128Mask = 0;
     uint32_t upload256Mask = 0;
     {
@@ -1170,7 +1228,8 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         for (int layer = 0; layer < 16; layer++)
         {
             const auto& meta = CaptureState->Meta[layer];
-            if (!meta.Dirty || meta.UploadInFlight || meta.Size < 0)
+            if (!meta.Dirty || meta.CpuUploadInFlight ||
+                meta.GpuCaptureInFlight || meta.Size < 0)
                 continue;
             if (meta.Size == 0)
                 upload128Mask |= 1u << layer;
@@ -1185,7 +1244,7 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     // Kept alive by the completion handlers below (captured by value), so a
     // ConfigureMetalCaptureState() reconfigure racing with an in-flight
     // upload can never leave a handler writing through a dangling
-    // MetalCaptureState. See MetalCaptureState::CaptureMeta::SubmittedSerial
+    // MetalCaptureState. See MetalCaptureState::CaptureMeta::CpuSubmittedSerial
     // for how a handler tells whether it is still the authoritative result
     // for its layer once it does run.
     std::shared_ptr<MetalCaptureState> capturedState = CaptureState;
@@ -1202,8 +1261,8 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
         {
             std::lock_guard<std::mutex> lock(CaptureState->MetaMutex);
             auto& meta = CaptureState->Meta[layer];
-            meta.UploadInFlight = true;
-            meta.SubmittedSerial = meta.DirtySerial;
+            meta.CpuUploadInFlight = true;
+            meta.CpuSubmittedSerial = meta.DirtySerial;
         }
         if (!UploadCaptureTexture(
                 capturedState,
@@ -1231,10 +1290,11 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
             {
                 const int layer = static_cast<int>((bank << 2u) | start);
                 auto& meta = CaptureState->Meta[layer];
-                if (meta.Dirty && !meta.UploadInFlight && meta.Size > 0)
+                if (meta.Dirty && !meta.CpuUploadInFlight &&
+                    !meta.GpuCaptureInFlight && meta.Size > 0)
                 {
-                    meta.UploadInFlight = true;
-                    meta.SubmittedSerial = meta.DirtySerial;
+                    meta.CpuUploadInFlight = true;
+                    meta.CpuSubmittedSerial = meta.DirtySerial;
                     affectedLayers.push_back(layer);
                 }
             }

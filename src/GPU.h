@@ -133,6 +133,7 @@ struct RendererOutputLease
           Context(other.Context),
           ReleaseFn(other.ReleaseFn)
     {
+        other.Output = {};
         other.Context = nullptr;
         other.ReleaseFn = nullptr;
     }
@@ -145,6 +146,7 @@ struct RendererOutputLease
             Output = other.Output;
             Context = other.Context;
             ReleaseFn = other.ReleaseFn;
+            other.Output = {};
             other.Context = nullptr;
             other.ReleaseFn = nullptr;
         }
@@ -162,6 +164,10 @@ struct RendererOutputLease
         void (*releaseFn)(void*) = ReleaseFn;
         Context = nullptr;
         ReleaseFn = nullptr;
+        // Clear Output too: after release the texture handle is no longer
+        // leased, and leaving stale Top/metadata behind invites accidental
+        // reuse (see MELONPRIME_METAL_LEASE_RELEASE_CLEARS_OUTPUT_V1).
+        Output = {};
         if (context && releaseFn)
             releaseFn(context);
     }
