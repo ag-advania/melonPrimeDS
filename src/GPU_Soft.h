@@ -114,7 +114,8 @@ private:
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
-    // [backBuffer][physicalScreen 0=Top / 1=Bottom], Sapphire packed stride.
+    // [backBuffer][physicalScreen 0=Top / 1=Bottom]. Authoritative Vulkan 2D
+    // producer (Sapphire packed stride). ScreenPlanes are derived from this.
     std::array<u32, VulkanPackedPixelCount> VulkanPackedFramebuffer[2][2]{};
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
