@@ -119,6 +119,9 @@ private:
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
+    // Reject previous-frame capture metadata when Engine B samples capture planes.
+    std::array<u64, 4u * 192u> StructuredCaptureLineGeneration{};
+    u64 StructuredCaptureProducerGeneration = 0;
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     std::array<u32, 192u * 17u> StructuredCaptureBackedSourceClassPixels{};
     std::array<u8, 192u> StructuredCaptureBackedExplicitSlot{};

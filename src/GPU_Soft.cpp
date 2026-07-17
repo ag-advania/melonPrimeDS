@@ -95,6 +95,8 @@ void SoftRenderer::Reset()
     StructuredCapturePlanes.fill(0);
     StructuredCaptureLineValid.fill(0);
     StructuredCaptureLineUses3D.fill(0);
+    StructuredCaptureLineGeneration.fill(0);
+    StructuredCaptureProducerGeneration = 0;
     StructuredEngineLineUsesCapture3D.fill(0);
     StructuredCaptureBackedSourceClassPixels.fill(0);
     StructuredCaptureBackedExplicitSlot.fill(0);
@@ -240,6 +242,9 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCaptureBackedExplicitSlot.fill(0);
             StructuredCaptureBackedBestClassLines.fill(0);
             StructuredCaptureBacked3DLines = 0;
+            // New in-flight capture generation for this visible frame. Engine B
+            // must not consume previous-frame StructuredCapturePlanes.
+            ++StructuredCaptureProducerGeneration;
 
             const u32 captureMode = (GPU.CaptureCnt >> 29u) & 0x3u;
             const bool sourceAContributes = captureMode == 0u
@@ -274,48 +279,66 @@ void SoftRenderer::DrawScanline(u32 line)
         Output3D = Rend3D->GetLine(line);
 #endif
 
-        // draw BG/OBJ layers
-        Rend2D_A->DrawScanline(line);
-        Rend2D_B->DrawScanline(line);
-
-        // draw the final screen output
-        DrawScanlineA(line, dstA);
-        DrawScanlineB(line, dstB);
-
-        // perform display capture if enabled
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (GPU.CaptureEnable)
+        if (structuredVulkan2D)
         {
-            const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
-            const bool sourceAContributes = captureMode == 0u
-                || (captureMode >= 2u && (GPU.CaptureCnt & 0x1Fu) != 0u);
-            const bool captureNeeds3D = structuredVulkan2D
-                && captureMode != 1u
-                && sourceAContributes
-                && (((GPU.CaptureCnt & (1u << 24u)) != 0u)
-                    || ((GPU.GPU2D_A.DispCnt & 0x0108u) == 0x0108u));
-            if (captureNeeds3D)
+            // Sapphire order: Engine A draw + output + capture, then Engine B.
+            // Engine B's DrawStructuredCapturePixel must see this scanline's
+            // StoreStructuredCaptureLine result, not the previous frame.
+            Rend2D_A->DrawScanline(line);
+            DrawScanlineA(line, dstA);
+
+            if (GPU.CaptureEnable)
             {
-                if (!StructuredCapturePreparedThisFrame)
+                const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
+                const bool sourceAContributes = captureMode == 0u
+                    || (captureMode >= 2u && (GPU.CaptureCnt & 0x1Fu) != 0u);
+                const bool captureNeeds3D = captureMode != 1u
+                    && sourceAContributes
+                    && (((GPU.CaptureCnt & (1u << 24u)) != 0u)
+                        || ((GPU.GPU2D_A.DispCnt & 0x0108u) == 0x0108u));
+                if (captureNeeds3D)
                 {
-                    StructuredCaptureScreenSwap = GPU.ScreenSwap;
-                    StructuredCaptureScreenSwapValid = true;
-                    Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
-                    Rend3D->BeginCaptureFrame();
-                    Rend3D->PrepareCaptureFrame();
-                    StructuredCapturePreparedThisFrame = true;
+                    if (!StructuredCapturePreparedThisFrame)
+                    {
+                        StructuredCaptureScreenSwap = GPU.ScreenSwap;
+                        StructuredCaptureScreenSwapValid = true;
+                        Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
+                        Rend3D->BeginCaptureFrame();
+                        Rend3D->PrepareCaptureFrame();
+                        StructuredCapturePreparedThisFrame = true;
+                    }
+                    Output3D = Rend3D->GetLine(static_cast<int>(line));
+                    PrepareStructuredCaptureLine(line, Output3D);
                 }
-                Output3D = Rend3D->GetLine(static_cast<int>(line));
-                PrepareStructuredCaptureLine(line, Output3D);
+                else
+                    StructuredCaptureCompositeLineValid = false;
+                DoCapture(line);
             }
-            else
-                StructuredCaptureCompositeLineValid = false;
-            DoCapture(line);
+
+            Rend2D_B->DrawScanline(line);
+            DrawScanlineB(line, dstB);
         }
-#else
-        if (GPU.CaptureEnable)
-            DoCapture(line);
+        else
 #endif
+        {
+            // draw BG/OBJ layers
+            Rend2D_A->DrawScanline(line);
+            Rend2D_B->DrawScanline(line);
+
+            // draw the final screen output
+            DrawScanlineA(line, dstA);
+            DrawScanlineB(line, dstB);
+
+            // perform display capture if enabled
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (GPU.CaptureEnable)
+                DoCapture(line);
+#else
+            if (GPU.CaptureEnable)
+                DoCapture(line);
+#endif
+        }
     }
     else
     {
@@ -995,6 +1018,37 @@ void SoftRenderer::StoreStructuredCaptureLine(
     bool lineUses3D = false;
     bool wroteMetadata = false;
 
+    // Invalidate the destination capture line before rewriting so Engine B
+    // cannot sample a mix of this frame and a previous opposite-phase frame.
+    {
+        const std::size_t destinationLine =
+            static_cast<std::size_t>((destinationAddress & 0xFFFFu) / 256u);
+        if (destinationLine < 192u)
+        {
+            const std::size_t validIndex =
+                static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
+            const std::size_t linePixelBase = destinationLine * 256u;
+            std::memset(
+                StructuredCapturePlanes.data() + captureBase + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            std::memset(
+                StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            std::memset(
+                StructuredCapturePlanes.data()
+                    + captureBase
+                    + (2u * StructuredPixelCount)
+                    + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            StructuredCaptureLineValid[validIndex] = 0;
+            StructuredCaptureLineUses3D[validIndex] = 0;
+            StructuredCaptureLineGeneration[validIndex] = 0;
+        }
+    }
+
     const u32 copyWidth = std::min<u32>(width, 256u);
     for (u32 x = 0; x < copyWidth; ++x)
     {
@@ -1031,7 +1085,9 @@ void SoftRenderer::StoreStructuredCaptureLine(
             {
                 const std::size_t sourceLine = static_cast<std::size_t>(address / 256u);
                 const std::size_t validIndex = static_cast<std::size_t>(sourceBBank) * 192u + sourceLine;
-                if (StructuredCaptureLineValid[validIndex] != 0u)
+                if (StructuredCaptureLineValid[validIndex] != 0u
+                    && StructuredCaptureLineGeneration[validIndex]
+                        == StructuredCaptureProducerGeneration)
                 {
                     const std::size_t sourceBase = static_cast<std::size_t>(sourceBBank) * 3u * StructuredPixelCount;
                     const std::size_t sourceIndex = static_cast<std::size_t>(address);
@@ -1153,6 +1209,7 @@ void SoftRenderer::StoreStructuredCaptureLine(
             const std::size_t validIndex = static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
             StructuredCaptureLineValid[validIndex] = 1;
             StructuredCaptureLineUses3D[validIndex] = lineUses3D ? 1 : 0;
+            StructuredCaptureLineGeneration[validIndex] = StructuredCaptureProducerGeneration;
         }
     }
 }
@@ -1176,6 +1233,8 @@ bool SoftRenderer::DrawStructuredCapturePixel(u32 engine, u32* destination, u32 
             continue;
         const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + (captureAddress / 256u);
         if (StructuredCaptureLineValid[validIndex] == 0u)
+            continue;
+        if (StructuredCaptureLineGeneration[validIndex] != StructuredCaptureProducerGeneration)
             continue;
 
         const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
