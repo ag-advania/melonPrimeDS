@@ -1361,6 +1361,13 @@ void MetalRenderer::SyncVRAMCapture(
             "bank=%u start=%u size=%u\n",
             bank, start, len);
     }
+
+    // MELONPRIME_METAL_READBACK_EXPLICIT_V1 (PR-6): ARM CPU VRAM reads are
+    // an allowed explicit reason; count bytes separately from normal-path.
+    const uint64_t bytes = (len == 0)
+        ? (128ull * 128ull * sizeof(uint16_t))
+        : (static_cast<uint64_t>(len) * 64ull * 256ull * sizeof(uint16_t));
+    MetalRecordExplicitReadbackBytes(MetalReadbackReason::CpuVramRead, bytes);
 }
 
 bool MetalRenderer::MetalCaptureReady() const

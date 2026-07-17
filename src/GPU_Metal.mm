@@ -36,6 +36,7 @@
 #include "GPU3D_Metal.h"
 #include "GPU3D_MetalCompute.h"
 #include "GPU_MetalStrictDiagnostics.h"
+#include "GPU_MetalReadback.h"
 #include "NDS.h"
 
 namespace melonDS
@@ -1252,6 +1253,7 @@ void MetalRenderer::VBlank()
         MetalFullGpuFrameStatsRecord(
             FullGpuState->FrameStats,
             rendered, false, !rendered, FullGpuState->BlockedByCaptureFeedback);
+        MetalReadbackStatsNoteFrame();
         return;
     }
 
@@ -1270,6 +1272,7 @@ void MetalRenderer::VBlank()
         FullGpuState->Completed = MetalFullGpuState::CpuComposite;
         MetalFullGpuFrameStatsRecord(FullGpuState->FrameStats, false, true, false, false);
     }
+    MetalReadbackStatsNoteFrame();
 }
 
 void MetalRenderer::SwapBuffers()

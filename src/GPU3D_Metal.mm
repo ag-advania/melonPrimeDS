@@ -13,6 +13,7 @@
 #include "GPU3D_Metal.h"
 #include "GPU3D_TexcacheMetal.h"
 #include "GPU_MetalStrictDiagnostics.h"
+#include "GPU_MetalReadback.h"
 #include "MetalContext.h"
 
 #include <chrono>
@@ -1159,7 +1160,16 @@ void MetalRenderer3D::RenderFrame()
                 if (CpuReadbackRequired)
                 {
                     if (ReadbackNativeColorTargetToLineBuffer())
-                        perfFrame.CpuReadbackBytes = 256ull * 192ull * 4ull;
+                    {
+                        // Soft compositor still consumes GetLine() on
+                        // non-Full-GPU frames (PR-7 removes this path).
+                        const uint64_t bytes = 256ull * 192ull * 4ull;
+                        perfFrame.CpuReadbackBytes = bytes;
+                        MetalRecordNormalReadbackBytes(bytes);
+                        MetalRecordExplicitReadbackBytes(
+                            MetalReadbackReason::SoftCompositorGetLine,
+                            bytes);
+                    }
                 }
                 else
                     State->NativeLineReady = false;

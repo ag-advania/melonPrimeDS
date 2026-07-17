@@ -10,8 +10,8 @@
 | PR-2 | capture differential scaffold | **完了（部分）** | `f83aeea5` | EXPERIMENT flag、Soft対Metal candidate、artifact／CSV、homebrew設計。実ROM／homebrew ROM／capture-backed Bは未 |
 | PR-3 | native canonical capture storage | **完了（部分）** | `f75ba9f4` | R16Uint native、scale非依存再生成、upload／readback直結。Enhanced cache／実ROM diff未 |
 | PR-4 | per-scanline／segment capture | **完了（部分）** | `87c79f76` | segment loop A→B→Capture。ticket／ping-pong／実ROM同frame feedback未 |
-| PR-5 | capture Full-GPU cutover | **完了（部分）** | （本コミット） | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
-| PR-6 | normal readback 0 | 未着手 | — | |
+| PR-5 | capture Full-GPU cutover | **完了（部分）** | `9b256370` | CaptureCnt exclusion 撤廃。実ROM／strict counter／diff 0未 |
+| PR-6 | normal readback 0 | **完了（部分）** | （本コミット） | reason／counter 導入。Soft GetLine／UploadCpu 削除は PR-7 待ち |
 | PR-7 | SoftRenderer 継承撤廃 | 未着手 | — | M4/M5 後 |
 | PR-8 | Compute RasterReference 撤廃 | 未着手 | — | |
 | PR-9 | presenter MetalTexture-only | 未着手 | — | |
@@ -79,6 +79,18 @@
 
 - 6000 frame strict counter
 - 実ROM／homebrew／scale matrix
+
+## PR-6 要約（2026-07-17）
+
+追加:
+
+- `MetalReadbackReason` + normal／explicit byte counters
+- SyncVRAMCapture / Soft GetLine を分類計上
+- 600 frame ごとの readback ログ
+
+未削除（PR-7）:
+
+- Soft VBlank／GetLine／ComposeMetalVisibleOutput CPU upload
 
 ## PR-0 証拠要約（2026-07-17）
 
