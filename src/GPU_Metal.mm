@@ -1189,60 +1189,52 @@ void MetalRenderer::VBlank()
             // referencing capture-backed VRAM that has never actually been
             // captured into (Meta[layer].Valid false), which has nothing to
             // do with whether a capture is active this exact frame.
-            const bool captureRelatedRejection =
+            FullGpuState->BlockedByCaptureFeedback =
                 MetalCaptureFrameHadCapture() ||
                 GPU.CaptureEnable ||
                 !MetalCaptureResourcesCoherent();
-            FullGpuState->BlockedByCaptureFeedback = captureRelatedRejection;
-            if (captureRelatedRejection)
-            {
-                // MELONPRIME_METAL_CAPTURE_FEEDBACK_COOLDOWN_V1: keep Soft
-                // path armed across Start3DRendering's CaptureEnable=false
-                // window so we do not RetainPrevious-loop every frame.
-                FullGpuState->CaptureFeedbackCooldownFrames =
-                    kMidFrameInvalidationCooldownFrames;
-            }
-            // Always sticky-block Full-GPU retries after any rejection.
-            // Soft DrawScanline did not run for this FrameActive attempt, so
-            // the only way to keep the picture updating is Soft on subsequent
-            // frames -- not another Full-GPU attempt that RetainPreviouss.
-            FullGpuState->BlockedByMidFrameInvalidation = true;
-            FullGpuState->MidFrameInvalidationCooldownFrames =
-                kMidFrameInvalidationCooldownFrames;
             if (!FullGpuState->LoggedRejected)
             {
                 FullGpuState->LoggedRejected = true;
                 std::fprintf(stderr,
                     "[MelonPrime] metal full-gpu: frame rejected; "
-                    "retaining previous frame and using CPU fallback while "
-                    "same-frame capture feedback remains active "
-                    "(stage=%s)\n",
+                    "retaining previous frame "
+                    "(stage=%s; no silent Soft mid-frame escape)\n",
                     rejectionStage);
             }
 
-            // Same-frame display-capture feedback is a known, catalogued gap,
-            // so it does not trip the strict assert. Only a rejection with
-            // NEITHER capture-related cause NOR the sticky mid-frame block
-            // we just armed is unexpected.
-            if (!captureRelatedRejection &&
-                FullGpuState->LoggedRejectionDetailCount < 10)
+            // Plan §11.4 / standing rule: do not silently return to Software
+            // after FrameActive. Known capture-feedback / mid-frame sticky
+            // blocks are catalogued; only unexpected rejections arm the
+            // mid-frame cooldown so the *next* frames choose Soft at
+            // eligibility (Soft DrawScanline from the start), not mid-frame.
+            if (!FullGpuState->BlockedByCaptureFeedback &&
+                !FullGpuState->BlockedByMidFrameInvalidation)
             {
-                FullGpuState->LoggedRejectionDetailCount++;
-                std::fprintf(stderr,
-                    "[MelonPrime] metal full-gpu: unexpected rejection detail "
-                    "stage=%s frameValid=%d captureFrameSupported=%d "
-                    "captureEnable=%d captureCntBit31=%d screensEnabled=%d\n",
-                    rejectionStage,
-                    FullGpuState->FrameValid ? 1 : 0,
-                    MetalCaptureFrameSupported() ? 1 : 0,
-                    GPU.CaptureEnable ? 1 : 0,
-                    (GPU.CaptureCnt & (1u << 31)) ? 1 : 0,
-                    GPU.ScreensEnabled ? 1 : 0);
+                if (FullGpuState->LoggedRejectionDetailCount < 10)
+                {
+                    FullGpuState->LoggedRejectionDetailCount++;
+                    std::fprintf(stderr,
+                        "[MelonPrime] metal full-gpu: unexpected rejection detail "
+                        "stage=%s frameValid=%d captureFrameSupported=%d "
+                        "captureEnable=%d captureCntBit31=%d screensEnabled=%d\n",
+                        rejectionStage,
+                        FullGpuState->FrameValid ? 1 : 0,
+                        MetalCaptureFrameSupported() ? 1 : 0,
+                        GPU.CaptureEnable ? 1 : 0,
+                        (GPU.CaptureCnt & (1u << 31)) ? 1 : 0,
+                        GPU.ScreensEnabled ? 1 : 0);
+                }
                 MetalStrictGpuOnlyViolation(
                     "MetalRenderer::VBlank",
                     "full-gpu frame rejected mid-render for a reason other than "
                     "known display-capture feedback, despite eligibility having "
                     "passed in Start3DRendering");
+                // MELONPRIME_METAL_VBLANK_REJECTION_COOLDOWN_V1: next frames
+                // become Soft at eligibility (not a mid-frame Soft escape).
+                FullGpuState->BlockedByMidFrameInvalidation = true;
+                FullGpuState->MidFrameInvalidationCooldownFrames =
+                    kMidFrameInvalidationCooldownFrames;
             }
         }
         MetalFullGpuFrameStatsRecord(

@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""PR-5 follow-up: capture Full-GPU stays gated until feedback is ready.
-
-After the cutover freeze regression, capture-start frames must Soft-fallback
-again (CaptureCnt bit31 exclusion), and VBlank rejections must sticky-cooldown.
-"""
+"""Capture Full-GPU gate + no silent Soft mid-frame escape."""
 
 from __future__ import annotations
 
@@ -17,20 +13,23 @@ def main() -> int:
     issues: list[str] = []
     full = (ROOT / "src/GPU_MetalFullGpuMethods.inc").read_text(encoding="utf-8")
     if "if (GPU.CaptureCnt & (1u << 31))" not in full:
-        issues.append("CaptureCnt bit31 Soft gate missing (required after freeze fix)")
+        issues.append("CaptureCnt bit31 eligibility Soft gate missing")
     if "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" not in full:
         issues.append("missing CAPTURE_FULLGPU_GATED_V2 marker")
-    if "CaptureFeedbackCooldownFrames" not in full:
-        issues.append("missing CaptureFeedbackCooldownFrames sticky cooldown")
-    if "MELONPRIME_METAL_CAPTURE_FULLGPU_CUTOVER_V1" in full and \
-            "MELONPRIME_METAL_CAPTURE_FULLGPU_GATED_V2" not in full:
-        issues.append("stale unconditional cutover marker without gate")
+    if "CaptureFeedbackCooldownFrames" in full:
+        issues.append(
+            "CaptureFeedbackCooldownFrames Soft-escape cooldown must not exist "
+            "(plan forbids silent Software return)"
+        )
 
     mm = (ROOT / "src/GPU_Metal.mm").read_text(encoding="utf-8")
-    if "CaptureFeedbackCooldownFrames" not in mm:
-        issues.append("VBlank rejection must arm CaptureFeedbackCooldownFrames")
-    if "BlockedByMidFrameInvalidation = true" not in mm:
-        issues.append("VBlank rejection must sticky-block Full-GPU retries")
+    if "no silent Soft mid-frame escape" not in mm:
+        issues.append("VBlank rejection log must state no silent Soft escape")
+    if "CaptureFeedbackCooldownFrames" in mm:
+        issues.append("VBlank must not arm CaptureFeedback Soft-escape cooldown")
+    # Must not always Soft-block on every rejection.
+    if "Always sticky-block Full-GPU retries after any rejection" in mm:
+        issues.append("must not always Soft-escape after Full-GPU rejection")
 
     header = (ROOT / "src/GPU_Metal.h").read_text(encoding="utf-8")
     if "class MetalRenderer : public SoftRenderer" not in header:
