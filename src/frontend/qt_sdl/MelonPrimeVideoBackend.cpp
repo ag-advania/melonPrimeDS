@@ -10,6 +10,10 @@
 namespace MelonPrime::VideoBackend {
 
 #if defined(MELONPRIME_ENABLE_METAL)
+namespace {
+bool gSessionMetalInitFailed = false;
+}
+
 bool ShouldForceMetalPresenterFromEnv()
 {
     const char* env = std::getenv("MELONPRIME_FORCE_METAL_PRESENTER");
@@ -20,6 +24,16 @@ bool ShouldForceMetalRendererFromEnv()
 {
     const char* env = std::getenv("MELONPRIME_FORCE_METAL_RENDERER");
     return env != nullptr && env[0] == '1';
+}
+
+void SetSessionMetalInitFailed(bool failed)
+{
+    gSessionMetalInitFailed = failed;
+}
+
+bool SessionMetalInitFailed()
+{
+    return gSessionMetalInitFailed;
 }
 #endif
 
@@ -88,6 +102,12 @@ bool RendererRequiresOpenGLContext(int renderer)
 PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRenderer)
 {
 #if defined(MELONPRIME_ENABLE_METAL)
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: Metal Init failed this session --
+    // present with OpenGL until the user successfully reselects Metal.
+    // Never persisted to config.
+    if (SessionMetalInitFailed())
+        return PresentationBackend::OpenGL;
+
     // Phase 4/7 bootstrap (see ShouldForceMetalPresenterFromEnv() and
     // ShouldForceMetalRendererFromEnv()). Checked
     // before the GL branch so both MainWindow::createScreenPanel() and

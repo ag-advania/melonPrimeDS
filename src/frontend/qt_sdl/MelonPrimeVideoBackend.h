@@ -61,6 +61,11 @@ namespace MelonPrime::VideoBackend {
     // ResolvePresentationBackend) once Phase 9 lands.
     bool ShouldForceMetalPresenterFromEnv();
     bool ShouldForceMetalRendererFromEnv();
+
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: session-only OpenGL presentation
+    // after Metal renderer Init() failed. Never written to config.
+    void SetSessionMetalInitFailed(bool failed);
+    bool SessionMetalInitFailed();
 #endif
 
 } // namespace MelonPrime::VideoBackend

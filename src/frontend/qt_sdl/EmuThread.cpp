@@ -1301,6 +1301,38 @@ void EmuThread::updateRenderer()
 #endif
         default: __builtin_unreachable();
         }
+
+#if defined(MELONPRIME_ENABLE_METAL) && defined(MELONPRIME_DS)
+        // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: Metal Init() failure leaves
+        // SoftRenderer installed (GPU::SetRenderer). Switch this session to
+        // OpenGL with an explicit OSD -- never silent, never config write.
+        if ((videoRenderer == renderer3D_Metal ||
+             videoRenderer == renderer3D_MetalCompute) &&
+            dynamic_cast<SoftRenderer*>(&nds->GetRenderer()) != nullptr)
+        {
+            MelonPrime::VideoBackend::SetSessionMetalInitFailed(true);
+            std::fprintf(stderr,
+                "[MelonPrime] Metal renderer initialization failed. "
+                "Temporarily using OpenGL for this session.\n");
+            emuInstance->osdAddMessage(0,
+                "Metal renderer initialization failed. "
+                "Temporarily using OpenGL for this session. "
+                "See the log for the failing Metal stage.");
+#ifdef OGLRENDERER_ENABLED
+            videoRenderer = renderer3D_OpenGL;
+            nds->SetRenderer(std::make_unique<GLRenderer>(*nds, false));
+#else
+            videoRenderer = renderer3D_Software;
+#endif
+            videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                true, videoRenderer);
+        }
+        else if (videoRenderer == renderer3D_Metal ||
+                 videoRenderer == renderer3D_MetalCompute)
+        {
+            MelonPrime::VideoBackend::SetSessionMetalInitFailed(false);
+        }
+#endif
     }
     lastVideoRenderer = videoRenderer;
 

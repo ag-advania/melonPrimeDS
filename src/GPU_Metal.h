@@ -115,7 +115,7 @@ private:
             &OutputState, std::move(next), std::memory_order_acq_rel);
     }
 
-    void ConfigureMetal2DMirror(void* preferredDevice);
+    bool ConfigureMetal2DMirror(void* preferredDevice);
     bool ConfigureMetalVisibleOutput(void* preferredDevice);
     bool InitializeMetalFullGpuOutput();
     bool IsMetalFullGpuFrameEligible() const;

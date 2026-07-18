@@ -526,33 +526,58 @@ bool MetalRenderer::GetFramebuffers(void** top, void** bottom)
 
 bool MetalRenderer::Init()
 {
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: required pipelines must succeed.
+    // There is no CpuBgra/Soft compositor left after PR-7/PR-9 -- Init()
+    // must not return true with a permanently empty MetalTexture path.
     std::fprintf(stderr,
-        "[MelonPrime] metal renderer: initializing native Metal 3D GetLine integration path\n");
-    if (!Rend3D->Init())
+        "[MelonPrime] metal renderer: initializing\n");
+
+    auto logInitFailure = [](const char* stage) {
+        std::fprintf(stderr,
+            "[MelonPrime] Metal renderer initialization failed at stage=%s; "
+            "no displayable MetalTexture path is available\n",
+            stage);
+    };
+
+    if (!Rend3D || !Rend3D->Init())
+    {
+        logInitFailure("3d-renderer");
         return false;
+    }
 
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
-    ConfigureMetal2DMirror(preferredDevice);
+    if (!preferredDevice)
+    {
+        logInitFailure("preferred-device");
+        return false;
+    }
+
+    if (!ConfigureMetal2DMirror(preferredDevice))
+    {
+        logInitFailure("2d-renderer");
+        return false;
+    }
+
     if (!ConfigureMetalVisibleOutput(preferredDevice))
     {
-        std::fprintf(stderr,
-            "[MelonPrime] metal visible output: initialization failed; CPU output remains available\n");
+        logInitFailure("visible-output");
+        return false;
     }
+
     if (!InitializeMetalFullGpuOutput())
     {
-        std::fprintf(stderr,
-            "[MelonPrime] metal full-gpu: initialization failed; stable CPU compositor path remains active\n");
+        logInitFailure("full-gpu-output");
+        return false;
     }
+
     if (!ConfigureMetalCaptureState(preferredDevice))
     {
-        std::fprintf(stderr,
-            "[MelonPrime] metal display capture: initialization failed; "
-            "capture frames remain on the CPU path\n");
+        logInitFailure("display-capture");
+        return false;
     }
-    if (EnsureMetalCaptureExperimentState(preferredDevice))
-    {
-        // Logged inside EnsureMetalCaptureExperimentState on first success.
-    }
+
+    // Debug capture experiment scaffold is optional.
+    EnsureMetalCaptureExperimentState(preferredDevice);
     return true;
 }
 
@@ -607,23 +632,32 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     }
 
     void* preferredDevice = Metal3DPreferredDevice(Rend3D.get());
-    ConfigureMetal2DMirror(preferredDevice);
-    ConfigureMetalVisibleOutput(preferredDevice);
-    ConfigureMetalCaptureState(preferredDevice);
+    if (!ConfigureMetal2DMirror(preferredDevice) ||
+        !ConfigureMetalVisibleOutput(preferredDevice) ||
+        !ConfigureMetalCaptureState(preferredDevice))
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal renderer: SetRenderSettings pipeline refresh failed; "
+            "no displayable MetalTexture path is available\n");
+    }
 }
 
-void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
+bool MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
 {
     void* preferredQueue = Metal3DCommandQueue(Rend3D.get());
-    bool okA = !Metal2D_A ||
+    if (!preferredDevice || !preferredQueue)
+        return false;
+    const bool okA = Metal2D_A &&
         Metal2D_A->Configure(preferredDevice, preferredQueue, ScaleFactor);
-    bool okB = !Metal2D_B ||
+    const bool okB = Metal2D_B &&
         Metal2D_B->Configure(preferredDevice, preferredQueue, ScaleFactor);
     if (!okA || !okB)
     {
         std::fprintf(stderr,
-            "[MelonPrime] metal 2d: scaffold allocation failed; keeping Phase 2/3 CPU-composited output visible\n");
+            "[MelonPrime] metal 2d: configuration failed\n");
+        return false;
     }
+    return true;
 }
 
 
