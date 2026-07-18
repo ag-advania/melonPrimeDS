@@ -1113,46 +1113,60 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     // Temporal carries from the previous frame's latched snapshot, run before
     // Engine A restores planes so they only fill genuinely empty/ambiguous
     // lines rather than fighting the phase-cache repair below.
-    carryPreviousLatchedScreenLines(
-        previousSnapshot,
-        true,
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    carryPreviousLatchedScreenLines(
-        previousSnapshot,
-        false,
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
-    carryPreviousTemporalOverlayPixels(
-        previousSnapshot,
-        true,
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    carryPreviousTemporalOverlayPixels(
-        previousSnapshot,
-        false,
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
-    carryPreviousFullRegularComp7Overlay(
-        previousSnapshot,
-        true,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    carryPreviousFullRegularComp7Overlay(
-        previousSnapshot,
-        false,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
+    //
+    // These carry line/pixel content from previousSnapshot into the CURRENT
+    // physical Top/Bottom without checking previousSnapshot.physicalScreenSwap
+    // against the current phase (screenSwapToggledThisFrame is computed above
+    // but was never used to gate these calls). When ScreenSwap flips between
+    // frames, physical Top and Bottom swap which engine drives them; carrying
+    // "previous Top" into "current Top" then injects the opposite engine's
+    // content (and its 3D-slot/above-plane/protected-black control bits)
+    // into the wrong physical LCD. Skip entirely whenever an authoritative
+    // packed physical buffer exists (same hasPackedPhysical contract as the
+    // Engine A phase cache below) or when the phase just changed.
+    if (!hasPackedPhysical && !screenSwapToggledThisFrame)
+    {
+        carryPreviousLatchedScreenLines(
+            previousSnapshot,
+            true,
+            destination.packedTopPlane0,
+            destination.packedTopPlane1,
+            destination.packedTopControl,
+            destination.packedTopLineMeta);
+        carryPreviousLatchedScreenLines(
+            previousSnapshot,
+            false,
+            destination.packedBottomPlane0,
+            destination.packedBottomPlane1,
+            destination.packedBottomControl,
+            destination.packedBottomLineMeta);
+        carryPreviousTemporalOverlayPixels(
+            previousSnapshot,
+            true,
+            destination.packedTopPlane0,
+            destination.packedTopPlane1,
+            destination.packedTopControl,
+            destination.packedTopLineMeta);
+        carryPreviousTemporalOverlayPixels(
+            previousSnapshot,
+            false,
+            destination.packedBottomPlane0,
+            destination.packedBottomPlane1,
+            destination.packedBottomControl,
+            destination.packedBottomLineMeta);
+        carryPreviousFullRegularComp7Overlay(
+            previousSnapshot,
+            true,
+            destination.packedTopPlane1,
+            destination.packedTopControl,
+            destination.packedTopLineMeta);
+        carryPreviousFullRegularComp7Overlay(
+            previousSnapshot,
+            false,
+            destination.packedBottomPlane1,
+            destination.packedBottomControl,
+            destination.packedBottomLineMeta);
+    }
 
     // Sapphire Engine A Top/Bottom phase cache. physicalScreenSwap is only the
     // phase key (which physical LCD currently hosts Engine A). Cache stores

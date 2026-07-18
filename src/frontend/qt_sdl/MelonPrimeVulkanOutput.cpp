@@ -2141,20 +2141,18 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
         && screenUsesStructuredHandoffWithoutCurrent3d(
             softPackedSnapshot.bottomScreenStats,
             softPackedSnapshot.topScreenStats);
-    const bool topPackedCarryState =
-        (screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.topScreenStats)
-            || screenUsesPlainStructured3dSlot(softPackedSnapshot.topScreenStats))
-        && bottomStructuredHandoffNoCurrent3d;
-    const bool bottomPackedCarryState =
-        (screenUsesPlainStructuredComp7HandoffSlot(softPackedSnapshot.bottomScreenStats)
-            || screenUsesPlainStructured3dSlot(softPackedSnapshot.bottomScreenStats))
-        && topStructuredHandoffNoCurrent3d;
-    const bool topPackedCarryFromPrevious =
-        lastValidTopPackedAvailable
-        && topPackedCarryState;
-    const bool bottomPackedCarryFromPrevious =
-        lastValidBottomPackedAvailable
-        && bottomPackedCarryState;
+    // Disabled: lastValidTopPacked/lastValidBottomPacked carry the ENTIRE
+    // previous packed screen forward keyed only on the CURRENT frame's
+    // content shape (plain structured comp7/3d slot + opposite screen
+    // handoff-without-3d) -- with no check against the phase
+    // (physicalScreenSwap/captureScreenSwap/renderer3dOwner) the saved
+    // buffer was captured under. When ScreenSwap flips between frames,
+    // physical Top and Bottom swap which engine drives them; blindly
+    // memcpy-ing "last valid Top" into "current Top" then injects the
+    // opposite phase's whole screen, producing a complete Top/Bottom swap
+    // on alternating ScreenSwap scenes.
+    const bool topPackedCarryFromPrevious = false;
+    const bool bottomPackedCarryFromPrevious = false;
     if (topPackedCarryFromPrevious)
     {
         std::memcpy(
