@@ -15,22 +15,23 @@ struct StructuredVulkanSnapshotSource
 {
     const u32* plane[2][3]{};
     const u32* lineMeta[2]{};
-    // Optional Sapphire packed physical buffers (stride 256*3+1). When set,
-    // these are the authoritative Top/Bottom source for latch.
+    // Sapphire packed physical buffers (stride 256*3+1), already merged by
+    // the desktop producer and authoritative for the latch.
     const u32* packedTop{};
     const u32* packedBottom{};
-    const u32* enginePlane[2][3]{};
-    const u8* engineLineUsesCapture3d[2]{};
     const u32* capture3dSource{};
+    const u8* captureLineUses3dMask{};
     const u8* capture3dSourceLineValid{};
     const u8* screenNeedsCapture3d[2]{};
     bool hasCapture3dSource{};
     bool captureScreenSwap{};
     bool captureScreenSwapValid{};
-    bool physicalScreenSwap{};
-    bool physicalScreenSwapStable{true};
+    bool screenSwapLatched{};
     bool captureBackedClass4Only{};
+    bool captureBackedPartialClass0Only{};
+    bool captureBackedFullClass0AlternatingCapture{};
     bool captureBackedHasStructured2DSource{};
+    u32 structuredCopyLines{};
     int frontBuffer{-1};
     bool renderer3dOwnerIsTop{};
     u64 generation{};
@@ -44,19 +45,13 @@ class MelonPrimeVulkanSnapshotBuilder
 {
 public:
     void reset() noexcept;
+    bool takeRegularCaptureTransitionResyncRequest() noexcept;
     bool build(
         const StructuredVulkanSnapshotSource& source,
         u64 frameId,
         SoftPackedFrameSnapshot& destination);
 
 private:
-    struct PhaseHistory
-    {
-        SoftPackedFrameSnapshot snapshot{};
-        u64 generation{};
-        bool valid{};
-    };
-
     struct EnginePhaseCache
     {
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> plane0{};
@@ -66,23 +61,25 @@ private:
         bool valid{};
     };
 
-    // Two physical-only phases plus four exact
-    // (physical ScreenSwap, capture owner) phases for packed recovery.
-    // Capture history is four phases of (physicalScreenSwap, captureScreenSwap)
-    // so opposite PhysicalScreenSwap frames never share one capture bucket.
-    //
-    // A ScreenSwap-toggling title alternates ownership every frame. Packed
-    // line recovery must use the last snapshot from the SAME ownership phase;
-    // recovering from the immediately previous opposite phase fills Top with
-    // the other engine's content and looks like a complete Top/Bottom swap.
-    std::array<PhaseHistory, 6> phaseHistory{};
-    std::array<PhaseHistory, 4> capturePhaseHistory{};
-
     // Sapphire-compatible Engine A Top/Bottom phase caches. Identity is
     // "Engine A when routed to Top/Bottom", not "physical Top/Bottom history".
     SoftPackedFrameSnapshot previousSnapshot{};
     EnginePhaseCache engineATop{};
     EnginePhaseCache engineABottom{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidTopScreenCapture3dDsFrame{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidBottomScreenCapture3dDsFrame{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidTopScreenResolvedPrimary{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidBottomScreenResolvedPrimary{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidTopScreenResolvedPrimaryLines{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidBottomScreenResolvedPrimaryLines{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedAtypicalDisplayTopPrimary{};
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedAtypicalDisplayBottomPrimary{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> cachedAtypicalDisplayTopPrimaryLines{};
+    std::array<u8, SoftPackedFrameSnapshot::kLineCount> cachedAtypicalDisplayBottomPrimaryLines{};
+    bool hasLastValidTopScreenCapture3dDsFrame = false;
+    bool hasLastValidBottomScreenCapture3dDsFrame = false;
+    bool vulkanRegularCaptureTransitionResyncPending = false;
+    int vulkanStructuredCaptureGateFrames = 0;
     int framesSinceLastScreenSwapToggle = 1024;
     bool wasInAlternatingMode = false;
 };

@@ -676,7 +676,6 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     CurrentRenderScreenSwap = false;
     RenderSerial = 0;
     LastSuccessfulRenderSerial = 0;
-    LastSuccessfulRenderScreenSwap = false;
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
         PendingCompletedFrameSlot = -1;
@@ -827,7 +826,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
         LastSuccessfulRenderSerial = RenderSerial;
-        LastSuccessfulRenderScreenSwap = CurrentRenderScreenSwap;
         return;
     }
 
@@ -1128,12 +1126,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 
     LastSubmittedRenderPolygonCount = gpu.GPU3D.RenderNumPolygons;
     LastSuccessfulRenderSerial = RenderSerial;
-    LastSuccessfulRenderScreenSwap = CurrentRenderScreenSwap;
-}
-
-void VulkanRenderer3D::FinishRendering()
-{
-    (void)snapshotCompletedFrameAtVBlank();
 }
 
 void VulkanRenderer3D::RestartFrame(melonDS::GPU& gpu)
@@ -2385,6 +2377,11 @@ bool VulkanRenderer3D::AcquireCompletedFrameForStructured(
     Renderer3DCompletedFrameReference& reference)
 {
     reference = {};
+    // Capturing at VBlank 192 leaves the immutable image one render/POWCNT1
+    // ownership phase behind the packed 2D frame on alternating-screen scenes.
+    if (!snapshotCompletedFrameForStructured())
+        return false;
+
     const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
     if (PendingCompletedFrameSlot < 0
         || static_cast<u32>(PendingCompletedFrameSlot) >= CompletedFrameSlotCount)
@@ -2480,7 +2477,7 @@ void VulkanRenderer3D::ReleaseCompletedFrameView(const VulkanCompletedFrameView&
         ReleaseCompletedFrameReference(view.Reference);
 }
 
-bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
+bool VulkanRenderer3D::snapshotCompletedFrameForStructured()
 {
     if (!Initialized
         || !ColorImageInitialized
@@ -2527,7 +2524,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         Log(LogLevel::Warn,
             "VulkanCompleted3D: no free immutable image slot serial=%llu owner=%u",
             static_cast<unsigned long long>(RenderSerial),
-            LastSuccessfulRenderScreenSwap ? 1u : 0u);
+            CurrentRenderScreenSwap ? 1u : 0u);
         return false;
     }
 
@@ -2641,7 +2638,11 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         CompletedFrameSlot& slot = CompletedFrameSlots[selectedSlot];
         slot.Serial = LastSuccessfulRenderSerial;
         slot.CompletionValue = ++CompletedFrameCompletionValue;
-        slot.OwnerLcd = LastSuccessfulRenderScreenSwap
+        // Sapphire associates the post-RunFrame color target with the backend's
+        // current ownership after the VCount-215 latch.  This matters when an
+        // early submission rendered the image before VCount 215 and the later
+        // call only refreshed CurrentRenderScreenSwap while skipping redraw.
+        slot.OwnerLcd = CurrentRenderScreenSwap
             ? Renderer3DPhysicalLcd::Top
             : Renderer3DPhysicalLcd::Bottom;
         slot.LayoutReady = true;
@@ -2651,7 +2652,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         PendingCompletedFrameSlot = static_cast<int>(selectedSlot);
         NextCompletedFrameSlot = (selectedSlot + 1u) % CompletedFrameSlotCount;
         Log(Vulkan2DPhaseTraceEnabled() ? LogLevel::Info : LogLevel::Debug,
-            "Vulkan2DPhase event=Completed3D VCount=192 completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
+            "Vulkan2DPhase event=Completed3D phase=PostRunFrame completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
             static_cast<unsigned long long>(slot.Serial),
             slot.OwnerLcd == Renderer3DPhysicalLcd::Top ? 1u : 0u,
             selectedSlot,
@@ -7579,7 +7580,6 @@ void VulkanRenderer3D::InvalidatePresentationState(bool discardColorTarget) noex
     clearLineCache();
     LastSubmittedRenderContext = nullptr;
     LastSuccessfulRenderSerial = 0u;
-    LastSuccessfulRenderScreenSwap = false;
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
         if (PendingCompletedFrameSlot >= 0
