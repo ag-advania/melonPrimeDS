@@ -17,9 +17,10 @@ Primary files:
 | `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeLanguageRegistry.h` | `LanguageInfo` struct fields, `SplashFontGroup` enum |
 | `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeLanguageRegistry.cpp` | `kLanguageInfos[]` table, `LanguageTagToMenuLang()`, `QLocaleLanguageToMenuLang()`, macOS `applePrefixes[]` |
 | `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeSplashLocalization.cpp` | `NoRomSplashUiFont()` — per-script font family lists |
-| `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc` | `kTranslations[]` — exact-match short-string translations |
-| `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc` | `kObjectTextTranslations[]` — objectName-keyed long descriptions |
-| `src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc` | Extra translation rows for upstream melonDS dialogs — **spliced into `kTranslations` via `#include`, lives in `qt_sdl/` root, not the `MelonPrimeLocalization/` subdir** |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeTranslations.inc` | `kTranslations[]` manifest — includes topic-based exact-match shards |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeDialogsTranslations.inc` | Manifest for upstream melonDS dialog translation shards, spliced into `kTranslations[]` |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeObjectTranslations.inc` | `kObjectTextTranslations[]` manifest — includes topic-based object-text shards |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrime*Translations*.inc` | Bounded translation data shards; edit the shard containing the relevant English key |
 | `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslationDynamic.cpp` | `Tr()`-family dynamic/decorated string handling (instance labels, slot labels, camera suffixes, etc.) |
 | `tools/ci/audits/localization/audit-melonprime-localization.py` | **Strict gate.** Must stay green. Covers the original languages + zh-Hant only (see "Scope note" below) |
 
@@ -42,15 +43,13 @@ Related docs (not indexed elsewhere — read these too):
    "Verifying a translation pack" below. This has bitten real packs twice in this
    repo's history (a 0-6% real-translation batch that self-reported 100%, and a
    systematic "display-name leak" artifact in an otherwise-good batch).
-3. **Never mechanically reformat the `.inc` translation files.** A row-based parser
-   used to "prettify" these files can silently drop the
-   `#include "MelonPrimeLocalizationMelondsDialogs.inc"` line — it lives inside the
-   `kTranslations` array body as non-brace literal text, not as a `{...}` row, so a
-   naive regenerator skips it and quietly loses 263 rows' worth of coverage with no
-   compiler error. This has already happened once in this repo and was caught only
-   by `grep -n "MelonPrimeLocalizationMelondsDialogs"` before commit. If you must
-   reformat, diff every row's key/value set before and after, and grep for that
-   `#include` line, before trusting the result.
+3. **Never flatten or mechanically reformat the `.inc` manifests and shards.**
+   `MelonPrimeTranslations.inc`, `MelonPrimeDialogsTranslations.inc`, and
+   `MelonPrimeObjectTranslations.inc` are include manifests whose rows live in
+   bounded topic shards. A row-only regenerator can silently discard include lines
+   and therefore entire sections of the catalog. If a structural rewrite is
+   unavoidable, compare every key/value set before and after and run both strict
+   localization audits before trusting the result.
 
 ## Adding a new language: step by step
 

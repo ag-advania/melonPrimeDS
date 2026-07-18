@@ -103,9 +103,9 @@ const char* ObjectTranslationFieldForLang(const ObjectTextTranslation& entry, Me
     return nullptr;
 }
 
-#include "MelonPrimeTranslations.inc"
+#include "inc/MelonPrimeTranslations.inc"
 
-#include "MelonPrimeObjectTranslations.inc"
+#include "inc/MelonPrimeObjectTranslations.inc"
 
 void ReportCatalogIssue(const char* context, const QString& key, const char* issue)
 {

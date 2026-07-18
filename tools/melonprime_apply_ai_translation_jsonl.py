@@ -11,10 +11,8 @@ The script inserts a `{MenuLangId::Language, "..."},` value into the matching
 translation row when that language is missing. Existing values are preserved by
 default; pass --replace-existing to replace them.
 
-"exact" rows are tried against MelonPrimeTranslations.inc first, then against
-MelonPrimeLocalizationMelondsDialogs.inc (a nested #include pulled into the
-same kTranslations array, holding melonDS settings-dialog strings) for any key
-not found in the first file.
+"exact" rows are applied across the exact-match shards included by
+MelonPrimeTranslations.inc.
 """
 
 from __future__ import annotations
@@ -118,33 +116,38 @@ def main() -> int:
     exact_rows = [r for r in rows if r.get("surface") == "exact"]
     obj_rows = [r for r in rows if r.get("surface") == "object"]
 
-    exact_changed_1, exact_not_found_1 = apply_to_file(
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc",
-        exact_rows,
-        args.replace_existing,
-    )
-    # Nested #include pulled in by MelonPrimeTranslations.inc (melonDS settings
-    # dialog strings); lives in qt_sdl/ root, not the MelonPrimeLocalization/
-    # subdir. Only try keys the first file did not have.
-    exact_changed_2, exact_not_found_2 = apply_to_file(
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc",
-        exact_not_found_1,
-        args.replace_existing,
-    )
-    exact_changed = exact_changed_1 + exact_changed_2
-    exact_skipped = len(exact_not_found_2)
+    localization = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/inc"
 
-    obj_changed, obj_not_found = apply_to_file(
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc",
-        obj_rows,
-        args.replace_existing,
-    )
+    def leaf_files(pattern: str) -> list[Path]:
+        return sorted(
+            path
+            for path in localization.glob(pattern)
+            if '#include "' not in path.read_text(encoding="utf-8")
+        )
+
+    exact_paths = leaf_files("MelonPrimeTranslations*.inc")
+    exact_paths += leaf_files("MelonPrimeDialogsTranslations*.inc")
+    exact_paths.append(localization / "MelonPrimeLocalizationMetalVideoPresets.inc")
+    object_paths = leaf_files("MelonPrimeObjectTranslations*.inc")
+
+    exact_changed = 0
+    exact_not_found = exact_rows
+    for path in exact_paths:
+        changed, exact_not_found = apply_to_file(path, exact_not_found, args.replace_existing)
+        exact_changed += changed
+    exact_skipped = len(exact_not_found)
+
+    obj_changed = 0
+    obj_not_found = obj_rows
+    for path in object_paths:
+        changed, obj_not_found = apply_to_file(path, obj_not_found, args.replace_existing)
+        obj_changed += changed
     obj_skipped = len(obj_not_found)
 
     print(f"[PASS] applied exact={exact_changed}, object={obj_changed}")
     print(f"[INFO] skipped exact={exact_skipped}, object={obj_skipped}")
-    if exact_not_found_2:
-        sample = ", ".join(sorted({r["key"] for r in exact_not_found_2})[:10])
+    if exact_not_found:
+        sample = ", ".join(sorted({r["key"] for r in exact_not_found})[:10])
         print(f"[WARN] exact keys not found in either file (sample): {sample}")
     if obj_not_found:
         sample = ", ".join(sorted({r["key"] for r in obj_not_found})[:10])

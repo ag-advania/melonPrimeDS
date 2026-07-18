@@ -21,8 +21,15 @@ public:
     WaylandPointerLock& operator=(const WaylandPointerLock&) = delete;
 
     // displayHandle must be wl_display*, surfaceHandle must be wl_surface*.
-    // Neither object is owned by this class.
-    bool setLocked(void* displayHandle, void* surfaceHandle, bool enabled);
+    // Neither object is owned by this class. hintSurfaceX/Y are the point
+    // (in the locked surface's local coordinate space, e.g. the DS panel's
+    // center mapped into the top-level window) the compositor should warp
+    // the (invisible) cursor to whenever the lock is released -- this keeps
+    // the cursor away from the window edge if a later re-lock exposes it
+    // during a brief gap. Ignored when enabled is false; the most recent
+    // hint from a prior enabled=true call is reused for that release.
+    bool setLocked(void* displayHandle, void* surfaceHandle, bool enabled,
+        int hintSurfaceX = 0, int hintSurfaceY = 0);
 
     [[nodiscard]] bool isLockRequested() const noexcept;
     [[nodiscard]] bool isLockActive() const noexcept;

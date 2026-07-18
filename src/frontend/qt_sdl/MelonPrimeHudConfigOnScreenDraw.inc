@@ -203,17 +203,85 @@ static int CountBuiltinRows(const HudEditElemDesc& d) {
     return n;
 }
 
-static QRectF ComputePropsPanelRect(const QRectF& elemRect, int totalRowCount)
+static QRectF ComputePropsPanelRect(const QRectF& elemRect, int totalRowCount, float panelW)
 {
     int visCount = std::min(totalRowCount, kPropMaxVisible);
     float h = visCount * kPropRowH + 4.0f + (s_anchorPickerOpen ? kAnchorGridH : 0.0f);
     float px = static_cast<float>(elemRect.right()) + 4.0f;
     float py = static_cast<float>(elemRect.top());
-    if (px + kPropPanelW > 256.0f) px = static_cast<float>(elemRect.left()) - kPropPanelW - 2.0f;
+    if (px + panelW > 256.0f) px = static_cast<float>(elemRect.left()) - panelW - 2.0f;
     if (py + h > 192.0f) py = 192.0f - h;
     if (px < 0.0f) px = 0.0f;
     if (py < 26.0f) py = 26.0f;
-    return QRectF(px, py, kPropPanelW, h);
+    return QRectF(px, py, panelW, h);
+}
+
+// ── Dynamic per-element props panel width ───────────────────────────────────
+// kPropLabelW/kPropCtrlW are fixed sizes tuned for typical English labels, and
+// remain the Crosshair panel's exact dimensions unchanged: that layout sits
+// tightly beside the Inner/Outer side panel and the live preview box within
+// the 256-wide DS screen, so it must never grow. The generic per-element
+// panel has no such neighbor to collide with, so its label/control columns
+// grow just enough to fit the currently selected element's actual translated
+// label and enum-value text, preventing cropping in longer languages (e.g.
+// French) or for verbose property names. Recomputed only when the selection
+// or the active menu language changes, so this is cheap to call every frame.
+static float s_dynLabelW = kPropLabelW;
+static float s_dynCtrlW  = kPropCtrlW;
+static int   s_dynWidthsForElem = -2; // -2 = never computed yet
+static UiText::MenuLangId s_dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
+
+static inline float DynPropsPanelW() { return s_dynLabelW + s_dynCtrlW + 4.0f; }
+static inline float DynAnchorGridCellW() { return (DynPropsPanelW() - 4.0f) / 3.0f; }
+
+static void RecomputeDynamicPanelWidths(int elemIdx, const QFont& smallFont)
+{
+    const UiText::MenuLangId lang = UiText::ActiveMenuLanguage();
+    if (elemIdx == s_dynWidthsForElem && lang == s_dynWidthsForLang) return;
+    s_dynWidthsForElem = elemIdx;
+    s_dynWidthsForLang = lang;
+
+    if (elemIdx < 0 || elemIdx >= kEditElemCount) {
+        s_dynLabelW = kPropLabelW;
+        s_dynCtrlW  = kPropCtrlW;
+        return;
+    }
+
+    const HudEditElemDesc& d = kEditElems[elemIdx];
+    const QFontMetrics fm(smallFont);
+
+    float labelW = kPropLabelW;
+    float ctrlW  = kPropCtrlW;
+
+    const auto measureLabel = [&](const QString& text) {
+        const float w = static_cast<float>(fm.horizontalAdvance(text)) + 4.0f;
+        if (w > labelW) labelW = w;
+    };
+    const auto measureCtrl = [&](const QString& text) {
+        const float w = static_cast<float>(fm.horizontalAdvance(text)) + 20.0f; // 2 arrow buttons + padding
+        if (w > ctrlW) ctrlW = w;
+    };
+
+    if (d.showKey)   measureLabel(UiText::Tr("Show"));
+    if (d.anchorKey) measureLabel(UiText::Tr("Anchor"));
+    if (d.colorRKey) measureLabel(UiText::Tr("Color"));
+
+    for (int i = 0; i < d.propCount; ++i) {
+        const HudEditPropDesc& pr = d.props[i];
+        measureLabel(UiText::Tr(pr.label));
+        if (pr.type == EditPropType::Enum && pr.extra1) {
+            const char* p = pr.extra1;
+            while (*p) {
+                const char* start = p;
+                while (*p && *p != '|') ++p;
+                measureCtrl(UiText::Tr(start, static_cast<int>(p - start)));
+                if (*p == '|') ++p;
+            }
+        }
+    }
+
+    s_dynLabelW = labelW;
+    s_dynCtrlW  = ctrlW;
 }
 
 static QRectF GetOrientToggleRect(int idx)
@@ -391,7 +459,10 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
     const int totalRows = builtinRows + d.propCount;
     if (totalRows <= 0) return;
 
-    QRectF panelRect = ComputePropsPanelRect(selRect, totalRows);
+    RecomputeDynamicPanelWidths(s_editSelected, smallFont);
+    const float dynPanelW = DynPropsPanelW();
+
+    QRectF panelRect = ComputePropsPanelRect(selRect, totalRows, dynPanelW);
     // Shadow
     p->setPen(Qt::NoPen); p->setBrush(kPanelShadow);
     p->drawRoundedRect(panelRect.translated(1.0, 1.0), kBtnCorner, kBtnCorner);
@@ -412,8 +483,8 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         if (rowIdx >= totalRows) break;
         float rowY = static_cast<float>(panelRect.top()) + 2.0f + vi * kPropRowH;
         float rowX = static_cast<float>(panelRect.left()) + 2.0f;
-        float ctrlX = rowX + kPropLabelW;
-        float ctrlW = kPropCtrlW;
+        float ctrlX = rowX + s_dynLabelW;
+        float ctrlW = s_dynCtrlW;
 
         int builtinIdx = rowIdx;
         bool isShowRow = false, isColorRow = false, isAnchorRow = false;
@@ -434,7 +505,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         if (isShowRow) {
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Show"));
             const bool visible = cfg.GetBool(d.showKey);
             QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
@@ -447,7 +518,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         } else if (isColorRow) {
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Color"));
             QColor curColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
             QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
@@ -466,7 +537,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             QRectF btnR(ctrlX + halfW, rowY + 1.0f, halfW, kPropRowH - 2.0f);
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
                         Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Anchor"));
             p->setBrush(kCtrlBg); p->setPen(Qt::NoPen);
             p->drawRoundedRect(valR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
@@ -485,7 +556,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr(pr.label));
 
             switch (pr.type) {
@@ -610,7 +681,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         int curAnchor = cfg.GetInt(d.anchorKey);
         float gridLeft = static_cast<float>(panelRect.left()) + 2.0f;
         float gridTop  = static_cast<float>(panelRect.top()) + 2.0f + visCount * kPropRowH + 2.0f;
-        float cellW = (kPropPanelW - 4.0f) / 3.0f;
+        float cellW = DynAnchorGridCellW();
         float cellH = kAnchorGridCellH;
         p->setFont(normalFont);
         for (int a = 0; a < 9; ++a) {
