@@ -126,6 +126,19 @@ private:
     // [backBuffer][physicalScreen 0=Top / 1=Bottom]. Authoritative Vulkan 2D
     // producer (Sapphire packed stride). ScreenPlanes are derived from this.
     std::array<u32, VulkanPackedPixelCount> VulkanPackedFramebuffer[2][2]{};
+    // Structured display-capture metadata (plane0/plane1/control per VRAM
+    // bank+line). Shared by both SoftRenderer2D instances (Rend2D_A /
+    // Rend2D_B) via Parent -- Sapphire drives both engines through a single
+    // GPU2D::SoftRenderer object, so its equivalent arrays are implicitly
+    // shared. melonPrimeDS has two separate engine instances; owning this
+    // here (keyed by VRAM bank+address, not by engine) is what lets Engine B
+    // read capture metadata that Engine-A hardware wrote. Validity is driven
+    // by per-line invalidate-before-write (StoreStructuredCaptureLine) and by
+    // InvalidateStructuredCaptureRange on genuine CPU/DMA VRAM writes --
+    // never by a visible-frame generation counter.
+    std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     std::array<u32, 192u * 17u> StructuredCaptureBackedSourceClassPixels{};
     std::array<u8, 192u> StructuredCaptureBackedExplicitSlot{};
@@ -163,6 +176,7 @@ private:
         u32 legacyVal2,
         u32 legacyControl);
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
+    void InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len);
     void BuildStructuredScreenLine(
         u32 engine,
         u32 screen,
