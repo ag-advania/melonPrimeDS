@@ -596,6 +596,11 @@ struct ScreenPanelMetal::Impl
     bool loggedGenerationRollback = false;
     bool loggedFrameSerialRollback = false;
     bool loggedMetalNeverProduced = false;
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: present one black drawable when
+    // emulation starts without a MetalTexture so the pre-ROM splash cannot
+    // remain stuck on the CAMetalLayer.
+    bool startupBlackClearDone = false;
+    bool loggedStartupBlackClear = false;
     bool loggedInvalidOutputMetadata = false;
     // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): a Metal-selected
     // renderer's own AcquireOutputLease() (GPU_Metal.mm) never returns
@@ -1167,6 +1172,7 @@ void ScreenPanelMetal::drawScreen()
                 m->lastGoodProducerId = 0;
                 m->lastGoodGeneration = 0;
                 m->lastGoodFrameSerial = 0;
+                m->startupBlackClearDone = false;
             }
 
             // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): short
@@ -1383,13 +1389,12 @@ void ScreenPanelMetal::drawScreen()
                         "ever produced within the startup grace window");
                 }
                 // else: still within the startup grace window and nothing
-                // retained either -- nothing to present this frame.
+                // retained -- fall through to a black clear so the pre-ROM
+                // splash cannot remain stuck on the CAMetalLayer.
             }
 
-            if (!finalMetalTextureForFrame)
-                return;
-
-            if (MetalDiagEnabled() && !m->loggedScreenPlacementDiag)
+            if (MetalDiagEnabled() && !m->loggedScreenPlacementDiag &&
+                finalMetalTextureForFrame)
             {
                 m->loggedScreenPlacementDiag = true;
                 fprintf(stderr,
@@ -1423,6 +1428,40 @@ void ScreenPanelMetal::drawScreen()
             m->lastGoodProducerId = 0;
             m->lastGoodGeneration = 0;
             m->lastGoodFrameSerial = 0;
+            m->startupBlackClearDone = false;
+            m->loggedMetalNeverProduced = false;
+            // Inactive: splash/UI may still be drawn below; no DS texture.
+        }
+
+        // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: when emulation is active with
+        // Metal selected but no MetalTexture yet, present a black clear
+        // instead of returning (which would leave the splash drawable).
+        const bool presentBlackOnly =
+            emuThread->emuIsActive() &&
+            !finalMetalTextureForFrame &&
+            (emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Metal ||
+             emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_MetalCompute);
+
+        if (!emuThread->emuIsActive() && !finalMetalTextureForFrame)
+        {
+            // Pre-ROM / inactive without a DS texture: allow splash/OSD path
+            // below (encoder still clears to black then draws OSD/splash).
+        }
+        else if (!finalMetalTextureForFrame && !presentBlackOnly)
+        {
+            return;
+        }
+
+        if (presentBlackOnly && !m->startupBlackClearDone)
+        {
+            m->startupBlackClearDone = true;
+            if (!m->loggedStartupBlackClear)
+            {
+                m->loggedStartupBlackClear = true;
+                fprintf(stderr,
+                        "[MelonPrime] metal presenter: startup black clear "
+                        "(no MetalTexture yet; clearing stale splash)\n");
+            }
         }
 
         id<CAMetalDrawable> drawable = [layer nextDrawable];
@@ -1447,9 +1486,7 @@ void ScreenPanelMetal::drawScreen()
         // MELONPRIME_METAL_PRESENT_METALTEXTURE_ONLY_V1 (PR-9): the only
         // source this presenter ever binds for the DS screens is the
         // renderer-owned MetalTexture from AcquireRendererOutputLease() (or
-        // its retained last known-good). There is no CPU-upload path left
-        // here at all -- if `finalMetalTextureForFrame` is nil the function
-        // already returned above, before the drawable/encoder were created.
+        // its retained last known-good). presentBlackOnly skips DS draws.
         if (emuThread->emuIsActive() && finalMetalTextureForFrame)
         {
             [encoder setRenderPipelineState:m->pipeline];
