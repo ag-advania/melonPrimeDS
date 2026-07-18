@@ -9,4 +9,7 @@ header unless a later migration intentionally changes the boundary.
 - `MelonPrimeTranslationDynamic.*`: decorated and dynamic `Tr()` handling.
 - `MelonPrimeWidgetLocalizer.*`: widget, action, menu, and dialog localization.
 - `MelonPrimeSplashLocalization.*`: no-ROM splash text and UI-font rendering.
-- `MelonPrimeTranslations.inc` / `MelonPrimeObjectTranslations.inc`: translation data included by the catalog implementation.
+- `inc/MelonPrimeTranslations.inc`: thin include manifest for exact-match translation shards.
+- `inc/MelonPrimeDialogsTranslations.inc`: thin include manifest for upstream melonDS dialog translation shards.
+- `inc/MelonPrimeObjectTranslations.inc`: thin include manifest for object-name translation shards.
+- `inc/MelonPrime*Translations*.inc`: bounded, topic-based data shards. Add or edit rows in the matching shard; do not grow the manifests into monoliths again.

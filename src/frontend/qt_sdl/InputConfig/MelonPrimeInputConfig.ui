@@ -134,7 +134,7 @@
 										</item>
 										<item row="9" column="0" colspan="2">
 											<widget class="QLabel" name="lblMetroidDirectAltFormTransformDesc">
-												<property name="text"><string>Triggers the Alt-Form transition by writing directly to the game's player state flags instead of simulating touch input. Uses the same guard conditions as the game's own TransformRequest function. Note: Weavel Halfturret spawn (hunter-specific setup inside TransformRequest) is not reproduced.</string></property>
+												<property name="text"><string>New Method redirects a short native input gate into the game's TransformRequest path. Legacy Method keeps the older simulated touch/menu transform path.</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
 											</widget>

@@ -211,10 +211,15 @@ def main() -> int:
     lookup = load_lookup()
     objects = load_objects()
 
-    melonds_path = QT_SDL / "MelonPrimeLocalizationMelondsDialogs.inc"
-    melonds_text, melonds_updated = sync_full_pairs(
-        replace_pairs(melonds_path.read_text(encoding="utf-8"), lookup), lookup)
-    melonds_path.write_text(melonds_text, encoding="utf-8")
+    localization = QT_SDL / "MelonPrimeLocalization" / "inc"
+    melonds_updated = 0
+    for melonds_path in sorted(localization.glob("MelonPrimeDialogsTranslations*.inc")):
+        source = melonds_path.read_text(encoding="utf-8")
+        if '#include "' in source:
+            continue
+        melonds_text, updated = sync_full_pairs(replace_pairs(source, lookup), lookup)
+        melonds_path.write_text(melonds_text, encoding="utf-8")
+        melonds_updated += updated
 
     cpp_path = QT_SDL / "MelonPrimeLocalization.cpp"
     cpp = cpp_path.read_text(encoding="utf-8")
