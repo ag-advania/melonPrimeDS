@@ -364,6 +364,28 @@ bool packedControlMarksProtectedBlack2D(u32 control) noexcept
     return ((control >> 24u) & 0x20u) != 0u;
 }
 
+void restoreStructuredProtectedBlack(
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) noexcept
+{
+    for (std::size_t index = 0; index < control.size(); ++index)
+    {
+        const u32 controlAlpha = control[index] >> 24u;
+        const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
+        const bool structuredAbove = (controlAlpha & 0x80u) != 0u;
+        const bool opaqueBlack2D = structuredAbove
+            && (structuredSlot
+                ? packedPixelIsOpaqueBlack(plane1[index])
+                : packedPixelIsOpaqueBlack(plane0[index]));
+        if (opaqueBlack2D)
+        {
+            control[index] = (control[index] & 0x00FFFFFFu)
+                | ((controlAlpha | 0x20u) << 24u);
+        }
+    }
+}
+
 bool packedPixelIsCaptureBackedComp4(u32 plane0Pixel, u32 plane1Pixel, u32 controlPixel) noexcept
 {
     const u32 compMode = (controlPixel >> 24u) & 0xFu;
@@ -2988,6 +3010,20 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedBottomLineMeta,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimary : nullptr,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimaryLines : nullptr);
+
+    // Sapphire's producer guarantees that an opaque-black structured 2D
+    // pixel carries the protected-black control bit. The desktop producer
+    // performs its physical-screen merge before this latch, so restore that
+    // invariant after every post-merge temporal repair that may replace a
+    // plane without replacing its control word.
+    restoreStructuredProtectedBlack(
+        destination.packedTopPlane0,
+        destination.packedTopPlane1,
+        destination.packedTopControl);
+    restoreStructuredProtectedBlack(
+        destination.packedBottomPlane0,
+        destination.packedBottomPlane1,
+        destination.packedBottomControl);
 
     if (!renderer2dDebugControlsActive)
     {
