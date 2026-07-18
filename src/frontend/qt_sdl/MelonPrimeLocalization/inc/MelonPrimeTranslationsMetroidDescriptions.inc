@@ -650,11 +650,11 @@
     {
         "Checked: inject a native fire edge inside the game's Biped fire update. Unchecked: use the older fixed input/overlay path.",
         {
-            {MenuLangId::Japanese, "オン: ゲーム本来の二足射撃更新内へ射撃入力エッジを注入します。オフ: 従来の固定入力/オーバーレイ経路を使います。"},
-            {MenuLangId::German, "Aktiviert: Feuer-Edge nativ in das Biped-Feuer-Update des Spiels einschleusen. Deaktiviert: älteren festen Eingabe-/Überlagerung-Pfad verwenden."},
-            {MenuLangId::Spanish, "Activado: inyecta un borde de disparo nativo en la actualización de fuego Biped del juego. Desactivado: usa la ruta antigua de entrada/superposición fija."},
-            {MenuLangId::French, "Coché : injecte un signal de tir natif dans la mise à jour de tir Biped du jeu. Décoché : utilise l'ancien chemin d'entrée/superposition fixe."},
-            {MenuLangId::Italian, "Selezionata: inietta un segnale di fuoco nativo nell’aggiornamento del fuoco in forma bipede del gioco. Deselezionata: usa il precedente percorso fisso di input/sovrapposizione."},
+            {MenuLangId::Japanese, "オン: ゲーム本来の通常形態の射撃更新内へ射撃入力エッジを注入します。オフ: 従来の固定入力/オーバーレイ経路を使います。"},
+            {MenuLangId::German, "Aktiviert: Schusstastenflanke nativ in die Feueraktualisierung der Normalform einschleusen. Deaktiviert: den älteren festen Eingabe-/Overlay-Pfad verwenden."},
+            {MenuLangId::Spanish, "Activado: inyecta una señal nativa de disparo en la actualización de disparo en forma normal del juego. Desactivado: usa la ruta antigua de entrada/superposición fija."},
+            {MenuLangId::French, "Coché : injecte un signal de tir natif dans la mise à jour du tir en forme normale du jeu. Décoché : utilise l’ancien chemin fixe d’entrée/superposition."},
+            {MenuLangId::Italian, "Selezionata: inietta un segnale di fuoco nativo nell’aggiornamento del fuoco in forma normale del gioco. Deselezionata: usa il precedente percorso fisso di input/sovrapposizione."},
             {MenuLangId::Dutch, "Aangevinkt: injecteert een native vuur-edge in de Biped-vuurupdate van het spel. Uitgevinkt: gebruikt het oudere vaste invoer/overlaag-pad."},
             {MenuLangId::Portuguese, "Marcado: injeta um sinal de disparo nativo na atualização de fogo Biped do jogo. Desmarcado: usa o caminho antigo fixo de entrada/sobreposição."},
             {MenuLangId::Russian, "Включено: внедряет нативный сигнал выстрела в обновление огня Biped игры. Выключено: использует старый фиксированный путь ввода/оверлея."},
@@ -2429,4 +2429,3 @@
             {MenuLangId::Hebrew, "הדבק כאן TOML עבור ה-HUD הניתן להתאמה, ואז לחץ על החל קלט."},
         }
     },
-

@@ -407,7 +407,7 @@
     {
         "OK",
         {
-            {MenuLangId::Japanese, "了承"},
+            {MenuLangId::Japanese, "OK"},
             {MenuLangId::German, "Bestätigen"},
             {MenuLangId::Spanish, "Aceptar"},
             {MenuLangId::French, "Valider"},
@@ -735,7 +735,7 @@
             {MenuLangId::German, "Ausgabe in Eingabe kopieren"},
             {MenuLangId::Spanish, "Copiar salida a entrada"},
             {MenuLangId::French, "Copier la sortie vers l’entrée"},
-            {MenuLangId::Italian, "Copia l’output nell’input"},
+            {MenuLangId::Italian, "Copia l’uscita nell’ingresso"},
             {MenuLangId::Dutch, "Uitvoer naar invoer kopiëren"},
             {MenuLangId::Portuguese, "Copiar saída para entrada"},
             {MenuLangId::Russian, "Скопировать вывод во ввод"},
@@ -1302,7 +1302,7 @@
             {MenuLangId::German, "Fadenkreuzfarbe"},
             {MenuLangId::Spanish, "Color del punto de mira"},
             {MenuLangId::French, "Couleur du réticule"},
-            {MenuLangId::Italian, "Colore mirino"},
+            {MenuLangId::Italian, "Colore del mirino"},
             {MenuLangId::Dutch, "Kleur van richtkruis"},
             {MenuLangId::Portuguese, "Cor da mira"},
             {MenuLangId::Russian, "Цвет прицела"},
@@ -2677,9 +2677,9 @@
         {
             {MenuLangId::Japanese, "フォントファイル (*.ttf *.otf *.ttc);;すべてのファイル (*)"},
             {MenuLangId::German, "Schriftdateien (*.ttf *.otf *.ttc);;Alle Dateien (*)"},
-            {MenuLangId::Spanish, "Archivos tipográficos (*.ttf *.otf *.ttc);;Todos los archivos (*)"},
+            {MenuLangId::Spanish, "Archivos de fuente (*.ttf *.otf *.ttc);;Todos los archivos (*)"},
             {MenuLangId::French, "Fichiers de police (*.ttf *.otf *.ttc);;Tous les fichiers (*)"},
-            {MenuLangId::Italian, "Documenti dei caratteri (*.ttf *.otf *.ttc);;Tutti i documenti (*)"},
+            {MenuLangId::Italian, "File dei font (*.ttf *.otf *.ttc);;Tutti i file (*)"},
             {MenuLangId::Dutch, "Lettertypebestanden (*.ttf *.otf *.ttc);;Alle bestanden (*)"},
             {MenuLangId::Portuguese, "Arquivos tipográficos (*.ttf *.otf *.ttc);;Todos os arquivos (*)"},
             {MenuLangId::Russian, "Файлы шрифтов (*.ttf *.otf *.ttc);;Все файлы (*)"},
@@ -5102,4 +5102,3 @@
             {MenuLangId::Hebrew, "רומנית"},
         }
     },
-

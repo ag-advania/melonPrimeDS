@@ -731,7 +731,7 @@
     {
         "Color 3",
         {
-            {MenuLangId::Japanese, "色3"},
+            {MenuLangId::Japanese, "色 3"},
             {MenuLangId::German, "Farbe 3"},
             {MenuLangId::Spanish, "Color n.º 3"},
             {MenuLangId::French, "Couleur 3"},
@@ -893,7 +893,7 @@
     {
         "Color 5",
         {
-            {MenuLangId::Japanese, "色5"},
+            {MenuLangId::Japanese, "色 5"},
             {MenuLangId::German, "Farbe 5"},
             {MenuLangId::Spanish, "Color n.º 5"},
             {MenuLangId::French, "Couleur 5"},
@@ -1058,8 +1058,8 @@
         "Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it.",
         {
             {MenuLangId::Japanese, "現在のカスタムHUD設定から共有用TOMLを生成するか、下にTOMLを貼り付けて適用します。"},
-            {MenuLangId::German, "Aus den aktuellen benutzerdefinierten HUD-Einstellungen teilbares TOML erzeugen oder unten TOML einfügen, um es anzuwenden."},
-            {MenuLangId::Spanish, "Genera un TOML compartible desde los ajustes actuales del HUD personalizado, o pega TOML abajo para aplicarlo."},
+            {MenuLangId::German, "Aus den aktuellen benutzerdefinierten HUD-Einstellungen eine TOML-Datei zum Teilen erzeugen oder unten TOML einfügen, um es anzuwenden."},
+            {MenuLangId::Spanish, "Genera un TOML para compartir a partir de los ajustes actuales del HUD personalizado, o pega un TOML abajo para aplicarlo."},
             {MenuLangId::French, "Générez un TOML partageable à partir des réglages actuels du HUD personnalisé, ou collez le TOML ci-dessous pour l’appliquer."},
             {MenuLangId::Italian, "Genera un TOML condivisibile dalle impostazioni HUD personalizzate attuali, oppure incolla il TOML sotto per applicarlo."},
             {MenuLangId::Dutch, "Genereer deelbare TOML uit de huidige aangepaste HUD-instellingen, of plak TOML hieronder om die toe te passen."},
@@ -1382,7 +1382,7 @@
         "Custom HUD code applied to the dialog.",
         {
             {MenuLangId::Japanese, "カスタムHUDコードをダイアログへ適用しました。"},
-            {MenuLangId::German, "Benutzerdefinierter HUD-Code wurde auf den Dialog angewendet."},
+            {MenuLangId::German, "Benutzerdefinierter HUD-Code wurde im Dialog angewendet."},
             {MenuLangId::Spanish, "El código del HUD personalizado se aplicó al diálogo."},
             {MenuLangId::French, "Le code du HUD personnalisé a été appliqué à la boîte de dialogue."},
             {MenuLangId::Italian, "Il codice HUD personalizzato è stato applicato alla finestra di dialogo."},
@@ -1702,4 +1702,3 @@
             {MenuLangId::Hebrew, "טעינת קוד Custom HUD נכשלה: %1"},
         }
     },
-

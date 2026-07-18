@@ -24,6 +24,10 @@ ROW_START_RE = re.compile(r'\{\s*"(?P<key>(?:\\.|[^"\\])*)"\s*,\s*\{', re.S)
 LANG_VALUE_RE = re.compile(r'\{MenuLangId::(?P<lang>[A-Za-z0-9_]+),\s*"(?P<text>(?:\\.|[^"\\])*)"\},')
 
 OBJECT_SOURCE_OVERRIDES = {
+    "lblMetroidDirectAltFormTransformDesc": (
+        "New Method redirects a short native input gate into the game's TransformRequest path. "
+        "Legacy Method keeps the older simulated touch/menu transform path."
+    ),
     "lblMetroidLowLatencyAimDesc": (
         "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point "
         "and rebuild the aim basis. MoonLike Aim applies small aim movements immediately and limits only "

@@ -1704,10 +1704,10 @@
         "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)",
         {
             {MenuLangId::Japanese, "[Metroid] (R) 得意武器 (最後に使った武器/オメガキャノン)"},
-            {MenuLangId::German, "[Metroid] (R) Spezialwaffe (zuletzt verwendete Waffe/Omega-Kanone)"},
+            {MenuLangId::German, "[Metroid] (R) spezifische Waffe (zuletzt verwendete Waffe/Omega-Kanone)"},
             {MenuLangId::Spanish, "[Metroid] (R) arma afín (última arma usada/Cañón Omega)"},
-            {MenuLangId::French, "[Metroid] (R) arme d’affinité (dernière arme utilisée/Canon Omega)"},
-            {MenuLangId::Italian, "[Metroid] (R) arma affine (ultima arma usata/Cannone Omega)"},
+            {MenuLangId::French, "[Metroid] (R) arme préférée (dernière arme utilisée/Canon Omega)"},
+            {MenuLangId::Italian, "[Metroid] (R) arma di default (ultima arma usata/Cannone Omega)"},
             {MenuLangId::Dutch, "[Metroid] (R) voorkeurswapen (laatst gebruikte wapen/Omega-kanon)"},
             {MenuLangId::Portuguese, "[Metroid] (R) arma de afinidade (última arma usada/Canhão Omega)"},
             {MenuLangId::Russian, "[Metroid] (R) родное оружие (последнее использованное оружие/Пушка Омега)"},
@@ -2027,11 +2027,11 @@
     {
         "[Metroid] (J) Next Weapon in the sorted order",
         {
-            {MenuLangId::Japanese, "[Metroid] (J) 次の武器"},
-            {MenuLangId::German, "[Metroid] (J) Nächste Waffe"},
-            {MenuLangId::Spanish, "[Metroid] (J) Siguiente arma"},
-            {MenuLangId::French, "[Metroid] (J) Arme suivante"},
-            {MenuLangId::Italian, "[Metroid] (J) Arma successiva"},
+            {MenuLangId::Japanese, "[Metroid] (J) 並び順で次の武器"},
+            {MenuLangId::German, "[Metroid] (J) Nächste Waffe in der Listenreihenfolge"},
+            {MenuLangId::Spanish, "[Metroid] (J) Siguiente arma según el orden de la lista"},
+            {MenuLangId::French, "[Metroid] (J) Arme suivante dans l’ordre de la liste"},
+            {MenuLangId::Italian, "[Metroid] (J) Arma successiva nell’ordine dell’elenco"},
             {MenuLangId::Dutch, "[Metroid] (J) Volgend wapen"},
             {MenuLangId::Portuguese, "[Metroid] (J) Próxima arma"},
             {MenuLangId::Russian, "[Metroid] (J) Следующее оружие"},
@@ -2108,11 +2108,11 @@
     {
         "[Metroid] (K) Previous Weapon in the sorted order",
         {
-            {MenuLangId::Japanese, "[Metroid] (K) 前の武器"},
-            {MenuLangId::German, "[Metroid] (K) Vorherige Waffe"},
-            {MenuLangId::Spanish, "[Metroid] (K) Arma anterior"},
-            {MenuLangId::French, "[Metroid] (K) Arme précédente"},
-            {MenuLangId::Italian, "[Metroid] (K) Arma precedente"},
+            {MenuLangId::Japanese, "[Metroid] (K) 並び順で前の武器"},
+            {MenuLangId::German, "[Metroid] (K) Vorherige Waffe in der Listenreihenfolge"},
+            {MenuLangId::Spanish, "[Metroid] (K) Arma anterior según el orden de la lista"},
+            {MenuLangId::French, "[Metroid] (K) Arme précédente dans l’ordre de la liste"},
+            {MenuLangId::Italian, "[Metroid] (K) Arma precedente nell’ordine dell’elenco"},
             {MenuLangId::Dutch, "[Metroid] (K) Vorig wapen"},
             {MenuLangId::Portuguese, "[Metroid] (K) Arma anterior"},
             {MenuLangId::Russian, "[Metroid] (K) Предыдущее оружие"},
@@ -2753,4 +2753,3 @@
             {MenuLangId::Hebrew, "[Metroid] (Y) בדיקת נשק"},
         }
     },
-

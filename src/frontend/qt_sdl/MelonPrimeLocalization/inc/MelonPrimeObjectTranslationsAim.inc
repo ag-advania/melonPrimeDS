@@ -245,7 +245,7 @@
     {
         "lblMetroidLowLatencyAimDesc",
         {
-            {MenuLangId::Japanese, "即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。『Moon』風エイム、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。"},
+            {MenuLangId::Japanese, "即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。『Moon』風エイムは小さな照準移動を即時に反映し、大きなジャンプだけを最大ステップで追従します。MPHのエイム補間無効化が必要です。"},
             {MenuLangId::German, "Die Sofortsynchronisierung gleicht den aktuellen Zielpunkt über einen ARM9-Hook mit niedriger Latenz an die Zielposition an und erstellt die Zielreferenz neu. Das Zielen im Moon-Stil setzt kleine Bewegungen sofort um und folgt großen Sprüngen nur mit der maximalen Schrittweite. Dafür muss die Zielinterpolation von MPH deaktiviert sein."},
             {MenuLangId::Spanish, "La sincronización inmediata usa un hook de ARM9 de baja latencia para alinear al instante la mira actual con la posición objetivo y reconstruir la referencia de la mira. La puntería de estilo Moon refleja de inmediato los movimientos pequeños y solo sigue los saltos grandes con el paso máximo. Es necesario desactivar la interpolación de la mira de MPH."},
             {MenuLangId::French, "La synchronisation immédiate utilise un hook ARM9 à faible latence pour aligner instantanément la visée actuelle sur la position cible et reconstruire la référence de visée. La visée de style Moon répercute immédiatement les petits mouvements et ne suit les grands écarts qu’à hauteur du pas maximal. L’interpolation de la visée de MPH doit être désactivée."},
@@ -451,7 +451,7 @@
             {MenuLangId::Kannada, "ಸ್ಪರ್ಶ ಸಂಸ್ಕರಣೆಯ ನಂತರ PostFold ಬರವಣಿಗೆ ಹೂಕ್ ಕಾರ್ಯನಿರ್ವಹಿಸುತ್ತದೆ ಮತ್ತು spec108=0 (Samus/Kanden/Noxus/Spire) ಸೇರಿದಂತೆ ಎಲ್ಲಾ ರೂಪಾಂತರಗಳನ್ನು ನಿರ್ವಹಿಸುತ್ತದೆ. ಡೆವಲಪರ್ ಬಿಲ್ಡ್‌ಗಳಿಗೆ ಮಾತ್ರ."},
             {MenuLangId::Odia, "ସ୍ପର୍ଶ ପ୍ରକ୍ରିୟା ପରେ PostFold ଲେଖନ ହୁକ୍ କାମ କରେ ଏବଂ spec108=0 (Samus/Kanden/Noxus/Spire) ସହିତ ସମସ୍ତ ରୂପାନ୍ତରକୁ ସମ୍ଭାଳେ। କେବଳ ଡିଭେଲପର ବିଲ୍ଡ ପାଇଁ।"},
             {MenuLangId::Malayalam, "സ്പർശ പ്രക്രിയയ്ക്കുശേഷം PostFold എഴുത്ത് ഹുക്ക് പ്രവർത്തിക്കുന്നു, കൂടാതെ spec108=0 (Samus/Kanden/Noxus/Spire) ഉൾപ്പെടെ എല്ലാ പരിവർത്തനങ്ങളും കൈകാര്യം ചെയ്യുന്നു. ഡെവലപ്പർ ബിൽഡുകൾക്കു മാത്രം."},
-            {MenuLangId::Burmese, "ထိတွေ့မှု 처리ပြီးနောက် PostFold ရေးသားမှုဟုတ်ခ် လုပ်ဆောင်ပြီး spec108=0 (Samus/Kanden/Noxus/Spire) အပါအဝင် ပြောင်းလဲမှုအားလုံးကို ကိုင်တွယ်သည်။ developer build များအတွက်သာ။"},
+            {MenuLangId::Burmese, "ထိတွေ့မှုကို လုပ်ဆောင်ပြီးနောက် PostFold ရေးသားမှုဟုတ်ခ် လုပ်ဆောင်ပြီး spec108=0 (Samus/Kanden/Noxus/Spire) အပါအဝင် ပြောင်းလဲမှုအားလုံးကို ကိုင်တွယ်သည်။ developer build များအတွက်သာ။"},
             {MenuLangId::Uzbek, "Teginish qayta ishlangandan keyin PostFold yozish ilmog‘i ishlaydi va spec108=0 (Samus/Kanden/Noxus/Spire) bilan barcha o‘zgarishlarni qamrab oladi. Faqat dasturchi yig‘malari uchun."},
             {MenuLangId::Azerbaijani, "Toxunuş emalından sonra PostFold yazma çəngəli işləyir və spec108=0 (Samus/Kanden/Noxus/Spire) daxil olmaqla bütün çevrilmələri əhatə edir. Yalnız tərtibatçı quruluşları üçün."},
             {MenuLangId::Nepali, "स्पर्श प्रशोधनपछि PostFold लेखन हुक चल्छ र spec108=0 (Samus/Kanden/Noxus/Spire) सहित सबै रूपान्तरण समेट्छ। विकासकर्ता बिल्डका लागि मात्र।"},
@@ -489,10 +489,10 @@
         "lblMetroidDirectAltFormTransformDesc",
         {
             {MenuLangId::Japanese, "新方式は短いネイティブ入力ゲートをゲーム本来の変形要求処理へリダイレクトします。旧方式は従来のタッチ/メニュー模擬による変形処理を使います。"},
-            {MenuLangId::German, "Die neue Methode leitet ein kurzes natives Eingabe-Gate zur ingame-Transformationsanforderung um. Die alte Methode nutzt die bisherige Touch-/Menü-Simulation."},
-            {MenuLangId::Spanish, "El método nuevo redirige una breve ventana de entrada nativa al procesamiento de las solicitudes de transformación del juego. El método antiguo usa la simulación tradicional mediante pantalla táctil/menú."},
-            {MenuLangId::French, "La nouvelle méthode redirige une brève fenêtre d’entrée native vers le traitement des demandes de transformation du jeu. L’ancienne méthode utilise la simulation traditionnelle par écran tactile/menu."},
-            {MenuLangId::Italian, "Il nuovo metodo reindirizza un breve gate di input nativo all’elaborazione della richiesta di trasformazione del gioco. Il metodo precedente usa la tradizionale simulazione touch/menu."},
+            {MenuLangId::German, "Die neue Methode leitet eine kurze native Eingabeabfrage auf den TransformRequest-Pfad des Spiels um. Die alte Methode nutzt weiterhin die bisherige Touch-/Menüsimulation."},
+            {MenuLangId::Spanish, "El método nuevo redirige una breve comprobación de entrada nativa a la ruta TransformRequest del juego. El método antiguo conserva la simulación tradicional mediante pantalla táctil/menú."},
+            {MenuLangId::French, "La nouvelle méthode redirige un bref contrôle d’entrée natif vers le chemin TransformRequest du jeu. L’ancienne méthode conserve la simulation traditionnelle par écran tactile/menu."},
+            {MenuLangId::Italian, "Il nuovo metodo reindirizza un breve controllo dell’input nativo al percorso TransformRequest del gioco. Il metodo precedente mantiene la tradizionale simulazione touch/menu."},
             {MenuLangId::Dutch, "De nieuwe methode leidt een korte native invoerpoort om naar de transformatieverwerking van het spel. De oude methode gebruikt de traditionele touch-/menusimulatie."},
             {MenuLangId::Portuguese, "O novo método redireciona uma breve janela de entrada nativa para o processamento original dos pedidos de transformação do jogo. O método antigo utiliza a simulação tradicional por toque/menu."},
             {MenuLangId::Russian, "Новый метод перенаправляет короткий нативный входной шлюз к обработке трансформации игры. Старый метод использует традиционную эмуляцию касаний/меню."},
