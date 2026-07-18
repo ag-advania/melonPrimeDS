@@ -92,6 +92,9 @@ void SoftRenderer::Reset()
         bufferPair[0].fill(0);
         bufferPair[1].fill(0);
     }
+    StructuredCapturePlanes.fill(0);
+    StructuredCaptureLineValid.fill(0);
+    StructuredCaptureLineUses3D.fill(0);
     StructuredEngineLineUsesCapture3D.fill(0);
     StructuredCaptureBackedSourceClassPixels.fill(0);
     StructuredCaptureBackedExplicitSlot.fill(0);
@@ -667,8 +670,9 @@ void SoftRenderer::DoCapture(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     if (UseStructuredVulkan2D())
     {
-        // Display capture is Engine-A hardware; the metadata it produces is
-        // scoped to Engine A's own SoftRenderer2D instance (Sapphire contract).
+        // Display capture is Engine-A hardware, so the write is issued
+        // through Rend2D_A -- but it lands in the shared capture store
+        // (keyed by VRAM bank+address), which Engine B can also read.
         static_cast<SoftRenderer2D*>(Rend2D_A.get())->StoreStructuredCaptureLine(
             line,
             width,
@@ -946,10 +950,50 @@ void SoftRenderer::PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine
 void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
 {
     // The software renderer already writes captures straight to VRAM, so
-    // there is nothing to sync back. Display capture is Engine-A hardware,
-    // so route the invalidation to Engine A's own structured-metadata copy.
+    // there is nothing to sync back. This is still the correct signal that
+    // the CPU/DMA is about to touch a VRAM range the shared structured
+    // capture store shadows -- drop that range so later reads fall back to
+    // plain VRAM color instead of stale plane/control data.
     (void)complete;
-    static_cast<SoftRenderer2D*>(Rend2D_A.get())->InvalidateStructuredCaptureRange(bank, start, len);
+    InvalidateStructuredCaptureRange(bank, start, len);
+}
+
+void SoftRenderer::InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len)
+{
+    if (!UseStructuredVulkan2D() || bank >= 4u)
+        return;
+
+    // (bank, start, len) are 0x8000-byte VRAM capture blocks -- 64 display
+    // lines each -- except the hardware's 128x128 capture size (len == 0),
+    // which spans 128 lines from the same start. Mirrors GLRenderer's
+    // SyncVRAMCapture block-to-line mapping so both renderers agree on which
+    // VRAM bytes a given (bank, start, len) covers.
+    const u32 lineCount = (len == 0u) ? 128u : (len * 64u);
+    const u32 lineStart = start * 64u;
+    const u32 lineEnd = std::min<u32>(lineStart + lineCount, 192u);
+    if (lineStart >= lineEnd)
+        return;
+
+    const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
+    for (u32 line = lineStart; line < lineEnd; ++line)
+    {
+        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
+        const std::size_t linePixelBase = static_cast<std::size_t>(line) * 256u;
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + (2u * StructuredPixelCount) + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        StructuredCaptureLineValid[validIndex] = 0;
+        StructuredCaptureLineUses3D[validIndex] = 0;
+    }
 }
 
 void SoftRenderer::BuildStructuredScreenLine(
@@ -1034,25 +1078,25 @@ void SoftRenderer::BuildStructuredScreenLine(
     }
     else if (!forcePlain && engine == 0u && displayMode == 2u)
     {
-        // VRAM Display mode is Engine-A-only hardware; the captured metadata
-        // it reads back lives on Engine A's own SoftRenderer2D instance.
-        const auto* engineA = static_cast<const SoftRenderer2D*>(Rend2D_A.get());
+        // VRAM Display mode is Engine-A-only hardware; the captured
+        // metadata it reads back lives in the shared capture store, keyed
+        // by VRAM bank+address, not by engine.
         const u32 bank = (GPU.GPU2D_A.DispCnt >> 18u) & 0x3u;
         const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + engineLine;
-        if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u && engineA->StructuredCaptureLineValid[validIndex] != 0u)
+        if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u && StructuredCaptureLineValid[validIndex] != 0u)
         {
             const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
             std::memcpy(
                 packedPlane0,
-                engineA->StructuredCapturePlanes.data() + captureBase + engineRowBase,
+                StructuredCapturePlanes.data() + captureBase + engineRowBase,
                 256u * sizeof(u32));
             std::memcpy(
                 packedPlane1,
-                engineA->StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + engineRowBase,
+                StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + engineRowBase,
                 256u * sizeof(u32));
             std::memcpy(
                 packedControl,
-                engineA->StructuredCapturePlanes.data()
+                StructuredCapturePlanes.data()
                     + captureBase
                     + (2u * StructuredPixelCount)
                     + engineRowBase,
@@ -1062,7 +1106,7 @@ void SoftRenderer::BuildStructuredScreenLine(
                 (2u << 16u)
                 | (static_cast<u32>(brightness >> 14u) << 8u)
                 | static_cast<u32>(brightness & 0x1Fu);
-            if (engineA->StructuredCaptureLineUses3D[validIndex] != 0u)
+            if (StructuredCaptureLineUses3D[validIndex] != 0u)
                 lineMeta |= 1u << 22u;
             copiedStructured = true;
         }

@@ -104,11 +104,8 @@ void SoftRenderer2D::Reset()
 
     NumSprites = 0;
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    StructuredCapturePlanes.fill(0);
-    StructuredCaptureLineValid.fill(0);
-    StructuredCaptureLineUses3D.fill(0);
-#endif
+    // Structured capture arrays are owned by Parent and cleared by
+    // SoftRenderer::Reset() (shared store, not per-instance).
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -125,13 +122,14 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
     if (!Parent.UseStructuredVulkan2D() || line >= 192u || destinationBank >= 4u || captureOutput == nullptr)
         return;
 
+    constexpr std::size_t kPixelCount = SoftRenderer::StructuredPixelCount;
     const u32 captureCnt = GPU.CaptureCnt;
     const u32 captureMode = (captureCnt >> 29u) & 0x3u;
     const bool direct3D = (captureCnt & (1u << 24u)) != 0u;
     const u32 eva = std::min<u32>(captureCnt & 0x1Fu, 16u);
     const u32 evb = std::min<u32>((captureCnt >> 8u) & 0x1Fu, 16u);
     const std::size_t sourceARowBase = static_cast<std::size_t>(line) * 256u;
-    const std::size_t captureBase = static_cast<std::size_t>(destinationBank) * 3u * kStructuredCapturePixelCount;
+    const std::size_t captureBase = static_cast<std::size_t>(destinationBank) * 3u * kPixelCount;
     bool lineUses3D = false;
     bool wroteMetadata = false;
 
@@ -146,22 +144,22 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
                 static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
             const std::size_t linePixelBase = destinationLine * 256u;
             std::memset(
-                StructuredCapturePlanes.data() + captureBase + linePixelBase,
+                Parent.StructuredCapturePlanes.data() + captureBase + linePixelBase,
                 0,
                 256u * sizeof(u32));
             std::memset(
-                StructuredCapturePlanes.data() + captureBase + kStructuredCapturePixelCount + linePixelBase,
+                Parent.StructuredCapturePlanes.data() + captureBase + kPixelCount + linePixelBase,
                 0,
                 256u * sizeof(u32));
             std::memset(
-                StructuredCapturePlanes.data()
+                Parent.StructuredCapturePlanes.data()
                     + captureBase
-                    + (2u * kStructuredCapturePixelCount)
+                    + (2u * kPixelCount)
                     + linePixelBase,
                 0,
                 256u * sizeof(u32));
-            StructuredCaptureLineValid[validIndex] = 0;
-            StructuredCaptureLineUses3D[validIndex] = 0;
+            Parent.StructuredCaptureLineValid[validIndex] = 0;
+            Parent.StructuredCaptureLineUses3D[validIndex] = 0;
         }
     }
 
@@ -169,7 +167,7 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
     for (u32 x = 0; x < copyWidth; ++x)
     {
         const u32 captureAddress = (destinationAddress + x) & 0xFFFFu;
-        if (captureAddress >= kStructuredCapturePixelCount)
+        if (captureAddress >= kPixelCount)
             continue;
 
         const std::size_t destinationIndex = static_cast<std::size_t>(captureAddress);
@@ -197,17 +195,17 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
         if (sourceBFromVram && sourceBBank < 4u)
         {
             const u32 address = (sourceBAddress + x) & 0xFFFFu;
-            if (address < kStructuredCapturePixelCount)
+            if (address < kPixelCount)
             {
                 const std::size_t sourceLine = static_cast<std::size_t>(address / 256u);
                 const std::size_t validIndex = static_cast<std::size_t>(sourceBBank) * 192u + sourceLine;
-                if (StructuredCaptureLineValid[validIndex] != 0u)
+                if (Parent.StructuredCaptureLineValid[validIndex] != 0u)
                 {
-                    const std::size_t sourceBase = static_cast<std::size_t>(sourceBBank) * 3u * kStructuredCapturePixelCount;
+                    const std::size_t sourceBase = static_cast<std::size_t>(sourceBBank) * 3u * kPixelCount;
                     const std::size_t sourceIndex = static_cast<std::size_t>(address);
-                    sourceBPlane0 = StructuredCapturePlanes[sourceBase + sourceIndex];
-                    sourceBPlane1 = StructuredCapturePlanes[sourceBase + kStructuredCapturePixelCount + sourceIndex];
-                    sourceBControl = StructuredCapturePlanes[sourceBase + (2u * kStructuredCapturePixelCount) + sourceIndex];
+                    sourceBPlane0 = Parent.StructuredCapturePlanes[sourceBase + sourceIndex];
+                    sourceBPlane1 = Parent.StructuredCapturePlanes[sourceBase + kPixelCount + sourceIndex];
+                    sourceBControl = Parent.StructuredCapturePlanes[sourceBase + (2u * kPixelCount) + sourceIndex];
                     sourceBHas3D = ((sourceBControl >> 24u) & 0x40u) != 0u;
                 }
             }
@@ -308,9 +306,9 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
             }
         }
 
-        StructuredCapturePlanes[captureBase + destinationIndex] = plane0;
-        StructuredCapturePlanes[captureBase + kStructuredCapturePixelCount + destinationIndex] = plane1;
-        StructuredCapturePlanes[captureBase + (2u * kStructuredCapturePixelCount) + destinationIndex] = control;
+        Parent.StructuredCapturePlanes[captureBase + destinationIndex] = plane0;
+        Parent.StructuredCapturePlanes[captureBase + kPixelCount + destinationIndex] = plane1;
+        Parent.StructuredCapturePlanes[captureBase + (2u * kPixelCount) + destinationIndex] = control;
         lineUses3D = lineUses3D || (((control >> 24u) & 0x40u) != 0u);
         wroteMetadata = true;
     }
@@ -321,8 +319,8 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
         if (destinationLine < 192u)
         {
             const std::size_t validIndex = static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
-            StructuredCaptureLineValid[validIndex] = 1;
-            StructuredCaptureLineUses3D[validIndex] = lineUses3D ? 1 : 0;
+            Parent.StructuredCaptureLineValid[validIndex] = 1;
+            Parent.StructuredCaptureLineUses3D[validIndex] = lineUses3D ? 1 : 0;
         }
     }
 }
@@ -332,13 +330,14 @@ bool SoftRenderer2D::DrawStructuredCapturePixel(u32* destination, u32 flatByteAd
     if (!Parent.UseStructuredVulkan2D() || destination == nullptr)
         return false;
 
+    constexpr std::size_t kPixelCount = SoftRenderer::StructuredPixelCount;
     const u32 engine = GPU2D.Num;
     const u32 maskedAddress = flatByteAddress & (engine != 0u ? 0x1FFFFu : 0x7FFFFu);
     const u32 mapMask = engine != 0u
         ? GPU.VRAMMap_BBG[(maskedAddress >> 14u) & 0x7u]
         : GPU.VRAMMap_ABG[(maskedAddress >> 14u) & 0x1Fu];
     const u32 captureAddress = (maskedAddress & 0x1FFFFu) >> 1u;
-    if (captureAddress >= kStructuredCapturePixelCount)
+    if (captureAddress >= kPixelCount)
         return false;
 
     for (u32 bank = 0; bank < 4u; ++bank)
@@ -346,14 +345,14 @@ bool SoftRenderer2D::DrawStructuredCapturePixel(u32* destination, u32 flatByteAd
         if ((mapMask & (1u << bank)) == 0u)
             continue;
         const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + (captureAddress / 256u);
-        if (StructuredCaptureLineValid[validIndex] == 0u)
+        if (Parent.StructuredCaptureLineValid[validIndex] == 0u)
             continue;
 
-        const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * kStructuredCapturePixelCount;
+        const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * kPixelCount;
         const std::size_t index = static_cast<std::size_t>(captureAddress);
-        const u32 below = StructuredCapturePlanes[captureBase + index];
-        const u32 above = StructuredCapturePlanes[captureBase + kStructuredCapturePixelCount + index];
-        const u32 control = StructuredCapturePlanes[captureBase + (2u * kStructuredCapturePixelCount) + index];
+        const u32 below = Parent.StructuredCapturePlanes[captureBase + index];
+        const u32 above = Parent.StructuredCapturePlanes[captureBase + kPixelCount + index];
+        const u32 control = Parent.StructuredCapturePlanes[captureBase + (2u * kPixelCount) + index];
         const u32 controlAlpha = control >> 24u;
         if ((controlAlpha & 0x40u) != 0u)
         {
@@ -375,44 +374,6 @@ bool SoftRenderer2D::DrawStructuredCapturePixel(u32* destination, u32 flatByteAd
         }
     }
     return false;
-}
-
-void SoftRenderer2D::InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len)
-{
-    if (!Parent.UseStructuredVulkan2D() || bank >= 4u)
-        return;
-
-    // (bank, start, len) are 0x8000-byte VRAM capture blocks -- 64 display
-    // lines each -- except the hardware's 128x128 capture size (len == 0),
-    // which spans 128 lines from the same start. Mirrors GLRenderer's
-    // SyncVRAMCapture block-to-line mapping so both renderers agree on which
-    // VRAM bytes a given (bank, start, len) covers.
-    const u32 lineCount = (len == 0u) ? 128u : (len * 64u);
-    const u32 lineStart = start * 64u;
-    const u32 lineEnd = std::min<u32>(lineStart + lineCount, 192u);
-    if (lineStart >= lineEnd)
-        return;
-
-    const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * kStructuredCapturePixelCount;
-    for (u32 line = lineStart; line < lineEnd; ++line)
-    {
-        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
-        const std::size_t linePixelBase = static_cast<std::size_t>(line) * 256u;
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + kStructuredCapturePixelCount + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + (2u * kStructuredCapturePixelCount) + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        StructuredCaptureLineValid[validIndex] = 0;
-        StructuredCaptureLineUses3D[validIndex] = 0;
-    }
 }
 #endif
 
