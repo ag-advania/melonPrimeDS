@@ -20,6 +20,10 @@
 
 #include "GPU2D.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <array>
+#endif
+
 namespace melonDS
 {
 class SoftRenderer;
@@ -37,7 +41,31 @@ public:
     void VBlank() override {}
     void VBlankEnd() override {};
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Structured capture metadata (plane0/plane1/control per VRAM bank+line)
+    // is scoped per 2D engine, matching Sapphire's GPU2D::SoftRenderer
+    // contract: only Engine A ever writes it (display capture is Engine-A
+    // hardware, driven from SoftRenderer::DoCapture), and each engine only
+    // ever reads its own copy. This is what makes it safe to keep metadata
+    // valid across frames (no visible-frame generation gate needed) --
+    // Engine B structurally can never observe a stale phase of Engine A's
+    // capture, because Engine B's own array is simply never written.
+    void StoreStructuredCaptureLine(
+        u32 line,
+        u32 width,
+        u32 destinationBank,
+        u32 destinationAddress,
+        u32 sourceBAddress,
+        u32 sourceBBank,
+        bool sourceBFromVram,
+        const u16* captureOutput);
+    [[nodiscard]] bool DrawStructuredCapturePixel(u32* destination, u32 flatByteAddress);
+    void InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len);
+#endif
+
 private:
+    friend class SoftRenderer;
+
     SoftRenderer& Parent;
 
     enum
@@ -57,6 +85,16 @@ private:
     alignas(8) u32 BGOBJLine[256*3];
 #else
     alignas(8) u32 BGOBJLine[256*2];
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Kept independent of SoftRenderer::StructuredPixelCount to avoid a
+    // circular include (GPU_Soft.h already includes this header). Both
+    // describe the fixed 256x192 NDS screen resolution.
+    static constexpr std::size_t kStructuredCapturePixelCount = 256u * 192u;
+    std::array<u32, 4u * 3u * kStructuredCapturePixelCount> StructuredCapturePlanes{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
 #endif
 
     alignas(8) u8 WindowMask[256];

@@ -19,8 +19,71 @@
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <algorithm>
+#include <cstring>
+#endif
+
 namespace melonDS
 {
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+// Duplicated from GPU_Soft.cpp's anonymous namespace: also needed by
+// SoftRenderer::StoreStructuredEnginePixel / BuildStructuredScreenLine there,
+// so it can't simply move here.
+bool StructuredVulkan2DIsOpaqueBlack(u32 value)
+{
+    return value != 0u
+        && (value >> 24u) != 0x40u
+        && (value & 0x00FFFFFFu) == 0u;
+}
+
+u32 PackedCaptureColorToColor6(u16 color)
+{
+    const u32 red = (color & 0x001Fu) << 1u;
+    const u32 green = (color & 0x03E0u) >> 4u;
+    const u32 blue = (color & 0x7C00u) >> 9u;
+    const u32 alpha = (color & 0x8000u) != 0u ? 1u : 0u;
+    return red | (green << 8u) | (blue << 16u) | (alpha << 24u);
+}
+
+u16 Color6ToPackedCaptureColor(u32 color)
+{
+    return static_cast<u16>(
+        ((color >> 1u) & 0x1Fu)
+        | (((color >> 9u) & 0x1Fu) << 5u)
+        | (((color >> 17u) & 0x1Fu) << 10u)
+        | ((color >> 24u) != 0u ? 0x8000u : 0u));
+}
+
+bool PackedCaptureColorsClose(u16 lhs, u16 rhs)
+{
+    if (((lhs ^ rhs) & 0x8000u) != 0u)
+        return false;
+    const int lhsR = lhs & 0x1Fu;
+    const int lhsG = (lhs >> 5u) & 0x1Fu;
+    const int lhsB = (lhs >> 10u) & 0x1Fu;
+    const int rhsR = rhs & 0x1Fu;
+    const int rhsG = (rhs >> 5u) & 0x1Fu;
+    const int rhsB = (rhs >> 10u) & 0x1Fu;
+    const auto closeChannel = [](int left, int right) {
+        return (left > right ? left - right : right - left) <= 2;
+    };
+    return closeChannel(lhsR, rhsR)
+        && closeChannel(lhsG, rhsG)
+        && closeChannel(lhsB, rhsB);
+}
+
+void PushStructuredRawPixel(u32* destination, u32 value)
+{
+    destination[512] = destination[256];
+    destination[256] = destination[0];
+    destination[0] = value;
+}
+}
+#endif
 
 SoftRenderer2D::SoftRenderer2D(melonDS::GPU2D& gpu2D, SoftRenderer& parent)
     : Renderer2D(gpu2D), Parent(parent)
@@ -40,7 +103,318 @@ void SoftRenderer2D::Reset()
     memset(OBJWindow, 0, sizeof(OBJWindow));
 
     NumSprites = 0;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    StructuredCapturePlanes.fill(0);
+    StructuredCaptureLineValid.fill(0);
+    StructuredCaptureLineUses3D.fill(0);
+#endif
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void SoftRenderer2D::StoreStructuredCaptureLine(
+    u32 line,
+    u32 width,
+    u32 destinationBank,
+    u32 destinationAddress,
+    u32 sourceBAddress,
+    u32 sourceBBank,
+    bool sourceBFromVram,
+    const u16* captureOutput)
+{
+    if (!Parent.UseStructuredVulkan2D() || line >= 192u || destinationBank >= 4u || captureOutput == nullptr)
+        return;
+
+    const u32 captureCnt = GPU.CaptureCnt;
+    const u32 captureMode = (captureCnt >> 29u) & 0x3u;
+    const bool direct3D = (captureCnt & (1u << 24u)) != 0u;
+    const u32 eva = std::min<u32>(captureCnt & 0x1Fu, 16u);
+    const u32 evb = std::min<u32>((captureCnt >> 8u) & 0x1Fu, 16u);
+    const std::size_t sourceARowBase = static_cast<std::size_t>(line) * 256u;
+    const std::size_t captureBase = static_cast<std::size_t>(destinationBank) * 3u * kStructuredCapturePixelCount;
+    bool lineUses3D = false;
+    bool wroteMetadata = false;
+
+    // Invalidate the destination capture line before rewriting so a later
+    // read cannot sample a mix of this frame and a previous capture.
+    {
+        const std::size_t destinationLine =
+            static_cast<std::size_t>((destinationAddress & 0xFFFFu) / 256u);
+        if (destinationLine < 192u)
+        {
+            const std::size_t validIndex =
+                static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
+            const std::size_t linePixelBase = destinationLine * 256u;
+            std::memset(
+                StructuredCapturePlanes.data() + captureBase + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            std::memset(
+                StructuredCapturePlanes.data() + captureBase + kStructuredCapturePixelCount + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            std::memset(
+                StructuredCapturePlanes.data()
+                    + captureBase
+                    + (2u * kStructuredCapturePixelCount)
+                    + linePixelBase,
+                0,
+                256u * sizeof(u32));
+            StructuredCaptureLineValid[validIndex] = 0;
+            StructuredCaptureLineUses3D[validIndex] = 0;
+        }
+    }
+
+    const u32 copyWidth = std::min<u32>(width, 256u);
+    for (u32 x = 0; x < copyWidth; ++x)
+    {
+        const u32 captureAddress = (destinationAddress + x) & 0xFFFFu;
+        if (captureAddress >= kStructuredCapturePixelCount)
+            continue;
+
+        const std::size_t destinationIndex = static_cast<std::size_t>(captureAddress);
+        const std::size_t sourceAIndex = sourceARowBase + static_cast<std::size_t>(x);
+        u32 sourceAPlane0 = Parent.StructuredEnginePlanes[sourceAIndex];
+        u32 sourceAPlane1 = Parent.StructuredEnginePlanes[Parent.StructuredPixelCount + sourceAIndex];
+        u32 sourceAControl = Parent.StructuredEnginePlanes[(2u * Parent.StructuredPixelCount) + sourceAIndex];
+        bool sourceAHas3D = (sourceAControl >> 24u & 0x40u) != 0u;
+        if (direct3D)
+        {
+            sourceAPlane0 = 0u;
+            sourceAPlane1 = 0u;
+            sourceAControl = 0x40000000u;
+            sourceAHas3D = true;
+        }
+        const bool sourceA3DCoverageKnown =
+            Parent.StructuredCapture3DSourceLineValid[static_cast<std::size_t>(line)] != 0u;
+        const bool sourceA3DCoverage = sourceA3DCoverageKnown
+            && (Parent.StructuredCapture3DSource[sourceAIndex] >> 24u) != 0u;
+
+        u32 sourceBPlane0 = 0u;
+        u32 sourceBPlane1 = 0u;
+        u32 sourceBControl = 0u;
+        bool sourceBHas3D = false;
+        if (sourceBFromVram && sourceBBank < 4u)
+        {
+            const u32 address = (sourceBAddress + x) & 0xFFFFu;
+            if (address < kStructuredCapturePixelCount)
+            {
+                const std::size_t sourceLine = static_cast<std::size_t>(address / 256u);
+                const std::size_t validIndex = static_cast<std::size_t>(sourceBBank) * 192u + sourceLine;
+                if (StructuredCaptureLineValid[validIndex] != 0u)
+                {
+                    const std::size_t sourceBase = static_cast<std::size_t>(sourceBBank) * 3u * kStructuredCapturePixelCount;
+                    const std::size_t sourceIndex = static_cast<std::size_t>(address);
+                    sourceBPlane0 = StructuredCapturePlanes[sourceBase + sourceIndex];
+                    sourceBPlane1 = StructuredCapturePlanes[sourceBase + kStructuredCapturePixelCount + sourceIndex];
+                    sourceBControl = StructuredCapturePlanes[sourceBase + (2u * kStructuredCapturePixelCount) + sourceIndex];
+                    sourceBHas3D = ((sourceBControl >> 24u) & 0x40u) != 0u;
+                }
+            }
+        }
+
+        const u32 flatOutput = PackedCaptureColorToColor6(captureOutput[x]);
+        u32 plane0 = flatOutput;
+        u32 plane1 = 0u;
+        u32 control = StructuredVulkan2DIsOpaqueBlack(flatOutput)
+            ? 0xA7000000u
+            : 0x87000000u;
+        bool selectedSourceA3D = false;
+
+        if (captureMode == 0u && sourceAHas3D)
+        {
+            plane0 = sourceAPlane0;
+            plane1 = sourceAPlane1;
+            control = sourceAControl;
+            selectedSourceA3D = true;
+        }
+        else if (captureMode == 1u && sourceBControl != 0u)
+        {
+            plane0 = sourceBPlane0;
+            plane1 = sourceBPlane1;
+            control = sourceBControl;
+        }
+        else if (captureMode >= 2u && sourceAHas3D && eva != 0u)
+        {
+            plane0 = flatOutput;
+            const u16 sourceBPacked = (captureCnt & (1u << 25u)) != 0u
+                ? GPU.DispFIFOBuffer[x]
+                : (sourceBFromVram && sourceBBank < 4u
+                    ? reinterpret_cast<const u16*>(GPU.VRAM[sourceBBank])[(sourceBAddress + x) & 0xFFFFu]
+                    : 0u);
+            plane1 = ((sourceBPacked & 0x8000u) != 0u && evb != 0u)
+                ? PackedCaptureColorToColor6(sourceBPacked)
+                : 0u;
+            const u32 structuredAlpha = 0x41u | (plane1 != 0u ? 0x80u : 0u);
+            control = (structuredAlpha << 24u)
+                | ((eva & 0x1Fu) << 16u)
+                | ((evb & 0x1Fu) << 8u);
+            if (StructuredVulkan2DIsOpaqueBlack(plane1))
+                control |= 0x20000000u;
+            selectedSourceA3D = true;
+        }
+        else if (captureMode >= 2u && sourceBHas3D && evb != 0u)
+        {
+            plane0 = flatOutput;
+            plane1 = (eva != 0u) ? sourceAPlane0 : 0u;
+            const u32 sourceBNoCoverage = (sourceBControl >> 24u) & 0x10u;
+            const u32 structuredAlpha = 0x41u
+                | (plane1 != 0u ? 0x80u : 0u)
+                | sourceBNoCoverage;
+            control = (structuredAlpha << 24u)
+                | ((evb & 0x1Fu) << 16u)
+                | ((eva & 0x1Fu) << 8u);
+            if (StructuredVulkan2DIsOpaqueBlack(plane1))
+                control |= 0x20000000u;
+        }
+        if (selectedSourceA3D && sourceA3DCoverageKnown && !sourceA3DCoverage)
+            control |= 0x10000000u;
+
+        // Preserve a real 2D overlay carried by structured source B when its
+        // color survives the hardware A+B capture blend. This is Sapphire's
+        // capture-overlay merge contract and keeps opaque black UI pixels
+        // distinct from an empty 3D slot.
+        if (captureMode >= 2u && sourceBFromVram && evb != 0u && sourceBControl != 0u)
+        {
+            const u32 sourceBAlpha = sourceBControl >> 24u;
+            const bool sourceBSlot = (sourceBAlpha & 0x40u) != 0u;
+            u32 overlayPixel = 0u;
+            if (sourceBSlot && (sourceBAlpha & 0x80u) != 0u && sourceBPlane1 != 0u)
+                overlayPixel = sourceBPlane1;
+            else if (!sourceBSlot && (sourceBAlpha & 0x80u) != 0u && sourceBPlane0 != 0u)
+                overlayPixel = sourceBPlane0;
+
+            if (overlayPixel != 0u
+                && PackedCaptureColorsClose(
+                    Color6ToPackedCaptureColor(overlayPixel),
+                    captureOutput[x]))
+            {
+                u32 destinationAlpha = control >> 24u;
+                const u32 protectedBlack = sourceBAlpha & 0x20u;
+                if ((destinationAlpha & 0x40u) != 0u)
+                {
+                    plane1 = overlayPixel;
+                    destinationAlpha |= 0x80u | protectedBlack;
+                }
+                else
+                {
+                    plane0 = overlayPixel;
+                    const u32 compMode = destinationAlpha & 0x0Fu;
+                    destinationAlpha = (compMode <= 7u ? compMode : 5u)
+                        | 0x80u
+                        | protectedBlack;
+                }
+                control = (control & 0x00FFFFFFu) | (destinationAlpha << 24u);
+            }
+        }
+
+        StructuredCapturePlanes[captureBase + destinationIndex] = plane0;
+        StructuredCapturePlanes[captureBase + kStructuredCapturePixelCount + destinationIndex] = plane1;
+        StructuredCapturePlanes[captureBase + (2u * kStructuredCapturePixelCount) + destinationIndex] = control;
+        lineUses3D = lineUses3D || (((control >> 24u) & 0x40u) != 0u);
+        wroteMetadata = true;
+    }
+
+    if (wroteMetadata)
+    {
+        const std::size_t destinationLine = static_cast<std::size_t>((destinationAddress & 0xFFFFu) / 256u);
+        if (destinationLine < 192u)
+        {
+            const std::size_t validIndex = static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
+            StructuredCaptureLineValid[validIndex] = 1;
+            StructuredCaptureLineUses3D[validIndex] = lineUses3D ? 1 : 0;
+        }
+    }
+}
+
+bool SoftRenderer2D::DrawStructuredCapturePixel(u32* destination, u32 flatByteAddress)
+{
+    if (!Parent.UseStructuredVulkan2D() || destination == nullptr)
+        return false;
+
+    const u32 engine = GPU2D.Num;
+    const u32 maskedAddress = flatByteAddress & (engine != 0u ? 0x1FFFFu : 0x7FFFFu);
+    const u32 mapMask = engine != 0u
+        ? GPU.VRAMMap_BBG[(maskedAddress >> 14u) & 0x7u]
+        : GPU.VRAMMap_ABG[(maskedAddress >> 14u) & 0x1Fu];
+    const u32 captureAddress = (maskedAddress & 0x1FFFFu) >> 1u;
+    if (captureAddress >= kStructuredCapturePixelCount)
+        return false;
+
+    for (u32 bank = 0; bank < 4u; ++bank)
+    {
+        if ((mapMask & (1u << bank)) == 0u)
+            continue;
+        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + (captureAddress / 256u);
+        if (StructuredCaptureLineValid[validIndex] == 0u)
+            continue;
+
+        const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * kStructuredCapturePixelCount;
+        const std::size_t index = static_cast<std::size_t>(captureAddress);
+        const u32 below = StructuredCapturePlanes[captureBase + index];
+        const u32 above = StructuredCapturePlanes[captureBase + kStructuredCapturePixelCount + index];
+        const u32 control = StructuredCapturePlanes[captureBase + (2u * kStructuredCapturePixelCount) + index];
+        const u32 controlAlpha = control >> 24u;
+        if ((controlAlpha & 0x40u) != 0u)
+        {
+            if (below != 0u)
+                PushStructuredRawPixel(destination, below);
+            PushStructuredRawPixel(
+                destination,
+                0x40000000u | ((controlAlpha & 0x10u) << 24u));
+            if ((controlAlpha & 0x80u) != 0u && above != 0u)
+                PushStructuredRawPixel(destination, above);
+            const u32 line = std::min<u32>(GPU.VCount, 191u);
+            Parent.StructuredEngineLineUsesCapture3D[static_cast<std::size_t>(engine) * 192u + line] = 1;
+            return true;
+        }
+        if ((controlAlpha & 0x80u) != 0u && below != 0u)
+        {
+            PushStructuredRawPixel(destination, below);
+            return true;
+        }
+    }
+    return false;
+}
+
+void SoftRenderer2D::InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len)
+{
+    if (!Parent.UseStructuredVulkan2D() || bank >= 4u)
+        return;
+
+    // (bank, start, len) are 0x8000-byte VRAM capture blocks -- 64 display
+    // lines each -- except the hardware's 128x128 capture size (len == 0),
+    // which spans 128 lines from the same start. Mirrors GLRenderer's
+    // SyncVRAMCapture block-to-line mapping so both renderers agree on which
+    // VRAM bytes a given (bank, start, len) covers.
+    const u32 lineCount = (len == 0u) ? 128u : (len * 64u);
+    const u32 lineStart = start * 64u;
+    const u32 lineEnd = std::min<u32>(lineStart + lineCount, 192u);
+    if (lineStart >= lineEnd)
+        return;
+
+    const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * kStructuredCapturePixelCount;
+    for (u32 line = lineStart; line < lineEnd; ++line)
+    {
+        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
+        const std::size_t linePixelBase = static_cast<std::size_t>(line) * 256u;
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + kStructuredCapturePixelCount + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        std::memset(
+            StructuredCapturePlanes.data() + captureBase + (2u * kStructuredCapturePixelCount) + linePixelBase,
+            0,
+            256u * sizeof(u32));
+        StructuredCaptureLineValid[validIndex] = 0;
+        StructuredCaptureLineUses3D[validIndex] = 0;
+    }
+}
+#endif
 
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 {
@@ -832,7 +1206,7 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
                         const u32 pixelByteAddress =
                             (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
-                        if (Parent.DrawStructuredCapturePixel(GPU2D.Num, &BGOBJLine[i], pixelByteAddress))
+                        if (DrawStructuredCapturePixel(&BGOBJLine[i], pixelByteAddress))
                         {
                             rotX += rotA;
                             rotY += rotC;
