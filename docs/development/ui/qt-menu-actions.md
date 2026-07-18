@@ -13,13 +13,13 @@ Primary files:
 | `src/frontend/qt_sdl/Config.cpp` | Owns default values for config keys |
 | `src/frontend/qt_sdl/InputConfig/*` | Optional settings-dialog mirror of the same config key |
 | `src/frontend/qt_sdl/MelonPrimeLocalization.h` | localization API (`Tr`, `SetLocalizedActionText`, `LocalizeMenu`, ...) |
-| `src/frontend/qt_sdl/MelonPrimeLocalization.cpp` | translation tables (`kTranslations`, `kObjectTextTranslations`) |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslationCatalog.cpp` | translation lookup implementation and catalog ownership |
 
 ## Localization
 
-MelonPrime menu labels are localized through the `MelonPrime::UiText` API in `MelonPrimeLocalization.h`; the translation tables live in `MelonPrimeLocalization.cpp`.
+MelonPrime menu labels are localized through the `MelonPrime::UiText` API in `MelonPrimeLocalization.h`; the translation manifests and topic shards live in `MelonPrimeLocalization/inc/`.
 
-- Add every user-facing `QMenu`/`QAction` label to `kTranslations` (in `MelonPrimeLocalization/MelonPrimeTranslations.inc`, via the `MelonPrimeLocalization.cpp` facade) when adding or renaming a menu item. See [Add a Menu Language](../localization/add-menu-language.md) for the full translation-content workflow and pack-verification rules.
+- Add every user-facing `QMenu`/`QAction` label to the appropriate `MelonPrimeTranslations*.inc` topic shard included by `MelonPrimeTranslations.inc` when adding or renaming a menu item. See [Add a Menu Language](../localization/add-menu-language.md) for the full translation-content workflow and pack-verification rules.
 - `MainWindow::localizeMenuText()` applies the saved `Metroid.UI.MenuLanguage` to the menubar.
 - For labels that change after construction, use `MelonPrime::UiText::SetLocalizedActionText(action, englishSourceText)` instead of raw `setText()` so the English source text stays available when switching between Japanese and English.
 - Dynamically rebuilt menus, such as `recentMenu`, should call `MelonPrime::UiText::LocalizeMenu(menu)` after repopulating actions.
