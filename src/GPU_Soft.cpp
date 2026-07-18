@@ -111,6 +111,10 @@ void SoftRenderer::Reset()
     StructuredCapture3DSourceValid = false;
     StructuredCaptureScreenSwap = false;
     StructuredCaptureScreenSwapValid = false;
+    StructuredPackedScreenSwapAtLine0 = false;
+    StructuredPackedScreenSwapChangedMidFrame = false;
+    StructuredEngineAOnTopLines = 0;
+    StructuredEngineAOnBottomLines = 0;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
@@ -236,6 +240,10 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCapture3DSourceLineValid.fill(0);
             StructuredCapture3DSourceValid = false;
             StructuredCaptureScreenSwapValid = false;
+            StructuredPackedScreenSwapAtLine0 = GPU.ScreenSwap;
+            StructuredPackedScreenSwapChangedMidFrame = false;
+            StructuredEngineAOnTopLines = 0u;
+            StructuredEngineAOnBottomLines = 0u;
             VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][0].fill(0);
             VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][1].fill(0);
             StructuredCaptureCompositeLineValid = false;
@@ -262,6 +270,11 @@ void SoftRenderer::DrawScanline(u32 line)
                 Rend3D->PrepareCaptureFrame();
                 StructuredCapturePreparedThisFrame = true;
             }
+        }
+        else if (structuredVulkan2D
+            && GPU.ScreenSwap != StructuredPackedScreenSwapAtLine0)
+        {
+            StructuredPackedScreenSwapChangedMidFrame = true;
         }
         Output3D = structuredVulkan2D ? Structured3DPlaceholderLine : Rend3D->GetLine(line);
         if (structuredVulkan2D)
@@ -1405,6 +1418,14 @@ void SoftRenderer::BuildStructuredScreenLine(
 
     if (screenLine == 191u)
         StructuredFrameValid = true;
+
+    if (engine == 0u)
+    {
+        if (screen == 0u)
+            ++StructuredEngineAOnTopLines;
+        else
+            ++StructuredEngineAOnBottomLines;
+    }
 }
 
 bool SoftRenderer::CopyStructuredVulkanFrame(StructuredVulkanFrameSnapshot& snapshot) const
@@ -1450,7 +1471,19 @@ void SoftRenderer::SwapBuffers()
         constexpr u32 kMetaFlagRegularCaptureUses3d = 1u << 21u;
         constexpr u32 kMetaFlagVramCaptureUses3d = 1u << 22u;
         constexpr u32 kMetaFlagForceLive3dCompMode7 = 1u << 18u;
-        const bool currentScreenSwapLatched = GPU.GPU3D.GetRenderScreenSwapAt3D();
+        const bool currentRenderer3DOwnerIsTop = GPU.GPU3D.GetRenderScreenSwapAt3D();
+        // Sapphire has one post-RunFrame ownership value because its frontend
+        // latches the packed framebuffer outside the core.  melonPrimeDS
+        // publishes the packed framebuffer from Renderer::SwapBuffers(), after
+        // VCount 215 has moved the live renderer latch to the following render
+        // generation.  Use the actual Engine-A destination vote for packed 2D
+        // phase state. The immutable 3D reference below carries the owner that
+        // was latched with its image at VBlank; the live value is only a
+        // no-reference fallback.
+        const bool currentPackedScreenSwapLatched =
+            StructuredEngineAOnTopLines != StructuredEngineAOnBottomLines
+            ? StructuredEngineAOnTopLines > StructuredEngineAOnBottomLines
+            : StructuredPackedScreenSwapAtLine0;
         const StructuredVulkanFrameSnapshot* previousCompletedFrame = nullptr;
         for (const auto& candidate : CompletedStructuredVulkanFrames)
         {
@@ -1463,7 +1496,7 @@ void SoftRenderer::SwapBuffers()
         }
         const bool screenSwapToggledThisFrame =
             previousCompletedFrame != nullptr
-            && previousCompletedFrame->ScreenSwapLatched != currentScreenSwapLatched;
+            && previousCompletedFrame->ScreenSwapLatched != currentPackedScreenSwapLatched;
 
         const auto& rawTop =
             VulkanPackedFramebuffer[static_cast<std::size_t>(BackBuffer & 1)][0];
@@ -1779,22 +1812,13 @@ void SoftRenderer::SwapBuffers()
         completedFrame.HasCapture3DSource = StructuredCapture3DSourceValid;
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
         completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
-        completedFrame.ScreenSwapLatched = currentScreenSwapLatched;
+        completedFrame.ScreenSwapLatched = currentPackedScreenSwapLatched;
         Renderer3DCompletedFrameReference completed3DReference{};
         if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
             completedFrame.Completed3DReference = completed3DReference;
         completedFrame.Renderer3DOwnerIsTop = completedFrame.Completed3DReference.Valid
             ? completedFrame.Completed3DReference.OwnerIsTop()
-            : currentScreenSwapLatched;
-#ifndef NDEBUG
-        if (completedFrame.Completed3DReference.Valid)
-        {
-            // Sapphire obtains both values from the same post-RunFrame
-            // VCount-215 ownership latch.  A mismatch here would reintroduce
-            // a whole-screen Top/Bottom reversal at the compositor boundary.
-            assert(completedFrame.Renderer3DOwnerIsTop == currentScreenSwapLatched);
-        }
-#endif
+            : currentRenderer3DOwnerIsTop;
         completedFrame.CaptureBackedClass4Only = captureBackedClass4Only;
         completedFrame.CaptureBackedPartialClass0Only =
             StructuredCaptureBacked3DLines > 0u
@@ -1819,8 +1843,12 @@ void SoftRenderer::SwapBuffers()
         {
             Platform::Log(
                 Platform::LogLevel::Info,
-                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu publishedReferenced3dSerial=%llu publishedReferenced3dOwner=%u publishedReferencedImageSlot=%u publishedTimelineValue=%llu currentRendererSerial=%llu currentRendererOwner=%u currentColorImageSlot=mutable exactReference=%u",
+                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu packedScreenSwap=%u packedScreenSwapStable=%u engineATopLines=%u engineABottomLines=%u publishedReferenced3dSerial=%llu publishedReferenced3dOwner=%u publishedReferencedImageSlot=%u publishedTimelineValue=%llu currentRendererSerial=%llu currentRendererOwner=%u currentColorImageSlot=mutable exactReference=%u",
                 static_cast<unsigned long long>(completedFrame.Generation),
+                completedFrame.ScreenSwapLatched ? 1u : 0u,
+                StructuredPackedScreenSwapChangedMidFrame ? 0u : 1u,
+                StructuredEngineAOnTopLines,
+                StructuredEngineAOnBottomLines,
                 static_cast<unsigned long long>(completedFrame.Renderer3DRenderSerial),
                 completedFrame.Renderer3DOwnerIsTop ? 1u : 0u,
                 completedFrame.Completed3DReference.ImageSlot,

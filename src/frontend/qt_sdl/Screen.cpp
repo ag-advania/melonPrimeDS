@@ -1924,7 +1924,11 @@ void ScreenPanelVulkan::setupScreenLayout()
         const QRectF bounds = transform.mapRect(QRectF(0.0, 0.0, 256.0, 192.0));
         MelonPrime::VulkanPresentRegion region;
         region.enabled = bounds.width() > 0.0 && bounds.height() > 0.0;
-        region.bottomScreen = screenKind[index] != 0;
+        // The desktop compositor image is consumed through a Vulkan surface
+        // atlas whose LCD halves are opposite to ScreenLayout's CpuBgra layer
+        // indices. Normalize that convention only at the presentation edge;
+        // packed snapshots and temporal caches remain physical Top/Bottom.
+        region.bottomScreen = screenKind[index] == 0;
         region.x = qRound(bounds.left() * dpr);
         region.y = qRound(bounds.top() * dpr);
         region.width = qRound(bounds.width() * dpr);
@@ -2175,7 +2179,7 @@ void ScreenPanelVulkan::drawScreen()
                 renderFrame,
                 nds->GPU,
                 snapshot.frontBufferLatched,
-                snapshot.screenSwapLatched,
+                snapshot.renderer3dOwnerIsTop,
                 snapshot,
                 *renderer3D,
                 completed3DView)

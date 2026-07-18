@@ -2456,7 +2456,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && completed3DView.Valid
         && completed3DView.Reference.Valid
         ? completed3DView.Reference.OwnerIsTop()
-        : resource.screenSwap;
+        : resource.renderer3dOwnerIsTop;
     const bool class4VramStructuredPair =
         currentBackendIsGraphics
         && softPackedSnapshot.captureBackedClass4Only
@@ -2962,6 +2962,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && resource.snapshotFromGraphicsBackend == currentBackendIsGraphics
         && resource.snapshotWidth == renderer3D.GetColorTargetWidth()
         && resource.snapshotHeight == renderer3D.GetColorTargetHeight()
+        && resource.renderer3dSnapshotScreenSwap == backendRenderScreenSwap
         && (!currentBackendIsGraphics || needsDsTimedCaptureBackedComp4Source);
 
     const auto screenCanUseAccumulatedHighres = [&](const SoftPackedScreenStats& stats) {
@@ -2983,11 +2984,6 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     bool replaceAccumulatedHighres = false;
     if (canReusePreRunSnapshot)
     {
-        if (needsDsTimedCaptureBackedComp4Source
-            && topUsesScreenWideCaptureBackedComp4 != bottomUsesScreenWideCaptureBackedComp4)
-        {
-            resource.renderer3dSnapshotScreenSwap = liveSourceScreenSwap;
-        }
         resource.hasPreparedInputs = true;
         resource.hasContent = false;
     }
@@ -3018,9 +3014,8 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 resource,
                 renderer3D,
                 completed3DView,
-                liveSourceScreenSwap,
-                liveSourceScreenSwap,
-                !liveSourceScreenSwap,
+                backendRenderScreenSwap,
+                !backendRenderScreenSwap,
                 replaceAccumulatedHighres))
         {
             return false;
@@ -4241,7 +4236,6 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     FrameResource& resource,
     const melonDS::VulkanRenderer3D& renderer3D,
     const melonDS::VulkanCompletedFrameView& completed3DView,
-    bool snapshotScreenSwap,
     bool accumulateTopHighres,
     bool accumulateBottomHighres,
     bool replaceAccumulatedHighres)
@@ -4251,7 +4245,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, completed3DView, snapshotScreenSwap))
+    if (!recordRenderer3dSnapshotCopy(resource, completed3DView))
         return false;
 
     resource.snapshotFromPreRun = false;
@@ -4349,9 +4343,12 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
 
 bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(
     FrameResource& resource,
-    const melonDS::VulkanCompletedFrameView& completed3DView,
-    bool snapshotScreenSwap)
+    const melonDS::VulkanCompletedFrameView& completed3DView)
 {
+    // The immutable image's physical LCD owner is part of the completed-frame
+    // reference. Never retag it from packed/capture handoff heuristics: those
+    // can be one POWCNT1 phase apart on the desktop core.
+    const bool snapshotScreenSwap = resource.renderer3dOwnerIsTop;
     const u32 rendererWidth = completed3DView.Width;
     const u32 rendererHeight = completed3DView.Height;
     if (rendererWidth == 0u || rendererHeight == 0u)
