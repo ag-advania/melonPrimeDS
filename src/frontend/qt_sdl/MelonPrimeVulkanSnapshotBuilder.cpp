@@ -1159,7 +1159,19 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     // completed physical snapshots from that phase — never Engine A shadow planes.
     // Skip entirely when ScreenSwap changed mid-generation: a single frame-level
     // phase key cannot describe mixed physical routing.
-    if (source.physicalScreenSwapStable)
+    //
+    // Skip entirely whenever an authoritative packed physical buffer exists
+    // (hasPackedPhysical, unpacked above from source.packedTop/packedBottom).
+    // GPU_Soft already routes Engine A/B to the correct physical Top/Bottom
+    // destination pointer at scanline-draw time (Sapphire's actual contract:
+    // physical LCD identity is decided once, at the producer, and never
+    // re-selected downstream). Reapplying an Engine-A-owner-keyed cache here
+    // re-derives ScreenSwap a second time from stale per-owner history and
+    // whole-screen-replaces the CURRENT physical LCD with a PAST phase's
+    // screen -- on alternating ScreenSwap scenes this manifests as a
+    // complete Top/Bottom swap regardless of how correct the packed
+    // physical producer output already was.
+    if (source.physicalScreenSwapStable && !hasPackedPhysical)
     {
         const bool engineAOnTop = destination.physicalScreenSwap;
         const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
