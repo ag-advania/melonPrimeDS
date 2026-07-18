@@ -947,55 +947,6 @@ void SoftRenderer::PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine
     StructuredCaptureCompositeLineValid = true;
 }
 
-void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
-{
-    // The software renderer already writes captures straight to VRAM, so
-    // there is nothing to sync back. This is still the correct signal that
-    // the CPU/DMA is about to touch a VRAM range the shared structured
-    // capture store shadows -- drop that range so later reads fall back to
-    // plain VRAM color instead of stale plane/control data.
-    (void)complete;
-    InvalidateStructuredCaptureRange(bank, start, len);
-}
-
-void SoftRenderer::InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len)
-{
-    if (!UseStructuredVulkan2D() || bank >= 4u)
-        return;
-
-    // (bank, start, len) are 0x8000-byte VRAM capture blocks -- 64 display
-    // lines each -- except the hardware's 128x128 capture size (len == 0),
-    // which spans 128 lines from the same start. Mirrors GLRenderer's
-    // SyncVRAMCapture block-to-line mapping so both renderers agree on which
-    // VRAM bytes a given (bank, start, len) covers.
-    const u32 lineCount = (len == 0u) ? 128u : (len * 64u);
-    const u32 lineStart = start * 64u;
-    const u32 lineEnd = std::min<u32>(lineStart + lineCount, 192u);
-    if (lineStart >= lineEnd)
-        return;
-
-    const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
-    for (u32 line = lineStart; line < lineEnd; ++line)
-    {
-        const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
-        const std::size_t linePixelBase = static_cast<std::size_t>(line) * 256u;
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + StructuredPixelCount + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        std::memset(
-            StructuredCapturePlanes.data() + captureBase + (2u * StructuredPixelCount) + linePixelBase,
-            0,
-            256u * sizeof(u32));
-        StructuredCaptureLineValid[validIndex] = 0;
-        StructuredCaptureLineUses3D[validIndex] = 0;
-    }
-}
-
 void SoftRenderer::BuildStructuredScreenLine(
     u32 engine,
     u32 screen,

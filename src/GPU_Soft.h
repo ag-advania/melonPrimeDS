@@ -51,16 +51,14 @@ public:
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override {};
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // Structured capture metadata is scoped per 2D engine (SoftRenderer2D),
-    // matching Sapphire's contract -- only Engine A ever writes it, so this
-    // just routes the sync signal there. See SoftRenderer2D for why no
-    // visible-frame generation gate is needed once metadata is isolated
-    // per engine instead of shared cross-engine.
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
-#else
+    // The renderer callback fires for both CPU reads and writes to a VRAM
+    // block a hardware capture had touched (GPU::SyncVRAMCaptureBlock does
+    // not tell them apart), so it cannot be used to invalidate structured
+    // capture metadata -- a plain CPU read of just-captured VRAM would wipe
+    // metadata that is still fresh. Sapphire has no such hook either;
+    // structured metadata validity is driven entirely by exact-range
+    // invalidate-before-write inside the capture path itself.
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
-#endif
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
@@ -133,9 +131,9 @@ private:
     // shared. melonPrimeDS has two separate engine instances; owning this
     // here (keyed by VRAM bank+address, not by engine) is what lets Engine B
     // read capture metadata that Engine-A hardware wrote. Validity is driven
-    // by per-line invalidate-before-write (StoreStructuredCaptureLine) and by
-    // InvalidateStructuredCaptureRange on genuine CPU/DMA VRAM writes --
-    // never by a visible-frame generation counter.
+    // entirely by exact-range invalidate-before-write inside the capture
+    // path (StoreStructuredCaptureLine) -- never by a visible-frame
+    // generation counter, and never by a generic VRAM read/write hook.
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
@@ -176,7 +174,6 @@ private:
         u32 legacyVal2,
         u32 legacyControl);
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
-    void InvalidateStructuredCaptureRange(u32 bank, u32 start, u32 len);
     void BuildStructuredScreenLine(
         u32 engine,
         u32 screen,

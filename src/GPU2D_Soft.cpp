@@ -133,8 +133,24 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
     bool lineUses3D = false;
     bool wroteMetadata = false;
 
-    // Invalidate the destination capture line before rewriting so a later
-    // read cannot sample a mix of this frame and a previous capture.
+    // Invalidate exactly the pixels this call is about to rewrite -- not a
+    // blanket 256-wide row. A 128x128 capture issues two DoCapture calls
+    // per destination row (dstaddr = base + line*width, width == 128), so
+    // capture line 0 writes x=[0,128) and capture line 1 writes x=[128,256)
+    // of the SAME destination row. Clearing the full row on each call wiped
+    // out the half the other call had just written. Sapphire's
+    // ClearStructuredVulkan2DCaptureRange has the same exact-width contract.
+    const u32 copyWidth = std::min<u32>(width, 256u);
+    for (u32 clearX = 0; clearX < copyWidth; ++clearX)
+    {
+        const u32 clearAddress = (destinationAddress + clearX) & 0xFFFFu;
+        if (clearAddress >= kPixelCount)
+            continue;
+        const std::size_t clearIndex = static_cast<std::size_t>(clearAddress);
+        Parent.StructuredCapturePlanes[captureBase + clearIndex] = 0u;
+        Parent.StructuredCapturePlanes[captureBase + kPixelCount + clearIndex] = 0u;
+        Parent.StructuredCapturePlanes[captureBase + (2u * kPixelCount) + clearIndex] = 0u;
+    }
     {
         const std::size_t destinationLine =
             static_cast<std::size_t>((destinationAddress & 0xFFFFu) / 256u);
@@ -142,28 +158,11 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
         {
             const std::size_t validIndex =
                 static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
-            const std::size_t linePixelBase = destinationLine * 256u;
-            std::memset(
-                Parent.StructuredCapturePlanes.data() + captureBase + linePixelBase,
-                0,
-                256u * sizeof(u32));
-            std::memset(
-                Parent.StructuredCapturePlanes.data() + captureBase + kPixelCount + linePixelBase,
-                0,
-                256u * sizeof(u32));
-            std::memset(
-                Parent.StructuredCapturePlanes.data()
-                    + captureBase
-                    + (2u * kPixelCount)
-                    + linePixelBase,
-                0,
-                256u * sizeof(u32));
             Parent.StructuredCaptureLineValid[validIndex] = 0;
             Parent.StructuredCaptureLineUses3D[validIndex] = 0;
         }
     }
 
-    const u32 copyWidth = std::min<u32>(width, 256u);
     for (u32 x = 0; x < copyWidth; ++x)
     {
         const u32 captureAddress = (destinationAddress + x) & 0xFFFFu;
@@ -191,7 +190,6 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
         u32 sourceBPlane0 = 0u;
         u32 sourceBPlane1 = 0u;
         u32 sourceBControl = 0u;
-        bool sourceBHas3D = false;
         if (sourceBFromVram && sourceBBank < 4u)
         {
             const u32 address = (sourceBAddress + x) & 0xFFFFu;
@@ -206,7 +204,6 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
                     sourceBPlane0 = Parent.StructuredCapturePlanes[sourceBase + sourceIndex];
                     sourceBPlane1 = Parent.StructuredCapturePlanes[sourceBase + kPixelCount + sourceIndex];
                     sourceBControl = Parent.StructuredCapturePlanes[sourceBase + (2u * kPixelCount) + sourceIndex];
-                    sourceBHas3D = ((sourceBControl >> 24u) & 0x40u) != 0u;
                 }
             }
         }
@@ -219,51 +216,25 @@ void SoftRenderer2D::StoreStructuredCaptureLine(
             : 0x87000000u;
         bool selectedSourceA3D = false;
 
-        if (captureMode == 0u && sourceAHas3D)
+        // Sapphire: A+B capture's structured content is always source A's
+        // own already-classified pixel (3D-slot or plain-2D, exactly what
+        // captureMode==0 uses) -- never reconstructed from the post-blend
+        // capture RGB. Source B only ever contributes a color-matched flat
+        // 2D overlay (merged below), never a fabricated 3D-slot structure.
+        // Gate matches Sapphire's sourceAContributes: mode 0, or mode >=2
+        // with eva != 0 (source A actually contributes to the blend).
+        if (captureMode == 0u || (captureMode >= 2u && eva != 0u))
         {
             plane0 = sourceAPlane0;
             plane1 = sourceAPlane1;
             control = sourceAControl;
-            selectedSourceA3D = true;
+            selectedSourceA3D = sourceAHas3D;
         }
         else if (captureMode == 1u && sourceBControl != 0u)
         {
             plane0 = sourceBPlane0;
             plane1 = sourceBPlane1;
             control = sourceBControl;
-        }
-        else if (captureMode >= 2u && sourceAHas3D && eva != 0u)
-        {
-            plane0 = flatOutput;
-            const u16 sourceBPacked = (captureCnt & (1u << 25u)) != 0u
-                ? GPU.DispFIFOBuffer[x]
-                : (sourceBFromVram && sourceBBank < 4u
-                    ? reinterpret_cast<const u16*>(GPU.VRAM[sourceBBank])[(sourceBAddress + x) & 0xFFFFu]
-                    : 0u);
-            plane1 = ((sourceBPacked & 0x8000u) != 0u && evb != 0u)
-                ? PackedCaptureColorToColor6(sourceBPacked)
-                : 0u;
-            const u32 structuredAlpha = 0x41u | (plane1 != 0u ? 0x80u : 0u);
-            control = (structuredAlpha << 24u)
-                | ((eva & 0x1Fu) << 16u)
-                | ((evb & 0x1Fu) << 8u);
-            if (StructuredVulkan2DIsOpaqueBlack(plane1))
-                control |= 0x20000000u;
-            selectedSourceA3D = true;
-        }
-        else if (captureMode >= 2u && sourceBHas3D && evb != 0u)
-        {
-            plane0 = flatOutput;
-            plane1 = (eva != 0u) ? sourceAPlane0 : 0u;
-            const u32 sourceBNoCoverage = (sourceBControl >> 24u) & 0x10u;
-            const u32 structuredAlpha = 0x41u
-                | (plane1 != 0u ? 0x80u : 0u)
-                | sourceBNoCoverage;
-            control = (structuredAlpha << 24u)
-                | ((evb & 0x1Fu) << 16u)
-                | ((eva & 0x1Fu) << 8u);
-            if (StructuredVulkan2DIsOpaqueBlack(plane1))
-                control |= 0x20000000u;
         }
         if (selectedSourceA3D && sourceA3DCoverageKnown && !sourceA3DCoverage)
             control |= 0x10000000u;
