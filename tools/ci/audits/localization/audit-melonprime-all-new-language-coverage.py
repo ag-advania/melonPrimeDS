@@ -8,13 +8,24 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 META = REPO / "tools/melonprime_all_new_language_metadata.json"
 FILES = [
-    (REPO / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc", "exact"),
-    # Nested #include pulled in by MelonPrimeTranslations.inc (melonDS settings
-    # dialog strings); lives in qt_sdl/ root, not the MelonPrimeLocalization/
-    # subdir, and is not its own top-level array (spliced into kTranslations).
-    (REPO / "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc", "exact"),
-    (REPO / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc", "object"),
+    (REPO / "src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeTranslations.inc", "exact"),
+    (REPO / "src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeObjectTranslations.inc", "object"),
 ]
+
+def read_with_includes(path: Path, seen: set[Path] | None = None) -> str:
+    if seen is None:
+        seen = set()
+    path = path.resolve()
+    if path in seen:
+        return ""
+    seen.add(path)
+    text = path.read_text(encoding="utf-8")
+
+    def expand(match: re.Match[str]) -> str:
+        included = path.parent / match.group("path")
+        return read_with_includes(included, seen) if included.exists() else match.group(0)
+
+    return re.sub(r'#include\s+"(?P<path>[^"]+\.inc)"', expand, text)
 
 def count_rows(text: str) -> int:
     return len(re.findall(r'\{\s*"(?:\\.|[^"\\])*"\s*,\s*\{', text))
@@ -28,7 +39,7 @@ def main() -> int:
     totals = {"exact": 0, "object": 0}
     lang_counts = {"exact": {lang["id"]: 0 for lang in langs}, "object": {lang["id"]: 0 for lang in langs}}
     for path, surface in FILES:
-        text = path.read_text(encoding="utf-8")
+        text = read_with_includes(path)
         total = count_rows(text)
         totals[surface] += total
         print(f"[INFO] {path.name} ({surface}): rows={total}")

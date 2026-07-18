@@ -144,8 +144,12 @@ def main() -> int:
     lookup = load_lookup()
     objects = load_objects()
 
-    melonds = QT_SDL / "MelonPrimeLocalizationMelondsDialogs.inc"
-    melonds.write_text(replace_pairs(melonds.read_text(encoding="utf-8"), lookup), encoding="utf-8")
+    localization = QT_SDL / "MelonPrimeLocalization" / "inc"
+    for melonds in sorted(localization.glob("MelonPrimeDialogsTranslations*.inc")):
+        text = melonds.read_text(encoding="utf-8")
+        if '#include "' in text:
+            continue
+        melonds.write_text(replace_pairs(text, lookup), encoding="utf-8")
 
     cpp_path = QT_SDL / "MelonPrimeLocalization.cpp"
     cpp = cpp_path.read_text(encoding="utf-8")
