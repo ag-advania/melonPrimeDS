@@ -51,7 +51,16 @@ public:
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override {};
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Structured capture metadata is scoped per 2D engine (SoftRenderer2D),
+    // matching Sapphire's contract -- only Engine A ever writes it, so this
+    // just routes the sync signal there. See SoftRenderer2D for why no
+    // visible-frame generation gate is needed once metadata is isolated
+    // per engine instead of shared cross-engine.
+    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
+#else
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
+#endif
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
@@ -117,12 +126,6 @@ private:
     // [backBuffer][physicalScreen 0=Top / 1=Bottom]. Authoritative Vulkan 2D
     // producer (Sapphire packed stride). ScreenPlanes are derived from this.
     std::array<u32, VulkanPackedPixelCount> VulkanPackedFramebuffer[2][2]{};
-    std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
-    std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
-    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
-    // Reject previous-frame capture metadata when Engine B samples capture planes.
-    std::array<u64, 4u * 192u> StructuredCaptureLineGeneration{};
-    u64 StructuredCaptureProducerGeneration = 0;
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     std::array<u32, 192u * 17u> StructuredCaptureBackedSourceClassPixels{};
     std::array<u8, 192u> StructuredCaptureBackedExplicitSlot{};
@@ -160,16 +163,6 @@ private:
         u32 legacyVal2,
         u32 legacyControl);
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
-    void StoreStructuredCaptureLine(
-        u32 line,
-        u32 width,
-        u32 destinationBank,
-        u32 destinationAddress,
-        u32 sourceBAddress,
-        u32 sourceBBank,
-        bool sourceBFromVram,
-        const u16* captureOutput);
-    [[nodiscard]] bool DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress);
     void BuildStructuredScreenLine(
         u32 engine,
         u32 screen,
