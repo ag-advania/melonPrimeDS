@@ -1461,7 +1461,7 @@
         "Weapon Inventory",
         {
             {MenuLangId::Japanese, "武器: 一覧"},
-            {MenuLangId::German, "Waffe: Bestand"},
+            {MenuLangId::German, "Waffe: Inventar"},
             {MenuLangId::Spanish, "arma: inventario"},
             {MenuLangId::French, "Arme : inventaire"},
             {MenuLangId::Italian, "arma: inventario"},
@@ -1542,7 +1542,7 @@
         "Weapon Inventory Highlight",
         {
             {MenuLangId::Japanese, "武器: 一覧 - 強調表示"},
-            {MenuLangId::German, "Waffe: Bestand - Hervorhebung"},
+            {MenuLangId::German, "Waffe: Inventar - Hervorhebung"},
             {MenuLangId::Spanish, "arma: inventario - resaltado"},
             {MenuLangId::French, "Arme : surbrillance dans l’inventaire"},
             {MenuLangId::Italian, "arma: inventario - evidenziazione"},
@@ -1785,10 +1785,10 @@
         "Match Status",
         {
             {MenuLangId::Japanese, "試合情報"},
-            {MenuLangId::German, "Spielstand"},
+            {MenuLangId::German, "Spielstatus"},
             {MenuLangId::Spanish, "Estado de partida"},
-            {MenuLangId::French, "État du match"},
-            {MenuLangId::Italian, "Stato partita"},
+            {MenuLangId::French, "État de la partie"},
+            {MenuLangId::Italian, "Stato della partita"},
             {MenuLangId::Dutch, "Wedstrijdstatus"},
             {MenuLangId::Portuguese, "Estado da partida"},
             {MenuLangId::Russian, "Состояние матча"},
@@ -3974,7 +3974,7 @@
             {MenuLangId::Japanese, "得点"},
             {MenuLangId::German, "Punkte"},
             {MenuLangId::Spanish, "puntos"},
-            {MenuLangId::French, "unités"},
+            {MenuLangId::French, "points"},
             {MenuLangId::Italian, "punti"},
             {MenuLangId::Dutch, "punten"},
             {MenuLangId::Portuguese, "pontos"},
@@ -4130,4 +4130,3 @@
             {MenuLangId::Hebrew, "פצצות"},
         }
     },
-
