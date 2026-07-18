@@ -83,11 +83,11 @@
     {
         "Use New Method for Biped Fire",
         {
-            {MenuLangId::Japanese, "二足時の射撃に新方式を使う"},
-            {MenuLangId::German, "Neue Methode für Biped-Feuer verwenden"},
-            {MenuLangId::Spanish, "Usar nuevo método para disparo Biped"},
-            {MenuLangId::French, "Utiliser la nouvelle méthode pour le tir Biped"},
-            {MenuLangId::Italian, "Usa il nuovo metodo per il fuoco in forma bipede"},
+            {MenuLangId::Japanese, "通常形態での射撃に新方式を使う"},
+            {MenuLangId::German, "Neue Methode für das Schießen in Normalform verwenden"},
+            {MenuLangId::Spanish, "Usar el método nuevo para disparar en forma normal"},
+            {MenuLangId::French, "Utiliser la nouvelle méthode pour le tir en forme normale"},
+            {MenuLangId::Italian, "Usa il nuovo metodo per sparare in forma normale"},
             {MenuLangId::Dutch, "Nieuwe methode voor Biped-vuur gebruiken"},
             {MenuLangId::Portuguese, "Usar novo método para disparo Biped"},
             {MenuLangId::Russian, "Использовать новый метод для огня Biped"},
@@ -164,7 +164,7 @@
     {
         "Use New Method for Alt-Form Transform",
         {
-            {MenuLangId::Japanese, "トランスフォーム変形に新方式を使う"},
+            {MenuLangId::Japanese, "別形態への変形に新方式を使う"},
             {MenuLangId::German, "Neue Methode für Alt-Form-Transformation verwenden"},
             {MenuLangId::Spanish, "Usar el método nuevo para la forma alternativa"},
             {MenuLangId::French, "Utiliser la nouvelle méthode pour la forme alternative"},

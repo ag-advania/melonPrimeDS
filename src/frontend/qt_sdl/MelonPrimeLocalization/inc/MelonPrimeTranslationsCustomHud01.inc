@@ -569,11 +569,11 @@
     {
         "Hide Bomb (Boost Ball kept)",
         {
-            {MenuLangId::Japanese, "ボムを非表示（Boost Ballは維持）"},
-            {MenuLangId::German, "Bombe ausblenden (Boost Ball bleibt erhalten)"},
-            {MenuLangId::Spanish, "Ocultar bomba (se conserva Boost Ball)"},
-            {MenuLangId::French, "Masquer la bombe (Boost Ball conservé)"},
-            {MenuLangId::Italian, "Nascondi bomba (Boost Ball mantenuto)"},
+            {MenuLangId::Japanese, "ボムを非表示（ブーストは維持）"},
+            {MenuLangId::German, "BOMBE ausblenden (BOOST bleibt erhalten)"},
+            {MenuLangId::Spanish, "Ocultar la BOMBA (se conserva el TURBO)"},
+            {MenuLangId::French, "Masquer la BOMBE (BOOST conservé)"},
+            {MenuLangId::Italian, "Nascondi la BOMBA (TURBO mantenuto)"},
             {MenuLangId::Dutch, "Bom verbergen (Boost Ball blijft behouden)"},
             {MenuLangId::Portuguese, "Ocultar bomba (Boost Ball mantida)"},
             {MenuLangId::Russian, "Скрыть бомбу (Boost Ball сохраняется)"},

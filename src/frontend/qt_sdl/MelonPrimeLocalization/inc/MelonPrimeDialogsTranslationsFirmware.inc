@@ -3,7 +3,7 @@
         "Greyish blue",
         {
             {MenuLangId::Japanese, "灰みの青"},
-            {MenuLangId::German, "Grau-blau"},
+            {MenuLangId::German, "Graublau"},
             {MenuLangId::Spanish, "Azul grisáceo"},
             {MenuLangId::French, "Bleu grisâtre"},
             {MenuLangId::Italian, "Blu grigiastro"},
