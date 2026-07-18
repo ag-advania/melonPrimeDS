@@ -57,8 +57,13 @@ public:
         u32 sourceBAddress,
         u32 sourceBBank,
         bool sourceBFromVram,
+        bool sourceBAvailable,
         const u16* captureOutput);
     [[nodiscard]] bool DrawStructuredCapturePixel(u32* destination, u32 flatByteAddress);
+    [[nodiscard]] const u32* GetStructuredPackedLine() const noexcept
+    {
+        return BGOBJLine;
+    }
 #endif
 
 private:

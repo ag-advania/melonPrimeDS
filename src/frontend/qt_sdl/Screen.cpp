@@ -1742,7 +1742,11 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
 
     vulkan->framePolicy.MaxBacklogDepth = 1;
     vulkan->framePolicy.AllowStealPending = false;
-    vulkan->framePolicy.AllowPreviousFrameReuse = true;
+    // Sapphire constrains graphics-hardware presentation to the current
+    // completed frame on non-mobile GPUs. Temporal composition keeps its own
+    // explicit previous-source references; queue-level reuse would present a
+    // different packed generation.
+    vulkan->framePolicy.AllowPreviousFrameReuse = false;
     vulkan->framePolicy.PreferOldestFrame = false;
 }
 
@@ -2058,7 +2062,7 @@ void ScreenPanelVulkan::drawScreen()
     // preference and the normal one-frame presentation queue.
     vulkan->framePolicy.MaxBacklogDepth = speedOverride && rendererScale > 1u ? 2u : 1u;
     vulkan->framePolicy.AllowStealPending = speedOverride;
-    vulkan->framePolicy.AllowPreviousFrameReuse = !speedOverride;
+    vulkan->framePolicy.AllowPreviousFrameReuse = false;
     vulkan->framePolicy.AllowDropForDeadline = false;
     vulkan->framePolicy.PreferOldestFrame = false;
     vulkan->framePolicy.PreserveBacklogOnPresent = false;
@@ -2109,36 +2113,34 @@ void ScreenPanelVulkan::drawScreen()
         for (std::size_t screen = 0; screen < 2u; ++screen)
         {
             const std::size_t screenBase = screen * 3u * SoftRenderer::StructuredPixelCount;
-            const std::size_t engineBase = screen * 3u * SoftRenderer::StructuredPixelCount;
             snapshotSource.lineMeta[screen] = structuredSource.ScreenLineMeta.data() + (screen * 192u);
-            snapshotSource.engineLineUsesCapture3d[screen] =
-                structuredSource.EngineLineUsesCapture3D.data() + (screen * 192u);
             for (std::size_t plane = 0; plane < 3u; ++plane)
             {
                 snapshotSource.plane[screen][plane] =
                     structuredSource.ScreenPlanes.data()
                     + screenBase
                     + (plane * SoftRenderer::StructuredPixelCount);
-                snapshotSource.enginePlane[screen][plane] =
-                    structuredSource.EnginePlanes.data()
-                    + engineBase
-                    + (plane * SoftRenderer::StructuredPixelCount);
             }
         }
         snapshotSource.capture3dSource = structuredSource.Capture3DSource.data();
+        snapshotSource.captureLineUses3dMask = structuredSource.CaptureLineUses3D.data();
         snapshotSource.capture3dSourceLineValid = structuredSource.Capture3DSourceLineValid.data();
         snapshotSource.screenNeedsCapture3d[0] = structuredSource.TopScreenNeedsCapture3D.data();
         snapshotSource.screenNeedsCapture3d[1] = structuredSource.BottomScreenNeedsCapture3D.data();
         snapshotSource.hasCapture3dSource = structuredSource.HasCapture3DSource;
         snapshotSource.captureScreenSwap = structuredSource.CaptureScreenSwap;
         snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
-        snapshotSource.physicalScreenSwap = structuredSource.PhysicalScreenSwap;
-        snapshotSource.physicalScreenSwapStable = structuredSource.PhysicalScreenSwapStable;
+        snapshotSource.screenSwapLatched = structuredSource.ScreenSwapLatched;
         snapshotSource.packedTop = structuredSource.PackedTop.data();
         snapshotSource.packedBottom = structuredSource.PackedBottom.data();
         snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
+        snapshotSource.captureBackedPartialClass0Only =
+            structuredSource.CaptureBackedPartialClass0Only;
+        snapshotSource.captureBackedFullClass0AlternatingCapture =
+            structuredSource.CaptureBackedFullClass0AlternatingCapture;
         snapshotSource.captureBackedHasStructured2DSource =
             structuredSource.CaptureBackedHasStructured2DSource;
+        snapshotSource.structuredCopyLines = structuredSource.StructuredCopyLines;
         snapshotSource.frontBuffer = structuredSource.FrontBuffer;
         snapshotSource.renderer3dOwnerIsTop = structuredSource.Renderer3DOwnerIsTop;
         snapshotSource.generation = structuredSource.Generation;
@@ -2153,6 +2155,19 @@ void ScreenPanelVulkan::drawScreen()
             ++vulkan->consecutiveFailures;
             return;
         }
+        if (vulkan->snapshotBuilder.takeRegularCaptureTransitionResyncRequest())
+        {
+            // Sapphire drops the transition frame and clears both compositor
+            // and producer structured-capture histories. The producer clear is
+            // requested atomically and applied on its next frame boundary.
+            vulkan->output.clearStructuredCaptureHistory();
+            renderer->RequestStructuredVulkanResync();
+            vulkan->snapshotBuilder.reset();
+            snapshot.clear();
+            vulkan->frameQueue.discardRenderedFrame(renderFrame);
+            vulkan->lastQueuedStructuredGeneration = structuredSource.Generation;
+            return;
+        }
         renderFrame->sourceGeneration = structuredSource.Generation;
 
         MelonPrime::VulkanCompositionInputs composeInputs{};
@@ -2160,7 +2175,7 @@ void ScreenPanelVulkan::drawScreen()
                 renderFrame,
                 nds->GPU,
                 snapshot.frontBufferLatched,
-                snapshot.renderer3dOwnerIsTop,
+                snapshot.screenSwapLatched,
                 snapshot,
                 *renderer3D,
                 completed3DView)

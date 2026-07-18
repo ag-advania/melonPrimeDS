@@ -62,7 +62,6 @@ public:
     bool Init() override;
     void Reset() override;
     void RenderFrame() override;
-    void FinishRendering() override;
     void RestartFrame() override;
     u32* GetLine(int line) override;
 
@@ -405,7 +404,7 @@ private:
     void destroyRenderTarget();
     bool ensureCompletedFrameSlot(u32 slot, u32 width, u32 height);
     void destroyCompletedFrameSlots();
-    bool snapshotCompletedFrameAtVBlank();
+    bool snapshotCompletedFrameForStructured();
     bool ensureTriangleBuffer(RenderContext* context, size_t triangleCount);
     void destroyTriangleBuffer(RenderContext* context);
     bool ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount);
@@ -823,7 +822,6 @@ private:
     bool CurrentRenderScreenSwap = false;
     u64 RenderSerial = 0;
     u64 LastSuccessfulRenderSerial = 0;
-    bool LastSuccessfulRenderScreenSwap = false;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
     float TimestampPeriodNs = 0.0f;
     bool TimestampQueriesSupported = false;
