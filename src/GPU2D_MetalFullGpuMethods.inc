@@ -177,75 +177,93 @@ uint8_t* MetalSegmentedCaptureBase(StateT& state) noexcept
     return static_cast<uint8_t*>([buffer contents]);
 }
 
-void MetalRenderer2D::BeginSegmentSnapshotFrameIfNeeded(
-    int line) noexcept
+// MELONPRIME_METAL_FRAME_BOOTSTRAP_V1
+bool MetalRenderer2D::BeginSegmentedSnapshotFrame(
+    uint64_t frameEpoch) noexcept
 {
-    if (!State || line != 0)
+    if (!State ||
+        frameEpoch == 0 ||
+        !State->SnapshotBuffersReady ||
+        !State->SegmentedUploadRing ||
+        !State->SegmentedUploadRing->Ready())
+    {
+        return false;
+    }
+
+    // Same epoch: idempotent success if the slot is still reserved.
+    if (State->SnapshotFrameEpoch == frameEpoch)
+        return SegmentedSnapshotReady();
+
+    // Previous frame never reached VBlank take-lease -- free its slot.
+    MetalReleaseSegmentedUploadSlot(
+        State->SegmentedCaptureRing,
+        State->SegmentedCaptureSlot);
+    State->SegmentedCaptureRing.reset();
+    State->SegmentedCaptureSlot = -1;
+    State->SegmentedCaptureAttempted = false;
+    State->LayerSnapshotValid.fill(0);
+    State->SpriteSnapshotValid.fill(0);
+    State->LayerSnapshotLastLine = -1;
+    State->SpriteSnapshotLastLine = -1;
+    State->SegmentedFrameOutputCleared = false;
+    State->SnapshotFrameEpoch = frameEpoch;
+
+    std::shared_ptr<MetalSegmentedUploadRing> ring =
+        State->SegmentedUploadRing;
+    const int32_t slot =
+        MetalReserveSegmentedUploadSlot(ring);
+    if (slot < 0)
+    {
+        // Leave Attempted=false so a later frame (new epoch) can retry.
+        State->SnapshotFrameEpoch = 0;
+        return false;
+    }
+
+    State->SegmentedCaptureAttempted = true;
+    State->SegmentedCaptureRing = std::move(ring);
+    State->SegmentedCaptureSlot = slot;
+    return SegmentedSnapshotReady();
+}
+
+void MetalRenderer2D::CancelSegmentedSnapshotFrame(
+    uint64_t frameEpoch) noexcept
+{
+    if (!State || State->SnapshotFrameEpoch != frameEpoch)
         return;
 
-    // DrawSprites(0) and DrawScanline(0) can arrive in either order, and both
-    // call this every frame. NDS::NumFrames (bumped once per real DS frame in
-    // NDS::RunFrame(), independent of scanline progress) is the actual frame
-    // boundary: comparing it against the epoch the current reservation was
-    // made for correctly distinguishes "a new frame started" from "this is
-    // the second line-0 caller of the frame already in progress", which the
-    // prior `LastLine > 0` heuristic could not: a frame that restarts,
-    // aborts, or is interrupted by a savestate load/pause right after line 0
-    // leaves LastLine at 0 too, indistinguishable from mid-frame re-entry.
-    const uint32_t frameEpoch = GPU.NDS.NumFrames;
-    if (State->SnapshotFrameEpoch != frameEpoch)
-    {
-        MetalReleaseSegmentedUploadSlot(
-            State->SegmentedCaptureRing,
-            State->SegmentedCaptureSlot);
-        State->SegmentedCaptureRing.reset();
-        State->SegmentedCaptureSlot = -1;
-        State->SegmentedCaptureAttempted = false;
-        State->LayerSnapshotValid.fill(0);
-        State->SpriteSnapshotValid.fill(0);
-        State->LayerSnapshotLastLine = -1;
-        State->SpriteSnapshotLastLine = -1;
-        State->SegmentedFrameOutputCleared = false;
-        State->SnapshotFrameEpoch = frameEpoch;
-    }
-
-    if (!State->SegmentedCaptureAttempted &&
-        State->SnapshotBuffersReady)
-    {
-        State->SegmentedCaptureAttempted = true;
-        std::shared_ptr<MetalSegmentedUploadRing> ring =
-            State->SegmentedUploadRing;
-        const int32_t slot =
-            MetalReserveSegmentedUploadSlot(ring);
-        if (slot >= 0)
-        {
-            State->SegmentedCaptureRing =
-                std::move(ring);
-            State->SegmentedCaptureSlot = slot;
-        }
-    }
+    MetalReleaseSegmentedUploadSlot(
+        State->SegmentedCaptureRing,
+        State->SegmentedCaptureSlot);
+    State->SegmentedCaptureRing.reset();
+    State->SegmentedCaptureSlot = -1;
+    State->SegmentedCaptureAttempted = false;
+    State->SnapshotFrameEpoch = 0;
 }
 
 void MetalRenderer2D::MaybeReportSegmentSnapshotFrame() noexcept
 {
 }
 
-void MetalRenderer2D::CaptureScanlineState(int line) noexcept
+bool MetalRenderer2D::CaptureScanlineState(int line) noexcept
 {
-    if (!State || line < 0 || line >= kScreenH)
-        return;
+    if (!State ||
+        line < 0 ||
+        line >= kScreenH ||
+        !SegmentedSnapshotReady())
+    {
+        return false;
+    }
 
-    BeginSegmentSnapshotFrameIfNeeded(line);
     if (!RefreshScanlineConfig(line) ||
         !State->SnapshotBuffersReady)
     {
-        return;
+        return false;
     }
 
     uint8_t* frameUploadBase =
         MetalSegmentedCaptureBase(*State);
     if (!frameUploadBase)
-        return;
+        return false;
 
     const MetalSegmentedUploadLayout uploadLayout =
         MetalMakeSegmentedUploadLayout(
@@ -263,30 +281,34 @@ void MetalRenderer2D::CaptureScanlineState(int line) noexcept
     // RefreshLayerConfig builds the normalized BG contract consumed by the
     // segmented compositor. It remains compact and is retained separately for
     // segment hashing and BG target selection.
-    if (RefreshLayerConfig())
-    {
-        auto* frame =
-            reinterpret_cast<LayerScanlineSnapshotCpu*>(
-                [State->LayerScanlineSnapshotBuffer contents]);
-        frame->line[line] = State->LayerConfig;
-        State->LayerSnapshotHash[line] =
-            MetalSnapshotHash(
-                &frame->line[line],
-                sizeof(LayerConfigCpu));
-        State->LayerSnapshotValid[line] = 1;
-        State->LayerSnapshotLastLine = line;
-    }
+    if (!RefreshLayerConfig())
+        return false;
+
+    auto* frame =
+        reinterpret_cast<LayerScanlineSnapshotCpu*>(
+            [State->LayerScanlineSnapshotBuffer contents]);
+    if (!frame)
+        return false;
+    frame->line[line] = State->LayerConfig;
+    State->LayerSnapshotHash[line] =
+        MetalSnapshotHash(
+            &frame->line[line],
+            sizeof(LayerConfigCpu));
+    State->LayerSnapshotValid[line] = 1;
+    State->LayerSnapshotLastLine = line;
+    return true;
 }
 
-void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
+bool MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
 {
-    if (!State || !State->SpriteScanlineConfigBuffer ||
-        line < 0 || line >= kScreenH)
+    if (!State ||
+        !State->SpriteScanlineConfigBuffer ||
+        line < 0 ||
+        line >= kScreenH ||
+        !SegmentedSnapshotReady())
     {
-        return;
+        return false;
     }
-
-    BeginSegmentSnapshotFrameIfNeeded(line);
 
     auto* compatibilityConfig =
         reinterpret_cast<SpriteScanlineConfigCpu*>(
@@ -297,13 +319,13 @@ void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
     if (!State->SnapshotBuffersReady ||
         !RefreshSpriteConfig(line, line + 1))
     {
-        return;
+        return false;
     }
 
     uint8_t* frameUploadBase =
         MetalSegmentedCaptureBase(*State);
     if (!frameUploadBase)
-        return;
+        return false;
 
     const MetalSegmentedUploadLayout uploadLayout =
         MetalMakeSegmentedUploadLayout(
@@ -328,6 +350,8 @@ void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
     auto* meta =
         reinterpret_cast<SpriteScanlineMetaFrameCpu*>(
             [State->SpriteScanlineMetaBuffer contents]);
+    if (!meta)
+        return false;
     meta->line[line].numSprites =
         static_cast<uint32_t>(State->NumSprites);
     meta->line[line].useMosaic =
@@ -350,6 +374,7 @@ void MetalRenderer2D::CaptureSpriteScanlineState(int line) noexcept
             meta->line[line].useMosaic);
     State->SpriteSnapshotValid[line] = 1;
     State->SpriteSnapshotLastLine = line;
+    return true;
 }
 
 bool MetalRenderer2D::SegmentedSnapshotReady() const noexcept

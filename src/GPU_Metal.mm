@@ -1239,9 +1239,21 @@ void MetalRenderer::VBlank()
             FullGpuState->CompletedScreenSwap = FullGpuState->ScreenSwap;
             FullGpuState->CompletedBrightnessA = FullGpuState->BrightnessA;
             FullGpuState->CompletedBrightnessB = FullGpuState->BrightnessB;
+            FullGpuState->ActiveSnapshotEpoch = 0;
         }
         else
         {
+            // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: release unsubmitted snapshot
+            // slots on early VBlank rejection (before take-lease).
+            const uint64_t epoch = FullGpuState->ActiveSnapshotEpoch;
+            if (epoch != 0)
+            {
+                if (Metal2D_A)
+                    Metal2D_A->CancelSegmentedSnapshotFrame(epoch);
+                if (Metal2D_B)
+                    Metal2D_B->CancelSegmentedSnapshotFrame(epoch);
+                FullGpuState->ActiveSnapshotEpoch = 0;
+            }
             FullGpuState->Completed = MetalFullGpuState::RetainPrevious;
             // MetalCaptureFrameHadCapture() is narrower than "capture is
             // active this frame" -- it additionally requires the capture

@@ -538,16 +538,10 @@ struct MetalRenderer2D::Metal2DState
     size_t SpriteSnapshotStride = 0;
     int LayerSnapshotLastLine = -1;
     int SpriteSnapshotLastLine = -1;
-    // MELONPRIME_METAL_SNAPSHOT_FRAME_EPOCH_V1: NDS::NumFrames value the
-    // current ring-slot reservation belongs to (see
-    // BeginSegmentSnapshotFrameIfNeeded in GPU2D_MetalFullGpuMethods.inc).
-    // Distinguishes "the previous frame ended after line 0" (LastLine>0, the
-    // prior heuristic) from "the previous frame never advanced past line 0"
-    // (RestartFrame/abort/savestate/pause -- LastLine stays 0, which the
-    // prior heuristic could not tell apart from the *same* frame's second
-    // line-0 caller (DrawScanline/DrawSprites can each reach line 0 first)).
-    // An actual frame-boundary counter distinguishes both cases correctly.
-    uint32_t SnapshotFrameEpoch = 0xFFFFFFFFu;
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: renderer-owned monotonic epoch
+    // from MetalRenderer::Start3DRendering (not NDS::NumFrames). 0 means no
+    // active reservation.
+    uint64_t SnapshotFrameEpoch = 0;
     bool SnapshotBuffersReady = false;
     bool SegmentedRenderReady = false;
     bool SegmentedFrameOutputCleared = false;

@@ -15,29 +15,6 @@ namespace
 // rather than an immediate retry.
 constexpr uint32_t kMidFrameInvalidationCooldownFrames = 60;
 
-bool MetalSegmented2DVisibleRequested()
-{
-    return true;
-}
-
-bool MetalAllowExperimentalMixed3D2DGpuPath()
-{
-    return true;
-}
-
-bool MetalEngineAUsesMixed3DAnd2DOverlay(const GPU& gpu)
-{
-    const GPU2D& engine = gpu.GPU2D_A;
-    const bool uses3D = (engine.DispCnt & (1u << 3)) != 0u;
-
-    constexpr uint32_t kNon3DOverlayMask =
-        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4);
-    const bool uses2DOverlay =
-        (engine.LayerEnable & kNon3DOverlayMask) != 0u;
-
-    return uses3D && uses2DOverlay;
-}
-
 static constexpr const char* kMetalFullGpuOutputShaderSource = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
@@ -131,6 +108,12 @@ struct MetalRenderer::MetalFullGpuState
     // every single frame (which is what a sustained, multi-second freeze
     // looks like to the user).
     uint32_t MidFrameInvalidationCooldownFrames = 0;
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: renderer-owned monotonic epoch
+    // for segmented snapshot slot ownership (never 0).
+    uint64_t NextSnapshotEpoch = 1;
+    uint64_t ActiveSnapshotEpoch = 0;
+    bool LoggedBootstrapFirstActive = false;
+    bool LoggedBootstrapReject = false;
     bool LoggedEnabled = false;
     bool LoggedRejected = false;
     bool LoggedCompose = false;
@@ -273,19 +256,10 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
     if (displayModeA != 1u || displayModeB != 1u)
         return false;
 
-    // Mixed 3D+2D overlays use segmented Metal 2D snapshots (production).
-    // If snapshots are not ready, fail eligibility -- Soft mid-frame escape
-    // is forbidden (§11.4); the sticky mid-frame block handles retries.
-    if (MetalEngineAUsesMixed3DAnd2DOverlay(GPU))
-    {
-        if (MetalSegmented2DVisibleRequested() &&
-            (!Metal2D_A->SegmentedSnapshotReady() ||
-             !Metal2D_B->SegmentedSnapshotReady()))
-        {
-            return false;
-        }
-    }
-
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1 (design A): per-frame snapshot
+    // slot reservation is performed in Start3DRendering *before* this check.
+    // Do not require SegmentedSnapshotReady() here -- that created a
+    // bootstrap deadlock (FrameActive needs ready; ready needs FrameActive).
     return true;
 }
 
@@ -314,14 +288,73 @@ void MetalRenderer::Start3DRendering()
         }
     }
 
-    FullGpuState->FrameActive =
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: issue epoch, reserve A/B slots,
+    // then evaluate static eligibility. Never reverse that order.
+    uint64_t epoch = FullGpuState->NextSnapshotEpoch++;
+    if (epoch == 0)
+        epoch = FullGpuState->NextSnapshotEpoch++;
+    FullGpuState->ActiveSnapshotEpoch = epoch;
+
+    const bool snapshotAReady =
+        Metal2D_A && Metal2D_A->BeginSegmentedSnapshotFrame(epoch);
+    const bool snapshotBReady =
+        Metal2D_B && Metal2D_B->BeginSegmentedSnapshotFrame(epoch);
+
+    const bool captureCoherent = MetalCaptureResourcesCoherent();
+    const bool staticEligible =
         !FullGpuState->BlockedByCaptureFeedback &&
         !FullGpuState->BlockedByMidFrameInvalidation &&
-        MetalCaptureResourcesCoherent() &&
+        captureCoherent &&
         IsMetalFullGpuFrameEligible();
+
+    FullGpuState->FrameActive =
+        snapshotAReady && snapshotBReady && staticEligible;
     FullGpuState->FrameValid = FullGpuState->FrameActive;
+
     if (FullGpuState->FrameActive)
+    {
         BeginMetalCaptureFrame();
+        if (!FullGpuState->LoggedBootstrapFirstActive)
+        {
+            FullGpuState->LoggedBootstrapFirstActive = true;
+            std::fprintf(stderr,
+                "[MelonPrime] metal bootstrap: first frame activated "
+                "epoch=%llu\n",
+                static_cast<unsigned long long>(epoch));
+        }
+    }
+    else
+    {
+        if (Metal2D_A)
+            Metal2D_A->CancelSegmentedSnapshotFrame(epoch);
+        if (Metal2D_B)
+            Metal2D_B->CancelSegmentedSnapshotFrame(epoch);
+        FullGpuState->ActiveSnapshotEpoch = 0;
+
+        static const char* envDiag = std::getenv("MELONPRIME_METAL_DIAG");
+        const bool diag =
+            envDiag && envDiag[0] != '\0' && envDiag[0] != '0';
+        if (diag && !FullGpuState->LoggedBootstrapReject)
+        {
+            FullGpuState->LoggedBootstrapReject = true;
+            const char* stage = !snapshotAReady ? "snapshot-A-reserve"
+                : !snapshotBReady ? "snapshot-B-reserve"
+                : !captureCoherent ? "capture-not-coherent"
+                : FullGpuState->BlockedByCaptureFeedback ? "blocked-capture-feedback"
+                : FullGpuState->BlockedByMidFrameInvalidation ? "blocked-midframe"
+                : "static-eligibility";
+            std::fprintf(stderr,
+                "[MelonPrime] metal bootstrap rejected: epoch=%llu "
+                "stage=%s snapshotA=%d snapshotB=%d staticEligible=%d "
+                "captureCoherent=%d frameActive=0\n",
+                static_cast<unsigned long long>(epoch),
+                stage,
+                snapshotAReady ? 1 : 0,
+                snapshotBReady ? 1 : 0,
+                staticEligible ? 1 : 0,
+                captureCoherent ? 1 : 0);
+        }
+    }
 
     Metal3DSetCpuReadbackRequired(
         Rend3D.get(),
@@ -346,8 +379,17 @@ void MetalRenderer::DrawScanline(u32 line)
             FullGpuState->ScreenSwap[line] = GPU.ScreenSwap ? 1u : 0u;
             FullGpuState->BrightnessA[line] = GPU.MasterBrightnessA;
             FullGpuState->BrightnessB[line] = GPU.MasterBrightnessB;
-            Metal2D_A->CaptureScanlineState(static_cast<int>(line));
-            Metal2D_B->CaptureScanlineState(static_cast<int>(line));
+            const bool capA =
+                Metal2D_A->CaptureScanlineState(static_cast<int>(line));
+            const bool capB =
+                Metal2D_B->CaptureScanlineState(static_cast<int>(line));
+            if (!capA || !capB)
+            {
+                FullGpuState->FrameValid = false;
+                FullGpuState->BlockedByMidFrameInvalidation = true;
+                FullGpuState->MidFrameInvalidationCooldownFrames =
+                    kMidFrameInvalidationCooldownFrames;
+            }
             CaptureMetalDisplayCaptureLine(line);
             if (!MetalCaptureFrameSupported())
             {
@@ -372,8 +414,17 @@ void MetalRenderer::DrawSprites(u32 line)
     {
         if (line < 192)
         {
-            Metal2D_A->CaptureSpriteScanlineState(static_cast<int>(line));
-            Metal2D_B->CaptureSpriteScanlineState(static_cast<int>(line));
+            const bool sprA =
+                Metal2D_A->CaptureSpriteScanlineState(static_cast<int>(line));
+            const bool sprB =
+                Metal2D_B->CaptureSpriteScanlineState(static_cast<int>(line));
+            if (!sprA || !sprB)
+            {
+                FullGpuState->FrameValid = false;
+                FullGpuState->BlockedByMidFrameInvalidation = true;
+                FullGpuState->MidFrameInvalidationCooldownFrames =
+                    kMidFrameInvalidationCooldownFrames;
+            }
         }
         return;
     }

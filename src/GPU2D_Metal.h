@@ -27,8 +27,15 @@ public:
     void VBlankEnd() override {}
 
     bool Configure(void* preferredDevice, void* preferredQueue, int scale) noexcept;
-    void CaptureScanlineState(int line) noexcept;
-    void CaptureSpriteScanlineState(int line) noexcept;
+    // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1: reserve the per-frame upload-ring
+    // slot before Full-GPU eligibility. Idempotent for the same epoch.
+    bool BeginSegmentedSnapshotFrame(uint64_t frameEpoch) noexcept;
+    void CancelSegmentedSnapshotFrame(uint64_t frameEpoch) noexcept;
+    bool CaptureScanlineState(int line) noexcept;
+    bool CaptureSpriteScanlineState(int line) noexcept;
+    // True when a per-frame upload-ring slot is reserved and writable for the
+    // current renderer-owned frame epoch. Does NOT mean all 192 scanline
+    // snapshots are complete -- use SegmentedFrameComplete() for that.
     [[nodiscard]] bool SegmentedSnapshotReady() const noexcept;
     [[nodiscard]] bool SegmentedFrameComplete() const noexcept;
     [[nodiscard]] bool SegmentedRenderReady() const noexcept;
@@ -73,7 +80,6 @@ private:
     bool BuildLayerPipeline() noexcept;
     bool BuildFullGpuPipelines() noexcept;
     bool PrerenderConfiguredLayers() noexcept;
-    void BeginSegmentSnapshotFrameIfNeeded(int line) noexcept;
     void MaybeReportSegmentSnapshotFrame() noexcept;
 
     std::unique_ptr<Metal2DState> State;
