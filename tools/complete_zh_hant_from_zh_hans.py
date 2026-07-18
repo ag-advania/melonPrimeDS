@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Complete zh-Hant entries from zh-Hans entries.
 
-This script updates:
-  src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc
-  src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc
-  src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc
+This script updates the leaf translation shards included by:
+  src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeTranslations.inc
+  src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeDialogsTranslations.inc
+  src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeObjectTranslations.inc
 
 By default it inserts {MenuLangId::ChineseTraditional, "..."} immediately after
 {MenuLangId::ChineseSimplified, "..."} when the current translation block does
@@ -184,13 +184,18 @@ def main() -> int:
     args = parser.parse_args()
 
     repo = args.repo.resolve()
-    files = [
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc",
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc",
-        # Nested include pulled in by MelonPrimeTranslations.inc (melonDS dialog
-        # strings); lives in qt_sdl/ root, not the MelonPrimeLocalization/ subdir.
-        repo / "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc",
-    ]
+    localization = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/inc"
+    files = sorted(
+        path
+        for pattern in (
+            "MelonPrimeTranslations*.inc",
+            "MelonPrimeDialogsTranslations*.inc",
+            "MelonPrimeObjectTranslations*.inc",
+        )
+        for path in localization.glob(pattern)
+        if '#include "' not in path.read_text(encoding="utf-8")
+    )
+    files.append(localization / "MelonPrimeLocalizationMetalVideoPresets.inc")
 
     missing = [path for path in files if not path.exists()]
     if missing:

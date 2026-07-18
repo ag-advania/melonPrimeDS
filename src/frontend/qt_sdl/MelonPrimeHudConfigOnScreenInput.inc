@@ -114,7 +114,7 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
             const HudEditElemDesc& d = kEditElems[s_editSelected];
             const int totalRows = CountBuiltinRows(d) + d.propCount;
             if (totalRows > 0) {
-                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows);
+                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows, DynPropsPanelW());
                 if (panelRect.contains(ds)) return;
             }
         }
@@ -402,7 +402,7 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
             const int builtinRows = CountBuiltinRows(d);
             const int totalRows = builtinRows + d.propCount;
             if (totalRows > 0) {
-                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows);
+                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows, DynPropsPanelW());
                 if (panelRect.contains(ds)) {
                     int visCount = std::min(totalRows, kPropMaxVisible);
                     int scrollOfs = std::min(s_editPropScroll, std::max(0, totalRows - kPropMaxVisible));
@@ -412,8 +412,8 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
                         int rowIdx = vi + scrollOfs;
                         if (rowIdx >= totalRows) break;
                         float rowY = panelInnerY + vi * kPropRowH;
-                        float ctrlX = rowX + kPropLabelW;
-                        float ctrlW = kPropCtrlW;
+                        float ctrlX = rowX + s_dynLabelW;
+                        float ctrlW = s_dynCtrlW;
                         QRectF rowRect(ctrlX, rowY, ctrlW, kPropRowH);
                         if (!rowRect.contains(ds)) continue;
 
@@ -542,7 +542,7 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
                         float gridLeft = static_cast<float>(panelRect.left()) + 2.0f;
                         float gridTop  = static_cast<float>(panelRect.top()) + 2.0f +
                                          visCount * kPropRowH + 2.0f;
-                        float cellW = (kPropPanelW - 4.0f) / 3.0f;
+                        float cellW = DynAnchorGridCellW();
                         float cellH = kAnchorGridCellH;
                         for (int a = 0; a < 9; ++a) {
                             int col = a % 3, row = a / 3;
@@ -763,7 +763,7 @@ void CustomHud_EditMouseWheel(CustomHudConfigState& hudConfig, QPointF pt, int d
     const int totalRows = CountBuiltinRows(d) + d.propCount;
     if (totalRows <= kPropMaxVisible) return;
 
-    QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows);
+    QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows, DynPropsPanelW());
     if (!panelRect.contains(ds)) return;
 
     int maxScroll = totalRows - kPropMaxVisible;

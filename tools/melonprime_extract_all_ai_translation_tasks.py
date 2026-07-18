@@ -24,6 +24,10 @@ ROW_START_RE = re.compile(r'\{\s*"(?P<key>(?:\\.|[^"\\])*)"\s*,\s*\{', re.S)
 LANG_VALUE_RE = re.compile(r'\{MenuLangId::(?P<lang>[A-Za-z0-9_]+),\s*"(?P<text>(?:\\.|[^"\\])*)"\},')
 
 OBJECT_SOURCE_OVERRIDES = {
+    "lblMetroidDirectAltFormTransformDesc": (
+        "New Method redirects a short native input gate into the game's TransformRequest path. "
+        "Legacy Method keeps the older simulated touch/menu transform path."
+    ),
     "lblMetroidLowLatencyAimDesc": (
         "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point "
         "and rebuild the aim basis. MoonLike Aim applies small aim movements immediately and limits only "
@@ -157,9 +161,24 @@ def split_rows(body: str):
     return rows
 
 def parse_rows_in_array(path: Path, array_name: str, surface: str):
-    text = path.read_text(encoding="utf-8")
+    text = read_with_includes(path)
     body = find_array_body(text, array_name)
     return parse_rows_in_text(body, surface)
+
+def read_with_includes(path: Path, seen: set[Path] | None = None) -> str:
+    if seen is None:
+        seen = set()
+    path = path.resolve()
+    if path in seen:
+        return ""
+    seen.add(path)
+    text = path.read_text(encoding="utf-8")
+
+    def expand(match: re.Match[str]) -> str:
+        included = path.parent / match.group("path")
+        return read_with_includes(included, seen) if included.exists() else match.group(0)
+
+    return re.sub(r'#include\s+"(?P<path>[^"]+\.inc)"', expand, text)
 
 def parse_rows_in_text(body: str, surface: str):
     parsed = []
@@ -207,17 +226,9 @@ def main() -> int:
     languages = [x["id"] for x in metadata]
     meta_by_id = {x["id"]: x for x in metadata}
 
-    exact_path = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc"
-    object_path = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc"
-    # Nested #include pulled in by MelonPrimeTranslations.inc (melonDS settings
-    # dialog strings). It lives in qt_sdl/ root, not the MelonPrimeLocalization/
-    # subdir, and is a flat sequence of row entries with no "kTranslations[] = {"
-    # wrapper of its own (it is spliced into the parent array via #include), so
-    # it is parsed directly rather than through find_array_body().
-    melonds_dialogs_path = repo / "src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc"
-
+    exact_path = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeTranslations.inc"
+    object_path = repo / "src/frontend/qt_sdl/MelonPrimeLocalization/inc/MelonPrimeObjectTranslations.inc"
     exact = parse_rows_in_array(exact_path, "kTranslations", "exact")
-    exact += parse_rows_in_text(melonds_dialogs_path.read_text(encoding="utf-8"), "exact")
     obj = parse_rows_in_array(object_path, "kObjectTextTranslations", "object")
     object_sources = collect_ui_object_sources(repo)
 
