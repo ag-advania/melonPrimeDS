@@ -379,6 +379,17 @@ if (MELONPRIME_VULKAN_ACTIVE)
             USES_TERMINAL
             VERBATIM)
         unset(_melonprime_spirv_command)
+
+        # Sapphire wires SPIR-V regeneration into the normal build so an edited
+        # GLSL source can never silently ship a stale checked-in header. Only
+        # wire the *check* target (hash/byte comparison, no header rewrite)
+        # into the default build, and only when glslc was actually found --
+        # machines without the Vulkan SDK must still be able to build using
+        # the checked-in headers as-is.
+        if (MELONPRIME_GLSLC_EXECUTABLE)
+            add_dependencies(core melonprime_check_vulkan_spirv)
+            add_dependencies(melonDS melonprime_check_vulkan_spirv)
+        endif()
     else()
         message(WARNING
             "Python 3 was not found; MelonPrime Vulkan SPIR-V developer targets are unavailable")

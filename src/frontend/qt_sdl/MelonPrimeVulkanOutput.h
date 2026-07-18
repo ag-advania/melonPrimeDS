@@ -436,6 +436,12 @@ private:
         u32 height{};
         bool renderer3dOwnerIsTop{};
         bool renderer3dOwnerChangedFromPrevious{};
+        // Physical POWCNT1 ScreenSwap phase, distinct from renderer3dOwnerIsTop
+        // (the exact completed-3D-image owner). Packed 2D history, replay, and
+        // handoff cadence must key off this, not the live 3D owner. See
+        // docs audit: develop_vulkan Sapphire diff, physicalScreenSwap discard.
+        bool packedScreenSwap{};
+        bool packedScreenSwapChangedFromPrevious{};
         bool hasContent{};
         bool hasPreparedInputs{};
         bool replayTopComposedFromPrevious{};
