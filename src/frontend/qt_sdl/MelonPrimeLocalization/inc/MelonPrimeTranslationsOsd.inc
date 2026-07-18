@@ -1504,7 +1504,7 @@
             {MenuLangId::Kannada, "ಸ್ಥಾನ: ನೋಡ್ ವಶಪಡಿಸಿಕೆ  [flags=0x11]"},
             {MenuLangId::Odia, "ସ୍ଥାନ: ନୋଡ୍ ଦଖଲ  [flags=0x11]"},
             {MenuLangId::Malayalam, "സ്ഥാനം: നോഡ് പിടിത്തം  [flags=0x11]"},
-            {MenuLangId::Burmese, "နေရာ: နୋဒ် သိမ်းယူမှု  [flags=0x11]"},
+            {MenuLangId::Burmese, "နေရာ: Node သိမ်းယူမှု  [flags=0x11]"},
             {MenuLangId::Uzbek, "joy: tugunni egallash  [flags=0x11]"},
             {MenuLangId::Azerbaijani, "xana: qovşağı ələ keçirmə  [flags=0x11]"},
             {MenuLangId::Nepali, "स्थान: नोड कब्जा  [flags=0x11]"},

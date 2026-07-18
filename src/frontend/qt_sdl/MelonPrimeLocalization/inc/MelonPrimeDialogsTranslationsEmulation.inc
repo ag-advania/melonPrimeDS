@@ -1039,7 +1039,7 @@
             {MenuLangId::Lithuanian, "Konsolės tipas:"},
             {MenuLangId::Afrikaans, "Konsoletipe:"},
             {MenuLangId::Irish, "Cineál consóil:"},
-            {MenuLangId::Assamese, "କনছ'লৰ ধৰণ:"},
+            {MenuLangId::Assamese, "কনছ'লৰ ধৰণ:"},
             {MenuLangId::Amharic, "የኮንሶል አይነት:"},
             {MenuLangId::Estonian, "Konsooli tüüp:"},
             {MenuLangId::Kazakh, "Консоль түрі:"},
