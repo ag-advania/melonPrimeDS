@@ -258,8 +258,8 @@ bool MetalRenderer::IsMetalFullGpuFrameEligible() const
 
     // MELONPRIME_METAL_FRAME_BOOTSTRAP_V1 (design A): per-frame snapshot
     // slot reservation is performed in Start3DRendering *before* this check.
-    // Do not require SegmentedSnapshotReady() here -- that created a
-    // bootstrap deadlock (FrameActive needs ready; ready needs FrameActive).
+    // Do not require upload-ring readiness here -- that created a bootstrap
+    // deadlock (FrameActive needs ready; ready needs FrameActive).
     return true;
 }
 
