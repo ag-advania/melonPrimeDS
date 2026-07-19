@@ -748,18 +748,21 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     // pair with render #N-1 (the same convention SoftRenderer::GetLine uses).
     // Before latching this kick's ownership/serial and drawing render #N,
     // snapshot the current ColorImage -- which still holds the result of render
-    // #N-1 -- into a completed slot. At this pre-kick point CurrentRenderScreenSwap
-    // still holds the swap that was latched when render #N-1 was kicked (Blit at
-    // VCount 192 reseeds it from the previous frame's latch, and this frame's
-    // VCount-215 latch has not been applied to the member yet), and both
-    // RenderSerial and LastSuccessfulRenderSerial equal N-1, so the snapshot is
-    // tagged with serial N-1 and the previous render's owner. The skip re-entry
-    // (early submit already drew this frame at VCount 192) must NOT snapshot again.
+    // #N-1 -- into a completed slot. Hardware displays render #N-1 during THIS
+    // frame's visible lines, on the Engine A side selected by THIS frame's
+    // POWCNT latch — not by the value that was current when #N-1 was kicked.
+    // On per-frame ScreenSwap-toggling scenes those differ every frame, so the
+    // slot owner must be tagged with the freshly latched swap: apply the
+    // VCount-215 latch to CurrentRenderScreenSwap FIRST, then snapshot, so
+    // slot.OwnerLcd matches the LCD the consuming generation composites it to.
+    // RenderSerial and LastSuccessfulRenderSerial still equal N-1 here, so the
+    // snapshot keeps serial N-1. The skip re-entry (early submit already drew
+    // this frame at VCount 192) must NOT snapshot again.
+    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
+
     const bool skipThisKick = SkipRenderAtVCount215 && gpu.VCount == 215u;
     if (!skipThisKick)
         (void)snapshotCompletedFrameForStructured();
-
-    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
 
     if (Vulkan2DPhaseTraceEnabled() && gpu.VCount == 215u)
     {
