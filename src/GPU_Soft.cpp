@@ -1287,13 +1287,23 @@ void SoftRenderer::BuildStructuredScreenLine(
     }
     else
     {
+        // Sapphire's plain-line latch tags every published pixel as an opaque
+        // 2D-only sample. plane0 carries a non-zero alpha bit (0x01000000) so a
+        // black pixel is classified as protected opaque-black content
+        // (packedPixelIsOpaqueBlack / screenHasExplicitCurrentContent) instead
+        // of "no content" (0). control encodes the composited-2D-only slot
+        // (0x87) plus the protected-black flag (0x20 -> 0xA7) for black pixels.
+        // Stripping this (plane0 = rgb only, control = 0) makes black regions
+        // read as empty, and the temporal restore paths then backfill them with
+        // the other screen's cached lines (top logo bleeding onto the bottom
+        // menu on the MPH title screen).
         for (std::size_t x = 0; x < 256u; ++x)
         {
-            packedPlane0[x] = forcePlain
-                ? output[x]
-                : (output[x] & 0x00FFFFFFu);
+            const u32 rgb = output[x] & 0x00FFFFFFu;
+            const bool protectedBlack = rgb == 0u;
+            packedPlane0[x] = rgb | 0x01000000u;
             packedPlane1[x] = 0u;
-            packedControl[x] = 0u;
+            packedControl[x] = protectedBlack ? 0xA7000000u : 0x87000000u;
         }
     }
 
