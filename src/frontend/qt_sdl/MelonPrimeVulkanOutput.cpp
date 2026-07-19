@@ -2448,15 +2448,14 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         softPackedSnapshot.topScreenStats.StructuredSlotPixels > dominantStructuredSlotThreshold;
     const bool bottomUsesStructured3d =
         softPackedSnapshot.bottomScreenStats.StructuredSlotPixels > dominantStructuredSlotThreshold;
-    // Sapphire queries the graphics backend's actual live 3D owner here rather
-    // than reusing the 2D latch's ScreenSwap. Desktop presentation consumes an
-    // immutable completed-frame view, so its reference owner is the equivalent
-    // authoritative value for this exact image generation.
+    // Sapphire reads the backend latch synchronously after RunFrame. Desktop
+    // Vulkan work can outlive that call, so use the equivalent latch pinned to
+    // this immutable image generation instead of a potentially newer one.
     const bool backendRenderScreenSwap = currentBackendIsGraphics
         && completed3DView.Valid
         && completed3DView.Reference.Valid
         ? completed3DView.Reference.OwnerIsTop()
-        : resource.renderer3dOwnerIsTop;
+        : resource.screenSwap;
     const bool class4VramStructuredPair =
         currentBackendIsGraphics
         && softPackedSnapshot.captureBackedClass4Only
@@ -2962,7 +2961,6 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && resource.snapshotFromGraphicsBackend == currentBackendIsGraphics
         && resource.snapshotWidth == renderer3D.GetColorTargetWidth()
         && resource.snapshotHeight == renderer3D.GetColorTargetHeight()
-        && resource.renderer3dSnapshotScreenSwap == backendRenderScreenSwap
         && (!currentBackendIsGraphics || needsDsTimedCaptureBackedComp4Source);
 
     const auto screenCanUseAccumulatedHighres = [&](const SoftPackedScreenStats& stats) {
@@ -2984,6 +2982,11 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     bool replaceAccumulatedHighres = false;
     if (canReusePreRunSnapshot)
     {
+        if (needsDsTimedCaptureBackedComp4Source
+            && topUsesScreenWideCaptureBackedComp4 != bottomUsesScreenWideCaptureBackedComp4)
+        {
+            resource.renderer3dSnapshotScreenSwap = liveSourceScreenSwap;
+        }
         resource.hasPreparedInputs = true;
         resource.hasContent = false;
     }
@@ -3014,8 +3017,9 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 resource,
                 renderer3D,
                 completed3DView,
-                backendRenderScreenSwap,
-                !backendRenderScreenSwap,
+                liveSourceScreenSwap,
+                liveSourceScreenSwap,
+                !liveSourceScreenSwap,
                 replaceAccumulatedHighres))
         {
             return false;
@@ -4236,6 +4240,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     FrameResource& resource,
     const melonDS::VulkanRenderer3D& renderer3D,
     const melonDS::VulkanCompletedFrameView& completed3DView,
+    bool snapshotScreenSwap,
     bool accumulateTopHighres,
     bool accumulateBottomHighres,
     bool replaceAccumulatedHighres)
@@ -4245,7 +4250,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     if (!beginFrameCommand(resource))
         return false;
 
-    if (!recordRenderer3dSnapshotCopy(resource, completed3DView))
+    if (!recordRenderer3dSnapshotCopy(resource, completed3DView, snapshotScreenSwap))
         return false;
 
     resource.snapshotFromPreRun = false;
@@ -4343,12 +4348,13 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
 
 bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(
     FrameResource& resource,
-    const melonDS::VulkanCompletedFrameView& completed3DView)
+    const melonDS::VulkanCompletedFrameView& completed3DView,
+    bool snapshotScreenSwap)
 {
-    // The immutable image's physical LCD owner is part of the completed-frame
-    // reference. Never retag it from packed/capture handoff heuristics: those
-    // can be one POWCNT1 phase apart on the desktop core.
-    const bool snapshotScreenSwap = resource.renderer3dOwnerIsTop;
+    // The immutable reference owner validates which physical 3D generation is
+    // being copied. snapshotScreenSwap is deliberately separate: Sapphire
+    // retags that image with the logical live-source owner selected by its
+    // capture/temporal rules for this composition.
     const u32 rendererWidth = completed3DView.Width;
     const u32 rendererHeight = completed3DView.Height;
     if (rendererWidth == 0u || rendererHeight == 0u)

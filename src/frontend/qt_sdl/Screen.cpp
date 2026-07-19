@@ -18,6 +18,7 @@
 
 #include <string.h>
 
+#include <array>
 #include <optional>
 #include <utility>
 #include <cmath>
@@ -1712,7 +1713,7 @@ struct ScreenPanelVulkan::VulkanState
     MelonPrime::MelonPrimeVulkanSnapshotBuilder snapshotBuilder;
     MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
     MelonPrime::SoftPackedFrameSnapshot snapshot;
-    SoftRenderer::StructuredVulkanFrameSnapshot structuredSource;
+    std::array<SoftRenderer::StructuredVulkanFrameSnapshot, 2> structuredSources;
     QMutex layoutLock;
     std::vector<MelonPrime::VulkanPresentRegion> regions;
     std::uint32_t surfaceWidth = 0;
@@ -1724,6 +1725,7 @@ struct ScreenPanelVulkan::VulkanState
     bool speedOverride = false;
     bool runtimeFailureReported = false;
     u32 rendererScale = 0;
+    u64 lastBuiltStructuredGeneration = 0;
     u64 lastQueuedStructuredGeneration = 0;
     u64 lastPresentedStructuredGeneration = 0;
     unsigned consecutiveFailures = 0;
@@ -1924,11 +1926,10 @@ void ScreenPanelVulkan::setupScreenLayout()
         const QRectF bounds = transform.mapRect(QRectF(0.0, 0.0, 256.0, 192.0));
         MelonPrime::VulkanPresentRegion region;
         region.enabled = bounds.width() > 0.0 && bounds.height() > 0.0;
-        // The desktop compositor image is consumed through a Vulkan surface
-        // atlas whose LCD halves are opposite to ScreenLayout's CpuBgra layer
-        // indices. Normalize that convention only at the presentation edge;
-        // packed snapshots and temporal caches remain physical Top/Bottom.
-        region.bottomScreen = screenKind[index] == 0;
+        // ScreenLayout uses the same convention as the software and OpenGL
+        // presenters: 0 is the physical top LCD and 1 is the physical bottom
+        // LCD. The Vulkan compositor atlas also stores top before bottom.
+        region.bottomScreen = screenKind[index] != 0;
         region.x = qRound(bounds.left() * dpr);
         region.y = qRound(bounds.top() * dpr);
         region.width = qRound(bounds.width() * dpr);
@@ -1970,9 +1971,11 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
             vulkan->snapshotBuilder.reset();
-            vulkan->structuredSource.Valid = false;
+            for (auto& source : vulkan->structuredSources)
+                source.Valid = false;
             vulkan->speedOverride = false;
             vulkan->rendererScale = 0;
+            vulkan->lastBuiltStructuredGeneration = 0;
             vulkan->lastQueuedStructuredGeneration = 0;
             vulkan->lastPresentedStructuredGeneration = 0;
             QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
@@ -2008,30 +2011,71 @@ void ScreenPanelVulkan::drawScreen()
 
     auto* renderer = dynamic_cast<VulkanRenderer*>(&nds->GPU.GetRenderer());
     VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
-    auto& structuredSource = vulkan->structuredSource;
-    if (!renderer3D || !renderer || !renderer->CopyStructuredVulkanFrame(structuredSource)
-        || !structuredSource.Valid
-        || structuredSource.FrontBuffer < 0
-        || structuredSource.FrontBuffer > 1)
+    std::size_t structuredSourceCount = 0;
+    if (!renderer3D || !renderer
+        || !renderer->CopyStructuredVulkanFrames(
+            vulkan->structuredSources,
+            structuredSourceCount)
+        || structuredSourceCount == 0)
     {
         if (vulkan->consecutiveFailures++ == 0)
             Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
         return;
     }
-    melonDS::VulkanCompletedFrameView completed3DView{};
-    if (structuredSource.Completed3DReference.Valid)
+    auto& structuredSource = vulkan->structuredSources[structuredSourceCount - 1u];
+    const auto releaseStructuredReferences = [&]() {
+        for (std::size_t index = 0; index < structuredSourceCount; ++index)
+        {
+            const auto& reference = vulkan->structuredSources[index].Completed3DReference;
+            if (reference.Valid)
+                renderer3D->ReleaseCompletedFrameReference(reference);
+        }
+    };
+    if (!structuredSource.Valid
+        || structuredSource.FrontBuffer < 0
+        || structuredSource.FrontBuffer > 1)
     {
-        (void)renderer3D->AcquireCompletedFrameView(
-            structuredSource.Completed3DReference,
-            completed3DView);
-        renderer3D->ReleaseCompletedFrameReference(structuredSource.Completed3DReference);
+        releaseStructuredReferences();
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
+        return;
     }
+    std::array<melonDS::VulkanCompletedFrameView, 2> completed3DViews{};
+    for (std::size_t index = 0; index < structuredSourceCount; ++index)
+    {
+        const auto& reference = vulkan->structuredSources[index].Completed3DReference;
+        if (reference.Valid)
+        {
+            (void)renderer3D->AcquireCompletedFrameView(
+                reference,
+                completed3DViews[index]);
+        }
+    }
+    releaseStructuredReferences();
+    auto& completed3DView = completed3DViews[structuredSourceCount - 1u];
     if (!completed3DView.Valid)
     {
         completed3DView.Width = renderer3D->GetColorTargetWidth();
         completed3DView.Height = renderer3D->GetColorTargetHeight();
     }
-    MelonPrimeCompleted3DViewLease completed3DViewLease(renderer3D, &completed3DView);
+    MelonPrimeCompleted3DViewLease completed3DViewLease0(
+        renderer3D,
+        &completed3DViews[0]);
+    MelonPrimeCompleted3DViewLease completed3DViewLease1(
+        renderer3D,
+        &completed3DViews[1]);
+    if (vulkan->lastBuiltStructuredGeneration != 0
+        && structuredSource.Generation < vulkan->lastBuiltStructuredGeneration)
+    {
+        // Reset/ROM transitions restart the producer generation counter.
+        // Do not compare the new session against the old latch history.
+        vulkan->frameQueue.requestPresentationResync();
+        vulkan->output.invalidateTemporalHistory();
+        vulkan->snapshotBuilder.reset();
+        vulkan->lastBuiltStructuredGeneration = 0;
+        vulkan->lastQueuedStructuredGeneration = 0;
+        vulkan->lastPresentedStructuredGeneration = 0;
+    }
     if (structuredSource.Generation == vulkan->lastQueuedStructuredGeneration
         && structuredSource.Generation == vulkan->lastPresentedStructuredGeneration)
     {
@@ -2050,6 +2094,7 @@ void ScreenPanelVulkan::drawScreen()
         vulkan->frameQueue.requestPresentationResync();
         vulkan->output.invalidateTemporalHistory();
         vulkan->snapshotBuilder.reset();
+        vulkan->lastBuiltStructuredGeneration = 0;
         vulkan->lastQueuedStructuredGeneration = 0;
         vulkan->lastPresentedStructuredGeneration = 0;
     }
@@ -2072,137 +2117,178 @@ void ScreenPanelVulkan::drawScreen()
     vulkan->framePolicy.PreserveBacklogOnPresent = false;
     vulkan->framePolicy.TreatBacklogTrimAsFastForwardSkip = speedOverride;
 
-    MelonPrime::VulkanFrame* renderFrame = nullptr;
     if (structuredSource.Generation != vulkan->lastQueuedStructuredGeneration)
     {
-        for (std::size_t attempt = 0;
-             attempt < MelonPrime::MELONPRIME_VULKAN_FRAME_QUEUE_SIZE;
-             ++attempt)
-        {
-            MelonPrime::VulkanFrame* candidate = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-            if (candidate == nullptr)
-                break;
-
-            const bool presenterConsumed = vulkan->presenter.WaitForFrameConsumption(candidate);
-            const bool temporalSourceActive =
-                vulkan->output.isFrameReferencedAsPendingPreviousSource(candidate);
-            if (presenterConsumed && !temporalSourceActive)
+        const auto acquireRenderFrame = [&]() -> MelonPrime::VulkanFrame* {
+            for (std::size_t attempt = 0;
+                 attempt < MelonPrime::MELONPRIME_VULKAN_FRAME_QUEUE_SIZE;
+                 ++attempt)
             {
-                renderFrame = candidate;
-                break;
-            }
-            vulkan->frameQueue.recycleRenderFrame(candidate);
-        }
-        if (renderFrame == nullptr)
-        {
-            vulkan->output.releaseTemporalFrameReferences();
-            MelonPrime::VulkanFrame* candidate = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-            if (candidate != nullptr && vulkan->presenter.WaitForFrameConsumption(candidate))
-                renderFrame = candidate;
-            else if (candidate != nullptr)
+                MelonPrime::VulkanFrame* candidate =
+                    vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
+                if (candidate == nullptr)
+                    break;
+
+                const bool presenterConsumed =
+                    vulkan->presenter.WaitForFrameConsumption(candidate);
+                const bool temporalSourceActive =
+                    vulkan->output.isFrameReferencedAsPendingPreviousSource(candidate);
+                if (presenterConsumed && !temporalSourceActive)
+                    return candidate;
                 vulkan->frameQueue.recycleRenderFrame(candidate);
-        }
-        if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
-        {
-            if (renderFrame)
-                vulkan->frameQueue.discardRenderedFrame(renderFrame);
-            ++vulkan->consecutiveFailures;
-            return;
-        }
+            }
+
+            vulkan->output.releaseTemporalFrameReferences();
+            MelonPrime::VulkanFrame* candidate =
+                vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
+            if (candidate != nullptr
+                && vulkan->presenter.WaitForFrameConsumption(candidate))
+            {
+                return candidate;
+            }
+            if (candidate != nullptr)
+                vulkan->frameQueue.recycleRenderFrame(candidate);
+            return nullptr;
+        };
 
         auto& snapshot = vulkan->snapshot;
-        MelonPrime::StructuredVulkanSnapshotSource snapshotSource{};
-        // Keep plane[0/1], lineMeta, and capture masks on the same physical LCD
-        // indices as Renderer3DOwnerIsTop. Do not XOR-remap screens here.
-        for (std::size_t screen = 0; screen < 2u; ++screen)
+        for (std::size_t sourceIndex = 0;
+             sourceIndex < structuredSourceCount;
+             ++sourceIndex)
         {
-            const std::size_t screenBase = screen * 3u * SoftRenderer::StructuredPixelCount;
-            snapshotSource.lineMeta[screen] = structuredSource.ScreenLineMeta.data() + (screen * 192u);
-            for (std::size_t plane = 0; plane < 3u; ++plane)
+            const auto& source = vulkan->structuredSources[sourceIndex];
+            if (!source.Valid
+                || source.Generation <= vulkan->lastBuiltStructuredGeneration)
             {
-                snapshotSource.plane[screen][plane] =
-                    structuredSource.ScreenPlanes.data()
-                    + screenBase
-                    + (plane * SoftRenderer::StructuredPixelCount);
+                continue;
             }
-        }
-        snapshotSource.capture3dSource = structuredSource.Capture3DSource.data();
-        snapshotSource.captureLineUses3dMask = structuredSource.CaptureLineUses3D.data();
-        snapshotSource.capture3dSourceLineValid = structuredSource.Capture3DSourceLineValid.data();
-        snapshotSource.screenNeedsCapture3d[0] = structuredSource.TopScreenNeedsCapture3D.data();
-        snapshotSource.screenNeedsCapture3d[1] = structuredSource.BottomScreenNeedsCapture3D.data();
-        snapshotSource.hasCapture3dSource = structuredSource.HasCapture3DSource;
-        snapshotSource.captureScreenSwap = structuredSource.CaptureScreenSwap;
-        snapshotSource.captureScreenSwapValid = structuredSource.CaptureScreenSwapValid;
-        snapshotSource.screenSwapLatched = structuredSource.ScreenSwapLatched;
-        snapshotSource.packedTop = structuredSource.PackedTop.data();
-        snapshotSource.packedBottom = structuredSource.PackedBottom.data();
-        snapshotSource.captureBackedClass4Only = structuredSource.CaptureBackedClass4Only;
-        snapshotSource.captureBackedPartialClass0Only =
-            structuredSource.CaptureBackedPartialClass0Only;
-        snapshotSource.captureBackedFullClass0AlternatingCapture =
-            structuredSource.CaptureBackedFullClass0AlternatingCapture;
-        snapshotSource.captureBackedHasStructured2DSource =
-            structuredSource.CaptureBackedHasStructured2DSource;
-        snapshotSource.structuredCopyLines = structuredSource.StructuredCopyLines;
-        snapshotSource.frontBuffer = structuredSource.FrontBuffer;
-        snapshotSource.renderer3dOwnerIsTop = structuredSource.Renderer3DOwnerIsTop;
-        snapshotSource.generation = structuredSource.Generation;
-        snapshotSource.renderer3dRenderSerial = structuredSource.Renderer3DRenderSerial;
-        snapshotSource.renderer3dCompletionValue = structuredSource.Completed3DReference.CompletionValue;
-        snapshotSource.renderer3dImageSlot = structuredSource.Completed3DReference.ImageSlot;
-        snapshotSource.renderer3dReferenceValid = structuredSource.Completed3DReference.Valid
-            && completed3DView.Valid;
-        if (!vulkan->snapshotBuilder.build(snapshotSource, renderFrame->frameId, snapshot))
-        {
-            vulkan->frameQueue.discardRenderedFrame(renderFrame);
-            ++vulkan->consecutiveFailures;
-            return;
-        }
-        if (vulkan->snapshotBuilder.takeRegularCaptureTransitionResyncRequest())
-        {
-            // Sapphire drops the transition frame and clears both compositor
-            // and producer structured-capture histories. The producer clear is
-            // requested atomically and applied on its next frame boundary.
-            vulkan->output.clearStructuredCaptureHistory();
-            renderer->RequestStructuredVulkanResync();
-            vulkan->snapshotBuilder.reset();
-            snapshot.clear();
-            vulkan->frameQueue.discardRenderedFrame(renderFrame);
-            vulkan->lastQueuedStructuredGeneration = structuredSource.Generation;
-            return;
-        }
-        renderFrame->sourceGeneration = structuredSource.Generation;
 
-        MelonPrime::VulkanCompositionInputs composeInputs{};
-        const bool composed = vulkan->output.prepareFrameForPresentation(
-                renderFrame,
-                nds->GPU,
-                snapshot.frontBufferLatched,
-                snapshot.renderer3dOwnerIsTop,
-                snapshot,
-                *renderer3D,
-                completed3DView)
-            && vulkan->output.buildCompositionInputs(
-                renderFrame,
-                *renderer3D,
-                static_cast<int>(rendererScale),
-                filtering,
-                false,
-                false,
-                false,
-                composeInputs)
-            && vulkan->output.composeAndSubmitFrame(renderFrame, composeInputs);
-        if (!composed)
-        {
-            vulkan->frameQueue.discardRenderedFrame(renderFrame);
-            if (vulkan->consecutiveFailures++ == 0)
-                Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
-            return;
-        }
+            MelonPrime::VulkanFrame* renderFrame = acquireRenderFrame();
+            if (!renderFrame
+                || !vulkan->output.ensureFrameResources(
+                    renderFrame,
+                    outputWidth,
+                    outputHeight))
+            {
+                if (renderFrame)
+                    vulkan->frameQueue.discardRenderedFrame(renderFrame);
+                ++vulkan->consecutiveFailures;
+                return;
+            }
 
-        vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
-        vulkan->lastQueuedStructuredGeneration = structuredSource.Generation;
+            MelonPrime::StructuredVulkanSnapshotSource snapshotSource{};
+            // Keep plane[0/1], lineMeta, and capture masks on the same physical
+            // LCD indices as Renderer3DOwnerIsTop. Do not XOR-remap screens.
+            for (std::size_t screen = 0; screen < 2u; ++screen)
+            {
+                const std::size_t screenBase =
+                    screen * 3u * SoftRenderer::StructuredPixelCount;
+                snapshotSource.lineMeta[screen] =
+                    source.ScreenLineMeta.data() + (screen * 192u);
+                for (std::size_t plane = 0; plane < 3u; ++plane)
+                {
+                    snapshotSource.plane[screen][plane] =
+                        source.ScreenPlanes.data()
+                        + screenBase
+                        + (plane * SoftRenderer::StructuredPixelCount);
+                }
+            }
+            snapshotSource.capture3dSource = source.Capture3DSource.data();
+            snapshotSource.captureLineUses3dMask = source.CaptureLineUses3D.data();
+            snapshotSource.capture3dSourceLineValid = source.Capture3DSourceLineValid.data();
+            snapshotSource.screenNeedsCapture3d[0] = source.TopScreenNeedsCapture3D.data();
+            snapshotSource.screenNeedsCapture3d[1] = source.BottomScreenNeedsCapture3D.data();
+            snapshotSource.hasCapture3dSource = source.HasCapture3DSource;
+            snapshotSource.captureScreenSwap = source.CaptureScreenSwap;
+            snapshotSource.captureScreenSwapValid = source.CaptureScreenSwapValid;
+            snapshotSource.screenSwapLatched = source.ScreenSwapLatched;
+            snapshotSource.packedTop = source.PackedTop.data();
+            snapshotSource.packedBottom = source.PackedBottom.data();
+            snapshotSource.captureBackedClass4Only = source.CaptureBackedClass4Only;
+            snapshotSource.captureBackedPartialClass0Only =
+                source.CaptureBackedPartialClass0Only;
+            snapshotSource.captureBackedFullClass0AlternatingCapture =
+                source.CaptureBackedFullClass0AlternatingCapture;
+            snapshotSource.captureBackedHasStructured2DSource =
+                source.CaptureBackedHasStructured2DSource;
+            snapshotSource.structuredCopyLines = source.StructuredCopyLines;
+            snapshotSource.frontBuffer = source.FrontBuffer;
+            snapshotSource.renderer3dOwnerIsTop = source.Renderer3DOwnerIsTop;
+            snapshotSource.generation = source.Generation;
+            snapshotSource.renderer3dRenderSerial = source.Renderer3DRenderSerial;
+            snapshotSource.renderer3dCompletionValue =
+                source.Completed3DReference.CompletionValue;
+            snapshotSource.renderer3dImageSlot = source.Completed3DReference.ImageSlot;
+            const bool isLatestSource = sourceIndex + 1u == structuredSourceCount;
+            snapshotSource.renderer3dReferenceValid =
+                source.Completed3DReference.Valid
+                && completed3DViews[sourceIndex].Valid;
+            if (!vulkan->snapshotBuilder.build(
+                    snapshotSource,
+                    renderFrame->frameId,
+                    snapshot))
+            {
+                vulkan->frameQueue.discardRenderedFrame(renderFrame);
+                ++vulkan->consecutiveFailures;
+                return;
+            }
+            vulkan->lastBuiltStructuredGeneration = source.Generation;
+            if (vulkan->snapshotBuilder.takeRegularCaptureTransitionResyncRequest())
+            {
+                // Sapphire drops the transition frame and clears both
+                // compositor and producer structured-capture histories.
+                vulkan->output.clearStructuredCaptureHistory();
+                renderer->RequestStructuredVulkanResync();
+                vulkan->snapshotBuilder.reset();
+                snapshot.clear();
+                vulkan->frameQueue.discardRenderedFrame(renderFrame);
+                vulkan->lastBuiltStructuredGeneration = structuredSource.Generation;
+                vulkan->lastQueuedStructuredGeneration = structuredSource.Generation;
+                return;
+            }
+            renderFrame->sourceGeneration = source.Generation;
+
+            MelonPrime::VulkanCompositionInputs composeInputs{};
+            const bool composed = vulkan->output.prepareFrameForPresentation(
+                    renderFrame,
+                    nds->GPU,
+                    snapshot.frontBufferLatched,
+                    snapshot.screenSwapLatched,
+                    snapshot,
+                    *renderer3D,
+                    completed3DViews[sourceIndex])
+                && vulkan->output.buildCompositionInputs(
+                    renderFrame,
+                    *renderer3D,
+                    static_cast<int>(rendererScale),
+                    filtering,
+                    false,
+                    false,
+                    false,
+                    composeInputs)
+                && vulkan->output.composeAndSubmitFrame(renderFrame, composeInputs);
+            if (!composed)
+            {
+                vulkan->frameQueue.discardRenderedFrame(renderFrame);
+                vulkan->frameQueue.requestPresentationResync();
+                vulkan->output.invalidateTemporalHistory();
+                vulkan->snapshotBuilder.reset();
+                vulkan->lastBuiltStructuredGeneration = 0;
+                vulkan->lastQueuedStructuredGeneration = 0;
+                if (vulkan->consecutiveFailures++ == 0)
+                    Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
+                return;
+            }
+
+            // Keep the predecessor alive until the following generation has
+            // copied Sapphire's previous-frame sources. Presentation still
+            // selects the newest queued generation below.
+            MelonPrime::MelonPrimeVulkanFrameQueuePolicy catchUpPolicy = vulkan->framePolicy;
+            if (!isLatestSource)
+                catchUpPolicy.MaxBacklogDepth = std::max<u64>(2u, catchUpPolicy.MaxBacklogDepth);
+            vulkan->frameQueue.pushRenderedFrame(renderFrame, catchUpPolicy);
+            vulkan->lastQueuedStructuredGeneration = source.Generation;
+        }
     }
 
     MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(

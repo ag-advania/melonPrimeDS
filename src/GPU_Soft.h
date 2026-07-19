@@ -89,9 +89,8 @@ public:
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
         bool CaptureScreenSwapValid = false;
-        // Sapphire screenSwapLatched, adapted to the desktop core's publication
-        // timing: the physical Engine-A destination for this completed packed
-        // generation (the VCount-215 renderer latch already names the next one).
+        // Sapphire screenSwapLatched: RenderScreenSwapAt3D (POWCNT1 bit 15,
+        // latched at VCount 215) read when the packed frame is published.
         bool ScreenSwapLatched = false;
         bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
@@ -106,10 +105,14 @@ public:
         bool Valid = false;
     };
 
-    // Copies a single completed generation while the producer lock is held.
-    // The Qt presentation thread never observes a ring slot while the
-    // emulation thread is recycling it for a newer frame.
-    [[nodiscard]] bool CopyStructuredVulkanFrame(StructuredVulkanFrameSnapshot& snapshot) const;
+    // Copies every retained completed generation in ascending generation
+    // order while the producer lock is held. Sapphire latches once per
+    // RunFrame; if desktop presentation temporarily returns before advancing
+    // that state (initialization, resync, or resource pressure), consume both
+    // retained slots instead of losing the alternating predecessor.
+    [[nodiscard]] bool CopyStructuredVulkanFrames(
+        std::array<StructuredVulkanFrameSnapshot, 2>& snapshots,
+        std::size_t& count) const;
     void RequestStructuredVulkanResync() noexcept;
 #endif
 
@@ -158,14 +161,6 @@ private:
     bool StructuredCapture3DSourceValid = false;
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureScreenSwapValid = false;
-    // Desktop core adaptation: the packed 2D generation is completed after
-    // VCount 215 has already latched ownership for the next 3D target.  Track
-    // where Engine A actually wrote the 192 visible lines so packed temporal
-    // repair is keyed to this generation, not to the next 3D generation.
-    bool StructuredPackedScreenSwapAtLine0 = false;
-    bool StructuredPackedScreenSwapChangedMidFrame = false;
-    u32 StructuredEngineAOnTopLines = 0;
-    u32 StructuredEngineAOnBottomLines = 0;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};

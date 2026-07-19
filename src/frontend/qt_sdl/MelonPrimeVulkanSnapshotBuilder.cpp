@@ -364,28 +364,6 @@ bool packedControlMarksProtectedBlack2D(u32 control) noexcept
     return ((control >> 24u) & 0x20u) != 0u;
 }
 
-void restoreStructuredProtectedBlack(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) noexcept
-{
-    for (std::size_t index = 0; index < control.size(); ++index)
-    {
-        const u32 controlAlpha = control[index] >> 24u;
-        const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
-        const bool structuredAbove = (controlAlpha & 0x80u) != 0u;
-        const bool opaqueBlack2D = structuredAbove
-            && (structuredSlot
-                ? packedPixelIsOpaqueBlack(plane1[index])
-                : packedPixelIsOpaqueBlack(plane0[index]));
-        if (opaqueBlack2D)
-        {
-            control[index] = (control[index] & 0x00FFFFFFu)
-                | ((controlAlpha | 0x20u) << 24u);
-        }
-    }
-}
-
 bool packedPixelIsCaptureBackedComp4(u32 plane0Pixel, u32 plane1Pixel, u32 controlPixel) noexcept
 {
     const u32 compMode = (controlPixel >> 24u) & 0xFu;
@@ -1143,6 +1121,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     const bool screenSwapToggledThisFrame =
         previousSnapshot.valid
         && previousSnapshot.screenSwapLatched != destination.screenSwapLatched;
+    // Desktop does not expose Sapphire's renderer-2D debug controls through
+    // this split builder, so the production repair path is always active.
+    constexpr bool renderer2dDebugControlsActive = false;
 
     if (destination.captureBackedHasStructured2DSource)
         vulkanStructuredCaptureGateFrames = 2;
@@ -1241,24 +1222,27 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 || source.captureBackedFullClass0AlternatingCapture);
     }
 
-    // Sapphire post-merge temporal repair always runs on the already-merged
-    // physical buffers. ScreenSwap alternation is handled by its own cache
-    // logic below; it is not a reason to suppress these carries.
-    const int carriedTopLatchedLines = carryPreviousLatchedScreenLines(
+    const int carriedTopLatchedLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousLatchedScreenLines(
             previousSnapshot,
             true,
             destination.packedTopPlane0,
             destination.packedTopPlane1,
             destination.packedTopControl,
             destination.packedTopLineMeta);
-    const int carriedBottomLatchedLines = carryPreviousLatchedScreenLines(
+    const int carriedBottomLatchedLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousLatchedScreenLines(
             previousSnapshot,
             false,
             destination.packedBottomPlane0,
             destination.packedBottomPlane1,
             destination.packedBottomControl,
             destination.packedBottomLineMeta);
-    const int carriedTopTemporalOverlayLines = carryPreviousTemporalOverlayPixels(
+    const int carriedTopTemporalOverlayLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousTemporalOverlayPixels(
             previousSnapshot,
             true,
             source.captureBackedPartialClass0Only,
@@ -1266,7 +1250,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedTopPlane1,
             destination.packedTopControl,
             destination.packedTopLineMeta);
-    const int carriedBottomTemporalOverlayLines = carryPreviousTemporalOverlayPixels(
+    const int carriedBottomTemporalOverlayLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousTemporalOverlayPixels(
             previousSnapshot,
             false,
             source.captureBackedPartialClass0Only,
@@ -1274,13 +1260,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedBottomPlane1,
             destination.packedBottomControl,
             destination.packedBottomLineMeta);
-    int carriedTopFullRegularComp7OverlayLines = carryPreviousFullRegularComp7Overlay(
+    int carriedTopFullRegularComp7OverlayLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousFullRegularComp7Overlay(
             previousSnapshot,
             true,
             destination.packedTopPlane1,
             destination.packedTopControl,
             destination.packedTopLineMeta);
-    int carriedBottomFullRegularComp7OverlayLines = carryPreviousFullRegularComp7Overlay(
+    int carriedBottomFullRegularComp7OverlayLines = renderer2dDebugControlsActive
+        ? 0
+        : carryPreviousFullRegularComp7Overlay(
             previousSnapshot,
             false,
             destination.packedBottomPlane1,
@@ -1301,7 +1291,8 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     {
         const bool engineAOnTop = destination.screenSwapLatched;
-        const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
+        const bool captureBackedHasStructured2DSource =
+            destination.captureBackedHasStructured2DSource;
 
         auto screenHasMeaningfulContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
@@ -1481,7 +1472,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     destination.packedBottomPlane0,
                     destination.packedBottomPlane1);
             const bool cachedBottomHasStructured2DOnlyContent =
-                screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
+                screenHasStructured2DOnlyContent(
+                    engineABottom.plane0,
+                    engineABottom.control);
             const bool shouldReplaceBottom = engineABottom.valid
                 && ((!isInAlternatingMode && !currentBottomHasExplicitContent)
                     || (isInAlternatingMode
@@ -1527,7 +1520,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     destination.packedTopPlane0,
                     destination.packedTopPlane1);
             const bool cachedTopHasStructured2DOnlyContent =
-                screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
+                screenHasStructured2DOnlyContent(
+                    engineATop.plane0,
+                    engineATop.control);
             const bool shouldReplaceTop = engineATop.valid
                 && ((!isInAlternatingMode && !currentTopHasExplicitContent)
                     || (isInAlternatingMode
@@ -1570,7 +1565,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     // deliberately mirror Sapphire's latch locals so the post-merge block below
     // remains a line-for-line semantic port.
     constexpr bool hasStructuredVulkan2D = true;
-    constexpr bool renderer2dDebugControlsActive = false;
     const bool captureBackedClass4Only = destination.captureBackedClass4Only;
     const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
     const bool captureBackedFullClass0AlternatingCapture =
@@ -3010,20 +3004,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedBottomLineMeta,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimary : nullptr,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimaryLines : nullptr);
-
-    // Sapphire's producer guarantees that an opaque-black structured 2D
-    // pixel carries the protected-black control bit. The desktop producer
-    // performs its physical-screen merge before this latch, so restore that
-    // invariant after every post-merge temporal repair that may replace a
-    // plane without replacing its control word.
-    restoreStructuredProtectedBlack(
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl);
-    restoreStructuredProtectedBlack(
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl);
 
     if (!renderer2dDebugControlsActive)
     {
