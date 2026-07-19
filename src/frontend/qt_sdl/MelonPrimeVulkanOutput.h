@@ -486,7 +486,8 @@ private:
     void destroyRenderer3dSnapshot(FrameResource& resource);
     bool recordRenderer3dSnapshotCopy(
         FrameResource& resource,
-        const melonDS::VulkanCompletedFrameView& completed3DView);
+        const melonDS::VulkanCompletedFrameView& completed3DView,
+        bool snapshotScreenSwap);
 
     bool createAccumulateResources();
     void destroyAccumulateResources();
@@ -498,6 +499,7 @@ private:
         FrameResource& resource,
         const melonDS::VulkanRenderer3D& renderer3D,
         const melonDS::VulkanCompletedFrameView& completed3DView,
+        bool snapshotScreenSwap,
         bool accumulateTopHighres,
         bool accumulateBottomHighres,
         bool replaceAccumulatedHighres);

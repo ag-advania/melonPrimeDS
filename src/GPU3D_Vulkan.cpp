@@ -676,7 +676,6 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     CurrentRenderScreenSwap = false;
     RenderSerial = 0;
     LastSuccessfulRenderSerial = 0;
-    LastSuccessfulRenderScreenSwap = false;
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
         PendingCompletedFrameSlot = -1;
@@ -744,6 +743,22 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 {
     refreshActiveBackendMode();
+
+    // melonDS's 2D consumes the PREVIOUS 3D render: structured generation N must
+    // pair with render #N-1 (the same convention SoftRenderer::GetLine uses).
+    // Before latching this kick's ownership/serial and drawing render #N,
+    // snapshot the current ColorImage -- which still holds the result of render
+    // #N-1 -- into a completed slot. At this pre-kick point CurrentRenderScreenSwap
+    // still holds the swap that was latched when render #N-1 was kicked (Blit at
+    // VCount 192 reseeds it from the previous frame's latch, and this frame's
+    // VCount-215 latch has not been applied to the member yet), and both
+    // RenderSerial and LastSuccessfulRenderSerial equal N-1, so the snapshot is
+    // tagged with serial N-1 and the previous render's owner. The skip re-entry
+    // (early submit already drew this frame at VCount 192) must NOT snapshot again.
+    const bool skipThisKick = SkipRenderAtVCount215 && gpu.VCount == 215u;
+    if (!skipThisKick)
+        (void)snapshotCompletedFrameForStructured();
+
     CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
 
     if (Vulkan2DPhaseTraceEnabled() && gpu.VCount == 215u)
@@ -756,7 +771,7 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
             PendingCompletedFrameSlot);
     }
 
-    if (SkipRenderAtVCount215 && gpu.VCount == 215u)
+    if (skipThisKick)
     {
         SkipRenderAtVCount215 = false;
         EarlySubmitSkipVCount215Count++;
@@ -827,7 +842,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
         LastSuccessfulRenderSerial = RenderSerial;
-        LastSuccessfulRenderScreenSwap = CurrentRenderScreenSwap;
         return;
     }
 
@@ -1128,12 +1142,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 
     LastSubmittedRenderPolygonCount = gpu.GPU3D.RenderNumPolygons;
     LastSuccessfulRenderSerial = RenderSerial;
-    LastSuccessfulRenderScreenSwap = CurrentRenderScreenSwap;
-}
-
-void VulkanRenderer3D::FinishRendering()
-{
-    (void)snapshotCompletedFrameAtVBlank();
 }
 
 void VulkanRenderer3D::RestartFrame(melonDS::GPU& gpu)
@@ -2385,6 +2393,13 @@ bool VulkanRenderer3D::AcquireCompletedFrameForStructured(
     Renderer3DCompletedFrameReference& reference)
 {
     reference = {};
+    // The previous render (#N-1) was already snapshotted into
+    // PendingCompletedFrameSlot at the start of this generation's render kick
+    // (RenderFrameActiveBackend, before the new ownership/serial latch). Return
+    // that slot so structured generation N references render N-1, matching
+    // SoftRenderer::GetLine's previous-render consumption. Do NOT snapshot the
+    // freshly kicked render #N here -- that produced the one-early pairing that
+    // injected the opposite LCD's 3D under an alternating POWCNT swap.
     const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
     if (PendingCompletedFrameSlot < 0
         || static_cast<u32>(PendingCompletedFrameSlot) >= CompletedFrameSlotCount)
@@ -2480,7 +2495,7 @@ void VulkanRenderer3D::ReleaseCompletedFrameView(const VulkanCompletedFrameView&
         ReleaseCompletedFrameReference(view.Reference);
 }
 
-bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
+bool VulkanRenderer3D::snapshotCompletedFrameForStructured()
 {
     if (!Initialized
         || !ColorImageInitialized
@@ -2527,7 +2542,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         Log(LogLevel::Warn,
             "VulkanCompleted3D: no free immutable image slot serial=%llu owner=%u",
             static_cast<unsigned long long>(RenderSerial),
-            LastSuccessfulRenderScreenSwap ? 1u : 0u);
+            CurrentRenderScreenSwap ? 1u : 0u);
         return false;
     }
 
@@ -2641,7 +2656,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         CompletedFrameSlot& slot = CompletedFrameSlots[selectedSlot];
         slot.Serial = LastSuccessfulRenderSerial;
         slot.CompletionValue = ++CompletedFrameCompletionValue;
-        slot.OwnerLcd = LastSuccessfulRenderScreenSwap
+        slot.OwnerLcd = CurrentRenderScreenSwap
             ? Renderer3DPhysicalLcd::Top
             : Renderer3DPhysicalLcd::Bottom;
         slot.LayoutReady = true;
@@ -2651,7 +2666,7 @@ bool VulkanRenderer3D::snapshotCompletedFrameAtVBlank()
         PendingCompletedFrameSlot = static_cast<int>(selectedSlot);
         NextCompletedFrameSlot = (selectedSlot + 1u) % CompletedFrameSlotCount;
         Log(Vulkan2DPhaseTraceEnabled() ? LogLevel::Info : LogLevel::Debug,
-            "Vulkan2DPhase event=Completed3D VCount=192 completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
+            "Vulkan2DPhase event=Completed3D phase=PostRunFrame completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
             static_cast<unsigned long long>(slot.Serial),
             slot.OwnerLcd == Renderer3DPhysicalLcd::Top ? 1u : 0u,
             selectedSlot,
@@ -7579,7 +7594,6 @@ void VulkanRenderer3D::InvalidatePresentationState(bool discardColorTarget) noex
     clearLineCache();
     LastSubmittedRenderContext = nullptr;
     LastSuccessfulRenderSerial = 0u;
-    LastSuccessfulRenderScreenSwap = false;
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
         if (PendingCompletedFrameSlot >= 0
