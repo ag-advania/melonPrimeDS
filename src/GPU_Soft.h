@@ -89,8 +89,10 @@ public:
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
         bool CaptureScreenSwapValid = false;
-        // Sapphire screenSwapLatched: RenderScreenSwapAt3D (POWCNT1 bit 15,
-        // latched at VCount 215) read when the packed frame is published.
+        // Sapphire screenSwapLatched semantics for the physical packed frame:
+        // Engine A's LCD owner for this same visible generation. The desktop
+        // producer records it at visible line 0 because VCount 215 has already
+        // advanced RenderScreenSwapAt3D by the time SwapBuffers publishes.
         bool ScreenSwapLatched = false;
         bool CaptureBackedClass4Only = false;
         bool CaptureBackedPartialClass0Only = false;
@@ -152,6 +154,12 @@ private:
     bool StructuredCapture3DSourceValid = false;
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureScreenSwapValid = false;
+    // The packed physical frame is produced during visible scanlines, before
+    // VCount 215 advances RenderScreenSwapAt3D to the next 3D generation.
+    // Keep its Engine-A owner separately so temporal repair is keyed to the
+    // same generation as PackedTop/PackedBottom.
+    bool StructuredPackedScreenSwapAtLine0 = false;
+    bool StructuredPackedScreenSwapChangedMidFrame = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};
