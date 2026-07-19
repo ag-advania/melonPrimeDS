@@ -1,77 +1,73 @@
-#include "MelonPrimeVulkanSnapshotBuilder.h"
+// Independent transcription of SapphireRhodonite/melonDS-android 0.7.0.rc4
+// MelonInstance.cpp latchSoftPackedFrameSnapshot() (lines ~4819-8056; helper
+// collectPackedScreenStatsFromSnapshot etc. at ~503-769), for runtime parity
+// verification against MelonPrimeVulkanSnapshotBuilder -- NOT for production use.
+//
+// Transcribed from a fresh reading of the reference source, bound to the desktop
+// StructuredVulkanSnapshotSource / SoftPackedFrameSnapshot contract. Like the
+// production builder, this oracle receives already-merged physical Top/Bottom
+// packed buffers from the desktop producer (the reference performs the
+// structured-line merge inline during unpack; the desktop split moves that merge
+// into GPU_Soft.cpp), so it starts from unpack and runs the reference's
+// post-merge temporal-repair pipeline verbatim.
+//
+// Reference sub-function line ranges used (verified against the checked-out
+// tree):
+//   collectPackedScreenStatsFromSnapshot           ref 503-662
+//   packed* pixel/line helpers                      ref 664-769
+//   packedLineNeedsCompMode7Live3dFallback          ref 99-120
+//   clearBroadPartialRegularCapture /
+//     clearBroadRegularCaptureAgainstOppositeVram   ref 5375-5452
+//   capture-line-count recompute                    ref 5468-5490 (fix #1 site)
+//   latchedSnapshotLineIsZero /
+//     latchedSnapshotLineNeedsTemporalCarry /
+//     previousSnapshotLineNeedsTemporalCarry        ref 5669-5766
+//   carryPreviousLatchedScreenLines                 ref 5768-5851
+//   packedLineHasCarryableOverlayComposition /
+//     packedLineCanAcceptTemporalOverlay            ref 5861-5909
+//   carryPreviousTemporalOverlayPixels              ref 5911-6087
+//   carryPreviousFullRegularComp7Overlay            ref 6089-6181
+//   promoteLowresCaptureImageToStructuredSlot       ref 5578-5667
+//   Engine-A phase cache store/apply                ref ~6248-6531
+//   repairTopFullRegularCapture2DBaseFromPrevious /
+//     topFullRegularCaptureWithBottomCompMode2Slot  ref 6559-6698
+//   bottomOnlyRegularCaptureDominant band           ref 6700-6724 (fix #2 site)
+//   VRAM-pair carry block                           ref 6726-6924
+//   updateAtypicalDisplayPrimaryCache + carry       ref 6937-7130
+//   repairVramCapturePrimaryFromCaptureSource /
+//     repairStructured2dOnlyPrimaryFromCaptureSource ref 7150-7280
+//   repairClass4VramCaptureOverlay                  ref 7284-7455
+//   markCompMode7Live3dFallbackLines                ref 7523-7539
+//   populateComp4Placeholder                        ref 7541-7615
+//   updateLastValidResolvedPrimary                  ref 7617-7711
+//   repairVramCapturePrimaryFromResolvedCache       ref 7713-7750
+//   repairRegularCaptureStructuredAbovePrimary      ref 7752-7826
+//   repairTemporalPrimaryFromResolvedCache          ref 7890-7949
+//   valid = true tail                               ref 8054
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanSnapshotReferenceOracle.h"
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstring>
 
 #include "Platform.h"
 
 namespace MelonPrime
 {
+// Shared with MelonPrimeVulkanOutput.cpp. The reference gates its exact
+// non-regular-display content counts on the same debug toggle.
 bool areRendererDebugBgObjLogsEnabled();
 
 namespace
 {
-
-// Per-stage collapse/protected-black-loss auditing (V5 Vulkan re-audit doc,
-// section 6). Guarded by MELONPRIME_VULKAN_BUILDER_STAGE_TRACE: when unset,
-// this costs a single getenv() call per build(). When enabled it hashes both
-// screens after every major pipeline stage, so it must never run by default
-// (O(pixels) per stage per generation).
-u64 hashStageScreen(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) noexcept
-{
-    u64 hash = 1469598103934665603ull;
-    for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
-    {
-        hash ^= plane0[i];
-        hash *= 1099511628211ull;
-        hash ^= plane1[i];
-        hash *= 1099511628211ull;
-        hash ^= control[i];
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
-u32 countStageProtectedBlack(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) noexcept
-{
-    u32 count = 0;
-    for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
-    {
-        if ((plane0[i] & 0x00FFFFFFu) == 0u && ((control[i] >> 24u) & 0x20u) != 0u)
-            ++count;
-    }
-    return count;
-}
-
-struct BuilderStageSnapshot
-{
-    u64 topHash = 0;
-    u64 bottomHash = 0;
-    u32 topProtectedBlack = 0;
-    u32 bottomProtectedBlack = 0;
-    bool valid = false;
-};
 
 constexpr u32 kPacked3dPlaceholder = 0x20000000u;
 constexpr u32 kMetaRegularCaptureUses3d = 1u << 21u;
 constexpr u32 kMetaVramCaptureUses3d = 1u << 22u;
 constexpr u32 kMetaForceLive3dCompMode7 = 1u << 18u;
 constexpr u32 kMetaExactRegularCaptureUses3d = 1u << 19u;
-bool packedPixelIsOpaqueBlack(u32 pixel) noexcept
-{
-    return pixel != 0u
-        && pixel != kPacked3dPlaceholder
-        && (pixel & 0x00FFFFFFu) == 0u
-        && (pixel >> 24u) != 0u;
-}
 
 bool packedPixelHasVisibleColor(u32 pixel) noexcept
 {
@@ -80,55 +76,38 @@ bool packedPixelHasVisibleColor(u32 pixel) noexcept
         && (pixel & 0x00FFFFFFu) != 0u;
 }
 
+bool packedPixelIsOpaqueBlack(u32 pixel) noexcept
+{
+    return pixel != 0u
+        && pixel != kPacked3dPlaceholder
+        && (pixel & 0x00FFFFFFu) == 0u;
+}
+
+bool packedControlMarksProtectedBlack2D(u32 control) noexcept
+{
+    return ((control >> 24u) & 0x20u) != 0u;
+}
+
 bool packedPixelIsUseful(u32 pixel) noexcept
 {
     return packedPixelHasVisibleColor(pixel) || packedPixelIsOpaqueBlack(pixel);
 }
 
-bool packedLineNeedsCompMode7Live3dFallback(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    u32 lineMeta,
-    int line) noexcept
+bool packedPixelIsCaptureBackedComp4(u32 plane0Pixel, u32 plane1Pixel, u32 controlPixel) noexcept
 {
-    const u32 displayMode = (lineMeta >> 16u) & 0x3u;
-    if (displayMode != 1u || (lineMeta & kMetaRegularCaptureUses3d) == 0u)
-        return false;
-    const size_t rowBase = static_cast<size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
-    bool sawCompMode7 = false;
-    for (size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
-    {
-        const size_t index = rowBase + x;
-        const u32 compMode = (control[index] >> 24u) & 0xFu;
-        if (compMode == 7u)
-            sawCompMode7 = true;
-    }
-
-    return sawCompMode7;
-}
-
-bool packedLineHasAnyVisibleColor(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
-    int line) noexcept
-{
-    if (line < 0 || line >= SoftPackedFrameSnapshot::kLineCount)
-        return false;
-
-    const size_t rowBase = static_cast<size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
-    for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
-    {
-        if (packedPixelHasVisibleColor(pixels[rowBase + static_cast<size_t>(x)]))
-            return true;
-    }
-
-    return false;
+    const u32 compMode = (controlPixel >> 24u) & 0xFu;
+    return compMode == 4u
+        && plane0Pixel == kPacked3dPlaceholder
+        && plane1Pixel == kPacked3dPlaceholder;
 }
 
 bool packedResolvedLineHasAnyUsefulPixel(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
-    std::size_t y) noexcept
+    int line) noexcept
 {
-    const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+    if (line < 0 || line >= static_cast<int>(SoftPackedFrameSnapshot::kLineCount))
+        return false;
+    const std::size_t rowBase = static_cast<std::size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
     for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
     {
         const u32 pixel = pixels[rowBase + x];
@@ -140,11 +119,13 @@ bool packedResolvedLineHasAnyUsefulPixel(
 
 bool packedResolvedLineIsMostlyOpaqueBlack(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
-    std::size_t y) noexcept
+    int line) noexcept
 {
+    if (line < 0 || line >= static_cast<int>(SoftPackedFrameSnapshot::kLineCount))
+        return false;
     int blackPixels = 0;
     int usefulPixels = 0;
-    const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+    const std::size_t rowBase = static_cast<std::size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
     for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
     {
         const u32 pixel = pixels[rowBase + x];
@@ -158,16 +139,258 @@ bool packedResolvedLineIsMostlyOpaqueBlack(
         && blackPixels >= static_cast<int>((SoftPackedFrameSnapshot::kScreenWidth * 9u) / 10u);
 }
 
+bool packedLineHasAnyVisibleColor(
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
+    int line) noexcept
+{
+    if (line < 0 || line >= static_cast<int>(SoftPackedFrameSnapshot::kLineCount))
+        return false;
+    const std::size_t rowBase = static_cast<std::size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
+    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+    {
+        if (packedPixelHasVisibleColor(pixels[rowBase + x]))
+            return true;
+    }
+    return false;
+}
+
+bool lineHasUsefulPixel(
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
+    std::size_t y) noexcept
+{
+    const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+    {
+        if (packedPixelIsUseful(pixels[rowBase + x]))
+            return true;
+    }
+    return false;
+}
+
 bool lineMaskHasAnyValidLine(
     const std::array<u8, SoftPackedFrameSnapshot::kLineCount>& lineMask) noexcept
 {
     return std::any_of(lineMask.begin(), lineMask.end(), [](u8 value) { return value != 0u; });
 }
 
+bool packedLineNeedsCompMode7Live3dFallback(
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+    u32 lineMeta,
+    int line) noexcept
+{
+    const u32 displayMode = (lineMeta >> 16u) & 0x3u;
+    if (displayMode != 1u || (lineMeta & kMetaRegularCaptureUses3d) == 0u)
+        return false;
+    const std::size_t rowBase = static_cast<std::size_t>(line) * SoftPackedFrameSnapshot::kScreenWidth;
+    bool sawCompMode7 = false;
+    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+    {
+        const u32 compMode = (control[rowBase + x] >> 24u) & 0xFu;
+        if (compMode == 7u)
+            sawCompMode7 = true;
+    }
+    return sawCompMode7;
+}
+
+bool structuredLineHasPayload(
+    const u32* plane0,
+    const u32* plane1,
+    const u32* control,
+    std::size_t rowBase) noexcept
+{
+    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+    {
+        const std::size_t index = rowBase + x;
+        if (control[index] != 0u || plane1[index] != 0u || plane0[index] != 0u)
+            return true;
+    }
+    return false;
+}
+
+void copyStructuredLine(
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+    const u32* structuredPlane0,
+    const u32* structuredPlane1,
+    const u32* structuredControl,
+    std::size_t rowBase) noexcept
+{
+    constexpr std::size_t rowBytes = SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32);
+    std::memcpy(plane0.data() + rowBase, structuredPlane0 + rowBase, rowBytes);
+    std::memcpy(plane1.data() + rowBase, structuredPlane1 + rowBase, rowBytes);
+    std::memcpy(control.data() + rowBase, structuredControl + rowBase, rowBytes);
+}
+
+// --- Screen statistics (reference collectPackedScreenStatsFromSnapshot).
+
+SoftPackedScreenStats collectPackedScreenStatsFromSnapshot(
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+    const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta)
+{
+    SoftPackedScreenStats stats{};
+    const bool exactNonRegularDisplayContentCounts = areRendererDebugBgObjLogsEnabled();
+
+    for (int y = 0; y < 192; ++y)
+    {
+        const u32 meta = lineMeta[static_cast<std::size_t>(y)];
+        const u32 displayMode = (meta >> 16u) & 0x3u;
+        stats.DisplayModeCounts[displayMode]++;
+        if ((meta & kMetaRegularCaptureUses3d) != 0u)
+            stats.RegularCaptureUses3dLines++;
+        if (displayMode == 2u && (meta & kMetaVramCaptureUses3d) != 0u)
+            stats.VramCaptureUses3dLines++;
+        if ((meta & kMetaForceLive3dCompMode7) != 0u)
+            stats.ForceLive3dCompMode7Lines++;
+
+        const int xOffset = static_cast<int>((meta >> 24u) & 0xFFu)
+            - ((((meta >> 16u) & 0x80u) != 0u) ? 256 : 0);
+        if (!stats.HasOffsets)
+        {
+            stats.MinXOffset = xOffset;
+            stats.MaxXOffset = xOffset;
+            stats.HasOffsets = true;
+        }
+        else
+        {
+            stats.MinXOffset = std::min(stats.MinXOffset, xOffset);
+            stats.MaxXOffset = std::max(stats.MaxXOffset, xOffset);
+        }
+
+        if (displayMode != 1u)
+        {
+            const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+            bool plane0VisibleFound = stats.Plane0VisiblePixels > 0u;
+            bool plane1VisibleFound = stats.Plane1VisiblePixels > 0u;
+            bool plane0UsefulFound = stats.Plane0UsefulPixels > 0u;
+            bool plane1UsefulFound = stats.Plane1UsefulPixels > 0u;
+            if (!exactNonRegularDisplayContentCounts && plane0VisibleFound && plane1VisibleFound)
+                continue;
+            for (int x = 0; x < 256; ++x)
+            {
+                const std::size_t index = rowBase + static_cast<std::size_t>(x);
+                const u32 plane0Pixel = plane0[index];
+                const u32 plane1Pixel = plane1[index];
+                const bool plane0Useful = plane0Pixel != 0u && plane0Pixel != kPacked3dPlaceholder;
+                const bool plane1Useful = plane1Pixel != 0u && plane1Pixel != kPacked3dPlaceholder;
+                if (plane0Useful)
+                {
+                    if (exactNonRegularDisplayContentCounts || !plane0UsefulFound)
+                    {
+                        stats.Plane0UsefulPixels++;
+                        plane0UsefulFound = true;
+                    }
+                    if ((plane0Pixel & 0x00FFFFFFu) != 0u)
+                    {
+                        stats.Plane0VisiblePixels++;
+                        plane0VisibleFound = true;
+                    }
+                    else if (exactNonRegularDisplayContentCounts || !plane0VisibleFound)
+                    {
+                        stats.Plane0OpaqueBlackPixels++;
+                    }
+                }
+                if (plane1Useful)
+                {
+                    if (exactNonRegularDisplayContentCounts || !plane1UsefulFound)
+                    {
+                        stats.Plane1UsefulPixels++;
+                        plane1UsefulFound = true;
+                    }
+                    if ((plane1Pixel & 0x00FFFFFFu) != 0u)
+                    {
+                        stats.Plane1VisiblePixels++;
+                        plane1VisibleFound = true;
+                    }
+                    else if (exactNonRegularDisplayContentCounts || !plane1VisibleFound)
+                    {
+                        stats.Plane1OpaqueBlackPixels++;
+                    }
+                }
+
+                if (!exactNonRegularDisplayContentCounts && plane0VisibleFound && plane1VisibleFound)
+                    break;
+            }
+            continue;
+        }
+
+        bool lineHasCaptureBackedComp4 = false;
+        const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+        for (int x = 0; x < 256; ++x)
+        {
+            const std::size_t index = rowBase + static_cast<std::size_t>(x);
+            const u32 controlAlpha = control[index] >> 24u;
+            const u32 plane0Pixel = plane0[index];
+            const u32 plane1Pixel = plane1[index];
+            const bool plane0Useful = plane0Pixel != 0u && plane0Pixel != kPacked3dPlaceholder;
+            const bool plane1Useful = plane1Pixel != 0u && plane1Pixel != kPacked3dPlaceholder;
+            if (plane0Useful)
+            {
+                stats.Plane0UsefulPixels++;
+                if ((plane0Pixel & 0x00FFFFFFu) != 0u)
+                    stats.Plane0VisiblePixels++;
+                else
+                    stats.Plane0OpaqueBlackPixels++;
+            }
+            if (plane1Useful)
+            {
+                stats.Plane1UsefulPixels++;
+                if ((plane1Pixel & 0x00FFFFFFu) != 0u)
+                    stats.Plane1VisiblePixels++;
+                else
+                    stats.Plane1OpaqueBlackPixels++;
+            }
+            const u32 compMode = controlAlpha & 0xFu;
+            if (compMode < stats.CompModeCounts.size())
+                stats.CompModeCounts[compMode]++;
+            const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
+            const bool structuredAbove = structuredSlot && (controlAlpha & 0x80u) != 0u;
+            const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
+            if ((controlAlpha & 0x20u) != 0u)
+                stats.ProtectedBlackPixels++;
+            if (structuredSlot)
+                stats.StructuredSlotPixels++;
+            if (structuredAbove)
+            {
+                stats.StructuredAbovePixels++;
+                if (plane1Useful && (plane1Pixel & 0x00FFFFFFu) != 0u)
+                    stats.StructuredAboveVisiblePixels++;
+                else if (plane1Useful)
+                    stats.StructuredAboveBlackPixels++;
+            }
+            if (structured2DOnly)
+            {
+                stats.Structured2DOnlyPixels++;
+                if (plane0Useful && (plane0Pixel & 0x00FFFFFFu) != 0u)
+                    stats.Structured2DOnlyVisiblePixels++;
+            }
+
+            const bool captureBackedComp4 =
+                compMode == 4u
+                && plane0[index] == kPacked3dPlaceholder
+                && plane1[index] == kPacked3dPlaceholder;
+            if (!captureBackedComp4)
+                continue;
+
+            stats.CaptureBackedComp4Pixels++;
+            lineHasCaptureBackedComp4 = true;
+        }
+
+        if (lineHasCaptureBackedComp4)
+            stats.CaptureBackedComp4Lines++;
+    }
+
+    return stats;
+}
+
+// --- Screen-classification predicates over collected stats.
+
 bool softPackedScreenUsesPlainStructured3dSlot(const SoftPackedScreenStats& stats) noexcept
 {
-    constexpr u32 nearlyFullPixelThreshold =
-        (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
+    constexpr u32 nearlyFullPixelThreshold = (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
     constexpr u32 dominantLineThreshold = SoftPackedFrameSnapshot::kLineCount / 2u;
     return stats.DisplayModeCounts[1] > dominantLineThreshold
         && stats.StructuredSlotPixels > nearlyFullPixelThreshold
@@ -183,8 +406,7 @@ bool softPackedScreenUsesPlainStructured3dSlot(const SoftPackedScreenStats& stat
 
 bool softPackedScreenUsesFullStructured2dOnlyDisplay(const SoftPackedScreenStats& stats) noexcept
 {
-    constexpr u32 nearlyFullPixelThreshold =
-        (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
+    constexpr u32 nearlyFullPixelThreshold = (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
     return stats.DisplayModeCounts[1] > (SoftPackedFrameSnapshot::kLineCount / 2u)
         && stats.CompModeCounts[7] > nearlyFullPixelThreshold
         && stats.Structured2DOnlyPixels > nearlyFullPixelThreshold
@@ -197,8 +419,7 @@ bool softPackedScreenUsesFullStructured2dOnlyDisplay(const SoftPackedScreenStats
 
 bool softPackedScreenUsesFullStructuredSlotDisplay(const SoftPackedScreenStats& stats) noexcept
 {
-    constexpr u32 nearlyFullPixelThreshold =
-        (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
+    constexpr u32 nearlyFullPixelThreshold = (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
     return stats.DisplayModeCounts[1] > (SoftPackedFrameSnapshot::kLineCount / 2u)
         && stats.StructuredSlotPixels > nearlyFullPixelThreshold
         && stats.StructuredAbovePixels == 0u
@@ -212,8 +433,7 @@ bool packedScreenUsesFullStructuredCompMode2Slot(
     const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
     const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) noexcept
 {
-    constexpr u32 nearlyFullPixelThreshold =
-        (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
+    constexpr u32 nearlyFullPixelThreshold = (SoftPackedFrameSnapshot::kPixelCount * 7u) / 8u;
     u32 matchingPixels = 0;
     for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
     {
@@ -283,222 +503,7 @@ bool softPackedScreenUsesRegularStructured3dCaptureSlot(const SoftPackedScreenSt
         && stats.ForceLive3dCompMode7Lines == 0u;
 }
 
-bool lineHasUsefulPixel(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& pixels,
-    std::size_t y) noexcept
-{
-    const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
-    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
-    {
-        if (packedPixelIsUseful(pixels[rowBase + x]))
-            return true;
-    }
-    return false;
-}
-
-SoftPackedScreenStats collectPackedScreenStatsFromSnapshot(
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta)
-{
-    SoftPackedScreenStats stats{};
-    const bool exactNonRegularDisplayContentCounts = areRendererDebugBgObjLogsEnabled();
-
-    for (int y = 0; y < 192; y++)
-    {
-        const u32 meta = lineMeta[static_cast<size_t>(y)];
-        const u32 displayMode = (meta >> 16u) & 0x3u;
-        stats.DisplayModeCounts[displayMode]++;
-        if ((meta & kMetaRegularCaptureUses3d) != 0u)
-            stats.RegularCaptureUses3dLines++;
-        if (displayMode == 2u && (meta & kMetaVramCaptureUses3d) != 0u)
-            stats.VramCaptureUses3dLines++;
-        if ((meta & kMetaForceLive3dCompMode7) != 0u)
-            stats.ForceLive3dCompMode7Lines++;
-
-        const int xOffset = static_cast<int>((meta >> 24u) & 0xFFu)
-            - ((((meta >> 16u) & 0x80u) != 0u) ? 256 : 0);
-        if (!stats.HasOffsets)
-        {
-            stats.MinXOffset = xOffset;
-            stats.MaxXOffset = xOffset;
-            stats.HasOffsets = true;
-        }
-        else
-        {
-            stats.MinXOffset = std::min(stats.MinXOffset, xOffset);
-            stats.MaxXOffset = std::max(stats.MaxXOffset, xOffset);
-        }
-
-        if (displayMode != 1u)
-        {
-            const size_t rowBase = static_cast<size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
-            bool plane0VisibleFound = stats.Plane0VisiblePixels > 0u;
-            bool plane1VisibleFound = stats.Plane1VisiblePixels > 0u;
-            bool plane0UsefulFound = stats.Plane0UsefulPixels > 0u;
-            bool plane1UsefulFound = stats.Plane1UsefulPixels > 0u;
-            if (!exactNonRegularDisplayContentCounts && plane0VisibleFound && plane1VisibleFound)
-                continue;
-            for (int x = 0; x < 256; x++)
-            {
-                const size_t index = rowBase + static_cast<size_t>(x);
-                const u32 plane0Pixel = plane0[index];
-                const u32 plane1Pixel = plane1[index];
-                const bool plane0Useful = plane0Pixel != 0u && plane0Pixel != kPacked3dPlaceholder;
-                const bool plane1Useful = plane1Pixel != 0u && plane1Pixel != kPacked3dPlaceholder;
-                if (plane0Useful)
-                {
-                    if (exactNonRegularDisplayContentCounts || !plane0UsefulFound)
-                    {
-                        stats.Plane0UsefulPixels++;
-                        plane0UsefulFound = true;
-                    }
-                    if ((plane0Pixel & 0x00FFFFFFu) != 0u)
-                    {
-                        stats.Plane0VisiblePixels++;
-                        plane0VisibleFound = true;
-                    }
-                    else if (exactNonRegularDisplayContentCounts || !plane0VisibleFound)
-                    {
-                        stats.Plane0OpaqueBlackPixels++;
-                    }
-                }
-                if (plane1Useful)
-                {
-                    if (exactNonRegularDisplayContentCounts || !plane1UsefulFound)
-                    {
-                        stats.Plane1UsefulPixels++;
-                        plane1UsefulFound = true;
-                    }
-                    if ((plane1Pixel & 0x00FFFFFFu) != 0u)
-                    {
-                        stats.Plane1VisiblePixels++;
-                        plane1VisibleFound = true;
-                    }
-                    else if (exactNonRegularDisplayContentCounts || !plane1VisibleFound)
-                    {
-                        stats.Plane1OpaqueBlackPixels++;
-                    }
-                }
-
-                if (!exactNonRegularDisplayContentCounts && plane0VisibleFound && plane1VisibleFound)
-                    break;
-            }
-            continue;
-        }
-
-        bool lineHasCaptureBackedComp4 = false;
-        const size_t rowBase = static_cast<size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
-        for (int x = 0; x < 256; x++)
-        {
-            const size_t index = rowBase + static_cast<size_t>(x);
-            const u32 controlAlpha = control[index] >> 24u;
-            const u32 plane0Pixel = plane0[index];
-            const u32 plane1Pixel = plane1[index];
-            const bool plane0Useful = plane0Pixel != 0u && plane0Pixel != kPacked3dPlaceholder;
-            const bool plane1Useful = plane1Pixel != 0u && plane1Pixel != kPacked3dPlaceholder;
-            if (plane0Useful)
-            {
-                stats.Plane0UsefulPixels++;
-                if ((plane0Pixel & 0x00FFFFFFu) != 0u)
-                    stats.Plane0VisiblePixels++;
-                else
-                    stats.Plane0OpaqueBlackPixels++;
-            }
-            if (plane1Useful)
-            {
-                stats.Plane1UsefulPixels++;
-                if ((plane1Pixel & 0x00FFFFFFu) != 0u)
-                    stats.Plane1VisiblePixels++;
-                else
-                    stats.Plane1OpaqueBlackPixels++;
-            }
-            const u32 compMode = controlAlpha & 0xFu;
-            if (compMode < stats.CompModeCounts.size())
-                stats.CompModeCounts[compMode]++;
-            const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
-            const bool structuredAbove = structuredSlot && (controlAlpha & 0x80u) != 0u;
-            const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
-            if ((controlAlpha & 0x20u) != 0u)
-                stats.ProtectedBlackPixels++;
-            if (structuredSlot)
-                stats.StructuredSlotPixels++;
-            if (structuredAbove)
-            {
-                stats.StructuredAbovePixels++;
-                if (plane1Useful && (plane1Pixel & 0x00FFFFFFu) != 0u)
-                    stats.StructuredAboveVisiblePixels++;
-                else if (plane1Useful)
-                    stats.StructuredAboveBlackPixels++;
-            }
-            if (structured2DOnly)
-            {
-                stats.Structured2DOnlyPixels++;
-                if (plane0Useful && (plane0Pixel & 0x00FFFFFFu) != 0u)
-                    stats.Structured2DOnlyVisiblePixels++;
-            }
-
-            const bool captureBackedComp4 =
-                compMode == 4u
-                && plane0[index] == kPacked3dPlaceholder
-                && plane1[index] == kPacked3dPlaceholder;
-            if (!captureBackedComp4)
-                continue;
-
-            stats.CaptureBackedComp4Pixels++;
-            lineHasCaptureBackedComp4 = true;
-        }
-
-        if (lineHasCaptureBackedComp4)
-            stats.CaptureBackedComp4Lines++;
-    }
-
-    return stats;
-}
-
-bool structuredLineHasPayload(
-    const u32* plane0,
-    const u32* plane1,
-    const u32* control,
-    std::size_t rowBase) noexcept
-{
-    for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
-    {
-        const std::size_t index = rowBase + x;
-        if (control[index] != 0u || plane1[index] != 0u || plane0[index] != 0u)
-            return true;
-    }
-    return false;
-}
-
-void copyStructuredLine(
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-    const u32* structuredPlane0,
-    const u32* structuredPlane1,
-    const u32* structuredControl,
-    std::size_t rowBase) noexcept
-{
-    constexpr std::size_t rowBytes = SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32);
-    std::memcpy(plane0.data() + rowBase, structuredPlane0 + rowBase, rowBytes);
-    std::memcpy(plane1.data() + rowBase, structuredPlane1 + rowBase, rowBytes);
-    std::memcpy(control.data() + rowBase, structuredControl + rowBase, rowBytes);
-}
-
-bool packedControlMarksProtectedBlack2D(u32 control) noexcept
-{
-    return ((control >> 24u) & 0x20u) != 0u;
-}
-
-bool packedPixelIsCaptureBackedComp4(u32 plane0Pixel, u32 plane1Pixel, u32 controlPixel) noexcept
-{
-    const u32 compMode = (controlPixel >> 24u) & 0xFu;
-    return compMode == 4u
-        && plane0Pixel == kPacked3dPlaceholder
-        && plane1Pixel == kPacked3dPlaceholder;
-}
+// --- Capture-line-count recompute helper (reference countSnapshotCaptureUses3dLines).
 
 struct CaptureLineCounts
 {
@@ -521,11 +526,8 @@ CaptureLineCounts countCaptureLineCounts(
     return counts;
 }
 
-// Engine A/B shadow planes must not be merged back onto physical Top/Bottom
-// via frame-level physicalScreenSwap. source.plane[0/1] is already routed.
-
-// --- Capture metadata normalization (Sapphire clearBroadPartialRegularCapture
-// / clearBroadRegularCaptureAgainstOppositeVram).
+// --- Capture metadata normalization (reference clearBroadPartialRegularCapture
+// / clearBroadRegularCaptureAgainstOppositeVram, ref 5375-5452).
 
 void normalizeCaptureLineMeta(
     std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
@@ -577,7 +579,7 @@ void normalizeCaptureLineMeta(
     }
 }
 
-// --- Temporal carries (Sapphire carryPreviousLatchedScreenLines /
+// --- Temporal carries (reference carryPreviousLatchedScreenLines /
 // carryPreviousTemporalOverlayPixels / carryPreviousFullRegularComp7Overlay).
 
 bool latchedSnapshotLineIsZero(
@@ -1023,8 +1025,8 @@ int carryPreviousFullRegularComp7Overlay(
     return carriedLines;
 }
 
-// --- Lowres capture-image-only screen promotion (Sapphire
-// promoteLowresCaptureImageToStructuredSlot).
+// --- Lowres capture-image-only screen promotion (reference
+// promoteLowresCaptureImageToStructuredSlot, ref 5578-5667).
 
 void promoteLowresCaptureImageToStructuredSlot(
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
@@ -1114,7 +1116,7 @@ void promoteLowresCaptureImageToStructuredSlot(
 
 } // namespace
 
-void MelonPrimeVulkanSnapshotBuilder::reset() noexcept
+void MelonPrimeVulkanSnapshotReferenceOracle::reset() noexcept
 {
     previousSnapshot.clear();
     engineATop = {};
@@ -1137,14 +1139,7 @@ void MelonPrimeVulkanSnapshotBuilder::reset() noexcept
     wasInAlternatingMode = false;
 }
 
-bool MelonPrimeVulkanSnapshotBuilder::takeRegularCaptureTransitionResyncRequest() noexcept
-{
-    const bool pending = vulkanRegularCaptureTransitionResyncPending;
-    vulkanRegularCaptureTransitionResyncPending = false;
-    return pending;
-}
-
-bool MelonPrimeVulkanSnapshotBuilder::build(
+bool MelonPrimeVulkanSnapshotReferenceOracle::build(
     const StructuredVulkanSnapshotSource& source,
     u64 frameId,
     SoftPackedFrameSnapshot& destination)
@@ -1161,7 +1156,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 return false;
         }
     }
-
     if (source.packedTop == nullptr || source.packedBottom == nullptr)
         return false;
 
@@ -1177,140 +1171,50 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
     constexpr std::size_t pixelBytes = SoftPackedFrameSnapshot::kPixelCount * sizeof(u32);
     constexpr std::size_t kPackedStride = SoftPackedFrameSnapshot::kScreenWidth * 3u + 1u;
-    // The desktop producer has already performed Sapphire's structured-line
-    // merge into authoritative physical Top/Bottom packed buffers. Latch that
-    // result once; all code below is Sapphire's post-merge temporal repair.
-    auto unpackPackedScreen =
-            [](const u32* packed,
-                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-                std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-                std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
-                for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
-                {
-                    const std::size_t packedRow = y * kPackedStride;
-                    const std::size_t snapshotRow = y * SoftPackedFrameSnapshot::kScreenWidth;
-                    std::memcpy(
-                        plane0.data() + snapshotRow,
-                        packed + packedRow,
-                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
-                    std::memcpy(
-                        plane1.data() + snapshotRow,
-                        packed + packedRow + SoftPackedFrameSnapshot::kScreenWidth,
-                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
-                    std::memcpy(
-                        control.data() + snapshotRow,
-                        packed + packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
-                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
-                    lineMeta[y] = packed[packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 3u)];
-                }
-        };
-    unpackPackedScreen(
-        source.packedTop,
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    unpackPackedScreen(
-        source.packedBottom,
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
 
-    const char* const stageTraceValue = std::getenv("MELONPRIME_VULKAN_BUILDER_STAGE_TRACE");
-    const bool stageTraceEnabled =
-        stageTraceValue != nullptr && stageTraceValue[0] != '\0' && stageTraceValue[0] != '0';
-    BuilderStageSnapshot previousBuilderStage{};
-    auto emitBuilderStage = [&](const char* stageName) {
-        if (!stageTraceEnabled)
-            return;
-        const u64 topHash = hashStageScreen(
-            destination.packedTopPlane0, destination.packedTopPlane1, destination.packedTopControl);
-        const u64 bottomHash = hashStageScreen(
-            destination.packedBottomPlane0, destination.packedBottomPlane1, destination.packedBottomControl);
-        const u32 topProtectedBlack =
-            countStageProtectedBlack(destination.packedTopPlane0, destination.packedTopControl);
-        const u32 bottomProtectedBlack =
-            countStageProtectedBlack(destination.packedBottomPlane0, destination.packedBottomControl);
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Info,
-            "Vulkan2DBuilderStage generation=%llu frameId=%llu stage=%s screenSwap=%u "
-            "topHash=%016llX bottomHash=%016llX topProtectedBlack=%u bottomProtectedBlack=%u",
-            static_cast<unsigned long long>(source.generation),
-            static_cast<unsigned long long>(frameId),
-            stageName,
-            destination.screenSwapLatched ? 1u : 0u,
-            static_cast<unsigned long long>(topHash),
-            static_cast<unsigned long long>(bottomHash),
-            topProtectedBlack,
-            bottomProtectedBlack);
-        if (previousBuilderStage.valid)
-        {
-            if (previousBuilderStage.topHash != previousBuilderStage.bottomHash
-                && topHash == bottomHash)
+    // Desktop producer supplies already-merged physical Top/Bottom packed
+    // buffers (reference performs the structured merge inline; GPU_Soft.cpp does
+    // it here). Unpack once, then run the reference post-merge repair pipeline.
+    auto unpackPackedScreen =
+        [](const u32* packed,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+            std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
+            for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
             {
-                melonDS::Platform::Log(
-                    melonDS::Platform::LogLevel::Error,
-                    "TopBottomCollapse stage=%s generation=%llu beforeTopHash=%016llX "
-                    "beforeBottomHash=%016llX afterHash=%016llX",
-                    stageName,
-                    static_cast<unsigned long long>(source.generation),
-                    static_cast<unsigned long long>(previousBuilderStage.topHash),
-                    static_cast<unsigned long long>(previousBuilderStage.bottomHash),
-                    static_cast<unsigned long long>(topHash));
+                const std::size_t packedRow = y * kPackedStride;
+                const std::size_t snapshotRow = y * SoftPackedFrameSnapshot::kScreenWidth;
+                std::memcpy(plane0.data() + snapshotRow, packed + packedRow,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                std::memcpy(plane1.data() + snapshotRow, packed + packedRow + SoftPackedFrameSnapshot::kScreenWidth,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                std::memcpy(control.data() + snapshotRow, packed + packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                lineMeta[y] = packed[packedRow + (SoftPackedFrameSnapshot::kScreenWidth * 3u)];
             }
-            if (topProtectedBlack < previousBuilderStage.topProtectedBlack)
-            {
-                melonDS::Platform::Log(
-                    melonDS::Platform::LogLevel::Error,
-                    "ProtectedBlackLoss screen=Top stage=%s generation=%llu lost=%u",
-                    stageName,
-                    static_cast<unsigned long long>(source.generation),
-                    previousBuilderStage.topProtectedBlack - topProtectedBlack);
-            }
-            if (bottomProtectedBlack < previousBuilderStage.bottomProtectedBlack)
-            {
-                melonDS::Platform::Log(
-                    melonDS::Platform::LogLevel::Error,
-                    "ProtectedBlackLoss screen=Bottom stage=%s generation=%llu lost=%u",
-                    stageName,
-                    static_cast<unsigned long long>(source.generation),
-                    previousBuilderStage.bottomProtectedBlack - bottomProtectedBlack);
-            }
-        }
-        previousBuilderStage = {topHash, bottomHash, topProtectedBlack, bottomProtectedBlack, true};
-    };
-    emitBuilderStage("afterUnpackPacked");
+        };
+    unpackPackedScreen(source.packedTop, destination.packedTopPlane0, destination.packedTopPlane1,
+        destination.packedTopControl, destination.packedTopLineMeta);
+    unpackPackedScreen(source.packedBottom, destination.packedBottomPlane0, destination.packedBottomPlane1,
+        destination.packedBottomControl, destination.packedBottomLineMeta);
 
     if (source.capture3dSourceLineValid != nullptr)
-    {
-        std::memcpy(
-            destination.capture3dSourceLineValidMask.data(),
-            source.capture3dSourceLineValid,
+        std::memcpy(destination.capture3dSourceLineValidMask.data(), source.capture3dSourceLineValid,
             destination.capture3dSourceLineValidMask.size() * sizeof(u8));
-    }
     if (source.captureLineUses3dMask != nullptr)
-    {
-        std::memcpy(
-            destination.captureLineUses3dMask.data(),
-            source.captureLineUses3dMask,
+        std::memcpy(destination.captureLineUses3dMask.data(), source.captureLineUses3dMask,
             destination.captureLineUses3dMask.size() * sizeof(u8));
-    }
-    std::memcpy(
-        destination.topScreenNeedsCapture3dMask.data(),
-        source.screenNeedsCapture3d[0],
+    std::memcpy(destination.topScreenNeedsCapture3dMask.data(), source.screenNeedsCapture3d[0],
         destination.topScreenNeedsCapture3dMask.size() * sizeof(u8));
-    std::memcpy(
-        destination.bottomScreenNeedsCapture3dMask.data(),
-        source.screenNeedsCapture3d[1],
+    std::memcpy(destination.bottomScreenNeedsCapture3dMask.data(), source.screenNeedsCapture3d[1],
         destination.bottomScreenNeedsCapture3dMask.size() * sizeof(u8));
 
     const bool screenSwapToggledThisFrame =
         previousSnapshot.valid
         && previousSnapshot.screenSwapLatched != destination.screenSwapLatched;
-    // Desktop does not expose Sapphire's renderer-2D debug controls through
-    // this split builder, so the production repair path is always active.
+    // Reference areRenderer2DDebugControlsActive() is unconditionally false on
+    // this (desktop) path.
     constexpr bool renderer2dDebugControlsActive = false;
 
     if (destination.captureBackedHasStructured2DSource)
@@ -1374,11 +1278,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         promoteVramDisplayCaptureLines(destination.packedBottomLineMeta);
     }
 
-    // source.plane[0/1] is already physical Top/Bottom from GPU_Soft scanline
-    // routing. Do NOT merge Engine A/B shadow planes back onto Top/Bottom using
-    // the frame-level physicalScreenSwap bit — that second routing swaps whole
-    // 2D screens. Keep physical planes authoritative (Sapphire contract).
-
     // Capture metadata normalization on physical lineMeta only.
     {
         int capture3dMaskLines = 0;
@@ -1409,15 +1308,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.captureBackedHasStructured2DSource
                 || source.captureBackedFullClass0AlternatingCapture);
     }
-    emitBuilderStage("afterCaptureMetaNormalize");
 
-    // Sapphire recomputes these capture-line counts once, immediately after
-    // metadata normalization and before the temporal carries / Engine-A
-    // whole-screen cache replacement below. carryPreviousLatchedScreenLines
-    // and applyCachedEngineASnapshot both rewrite the high 16 bits of
-    // lineMeta (display mode + capture flags), so recomputing after those
-    // steps (as opposed to here) yields different gate values downstream in
-    // promoteLowresCaptureImageToStructuredSlot / repairTopFullRegularCapture2DBaseFromPrevious.
+    // Fix #1: recompute capture-line counts once, immediately after metadata
+    // normalization and before the temporal carries / Engine-A cache
+    // replacement (reference recompute at ~5468).
     const bool partialCapture3dMask = [&] {
         int capture3dMaskLines = 0;
         for (u8 uses3d : destination.captureLineUses3dMask)
@@ -1433,65 +1327,45 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     const int bottomRegularCaptureLineCount = bottomLineCounts.regularCaptureLines;
     const int topVramCaptureLineCount = topLineCounts.vramCaptureLines;
     const int bottomVramCaptureLineCount = bottomLineCounts.vramCaptureLines;
-    emitBuilderStage("afterCaptureLineCount");
 
     const int carriedTopLatchedLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousLatchedScreenLines(
-            previousSnapshot,
-            true,
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta);
+        : carryPreviousLatchedScreenLines(previousSnapshot, true,
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta);
     const int carriedBottomLatchedLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousLatchedScreenLines(
-            previousSnapshot,
-            false,
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
-    emitBuilderStage("afterCarryPreviousLatched");
+        : carryPreviousLatchedScreenLines(previousSnapshot, false,
+            destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta);
+    (void)carriedTopLatchedLines;
+    (void)carriedBottomLatchedLines;
     const int carriedTopTemporalOverlayLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousTemporalOverlayPixels(
-            previousSnapshot,
-            true,
+        : carryPreviousTemporalOverlayPixels(previousSnapshot, true,
             source.captureBackedPartialClass0Only,
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta);
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta);
     const int carriedBottomTemporalOverlayLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousTemporalOverlayPixels(
-            previousSnapshot,
-            false,
+        : carryPreviousTemporalOverlayPixels(previousSnapshot, false,
             source.captureBackedPartialClass0Only,
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
-    emitBuilderStage("afterCarryPreviousTemporalOverlay");
+            destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta);
+    (void)carriedTopTemporalOverlayLines;
+    (void)carriedBottomTemporalOverlayLines;
     int carriedTopFullRegularComp7OverlayLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousFullRegularComp7Overlay(
-            previousSnapshot,
-            true,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
+        : carryPreviousFullRegularComp7Overlay(previousSnapshot, true,
+            destination.packedTopPlane1, destination.packedTopControl,
             destination.packedTopLineMeta);
     int carriedBottomFullRegularComp7OverlayLines = renderer2dDebugControlsActive
         ? 0
-        : carryPreviousFullRegularComp7Overlay(
-            previousSnapshot,
-            false,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
+        : carryPreviousFullRegularComp7Overlay(previousSnapshot, false,
+            destination.packedBottomPlane1, destination.packedBottomControl,
             destination.packedBottomLineMeta);
-    emitBuilderStage("afterCarryPreviousFullRegularComp7");
+    (void)carriedTopFullRegularComp7OverlayLines;
+    (void)carriedBottomFullRegularComp7OverlayLines;
 
     if (screenSwapToggledThisFrame)
         framesSinceLastScreenSwapToggle = 0;
@@ -1512,8 +1386,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
         auto screenHasMeaningfulContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
-                constexpr std::size_t kMinVisiblePixels =
-                    SoftPackedFrameSnapshot::kPixelCount / 32u;
+                constexpr std::size_t kMinVisiblePixels = SoftPackedFrameSnapshot::kPixelCount / 32u;
                 std::size_t visiblePixels = 0;
                 for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
                 {
@@ -1528,8 +1401,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             };
         auto screenHasExplicitCurrentContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0) {
-                constexpr std::size_t kMinUsefulPixels =
-                    SoftPackedFrameSnapshot::kPixelCount / 32u;
+                constexpr std::size_t kMinUsefulPixels = SoftPackedFrameSnapshot::kPixelCount / 32u;
                 std::size_t usefulPixels = 0;
                 for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
                 {
@@ -1571,8 +1443,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                         return false;
                     const u32 displayMode = (meta >> 16u) & 0x3u;
                     const bool lineUses3d =
-                        (meta & (kMetaRegularCaptureUses3d
-                            | kMetaVramCaptureUses3d)) != 0u;
+                        (meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) != 0u;
                     if (displayMode != 1u || !lineUses3d)
                         continue;
                     bool lineHasCaptureBackedComp4 = false;
@@ -1598,8 +1469,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         auto screenHasStructured2DOnlyContent =
             [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control) {
-                constexpr std::size_t kMinVisiblePixels =
-                    SoftPackedFrameSnapshot::kPixelCount / 128u;
+                constexpr std::size_t kMinVisiblePixels = SoftPackedFrameSnapshot::kPixelCount / 128u;
                 std::size_t visiblePixels = 0;
                 for (std::size_t i = 0; i < SoftPackedFrameSnapshot::kPixelCount; ++i)
                 {
@@ -1644,24 +1514,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         if (engineAOnTop)
         {
             if (screenHasMeaningfulContent(destination.packedTopPlane0)
-                || screenIsScreenWideCaptureBackedComp4(
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1,
-                    destination.packedTopControl,
+                || screenIsScreenWideCaptureBackedComp4(destination.packedTopPlane0,
+                    destination.packedTopPlane1, destination.packedTopControl,
                     destination.packedTopLineMeta))
             {
-                storeEngineACache(
-                    engineATop,
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1,
-                    destination.packedTopControl,
+                storeEngineACache(engineATop, destination.packedTopPlane0,
+                    destination.packedTopPlane1, destination.packedTopControl,
                     destination.packedTopLineMeta);
             }
 
             const bool currentTopHasExplicitCompositedContent =
-                screenHasExplicitCompositedContent(
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1);
+                screenHasExplicitCompositedContent(destination.packedTopPlane0, destination.packedTopPlane1);
             const bool cachedTopHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
             if (engineATop.valid
@@ -1669,28 +1532,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 && screenUses3dCaptureMeta(destination.packedTopLineMeta)
                 && cachedTopHasStructured2DOnlyContent)
             {
-                applyCachedEngineASnapshot(
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1,
-                    destination.packedTopControl,
-                    destination.packedTopLineMeta,
-                    engineATop);
+                applyCachedEngineASnapshot(destination.packedTopPlane0, destination.packedTopPlane1,
+                    destination.packedTopControl, destination.packedTopLineMeta, engineATop);
             }
 
             const bool cachedBottomIsScreenWideCaptureBackedComp4 =
-                screenIsScreenWideCaptureBackedComp4(
-                    engineABottom.plane0,
-                    engineABottom.plane1,
-                    engineABottom.control,
-                    engineABottom.lineMeta);
+                screenIsScreenWideCaptureBackedComp4(engineABottom.plane0, engineABottom.plane1,
+                    engineABottom.control, engineABottom.lineMeta);
             const bool currentBottomHasExplicitContent =
-                screenHasExplicitCompositedContent(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1);
+                screenHasExplicitCompositedContent(destination.packedBottomPlane0, destination.packedBottomPlane1);
             const bool cachedBottomHasStructured2DOnlyContent =
-                screenHasStructured2DOnlyContent(
-                    engineABottom.plane0,
-                    engineABottom.control);
+                screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
             const bool shouldReplaceBottom = engineABottom.valid
                 && ((!isInAlternatingMode && !currentBottomHasExplicitContent)
                     || (isInAlternatingMode
@@ -1700,45 +1552,29 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                                 && cachedBottomHasStructured2DOnlyContent))));
             if (shouldReplaceBottom)
             {
-                applyCachedEngineASnapshot(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1,
-                    destination.packedBottomControl,
-                    destination.packedBottomLineMeta,
-                    engineABottom);
+                applyCachedEngineASnapshot(destination.packedBottomPlane0, destination.packedBottomPlane1,
+                    destination.packedBottomControl, destination.packedBottomLineMeta, engineABottom);
             }
         }
         else
         {
             if (screenHasMeaningfulContent(destination.packedBottomPlane0)
-                || screenIsScreenWideCaptureBackedComp4(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1,
-                    destination.packedBottomControl,
+                || screenIsScreenWideCaptureBackedComp4(destination.packedBottomPlane0,
+                    destination.packedBottomPlane1, destination.packedBottomControl,
                     destination.packedBottomLineMeta))
             {
-                storeEngineACache(
-                    engineABottom,
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1,
-                    destination.packedBottomControl,
+                storeEngineACache(engineABottom, destination.packedBottomPlane0,
+                    destination.packedBottomPlane1, destination.packedBottomControl,
                     destination.packedBottomLineMeta);
             }
 
             const bool cachedTopIsScreenWideCaptureBackedComp4 =
-                screenIsScreenWideCaptureBackedComp4(
-                    engineATop.plane0,
-                    engineATop.plane1,
-                    engineATop.control,
-                    engineATop.lineMeta);
+                screenIsScreenWideCaptureBackedComp4(engineATop.plane0, engineATop.plane1,
+                    engineATop.control, engineATop.lineMeta);
             const bool currentTopHasExplicitContent =
-                screenHasExplicitCompositedContent(
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1);
+                screenHasExplicitCompositedContent(destination.packedTopPlane0, destination.packedTopPlane1);
             const bool cachedTopHasStructured2DOnlyContent =
-                screenHasStructured2DOnlyContent(
-                    engineATop.plane0,
-                    engineATop.control);
+                screenHasStructured2DOnlyContent(engineATop.plane0, engineATop.control);
             const bool shouldReplaceTop = engineATop.valid
                 && ((!isInAlternatingMode && !currentTopHasExplicitContent)
                     || (isInAlternatingMode
@@ -1748,18 +1584,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                                 && cachedTopHasStructured2DOnlyContent))));
             if (shouldReplaceTop)
             {
-                applyCachedEngineASnapshot(
-                    destination.packedTopPlane0,
-                    destination.packedTopPlane1,
-                    destination.packedTopControl,
-                    destination.packedTopLineMeta,
-                    engineATop);
+                applyCachedEngineASnapshot(destination.packedTopPlane0, destination.packedTopPlane1,
+                    destination.packedTopControl, destination.packedTopLineMeta, engineATop);
             }
 
             const bool currentBottomHasExplicitCompositedContent =
-                screenHasExplicitCompositedContent(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1);
+                screenHasExplicitCompositedContent(destination.packedBottomPlane0, destination.packedBottomPlane1);
             const bool cachedBottomHasStructured2DOnlyContent =
                 screenHasStructured2DOnlyContent(engineABottom.plane0, engineABottom.control);
             if (engineABottom.valid
@@ -1767,60 +1597,39 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 && screenUses3dCaptureMeta(destination.packedBottomLineMeta)
                 && cachedBottomHasStructured2DOnlyContent)
             {
-                applyCachedEngineASnapshot(
-                    destination.packedBottomPlane0,
-                    destination.packedBottomPlane1,
-                    destination.packedBottomControl,
-                    destination.packedBottomLineMeta,
-                    engineABottom);
+                applyCachedEngineASnapshot(destination.packedBottomPlane0, destination.packedBottomPlane1,
+                    destination.packedBottomControl, destination.packedBottomLineMeta, engineABottom);
             }
         }
     }
-    // Covers V5 doc stages 06 (afterEngineACacheStore) and 07
-    // (afterEngineACacheApply) as one checkpoint: store and apply are
-    // interleaved above per screen, so only the net effect is observable.
-    emitBuilderStage("afterEngineACache");
 
-    // The producer supplies a complete immutable structured frame. These names
-    // deliberately mirror Sapphire's latch locals so the post-merge block below
-    // remains a line-for-line semantic port.
-    constexpr bool hasStructuredVulkan2D = true;
     const bool captureBackedClass4Only = destination.captureBackedClass4Only;
     const bool captureBackedHasStructured2DSource = destination.captureBackedHasStructured2DSource;
-    const bool captureBackedFullClass0AlternatingCapture =
-        source.captureBackedFullClass0AlternatingCapture;
+    (void)captureBackedHasStructured2DSource;
     const u32* structuredTopPlane0 = source.plane[0][0];
     const u32* structuredTopPlane1 = source.plane[0][1];
     const u32* structuredTopControl = source.plane[0][2];
     const u32* structuredBottomPlane0 = source.plane[1][0];
     const u32* structuredBottomPlane1 = source.plane[1][1];
     const u32* structuredBottomControl = source.plane[1][2];
+    constexpr bool hasStructuredVulkan2D = true;
 
     promoteLowresCaptureImageToStructuredSlot(
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta,
+        destination.packedTopPlane0, destination.packedTopPlane1,
+        destination.packedTopControl, destination.packedTopLineMeta,
         previousSnapshot.valid ? &previousSnapshot.packedTopControl : nullptr,
         isInAlternatingMode,
         captureBackedClass4Only && screenSwapToggledThisFrame,
         partialCapture3dMask,
-        topRegularCaptureLineCount,
-        bottomRegularCaptureLineCount,
-        bottomVramCaptureLineCount);
+        topRegularCaptureLineCount, bottomRegularCaptureLineCount, bottomVramCaptureLineCount);
     promoteLowresCaptureImageToStructuredSlot(
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta,
+        destination.packedBottomPlane0, destination.packedBottomPlane1,
+        destination.packedBottomControl, destination.packedBottomLineMeta,
         previousSnapshot.valid ? &previousSnapshot.packedBottomControl : nullptr,
         isInAlternatingMode,
         captureBackedClass4Only && screenSwapToggledThisFrame,
         partialCapture3dMask,
-        bottomRegularCaptureLineCount,
-        topRegularCaptureLineCount,
-        topVramCaptureLineCount);
-    emitBuilderStage("afterPromoteLowresCapture");
+        bottomRegularCaptureLineCount, topRegularCaptureLineCount, topVramCaptureLineCount);
 
     int preservedTopFullRegularProtectedBlackPixels = 0;
     auto repairTopFullRegularCapture2DBaseFromPrevious =
@@ -1831,22 +1640,23 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& previousPlane0,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& previousLineMeta,
             int regularCaptureLineCount,
-            int vramCaptureLineCount) {
+            int vramCaptureLineCount) -> int {
+            (void)plane1;
             if (!previousSnapshot.valid)
                 return 0;
             if (!isInAlternatingMode)
                 return 0;
-            if (regularCaptureLineCount != SoftPackedFrameSnapshot::kScreenHeight)
+            if (regularCaptureLineCount != static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight))
                 return 0;
             if (vramCaptureLineCount != 0)
                 return 0;
 
-            size_t regularComp7Pixels = 0;
-            size_t regularStructuredAbovePixels = 0;
-            size_t regularPixels = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            std::size_t regularComp7Pixels = 0;
+            std::size_t regularStructuredAbovePixels = 0;
+            std::size_t regularPixels = 0;
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool regularCaptureLine =
                     ((meta >> 16u) & 0x3u) == 1u
                     && (meta & kMetaRegularCaptureUses3d) != 0u
@@ -1854,17 +1664,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (!regularCaptureLine)
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 controlAlpha = control[index] >> 24u;
                     const u32 compMode = controlAlpha & 0xFu;
-                    regularPixels++;
+                    ++regularPixels;
                     if (compMode == 7u)
-                        regularComp7Pixels++;
+                        ++regularComp7Pixels;
                     if ((controlAlpha & 0x80u) != 0u)
-                        regularStructuredAbovePixels++;
+                        ++regularStructuredAbovePixels;
                 }
             }
 
@@ -1875,21 +1685,21 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             if (regularStructuredAbovePixels > (regularPixels / 16u))
                 return 0;
 
-            size_t previousUsefulLines = 0;
-            size_t previousRegularCaptureLines = 0;
-            size_t previousWideBlackLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            std::size_t previousUsefulLines = 0;
+            std::size_t previousRegularCaptureLines = 0;
+            std::size_t previousWideBlackLines = 0;
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 previousMeta = previousLineMeta[static_cast<size_t>(y)];
+                const u32 previousMeta = previousLineMeta[static_cast<std::size_t>(y)];
                 if (((previousMeta >> 16u) & 0x3u) == 1u
                     && (previousMeta & kMetaRegularCaptureUses3d) != 0u)
                 {
-                    previousRegularCaptureLines++;
+                    ++previousRegularCaptureLines;
                 }
                 if (packedResolvedLineHasAnyUsefulPixel(previousPlane0, y))
-                    previousUsefulLines++;
+                    ++previousUsefulLines;
                 if (packedResolvedLineIsMostlyOpaqueBlack(previousPlane0, y))
-                    previousWideBlackLines++;
+                    ++previousWideBlackLines;
             }
 
             if (previousUsefulLines <= (SoftPackedFrameSnapshot::kScreenHeight / 2))
@@ -1901,9 +1711,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
 
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount> currentPlane0 = plane0;
             plane0 = previousPlane0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool regularCaptureLine =
                     ((meta >> 16u) & 0x3u) == 1u
                     && (meta & kMetaRegularCaptureUses3d) != 0u
@@ -1911,10 +1721,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (!regularCaptureLine)
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 controlAlpha = control[index] >> 24u;
                     const u32 compMode = controlAlpha & 0xFu;
                     const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
@@ -1926,7 +1736,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                         && currentPlane0[index] != kPacked3dPlaceholder)
                     {
                         plane0[index] = currentPlane0[index];
-                        preservedTopFullRegularProtectedBlackPixels++;
+                        ++preservedTopFullRegularProtectedBlackPixels;
                     }
                 }
             }
@@ -1936,40 +1746,30 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     const bool topFullRegularCaptureWithBottomCompMode2Slot =
         !renderer2dDebugControlsActive
         && isInAlternatingMode
-        && topRegularCaptureLineCount == SoftPackedFrameSnapshot::kScreenHeight
+        && topRegularCaptureLineCount == static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight)
         && topVramCaptureLineCount == 0
         && bottomRegularCaptureLineCount == 0
         && bottomVramCaptureLineCount == 0
         && packedScreenUsesFullStructuredCompMode2Slot(
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
+            destination.packedBottomControl, destination.packedBottomLineMeta);
     const int repairedTopFullRegular2DBase = renderer2dDebugControlsActive || topFullRegularCaptureWithBottomCompMode2Slot
         ? 0
         : repairTopFullRegularCapture2DBaseFromPrevious(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta,
-            previousSnapshot.packedTopPlane0,
-            previousSnapshot.packedTopLineMeta,
-            topRegularCaptureLineCount,
-            topVramCaptureLineCount);
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta,
+            previousSnapshot.packedTopPlane0, previousSnapshot.packedTopLineMeta,
+            topRegularCaptureLineCount, topVramCaptureLineCount);
     if (!renderer2dDebugControlsActive && repairedTopFullRegular2DBase > 0)
     {
         carriedTopFullRegularComp7OverlayLines += carryPreviousFullRegularComp7Overlay(
-            previousSnapshot,
-            true,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
+            previousSnapshot, true,
+            destination.packedTopPlane1, destination.packedTopControl,
             destination.packedTopLineMeta);
     }
-    emitBuilderStage("afterRepairTopFullRegularBase");
 
-    // Sapphire forces the bottom-most strip of a regular-capture-dominant
-    // bottom screen (with no top-screen capture activity at all) to
-    // protected opaque black. Without this, that strip keeps whatever the
-    // carry/Engine-A repair pipeline produced, which can surface stale or
-    // transparent content on the touch screen.
+    // Fix #2: force the bottom-most strip of a regular-capture-dominant bottom
+    // screen (no top-screen capture activity) to protected opaque black
+    // (reference ref 6700-6724).
     const bool bottomOnlyRegularCaptureDominant =
         bottomRegularCaptureLineCount > static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight / 2u)
         && topRegularCaptureLineCount == 0
@@ -1992,12 +1792,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             }
         }
     }
-    emitBuilderStage("afterBottomProtectedBlackBand");
 
-    int carriedTopVramPairLines = 0;
-    int carriedBottomVramPairLines = 0;
-    int carriedTopCurrentStructuredVram2DPairLines = 0;
-    int carriedBottomCurrentStructuredVram2DPairLines = 0;
     if (hasStructuredVulkan2D
         && captureBackedClass4Only
         && !renderer2dDebugControlsActive
@@ -2006,29 +1801,25 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     {
         auto countSnapshotCaptureLines =
             [](const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
-                u32 flag,
-                u32 requiredDisplayMode) {
+                u32 flag, u32 requiredDisplayMode) {
                 int count = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    const u32 meta = lineMeta[static_cast<size_t>(y)];
+                    const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                     const u32 displayMode = (meta >> 16u) & 0x3u;
                     if (displayMode == requiredDisplayMode && (meta & flag) != 0u)
-                        count++;
+                        ++count;
                 }
                 return count;
             };
         auto countSnapshotAnyCaptureLines =
             [](const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
                 int count = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    const u32 meta = lineMeta[static_cast<size_t>(y)];
-                    if ((meta & (kMetaRegularCaptureUses3d
-                            | kMetaVramCaptureUses3d)) != 0u)
-                    {
-                        count++;
-                    }
+                    const u32 meta = lineMeta[static_cast<std::size_t>(y)];
+                    if ((meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) != 0u)
+                        ++count;
                 }
                 return count;
             };
@@ -2036,24 +1827,20 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             [](const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
                 u32 requiredDisplayMode) {
                 int count = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    const u32 meta = lineMeta[static_cast<size_t>(y)];
+                    const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                     const u32 displayMode = (meta >> 16u) & 0x3u;
                     if (displayMode == requiredDisplayMode)
-                        count++;
+                        ++count;
                 }
                 return count;
             };
 
         const int previousTopVramCaptureLineCount = countSnapshotCaptureLines(
-            previousSnapshot.packedTopLineMeta,
-            kMetaVramCaptureUses3d,
-            2u);
+            previousSnapshot.packedTopLineMeta, kMetaVramCaptureUses3d, 2u);
         const int previousBottomVramCaptureLineCount = countSnapshotCaptureLines(
-            previousSnapshot.packedBottomLineMeta,
-            kMetaVramCaptureUses3d,
-            2u);
+            previousSnapshot.packedBottomLineMeta, kMetaVramCaptureUses3d, 2u);
         const int previousTopAnyCaptureLineCount = countSnapshotAnyCaptureLines(
             previousSnapshot.packedTopLineMeta);
         const int previousBottomAnyCaptureLineCount = countSnapshotAnyCaptureLines(
@@ -2064,147 +1851,108 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedBottomLineMeta);
 
         const bool topVramCaptureAlternates =
-            (topVramCaptureLineCount > (SoftPackedFrameSnapshot::kScreenHeight / 2)
+            (topVramCaptureLineCount > (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
                 && previousTopAnyCaptureLineCount == 0)
-            || (previousTopVramCaptureLineCount > (SoftPackedFrameSnapshot::kScreenHeight / 2)
+            || (previousTopVramCaptureLineCount > (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
                 && currentTopAnyCaptureLineCount == 0);
         const bool bottomVramCaptureAlternates =
-            (bottomVramCaptureLineCount > (SoftPackedFrameSnapshot::kScreenHeight / 2)
+            (bottomVramCaptureLineCount > (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
                 && previousBottomAnyCaptureLineCount == 0)
-            || (previousBottomVramCaptureLineCount > (SoftPackedFrameSnapshot::kScreenHeight / 2)
+            || (previousBottomVramCaptureLineCount > (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
                 && currentBottomAnyCaptureLineCount == 0);
         auto copyCurrentStructuredVram2DPair =
             [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
                 std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
                 std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
                 const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
-                const u32* structuredPlane0,
-                const u32* structuredPlane1,
-                const u32* structuredControl,
-                bool screenVramCaptureAlternates,
-                int currentAnyCaptureLineCount,
-                int previousVramCaptureLineCount) {
+                const u32* structuredPlane0, const u32* structuredPlane1, const u32* structuredControl,
+                bool screenVramCaptureAlternates, int currentAnyCaptureLineCount,
+                int previousVramCaptureLineCount) -> int {
                 if (!screenVramCaptureAlternates
                     || currentAnyCaptureLineCount != 0
-                    || previousVramCaptureLineCount <= (SoftPackedFrameSnapshot::kScreenHeight / 2)
-                    || countSnapshotDisplayModeLines(lineMeta, 2u) <= (SoftPackedFrameSnapshot::kScreenHeight / 2))
+                    || previousVramCaptureLineCount <= (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
+                    || countSnapshotDisplayModeLines(lineMeta, 2u) <= (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2))
                 {
                     return 0;
                 }
 
                 int carriedLines = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    const u32 currentMeta = lineMeta[static_cast<size_t>(y)];
+                    const u32 currentMeta = lineMeta[static_cast<std::size_t>(y)];
                     const bool currentLineIsUnmarkedVramDisplay =
                         ((currentMeta >> 16u) & 0x3u) == 2u
-                        && (currentMeta & (kMetaRegularCaptureUses3d
-                            | kMetaVramCaptureUses3d)) == 0u;
-                    const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
+                        && (currentMeta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) == 0u;
+                    const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
                     if (!currentLineIsUnmarkedVramDisplay
                         || !structuredLineHasPayload(structuredPlane0, structuredPlane1, structuredControl, rowBase))
                     {
                         continue;
                     }
-
-                    copyStructuredLine(
-                        plane0,
-                        plane1,
-                        control,
-                        structuredPlane0,
-                        structuredPlane1,
-                        structuredControl,
-                        rowBase);
-                    carriedLines++;
+                    copyStructuredLine(plane0, plane1, control, structuredPlane0,
+                        structuredPlane1, structuredControl, rowBase);
+                    ++carriedLines;
                 }
-
                 return carriedLines;
             };
 
         auto carryPreviousVramCapturePair =
             [&](std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
                 const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& previousLineMeta,
-                bool screenVramCaptureAlternates,
-                int currentAnyCaptureLineCount,
-                int previousVramCaptureLineCount) {
+                bool screenVramCaptureAlternates, int currentAnyCaptureLineCount,
+                int previousVramCaptureLineCount) -> int {
                 if (!screenVramCaptureAlternates
                     || currentAnyCaptureLineCount != 0
-                    || previousVramCaptureLineCount <= (SoftPackedFrameSnapshot::kScreenHeight / 2)
-                    || countSnapshotDisplayModeLines(lineMeta, 2u) <= (SoftPackedFrameSnapshot::kScreenHeight / 2))
+                    || previousVramCaptureLineCount <= (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2)
+                    || countSnapshotDisplayModeLines(lineMeta, 2u) <= (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2))
                 {
                     return 0;
                 }
 
                 int carriedLines = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    const u32 currentMeta = lineMeta[static_cast<size_t>(y)];
-                    const u32 previousMeta = previousLineMeta[static_cast<size_t>(y)];
+                    const u32 currentMeta = lineMeta[static_cast<std::size_t>(y)];
+                    const u32 previousMeta = previousLineMeta[static_cast<std::size_t>(y)];
                     const bool currentLineIsUnmarkedVramDisplay =
                         ((currentMeta >> 16u) & 0x3u) == 2u
-                        && (currentMeta & (kMetaRegularCaptureUses3d
-                            | kMetaVramCaptureUses3d)) == 0u;
+                        && (currentMeta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d)) == 0u;
                     const bool previousLineUsesVramCapture =
                         ((previousMeta >> 16u) & 0x3u) == 2u
                         && (previousMeta & kMetaVramCaptureUses3d) != 0u;
                     if (!currentLineIsUnmarkedVramDisplay || !previousLineUsesVramCapture)
                         continue;
-
-                    lineMeta[static_cast<size_t>(y)] =
-                        (previousMeta & 0xFFFF0000u)
-                        | (currentMeta & 0x0000FFFFu);
-                    carriedLines++;
+                    lineMeta[static_cast<std::size_t>(y)] =
+                        (previousMeta & 0xFFFF0000u) | (currentMeta & 0x0000FFFFu);
+                    ++carriedLines;
                 }
                 return carriedLines;
             };
 
-        carriedTopCurrentStructuredVram2DPairLines = copyCurrentStructuredVram2DPair(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta,
-            structuredTopPlane0,
-            structuredTopPlane1,
-            structuredTopControl,
-            topVramCaptureAlternates,
-            currentTopAnyCaptureLineCount,
-            previousTopVramCaptureLineCount);
-        carriedBottomCurrentStructuredVram2DPairLines = copyCurrentStructuredVram2DPair(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta,
-            structuredBottomPlane0,
-            structuredBottomPlane1,
-            structuredBottomControl,
-            bottomVramCaptureAlternates,
-            currentBottomAnyCaptureLineCount,
-            previousBottomVramCaptureLineCount);
-        carriedTopVramPairLines = carryPreviousVramCapturePair(
-            destination.packedTopLineMeta,
-            previousSnapshot.packedTopLineMeta,
-            topVramCaptureAlternates,
-            currentTopAnyCaptureLineCount,
-            previousTopVramCaptureLineCount);
-        carriedBottomVramPairLines = carryPreviousVramCapturePair(
-            destination.packedBottomLineMeta,
-            previousSnapshot.packedBottomLineMeta,
-            bottomVramCaptureAlternates,
-            currentBottomAnyCaptureLineCount,
-            previousBottomVramCaptureLineCount);
+        (void)copyCurrentStructuredVram2DPair(
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta,
+            structuredTopPlane0, structuredTopPlane1, structuredTopControl,
+            topVramCaptureAlternates, currentTopAnyCaptureLineCount, previousTopVramCaptureLineCount);
+        (void)copyCurrentStructuredVram2DPair(
+            destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta,
+            structuredBottomPlane0, structuredBottomPlane1, structuredBottomControl,
+            bottomVramCaptureAlternates, currentBottomAnyCaptureLineCount, previousBottomVramCaptureLineCount);
+        (void)carryPreviousVramCapturePair(
+            destination.packedTopLineMeta, previousSnapshot.packedTopLineMeta,
+            topVramCaptureAlternates, currentTopAnyCaptureLineCount, previousTopVramCaptureLineCount);
+        (void)carryPreviousVramCapturePair(
+            destination.packedBottomLineMeta, previousSnapshot.packedBottomLineMeta,
+            bottomVramCaptureAlternates, currentBottomAnyCaptureLineCount, previousBottomVramCaptureLineCount);
     }
-    emitBuilderStage("afterVramPairCarry");
 
     destination.topScreenStats = collectPackedScreenStatsFromSnapshot(
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
+        destination.packedTopPlane0, destination.packedTopPlane1,
+        destination.packedTopControl, destination.packedTopLineMeta);
     destination.bottomScreenStats = collectPackedScreenStatsFromSnapshot(
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
+        destination.packedBottomPlane0, destination.packedBottomPlane1,
+        destination.packedBottomControl, destination.packedBottomLineMeta);
 
     auto updateAtypicalDisplayPrimaryCache =
         [](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
@@ -2215,46 +1963,36 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const bool fullStructuredSlot = softPackedScreenUsesFullStructuredSlotDisplay(stats);
             const bool regularStructured3dCapture = softPackedScreenUsesRegularStructured3dCaptureSlot(stats);
             if (!fullStructuredSlot && !regularStructured3dCapture)
-            {
                 return;
-            }
 
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                const u32* source = nullptr;
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                const u32* src = nullptr;
                 if (packedResolvedLineHasAnyUsefulPixel(plane0, y))
-                    source = plane0.data() + rowBase;
+                    src = plane0.data() + rowBase;
                 else if (regularStructured3dCapture
                     && capture3dSource != nullptr
                     && packedResolvedLineHasAnyUsefulPixel(*capture3dSource, y))
                 {
-                    source = capture3dSource->data() + rowBase;
+                    src = capture3dSource->data() + rowBase;
                 }
-                if (source == nullptr)
+                if (src == nullptr)
                     continue;
 
-                std::memcpy(
-                    cachedPrimary.data() + rowBase,
-                    source,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
-                cachedPrimaryLines[static_cast<size_t>(y)] = 1u;
+                std::memcpy(cachedPrimary.data() + rowBase, src,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                cachedPrimaryLines[static_cast<std::size_t>(y)] = 1u;
             }
         };
     if (!renderer2dDebugControlsActive)
     {
-        updateAtypicalDisplayPrimaryCache(
-            destination.packedTopPlane0,
-            destination.topScreenStats,
+        updateAtypicalDisplayPrimaryCache(destination.packedTopPlane0, destination.topScreenStats,
             destination.hasCapture3dSource ? &destination.capture3dSourceDsFrame : nullptr,
-            cachedAtypicalDisplayTopPrimary,
-            cachedAtypicalDisplayTopPrimaryLines);
-        updateAtypicalDisplayPrimaryCache(
-            destination.packedBottomPlane0,
-            destination.bottomScreenStats,
+            cachedAtypicalDisplayTopPrimary, cachedAtypicalDisplayTopPrimaryLines);
+        updateAtypicalDisplayPrimaryCache(destination.packedBottomPlane0, destination.bottomScreenStats,
             destination.hasCapture3dSource ? &destination.capture3dSourceDsFrame : nullptr,
-            cachedAtypicalDisplayBottomPrimary,
-            cachedAtypicalDisplayBottomPrimaryLines);
+            cachedAtypicalDisplayBottomPrimary, cachedAtypicalDisplayBottomPrimaryLines);
     }
 
     int carriedTopEmptyDisplay2dPairLines = 0;
@@ -2283,8 +2021,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 targetPlane1 = cachedPlane1;
                 targetControl = cachedControl;
                 targetLineMeta = cachedLineMeta;
-
-                for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
+                for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
                     targetLineMeta[y] = (targetLineMeta[y] & 0xFFFF0000u) | (currentLineMeta[y] & 0x0000FFFFu);
             };
 
@@ -2308,63 +2045,46 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& cachedPrimary,
                 const std::array<u8, SoftPackedFrameSnapshot::kLineCount>& cachedPrimaryLines) {
                 int carriedLines = 0;
-                for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+                for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
                 {
-                    if (cachedPrimaryLines[static_cast<size_t>(y)] == 0u)
+                    if (cachedPrimaryLines[static_cast<std::size_t>(y)] == 0u)
                         continue;
                     if (packedResolvedLineHasAnyUsefulPixel(targetPlane0, y))
                         continue;
 
-                    const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                    std::memcpy(
-                        targetPlane0.data() + rowBase,
-                        cachedPrimary.data() + rowBase,
-                        static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
-                    carriedLines++;
+                    const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                    std::memcpy(targetPlane0.data() + rowBase, cachedPrimary.data() + rowBase,
+                        SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                    ++carriedLines;
                 }
-
                 return carriedLines;
             };
         if ((topEmptyBottom2dOnly || top2dOnlyBottomEmpty)
             && lineMaskHasAnyValidLine(cachedAtypicalDisplayTopPrimaryLines))
         {
             carriedTopAtypicalDisplayPrimaryLines = carryAtypicalDisplayPrimary(
-                destination.packedTopPlane0,
-                cachedAtypicalDisplayTopPrimary,
+                destination.packedTopPlane0, cachedAtypicalDisplayTopPrimary,
                 cachedAtypicalDisplayTopPrimaryLines);
         }
         if ((bottomEmptyTop2dOnly || bottom2dOnlyTopEmpty || bottomEmptyTopRegular3dCapture)
             && lineMaskHasAnyValidLine(cachedAtypicalDisplayBottomPrimaryLines))
         {
             carriedBottomAtypicalDisplayPrimaryLines = carryAtypicalDisplayPrimary(
-                destination.packedBottomPlane0,
-                cachedAtypicalDisplayBottomPrimary,
+                destination.packedBottomPlane0, cachedAtypicalDisplayBottomPrimary,
                 cachedAtypicalDisplayBottomPrimaryLines);
         }
         if (topEmptyBottom2dOnly && engineATop.valid)
         {
-            applyCachedScreenSnapshot(
-                destination.packedTopPlane0,
-                destination.packedTopPlane1,
-                destination.packedTopControl,
-                destination.packedTopLineMeta,
-                engineATop.plane0,
-                engineATop.plane1,
-                engineATop.control,
-                engineATop.lineMeta);
+            applyCachedScreenSnapshot(destination.packedTopPlane0, destination.packedTopPlane1,
+                destination.packedTopControl, destination.packedTopLineMeta,
+                engineATop.plane0, engineATop.plane1, engineATop.control, engineATop.lineMeta);
             carriedTopEmptyDisplay2dPairLines = SoftPackedFrameSnapshot::kScreenHeight;
         }
         if (bottomEmptyTop2dOnly && engineABottom.valid)
         {
-            applyCachedScreenSnapshot(
-                destination.packedBottomPlane0,
-                destination.packedBottomPlane1,
-                destination.packedBottomControl,
-                destination.packedBottomLineMeta,
-                engineABottom.plane0,
-                engineABottom.plane1,
-                engineABottom.control,
-                engineABottom.lineMeta);
+            applyCachedScreenSnapshot(destination.packedBottomPlane0, destination.packedBottomPlane1,
+                destination.packedBottomControl, destination.packedBottomLineMeta,
+                engineABottom.plane0, engineABottom.plane1, engineABottom.control, engineABottom.lineMeta);
             carriedBottomEmptyDisplay2dPairLines = SoftPackedFrameSnapshot::kScreenHeight;
         }
         if (carriedTopEmptyDisplay2dPairLines > 0
@@ -2373,24 +2093,17 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             || carriedBottomAtypicalDisplayPrimaryLines > 0)
         {
             destination.topScreenStats = collectPackedScreenStatsFromSnapshot(
-                destination.packedTopPlane0,
-                destination.packedTopPlane1,
-                destination.packedTopControl,
-                destination.packedTopLineMeta);
+                destination.packedTopPlane0, destination.packedTopPlane1,
+                destination.packedTopControl, destination.packedTopLineMeta);
             destination.bottomScreenStats = collectPackedScreenStatsFromSnapshot(
-                destination.packedBottomPlane0,
-                destination.packedBottomPlane1,
-                destination.packedBottomControl,
-                destination.packedBottomLineMeta);
+                destination.packedBottomPlane0, destination.packedBottomPlane1,
+                destination.packedBottomControl, destination.packedBottomLineMeta);
         }
     }
 
     if (source.hasCapture3dSource && source.capture3dSource != nullptr)
     {
-        std::memcpy(
-            destination.capture3dSourceDsFrame.data(),
-            source.capture3dSource,
-            pixelBytes);
+        std::memcpy(destination.capture3dSourceDsFrame.data(), source.capture3dSource, pixelBytes);
         destination.hasCapture3dSource = true;
     }
 
@@ -2398,7 +2111,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
             std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const SoftPackedScreenStats& screenStats,
-            const SoftPackedScreenStats& oppositeStats) {
+            const SoftPackedScreenStats& oppositeStats) -> int {
             if (!destination.hasCapture3dSource)
                 return 0;
             if (screenStats.DisplayModeCounts[2] <= (SoftPackedFrameSnapshot::kScreenHeight / 2u)
@@ -2417,9 +2130,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 return 0;
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                u32& meta = lineMeta[static_cast<size_t>(y)];
+                u32& meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool vramCaptureLine =
                     ((meta >> 16u) & 0x3u) == 2u
                     && (meta & kMetaVramCaptureUses3d) != 0u
@@ -2429,15 +2142,13 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (packedLineHasAnyVisibleColor(plane0, y))
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                std::memcpy(
-                    plane0.data() + rowBase,
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                std::memcpy(plane0.data() + rowBase,
                     destination.capture3dSourceDsFrame.data() + rowBase,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
                 meta &= ~kMetaVramCaptureUses3d;
-                repairedLines++;
+                ++repairedLines;
             }
-
             return repairedLines;
         };
 
@@ -2445,7 +2156,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const SoftPackedScreenStats& screenStats,
-            const SoftPackedScreenStats& oppositeStats) {
+            const SoftPackedScreenStats& oppositeStats) -> int {
             if (!destination.hasCapture3dSource)
                 return 0;
             if (!softPackedScreenUsesMostlyStructured2dOnlyDisplay(screenStats))
@@ -2457,77 +2168,51 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             }
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool structuredOnlyLine =
                     ((meta >> 16u) & 0x3u) == 1u
-                    && (meta & (kMetaRegularCaptureUses3d
-                        | kMetaVramCaptureUses3d
-                        | kMetaForceLive3dCompMode7)) == 0u;
+                    && (meta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d | kMetaForceLive3dCompMode7)) == 0u;
                 if (!structuredOnlyLine)
                     continue;
                 if (packedLineHasAnyVisibleColor(plane0, y))
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                std::memcpy(
-                    plane0.data() + rowBase,
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                std::memcpy(plane0.data() + rowBase,
                     destination.capture3dSourceDsFrame.data() + rowBase,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
-                repairedLines++;
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                ++repairedLines;
             }
-
             return repairedLines;
         };
 
-    const int repairedTopVramCaptureSourceLines = renderer2dDebugControlsActive
-        ? 0
-        : repairVramCapturePrimaryFromCaptureSource(
-            destination.packedTopPlane0,
-            destination.packedTopLineMeta,
-            destination.topScreenStats,
-            destination.bottomScreenStats);
-    const int repairedBottomVramCaptureSourceLines = renderer2dDebugControlsActive
-        ? 0
-        : repairVramCapturePrimaryFromCaptureSource(
-            destination.packedBottomPlane0,
-            destination.packedBottomLineMeta,
-            destination.bottomScreenStats,
-            destination.topScreenStats);
-    const int repairedTopStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive
-        ? 0
-        : repairStructured2dOnlyPrimaryFromCaptureSource(
-            destination.packedTopPlane0,
-            destination.packedTopLineMeta,
-            destination.topScreenStats,
-            destination.bottomScreenStats);
-    const int repairedBottomStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive
-        ? 0
-        : repairStructured2dOnlyPrimaryFromCaptureSource(
-            destination.packedBottomPlane0,
-            destination.packedBottomLineMeta,
-            destination.bottomScreenStats,
-            destination.topScreenStats);
+    const int repairedTopVramCaptureSourceLines = renderer2dDebugControlsActive ? 0
+        : repairVramCapturePrimaryFromCaptureSource(destination.packedTopPlane0,
+            destination.packedTopLineMeta, destination.topScreenStats, destination.bottomScreenStats);
+    const int repairedBottomVramCaptureSourceLines = renderer2dDebugControlsActive ? 0
+        : repairVramCapturePrimaryFromCaptureSource(destination.packedBottomPlane0,
+            destination.packedBottomLineMeta, destination.bottomScreenStats, destination.topScreenStats);
+    const int repairedTopStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive ? 0
+        : repairStructured2dOnlyPrimaryFromCaptureSource(destination.packedTopPlane0,
+            destination.packedTopLineMeta, destination.topScreenStats, destination.bottomScreenStats);
+    const int repairedBottomStructured2dOnlyCaptureSourceLines = renderer2dDebugControlsActive ? 0
+        : repairStructured2dOnlyPrimaryFromCaptureSource(destination.packedBottomPlane0,
+            destination.packedBottomLineMeta, destination.bottomScreenStats, destination.topScreenStats);
     if (repairedTopVramCaptureSourceLines > 0
         || repairedBottomVramCaptureSourceLines > 0
         || repairedTopStructured2dOnlyCaptureSourceLines > 0
         || repairedBottomStructured2dOnlyCaptureSourceLines > 0)
     {
         destination.topScreenStats = collectPackedScreenStatsFromSnapshot(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta);
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta);
         destination.bottomScreenStats = collectPackedScreenStatsFromSnapshot(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
+            destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta);
     }
 
-    int repairedTopClass4VramOverlayLines = 0;
-    int repairedBottomClass4VramOverlayLines = 0;
     auto repairClass4VramCaptureOverlay =
         [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
@@ -2537,7 +2222,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& previousControl,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& previousLineMeta,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& oppositeLineMeta,
-            int oppositeVramCaptureLineCount) {
+            int oppositeVramCaptureLineCount) -> int {
             if (!captureBackedClass4Only
                 || !isInAlternatingMode
                 || renderer2dDebugControlsActive
@@ -2547,50 +2232,40 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             }
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 currentMeta = lineMeta[static_cast<size_t>(y)];
-                const u32 previousMeta = previousLineMeta[static_cast<size_t>(y)];
-                const u32 oppositeMeta = oppositeLineMeta[static_cast<size_t>(y)];
+                const u32 currentMeta = lineMeta[static_cast<std::size_t>(y)];
+                const u32 previousMeta = previousLineMeta[static_cast<std::size_t>(y)];
+                const u32 oppositeMeta = oppositeLineMeta[static_cast<std::size_t>(y)];
                 const u32 currentDisplayMode = (currentMeta >> 16u) & 0x3u;
                 const u32 previousDisplayMode = (previousMeta >> 16u) & 0x3u;
                 const bool currentIsStructuredDisplay =
                     currentDisplayMode == 1u
-                    && (currentMeta & (kMetaRegularCaptureUses3d
-                        | kMetaVramCaptureUses3d
-                        | kMetaForceLive3dCompMode7)) == 0u;
-                const bool previousWasVramDisplay =
-                    previousDisplayMode == 2u;
+                    && (currentMeta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d | kMetaForceLive3dCompMode7)) == 0u;
+                const bool previousWasVramDisplay = previousDisplayMode == 2u;
                 const bool previousWasStructuredDisplay =
                     previousDisplayMode == 1u
-                    && (previousMeta & (kMetaRegularCaptureUses3d
-                        | kMetaVramCaptureUses3d
-                        | kMetaForceLive3dCompMode7)) == 0u;
+                    && (previousMeta & (kMetaRegularCaptureUses3d | kMetaVramCaptureUses3d | kMetaForceLive3dCompMode7)) == 0u;
                 const bool currentUsesVram3d =
-                    currentDisplayMode == 2u
-                    && (currentMeta & kMetaVramCaptureUses3d) != 0u;
+                    currentDisplayMode == 2u && (currentMeta & kMetaVramCaptureUses3d) != 0u;
                 const bool oppositeCurrentlyUsesVram3d =
-                    ((oppositeMeta >> 16u) & 0x3u) == 2u
-                    && (oppositeMeta & kMetaVramCaptureUses3d) != 0u;
+                    ((oppositeMeta >> 16u) & 0x3u) == 2u && (oppositeMeta & kMetaVramCaptureUses3d) != 0u;
                 const bool repairsStructuredPhase =
                     currentIsStructuredDisplay
                     && destination.hasCapture3dSource
                     && previousWasVramDisplay
                     && oppositeCurrentlyUsesVram3d
-                    && oppositeVramCaptureLineCount > (SoftPackedFrameSnapshot::kScreenHeight / 2);
+                    && oppositeVramCaptureLineCount > (static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight) / 2);
                 const bool repairsVramPhase =
-                    currentUsesVram3d
-                    && (previousWasStructuredDisplay || previousWasVramDisplay);
+                    currentUsesVram3d && (previousWasStructuredDisplay || previousWasVramDisplay);
                 if (!repairsStructuredPhase && !repairsVramPhase)
-                {
                     continue;
-                }
 
                 bool repairedLine = false;
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 currentControlAlpha = control[index] >> 24u;
                     const bool currentStructuredSlot = (currentControlAlpha & 0x40u) != 0u;
                     const bool currentHasAbove = currentStructuredSlot && (currentControlAlpha & 0x80u) != 0u;
@@ -2604,10 +2279,8 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     const bool currentPrimaryHasOverlay =
                         currentPrimaryPixel != 0u && currentPrimaryPixel != kPacked3dPlaceholder;
                     const bool currentControlMarksOverlay = currentControlRgb != 0u;
-                    const bool currentHasUsableAbove =
-                        currentHasAbove && currentPlaneHasOverlay;
-                    const bool currentMarksOverlay =
-                        currentPlaneHasOverlay || currentControlMarksOverlay;
+                    const bool currentHasUsableAbove = currentHasAbove && currentPlaneHasOverlay;
+                    const bool currentMarksOverlay = currentPlaneHasOverlay || currentControlMarksOverlay;
                     const u32 previousOverlayPixel = previousPlane1[index];
                     const u32 previousControlAlpha = previousControl[index] >> 24u;
                     const u32 previousControlRgb = previousControl[index] & 0x00FFFFFFu;
@@ -2616,14 +2289,11 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     const bool previousPlaneHasOverlay =
                         previousOverlayPixel != 0u && previousOverlayPixel != kPacked3dPlaceholder;
                     const bool previousControlMarksOverlay = previousControlRgb != 0u;
-                    const bool previousMarksOverlay =
-                        previousPlaneHasOverlay || previousControlMarksOverlay;
+                    const bool previousMarksOverlay = previousPlaneHasOverlay || previousControlMarksOverlay;
                     if (!currentMarksOverlay && !previousMarksOverlay)
                         continue;
 
-                    u32 effectiveCompMode = currentStructuredSlot
-                        ? currentCompMode
-                        : previousCompMode;
+                    u32 effectiveCompMode = currentStructuredSlot ? currentCompMode : previousCompMode;
                     if (effectiveCompMode != 7u)
                         continue;
                     if (repairsStructuredPhase && (!currentStructuredSlot || currentHasAbove))
@@ -2637,8 +2307,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                         continue;
                     }
 
-                    const u32 currentCapturePixel =
-                        destination.capture3dSourceDsFrame[index];
+                    const u32 currentCapturePixel = destination.capture3dSourceDsFrame[index];
                     u32 overlayPixel = 0u;
                     if (repairsVramPhase && currentControlMarksOverlay && currentPrimaryHasOverlay)
                         overlayPixel = currentPrimaryPixel;
@@ -2661,8 +2330,7 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                         continue;
 
                     const bool overlayProtectedBlack =
-                        (currentControlAlpha & 0x20u) != 0u
-                        || (previousControlAlpha & 0x20u) != 0u;
+                        (currentControlAlpha & 0x20u) != 0u || (previousControlAlpha & 0x20u) != 0u;
                     if (packedPixelIsOpaqueBlack(overlayPixel)
                         && !overlayProtectedBlack
                         && !currentPlaneHasOverlay
@@ -2671,13 +2339,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                         continue;
                     }
 
-                    const bool protectedBlack =
-                        overlayProtectedBlack
-                        || packedPixelIsOpaqueBlack(overlayPixel);
+                    const bool protectedBlack = overlayProtectedBlack || packedPixelIsOpaqueBlack(overlayPixel);
                     const u32 overlayControlRgb =
-                        currentControlMarksOverlay
-                            ? currentControlRgb
-                            : previousControlRgb;
+                        currentControlMarksOverlay ? currentControlRgb : previousControlRgb;
                     if (currentHasUsableAbove
                         && currentControlMarksOverlay
                         && currentControlRgb == overlayControlRgb
@@ -2687,52 +2351,36 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     }
                     plane1[index] = overlayPixel;
                     control[index] = overlayControlRgb
-                        | ((effectiveCompMode
-                            | 0x40u
-                            | 0x80u
-                            | (protectedBlack ? 0x20u : 0u)) << 24u);
+                        | ((effectiveCompMode | 0x40u | 0x80u | (protectedBlack ? 0x20u : 0u)) << 24u);
                     repairedLine = true;
                 }
 
                 if (repairedLine)
-                    repairedLines++;
+                    ++repairedLines;
             }
-
             return repairedLines;
         };
 
-    repairedTopClass4VramOverlayLines = repairClass4VramCaptureOverlay(
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta,
-        previousSnapshot.packedTopPlane1,
-        previousSnapshot.packedTopControl,
-        previousSnapshot.packedTopLineMeta,
-        destination.packedBottomLineMeta,
+    const int repairedTopClass4VramOverlayLines = repairClass4VramCaptureOverlay(
+        destination.packedTopPlane0, destination.packedTopPlane1,
+        destination.packedTopControl, destination.packedTopLineMeta,
+        previousSnapshot.packedTopPlane1, previousSnapshot.packedTopControl,
+        previousSnapshot.packedTopLineMeta, destination.packedBottomLineMeta,
         bottomVramCaptureLineCount);
-    repairedBottomClass4VramOverlayLines = repairClass4VramCaptureOverlay(
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta,
-        previousSnapshot.packedBottomPlane1,
-        previousSnapshot.packedBottomControl,
-        previousSnapshot.packedBottomLineMeta,
-        destination.packedTopLineMeta,
+    const int repairedBottomClass4VramOverlayLines = repairClass4VramCaptureOverlay(
+        destination.packedBottomPlane0, destination.packedBottomPlane1,
+        destination.packedBottomControl, destination.packedBottomLineMeta,
+        previousSnapshot.packedBottomPlane1, previousSnapshot.packedBottomControl,
+        previousSnapshot.packedBottomLineMeta, destination.packedTopLineMeta,
         topVramCaptureLineCount);
     if (repairedTopClass4VramOverlayLines > 0 || repairedBottomClass4VramOverlayLines > 0)
     {
         destination.topScreenStats = collectPackedScreenStatsFromSnapshot(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta);
+            destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta);
         destination.bottomScreenStats = collectPackedScreenStatsFromSnapshot(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
+            destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta);
     }
 
     const bool topScreenUsesCurrentCapture3d =
@@ -2742,13 +2390,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         destination.bottomScreenStats.RegularCaptureUses3dLines > 0u
         || destination.bottomScreenStats.VramCaptureUses3dLines > 0u;
     const auto* previousTopScreenPrimary =
-        !renderer2dDebugControlsActive && previousSnapshot.valid
-        ? &previousSnapshot.packedTopPlane0
-        : nullptr;
+        !renderer2dDebugControlsActive && previousSnapshot.valid ? &previousSnapshot.packedTopPlane0 : nullptr;
     const auto* previousBottomScreenPrimary =
-        !renderer2dDebugControlsActive && previousSnapshot.valid
-        ? &previousSnapshot.packedBottomPlane0
-        : nullptr;
+        !renderer2dDebugControlsActive && previousSnapshot.valid ? &previousSnapshot.packedBottomPlane0 : nullptr;
     const bool hasTopResolvedPrimaryCache =
         !renderer2dDebugControlsActive && lineMaskHasAnyValidLine(lastValidTopScreenResolvedPrimaryLines);
     const bool hasBottomResolvedPrimaryCache =
@@ -2771,9 +2415,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                u32& meta = lineMeta[static_cast<size_t>(y)];
+                u32& meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool captureLineHasVisible3d =
                     destination.hasCapture3dSource
                     && packedLineHasAnyVisibleColor(destination.capture3dSourceDsFrame, y);
@@ -2785,81 +2429,80 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             }
         };
 
-    auto populateComp4Placeholder = [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* previousScreenPrimary,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* resolvedPrimaryCache,
-                                        const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines,
-                                        const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* fallbackCaptureCache,
-                                        std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& placeholder) {
-        for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
-        {
-            const u32 meta = lineMeta[static_cast<size_t>(y)];
-            const u32 displayMode = (meta >> 16u) & 0x3u;
-            if (displayMode != 1u)
-                continue;
-
-            const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-            const u32* placeholderSource = nullptr;
-            const bool fallbackCaptureLineHasUsefulPixels =
-                fallbackCaptureCache != nullptr
-                && packedResolvedLineHasAnyUsefulPixel(*fallbackCaptureCache, y);
-            const bool fallbackCaptureCanReplaceBlackLine =
-                fallbackCaptureLineHasUsefulPixels
-                && !packedResolvedLineIsMostlyOpaqueBlack(*fallbackCaptureCache, y);
-            if (fallbackCaptureLineHasUsefulPixels)
+    auto populateComp4Placeholder =
+        [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
+            const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
+            const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
+            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
+            const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* previousScreenPrimary,
+            const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* resolvedPrimaryCache,
+            const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines,
+            const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* fallbackCaptureCache,
+            std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& placeholder) {
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                placeholderSource = fallbackCaptureCache->data() + rowBase;
-            }
-            if (previousScreenPrimary != nullptr
-                && placeholderSource == nullptr
-                && packedResolvedLineHasAnyUsefulPixel(*previousScreenPrimary, y))
-            {
-                const bool previousLineIsOnlyBlack =
-                    packedResolvedLineIsMostlyOpaqueBlack(*previousScreenPrimary, y);
-                if (!previousLineIsOnlyBlack || !fallbackCaptureCanReplaceBlackLine)
-                    placeholderSource = previousScreenPrimary->data() + rowBase;
-            }
-            if (placeholderSource == nullptr
-                && resolvedPrimaryCache != nullptr
-                && resolvedPrimaryCacheLines != nullptr
-                && (*resolvedPrimaryCacheLines)[static_cast<size_t>(y)] != 0u
-                && packedResolvedLineHasAnyUsefulPixel(*resolvedPrimaryCache, y))
-            {
-                const bool resolvedLineIsOnlyBlack =
-                    packedResolvedLineIsMostlyOpaqueBlack(*resolvedPrimaryCache, y);
-                if (!resolvedLineIsOnlyBlack || !fallbackCaptureCanReplaceBlackLine)
-                    placeholderSource = resolvedPrimaryCache->data() + rowBase;
-            }
-            if (placeholderSource == nullptr && fallbackCaptureLineHasUsefulPixels)
-            {
-                placeholderSource = fallbackCaptureCache->data() + rowBase;
-            }
-            else if (destination.hasCapture3dSource)
-            {
-                placeholderSource = destination.capture3dSourceDsFrame.data() + rowBase;
-            }
-
-            if (placeholderSource == nullptr)
-                continue;
-
-            for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
-            {
-                const size_t index = rowBase + static_cast<size_t>(x);
-                const u32 compMode = (control[index] >> 24u) & 0xFu;
-                const bool captureBackedComp4 =
-                    compMode == 4u
-                    && plane0[index] == kPacked3dPlaceholder
-                    && plane1[index] == kPacked3dPlaceholder;
-                if (!captureBackedComp4)
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
+                const u32 displayMode = (meta >> 16u) & 0x3u;
+                if (displayMode != 1u)
                     continue;
 
-                placeholder[index] = placeholderSource[static_cast<size_t>(x)];
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                const u32* placeholderSource = nullptr;
+                const bool fallbackCaptureLineHasUsefulPixels =
+                    fallbackCaptureCache != nullptr
+                    && packedResolvedLineHasAnyUsefulPixel(*fallbackCaptureCache, y);
+                const bool fallbackCaptureCanReplaceBlackLine =
+                    fallbackCaptureLineHasUsefulPixels
+                    && !packedResolvedLineIsMostlyOpaqueBlack(*fallbackCaptureCache, y);
+                if (fallbackCaptureLineHasUsefulPixels)
+                    placeholderSource = fallbackCaptureCache->data() + rowBase;
+                if (previousScreenPrimary != nullptr
+                    && placeholderSource == nullptr
+                    && packedResolvedLineHasAnyUsefulPixel(*previousScreenPrimary, y))
+                {
+                    const bool previousLineIsOnlyBlack =
+                        packedResolvedLineIsMostlyOpaqueBlack(*previousScreenPrimary, y);
+                    if (!previousLineIsOnlyBlack || !fallbackCaptureCanReplaceBlackLine)
+                        placeholderSource = previousScreenPrimary->data() + rowBase;
+                }
+                if (placeholderSource == nullptr
+                    && resolvedPrimaryCache != nullptr
+                    && resolvedPrimaryCacheLines != nullptr
+                    && (*resolvedPrimaryCacheLines)[static_cast<std::size_t>(y)] != 0u
+                    && packedResolvedLineHasAnyUsefulPixel(*resolvedPrimaryCache, y))
+                {
+                    const bool resolvedLineIsOnlyBlack =
+                        packedResolvedLineIsMostlyOpaqueBlack(*resolvedPrimaryCache, y);
+                    if (!resolvedLineIsOnlyBlack || !fallbackCaptureCanReplaceBlackLine)
+                        placeholderSource = resolvedPrimaryCache->data() + rowBase;
+                }
+                if (placeholderSource == nullptr && fallbackCaptureLineHasUsefulPixels)
+                {
+                    placeholderSource = fallbackCaptureCache->data() + rowBase;
+                }
+                else if (destination.hasCapture3dSource)
+                {
+                    placeholderSource = destination.capture3dSourceDsFrame.data() + rowBase;
+                }
+
+                if (placeholderSource == nullptr)
+                    continue;
+
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
+                {
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
+                    const u32 compMode = (control[index] >> 24u) & 0xFu;
+                    const bool captureBackedComp4 =
+                        compMode == 4u
+                        && plane0[index] == kPacked3dPlaceholder
+                        && plane1[index] == kPacked3dPlaceholder;
+                    if (!captureBackedComp4)
+                        continue;
+
+                    placeholder[index] = placeholderSource[static_cast<std::size_t>(x)];
+                }
             }
-        }
-    };
+        };
 
     auto updateLastValidResolvedPrimary =
         [&](const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
@@ -2870,10 +2513,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& placeholder,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& resolvedPrimaryCache,
             std::array<u8, SoftPackedFrameSnapshot::kLineCount>& resolvedPrimaryCacheLines) {
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
-                const u32 oppositeMeta = oppositeLineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
+                const u32 oppositeMeta = oppositeLineMeta[static_cast<std::size_t>(y)];
                 const u32 displayMode = (meta >> 16u) & 0x3u;
                 const bool vramCapturePairsWithOppositeRegularCapture =
                     displayMode == 2u
@@ -2887,17 +2530,14 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 const bool forceLive3dCompMode7 = (meta & kMetaForceLive3dCompMode7) != 0u;
                 bool captureBackedComp4Line = false;
                 bool lineHasVisibleStructuredAbove = false;
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 controlAlpha = control[index] >> 24u;
                     const u32 compMode = controlAlpha & 0xFu;
-                    if ((controlAlpha & 0x80u) != 0u
-                        && packedPixelHasVisibleColor(plane1[index]))
-                    {
+                    if ((controlAlpha & 0x80u) != 0u && packedPixelHasVisibleColor(plane1[index]))
                         lineHasVisibleStructuredAbove = true;
-                    }
                     if (compMode == 4u
                         && plane0[index] == kPacked3dPlaceholder
                         && plane1[index] == kPacked3dPlaceholder)
@@ -2911,14 +2551,10 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (forceLive3dCompMode7)
                 {
                     if (packedResolvedLineHasAnyUsefulPixel(plane0, y))
-                    {
                         resolvedSource = plane0.data() + rowBase;
-                    }
                     else if (destination.hasCapture3dSource
                         && packedResolvedLineHasAnyUsefulPixel(destination.capture3dSourceDsFrame, y))
-                    {
                         resolvedSource = destination.capture3dSourceDsFrame.data() + rowBase;
-                    }
                 }
                 else if (captureBackedComp4Line)
                 {
@@ -2933,27 +2569,22 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (resolvedSource == nullptr)
                     continue;
 
-                std::memcpy(
-                    resolvedPrimaryCache.data() + rowBase,
-                    resolvedSource,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
+                std::memcpy(resolvedPrimaryCache.data() + rowBase, resolvedSource,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
                 if (displayMode == 1u
                     && (meta & kMetaRegularCaptureUses3d) != 0u
                     && (meta & kMetaVramCaptureUses3d) == 0u
                     && lineHasVisibleStructuredAbove)
                 {
-                    for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                    for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                     {
-                        const size_t index = rowBase + static_cast<size_t>(x);
+                        const std::size_t index = rowBase + static_cast<std::size_t>(x);
                         const u32 controlAlpha = control[index] >> 24u;
-                        if ((controlAlpha & 0x80u) != 0u
-                            && packedPixelHasVisibleColor(plane1[index]))
-                        {
+                        if ((controlAlpha & 0x80u) != 0u && packedPixelHasVisibleColor(plane1[index]))
                             resolvedPrimaryCache[index] = plane1[index];
-                        }
                     }
                 }
-                resolvedPrimaryCacheLines[static_cast<size_t>(y)] = 1u;
+                resolvedPrimaryCacheLines[static_cast<std::size_t>(y)] = 1u;
             }
         };
 
@@ -2962,18 +2593,18 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& oppositeLineMeta,
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* resolvedPrimaryCache,
-            const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines) {
+            const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines) -> int {
             if (resolvedPrimaryCache == nullptr || resolvedPrimaryCacheLines == nullptr)
                 return 0;
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                if ((*resolvedPrimaryCacheLines)[static_cast<size_t>(y)] == 0u)
+                if ((*resolvedPrimaryCacheLines)[static_cast<std::size_t>(y)] == 0u)
                     continue;
 
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
-                const u32 oppositeMeta = oppositeLineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
+                const u32 oppositeMeta = oppositeLineMeta[static_cast<std::size_t>(y)];
                 const bool vramCapturePairsWithOppositeRegularCapture =
                     ((meta >> 16u) & 0x3u) == 2u
                     && (meta & kMetaVramCaptureUses3d) != 0u
@@ -2985,14 +2616,11 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (!packedResolvedLineHasAnyUsefulPixel(*resolvedPrimaryCache, y))
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                std::memcpy(
-                    plane0.data() + rowBase,
-                    resolvedPrimaryCache->data() + rowBase,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
-                repairedLines++;
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                std::memcpy(plane0.data() + rowBase, resolvedPrimaryCache->data() + rowBase,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                ++repairedLines;
             }
-
             return repairedLines;
         };
 
@@ -3000,12 +2628,12 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
         [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane1,
             std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
-            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) {
-            size_t regularPixels = 0;
-            size_t regularStructuredAbovePixels = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta) -> int {
+            std::size_t regularPixels = 0;
+            std::size_t regularStructuredAbovePixels = 0;
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool regularCapture3dLine =
                     ((meta >> 16u) & 0x3u) == 1u
                     && (meta & kMetaRegularCaptureUses3d) != 0u
@@ -3013,13 +2641,13 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (!regularCapture3dLine)
                     continue;
 
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const u32 controlAlpha = control[rowBase + static_cast<size_t>(x)] >> 24u;
-                    regularPixels++;
+                    const u32 controlAlpha = control[rowBase + static_cast<std::size_t>(x)] >> 24u;
+                    ++regularPixels;
                     if ((controlAlpha & 0x80u) != 0u)
-                        regularStructuredAbovePixels++;
+                        ++regularStructuredAbovePixels;
                 }
             }
             if (regularPixels == 0)
@@ -3028,9 +2656,9 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 return 0;
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const bool regularCapture3dLine =
                     ((meta >> 16u) & 0x3u) == 1u
                     && (meta & kMetaRegularCaptureUses3d) != 0u
@@ -3039,24 +2667,20 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                     continue;
 
                 bool repairedLine = false;
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 controlAlpha = control[index] >> 24u;
                     const u32 compMode = controlAlpha & 0xFu;
                     const bool structuredAbove =
-                        (controlAlpha & 0x40u) != 0u
-                        && (controlAlpha & 0x80u) != 0u;
+                        (controlAlpha & 0x40u) != 0u && (controlAlpha & 0x80u) != 0u;
                     if (!structuredAbove || compMode != 7u)
                         continue;
 
                     const u32 abovePixel = plane1[index];
-                    if (!packedPixelHasVisibleColor(abovePixel)
-                        && !packedPixelIsOpaqueBlack(abovePixel))
-                    {
+                    if (!packedPixelHasVisibleColor(abovePixel) && !packedPixelIsOpaqueBlack(abovePixel))
                         continue;
-                    }
 
                     plane0[index] = abovePixel;
                     control[index] =
@@ -3066,75 +2690,52 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 }
 
                 if (repairedLine)
-                    repairedLines++;
+                    ++repairedLines;
             }
-
             return repairedLines;
         };
 
-    const int repairedTopRegularStructuredPrimaryLines = renderer2dDebugControlsActive
-        ? 0
-        : repairRegularCaptureStructuredAbovePrimary(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta);
-    const int repairedBottomRegularStructuredPrimaryLines = renderer2dDebugControlsActive
-        ? 0
-        : repairRegularCaptureStructuredAbovePrimary(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta);
+    const int repairedTopRegularStructuredPrimaryLines = renderer2dDebugControlsActive ? 0
+        : repairRegularCaptureStructuredAbovePrimary(destination.packedTopPlane0,
+            destination.packedTopPlane1, destination.packedTopControl, destination.packedTopLineMeta);
+    const int repairedBottomRegularStructuredPrimaryLines = renderer2dDebugControlsActive ? 0
+        : repairRegularCaptureStructuredAbovePrimary(destination.packedBottomPlane0,
+            destination.packedBottomPlane1, destination.packedBottomControl, destination.packedBottomLineMeta);
+    (void)repairedTopRegularStructuredPrimaryLines;
+    (void)repairedBottomRegularStructuredPrimaryLines;
 
-    const int repairedTopVramPrimaryLines = renderer2dDebugControlsActive
-        ? 0
-        : repairVramCapturePrimaryFromResolvedCache(
-            destination.packedTopPlane0,
-            destination.packedTopLineMeta,
-            destination.packedBottomLineMeta,
+    const int repairedTopVramPrimaryLines = renderer2dDebugControlsActive ? 0
+        : repairVramCapturePrimaryFromResolvedCache(destination.packedTopPlane0,
+            destination.packedTopLineMeta, destination.packedBottomLineMeta,
             hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimary : nullptr,
             hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimaryLines : nullptr);
-    const int repairedBottomVramPrimaryLines = renderer2dDebugControlsActive
-        ? 0
-        : repairVramCapturePrimaryFromResolvedCache(
-            destination.packedBottomPlane0,
-            destination.packedBottomLineMeta,
-            destination.packedTopLineMeta,
+    const int repairedBottomVramPrimaryLines = renderer2dDebugControlsActive ? 0
+        : repairVramCapturePrimaryFromResolvedCache(destination.packedBottomPlane0,
+            destination.packedBottomLineMeta, destination.packedTopLineMeta,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimary : nullptr,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimaryLines : nullptr);
-    emitBuilderStage("afterResolvedPrimaryRepair");
+    (void)repairedTopVramPrimaryLines;
+    (void)repairedBottomVramPrimaryLines;
 
-    markCompMode7Live3dFallbackLines(
-        destination.packedTopPlane0,
-        destination.packedTopControl,
-        destination.packedTopLineMeta);
-    markCompMode7Live3dFallbackLines(
-        destination.packedBottomPlane0,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta);
+    markCompMode7Live3dFallbackLines(destination.packedTopPlane0,
+        destination.packedTopControl, destination.packedTopLineMeta);
+    markCompMode7Live3dFallbackLines(destination.packedBottomPlane0,
+        destination.packedBottomControl, destination.packedBottomLineMeta);
 
-    populateComp4Placeholder(
-        destination.packedTopPlane0,
-        destination.packedTopPlane1,
-        destination.packedTopControl,
-        destination.packedTopLineMeta,
+    populateComp4Placeholder(destination.packedTopPlane0, destination.packedTopPlane1,
+        destination.packedTopControl, destination.packedTopLineMeta,
         previousTopScreenPrimary,
         hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimary : nullptr,
         hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimaryLines : nullptr,
         hasLastValidTopScreenCapture3dDsFrame ? &lastValidTopScreenCapture3dDsFrame : nullptr,
         destination.comp4TopPlaceholder);
-    populateComp4Placeholder(
-        destination.packedBottomPlane0,
-        destination.packedBottomPlane1,
-        destination.packedBottomControl,
-        destination.packedBottomLineMeta,
+    populateComp4Placeholder(destination.packedBottomPlane0, destination.packedBottomPlane1,
+        destination.packedBottomControl, destination.packedBottomLineMeta,
         previousBottomScreenPrimary,
         hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimary : nullptr,
         hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimaryLines : nullptr,
         hasLastValidBottomScreenCapture3dDsFrame ? &lastValidBottomScreenCapture3dDsFrame : nullptr,
         destination.comp4BottomPlaceholder);
-    emitBuilderStage("afterComp4Placeholder");
 
     auto repairTemporalPrimaryFromResolvedCache =
         [&](std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& plane0,
@@ -3142,34 +2743,33 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& control,
             const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& lineMeta,
             const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>* resolvedPrimaryCache,
-            const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines) {
+            const std::array<u8, SoftPackedFrameSnapshot::kLineCount>* resolvedPrimaryCacheLines) -> int {
             if (resolvedPrimaryCache == nullptr || resolvedPrimaryCacheLines == nullptr)
                 return 0;
 
             int repairedLines = 0;
-            for (int y = 0; y < SoftPackedFrameSnapshot::kScreenHeight; y++)
+            for (int y = 0; y < static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight); ++y)
             {
-                if ((*resolvedPrimaryCacheLines)[static_cast<size_t>(y)] == 0u)
+                if ((*resolvedPrimaryCacheLines)[static_cast<std::size_t>(y)] == 0u)
                     continue;
                 if (packedResolvedLineHasAnyUsefulPixel(plane0, y))
                     continue;
 
-                const u32 meta = lineMeta[static_cast<size_t>(y)];
+                const u32 meta = lineMeta[static_cast<std::size_t>(y)];
                 const u32 displayMode = (meta >> 16u) & 0x3u;
                 if (displayMode != 1u)
                     continue;
 
                 const bool temporalCompMode7Uses3d =
-                    (meta & (kMetaRegularCaptureUses3d
-                        | kMetaForceLive3dCompMode7)) != 0u;
+                    (meta & (kMetaRegularCaptureUses3d | kMetaForceLive3dCompMode7)) != 0u;
                 if (!temporalCompMode7Uses3d)
                     continue;
 
                 bool lineHasCompMode7 = false;
-                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth);
-                for (int x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; x++)
+                const std::size_t rowBase = static_cast<std::size_t>(y) * SoftPackedFrameSnapshot::kScreenWidth;
+                for (int x = 0; x < static_cast<int>(SoftPackedFrameSnapshot::kScreenWidth); ++x)
                 {
-                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const std::size_t index = rowBase + static_cast<std::size_t>(x);
                     const u32 compMode = (control[index] >> 24u) & 0xFu;
                     const bool captureBackedComp4 =
                         compMode == 4u
@@ -3187,63 +2787,138 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 if (!lineHasCompMode7)
                     continue;
 
-                std::memcpy(
-                    plane0.data() + rowBase,
-                    resolvedPrimaryCache->data() + rowBase,
-                    static_cast<size_t>(SoftPackedFrameSnapshot::kScreenWidth) * sizeof(u32));
-                repairedLines++;
+                std::memcpy(plane0.data() + rowBase, resolvedPrimaryCache->data() + rowBase,
+                    SoftPackedFrameSnapshot::kScreenWidth * sizeof(u32));
+                ++repairedLines;
             }
-
             return repairedLines;
         };
 
     const int repairedTopTemporalPrimaryLines = renderer2dDebugControlsActive || topFullRegularCaptureWithBottomCompMode2Slot
         ? 0
-        : repairTemporalPrimaryFromResolvedCache(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta,
+        : repairTemporalPrimaryFromResolvedCache(destination.packedTopPlane0,
+            destination.packedTopPlane1, destination.packedTopControl, destination.packedTopLineMeta,
             hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimary : nullptr,
             hasTopResolvedPrimaryCache ? &lastValidTopScreenResolvedPrimaryLines : nullptr);
-    const int repairedBottomTemporalPrimaryLines = renderer2dDebugControlsActive
-        ? 0
-        : repairTemporalPrimaryFromResolvedCache(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta,
+    const int repairedBottomTemporalPrimaryLines = renderer2dDebugControlsActive ? 0
+        : repairTemporalPrimaryFromResolvedCache(destination.packedBottomPlane0,
+            destination.packedBottomPlane1, destination.packedBottomControl, destination.packedBottomLineMeta,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimary : nullptr,
             hasBottomResolvedPrimaryCache ? &lastValidBottomScreenResolvedPrimaryLines : nullptr);
+    (void)repairedTopTemporalPrimaryLines;
+    (void)repairedBottomTemporalPrimaryLines;
 
     if (!renderer2dDebugControlsActive)
     {
-        updateLastValidResolvedPrimary(
-            destination.packedTopPlane0,
-            destination.packedTopPlane1,
-            destination.packedTopControl,
-            destination.packedTopLineMeta,
-            destination.packedBottomLineMeta,
-            destination.comp4TopPlaceholder,
-            lastValidTopScreenResolvedPrimary,
+        updateLastValidResolvedPrimary(destination.packedTopPlane0, destination.packedTopPlane1,
+            destination.packedTopControl, destination.packedTopLineMeta, destination.packedBottomLineMeta,
+            destination.comp4TopPlaceholder, lastValidTopScreenResolvedPrimary,
             lastValidTopScreenResolvedPrimaryLines);
-        updateLastValidResolvedPrimary(
-            destination.packedBottomPlane0,
-            destination.packedBottomPlane1,
-            destination.packedBottomControl,
-            destination.packedBottomLineMeta,
-            destination.packedTopLineMeta,
-            destination.comp4BottomPlaceholder,
-            lastValidBottomScreenResolvedPrimary,
+        updateLastValidResolvedPrimary(destination.packedBottomPlane0, destination.packedBottomPlane1,
+            destination.packedBottomControl, destination.packedBottomLineMeta, destination.packedTopLineMeta,
+            destination.comp4BottomPlaceholder, lastValidBottomScreenResolvedPrimary,
             lastValidBottomScreenResolvedPrimaryLines);
     }
-    emitBuilderStage("final");
 
+    (void)preservedTopFullRegularProtectedBlackPixels;
     destination.valid = true;
     previousSnapshot = destination;
     return true;
 }
 
+namespace
+{
+
+bool compareScreen(
+    const char* screenName,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& curPlane0,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& curPlane1,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& curControl,
+    const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& curMeta,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& refPlane0,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& refPlane1,
+    const std::array<u32, SoftPackedFrameSnapshot::kPixelCount>& refControl,
+    const std::array<u32, SoftPackedFrameSnapshot::kLineCount>& refMeta,
+    u64 generation)
+{
+    for (std::size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; ++y)
+    {
+        const u32 curMetaVal = curMeta[y];
+        const u32 refMetaVal = refMeta[y];
+        if (curMetaVal != refMetaVal)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Error,
+                "ReferenceParityMismatch generation=%llu screen=%s x=%d y=%d field=%s "
+                "currentValue=0x%08X referenceValue=0x%08X currentMeta=0x%08X referenceMeta=0x%08X\n",
+                static_cast<unsigned long long>(generation), screenName, 0, static_cast<int>(y),
+                "lineMeta", curMetaVal, refMetaVal, curMetaVal, refMetaVal);
+            return true;
+        }
+
+        const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+        for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+        {
+            const std::size_t index = rowBase + x;
+            const char* field = nullptr;
+            u32 curVal = 0u;
+            u32 refVal = 0u;
+            if (curPlane0[index] != refPlane0[index])
+            {
+                field = "plane0";
+                curVal = curPlane0[index];
+                refVal = refPlane0[index];
+            }
+            else if (curPlane1[index] != refPlane1[index])
+            {
+                field = "plane1";
+                curVal = curPlane1[index];
+                refVal = refPlane1[index];
+            }
+            else if (curControl[index] != refControl[index])
+            {
+                field = "control";
+                curVal = curControl[index];
+                refVal = refControl[index];
+            }
+            if (field == nullptr)
+                continue;
+
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Error,
+                "ReferenceParityMismatch generation=%llu screen=%s x=%d y=%d field=%s "
+                "currentValue=0x%08X referenceValue=0x%08X currentMeta=0x%08X referenceMeta=0x%08X\n",
+                static_cast<unsigned long long>(generation), screenName,
+                static_cast<int>(x), static_cast<int>(y), field,
+                curVal, refVal, curMetaVal, refMetaVal);
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+void compareReferenceOracleSnapshot(
+    const SoftPackedFrameSnapshot& current,
+    const SoftPackedFrameSnapshot& reference,
+    u64 generation)
+{
+    if (compareScreen(
+            "Top",
+            current.packedTopPlane0, current.packedTopPlane1, current.packedTopControl, current.packedTopLineMeta,
+            reference.packedTopPlane0, reference.packedTopPlane1, reference.packedTopControl, reference.packedTopLineMeta,
+            generation))
+    {
+        return;
+    }
+    (void)compareScreen(
+        "Bottom",
+        current.packedBottomPlane0, current.packedBottomPlane1, current.packedBottomControl, current.packedBottomLineMeta,
+        reference.packedBottomPlane0, reference.packedBottomPlane1, reference.packedBottomControl, reference.packedBottomLineMeta,
+        generation);
+}
+
 } // namespace MelonPrime
 
-#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
+#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && MELONPRIME_VULKAN_REFERENCE_ORACLE

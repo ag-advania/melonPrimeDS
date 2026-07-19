@@ -50,11 +50,13 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
 #include "GPU3D_Vulkan.h"
+#include "MelonPrimeBuildInfo.h"
 #include "MelonPrimeVulkanFilterMode.h"
 #include "MelonPrimeVulkanFrameQueue.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanOutput.h"
 #include "MelonPrimeVulkanSnapshotBuilder.h"
+#include "MelonPrimeVulkanSnapshotReferenceOracle.h"
 #include "MelonPrimeVulkanSurfacePresenter.h"
 #endif
 
@@ -1690,6 +1692,10 @@ struct ScreenPanelVulkan::VulkanState
     MelonPrime::MelonPrimeVulkanFrameQueuePolicy framePolicy;
     MelonPrime::MelonPrimeVulkanOutput output;
     MelonPrime::MelonPrimeVulkanSnapshotBuilder snapshotBuilder;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+    MelonPrime::MelonPrimeVulkanSnapshotReferenceOracle snapshotReferenceOracle;
+    MelonPrime::SoftPackedFrameSnapshot referenceOracleSnapshot;
+#endif
     MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
     MelonPrime::SoftPackedFrameSnapshot snapshot;
     SoftRenderer::StructuredVulkanFrameSnapshot structuredSource;
@@ -1739,6 +1745,9 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->output.shutdown();
     vulkan->frameQueue.clear();
     vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+    vulkan->snapshotReferenceOracle.reset();
+#endif
 }
 
 void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
@@ -1762,6 +1771,19 @@ bool ScreenPanelVulkan::initVulkan()
 {
     if (!vulkan || !vulkan->output.init())
         return false;
+
+    // Stamp every vulkan2d.log capture with the exact binary provenance so a
+    // trace can be verified as coming from this build before being used as
+    // evidence (see the Vulkan screen-swap/black-transparency re-audit doc).
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "MelonPrimeVulkanRevision gitSha=%s gitBranch=%s gitDirty=%s buildTimestamp=%s "
+        "referenceFrontendCommit=2c10e59d7209d354e90d9ef4228330bac3f6e794 "
+        "referenceCoreCommit=d77944275fa61f9b79cfcead2c3e98993429a023",
+        MELONPRIMEDS_GIT_SHA,
+        MELONPRIMEDS_GIT_BRANCH,
+        MELONPRIMEDS_GIT_DIRTY,
+        MelonPrime::kBuildStamp);
 
     auto& nativeWindow = vulkan->nativeWindow;
 #if defined(_WIN32)
@@ -1950,6 +1972,9 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
             vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+            vulkan->snapshotReferenceOracle.reset();
+#endif
             vulkan->structuredSource.Valid = false;
             vulkan->speedOverride = false;
             vulkan->rendererScale = 0;
@@ -2013,6 +2038,9 @@ void ScreenPanelVulkan::drawScreen()
         vulkan->frameQueue.requestPresentationResync();
         vulkan->output.invalidateTemporalHistory();
         vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+        vulkan->snapshotReferenceOracle.reset();
+#endif
         vulkan->lastBuiltStructuredGeneration = 0;
         vulkan->lastQueuedStructuredGeneration = 0;
         vulkan->lastPresentedStructuredGeneration = 0;
@@ -2033,6 +2061,9 @@ void ScreenPanelVulkan::drawScreen()
         vulkan->frameQueue.requestPresentationResync();
         vulkan->output.invalidateTemporalHistory();
         vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+        vulkan->snapshotReferenceOracle.reset();
+#endif
         vulkan->lastBuiltStructuredGeneration = 0;
         vulkan->lastQueuedStructuredGeneration = 0;
         vulkan->lastPresentedStructuredGeneration = 0;
@@ -2160,6 +2191,24 @@ void ScreenPanelVulkan::drawScreen()
                 return;
             }
             vulkan->lastBuiltStructuredGeneration = source.Generation;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+            // Run the independent reference-oracle transcription on the exact
+            // same input as the production builder above, then diff the two
+            // outputs. Logs ReferenceParityMismatch on the first divergent
+            // pixel/line-meta; silent when they match. Opt-in only
+            // (MELONPRIME_VULKAN_REFERENCE_ORACLE build flag) -- never runs in
+            // a normal build.
+            if (vulkan->snapshotReferenceOracle.build(
+                    snapshotSource,
+                    renderFrame->frameId,
+                    vulkan->referenceOracleSnapshot))
+            {
+                MelonPrime::compareReferenceOracleSnapshot(
+                    snapshot,
+                    vulkan->referenceOracleSnapshot,
+                    source.Generation);
+            }
+#endif
             const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
             if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
             {
@@ -2220,6 +2269,9 @@ void ScreenPanelVulkan::drawScreen()
                 vulkan->output.clearStructuredCaptureHistory();
                 renderer->RequestStructuredVulkanResync();
                 vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+                vulkan->snapshotReferenceOracle.reset();
+#endif
                 snapshot.clear();
                 vulkan->frameQueue.discardRenderedFrame(renderFrame);
                 vulkan->lastBuiltStructuredGeneration = structuredSource.Generation;
@@ -2252,6 +2304,9 @@ void ScreenPanelVulkan::drawScreen()
                 vulkan->frameQueue.requestPresentationResync();
                 vulkan->output.invalidateTemporalHistory();
                 vulkan->snapshotBuilder.reset();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
+                vulkan->snapshotReferenceOracle.reset();
+#endif
                 vulkan->lastBuiltStructuredGeneration = 0;
                 vulkan->lastQueuedStructuredGeneration = 0;
                 if (vulkan->consecutiveFailures++ == 0)
