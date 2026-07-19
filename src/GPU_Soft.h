@@ -92,7 +92,6 @@ public:
         // Sapphire screenSwapLatched: RenderScreenSwapAt3D (POWCNT1 bit 15,
         // latched at VCount 215) read when the packed frame is published.
         bool ScreenSwapLatched = false;
-        bool Renderer3DOwnerIsTop = false;
         bool CaptureBackedClass4Only = false;
         bool CaptureBackedPartialClass0Only = false;
         bool CaptureBackedFullClass0AlternatingCapture = false;
@@ -100,19 +99,11 @@ public:
         u32 StructuredCopyLines = 0;
         int FrontBuffer = -1;
         u64 Generation = 0;
-        u64 Renderer3DRenderSerial = 0;
-        Renderer3DCompletedFrameReference Completed3DReference{};
         bool Valid = false;
     };
 
-    // Copies every retained completed generation in ascending generation
-    // order while the producer lock is held. Sapphire latches once per
-    // RunFrame; if desktop presentation temporarily returns before advancing
-    // that state (initialization, resync, or resource pressure), consume both
-    // retained slots instead of losing the alternating predecessor.
-    [[nodiscard]] bool CopyStructuredVulkanFrames(
-        std::array<StructuredVulkanFrameSnapshot, 2>& snapshots,
-        std::size_t& count) const;
+    [[nodiscard]] bool CopyStructuredVulkanFrame(
+        StructuredVulkanFrameSnapshot& snapshot) const;
     void RequestStructuredVulkanResync() noexcept;
 #endif
 

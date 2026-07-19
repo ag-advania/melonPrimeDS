@@ -54,17 +54,6 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
 
 SoftRenderer::~SoftRenderer()
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
-        for (auto& completedFrame : CompletedStructuredVulkanFrames)
-        {
-            if (completedFrame.Completed3DReference.Valid)
-                Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
-            completedFrame.Completed3DReference = {};
-        }
-    }
-#endif
     delete[] Framebuffer[0][0];
     delete[] Framebuffer[0][1];
     delete[] Framebuffer[1][0];
@@ -115,11 +104,7 @@ void SoftRenderer::Reset()
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
     {
-        if (completedFrame.Completed3DReference.Valid)
-            Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
-        completedFrame.Completed3DReference = {};
         completedFrame.Valid = false;
-        completedFrame.Renderer3DOwnerIsTop = false;
         completedFrame.FrontBuffer = -1;
         completedFrame.Generation = 0;
     }
@@ -133,12 +118,7 @@ void SoftRenderer::Stop()
     {
         const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
         for (auto& completedFrame : CompletedStructuredVulkanFrames)
-        {
-            if (completedFrame.Completed3DReference.Valid)
-                Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
-            completedFrame.Completed3DReference = {};
             completedFrame.Valid = false;
-        }
     }
 #endif
     // clear framebuffers to black
@@ -219,12 +199,11 @@ void SoftRenderer::DrawScanline(u32 line)
             {
                 Platform::Log(
                     Platform::LogLevel::Info,
-                    "Vulkan2DPhase event=Visible2DStart VCount=%u physicalScreenSwap=%u structuredGenerationCandidate=%llu backBuffer=%d rendererSerialAtLine0=%llu rendererOwnerAtLine0=%u",
+                    "Vulkan2DPhase event=Visible2DStart VCount=%u physicalScreenSwap=%u structuredGenerationCandidate=%llu backBuffer=%d rendererOwnerAtLine0=%u",
                     GPU.VCount,
                     GPU.ScreenSwap ? 1u : 0u,
                     static_cast<unsigned long long>(StructuredVulkanGeneration + 1u),
                     BackBuffer,
-                    static_cast<unsigned long long>(Rend3D->GetRenderSerial()),
                     GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u);
             }
             // A completed snapshot is published only by SwapBuffers after all
@@ -1287,23 +1266,13 @@ void SoftRenderer::BuildStructuredScreenLine(
     }
     else
     {
-        // Sapphire's plain-line latch tags every published pixel as an opaque
-        // 2D-only sample. plane0 carries a non-zero alpha bit (0x01000000) so a
-        // black pixel is classified as protected opaque-black content
-        // (packedPixelIsOpaqueBlack / screenHasExplicitCurrentContent) instead
-        // of "no content" (0). control encodes the composited-2D-only slot
-        // (0x87) plus the protected-black flag (0x20 -> 0xA7) for black pixels.
-        // Stripping this (plane0 = rgb only, control = 0) makes black regions
-        // read as empty, and the temporal restore paths then backfill them with
-        // the other screen's cached lines (top logo bleeding onto the bottom
-        // menu on the MPH title screen).
         for (std::size_t x = 0; x < 256u; ++x)
         {
-            const u32 rgb = output[x] & 0x00FFFFFFu;
-            const bool protectedBlack = rgb == 0u;
-            packedPlane0[x] = rgb | 0x01000000u;
+            packedPlane0[x] = forcePlain
+                ? output[x]
+                : (output[x] & 0x00FFFFFFu);
             packedPlane1[x] = 0u;
-            packedControl[x] = protectedBlack ? 0xA7000000u : 0x87000000u;
+            packedControl[x] = 0u;
         }
     }
 
@@ -1417,45 +1386,27 @@ void SoftRenderer::BuildStructuredScreenLine(
         StructuredFrameValid = true;
 }
 
-bool SoftRenderer::CopyStructuredVulkanFrames(
-    std::array<StructuredVulkanFrameSnapshot, 2>& snapshots,
-    std::size_t& count) const
+bool SoftRenderer::CopyStructuredVulkanFrame(
+    StructuredVulkanFrameSnapshot& snapshot) const
 {
-    count = 0;
-    for (auto& snapshot : snapshots)
-        snapshot.Valid = false;
+    snapshot.Valid = false;
     if (!UseStructuredVulkan2D())
         return false;
 
     const std::lock_guard<std::mutex> completedFrameLock(CompletedStructuredVulkanFrameMutex);
-    std::array<const StructuredVulkanFrameSnapshot*, 2> completedFrames{};
+    const StructuredVulkanFrameSnapshot* completedFrame = nullptr;
     for (const auto& candidate : CompletedStructuredVulkanFrames)
     {
-        if (candidate.Valid)
-            completedFrames[count++] = &candidate;
-    }
-    if (count == 0)
-        return false;
-
-    if (count == 2
-        && completedFrames[0]->Generation > completedFrames[1]->Generation)
-    {
-        const StructuredVulkanFrameSnapshot* older = completedFrames[1];
-        completedFrames[1] = completedFrames[0];
-        completedFrames[0] = older;
-    }
-
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        snapshots[index] = *completedFrames[index];
-        if (snapshots[index].Completed3DReference.Valid
-            && !Rend3D->RetainCompletedFrameReference(
-                snapshots[index].Completed3DReference))
+        if (candidate.Valid
+            && (completedFrame == nullptr || candidate.Generation > completedFrame->Generation))
         {
-            snapshots[index].Completed3DReference = {};
-            snapshots[index].Renderer3DRenderSerial = 0u;
+            completedFrame = &candidate;
         }
     }
+    if (completedFrame == nullptr)
+        return false;
+
+    snapshot = *completedFrame;
     return true;
 }
 
@@ -1576,9 +1527,6 @@ void SoftRenderer::SwapBuffers()
 
         StructuredVulkanFrameSnapshot& completedFrame =
             CompletedStructuredVulkanFrames[static_cast<std::size_t>(BackBuffer & 1)];
-        if (completedFrame.Completed3DReference.Valid)
-            Rend3D->ReleaseCompletedFrameReference(completedFrame.Completed3DReference);
-        completedFrame.Completed3DReference = {};
         completedFrame.PackedTop = rawTop;
         completedFrame.PackedBottom = rawBottom;
 
@@ -1808,19 +1756,6 @@ void SoftRenderer::SwapBuffers()
         completedFrame.CaptureScreenSwap = StructuredCaptureScreenSwap;
         completedFrame.CaptureScreenSwapValid = StructuredCaptureScreenSwapValid;
         completedFrame.ScreenSwapLatched = currentScreenSwapLatched;
-        Renderer3DCompletedFrameReference completed3DReference{};
-        if (Rend3D->AcquireCompletedFrameForStructured(completed3DReference))
-            completedFrame.Completed3DReference = completed3DReference;
-        completedFrame.Renderer3DOwnerIsTop = completedFrame.Completed3DReference.Valid
-            ? completedFrame.Completed3DReference.OwnerIsTop()
-            : currentScreenSwapLatched;
-        // The referenced 3D image is the PREVIOUS render (#N-1), paired with this
-        // structured generation the way SoftRenderer::GetLine consumes the prior
-        // render. Its ownership latch therefore reflects the render kicked one
-        // generation earlier; under an alternating POWCNT swap that is the
-        // opposite LCD of this frame's currentScreenSwapLatched, so the two are
-        // intentionally NOT required to match (the earlier equality assert
-        // encoded the buggy same-generation pairing and no longer holds).
         completedFrame.CaptureBackedClass4Only = captureBackedClass4Only;
         completedFrame.CaptureBackedPartialClass0Only =
             StructuredCaptureBacked3DLines > 0u
@@ -1837,24 +1772,15 @@ void SoftRenderer::SwapBuffers()
         completedFrame.StructuredCopyLines = StructuredCopyLines;
         completedFrame.FrontBuffer = BackBuffer & 1;
         completedFrame.Generation = ++StructuredVulkanGeneration;
-        completedFrame.Renderer3DRenderSerial = completedFrame.Completed3DReference.Valid
-            ? completedFrame.Completed3DReference.Serial
-            : 0u;
         completedFrame.Valid = true;
         if (VulkanStructuredPhaseTraceEnabled())
         {
             Platform::Log(
                 Platform::LogLevel::Info,
-                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu packedScreenSwap=%u publishedReferenced3dSerial=%llu publishedReferenced3dOwner=%u publishedReferencedImageSlot=%u publishedTimelineValue=%llu currentRendererSerial=%llu currentRendererOwner=%u currentColorImageSlot=mutable exactReference=%u",
+                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu packedScreenSwap=%u currentRendererOwner=%u",
                 static_cast<unsigned long long>(completedFrame.Generation),
                 completedFrame.ScreenSwapLatched ? 1u : 0u,
-                static_cast<unsigned long long>(completedFrame.Renderer3DRenderSerial),
-                completedFrame.Renderer3DOwnerIsTop ? 1u : 0u,
-                completedFrame.Completed3DReference.ImageSlot,
-                static_cast<unsigned long long>(completedFrame.Completed3DReference.CompletionValue),
-                static_cast<unsigned long long>(Rend3D->GetRenderSerial()),
-                GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u,
-                completedFrame.Completed3DReference.Valid ? 1u : 0u);
+                GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u);
         }
     }
 
