@@ -674,18 +674,6 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     CurrentCaptureScreenSwapHint = false;
     HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
-    RenderSerial = 0;
-    LastSuccessfulRenderSerial = 0;
-    {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-        PendingCompletedFrameSlot = -1;
-        for (CompletedFrameSlot& slot : CompletedFrameSlots)
-        {
-            slot.Valid = false;
-            slot.CopyInProgress = false;
-            slot.HoldCount = 0u;
-        }
-    }
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
     EarlySubmitHitCount = 0;
@@ -743,47 +731,14 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 {
     refreshActiveBackendMode();
-
-    // melonDS's 2D consumes the PREVIOUS 3D render: structured generation N must
-    // pair with render #N-1 (the same convention SoftRenderer::GetLine uses).
-    // Before latching this kick's ownership/serial and drawing render #N,
-    // snapshot the current ColorImage -- which still holds the result of render
-    // #N-1 -- into a completed slot. Hardware displays render #N-1 during THIS
-    // frame's visible lines, on the Engine A side selected by THIS frame's
-    // POWCNT latch — not by the value that was current when #N-1 was kicked.
-    // On per-frame ScreenSwap-toggling scenes those differ every frame, so the
-    // slot owner must be tagged with the freshly latched swap: apply the
-    // VCount-215 latch to CurrentRenderScreenSwap FIRST, then snapshot, so
-    // slot.OwnerLcd matches the LCD the consuming generation composites it to.
-    // RenderSerial and LastSuccessfulRenderSerial still equal N-1 here, so the
-    // snapshot keeps serial N-1. The skip re-entry (early submit already drew
-    // this frame at VCount 192) must NOT snapshot again.
     CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
 
-    const bool skipThisKick = SkipRenderAtVCount215 && gpu.VCount == 215u;
-    if (!skipThisKick)
-        (void)snapshotCompletedFrameForStructured();
-
-    if (Vulkan2DPhaseTraceEnabled() && gpu.VCount == 215u)
-    {
-        Log(LogLevel::Info,
-            "Vulkan2DPhase event=Pending3DStart VCount=%u pending3dSerial=%llu pending3dOwner=%u pendingColorImageSlot=mutable previousCompletedSlot=%d",
-            gpu.VCount,
-            static_cast<unsigned long long>(RenderSerial + (SkipRenderAtVCount215 ? 0u : 1u)),
-            CurrentRenderScreenSwap ? 1u : 0u,
-            PendingCompletedFrameSlot);
-    }
-
-    if (skipThisKick)
+    if (SkipRenderAtVCount215 && gpu.VCount == 215u)
     {
         SkipRenderAtVCount215 = false;
         EarlySubmitSkipVCount215Count++;
         return;
     }
-
-    // One serial per emulated 3D frame. Early-submit frames skip the later
-    // VCount 215 call, so this remains a single increment for either path.
-    ++RenderSerial;
 
     const u64 renderStartNs = PerfNowNs();
     auto renderPerfScope = MakeScopeExit([&]() {
@@ -844,7 +799,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
             if (!CaptureLinePending && !CaptureLineReady)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
-        LastSuccessfulRenderSerial = RenderSerial;
         return;
     }
 
@@ -1144,7 +1098,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     LastSubmittedRenderPolygonCount = gpu.GPU3D.RenderNumPolygons;
-    LastSuccessfulRenderSerial = RenderSerial;
 }
 
 void VulkanRenderer3D::RestartFrame(melonDS::GPU& gpu)
@@ -1790,7 +1743,6 @@ void VulkanRenderer3D::destroyVulkan()
     destroyAllCaptureLineBuffers();
     destroyResultBuffer();
     destroyFallbackTexture();
-    destroyCompletedFrameSlots();
     destroyRenderTarget();
 
     if (InterpPipeline != VK_NULL_HANDLE)
@@ -2391,295 +2343,6 @@ bool VulkanRenderer3D::waitForReadbackSource()
 
     return waitForAllRenderContexts();
 }
-
-bool VulkanRenderer3D::AcquireCompletedFrameForStructured(
-    Renderer3DCompletedFrameReference& reference)
-{
-    reference = {};
-    // The previous render (#N-1) was already snapshotted into
-    // PendingCompletedFrameSlot at the start of this generation's render kick
-    // (RenderFrameActiveBackend, before the new ownership/serial latch). Return
-    // that slot so structured generation N references render N-1, matching
-    // SoftRenderer::GetLine's previous-render consumption. Do NOT snapshot the
-    // freshly kicked render #N here -- that produced the one-early pairing that
-    // injected the opposite LCD's 3D under an alternating POWCNT swap.
-    const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-    if (PendingCompletedFrameSlot < 0
-        || static_cast<u32>(PendingCompletedFrameSlot) >= CompletedFrameSlotCount)
-    {
-        return false;
-    }
-
-    const u32 slotIndex = static_cast<u32>(PendingCompletedFrameSlot);
-    CompletedFrameSlot& slot = CompletedFrameSlots[slotIndex];
-    if (!slot.Valid || slot.CopyInProgress || slot.HoldCount == 0u)
-    {
-        PendingCompletedFrameSlot = -1;
-        return false;
-    }
-
-    reference.Serial = slot.Serial;
-    reference.CompletionValue = slot.CompletionValue;
-    reference.ImageSlot = slotIndex;
-    reference.OwnerLcd = slot.OwnerLcd;
-    reference.Valid = true;
-    PendingCompletedFrameSlot = -1;
-    return true;
-}
-
-bool VulkanRenderer3D::RetainCompletedFrameReference(
-    const Renderer3DCompletedFrameReference& reference)
-{
-    if (!reference.Valid || reference.ImageSlot >= CompletedFrameSlotCount)
-        return false;
-
-    const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-    CompletedFrameSlot& slot = CompletedFrameSlots[reference.ImageSlot];
-    if (!slot.Valid
-        || slot.CopyInProgress
-        || slot.Serial != reference.Serial
-        || slot.CompletionValue != reference.CompletionValue
-        || slot.OwnerLcd != reference.OwnerLcd)
-    {
-        return false;
-    }
-
-    ++slot.HoldCount;
-    return true;
-}
-
-void VulkanRenderer3D::ReleaseCompletedFrameReference(
-    const Renderer3DCompletedFrameReference& reference)
-{
-    if (!reference.Valid || reference.ImageSlot >= CompletedFrameSlotCount)
-        return;
-
-    const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-    CompletedFrameSlot& slot = CompletedFrameSlots[reference.ImageSlot];
-    if (slot.Valid
-        && slot.Serial == reference.Serial
-        && slot.CompletionValue == reference.CompletionValue
-        && slot.OwnerLcd == reference.OwnerLcd
-        && slot.HoldCount > 0u)
-    {
-        --slot.HoldCount;
-    }
-}
-
-bool VulkanRenderer3D::AcquireCompletedFrameView(
-    const Renderer3DCompletedFrameReference& reference,
-    VulkanCompletedFrameView& view)
-{
-    view = {};
-    if (!RetainCompletedFrameReference(reference))
-        return false;
-
-    const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-    const CompletedFrameSlot& slot = CompletedFrameSlots[reference.ImageSlot];
-    if (!slot.Valid || slot.Image == VK_NULL_HANDLE || slot.ImageView == VK_NULL_HANDLE)
-    {
-        if (slot.HoldCount > 0u)
-            --CompletedFrameSlots[reference.ImageSlot].HoldCount;
-        return false;
-    }
-
-    view.Reference = reference;
-    view.Image = slot.Image;
-    view.ImageView = slot.ImageView;
-    view.Width = slot.Width;
-    view.Height = slot.Height;
-    view.Valid = true;
-    return true;
-}
-
-void VulkanRenderer3D::ReleaseCompletedFrameView(const VulkanCompletedFrameView& view)
-{
-    if (view.Valid)
-        ReleaseCompletedFrameReference(view.Reference);
-}
-
-bool VulkanRenderer3D::snapshotCompletedFrameForStructured()
-{
-    if (!Initialized
-        || !ColorImageInitialized
-        || ColorImage == VK_NULL_HANDLE
-        || ColorImageWidth == 0u
-        || ColorImageHeight == 0u
-        || LastSuccessfulRenderSerial == 0u
-        || LastSuccessfulRenderSerial != RenderSerial)
-    {
-        return false;
-    }
-
-    if (!waitForReadbackSource())
-        return false;
-
-    u32 selectedSlot = CompletedFrameSlotCount;
-    {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-        if (PendingCompletedFrameSlot >= 0
-            && static_cast<u32>(PendingCompletedFrameSlot) < CompletedFrameSlotCount)
-        {
-            CompletedFrameSlot& stale = CompletedFrameSlots[static_cast<u32>(PendingCompletedFrameSlot)];
-            if (stale.HoldCount > 0u)
-                --stale.HoldCount;
-            PendingCompletedFrameSlot = -1;
-        }
-
-        for (u32 offset = 0; offset < CompletedFrameSlotCount; ++offset)
-        {
-            const u32 candidate = (NextCompletedFrameSlot + offset) % CompletedFrameSlotCount;
-            CompletedFrameSlot& slot = CompletedFrameSlots[candidate];
-            if (slot.HoldCount == 0u && !slot.CopyInProgress)
-            {
-                selectedSlot = candidate;
-                slot.Valid = false;
-                slot.CopyInProgress = true;
-                break;
-            }
-        }
-    }
-
-    if (selectedSlot >= CompletedFrameSlotCount)
-    {
-        Log(LogLevel::Warn,
-            "VulkanCompleted3D: no free immutable image slot serial=%llu owner=%u",
-            static_cast<unsigned long long>(RenderSerial),
-            CurrentRenderScreenSwap ? 1u : 0u);
-        return false;
-    }
-
-    const auto failCopy = [&]() {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-        CompletedFrameSlot& slot = CompletedFrameSlots[selectedSlot];
-        slot.Valid = false;
-        slot.CopyInProgress = false;
-        slot.HoldCount = 0u;
-        return false;
-    };
-
-    if (!ensureCompletedFrameSlot(selectedSlot, ColorImageWidth, ColorImageHeight))
-        return failCopy();
-
-    if (FrameFence == VK_NULL_HANDLE || CommandBuffer == VK_NULL_HANDLE)
-        return failCopy();
-    if (vkWaitForFences(Device, 1, &FrameFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-        || vkResetFences(Device, 1, &FrameFence) != VK_SUCCESS
-        || vkResetCommandBuffer(CommandBuffer, 0) != VK_SUCCESS)
-    {
-        return failCopy();
-    }
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(CommandBuffer, &beginInfo) != VK_SUCCESS)
-        return failCopy();
-
-    CompletedFrameSlot& destination = CompletedFrameSlots[selectedSlot];
-    VkImageMemoryBarrier sourceToTransfer{};
-    sourceToTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    sourceToTransfer.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-    sourceToTransfer.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    sourceToTransfer.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    sourceToTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    sourceToTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceToTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    sourceToTransfer.image = ColorImage;
-    sourceToTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    sourceToTransfer.subresourceRange.levelCount = 1;
-    sourceToTransfer.subresourceRange.layerCount = 1;
-
-    VkImageMemoryBarrier destinationToTransfer{};
-    destinationToTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    destinationToTransfer.srcAccessMask = destination.LayoutReady ? VK_ACCESS_MEMORY_READ_BIT : 0u;
-    destinationToTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    destinationToTransfer.oldLayout = destination.LayoutReady ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
-    destinationToTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    destinationToTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    destinationToTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    destinationToTransfer.image = destination.Image;
-    destinationToTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    destinationToTransfer.subresourceRange.levelCount = 1;
-    destinationToTransfer.subresourceRange.layerCount = 1;
-
-    std::array<VkImageMemoryBarrier, 2> beforeCopy = {sourceToTransfer, destinationToTransfer};
-    vkCmdPipelineBarrier(
-        CommandBuffer,
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0, 0, nullptr, 0, nullptr,
-        static_cast<u32>(beforeCopy.size()), beforeCopy.data());
-
-    VkImageCopy copyRegion{};
-    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.srcSubresource.layerCount = 1;
-    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.extent = {ColorImageWidth, ColorImageHeight, 1u};
-    vkCmdCopyImage(
-        CommandBuffer,
-        ColorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        destination.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &copyRegion);
-
-    sourceToTransfer.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    sourceToTransfer.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-    sourceToTransfer.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    sourceToTransfer.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    destinationToTransfer.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    destinationToTransfer.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    destinationToTransfer.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    destinationToTransfer.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    std::array<VkImageMemoryBarrier, 2> afterCopy = {sourceToTransfer, destinationToTransfer};
-    vkCmdPipelineBarrier(
-        CommandBuffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-        0, 0, nullptr, 0, nullptr,
-        static_cast<u32>(afterCopy.size()), afterCopy.data());
-
-    if (vkEndCommandBuffer(CommandBuffer) != VK_SUCCESS)
-        return failCopy();
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &CommandBuffer;
-    {
-        std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
-        if (vkQueueSubmit(Queue, 1, &submitInfo, FrameFence) != VK_SUCCESS)
-            return failCopy();
-    }
-    if (vkWaitForFences(Device, 1, &FrameFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
-        return failCopy();
-
-    {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-        CompletedFrameSlot& slot = CompletedFrameSlots[selectedSlot];
-        slot.Serial = LastSuccessfulRenderSerial;
-        slot.CompletionValue = ++CompletedFrameCompletionValue;
-        slot.OwnerLcd = CurrentRenderScreenSwap
-            ? Renderer3DPhysicalLcd::Top
-            : Renderer3DPhysicalLcd::Bottom;
-        slot.LayoutReady = true;
-        slot.Valid = true;
-        slot.CopyInProgress = false;
-        slot.HoldCount = 1u;
-        PendingCompletedFrameSlot = static_cast<int>(selectedSlot);
-        NextCompletedFrameSlot = (selectedSlot + 1u) % CompletedFrameSlotCount;
-        Log(Vulkan2DPhaseTraceEnabled() ? LogLevel::Info : LogLevel::Debug,
-            "Vulkan2DPhase event=Completed3D phase=PostRunFrame completed3dSerial=%llu completed3dOwner=%u completedColorImageSlot=%u completedTimelineValue=%llu colorHash=unavailable size=%ux%u",
-            static_cast<unsigned long long>(slot.Serial),
-            slot.OwnerLcd == Renderer3DPhysicalLcd::Top ? 1u : 0u,
-            selectedSlot,
-            static_cast<unsigned long long>(slot.CompletionValue),
-            slot.Width,
-            slot.Height);
-    }
-    return true;
-}
-
 bool VulkanRenderer3D::waitForTextureCacheMutationSafePoint()
 {
     if (Device == VK_NULL_HANDLE)
@@ -5500,114 +5163,6 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     savePipelineCache();
     return true;
 }
-
-bool VulkanRenderer3D::ensureCompletedFrameSlot(u32 slotIndex, u32 width, u32 height)
-{
-    if (slotIndex >= CompletedFrameSlotCount || width == 0u || height == 0u || Device == VK_NULL_HANDLE)
-        return false;
-
-    CompletedFrameSlot& slot = CompletedFrameSlots[slotIndex];
-    if (slot.Image != VK_NULL_HANDLE
-        && slot.ImageView != VK_NULL_HANDLE
-        && slot.Width == width
-        && slot.Height == height)
-    {
-        return true;
-    }
-
-    if ((slot.Image != VK_NULL_HANDLE || slot.Memory != VK_NULL_HANDLE || slot.ImageView != VK_NULL_HANDLE)
-        && !waitForDeviceIdle("resize completed 3D image slot"))
-    {
-        return false;
-    }
-
-    if (slot.ImageView != VK_NULL_HANDLE)
-        vkDestroyImageView(Device, slot.ImageView, nullptr);
-    if (slot.Image != VK_NULL_HANDLE)
-        vkDestroyImage(Device, slot.Image, nullptr);
-    if (slot.Memory != VK_NULL_HANDLE)
-        vkFreeMemory(Device, slot.Memory, nullptr);
-    slot.ImageView = VK_NULL_HANDLE;
-    slot.Image = VK_NULL_HANDLE;
-    slot.Memory = VK_NULL_HANDLE;
-    slot.Width = 0u;
-    slot.Height = 0u;
-    slot.LayoutReady = false;
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-    imageInfo.extent = {width, height, 1u};
-    imageInfo.mipLevels = 1u;
-    imageInfo.arrayLayers = 1u;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    if (vkCreateImage(Device, &imageInfo, nullptr, &slot.Image) != VK_SUCCESS)
-        return false;
-
-    VkMemoryRequirements requirements{};
-    vkGetImageMemoryRequirements(Device, slot.Image, &requirements);
-    VkMemoryAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocation.allocationSize = requirements.size;
-    allocation.memoryTypeIndex = findMemoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (allocation.memoryTypeIndex == UINT32_MAX)
-        allocation.memoryTypeIndex = findMemoryType(requirements.memoryTypeBits, 0u);
-    if (allocation.memoryTypeIndex == UINT32_MAX
-        || vkAllocateMemory(Device, &allocation, nullptr, &slot.Memory) != VK_SUCCESS
-        || vkBindImageMemory(Device, slot.Image, slot.Memory, 0u) != VK_SUCCESS)
-    {
-        vkDestroyImage(Device, slot.Image, nullptr);
-        if (slot.Memory != VK_NULL_HANDLE)
-            vkFreeMemory(Device, slot.Memory, nullptr);
-        slot.Memory = VK_NULL_HANDLE;
-        slot.Image = VK_NULL_HANDLE;
-        return false;
-    }
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = slot.Image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.levelCount = 1u;
-    viewInfo.subresourceRange.layerCount = 1u;
-    if (vkCreateImageView(Device, &viewInfo, nullptr, &slot.ImageView) != VK_SUCCESS)
-    {
-        vkDestroyImage(Device, slot.Image, nullptr);
-        vkFreeMemory(Device, slot.Memory, nullptr);
-        slot.Memory = VK_NULL_HANDLE;
-        slot.Image = VK_NULL_HANDLE;
-        return false;
-    }
-
-    slot.Width = width;
-    slot.Height = height;
-    return true;
-}
-
-void VulkanRenderer3D::destroyCompletedFrameSlots()
-{
-    const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-    for (CompletedFrameSlot& slot : CompletedFrameSlots)
-    {
-        if (slot.ImageView != VK_NULL_HANDLE)
-            vkDestroyImageView(Device, slot.ImageView, nullptr);
-        if (slot.Image != VK_NULL_HANDLE)
-            vkDestroyImage(Device, slot.Image, nullptr);
-        if (slot.Memory != VK_NULL_HANDLE)
-            vkFreeMemory(Device, slot.Memory, nullptr);
-        slot = {};
-    }
-    PendingCompletedFrameSlot = -1;
-    NextCompletedFrameSlot = 0u;
-}
-
 bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
 {
     if (width == 0 || height == 0)
@@ -7596,18 +7151,6 @@ void VulkanRenderer3D::InvalidatePresentationState(bool discardColorTarget) noex
     resetCaptureLineState();
     clearLineCache();
     LastSubmittedRenderContext = nullptr;
-    LastSuccessfulRenderSerial = 0u;
-    {
-        const std::lock_guard<std::mutex> completedFrameLock(CompletedFrameMutex);
-        if (PendingCompletedFrameSlot >= 0
-            && static_cast<u32>(PendingCompletedFrameSlot) < CompletedFrameSlotCount)
-        {
-            CompletedFrameSlot& pending = CompletedFrameSlots[static_cast<u32>(PendingCompletedFrameSlot)];
-            if (pending.HoldCount > 0u)
-                --pending.HoldCount;
-        }
-        PendingCompletedFrameSlot = -1;
-    }
     if (discardColorTarget)
         ColorImageInitialized = false;
 }

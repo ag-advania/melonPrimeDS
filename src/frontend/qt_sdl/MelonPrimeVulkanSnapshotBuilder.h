@@ -33,12 +33,7 @@ struct StructuredVulkanSnapshotSource
     bool captureBackedHasStructured2DSource{};
     u32 structuredCopyLines{};
     int frontBuffer{-1};
-    bool renderer3dOwnerIsTop{};
     u64 generation{};
-    u64 renderer3dRenderSerial{};
-    u64 renderer3dCompletionValue{};
-    u32 renderer3dImageSlot{};
-    bool renderer3dReferenceValid{};
 };
 
 class MelonPrimeVulkanSnapshotBuilder
