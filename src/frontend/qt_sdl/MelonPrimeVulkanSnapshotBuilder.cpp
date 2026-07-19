@@ -1297,6 +1297,29 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
                 || source.captureBackedFullClass0AlternatingCapture);
     }
 
+    // Sapphire recomputes these capture-line counts once, immediately after
+    // metadata normalization and before the temporal carries / Engine-A
+    // whole-screen cache replacement below. carryPreviousLatchedScreenLines
+    // and applyCachedEngineASnapshot both rewrite the high 16 bits of
+    // lineMeta (display mode + capture flags), so recomputing after those
+    // steps (as opposed to here) yields different gate values downstream in
+    // promoteLowresCaptureImageToStructuredSlot / repairTopFullRegularCapture2DBaseFromPrevious.
+    const bool partialCapture3dMask = [&] {
+        int capture3dMaskLines = 0;
+        for (u8 uses3d : destination.captureLineUses3dMask)
+            capture3dMaskLines += uses3d != 0u ? 1 : 0;
+        return (capture3dMaskLines > 0
+                && capture3dMaskLines < static_cast<int>(SoftPackedFrameSnapshot::kLineCount))
+            || (source.structuredCopyLines > 0u
+                && source.structuredCopyLines < SoftPackedFrameSnapshot::kLineCount);
+    }();
+    const CaptureLineCounts topLineCounts = countCaptureLineCounts(destination.packedTopLineMeta);
+    const CaptureLineCounts bottomLineCounts = countCaptureLineCounts(destination.packedBottomLineMeta);
+    const int topRegularCaptureLineCount = topLineCounts.regularCaptureLines;
+    const int bottomRegularCaptureLineCount = bottomLineCounts.regularCaptureLines;
+    const int topVramCaptureLineCount = topLineCounts.vramCaptureLines;
+    const int bottomVramCaptureLineCount = bottomLineCounts.vramCaptureLines;
+
     const int carriedTopLatchedLines = renderer2dDebugControlsActive
         ? 0
         : carryPreviousLatchedScreenLines(
@@ -1651,21 +1674,6 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
     const u32* structuredBottomPlane1 = source.plane[1][1];
     const u32* structuredBottomControl = source.plane[1][2];
 
-    int capture3dMaskLines = 0;
-    for (u8 uses3d : destination.captureLineUses3dMask)
-        capture3dMaskLines += uses3d != 0u ? 1 : 0;
-    const bool partialCapture3dMask =
-        (capture3dMaskLines > 0
-            && capture3dMaskLines < static_cast<int>(SoftPackedFrameSnapshot::kLineCount))
-        || (source.structuredCopyLines > 0u
-            && source.structuredCopyLines < SoftPackedFrameSnapshot::kLineCount);
-    CaptureLineCounts topLineCounts = countCaptureLineCounts(destination.packedTopLineMeta);
-    CaptureLineCounts bottomLineCounts = countCaptureLineCounts(destination.packedBottomLineMeta);
-    int topRegularCaptureLineCount = topLineCounts.regularCaptureLines;
-    int bottomRegularCaptureLineCount = bottomLineCounts.regularCaptureLines;
-    int topVramCaptureLineCount = topLineCounts.vramCaptureLines;
-    int bottomVramCaptureLineCount = bottomLineCounts.vramCaptureLines;
-
     promoteLowresCaptureImageToStructuredSlot(
         destination.packedTopPlane0,
         destination.packedTopPlane1,
@@ -1833,6 +1841,34 @@ bool MelonPrimeVulkanSnapshotBuilder::build(
             destination.packedTopPlane1,
             destination.packedTopControl,
             destination.packedTopLineMeta);
+    }
+
+    // Sapphire forces the bottom-most strip of a regular-capture-dominant
+    // bottom screen (with no top-screen capture activity at all) to
+    // protected opaque black. Without this, that strip keeps whatever the
+    // carry/Engine-A repair pipeline produced, which can surface stale or
+    // transparent content on the touch screen.
+    const bool bottomOnlyRegularCaptureDominant =
+        bottomRegularCaptureLineCount > static_cast<int>(SoftPackedFrameSnapshot::kScreenHeight / 2u)
+        && topRegularCaptureLineCount == 0
+        && topVramCaptureLineCount == 0
+        && bottomVramCaptureLineCount == 0;
+    if (hasStructuredVulkan2D && partialCapture3dMask && bottomOnlyRegularCaptureDominant)
+    {
+        constexpr u32 protectedBlackControl = (0x80u | 0x20u) << 24u;
+        for (std::size_t y = 171; y < SoftPackedFrameSnapshot::kScreenHeight; ++y)
+        {
+            u32& lineMeta = destination.packedBottomLineMeta[y];
+            lineMeta = (lineMeta & ~0x00030000u) | (1u << 16u);
+            const std::size_t rowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+            for (std::size_t x = 0; x < SoftPackedFrameSnapshot::kScreenWidth; ++x)
+            {
+                const std::size_t index = rowBase + x;
+                destination.packedBottomPlane0[index] = 0xFF000000u;
+                destination.packedBottomPlane1[index] = 0u;
+                destination.packedBottomControl[index] = protectedBlackControl;
+            }
+        }
     }
 
     int carriedTopVramPairLines = 0;
