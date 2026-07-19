@@ -29,11 +29,69 @@
 namespace melonDS
 {
 
+namespace
+{
+constexpr u32 kPhysicalTopScreen = 0u;
+constexpr u32 kPhysicalBottomScreen = 1u;
+}
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 static bool VulkanStructuredPhaseTraceEnabled() noexcept
 {
     const char* value = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
     return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+
+u64 HashPhysicalFramebufferRgb6(const u32* pixels) noexcept
+{
+    u64 hash = 1469598103934665603ull;
+    for (std::size_t i = 0; i < SoftRenderer::StructuredPixelCount; ++i)
+    {
+        const u32 bgra8 = pixels[i];
+        const u32 rgb6 = ((bgra8 >> 18u) & 0x3Fu)
+            | (((bgra8 >> 10u) & 0x3Fu) << 8u)
+            | (((bgra8 >> 2u) & 0x3Fu) << 16u);
+        hash ^= rgb6;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+u64 HashPackedPrimaryRgb6(
+    const std::array<u32, SoftRenderer::VulkanPackedPixelCount>& packed) noexcept
+{
+    u64 hash = 1469598103934665603ull;
+    for (std::size_t y = 0; y < 192u; ++y)
+    {
+        const std::size_t rowBase = y * SoftRenderer::VulkanPackedStride;
+        for (std::size_t x = 0; x < 256u; ++x)
+        {
+            hash ^= packed[rowBase + x] & 0x00FFFFFFu;
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
+u32 CountPackedProtectedBlack(
+    const std::array<u32, SoftRenderer::VulkanPackedPixelCount>& packed) noexcept
+{
+    u32 count = 0;
+    for (std::size_t y = 0; y < 192u; ++y)
+    {
+        const std::size_t rowBase = y * SoftRenderer::VulkanPackedStride;
+        for (std::size_t x = 0; x < 256u; ++x)
+        {
+            const u32 plane0 = packed[rowBase + x];
+            const u32 controlAlpha = packed[rowBase + 512u + x] >> 24u;
+            if ((plane0 & 0x00FFFFFFu) == 0u
+                && (controlAlpha & 0x20u) != 0u)
+            {
+                ++count;
+            }
+        }
+    }
+    return count;
 }
 #endif
 
@@ -100,6 +158,8 @@ void SoftRenderer::Reset()
     StructuredCapture3DSourceValid = false;
     StructuredCaptureScreenSwap = false;
     StructuredCaptureScreenSwapValid = false;
+    StructuredPackedScreenSwapAtLine0 = false;
+    StructuredPackedScreenSwapChangedMidFrame = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     for (auto& completedFrame : CompletedStructuredVulkanFrames)
@@ -161,13 +221,13 @@ void SoftRenderer::DrawScanline(u32 line)
     u32 dstoffset = 256 * line;
     if (GPU.ScreenSwap)
     {
-        dstA = &Framebuffer[BackBuffer][0][dstoffset];
-        dstB = &Framebuffer[BackBuffer][1][dstoffset];
+        dstA = &Framebuffer[BackBuffer][kPhysicalTopScreen][dstoffset];
+        dstB = &Framebuffer[BackBuffer][kPhysicalBottomScreen][dstoffset];
     }
     else
     {
-        dstA = &Framebuffer[BackBuffer][1][dstoffset];
-        dstB = &Framebuffer[BackBuffer][0][dstoffset];
+        dstA = &Framebuffer[BackBuffer][kPhysicalBottomScreen][dstoffset];
+        dstB = &Framebuffer[BackBuffer][kPhysicalTopScreen][dstoffset];
     }
 
     // the position used for drawing operations is based on VCOUNT
@@ -179,6 +239,8 @@ void SoftRenderer::DrawScanline(u32 line)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
         if (structuredVulkan2D && outputLine == 0u)
         {
+            StructuredPackedScreenSwapAtLine0 = GPU.ScreenSwap;
+            StructuredPackedScreenSwapChangedMidFrame = false;
             StructuredFrameCaptureLineUses3D.fill(0);
             if (StructuredVulkanResyncRequested.exchange(false, std::memory_order_acq_rel))
             {
@@ -241,6 +303,11 @@ void SoftRenderer::DrawScanline(u32 line)
                 Rend3D->PrepareCaptureFrame();
                 StructuredCapturePreparedThisFrame = true;
             }
+        }
+        else if (structuredVulkan2D
+            && GPU.ScreenSwap != StructuredPackedScreenSwapAtLine0)
+        {
+            StructuredPackedScreenSwapChangedMidFrame = true;
         }
         Output3D = structuredVulkan2D ? Structured3DPlaceholderLine : Rend3D->GetLine(line);
         if (structuredVulkan2D)
@@ -348,11 +415,11 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         // Physical LCD index must follow the actual framebuffer destination
         // pointers, not a second independent ScreenSwap decode.
-        const u32* const topLine = &Framebuffer[BackBuffer][0][dstoffset];
-        const u32 screenA = dstA == topLine ? 0u : 1u;
+        const u32* const topLine = &Framebuffer[BackBuffer][kPhysicalTopScreen][dstoffset];
+        const u32 screenA = dstA == topLine ? kPhysicalTopScreen : kPhysicalBottomScreen;
         const u32 screenB = screenA ^ 1u;
 #ifndef NDEBUG
-        const u32* const bottomLine = &Framebuffer[BackBuffer][1][dstoffset];
+        const u32* const bottomLine = &Framebuffer[BackBuffer][kPhysicalBottomScreen][dstoffset];
         assert(dstA == topLine || dstA == bottomLine);
         assert(dstB == topLine || dstB == bottomLine);
         assert(dstB == (screenB == 0u ? topLine : bottomLine));
@@ -388,11 +455,11 @@ void SoftRenderer::DrawScanline(u32 line)
             dstB[i] = 0xFF000000;
         }
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        const u32* const topLine = &Framebuffer[BackBuffer][0][dstoffset];
-        const u32 screenA = dstA == topLine ? 0u : 1u;
+        const u32* const topLine = &Framebuffer[BackBuffer][kPhysicalTopScreen][dstoffset];
+        const u32 screenA = dstA == topLine ? kPhysicalTopScreen : kPhysicalBottomScreen;
         const u32 screenB = screenA ^ 1u;
 #ifndef NDEBUG
-        const u32* const bottomLine = &Framebuffer[BackBuffer][1][dstoffset];
+        const u32* const bottomLine = &Framebuffer[BackBuffer][kPhysicalBottomScreen][dstoffset];
         assert(dstA == topLine || dstA == bottomLine);
         assert(dstB == topLine || dstB == bottomLine);
         assert(dstB == (screenB == 0u ? topLine : bottomLine));
@@ -1268,11 +1335,27 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         for (std::size_t x = 0; x < 256u; ++x)
         {
-            packedPlane0[x] = forcePlain
-                ? output[x]
-                : (output[x] & 0x00FFFFFFu);
+            if (forcePlain)
+            {
+                packedPlane0[x] = output[x];
+                packedControl[x] = 0u;
+            }
+            else
+            {
+                // Sapphire distinguishes a missing packed pixel (all zero)
+                // from a real 2D pixel whose RGB happens to be black. Display
+                // modes 0/2/3 produce a final LCD pixel rather than BG/OBJ's
+                // three-plane line, so publish it as an explicit 2D-only
+                // source. 0x01 is a real-2D source class; 0x80 marks the
+                // control as 2D-only, composition mode 7 is Sapphire's plain
+                // composited-2D value, and 0x20 protects valid opaque black.
+                const u32 rgb = output[x] & 0x00FFFFFFu;
+                const bool opaqueBlack = rgb == 0u;
+                packedPlane0[x] = rgb | 0x01000000u;
+                packedControl[x] =
+                    (0x80u | 0x07u | (opaqueBlack ? 0x20u : 0u)) << 24u;
+            }
             packedPlane1[x] = 0u;
-            packedControl[x] = 0u;
         }
     }
 
@@ -1377,9 +1460,12 @@ void SoftRenderer::BuildStructuredScreenLine(
     }
     if (!copiedStructured)
     {
-        std::fill_n(structuredPlane0, 256u, 0u);
-        std::fill_n(structuredPlane1, 256u, 0u);
-        std::fill_n(structuredControl, 256u, 0u);
+        // Keep the explicit final-LCD fallback and its black-validity metadata
+        // available to the post-merge temporal repair. Clearing these planes
+        // made a valid black indistinguishable from a capture hole.
+        std::memcpy(structuredPlane0, packedPlane0, 256u * sizeof(u32));
+        std::memcpy(structuredPlane1, packedPlane1, 256u * sizeof(u32));
+        std::memcpy(structuredControl, packedControl, 256u * sizeof(u32));
     }
 
     if (screenLine == 191u)
@@ -1424,12 +1510,12 @@ void SoftRenderer::SwapBuffers()
         constexpr u32 kMetaFlagRegularCaptureUses3d = 1u << 21u;
         constexpr u32 kMetaFlagVramCaptureUses3d = 1u << 22u;
         constexpr u32 kMetaFlagForceLive3dCompMode7 = 1u << 18u;
-        // Sapphire latches this exact GPU3D ownership value after RunFrame and
-        // uses it as the temporal-history key. Do not derive it again from the
-        // per-line Engine-A destinations: games can change POWCNT1 during a
-        // frame, and a majority vote then assigns short-lived overlays to the
-        // opposite physical screen.
-        const bool currentScreenSwapLatched = GPU.GPU3D.GetRenderScreenSwapAt3D();
+        // Sapphire's frontend latches immediately after the frame it reads.
+        // This desktop producer publishes from Renderer::SwapBuffers(), after
+        // VCount 215 has already latched the owner of the next 3D render. Use
+        // the visible-line owner belonging to these physical packed buffers;
+        // the live/reference 3D owners remain separate downstream inputs.
+        const bool currentScreenSwapLatched = StructuredPackedScreenSwapAtLine0;
         const StructuredVulkanFrameSnapshot* previousCompletedFrame = nullptr;
         for (const auto& candidate : CompletedStructuredVulkanFrames)
         {
@@ -1775,12 +1861,25 @@ void SoftRenderer::SwapBuffers()
         completedFrame.Valid = true;
         if (VulkanStructuredPhaseTraceEnabled())
         {
+            const u64 physicalTopHash =
+                HashPhysicalFramebufferRgb6(Framebuffer[BackBuffer][kPhysicalTopScreen]);
+            const u64 physicalBottomHash =
+                HashPhysicalFramebufferRgb6(Framebuffer[BackBuffer][kPhysicalBottomScreen]);
+            const u64 packedTopHash = HashPackedPrimaryRgb6(completedFrame.PackedTop);
+            const u64 packedBottomHash = HashPackedPrimaryRgb6(completedFrame.PackedBottom);
             Platform::Log(
                 Platform::LogLevel::Info,
-                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu packedScreenSwap=%u currentRendererOwner=%u",
+                "Vulkan2DPhase event=StructuredPublish structuredGeneration=%llu packedScreenSwap=%u packedScreenSwapStable=%u currentRendererOwner=%u physicalTopHash=%016llX physicalBottomHash=%016llX packedTopHash=%016llX packedBottomHash=%016llX packedTopProtectedBlack=%u packedBottomProtectedBlack=%u",
                 static_cast<unsigned long long>(completedFrame.Generation),
                 completedFrame.ScreenSwapLatched ? 1u : 0u,
-                GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u);
+                StructuredPackedScreenSwapChangedMidFrame ? 0u : 1u,
+                GPU.GPU3D.GetRenderScreenSwapAt3D() ? 1u : 0u,
+                static_cast<unsigned long long>(physicalTopHash),
+                static_cast<unsigned long long>(physicalBottomHash),
+                static_cast<unsigned long long>(packedTopHash),
+                static_cast<unsigned long long>(packedBottomHash),
+                CountPackedProtectedBlack(completedFrame.PackedTop),
+                CountPackedProtectedBlack(completedFrame.PackedBottom));
         }
     }
 

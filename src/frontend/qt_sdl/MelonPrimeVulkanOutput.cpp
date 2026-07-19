@@ -2174,6 +2174,29 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
         packedDebugLogsRemaining--;
     }
 
+    const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
+    if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
+    {
+        const auto hashPackedUpload = [](const u32* packed) {
+            u64 hash = 1469598103934665603ull;
+            for (std::size_t i = 0; i < kPackedScreenWordCount; ++i)
+            {
+                hash ^= packed[i];
+                hash *= 1099511628211ull;
+            }
+            return hash;
+        };
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "Vulkan2DPhase event=PackedUpload structuredGeneration=%llu screenSwapLatched=%u uploadTopHash=%016llX uploadBottomHash=%016llX topCarry=%u bottomCarry=%u",
+            static_cast<unsigned long long>(softPackedSnapshot.sourceGeneration),
+            softPackedSnapshot.screenSwapLatched ? 1u : 0u,
+            static_cast<unsigned long long>(hashPackedUpload(topPacked)),
+            static_cast<unsigned long long>(hashPackedUpload(bottomPacked)),
+            topPackedCarryFromPrevious ? 1u : 0u,
+            bottomPackedCarryFromPrevious ? 1u : 0u);
+    }
+
     return true;
 }
 

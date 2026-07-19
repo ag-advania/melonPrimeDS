@@ -2160,6 +2160,59 @@ void ScreenPanelVulkan::drawScreen()
                 return;
             }
             vulkan->lastBuiltStructuredGeneration = source.Generation;
+            const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
+            if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
+            {
+                const auto hashPackedScreen =
+                    [](const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane1,
+                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control) {
+                        u64 hash = 1469598103934665603ull;
+                        for (std::size_t i = 0;
+                            i < MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
+                            ++i)
+                        {
+                            hash ^= plane0[i];
+                            hash *= 1099511628211ull;
+                            hash ^= plane1[i];
+                            hash *= 1099511628211ull;
+                            hash ^= control[i];
+                            hash *= 1099511628211ull;
+                        }
+                        return hash;
+                    };
+                const auto countProtectedBlack =
+                    [](const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
+                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control) {
+                        u32 count = 0;
+                        for (std::size_t i = 0;
+                            i < MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
+                            ++i)
+                        {
+                            if ((plane0[i] & 0x00FFFFFFu) == 0u
+                                && ((control[i] >> 24u) & 0x20u) != 0u)
+                            {
+                                ++count;
+                            }
+                        }
+                        return count;
+                    };
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "Vulkan2DPhase event=SnapshotBuilt structuredGeneration=%llu screenSwapLatched=%u snapshotTopHash=%016llX snapshotBottomHash=%016llX snapshotTopProtectedBlack=%u snapshotBottomProtectedBlack=%u",
+                    static_cast<unsigned long long>(source.Generation),
+                    snapshot.screenSwapLatched ? 1u : 0u,
+                    static_cast<unsigned long long>(hashPackedScreen(
+                        snapshot.packedTopPlane0,
+                        snapshot.packedTopPlane1,
+                        snapshot.packedTopControl)),
+                    static_cast<unsigned long long>(hashPackedScreen(
+                        snapshot.packedBottomPlane0,
+                        snapshot.packedBottomPlane1,
+                        snapshot.packedBottomControl)),
+                    countProtectedBlack(snapshot.packedTopPlane0, snapshot.packedTopControl),
+                    countProtectedBlack(snapshot.packedBottomPlane0, snapshot.packedBottomControl));
+            }
             if (vulkan->snapshotBuilder.takeRegularCaptureTransitionResyncRequest())
             {
                 // Sapphire drops the transition frame and clears both
@@ -2332,7 +2385,8 @@ void ScreenPanelVulkan::drawScreen()
             presentFrame->height,
             regions,
             hasOverlay ? &overlay : nullptr);
-    if (std::getenv("MELONPRIME_VULKAN_2D_TRACE") != nullptr)
+    const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
+    if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
     {
         Platform::Log(
             Platform::LogLevel::Info,
