@@ -22,7 +22,6 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include <algorithm>
-#include <cstdlib>
 
 namespace MelonDSAndroid
 {
@@ -220,7 +219,7 @@ void SoftRenderer::DrawScanline(u32 line)
             DrawScanlineA(line, dstA);
 
             if (GPU.CaptureEnable)
-                DoCapture(line);
+                DoCapture(line, accelRow);
 
             Rend2D_B->DrawScanline(line);
             const auto& rend2dB = static_cast<const SoftRenderer2D&>(*Rend2D_B);
@@ -243,7 +242,7 @@ void SoftRenderer::DrawScanline(u32 line)
 
         // perform display capture if enabled
             if (GPU.CaptureEnable)
-                DoCapture(line);
+                DoCapture(line, line);
         }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -377,6 +376,18 @@ void SoftRenderer::PackAccelFramebufferSlot(
 {
     u32* dst = slotBase + static_cast<size_t>(kAccelFramebufferStride) * row;
 
+    // Sapphire force-blanks engine B when POWCNT1 disables it, but not engine A. Its accelerated
+    // renderer writes an opaque-white plane and clears the per-line metadata before returning.
+    // Do that before consulting BGOBJLine so a disabled/forced-blank unit cannot republish the
+    // preceding scanline's packed layers.
+    if (unit.ForcedBlank || (unit.Num != 0 && !unit.Enabled))
+    {
+        for (u32 i = 0; i < 256u; i++)
+            dst[i] = 0xFFFFFFFFu;
+        dst[kAccelFramebufferStride - 1u] = 0u;
+        return;
+    }
+
     const u32 dispmodeMask = unit.Num ? 0x1u : 0x3u;
     const u32 dispmode = (unit.DispCnt >> 16) & dispmodeMask;
 
@@ -471,10 +482,9 @@ void SoftRenderer::PackAccelFramebufferSlot(
         (static_cast<u32>(xpos) << 24) | ((static_cast<u32>(xpos) & 0x100u) << 15);
 }
 
-// MELONPRIME-PORT-ADAPT: packs BOTH physical screens for this scanline. This is producer-time
-// routing, so "which engine currently targets top" intentionally follows the live GPU.ScreenSwap,
-// matching SoftRenderer2D::CurrentUnitTargetsTopScreen(). The later completed-frame bridge uses
-// the corresponding VCount-215 latch instead (see StructuredVulkan2DRendererBridge::UnitForScreen).
+// MELONPRIME-PORT-ADAPT: packs BOTH physical screens for this scanline. Sapphire reassigns its
+// accelerated framebuffer pointers immediately when POWCNT1 changes; GPU.ScreenSwap is this
+// fork's equivalent live assignment.
 void SoftRenderer::PackAccelFramebufferLine(u32 row, u32 contentLine)
 {
     auto& rend2dA = static_cast<SoftRenderer2D&>(*Rend2D_A);
@@ -609,7 +619,7 @@ void SoftRenderer::DrawScanlineB(u32 line, u32* dst)
     ApplyMasterBrightness(GPU.MasterBrightnessB, dst);
 }
 
-void SoftRenderer::DoCapture(u32 line)
+void SoftRenderer::DoCapture(u32 line, u32 sourceLine)
 {
     u32 captureCnt = GPU.CaptureCnt;
 
@@ -763,7 +773,7 @@ void SoftRenderer::DoCapture(u32 line)
             if (captureDebugEnabled)
                 LastDebugCaptureStats.Direct3DLines++;
             Rend3D->SetCaptureScreenSwapHint(captureScreenSwap);
-            Output3D = Rend3D->GetLine(static_cast<int>(line));
+            Output3D = Rend3D->GetLine(static_cast<int>(sourceLine));
             srcA = Output3D;
             captureLineUses3d = Output3D != nullptr;
         }
@@ -793,7 +803,7 @@ void SoftRenderer::DoCapture(u32 line)
                 if (captureDebugEnabled)
                     LastDebugCaptureStats.SourceACompositeLines++;
                 Rend3D->SetCaptureScreenSwapHint(captureScreenSwap);
-                Output3D = Rend3D->GetLine(static_cast<int>(line));
+                Output3D = Rend3D->GetLine(static_cast<int>(sourceLine));
             }
 
             if (needs3dComposite && Output3D != nullptr)

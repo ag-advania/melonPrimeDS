@@ -525,12 +525,9 @@ void SoftRenderer2D::MergeStructuredVulkan2DCapture2DOverlayPixel(
 // reference GPU2D_Soft.cpp ~653-669
 bool SoftRenderer2D::CurrentUnitTargetsTopScreen() const noexcept
 {
-    // MELONPRIME-PORT-ADAPT: see class-level comment in GPU2D_Soft.h -- our fork resolves
-    // engine-to-physical-screen mapping via GPU.ScreenSwap (the same signal
-    // SoftRenderer::DrawScanlineA/B use in GPU_Soft.cpp) instead of reference's accelerated-
-    // pipeline Framebuffer-pointer comparison, which has no equivalent in our architecture.
-    // When ScreenSwap is set, engine A (Num==0) writes the top slot (Framebuffer[..][0]);
-    // when clear, engine A writes the bottom slot -- engine B is always the opposite.
+    // Sapphire's GPU::AssignFramebuffers() is called immediately when POWCNT1 changes, so its
+    // framebuffer-pointer comparison observes the live screen assignment. GPU.ScreenSwap is this
+    // fork's directly-updated equivalent and is also used by the legacy framebuffer path below.
     return GPU2D.Num == 0 ? GPU.ScreenSwap : !GPU.ScreenSwap;
 }
 
@@ -945,6 +942,7 @@ bool SoftRenderer2D::TryDrawStructuredVulkan2DCapturePixel(u32* dst, u32 flatByt
             PushRawPixel_Accel(dst, 0x40000000u);
             if ((controlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u && abovePlane != 0u)
                 PushRawPixel_Accel(dst, abovePlane);
+            CurrentLineRegularCaptureUses3d = true;
             return true;
         }
 
@@ -978,7 +976,15 @@ void SoftRenderer2D::DrawScanline(u32 line)
         Parent.CaptureLineUses3d.fill(0);
 #endif
 
-    if (!GPU2D.Enabled)
+    bool powerDisabled = !GPU2D.Enabled;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PC-ADAPT: Sapphire only force-blanks engine B when POWCNT1 disables a 2D unit.
+    // Engine A keeps rendering (reference GPU2D_Soft.cpp:1039-1041). Preserve the upstream
+    // per-engine behavior outside the structured Vulkan path.
+    if (UseStructuredVulkan2D() && GPU2D.Num == 0)
+        powerDisabled = false;
+#endif
+    if (powerDisabled)
     {
         // if this 2D unit is disabled in POWCNT, the output is a fixed color
         // (black for unit A, white for unit B)
@@ -2820,7 +2826,14 @@ void SoftRenderer2D::InterleaveSprites_Structured(u32 prio)
 void SoftRenderer2D::DrawSprites(u32 line)
 {
     // the OBJ buffers don't get updated at all if the 2D engine is disabled
-    if (!GPU2D.Enabled)
+    bool powerDisabled = !GPU2D.Enabled;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Sapphire applies POWCNT1's complete-disable behavior to engine B only. Engine A's OBJ
+    // pipeline must advance even while its Enabled flag is clear, just like DrawScanline().
+    if (UseStructuredVulkan2D() && GPU2D.Num == 0)
+        powerDisabled = false;
+#endif
+    if (powerDisabled)
         return;
 
     if (GPU2D.Num == 0)

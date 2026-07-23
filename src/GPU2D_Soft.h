@@ -147,10 +147,9 @@ private:
         u32 vramAddress,
         u32 overlayPixel,
         u32 overlayControlAlpha);
-    // MELONPRIME-PORT-ADAPT: reference derives top/bottom placement from a Framebuffer-pointer
-    // comparison specific to its accelerated-stride DrawScanline, which has no equivalent here;
-    // adapted to read GPU.ScreenSwap, the same signal SoftRenderer::DrawScanline already uses
-    // (see GPU_Soft.cpp DrawScanlineA/B) to map engines to physical screen position.
+    // MELONPRIME-PORT-ADAPT: reference derives top/bottom placement from accelerated framebuffer
+    // pointers reassigned immediately when POWCNT1 changes. This fork uses the equivalent live
+    // GPU.ScreenSwap signal maintained by GPU::SetPowerCnt().
     [[nodiscard]] bool CurrentUnitTargetsTopScreen() const noexcept;
     void StoreStructuredVulkan2DPixel(
         u32 line,

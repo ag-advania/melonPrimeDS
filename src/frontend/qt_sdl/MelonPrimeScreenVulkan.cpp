@@ -90,20 +90,19 @@ void ScreenPanelVulkan::applyCurrentLayout()
     // VulkanPresenterRects (and hybridTopScreen/hybridBottomScreen for hybrid layouts) is
     // follow-up work.
     MelonDSAndroid::VulkanSurfaceConfig config;
+    // MELONPRIME-PC-ADAPT: preserve Sapphire's physical screen identities at the Win32 boundary.
+    // Producer ownership and capture routing already expose topScreen/bottomScreen correctly;
+    // swapping these destinations would invert Nintendo/ACTIMAGINE and the title/touch menu.
     config.topScreen.enabled = true;
-    // MELONPRIME-PC-ADAPT: Sapphire's completed composite exposes the DS touch-screen source
-    // through topScreen and the DS upper-screen source through bottomScreen for this frontend
-    // path. Map those sources to the desktop's physical upper/lower rectangles explicitly:
-    // game/logo (upper DS screen) above, touch UI (lower DS screen) below.
     config.topScreen.x = 0;
-    config.topScreen.y = h / 2;
+    config.topScreen.y = 0;
     config.topScreen.width = w;
-    config.topScreen.height = h - (h / 2);
+    config.topScreen.height = h / 2;
     config.bottomScreen.enabled = true;
     config.bottomScreen.x = 0;
-    config.bottomScreen.y = 0;
+    config.bottomScreen.y = h / 2;
     config.bottomScreen.width = w;
-    config.bottomScreen.height = h / 2;
+    config.bottomScreen.height = h - (h / 2);
 
     // MELONPRIME-KNOWN-GAP: "vsync from Screen.VSync" (W5 task brief) is not actually wirable here
     // -- VulkanSurfaceConfig/VulkanSurfacePresenter (verbatim-copied Sapphire files, never edited

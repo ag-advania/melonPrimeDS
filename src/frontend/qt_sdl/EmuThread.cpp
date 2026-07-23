@@ -1340,7 +1340,14 @@ void EmuThread::updateRenderer()
             // (MelonPrimeScreenVulkan.cpp) for the full explanation of this gap.
             {
                 auto vulkanRenderSettings = std::make_unique<MelonDSAndroid::VulkanRenderSettings>();
-                vulkanRenderSettings->threadedRendering = cfg.GetBool("3D.Soft.Threaded");
+                // MELONPRIME-PC-ADAPT: this setting belongs to the software 3D renderer. Reusing
+                // it for Vulkan lets the graphics-hardware capture export complete several frames
+                // after the live POWCNT screen owner has changed. Sapphire correctly rejects that
+                // stale export, but the capture-backed screen then loses its structured 3D slot
+                // and flashes black. Keep the copied Sapphire Vulkan path synchronous on desktop;
+                // a future Vulkan-specific threading option needs an explicit capture-ordering
+                // contract instead of borrowing 3D.Soft.Threaded.
+                vulkanRenderSettings->threadedRendering = false;
                 vulkanRenderSettings->betterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
                 vulkanRenderSettings->scale = std::max(1, cfg.GetInt("3D.GL.ScaleFactor"));
                 vulkanRenderSettings->useSimplePipeline = true;
@@ -1368,9 +1375,14 @@ void EmuThread::updateRenderer()
     }
     lastVideoRenderer = videoRenderer;
 
+    bool threaded3D = cfg.GetBool("3D.Soft.Threaded");
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (videoRenderer == renderer3D_Vulkan)
+        threaded3D = false;
+#endif
     melonDS::RendererSettings settings = {
         .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
-        .Threaded = cfg.GetBool("3D.Soft.Threaded"),
+        .Threaded = threaded3D,
         .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
         .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
     };
