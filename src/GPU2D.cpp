@@ -88,6 +88,11 @@ using Platform::LogLevel;
 
 
 GPU2D::GPU2D(u32 num, melonDS::GPU& gpu) : Num(num), GPU(gpu)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT-ADAPT: bind the reference-generation CaptureCnt alias to the single
+    // CaptureCnt storage already owned by melonDS::GPU (see GPU2D.h) instead of duplicating it.
+    , CaptureCnt(gpu.CaptureCnt)
+#endif
 {
 }
 

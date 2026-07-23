@@ -28,7 +28,7 @@ namespace melonDS
 {
 class SoftRenderer;
 
-class SoftRenderer3D : public Renderer3D
+class SoftRenderer3D : public Renderer3DLegacyBase
 {
 public:
     SoftRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;

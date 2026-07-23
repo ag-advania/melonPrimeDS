@@ -32,6 +32,17 @@
 #include <cstdint>
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// Sapphire MelonInstance Vulkan pipeline (frame queue / soft-packed latch / presentation); see
+// src/frontend/qt_sdl/sapphire/MelonInstanceVulkan.h for the kept/omitted function inventory.
+// NOTE: as of this port, MelonInstanceVulkan.cpp does not yet compile against this tree's GPU.h --
+// GPU::GetRenderer3D()/GetRenderer2D()/FrontBuffer/Framebuffer/SetRenderer3D (used pervasively by the
+// reference MelonInstance functions this class ports) have no equivalent under GPU's current unified
+// GPU::GetRenderer() (returns Renderer&, owning Rend2D_A/B/Rend3D as its own protected members) shape.
+// This is an unresolved architecture mismatch between the reference Android GPU/Renderer3D/Renderer2D
+// split and this tree's already-migrated single-Renderer-per-GPU model; see the port report for detail.
+#include "sapphire/MelonInstanceVulkan.h"
+#endif
 
 const int kMaxWindows = 4;
 
@@ -118,6 +129,9 @@ enum
 #if defined(MELONPRIME_ENABLE_METAL)
     renderer3D_Metal,
     renderer3D_MetalCompute,
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    renderer3D_Vulkan,
 #endif
     // MELONPRIME_METAL_COMPUTE_UI_V1
     renderer3D_Max,
@@ -370,6 +384,14 @@ public:
     std::unique_ptr<SaveManager> ndsSave;
     std::unique_ptr<SaveManager> gbaSave;
     std::unique_ptr<SaveManager> firmwareSave;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PC-ADAPT: owns the ported Sapphire MelonInstance Vulkan pipeline (frame queue /
+    // soft-packed latch / presentation) for this instance's NDS when the Vulkan renderer is selected.
+    // Constructed lazily by EmuThread::updateRenderer() when renderer3D_Vulkan is chosen; see EmuThread.cpp.
+    // See the include-site note above for the current (unresolved) GPU accessor blocker.
+    std::unique_ptr<MelonDSAndroid::MelonInstance> melonVulkanInstance;
+#endif
 
     bool doLimitFPS;
     double curFPS;

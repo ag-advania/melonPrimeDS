@@ -33,6 +33,13 @@ namespace MelonPrime::VideoBackend {
 #if defined(MELONPRIME_ENABLE_METAL)
         Metal,
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        // W5 (Vulkan Qt wiring): unlike Metal's Phase-4 bootstrap (no persisted config key/UI yet,
+        // env-var-forced only), renderer3D_Vulkan is already a real, directly selectable
+        // `3D.Renderer` value (see EmuInstance.h) that EmuThread::updateRenderer() already routes
+        // to VulkanGpuRenderer -- no env-var bootstrap needed here, see ResolvePresentationBackend().
+        Vulkan,
+#endif
     };
 
     // `useGLConfig` / `requestedRenderer` are the raw `Screen.UseGL` /

@@ -48,6 +48,9 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "GPU_Vulkan.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -442,6 +445,28 @@ void EmuThread::run()
             // RunFrameHook + SetKeyMask already done above (P-28).
 #else
             // Original melonDS path (no hook).
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            // MELONPRIME-PC-ADAPT: ported Sapphire MelonInstance runFrame() split (see
+            // sapphire/MelonInstanceVulkan.cpp's "Part 2" mapping comment) around this existing,
+            // renderer-agnostic emu-step call: runFrameVulkanPreStep() does the reference's
+            // pre-emu-step Vulkan pipeline work (frame acquisition, temporal-history gating, ...) and
+            // returns false to skip the step entirely when nds->IsRunning() is false (matching the
+            // reference's early `return 0;`); runFrameVulkanPostStep(nlines) does the post-emu-step work
+            // (soft-packed latch, frame-queue submission, screenshot/rewind bookkeeping, perf logging).
+            if (emuInstance->melonVulkanInstance)
+            {
+                if (emuInstance->melonVulkanInstance->runFrameVulkanPreStep())
+                {
+                    nlines = emuInstance->nds->RunFrame();
+                    emuInstance->melonVulkanInstance->runFrameVulkanPostStep(nlines);
+                }
+                else
+                {
+                    nlines = 0;
+                }
+            }
+            else
 #endif
             nlines = emuInstance->nds->RunFrame();
         }
@@ -1297,6 +1322,45 @@ void EmuThread::updateRenderer()
             break;
         case renderer3D_MetalCompute:
             nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
+            break;
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        case renderer3D_Vulkan:
+            nds->SetRenderer(std::make_unique<VulkanGpuRenderer>(*nds));
+            // MELONPRIME-PC-ADAPT: (re)construct the ported Sapphire MelonInstance Vulkan pipeline
+            // (frame queue / soft-packed latch / presentation) whenever the Vulkan renderer is
+            // (re)selected. W5: scale/threaded/betterPolygons now read from this tree's real config
+            // keys (same keys the OpenGL path below reads, for consistency -- Vulkan has no
+            // dedicated settings-dialog surface of its own yet). rendererDebug*/conservativeCoverage*
+            // remain fixed-false/0: no config keys exist for them anywhere in this tree yet (verified
+            // -- see VideoSettingsDialog.cpp), so this is a correctly-conservative default, not a
+            // placeholder. Screen.VSync is deliberately NOT read here: VulkanSurfaceConfig/
+            // VulkanSurfacePresenter (verbatim-copied Sapphire files, never edited) have no
+            // present-mode-selection field to receive it -- see ScreenPanelVulkan::applyCurrentLayout()
+            // (MelonPrimeScreenVulkan.cpp) for the full explanation of this gap.
+            {
+                auto vulkanRenderSettings = std::make_unique<MelonDSAndroid::VulkanRenderSettings>();
+                vulkanRenderSettings->threadedRendering = cfg.GetBool("3D.Soft.Threaded");
+                vulkanRenderSettings->betterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
+                vulkanRenderSettings->scale = std::max(1, cfg.GetInt("3D.GL.ScaleFactor"));
+                vulkanRenderSettings->useSimplePipeline = true;
+                vulkanRenderSettings->rendererDebugToolsEnabled = false;
+                vulkanRenderSettings->rendererDebugBgObjEnabled = false;
+                vulkanRenderSettings->rendererDebugLatchTraceEnabled = false;
+                vulkanRenderSettings->conservativeCoverageEnabled = false;
+                vulkanRenderSettings->conservativeCoveragePx = 0.0f;
+                vulkanRenderSettings->conservativeCoverageDepthBias = 0.0f;
+                vulkanRenderSettings->conservativeCoverageApplyRepeat = false;
+                vulkanRenderSettings->conservativeCoverageApplyClamp = false;
+                vulkanRenderSettings->debug3dClearMagenta = false;
+
+                auto melonConfiguration = std::make_shared<MelonDSAndroid::EmulatorConfiguration>();
+                melonConfiguration->renderer = MelonDSAndroid::Renderer::Vulkan;
+                melonConfiguration->renderSettings = std::move(vulkanRenderSettings);
+
+                emuInstance->melonVulkanInstance = std::make_unique<MelonDSAndroid::MelonInstance>(
+                    emuInstance->instanceID, nds, std::move(melonConfiguration));
+            }
             break;
 #endif
         default: __builtin_unreachable();

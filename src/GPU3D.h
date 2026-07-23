@@ -105,6 +105,16 @@ public:
 
     void VBlank() noexcept;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Sapphire-generation (GPU&-parameter) timeline hook, called at the identical
+    // VCount==215 dispatch site reference melonDS uses (see GPU::StartHBlank in
+    // GPU.cpp). Unlike the reference fork, our GPU3D does not own the active
+    // Renderer3D, so this only updates GPU3D-owned state (RenderScreenSwapAt3D);
+    // the actual render kickoff continues to happen through Renderer::Start3DRendering(),
+    // which VulkanGpuRenderer overrides to reach VulkanRenderer3D::RenderFrame(GPU&).
+    void VCount215(melonDS::GPU& gpu) noexcept;
+#endif
+
     void SetRenderXPos(u16 xpos, u16 mask) noexcept;
     [[nodiscard]] u16 GetRenderXPos() const noexcept { return RenderXPos; }
 
@@ -261,6 +271,13 @@ public:
 
     bool RenderFrameIdentical = false; // not part of the hardware state, don't serialize
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Verbatim from reference melonDS-android-lib GPU3D.h (~:276): set at VCount==215
+    // (see GPU3D::VCount215() / GPU::StartHBlank in GPU.cpp) and consumed by
+    // VulkanRenderer3D via gpu.GPU3D.RenderScreenSwapAt3D in GPU3D_Vulkan.cpp.
+    bool RenderScreenSwapAt3D = false;
+#endif
+
     u16 RenderXPos = 0;
 
     bool AbortFrame = false;
@@ -318,6 +335,108 @@ public:
     u32 FlushAttributes = 0;
 };
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// Union scaffold: this Renderer3D base now has to serve two renderer generations at
+// once -- the original no-arg-method generation (SoftRenderer3D, GLRenderer3D,
+// ComputeRenderer3D, MetalRenderer3D, MetalComputeRenderer3D) and the Sapphire-ported
+// GPU&-parameter generation (VulkanRenderer3D, in the verbatim-copied, never-edited
+// src/GPU3D_Vulkan.h/.cpp). Reset()/RenderFrame() are relaxed from pure virtual to
+// default (no-op) bodies so a VulkanRenderer3D -- which only implements the
+// GPU&-parameter overload of each -- can be instantiated without also having to
+// implement the legacy no-arg overload.
+class Renderer3D
+{
+public:
+    virtual ~Renderer3D() = default;
+
+    Renderer3D(const Renderer3D&) = delete;
+    Renderer3D& operator=(const Renderer3D&) = delete;
+    virtual bool Init() { return true; }
+    virtual void Reset() {}
+
+    virtual void RenderFrame() {}
+    virtual void FinishRendering() {}
+    virtual void RestartFrame() {};
+
+    // return one scanline of the framebuffer, with X scroll applied
+    // this is used in software renderers
+    virtual u32* GetLine(int line) = 0;
+
+    virtual bool NeedsShaderCompile() { return false; }
+    virtual void ShaderCompileStep(int& current, int& count) {}
+
+    // --- Sapphire-generation (GPU&-parameter) surface -----------------------------
+    // Mirrors the copied src/GPU3D_Vulkan.h `override`s exactly (signatures, const,
+    // and noexcept qualifiers). VulkanRenderer3D is the only current implementor;
+    // every other subclass inherits these no-op defaults untouched.
+    const bool Accelerated;
+
+    virtual void Reset(GPU& gpu) {}
+    virtual void VCount144(GPU& gpu) {}
+    virtual void RenderFrame(GPU& gpu) {}
+    virtual void RestartFrame(GPU& gpu) {}
+    virtual void Blit(const GPU& gpu) {}
+    virtual void Stop(const GPU& gpu) {}
+    virtual void SetupAccelFrame() {}
+    virtual void PrepareCaptureFrame() {}
+    virtual void BeginCaptureFrame() {}
+    virtual void SetCaptureScreenSwapHint(bool screenSwap) {}
+    [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+
+    // MELONPRIME-PORT: reference-generation (melonDS-android-lib) GPU3D.h:360-361
+    // (SetOutputTexture/BindOutputTexture), ported verbatim as empty-bodied virtuals. Reference's
+    // GLRenderer/ComputeRenderer (old-generation Renderer3D subclasses with no equivalent in this
+    // fork -- our GL/Compute Renderer3D subclasses are GLRenderer3D/ComputeRenderer3D, a different
+    // hierarchy) are the only reference overriders; the verbatim-copied Sapphire VulkanRenderer3D
+    // (src/GPU3D_Vulkan.h/.cpp) doesn't override either, so it inherits these no-op defaults --
+    // matching reference's own Sapphire VulkanRenderer3D, which likewise never overrides them.
+    // Needed so MelonInstanceVulkan.cpp's `nds->GPU.GetRenderer3D().SetOutputTexture(...)` call
+    // (guarded, in practice unreachable for this Vulkan-only MelonInstance -- see call site comment)
+    // type-checks against the base Renderer3D& it's called through, without a downcast.
+    virtual void SetOutputTexture(int buffer, u32 texture) {}
+    virtual void BindOutputTexture(int buffer) {}
+
+protected:
+    // Bound by the GPU_Vulkan glue immediately before constructing a Sapphire-generation
+    // renderer (whose verbatim base-ctor call is Renderer3D(true), carrying no GPU3D&);
+    // see MelonPrimeSetAcceleratedRendererCtorContext() below.
+    explicit Renderer3D(bool Accelerated);
+};
+
+// Called by the GPU_Vulkan glue immediately before constructing a Sapphire-generation
+// Renderer3D (and cleared right after); verified (via assert) by Renderer3D(bool)'s
+// definition in GPU3D.cpp as a calling-convention contract. Renderer3D itself has no
+// GPU&/GPU3D& members to bind from this context -- see Renderer3DLegacyBase below for
+// why -- so today this is a documented hook for any future accelerated-renderer
+// generation that needs GPU3D-derived state during construction.
+void MelonPrimeSetAcceleratedRendererCtorContext(melonDS::GPU3D* gpu3D) noexcept;
+
+// Base for the legacy (no-arg-generation) renderers: SoftRenderer3D, GLRenderer3D,
+// ComputeRenderer3D, MetalRenderer3D, and MetalComputeRenderer3D derive from this
+// instead of Renderer3D directly.
+//
+// Why this indirection exists: GPU3D_Vulkan.h (copied verbatim from Sapphire, never
+// edited) declares its Renderer3D overrides using unqualified `GPU`/`GPU3D` as *type*
+// names (e.g. `void Reset(GPU& gpu) override;`). Per the ordinary class-name-hiding
+// rule ([basic.scope.hiding]), a same-named *data member* declared anywhere in
+// Renderer3D's own scope would hide those type names for every class derived from
+// Renderer3D -- including VulkanRenderer3D -- breaking compilation of the untouched
+// copied file (confirmed with a minimal repro against this toolchain). So the legacy
+// GPU&/GPU3D& reference members, and the constructor that binds them, live one level
+// below Renderer3D, in the ancestry of the legacy renderers only -- never in
+// VulkanRenderer3D's ancestry. Runtime semantics are unchanged from the original
+// single-class Renderer3D(melonDS::GPU3D&) constructor this replaces.
+class Renderer3DLegacyBase : public Renderer3D
+{
+public:
+    explicit Renderer3DLegacyBase(melonDS::GPU3D& gpu3D) noexcept
+        : Renderer3D(false), GPU(gpu3D.GPU), GPU3D(gpu3D) {}
+
+protected:
+    melonDS::GPU& GPU;
+    melonDS::GPU3D& GPU3D;
+};
+#else
 class Renderer3D
 {
 public:
@@ -344,6 +463,11 @@ protected:
     melonDS::GPU& GPU;
     melonDS::GPU3D& GPU3D;
 };
+
+// Non-Vulkan builds: Renderer3D above is textually identical to upstream, so the
+// legacy renderers can keep deriving from it directly under this alias.
+using Renderer3DLegacyBase = Renderer3D;
+#endif
 
 }
 

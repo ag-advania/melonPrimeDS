@@ -35,7 +35,7 @@ namespace melonDS
 {
 class GLRenderer;
 
-class ComputeRenderer3D : public Renderer3D
+class ComputeRenderer3D : public Renderer3DLegacyBase
 {
 public:
     ComputeRenderer3D(melonDS::GPU3D& gpu3D, GLRenderer& parent);

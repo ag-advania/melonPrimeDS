@@ -938,7 +938,7 @@ fragment float4 mp3d_resolve_fs(
 )";
 
 MetalRenderer3D::MetalRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept
-    : Renderer3D(gpu3D),
+    : Renderer3DLegacyBase(gpu3D),
       Delegate(gpu3D, parent),
       State(std::make_unique<MetalState>())
 {

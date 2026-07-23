@@ -17,6 +17,9 @@
 */
 
 #include <string.h>
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <cassert>
+#endif
 #include "NDS.h"
 #include "GPU.h"
 
@@ -353,6 +356,33 @@ bool GPU::GetFramebuffers(void** top, void** bottom)
 {
     return Rend->GetFramebuffers(top, bottom);
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// See GPU.h class-level comments (GPU::GetRenderer3D()/GetRenderer2D()/GetFrontBufferIndex()/
+// GetAccelFramebuffer()) for design rationale. GetRenderer3D()/GetFrontBufferIndex() forward
+// generically through Renderer (any subclass); GetRenderer2D()/GetAccelFramebuffer() require the
+// SoftRenderer-specific surface (GPU_Soft.h, already included by this file), so they dynamic_cast
+// the active renderer -- always valid for every real caller (MelonInstanceVulkan.cpp only calls
+// these while currentRenderer == Renderer::Vulkan, always backed by VulkanGpuRenderer : SoftRenderer).
+const Renderer3D& GPU::GetRenderer3D() const noexcept { return GetRenderer().GetRenderer3D(); }
+Renderer3D& GPU::GetRenderer3D() noexcept { return GetRenderer().GetRenderer3D(); }
+int GPU::GetFrontBufferIndex() const noexcept { return GetRenderer().GetFrontBufferIndex(); }
+
+StructuredVulkan2DRendererBridge& GPU::GetRenderer2D() noexcept
+{
+    auto* softRenderer = dynamic_cast<SoftRenderer*>(&GetRenderer());
+    assert(softRenderer != nullptr && "GPU::GetRenderer2D() requires a SoftRenderer-derived active renderer");
+    return softRenderer->GetRenderer2D();
+}
+
+const u32* GPU::GetAccelFramebuffer(int buf, int screen) const noexcept
+{
+    auto* softRenderer = dynamic_cast<SoftRenderer*>(&const_cast<GPU*>(this)->GetRenderer());
+    if (softRenderer == nullptr)
+        return nullptr;
+    return softRenderer->GetAccelFramebuffer(buf, screen);
+}
+#endif
 
 RendererOutput GPU::GetRendererOutput()
 {
@@ -1180,6 +1210,11 @@ void GPU::StartHBlank(u32 line) noexcept
     }
     else if (VCount == 215)
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // Exact VCount parity with reference melonDS-android-lib GPU::StartHBlank()
+        // (~:902-905), which calls GPU3D.VCount215(*this) at this same VCount.
+        GPU3D.VCount215(*this);
+#endif
         Rend->Start3DRendering();
     }
     else if (VCount == 262)
@@ -1279,6 +1314,14 @@ void GPU::StartScanline(u32 line) noexcept
 
     if (VCount == 0)
     {
+        // Sapphire calls the active 2D renderer's VBlankEnd hook at the start
+        // of scanline 0, before capture is latched for the new frame.  The
+        // Vulkan renderer uses this hook to bind the exact 3D capture export
+        // to the current POWCNT1 screen owner.  Skipping it leaves the capture
+        // screen-swap hint invalid and makes games which alternate the 3D
+        // owner every frame present one stale/empty screen.
+        Rend->VBlankEnd();
+
         if (CaptureCnt & (1<<31))
         {
             CaptureEnable = true;

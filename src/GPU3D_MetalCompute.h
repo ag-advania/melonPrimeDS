@@ -27,7 +27,7 @@ class SoftRenderer;
 // the canonical per-work-item Color/Depth/Attr tile memories consumed by the
 // non-visible DepthBlend pass. Visible output remains the validated MetalRenderer3D
 // reference until the complete texture/depth/blend/final-pass chain reaches parity.
-class MetalComputeRenderer3D final : public Renderer3D
+class MetalComputeRenderer3D final : public Renderer3DLegacyBase
 {
 public:
     MetalComputeRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;

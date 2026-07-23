@@ -19,8 +19,62 @@
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT: reference-generation (Sapphire) GPU2D_Soft.cpp declares this extern instead
+// of including the Android support header; definition already exists in
+// src/frontend/qt_sdl/sapphire/SapphireSupport.cpp (ported by a prior phase).
+namespace MelonDSAndroid
+{
+bool areRendererDebugToolsEnabled();
+}
+#endif
+
 namespace melonDS
 {
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+// MELONPRIME-PORT: reference-generation structured-Vulkan-2D flag constants and pure helper
+// functions (GPU2D_Soft.cpp ~78-118), ported verbatim.
+constexpr u32 kStructuredVulkan2DSlot3DFlag = 0x40u;
+constexpr u32 kStructuredVulkan2DAbove3DFlag = 0x80u;
+constexpr u32 kStructuredVulkan2DOnlyFlag = 0x80u;
+constexpr u32 kStructuredVulkan2DProtectedBlackFlag = 0x20u;
+constexpr u32 kStructuredVulkan2DNo3DCoverageFlag = 0x10u;
+constexpr u32 kStructuredVulkan2D3DPlaceholder = 0x20000000u;
+
+u32 StructuredVulkan2DSourceClass(u32 value)
+{
+    const u32 flags = value >> 24u;
+    if (flags == 0u || flags == 0x20u)
+        return 0u;
+    if ((flags & 0xC0u) == 0x40u)
+        return 0u;
+    if ((flags & 0x80u) != 0u || (flags & 0x10u) != 0u)
+        return 0x10u;
+    return flags & 0x0Fu;
+}
+
+bool StructuredVulkan2DHas3DSlot(u32 value)
+{
+    const u32 flags = value >> 24u;
+    return (flags & 0xC0u) == 0x40u;
+}
+
+bool StructuredVulkan2DSourceIsReal2D(u32 sourceClass)
+{
+    return sourceClass != 0u;
+}
+
+bool StructuredVulkan2DIsOpaqueBlack(u32 value)
+{
+    return value != 0u
+        && (value >> 24u) != 0x40u
+        && (value & 0x00FFFFFFu) == 0u;
+}
+}
+#endif
 
 SoftRenderer2D::SoftRenderer2D(melonDS::GPU2D& gpu2D, SoftRenderer& parent)
     : Renderer2D(gpu2D), Parent(parent)
@@ -31,6 +85,18 @@ SoftRenderer2D::SoftRenderer2D(melonDS::GPU2D& gpu2D, SoftRenderer& parent)
 SoftRenderer2D::~SoftRenderer2D()
 {
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void SoftRenderer2D::ShareStructuredVulkan2DStateFrom(const SoftRenderer2D& source) noexcept
+{
+    StructuredVulkan2DPlanes = source.StructuredVulkan2DPlanes;
+    StructuredVulkan2DCaptureSourceLine = source.StructuredVulkan2DCaptureSourceLine;
+    StructuredVulkan2DCaptureSourceLineValid = source.StructuredVulkan2DCaptureSourceLineValid;
+    StructuredVulkan2DCaptureSourceLineY = source.StructuredVulkan2DCaptureSourceLineY;
+    StructuredVulkan2DCapturePlanes = source.StructuredVulkan2DCapturePlanes;
+    StructuredVulkan2DCaptureLineValid = source.StructuredVulkan2DCaptureLineValid;
+}
+#endif
 
 void SoftRenderer2D::Reset()
 {
@@ -114,9 +180,803 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
     return val1;
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT: reference-generation structured-Vulkan-2D method bodies (GPU2D_Soft.cpp,
+// see per-method reference line citations below), ported with CurUnit-> adapted to GPU2D./GPU.
+// (MELONPRIME-PORT-ADAPT: this SoftRenderer2D is permanently bound to one GPU2D engine, unlike
+// reference's single CurUnit-switching SoftRenderer instance -- every such replacement is this
+// same adaptation, not tagged individually line-by-line).
+
+// reference GPU2D_Soft.cpp ~334-343
+const u32* SoftRenderer2D::GetStructuredVulkan2DPlane(bool topScreen, u32 plane) const noexcept
+{
+    if (!UseStructuredVulkan2D() || plane >= kStructuredPlaneCount)
+        return nullptr;
+
+    const size_t screenIndex = topScreen ? 0u : 1u;
+    const size_t offset =
+        ((screenIndex * kStructuredPlaneCount) + static_cast<size_t>(plane)) * kStructuredPixelCount;
+    return StructuredVulkan2DPlanes.data() + offset;
+}
+
+// reference GPU2D_Soft.cpp ~345-357
+void SoftRenderer2D::ClearStructuredVulkan2DState() noexcept
+{
+    Parent.LastDebugCaptureStats = {};
+    Parent.HasLastDebugCapture3dSource = false;
+    Parent.LastDebugCapture3dSource.fill(0u);
+    Parent.CaptureLineUses3d.fill(0);
+    StructuredVulkan2DCaptureSourceLine.fill(0);
+    StructuredVulkan2DCaptureSourceLineValid = false;
+    StructuredVulkan2DCaptureSourceLineY = 0;
+    StructuredVulkan2DPlanes.fill(0);
+    StructuredVulkan2DCapturePlanes.fill(0);
+    StructuredVulkan2DCaptureLineValid.fill(0);
+}
+
+// reference GPU2D_Soft.cpp ~359-362
+bool SoftRenderer2D::UseStructuredVulkan2D() const noexcept
+{
+    // MELONPRIME-PORT-ADAPT: reference reads GPU.GPU3D.GetCurrentRenderer(); our fork's active
+    // Renderer3D is owned by the GPU-level Renderer (SoftRenderer::Rend3D, protected), reachable
+    // here via the existing SoftRenderer2D/SoftRenderer friend relationship (GPU_Soft.h).
+    return Parent.Rend3D->UsesStructured2DMetadata();
+}
+
+// reference GPU2D_Soft.cpp ~364-379
+void SoftRenderer2D::ClearStructuredVulkan2DLine(u32 line)
+{
+    if (!UseStructuredVulkan2D() || line >= kStructuredScreenHeight)
+        return;
+
+    const size_t screenIndex = StructuredVulkan2DCurrentLineTargetsTop ? 0u : 1u;
+    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    const size_t screenBase = screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+    {
+        std::fill_n(
+            StructuredVulkan2DPlanes.data() + screenBase + (plane * kStructuredPixelCount) + rowBase,
+            kStructuredScreenWidth,
+            0u);
+    }
+}
+
+// reference GPU2D_Soft.cpp ~381-395
+void SoftRenderer2D::ClearStructuredVulkan2DCapture(u32 vramBank)
+{
+    if (!UseStructuredVulkan2D() || vramBank >= 4u)
+        return;
+
+    const size_t screenBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    std::fill_n(
+        StructuredVulkan2DCapturePlanes.data() + screenBase,
+        kStructuredPlaneCount * kStructuredPixelCount,
+        0u);
+    std::fill_n(
+        StructuredVulkan2DCaptureLineValid.data() + (static_cast<size_t>(vramBank) * kStructuredScreenHeight),
+        kStructuredScreenHeight,
+        0u);
+}
+
+// reference GPU2D_Soft.cpp ~397-418
+void SoftRenderer2D::ClearStructuredVulkan2DCaptureRange(u32 vramBank, u32 dstAddress, u32 width)
+{
+    if (!UseStructuredVulkan2D() || vramBank >= 4u)
+        return;
+
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const u32 clearWidth = std::min<u32>(width, kStructuredScreenWidth);
+    for (u32 x = 0; x < clearWidth; x++)
+    {
+        const u32 captureAddress = (dstAddress + x) & 0xFFFFu;
+        if (captureAddress >= kStructuredPixelCount)
+            continue;
+
+        const size_t captureIndex = static_cast<size_t>(captureAddress);
+        for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+            StructuredVulkan2DCapturePlanes[captureBase + (plane * kStructuredPixelCount) + captureIndex] = 0u;
+
+        StructuredVulkan2DCaptureLineValid[
+            (static_cast<size_t>(vramBank) * kStructuredScreenHeight)
+                + (captureIndex / kStructuredScreenWidth)] = 0u;
+    }
+}
+
+// reference GPU2D_Soft.cpp ~420-438
+void SoftRenderer2D::SaveStructuredVulkan2DCaptureSourceLine(u32 line)
+{
+    if (!UseStructuredVulkan2D() || line >= kStructuredScreenHeight)
+        return;
+
+    const bool sourceTop = CurrentUnitTargetsTopScreen();
+    const size_t sourceScreenIndex = sourceTop ? 0u : 1u;
+    const size_t sourceBase = sourceScreenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t sourceRowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+    {
+        std::memcpy(
+            StructuredVulkan2DCaptureSourceLine.data() + (plane * kStructuredScreenWidth),
+            StructuredVulkan2DPlanes.data() + sourceBase + (plane * kStructuredPixelCount) + sourceRowBase,
+            kStructuredScreenWidth * sizeof(u32));
+    }
+    StructuredVulkan2DCaptureSourceLineY = line;
+    StructuredVulkan2DCaptureSourceLineValid = true;
+}
+
+// reference GPU2D_Soft.cpp ~440-489
+void SoftRenderer2D::CopyStructuredVulkan2DCaptureSourceLineToCapture(
+    u32 line,
+    u32 vramBank,
+    u32 dstAddress,
+    u32 width)
+{
+    if (!UseStructuredVulkan2D()
+        || !StructuredVulkan2DCaptureSourceLineValid
+        || StructuredVulkan2DCaptureSourceLineY != line
+        || vramBank >= 4u)
+    {
+        return;
+    }
+
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const u32 copyWidth = std::min<u32>(width, kStructuredScreenWidth);
+    Parent.LastDebugCaptureStats.StructuredCopyLines++;
+    for (u32 x = 0; x < copyWidth; x++)
+    {
+        const u32 captureAddress = (dstAddress + x) & 0xFFFFu;
+        if (captureAddress >= kStructuredPixelCount)
+            continue;
+
+        const size_t captureIndex = static_cast<size_t>(captureAddress);
+        const u32 sourcePlane0 = StructuredVulkan2DCaptureSourceLine[static_cast<size_t>(x)];
+        const u32 sourcePlane1 =
+            StructuredVulkan2DCaptureSourceLine[kStructuredScreenWidth + static_cast<size_t>(x)];
+        const u32 sourceControl =
+            StructuredVulkan2DCaptureSourceLine[(kStructuredScreenWidth * 2u) + static_cast<size_t>(x)];
+        if (sourcePlane0 != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyPlane0UsefulPixels++;
+        if (sourcePlane1 != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyPlane1UsefulPixels++;
+        const u32 sourceControlAlpha = sourceControl >> 24u;
+        const bool structuredSlot = (sourceControlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+        if (structuredSlot)
+            Parent.LastDebugCaptureStats.StructuredCopySlotPixels++;
+        if (structuredSlot && (sourceControlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyAbovePixels++;
+        if (!structuredSlot && (sourceControlAlpha & kStructuredVulkan2DOnlyFlag) != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopy2DOnlyPixels++;
+
+        StructuredVulkan2DCapturePlanes[captureBase + captureIndex] = sourcePlane0;
+        StructuredVulkan2DCapturePlanes[captureBase + kStructuredPixelCount + captureIndex] = sourcePlane1;
+        StructuredVulkan2DCapturePlanes[captureBase + (kStructuredPixelCount * 2u) + captureIndex] = sourceControl;
+        StructuredVulkan2DCaptureLineValid[
+            (static_cast<size_t>(vramBank) * kStructuredScreenHeight)
+                + (captureIndex / kStructuredScreenWidth)] = 1u;
+    }
+}
+
+// reference GPU2D_Soft.cpp ~491-539
+void SoftRenderer2D::CopyStructuredVulkan2DCurrentLineToCapture(u32 line, u32 vramBank, u32 dstAddress, u32 width)
+{
+    if (!UseStructuredVulkan2D()
+        || line >= kStructuredScreenHeight
+        || vramBank >= 4u)
+    {
+        return;
+    }
+
+    const bool sourceTop = CurrentUnitTargetsTopScreen();
+    const size_t sourceScreenIndex = sourceTop ? 0u : 1u;
+    const size_t sourceBase = sourceScreenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t sourceRowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    const u32 copyWidth = std::min<u32>(width, kStructuredScreenWidth);
+    Parent.LastDebugCaptureStats.StructuredCopyLines++;
+    for (u32 x = 0; x < copyWidth; x++)
+    {
+        const u32 captureAddress = (dstAddress + x) & 0xFFFFu;
+        if (captureAddress >= kStructuredPixelCount)
+            continue;
+
+        const size_t sourceIndex = sourceRowBase + static_cast<size_t>(x);
+        const size_t captureIndex = static_cast<size_t>(captureAddress);
+        const u32 sourcePlane0 = StructuredVulkan2DPlanes[sourceBase + sourceIndex];
+        const u32 sourcePlane1 = StructuredVulkan2DPlanes[sourceBase + kStructuredPixelCount + sourceIndex];
+        const u32 sourceControl =
+            StructuredVulkan2DPlanes[sourceBase + (kStructuredPixelCount * 2u) + sourceIndex];
+        if (sourcePlane0 != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyPlane0UsefulPixels++;
+        if (sourcePlane1 != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyPlane1UsefulPixels++;
+        const u32 sourceControlAlpha = sourceControl >> 24u;
+        const bool structuredSlot = (sourceControlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+        if (structuredSlot)
+            Parent.LastDebugCaptureStats.StructuredCopySlotPixels++;
+        if (structuredSlot && (sourceControlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopyAbovePixels++;
+        if (!structuredSlot && (sourceControlAlpha & kStructuredVulkan2DOnlyFlag) != 0u)
+            Parent.LastDebugCaptureStats.StructuredCopy2DOnlyPixels++;
+        for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+        {
+            StructuredVulkan2DCapturePlanes[captureBase + (plane * kStructuredPixelCount) + captureIndex] =
+                StructuredVulkan2DPlanes[sourceBase + (plane * kStructuredPixelCount) + sourceIndex];
+        }
+        StructuredVulkan2DCaptureLineValid[
+            (static_cast<size_t>(vramBank) * kStructuredScreenHeight)
+                + (captureIndex / kStructuredScreenWidth)] = 1u;
+    }
+}
+
+// reference GPU2D_Soft.cpp ~541-562
+void SoftRenderer2D::CopyStructuredVulkan2DCaptureLineToCurrentScreen(u32 line, u32 vramBank)
+{
+    if (!UseStructuredVulkan2D()
+        || line >= kStructuredScreenHeight
+        || vramBank >= 4u
+        || StructuredVulkan2DCaptureLineValid[(static_cast<size_t>(vramBank) * kStructuredScreenHeight) + line] == 0u)
+    {
+        return;
+    }
+
+    const size_t screenIndex = StructuredVulkan2DCurrentLineTargetsTop ? 0u : 1u;
+    const size_t screenBase = screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t rowBase = static_cast<size_t>(line) * kStructuredScreenWidth;
+    for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+    {
+        std::memcpy(
+            StructuredVulkan2DPlanes.data() + screenBase + (plane * kStructuredPixelCount) + rowBase,
+            StructuredVulkan2DCapturePlanes.data() + captureBase + (plane * kStructuredPixelCount) + rowBase,
+            kStructuredScreenWidth * sizeof(u32));
+    }
+}
+
+// reference GPU2D_Soft.cpp ~564-607
+bool SoftRenderer2D::ReadStructuredVulkan2DCapture2DOverlayPixel(
+    u32 vramBank,
+    u32 vramAddress,
+    u32& overlayPixel,
+    u32& overlayControlAlpha) const noexcept
+{
+    overlayPixel = 0u;
+    overlayControlAlpha = 0u;
+    if (!UseStructuredVulkan2D() || vramBank >= 4u || vramAddress >= kStructuredPixelCount)
+        return false;
+
+    const u32 line = vramAddress / kStructuredScreenWidth;
+    const size_t lineValidIndex = (static_cast<size_t>(vramBank) * kStructuredScreenHeight) + line;
+    if (StructuredVulkan2DCaptureLineValid[lineValidIndex] == 0u)
+        return false;
+
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t captureIndex = static_cast<size_t>(vramAddress);
+    const u32 belowPlane = StructuredVulkan2DCapturePlanes[captureBase + captureIndex];
+    const u32 abovePlane =
+        StructuredVulkan2DCapturePlanes[captureBase + kStructuredPixelCount + captureIndex];
+    const u32 control =
+        StructuredVulkan2DCapturePlanes[captureBase + (kStructuredPixelCount * 2u) + captureIndex];
+    const u32 controlAlpha = control >> 24u;
+    if (controlAlpha == 0u)
+        return false;
+
+    const bool structuredSlot = (controlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+    if (structuredSlot && (controlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u && abovePlane != 0u)
+    {
+        overlayPixel = abovePlane;
+        overlayControlAlpha = controlAlpha;
+        return true;
+    }
+
+    if (!structuredSlot && (controlAlpha & kStructuredVulkan2DOnlyFlag) != 0u && belowPlane != 0u)
+    {
+        overlayPixel = belowPlane;
+        overlayControlAlpha = controlAlpha;
+        return true;
+    }
+
+    return false;
+}
+
+// reference GPU2D_Soft.cpp ~609-651
+void SoftRenderer2D::MergeStructuredVulkan2DCapture2DOverlayPixel(
+    u32 vramBank,
+    u32 vramAddress,
+    u32 overlayPixel,
+    u32 overlayControlAlpha)
+{
+    if (!UseStructuredVulkan2D() || vramBank >= 4u || vramAddress >= kStructuredPixelCount || overlayPixel == 0u)
+        return;
+
+    const size_t captureBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t captureIndex = static_cast<size_t>(vramAddress);
+    u32& belowPlane = StructuredVulkan2DCapturePlanes[captureBase + captureIndex];
+    u32& abovePlane = StructuredVulkan2DCapturePlanes[captureBase + kStructuredPixelCount + captureIndex];
+    u32& control =
+        StructuredVulkan2DCapturePlanes[captureBase + (kStructuredPixelCount * 2u) + captureIndex];
+    const u32 controlAlpha = control >> 24u;
+    const bool destinationHas3DSlot = (controlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+    const u32 protectedBlack =
+        overlayControlAlpha & kStructuredVulkan2DProtectedBlackFlag;
+
+    if (destinationHas3DSlot)
+    {
+        abovePlane = overlayPixel;
+        control = (control & 0x00FFFFFFu)
+            | ((controlAlpha
+                | kStructuredVulkan2DAbove3DFlag
+                | protectedBlack) << 24u);
+    }
+    else
+    {
+        belowPlane = overlayPixel;
+        const u32 compMode = controlAlpha & 0x0Fu;
+        control = (control & 0x00FFFFFFu)
+            | (((compMode <= 7u ? compMode : 5u)
+                | kStructuredVulkan2DOnlyFlag
+                | protectedBlack) << 24u);
+    }
+
+    const u32 line = vramAddress / kStructuredScreenWidth;
+    StructuredVulkan2DCaptureLineValid[
+        (static_cast<size_t>(vramBank) * kStructuredScreenHeight) + line] = 1u;
+    Parent.LastDebugCaptureStats.StructuredCopySourceBOverlayPixels++;
+}
+
+// reference GPU2D_Soft.cpp ~653-669
+bool SoftRenderer2D::CurrentUnitTargetsTopScreen() const noexcept
+{
+    // MELONPRIME-PORT-ADAPT: see class-level comment in GPU2D_Soft.h -- our fork resolves
+    // engine-to-physical-screen mapping via GPU.ScreenSwap (the same signal
+    // SoftRenderer::DrawScanlineA/B use in GPU_Soft.cpp) instead of reference's accelerated-
+    // pipeline Framebuffer-pointer comparison, which has no equivalent in our architecture.
+    // When ScreenSwap is set, engine A (Num==0) writes the top slot (Framebuffer[..][0]);
+    // when clear, engine A writes the bottom slot -- engine B is always the opposite.
+    return GPU2D.Num == 0 ? GPU.ScreenSwap : !GPU.ScreenSwap;
+}
+
+// reference GPU2D_Soft.cpp ~671-794
+void SoftRenderer2D::StoreStructuredVulkan2DPixel(
+    u32 line,
+    u32 x,
+    u32 originalVal1,
+    u32 originalVal2,
+    u32 originalVal3,
+    u32 legacyVal1,
+    u32 legacyVal2,
+    u32 legacyControl,
+    u32 captureBacked3DSourceClass)
+{
+    if (!UseStructuredVulkan2D() || line >= kStructuredScreenHeight || x >= kStructuredScreenWidth)
+        return;
+
+    const u32 flags0 = originalVal1 >> 24u;
+    const u32 flags1 = originalVal2 >> 24u;
+    const u32 flags2 = originalVal3 >> 24u;
+    const bool slotInPlane0 = (flags0 & 0xC0u) == 0x40u;
+    const bool slotInPlane1 = (flags1 & 0xC0u) == 0x40u;
+    const bool slotInPlane2 = (flags2 & 0xC0u) == 0x40u;
+    const bool has3DSlot = slotInPlane0 || slotInPlane1 || slotInPlane2;
+    const u32 legacyAlpha = (legacyControl >> 24u) & 0x0Fu;
+    const bool legacyCompMode4 = legacyAlpha == 4u;
+    const bool legacyCaptureBackedComp4 =
+        legacyCompMode4
+        && legacyVal1 == kStructuredVulkan2D3DPlaceholder
+        && legacyVal2 == kStructuredVulkan2D3DPlaceholder;
+    const size_t index = static_cast<size_t>(line) * kStructuredScreenWidth + static_cast<size_t>(x);
+    const size_t screenIndex = StructuredVulkan2DCurrentLineTargetsTop ? 0u : 1u;
+    const size_t screenBase = screenIndex * kStructuredPlaneCount * kStructuredPixelCount;
+    if (!has3DSlot
+        && captureBacked3DSourceClass == 0u
+        && !legacyCaptureBackedComp4
+        && !StructuredVulkan2DIsOpaqueBlack(legacyVal1))
+    {
+        StructuredVulkan2DPlanes[screenBase + index] = legacyVal1;
+        StructuredVulkan2DPlanes[screenBase + kStructuredPixelCount + index] = 0u;
+        StructuredVulkan2DPlanes[screenBase + (kStructuredPixelCount * 2u) + index] =
+            (legacyControl & 0x00FFFFFFu) | ((legacyAlpha | kStructuredVulkan2DOnlyFlag) << 24u);
+        return;
+    }
+
+    const u32 sourceClass0 = StructuredVulkan2DSourceClass(originalVal1);
+    const u32 sourceClass1 = StructuredVulkan2DSourceClass(originalVal2);
+    const u32 sourceClass2 = StructuredVulkan2DSourceClass(originalVal3);
+    const bool captureBackedSlotInPlane0 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass0 == captureBacked3DSourceClass;
+    const bool captureBackedSlotInPlane1 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass1 == captureBacked3DSourceClass;
+    const bool captureBackedSlotInPlane2 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass2 == captureBacked3DSourceClass;
+    const bool hasCaptureBacked3DSlot =
+        !has3DSlot
+        && (captureBackedSlotInPlane0 || captureBackedSlotInPlane1 || captureBackedSlotInPlane2);
+
+    u32 belowPlane = legacyVal1;
+    u32 abovePlane = 0u;
+    u32 control = legacyControl;
+    bool protectedBlack2D = false;
+
+    if (has3DSlot || hasCaptureBacked3DSlot || legacyCaptureBackedComp4)
+    {
+        bool hasAbovePlane = false;
+        if (legacyCaptureBackedComp4)
+        {
+            belowPlane = 0u;
+        }
+        else if (slotInPlane0 || captureBackedSlotInPlane0)
+        {
+            belowPlane = legacyVal2;
+        }
+        else if (slotInPlane1 || captureBackedSlotInPlane1)
+        {
+            belowPlane = legacyVal2;
+            if (StructuredVulkan2DSourceIsReal2D(sourceClass0))
+            {
+                abovePlane = originalVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+        else
+        {
+            belowPlane = legacyVal1;
+            if (StructuredVulkan2DSourceIsReal2D(sourceClass0) || StructuredVulkan2DSourceIsReal2D(sourceClass1))
+            {
+                abovePlane = legacyVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    (StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                        || StructuredVulkan2DSourceIsReal2D(sourceClass1))
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+
+        const u32 structuredAlpha = legacyAlpha
+            | kStructuredVulkan2DSlot3DFlag
+            | (hasAbovePlane ? kStructuredVulkan2DAbove3DFlag : 0u);
+        control = (legacyControl & 0x00FFFFFFu)
+            | ((structuredAlpha
+                | (protectedBlack2D ? kStructuredVulkan2DProtectedBlackFlag : 0u)) << 24u);
+    }
+    else
+    {
+        protectedBlack2D =
+            (StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                || StructuredVulkan2DSourceIsReal2D(sourceClass1)
+                || StructuredVulkan2DSourceIsReal2D(sourceClass2))
+            && StructuredVulkan2DIsOpaqueBlack(legacyVal1);
+        control = (legacyControl & 0x00FFFFFFu)
+            | ((legacyAlpha
+                | kStructuredVulkan2DOnlyFlag
+                | (protectedBlack2D ? kStructuredVulkan2DProtectedBlackFlag : 0u)) << 24u);
+    }
+
+    StructuredVulkan2DPlanes[screenBase + index] = belowPlane;
+    StructuredVulkan2DPlanes[screenBase + kStructuredPixelCount + index] = abovePlane;
+    StructuredVulkan2DPlanes[screenBase + (kStructuredPixelCount * 2u) + index] = control;
+}
+
+// reference GPU2D_Soft.cpp ~796-998
+void SoftRenderer2D::StoreStructuredVulkan2DCapturePixel(
+    u32 vramBank,
+    u32 vramAddress,
+    u32 originalVal1,
+    u32 originalVal2,
+    u32 originalVal3,
+    u32 legacyVal1,
+    u32 legacyVal2,
+    u32 legacyControl,
+    u32 external3DSourceClass,
+    bool external3DSlot,
+    bool external3DCoverage,
+    bool allowUnclassifiedExternal3DSlot)
+{
+    if (!UseStructuredVulkan2D() || vramBank >= 4u || vramAddress >= kStructuredPixelCount)
+        return;
+
+    const size_t screenBase = static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+    const u32 line = vramAddress / kStructuredScreenWidth;
+    const u32 x = vramAddress % kStructuredScreenWidth;
+    const size_t screenIndex = screenBase + static_cast<size_t>(line) * kStructuredScreenWidth + static_cast<size_t>(x);
+    const size_t lineValidIndex = (static_cast<size_t>(vramBank) * kStructuredScreenHeight) + line;
+
+    const u32 sourceClass0 = StructuredVulkan2DSourceClass(originalVal1);
+    const u32 sourceClass1 = StructuredVulkan2DSourceClass(originalVal2);
+    const u32 sourceClass2 = StructuredVulkan2DSourceClass(originalVal3);
+    const bool slotInPlane0 = StructuredVulkan2DHas3DSlot(originalVal1);
+    const bool slotInPlane1 = StructuredVulkan2DHas3DSlot(originalVal2);
+    const bool slotInPlane2 = StructuredVulkan2DHas3DSlot(originalVal3);
+    const bool has3DSlot = slotInPlane0 || slotInPlane1 || slotInPlane2;
+    const bool hasExternal3DSlot =
+        !has3DSlot
+        && external3DSlot
+        && (external3DSourceClass != 0u || allowUnclassifiedExternal3DSlot);
+
+    u32 captureBacked3DSourceClass = 0u;
+    if (!has3DSlot && !hasExternal3DSlot)
+    {
+        if (sourceClass0 != 0x10u && sourceClass0 != 0u)
+            captureBacked3DSourceClass = sourceClass0;
+        else if (sourceClass1 != 0x10u && sourceClass1 != 0u)
+            captureBacked3DSourceClass = sourceClass1;
+        else if (sourceClass2 != 0x10u && sourceClass2 != 0u)
+            captureBacked3DSourceClass = sourceClass2;
+    }
+
+    const bool captureBackedSlotInPlane0 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass0 == captureBacked3DSourceClass;
+    const bool captureBackedSlotInPlane1 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass1 == captureBacked3DSourceClass;
+    const bool captureBackedSlotInPlane2 =
+        captureBacked3DSourceClass != 0u
+        && sourceClass2 == captureBacked3DSourceClass;
+    const bool hasCaptureBacked3DSlot =
+        !has3DSlot
+        && !hasExternal3DSlot
+        && (captureBackedSlotInPlane0 || captureBackedSlotInPlane1 || captureBackedSlotInPlane2);
+
+    u32 belowPlane = legacyVal1;
+    u32 abovePlane = 0u;
+    u32 control = legacyControl;
+    const u32 existingAbovePlane =
+        StructuredVulkan2DCapturePlanes[screenBase + kStructuredPixelCount + (screenIndex - screenBase)];
+    const u32 existingControl =
+        StructuredVulkan2DCapturePlanes[screenBase + (kStructuredPixelCount * 2u) + (screenIndex - screenBase)];
+    const u32 existingControlAlpha = existingControl >> 24u;
+    const bool existingHasStructuredAbove =
+        (existingControlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u
+        && (existingControlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u
+        && existingAbovePlane != 0u;
+    const u32 legacyAlpha = (legacyControl >> 24u) & 0x0Fu;
+    const bool legacyCompMode4 = legacyAlpha == 4u;
+    const bool legacyCaptureBackedComp4 =
+        legacyCompMode4
+        && legacyVal1 == kStructuredVulkan2D3DPlaceholder
+        && legacyVal2 == kStructuredVulkan2D3DPlaceholder;
+    bool protectedBlack2D = false;
+    if (has3DSlot || hasExternal3DSlot || hasCaptureBacked3DSlot || legacyCaptureBackedComp4)
+    {
+        bool hasAbovePlane = false;
+        if (legacyCaptureBackedComp4)
+        {
+            belowPlane = 0u;
+        }
+        else if (hasExternal3DSlot)
+        {
+            belowPlane = legacyVal2;
+            if (legacyAlpha == 1u && StructuredVulkan2DSourceIsReal2D(sourceClass0))
+            {
+                abovePlane = originalVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+            else if (
+                legacyAlpha == 7u
+                && existingHasStructuredAbove
+                && existingAbovePlane == legacyVal1)
+            {
+                abovePlane = existingAbovePlane;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    (existingControlAlpha & kStructuredVulkan2DProtectedBlackFlag) != 0u;
+            }
+            else if (
+                legacyAlpha == 7u
+                && external3DSourceClass != 0u
+                && sourceClass0 != external3DSourceClass
+                && StructuredVulkan2DSourceIsReal2D(sourceClass0))
+            {
+                abovePlane = originalVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+        else if (external3DSlot && slotInPlane0)
+        {
+            belowPlane = legacyVal2;
+            if (StructuredVulkan2DSourceIsReal2D(sourceClass1))
+            {
+                abovePlane = legacyVal2;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    StructuredVulkan2DSourceIsReal2D(sourceClass1)
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+        else if (slotInPlane0 || captureBackedSlotInPlane0)
+        {
+            belowPlane = legacyVal2;
+        }
+        else if (slotInPlane1 || captureBackedSlotInPlane1)
+        {
+            belowPlane = legacyVal2;
+            if (StructuredVulkan2DSourceIsReal2D(sourceClass0))
+            {
+                abovePlane = originalVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+        else
+        {
+            belowPlane = legacyVal1;
+            if (StructuredVulkan2DSourceIsReal2D(sourceClass0) || StructuredVulkan2DSourceIsReal2D(sourceClass1))
+            {
+                abovePlane = legacyVal1;
+                hasAbovePlane = true;
+                protectedBlack2D =
+                    (StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                        || StructuredVulkan2DSourceIsReal2D(sourceClass1))
+                    && StructuredVulkan2DIsOpaqueBlack(abovePlane);
+            }
+        }
+
+        const u32 structuredAlpha = legacyAlpha
+            | kStructuredVulkan2DSlot3DFlag
+            | (hasAbovePlane ? kStructuredVulkan2DAbove3DFlag : 0u)
+            | (external3DSlot && !external3DCoverage ? kStructuredVulkan2DNo3DCoverageFlag : 0u);
+        control = (legacyControl & 0x00FFFFFFu)
+            | ((structuredAlpha
+                | (protectedBlack2D ? kStructuredVulkan2DProtectedBlackFlag : 0u)) << 24u);
+    }
+    else
+    {
+        protectedBlack2D =
+            (StructuredVulkan2DSourceIsReal2D(sourceClass0)
+                || StructuredVulkan2DSourceIsReal2D(sourceClass1)
+                || StructuredVulkan2DSourceIsReal2D(sourceClass2))
+            && StructuredVulkan2DIsOpaqueBlack(legacyVal1);
+        control = (legacyControl & 0x00FFFFFFu)
+            | ((legacyAlpha
+                | kStructuredVulkan2DOnlyFlag
+                | (protectedBlack2D ? kStructuredVulkan2DProtectedBlackFlag : 0u)) << 24u);
+    }
+
+    if (StructuredVulkan2DCaptureLineValid[lineValidIndex] == 0u)
+        Parent.LastDebugCaptureStats.StructuredCopyLines++;
+    if (belowPlane != 0u)
+        Parent.LastDebugCaptureStats.StructuredCopyPlane0UsefulPixels++;
+    if (abovePlane != 0u)
+        Parent.LastDebugCaptureStats.StructuredCopyPlane1UsefulPixels++;
+    const u32 controlAlpha = control >> 24u;
+    const bool structuredSlot = (controlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+    if (structuredSlot)
+        Parent.LastDebugCaptureStats.StructuredCopySlotPixels++;
+    if (structuredSlot && (controlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u)
+        Parent.LastDebugCaptureStats.StructuredCopyAbovePixels++;
+    if (!structuredSlot && (controlAlpha & kStructuredVulkan2DOnlyFlag) != 0u)
+        Parent.LastDebugCaptureStats.StructuredCopy2DOnlyPixels++;
+
+    StructuredVulkan2DCapturePlanes[screenIndex] = belowPlane;
+    StructuredVulkan2DCapturePlanes[screenBase + kStructuredPixelCount + (screenIndex - screenBase)] = abovePlane;
+    StructuredVulkan2DCapturePlanes[screenBase + (kStructuredPixelCount * 2u) + (screenIndex - screenBase)] = control;
+    StructuredVulkan2DCaptureLineValid[lineValidIndex] = 1u;
+}
+
+// reference GPU2D_Soft.cpp ~2691-2718
+void SoftRenderer2D::DrawPixel_Normal(u32* dst, u16 color, u32 flag)
+{
+    u8 r = (color & 0x001F) << 1;
+    u8 g = (color & 0x03E0) >> 4;
+    u8 b = (color & 0x7C00) >> 9;
+
+    *(dst+256) = *dst;
+    *dst = r | (g << 8) | (b << 16) | flag;
+}
+
+void SoftRenderer2D::DrawPixel_Accel(u32* dst, u16 color, u32 flag)
+{
+    u8 r = (color & 0x001F) << 1;
+    u8 g = (color & 0x03E0) >> 4;
+    u8 b = (color & 0x7C00) >> 9;
+
+    *(dst+512) = *(dst+256);
+    *(dst+256) = *dst;
+    *dst = r | (g << 8) | (b << 16) | flag;
+}
+
+void SoftRenderer2D::PushRawPixel_Accel(u32* dst, u32 value)
+{
+    *(dst+512) = *(dst+256);
+    *(dst+256) = *dst;
+    *dst = value;
+}
+
+// reference GPU2D_Soft.cpp ~2720-2782
+bool SoftRenderer2D::TryDrawStructuredVulkan2DCapturePixel(u32* dst, u32 flatByteAddress)
+{
+    if (!UseStructuredVulkan2D())
+        return false;
+
+    const u32 displayMode =
+        (GPU2D.DispCnt >> 16u) & (GPU2D.Num ? 0x1u : 0x3u);
+    if (displayMode != 1u)
+        return false;
+
+    const u32 maskedByteAddress = flatByteAddress & (GPU2D.Num ? 0x1FFFFu : 0x7FFFFu);
+    const u32 mapMask = GPU2D.Num
+        ? GPU.VRAMMap_BBG[(maskedByteAddress >> 14u) & 0x7u]
+        : GPU.VRAMMap_ABG[(maskedByteAddress >> 14u) & 0x1Fu];
+
+    for (u32 vramBank = 0; vramBank < 4u; vramBank++)
+    {
+        if ((mapMask & (1u << vramBank)) == 0u)
+            continue;
+
+        const u32 captureAddress = (maskedByteAddress & 0x1FFFFu) >> 1u;
+        if (captureAddress >= kStructuredPixelCount)
+            continue;
+
+        const size_t lineValidIndex =
+            (static_cast<size_t>(vramBank) * kStructuredScreenHeight)
+                + (captureAddress / kStructuredScreenWidth);
+        if (StructuredVulkan2DCaptureLineValid[lineValidIndex] == 0u)
+            continue;
+
+        const size_t captureBase =
+            static_cast<size_t>(vramBank) * kStructuredPlaneCount * kStructuredPixelCount;
+        const size_t captureIndex = static_cast<size_t>(captureAddress);
+        const u32 belowPlane = StructuredVulkan2DCapturePlanes[captureBase + captureIndex];
+        const u32 abovePlane =
+            StructuredVulkan2DCapturePlanes[captureBase + kStructuredPixelCount + captureIndex];
+        const u32 control =
+            StructuredVulkan2DCapturePlanes[captureBase + (kStructuredPixelCount * 2u) + captureIndex];
+        const u32 controlAlpha = control >> 24u;
+        if (controlAlpha == 0u)
+            continue;
+
+        const bool structuredSlot = (controlAlpha & kStructuredVulkan2DSlot3DFlag) != 0u;
+        if (structuredSlot)
+        {
+            if (belowPlane != 0u)
+                PushRawPixel_Accel(dst, belowPlane);
+            PushRawPixel_Accel(dst, 0x40000000u);
+            if ((controlAlpha & kStructuredVulkan2DAbove3DFlag) != 0u && abovePlane != 0u)
+                PushRawPixel_Accel(dst, abovePlane);
+            return true;
+        }
+
+        if ((controlAlpha & kStructuredVulkan2DOnlyFlag) != 0u && belowPlane != 0u)
+        {
+            PushRawPixel_Accel(dst, belowPlane);
+            return true;
+        }
+    }
+
+    return false;
+}
+#endif // defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+
 void SoftRenderer2D::DrawScanline(u32 line)
 {
     u32* dst = Parent.Output2D[GPU2D.Num];
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference GPU2D_Soft.cpp ~1011-1012 (DrawScanline per-line structured-
+    // Vulkan-2D init hunk), ported modulo the CurrentUnitTargetsTopScreen() adaptation documented
+    // above.
+    StructuredVulkan2DCurrentLineTargetsTop = CurrentUnitTargetsTopScreen();
+    ClearStructuredVulkan2DLine(line);
+    // MELONPRIME-PORT: reference GPU2D_Soft.cpp ~1043-1046 (useStructuredVulkan2D &&
+    // CurUnit->Num == 0 && line == 0 frame-start CaptureLineUses3d reset).
+    // MELONPRIME-PORT-ADAPT: CaptureLineUses3d now lives on Parent (see GPU_Soft.h); engine A
+    // (Num == 0) owns the reset, matching reference (only engine A's DoCapture writes it).
+    CurrentLineRegularCaptureUses3d = false;
+    if (UseStructuredVulkan2D() && GPU2D.Num == 0 && line == 0)
+        Parent.CaptureLineUses3d.fill(0);
+#endif
 
     if (!GPU2D.Enabled)
     {
@@ -159,8 +1019,85 @@ void SoftRenderer2D::DrawScanline(u32 line)
 
     // render BG layers and sprites
     DrawScanline_BGOBJ(line, dst);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference GPU2D_Soft.cpp ~1076-1078 (SaveStructuredVulkan2DCaptureSourceLine
+    // call, gated on useStructuredVulkan2D && CurUnit->Num == 0 && CurUnit->CaptureLatch).
+    // MELONPRIME-PORT-ADAPT: our fork has no per-unit CaptureLatch; GPU.CaptureEnable (read by
+    // SoftRenderer::DrawScanline's own "if (GPU.CaptureEnable) DoCapture(line);" gate in
+    // GPU_Soft.cpp) is the equivalent GPU-level signal. Must run after DrawScanline_BGOBJ (this
+    // line's structured planes must already be populated) and only for engine A, since capture
+    // always sources from engine A's composited line.
+    if (GPU2D.Num == 0 && UseStructuredVulkan2D() && GPU.CaptureEnable)
+        SaveStructuredVulkan2DCaptureSourceLine(line);
+#endif
 }
 
+// MELONPRIME-PORT: reference GPU2D_Soft.cpp ~1999-2032 (DoDrawBG/DoDrawBG_Large IsRendererAccelerated()
+// dispatch between DrawPixel_Accel/DrawPixel_Normal). MELONPRIME-PORT-ADAPT: our fork's equivalent
+// gate is UseStructuredVulkan2D() (see DrawBG_*_Structured comment in GPU2D_Soft.h); the
+// Renderer2DDebugShouldDraw##type##Bg(...) debug-tool gate has no equivalent here and is dropped.
+// The #else branch below is byte-identical to the pre-existing macro so the Vulkan-off
+// preprocessed output is unaffected.
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#define DoDrawBG(type, line, num) \
+    do \
+    { \
+        if (UseStructuredVulkan2D()) \
+        { \
+            if ((bgCnt[num] & (1<<6)) && (GPU2D.BGMosaicSize[0] > 0)) \
+                DrawBG_##type##_Structured<true, DrawPixel_Accel>(line, num); \
+            else \
+                DrawBG_##type##_Structured<false, DrawPixel_Accel>(line, num); \
+        } \
+        else if ((bgCnt[num] & (1<<6)) && (GPU2D.BGMosaicSize[0] > 0)) \
+        { \
+            DrawBG_##type<true>(line, num); \
+        } \
+        else \
+        { \
+            DrawBG_##type<false>(line, num); \
+        } \
+    } while (false)
+
+#define DoDrawBG_Large(line) \
+    do \
+    { \
+        if (UseStructuredVulkan2D()) \
+        { \
+            if ((bgCnt[2] & (1<<6)) && (GPU2D.BGMosaicSize[0] > 0)) \
+                DrawBG_Large_Structured<true, DrawPixel_Accel>(line); \
+            else \
+                DrawBG_Large_Structured<false, DrawPixel_Accel>(line); \
+        } \
+        else if ((bgCnt[2] & (1<<6)) && (GPU2D.BGMosaicSize[0] > 0)) \
+        { \
+            DrawBG_Large<true>(line); \
+        } \
+        else \
+        { \
+            DrawBG_Large<false>(line); \
+        } \
+    } while (false)
+
+#define DoDrawBG_3D() \
+    do \
+    { \
+        if (UseStructuredVulkan2D()) \
+            DrawBG_3D_Structured(); \
+        else \
+            DrawBG_3D(); \
+    } while (false)
+
+#define DoInterleaveSprites(prio) \
+    do \
+    { \
+        if (UseStructuredVulkan2D()) \
+            InterleaveSprites_Structured<DrawPixel_Accel>(prio); \
+        else \
+            InterleaveSprites(prio); \
+    } while (false)
+#else
 #define DoDrawBG(type, line, num) \
     do \
     { \
@@ -186,6 +1123,10 @@ void SoftRenderer2D::DrawScanline(u32 line)
             DrawBG_Large<false>(line); \
         } \
     } while (false)
+
+#define DoDrawBG_3D() DrawBG_3D()
+#define DoInterleaveSprites(prio) InterleaveSprites(prio)
+#endif
 
 template<u32 bgmode>
 void SoftRenderer2D::DrawScanlineBGMode(u32 line)
@@ -230,14 +1171,14 @@ void SoftRenderer2D::DrawScanlineBGMode(u32 line)
             if (GPU2D.LayerEnable & (1<<0))
             {
                 if (!GPU2D.Num && (dispCnt & 0x8))
-                    DrawBG_3D();
+                    DoDrawBG_3D();
                 else
                     DoDrawBG(Text, line, 0);
             }
         }
         if ((GPU2D.LayerEnable & (1<<4)) && NumSprites)
         {
-            InterleaveSprites(i);
+            DoInterleaveSprites(i);
         }
 
     }
@@ -261,12 +1202,12 @@ void SoftRenderer2D::DrawScanlineBGMode6(u32 line)
             if (GPU2D.LayerEnable & (1<<0))
             {
                 if ((!GPU2D.Num) && (dispCnt & 0x8))
-                    DrawBG_3D();
+                    DoDrawBG_3D();
             }
         }
         if ((GPU2D.LayerEnable & (1<<4)) && NumSprites)
         {
-            InterleaveSprites(i);
+            DoInterleaveSprites(i);
         }
     }
 }
@@ -291,14 +1232,14 @@ void SoftRenderer2D::DrawScanlineBGMode7(u32 line)
             if (GPU2D.LayerEnable & (1<<0))
             {
                 if (!GPU2D.Num && (dispCnt & 0x8))
-                    DrawBG_3D();
+                    DoDrawBG_3D();
                 else
                     DoDrawBG(Text, line, 0);
             }
         }
         if ((GPU2D.LayerEnable & (1<<4)) && NumSprites)
         {
-            InterleaveSprites(i);
+            DoInterleaveSprites(i);
         }
     }
 }
@@ -323,6 +1264,16 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
             *(u64*)&BGOBJLine[i] = backdrop;
         for (int i = 256; i < 512; i+=2)
             *(u64*)&BGOBJLine[i] = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // MELONPRIME-PORT: reference GPU2D_Soft.cpp ~2392-2396 (backdrop-init also clears the
+        // third BGOBJLine plane when useStructuredVulkan2D). The first two planes are already
+        // cleared unconditionally above; only the third (accel-only) plane needs the extra clear.
+        if (UseStructuredVulkan2D())
+        {
+            for (int i = 512; i < 768; i+=2)
+                *(u64*)&BGOBJLine[i] = 0;
+        }
+#endif
     }
 
     if (GPU2D.DispCnt & 0xE000)
@@ -348,6 +1299,218 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
     // color special effects
     // can likely be optimized
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference GPU2D_Soft.cpp ~2430-2671 (IsRendererAccelerated() compositing
+    // branch: per-pixel 3D-blend classification into a deferred control byte instead of an
+    // immediate CPU-side blend, plus the StoreStructuredVulkan2DPixel producer call).
+    // MELONPRIME-PORT-ADAPT: gated on UseStructuredVulkan2D() (our fork's equivalent of
+    // GPU.GPU3D.IsRendererAccelerated(), see class-level comment in GPU2D_Soft.h); CurUnit->
+    // fields replaced with GPU2D./Parent. as established throughout this file. Debug-tool
+    // bookkeeping (LastDebugCaptureStats, logCaptureSamples/CaptureSamplePoint logging,
+    // MelonDSAndroid::getRenderer2DDebugForcedMode) is omitted, consistent with the rest of this
+    // port; captureBacked3DSourceClass classification (real, non-debug logic feeding
+    // StoreStructuredVulkan2DPixel) is kept.
+    if (UseStructuredVulkan2D())
+    {
+        const u32 displayMode = (GPU2D.DispCnt >> 16u) & (GPU2D.Num ? 0x1u : 0x3u);
+        const bool captureBacked3DLine =
+            GPU2D.Num == 1
+            && displayMode == 1u
+            && line < Parent.CaptureLineUses3d.size()
+            && Parent.CaptureLineUses3d[line] != 0u;
+        u32 captureBacked3DSourceClass = 0u;
+        if (captureBacked3DLine)
+        {
+            Parent.LastDebugCaptureStats.CaptureBacked3DLines++;
+            u32 sourceCounts[17] {};
+            bool lineHasExplicit3DSlot = false;
+            for (int i = 0; i < 256; i++)
+            {
+                lineHasExplicit3DSlot =
+                    lineHasExplicit3DSlot
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[i])
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[256+i])
+                    || StructuredVulkan2DHas3DSlot(BGOBJLine[512+i]);
+                const u32 sourceClass = StructuredVulkan2DSourceClass(BGOBJLine[i]);
+                if (sourceClass <= 16u)
+                    sourceCounts[sourceClass]++;
+            }
+
+            if (!lineHasExplicit3DSlot)
+            {
+                constexpr u32 sourceClasses[] = {1u, 2u, 4u, 8u};
+                u32 bestSourceClass = 0u;
+                u32 bestSourceCount = 0u;
+                for (u32 sourceClass : sourceClasses)
+                {
+                    if (sourceCounts[sourceClass] > bestSourceCount)
+                    {
+                        bestSourceCount = sourceCounts[sourceClass];
+                        bestSourceClass = sourceClass;
+                    }
+                }
+
+                if (bestSourceCount >= 128u)
+                    captureBacked3DSourceClass = bestSourceClass;
+                else
+                    Parent.LastDebugCaptureStats.CaptureBacked3DNoBestClassLines++;
+            }
+            else
+            {
+                Parent.LastDebugCaptureStats.CaptureBacked3DExplicitSlotLines++;
+            }
+
+            if (captureBacked3DSourceClass
+                < (sizeof(Parent.LastDebugCaptureStats.CaptureBacked3DBestClassCounts)
+                    / sizeof(Parent.LastDebugCaptureStats.CaptureBacked3DBestClassCounts[0])))
+            {
+                Parent.LastDebugCaptureStats.CaptureBacked3DBestClassCounts[captureBacked3DSourceClass]++;
+            }
+        }
+
+        if (GPU2D.Num == 0)
+        {
+            for (int i = 0; i < 256; i++)
+            {
+                const u32 originalVal1 = BGOBJLine[i];
+                const u32 originalVal2 = BGOBJLine[256+i];
+                const u32 originalVal3 = BGOBJLine[512+i];
+
+                u32 val1 = originalVal1;
+                u32 val2 = originalVal2;
+                u32 val3 = originalVal3;
+
+                u32 flag1 = val1 >> 24;
+                u32 flag2 = val2 >> 24;
+
+                u32 bldcnteffect = (GPU2D.BlendCnt >> 6) & 0x3;
+
+                u32 target1;
+                if      (flag1 & 0x80) target1 = 0x0010;
+                else if (flag1 & 0x40) target1 = 0x0001;
+                else                   target1 = flag1;
+
+                u32 target2;
+                if      (flag2 & 0x80) target2 = 0x1000;
+                else if (flag2 & 0x40) target2 = 0x0100;
+                else                   target2 = flag2 << 8;
+
+                if (((flag1 & 0xC0) == 0x40) && (GPU2D.BlendCnt & target2))
+                {
+                    // 3D on top, blending
+
+                    BGOBJLine[i]     = val2;
+                    BGOBJLine[256+i] = ColorComposite(i, val2, val3);
+                    BGOBJLine[512+i] = 0x04000000;
+                }
+                else if ((flag1 & 0xC0) == 0x40)
+                {
+                    // 3D on top, normal/fade
+
+                    if (bldcnteffect == 1)             bldcnteffect = 0;
+                    if (!(GPU2D.BlendCnt & 0x0001))    bldcnteffect = 0;
+                    if (!(WindowMask[i] & 0x20))       bldcnteffect = 0;
+
+                    BGOBJLine[i]     = val2;
+                    BGOBJLine[256+i] = ColorComposite(i, val2, val3);
+                    BGOBJLine[512+i] = (bldcnteffect << 24) | (GPU2D.EVY << 8);
+                }
+                else if (((flag2 & 0xC0) == 0x40) && ((GPU2D.BlendCnt & 0x01C0) == 0x0140))
+                {
+                    // 3D on bottom, blending
+
+                    u32 eva, evb;
+                    if ((flag1 & 0xC0) == 0xC0)
+                    {
+                        eva = flag1 & 0x1F;
+                        evb = 16 - eva;
+                    }
+                    else if (((GPU2D.BlendCnt & target1) && (WindowMask[i] & 0x20)) ||
+                            ((flag1 & 0xC0) == 0x80))
+                    {
+                        eva = GPU2D.EVA;
+                        evb = GPU2D.EVB;
+                    }
+                    else
+                        bldcnteffect = 7;
+
+                    BGOBJLine[i]     = val1;
+                    BGOBJLine[256+i] = ColorComposite(i, val1, val3);
+                    BGOBJLine[512+i] = (bldcnteffect << 24) | (GPU2D.EVB << 16) | (GPU2D.EVA << 8);
+                }
+                else
+                {
+                    // no potential 3D pixel involved
+
+                    const u32 flag3 = originalVal3 >> 24;
+                    const bool overlayOver3d = (flag3 & 0x40u) != 0;
+
+                    BGOBJLine[i]     = ColorComposite(i, val1, val2);
+                    BGOBJLine[256+i] = 0;
+                    BGOBJLine[512+i] = overlayOver3d ? 0x87000000u : 0x07000000u;
+                }
+
+                StoreStructuredVulkan2DPixel(
+                    line,
+                    static_cast<u32>(i),
+                    originalVal1,
+                    originalVal2,
+                    originalVal3,
+                    BGOBJLine[i],
+                    BGOBJLine[256+i],
+                    BGOBJLine[512+i],
+                    captureBacked3DSourceClass);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 256; i++)
+            {
+                const u32 originalVal1 = BGOBJLine[i];
+                const u32 originalVal2 = BGOBJLine[256+i];
+                const u32 originalVal3 = BGOBJLine[512+i];
+
+                u32 val1 = originalVal1;
+                u32 val2 = originalVal2;
+
+                const u32 flag3 = originalVal3 >> 24;
+                const bool overlayOver3d = (flag3 & 0x40u) != 0;
+
+                BGOBJLine[i]     = ColorComposite(i, val1, val2);
+                BGOBJLine[256+i] = 0;
+                BGOBJLine[512+i] = overlayOver3d ? 0x87000000u : 0x07000000u;
+
+                StoreStructuredVulkan2DPixel(
+                    line,
+                    static_cast<u32>(i),
+                    originalVal1,
+                    originalVal2,
+                    originalVal3,
+                    BGOBJLine[i],
+                    BGOBJLine[256+i],
+                    BGOBJLine[512+i],
+                    captureBacked3DSourceClass);
+            }
+        }
+
+        // MELONPRIME-PORT-ADAPT: reference copies all 3 BGOBJLine planes verbatim into its
+        // accelerated-stride Framebuffer (dst[0..255]=plane0/legacy, dst[256..511]=plane1/above,
+        // dst[512..767]=plane2/control -- see GPU2D_Soft.cpp DrawScanline dispmode==1 case,
+        // `stride = IsRendererAccelerated() ? 256*3+1 : 256`), which its GL/Vulkan compositor
+        // shader later resolves using the deferred 3D blend. Our fork's Output2D/Framebuffer
+        // (GPU_Soft.h) is a plain 256-word-per-line buffer with no room for the extra planes --
+        // restructuring it to carry them is a GPU.h/Framebuffer-ownership change outside this
+        // port's declared scope (src/GPU2D_Soft.* and src/GPU_Soft.* only). The real, correct
+        // 2D+3D composite is expected to be produced by the Vulkan consumer reading
+        // StructuredVulkan2DPlanes via GetStructuredVulkan2DPlane (populated above, correctly, in
+        // all 3 planes); Output2D here is written with plane0 (the same "assume no 3D coverage"
+        // legacy value reference itself puts in dst[i]) purely as a harmless non-Vulkan/fallback
+        // pixel for any remaining plain-BGRA consumer of Output2D/Framebuffer.
+        for (int i = 0; i < 256; i++)
+            dst[i] = BGOBJLine[i];
+    }
+    else
+#endif
     for (int i = 0; i < 256; i++)
     {
         u32 val1 = BGOBJLine[i];
@@ -381,6 +1544,26 @@ void SoftRenderer2D::DrawBG_3D()
         BGOBJLine[i] = c | 0x40000000;
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// reference GPU2D_Soft.cpp ~2784-2801 (IsRendererAccelerated() branch of DrawBG_3D). Unlike
+// DrawBG_3D() above, this does NOT read Parent.Output3D at all: the real 3D pixel color is
+// supplied later by the Vulkan compositor from the 3D renderer's own output, so this only needs
+// to shift the existing 2 planes down and mark plane0 as the deferred-3D-blend placeholder
+// (0x40000000, the same flag byte StoreStructuredVulkan2DPixel/StoreStructuredVulkan2DCapturePixel
+// test via `(flags & 0xC0) == 0x40`).
+void SoftRenderer2D::DrawBG_3D_Structured()
+{
+    for (int i = 0; i < 256; i++)
+    {
+        if (!(WindowMask[i] & 0x01)) continue;
+
+        BGOBJLine[i+512] = BGOBJLine[i+256];
+        BGOBJLine[i+256] = BGOBJLine[i];
+        BGOBJLine[i] = 0x40000000; // 3D-layer placeholder
+    }
+}
+#endif
 
 template<bool mosaic>
 void SoftRenderer2D::DrawBG_Text(u32 line, u32 bgnum)
@@ -555,6 +1738,180 @@ void SoftRenderer2D::DrawBG_Text(u32 line, u32 bgnum)
     }
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: byte-for-byte duplicate of DrawBG_Text<mosaic> above with the two
+// DrawPixel(...) leaf calls parameterized via drawPixel (see StructuredDrawPixelFn / class-level
+// comment in GPU2D_Soft.h for why this is a sibling method rather than a second template
+// parameter bolted onto DrawBG_Text itself). Everything else -- field names, bit tests, the
+// GPU2D.BGMosaicLine mosaic-Y handling -- matches this fork's already-adapted DrawBG_Text, not
+// reference's CurUnit->BGMosaicY form, since that is what this fork's GPU2D actually exposes.
+template<bool mosaic, SoftRenderer2D::StructuredDrawPixelFn drawPixel>
+void SoftRenderer2D::DrawBG_Text_Structured(u32 line, u32 bgnum)
+{
+    // workaround for backgrounds missing on aarch64 with lto build
+    asm volatile ("" : : : "memory");
+
+    u16 bgcnt = GPU2D.BGCnt[bgnum];
+
+    u32 tilesetaddr, tilemapaddr;
+    u16* pal;
+    u32 extpal, extpalslot;
+
+    u16 xoff = GPU2D.BGXPos[bgnum];
+    u16 yoff = GPU2D.BGYPos[bgnum];
+
+    if (bgcnt & (1<<6))
+        yoff += GPU2D.BGMosaicLine;
+    else
+        yoff += line;
+
+    u32 widexmask = (bgcnt & (1<<14)) ? 0x100 : 0;
+
+    extpal = (GPU2D.DispCnt & (1<<30));
+    if (extpal) extpalslot = ((bgnum<2) && (bgcnt&0x2000)) ? (2+bgnum) : bgnum;
+
+    u8* bgvram;
+    u32 bgvrammask;
+    GPU2D.GetBGVRAM(bgvram, bgvrammask);
+    if (GPU2D.Num)
+    {
+        tilesetaddr = ((bgcnt & 0x003C) << 12);
+        tilemapaddr = ((bgcnt & 0x1F00) << 3);
+
+        pal = (u16*)&GPU.Palette[0x400];
+    }
+    else
+    {
+        tilesetaddr = ((GPU2D.DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
+        tilemapaddr = ((GPU2D.DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
+
+        pal = (u16*)&GPU.Palette[0];
+    }
+
+    // adjust Y position in tilemap
+    if (bgcnt & (1<<15))
+    {
+        tilemapaddr += ((yoff & 0x1F8) << 3);
+        if (bgcnt & (1<<14))
+            tilemapaddr += ((yoff & 0x100) << 3);
+    }
+    else
+        tilemapaddr += ((yoff & 0xF8) << 3);
+
+    u16 curtile;
+    u16* curpal;
+    u32 pixelsaddr;
+    u8 color;
+    u32 lastxpos;
+
+    if (bgcnt & (1<<7))
+    {
+        // 256-color
+
+        // preload shit as needed
+        if ((xoff & 0x7) || mosaic)
+        {
+            curtile = *(u16*)&bgvram[(tilemapaddr + ((xoff & 0xF8) >> 2) + ((xoff & widexmask) << 3)) & bgvrammask];
+
+            if (extpal) curpal = GPU2D.GetBGExtPal(extpalslot, curtile>>12);
+            else        curpal = pal;
+
+            pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 6)
+                                     + (((curtile & (1<<11)) ? (7-(yoff&0x7)) : (yoff&0x7)) << 3);
+        }
+
+        if (mosaic) lastxpos = xoff;
+
+        for (int i = 0; i < 256; i++)
+        {
+            u32 xpos;
+            if (mosaic) xpos = xoff - CurBGXMosaicTable[i];
+            else        xpos = xoff;
+
+            if ((!mosaic && (!(xpos & 0x7))) ||
+                (mosaic && ((xpos >> 3) != (lastxpos >> 3))))
+            {
+                // load a new tile
+                curtile = *(u16*)&bgvram[(tilemapaddr + ((xpos & 0xF8) >> 2) + ((xpos & widexmask) << 3)) & bgvrammask];
+
+                if (extpal) curpal = GPU2D.GetBGExtPal(extpalslot, curtile>>12);
+                else        curpal = pal;
+
+                pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 6)
+                                         + (((curtile & (1<<11)) ? (7-(yoff&0x7)) : (yoff&0x7)) << 3);
+
+                if (mosaic) lastxpos = xpos;
+            }
+
+            // draw pixel
+            if (WindowMask[i] & (1<<bgnum))
+            {
+                u32 tilexoff = (curtile & (1<<10)) ? (7-(xpos&0x7)) : (xpos&0x7);
+                color = bgvram[(pixelsaddr + tilexoff) & bgvrammask];
+
+                if (color)
+                    drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+            }
+
+            xoff++;
+        }
+    }
+    else
+    {
+        // 16-color
+
+        // preload shit as needed
+        if ((xoff & 0x7) || mosaic)
+        {
+            curtile = *(u16*)&bgvram[((tilemapaddr + ((xoff & 0xF8) >> 2) + ((xoff & widexmask) << 3))) & bgvrammask];
+            curpal = pal + ((curtile & 0xF000) >> 8);
+            pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 5)
+                                     + (((curtile & (1<<11)) ? (7-(yoff&0x7)) : (yoff&0x7)) << 2);
+        }
+
+        if (mosaic) lastxpos = xoff;
+
+        for (int i = 0; i < 256; i++)
+        {
+            u32 xpos;
+            if (mosaic) xpos = xoff - CurBGXMosaicTable[i];
+            else        xpos = xoff;
+
+            if ((!mosaic && (!(xpos & 0x7))) ||
+                (mosaic && ((xpos >> 3) != (lastxpos >> 3))))
+            {
+                // load a new tile
+                curtile = *(u16*)&bgvram[(tilemapaddr + ((xpos & 0xF8) >> 2) + ((xpos & widexmask) << 3)) & bgvrammask];
+                curpal = pal + ((curtile & 0xF000) >> 8);
+                pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 5)
+                                         + (((curtile & (1<<11)) ? (7-(yoff&0x7)) : (yoff&0x7)) << 2);
+
+                if (mosaic) lastxpos = xpos;
+            }
+
+            // draw pixel
+            if (WindowMask[i] & (1<<bgnum))
+            {
+                u32 tilexoff = (curtile & (1<<10)) ? (7-(xpos&0x7)) : (xpos&0x7);
+                if (tilexoff & 0x1)
+                {
+                    color = bgvram[(pixelsaddr + (tilexoff >> 1)) & bgvrammask] >> 4;
+                }
+                else
+                {
+                    color = bgvram[(pixelsaddr + (tilexoff >> 1)) & bgvrammask] & 0x0F;
+                }
+
+                if (color)
+                    drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+            }
+
+            xoff++;
+        }
+    }
+}
+#endif
+
 template<bool mosaic>
 void SoftRenderer2D::DrawBG_Affine(u32 line, u32 bgnum)
 {
@@ -643,6 +2000,99 @@ void SoftRenderer2D::DrawBG_Affine(u32 line, u32 bgnum)
         rotY += rotC;
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: byte-for-byte duplicate of DrawBG_Affine<mosaic> above with the single
+// DrawPixel(...) leaf call parameterized via drawPixel. See DrawBG_Text_Structured comment above.
+template<bool mosaic, SoftRenderer2D::StructuredDrawPixelFn drawPixel>
+void SoftRenderer2D::DrawBG_Affine_Structured(u32 line, u32 bgnum)
+{
+    u16 bgcnt = GPU2D.BGCnt[bgnum];
+
+    u32 tilesetaddr, tilemapaddr;
+    u16* pal;
+
+    u32 coordmask;
+    u32 yshift;
+    switch ((bgcnt >> 14) & 0x3)
+    {
+        case 0: coordmask = 0x07800; yshift = 7; break;
+        case 1: coordmask = 0x0F800; yshift = 8; break;
+        case 2: coordmask = 0x1F800; yshift = 9; break;
+        case 3: coordmask = 0x3F800; yshift = 10; break;
+    }
+
+    u32 overflowmask;
+    if (bgcnt & (1<<13)) overflowmask = 0;
+    else                 overflowmask = ~(coordmask | 0x7FF);
+
+    s16 rotA = GPU2D.BGRotA[bgnum-2];
+    s16 rotC = GPU2D.BGRotC[bgnum-2];
+
+    s32 rotX = GPU2D.BGXRefInternal[bgnum-2];
+    s32 rotY = GPU2D.BGYRefInternal[bgnum-2];
+
+    u8* bgvram;
+    u32 bgvrammask;
+    GPU2D.GetBGVRAM(bgvram, bgvrammask);
+
+    if (GPU2D.Num)
+    {
+        tilesetaddr = ((bgcnt & 0x003C) << 12);
+        tilemapaddr = ((bgcnt & 0x1F00) << 3);
+
+        pal = (u16*)&GPU.Palette[0x400];
+    }
+    else
+    {
+        tilesetaddr = ((GPU2D.DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
+        tilemapaddr = ((GPU2D.DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
+
+        pal = (u16*)&GPU.Palette[0];
+    }
+
+    u16 curtile;
+    u8 color;
+
+    yshift -= 3;
+
+    for (int i = 0; i < 256; i++)
+    {
+        if (WindowMask[i] & (1<<bgnum))
+        {
+            s32 finalX, finalY;
+            if (mosaic)
+            {
+                int im = CurBGXMosaicTable[i];
+                finalX = rotX - (im * rotA);
+                finalY = rotY - (im * rotC);
+            }
+            else
+            {
+                finalX = rotX;
+                finalY = rotY;
+            }
+
+            if ((!((finalX|finalY) & overflowmask)))
+            {
+                curtile = bgvram[(tilemapaddr + ((((finalY & coordmask) >> 11) << yshift) + ((finalX & coordmask) >> 11))) & bgvrammask];
+
+                // draw pixel
+                u32 tilexoff = (finalX >> 8) & 0x7;
+                u32 tileyoff = (finalY >> 8) & 0x7;
+
+                color = bgvram[(tilesetaddr + (curtile << 6) + (tileyoff << 3) + tilexoff) & bgvrammask];
+
+                if (color)
+                    drawPixel(&BGOBJLine[i], pal[color], 0x01000000<<bgnum);
+            }
+        }
+
+        rotX += rotA;
+        rotY += rotC;
+    }
+}
+#endif
 
 template<bool mosaic>
 void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
@@ -852,6 +2302,234 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
     }
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: byte-for-byte duplicate of DrawBG_Extended<mosaic> above with the three
+// DrawPixel(...) leaf calls parameterized via drawPixel, PLUS the reference-only
+// TryDrawStructuredVulkan2DCapturePixel(...) check in the direct-color-bitmap sub-branch
+// (reference GPU2D_Soft.cpp ~3169-3176): when this BG's bitmap pixel address is backed by a
+// VRAM bank holding valid structured capture data (i.e. this is really a VRAM-display-mode
+// screen previously populated by DoCapture's structured branch), push the captured
+// below/placeholder/above triplet directly and skip the raw VRAM color read for that pixel. See
+// DrawBG_Text_Structured comment above for why this is a sibling method, not a second template
+// parameter on DrawBG_Extended.
+template<bool mosaic, SoftRenderer2D::StructuredDrawPixelFn drawPixel>
+void SoftRenderer2D::DrawBG_Extended_Structured(u32 line, u32 bgnum)
+{
+    u16 bgcnt = GPU2D.BGCnt[bgnum];
+
+    u32 tilesetaddr, tilemapaddr;
+    u16* pal;
+    u32 extpal;
+
+    u8* bgvram;
+    u32 bgvrammask;
+    GPU2D.GetBGVRAM(bgvram, bgvrammask);
+
+    extpal = (GPU2D.DispCnt & (1<<30));
+
+    s16 rotA = GPU2D.BGRotA[bgnum-2];
+    s16 rotC = GPU2D.BGRotC[bgnum-2];
+
+    s32 rotX = GPU2D.BGXRefInternal[bgnum-2];
+    s32 rotY = GPU2D.BGYRefInternal[bgnum-2];
+
+    if (bgcnt & (1<<7))
+    {
+        // bitmap modes
+
+        u32 xmask, ymask;
+        u32 yshift;
+        switch ((bgcnt >> 14) & 0x3)
+        {
+            case 0: xmask = 0x07FFF; ymask = 0x07FFF; yshift = 7; break;
+            case 1: xmask = 0x0FFFF; ymask = 0x0FFFF; yshift = 8; break;
+            case 2: xmask = 0x1FFFF; ymask = 0x0FFFF; yshift = 9; break;
+            case 3: xmask = 0x1FFFF; ymask = 0x1FFFF; yshift = 9; break;
+        }
+
+        u32 ofxmask, ofymask;
+        if (bgcnt & (1<<13))
+        {
+            ofxmask = 0;
+            ofymask = 0;
+        }
+        else
+        {
+            ofxmask = ~xmask;
+            ofymask = ~ymask;
+        }
+
+        tilemapaddr = ((bgcnt & 0x1F00) << 6);
+
+        if (bgcnt & (1<<2))
+        {
+            // direct color bitmap
+
+            u16 color;
+
+            for (int i = 0; i < 256; i++)
+            {
+                if (WindowMask[i] & (1<<bgnum))
+                {
+                    s32 finalX, finalY;
+                    if (mosaic)
+                    {
+                        int im = CurBGXMosaicTable[i];
+                        finalX = rotX - (im * rotA);
+                        finalY = rotY - (im * rotC);
+                    }
+                    else
+                    {
+                        finalX = rotX;
+                        finalY = rotY;
+                    }
+
+                    if (!(finalX & ofxmask) && !(finalY & ofymask))
+                    {
+                        const u32 pixelByteAddress =
+                            (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
+                        if (TryDrawStructuredVulkan2DCapturePixel(&BGOBJLine[i], pixelByteAddress))
+                        {
+                            rotX += rotA;
+                            rotY += rotC;
+                            continue;
+                        }
+
+                        color = *(u16*)&bgvram[pixelByteAddress];
+
+                        if (color & 0x8000)
+                            drawPixel(&BGOBJLine[i], color & 0x7FFF, 0x01000000<<bgnum);
+                    }
+                }
+
+                rotX += rotA;
+                rotY += rotC;
+            }
+        }
+        else
+        {
+            // 256-color bitmap
+
+            if (GPU2D.Num) pal = (u16*)&GPU.Palette[0x400];
+            else           pal = (u16*)&GPU.Palette[0];
+
+            u8 color;
+
+            for (int i = 0; i < 256; i++)
+            {
+                if (WindowMask[i] & (1<<bgnum))
+                {
+                    s32 finalX, finalY;
+                    if (mosaic)
+                    {
+                        int im = CurBGXMosaicTable[i];
+                        finalX = rotX - (im * rotA);
+                        finalY = rotY - (im * rotC);
+                    }
+                    else
+                    {
+                        finalX = rotX;
+                        finalY = rotY;
+                    }
+
+                    if (!(finalX & ofxmask) && !(finalY & ofymask))
+                    {
+                        color = bgvram[(tilemapaddr + (((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) & bgvrammask];
+
+                        if (color)
+                            drawPixel(&BGOBJLine[i], pal[color], 0x01000000<<bgnum);
+                    }
+                }
+
+                rotX += rotA;
+                rotY += rotC;
+            }
+        }
+    }
+    else
+    {
+        // mixed affine/text mode
+
+        u32 coordmask;
+        u32 yshift;
+        switch ((bgcnt >> 14) & 0x3)
+        {
+            case 0: coordmask = 0x07800; yshift = 7; break;
+            case 1: coordmask = 0x0F800; yshift = 8; break;
+            case 2: coordmask = 0x1F800; yshift = 9; break;
+            case 3: coordmask = 0x3F800; yshift = 10; break;
+        }
+
+        u32 overflowmask;
+        if (bgcnt & (1<<13)) overflowmask = 0;
+        else                 overflowmask = ~(coordmask | 0x7FF);
+
+        if (GPU2D.Num)
+        {
+            tilesetaddr = ((bgcnt & 0x003C) << 12);
+            tilemapaddr = ((bgcnt & 0x1F00) << 3);
+
+            pal = (u16*)&GPU.Palette[0x400];
+        }
+        else
+        {
+            tilesetaddr = ((GPU2D.DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
+            tilemapaddr = ((GPU2D.DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
+
+            pal = (u16*)&GPU.Palette[0];
+        }
+
+        u16 curtile;
+        u16* curpal;
+        u8 color;
+
+        yshift -= 3;
+
+        for (int i = 0; i < 256; i++)
+        {
+            if (WindowMask[i] & (1<<bgnum))
+            {
+                s32 finalX, finalY;
+                if (mosaic)
+                {
+                    int im = CurBGXMosaicTable[i];
+                    finalX = rotX - (im * rotA);
+                    finalY = rotY - (im * rotC);
+                }
+                else
+                {
+                    finalX = rotX;
+                    finalY = rotY;
+                }
+
+                if ((!((finalX|finalY) & overflowmask)))
+                {
+                    curtile = *(u16*)&bgvram[(tilemapaddr + (((((finalY & coordmask) >> 11) << yshift) + ((finalX & coordmask) >> 11)) << 1)) & bgvrammask];
+
+                    if (extpal) curpal = GPU2D.GetBGExtPal(bgnum, curtile>>12);
+                    else        curpal = pal;
+
+                    // draw pixel
+                    u32 tilexoff = (finalX >> 8) & 0x7;
+                    u32 tileyoff = (finalY >> 8) & 0x7;
+
+                    if (curtile & (1<<10)) tilexoff = 7-tilexoff;
+                    if (curtile & (1<<11)) tileyoff = 7-tileyoff;
+
+                    color = bgvram[(tilesetaddr + ((curtile & 0x03FF) << 6) + (tileyoff << 3) + tilexoff) & bgvrammask];
+
+                    if (color)
+                        drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+                }
+            }
+
+            rotX += rotA;
+            rotY += rotC;
+        }
+    }
+}
+#endif
+
 template<bool mosaic>
 void SoftRenderer2D::DrawBG_Large(u32 line) // BG is always BG2
 {
@@ -934,6 +2612,92 @@ void SoftRenderer2D::DrawBG_Large(u32 line) // BG is always BG2
     }
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: byte-for-byte duplicate of DrawBG_Large<mosaic> above with the single
+// DrawPixel(...) leaf call parameterized via drawPixel. See DrawBG_Text_Structured comment above.
+template<bool mosaic, SoftRenderer2D::StructuredDrawPixelFn drawPixel>
+void SoftRenderer2D::DrawBG_Large_Structured(u32 line) // BG is always BG2
+{
+    u16 bgcnt = GPU2D.BGCnt[2];
+
+    u16* pal;
+
+    // large BG sizes:
+    // 0: 512x1024
+    // 1: 1024x512
+    // 2: 512x256
+    // 3: 512x512
+    u32 xmask, ymask;
+    u32 yshift;
+    switch ((bgcnt >> 14) & 0x3)
+    {
+        case 0: xmask = 0x1FFFF; ymask = 0x3FFFF; yshift = 9; break;
+        case 1: xmask = 0x3FFFF; ymask = 0x1FFFF; yshift = 10; break;
+        case 2: xmask = 0x1FFFF; ymask = 0x0FFFF; yshift = 9; break;
+        case 3: xmask = 0x1FFFF; ymask = 0x1FFFF; yshift = 9; break;
+    }
+
+    u32 ofxmask, ofymask;
+    if (bgcnt & (1<<13))
+    {
+        ofxmask = 0;
+        ofymask = 0;
+    }
+    else
+    {
+        ofxmask = ~xmask;
+        ofymask = ~ymask;
+    }
+
+    s16 rotA = GPU2D.BGRotA[0];
+    s16 rotC = GPU2D.BGRotC[0];
+
+    s32 rotX = GPU2D.BGXRefInternal[0];
+    s32 rotY = GPU2D.BGYRefInternal[0];
+
+    u8* bgvram;
+    u32 bgvrammask;
+    GPU2D.GetBGVRAM(bgvram, bgvrammask);
+
+    // 256-color bitmap
+
+    if (GPU2D.Num) pal = (u16*)&GPU.Palette[0x400];
+    else           pal = (u16*)&GPU.Palette[0];
+
+    u8 color;
+
+    for (int i = 0; i < 256; i++)
+    {
+        if (WindowMask[i] & (1<<2))
+        {
+            s32 finalX, finalY;
+            if (mosaic)
+            {
+                int im = CurBGXMosaicTable[i];
+                finalX = rotX - (im * rotA);
+                finalY = rotY - (im * rotC);
+            }
+            else
+            {
+                finalX = rotX;
+                finalY = rotY;
+            }
+
+            if (!(finalX & ofxmask) && !(finalY & ofymask))
+            {
+                color = bgvram[((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) & bgvrammask];
+
+                if (color)
+                    drawPixel(&BGOBJLine[i], pal[color], 0x01000000<<2);
+            }
+        }
+
+        rotX += rotA;
+        rotY += rotC;
+    }
+}
+#endif
+
 
 void SoftRenderer2D::ApplySpriteMosaicX()
 {
@@ -1007,6 +2771,38 @@ void SoftRenderer2D::InterleaveSprites(u32 prio)
         DrawPixel(&BGOBJLine[i], color, pixel & 0xFF000000);
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: byte-for-byte duplicate of InterleaveSprites above with the DrawPixel(...)
+// leaf call parameterized via drawPixel. See DrawBG_Text_Structured comment above.
+template<SoftRenderer2D::StructuredDrawPixelFn drawPixel>
+void SoftRenderer2D::InterleaveSprites_Structured(u32 prio)
+{
+    u32 attrmask = (prio << 16) | OBJ_IsOpaque;
+    u16* pal = (u16*)&GPU.Palette[GPU2D.Num ? 0x600 : 0x200];
+    u16* extpal = GPU2D.GetOBJExtPal();
+
+    for (u32 i = 0; i < 256; i++)
+    {
+        if ((OBJLine[i] & OBJ_OpaPrioMask) != attrmask)
+            continue;
+        if (!(WindowMask[i] & 0x10))
+            continue;
+
+        u16 color;
+        u32 pixel = OBJLine[i];
+
+        if (pixel & OBJ_DirectColor)
+            color = pixel & 0x7FFF;
+        else if (pixel & OBJ_StandardPal)
+            color = pal[pixel & 0xFF];
+        else
+            color = extpal[pixel & 0xFFF];
+
+        drawPixel(&BGOBJLine[i], color, pixel & 0xFF000000);
+    }
+}
+#endif
 
 #define DoDrawSprite(type, ...) \
     do \
@@ -1543,5 +3339,93 @@ void SoftRenderer2D::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos,
         }
     }
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT-ADAPT: StructuredVulkan2DRendererBridge method bodies (see class-level comment
+// in GPU2D_Soft.h). Sapphire's single SoftRenderer stores both physical screens in one plane set.
+// This PC bridge recreates that storage from the fork's separate engine-A/engine-B renderers while
+// the producer's live screen ownership is still known.
+void StructuredVulkan2DRendererBridge::LatchStructuredVulkan2DLine(
+    int buffer,
+    u32 outputLine,
+    u32 sourceLine,
+    bool engineATargetsTop) noexcept
+{
+    if (buffer < 0
+        || buffer >= static_cast<int>(kStructuredBufferCount)
+        || outputLine >= kStructuredScreenHeight
+        || sourceLine >= kStructuredScreenHeight)
+    {
+        return;
+    }
+
+    const size_t bufferBase =
+        static_cast<size_t>(buffer)
+        * kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t destinationRow =
+        static_cast<size_t>(outputLine) * kStructuredScreenWidth;
+    const size_t sourceRow =
+        static_cast<size_t>(sourceLine) * kStructuredScreenWidth;
+    for (size_t screen = 0; screen < kStructuredScreenCount; screen++)
+    {
+        const bool topScreen = screen == 0;
+        const SoftRenderer2D& sourceRenderer =
+            (topScreen == engineATargetsTop) ? Rend2D_A : Rend2D_B;
+        for (size_t plane = 0; plane < kStructuredPlaneCount; plane++)
+        {
+            const u32* source =
+                sourceRenderer.GetStructuredVulkan2DPlane(topScreen, static_cast<u32>(plane));
+            u32* destination =
+                PhysicalStructuredVulkan2DPlanes.data()
+                + bufferBase
+                + ((screen * kStructuredPlaneCount + plane) * kStructuredPixelCount);
+            if (source != nullptr)
+            {
+                std::memcpy(
+                    destination + destinationRow,
+                    source + sourceRow,
+                    kStructuredScreenWidth * sizeof(u32));
+            }
+            else
+            {
+                std::fill_n(
+                    destination + destinationRow,
+                    kStructuredScreenWidth,
+                    0u);
+            }
+        }
+    }
+}
+
+const u32* StructuredVulkan2DRendererBridge::GetStructuredVulkan2DPlane(
+    int buffer,
+    bool topScreen,
+    u32 plane) const noexcept
+{
+    if (buffer < 0
+        || buffer >= static_cast<int>(kStructuredBufferCount)
+        || plane >= kStructuredPlaneCount
+        || Rend2D_A.GetStructuredVulkan2DPlane(topScreen, plane) == nullptr)
+    {
+        return nullptr;
+    }
+
+    const size_t bufferBase =
+        static_cast<size_t>(buffer)
+        * kStructuredScreenCount * kStructuredPlaneCount * kStructuredPixelCount;
+    const size_t screen = topScreen ? 0u : 1u;
+    return PhysicalStructuredVulkan2DPlanes.data()
+        + bufferBase
+        + ((screen * kStructuredPlaneCount + static_cast<size_t>(plane))
+            * kStructuredPixelCount);
+}
+
+void StructuredVulkan2DRendererBridge::ClearStructuredVulkan2DState() noexcept
+{
+    Rend2D_A.ClearStructuredVulkan2DState();
+    Rend2D_B.ClearStructuredVulkan2DState();
+    PhysicalStructuredVulkan2DPlanes.fill(0u);
+}
+#endif
 
 }

@@ -108,6 +108,14 @@ public:
     u8 EVA, EVB;
     u8 EVY;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) GPU2D::Unit exposes DISPCAPCNT as a
+    // plain public "CaptureCnt" field read directly by GPU3D_Vulkan.cpp (verbatim, untouchable).
+    // Our fork centralizes the capture-control register on melonDS::GPU instead of per-unit;
+    // this reference-bound alias reads that single storage location so no state is duplicated.
+    u32& CaptureCnt;
+#endif
+
 private:
     friend class Renderer2D;
 

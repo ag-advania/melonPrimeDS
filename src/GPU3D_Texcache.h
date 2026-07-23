@@ -7,6 +7,11 @@
 #include <assert.h>
 #include <unordered_map>
 #include <vector>
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// MELONPRIME-PORT: reference-generation (Sapphire) GPU3D_Texcache.h Update() uses
+// std::forward, needed for the guarded reference-generation overload added below.
+#include <utility>
+#endif
 
 #define XXH_STATIC_LINKING_ONLY
 #include "xxhash/xxhash.h"
@@ -45,8 +50,30 @@ class Texcache
 {
 public:
     Texcache(melonDS::GPU& gpu, const TexLoaderT& texloader)
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // MELONPRIME-PORT-ADAPT: GPU is a pointer under this guard (see declaration below).
+        : GPU(&gpu), TexLoader(texloader) // probably better if this would be a move constructor???
+#else
         : GPU(gpu), TexLoader(texloader) // probably better if this would be a move constructor???
+#endif
     {}
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) GPU3D_Texcache.h constructor
+    // (verbatim). GPU3D_Vulkan.cpp (byte-verbatim, untouchable) constructs its Texcache member
+    // with this single-argument form (no GPU& available at VulkanRenderer3D construction time).
+    // MELONPRIME-PORT-ADAPT: the pre-existing `GPU` member below becomes a pointer under this
+    // guard (see declaration) so it can default-initialize to null here instead of requiring a
+    // reference binding; old-generation callers (OpenGL/Compute renderers) are unaffected --
+    // see the per-method shadow-reference adaptation in Update(u8&)/GetTexture(u32,...) below.
+    Texcache(const TexLoaderT& texloader)
+        : TexLoader(texloader) // probably better if this would be a move constructor???
+    {}
+
+    // reference-generation accessors (GPU3D_Texcache.h ~52-53), verbatim.
+    TexLoaderT& GetLoader() { return TexLoader; }
+    const TexLoaderT& GetLoader() const { return TexLoader; }
+#endif
 
     u64 MaskedHash(u8* vram, u32 vramSize, u32 addr, u32 size)
     {
@@ -94,6 +121,13 @@ public:
 
     bool Update(u8& clrBitmapDirty)
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // MELONPRIME-PORT-ADAPT: under the Vulkan guard the `GPU` member is a pointer (see
+        // declaration below) so the reference-generation ctor can default-construct without a
+        // GPU&; this shadow restores the original `GPU.` reference syntax for the rest of this
+        // (old-generation, OpenGL/Compute-used) method body unchanged.
+        melonDS::GPU& GPU = *this->GPU;
+#endif
         auto textureDirty = GPU.VRAMDirty_Texture.DeriveState(GPU.VRAMMap_Texture, GPU);
         auto texPalDirty = GPU.VRAMDirty_TexPal.DeriveState(GPU.VRAMMap_TexPal, GPU);
 
@@ -163,8 +197,76 @@ public:
         return false;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) GPU3D_Texcache.h Update(GPU&,
+    // BeforeMutationT&&) / Update(GPU&) overloads, verbatim. Overload resolution distinguishes
+    // these from the old-generation Update(u8&) above; no state is duplicated -- both
+    // generations share Cache/FreeTextures/TexArrays/TexLoader.
+    template <typename BeforeMutationT>
+    bool Update(GPU& gpu, BeforeMutationT&& beforeMutation)
+    {
+        auto textureDirty = gpu.VRAMDirty_Texture.DeriveState(gpu.VRAMMap_Texture, gpu);
+        auto texPalDirty = gpu.VRAMDirty_TexPal.DeriveState(gpu.VRAMMap_TexPal, gpu);
+
+        bool textureChanged = gpu.MakeVRAMFlat_TextureCoherent(textureDirty);
+        bool texPalChanged = gpu.MakeVRAMFlat_TexPalCoherent(texPalDirty);
+
+        if (textureChanged || texPalChanged)
+        {
+            std::forward<BeforeMutationT>(beforeMutation)();
+            //printf("check invalidation %d\n", TexCache.size());
+            for (auto it = Cache.begin(); it != Cache.end();)
+            {
+                TexCacheEntry& entry = it->second;
+                if (textureChanged)
+                {
+                    for (u32 i = 0; i < 2; i++)
+                    {
+                        if (CheckInvalid(entry.TextureRAMStart[i], entry.TextureRAMSize[i],
+                                entry.TextureHash[i],
+                                textureDirty.Data,
+                                gpu.VRAMFlat_Texture, sizeof(gpu.VRAMFlat_Texture)))
+                            goto invalidate;
+                    }
+                }
+
+                if (texPalChanged && entry.TexPalSize > 0)
+                {
+                    if (CheckInvalid(entry.TexPalStart, entry.TexPalSize,
+                            entry.TexPalHash,
+                            texPalDirty.Data,
+                            gpu.VRAMFlat_TexPal, sizeof(gpu.VRAMFlat_TexPal)))
+                        goto invalidate;
+                }
+
+                it++;
+                continue;
+            invalidate:
+                FreeTextures[entry.WidthLog2][entry.HeightLog2].push_back(entry.Texture);
+
+                //printf("invalidating texture %d\n", entry.ImageDescriptor);
+
+                it = Cache.erase(it);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    bool Update(GPU& gpu)
+    {
+        return Update(gpu, []() {});
+    }
+#endif
+
     void GetTexture(u32 texParam, u32 palBase, TexHandleT& textureHandle, u32& layer, u32*& helper)
     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // MELONPRIME-PORT-ADAPT: see Update(u8&) above for why this shadow is needed.
+        melonDS::GPU& GPU = *this->GPU;
+#endif
         // remove sampling and texcoord gen params
         texParam &= ~0xC00F0000;
 
@@ -302,6 +404,143 @@ public:
         helper = &Cache.emplace(std::make_pair(key, entry)).first->second.LastVariant;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) GPU3D_Texcache.h GetTexture(GPU&, ...)
+    // overload, verbatim (uses the local `gpu` parameter throughout, so it needs none of the
+    // `this->GPU` shadow the old-generation methods use). Shares DecodingBuffer/Cache/
+    // TexArrays/FreeTextures/TexLoader with the old-generation overload above -- no duplicated
+    // state.
+    void GetTexture(GPU& gpu, u32 texParam, u32 palBase, TexHandleT& textureHandle, u32& layer, u32*& helper)
+    {
+        // remove sampling and texcoord gen params
+        texParam &= ~0xC00F0000;
+
+        u32 fmt = (texParam >> 26) & 0x7;
+        u64 key = texParam;
+        if (fmt != 7)
+        {
+            key |= (u64)palBase << 32;
+            if (fmt == 5)
+                key &= ~((u64)1 << 29);
+        }
+
+        assert(fmt != 0 && "no texture is not a texture format!");
+
+        auto it = Cache.find(key);
+
+        if (it != Cache.end())
+        {
+            textureHandle = it->second.Texture.TextureID;
+            layer = it->second.Texture.Layer;
+            helper = &it->second.LastVariant;
+            return;
+        }
+
+        u32 widthLog2 = (texParam >> 20) & 0x7;
+        u32 heightLog2 = (texParam >> 23) & 0x7;
+        u32 width = 8 << widthLog2;
+        u32 height = 8 << heightLog2;
+
+        u32 addr = (texParam & 0xFFFF) * 8;
+
+        TexCacheEntry entry = {0};
+
+        entry.TextureRAMStart[0] = addr;
+        entry.WidthLog2 = widthLog2;
+        entry.HeightLog2 = heightLog2;
+
+        // apparently a new texture
+        if (fmt == 7)
+        {
+            entry.TextureRAMSize[0] = width*height*2;
+
+            ConvertBitmapTexture<outputFmt_RGB6A5>(width, height, DecodingBuffer, addr, gpu);
+        }
+        else if (fmt == 5)
+        {
+            u32 slot1addr = 0x20000 + ((addr & 0x1FFFC) >> 1);
+            if (addr >= 0x40000)
+                slot1addr += 0x10000;
+
+            entry.TextureRAMSize[0] = width*height/16*4;
+            entry.TextureRAMStart[1] = slot1addr;
+            entry.TextureRAMSize[1] = width*height/16*2;
+            entry.TexPalStart = palBase*16;
+            entry.TexPalSize = 0x10000;
+
+            ConvertCompressedTexture<outputFmt_RGB6A5>(width, height, DecodingBuffer, addr, slot1addr, entry.TexPalStart, gpu);
+        }
+        else
+        {
+            u32 texSize, palAddr = palBase*16, numPalEntries;
+            switch (fmt)
+            {
+            case 1: texSize = width*height; numPalEntries = 32; break;
+            case 6: texSize = width*height; numPalEntries = 8; break;
+            case 2: texSize = width*height/4; numPalEntries = 4; palAddr >>= 1; break;
+            case 3: texSize = width*height/2; numPalEntries = 16; break;
+            case 4: texSize = width*height; numPalEntries = 256; break;
+            }
+
+            palAddr &= 0x1FFFF;
+
+            entry.TextureRAMSize[0] = texSize;
+            entry.TexPalStart = palAddr;
+            entry.TexPalSize = numPalEntries*2;
+
+            bool color0Transparent = texParam & (1 << 29);
+
+            switch (fmt)
+            {
+            case 1: ConvertAXIYTexture<outputFmt_RGB6A5, 3, 5>(width, height, DecodingBuffer, addr, palAddr, gpu); break;
+            case 6: ConvertAXIYTexture<outputFmt_RGB6A5, 5, 3>(width, height, DecodingBuffer, addr, palAddr, gpu); break;
+            case 2: ConvertNColorsTexture<outputFmt_RGB6A5, 2>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, gpu); break;
+            case 3: ConvertNColorsTexture<outputFmt_RGB6A5, 4>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, gpu); break;
+            case 4: ConvertNColorsTexture<outputFmt_RGB6A5, 8>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, gpu); break;
+            }
+        }
+
+        for (int i = 0; i < 2; i++)
+        {
+            if (entry.TextureRAMSize[i])
+                entry.TextureHash[i] = MaskedHash(gpu.VRAMFlat_Texture, sizeof(gpu.VRAMFlat_Texture),
+                    entry.TextureRAMStart[i], entry.TextureRAMSize[i]);
+        }
+        if (entry.TexPalSize)
+            entry.TexPalHash = MaskedHash(gpu.VRAMFlat_TexPal, sizeof(gpu.VRAMFlat_TexPal),
+                entry.TexPalStart, entry.TexPalSize);
+
+        auto& texArrays = TexArrays[widthLog2][heightLog2];
+        auto& freeTextures = FreeTextures[widthLog2][heightLog2];
+
+        if (freeTextures.size() == 0)
+        {
+            texArrays.resize(texArrays.size()+1);
+            TexHandleT& array = texArrays[texArrays.size()-1];
+
+            u32 layers = std::min<u32>((8*1024*1024) / (width*height*4), 64);
+
+            array = TexLoader.GenerateTexture(width, height, layers);
+
+            for (u32 i = 0; i < layers; i++)
+            {
+                freeTextures.push_back(TexArrayEntry{array, i});
+            }
+        }
+
+        TexArrayEntry storagePlace = freeTextures[freeTextures.size()-1];
+        freeTextures.pop_back();
+
+        entry.Texture = storagePlace;
+
+        TexLoader.UploadTexture(storagePlace.TextureID, width, height, storagePlace.Layer, DecodingBuffer);
+
+        textureHandle = storagePlace.TextureID;
+        layer = storagePlace.Layer;
+        helper = &Cache.emplace(std::make_pair(key, entry)).first->second.LastVariant;
+    }
+#endif
+
     void Reset()
     {
         for (u32 i = 0; i < 8; i++)
@@ -318,7 +557,14 @@ public:
     }
 
 private:
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT-ADAPT: pointer instead of reference so the guarded reference-generation
+    // ctor above (which receives no GPU&) can default-construct it to null; old-generation
+    // methods restore reference semantics locally via `melonDS::GPU& GPU = *this->GPU;`.
+    melonDS::GPU* GPU = nullptr;
+#else
     melonDS::GPU& GPU;
+#endif
 
     struct TexArrayEntry
     {

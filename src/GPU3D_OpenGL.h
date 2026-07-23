@@ -28,7 +28,7 @@ namespace melonDS
 {
 class GLRenderer;
 
-class GLRenderer3D : public Renderer3D
+class GLRenderer3D : public Renderer3DLegacyBase
 {
 public:
     GLRenderer3D(melonDS::GPU3D& gpu3D, GLRenderer& parent) noexcept;

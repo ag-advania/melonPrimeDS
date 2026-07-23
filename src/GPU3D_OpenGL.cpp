@@ -104,7 +104,7 @@ void SetupDefaultTexParams(GLuint tex)
 }
 
 GLRenderer3D::GLRenderer3D(melonDS::GPU3D& gpu3D, GLRenderer& parent) noexcept :
-    Renderer3D(gpu3D), Parent(parent), Texcache(gpu3D.GPU, TexcacheOpenGLLoader(false))
+    Renderer3DLegacyBase(gpu3D), Parent(parent), Texcache(gpu3D.GPU, TexcacheOpenGLLoader(false))
 {
     ClearBitmap[0] = new u32[256*256];
     ClearBitmap[1] = new u32[256*256];

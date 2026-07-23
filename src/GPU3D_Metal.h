@@ -29,7 +29,7 @@ struct Metal3DDiagnostics
     uint32_t Draws = 0;
 };
 
-class MetalRenderer3D final : public Renderer3D
+class MetalRenderer3D final : public Renderer3DLegacyBase
 {
 public:
     MetalRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept;

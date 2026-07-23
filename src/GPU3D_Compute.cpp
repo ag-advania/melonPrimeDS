@@ -31,7 +31,7 @@ namespace melonDS
 {
 
 ComputeRenderer3D::ComputeRenderer3D(melonDS::GPU3D& gpu3D, GLRenderer& parent)
-    : Renderer3D(gpu3D), Parent(parent), Texcache(gpu3D.GPU, TexcacheOpenGLLoader(true))
+    : Renderer3DLegacyBase(gpu3D), Parent(parent), Texcache(gpu3D.GPU, TexcacheOpenGLLoader(true))
 {
     ScaleFactor = 0;
     HiresCoordinates = false;

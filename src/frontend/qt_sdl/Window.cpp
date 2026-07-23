@@ -86,6 +86,9 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeScreenVulkan.h"
+#endif
 #define MP_OPEN_MELONDS_DLG(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialog<Type>(parent)
 #define MP_OPEN_MELONDS_DLG_ONCE(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialogOnce<Type>(parent)
 #else
@@ -1141,6 +1144,20 @@ void MainWindow::createScreenPanel()
             delete panelMetal;
             panelMetal = nullptr;
         }
+    }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // W5 (Vulkan Qt wiring): unlike Metal above, renderer3D_Vulkan is a real, directly selectable
+    // `3D.Renderer` value (see MelonPrimeVideoBackend.h ResolvePresentationBackend()'s comment) --
+    // no env-var bootstrap gate here. ScreenPanelVulkan's attach happens lazily on first
+    // show/expose (see its event() override), not synchronously here, since attaching needs a
+    // valid native window ID that may not exist until after show()/setCentralWidget() below.
+    if (presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan)
+    {
+        ScreenPanelVulkan* panelVulkan = new ScreenPanelVulkan(this);
+        panelVulkan->show();
+        panel = panelVulkan;
     }
 #endif
 

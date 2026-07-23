@@ -25,6 +25,9 @@
 #include "GPU3D_Soft.h"
 #include "Platform.h"
 #include "GPU3D.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include <cassert>
+#endif
 
 namespace melonDS
 {
@@ -177,7 +180,26 @@ void GPU3D::ResetRenderingState() noexcept
 
     RenderClearAttr1 = 0x3F000000;
     RenderClearAttr2 = 0x00007FFF;
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Verbatim from reference melonDS-android-lib GPU3D::ResetRenderingState() (~:187).
+    RenderScreenSwapAt3D = false;
+#endif
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+void GPU3D::VCount215(melonDS::GPU& gpu) noexcept
+{
+    // Verbatim from reference melonDS-android-lib GPU3D::VCount215() (~:2538-2542),
+    // minus the CurrentRenderer->RenderFrame(gpu) dispatch: our GPU3D does not own the
+    // active Renderer3D (Renderer does, via Rend3D), so that half of the reference
+    // method has no home here. The render kickoff instead happens through
+    // Renderer::Start3DRendering(), called from the identical VCount==215 site in
+    // GPU::StartHBlank() (GPU.cpp), which VulkanGpuRenderer overrides to reach
+    // VulkanRenderer3D::RenderFrame(GPU&).
+    RenderScreenSwapAt3D = (NDS.PowerControl9 & (1u << 15)) != 0;
+}
+#endif
 
 void GPU3D::Reset() noexcept
 {
@@ -2916,6 +2938,34 @@ void GPU3D::Write32(u32 addr, u32 val) noexcept
 
     Log(LogLevel::Debug, "unknown GPU3D write32 %08X %08X\n", addr, val);
 }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// Set by the GPU_Vulkan glue immediately before constructing the Sapphire
+// VulkanRenderer3D (whose verbatim base-ctor call is Renderer3D(true) and carries no
+// GPU3D&), and cleared by the same glue right after construction completes.
+//
+// Renderer3D itself no longer stores GPU&/GPU3D& reference members (see
+// Renderer3DLegacyBase in GPU3D.h for why), so VulkanRenderer3D's construction path
+// has nothing to bind them into -- every VulkanRenderer3D method instead takes an
+// explicit GPU& parameter. This context therefore currently exists purely as a
+// calling-convention contract, verified below, and as a documented hook for any
+// future accelerated-renderer generation that *does* need GPU3D-derived state during
+// construction.
+static thread_local melonDS::GPU3D* MelonPrimeAcceleratedCtorContext = nullptr;
+
+void MelonPrimeSetAcceleratedRendererCtorContext(melonDS::GPU3D* gpu3D) noexcept
+{
+    MelonPrimeAcceleratedCtorContext = gpu3D;
+}
+
+Renderer3D::Renderer3D(bool Accelerated)
+    : Accelerated(Accelerated)
+{
+    // Programming error if an accelerated renderer is constructed without the glue
+    // having set the context first; crash loudly rather than silently misbehave.
+    assert(!Accelerated || MelonPrimeAcceleratedCtorContext != nullptr);
+}
+#endif
 
 }
 

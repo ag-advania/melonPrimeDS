@@ -96,7 +96,7 @@ void SoftRenderer3D::EnableRenderThread()
 }
 
 SoftRenderer3D::SoftRenderer3D(melonDS::GPU3D& gpu3D, SoftRenderer& parent) noexcept
-    : Renderer3D(gpu3D), Parent(parent)
+    : Renderer3DLegacyBase(gpu3D), Parent(parent)
 {
     Sema_RenderStart = Platform::Semaphore_Create();
     Sema_RenderDone = Platform::Semaphore_Create();

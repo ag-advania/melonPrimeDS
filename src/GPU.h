@@ -161,6 +161,12 @@ struct VRAMTrackingSet
 
 class Renderer;
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+// Forward declaration only; the concrete type is defined in GPU2D_Soft.h (see GPU::GetRenderer2D()
+// below for why this header doesn't include it directly).
+class StructuredVulkan2DRendererBridge;
+#endif
+
 class GPU
 {
 public:
@@ -174,6 +180,41 @@ public:
     void SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept;
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) `GPU::GetRenderer3D()`/`GetRenderer2D()`
+    // (melonDS-android-lib src/GPU.h:69-70/76-77: `GetRenderer3D()` forwards to
+    // `GPU3D.GetCurrentRenderer()`, `GetRenderer2D()` returns `*GPU2D_Renderer`). Our fork has no
+    // GPU3D-owned "current renderer" concept and no GPU-level GPU2D_Renderer pointer -- the active
+    // Renderer3D/Renderer2D pair is owned by this GPU's active `Renderer` (Rend, see GetRenderer()
+    // above). GetRenderer3D() forwards through GetRenderer() (mirrors the reference delegation
+    // pattern exactly, see Renderer::GetRenderer3D() below). GetRenderer2D() cannot forward as
+    // generically: reference's GetRenderer2D() returns one shared `GPU2D::Renderer2D&` object that
+    // internally switches between both display engines, but our fork splits 2D rendering into two
+    // independent per-engine renderers (Rend2D_A/Rend2D_B), and only the SoftRenderer/
+    // VulkanGpuRenderer family binds them to the Vulkan-consumed SoftRenderer2D type (GLRenderer
+    // uses an unrelated GLRenderer2D). Defined out-of-line in GPU.cpp (which already includes
+    // GPU_Soft.h) so this header doesn't need to know about SoftRenderer/SoftRenderer2D; asserts
+    // the active renderer is SoftRenderer-derived, which holds for every caller (MelonInstanceVulkan.cpp
+    // only calls this while currentRenderer == Renderer::Vulkan, always backed by
+    // VulkanGpuRenderer : SoftRenderer).
+    [[nodiscard]] const Renderer3D& GetRenderer3D() const noexcept;
+    [[nodiscard]] Renderer3D& GetRenderer3D() noexcept;
+    [[nodiscard]] StructuredVulkan2DRendererBridge& GetRenderer2D() noexcept;
+
+    // MELONPRIME-PORT-ADAPT: reference `GPU::FrontBuffer` (melonDS-android-lib src/GPU.h:584) is a
+    // plain data member updated alongside its own double-buffered `Framebuffer[2][2]`. Our fork's
+    // double-buffer index instead lives as `Renderer::BackBuffer` (protected, toggled by
+    // `SwapBuffers()`); this exposes the reference-equivalent "front buffer index" derived from it
+    // (mirrors `SoftRenderer::GetFramebuffers()`'s own `BackBuffer ^ 1` computation in GPU_Soft.cpp).
+    [[nodiscard]] int GetFrontBufferIndex() const noexcept;
+
+    // MELONPRIME-PORT-ADAPT: forwarder to the active SoftRenderer/VulkanGpuRenderer's accelerated
+    // Framebuffer channel (see SoftRenderer::GetAccelFramebuffer() in GPU_Soft.h for the storage/
+    // layout design). `screen` is physical-screen-indexed (0 = top, 1 = bottom), matching
+    // GetFrontBufferIndex()/GetRenderer2D() above.
+    [[nodiscard]] const u32* GetAccelFramebuffer(int buf, int screen) const noexcept;
+#endif
 
     // return value for GetFramebuffers:
     // true -> pointers to RAM framebuffers are returned via the parameters
@@ -991,6 +1032,23 @@ public:
 
     virtual bool NeedsShaderCompile() { return false; }
     virtual void ShaderCompileStep(int& current, int& count) {}
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // MELONPRIME-PORT: reference-generation (Sapphire) `GPU::GetRenderer3D()` (melonDS-android-lib
+    // src/GPU.h:69-70). Our fork's active Renderer3D lives on this GPU-level Renderer (protected
+    // Rend3D, below) rather than on GPU3D directly; forwarded from GPU::GetRenderer3D() via
+    // GPU::GetRenderer() (see GPU.h class GPU). Safe to define inline here: Renderer3D is already a
+    // complete type by this point in the header (Start3DRendering()/Finish3DRendering()/
+    // Restart3DRendering() above already dereference Rend3D the same way).
+    [[nodiscard]] const Renderer3D& GetRenderer3D() const noexcept { return *Rend3D; }
+    [[nodiscard]] Renderer3D& GetRenderer3D() noexcept { return *Rend3D; }
+
+    // MELONPRIME-PORT-ADAPT: reference `SoftRenderer::GetFramebuffers()`'s own front-buffer
+    // computation (GPU_Soft.cpp `int frontbuf = BackBuffer ^ 1;`), promoted to the Renderer base so
+    // GPU::GetFrontBufferIndex() (GPU.h) can forward through it uniformly for any Renderer subclass
+    // that uses the BackBuffer double-buffering convention (SoftRenderer/VulkanGpuRenderer).
+    [[nodiscard]] int GetFrontBufferIndex() const noexcept { return BackBuffer ^ 1; }
+#endif
 
 protected:
     melonDS::GPU& GPU;

@@ -70,6 +70,10 @@ int NormalizeRendererForPlatform(int requested)
     case renderer3D_MetalCompute:
         return requested;
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    case renderer3D_Vulkan:
+        return requested;
+#endif
     default:
         return renderer3D_Software;
     }
@@ -102,6 +106,10 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
 #if defined(MELONPRIME_ENABLE_METAL)
     if (normalized == renderer3D_Metal || normalized == renderer3D_MetalCompute)
         return PresentationBackend::Metal;
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (normalized == renderer3D_Vulkan)
+        return PresentationBackend::Vulkan;
 #endif
     if (useGLConfig || RendererRequiresOpenGLContext(normalized))
         return PresentationBackend::OpenGL;

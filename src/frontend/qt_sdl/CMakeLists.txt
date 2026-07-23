@@ -336,6 +336,74 @@ if (MELONPRIME_METAL_ACTIVE)
     )
 endif()
 
+# --- MelonPrime Vulkan backend build switch ---------------------------------
+# Sapphire (SapphireRhodonite/melonDS-android 0.7.0.rc4 + melonDS-android-lib
+# d7794427) Vulkan renderer, ported as verbatim copies. Complete build gate
+# mirroring the Metal pattern above: when inactive, no Vulkan source, include
+# path, compile definition, or loader dependency is added to either target.
+option(MELONPRIME_ENABLE_VULKAN
+    "Build the Sapphire Vulkan renderer and native presenter"
+    ON)
+option(MELONPRIME_FORCE_DISABLE_VULKAN
+    "Completely exclude all MelonPrime Vulkan code"
+    OFF)
+
+set(MELONPRIME_VULKAN_ACTIVE OFF)
+if (MELONPRIME_FORCE_DISABLE_VULKAN)
+    set(MELONPRIME_VULKAN_ACTIVE OFF)
+elseif (MELONPRIME_ENABLE_VULKAN)
+    find_path(MELONPRIME_VULKAN_INCLUDE_DIR
+        NAMES vulkan/vulkan.h
+        DOC "Directory containing the Vulkan headers")
+    if (MELONPRIME_VULKAN_INCLUDE_DIR)
+        set(MELONPRIME_VULKAN_ACTIVE ON)
+        message(STATUS "MelonPrime Vulkan backend: enabled (headers: ${MELONPRIME_VULKAN_INCLUDE_DIR})")
+    else()
+        message(WARNING
+            "Vulkan headers were not found; MelonPrime Vulkan is excluded from this build")
+    endif()
+endif()
+
+if (MELONPRIME_VULKAN_ACTIVE)
+    # PUBLIC on core propagates to melonDS as well; the loader is resolved at
+    # runtime through VulkanDispatch (LoadLibrary/dlopen), so no static Vulkan
+    # link is added anywhere.
+    target_compile_definitions(core PUBLIC
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    if (WIN32)
+        target_compile_definitions(core PUBLIC VK_USE_PLATFORM_WIN32_KHR=1)
+    endif()
+    target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_include_directories(melonDS PRIVATE
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/sapphire"
+        "${CMAKE_CURRENT_SOURCE_DIR}/sapphire/compat")
+
+    # Sapphire core (verbatim copies in src/).
+    target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanContext.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_AcceleratedFrontend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)
+
+    # Sapphire frontend (verbatim copies under sapphire/) plus the desktop
+    # shims, compat stubs, and the Qt presentation panel.
+    target_sources(melonDS PRIVATE
+        sapphire/renderer/FrameQueue.cpp
+        sapphire/renderer/VulkanOutput.cpp
+        sapphire/renderer/VulkanRetroArchFilterChain.cpp
+        sapphire/renderer/VulkanSurfacePresenter.cpp
+        sapphire/SapphireSupport.cpp
+        sapphire/RewindManager.cpp
+        sapphire/MelonInstanceVulkan.cpp
+        sapphire/compat/GlStubs.cpp
+        sapphire/compat/LibrashaderStubs.cpp
+        MelonPrimeScreenVulkan.cpp)
+endif()
+
 add_subdirectory("../../net"
     ${CMAKE_BINARY_DIR}/net)
 
