@@ -19,6 +19,11 @@ namespace MelonPrime {
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
+        // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V1
+        // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V4
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V5_SYMMETRIC
+        inline constexpr const char* MorphBoostMouseSens = "Metroid.Sensitivity.MorphBoostMouse";
         inline constexpr const char* AimYScale       = "Metroid.Sensitivity.AimYAxisScale";
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
         inline constexpr const char* ZoomAimScaleEnable = "Metroid.Aim.ZoomScale.Enable";

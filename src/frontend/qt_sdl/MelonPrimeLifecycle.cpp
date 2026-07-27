@@ -75,6 +75,7 @@ namespace MelonPrime {
         m_enableNativeZoomToggle = s.nativeZoomToggle;
         m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
         m_enableZoomAimScale = s.zoomAimScaleEnable;
+        m_morphBoostAssistThresholdSq = s.morphBoostAssistThresholdSq;
         if (!m_enableZoomAimScale) {
             if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
                 m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);

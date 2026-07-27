@@ -66,6 +66,11 @@ struct RuntimeConfigSnapshot {
     bool zoomAimScaleEnable = false;
     uint32_t zoomAimScaleQ14 = 1u << 14;
 
+    // Effective mouse-mode Morph Ball swipe threshold. 0 disables swipe boost;
+    // 100% matches the game's threshold; lower values raise the threshold and
+    // higher values lower it.
+    int32_t morphBoostAssistThresholdSq = 0x1FA4;
+
 #ifdef MELONPRIME_DS
     bool nativeWeaponSwitch = false;
 #endif

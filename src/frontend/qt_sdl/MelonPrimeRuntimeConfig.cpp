@@ -20,6 +20,23 @@ namespace {
 }
 
 constexpr int64_t kAimOneFp = 1LL << 14;
+constexpr int64_t kMorphBoostGameSwipeThresholdSq = 0x1FA4;
+
+[[nodiscard]] int32_t CalculateMorphBoostAssistThresholdSq(int sensitivityPct) noexcept
+{
+    // 0% disables mouse swipe boosting. Positive sensitivity is an amplitude
+    // ratio; because the game compares squared magnitude, the threshold scales
+    // with the inverse square. 50% needs about twice the movement, while 200%
+    // needs about half and 1000% about one tenth.
+    if (sensitivityPct <= 0)
+        return 0;
+
+    const int64_t pct = std::clamp<int64_t>(sensitivityPct, 1, 1000);
+    const int64_t denominator = pct * pct;
+    const int64_t numerator = kMorphBoostGameSwipeThresholdSq * 10000;
+    return static_cast<int32_t>(std::max<int64_t>(
+        1, (numerator + denominator / 2) / denominator));
+}
 
 } // namespace
 
@@ -94,6 +111,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     s.zoomAimScaleEnable =
         cfg.GetBool(CfgKey::ZoomAimScaleEnable)
         && s.zoomAimScaleQ14 != static_cast<uint32_t>(kAimOneFp);
+
+    s.morphBoostAssistThresholdSq = CalculateMorphBoostAssistThresholdSq(
+        cfg.GetInt(CfgKey::MorphBoostMouseSens));
 
 #ifdef MELONPRIME_DS
     s.nativeWeaponSwitch =

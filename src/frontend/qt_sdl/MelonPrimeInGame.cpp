@@ -6,6 +6,10 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+
+#include <algorithm>
+#include <cmath>
+
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #endif
@@ -272,21 +276,70 @@ namespace MelonPrime {
         // Stylus mode is excluded entirely: the real stylus drives the touch state,
         // so the game arbitrates correctly with no help from us.
         if (isAltForm && !isStylusMode && m_ptrs.flags1) {
-            bool swiping = false;
+            constexpr int64_t kGameSwipeThresholdSq = 0x1FA4;
+            constexpr int64_t kPromotionTargetSq = kGameSwipeThresholdSq + 0x100;
+
+            const bool swipeDisabled = m_morphBoostAssistThresholdSq <= 0;
+            bool gameWouldSwipe = false;
+            bool sensitivityWouldSwipe = false;
             if (m_ptrs.altSteerDelta) {
-                // Previous-frame steer delta (input +0x2A/+0x2C, s16); for a held
-                // swipe it tracks the current gesture. 0x1FA4 is the game's own
-                // touch-boost magnitude threshold (sum of squares).
+                // Previous-frame steer delta (input +0x2A/+0x2C, s16). Use 64-bit
+                // products so the two maximum int16 squares cannot overflow.
                 const int32_t sdx = m_ptrs.altSteerDelta[0];
                 const int32_t sdy = m_ptrs.altSteerDelta[1];
-                swiping = (sdx * sdx + sdy * sdy) > 0x1FA4;
+                const int64_t magnitudeSq =
+                    static_cast<int64_t>(sdx) * sdx
+                    + static_cast<int64_t>(sdy) * sdy;
+
+                gameWouldSwipe = magnitudeSq > kGameSwipeThresholdSq;
+                sensitivityWouldSwipe = !swipeDisabled
+                    && magnitudeSq
+                        > static_cast<int64_t>(m_morphBoostAssistThresholdSq);
+
+                // Above 100%, the configured threshold can be reached before the
+                // game's fixed threshold. Promote only this transient steer vector
+                // while preserving direction so the native touch branch sees a
+                // valid swipe.
+                if (sensitivityWouldSwipe && !gameWouldSwipe && magnitudeSq > 0) {
+                    const double scale = std::sqrt(
+                        static_cast<double>(kPromotionTargetSq)
+                        / static_cast<double>(magnitudeSq));
+                    const int32_t promotedX = std::clamp<int32_t>(
+                        static_cast<int32_t>(std::lround(static_cast<double>(sdx) * scale)),
+                        -32768, 32767);
+                    const int32_t promotedY = std::clamp<int32_t>(
+                        static_cast<int32_t>(std::lround(static_cast<double>(sdy) * scale)),
+                        -32768, 32767);
+                    m_ptrs.altSteerDelta[0] = static_cast<int16_t>(promotedX);
+                    m_ptrs.altSteerDelta[1] = static_cast<int16_t>(promotedY);
+                }
             }
-            const bool buttonBoost = !swiping
-                && (IsDown(IB_ZOOM) || IsDown(IB_MORPH_BOOST) || (*m_ptrs.boostGauge != 0));
-            if (buttonBoost)
+
+            if (swipeDisabled) {
+                // 0%: keep the native touch/swipe branch disabled every frame.
+                // This is intentionally stronger than waiting for the previous
+                // frame's delta to cross the game's threshold.
                 *m_ptrs.flags1 &= ~0x08000000u;
-            else
+            }
+            else if (sensitivityWouldSwipe) {
+                // Configured swipe wins even while R is held, preserving:
+                // hold R -> swipe -> release R.
                 *m_ptrs.flags1 |= 0x08000000u;
+            }
+            else if (gameWouldSwipe) {
+                // Below 100%, the game threshold may be crossed before the
+                // configured threshold. Suppress that native swipe for this frame.
+                *m_ptrs.flags1 &= ~0x08000000u;
+            }
+            else {
+                const bool buttonBoost = IsDown(IB_ZOOM)
+                    || IsDown(IB_MORPH_BOOST)
+                    || (*m_ptrs.boostGauge != 0);
+                if (buttonBoost)
+                    *m_ptrs.flags1 &= ~0x08000000u;
+                else
+                    *m_ptrs.flags1 |= 0x08000000u;
+            }
         }
 
         // Shift hold-to-boost auto-cycle (separate from the manual right-click R
