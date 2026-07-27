@@ -540,6 +540,9 @@ namespace MelonPrime {
         // hotkey. Config::Table remains a cold reload/persistence boundary.
         int      m_runtimeAimSensitivity = 1;
         float    m_runtimeAimYScale = 1.0f;
+        // Effective mouse-mode Morph Ball swipe threshold. Zero disables
+        // swipe boosting; values below/above 100% raise/lower the threshold.
+        int32_t  m_morphBoostAssistThresholdSq = 0x1FA4;
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to

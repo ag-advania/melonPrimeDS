@@ -464,6 +464,10 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::LowHpWarningMedium, K::SpinInt,       ui->spinMetroidLowHpWarningMedium },  // 42
         { C::LowHpWarningHigh,   K::SpinInt,       ui->spinMetroidLowHpWarningHigh },    // 43
         { C::LowHpWarningAutoBase, K::SpinInt,     ui->spinMetroidLowHpWarningAutoBase }, // 44
+        // V2: keep mouse boost sensitivity in the same symmetric load/save path
+        // as every other plain numeric setting. Appended to preserve all existing
+        // segmented binding indices and their observable load order.
+        { C::MorphBoostMouseSens, K::SpinInt, m_spinMetroidMorphBoostMouseSensitivity }, // 45
     };
 }
 
@@ -565,7 +569,46 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             });
     }
 
+    if (!m_spinMetroidMorphBoostMouseSensitivity) {
+        m_spinMetroidMorphBoostMouseSensitivity = new QSpinBox(ui->sectionSensitivity);
+        m_spinMetroidMorphBoostMouseSensitivity->setObjectName(
+            QStringLiteral("spinMetroidMorphBoostMouseSensitivity"));
+        m_spinMetroidMorphBoostMouseSensitivity->setRange(0, 1000);
+        m_spinMetroidMorphBoostMouseSensitivity->setSingleStep(1);
+        m_spinMetroidMorphBoostMouseSensitivity->setSuffix(QStringLiteral("%"));
+
+        m_lblMetroidMorphBoostMouseSensitivity = new QLabel(
+            QStringLiteral("Morph Ball Boost Assist Sensitivity"),
+            ui->sectionSensitivity);
+        m_lblMetroidMorphBoostMouseSensitivity->setObjectName(
+            QStringLiteral("lblMetroidMorphBoostMouseSensitivity"));
+        m_lblMetroidMorphBoostMouseSensitivity->setBuddy(
+            m_spinMetroidMorphBoostMouseSensitivity);
+
+        m_lblMetroidMorphBoostMouseSensitivityDesc = new QLabel(
+            QStringLiteral(
+                "Mouse mode only. 0% disables mouse swipe boost. Values below 100% require more movement; "
+                "100% preserves the default threshold; values above 100% require less movement; "
+                "1000% needs about one tenth. Right-click R boost and the Shift auto-cycle are unchanged."),
+            ui->sectionSensitivity);
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setObjectName(
+            QStringLiteral("lblMetroidMorphBoostMouseSensitivityDesc"));
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setWordWrap(true);
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
+            form->insertRow(17,
+                m_lblMetroidMorphBoostMouseSensitivity,
+                m_spinMetroidMorphBoostMouseSensitivity);
+            form->insertRow(18, m_lblMetroidMorphBoostMouseSensitivityDesc);
+        }
+    }
+
     buildSettingBindings();
+    // Appended binding index 45 is independent of the historical segmented
+    // order. Loading it here fixes persistence without renumbering old ranges.
+    loadBindingsRange(instcfg, 45, 46);
 
     // Segment 1 [0,22): sensitivities + toggles, up to the dynamic
     // Low-Latency Aim Mode combo block. (setChecked on stylus/smoothing fires
@@ -970,6 +1013,12 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
         m_spinMetroidZoomAimScalePct->setEnabled(enableZoomAimScale);
     if (m_lblMetroidZoomAimScaleDesc)
         m_lblMetroidZoomAimScaleDesc->setEnabled(enableZoomAimScale);
+    if (m_lblMetroidMorphBoostMouseSensitivity)
+        m_lblMetroidMorphBoostMouseSensitivity->setEnabled(enableAimControls);
+    if (m_spinMetroidMorphBoostMouseSensitivity)
+        m_spinMetroidMorphBoostMouseSensitivity->setEnabled(enableAimControls);
+    if (m_lblMetroidMorphBoostMouseSensitivityDesc)
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(enableAimControls);
     const bool enableLowLatencyAimMode =
         enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
     if (m_lblMetroidLowLatencyAimMode)
@@ -1124,6 +1173,8 @@ void MelonPrimeInputConfig::on_metroidResetSensitivityValues_clicked()
         m_cbMetroidZoomAimScaleEnable->setChecked(false);
     if (m_spinMetroidZoomAimScalePct)
         m_spinMetroidZoomAimScalePct->setValue(75);
+    if (m_spinMetroidMorphBoostMouseSensitivity)
+        m_spinMetroidMorphBoostMouseSensitivity->setValue(100);
 }
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToLow_clicked()

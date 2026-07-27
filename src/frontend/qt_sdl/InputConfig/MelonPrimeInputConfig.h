@@ -199,6 +199,9 @@ private:
     QLabel* m_lblMetroidZoomAimScalePct = nullptr;
     QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
     QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
+    QLabel* m_lblMetroidMorphBoostMouseSensitivity = nullptr;
+    QSpinBox* m_spinMetroidMorphBoostMouseSensitivity = nullptr;
+    QLabel* m_lblMetroidMorphBoostMouseSensitivityDesc = nullptr;
     QWidget* m_menuLanguageGroup = nullptr;
     QLabel* m_lblMenuLanguage = nullptr;
     QComboBox* m_comboMenuLanguage = nullptr;

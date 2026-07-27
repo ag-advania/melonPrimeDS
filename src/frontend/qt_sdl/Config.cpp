@@ -92,6 +92,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS { */ // Sensitivity & Custom Hotkeys
         {"Instance*.Metroid.Sensitivity.Aim", 63},
+        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", 100},
         {"Instance*.Metroid.Aim.ZoomScale.Percent", 75},
         {"Instance*.Metroid.Volume.SFX", 9},
         {"Instance*.Metroid.Volume.Music", 9},
@@ -173,6 +174,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS. this is not for input. this is for loading. */
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
+        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", {0,1000}},
         {"Instance*.Metroid.Aim.ZoomScale.Percent", {10,300}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
