@@ -195,3 +195,7 @@ manual UI review work, treat it as a distinct, still-open task from this
 content pass.
 
 Applied, strict audit green, macOS build clean, launch/exit smoke clean.
+<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_QUALITY_V15 -->
+### V15 focused checks
+
+The audit verifies both Disable labels, inverted load/save symmetry, unchecked defaults from positive `true` keys, Morph Boost parent-child enable wiring, legacy distance-0 migration, absence of obsolete Enable labels, and 76-row localization structure for both feature groups. Native-speaker review remains outside the structural audit.

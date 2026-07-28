@@ -498,6 +498,8 @@ namespace MelonPrime {
     {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
+        // Morph Boost already consumed this frame's m_input.mouseX/Y; this
+        // routine applies the same sample to aim. // MELONPRIME_MORPH_BOOST_CURRENT_FRAME_RAW_V13
 #if !defined(_WIN32)
         const bool warpCursorAfterAim =
             PlatformInput_ShouldWarpCursorAfterAim(

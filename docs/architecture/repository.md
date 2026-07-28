@@ -170,35 +170,44 @@ Important current groups include:
 
 ### Default value type classification — CRITICAL
 
-`Config.cpp` has **three separate typed default lists**. Each `GetXxx()` method looks only in its own list; cross-list entries are silently ignored and the hard-coded fallback is used instead (e.g. `false` for bool, `0.0` for double).
+`Config.cpp` has **four separate typed default lists**. Each typed accessor consults only its matching list; cross-list entries are silently ignored and the accessor fallback is used instead.
 
-| List | Type | `GetXxx` that reads it | Use for |
-|---|---|---|---|
-| `DefaultInts` | `int` | `GetInt()` | integers, anchors, color R/G/B channels, enum indices |
-| `DefaultBools` | `bool` | `GetBool()` | booleans (Show, Enable, …) |
-| `DefaultDoubles` | `double` | `GetDouble()` | opacities, scale factors, floating-point values |
+| List | Type | Current-value accessor | Compiled-default accessor | Use for |
+|---|---|---|---|---|
+| `DefaultInts` | `int` | `GetInt()` | `GetDefaultInt()` | integers, anchors, color R/G/B channels, enum indices |
+| `DefaultBools` | `bool` | `GetBool()` | `GetDefaultBool()` | booleans (Show, Enable, Disable storage values, …) |
+| `DefaultDoubles` | `double` | `GetDouble()` | `GetDefaultDouble()` | opacities, scale factors, floating-point values |
+| `DefaultStrings` | `std::string` | `GetString()` | `GetDefaultString()` | paths, font families, text values |
 
-**Rule**: always register a new key in the list that matches its C++ accessor:
-- `cfg.GetBool(...)` → entry must be in `DefaultBools`
-- `cfg.GetDouble(...)` → entry must be in `DefaultDoubles`
-- `cfg.GetInt(...)` → entry must be in `DefaultInts`
+The `GetDefault*()` accessors are `MELONPRIME_DS`-guarded additions for UI reset and validation paths. They read the compiled default without consulting or mutating the current TOML node. `GetDefaultInt()` also applies the same configured integer range clamp as `GetInt()`.
 
-In particular, `true`/`false` literals placed in `DefaultInts` are **not** seen by `GetBool()`, and `1.0`/`0.8` etc. placed in `DefaultInts` are **not** seen by `GetDouble()`. Both bugs silently produce 0/false at runtime for any key not yet present in the user's config file.
+**Rule**: always register a key in the list matching every accessor used for it:
+- `GetBool()` / `GetDefaultBool()` → `DefaultBools`
+- `GetDouble()` / `GetDefaultDouble()` → `DefaultDoubles`
+- `GetInt()` / `GetDefaultInt()` → `DefaultInts`
+- `GetString()` / `GetDefaultString()` → `DefaultStrings`
 
-When touching UI or runtime HUD behavior, always check both:
-- `Config.cpp` for defaults (and correct list placement per the table above)
+In particular, boolean or floating literals placed in `DefaultInts` are not visible to the corresponding typed accessor. Missing or cross-typed entries can silently produce fallback values for a fresh configuration and incorrect values when a reset button requests the compiled default.
+
+When touching UI or runtime settings, always check both:
+- `Config.cpp` for defaults and correct typed-list placement
 - `MelonPrimeInputConfigConfig.cpp` for save/reset coverage
 
-### GetXxx Default Coverage Audit (Metroid keys)
-Use this quick audit whenever you add/rename settings or large default updates:
-- Enumerate call sites by accessor type: `GetInt("Metroid....")`, `GetDouble("Metroid....")`, `GetBool("Metroid....")`.
-- Ensure every runtime/UI-read key exists in the matching default list (`DefaultInts` / `DefaultDoubles` / `DefaultBools`).
-- If a key type changes (for example int->double), move it to the correct list and remove the old entry from the old list.
+### GetXxx / GetDefaultXxx Default Coverage Audit (Metroid keys)
+Use this audit whenever settings, defaults, binding kinds, or reset behavior change:
+- enumerate current-value and compiled-default accessors by type;
+- ensure every runtime/UI/reset key exists in the matching default list;
+- ensure `SettingBinding` kinds agree with the referenced key type, including `CheckBoolInverted`;
+- if a key type changes, move it to the correct list and remove the obsolete entry.
+
+Run `tools/ci/audits/audit-config-defaults.ps1` and the focused feature audit when one exists. For the Sensitivity reset, also verify that widget signals are blocked and no config write or runtime notification occurs before Save/OK.
 
 Rules of thumb from recent fixes:
 - Outline keys split by type: `*OutlineColor[R/G/B]` and `*OutlineThickness` are int; `*OutlineOpacity` is double.
-- Non-Visual `Metroid.*` keys used by InputConfig/MelonPrimeCore also need defaults (not just `Metroid.Visual.*`).
+- Non-Visual `Metroid.*` keys used by InputConfig/MelonPrimeCore also need defaults.
 - `Metroid.Visual.HudFontSize` is a legacy migration-only key read behind `HasKey()`; it does not need a new default unless migration logic changes.
+
+<!-- MELONPRIME_FINAL_DOC_AUDIT_V18 -->
 
 ### HUD Property Schema Ownership
 
@@ -352,3 +361,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `tools/ci/audits/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
 - Nested `.inc` fragments are allowed only when the child has exactly one `.inc` parent and is documented as owned by that parent. `MelonPrimeHudRenderCrosshairFx.inc` is the current example: it is included by `MelonPrimeHudRenderDraw.inc`, not directly by `MelonPrimeHudRender.cpp`.
+<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_REPOSITORY_V15 -->
+### Disable-checkbox UI semantics
+
+`InputConfig/MelonPrimeInputConfig.h/.cpp` owns the `CheckBoolInverted` binding used by the Morph Ball swipe and mouse-wheel cycle Disable checkboxes. Positive config keys and runtime members remain unchanged for backward compatibility. Translation catalogs and focused audits use the new negative source labels.
