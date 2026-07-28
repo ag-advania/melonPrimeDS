@@ -404,6 +404,7 @@ namespace MelonPrime {
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
+                ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
                     *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
@@ -475,6 +476,7 @@ namespace MelonPrime {
                     m_input.moveIndex = 0;
                     // weaponSwitchPending cleared in the DS block below.
                     ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
+                    ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef _WIN32
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
                     // (one fence instead of two)
@@ -536,6 +538,7 @@ namespace MelonPrime {
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         ResetTransientInputState(
             TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending);
+        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
         const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;

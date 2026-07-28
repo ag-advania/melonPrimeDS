@@ -52,12 +52,12 @@ static constexpr HotkeyEntry kMetroidHotkeys[] =
     {HK_MetroidHoldMorphBallBoost,  "[Metroid] (Shift) Hold to Fast Morph Ball Boost"},
     {HK_MetroidWeaponBeam,          "[Metroid] (Mouse 5, Side Top) Weapon Beam"},
     {HK_MetroidWeaponMissile,       "[Metroid] (Mouse 4, Side Bottom) Weapon Missile"},
-    {HK_MetroidWeapon1,             "[Metroid] (1) Weapon 1. ShockCoil"},
+    {HK_MetroidWeapon1,             "[Metroid] (1) Weapon 1. Shock Coil"},
     {HK_MetroidWeapon2,             "[Metroid] (2) Weapon 2. Magmaul"},
     {HK_MetroidWeapon3,             "[Metroid] (3) Weapon 3. Judicator"},
     {HK_MetroidWeapon4,             "[Metroid] (4) Weapon 4. Imperialist"},
     {HK_MetroidWeapon5,             "[Metroid] (5) Weapon 5. Battlehammer"},
-    {HK_MetroidWeapon6,             "[Metroid] (6) Weapon 6. VoltDriver"},
+    {HK_MetroidWeapon6,             "[Metroid] (6) Weapon 6. Volt Driver"},
     {HK_MetroidWeaponSpecial,       "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)"},
     {HK_MetroidMenu,                "[Metroid] (Tab) Menu/Map"},
 };
@@ -159,7 +159,7 @@ private:
     // ── Non-HUD settings binding table (Phase 5b) ───────────────────────────
     // One row per symmetric simple setting; drives both load and save so the
     // two sides can never drift. Storage key names are unchanged.
-    enum class SettingKind { CheckBool, ComboIndexInt, SpinInt, DoubleSpinDouble };
+    enum class SettingKind { CheckBool, CheckBoolInverted, ComboIndexInt, SpinInt, DoubleSpinDouble }; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
     struct SettingBinding { const char* key; SettingKind kind; QWidget* widget; };
     // Built once in setupSensitivityAndToggles (after setupUi) in code order.
     std::vector<SettingBinding> m_settingBindings;
@@ -188,6 +188,8 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidDisableMouseWheelWeaponCycle = nullptr; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    QLabel* m_lblMetroidDisableMouseWheelWeaponCycleDesc = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
@@ -199,6 +201,13 @@ private:
     QLabel* m_lblMetroidZoomAimScalePct = nullptr;
     QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
     QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
+    QCheckBox* m_cbMetroidDisableMorphBoostSwipe = nullptr; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    QLabel* m_lblMetroidDisableMorphBoostSwipeDesc = nullptr;
+    QCheckBox* m_cbMetroidMorphBoostCustomRawThreshold = nullptr;
+    QLabel* m_lblMetroidMorphBoostCustomRawThresholdDesc = nullptr;
+    QLabel* m_lblMetroidMorphBoostMouseSensitivity = nullptr;
+    QSpinBox* m_spinMetroidMorphBoostMouseSensitivity = nullptr;
+    QLabel* m_lblMetroidMorphBoostMouseSensitivityDesc = nullptr;
     QWidget* m_menuLanguageGroup = nullptr;
     QLabel* m_lblMenuLanguage = nullptr;
     QComboBox* m_comboMenuLanguage = nullptr;
