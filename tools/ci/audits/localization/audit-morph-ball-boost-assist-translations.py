@@ -16,11 +16,12 @@ KEYS = [
     "Use Custom Raw Mouse Movement Threshold",
     "Off uses only the game's internal swipe amount. On requires the current frame's raw mouse movement to reach the value below and uses that same vector for the native swipe pulse.",
 ]
-WIKIPEDIA_MORPH_BALL_TERMS = {
+MORPH_BALL_TERMS = {
     "Japanese": "モーフボール",
-    "German": "Morph-Ball",
-    "Spanish": "Morfosfera",
-    "French": "boule morphing",
+    "German": "Morph Ball",
+    "Spanish": "MORFOSFERA",
+    "French": "BOULE MORPHING",
+    "Italian": "MORFOSFERA",
     "Korean": "모프볼",
     "Portuguese": "Morph Ball",
     "Russian": "Морфошар",
@@ -28,10 +29,14 @@ WIKIPEDIA_MORPH_BALL_TERMS = {
     "ChineseSimplified": "变球",
     "ChineseTraditional": "變球",
     "ChineseHongKong": "變球",
-}
-MORPH_BALL_TERMS = {
-    **WIKIPEDIA_MORPH_BALL_TERMS,
     "Sinhala": "මෝර්ෆ් බෝල",
+}
+OFFICIAL_BOOST_TERMS = {
+    "Japanese": "ブースト",
+    "German": "BOOST",
+    "Spanish": "TURBO",
+    "French": "BOOST",
+    "Italian": "TURBO",
 }
 text = PATH.read_text(encoding="utf-8")
 ui_text = re.sub(r'"\s*"', "", UI_PATH.read_text(encoding="utf-8"))
@@ -96,6 +101,11 @@ for shard in PATH.parent.glob("MelonPrime*Translations*.inc"):
             if term.casefold() not in values.get(lang, "").casefold():
                 errors.append(
                     f"{shard.name}: {key}: preferred terminology missing for {lang}: {term}"
+                )
+        for lang, term in OFFICIAL_BOOST_TERMS.items():
+            if term.casefold() not in values.get(lang, "").casefold():
+                errors.append(
+                    f"{shard.name}: {key}: official manual BOOST term missing for {lang}: {term}"
                 )
 if len(morph_rows) < 4:
     errors.append(f"expected at least 4 catalog-wide Morph Ball rows, found {len(morph_rows)}")
