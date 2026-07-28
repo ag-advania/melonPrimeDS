@@ -188,6 +188,8 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidMouseWheelWeaponCycle = nullptr; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
+    QLabel* m_lblMetroidMouseWheelWeaponCycleDesc = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;

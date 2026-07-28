@@ -27,11 +27,11 @@ constexpr int64_t kMorphBoostGameSwipeThresholdSq = 0x1FA4;
     // 0% disables mouse swipe boosting. Positive sensitivity is an amplitude
     // ratio; because the game compares squared magnitude, the threshold scales
     // with the inverse square. 50% needs about twice the movement, while 200%
-    // needs about half and 1000% about one tenth.
+    // needs about half, 1000% about one tenth, and 9000% one ninetieth.
     if (sensitivityPct <= 0)
         return 0;
 
-    const int64_t pct = std::clamp<int64_t>(sensitivityPct, 1, 1000);
+    const int64_t pct = std::clamp<int64_t>(sensitivityPct, 1, 9000); // MELONPRIME_MORPH_BOOST_9000_V7
     const int64_t denominator = pct * pct;
     const int64_t numerator = kMorphBoostGameSwipeThresholdSq * 10000;
     return static_cast<int32_t>(std::max<int64_t>(
@@ -87,6 +87,7 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     s.directAltFormTransform = cfg.GetBool(CfgKey::DirectAltFormTransform);
+    s.mouseWheelWeaponCycle = cfg.GetBool(CfgKey::MouseWheelWeaponCycle); // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeBipedFire =

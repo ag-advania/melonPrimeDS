@@ -204,3 +204,10 @@ Applied, strict audit green, macOS build clean, launch/exit smoke clean.
 The two new exact-match rows for `Morph Ball Boost Assist Sensitivity` received a focused content pass. The pass replaced the label and explanatory text for the 14 languages previously identified as the highest-priority manual-review set: Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic, Catalan, Odia, Estonian, Assamese, Kyrgyz, Filipino, and Swahili. It also aligned German, Spanish, French, and Italian game terminology with the official regional Metroid Prime Hunters manuals (`MORPH BALL`/`BOOST`, `MORFOSFERA`/`TURBO`, `BOULE MORPHING`/`BOOST`, and `MORFOSFERA`/`TURBO`).
 
 This is a focused two-row correction, not a claim that the remaining catalog content for those languages is fully native-reviewed. `tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py` locks the exact corrected values, rejects empty/English-copy/display-name-leak regressions for the targeted rows, and verifies full 76-language row coverage.
+
+
+## Update (2026-07-28): Mouse Wheel Weapon Cycling translations
+
+<!-- MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_I18N_DOC_V7 -->
+
+The `Enable Mouse Wheel Weapon Cycling` label and its explanatory text were added with direct values for all 76 catalog languages. `tools/ci/audits/localization/audit-mouse-wheel-weapon-cycle-translations.py` verifies exact row presence, full ordered language coverage, non-empty values, and the absence of unchanged English copies. Coverage is structural and does not claim native-speaker review of every language.

@@ -39,6 +39,7 @@ namespace MelonPrime {
         inline constexpr const char* ImmediateInputEdgeOverlay = "Metroid.Input.Enable.ImmediateInputEdgeOverlay";
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
         inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native
+        inline constexpr const char* MouseWheelWeaponCycle      = "Metroid.Input.MouseWheelWeaponCycle"; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
         inline constexpr const char* BipedFireMethod           = "Metroid.Input.BipedFireMethod"; // 0=Legacy input 1=New native edge
         inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy fixed R 1=New preset binding 2=New native toggle
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";

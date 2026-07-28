@@ -64,6 +64,7 @@ namespace MelonPrime {
         m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
         m_enableDirectAltFormTransform = s.directAltFormTransform;
+        m_enableMouseWheelWeaponCycle = s.mouseWheelWeaponCycle; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
         m_enableNativeBipedFire = s.nativeBipedFire;

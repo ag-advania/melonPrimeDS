@@ -174,7 +174,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS. this is not for input. this is for loading. */
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
-        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", {0,1000}},
+        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", {0,9000}},
         {"Instance*.Metroid.Aim.ZoomScale.Percent", {10,300}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
@@ -239,6 +239,7 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
+        {"Instance*.Metroid.Input.MouseWheelWeaponCycle", true}, // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
         /* MelonPrimeDS Visual bool defaults are generated from MelonPrimeHudPropSchema.inc. */
         MP_HUD_PROP_SCHEMA_BOOL(MP_HUD_DEFAULT_ENTRY)
         {"Instance*.Metroid.BugFix.WifiBitset",        true},

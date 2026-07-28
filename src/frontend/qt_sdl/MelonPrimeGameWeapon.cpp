@@ -181,7 +181,8 @@ namespace MelonPrime {
             //   Eliminates: emuInstance->getMainWindow()->panel->getDelta() (~18-28 cyc)
             //   The caller (HandleInGameLogic) already gates on hasWeaponInput,
             //   so this path only executes when wheel/next/prev is active.
-            const int wheelDelta = m_input.wheelDelta;
+            const int wheelDelta =
+                m_enableMouseWheelWeaponCycle ? m_input.wheelDelta : 0; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
             const bool nextKey = IsPressed(IB_WEAPON_NEXT);
             const bool prevKey = IsPressed(IB_WEAPON_PREV);
 
