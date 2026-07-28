@@ -44,7 +44,8 @@ namespace MelonPrime {
             constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
                 IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
             const bool hasWeaponInput =
-                (m_input.press & IB_WEAPON_ALL_TRIGGERS) || m_input.wheelDelta;
+                (m_input.press & IB_WEAPON_ALL_TRIGGERS)
+                || (m_enableMouseWheelWeaponCycle && m_input.wheelDelta); // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
             if (UNLIKELY(hasWeaponInput && ProcessWeaponSwitch())) {
                 HandleRareWeaponSwitch();
             }

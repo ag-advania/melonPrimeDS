@@ -468,6 +468,7 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // as every other plain numeric setting. Appended to preserve all existing
         // segmented binding indices and their observable load order.
         { C::MorphBoostMouseSens, K::SpinInt, m_spinMetroidMorphBoostMouseSensitivity }, // 45
+        { C::MouseWheelWeaponCycle, K::CheckBool, m_cbMetroidMouseWheelWeaponCycle }, // 46 MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
     };
 }
 
@@ -573,7 +574,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         m_spinMetroidMorphBoostMouseSensitivity = new QSpinBox(ui->sectionSensitivity);
         m_spinMetroidMorphBoostMouseSensitivity->setObjectName(
             QStringLiteral("spinMetroidMorphBoostMouseSensitivity"));
-        m_spinMetroidMorphBoostMouseSensitivity->setRange(0, 1000);
+        m_spinMetroidMorphBoostMouseSensitivity->setRange(0, 9000); // MELONPRIME_MORPH_BOOST_9000_V7
         m_spinMetroidMorphBoostMouseSensitivity->setSingleStep(1);
         m_spinMetroidMorphBoostMouseSensitivity->setSuffix(QStringLiteral("%"));
 
@@ -589,7 +590,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral(
                 "Mouse mode only. 0% disables mouse swipe boost. Values below 100% require more movement; "
                 "100% preserves the default threshold; values above 100% require less movement; "
-                "1000% needs about one tenth. Right-click R boost and the Shift auto-cycle are unchanged."),
+                "9000% is the effective maximum and needs about one ninetieth. Right-click R boost and the Shift auto-cycle are unchanged."),
             ui->sectionSensitivity);
         m_lblMetroidMorphBoostMouseSensitivityDesc->setObjectName(
             QStringLiteral("lblMetroidMorphBoostMouseSensitivityDesc"));
@@ -605,10 +606,32 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         }
     }
 
+    if (!m_cbMetroidMouseWheelWeaponCycle) {
+        m_cbMetroidMouseWheelWeaponCycle = new QCheckBox(
+            QStringLiteral("Enable Mouse Wheel Weapon Cycling"),
+            ui->sectionInputSettings);
+        m_cbMetroidMouseWheelWeaponCycle->setObjectName(
+            QStringLiteral("cbMetroidMouseWheelWeaponCycle"));
+        m_lblMetroidMouseWheelWeaponCycleDesc = new QLabel(
+            QStringLiteral(
+                "Enable this to cycle weapons with the mouse wheel. Disable it to leave wheel scrolling available for other bindings. "
+                "Next Weapon, Previous Weapon, and direct weapon keys still work."),
+            ui->sectionInputSettings);
+        m_lblMetroidMouseWheelWeaponCycleDesc->setObjectName(
+            QStringLiteral("lblMetroidMouseWheelWeaponCycleDesc"));
+        m_lblMetroidMouseWheelWeaponCycleDesc->setWordWrap(true);
+        m_lblMetroidMouseWheelWeaponCycleDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+        if (QLayout* const layout = ui->sectionInputSettings->layout()) {
+            layout->addWidget(m_cbMetroidMouseWheelWeaponCycle);
+            layout->addWidget(m_lblMetroidMouseWheelWeaponCycleDesc);
+        }
+    }
+
     buildSettingBindings();
     // Appended binding index 45 is independent of the historical segmented
     // order. Loading it here fixes persistence without renumbering old ranges.
-    loadBindingsRange(instcfg, 45, 46);
+    loadBindingsRange(instcfg, 45, 47); // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
 
     // Segment 1 [0,22): sensitivities + toggles, up to the dynamic
     // Low-Latency Aim Mode combo block. (setChecked on stylus/smoothing fires

@@ -358,4 +358,11 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 
 <!-- MELONPRIME_MORPH_BOOST_REPOSITORY_DOC_V6 -->
 
-`Metroid.Sensitivity.MorphBoostMouse` is an integer, per-instance setting with default `100` and range `0`～`1000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`'s `DefaultInts` and `IntRanges`, loaded/saved through the non-HUD settings binding table, and derived in `RuntimeConfigSnapshot`. The runtime field is a warm per-instance scalar because the gameplay hot path reads it every active Morph Ball frame. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+`Metroid.Sensitivity.MorphBoostMouse` is an integer, per-instance setting with default `100` and range `0`～`9000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`'s `DefaultInts` and `IntRanges`, loaded/saved through the non-HUD settings binding table, and derived in `RuntimeConfigSnapshot`. The runtime field is a warm per-instance scalar because the gameplay hot path reads it every active Morph Ball frame. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+
+
+## Mouse Wheel Weapon Cycling config contract
+
+<!-- MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_REPOSITORY_DOC_V7 -->
+
+`Metroid.Input.MouseWheelWeaponCycle` is a per-instance boolean with default `true`. It is owned by `CfgKey::MouseWheelWeaponCycle`, registered in `Config.cpp`'s `DefaultBools`, loaded/saved through the non-HUD settings binding table, and published through `RuntimeConfigSnapshot`. The gameplay path reads only the cached warm scalar. See [../features/gameplay/mouse-wheel-weapon-cycling.md](../features/gameplay/mouse-wheel-weapon-cycling.md).

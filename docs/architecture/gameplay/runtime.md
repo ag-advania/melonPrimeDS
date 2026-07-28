@@ -162,4 +162,11 @@ When touching `RunFrameHook` or match lifecycle code:
 
 <!-- MELONPRIME_MORPH_BOOST_RUNTIME_DOC_V6 -->
 
-The mouse-mode Morph Ball swipe threshold is loaded through `RuntimeConfigSnapshot` and stored in the per-instance warm scalar `m_morphBoostAssistThresholdSq`. `HandleMorphBallBoost()` reads the cached value in the in-game hot path; it must not perform a `Config::Table` lookup. `0%` suppresses the mouse swipe path, `1%`～`99%` raises the required movement, `100%` preserves the game threshold `0x1FA4`, and `101%`～`1000%` lowers the required movement. Right-click R boost, Shift auto-cycle, and Stylus Mode remain separate paths. Detailed behavior and validation live in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+The mouse-mode Morph Ball swipe threshold is loaded through `RuntimeConfigSnapshot` and stored in the per-instance warm scalar `m_morphBoostAssistThresholdSq`. `HandleMorphBallBoost()` reads the cached value in the in-game hot path; it must not perform a `Config::Table` lookup. `0%` suppresses the mouse swipe path, `1%`～`99%` raises the required movement, `100%` preserves the game threshold `0x1FA4`, and `101%`～`9000%` lowers the required movement. `9000%` is the effective maximum and maps to squared threshold `1`. Right-click R boost, Shift auto-cycle, and Stylus Mode remain separate paths. Detailed behavior and validation live in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+
+
+## Mouse Wheel Weapon Cycling
+
+<!-- MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_RUNTIME_DOC_V7 -->
+
+The hardcoded mouse-wheel weapon-cycle path is controlled by `Metroid.Input.MouseWheelWeaponCycle` (default `true`). The cached per-instance boolean gates wheel-only dispatch in `HandleInGameLogic()` and masks `wheelDelta` inside `ProcessWeaponSwitch()`. Disabling it does not disable Next Weapon, Previous Weapon, or direct weapon bindings. See [../../features/gameplay/mouse-wheel-weapon-cycling.md](../../features/gameplay/mouse-wheel-weapon-cycling.md).

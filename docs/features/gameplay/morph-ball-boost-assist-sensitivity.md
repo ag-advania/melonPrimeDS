@@ -1,6 +1,7 @@
 # Morph Ball Boost Assist Sensitivity
 
 <!-- MELONPRIME_MORPH_BOOST_ASSIST_DOC_V6 -->
+<!-- MELONPRIME_MORPH_BOOST_9000_DOC_V7 -->
 
 ## Purpose
 
@@ -13,7 +14,7 @@
 | `0%` | Suppress the mouse swipe boost path by clearing `CanTouchBoost` each applicable frame. |
 | `1%`～`99%` | Require more mouse movement than the game's default swipe threshold. |
 | `100%` | Use the game's default squared threshold, `0x1FA4`. |
-| `101%`～`1000%` | Require less mouse movement; `200%` is approximately half and `1000%` approximately one tenth of the default movement amplitude. |
+| `101%`～`9000%` | Require less mouse movement; `200%` is approximately half, `1000%` approximately one tenth, and `9000%` approximately one ninetieth of the default movement amplitude. `9000%` produces the minimum squared threshold of `1`. |
 
 The threshold is derived from an amplitude percentage while the game compares squared magnitude:
 
@@ -47,7 +48,7 @@ In mouse mode, the configured threshold may suppress or promote the swipe path. 
 Key:     Metroid.Sensitivity.MorphBoostMouse
 Type:    int
 Default: 100
-Range:   0～1000
+Range:   0～9000
 Scope:   Instance*.Metroid.*
 ```
 
@@ -91,4 +92,4 @@ python tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.p
 python tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py
 ```
 
-Compilation and runtime smoke testing remain distinct from static audits. Runtime testing should cover `0`, `50`, `99`, `100`, `101`, `200`, and `1000`, including right-click R, Shift auto-cycle, transformation edges, and the R-hold/swipe/R-release sequence.
+Compilation and runtime smoke testing remain distinct from static audits. Runtime testing should cover `0`, `50`, `99`, `100`, `101`, `200`, `1000`, and `9000`, including right-click R, Shift auto-cycle, transformation edges, and the R-hold/swipe/R-release sequence.

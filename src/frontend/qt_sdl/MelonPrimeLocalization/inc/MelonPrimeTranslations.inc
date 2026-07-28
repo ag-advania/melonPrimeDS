@@ -6,6 +6,7 @@ constexpr Translation kTranslations[] = {
 #include "MelonPrimeTranslationsMetroidGameplay.inc"
 #include "MelonPrimeTranslationsMetroidOptions.inc"
 #include "MelonPrimeTranslationsMouseBoost.inc"
+#include "MelonPrimeTranslationsMouseWheelWeaponCycle.inc" // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
 #include "MelonPrimeTranslationsMetroidDescriptions.inc"
 #include "MelonPrimeTranslationsCustomHud01.inc"
 #include "MelonPrimeTranslationsCustomHud02.inc"
