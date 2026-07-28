@@ -928,6 +928,33 @@ namespace Config
         return tval.as_floating();
     }
 
+#ifdef MELONPRIME_DS
+    // MELONPRIME_CONFIG_DEFAULT_ACCESS_V17
+    int Table::GetDefaultInt(const std::string& path)
+    {
+        int ret = FindDefault(path, 0, DefaultInts);
+        const std::string rngkey = GetDefaultKey(PathPrefix + path);
+        if (const auto it = IntRanges.find(rngkey); it != IntRanges.end())
+            ret = std::clamp(ret, std::get<0>(it->second), std::get<1>(it->second));
+        return ret;
+    }
+
+    bool Table::GetDefaultBool(const std::string& path)
+    {
+        return FindDefault(path, false, DefaultBools);
+    }
+
+    std::string Table::GetDefaultString(const std::string& path)
+    {
+        return FindDefault(path, ""s, DefaultStrings);
+    }
+
+    double Table::GetDefaultDouble(const std::string& path)
+    {
+        return FindDefault(path, 0.0, DefaultDoubles);
+    }
+#endif
+
     void Table::SetInt(const std::string& path, int val)
     {
         std::string rngkey = GetDefaultKey(PathPrefix + path);

@@ -35,6 +35,7 @@
 #include <QWheelEvent>
 #include <QAbstractSpinBox>
 #include <QAbstractScrollArea>
+#include <QSignalBlocker> // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
 #include <algorithm>
 #include <sstream>
 
@@ -1277,16 +1278,72 @@ void MelonPrimeInputConfig::populatePage(QWidget* page, const HotkeyEntry* entri
 
 void MelonPrimeInputConfig::on_metroidResetSensitivityValues_clicked()
 {
-    ui->metroidMphSensitvitySpinBox->setValue(-3);
-    ui->metroidAimSensitvitySpinBox->setValue(63);
-    ui->metroidAimYAxisScaleSpinBox->setValue(1.514700);
-    ui->metroidAimAdjustSpinBox->setValue(0.010000);
-    if (m_cbMetroidZoomAimScaleEnable)
-        m_cbMetroidZoomAimScaleEnable->setChecked(false);
-    if (m_spinMetroidZoomAimScalePct)
-        m_spinMetroidZoomAimScalePct->setValue(75);
-    if (m_spinMetroidMorphBoostMouseSensitivity)
-        m_spinMetroidMorphBoostMouseSensitivity->setValue(100);
+    // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
+    // Reset only the widgets that currently belong to the Sensitivity section.
+    // QSignalBlocker guarantees that this operation cannot invoke config-writing
+    // slots. Values reach Config only through the dialog's existing Save path.
+    Config::Table& instcfg = emuInstance->getLocalConfig();
+
+    for (const SettingBinding& binding : m_settingBindings) {
+        QWidget* const widget = binding.widget;
+        if (!widget || !ui->sectionSensitivity->isAncestorOf(widget))
+            continue;
+
+        const QSignalBlocker blocker(widget);
+        switch (binding.kind) {
+        case SettingKind::CheckBool:
+            static_cast<QCheckBox*>(widget)->setChecked(
+                instcfg.GetDefaultBool(binding.key));
+            break;
+        case SettingKind::CheckBoolInverted:
+            static_cast<QCheckBox*>(widget)->setChecked(
+                !instcfg.GetDefaultBool(binding.key));
+            break;
+        case SettingKind::ComboIndexInt:
+            static_cast<QComboBox*>(widget)->setCurrentIndex(
+                instcfg.GetDefaultInt(binding.key));
+            break;
+        case SettingKind::SpinInt:
+            static_cast<QSpinBox*>(widget)->setValue(
+                instcfg.GetDefaultInt(binding.key));
+            break;
+        case SettingKind::DoubleSpinDouble:
+            static_cast<QDoubleSpinBox*>(widget)->setValue(
+                instcfg.GetDefaultDouble(binding.key));
+            break;
+        }
+    }
+
+    // Low-Latency Aim Mode is intentionally outside m_settingBindings because
+    // its save path uses currentData() and applies a public/developer mode gate.
+    if (m_comboMetroidLowLatencyAimMode
+        && ui->sectionSensitivity->isAncestorOf(m_comboMetroidLowLatencyAimMode)) {
+        const QSignalBlocker blocker(m_comboMetroidLowLatencyAimMode);
+        SetComboCurrentData(
+            m_comboMetroidLowLatencyAimMode,
+            instcfg.GetDefaultInt(MelonPrime::CfgKey::LowLatencyAimMode));
+    }
+
+    // Signals were blocked above, so refresh only the dependent enabled states.
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+
+    if (m_cbMetroidDisableMorphBoostSwipe
+        && m_cbMetroidMorphBoostCustomRawThreshold) {
+        const bool swipeEnabled = !m_cbMetroidDisableMorphBoostSwipe->isChecked();
+        m_cbMetroidMorphBoostCustomRawThreshold->setEnabled(swipeEnabled);
+        if (m_lblMetroidMorphBoostCustomRawThresholdDesc)
+            m_lblMetroidMorphBoostCustomRawThresholdDesc->setEnabled(swipeEnabled);
+
+        const bool customEnabled = swipeEnabled
+            && m_cbMetroidMorphBoostCustomRawThreshold->isChecked()
+            && !ui->cbMetroidEnableStylusMode->isChecked();
+        if (m_lblMetroidMorphBoostMouseSensitivity)
+            m_lblMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+        if (m_spinMetroidMorphBoostMouseSensitivity)
+            m_spinMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+        if (m_lblMetroidMorphBoostMouseSensitivityDesc)
+            m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(customEnabled);
+    }
 }
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToLow_clicked()
