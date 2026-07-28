@@ -531,6 +531,10 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6
+        // Warm: consumed by HandleMorphBallBoost during active in-game frames.
+        // The value is derived on the cold config path and remains per-instance.
+        int32_t  m_morphBoostAssistThresholdSq = 0x1FA4;
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -540,9 +544,6 @@ namespace MelonPrime {
         // hotkey. Config::Table remains a cold reload/persistence boundary.
         int      m_runtimeAimSensitivity = 1;
         float    m_runtimeAimYScale = 1.0f;
-        // Effective mouse-mode Morph Ball swipe threshold. Zero disables
-        // swipe boosting; values below/above 100% raise/lower the threshold.
-        int32_t  m_morphBoostAssistThresholdSq = 0x1FA4;
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
