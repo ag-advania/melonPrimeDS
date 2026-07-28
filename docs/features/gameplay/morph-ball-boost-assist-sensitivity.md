@@ -2,10 +2,11 @@
 
 <!-- MELONPRIME_MORPH_BOOST_ASSIST_DOC_V6 -->
 <!-- MELONPRIME_MORPH_BOOST_9000_DOC_V7 -->
+<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_DOC_V9 -->
 
 ## Purpose
 
-`Metroid.Sensitivity.MorphBoostMouse` controls the mouse movement threshold used for Samus's Morph Ball swipe boost. It changes only the mouse-mode swipe path. Stylus Mode, the right-click R boost, and the Shift automatic boost cycle retain their existing paths.
+`Metroid.Sensitivity.MorphBoostMouse` controls the mouse movement threshold used for Samus's original Morph Ball touch/swipe boost. It does not convert mouse movement into an R-button boost. Stylus Mode, manual right-click R boost, and the Shift automatic boost cycle retain their existing paths.
 
 ## User-facing behavior
 
@@ -13,34 +14,54 @@
 |---:|---|
 | `0%` | Suppress the mouse swipe boost path by clearing `CanTouchBoost` each applicable frame. |
 | `1%`～`99%` | Require more mouse movement than the game's default swipe threshold. |
-| `100%` | Use the game's default squared threshold, `0x1FA4`. |
-| `101%`～`9000%` | Require less mouse movement; `200%` is approximately half, `1000%` approximately one tenth, and `9000%` approximately one ninetieth of the default movement amplitude. `9000%` produces the minimum squared threshold of `1`. |
+| `100%` | Preserve the game's default squared threshold, `0x1FA4`. |
+| `101%`～`9000%` | Require less movement. The first configured-threshold crossing emits one native touch/swipe pulse. Continuous movement cannot emit another pulse until movement falls below the configured threshold and the native boost state finishes. |
 
-The threshold is derived from an amplitude percentage while the game compares squared magnitude:
+The threshold remains an amplitude percentage converted to the squared quantity used by the game:
 
 ```text
 thresholdSquared = round(0x1FA4 * 10000 / percentage^2)
 ```
 
-A zero percentage is handled separately and never enters the division.
+`9000%` maps to the minimum stored squared threshold of `1`.
 
-## Runtime ownership and ordering
+## Why V7 became overpowered
 
-- `LoadRuntimeConfigSnapshot()` reads and clamps the persisted value on the cold config path.
-- `ApplyRuntimeConfigSnapshot()` publishes the derived squared threshold to the per-instance `MelonPrimeCore` member.
-- `m_morphBoostAssistThresholdSq` is a warm per-instance scalar because `HandleMorphBallBoost()` reads it during active gameplay.
-- `HandleMorphBallBoost()` executes after standard button mapping and before the mouse aim path.
-- No per-frame `Config::Table` lookup, allocation, lock, logging, or platform-specific branch is added.
+V7 promoted every below-native `altSteerDelta` frame that exceeded the configured threshold. At very high sensitivity, ordinary continuous mouse motion could therefore be promoted on consecutive frames. Each accepted frame entered the game's touch/swipe boost path again, allowing repeated Boosting/contact-damage states rather than one physical swipe gesture.
+
+V9 retains the native touch/swipe route but makes promotion a one-frame pulse. `m_morphBoostSwipePulseLatched` records that the current gesture has already emitted its swipe. Promotion is not repeated while the gesture remains above threshold. The latch re-arms only when movement is below threshold and both `CPlayer +0x4C4 bit26` Boosting and the cached boost busy timer are clear.
+
+## Why V8 is not used
+
+V8 routed high-sensitivity assistance through a native R charge/release cycle. That was safer than repeated vector promotion, but it changed the feature into an R/Shift-style boost. V9 removes the V8 R-cycle state and never synthesizes R for mouse sensitivity assistance.
+
+## Native game-flow evidence
+
+Reverse-engineering notes are stored in `Zection6V/mphCodex`:
+
+- `02021C04-altform-boost-input-update-JP1_0.md` identifies the ability gate, touch boost gate, R hold/release processing, speed application, and Boosting state in the game's own update function.
+- `0200BDE0-player-boost-contact-damage-JP1_0.md` shows that Boosting contact consumes `player+0x149` damage and ends the current Boosting state.
+- `0200C49C-player-end-boost-altattack-JP1_0.md` documents clearing the Samus Boosting flag.
+
+The implementation therefore leaves damage, speed, effects, and boost termination to the original touch/swipe game path. It changes only whether one gesture is accepted at the fixed native comparison.
+
+## Runtime ownership and state
+
+- `LoadRuntimeConfigSnapshot()` reads and clamps the persisted value on the cold path.
+- `ApplyRuntimeConfigSnapshot()` publishes the squared threshold and resets the transient swipe-pulse latch.
+- `m_morphBoostAssistThresholdSq` and `m_morphBoostSwipePulseLatched` are warm per-instance scalars.
+- Config reload, startup, boot reset, stop, focus loss, game leave, and game join reset the latch.
+- The hot path performs no config lookup, allocation, lock, or logging.
 
 ## Input arbitration
 
-The implementation preserves the accepted double-boost sequence:
-
-```text
-hold R -> mouse/stylus swipe boost -> release R -> button boost
-```
-
-In mouse mode, the configured threshold may suppress or promote the swipe path. The right-click R boost and Shift automatic cycle remain separate button paths. Stylus Mode does not use this mouse sensitivity setting.
+- `0%` disables mouse swipe boost.
+- `1%`～`99%` suppresses the native threshold until the configured higher threshold is crossed.
+- `100%` retains the previous native behavior.
+- Above `100%`, one threshold crossing emits one native swipe pulse.
+- A true native-threshold flick and an assisted below-native flick share the same one-gesture latch above `100%`, preventing a double pulse from one continuous motion.
+- Manual R and Shift remain independent. Movement present while either is held is latched so releasing the button does not immediately create an unrelated assisted swipe.
+- The accepted `hold R -> native swipe -> release R` sequence remains available after a distinct swipe gesture.
 
 ## Configuration contract
 
@@ -52,35 +73,13 @@ Range:   0～9000
 Scope:   Instance*.Metroid.*
 ```
 
-The key must remain in `DefaultInts`, use `CfgKey::MorphBoostMouseSens`, load/save through the non-HUD binding table, and cross the runtime through `RuntimeConfigSnapshot`.
+## Localization
 
-## Localization terminology
-
-The English source key remains `Morph Ball Boost Assist Sensitivity`. Official manuals were used as terminology references for the established game terms:
-
-- English: `MORPH BALL`, `BOOST`
-- Spanish: `MORFOSFERA`, `TURBO`
-- French: `BOULE MORPHING`, `BOOST`
-- German: `MORPH BALL`, `BOOST`
-- Italian: `MORFOSFERA`, `TURBO`
-- Japanese: `モーフボール`, `ブースト`
-
-Reference manuals:
-
-- https://www.nintendo.co.jp/data/software/manual/AMHJ_J.pdf
-- https://m1.nintendo.net/docvc/NTR/JPN/AMHJ/AMHJ_J.pdf
-- https://www.nintendo.com/eu/media/downloads/games_8/emanuals/nintendo_ds_21/Manual_NintendoDS_MetroidPrimeHunters_EN.pdf
-- https://csassets.nintendo.com/noaext/image/private/t_KA_PDF/DS_Metroid_Prime_Hunters
-- https://www.nintendo.com/eu/media/downloads/games_8/emanuals/nintendo_ds_21/Manual_NintendoDS_MetroidPrimeHunters_ES.pdf
-- https://www.nintendo.com/eu/media/downloads/games_8/emanuals/nintendo_ds_21/Manual_NintendoDS_MetroidPrimeHunters_FR.pdf
-- https://www.nintendo.com/eu/media/downloads/games_8/emanuals/nintendo_ds_21/Manual_NintendoDS_MetroidPrimeHunters_DE.pdf
-- https://www.nintendo.com/eu/media/downloads/games_8/emanuals/nintendo_ds_21/Manual_NintendoDS_MetroidPrimeHunters_IT.pdf
-
-The 14 languages called out by the localization quality audit receive explicit focused-correction rows in `MelonPrimeTranslationsMouseBoost.inc`: Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic, Catalan, Odia, Estonian, Assamese, Kyrgyz, Filipino, and Swahili.
+The V7 label and 76 direct translation rows are retained. V8's descriptions that claimed an R/Shift-style cycle are removed. The existing description remains accurate: values above `100%` require less mouse movement, while right-click R and Shift remain unchanged.
 
 ## Validation
 
-Required checks:
+Required static checks remain:
 
 ```text
 git diff --check
@@ -92,4 +91,4 @@ python tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.p
 python tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py
 ```
 
-Compilation and runtime smoke testing remain distinct from static audits. Runtime testing should cover `0`, `50`, `99`, `100`, `101`, `200`, `1000`, and `9000`, including right-click R, Shift auto-cycle, transformation edges, and the R-hold/swipe/R-release sequence.
+Runtime testing must compare one short flick with a sustained movement at `101`, `200`, `1000`, and `9000`. A sustained movement must produce at most one assisted native swipe until the movement returns below threshold and the boost finishes. Also test `0`, `50`, `99`, `100`, manual R, Shift, transformation edges, enemy contact, and `hold R -> swipe -> release R`.

@@ -161,8 +161,10 @@ When touching `RunFrameHook` or match lifecycle code:
 ## Morph Ball Boost Assist Sensitivity
 
 <!-- MELONPRIME_MORPH_BOOST_RUNTIME_DOC_V6 -->
+<!-- MELONPRIME_MORPH_BOOST_SHIFT_STYLE_RUNTIME_DOC_V8_REMOVED -->
+<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_RUNTIME_DOC_V9 -->
 
-The mouse-mode Morph Ball swipe threshold is loaded through `RuntimeConfigSnapshot` and stored in the per-instance warm scalar `m_morphBoostAssistThresholdSq`. `HandleMorphBallBoost()` reads the cached value in the in-game hot path; it must not perform a `Config::Table` lookup. `0%` suppresses the mouse swipe path, `1%`～`99%` raises the required movement, `100%` preserves the game threshold `0x1FA4`, and `101%`～`9000%` lowers the required movement. `9000%` is the effective maximum and maps to squared threshold `1`. Right-click R boost, Shift auto-cycle, and Stylus Mode remain separate paths. Detailed behavior and validation live in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+The mouse-mode threshold is cached in warm per-instance state. Above `100%`, `HandleMorphBallBoost()` emits one native touch/swipe pulse per threshold crossing and records it in `m_morphBoostSwipePulseLatched`. Only an assisted below-native pulse receives a one-frame direction-preserving `altSteerDelta` promotion; the R input mask and `player+0x148` charge are untouched. Continuous motion is suppressed until motion falls below the configured threshold and native Boosting/cooldown are clear. Config reload and lifecycle/focus/game boundaries reset the latch. Detailed behavior is in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
 
 
 ## Mouse Wheel Weapon Cycling

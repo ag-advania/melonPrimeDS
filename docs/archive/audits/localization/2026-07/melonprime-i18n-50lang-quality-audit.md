@@ -201,9 +201,16 @@ Applied, strict audit green, macOS build clean, launch/exit smoke clean.
 
 <!-- MELONPRIME_MORPH_BOOST_I18N_QUALITY_DOC_V6 -->
 
-The two new exact-match rows for `Morph Ball Boost Assist Sensitivity` received a focused content pass. The pass replaced the label and explanatory text for the 14 languages previously identified as the highest-priority manual-review set: Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic, Catalan, Odia, Estonian, Assamese, Kyrgyz, Filipino, and Swahili. It also aligned German, Spanish, French, and Italian game terminology with the official regional Metroid Prime Hunters manuals (`MORPH BALL`/`BOOST`, `MORFOSFERA`/`TURBO`, `BOULE MORPHING`/`BOOST`, and `MORFOSFERA`/`TURBO`).
+The two exact-match rows for `Morph Ball Boost Assist Sensitivity` retain the focused corrections for Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic, Catalan, Odia, Estonian, Assamese, Kyrgyz, Filipino, and Swahili. German, Spanish, French, and Italian retain the official regional terminology alignment.
 
-This is a focused two-row correction, not a claim that the remaining catalog content for those languages is fully native-reviewed. `tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py` locks the exact corrected values, rejects empty/English-copy/display-name-leak regressions for the targeted rows, and verifies full 76-language row coverage.
+This remains a focused two-row correction, not a claim that the complete catalogs are native-reviewed. `tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py` verifies the corrected values and full 76-language row coverage.
+
+
+## Update (2026-07-28): Native-swipe pulse behavior
+
+<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_I18N_DOC_V9 -->
+
+V8's explanatory rows that described an R/Shift-style charge cycle were removed because the implementation again uses the original native touch/swipe path. The V7 user-facing text is restored for all 76 direct languages. Detailed one-pulse/rearm semantics are documented in the feature and architecture documents without introducing a new translation key.
 
 
 ## Update (2026-07-28): Mouse Wheel Weapon Cycling translations
