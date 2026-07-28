@@ -639,14 +639,30 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("QLabel { margin-left: 20px; }"));
 
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
-            form->insertRow(17, m_cbMetroidDisableMorphBoostSwipe);
-            form->insertRow(18, m_lblMetroidDisableMorphBoostSwipeDesc);
-            form->insertRow(19, m_cbMetroidMorphBoostCustomRawThreshold);
-            form->insertRow(20, m_lblMetroidMorphBoostCustomRawThresholdDesc);
-            form->insertRow(21,
-                m_lblMetroidMorphBoostMouseSensitivity,
-                m_spinMetroidMorphBoostMouseSensitivity);
-            form->insertRow(22, m_lblMetroidMorphBoostMouseSensitivityDesc);
+            // MELONPRIME_MORPH_SETTINGS_BELOW_SUBPIXEL_V16
+            // Dynamic rows (for example Zoom Aim Scale) may shift the original
+            // .ui row numbers. Anchor this group to the actual sub-pixel
+            // accumulator widget instead of relying on a fragile fixed index.
+            int subpixelRow = -1;
+            QFormLayout::ItemRole subpixelRole = QFormLayout::SpanningRole;
+            form->getWidgetPosition(
+                ui->cbMetroidEnableAimAccumulator,
+                &subpixelRow,
+                &subpixelRole);
+            if (subpixelRow < 0) {
+                qWarning("Morph Boost settings: Aim Sub-pixel Accumulator row was not found");
+            }
+            else {
+                int morphRow = subpixelRow + 1;
+                form->insertRow(morphRow++, m_cbMetroidDisableMorphBoostSwipe);
+                form->insertRow(morphRow++, m_lblMetroidDisableMorphBoostSwipeDesc);
+                form->insertRow(morphRow++, m_cbMetroidMorphBoostCustomRawThreshold);
+                form->insertRow(morphRow++, m_lblMetroidMorphBoostCustomRawThresholdDesc);
+                form->insertRow(morphRow++,
+                    m_lblMetroidMorphBoostMouseSensitivity,
+                    m_spinMetroidMorphBoostMouseSensitivity);
+                form->insertRow(morphRow++, m_lblMetroidMorphBoostMouseSensitivityDesc);
+            }
         }
 
         const auto updateMorphBoostControls = [this]() {
