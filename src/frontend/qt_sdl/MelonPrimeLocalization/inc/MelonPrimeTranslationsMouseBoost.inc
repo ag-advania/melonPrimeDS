@@ -88,9 +88,9 @@
         }
     },
     {
-        "Mouse mode only. Range 1–46339; 90 matches the game's default. Smaller values trigger more easily; larger values require more movement. This value is used only while the custom raw threshold option is enabled.",
+        "Mouse mode only. Range 1–46339; the MelonPrime default is 90. Smaller values trigger more easily; larger values require more movement. This raw-input value is used only with the custom threshold and is not MPH's native swipe threshold.",
         {
-            {MenuLangId::Japanese, "マウスモード専用。範囲は1～46339で、90がゲーム標準です。小さい値ほど発動しやすく、大きい値ほど多くの移動が必要です。この値はカスタムRaw移動量しきい値が有効な場合だけ使用されます。"},
+            {MenuLangId::Japanese, "マウスモード専用。範囲は1～46339で、MelonPrimeのデフォルトは90です。小さい値ほど発動しやすく、大きい値ほど多くの移動が必要です。このRaw入力値はカスタムしきい値が有効な場合だけ使用され、MPH本来のスワイプしきい値を表すものではありません。"},
             {MenuLangId::German, "Nur im Mausmodus. Bereich 1–46339; 90 entspricht dem Spielstandard. Kleinere Werte lösen leichter aus, größere Werte erfordern mehr Bewegung. Der R-BOOST per Rechtsklick und der automatische Shift-Zyklus bleiben unverändert."},
             {MenuLangId::Spanish, "Solo en modo ratón. Rango 1–46339; 90 es el valor estándar del juego. Los valores menores se activan más fácilmente y los mayores requieren más movimiento. El TURBO R con clic derecho y el ciclo automático de Shift no cambian."},
             {MenuLangId::French, "Mode souris uniquement. Plage 1–46339 ; 90 correspond au réglage standard du jeu. Les petites valeurs facilitent l’activation, les grandes exigent plus de mouvement. Le BOOST R au clic droit et le cycle automatique de Maj restent inchangés."},

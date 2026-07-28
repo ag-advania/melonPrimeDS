@@ -629,9 +629,9 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
         m_lblMetroidMorphBoostMouseSensitivityDesc = new QLabel(
             QStringLiteral(
-                "Mouse mode only. Range 1–46339; 90 matches the game's default. "
+                "Mouse mode only. Range 1–46339; the MelonPrime default is 90. "
                 "Smaller values trigger more easily; larger values require more movement. "
-                "This value is used only while the custom raw threshold option is enabled."),
+                "This raw-input value is used only with the custom threshold and is not MPH's native swipe threshold."),
             ui->sectionSensitivity);
         m_lblMetroidMorphBoostMouseSensitivityDesc->setObjectName(
             QStringLiteral("lblMetroidMorphBoostMouseSensitivityDesc"));
