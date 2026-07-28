@@ -105,6 +105,15 @@ public:
     std::string GetString(const std::string& path);
     double GetDouble(const std::string& path);
 
+#ifdef MELONPRIME_DS
+    // MELONPRIME_CONFIG_DEFAULT_ACCESS_V17
+    // Read the compiled default without consulting or mutating the current TOML value.
+    int GetDefaultInt(const std::string& path);
+    bool GetDefaultBool(const std::string& path);
+    std::string GetDefaultString(const std::string& path);
+    double GetDefaultDouble(const std::string& path);
+#endif
+
     void SetInt(const std::string& path, int val);
     void SetInt64(const std::string& path, int64_t val);
     void SetBool(const std::string& path, bool val);
