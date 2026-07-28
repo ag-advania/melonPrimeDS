@@ -16,9 +16,11 @@ KEYS = [
     "Use Custom Raw Mouse Movement Threshold",
     "Off uses only the game's internal swipe amount. On requires the current frame's raw mouse movement to reach the value below and uses that same vector for the native swipe pulse.",
 ]
+# Grade A/B terminology comes from:
+# docs/development/localization/metroid-prime-hunters-terminology-reference.md
 MORPH_BALL_TERMS = {
     "Japanese": "モーフボール",
-    "German": "Morph Ball",
+    "German": "Morph-Ball",
     "Spanish": "MORFOSFERA",
     "French": "BOULE MORPHING",
     "Italian": "MORFOSFERA",

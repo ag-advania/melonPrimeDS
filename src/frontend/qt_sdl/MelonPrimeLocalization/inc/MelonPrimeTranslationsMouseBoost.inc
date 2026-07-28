@@ -10,7 +10,7 @@
         "Morph Ball Boost Required Mouse Movement",
         {
             {MenuLangId::Japanese, "モーフボールブーストに必要なマウス移動量"},
-            {MenuLangId::German, "Für den Morph Ball-BOOST erforderliche Mausbewegung"},
+            {MenuLangId::German, "Für den Morph-Ball-Boost erforderliche Mausbewegung"},
             {MenuLangId::Spanish, "Movimiento del ratón necesario para el TURBO de la MORFOSFERA"},
             {MenuLangId::French, "Mouvement de la souris requis pour le BOOST de la BOULE MORPHING"},
             {MenuLangId::Italian, "Movimento del mouse necessario per il TURBO della MORFOSFERA"},
@@ -174,7 +174,7 @@
         "Disable Morph Ball Swipe Boost",
         {
             {MenuLangId::Japanese, "マウススワイプによるモーフボールブーストを無効化"},
-            {MenuLangId::German, "Morph Ball-BOOST per Mauswischbewegung deaktivieren"},
+            {MenuLangId::German, "Morph-Ball-Boost per Mauswischbewegung deaktivieren"},
             {MenuLangId::Spanish, "Desactivar el TURBO de la MORFOSFERA mediante deslizamiento del ratón"},
             {MenuLangId::French, "Désactiver le BOOST de la BOULE MORPHING par balayage de la souris"},
             {MenuLangId::Italian, "Disattiva il TURBO della MORFOSFERA tramite scorrimento del mouse"},
@@ -255,7 +255,7 @@
         "Mouse mode only. Check this to disable mouse swipe boost. Right-click R boost, the Shift auto-cycle, and Stylus Mode are unchanged.",
         {
             {MenuLangId::Japanese, "マウスモード専用。オンにすると、マウススワイプによるモーフボールブーストを無効化します。右クリックのRブースト、Shiftによる自動連続ブースト、スタイラスモードには影響しません。"},
-            {MenuLangId::German, "Nur im Mausmodus. Aktivieren, um den Morph Ball-BOOST per Mauswischbewegung zu deaktivieren. Der BOOST per Rechtsklick auf R, der automatische wiederholte BOOST mit Shift und der Touchpen-Modus bleiben unverändert."},
+            {MenuLangId::German, "Nur im Mausmodus. Aktivieren, um den Morph-Ball-Boost per Mauswischbewegung zu deaktivieren. Der Boost per Rechtsklick auf R, der automatische wiederholte Boost mit Shift und der Touchpen-Modus bleiben unverändert."},
             {MenuLangId::Spanish, "Solo en modo ratón. Actívalo para deshabilitar el TURBO de la MORFOSFERA mediante deslizamiento del ratón. El TURBO con clic derecho en R, el TURBO automático repetido con Shift y el modo táctil no cambian."},
             {MenuLangId::French, "Mode souris uniquement. Activez cette option pour désactiver le BOOST de la BOULE MORPHING par balayage de la souris. Le BOOST avec clic droit sur R, le BOOST automatique répété avec Shift et le mode stylet restent inchangés."},
             {MenuLangId::Italian, "Solo in modalità mouse. Attiva per disabilitare il TURBO della MORFOSFERA tramite scorrimento del mouse. Il TURBO con clic destro su R, il TURBO automatico ripetuto con Shift e la modalità stilo restano invariati."},
