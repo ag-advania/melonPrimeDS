@@ -691,7 +691,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("cbMetroidDisableMouseWheelWeaponCycle"));
         m_lblMetroidDisableMouseWheelWeaponCycleDesc = new QLabel(
             QStringLiteral(
-                "Check this to disable cycling weapons with the mouse wheel and leave scrolling available for other bindings. "
+                "Check this to disable cycling weapons with the mouse wheel and leave wheel scrolling available for other bindings. "
                 "Next Weapon, Previous Weapon, and direct weapon keys still work."),
             ui->sectionInputSettings);
         m_lblMetroidDisableMouseWheelWeaponCycleDesc->setObjectName(
