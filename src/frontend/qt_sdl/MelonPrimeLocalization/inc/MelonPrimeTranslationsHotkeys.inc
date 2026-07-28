@@ -732,7 +732,7 @@
         "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
         {
             {MenuLangId::Japanese, "[Metroid] (マウス右) インペリアリストズーム、マップ縮小、モーフボールブースト"},
-            {MenuLangId::German, "[Metroid] (Rechte Maustaste) Imperialist-Zoom, Karte verkleinern, Morph Ball-BOOST"},
+            {MenuLangId::German, "[Metroid] (Rechte Maustaste) Imperialist-Zoom, Karte verkleinern, Morph-Ball-Boost"},
             {MenuLangId::Spanish, "[Metroid] (Clic derecho) Zoom del Imperialist, alejar el mapa, turbo de la Morfosfera"},
             {MenuLangId::French, "[Metroid] (Clic droit) Zoom de l’Impérialiste, dézoomer la carte, boost de la boule morphing"},
             {MenuLangId::Italian, "[Metroid] (Mouse destro) Zoom del Raggio Imperium, riduci la mappa, turbo della Morfosfera"},
@@ -975,7 +975,7 @@
         "[Metroid] (Shift) Hold to Fast Morph Ball Boost",
         {
             {MenuLangId::Japanese, "[Metroid] (Shift) 長押しで高速モーフボールブースト"},
-            {MenuLangId::German, "[Metroid] (Umschalt) Für einen schnellen Morph Ball-BOOST gedrückt halten"},
+            {MenuLangId::German, "[Metroid] (Umschalt) Für einen schnellen Morph-Ball-Boost gedrückt halten"},
             {MenuLangId::Spanish, "[Metroid] (Mayús) Mantener pulsado para activar el turbo rápido de la Morfosfera"},
             {MenuLangId::French, "[Metroid] (Maj) Maintenir pour le BOOST rapide de la boule morphing"},
             {MenuLangId::Italian, "[Metroid] (Maiusc) Tieni premuto per il turbo rapido della Morfosfera"},
