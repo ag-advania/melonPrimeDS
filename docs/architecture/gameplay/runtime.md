@@ -156,3 +156,7 @@ When touching `RunFrameHook` or match lifecycle code:
 - `src/frontend/qt_sdl/MelonPrimePatchRegistry.h`
 - `src/frontend/qt_sdl/MelonPrimePatchRegistry.cpp`
 - `src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp`
+<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_RUNTIME_V15 -->
+### Negative UI checkboxes over positive runtime keys
+
+`MorphBoostSwipeEnabled` and `MouseWheelWeaponCycle` remain positive runtime/config booleans. InputConfig presents them as Disable checkboxes through `SettingKind::CheckBoolInverted`: load uses `checked = !GetBool(key)` and save uses `SetBool(key, !checked)`. Runtime snapshot and hot-path behavior are unchanged.

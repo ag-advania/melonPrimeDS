@@ -35,6 +35,7 @@
 #include <QWheelEvent>
 #include <QAbstractSpinBox>
 #include <QAbstractScrollArea>
+#include <QSignalBlocker> // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
 #include <algorithm>
 #include <sstream>
 
@@ -392,12 +393,10 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 }
 
 // Non-HUD settings binding table (Phase 5b)
-// Single source of truth for symmetric simple settings: load and save both
-// iterate the same rows so the two sides can never drift. Only plain mirrors
-// live here (setChecked<->SetBool(checkState==Checked), setCurrentIndex<->
-// SetInt(currentIndex), setValue<->SetInt/SetDouble(value)). Anything with a
-// transform / dev-only gate / migration / invalidate-couple / non-mirror save
-// stays out of the table and keeps its original code.
+// Single source of truth for simple settings: load and save both iterate
+// the same rows. CheckBoolInverted is the explicit negative-UI/positive-key
+// transform; all other rows are plain mirrors. More complex transforms, gates,
+// migrations and coupled saves stay outside the table. // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
 //
 // Order is IDENTICAL to the original setupSensitivityAndToggles load order so
 // the segmented load below reproduces the exact sequence of widget loads
@@ -464,6 +463,13 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::LowHpWarningMedium, K::SpinInt,       ui->spinMetroidLowHpWarningMedium },  // 42
         { C::LowHpWarningHigh,   K::SpinInt,       ui->spinMetroidLowHpWarningHigh },    // 43
         { C::LowHpWarningAutoBase, K::SpinInt,     ui->spinMetroidLowHpWarningAutoBase }, // 44
+        // V11: direct required movement remains in the symmetric load/save path.
+        // The existing widget/member names are retained to avoid needless UI ABI churn.
+        // Appended position preserves all historical binding indices and load order.
+        { C::MorphBoostSwipeDistance, K::SpinInt, m_spinMetroidMorphBoostMouseSensitivity }, // 45
+        { C::MorphBoostSwipeEnabled, K::CheckBoolInverted, m_cbMetroidDisableMorphBoostSwipe }, // 46 MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+        { C::MorphBoostCustomRawThreshold, K::CheckBool, m_cbMetroidMorphBoostCustomRawThreshold }, // 47
+        { C::MouseWheelWeaponCycle, K::CheckBoolInverted, m_cbMetroidDisableMouseWheelWeaponCycle }, // 48 MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
     };
 }
 
@@ -475,6 +481,9 @@ void MelonPrimeInputConfig::loadBindingsRange(Config::Table& instcfg, int begin,
         case SettingKind::CheckBool:
             static_cast<QCheckBox*>(b.widget)->setChecked(instcfg.GetBool(b.key));
             break;
+        case SettingKind::CheckBoolInverted:
+            static_cast<QCheckBox*>(b.widget)->setChecked(!instcfg.GetBool(b.key));
+            break; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
         case SettingKind::ComboIndexInt:
         {
             auto* combo = static_cast<QComboBox*>(b.widget);
@@ -504,6 +513,10 @@ void MelonPrimeInputConfig::saveBindings(Config::Table& instcfg)
             instcfg.SetBool(b.key,
                 static_cast<QCheckBox*>(b.widget)->checkState() == Qt::Checked);
             break;
+        case SettingKind::CheckBoolInverted:
+            instcfg.SetBool(b.key,
+                static_cast<QCheckBox*>(b.widget)->checkState() != Qt::Checked);
+            break; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
         case SettingKind::ComboIndexInt:
             instcfg.SetInt(b.key, static_cast<QComboBox*>(b.widget)->currentIndex());
             break;
@@ -565,7 +578,150 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             });
     }
 
+    if (!m_cbMetroidDisableMorphBoostSwipe) {
+        m_cbMetroidDisableMorphBoostSwipe = new QCheckBox(
+            QStringLiteral("Disable Morph Ball Swipe Boost"),
+            ui->sectionSensitivity);
+        m_cbMetroidDisableMorphBoostSwipe->setObjectName(
+            QStringLiteral("cbMetroidDisableMorphBoostSwipe"));
+
+        m_lblMetroidDisableMorphBoostSwipeDesc = new QLabel(
+            QStringLiteral(
+                "Mouse mode only. Check this to disable mouse swipe boost. "
+                "Right-click R boost, the Shift auto-cycle, and Stylus Mode are unchanged."),
+            ui->sectionSensitivity);
+        m_lblMetroidDisableMorphBoostSwipeDesc->setObjectName(
+            QStringLiteral("lblMetroidDisableMorphBoostSwipeDesc"));
+        m_lblMetroidDisableMorphBoostSwipeDesc->setWordWrap(true);
+        m_lblMetroidDisableMorphBoostSwipeDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        m_cbMetroidMorphBoostCustomRawThreshold = new QCheckBox(
+            QStringLiteral("Use Custom Raw Mouse Movement Threshold"),
+            ui->sectionSensitivity);
+        m_cbMetroidMorphBoostCustomRawThreshold->setObjectName(
+            QStringLiteral("cbMetroidMorphBoostCustomRawThreshold"));
+
+        m_lblMetroidMorphBoostCustomRawThresholdDesc = new QLabel(
+            QStringLiteral(
+                "Off uses only the game's internal swipe amount. On requires the current frame's raw mouse movement "
+                "to reach the value below and uses that same vector for the native swipe pulse."),
+            ui->sectionSensitivity);
+        m_lblMetroidMorphBoostCustomRawThresholdDesc->setObjectName(
+            QStringLiteral("lblMetroidMorphBoostCustomRawThresholdDesc"));
+        m_lblMetroidMorphBoostCustomRawThresholdDesc->setWordWrap(true);
+        m_lblMetroidMorphBoostCustomRawThresholdDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        m_spinMetroidMorphBoostMouseSensitivity = new QSpinBox(ui->sectionSensitivity);
+        m_spinMetroidMorphBoostMouseSensitivity->setObjectName(
+            QStringLiteral("spinMetroidMorphBoostMouseSensitivity"));
+        m_spinMetroidMorphBoostMouseSensitivity->setRange(1, 46339); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+        m_spinMetroidMorphBoostMouseSensitivity->setSingleStep(1);
+
+        m_lblMetroidMorphBoostMouseSensitivity = new QLabel(
+            QStringLiteral("Morph Ball Boost Required Mouse Movement"),
+            ui->sectionSensitivity);
+        m_lblMetroidMorphBoostMouseSensitivity->setObjectName(
+            QStringLiteral("lblMetroidMorphBoostMouseSensitivity"));
+        m_lblMetroidMorphBoostMouseSensitivity->setBuddy(
+            m_spinMetroidMorphBoostMouseSensitivity);
+
+        m_lblMetroidMorphBoostMouseSensitivityDesc = new QLabel(
+            QStringLiteral(
+                "Mouse mode only. Range 1–46339; the MelonPrime default is 90. "
+                "Smaller values trigger more easily; larger values require more movement. "
+                "This raw-input value is used only with the custom threshold and is not MPH's native swipe threshold."),
+            ui->sectionSensitivity);
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setObjectName(
+            QStringLiteral("lblMetroidMorphBoostMouseSensitivityDesc"));
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setWordWrap(true);
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
+            // MELONPRIME_MORPH_SETTINGS_BELOW_SUBPIXEL_V16
+            // Dynamic rows (for example Zoom Aim Scale) may shift the original
+            // .ui row numbers. Anchor this group to the actual sub-pixel
+            // accumulator widget instead of relying on a fragile fixed index.
+            int subpixelRow = -1;
+            QFormLayout::ItemRole subpixelRole = QFormLayout::SpanningRole;
+            form->getWidgetPosition(
+                ui->cbMetroidEnableAimAccumulator,
+                &subpixelRow,
+                &subpixelRole);
+            if (subpixelRow < 0) {
+                qWarning("Morph Boost settings: Aim Sub-pixel Accumulator row was not found");
+            }
+            else {
+                int morphRow = subpixelRow + 1;
+                form->insertRow(morphRow++, m_cbMetroidDisableMorphBoostSwipe);
+                form->insertRow(morphRow++, m_lblMetroidDisableMorphBoostSwipeDesc);
+                form->insertRow(morphRow++, m_cbMetroidMorphBoostCustomRawThreshold);
+                form->insertRow(morphRow++, m_lblMetroidMorphBoostCustomRawThresholdDesc);
+                form->insertRow(morphRow++,
+                    m_lblMetroidMorphBoostMouseSensitivity,
+                    m_spinMetroidMorphBoostMouseSensitivity);
+                form->insertRow(morphRow++, m_lblMetroidMorphBoostMouseSensitivityDesc);
+            }
+        }
+
+        const auto updateMorphBoostControls = [this]() {
+            const bool swipeEnabled = !m_cbMetroidDisableMorphBoostSwipe->isChecked();
+            m_cbMetroidMorphBoostCustomRawThreshold->setEnabled(swipeEnabled);
+            m_lblMetroidMorphBoostCustomRawThresholdDesc->setEnabled(swipeEnabled);
+            const bool customEnabled = swipeEnabled
+                && m_cbMetroidMorphBoostCustomRawThreshold->isChecked();
+            m_lblMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+            m_spinMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+            m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(customEnabled);
+        };
+        connect(m_cbMetroidDisableMorphBoostSwipe, &QCheckBox::toggled,
+            this, [updateMorphBoostControls](bool) { updateMorphBoostControls(); });
+        connect(m_cbMetroidMorphBoostCustomRawThreshold, &QCheckBox::toggled,
+            this, [updateMorphBoostControls](bool) { updateMorphBoostControls(); });
+        updateMorphBoostControls();
+    }
+
+    if (!m_cbMetroidDisableMouseWheelWeaponCycle) {
+        m_cbMetroidDisableMouseWheelWeaponCycle = new QCheckBox(
+            QStringLiteral("Disable Mouse Wheel Weapon Cycling"),
+            ui->sectionInputSettings);
+        m_cbMetroidDisableMouseWheelWeaponCycle->setObjectName(
+            QStringLiteral("cbMetroidDisableMouseWheelWeaponCycle"));
+        m_lblMetroidDisableMouseWheelWeaponCycleDesc = new QLabel(
+            QStringLiteral(
+                "Check this to disable cycling weapons with the mouse wheel and leave wheel scrolling available for other bindings. "
+                "Next Weapon, Previous Weapon, and direct weapon keys still work."),
+            ui->sectionInputSettings);
+        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setObjectName(
+            QStringLiteral("lblMetroidDisableMouseWheelWeaponCycleDesc"));
+        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setWordWrap(true);
+        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setStyleSheet(
+            QStringLiteral("QLabel { margin-left: 20px; }"));
+        if (QLayout* const layout = ui->sectionInputSettings->layout()) {
+            layout->addWidget(m_cbMetroidDisableMouseWheelWeaponCycle);
+            layout->addWidget(m_lblMetroidDisableMouseWheelWeaponCycleDesc);
+        }
+    }
+
     buildSettingBindings();
+    // V15 appended bindings 45..48: distance, inverted disable parent,
+    // custom mode, and inverted disable wheel checkbox.
+    loadBindingsRange(instcfg, 45, 49); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
+        && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
+        m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
+        m_spinMetroidMorphBoostMouseSensitivity->setValue(90);
+    }
+    const bool morphSwipeEnabled = !m_cbMetroidDisableMorphBoostSwipe->isChecked();
+    m_cbMetroidMorphBoostCustomRawThreshold->setEnabled(morphSwipeEnabled);
+    m_lblMetroidMorphBoostCustomRawThresholdDesc->setEnabled(morphSwipeEnabled);
+    const bool morphCustomEnabled = morphSwipeEnabled
+        && m_cbMetroidMorphBoostCustomRawThreshold->isChecked();
+    m_lblMetroidMorphBoostMouseSensitivity->setEnabled(morphCustomEnabled);
+    m_spinMetroidMorphBoostMouseSensitivity->setEnabled(morphCustomEnabled);
+    m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(morphCustomEnabled);
 
     // Segment 1 [0,22): sensitivities + toggles, up to the dynamic
     // Low-Latency Aim Mode combo block. (setChecked on stylus/smoothing fires
@@ -970,6 +1126,12 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
         m_spinMetroidZoomAimScalePct->setEnabled(enableZoomAimScale);
     if (m_lblMetroidZoomAimScaleDesc)
         m_lblMetroidZoomAimScaleDesc->setEnabled(enableZoomAimScale);
+    if (m_lblMetroidMorphBoostMouseSensitivity)
+        m_lblMetroidMorphBoostMouseSensitivity->setEnabled(enableAimControls);
+    if (m_spinMetroidMorphBoostMouseSensitivity)
+        m_spinMetroidMorphBoostMouseSensitivity->setEnabled(enableAimControls);
+    if (m_lblMetroidMorphBoostMouseSensitivityDesc)
+        m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(enableAimControls);
     const bool enableLowLatencyAimMode =
         enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
     if (m_lblMetroidLowLatencyAimMode)
@@ -1116,14 +1278,72 @@ void MelonPrimeInputConfig::populatePage(QWidget* page, const HotkeyEntry* entri
 
 void MelonPrimeInputConfig::on_metroidResetSensitivityValues_clicked()
 {
-    ui->metroidMphSensitvitySpinBox->setValue(-3);
-    ui->metroidAimSensitvitySpinBox->setValue(63);
-    ui->metroidAimYAxisScaleSpinBox->setValue(1.514700);
-    ui->metroidAimAdjustSpinBox->setValue(0.010000);
-    if (m_cbMetroidZoomAimScaleEnable)
-        m_cbMetroidZoomAimScaleEnable->setChecked(false);
-    if (m_spinMetroidZoomAimScalePct)
-        m_spinMetroidZoomAimScalePct->setValue(75);
+    // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
+    // Reset only the widgets that currently belong to the Sensitivity section.
+    // QSignalBlocker guarantees that this operation cannot invoke config-writing
+    // slots. Values reach Config only through the dialog's existing Save path.
+    Config::Table& instcfg = emuInstance->getLocalConfig();
+
+    for (const SettingBinding& binding : m_settingBindings) {
+        QWidget* const widget = binding.widget;
+        if (!widget || !ui->sectionSensitivity->isAncestorOf(widget))
+            continue;
+
+        const QSignalBlocker blocker(widget);
+        switch (binding.kind) {
+        case SettingKind::CheckBool:
+            static_cast<QCheckBox*>(widget)->setChecked(
+                instcfg.GetDefaultBool(binding.key));
+            break;
+        case SettingKind::CheckBoolInverted:
+            static_cast<QCheckBox*>(widget)->setChecked(
+                !instcfg.GetDefaultBool(binding.key));
+            break;
+        case SettingKind::ComboIndexInt:
+            static_cast<QComboBox*>(widget)->setCurrentIndex(
+                instcfg.GetDefaultInt(binding.key));
+            break;
+        case SettingKind::SpinInt:
+            static_cast<QSpinBox*>(widget)->setValue(
+                instcfg.GetDefaultInt(binding.key));
+            break;
+        case SettingKind::DoubleSpinDouble:
+            static_cast<QDoubleSpinBox*>(widget)->setValue(
+                instcfg.GetDefaultDouble(binding.key));
+            break;
+        }
+    }
+
+    // Low-Latency Aim Mode is intentionally outside m_settingBindings because
+    // its save path uses currentData() and applies a public/developer mode gate.
+    if (m_comboMetroidLowLatencyAimMode
+        && ui->sectionSensitivity->isAncestorOf(m_comboMetroidLowLatencyAimMode)) {
+        const QSignalBlocker blocker(m_comboMetroidLowLatencyAimMode);
+        SetComboCurrentData(
+            m_comboMetroidLowLatencyAimMode,
+            instcfg.GetDefaultInt(MelonPrime::CfgKey::LowLatencyAimMode));
+    }
+
+    // Signals were blocked above, so refresh only the dependent enabled states.
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+
+    if (m_cbMetroidDisableMorphBoostSwipe
+        && m_cbMetroidMorphBoostCustomRawThreshold) {
+        const bool swipeEnabled = !m_cbMetroidDisableMorphBoostSwipe->isChecked();
+        m_cbMetroidMorphBoostCustomRawThreshold->setEnabled(swipeEnabled);
+        if (m_lblMetroidMorphBoostCustomRawThresholdDesc)
+            m_lblMetroidMorphBoostCustomRawThresholdDesc->setEnabled(swipeEnabled);
+
+        const bool customEnabled = swipeEnabled
+            && m_cbMetroidMorphBoostCustomRawThreshold->isChecked()
+            && !ui->cbMetroidEnableStylusMode->isChecked();
+        if (m_lblMetroidMorphBoostMouseSensitivity)
+            m_lblMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+        if (m_spinMetroidMorphBoostMouseSensitivity)
+            m_spinMetroidMorphBoostMouseSensitivity->setEnabled(customEnabled);
+        if (m_lblMetroidMorphBoostMouseSensitivityDesc)
+            m_lblMetroidMorphBoostMouseSensitivityDesc->setEnabled(customEnabled);
+    }
 }
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToLow_clicked()
