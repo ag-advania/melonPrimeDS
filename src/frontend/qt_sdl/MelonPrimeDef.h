@@ -23,7 +23,10 @@ namespace MelonPrime {
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V4
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V5_SYMMETRIC
-        inline constexpr const char* MorphBoostMouseSens = "Metroid.Sensitivity.MorphBoostMouse";
+        inline constexpr const char* MorphBoostMouseSens = "Metroid.Sensitivity.MorphBoostMouse"; // legacy V7-V10
+        inline constexpr const char* MorphBoostSwipeDistance = "Metroid.Input.MorphBoostSwipeDistance"; // MELONPRIME_MORPH_BOOST_REQUIRED_MOVEMENT_V11
+        inline constexpr const char* MorphBoostSwipeEnabled = "Metroid.Input.MorphBoostSwipeEnabled"; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+        inline constexpr const char* MorphBoostCustomRawThreshold = "Metroid.Input.MorphBoostCustomRawThreshold"; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         inline constexpr const char* AimYScale       = "Metroid.Sensitivity.AimYAxisScale";
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
         inline constexpr const char* ZoomAimScaleEnable = "Metroid.Aim.ZoomScale.Enable";

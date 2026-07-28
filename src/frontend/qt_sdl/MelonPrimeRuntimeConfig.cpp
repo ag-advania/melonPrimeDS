@@ -20,22 +20,16 @@ namespace {
 }
 
 constexpr int64_t kAimOneFp = 1LL << 14;
-constexpr int64_t kMorphBoostGameSwipeThresholdSq = 0x1FA4;
+constexpr int64_t kMorphBoostMaxRequiredMovement = 46339;
 
-[[nodiscard]] int32_t CalculateMorphBoostAssistThresholdSq(int sensitivityPct) noexcept
+[[nodiscard]] int32_t CalculateMorphBoostSwipeThresholdSq(int requiredMovement) noexcept
 {
-    // 0% disables mouse swipe boosting. Positive sensitivity is an amplitude
-    // ratio; because the game compares squared magnitude, the threshold scales
-    // with the inverse square. 50% needs about twice the movement, while 200%
-    // needs about half, 1000% about one tenth, and 9000% one ninetieth.
-    if (sensitivityPct <= 0)
-        return 0;
-
-    const int64_t pct = std::clamp<int64_t>(sensitivityPct, 1, 9000); // MELONPRIME_MORPH_BOOST_9000_V7
-    const int64_t denominator = pct * pct;
-    const int64_t numerator = kMorphBoostGameSwipeThresholdSq * 10000;
-    return static_cast<int32_t>(std::max<int64_t>(
-        1, (numerator + denominator / 2) / denominator));
+    // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+    // Disablement belongs to the parent boolean. The user-facing distance is
+    // always 1..46339 and is squared once for the custom raw hot path.
+    const int64_t movement = std::clamp<int64_t>(
+        requiredMovement, 1, kMorphBoostMaxRequiredMovement);
+    return static_cast<int32_t>(movement * movement);
 }
 
 } // namespace
@@ -113,8 +107,16 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         cfg.GetBool(CfgKey::ZoomAimScaleEnable)
         && s.zoomAimScaleQ14 != static_cast<uint32_t>(kAimOneFp);
 
-    s.morphBoostAssistThresholdSq = CalculateMorphBoostAssistThresholdSq(
-        cfg.GetInt(CfgKey::MorphBoostMouseSens));
+    const int morphBoostRequiredMovement = cfg.GetInt(CfgKey::MorphBoostSwipeDistance);
+    // Legacy V12/V13 migration: before the explicit parent existed, distance 0
+    // meant disabled. Preserve that state only when the new key is absent.
+    s.morphBoostSwipeEnabled = cfg.HasKey(CfgKey::MorphBoostSwipeEnabled)
+        ? cfg.GetBool(CfgKey::MorphBoostSwipeEnabled)
+        : morphBoostRequiredMovement != 0;
+    s.morphBoostCustomRawThreshold =
+        cfg.GetBool(CfgKey::MorphBoostCustomRawThreshold);
+    s.morphBoostAssistThresholdSq = CalculateMorphBoostSwipeThresholdSq(
+        morphBoostRequiredMovement <= 0 ? 90 : morphBoostRequiredMovement); // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
 
 #ifdef MELONPRIME_DS
     s.nativeWeaponSwitch =

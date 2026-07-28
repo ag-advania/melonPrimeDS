@@ -341,11 +341,7 @@ Troubleshooting:
 - `Metroid.Apply.joy2KeySupport`
 
 (Defined in `src/frontend/qt_sdl/MelonPrimeDef.h`)
+<!-- MELONPRIME_MORPH_BOOST_MODE_CONTROLS_AIM_V14 -->
+### Morph Ball Boost input modes
 
-
-## Morph Ball Boost Assist Sensitivity
-
-<!-- MELONPRIME_MORPH_BOOST_AIM_DOC_V6 -->
-<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_AIM_DOC_V10 -->
-
-`HandleMorphBallBoost()` reads the previous-frame `altSteerDelta` (`CPlayer input +0x2A/+0x2C`) and `CanTouchBoost` (`CPlayer +0x4C4`, bit 27). The game compares squared steering magnitude with `0x1FA4`. Below `100%`, native swipe is suppressed until the higher configured threshold is crossed; `100%` preserves the existing native behavior. Above `100%`, the first configured-threshold crossing emits one native touch/swipe pulse. A below-native vector is direction-preservingly promoted for that frame only. `m_morphBoostSwipePulseState` blocks further pulses until the game has entered and completed its native Boosting/cooldown state and the equivalent `> 0x0A` elapsed-frame gate is satisfied. Movement does not have to drop below threshold. No R input or Boost charge is synthesized. See [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+Internal mode does not read raw movement for swipe acceptance and does not synthesize `altSteerDelta`; the game's internal vector remains authoritative. Custom mode reads the current frame's `m_input.mouseX/Y` for both threshold and direction before `ProcessAimInputMouse()` applies the same sample to aim. The values are read, not consumed or cleared, so no additional aim frame or queue is introduced.

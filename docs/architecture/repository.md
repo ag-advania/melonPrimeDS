@@ -352,18 +352,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `tools/ci/audits/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
 - Nested `.inc` fragments are allowed only when the child has exactly one `.inc` parent and is documented as owned by that parent. `MelonPrimeHudRenderCrosshairFx.inc` is the current example: it is included by `MelonPrimeHudRenderDraw.inc`, not directly by `MelonPrimeHudRender.cpp`.
+<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_REPOSITORY_V15 -->
+### Disable-checkbox UI semantics
 
-
-## Morph Ball Boost Assist Sensitivity config contract
-
-<!-- MELONPRIME_MORPH_BOOST_REPOSITORY_DOC_V6 -->
-<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_REPOSITORY_DOC_V10 -->
-
-`Metroid.Sensitivity.MorphBoostMouse` is an integer per-instance setting with default `100` and range `0`～`9000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`, loaded/saved through the non-HUD binding table, and derived through `RuntimeConfigSnapshot`. The warm threshold scalar is accompanied by `m_morphBoostSwipePulseState` and `m_morphBoostSwipePulseElapsedFrames`, which rate-limit assisted native swipe pulses to one per completed Shift-equivalent busy/charge interval above `100%`. The feature does not own R input or boost charge state. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
-
-
-## Mouse Wheel Weapon Cycling config contract
-
-<!-- MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_REPOSITORY_DOC_V7 -->
-
-`Metroid.Input.MouseWheelWeaponCycle` is a per-instance boolean with default `true`. It is owned by `CfgKey::MouseWheelWeaponCycle`, registered in `Config.cpp`'s `DefaultBools`, loaded/saved through the non-HUD settings binding table, and published through `RuntimeConfigSnapshot`. The gameplay path reads only the cached warm scalar. See [../features/gameplay/mouse-wheel-weapon-cycling.md](../features/gameplay/mouse-wheel-weapon-cycling.md).
+`InputConfig/MelonPrimeInputConfig.h/.cpp` owns the `CheckBoolInverted` binding used by the Morph Ball swipe and mouse-wheel cycle Disable checkboxes. Positive config keys and runtime members remain unchanged for backward compatibility. Translation catalogs and focused audits use the new negative source labels.
