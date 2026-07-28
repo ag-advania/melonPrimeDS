@@ -156,3 +156,10 @@ When touching `RunFrameHook` or match lifecycle code:
 - `src/frontend/qt_sdl/MelonPrimePatchRegistry.h`
 - `src/frontend/qt_sdl/MelonPrimePatchRegistry.cpp`
 - `src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp`
+
+
+## Morph Ball Boost Assist Sensitivity
+
+<!-- MELONPRIME_MORPH_BOOST_RUNTIME_DOC_V6 -->
+
+The mouse-mode Morph Ball swipe threshold is loaded through `RuntimeConfigSnapshot` and stored in the per-instance warm scalar `m_morphBoostAssistThresholdSq`. `HandleMorphBallBoost()` reads the cached value in the in-game hot path; it must not perform a `Config::Table` lookup. `0%` suppresses the mouse swipe path, `1%`～`99%` raises the required movement, `100%` preserves the game threshold `0x1FA4`, and `101%`～`1000%` lowers the required movement. Right-click R boost, Shift auto-cycle, and Stylus Mode remain separate paths. Detailed behavior and validation live in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).

@@ -352,3 +352,10 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `tools/ci/audits/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
 - Nested `.inc` fragments are allowed only when the child has exactly one `.inc` parent and is documented as owned by that parent. `MelonPrimeHudRenderCrosshairFx.inc` is the current example: it is included by `MelonPrimeHudRenderDraw.inc`, not directly by `MelonPrimeHudRender.cpp`.
+
+
+## Morph Ball Boost Assist Sensitivity config contract
+
+<!-- MELONPRIME_MORPH_BOOST_REPOSITORY_DOC_V6 -->
+
+`Metroid.Sensitivity.MorphBoostMouse` is an integer, per-instance setting with default `100` and range `0`～`1000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`'s `DefaultInts` and `IntRanges`, loaded/saved through the non-HUD settings binding table, and derived in `RuntimeConfigSnapshot`. The runtime field is a warm per-instance scalar because the gameplay hot path reads it every active Morph Ball frame. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
