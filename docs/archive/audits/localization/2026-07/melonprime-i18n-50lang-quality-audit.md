@@ -195,26 +195,7 @@ manual UI review work, treat it as a distinct, still-open task from this
 content pass.
 
 Applied, strict audit green, macOS build clean, launch/exit smoke clean.
+<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_QUALITY_V15 -->
+### V15 focused checks
 
-
-## Update (2026-07-28): Morph Ball Boost Assist Sensitivity focused quality pass
-
-<!-- MELONPRIME_MORPH_BOOST_I18N_QUALITY_DOC_V6 -->
-
-The two exact-match rows for `Morph Ball Boost Assist Sensitivity` retain the focused corrections for Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic, Catalan, Odia, Estonian, Assamese, Kyrgyz, Filipino, and Swahili. German, Spanish, French, and Italian retain the official regional terminology alignment.
-
-This remains a focused two-row correction, not a claim that the complete catalogs are native-reviewed. `tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py` verifies the corrected values and full 76-language row coverage.
-
-
-## Update (2026-07-28): Native-swipe pulse behavior
-
-<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_I18N_DOC_V10 -->
-
-V8's explanatory rows that described an R/Shift-style charge cycle were removed because the implementation again uses the original native touch/swipe path. The V7 user-facing text is restored for all 76 direct languages. Detailed one-pulse/rearm semantics are documented in the feature and architecture documents without introducing a new translation key.
-
-
-## Update (2026-07-28): Mouse Wheel Weapon Cycling translations
-
-<!-- MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_I18N_DOC_V7 -->
-
-The `Enable Mouse Wheel Weapon Cycling` label and its explanatory text were added with direct values for all 76 catalog languages. `tools/ci/audits/localization/audit-mouse-wheel-weapon-cycle-translations.py` verifies exact row presence, full ordered language coverage, non-empty values, and the absence of unchanged English copies. Coverage is structural and does not claim native-speaker review of every language.
+The audit verifies both Disable labels, inverted load/save symmetry, unchecked defaults from positive `true` keys, Morph Boost parent-child enable wiring, legacy distance-0 migration, absence of obsolete Enable labels, and 76-row localization structure for both feature groups. Native-speaker review remains outside the structural audit.

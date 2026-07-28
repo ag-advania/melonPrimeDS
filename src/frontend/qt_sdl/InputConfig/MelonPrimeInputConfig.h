@@ -159,7 +159,7 @@ private:
     // ── Non-HUD settings binding table (Phase 5b) ───────────────────────────
     // One row per symmetric simple setting; drives both load and save so the
     // two sides can never drift. Storage key names are unchanged.
-    enum class SettingKind { CheckBool, ComboIndexInt, SpinInt, DoubleSpinDouble };
+    enum class SettingKind { CheckBool, CheckBoolInverted, ComboIndexInt, SpinInt, DoubleSpinDouble }; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
     struct SettingBinding { const char* key; SettingKind kind; QWidget* widget; };
     // Built once in setupSensitivityAndToggles (after setupUi) in code order.
     std::vector<SettingBinding> m_settingBindings;
@@ -188,8 +188,8 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
-    QCheckBox* m_cbMetroidMouseWheelWeaponCycle = nullptr; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
-    QLabel* m_lblMetroidMouseWheelWeaponCycleDesc = nullptr;
+    QCheckBox* m_cbMetroidDisableMouseWheelWeaponCycle = nullptr; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    QLabel* m_lblMetroidDisableMouseWheelWeaponCycleDesc = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
@@ -201,6 +201,10 @@ private:
     QLabel* m_lblMetroidZoomAimScalePct = nullptr;
     QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
     QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
+    QCheckBox* m_cbMetroidDisableMorphBoostSwipe = nullptr; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    QLabel* m_lblMetroidDisableMorphBoostSwipeDesc = nullptr;
+    QCheckBox* m_cbMetroidMorphBoostCustomRawThreshold = nullptr;
+    QLabel* m_lblMetroidMorphBoostCustomRawThresholdDesc = nullptr;
     QLabel* m_lblMetroidMorphBoostMouseSensitivity = nullptr;
     QSpinBox* m_spinMetroidMorphBoostMouseSensitivity = nullptr;
     QLabel* m_lblMetroidMorphBoostMouseSensitivityDesc = nullptr;

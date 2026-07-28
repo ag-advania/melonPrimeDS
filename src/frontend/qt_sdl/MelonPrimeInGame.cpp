@@ -263,26 +263,23 @@ namespace MelonPrime {
             ResetMorphBoostSwipePulseState();
         }
 
-        // Boost path arbitration — MOUSE MODE ONLY. In mouse mode MelonPrime holds
-        // a static center touch every frame for aim, which pins the game's touch
-        // state on. CanTouchBoost (CPlayer +0x4C4 bit27) selects the native
-        // touch/swipe branch when set and the native R charge branch when clear.
+        // Mouse-mode Morph Ball swipe arbitration.
+        // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         //
-        // V10 Shift-cadence native-swipe pulse
-        // (MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10):
-        //  - 0% suppresses the mouse swipe path.
-        //  - 1%..100% retain the existing native-threshold/suppression behavior.
-        //  - Above 100%, one configured-threshold event emits one native touch/
-        //    swipe pulse. A below-native vector is promoted for that frame only.
-        //  - No R input is synthesized and player+0x148 charge is never used.
-        //  - Re-arm is driven by the native Boosting/cooldown completion boundary,
-        //    not by mouse motion returning below threshold. Sustained movement can
-        //    therefore emit at most one pulse per completed native boost interval,
-        //    matching the busy-state cadence used by the Shift auto-cycle.
-        //  - Manual R remains compatible with hold R -> swipe -> release R.
+        // Parent OFF:
+        //   Disable mouse swipe boost by keeping CanTouchBoost clear. R/right-click
+        //   and Shift auto-cycle remain on the native button-charge path.
+        // Parent ON + custom OFF (default):
+        //   Preserve the game's internal altSteerDelta swipe behavior. The custom
+        //   raw movement setting is not consulted.
+        // Parent ON + custom ON:
+        //   Treat the current-frame raw mouse threshold as authoritative. Open
+        //   CanTouchBoost for exactly one accepted pulse and close it on every
+        //   unaccepted frame, including same-frame game-generated steer updates.
         if (isAltForm && !isStylusMode && m_ptrs.flags1) {
             constexpr int64_t kGameSwipeThresholdSq = 0x1FA4;
             constexpr int64_t kPromotionTargetSq = kGameSwipeThresholdSq + 0x100;
+            constexpr uint32_t kCanTouchBoostBit = 0x08000000u;
             constexpr uint32_t kBoostingBit = 0x04000000u;
             constexpr uint8_t kPulseReady = 0;
             constexpr uint8_t kPulseAwaitBusy = 1;
@@ -290,53 +287,63 @@ namespace MelonPrime {
             constexpr uint8_t kPulseAcceptTimeoutFrames = 4;
             constexpr uint8_t kShiftGaugeReadyFrames = 0x0A;
 
-            const bool swipeDisabled = m_morphBoostAssistThresholdSq <= 0;
-            const bool useNativeSwipeAssist =
-                m_morphBoostAssistThresholdSq > 0
-                && m_morphBoostAssistThresholdSq < kGameSwipeThresholdSq;
-            bool gameWouldSwipe = false;
-            bool sensitivityWouldSwipe = false;
-            int64_t magnitudeSq = 0;
-            int32_t sdx = 0;
-            int32_t sdy = 0;
-            if (m_ptrs.altSteerDelta) {
-                // Previous-frame steer delta (input +0x2A/+0x2C, s16). Products
-                // are widened so the two maximum int16 squares cannot overflow.
-                sdx = m_ptrs.altSteerDelta[0];
-                sdy = m_ptrs.altSteerDelta[1];
-                magnitudeSq =
-                    static_cast<int64_t>(sdx) * sdx
-                    + static_cast<int64_t>(sdy) * sdy;
-                gameWouldSwipe = magnitudeSq > kGameSwipeThresholdSq;
-                sensitivityWouldSwipe = !swipeDisabled
-                    && magnitudeSq
-                        > static_cast<int64_t>(m_morphBoostAssistThresholdSq);
+            if (!m_enableMorphBoostSwipe) {
+                ResetMorphBoostSwipePulseState();
+                *m_ptrs.flags1 &= ~kCanTouchBoostBit;
             }
+            else if (!m_enableMorphBoostCustomRawThreshold) {
+                // Native/internal mode. Do not synthesize or normalize a raw vector.
+                // Keep custom pulse state cold so changing modes cannot inherit a
+                // stale cadence latch.
+                ResetMorphBoostSwipePulseState();
 
-            const bool boostBusy = ((*m_ptrs.flags1 & kBoostingBit) != 0)
-                || (m_ptrs.isBoosting && *m_ptrs.isBoosting != 0);
+                bool gameWouldSwipe = false;
+                if (m_ptrs.altSteerDelta) {
+                    const int32_t steerX = m_ptrs.altSteerDelta[0];
+                    const int32_t steerY = m_ptrs.altSteerDelta[1];
+                    const int64_t steerMagnitudeSq =
+                        static_cast<int64_t>(steerX) * steerX
+                        + static_cast<int64_t>(steerY) * steerY;
+                    gameWouldSwipe = steerMagnitudeSq > kGameSwipeThresholdSq;
+                }
 
-            if (useNativeSwipeAssist) {
-                // The Shift auto-cycle holds R until both conditions are met:
-                // native busy/cooldown is clear and boostGauge > 0x0A. The swipe
-                // route must not touch player+0x148, so mirror that charge interval
-                // with a private elapsed-frame counter while using the real native
-                // busy/cooldown state for the other half of the gate.
+                // A visible internal swipe wins for this frame, including while R
+                // is held. Otherwise the clear bit exposes the native R charge path.
+                const bool buttonBoost = manualRBoost
+                    || shiftAutoCycle
+                    || (*m_ptrs.boostGauge != 0);
+                if (gameWouldSwipe || !buttonBoost)
+                    *m_ptrs.flags1 |= kCanTouchBoostBit;
+                else
+                    *m_ptrs.flags1 &= ~kCanTouchBoostBit;
+            }
+            else {
+                // Custom raw threshold mode. Threshold and direction both use the
+                // current frame's m_input.mouseX/Y sample. ProcessAimInputMouse()
+                // later consumes the same sample, so aim receives no added delay.
+                const int32_t rawDx = m_input.mouseX;
+                const int32_t rawDy = m_input.mouseY;
+                const int64_t rawMagnitudeSq =
+                    static_cast<int64_t>(rawDx) * rawDx
+                    + static_cast<int64_t>(rawDy) * rawDy;
+                const bool configuredMovementWouldSwipe = rawMagnitudeSq > 0
+                    && rawMagnitudeSq
+                        >= static_cast<int64_t>(m_morphBoostAssistThresholdSq);
+
+                const bool boostBusy = ((*m_ptrs.flags1 & kBoostingBit) != 0)
+                    || (m_ptrs.isBoosting && *m_ptrs.isBoosting != 0);
+
                 if (m_morphBoostSwipePulseState != kPulseReady
                     && m_morphBoostSwipePulseElapsedFrames != 0xFF) {
                     ++m_morphBoostSwipePulseElapsedFrames;
                 }
 
-                // State 1 covers the short hand-off between issuing the one-frame
-                // touch pulse and the game publishing Boosting/cooldown state.
                 if (m_morphBoostSwipePulseState == kPulseAwaitBusy) {
                     if (boostBusy) {
                         m_morphBoostSwipePulseState = kPulseBusyObserved;
                     }
                     else if (m_morphBoostSwipePulseElapsedFrames
                              > kPulseAcceptTimeoutFrames) {
-                        // The game did not accept the pulse. Recover instead of
-                        // leaving the assist permanently blocked.
                         ResetMorphBoostSwipePulseState();
                     }
                 }
@@ -344,86 +351,43 @@ namespace MelonPrime {
                     if (!boostBusy
                         && m_morphBoostSwipePulseElapsedFrames
                             > kShiftGaugeReadyFrames) {
-                        // Same readiness condition as held Shift: native busy is
-                        // clear and the equivalent >0x0A charge interval elapsed.
                         ResetMorphBoostSwipePulseState();
                     }
                 }
                 else if (m_morphBoostSwipePulseState != kPulseReady) {
                     ResetMorphBoostSwipePulseState();
                 }
-            }
-            else {
-                ResetMorphBoostSwipePulseState();
-            }
 
-            const bool pulseReady =
-                m_morphBoostSwipePulseState == kPulseReady;
-            const bool nativeSwipePulse = useNativeSwipeAssist
-                && sensitivityWouldSwipe
-                && gameWouldSwipe
-                && pulseReady
-                && !boostBusy
-                && !shiftAutoCycle;
-            const bool assistedSwipePulse = useNativeSwipeAssist
-                && sensitivityWouldSwipe
-                && !gameWouldSwipe
-                && pulseReady
-                && !boostBusy
-                && !shiftAutoCycle;
-            const bool emitNativeSwipePulse = nativeSwipePulse || assistedSwipePulse;
+                const bool pulseReady =
+                    m_morphBoostSwipePulseState == kPulseReady;
+                const bool emitCurrentFrameSwipePulse = configuredMovementWouldSwipe
+                    && m_ptrs.altSteerDelta
+                    && pulseReady
+                    && !boostBusy
+                    && !shiftAutoCycle;
 
-            if (emitNativeSwipePulse) {
-                m_morphBoostSwipePulseState = kPulseAwaitBusy;
-                m_morphBoostSwipePulseElapsedFrames = 0;
-            }
+                if (emitCurrentFrameSwipePulse) {
+                    m_morphBoostSwipePulseState = kPulseAwaitBusy;
+                    m_morphBoostSwipePulseElapsedFrames = 0;
 
-            // Only an assisted, below-native event needs one-frame promotion.
-            // Direction is preserved. Further writes are blocked until the game's
-            // native Boosting/cooldown cycle completes.
-            if (assistedSwipePulse && m_ptrs.altSteerDelta && magnitudeSq > 0) {
-                const double scale = std::sqrt(
-                    static_cast<double>(kPromotionTargetSq)
-                    / static_cast<double>(magnitudeSq));
-                const int32_t promotedX = std::clamp<int32_t>(
-                    static_cast<int32_t>(std::lround(static_cast<double>(sdx) * scale)),
-                    -32768, 32767);
-                const int32_t promotedY = std::clamp<int32_t>(
-                    static_cast<int32_t>(std::lround(static_cast<double>(sdy) * scale)),
-                    -32768, 32767);
-                m_ptrs.altSteerDelta[0] = static_cast<int16_t>(promotedX);
-                m_ptrs.altSteerDelta[1] = static_cast<int16_t>(promotedY);
-            }
-
-            if (swipeDisabled) {
-                *m_ptrs.flags1 &= ~0x08000000u;
-            }
-            else if (emitNativeSwipePulse) {
-                // One-frame native touch/swipe request. No R input is generated.
-                *m_ptrs.flags1 |= 0x08000000u;
-            }
-            else if (useNativeSwipeAssist && gameWouldSwipe) {
-                // Suppress repeat native-threshold frames until the current native
-                // Boosting/cooldown interval has completed.
-                *m_ptrs.flags1 &= ~0x08000000u;
-            }
-            else if (!useNativeSwipeAssist && sensitivityWouldSwipe) {
-                // 1%..100% path: configured native swipe wins.
-                *m_ptrs.flags1 |= 0x08000000u;
-            }
-            else if (!useNativeSwipeAssist && gameWouldSwipe) {
-                // Below 100%, suppress the game threshold until the higher
-                // configured threshold is crossed.
-                *m_ptrs.flags1 &= ~0x08000000u;
-            }
-            else {
-                const bool buttonBoost = manualRBoost
-                    || shiftAutoCycle
-                    || (*m_ptrs.boostGauge != 0);
-                if (buttonBoost)
-                    *m_ptrs.flags1 &= ~0x08000000u;
-                else
-                    *m_ptrs.flags1 |= 0x08000000u;
+                    const double scale = std::sqrt(
+                        static_cast<double>(kPromotionTargetSq)
+                        / static_cast<double>(rawMagnitudeSq));
+                    const int32_t promotedX = std::clamp<int32_t>(
+                        static_cast<int32_t>(std::lround(static_cast<double>(rawDx) * scale)),
+                        -32768, 32767);
+                    const int32_t promotedY = std::clamp<int32_t>(
+                        static_cast<int32_t>(std::lround(static_cast<double>(rawDy) * scale)),
+                        -32768, 32767);
+                    m_ptrs.altSteerDelta[0] = static_cast<int16_t>(promotedX);
+                    m_ptrs.altSteerDelta[1] = static_cast<int16_t>(promotedY);
+                    *m_ptrs.flags1 |= kCanTouchBoostBit;
+                }
+                else {
+                    // Authoritative custom gate. No internal/same-frame swipe may
+                    // bypass the configured raw movement threshold.
+                    *m_ptrs.flags1 &= ~kCanTouchBoostBit;
+                }
             }
         }
 

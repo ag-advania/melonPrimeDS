@@ -92,7 +92,8 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS { */ // Sensitivity & Custom Hotkeys
         {"Instance*.Metroid.Sensitivity.Aim", 63},
-        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", 100},
+        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", 100}, // legacy V7-V10 percentage key
+        {"Instance*.Metroid.Input.MorphBoostSwipeDistance", 90}, // MELONPRIME_MORPH_BOOST_REQUIRED_MOVEMENT_V11
         {"Instance*.Metroid.Aim.ZoomScale.Percent", 75},
         {"Instance*.Metroid.Volume.SFX", 9},
         {"Instance*.Metroid.Volume.Music", 9},
@@ -174,7 +175,8 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS. this is not for input. this is for loading. */
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
-        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", {0,9000}},
+        {"Instance*.Metroid.Sensitivity.MorphBoostMouse", {0,9000}}, // legacy V7-V10 percentage range
+        {"Instance*.Metroid.Input.MorphBoostSwipeDistance", {1,46339}}, // MELONPRIME_MORPH_BOOST_REQUIRED_MOVEMENT_V11 // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         {"Instance*.Metroid.Aim.ZoomScale.Percent", {10,300}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
@@ -240,6 +242,8 @@ namespace Config
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
         {"Instance*.Metroid.Input.MouseWheelWeaponCycle", true}, // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
+        {"Instance*.Metroid.Input.MorphBoostSwipeEnabled", true}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+        {"Instance*.Metroid.Input.MorphBoostCustomRawThreshold", false}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         /* MelonPrimeDS Visual bool defaults are generated from MelonPrimeHudPropSchema.inc. */
         MP_HUD_PROP_SCHEMA_BOOL(MP_HUD_DEFAULT_ENTRY)
         {"Instance*.Metroid.BugFix.WifiBitset",        true},
