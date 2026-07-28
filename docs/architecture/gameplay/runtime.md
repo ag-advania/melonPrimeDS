@@ -162,9 +162,9 @@ When touching `RunFrameHook` or match lifecycle code:
 
 <!-- MELONPRIME_MORPH_BOOST_RUNTIME_DOC_V6 -->
 <!-- MELONPRIME_MORPH_BOOST_SHIFT_STYLE_RUNTIME_DOC_V8_REMOVED -->
-<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_RUNTIME_DOC_V9 -->
+<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_RUNTIME_DOC_V10 -->
 
-The mouse-mode threshold is cached in warm per-instance state. Above `100%`, `HandleMorphBallBoost()` emits one native touch/swipe pulse per threshold crossing and records it in `m_morphBoostSwipePulseLatched`. Only an assisted below-native pulse receives a one-frame direction-preserving `altSteerDelta` promotion; the R input mask and `player+0x148` charge are untouched. Continuous motion is suppressed until motion falls below the configured threshold and native Boosting/cooldown are clear. Config reload and lifecycle/focus/game boundaries reset the latch. Detailed behavior is in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+The mouse-mode threshold is cached in warm per-instance state. Above `100%`, `HandleMorphBallBoost()` emits one native touch/swipe pulse per threshold crossing and records a short `ready -> await busy -> busy observed` state transition. Only an assisted below-native pulse receives a one-frame direction-preserving `altSteerDelta` promotion; the R input mask and `player+0x148` charge are untouched. Continuous motion may emit again only after native Boosting/cooldown clears and the private elapsed-frame counter passes `0x0A`, mirroring the two readiness gates used by held Shift. Config reload and lifecycle/focus/game boundaries reset the state machine. Detailed behavior is in [../../features/gameplay/morph-ball-boost-assist-sensitivity.md](../../features/gameplay/morph-ball-boost-assist-sensitivity.md).
 
 
 ## Mouse Wheel Weapon Cycling

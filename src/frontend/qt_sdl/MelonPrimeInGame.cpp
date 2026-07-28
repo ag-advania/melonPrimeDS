@@ -268,21 +268,27 @@ namespace MelonPrime {
         // state on. CanTouchBoost (CPlayer +0x4C4 bit27) selects the native
         // touch/swipe branch when set and the native R charge branch when clear.
         //
-        // V9 native-swipe pulse (MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9):
+        // V10 Shift-cadence native-swipe pulse
+        // (MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10):
         //  - 0% suppresses the mouse swipe path.
         //  - 1%..100% retain the existing native-threshold/suppression behavior.
-        //  - Above 100%, the first configured-threshold crossing emits exactly one
-        //    native touch/swipe pulse. A below-native vector is promoted for that
-        //    single frame only so the game's original fixed comparison accepts it.
+        //  - Above 100%, one configured-threshold event emits one native touch/
+        //    swipe pulse. A below-native vector is promoted for that frame only.
         //  - No R input is synthesized and player+0x148 charge is never used.
-        //  - The pulse remains latched until movement returns below the configured
-        //    threshold and both native Boosting/cooldown states are clear. This
-        //    models one physical stylus swipe instead of manufacturing a swipe on
-        //    every frame of continuous mouse motion.
+        //  - Re-arm is driven by the native Boosting/cooldown completion boundary,
+        //    not by mouse motion returning below threshold. Sustained movement can
+        //    therefore emit at most one pulse per completed native boost interval,
+        //    matching the busy-state cadence used by the Shift auto-cycle.
+        //  - Manual R remains compatible with hold R -> swipe -> release R.
         if (isAltForm && !isStylusMode && m_ptrs.flags1) {
             constexpr int64_t kGameSwipeThresholdSq = 0x1FA4;
             constexpr int64_t kPromotionTargetSq = kGameSwipeThresholdSq + 0x100;
             constexpr uint32_t kBoostingBit = 0x04000000u;
+            constexpr uint8_t kPulseReady = 0;
+            constexpr uint8_t kPulseAwaitBusy = 1;
+            constexpr uint8_t kPulseBusyObserved = 2;
+            constexpr uint8_t kPulseAcceptTimeoutFrames = 4;
+            constexpr uint8_t kShiftGaugeReadyFrames = 0x0A;
 
             const bool swipeDisabled = m_morphBoostAssistThresholdSq <= 0;
             const bool useNativeSwipeAssist =
@@ -310,45 +316,71 @@ namespace MelonPrime {
             const bool boostBusy = ((*m_ptrs.flags1 & kBoostingBit) != 0)
                 || (m_ptrs.isBoosting && *m_ptrs.isBoosting != 0);
 
-            // Above 100%, re-arm only after the physical gesture has ended and the
-            // native boost state has completed. Manual R/Shift owns its own path;
-            // motion present during those inputs is latched so releasing the button
-            // cannot immediately create an unrelated assisted swipe.
             if (useNativeSwipeAssist) {
-                if (!sensitivityWouldSwipe && !boostBusy) {
-                    m_morphBoostSwipePulseLatched = false;
+                // The Shift auto-cycle holds R until both conditions are met:
+                // native busy/cooldown is clear and boostGauge > 0x0A. The swipe
+                // route must not touch player+0x148, so mirror that charge interval
+                // with a private elapsed-frame counter while using the real native
+                // busy/cooldown state for the other half of the gate.
+                if (m_morphBoostSwipePulseState != kPulseReady
+                    && m_morphBoostSwipePulseElapsedFrames != 0xFF) {
+                    ++m_morphBoostSwipePulseElapsedFrames;
                 }
-                if ((manualRBoost || shiftAutoCycle) && sensitivityWouldSwipe) {
-                    m_morphBoostSwipePulseLatched = true;
+
+                // State 1 covers the short hand-off between issuing the one-frame
+                // touch pulse and the game publishing Boosting/cooldown state.
+                if (m_morphBoostSwipePulseState == kPulseAwaitBusy) {
+                    if (boostBusy) {
+                        m_morphBoostSwipePulseState = kPulseBusyObserved;
+                    }
+                    else if (m_morphBoostSwipePulseElapsedFrames
+                             > kPulseAcceptTimeoutFrames) {
+                        // The game did not accept the pulse. Recover instead of
+                        // leaving the assist permanently blocked.
+                        ResetMorphBoostSwipePulseState();
+                    }
+                }
+                else if (m_morphBoostSwipePulseState == kPulseBusyObserved) {
+                    if (!boostBusy
+                        && m_morphBoostSwipePulseElapsedFrames
+                            > kShiftGaugeReadyFrames) {
+                        // Same readiness condition as held Shift: native busy is
+                        // clear and the equivalent >0x0A charge interval elapsed.
+                        ResetMorphBoostSwipePulseState();
+                    }
+                }
+                else if (m_morphBoostSwipePulseState != kPulseReady) {
+                    ResetMorphBoostSwipePulseState();
                 }
             }
             else {
-                m_morphBoostSwipePulseLatched = false;
+                ResetMorphBoostSwipePulseState();
             }
 
+            const bool pulseReady =
+                m_morphBoostSwipePulseState == kPulseReady;
             const bool nativeSwipePulse = useNativeSwipeAssist
                 && sensitivityWouldSwipe
                 && gameWouldSwipe
-                && !m_morphBoostSwipePulseLatched
+                && pulseReady
                 && !boostBusy
-                && !manualRBoost
                 && !shiftAutoCycle;
             const bool assistedSwipePulse = useNativeSwipeAssist
                 && sensitivityWouldSwipe
                 && !gameWouldSwipe
-                && !m_morphBoostSwipePulseLatched
+                && pulseReady
                 && !boostBusy
-                && !manualRBoost
                 && !shiftAutoCycle;
             const bool emitNativeSwipePulse = nativeSwipePulse || assistedSwipePulse;
 
             if (emitNativeSwipePulse) {
-                m_morphBoostSwipePulseLatched = true;
+                m_morphBoostSwipePulseState = kPulseAwaitBusy;
+                m_morphBoostSwipePulseElapsedFrames = 0;
             }
 
-            // Only an assisted, below-native gesture needs one-frame promotion.
-            // Direction is preserved. The next frame is never promoted while the
-            // latch is set, preventing repeated contact-damage boosts.
+            // Only an assisted, below-native event needs one-frame promotion.
+            // Direction is preserved. Further writes are blocked until the game's
+            // native Boosting/cooldown cycle completes.
             if (assistedSwipePulse && m_ptrs.altSteerDelta && magnitudeSq > 0) {
                 const double scale = std::sqrt(
                     static_cast<double>(kPromotionTargetSq)
@@ -371,8 +403,8 @@ namespace MelonPrime {
                 *m_ptrs.flags1 |= 0x08000000u;
             }
             else if (useNativeSwipeAssist && gameWouldSwipe) {
-                // A continuous high-magnitude gesture has already consumed its one
-                // swipe pulse. Suppress repeats until the latch re-arms.
+                // Suppress repeat native-threshold frames until the current native
+                // Boosting/cooldown interval has completed.
                 *m_ptrs.flags1 &= ~0x08000000u;
             }
             else if (!useNativeSwipeAssist && sensitivityWouldSwipe) {

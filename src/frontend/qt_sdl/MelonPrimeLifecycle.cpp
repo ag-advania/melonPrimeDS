@@ -77,7 +77,7 @@ namespace MelonPrime {
         m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
         m_enableZoomAimScale = s.zoomAimScaleEnable;
         m_morphBoostAssistThresholdSq = s.morphBoostAssistThresholdSq;
-        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
+        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         if (!m_enableZoomAimScale) {
             if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
                 m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
@@ -183,7 +183,7 @@ namespace MelonPrime {
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
-        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
+        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 
         m_layoutGenerationSeen = 0;
         PublishUiSnapshot();
@@ -211,7 +211,7 @@ namespace MelonPrime {
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
-        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
+        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         PublishUiSnapshot();
     }
 
@@ -236,7 +236,7 @@ namespace MelonPrime {
         // weaponSwitchPending is cleared in the DS block below (before
         // ARM9Hook_Uninstall).
         ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
-        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
+        ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             CustomHud_EnsurePatchRestored(

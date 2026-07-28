@@ -536,7 +536,8 @@ namespace MelonPrime {
         // Warm: consumed by HandleMorphBallBoost during active in-game frames.
         // The value is derived on the cold config path and remains per-instance.
         int32_t  m_morphBoostAssistThresholdSq = 0x1FA4;
-        bool     m_morphBoostSwipePulseLatched = false; // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
+        uint8_t  m_morphBoostSwipePulseState = 0; // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
+        uint8_t  m_morphBoostSwipePulseElapsedFrames = 0;
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -708,8 +709,9 @@ namespace MelonPrime {
             m_inputMaskFast = (m_inputMaskFast & ~mask) | (static_cast<uint16_t>(released) * mask);
         }
 
-        FORCE_INLINE void ResetMorphBoostSwipePulseState() noexcept { // MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_PULSE_V9
-            m_morphBoostSwipePulseLatched = false;
+        FORCE_INLINE void ResetMorphBoostSwipePulseState() noexcept { // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
+            m_morphBoostSwipePulseState = 0;
+            m_morphBoostSwipePulseElapsedFrames = 0;
         }
 
         FORCE_INLINE void SetAimBlockBranchless(uint32_t bitMask, bool enable) noexcept {
