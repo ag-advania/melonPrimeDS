@@ -208,7 +208,7 @@ This remains a focused two-row correction, not a claim that the complete catalog
 
 ## Update (2026-07-28): Native-swipe pulse behavior
 
-<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_I18N_DOC_V9 -->
+<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_I18N_DOC_V10 -->
 
 V8's explanatory rows that described an R/Shift-style charge cycle were removed because the implementation again uses the original native touch/swipe path. The V7 user-facing text is restored for all 76 direct languages. Detailed one-pulse/rearm semantics are documented in the feature and architecture documents without introducing a new translation key.
 

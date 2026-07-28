@@ -2,7 +2,7 @@
 
 <!-- MELONPRIME_MORPH_BOOST_ASSIST_DOC_V6 -->
 <!-- MELONPRIME_MORPH_BOOST_9000_DOC_V7 -->
-<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_DOC_V9 -->
+<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_DOC_V10 -->
 
 ## Purpose
 
@@ -15,7 +15,7 @@
 | `0%` | Suppress the mouse swipe boost path by clearing `CanTouchBoost` each applicable frame. |
 | `1%`～`99%` | Require more mouse movement than the game's default swipe threshold. |
 | `100%` | Preserve the game's default squared threshold, `0x1FA4`. |
-| `101%`～`9000%` | Require less movement. The first configured-threshold crossing emits one native touch/swipe pulse. Continuous movement cannot emit another pulse until movement falls below the configured threshold and the native boost state finishes. |
+| `101%`～`9000%` | Require less movement. One native touch/swipe pulse may be emitted per completed Shift-equivalent interval: native Boosting/cooldown clear plus an equivalent elapsed-frame count greater than `0x0A`. Continuous movement no longer has to fall below the threshold before the next interval. |
 
 The threshold remains an amplitude percentage converted to the squared quantity used by the game:
 
@@ -29,11 +29,11 @@ thresholdSquared = round(0x1FA4 * 10000 / percentage^2)
 
 V7 promoted every below-native `altSteerDelta` frame that exceeded the configured threshold. At very high sensitivity, ordinary continuous mouse motion could therefore be promoted on consecutive frames. Each accepted frame entered the game's touch/swipe boost path again, allowing repeated Boosting/contact-damage states rather than one physical swipe gesture.
 
-V9 retains the native touch/swipe route but makes promotion a one-frame pulse. `m_morphBoostSwipePulseLatched` records that the current gesture has already emitted its swipe. Promotion is not repeated while the gesture remains above threshold. The latch re-arms only when movement is below threshold and both `CPlayer +0x4C4 bit26` Boosting and the cached boost busy timer are clear.
+V10 retains the native touch/swipe route and keeps promotion to one frame, but replaces the gesture latch with a native-cycle state machine. After emitting a pulse, it waits for `CPlayer +0x4C4 bit26` Boosting or the cached `player+0x14A` busy timer to appear, then re-arms only after that native busy state clears and the private elapsed-frame counter has passed the same `> 0x0A` readiness threshold used by Shift. Mouse movement does not have to return below threshold. This prevents frame-by-frame damage while allowing the same `busy clear && equivalent elapsed frames > 0x0A` cadence used by the Shift auto-cycle.
 
 ## Why V8 is not used
 
-V8 routed high-sensitivity assistance through a native R charge/release cycle. That was safer than repeated vector promotion, but it changed the feature into an R/Shift-style boost. V9 removes the V8 R-cycle state and never synthesizes R for mouse sensitivity assistance.
+V8 routed high-sensitivity assistance through a native R charge/release cycle. That was safer than repeated vector promotion, but it changed the feature into an R/Shift-style boost. V10 removes the V8 R-cycle state and never synthesizes R for mouse sensitivity assistance.
 
 ## Native game-flow evidence
 
@@ -48,9 +48,9 @@ The implementation therefore leaves damage, speed, effects, and boost terminatio
 ## Runtime ownership and state
 
 - `LoadRuntimeConfigSnapshot()` reads and clamps the persisted value on the cold path.
-- `ApplyRuntimeConfigSnapshot()` publishes the squared threshold and resets the transient swipe-pulse latch.
-- `m_morphBoostAssistThresholdSq` and `m_morphBoostSwipePulseLatched` are warm per-instance scalars.
-- Config reload, startup, boot reset, stop, focus loss, game leave, and game join reset the latch.
+- `ApplyRuntimeConfigSnapshot()` publishes the squared threshold and resets the transient swipe-cycle state.
+- `m_morphBoostAssistThresholdSq`, `m_morphBoostSwipePulseState`, and `m_morphBoostSwipePulseElapsedFrames` are warm per-instance scalars.
+- Config reload, startup, boot reset, stop, focus loss, game leave, and game join reset the state machine.
 - The hot path performs no config lookup, allocation, lock, or logging.
 
 ## Input arbitration
@@ -58,10 +58,10 @@ The implementation therefore leaves damage, speed, effects, and boost terminatio
 - `0%` disables mouse swipe boost.
 - `1%`～`99%` suppresses the native threshold until the configured higher threshold is crossed.
 - `100%` retains the previous native behavior.
-- Above `100%`, one threshold crossing emits one native swipe pulse.
-- A true native-threshold flick and an assisted below-native flick share the same one-gesture latch above `100%`, preventing a double pulse from one continuous motion.
-- Manual R and Shift remain independent. Movement present while either is held is latched so releasing the button does not immediately create an unrelated assisted swipe.
-- The accepted `hold R -> native swipe -> release R` sequence remains available after a distinct swipe gesture.
+- Above `100%`, one accepted event emits one native swipe pulse.
+- A true native-threshold event and an assisted below-native event share the same native-cycle state, preventing multiple pulses inside one Shift-equivalent busy/charge interval.
+- Sustained motion may emit again when the native busy timer is clear and the equivalent `> 0x0A` interval has elapsed; it does not wait for movement to fall below threshold.
+- Shift owns its own automatic cycle while held. Manual R does not block the native swipe pulse, preserving `hold R -> swipe -> release R`.
 
 ## Configuration contract
 
@@ -91,4 +91,4 @@ python tools/ci/audits/localization/audit-melonprime-all-new-language-coverage.p
 python tools/ci/audits/localization/audit-morph-ball-boost-assist-translations.py
 ```
 
-Runtime testing must compare one short flick with a sustained movement at `101`, `200`, `1000`, and `9000`. A sustained movement must produce at most one assisted native swipe until the movement returns below threshold and the boost finishes. Also test `0`, `50`, `99`, `100`, manual R, Shift, transformation edges, enemy contact, and `hold R -> swipe -> release R`.
+Runtime testing must compare one short flick with sustained movement at `101`, `200`, `1000`, and `9000`. Sustained movement may repeat, but never more than once per completed Shift-equivalent busy/charge interval. Compare its repeat cadence directly with held Shift. Also test `0`, `50`, `99`, `100`, manual R, Shift, transformation edges, enemy contact, and `hold R -> swipe -> release R`.

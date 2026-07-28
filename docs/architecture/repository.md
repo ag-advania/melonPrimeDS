@@ -357,9 +357,9 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 ## Morph Ball Boost Assist Sensitivity config contract
 
 <!-- MELONPRIME_MORPH_BOOST_REPOSITORY_DOC_V6 -->
-<!-- MELONPRIME_MORPH_BOOST_NATIVE_SWIPE_REPOSITORY_DOC_V9 -->
+<!-- MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_REPOSITORY_DOC_V10 -->
 
-`Metroid.Sensitivity.MorphBoostMouse` is an integer per-instance setting with default `100` and range `0`～`9000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`, loaded/saved through the non-HUD binding table, and derived through `RuntimeConfigSnapshot`. The warm threshold scalar is accompanied by `m_morphBoostSwipePulseLatched`, which owns one physical-gesture-equivalent native swipe pulse above `100%`. The feature does not own R input or boost charge state. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
+`Metroid.Sensitivity.MorphBoostMouse` is an integer per-instance setting with default `100` and range `0`～`9000`. It is owned by `CfgKey::MorphBoostMouseSens`, registered in `Config.cpp`, loaded/saved through the non-HUD binding table, and derived through `RuntimeConfigSnapshot`. The warm threshold scalar is accompanied by `m_morphBoostSwipePulseState` and `m_morphBoostSwipePulseElapsedFrames`, which rate-limit assisted native swipe pulses to one per completed Shift-equivalent busy/charge interval above `100%`. The feature does not own R input or boost charge state. See [../features/gameplay/morph-ball-boost-assist-sensitivity.md](../features/gameplay/morph-ball-boost-assist-sensitivity.md).
 
 
 ## Mouse Wheel Weapon Cycling config contract
