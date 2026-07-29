@@ -156,6 +156,15 @@ namespace MelonPrime {
         inline constexpr const char* LowHpWarningAutoBase           = "Metroid.LowHpWarning.AutoBase";
     }
 
+    // Virtual mouse-wheel codes stored in Keyboard.HK_* integer mappings.
+    // Share the mouse mark used by button bindings (button | 0xF0000000);
+    // payloads sit outside Qt::AllButtons (0x07ffffff) so they never collide.
+    namespace InputKey {
+        inline constexpr int MouseMark       = static_cast<int>(0xF0000000u);
+        inline constexpr int MouseWheelUp    = static_cast<int>(0xF1000000u);
+        inline constexpr int MouseWheelDown  = static_cast<int>(0xF2000000u);
+    }
+
     namespace WeaponSwitchMethod {
         inline constexpr int LegacyTouch = 0;
         inline constexpr int NewNative = 1;
