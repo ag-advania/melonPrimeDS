@@ -1,5 +1,6 @@
 #include "MelonPrimeRawHotkeyVkBinding.h"
 #include "MelonPrimeRawInputWinFilter.h"
+#include "MelonPrimeDef.h"
 #include "Config.h"
 #include "EmuInstance.h"
 
@@ -21,7 +22,6 @@ namespace MelonPrime {
         constexpr int kQtKey_F1 = 0x01000030;
         constexpr int kQtKey_F35 = 0x0100004F;
 
-        constexpr int kQtMouseMark = 0xF0000000;
     }
 
     // ------------------------------------------------------------------------
@@ -44,9 +44,14 @@ namespace MelonPrime {
     SmallVkList MapQtKeyIntToVks(int qtKey) {
         SmallVkList vks;
 
+        // Mouse wheel virtual keys have no Win32 VK; runtime injects one-frame
+        // presses from the Qt wheel delta (see MelonPrimeGameInput).
+        if (qtKey == InputKey::MouseWheelUp || qtKey == InputKey::MouseWheelDown)
+            return vks;
+
         // Mouse Buttons
-        if ((qtKey & kQtMouseMark) == kQtMouseMark) {
-            const int btn = (qtKey & ~kQtMouseMark);
+        if ((qtKey & InputKey::MouseMark) == InputKey::MouseMark) {
+            const int btn = (qtKey & ~InputKey::MouseMark);
             switch (btn) {
             case 0x01: vks.push_back(VK_LBUTTON);  break;
             case 0x02: vks.push_back(VK_RBUTTON);  break;

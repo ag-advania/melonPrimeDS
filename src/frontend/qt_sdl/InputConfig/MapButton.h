@@ -24,7 +24,10 @@
 
 #ifdef MELONPRIME_DS
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <optional>
+#include "MelonPrimeDef.h"
+#include "MelonPrimeWheelEvent.h"
 #endif
 
 #include <SDL2/SDL.h>
@@ -105,7 +108,23 @@ protected:
 
         // Log(melonDS::Platform::Debug, "MOUSE BUTTON PRESSED = %08X\n", event->button());
 
-        *mapping = (int)event->button() | 0xF0000000;
+        *mapping = (int)event->button() | MelonPrime::InputKey::MouseMark;
+        click();
+    }
+
+    void wheelEvent(QWheelEvent* event) override {
+        if (!isChecked()) return QPushButton::wheelEvent(event);
+
+        const int steps = MelonPrime::PhysicalWheelSteps(*event);
+        if (steps == 0) {
+            event->ignore();
+            return;
+        }
+
+        *mapping = (steps > 0)
+            ? MelonPrime::InputKey::MouseWheelUp
+            : MelonPrime::InputKey::MouseWheelDown;
+        event->accept();
         click();
     }
 #endif
@@ -144,6 +163,11 @@ private:
         if (key == -1) return "None";
 
 #ifdef MELONPRIME_DS
+        if (key == MelonPrime::InputKey::MouseWheelUp)
+            return QStringLiteral("Mouse Wheel Up");
+        if (key == MelonPrime::InputKey::MouseWheelDown)
+            return QStringLiteral("Mouse Wheel Down");
+
         auto getMouseButtonName = [](Qt::MouseButton button) -> std::optional<QString> {
             static const struct {
                 Qt::MouseButton button;
@@ -185,9 +209,11 @@ private:
             return std::nullopt;
             };
 
-        auto mouseButton = key & ~0xF0000000;
-        if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
-            return *name;
+        if ((key & MelonPrime::InputKey::MouseMark) == MelonPrime::InputKey::MouseMark) {
+            auto mouseButton = key & ~MelonPrime::InputKey::MouseMark;
+            if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
+                return *name;
+            }
         }
 #endif
 
