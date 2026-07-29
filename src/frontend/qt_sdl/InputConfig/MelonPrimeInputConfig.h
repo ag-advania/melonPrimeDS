@@ -66,8 +66,10 @@ static constexpr HotkeyEntry kMetroidHotkeys2[] =
 {
     {HK_MetroidIngameSensiUp,    "[Metroid] (PgUp) AimSensitivity Up"},
     {HK_MetroidIngameSensiDown,  "[Metroid] (PgDown) AimSensitivity Down"},
-    {HK_MetroidWeaponNext,       "[Metroid] (J) Next Weapon in the sorted order"},
-    {HK_MetroidWeaponPrevious,   "[Metroid] (K) Previous Weapon in the sorted order"},
+    {HK_MetroidWeaponNext,                "[Metroid] (J) Next Weapon (Primary)"},
+    {HK_MetroidWeaponNextSecondary,       "[Metroid] (Mouse Wheel Down) Next Weapon (Secondary)"},
+    {HK_MetroidWeaponPrevious,            "[Metroid] (K) Previous Weapon (Primary)"},
+    {HK_MetroidWeaponPreviousSecondary,   "[Metroid] (Mouse Wheel Up) Previous Weapon (Secondary)"},
     {HK_MetroidScanVisor,        "[Metroid] (C) Scan Visor"},
     {HK_MetroidUILeft,           "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)"},
     {HK_MetroidUIRight,          "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)"},
@@ -188,8 +190,6 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
-    QCheckBox* m_cbMetroidDisableMouseWheelWeaponCycle = nullptr; // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    QLabel* m_lblMetroidDisableMouseWheelWeaponCycleDesc = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;

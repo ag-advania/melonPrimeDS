@@ -130,6 +130,12 @@ namespace Config
         {"Instance*.Keyboard.HK_MetroidWeaponSpecial",     Qt::Key_R},
         {"Instance*.Keyboard.HK_MetroidWeaponNext",        Qt::Key_J},
         {"Instance*.Keyboard.HK_MetroidWeaponPrevious",    Qt::Key_K},
+        // Preserve legacy wheel→weapon direction: physical wheel down = next,
+        // wheel up = previous (was wheelDelta < 0 → next).
+        {"Instance*.Keyboard.HK_MetroidWeaponNextSecondary",
+            MelonPrime::InputKey::MouseWheelDown},
+        {"Instance*.Keyboard.HK_MetroidWeaponPreviousSecondary",
+            MelonPrime::InputKey::MouseWheelUp},
         {"Instance*.Keyboard.HK_MetroidWeapon1",           Qt::Key_1},
         {"Instance*.Keyboard.HK_MetroidWeapon2",           Qt::Key_2},
         {"Instance*.Keyboard.HK_MetroidWeapon3",           Qt::Key_3},
@@ -241,7 +247,6 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
-        {"Instance*.Metroid.Input.MouseWheelWeaponCycle", true}, // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
         {"Instance*.Metroid.Input.MorphBoostSwipeEnabled", true}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         {"Instance*.Metroid.Input.MorphBoostCustomRawThreshold", false}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         /* MelonPrimeDS Visual bool defaults are generated from MelonPrimeHudPropSchema.inc. */
@@ -420,6 +425,8 @@ namespace Config
         {"HKKey_MetroidWeaponSpecial",     0, "Keyboard.HK_MetroidWeaponSpecial",      true},
         {"HKKey_MetroidWeaponNext",        0, "Keyboard.HK_MetroidWeaponNext",         true},
         {"HKKey_MetroidWeaponPrevious",    0, "Keyboard.HK_MetroidWeaponPrevious",     true},
+        {"HKKey_MetroidWpnNextSec",  0, "Keyboard.HK_MetroidWeaponNextSecondary",     true},
+        {"HKKey_MetroidWpnPrevSec",  0, "Keyboard.HK_MetroidWeaponPreviousSecondary", true},
         {"HKKey_MetroidWeapon1",           0, "Keyboard.HK_MetroidWeapon1",            true},
         {"HKKey_MetroidWeapon2",           0, "Keyboard.HK_MetroidWeapon2",            true},
         {"HKKey_MetroidWeapon3",           0, "Keyboard.HK_MetroidWeapon3",            true},
@@ -485,6 +492,8 @@ namespace Config
         { "HKJoy_MetroidWeaponSpecial",     0, "Joystick.HK_MetroidWeaponSpecial",      true},
         { "HKJoy_MetroidWeaponNext",        0, "Joystick.HK_MetroidWeaponNext",         true},
         { "HKJoy_MetroidWeaponPrevious",    0, "Joystick.HK_MetroidWeaponPrevious",     true},
+        { "HKJoy_MetroidWpnNextSec", 0, "Joystick.HK_MetroidWeaponNextSecondary",     true},
+        { "HKJoy_MetroidWpnPrevSec", 0, "Joystick.HK_MetroidWeaponPreviousSecondary", true},
         { "HKJoy_MetroidWeapon1",           0, "Joystick.HK_MetroidWeapon1",            true},
         { "HKJoy_MetroidWeapon2",           0, "Joystick.HK_MetroidWeapon2",            true},
         { "HKJoy_MetroidWeapon3",           0, "Joystick.HK_MetroidWeapon3",            true},
