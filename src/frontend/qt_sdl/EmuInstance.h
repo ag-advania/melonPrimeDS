@@ -93,6 +93,11 @@ enum
     HK_MetroidMenu,
     HK_MetroidIngameSensiUp,
     HK_MetroidIngameSensiDown,
+    // Secondary next/prev aliases (OR'd into IB_WEAPON_NEXT/PREV at project time).
+    // Appended after the contiguous Beam..Previous group so InputProjection bit
+    // packing stays valid.
+    HK_MetroidWeaponNextSecondary,
+    HK_MetroidWeaponPreviousSecondary,
 #endif // MELONPRIME_DS
 
     // HK_MAX should be last item.

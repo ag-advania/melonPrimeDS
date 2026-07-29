@@ -143,6 +143,8 @@ namespace MelonPrime {
             { "Keyboard.HK_MetroidWeaponCheck",        HK_MetroidWeaponCheck },
             { "Keyboard.HK_MetroidWeaponNext",         HK_MetroidWeaponNext },
             { "Keyboard.HK_MetroidWeaponPrevious",     HK_MetroidWeaponPrevious },
+            { "Keyboard.HK_MetroidWeaponNextSecondary",     HK_MetroidWeaponNextSecondary },
+            { "Keyboard.HK_MetroidWeaponPreviousSecondary", HK_MetroidWeaponPreviousSecondary },
 
             // UI / Menu
             { "Keyboard.HK_MetroidUIOk",               HK_MetroidUIOk },

@@ -469,7 +469,6 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::MorphBoostSwipeDistance, K::SpinInt, m_spinMetroidMorphBoostMouseSensitivity }, // 45
         { C::MorphBoostSwipeEnabled, K::CheckBoolInverted, m_cbMetroidDisableMorphBoostSwipe }, // 46 MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
         { C::MorphBoostCustomRawThreshold, K::CheckBool, m_cbMetroidMorphBoostCustomRawThreshold }, // 47
-        { C::MouseWheelWeaponCycle, K::CheckBoolInverted, m_cbMetroidDisableMouseWheelWeaponCycle }, // 48 MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
     };
 }
 
@@ -683,32 +682,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         updateMorphBoostControls();
     }
 
-    if (!m_cbMetroidDisableMouseWheelWeaponCycle) {
-        m_cbMetroidDisableMouseWheelWeaponCycle = new QCheckBox(
-            QStringLiteral("Disable Mouse Wheel Weapon Cycling"),
-            ui->sectionInputSettings);
-        m_cbMetroidDisableMouseWheelWeaponCycle->setObjectName(
-            QStringLiteral("cbMetroidDisableMouseWheelWeaponCycle"));
-        m_lblMetroidDisableMouseWheelWeaponCycleDesc = new QLabel(
-            QStringLiteral(
-                "Check this to disable cycling weapons with the mouse wheel and leave wheel scrolling available for other bindings. "
-                "Next Weapon, Previous Weapon, and direct weapon keys still work."),
-            ui->sectionInputSettings);
-        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setObjectName(
-            QStringLiteral("lblMetroidDisableMouseWheelWeaponCycleDesc"));
-        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setWordWrap(true);
-        m_lblMetroidDisableMouseWheelWeaponCycleDesc->setStyleSheet(
-            QStringLiteral("QLabel { margin-left: 20px; }"));
-        if (QLayout* const layout = ui->sectionInputSettings->layout()) {
-            layout->addWidget(m_cbMetroidDisableMouseWheelWeaponCycle);
-            layout->addWidget(m_lblMetroidDisableMouseWheelWeaponCycleDesc);
-        }
-    }
-
     buildSettingBindings();
-    // V15 appended bindings 45..48: distance, inverted disable parent,
-    // custom mode, and inverted disable wheel checkbox.
-    loadBindingsRange(instcfg, 45, 49); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
+    // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
+    loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);

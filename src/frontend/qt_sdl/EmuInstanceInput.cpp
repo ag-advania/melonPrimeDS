@@ -107,6 +107,8 @@ const char* EmuInstance::hotkeyNames[HK_MAX] =
     "HK_MetroidMenu",
     "HK_MetroidIngameSensiUp",
     "HK_MetroidIngameSensiDown",
+    "HK_MetroidWeaponNextSecondary",
+    "HK_MetroidWeaponPreviousSecondary",
 #endif
 };
 
