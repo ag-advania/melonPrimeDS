@@ -129,7 +129,30 @@ namespace MelonPrime {
             return;
         }
 
+        if constexpr (!kReentrant)
+            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu();
+        else
+            m_input.wheelDelta = 0;
+
 #ifdef _WIN32
+        // Mouse-wheel bindings are virtual one-frame keys. Raw Input has no VK
+        // for wheel ticks, so when Windows Raw Input owns the keyboard source,
+        // inject matching hotkey bits from the consumed wheel delta. The Qt
+        // path (!isInputOwner / non-Windows) already gets these via
+        // EmuInstance::onMouseWheel + inputProcess.
+        uint64_t wheelHotkeyBits = 0;
+        if constexpr (!kReentrant) {
+            if (isInputOwner && m_input.wheelDelta) {
+                const int wheelKey = (m_input.wheelDelta > 0)
+                    ? InputKey::MouseWheelUp
+                    : InputKey::MouseWheelDown;
+                for (int i = 0; i < HK_MAX; ++i) {
+                    if (emuInstance->hkKeyMapping[i] == wheelKey)
+                        wheelHotkeyBits |= (1ULL << i);
+                }
+            }
+        }
+
         // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FALLBACK_V1
         // Raw Input ownership is reserved for captured FPS aim. Cursor-mode
         // screens intentionally release that owner, but their focused window
@@ -139,11 +162,11 @@ namespace MelonPrime {
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
         const uint64_t hotDownMask = isInputOwner
-            ? (hk.down | emuInstance->joyHotkeyMask)
+            ? (hk.down | emuInstance->joyHotkeyMask | wheelHotkeyBits)
             : emuInstance->hotkeyMask;
         if constexpr (!kReentrant) {
             const uint64_t hotPressMask = isInputOwner
-                ? (hk.pressed | emuInstance->joyHotkeyPress)
+                ? (hk.pressed | emuInstance->joyHotkeyPress | wheelHotkeyBits)
                 : emuInstance->hotkeyPress;
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);
         } else {
@@ -183,11 +206,6 @@ namespace MelonPrime {
             m_aimData.centerX,
             m_aimData.centerY);
 #endif
-
-        if constexpr (!kReentrant)
-            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu();
-        else
-            m_input.wheelDelta = 0;
     }
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState(const bool focused)          { UpdateInputStateImpl<false>(focused); }

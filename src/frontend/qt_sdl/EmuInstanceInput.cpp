@@ -27,6 +27,7 @@
 
 #ifdef MELONPRIME_DS
 #include "MelonPrimeCompilerHints.h"
+#include "MelonPrimeDef.h"
 #endif
 
 using namespace melonDS;
@@ -436,7 +437,7 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 #ifdef MELONPRIME_DS
 void EmuInstance::onMousePress(QMouseEvent* event)
 {
-    int key = static_cast<int>(event->button()) | 0xF0000000;
+    int key = static_cast<int>(event->button()) | MelonPrime::InputKey::MouseMark;
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
@@ -449,7 +450,7 @@ void EmuInstance::onMousePress(QMouseEvent* event)
 
 void EmuInstance::onMouseRelease(QMouseEvent* event)
 {
-    int key = static_cast<int>(event->button()) | 0xF0000000;
+    int key = static_cast<int>(event->button()) | MelonPrime::InputKey::MouseMark;
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
@@ -465,7 +466,7 @@ void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
     auto releaseIfUp = [&](Qt::MouseButton btn) {
         if (physical & btn)
             return;
-        const int key = static_cast<int>(btn) | 0xF0000000;
+        const int key = static_cast<int>(btn) | MelonPrime::InputKey::MouseMark;
         for (int i = 0; i < 12; i++)
             if (key == hkKeyMapping[i])
                 keyInputMask |= (1u << i);
@@ -480,6 +481,24 @@ void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
     releaseIfUp(Qt::XButton1);
     releaseIfUp(Qt::XButton2);
 }
+
+void EmuInstance::onMouseWheel(int delta)
+{
+    if (!delta) return;
+
+    const int key = (delta > 0)
+        ? MelonPrime::InputKey::MouseWheelUp
+        : MelonPrime::InputKey::MouseWheelDown;
+
+    uint64_t pulse = 0;
+    for (int i = 0; i < HK_MAX; i++) {
+        if (key == hkKeyMapping[i]) {
+            keyHotkeyMask |= (1ULL << i);
+            pulse |= (1ULL << i);
+        }
+    }
+    wheelHotkeyPulseMask |= pulse;
+}
 #endif // MELONPRIME_DS
 
 void EmuInstance::keyReleaseAll()
@@ -487,6 +506,7 @@ void EmuInstance::keyReleaseAll()
 #ifdef MELONPRIME_DS
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
+    wheelHotkeyPulseMask = 0;
 #else
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
@@ -599,6 +619,13 @@ void EmuInstance::inputProcess()
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
+
+    // Mouse-wheel bindings are impulses: release the virtual key after the
+    // edge latch so the next frame sees a clean release.
+    if (wheelHotkeyPulseMask) {
+        keyHotkeyMask &= ~wheelHotkeyPulseMask;
+        wheelHotkeyPulseMask = 0;
+    }
 
 #else
     // Original melonDS path: full SDL polling + edge detection
