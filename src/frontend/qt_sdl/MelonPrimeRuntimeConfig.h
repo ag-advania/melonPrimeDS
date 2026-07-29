@@ -58,7 +58,6 @@ struct RuntimeConfigSnapshot {
 
     bool immediateInputEdgeOverlay = false;
     bool directAltFormTransform = false;
-    bool mouseWheelWeaponCycle = true; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
     bool nativeBipedFire = false;
 
     bool newZoomInputMethod = false;

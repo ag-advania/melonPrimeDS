@@ -175,22 +175,18 @@ namespace MelonPrime {
     {
         using namespace WeaponData;
 
-        // --- Case 1: Mouse Wheel / Next / Prev ---
+        // --- Case 1: Next / Prev (primary OR secondary bindings) ---
         if (LIKELY(!IsAnyPressed(IB_WEAPON_ANY))) {
-            // OPT-A: wheelDelta is now pre-fetched by UpdateInputState into m_input.
-            //   Eliminates: emuInstance->getMainWindow()->panel->getDelta() (~18-28 cyc)
-            //   The caller (HandleInGameLogic) already gates on hasWeaponInput,
-            //   so this path only executes when wheel/next/prev is active.
-            const int wheelDelta =
-                m_enableMouseWheelWeaponCycle ? m_input.wheelDelta : 0; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
+            // Wheel ticks arrive as Mouse Wheel Up/Down virtual keys and map
+            // through the normal hotkey path into IB_WEAPON_NEXT/PREV.
             const bool nextKey = IsPressed(IB_WEAPON_NEXT);
             const bool prevKey = IsPressed(IB_WEAPON_PREV);
 
-            if (!wheelDelta && !nextKey && !prevKey) return false;
+            if (!nextKey && !prevKey) return false;
 
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
-            const bool forward = (wheelDelta < 0) || nextKey;
+            const bool forward = nextKey;
 
             const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
