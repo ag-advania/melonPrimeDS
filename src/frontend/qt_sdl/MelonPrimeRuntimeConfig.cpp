@@ -81,7 +81,6 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     s.directAltFormTransform = cfg.GetBool(CfgKey::DirectAltFormTransform);
-    s.mouseWheelWeaponCycle = cfg.GetBool(CfgKey::MouseWheelWeaponCycle); // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeBipedFire =

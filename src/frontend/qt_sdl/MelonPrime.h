@@ -531,7 +531,6 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
-        bool     m_enableMouseWheelWeaponCycle = true; // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
         bool     m_enableMorphBoostSwipe = true; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         bool     m_enableMorphBoostCustomRawThreshold = false;
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6

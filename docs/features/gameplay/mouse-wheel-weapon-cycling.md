@@ -1,32 +1,20 @@
-# Mouse Wheel Weapon Cycling
+# Mouse Wheel Weapon Switching
 
-<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15 -->
+Mouse-wheel weapon switching is configured through standard input bindings, not a dedicated toggle.
 
-<!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_WHEEL_DOC_V15 -->
+## Bindings
 
-## User-facing setting
+| Action | Config key | Default |
+|---|---|---|
+| Next Weapon (Primary) | `Keyboard.HK_MetroidWeaponNext` | `J` (unchanged; shown as `(J)` in the label) |
+| Next Weapon (Secondary) | `Keyboard.HK_MetroidWeaponNextSecondary` | Mouse Wheel Down |
+| Previous Weapon (Primary) | `Keyboard.HK_MetroidWeaponPrevious` | `K` (unchanged; shown as `(K)` in the label) |
+| Previous Weapon (Secondary) | `Keyboard.HK_MetroidWeaponPreviousSecondary` | Mouse Wheel Up |
 
-The UI is **Disable Mouse Wheel Weapon Cycling** and defaults unchecked. The stored compatibility key remains positive:
+Either binding for an action activates that action. Set a Secondary binding to **None** to disable wheel weapon switching while keeping keyboard/mouse-button Primary bindings.
 
-```text
-Key:     Metroid.Input.MouseWheelWeaponCycle
-Type:    bool
-Default: true
-```
+Secondary defaults use physical wheel direction and match the historical special-case behavior (`wheelDelta < 0` → next).
 
-| Disable checkbox | Stored key | Behavior |
-|---|---:|---|
-| unchecked (default) | `true` | Mouse-wheel deltas cycle weapons. |
-| checked | `false` | Wheel-only cycling is disabled and scrolling remains available for other bindings. |
+## Removed setting
 
-The InputConfig binding uses an explicit inverted-bool kind, so loading and saving are exact inverses without changing existing TOML data.
-
-Next Weapon, Previous Weapon, and direct weapon bindings remain independent and continue to work while the checkbox is checked.
-
-## Binding mouse wheel to hotkeys
-
-Input configuration can assign **Mouse Wheel Up** / **Mouse Wheel Down** to any keyboard/mouse hotkey slot. These are stored as reserved integer codes (`MelonPrime::InputKey::MouseWheelUp` / `MouseWheelDown`) alongside existing Qt key and mouse-button mappings — no config format change.
-
-At runtime, a wheel tick becomes a one-frame virtual button press (then auto-release). When weapon cycling is enabled, wheel deltas still cycle weapons independently of any hotkey bound to the same wheel direction.
-
-Direction follows the **physical** wheel (top rotating away from the user = Up), including when the OS has natural scrolling enabled. Qt's inverted deltas are normalized via `MelonPrime::PhysicalWheelSteps()`.
+`Metroid.Input.MouseWheelWeaponCycle` / **Disable Mouse Wheel Weapon Cycling** has been removed. Stale TOML entries are ignored.

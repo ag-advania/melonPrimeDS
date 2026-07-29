@@ -39,13 +39,12 @@ namespace MelonPrime {
         }
 
         // Combined weapon input gate.
-        //   Single bitmask test + wheelDelta check skips call entirely on 99%+ frames.
+        //   Single bitmask test skips ProcessWeaponSwitch on 99%+ frames.
+        //   Next/Prev secondary (default: mouse wheel) already OR into these bits.
         {
             constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
                 IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
-            const bool hasWeaponInput =
-                (m_input.press & IB_WEAPON_ALL_TRIGGERS)
-                || (m_enableMouseWheelWeaponCycle && m_input.wheelDelta); // MELONPRIME_MOUSE_WHEEL_WEAPON_CYCLE_V7
+            const bool hasWeaponInput = (m_input.press & IB_WEAPON_ALL_TRIGGERS) != 0;
             if (UNLIKELY(hasWeaponInput && ProcessWeaponSwitch())) {
                 HandleRareWeaponSwitch();
             }
