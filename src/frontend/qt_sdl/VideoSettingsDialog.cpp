@@ -96,6 +96,15 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
 
+    const QString vulkanOutsideMatchMessage = MelonPrime::UiText::Tr(
+        "Vulkan forces software rendering outside matches; the saved setting is not changed.");
+    const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
+        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
+    ui->lblRendererNotes->setVisible(vulkanRenderer);
+    ui->lblRendererNotes->setText(vulkanRenderer
+        ? vulkanOutsideMatchMessage + QStringLiteral("\n") + vulkanResolutionMessage
+        : QString());
+
     // Vulkan uses the software renderer for menus and other non-match screens
     // regardless of the saved checkbox value. Make that runtime behavior
     // visible at the renderer choice, and warn about the known 4x OSD issue
@@ -105,10 +114,8 @@ void VideoSettingsDialog::setEnabled()
         ? MelonPrime::UiText::Tr(
             "Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
         : QString::fromStdString(vulkanProbe.Reason);
-    const QString vulkanOutsideMatchTooltip = MelonPrime::UiText::Tr(
-        "Vulkan forces software rendering outside matches; the saved setting is not changed.");
     const QString vulkanRendererDescription = vulkanRenderer && vulkanProbe.Available
-        ? vulkanBaseTooltip + QStringLiteral("\n") + vulkanOutsideMatchTooltip
+        ? vulkanBaseTooltip + QStringLiteral("\n") + vulkanOutsideMatchMessage
         : vulkanBaseTooltip;
     rb3DVulkan->setToolTip(vulkanRendererDescription);
     rb3DVulkan->setWhatsThis(vulkanRendererDescription);
