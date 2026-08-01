@@ -93,6 +93,11 @@ enum
     HK_MetroidMenu,
     HK_MetroidIngameSensiUp,
     HK_MetroidIngameSensiDown,
+    // Secondary next/prev aliases (OR'd into IB_WEAPON_NEXT/PREV at project time).
+    // Appended after the contiguous Beam..Previous group so InputProjection bit
+    // packing stays valid.
+    HK_MetroidWeaponNextSecondary,
+    HK_MetroidWeaponPreviousSecondary,
 #endif // MELONPRIME_DS
 
     // HK_MAX should be last item.
@@ -143,6 +148,8 @@ public:
     void onMousePress(QMouseEvent* event);
     void onMouseRelease(QMouseEvent* event);
     void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
+    // One-frame virtual press for MelonPrime::InputKey::MouseWheelUp/Down bindings.
+    void onMouseWheel(int delta);
 #endif // MELONPRIME_DS
 
     int getInstanceID() { return instanceID; }
@@ -467,6 +474,9 @@ private:
     uint64_t joyHotkeyPress;
     uint64_t joyHotkeyRelease;
     uint64_t lastJoyHotkeyMask;
+    // Bits latched by onMouseWheel(); cleared after edge detection so the
+    // virtual key is a one-frame press rather than a held button.
+    uint64_t wheelHotkeyPulseMask = 0;
 #else
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;

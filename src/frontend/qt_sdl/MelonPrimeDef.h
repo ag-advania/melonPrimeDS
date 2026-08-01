@@ -19,6 +19,14 @@ namespace MelonPrime {
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
+        // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V1
+        // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V4
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_V5_SYMMETRIC
+        inline constexpr const char* MorphBoostMouseSens = "Metroid.Sensitivity.MorphBoostMouse"; // legacy V7-V10
+        inline constexpr const char* MorphBoostSwipeDistance = "Metroid.Input.MorphBoostSwipeDistance"; // MELONPRIME_MORPH_BOOST_REQUIRED_MOVEMENT_V11
+        inline constexpr const char* MorphBoostSwipeEnabled = "Metroid.Input.MorphBoostSwipeEnabled"; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+        inline constexpr const char* MorphBoostCustomRawThreshold = "Metroid.Input.MorphBoostCustomRawThreshold"; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         inline constexpr const char* AimYScale       = "Metroid.Sensitivity.AimYAxisScale";
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
         inline constexpr const char* ZoomAimScaleEnable = "Metroid.Aim.ZoomScale.Enable";
@@ -145,6 +153,15 @@ namespace MelonPrime {
         inline constexpr const char* LowHpWarningMedium             = "Metroid.LowHpWarning.Medium";
         inline constexpr const char* LowHpWarningHigh               = "Metroid.LowHpWarning.High";
         inline constexpr const char* LowHpWarningAutoBase           = "Metroid.LowHpWarning.AutoBase";
+    }
+
+    // Virtual mouse-wheel codes stored in Keyboard.HK_* integer mappings.
+    // Share the mouse mark used by button bindings (button | 0xF0000000);
+    // payloads sit outside Qt::AllButtons (0x07ffffff) so they never collide.
+    namespace InputKey {
+        inline constexpr int MouseMark       = static_cast<int>(0xF0000000u);
+        inline constexpr int MouseWheelUp    = static_cast<int>(0xF1000000u);
+        inline constexpr int MouseWheelDown  = static_cast<int>(0xF2000000u);
     }
 
     namespace WeaponSwitchMethod {

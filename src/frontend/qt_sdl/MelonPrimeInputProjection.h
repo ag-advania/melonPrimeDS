@@ -78,7 +78,10 @@ struct ProjectedDownState {
     press |= (weaponBits & 0x3ULL) << 17;          // Beam / Missile
     press |= ((weaponBits >> 5) & 0x3FULL) << 19;  // Weapon1..6
     press |= ((weaponBits >> 2) & 0x1ULL) << 25;   // Special
-    press |= ((weaponBits >> 3) & 0x3ULL) << 26;   // Next / Prev
+    // Primary Next/Prev from the contiguous weapon group, OR secondary aliases.
+    press |= ((weaponBits >> 3) & 0x3ULL) << 26;   // Next / Prev (primary)
+    press |= ((hotMask >> HK_MetroidWeaponNextSecondary) & 1ULL) << 26;
+    press |= ((hotMask >> HK_MetroidWeaponPreviousSecondary) & 1ULL) << 27;
     return press;
 }
 

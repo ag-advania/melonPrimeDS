@@ -341,3 +341,7 @@ Troubleshooting:
 - `Metroid.Apply.joy2KeySupport`
 
 (Defined in `src/frontend/qt_sdl/MelonPrimeDef.h`)
+<!-- MELONPRIME_MORPH_BOOST_MODE_CONTROLS_AIM_V14 -->
+### Morph Ball Boost input modes
+
+Internal mode does not read raw movement for swipe acceptance and does not synthesize `altSteerDelta`; the game's internal vector remains authoritative. Custom mode reads the current frame's `m_input.mouseX/Y` for both threshold and direction before `ProcessAimInputMouse()` applies the same sample to aim. The values are read, not consumed or cleared, so no additional aim frame or queue is introduced.

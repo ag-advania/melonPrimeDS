@@ -531,6 +531,16 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        bool     m_enableMorphBoostSwipe = true; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+        bool     m_enableMorphBoostCustomRawThreshold = false;
+        // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6
+        // Warm: consumed by HandleMorphBallBoost during active in-game frames.
+        // The value is derived on the cold config path and remains per-instance.
+        int32_t  m_morphBoostAssistThresholdSq = 0x1FA4;
+        uint8_t  m_morphBoostSwipePulseState = 0; // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
+        uint8_t  m_morphBoostSwipePulseElapsedFrames = 0;
+        // Current raw movement is read directly from FrameInputState; no
+        // delayed duplicate sample is stored. // MELONPRIME_MORPH_BOOST_CURRENT_FRAME_RAW_V13
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -700,6 +710,11 @@ namespace MelonPrime {
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
             const uint16_t mask = 1u << bit;
             m_inputMaskFast = (m_inputMaskFast & ~mask) | (static_cast<uint16_t>(released) * mask);
+        }
+
+        FORCE_INLINE void ResetMorphBoostSwipePulseState() noexcept { // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
+            m_morphBoostSwipePulseState = 0;
+            m_morphBoostSwipePulseElapsedFrames = 0;
         }
 
         FORCE_INLINE void SetAimBlockBranchless(uint32_t bitMask, bool enable) noexcept {

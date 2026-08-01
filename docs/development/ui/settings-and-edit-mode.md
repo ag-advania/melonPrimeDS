@@ -173,7 +173,16 @@ Important side effects in `saveConfig()`:
 HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
 
 ### Reset/default handlers
-Default reset from the settings dialog is not implemented. Resetting to defaults happens through the in-game edit mode Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreenSnapshot.inc`).
+
+The **Reset sensitivity values** button resets every bound setting whose widget currently belongs to `sectionSensitivity`. It does not maintain a second list of numeric defaults. Instead, it resolves values from `Config.cpp` through the `Config::Table::GetDefaultInt/GetDefaultBool/GetDefaultDouble/GetDefaultString` accessors. `CheckBoolInverted` rows invert the positive stored default when updating a negative **Disable...** checkbox.
+
+`Low-Latency Aim Mode` remains outside the generic binding table because its save path uses combo item data and a public/developer-mode gate; the reset handler restores it explicitly through the same compiled integer default.
+
+The handler blocks widget signals while applying defaults and does not call `SetInt`, `SetBool`, `SetDouble`, `Config::Save()`, or runtime notification functions. The new values are committed only by the dialog's existing Save/OK path. Cancelling the dialog therefore preserves the previously saved sensitivity configuration.
+
+Custom HUD reset remains owned by the in-game edit mode `ResetEditToDefaults()` path and is separate from the Sensitivity-section reset.
+
+<!-- MELONPRIME_FINAL_DOC_AUDIT_V18 -->
 
 ### 9-point anchor widgets
 In the settings dialog, 9-point anchors are `QComboBox` widgets with 9 items (Top Left through Bottom Right), created programmatically. In the in-game edit mode, anchors use an embedded `3x3` grid picker.
