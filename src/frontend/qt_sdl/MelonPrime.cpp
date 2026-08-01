@@ -239,7 +239,7 @@ namespace MelonPrime {
 
     bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
     {
-        return !m_flags.test(StateFlags::BIT_IN_GAME);
+        return !IsPatchMatchActive();
     }
 
     // =========================================================================
