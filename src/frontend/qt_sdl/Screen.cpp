@@ -1644,7 +1644,9 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
 
+#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
 
         emuInstance->renderLock.unlock();
     }
@@ -1861,7 +1863,9 @@ void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
                     vulkan->softwareScreen[screenKind[index]]);
             }
 
+#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&vulkan->softwareScreen[1])
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
         }
 
         if (osdEnabled)
@@ -2233,6 +2237,7 @@ void ScreenPanelVulkan::drawScreen()
         emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
 
     bool hasOverlay = false;
+    MelonPrime::VulkanRadarFrame radarFrame{};
     const qreal dpr = devicePixelRatioF();
     const int logicalWidth = width();
     const int logicalHeight = height();
@@ -2262,6 +2267,12 @@ void ScreenPanelVulkan::drawScreen()
                     mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
                 MelonPrimeHud_RefreshOverlayFontIfNeeded(
                     mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+                MelonPrimeHud_RefreshRadarConfigIfNeeded(
+                    mp->HudConfigState(), instcfg, m_radarCfgEpoch,
+                    m_radarEnable, m_radarAnchor,
+                    m_radarDstX, m_radarDstY, m_radarDstSize,
+                    m_radarOpacity, m_radarSrcRadius,
+                    m_radarAnchorDsX, m_radarAnchorDsY);
                 if (MelonPrimeHud_IsHudVisibleOrRestorePatch(
                         emuInstance, instcfg, mp, m_hudEnabled, editMode))
                 {
@@ -2280,6 +2291,34 @@ void ScreenPanelVulkan::drawScreen()
                     overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
                     m_hudPrevDirty = currentDirty;
                     hasOverlay = true;
+
+                    if (m_radarEnable && m_hudTopMatrixValid
+                        && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                            emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
+                    {
+                        const float* topMtx = m_hudTopMatrix;
+                        const float anchorX = topMtx[0] * m_radarAnchorDsX
+                            + topMtx[1] * m_radarAnchorDsY + topMtx[4];
+                        const float anchorY = topMtx[2] * m_radarAnchorDsX
+                            + topMtx[3] * m_radarAnchorDsY + topMtx[5];
+                        const int overlayBaseX = static_cast<int>(m_hudOriginX);
+                        const int overlayBaseY = static_cast<int>(m_hudOriginY);
+                        const int destinationX = overlayBaseX + static_cast<int>(
+                            (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
+                        const int destinationY = overlayBaseY + static_cast<int>(
+                            (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
+                        const uint8_t hunterID = std::min<uint8_t>(
+                            mp->GetHunterID(), MelonPrime::kHunterCount - 1);
+                        radarFrame.enabled = true;
+                        radarFrame.x = static_cast<float>(destinationX * dpr);
+                        radarFrame.y = static_cast<float>(destinationY * dpr);
+                        radarFrame.size = static_cast<float>(m_radarDstSize * m_hudScale * dpr);
+                        radarFrame.opacity = m_radarOpacity;
+                        radarFrame.sourceCenterY = static_cast<std::uint32_t>(
+                            MelonPrime::kBtmOverlaySrcCenterY[hunterID]);
+                        radarFrame.sourceRadius = static_cast<std::uint32_t>(
+                            std::max(m_radarSrcRadius, 0));
+                    }
                 }
             }
         }
@@ -2299,6 +2338,7 @@ void ScreenPanelVulkan::drawScreen()
     }
 
     MelonPrime::VulkanOverlayFrame overlay{};
+    overlay.radar = radarFrame;
     if (hasOverlay)
     {
         overlay.pixels = vulkan->overlayFrame.constBits();
@@ -2306,6 +2346,7 @@ void ScreenPanelVulkan::drawScreen()
         overlay.height = static_cast<std::uint32_t>(vulkan->overlayFrame.height());
         overlay.rowBytes = static_cast<std::size_t>(vulkan->overlayFrame.bytesPerLine());
     }
+    const bool hasPresentationOverlay = hasOverlay || radarFrame.IsValid();
     if (vulkan->presenter.Present(
             presentFrame,
             vulkan->output,
@@ -2313,7 +2354,7 @@ void ScreenPanelVulkan::drawScreen()
             outputWidth,
             outputHeight,
             regions,
-            hasOverlay ? &overlay : nullptr))
+            hasPresentationOverlay ? &overlay : nullptr))
     {
         vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
         vulkan->consecutiveFailures = 0;

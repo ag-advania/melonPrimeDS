@@ -42,25 +42,17 @@
     //   F8F898 (248,248,152) - center of Kanden radar
     //   529CD6, 6582B1       - Noxus radar blue variants
     {
-        const float palette[15][3] = {
-            {192, 248, 104},  // C0F868 - yellow-green
-            {248, 168, 168},  // F8A8A8 - pink, node red middle
-            {224,  48,  48},  // E03030 - node red outer and center
-            {160, 160, 160},  // A0A0A0 - octolith gray top
-            {200, 200, 200},  // C8C8C8 - octolith gray center
-            {144, 144, 144},  // 909090 - octolith gray bottom
-            {248, 128,  16},  // F88010 - octolith orange top
-            {248, 208, 160},  // F8D0A0 - octolith orange center
-            {216, 104,   0},  // D86800 - octolith orange bottom
-            {136, 224,   8},  // 88E008 - octolith green top
-            {200, 248, 128},  // C8F880 - octolith green center
-            {104, 184,   0},  // 68B800 - octolith green bottom
-            { 16, 152, 200},  // 1098C8 - node blue outer and center
-            { 40, 216, 248},  // 28D8F8 - node blue middle
-            {168, 168, 168},  // A8A8A8 - node gray
-        };
+        static_assert(MelonPrime::kRadarPaletteColorCount == 15,
+            "OpenGL radar shader palette size must stay in sync");
+        float palette[MelonPrime::kRadarPaletteColorCount][3] = {};
+        for (int i = 0; i < MelonPrime::kRadarPaletteColorCount; ++i) {
+            const uint32_t rgb = MelonPrime::kRadarPaletteColors[i];
+            palette[i][0] = static_cast<float>((rgb >> 16) & 0xFF);
+            palette[i][1] = static_cast<float>((rgb >> 8) & 0xFF);
+            palette[i][2] = static_cast<float>(rgb & 0xFF);
+        }
         GLint paletteLoc = glGetUniformLocation(btmOverlayShader, "uPalette");
-        glUniform3fv(paletteLoc, 15, &palette[0][0]);
+        glUniform3fv(paletteLoc, MelonPrime::kRadarPaletteColorCount, &palette[0][0]);
     }
 
     // Quad: 6 vertices, each with position(x,y) + texcoord(u,v)
