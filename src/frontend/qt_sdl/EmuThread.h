@@ -238,8 +238,8 @@ private:
 #endif
     int videoRenderer;
     bool videoSettingsDirty;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    bool vulkanWasInGame = false;
+#ifdef MELONPRIME_DS
+    bool rendererWasInGame = false;
 #endif
 };
 

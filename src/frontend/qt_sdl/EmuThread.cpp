@@ -339,12 +339,21 @@ void EmuThread::run()
         if (LIKELY(!needsCompile)) {
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
-#if defined(MELONPRIME_ENABLE_VULKAN)
-            const bool vulkanIsInGame = melonPrime->IsInGame();
-            if (UNLIKELY(vulkanIsInGame != vulkanWasInGame))
+#if defined(MELONPRIME_DS)
+            const bool rendererIsInGame = melonPrime->IsInGame();
+            if (UNLIKELY(rendererIsInGame != rendererWasInGame))
             {
-                vulkanWasInGame = vulkanIsInGame;
-                if (globalCfg.GetInt("3D.Renderer") == renderer3D_Vulkan)
+                rendererWasInGame = rendererIsInGame;
+                const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+                bool forceSoftwareOutsideMatch =
+                    globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                // Vulkan's 2D path is deliberately avoided outside a match.
+                // This is a runtime override only; never rewrite the setting.
+                forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
+                    || requestedRenderer == renderer3D_Vulkan;
+#endif
+                if (forceSoftwareOutsideMatch)
                     videoSettingsDirty = true;
             }
 #endif
@@ -359,10 +368,19 @@ void EmuThread::run()
         if (videoSettingsDirty)
         {
 #ifdef MELONPRIME_DS
+            const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+            bool forceSoftwareOutsideMatch =
+                globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            // Vulkan always keeps non-match screens on the known-good software
+            // path. This does not mutate 3D.ForceSoftwareOutsideMatch.
+            forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
+                || requestedRenderer == renderer3D_Vulkan;
+#endif
             if (!useOpenGL)
             {
                 videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-                    globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+                    globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
                 if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
                     videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
             }
@@ -373,14 +391,12 @@ void EmuThread::run()
 #ifdef MELONPRIME_DS
                 emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
                 videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
-#if defined(MELONPRIME_ENABLE_VULKAN)
-                if (videoRenderer == renderer3D_Vulkan
+                    requestedRenderer);
+                if (forceSoftwareOutsideMatch
                     && melonPrime->ShouldForceSoftwareRenderer())
                 {
                     videoRenderer = renderer3D_Software;
                 }
-#endif
 #else
                 emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
@@ -398,17 +414,15 @@ void EmuThread::run()
                 // Phase 9 UI exists) instead of only clamping renderers that
                 // actually require one.
                 const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
+                    requestedRenderer);
                 videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
                     ? renderer3D_Software
                     : normalizedRenderer;
-#if defined(MELONPRIME_ENABLE_VULKAN)
-                if (videoRenderer == renderer3D_Vulkan
+                if (forceSoftwareOutsideMatch
                     && melonPrime->ShouldForceSoftwareRenderer())
                 {
                     videoRenderer = renderer3D_Software;
                 }
-#endif
 #else
                 videoRenderer = 0;
 #endif

@@ -128,6 +128,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldVSync = cfg.GetBool("Screen.VSync");
     oldVSyncInterval = cfg.GetInt("Screen.VSyncInterval");
     oldSoftThreaded = cfg.GetBool("3D.Soft.Threaded");
+#ifdef MELONPRIME_DS
+    oldForceSoftwareOutsideMatch = cfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#endif
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
@@ -268,6 +271,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->sbVSyncInterval->setValue(oldVSyncInterval);
 
     ui->cbSoftwareThreaded->setChecked(oldSoftThreaded);
+#ifdef MELONPRIME_DS
+    ui->cbForceSoftwareOutsideMatch->setChecked(oldForceSoftwareOutsideMatch);
+#else
+    ui->cbForceSoftwareOutsideMatch->hide();
+#endif
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
@@ -317,6 +325,9 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetBool("Screen.VSync", oldVSync);
     cfg.SetInt("Screen.VSyncInterval", oldVSyncInterval);
     cfg.SetBool("3D.Soft.Threaded", oldSoftThreaded);
+#ifdef MELONPRIME_DS
+    cfg.SetBool("3D.ForceSoftwareOutsideMatch", oldForceSoftwareOutsideMatch);
+#endif
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
@@ -415,6 +426,18 @@ void VideoSettingsDialog::on_cbSoftwareThreaded_stateChanged(int state)
     cfg.SetBool("3D.Soft.Threaded", (state != 0));
 
     emit updateVideoSettings(false);
+}
+
+void VideoSettingsDialog::on_cbForceSoftwareOutsideMatch_stateChanged(int state)
+{
+#ifdef MELONPRIME_DS
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("3D.ForceSoftwareOutsideMatch", state != 0);
+
+    emit updateVideoSettings(false);
+#else
+    Q_UNUSED(state);
+#endif
 }
 
 void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)
