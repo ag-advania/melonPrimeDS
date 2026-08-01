@@ -80,6 +80,15 @@ void VulkanRenderer::VBlank()
         vulkan3D->Blit(GPU);
 }
 
+RendererOutput VulkanRenderer::GetOutput()
+{
+    // SoftRenderer exposes its CPU framebuffers by default. Those buffers
+    // deliberately omit Vulkan's 3D target, so advertising them would make
+    // the Qt screen select its software paint path and bypass the structured
+    // Vulkan compositor entirely.
+    return {};
+}
+
 VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() noexcept
 {
     return dynamic_cast<VulkanRenderer3D*>(Rend3D.get());

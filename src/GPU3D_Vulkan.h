@@ -22,7 +22,6 @@
 
 #include <array>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.h>

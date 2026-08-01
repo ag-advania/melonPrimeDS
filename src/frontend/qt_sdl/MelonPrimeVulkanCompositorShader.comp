@@ -247,7 +247,6 @@ Rgba6 samplePreviousTop3DColorAtScaledPixel(int scaledX, int scaledY)
     zero.g = 0;
     zero.b = 0;
     zero.a = 0;
-
     if (scaledX < 0
         || scaledX >= int(pc.rendererWidth)
         || scaledY < 0

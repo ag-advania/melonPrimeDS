@@ -37,35 +37,6 @@ public:
     void VBlank() override {}
     void VBlankEnd() override {};
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // Structured capture metadata (plane0/plane1/control per VRAM bank+line)
-    // is owned by Parent (SoftRenderer) and shared by both engine instances
-    // -- Sapphire drives Engine A and Engine B through a *single* shared
-    // GPU2D::SoftRenderer object (CurUnit switches which unit it draws),
-    // so its capture arrays are implicitly shared. melonPrimeDS instead has
-    // two separate SoftRenderer2D instances (Rend2D_A / Rend2D_B); per-engine
-    // storage here would mean display capture (Engine-A-only hardware) is
-    // written to Rend2D_A but never visible to Rend2D_B reading that same
-    // captured VRAM as a direct-color BG, causing a full Top/Bottom swap.
-    // These methods operate on Parent's shared arrays, not per-instance
-    // ones -- ownership unit is VRAM bank+address, not engine.
-    void StoreStructuredCaptureLine(
-        u32 line,
-        u32 width,
-        u32 destinationBank,
-        u32 destinationAddress,
-        u32 sourceBAddress,
-        u32 sourceBBank,
-        bool sourceBFromVram,
-        bool sourceBAvailable,
-        const u16* captureOutput);
-    [[nodiscard]] bool DrawStructuredCapturePixel(u32* destination, u32 flatByteAddress);
-    [[nodiscard]] const u32* GetStructuredPackedLine() const noexcept
-    {
-        return BGOBJLine;
-    }
-#endif
-
 private:
     SoftRenderer& Parent;
 
@@ -80,13 +51,7 @@ private:
         OBJ_Mosaic = (1<<20),
     };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // Sapphire's accelerated 2D contract keeps the layer below a 3D slot.
-    // The third plane is only needed by the guarded Vulkan compositor path.
-    alignas(8) u32 BGOBJLine[256*3];
-#else
     alignas(8) u32 BGOBJLine[256*2];
-#endif
 
     alignas(8) u8 WindowMask[256];
 
@@ -112,18 +77,24 @@ private:
         return table;
     }();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    struct CompositeMetadata
+    {
+        u32 Mode = 0;
+        u32 Eva = 0;
+        u32 Evb = 0;
+    };
+    u32 ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata = nullptr) const;
+#else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
+#endif
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);
     void DrawScanlineBGMode7(u32 line);
     void DrawScanline_BGOBJ(u32 line, u32* dst);
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    void DrawPixel(u32* dst, u16 color, u32 flag);
-#else
     static void DrawPixel(u32* dst, u16 color, u32 flag);
-#endif
 
     void DrawBG_3D();
     template<bool mosaic> void DrawBG_Text(u32 line, u32 bgnum);

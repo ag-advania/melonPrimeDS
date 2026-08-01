@@ -24,7 +24,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <optional>
@@ -79,12 +78,6 @@ namespace melonDS
 {
 using Platform::Log;
 using Platform::LogLevel;
-
-static bool Vulkan2DPhaseTraceEnabled() noexcept
-{
-    const char* value = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
-    return value != nullptr && value[0] != '\0' && value[0] != '0';
-}
 
 namespace
 {
@@ -731,7 +724,7 @@ void VulkanRenderer3D::RenderFrame(melonDS::GPU& gpu)
 void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
 {
     refreshActiveBackendMode();
-    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
+    CurrentRenderScreenSwap = gpu.ScreenSwap;
 
     if (SkipRenderAtVCount215 && gpu.VCount == 215u)
     {
@@ -1345,7 +1338,7 @@ void VulkanRenderer3D::Blit(const melonDS::GPU& gpu)
 
 void VulkanRenderer3D::BlitActiveBackend(const melonDS::GPU& gpu)
 {
-    CurrentRenderScreenSwap = gpu.GPU3D.GetRenderScreenSwapAt3D();
+    CurrentRenderScreenSwap = gpu.ScreenSwap;
 
     if (ActiveBackendMode != BackendMode::GraphicsHardware
         || !Initialized
@@ -2343,6 +2336,7 @@ bool VulkanRenderer3D::waitForReadbackSource()
 
     return waitForAllRenderContexts();
 }
+
 bool VulkanRenderer3D::waitForTextureCacheMutationSafePoint()
 {
     if (Device == VK_NULL_HANDLE)
@@ -5163,6 +5157,7 @@ bool VulkanRenderer3D::createGraphicsPipelines()
     savePipelineCache();
     return true;
 }
+
 bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
 {
     if (width == 0 || height == 0)
