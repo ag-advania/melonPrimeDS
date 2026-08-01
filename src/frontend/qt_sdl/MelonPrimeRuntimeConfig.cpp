@@ -20,6 +20,17 @@ namespace {
 }
 
 constexpr int64_t kAimOneFp = 1LL << 14;
+constexpr int64_t kMorphBoostMaxRequiredMovement = 46339;
+
+[[nodiscard]] int32_t CalculateMorphBoostSwipeThresholdSq(int requiredMovement) noexcept
+{
+    // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+    // Disablement belongs to the parent boolean. The user-facing distance is
+    // always 1..46339 and is squared once for the custom raw hot path.
+    const int64_t movement = std::clamp<int64_t>(
+        requiredMovement, 1, kMorphBoostMaxRequiredMovement);
+    return static_cast<int32_t>(movement * movement);
+}
 
 } // namespace
 
@@ -94,6 +105,17 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     s.zoomAimScaleEnable =
         cfg.GetBool(CfgKey::ZoomAimScaleEnable)
         && s.zoomAimScaleQ14 != static_cast<uint32_t>(kAimOneFp);
+
+    const int morphBoostRequiredMovement = cfg.GetInt(CfgKey::MorphBoostSwipeDistance);
+    // Legacy V12/V13 migration: before the explicit parent existed, distance 0
+    // meant disabled. Preserve that state only when the new key is absent.
+    s.morphBoostSwipeEnabled = cfg.HasKey(CfgKey::MorphBoostSwipeEnabled)
+        ? cfg.GetBool(CfgKey::MorphBoostSwipeEnabled)
+        : morphBoostRequiredMovement != 0;
+    s.morphBoostCustomRawThreshold =
+        cfg.GetBool(CfgKey::MorphBoostCustomRawThreshold);
+    s.morphBoostAssistThresholdSq = CalculateMorphBoostSwipeThresholdSq(
+        morphBoostRequiredMovement <= 0 ? 90 : morphBoostRequiredMovement); // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
 
 #ifdef MELONPRIME_DS
     s.nativeWeaponSwitch =

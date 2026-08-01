@@ -66,6 +66,13 @@ struct RuntimeConfigSnapshot {
     bool zoomAimScaleEnable = false;
     uint32_t zoomAimScaleQ14 = 1u << 14;
 
+    // Mouse-mode Morph Ball swipe hierarchy. Parent defaults ON; custom raw
+    // threshold defaults OFF, preserving the game's internal swipe amount.
+    // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
+    bool morphBoostSwipeEnabled = true;
+    bool morphBoostCustomRawThreshold = false;
+    int32_t morphBoostAssistThresholdSq = 0x1FA4;
+
 #ifdef MELONPRIME_DS
     bool nativeWeaponSwitch = false;
 #endif

@@ -72,6 +72,7 @@
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeScreenCursorPolicy.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeWheelEvent.h"
 #include "MelonPrimeInstanceDiagnostics.h"
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
 #include "MelonPrimeWaylandPointerLock.h" // MELONPRIME_WAYLAND_POINTER_LOCK_V1
@@ -242,9 +243,13 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
 
 void ScreenPanel::wheelEvent(QWheelEvent* event)
 {
-    if (auto* core = melonPrimeCore())
-        core->ThreadBridge().AddWheelFromGui(
-            (event->angleDelta().y() > 0) ? 1 : -1);
+    const int steps = MelonPrime::PhysicalWheelSteps(*event);
+    if (steps != 0) {
+        if (auto* core = melonPrimeCore())
+            core->ThreadBridge().AddWheelFromGui(steps);
+        if (emuInstance)
+            emuInstance->onMouseWheel(steps);
+    }
 #include "MelonPrimeHudScreenCppMouseWheel.inc"
     event->accept();
 }
