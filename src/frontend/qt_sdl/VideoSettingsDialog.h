@@ -71,6 +71,7 @@ private slots:
     void on_cbxComputeHiResCoords_stateChanged(int state);
 
     void on_cbSoftwareThreaded_stateChanged(int state);
+    void on_cbForceSoftwareOutsideMatch_stateChanged(int state);
 private:
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
@@ -93,6 +94,7 @@ private:
     int oldVSync;
     int oldVSyncInterval;
     int oldSoftThreaded;
+    int oldForceSoftwareOutsideMatch;
     int oldGLScale;
     int oldGLBetterPolygons;
     int oldHiresCoordinates;

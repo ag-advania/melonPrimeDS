@@ -4455,6 +4455,12 @@
         }
     },
     {
+        "Use software renderer outside matches",
+        {
+            {MenuLangId::Japanese, "試合中以外はソフトウェアレンダラーを使用"},
+        }
+    },
+    {
         "Use separate thread",
         {
             {MenuLangId::Japanese, "別スレッドを使用"},

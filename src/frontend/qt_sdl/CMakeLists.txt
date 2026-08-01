@@ -237,6 +237,26 @@ if (USE_VCPKG AND WIN32 AND MINGW)
     endif()
 endif()
 
+# CMake's FindPkgConfig resolves the `-lm` dependency from the static SDL2
+# and faad2 pkg-config files through find_library().  In an MSYS2 shell that
+# can select MSYS's incompatible /usr/lib/libm.a even though the compiler is
+# MinGW. Seed both cache entries from the active MinGW toolchain before the
+# imported pkg-config targets are created.
+if (WIN32 AND MINGW)
+    get_filename_component(_melonprime_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_melonprime_mingw_root "${_melonprime_mingw_bin}" DIRECTORY)
+    set(_melonprime_mingw_libm "${_melonprime_mingw_root}/lib/libm.a")
+    if (EXISTS "${_melonprime_mingw_libm}")
+        set(pkgcfg_lib_SDL2_m "${_melonprime_mingw_libm}" CACHE FILEPATH
+            "MinGW math library used by SDL2" FORCE)
+        set(pkgcfg_lib_Faad_m "${_melonprime_mingw_libm}" CACHE FILEPATH
+            "MinGW math library used by faad2" FORCE)
+    endif()
+    unset(_melonprime_mingw_libm)
+    unset(_melonprime_mingw_root)
+    unset(_melonprime_mingw_bin)
+endif()
+
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 pkg_check_modules(LibArchive REQUIRED IMPORTED_TARGET libarchive)
 pkg_check_modules(Zstd REQUIRED IMPORTED_TARGET libzstd)
