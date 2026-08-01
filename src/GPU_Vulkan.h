@@ -21,6 +21,7 @@ public:
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
     void VBlank() override;
+    RendererOutput GetOutput() override;
 
     [[nodiscard]] VulkanRenderer3D* GetVulkanRenderer3D() noexcept;
     [[nodiscard]] const VulkanRenderer3D* GetVulkanRenderer3D() const noexcept;

@@ -339,6 +339,15 @@ void EmuThread::run()
         if (LIKELY(!needsCompile)) {
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            const bool vulkanIsInGame = melonPrime->IsInGame();
+            if (UNLIKELY(vulkanIsInGame != vulkanWasInGame))
+            {
+                vulkanWasInGame = vulkanIsInGame;
+                if (globalCfg.GetInt("3D.Renderer") == renderer3D_Vulkan)
+                    videoSettingsDirty = true;
+            }
+#endif
         }
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
 #endif
@@ -365,6 +374,13 @@ void EmuThread::run()
                 emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
                 videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
                     globalCfg.GetInt("3D.Renderer"));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                if (videoRenderer == renderer3D_Vulkan
+                    && melonPrime->ShouldForceSoftwareRenderer())
+                {
+                    videoRenderer = renderer3D_Software;
+                }
+#endif
 #else
                 emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
@@ -386,6 +402,13 @@ void EmuThread::run()
                 videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
                     ? renderer3D_Software
                     : normalizedRenderer;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                if (videoRenderer == renderer3D_Vulkan
+                    && melonPrime->ShouldForceSoftwareRenderer())
+                {
+                    videoRenderer = renderer3D_Software;
+                }
+#endif
 #else
                 videoRenderer = 0;
 #endif

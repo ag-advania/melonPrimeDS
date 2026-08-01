@@ -238,6 +238,9 @@ private:
 #endif
     int videoRenderer;
     bool videoSettingsDirty;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool vulkanWasInGame = false;
+#endif
 };
 
 #endif // EMUTHREAD_H

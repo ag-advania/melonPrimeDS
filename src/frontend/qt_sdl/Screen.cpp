@@ -50,13 +50,10 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
 #include "GPU3D_Vulkan.h"
-#include "MelonPrimeBuildInfo.h"
 #include "MelonPrimeVulkanFilterMode.h"
 #include "MelonPrimeVulkanFrameQueue.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanOutput.h"
-#include "MelonPrimeVulkanSnapshotBuilder.h"
-#include "MelonPrimeVulkanSnapshotReferenceOracle.h"
 #include "MelonPrimeVulkanSurfacePresenter.h"
 #endif
 
@@ -1696,30 +1693,125 @@ struct ScreenPanelVulkan::VulkanState
     MelonPrime::MelonPrimeVulkanFrameQueue frameQueue;
     MelonPrime::MelonPrimeVulkanFrameQueuePolicy framePolicy;
     MelonPrime::MelonPrimeVulkanOutput output;
-    MelonPrime::MelonPrimeVulkanSnapshotBuilder snapshotBuilder;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-    MelonPrime::MelonPrimeVulkanSnapshotReferenceOracle snapshotReferenceOracle;
-    MelonPrime::SoftPackedFrameSnapshot referenceOracleSnapshot;
-#endif
     MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
     MelonPrime::SoftPackedFrameSnapshot snapshot;
-    SoftRenderer::StructuredVulkanFrameSnapshot structuredSource;
     QMutex layoutLock;
     std::vector<MelonPrime::VulkanPresentRegion> regions;
     std::uint32_t surfaceWidth = 0;
     std::uint32_t surfaceHeight = 0;
     QImage overlayFrame;
     MelonPrime::VulkanNativeWindowInfo nativeWindow;
+    QMutex softwareBufferLock;
+    QImage softwareScreen[2] = {
+        QImage(256, 192, QImage::Format_RGB32),
+        QImage(256, 192, QImage::Format_RGB32),
+    };
+    QTransform softwareScreenTransform[kMaxScreenTransforms];
     bool initialized = false;
     bool presenterInitialized = false;
-    bool speedOverride = false;
+    bool softwareMode = true;
+    bool hasSoftwareBuffers = false;
     bool runtimeFailureReported = false;
-    u32 rendererScale = 0;
-    u64 lastBuiltStructuredGeneration = 0;
-    u64 lastQueuedStructuredGeneration = 0;
-    u64 lastPresentedStructuredGeneration = 0;
     unsigned consecutiveFailures = 0;
 };
+
+namespace
+{
+
+void FillStructuredPackedScreen(
+    const u32* sourcePlane0,
+    const u32* sourcePlane1,
+    const u32* sourceControl,
+    const u32* sourceLineMeta,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane1,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control,
+    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kLineCount>& lineMeta,
+    MelonPrime::SoftPackedScreenStats& stats)
+{
+    constexpr std::size_t pixelCount = MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
+    std::memcpy(plane0.data(), sourcePlane0, pixelCount * sizeof(u32));
+    std::memcpy(plane1.data(), sourcePlane1, pixelCount * sizeof(u32));
+    std::memcpy(control.data(), sourceControl, pixelCount * sizeof(u32));
+    std::memcpy(lineMeta.data(), sourceLineMeta, lineMeta.size() * sizeof(u32));
+    stats = {};
+    for (std::size_t y = 0; y < lineMeta.size(); ++y)
+    {
+        const u32 meta = lineMeta[y];
+        const u32 displayMode = (meta >> 16u) & 0x3u;
+        stats.DisplayModeCounts[displayMode]++;
+        if ((meta & (1u << 21u)) != 0)
+            stats.RegularCaptureUses3dLines++;
+        if (displayMode == 2u && (meta & (1u << 22u)) != 0)
+            stats.VramCaptureUses3dLines++;
+        if ((meta & (1u << 18u)) != 0)
+            stats.ForceLive3dCompMode7Lines++;
+        const int xOffset = static_cast<int>((meta >> 24u) & 0xFFu)
+            - ((((meta >> 16u) & 0x80u) != 0u) ? 256 : 0);
+        if (!stats.HasOffsets)
+        {
+            stats.MinXOffset = xOffset;
+            stats.MaxXOffset = xOffset;
+            stats.HasOffsets = true;
+        }
+        else
+        {
+            stats.MinXOffset = std::min(stats.MinXOffset, xOffset);
+            stats.MaxXOffset = std::max(stats.MaxXOffset, xOffset);
+        }
+    }
+    for (std::size_t index = 0; index < pixelCount; ++index)
+    {
+        const bool plane0Useful = plane0[index] != 0u && plane0[index] != 0x20000000u;
+        const bool plane1Useful = plane1[index] != 0u && plane1[index] != 0x20000000u;
+        if (plane0Useful)
+        {
+            stats.Plane0UsefulPixels++;
+            if ((plane0[index] & 0x00FFFFFFu) != 0u)
+                stats.Plane0VisiblePixels++;
+            else
+                stats.Plane0OpaqueBlackPixels++;
+        }
+        if (plane1Useful)
+        {
+            stats.Plane1UsefulPixels++;
+            if ((plane1[index] & 0x00FFFFFFu) != 0u)
+                stats.Plane1VisiblePixels++;
+            else
+                stats.Plane1OpaqueBlackPixels++;
+        }
+        const u32 controlAlpha = control[index] >> 24u;
+        const u32 compositionMode = controlAlpha & 0xFu;
+        if (compositionMode < stats.CompModeCounts.size())
+            stats.CompModeCounts[compositionMode]++;
+        const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
+        const bool structuredAbove = structuredSlot && (controlAlpha & 0x80u) != 0u;
+        const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
+        if ((controlAlpha & 0x20u) != 0u)
+            stats.ProtectedBlackPixels++;
+        if (structuredSlot)
+            stats.StructuredSlotPixels++;
+        if (structuredAbove)
+        {
+            stats.StructuredAbovePixels++;
+            if (plane1Useful && (plane1[index] & 0x00FFFFFFu) != 0u)
+                stats.StructuredAboveVisiblePixels++;
+            else if (plane1Useful)
+                stats.StructuredAboveBlackPixels++;
+        }
+        if (structured2DOnly)
+        {
+            stats.Structured2DOnlyPixels++;
+            if (plane0Useful && (plane0[index] & 0x00FFFFFFu) != 0u)
+                stats.Structured2DOnlyVisiblePixels++;
+        }
+        if (compositionMode == 4u
+            && plane0[index] == 0x20000000u
+            && plane1[index] == 0x20000000u)
+            stats.CaptureBackedComp4Pixels++;
+    }
+}
+}
 
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     : ScreenPanel(parent), vulkan(std::make_unique<VulkanState>())
@@ -1733,12 +1825,8 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setMinimumSize(screenGetMinSize());
 
     vulkan->framePolicy.MaxBacklogDepth = 1;
-    vulkan->framePolicy.AllowStealPending = false;
-    // Sapphire constrains graphics-hardware presentation to the current
-    // completed frame on non-mobile GPUs. Temporal composition keeps its own
-    // explicit previous-source references; queue-level reuse would present a
-    // different packed generation.
-    vulkan->framePolicy.AllowPreviousFrameReuse = false;
+    vulkan->framePolicy.AllowStealPending = true;
+    vulkan->framePolicy.AllowPreviousFrameReuse = true;
     vulkan->framePolicy.PreferOldestFrame = false;
 }
 
@@ -1749,46 +1837,60 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->presenter.Shutdown();
     vulkan->output.shutdown();
     vulkan->frameQueue.clear();
-    vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-    vulkan->snapshotReferenceOracle.reset();
-#endif
 }
 
 void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
 {
     auto* emuThread = emuInstance->getEmuThread();
     if (emuThread != nullptr && emuThread->emuIsActive())
+    {
+        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
+        if (!vulkan->softwareMode)
+            return;
+
+        QPainter painter(this);
+        painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
+        if (vulkan->hasSoftwareBuffers)
+        {
+            const QRect screenRect(0, 0, 256, 192);
+            for (int index = 0; index < numScreens; ++index)
+            {
+                painter.setTransform(vulkan->softwareScreenTransform[index]);
+                painter.drawImage(
+                    screenRect,
+                    vulkan->softwareScreen[screenKind[index]]);
+            }
+
+#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+        }
+
+        if (osdEnabled)
+        {
+            QMutexLocker osdLock(&osdMutex);
+            int y = kOSDMargin;
+            painter.resetTransform();
+            for (const OSDItem& item : osdItems)
+            {
+                painter.drawImage(kOSDMargin, y, item.bitmap);
+                y += item.bitmap.height();
+            }
+        }
         return;
+    }
 
     QPainter painter(this);
     painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
-
     osdUpdate();
-    osdMutex.lock();
+    QMutexLocker osdLock(&osdMutex);
     painter.drawPixmap(QRect(splashPos[3], QSize(kLogoWidth, kLogoWidth)), splashLogo);
     for (int index = 0; index < 3; ++index)
         painter.drawImage(splashPos[index], splashText[index].bitmap);
-    osdMutex.unlock();
 }
 
 bool ScreenPanelVulkan::initVulkan()
 {
     if (!vulkan || !vulkan->output.init())
         return false;
-
-    // Stamp every vulkan2d.log capture with the exact binary provenance so a
-    // trace can be verified as coming from this build before being used as
-    // evidence (see the Vulkan screen-swap/black-transparency re-audit doc).
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "MelonPrimeVulkanRevision gitSha=%s gitBranch=%s gitDirty=%s buildTimestamp=%s "
-        "referenceFrontendCommit=2c10e59d7209d354e90d9ef4228330bac3f6e794 "
-        "referenceCoreCommit=d77944275fa61f9b79cfcead2c3e98993429a023",
-        MELONPRIMEDS_GIT_SHA,
-        MELONPRIMEDS_GIT_BRANCH,
-        MELONPRIMEDS_GIT_DIRTY,
-        MelonPrime::kBuildStamp);
 
     auto& nativeWindow = vulkan->nativeWindow;
 #if defined(_WIN32)
@@ -1839,13 +1941,7 @@ bool ScreenPanelVulkan::initVulkan()
 #endif
 #endif
 
-    // Keep the native HWND owned exclusively by Qt while no game is active so
-    // the normal melonDS splash can be painted without competing with a
-    // swapchain.  The presenter is created on the first valid game frame.
     vulkan->initialized = true;
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "Vulkan output initialized; native presentation deferred until emulation starts");
     return true;
 }
 
@@ -1869,8 +1965,7 @@ bool ScreenPanelVulkan::initVulkanPresenter()
             vulkan->nativeWindow,
             surfaceWidth,
             surfaceHeight,
-            emuInstance->getGlobalConfig().GetBool("Screen.VSync")
-                && !vulkan->speedOverride))
+            emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
     {
         return false;
     }
@@ -1888,22 +1983,8 @@ void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
         return;
 
     vulkan->runtimeFailureReported = true;
-    const char* diagnostic = reason != nullptr && reason[0] != '\0'
-        ? reason
-        : "Vulkan presentation failed";
-    MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(diagnostic);
-    const QByteArray vulkanFailureText =
-        MelonPrime::UiText::Tr("Vulkan initialization failed").toUtf8();
-    emuInstance->osdAddMessage(
-        0,
-        "%s: %s",
-        vulkanFailureText.constData(),
-        diagnostic);
-
-    // EmuThread owns renderer replacement.  Queue its existing fallback
-    // signal so this widget is not deleted while drawScreen() is still on the
-    // stack.  NormalizeRendererForPlatform() observes the recorded runtime
-    // failure and selects Software without modifying the persisted setting.
+    MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
+        reason != nullptr ? reason : "Vulkan presentation failed");
     if (auto* emuThread = emuInstance->getEmuThread(); emuThread != nullptr)
     {
         QMetaObject::invokeMethod(
@@ -1925,6 +2006,10 @@ void ScreenPanelVulkan::setupScreenLayout()
     for (int index = 0; index < numScreens; ++index)
     {
         const float* matrix = screenMatrix[index];
+        vulkan->softwareScreenTransform[index].setMatrix(
+            matrix[0], matrix[1], 0.0f,
+            matrix[2], matrix[3], 0.0f,
+            matrix[4], matrix[5], 1.0f);
         QTransform transform(
             matrix[0], matrix[1],
             matrix[2], matrix[3],
@@ -1932,9 +2017,6 @@ void ScreenPanelVulkan::setupScreenLayout()
         const QRectF bounds = transform.mapRect(QRectF(0.0, 0.0, 256.0, 192.0));
         MelonPrime::VulkanPresentRegion region;
         region.enabled = bounds.width() > 0.0 && bounds.height() > 0.0;
-        // ScreenLayout uses the same convention as the software and OpenGL
-        // presenters: 0 is the physical top LCD and 1 is the physical bottom
-        // LCD. The Vulkan compositor atlas also stores top before bottom.
         region.bottomScreen = screenKind[index] != 0;
         region.x = qRound(bounds.left() * dpr);
         region.y = qRound(bounds.top() * dpr);
@@ -1976,40 +2058,14 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->presenter.Shutdown();
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
-            vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-            vulkan->snapshotReferenceOracle.reset();
-#endif
-            vulkan->structuredSource.Valid = false;
-            vulkan->speedOverride = false;
-            vulkan->rendererScale = 0;
-            vulkan->lastBuiltStructuredGeneration = 0;
-            vulkan->lastQueuedStructuredGeneration = 0;
-            vulkan->lastPresentedStructuredGeneration = 0;
-            QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
+            vulkan->output.invalidateTemporalHistory();
         }
-        return;
-    }
-
-    const auto* melonPrimeCore = emuThread->GetMelonPrimeCore();
-    const bool speedOverride = melonPrimeCore != nullptr
-        && melonPrimeCore->ThreadBridge().ReadForGui().fastForward;
-    if (vulkan->speedOverride != speedOverride)
-    {
-        vulkan->speedOverride = speedOverride;
-        vulkan->frameQueue.requestFastForwardPresentationTransition();
-        vulkan->output.invalidateTemporalHistory();
-    }
-
-    if (!initVulkanPresenter())
-    {
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
-        const std::string& presenterReason = vulkan->presenter.LastError();
-        reportVulkanRuntimeFailure(
-            presenterReason.empty()
-                ? "Vulkan native presenter initialization failed"
-                : presenterReason.c_str());
+        {
+            QMutexLocker bufferLock(&vulkan->softwareBufferLock);
+            vulkan->softwareMode = true;
+            vulkan->hasSoftwareBuffers = false;
+        }
+        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
         return;
     }
 
@@ -2017,336 +2073,150 @@ void ScreenPanelVulkan::drawScreen()
     if (!nds)
         return;
 
+    const RendererOutput rendererOutput = nds->GPU.GetRendererOutput();
+    if (rendererOutput.Kind == RendererOutputKind::CpuBgra)
+    {
+        if (vulkan->presenterInitialized)
+        {
+            vulkan->presenter.Shutdown();
+            vulkan->presenterInitialized = false;
+            vulkan->frameQueue.clear();
+            vulkan->output.invalidateTemporalHistory();
+        }
+        {
+            QMutexLocker bufferLock(&vulkan->softwareBufferLock);
+            std::memcpy(
+                vulkan->softwareScreen[0].scanLine(0),
+                rendererOutput.Top,
+                256u * 192u * sizeof(u32));
+            std::memcpy(
+                vulkan->softwareScreen[1].scanLine(0),
+                rendererOutput.Bottom,
+                256u * 192u * sizeof(u32));
+            vulkan->softwareMode = true;
+            vulkan->hasSoftwareBuffers = true;
+        }
+        vulkan->consecutiveFailures = 0;
+        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
+        return;
+    }
+
     auto* renderer = dynamic_cast<VulkanRenderer*>(&nds->GPU.GetRenderer());
     VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
-    if (!renderer3D || !renderer
-        || !renderer->CopyStructuredVulkanFrame(vulkan->structuredSource))
+
+    SoftRenderer::StructuredVulkanFrameView structuredView{};
+    if (!renderer3D || !renderer || !renderer->GetStructuredVulkanFrame(structuredView)
+        || !structuredView.Valid)
     {
         if (vulkan->consecutiveFailures++ == 0)
             Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
         return;
     }
-    auto& structuredSource = vulkan->structuredSource;
-    if (!structuredSource.Valid
-        || structuredSource.FrontBuffer < 0
-        || structuredSource.FrontBuffer > 1)
+
+    {
+        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
+        vulkan->softwareMode = false;
+        vulkan->hasSoftwareBuffers = false;
+    }
+    if (!initVulkanPresenter())
     {
         if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
+            Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
+        const std::string& reason = vulkan->presenter.LastError();
+        reportVulkanRuntimeFailure(
+            reason.empty()
+                ? "Vulkan native presenter initialization failed"
+                : reason.c_str());
         return;
     }
-    if (vulkan->lastBuiltStructuredGeneration != 0
-        && structuredSource.Generation < vulkan->lastBuiltStructuredGeneration)
-    {
-        // Reset/ROM transitions restart the producer generation counter.
-        // Do not compare the new session against the old latch history.
-        vulkan->frameQueue.requestPresentationResync();
-        vulkan->output.invalidateTemporalHistory();
-        vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-        vulkan->snapshotReferenceOracle.reset();
-#endif
-        vulkan->lastBuiltStructuredGeneration = 0;
-        vulkan->lastQueuedStructuredGeneration = 0;
-        vulkan->lastPresentedStructuredGeneration = 0;
-    }
-    if (structuredSource.Generation == vulkan->lastQueuedStructuredGeneration
-        && structuredSource.Generation == vulkan->lastPresentedStructuredGeneration)
-    {
-        return;
-    }
+
     const int configuredScale = std::clamp(
         emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
-    const u32 renderer3DWidth = renderer3D->GetColorTargetWidth();
-    const u32 rendererScale = renderer3DWidth >= 256
-        ? std::max<u32>(1, renderer3DWidth / 256u)
+    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
+        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
         : static_cast<u32>(configuredScale);
-    if (vulkan->rendererScale != 0u && vulkan->rendererScale != rendererScale)
-    {
-        vulkan->frameQueue.requestPresentationResync();
-        vulkan->output.invalidateTemporalHistory();
-        vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-        vulkan->snapshotReferenceOracle.reset();
-#endif
-        vulkan->lastBuiltStructuredGeneration = 0;
-        vulkan->lastQueuedStructuredGeneration = 0;
-        vulkan->lastPresentedStructuredGeneration = 0;
-    }
-    vulkan->rendererScale = rendererScale;
     const u32 outputWidth = 256u * rendererScale;
     const u32 outputHeight = 386u * rendererScale;
+
+    MelonPrime::VulkanFrame* renderFrame = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
+    if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
+    {
+        if (renderFrame)
+            vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        ++vulkan->consecutiveFailures;
+        return;
+    }
+
+    auto& snapshot = vulkan->snapshot;
+    snapshot.clear();
+    snapshot.frameId = renderFrame->frameId;
+    snapshot.frontBufferLatched = 0;
+    snapshot.screenSwapLatched = nds->GPU.ScreenSwap;
+    snapshot.valid = true;
+    FillStructuredPackedScreen(
+        structuredView.Plane[0][0],
+        structuredView.Plane[0][1],
+        structuredView.Plane[0][2],
+        structuredView.LineMeta[0],
+        snapshot.packedTopPlane0,
+        snapshot.packedTopPlane1,
+        snapshot.packedTopControl,
+        snapshot.packedTopLineMeta,
+        snapshot.topScreenStats);
+    FillStructuredPackedScreen(
+        structuredView.Plane[1][0],
+        structuredView.Plane[1][1],
+        structuredView.Plane[1][2],
+        structuredView.LineMeta[1],
+        snapshot.packedBottomPlane0,
+        snapshot.packedBottomPlane1,
+        snapshot.packedBottomControl,
+        snapshot.packedBottomLineMeta,
+        snapshot.bottomScreenStats);
+    if (structuredView.HasCapture3DSource
+        && structuredView.Capture3DSource != nullptr
+        && structuredView.CaptureLineUses3D != nullptr)
+    {
+        std::memcpy(
+            snapshot.capture3dSourceDsFrame.data(),
+            structuredView.Capture3DSource,
+            snapshot.capture3dSourceDsFrame.size() * sizeof(u32));
+        std::memcpy(
+            snapshot.captureLineUses3dMask.data(),
+            structuredView.CaptureLineUses3D,
+            snapshot.captureLineUses3dMask.size() * sizeof(u8));
+        snapshot.hasCapture3dSource = true;
+    }
+
+    MelonPrime::VulkanCompositionInputs inputs{};
     const MelonPrime::VulkanFilterMode filtering = filter
         ? MelonPrime::VulkanFilterMode::Linear
         : MelonPrime::VulkanFilterMode::Nearest;
-
-    // Match Sapphire's Vulkan fast-forward queue policy.  A speed override
-    // must neither retain a stale previous frame nor block emulation behind a
-    // FIFO swapchain.  Returning to real-time restores the user's VSync
-    // preference and the normal one-frame presentation queue.
-    vulkan->framePolicy.MaxBacklogDepth = speedOverride && rendererScale > 1u ? 2u : 1u;
-    vulkan->framePolicy.AllowStealPending = speedOverride;
-    vulkan->framePolicy.AllowPreviousFrameReuse = false;
-    vulkan->framePolicy.AllowDropForDeadline = false;
-    vulkan->framePolicy.PreferOldestFrame = false;
-    vulkan->framePolicy.PreserveBacklogOnPresent = false;
-    vulkan->framePolicy.TreatBacklogTrimAsFastForwardSkip = speedOverride;
-
-    if (structuredSource.Generation != vulkan->lastQueuedStructuredGeneration)
-    {
-        const auto acquireRenderFrame = [&]() -> MelonPrime::VulkanFrame* {
-            for (std::size_t attempt = 0;
-                 attempt < MelonPrime::MELONPRIME_VULKAN_FRAME_QUEUE_SIZE;
-                 ++attempt)
-            {
-                MelonPrime::VulkanFrame* candidate =
-                    vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-                if (candidate == nullptr)
-                    break;
-
-                const bool presenterConsumed =
-                    vulkan->presenter.WaitForFrameConsumption(candidate);
-                const bool temporalSourceActive =
-                    vulkan->output.isFrameReferencedAsPendingPreviousSource(candidate);
-                if (presenterConsumed && !temporalSourceActive)
-                    return candidate;
-                vulkan->frameQueue.recycleRenderFrame(candidate);
-            }
-
-            vulkan->output.releaseTemporalFrameReferences();
-            MelonPrime::VulkanFrame* candidate =
-                vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-            if (candidate != nullptr
-                && vulkan->presenter.WaitForFrameConsumption(candidate))
-            {
-                return candidate;
-            }
-            if (candidate != nullptr)
-                vulkan->frameQueue.recycleRenderFrame(candidate);
-            return nullptr;
-        };
-
-        auto& snapshot = vulkan->snapshot;
-        {
-            const auto& source = structuredSource;
-            if (!source.Valid
-                || source.Generation <= vulkan->lastBuiltStructuredGeneration)
-            {
-                return;
-            }
-
-            MelonPrime::VulkanFrame* renderFrame = acquireRenderFrame();
-            if (!renderFrame
-                || !vulkan->output.ensureFrameResources(
-                    renderFrame,
-                    outputWidth,
-                    outputHeight))
-            {
-                if (renderFrame)
-                    vulkan->frameQueue.discardRenderedFrame(renderFrame);
-                ++vulkan->consecutiveFailures;
-                return;
-            }
-
-            MelonPrime::StructuredVulkanSnapshotSource snapshotSource{};
-            // The producer has already routed these planes and masks to the
-            // physical Top/Bottom framebuffer indices.
-            for (std::size_t screen = 0; screen < 2u; ++screen)
-            {
-                const std::size_t screenBase =
-                    screen * 3u * SoftRenderer::StructuredPixelCount;
-                snapshotSource.lineMeta[screen] =
-                    source.ScreenLineMeta.data() + (screen * 192u);
-                for (std::size_t plane = 0; plane < 3u; ++plane)
-                {
-                    snapshotSource.plane[screen][plane] =
-                        source.ScreenPlanes.data()
-                        + screenBase
-                        + (plane * SoftRenderer::StructuredPixelCount);
-                }
-            }
-            snapshotSource.capture3dSource = source.Capture3DSource.data();
-            snapshotSource.captureLineUses3dMask = source.CaptureLineUses3D.data();
-            snapshotSource.capture3dSourceLineValid = source.Capture3DSourceLineValid.data();
-            snapshotSource.screenNeedsCapture3d[0] = source.TopScreenNeedsCapture3D.data();
-            snapshotSource.screenNeedsCapture3d[1] = source.BottomScreenNeedsCapture3D.data();
-            snapshotSource.hasCapture3dSource = source.HasCapture3DSource;
-            snapshotSource.captureScreenSwap = source.CaptureScreenSwap;
-            snapshotSource.captureScreenSwapValid = source.CaptureScreenSwapValid;
-            snapshotSource.screenSwapLatched = source.ScreenSwapLatched;
-            snapshotSource.packedTop = source.PackedTop.data();
-            snapshotSource.packedBottom = source.PackedBottom.data();
-            snapshotSource.captureBackedClass4Only = source.CaptureBackedClass4Only;
-            snapshotSource.captureBackedPartialClass0Only =
-                source.CaptureBackedPartialClass0Only;
-            snapshotSource.captureBackedFullClass0AlternatingCapture =
-                source.CaptureBackedFullClass0AlternatingCapture;
-            snapshotSource.captureBackedHasStructured2DSource =
-                source.CaptureBackedHasStructured2DSource;
-            snapshotSource.structuredCopyLines = source.StructuredCopyLines;
-            snapshotSource.frontBuffer = source.FrontBuffer;
-            snapshotSource.generation = source.Generation;
-            if (!vulkan->snapshotBuilder.build(
-                    snapshotSource,
-                    renderFrame->frameId,
-                    snapshot))
-            {
-                vulkan->frameQueue.discardRenderedFrame(renderFrame);
-                ++vulkan->consecutiveFailures;
-                return;
-            }
-            vulkan->lastBuiltStructuredGeneration = source.Generation;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-            // Run the independent reference-oracle transcription on the exact
-            // same input as the production builder above, then diff the two
-            // outputs. Logs ReferenceParityMismatch on the first divergent
-            // pixel/line-meta; silent when they match. Opt-in only
-            // (MELONPRIME_VULKAN_REFERENCE_ORACLE build flag) -- never runs in
-            // a normal build.
-            if (vulkan->snapshotReferenceOracle.build(
-                    snapshotSource,
-                    renderFrame->frameId,
-                    vulkan->referenceOracleSnapshot))
-            {
-                MelonPrime::compareReferenceOracleSnapshot(
-                    snapshot,
-                    vulkan->referenceOracleSnapshot,
-                    source.Generation);
-            }
-#endif
-            const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
-            if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
-            {
-                const auto hashPackedScreen =
-                    [](const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
-                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane1,
-                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control) {
-                        u64 hash = 1469598103934665603ull;
-                        for (std::size_t i = 0;
-                            i < MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
-                            ++i)
-                        {
-                            hash ^= plane0[i];
-                            hash *= 1099511628211ull;
-                            hash ^= plane1[i];
-                            hash *= 1099511628211ull;
-                            hash ^= control[i];
-                            hash *= 1099511628211ull;
-                        }
-                        return hash;
-                    };
-                const auto countProtectedBlack =
-                    [](const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
-                        const std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control) {
-                        u32 count = 0;
-                        for (std::size_t i = 0;
-                            i < MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
-                            ++i)
-                        {
-                            if ((plane0[i] & 0x00FFFFFFu) == 0u
-                                && ((control[i] >> 24u) & 0x20u) != 0u)
-                            {
-                                ++count;
-                            }
-                        }
-                        return count;
-                    };
-                Platform::Log(
-                    Platform::LogLevel::Info,
-                    "Vulkan2DPhase event=SnapshotBuilt structuredGeneration=%llu screenSwapLatched=%u snapshotTopHash=%016llX snapshotBottomHash=%016llX snapshotTopProtectedBlack=%u snapshotBottomProtectedBlack=%u",
-                    static_cast<unsigned long long>(source.Generation),
-                    snapshot.screenSwapLatched ? 1u : 0u,
-                    static_cast<unsigned long long>(hashPackedScreen(
-                        snapshot.packedTopPlane0,
-                        snapshot.packedTopPlane1,
-                        snapshot.packedTopControl)),
-                    static_cast<unsigned long long>(hashPackedScreen(
-                        snapshot.packedBottomPlane0,
-                        snapshot.packedBottomPlane1,
-                        snapshot.packedBottomControl)),
-                    countProtectedBlack(snapshot.packedTopPlane0, snapshot.packedTopControl),
-                    countProtectedBlack(snapshot.packedBottomPlane0, snapshot.packedBottomControl));
-            }
-            if (vulkan->snapshotBuilder.takeRegularCaptureTransitionResyncRequest())
-            {
-                // Sapphire drops the transition frame and clears both
-                // compositor and producer structured-capture histories.
-                vulkan->output.clearStructuredCaptureHistory();
-                renderer->RequestStructuredVulkanResync();
-                vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-                vulkan->snapshotReferenceOracle.reset();
-#endif
-                snapshot.clear();
-                vulkan->frameQueue.discardRenderedFrame(renderFrame);
-                vulkan->lastBuiltStructuredGeneration = structuredSource.Generation;
-                vulkan->lastQueuedStructuredGeneration = structuredSource.Generation;
-                return;
-            }
-            renderFrame->sourceGeneration = source.Generation;
-
-            MelonPrime::VulkanCompositionInputs composeInputs{};
-            const bool composed = vulkan->output.prepareFrameForPresentation(
-                    renderFrame,
-                    nds->GPU,
-                    snapshot.frontBufferLatched,
-                    snapshot.screenSwapLatched,
-                    snapshot,
-                    *renderer3D)
-                && vulkan->output.buildCompositionInputs(
-                    renderFrame,
-                    *renderer3D,
-                    static_cast<int>(rendererScale),
-                    filtering,
-                    false,
-                    false,
-                    false,
-                    composeInputs)
-                && vulkan->output.composeAndSubmitFrame(renderFrame, composeInputs);
-            if (!composed)
-            {
-                vulkan->frameQueue.discardRenderedFrame(renderFrame);
-                vulkan->frameQueue.requestPresentationResync();
-                vulkan->output.invalidateTemporalHistory();
-                vulkan->snapshotBuilder.reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(MELONPRIME_VULKAN_REFERENCE_ORACLE)
-                vulkan->snapshotReferenceOracle.reset();
-#endif
-                vulkan->lastBuiltStructuredGeneration = 0;
-                vulkan->lastQueuedStructuredGeneration = 0;
-                if (vulkan->consecutiveFailures++ == 0)
-                    Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
-                return;
-            }
-
-            vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
-            vulkan->lastQueuedStructuredGeneration = source.Generation;
-        }
-    }
-
-    MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(
-        vulkan->framePolicy, std::nullopt);
-    if (!presentFrame)
-        return;
-
-    // Every pending/retried frame owns its packed buffers and 3D snapshot.
-    // Build the present descriptors from that frame unconditionally instead
-    // of borrowing inputs from the latest composition submission.
-    MelonPrime::VulkanCompositionInputs presentInputs{};
-    if (!vulkan->output.buildCompositionInputs(
-            presentFrame,
+    const bool composed = vulkan->output.prepareFrameForPresentation(
+            renderFrame, nds->GPU, 0, snapshot.screenSwapLatched, snapshot, *renderer3D)
+        && vulkan->output.buildCompositionInputs(
+            renderFrame,
             *renderer3D,
-            static_cast<int>(std::max<std::uint32_t>(presentFrame->width / 256u, 1u)),
+            static_cast<int>(rendererScale),
             filtering,
             false,
             false,
             false,
-            presentInputs))
+            inputs)
+        && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
+    if (!composed)
     {
-        vulkan->frameQueue.deferPresentedFrame(presentFrame, vulkan->framePolicy);
-        ++vulkan->consecutiveFailures;
+        vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
         return;
     }
+
+    vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
+    MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(
+        vulkan->framePolicy, std::nullopt);
+    if (!presentFrame)
+        return;
 
     std::vector<MelonPrime::VulkanPresentRegion> regions;
     std::uint32_t surfaceWidth = 0;
@@ -2360,8 +2230,7 @@ void ScreenPanelVulkan::drawScreen()
     vulkan->presenter.Resize(
         surfaceWidth,
         surfaceHeight,
-        emuInstance->getGlobalConfig().GetBool("Screen.VSync")
-            && !speedOverride);
+        emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
 
     bool hasOverlay = false;
     const qreal dpr = devicePixelRatioF();
@@ -2437,29 +2306,16 @@ void ScreenPanelVulkan::drawScreen()
         overlay.height = static_cast<std::uint32_t>(vulkan->overlayFrame.height());
         overlay.rowBytes = static_cast<std::size_t>(vulkan->overlayFrame.bytesPerLine());
     }
-    const bool presentSucceeded = vulkan->presenter.Present(
+    if (vulkan->presenter.Present(
             presentFrame,
             vulkan->output,
-            presentInputs,
-            presentFrame->width,
-            presentFrame->height,
+            inputs,
+            outputWidth,
+            outputHeight,
             regions,
-            hasOverlay ? &overlay : nullptr);
-    const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
-    if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
-    {
-        Platform::Log(
-            Platform::LogLevel::Info,
-            "Vulkan2DPresentTrace frameId=%llu sourceGeneration=%llu submissionValue=%llu presentResult=%u",
-            static_cast<unsigned long long>(presentFrame->frameId),
-            static_cast<unsigned long long>(presentFrame->sourceGeneration),
-            static_cast<unsigned long long>(presentFrame->renderTimelineValue),
-            presentSucceeded ? 1u : 0u);
-    }
-    if (presentSucceeded)
+            hasOverlay ? &overlay : nullptr))
     {
         vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
-        vulkan->lastPresentedStructuredGeneration = presentFrame->sourceGeneration;
         vulkan->consecutiveFailures = 0;
     }
     else

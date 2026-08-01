@@ -142,9 +142,6 @@ void MelonPrimeVulkanSurfacePresenter::Shutdown()
     if (surface != VK_NULL_HANDLE && instance != VK_NULL_HANDLE)
         vkDestroySurfaceKHR(instance, surface, nullptr);
     surface = VK_NULL_HANDLE;
-    if (submittedFrame != nullptr)
-        submittedFrame->presentTimelineValue = 0;
-    submittedFrame = nullptr;
 
     if (contextAcquired)
         melonDS::VulkanContext::Get().Release();
@@ -416,11 +413,11 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchainGraphicsResources()
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.blendEnable = VK_TRUE;
-    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
     blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
         | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -957,9 +954,6 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
 
     if (vkWaitForFences(device, 1, &submitFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
         return false;
-    if (submittedFrame != nullptr)
-        submittedFrame->presentTimelineValue = 0;
-    submittedFrame = nullptr;
     if (!UpdateOverlayBuffer(overlay))
         return false;
 
@@ -1018,9 +1012,17 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     vertexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertexBarrier.buffer = vertexBuffer;
     vertexBarrier.size = VK_WHOLE_SIZE;
-    std::array<VkBufferMemoryBarrier, 2> bufferBarriers{};
+    std::array<VkBufferMemoryBarrier, 3> bufferBarriers{};
     bufferBarriers[0] = vertexBarrier;
-    std::uint32_t bufferBarrierCount = 1;
+    VkBufferMemoryBarrier& captureBarrier = bufferBarriers[1];
+    captureBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    captureBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    captureBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    captureBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    captureBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    captureBarrier.buffer = inputs.capture3dBuffer;
+    captureBarrier.size = inputs.capture3dBufferSize;
+    std::uint32_t bufferBarrierCount = 2;
     if (overlayDataSize > 0)
     {
         VkBufferMemoryBarrier& overlayBarrier = bufferBarriers[bufferBarrierCount++];
@@ -1159,8 +1161,6 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
         if (vkQueueSubmit(queue, 1, &submitInfo, submitFence) != VK_SUCCESS)
             return false;
     }
-    submittedFrame = frame;
-    frame->presentTimelineValue = 1;
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1178,24 +1178,6 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
         return RecoverSwapchain("present/recreate");
     if (presentResult != VK_SUCCESS)
         return RecoverSwapchain("present/failure");
-    return true;
-}
-
-bool MelonPrimeVulkanSurfacePresenter::WaitForFrameConsumption(
-    VulkanFrame* frame,
-    std::uint64_t timeoutNs)
-{
-    if (!initialized || frame == nullptr || frame != submittedFrame)
-        return true;
-    if (device == VK_NULL_HANDLE || submitFence == VK_NULL_HANDLE)
-        return false;
-
-    const VkResult waitResult = vkWaitForFences(device, 1, &submitFence, VK_TRUE, timeoutNs);
-    if (waitResult != VK_SUCCESS)
-        return false;
-
-    frame->presentTimelineValue = 0;
-    submittedFrame = nullptr;
     return true;
 }
 

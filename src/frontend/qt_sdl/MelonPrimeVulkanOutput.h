@@ -63,15 +63,11 @@ struct SoftPackedFrameSnapshot
     static constexpr size_t kLineCount = kScreenHeight;
 
     u64 frameId = 0;
-    u64 sourceGeneration = 0;
     int frontBufferLatched = -1;
+    bool screenSwapLatched = false;
     bool valid = false;
     bool hasCapture3dSource = false;
-    bool captureScreenSwap = false;
-    bool captureScreenSwapValid = false;
-    bool screenSwapLatched = false;
     bool captureBackedClass4Only = false;
-    bool captureBackedHasStructured2DSource = false;
     std::array<u32, kPixelCount> packedTopPlane0{};
     std::array<u32, kPixelCount> packedTopPlane1{};
     std::array<u32, kPixelCount> packedTopControl{};
@@ -82,9 +78,6 @@ struct SoftPackedFrameSnapshot
     std::array<u32, kLineCount> packedBottomLineMeta{};
     std::array<u32, kPixelCount> capture3dSourceDsFrame{};
     std::array<u8, kLineCount> captureLineUses3dMask{};
-    std::array<u8, kLineCount> capture3dSourceLineValidMask{};
-    std::array<u8, kLineCount> topScreenNeedsCapture3dMask{};
-    std::array<u8, kLineCount> bottomScreenNeedsCapture3dMask{};
     std::array<u8, kLineCount> captureFallbackLines{};
     std::array<u32, kPixelCount> comp4TopPlaceholder{};
     std::array<u32, kPixelCount> comp4BottomPlaceholder{};
@@ -94,15 +87,11 @@ struct SoftPackedFrameSnapshot
     void clear()
     {
         frameId = 0;
-        sourceGeneration = 0;
         frontBufferLatched = -1;
+        screenSwapLatched = false;
         valid = false;
         hasCapture3dSource = false;
-        captureScreenSwap = false;
-        captureScreenSwapValid = false;
-        screenSwapLatched = false;
         captureBackedClass4Only = false;
-        captureBackedHasStructured2DSource = false;
         packedTopPlane0.fill(0);
         packedTopPlane1.fill(0);
         packedTopControl.fill(0);
@@ -113,9 +102,23 @@ struct SoftPackedFrameSnapshot
         packedBottomLineMeta.fill(0);
         capture3dSourceDsFrame.fill(0);
         captureLineUses3dMask.fill(0);
-        capture3dSourceLineValidMask.fill(0);
-        topScreenNeedsCapture3dMask.fill(0);
-        bottomScreenNeedsCapture3dMask.fill(0);
+        captureFallbackLines.fill(0);
+        comp4TopPlaceholder.fill(0);
+        comp4BottomPlaceholder.fill(0);
+        topScreenStats = {};
+        bottomScreenStats = {};
+    }
+
+    void clearForLatch()
+    {
+        frameId = 0;
+        frontBufferLatched = -1;
+        screenSwapLatched = false;
+        valid = false;
+        hasCapture3dSource = false;
+        captureBackedClass4Only = false;
+        capture3dSourceDsFrame.fill(0);
+        captureLineUses3dMask.fill(0);
         captureFallbackLines.fill(0);
         comp4TopPlaceholder.fill(0);
         comp4BottomPlaceholder.fill(0);
@@ -127,15 +130,11 @@ struct SoftPackedFrameSnapshot
 struct PreparedSoftPackedFrameDebugView
 {
     u64 frameId = 0;
-    u64 sourceGeneration = 0;
     int frontBufferLatched = -1;
     bool screenSwapLatched = false;
     bool captureBackedClass4Only = false;
     const u32* capture3dSourceDsFrame = nullptr;
     const u8* captureLineUses3dMask = nullptr;
-    const u8* capture3dSourceLineValidMask = nullptr;
-    const u8* topScreenNeedsCapture3dMask = nullptr;
-    const u8* bottomScreenNeedsCapture3dMask = nullptr;
     const u8* captureFallbackLines = nullptr;
     const u32* comp4TopPlaceholder = nullptr;
     const u32* comp4BottomPlaceholder = nullptr;
@@ -165,6 +164,7 @@ struct VulkanCompositionInputs
     VulkanFilterMode filtering{VulkanFilterMode::Nearest};
     bool previousTopSourceValid{};
     bool previousBottomSourceValid{};
+    bool currentSourceHasHighres3d{};
     bool capture3dSourceValid{};
     bool capture3dSourceScreenSwapValid{};
     bool capture3dSourceScreenSwap{};
@@ -254,6 +254,7 @@ public:
     void invalidateTemporalHistory();
     void clearStructuredCaptureHistory();
     void releaseTemporalFrameReferences();
+    bool captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
     bool prepareFrameForPresentation(
         VulkanFrame* frame,
         const melonDS::GPU& gpu,
@@ -335,10 +336,6 @@ private:
         u32 topStructuredHandoffSuppress3d;
         u32 bottomStructuredHandoffSuppress3d;
     };
-    static_assert(offsetof(CompositorPushConstants, filtering) == 7u * sizeof(u32));
-    static_assert(offsetof(CompositorPushConstants, captureSourceScreenSwapValid) == 11u * sizeof(u32));
-    static_assert(offsetof(CompositorPushConstants, liveSourceScreenSwap) == 13u * sizeof(u32));
-    static_assert(sizeof(CompositorPushConstants) == 22u * sizeof(u32));
 
     struct AccumulatePushConstants
     {
@@ -387,7 +384,6 @@ private:
         VulkanFrame* previousBottomSourceFrame{};
         bool previousBottomSourcePending{};
         u64 softPackedFrameId{};
-        u64 structuredGeneration{};
         int frontBufferLatched{-1};
         bool captureBackedClass4Only{};
         bool class4NoAboveVramStructuredPair{};
@@ -406,9 +402,6 @@ private:
         SoftPackedScreenStats bottomScreenStats{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> capture3dSourceDsFrame{};
         std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureLineUses3dMask{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> capture3dSourceLineValidMask{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> topScreenNeedsCapture3dMask{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> bottomScreenNeedsCapture3dMask{};
         std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureFallbackLines{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4TopPlaceholder{};
         std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4BottomPlaceholder{};
@@ -463,10 +456,7 @@ private:
         melonDS::VulkanRenderer3D& renderer3D);
     bool ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height);
     void destroyRenderer3dSnapshot(FrameResource& resource);
-    bool recordRenderer3dSnapshotCopy(
-        FrameResource& resource,
-        const melonDS::VulkanRenderer3D& renderer3D,
-        bool snapshotScreenSwap);
+    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
 
     bool createAccumulateResources();
     void destroyAccumulateResources();

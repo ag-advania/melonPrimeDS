@@ -68,7 +68,6 @@ public:
         std::uint32_t sourceHeight,
         const std::vector<VulkanPresentRegion>& regions,
         const VulkanOverlayFrame* overlay);
-    bool WaitForFrameConsumption(VulkanFrame* frame, std::uint64_t timeoutNs = UINT64_MAX);
 
     [[nodiscard]] bool IsInitialized() const noexcept { return initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return lastError; }
@@ -154,10 +153,6 @@ private:
         std::uint32_t overlayWidth;
         std::uint32_t overlayHeight;
     };
-    static_assert(offsetof(PresenterPushConstants, filtering) == 6u * sizeof(std::uint32_t));
-    static_assert(offsetof(PresenterPushConstants, captureSourceScreenSwapValid) == 10u * sizeof(std::uint32_t));
-    static_assert(offsetof(PresenterPushConstants, liveSourceScreenSwap) == 12u * sizeof(std::uint32_t));
-    static_assert(sizeof(PresenterPushConstants) == 25u * sizeof(std::uint32_t));
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
@@ -189,7 +184,6 @@ private:
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence submitFence = VK_NULL_HANDLE;
-    VulkanFrame* submittedFrame = nullptr;
 };
 
 } // namespace MelonPrime

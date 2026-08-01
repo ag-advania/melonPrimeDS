@@ -23,12 +23,6 @@
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
-#include <atomic>
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include <mutex>
-#endif
-
 namespace melonDS
 {
 
@@ -53,60 +47,23 @@ public:
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override {};
-    // The renderer callback fires for both CPU reads and writes to a VRAM
-    // block a hardware capture had touched (GPU::SyncVRAMCaptureBlock does
-    // not tell them apart), so it cannot be used to invalidate structured
-    // capture metadata -- a plain CPU read of just-captured VRAM would wipe
-    // metadata that is still fresh. Sapphire has no such hook either;
-    // structured metadata validity is driven entirely by exact-range
-    // invalidate-before-write inside the capture path itself.
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    void SwapBuffers() override;
-
-    static constexpr std::size_t StructuredPixelCount = 256u * 192u;
-    // Sapphire accelerated layout: Plane0|Plane1|Control|Meta per physical line.
-    static constexpr std::size_t VulkanPackedStride = 256u * 3u + 1u;
-    static constexpr std::size_t VulkanPackedPixelCount = VulkanPackedStride * 192u;
-    struct StructuredVulkanFrameSnapshot
+    struct StructuredVulkanFrameView
     {
-        // Physical Top/Bottom structured planes before the frontend merge.
-        // PackedTop/Bottom contain the corresponding post-merge result.
-        std::array<u32, 2u * 3u * StructuredPixelCount> ScreenPlanes{};
-        std::array<u32, 2u * 192u> ScreenLineMeta{};
-        // Authoritative physical Top/Bottom packed buffers for this generation.
-        std::array<u32, VulkanPackedPixelCount> PackedTop{};
-        std::array<u32, VulkanPackedPixelCount> PackedBottom{};
-        // Exact CPU 3D source used by hardware display capture.
-        std::array<u32, StructuredPixelCount> Capture3DSource{};
-        std::array<u8, 192u> CaptureLineUses3D{};
-        std::array<u8, 192u> Capture3DSourceLineValid{};
-        std::array<u8, 192u> TopScreenNeedsCapture3D{};
-        std::array<u8, 192u> BottomScreenNeedsCapture3D{};
+        const u32* Plane[2][3]{};
+        const u32* LineMeta[2]{};
+        const u32* Capture3DSource = nullptr;
+        const u8* CaptureLineUses3D = nullptr;
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
-        bool CaptureScreenSwapValid = false;
-        // Sapphire screenSwapLatched semantics for the physical packed frame:
-        // Engine A's LCD owner for this same visible generation. The desktop
-        // producer records it at visible line 0 because VCount 215 has already
-        // advanced RenderScreenSwapAt3D by the time SwapBuffers publishes.
-        bool ScreenSwapLatched = false;
-        bool CaptureBackedClass4Only = false;
-        bool CaptureBackedPartialClass0Only = false;
-        bool CaptureBackedFullClass0AlternatingCapture = false;
-        bool CaptureBackedHasStructured2DSource = false;
-        u32 StructuredCopyLines = 0;
-        int FrontBuffer = -1;
-        u64 Generation = 0;
         bool Valid = false;
     };
 
-    [[nodiscard]] bool CopyStructuredVulkanFrame(
-        StructuredVulkanFrameSnapshot& snapshot) const;
-    void RequestStructuredVulkanResync() noexcept;
+    [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
 #endif
 
 private:
@@ -119,33 +76,14 @@ private:
     alignas(8) u32 Output2D[2][256];
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    static constexpr std::size_t StructuredPixelCount = 256u * 192u;
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
-    // [backBuffer][physicalScreen 0=Top / 1=Bottom]. Authoritative Vulkan 2D
-    // producer (Sapphire packed stride). StructuredScreenPlanes retain the
-    // pre-merge source needed by Sapphire's post-merge temporal repairs.
-    std::array<u32, VulkanPackedPixelCount> VulkanPackedFramebuffer[2][2]{};
-    // Structured display-capture metadata (plane0/plane1/control per VRAM
-    // bank+line). Shared by both SoftRenderer2D instances (Rend2D_A /
-    // Rend2D_B) via Parent -- Sapphire drives both engines through a single
-    // GPU2D::SoftRenderer object, so its equivalent arrays are implicitly
-    // shared. melonPrimeDS has two separate engine instances; owning this
-    // here (keyed by VRAM bank+address, not by engine) is what lets Engine B
-    // read capture metadata that Engine-A hardware wrote. Validity is driven
-    // entirely by exact-range invalidate-before-write inside the capture
-    // path (StoreStructuredCaptureLine) -- never by a visible-frame
-    // generation counter, and never by a generic VRAM read/write hook.
+    std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
-    // Sapphire CaptureLineUses3d: current hardware-capture source line, reset
-    // once per frame. This is distinct from the persistent, VRAM-bank-indexed
-    // structured capture plane store above.
-    std::array<u8, 192u> StructuredFrameCaptureLineUses3D{};
+    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
-    std::array<u32, 17u> StructuredCaptureBackedBestClassLines{};
-    u32 StructuredCaptureBacked3DLines = 0;
-    u32 StructuredCopyLines = 0;
-    u32 StructuredCaptureMode = 0;
     std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
     std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
@@ -153,58 +91,32 @@ private:
     bool StructuredFrameValid = false;
     bool StructuredCapture3DSourceValid = false;
     bool StructuredCaptureScreenSwap = false;
-    bool StructuredCaptureScreenSwapValid = false;
-    // The packed physical frame is produced during visible scanlines, before
-    // VCount 215 advances RenderScreenSwapAt3D to the next 3D generation.
-    // Keep its Engine-A owner separately so temporal repair is keyed to the
-    // same generation as PackedTop/PackedBottom.
-    bool StructuredPackedScreenSwapAtLine0 = false;
-    bool StructuredPackedScreenSwapChangedMidFrame = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
-    std::array<StructuredVulkanFrameSnapshot, 2> CompletedStructuredVulkanFrames{};
-    std::atomic_bool StructuredVulkanResyncRequested{false};
-    mutable std::mutex CompletedStructuredVulkanFrameMutex;
-    u64 StructuredVulkanGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     void StoreStructuredEnginePixel(
         u32 engine,
         u32 line,
         u32 x,
-        u32 originalVal1,
-        u32 originalVal2,
-        u32 originalVal3,
-        u32 legacyVal1,
-        u32 legacyVal2,
-        u32 legacyControl,
-        u32 captureBacked3DSourceClass);
-    void StoreStructuredCapturePixel(
-        u32 vramBank,
-        u32 vramAddress,
-        u32 originalVal1,
-        u32 originalVal2,
-        u32 originalVal3,
-        u32 legacyVal1,
-        u32 legacyVal2,
-        u32 legacyControl,
-        u32 external3DSourceClass,
-        bool external3DSlot,
-        bool external3DCoverage,
-        bool allowUnclassifiedExternal3DSlot);
-    [[nodiscard]] u32 ClassifyStructuredCaptureBackedLine(
-        u32 engine,
-        u32 line,
-        const u32* structuredPixels);
+        u32 val1,
+        u32 val2,
+        u32 composed,
+        u32 compositionMode,
+        u32 eva,
+        u32 evb);
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
-    void BuildStructuredScreenLine(
-        u32 engine,
-        u32 screen,
-        u32 screenLine,
-        u32 engineLine,
-        const u32* rawPacked,
-        const u32* output,
-        bool forcePlain = false);
+    void StoreStructuredCaptureLine(
+        u32 line,
+        u32 width,
+        u32 destinationBank,
+        u32 destinationAddress,
+        u32 sourceBAddress,
+        u32 sourceBBank,
+        bool sourceBFromVram,
+        const u16* captureOutput);
+    [[nodiscard]] bool DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress);
+    void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

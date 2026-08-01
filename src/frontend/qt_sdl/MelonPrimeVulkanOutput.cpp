@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -27,17 +26,7 @@ namespace MelonPrime
 // Android renderer-debug controls are not part of the desktop frontend.
 // Keep the pinned compositor branches present but conservatively inactive.
 bool areRendererDebugToolsEnabled() { return false; }
-// MELONPRIME_VULKAN_DEBUG_LOGS: opt-in Vulkan 2D presentation diagnostics.
-// Enabled when the environment variable is set to a non-empty, non-"0" value.
-// Read once so hot paths only branch on a cached bool.
-bool areRendererDebugBgObjLogsEnabled()
-{
-    static const bool enabled = []() {
-        const char* value = std::getenv("MELONPRIME_VULKAN_DEBUG_LOGS");
-        return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
-    }();
-    return enabled;
-}
+bool areRendererDebugBgObjLogsEnabled() { return false; }
 bool areRenderer2DDebugControlsActive() { return false; }
 bool isRenderer2DDebugBackgroundKindEnabled(melonDS::u32) { return false; }
 
@@ -1711,7 +1700,6 @@ bool MelonPrimeVulkanOutput::createFrameResource(VulkanFrame* frame, u32 width, 
     resource->previousBottomSourceFrame = nullptr;
     resource->previousBottomSourcePending = false;
     resource->captureBackedClass4Only = false;
-    resource->structuredGeneration = 0;
     resource->class4NoAboveVramStructuredPair = false;
     resource->class4PreservePackedVramValid = false;
     resource->class4PreservePackedVramScreenSwap = false;
@@ -2121,7 +2109,6 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
     }
 
     resource.softPackedFrameId = softPackedSnapshot.frameId;
-    resource.structuredGeneration = softPackedSnapshot.sourceGeneration;
     resource.frontBufferLatched = softPackedSnapshot.frontBufferLatched;
     resource.captureBackedClass4Only = softPackedSnapshot.captureBackedClass4Only;
     resource.hasSoftPackedDebugData = true;
@@ -2129,9 +2116,6 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
     resource.bottomScreenStats = softPackedSnapshot.bottomScreenStats;
     resource.capture3dSourceDsFrame = softPackedSnapshot.capture3dSourceDsFrame;
     resource.captureLineUses3dMask = softPackedSnapshot.captureLineUses3dMask;
-    resource.capture3dSourceLineValidMask = softPackedSnapshot.capture3dSourceLineValidMask;
-    resource.topScreenNeedsCapture3dMask = softPackedSnapshot.topScreenNeedsCapture3dMask;
-    resource.bottomScreenNeedsCapture3dMask = softPackedSnapshot.bottomScreenNeedsCapture3dMask;
     resource.captureFallbackLines.fill(0);
     resource.comp4TopPlaceholder = softPackedSnapshot.comp4TopPlaceholder;
     resource.comp4BottomPlaceholder = softPackedSnapshot.comp4BottomPlaceholder;
@@ -2172,29 +2156,6 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
             packedDebugLogsRemaining
         );
         packedDebugLogsRemaining--;
-    }
-
-    const char* const traceValue = std::getenv("MELONPRIME_VULKAN_2D_TRACE");
-    if (traceValue != nullptr && traceValue[0] != '\0' && traceValue[0] != '0')
-    {
-        const auto hashPackedUpload = [](const u32* packed) {
-            u64 hash = 1469598103934665603ull;
-            for (std::size_t i = 0; i < kPackedScreenWordCount; ++i)
-            {
-                hash ^= packed[i];
-                hash *= 1099511628211ull;
-            }
-            return hash;
-        };
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Info,
-            "Vulkan2DPhase event=PackedUpload structuredGeneration=%llu screenSwapLatched=%u uploadTopHash=%016llX uploadBottomHash=%016llX topCarry=%u bottomCarry=%u",
-            static_cast<unsigned long long>(softPackedSnapshot.sourceGeneration),
-            softPackedSnapshot.screenSwapLatched ? 1u : 0u,
-            static_cast<unsigned long long>(hashPackedUpload(topPacked)),
-            static_cast<unsigned long long>(hashPackedUpload(bottomPacked)),
-            topPackedCarryFromPrevious ? 1u : 0u,
-            bottomPackedCarryFromPrevious ? 1u : 0u);
     }
 
     return true;
@@ -3664,9 +3625,7 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4Placeholder.data();
         lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4PlaceholderLines.data();
     }
-    const auto captureLineUses3dAt = [&softPackedSnapshot](size_t lineIndex) {
-        return softPackedSnapshot.captureLineUses3dMask[lineIndex] != 0u;
-    };
+    const auto* captureLineUses3dMask = &softPackedSnapshot.captureLineUses3dMask;
     const bool renderer2dCapture3dSourceHasPixels =
         renderer2dDebug3dBackgroundEnabled && capture3dSourceHasAnyUsefulPixel(preparedCapture3dSource);
     if (!currentFrameNeedsCapture3dSource)
@@ -3710,7 +3669,8 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         const bool lineUses3d =
             frameUsesCurrentRegularCapture3d
             || lineMetaUses3d
-            || captureLineUses3dAt(static_cast<size_t>(y));
+            || (captureLineUses3dMask != nullptr
+                && (*captureLineUses3dMask)[static_cast<size_t>(y)] != 0u);
         const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(kScreenWidth);
         if (acceptPreferredComp4Line)
         {
@@ -3937,7 +3897,8 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             const bool lineUses3d =
                 frameUsesCurrentRegularCapture3d
                 || lineMetaUses3d
-                || captureLineUses3dAt(static_cast<size_t>(y));
+                || (captureLineUses3dMask != nullptr
+                    && (*captureLineUses3dMask)[static_cast<size_t>(y)] != 0u);
             if (resolvedLines[static_cast<size_t>(y)] != 0u)
                 continue;
             if (renderer2dLineHasPixels)
@@ -3999,6 +3960,49 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
     return resource.hasPreparedCapture3dSource || !currentFrameNeedsCapture3dSource;
 }
 
+bool MelonPrimeVulkanOutput::captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+{
+    std::scoped_lock commandLock(commandPoolLock);
+
+    if (frame != nullptr)
+        frame->renderTimelineValue = 0;
+
+    if (!initialized || frame == nullptr || !renderer3D.HasColorTarget())
+        return false;
+
+    auto iterator = resources.find(frame);
+    if (iterator == resources.end())
+        return false;
+
+    FrameResource& resource = iterator->second;
+    resource.hasPreparedInputs = false;
+    resource.snapshotFromPreRun = false;
+    resource.snapshotFromInitializedTarget = false;
+    resource.snapshotFromGraphicsBackend = false;
+
+    if (!renderer3D.IsColorTargetInitialized())
+        return false;
+
+    if (!beginFrameCommand(resource))
+        return false;
+
+    if (!recordRenderer3dSnapshotCopy(resource, renderer3D, snapshotScreenSwap))
+        return false;
+
+    resource.snapshotFromPreRun = true;
+    resource.snapshotFromInitializedTarget = true;
+    resource.snapshotFromGraphicsBackend =
+        renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
+    resource.previousTopSourceFrame = nullptr;
+    resource.previousTopSourcePending = false;
+    resource.previousBottomSourceFrame = nullptr;
+    resource.previousBottomSourcePending = false;
+
+    const bool submitted = submitFrameCommand(frame, resource, true);
+    if (submitted)
+        resource.timestampPending = false;
+    return submitted;
+}
 
 bool MelonPrimeVulkanOutput::composeAndSubmitFrame(
     VulkanFrame* frame,
@@ -4093,6 +4097,17 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
         resource.topScreenStats.StructuredSlotPixels > dominantStructuredSlotThreshold;
     const bool bottomUsesStructured3d =
         resource.bottomScreenStats.StructuredSlotPixels > dominantStructuredSlotThreshold;
+    const bool topUsesCurrentCapture3d = topUsesRegularCapture3d || topUsesVramCapture3d;
+    const bool bottomUsesCurrentCapture3d = bottomUsesRegularCapture3d || bottomUsesVramCapture3d;
+    const bool topHasVisibleStructured3d =
+        resource.topScreenStats.StructuredAboveVisiblePixels > 0
+        || topUsesCurrentCapture3d;
+    const bool bottomHasVisibleStructured3d =
+        resource.bottomScreenStats.StructuredAboveVisiblePixels > 0
+        || bottomUsesCurrentCapture3d;
+    outInputs.currentSourceHasHighres3d =
+        topHasVisibleStructured3d
+        || bottomHasVisibleStructured3d;
     outInputs.class4VramStructuredPair =
         resource.captureBackedClass4Only
         && !topUsesRegularCapture3d
@@ -4121,8 +4136,6 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     outInputs.scale = static_cast<u32>(scale);
     outInputs.filtering = filtering;
     outInputs.capture3dSourceValid = resource.hasPreparedCapture3dSource && resource.capture3dBuffer != VK_NULL_HANDLE;
-    const bool topUsesCurrentCapture3d = topUsesRegularCapture3d || topUsesVramCapture3d;
-    const bool bottomUsesCurrentCapture3d = bottomUsesRegularCapture3d || bottomUsesVramCapture3d;
     const bool asymmetricRegularCapture3d =
         topUsesRegularCapture3d != bottomUsesRegularCapture3d
         && !topUsesVramCapture3d
@@ -4352,10 +4365,7 @@ bool MelonPrimeVulkanOutput::recordDirectPresentationPrep(
     return submitted;
 }
 
-bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(
-    FrameResource& resource,
-    const melonDS::VulkanRenderer3D& renderer3D,
-    bool snapshotScreenSwap)
+bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
 {
     const u32 rendererWidth = renderer3D.GetColorTargetWidth();
     const u32 rendererHeight = renderer3D.GetColorTargetHeight();
@@ -4496,7 +4506,9 @@ bool MelonPrimeVulkanOutput::recordRenderer3dSnapshotCopy(
     vkCmdPipelineBarrier(
         resource.commandBuffer,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,
         0,
         nullptr,
@@ -5270,15 +5282,11 @@ bool MelonPrimeVulkanOutput::getPreparedSoftPackedFrameDebugView(
         return false;
 
     outView.frameId = resource.softPackedFrameId;
-    outView.sourceGeneration = resource.structuredGeneration;
     outView.frontBufferLatched = resource.frontBufferLatched;
     outView.screenSwapLatched = resource.screenSwap;
     outView.captureBackedClass4Only = resource.captureBackedClass4Only;
     outView.capture3dSourceDsFrame = resource.capture3dSourceDsFrame.data();
     outView.captureLineUses3dMask = resource.captureLineUses3dMask.data();
-    outView.capture3dSourceLineValidMask = resource.capture3dSourceLineValidMask.data();
-    outView.topScreenNeedsCapture3dMask = resource.topScreenNeedsCapture3dMask.data();
-    outView.bottomScreenNeedsCapture3dMask = resource.bottomScreenNeedsCapture3dMask.data();
     outView.captureFallbackLines = resource.captureFallbackLines.data();
     outView.comp4TopPlaceholder = resource.comp4TopPlaceholder.data();
     outView.comp4BottomPlaceholder = resource.comp4BottomPlaceholder.data();

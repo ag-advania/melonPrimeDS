@@ -132,9 +132,6 @@ set(SOURCES_QT_SDL
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
-option(MELONPRIME_VULKAN_REFERENCE_ORACLE
-    "Build the debug-only reference-oracle parity check for MelonPrimeVulkanSnapshotBuilder (runs an independent transcription of the SapphireRhodonite reference pipeline alongside the production builder and logs ReferenceParityMismatch on divergence)"
-    OFF)
 
 # --- MelonPrime Vulkan backend build switch ---------------------------------
 # This is a complete build gate. When inactive, no Vulkan source, include path,
@@ -322,63 +319,6 @@ else()
 endif()
 target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
 
-# MelonPrimeDS: embed git provenance (HEAD SHA/branch/dirty state) so a
-# captured vulkan2d.log can be verified as coming from the binary under test
-# rather than a stale build (see the Vulkan screen-swap/black-transparency
-# re-audit doc). CMAKE_CONFIGURE_DEPENDS makes Ninja re-run CMake configure
-# whenever .git/HEAD or the index changes, so this stays fresh even through
-# build-mingw-existing.bat's --build-only path.
-find_package(Git QUIET)
-set(_mp_git_sha "unknown")
-set(_mp_git_branch "unknown")
-set(_mp_git_dirty "1")
-if(GIT_EXECUTABLE)
-    execute_process(
-        COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE _mp_git_sha
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE _mp_git_sha_result)
-    if(NOT _mp_git_sha_result EQUAL 0 OR _mp_git_sha STREQUAL "")
-        set(_mp_git_sha "unknown")
-    endif()
-    execute_process(
-        COMMAND "${GIT_EXECUTABLE}" rev-parse --abbrev-ref HEAD
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE _mp_git_branch
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE _mp_git_branch_result)
-    if(NOT _mp_git_branch_result EQUAL 0 OR _mp_git_branch STREQUAL "")
-        set(_mp_git_branch "unknown")
-    endif()
-    execute_process(
-        COMMAND "${GIT_EXECUTABLE}" status --porcelain
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE _mp_git_status
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE _mp_git_status_result)
-    if(_mp_git_status_result EQUAL 0)
-        if(_mp_git_status STREQUAL "")
-            set(_mp_git_dirty "0")
-        else()
-            set(_mp_git_dirty "1")
-        endif()
-    endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/.git/HEAD")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/.git/HEAD")
-    endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/.git/index")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/.git/index")
-    endif()
-endif()
-target_compile_definitions(melonDS PRIVATE
-    MELONPRIMEDS_GIT_SHA="${_mp_git_sha}"
-    MELONPRIMEDS_GIT_BRANCH="${_mp_git_branch}"
-    MELONPRIMEDS_GIT_DIRTY="${_mp_git_dirty}")
-
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 endif()
@@ -387,9 +327,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_compile_definitions(melonDS PRIVATE
         MELONPRIME_ENABLE_VULKAN=1
         VK_NO_PROTOTYPES=1)
-    if (MELONPRIME_VULKAN_REFERENCE_ORACLE)
-        target_compile_definitions(melonDS PRIVATE MELONPRIME_VULKAN_REFERENCE_ORACLE=1)
-    endif()
     target_compile_definitions(core PUBLIC
         MELONPRIME_ENABLE_VULKAN=1
         VK_NO_PROTOTYPES=1)
@@ -409,8 +346,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanFeatureCheck.cpp
         MelonPrimeVulkanFrameQueue.cpp
         MelonPrimeVulkanOutput.cpp
-        MelonPrimeVulkanSnapshotBuilder.cpp
-        MelonPrimeVulkanSnapshotReferenceOracle.cpp
         MelonPrimeVulkanSurfacePresenter.cpp
         MelonPrimeVulkanSurfaceWin32.cpp
         MelonPrimeVulkanSurfaceLinux.cpp
@@ -443,17 +378,6 @@ if (MELONPRIME_VULKAN_ACTIVE)
             USES_TERMINAL
             VERBATIM)
         unset(_melonprime_spirv_command)
-
-        # Sapphire wires SPIR-V regeneration into the normal build so an edited
-        # GLSL source can never silently ship a stale checked-in header. Only
-        # wire the *check* target (hash/byte comparison, no header rewrite)
-        # into the default build, and only when glslc was actually found --
-        # machines without the Vulkan SDK must still be able to build using
-        # the checked-in headers as-is.
-        if (MELONPRIME_GLSLC_EXECUTABLE)
-            add_dependencies(core melonprime_check_vulkan_spirv)
-            add_dependencies(melonDS melonprime_check_vulkan_spirv)
-        endif()
     else()
         message(WARNING
             "Python 3 was not found; MelonPrime Vulkan SPIR-V developer targets are unavailable")
