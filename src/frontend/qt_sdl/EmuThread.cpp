@@ -340,10 +340,10 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(MELONPRIME_DS)
-            const bool rendererIsInGame = melonPrime->IsInGame();
-            if (UNLIKELY(rendererIsInGame != rendererWasInGame))
+            const bool rendererIsInMatch = melonPrime->IsPatchMatchActive();
+            if (UNLIKELY(rendererIsInMatch != rendererWasInMatch))
             {
-                rendererWasInGame = rendererIsInGame;
+                rendererWasInMatch = rendererIsInMatch;
                 const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
                 bool forceSoftwareOutsideMatch =
                     globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");

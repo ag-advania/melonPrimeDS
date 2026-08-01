@@ -239,7 +239,7 @@ private:
     int videoRenderer;
     bool videoSettingsDirty;
 #ifdef MELONPRIME_DS
-    bool rendererWasInGame = false;
+    bool rendererWasInMatch = false;
 #endif
 };
 
