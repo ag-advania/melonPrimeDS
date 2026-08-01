@@ -95,6 +95,33 @@ void VideoSettingsDialog::setEnabled()
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
+
+    // Vulkan uses the software renderer for menus and other non-match screens
+    // regardless of the saved checkbox value. Make that runtime behavior
+    // visible at the renderer choice, and warn about the known 4x OSD issue
+    // next to the resolution control while Vulkan is selected.
+    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+    const QString vulkanBaseTooltip = vulkanProbe.Available
+        ? MelonPrime::UiText::Tr(
+            "Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+        : QString::fromStdString(vulkanProbe.Reason);
+    const QString vulkanOutsideMatchTooltip = MelonPrime::UiText::Tr(
+        "Vulkan forces software rendering outside matches; the saved setting is not changed.");
+    const QString vulkanRendererDescription = vulkanRenderer && vulkanProbe.Available
+        ? vulkanBaseTooltip + QStringLiteral("\n") + vulkanOutsideMatchTooltip
+        : vulkanBaseTooltip;
+    rb3DVulkan->setToolTip(vulkanRendererDescription);
+    rb3DVulkan->setWhatsThis(vulkanRendererDescription);
+
+    const QString resolutionBaseTooltip = MelonPrime::UiText::Tr(
+        "The resolution at which the 3D graphics will be rendered. Higher resolutions improve graphics quality when the main window is enlarged, but may also cause glitches.");
+    const QString vulkanResolutionWarning = MelonPrime::UiText::Tr(
+        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
+    const QString resolutionDescription = vulkanRenderer
+        ? resolutionBaseTooltip + QStringLiteral("\n") + vulkanResolutionWarning
+        : resolutionBaseTooltip;
+    ui->cbxGLResolution->setToolTip(resolutionDescription);
+    ui->cbxGLResolution->setWhatsThis(resolutionDescription);
 #else
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
 #endif
