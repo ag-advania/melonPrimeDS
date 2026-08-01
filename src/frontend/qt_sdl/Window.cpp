@@ -2818,6 +2818,21 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     if (glchange)
     {
         emuThread->emuPause();
+#ifdef MELONPRIME_DS
+        // Tear down the current 3D renderer before its Vulkan presentation
+        // objects or OpenGL context disappear. Keeping this synchronous also
+        // prevents injected graphics layers from observing partially destroyed
+        // backend state during a live renderer switch.
+        emuThread->prepareVideoBackendTransition();
+        for (auto child : childwins)
+        {
+            if (child->getWindowID() == 0)
+            {
+                auto thread = child->getEmuInstance()->getEmuThread();
+                thread->prepareVideoBackendTransition();
+            }
+        }
+#endif
         if (hadOGL)
         {
             emuThread->deinitContext(windowID);

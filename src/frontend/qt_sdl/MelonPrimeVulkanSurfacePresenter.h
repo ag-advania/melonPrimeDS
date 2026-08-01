@@ -30,12 +30,29 @@ struct VulkanPresentRegion
     bool hasTransformedCorners = false;
 };
 
+struct VulkanRadarFrame
+{
+    bool enabled = false;
+    float x = 0.0f;
+    float y = 0.0f;
+    float size = 0.0f;
+    float opacity = 0.0f;
+    std::uint32_t sourceCenterY = 0;
+    std::uint32_t sourceRadius = 0;
+
+    [[nodiscard]] bool IsValid() const noexcept
+    {
+        return enabled && size > 0.0f && opacity > 0.0f && sourceRadius > 0;
+    }
+};
+
 struct VulkanOverlayFrame
 {
     const void* pixels = nullptr;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::size_t rowBytes = 0;
+    VulkanRadarFrame radar{};
 
     [[nodiscard]] bool IsValid() const noexcept
     {
@@ -86,7 +103,10 @@ private:
         const VulkanCompositionInputs& inputs,
         VkBuffer overlayBuffer,
         VkDeviceSize overlayBufferSize);
-    bool UpdatePresentationVertices(const std::vector<VulkanPresentRegion>& regions, bool includeOverlay);
+    bool UpdatePresentationVertices(
+        const std::vector<VulkanPresentRegion>& regions,
+        const VulkanRadarFrame* radar,
+        bool includeOverlay);
     bool UpdateOverlayBuffer(const VulkanOverlayFrame* overlay);
     void DestroyOverlayBuffer();
     std::uint32_t FindMemoryType(std::uint32_t typeBits, VkMemoryPropertyFlags properties) const;
@@ -152,6 +172,10 @@ private:
         float viewportHeight;
         std::uint32_t overlayWidth;
         std::uint32_t overlayHeight;
+        float radarOpacity;
+        std::uint32_t radarSourceCenterY;
+        std::uint32_t radarSourceRadius;
+        std::uint32_t radarReserved;
     };
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -170,6 +194,8 @@ private:
     std::size_t vertexCapacity = 0;
     std::uint32_t presentVertexCount = 0;
     std::uint32_t presentScreenVertexCount = 0;
+    std::uint32_t radarFirstVertex = 0;
+    std::uint32_t radarVertexCount = 0;
     std::uint32_t overlayFirstVertex = 0;
     VkBuffer overlayBuffer = VK_NULL_HANDLE;
     VkDeviceMemory overlayMemory = VK_NULL_HANDLE;

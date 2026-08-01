@@ -80,6 +80,9 @@ public:
         msg_InitGL,
         msg_DeInitGL,
         msg_BorrowGL,
+#ifdef MELONPRIME_DS
+        msg_PrepareVideoBackendTransition,
+#endif
 
         msg_BootROM,
         msg_BootFirmware,
@@ -146,6 +149,9 @@ public:
     void deinitContext(int win);
     void borrowGL();
     void returnGL();
+#ifdef MELONPRIME_DS
+    void prepareVideoBackendTransition();
+#endif
     void updateVideoSettings() { videoSettingsDirty = true; }
     void updateVideoRenderer() { videoSettingsDirty = true; lastVideoRenderer = -1; }
 

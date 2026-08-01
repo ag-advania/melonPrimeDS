@@ -215,7 +215,7 @@ protected:
     std::deque<OSDItem> osdItems;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
+    QImage Overlay[2];       // [0]=Top HUD, [1]=software radar color-key scratch
     QFont overlayFont;
     MelonPrimeHudConfigOnScreenEdit* m_hudEditPanel = nullptr;
     // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
@@ -230,7 +230,7 @@ protected:
     bool     m_hudEnabled    = false;
     // overlayFont rebuilt from CustomHud_ResolveBaseFont when this epoch changes.
     uint32_t m_hudFontEpoch  = ~0u;
-    // BtmOverlay config cache (GL path):
+    // BtmOverlay config cache (all renderer paths):
     uint32_t m_radarCfgEpoch = ~0u;
     bool     m_radarEnable    = false;
     int      m_radarAnchor    = 2;

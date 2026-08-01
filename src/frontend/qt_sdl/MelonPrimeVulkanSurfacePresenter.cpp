@@ -716,6 +716,8 @@ void MelonPrimeVulkanSurfacePresenter::DestroyPresentationResources()
     vertexCapacity = 0;
     presentVertexCount = 0;
     presentScreenVertexCount = 0;
+    radarFirstVertex = 0;
+    radarVertexCount = 0;
     overlayFirstVertex = 0;
 }
 
@@ -782,10 +784,13 @@ bool MelonPrimeVulkanSurfacePresenter::UpdatePresentationDescriptors(
 
 bool MelonPrimeVulkanSurfacePresenter::UpdatePresentationVertices(
     const std::vector<VulkanPresentRegion>& regions,
+    const VulkanRadarFrame* radar,
     bool includeOverlay)
 {
     std::vector<SurfaceVertex> vertices;
-    vertices.reserve((regions.size() + (includeOverlay ? 1u : 0u)) * 6u);
+    const bool includeRadar = radar != nullptr && radar->IsValid();
+    vertices.reserve((regions.size() + (includeRadar ? 1u : 0u)
+        + (includeOverlay ? 1u : 0u)) * 6u);
     const auto ndcX = [this](float x) {
         return (x * 2.0f / static_cast<float>(swapchainExtent.width)) - 1.0f;
     };
@@ -823,7 +828,25 @@ bool MelonPrimeVulkanSurfacePresenter::UpdatePresentationVertices(
         });
     }
     presentScreenVertexCount = static_cast<std::uint32_t>(vertices.size());
-    overlayFirstVertex = presentScreenVertexCount;
+    radarFirstVertex = presentScreenVertexCount;
+    radarVertexCount = 0;
+    if (includeRadar)
+    {
+        const float left = ndcX(radar->x);
+        const float top = ndcY(radar->y);
+        const float right = ndcX(radar->x + radar->size);
+        const float bottom = ndcY(radar->y + radar->size);
+        const SurfaceVertex topLeft{left, top, 0.0f, 0.0f, 1.0f};
+        const SurfaceVertex topRight{right, top, 1.0f, 0.0f, 1.0f};
+        const SurfaceVertex bottomLeft{left, bottom, 0.0f, 1.0f, 1.0f};
+        const SurfaceVertex bottomRight{right, bottom, 1.0f, 1.0f, 1.0f};
+        vertices.insert(vertices.end(), {
+            topLeft, bottomLeft, bottomRight,
+            topLeft, bottomRight, topRight,
+        });
+        radarVertexCount = 6;
+    }
+    overlayFirstVertex = static_cast<std::uint32_t>(vertices.size());
     if (includeOverlay)
     {
         const SurfaceVertex topLeft{-1.0f, -1.0f, 0.0f, 0.0f, 1.0f};
@@ -981,7 +1004,10 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     if (sourceImage == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE
         || !UpdatePresentationDescriptors(
             sourceImageView, inputs, overlayDescriptorBuffer, overlayDescriptorSize)
-        || !UpdatePresentationVertices(regions, overlayDataSize > 0))
+        || !UpdatePresentationVertices(
+            regions,
+            overlay != nullptr ? &overlay->radar : nullptr,
+            overlayDataSize > 0))
         return false;
 
     vkResetCommandBuffer(commandBuffer, 0);
@@ -1103,6 +1129,9 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     pushConstants.viewportHeight = static_cast<float>(swapchainExtent.height);
     pushConstants.overlayWidth = overlayWidth;
     pushConstants.overlayHeight = overlayHeight;
+    pushConstants.radarOpacity = overlay != nullptr ? overlay->radar.opacity : 0.0f;
+    pushConstants.radarSourceCenterY = overlay != nullptr ? overlay->radar.sourceCenterY : 0u;
+    pushConstants.radarSourceRadius = overlay != nullptr ? overlay->radar.sourceRadius : 0u;
     vkCmdPushConstants(
         commandBuffer,
         pipelineLayout,
@@ -1122,6 +1151,18 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
             sizeof(pushConstants),
             &pushConstants);
         vkCmdDraw(commandBuffer, 6, 1, overlayFirstVertex, 0);
+    }
+    if (radarVertexCount > 0)
+    {
+        pushConstants.drawMode = 8;
+        vkCmdPushConstants(
+            commandBuffer,
+            pipelineLayout,
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(pushConstants),
+            &pushConstants);
+        vkCmdDraw(commandBuffer, radarVertexCount, 1, radarFirstVertex, 0);
     }
     vkCmdEndRenderPass(commandBuffer);
 

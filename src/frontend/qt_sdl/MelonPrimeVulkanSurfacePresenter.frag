@@ -52,6 +52,10 @@ layout(push_constant) uniform PresenterPushConstants
     float viewportHeight;
     uint overlayWidth;
     uint overlayHeight;
+    float radarOpacity;
+    uint radarSourceCenterY;
+    uint radarSourceRadius;
+    uint radarReserved;
 } pushConstants;
 
 const uint kMetaFlagRegularCaptureUses3d = 1u << 21u;
@@ -66,6 +70,13 @@ const uint kFilterHq4x = 4u;
 const uint kFilterQuilez = 5u;
 const uint kFilterLcd = 6u;
 const uint kFilterScanlines = 7u;
+const uint kRadarPaletteSize = 15u;
+const uint kRadarPalette[kRadarPaletteSize] = uint[](
+    0xC0F868u, 0xF8A8A8u, 0xE03030u,
+    0xA0A0A0u, 0xC8C8C8u, 0x909090u,
+    0xF88010u, 0xF8D0A0u, 0xD86800u,
+    0x88E008u, 0xC8F880u, 0x68B800u,
+    0x1098C8u, 0x28D8F8u, 0xA8A8A8u);
 
 layout(location = 0) in vec2 fragUv;
 layout(location = 1) in float fragAlpha;
@@ -1456,8 +1467,60 @@ vec3 applyCompositePostFilter(vec2 uv, bool topScreen)
     return sampleCompositeRgb(uv, topScreen);
 }
 
+vec3 sampleRadarRgb(vec2 uv)
+{
+    ivec2 textureExtent = textureSize(uTexture, 0);
+    vec2 texelPosition = uv * vec2(textureExtent) - vec2(0.5);
+    ivec2 base = ivec2(floor(texelPosition));
+    vec2 fraction = fract(texelPosition);
+    ivec2 maximum = textureExtent - ivec2(1);
+    ivec2 p00 = clamp(base, ivec2(0), maximum);
+    ivec2 p10 = clamp(base + ivec2(1, 0), ivec2(0), maximum);
+    ivec2 p01 = clamp(base + ivec2(0, 1), ivec2(0), maximum);
+    ivec2 p11 = clamp(base + ivec2(1, 1), ivec2(0), maximum);
+    vec3 top = mix(texelFetch(uTexture, p00, 0).bgr,
+        texelFetch(uTexture, p10, 0).bgr, fraction.x);
+    vec3 bottom = mix(texelFetch(uTexture, p01, 0).bgr,
+        texelFetch(uTexture, p11, 0).bgr, fraction.x);
+    return mix(top, bottom, fraction.y);
+}
+
+bool isRadarPaletteColor(vec3 rgb)
+{
+    // Vulkan composition expands the DS 6-bit channels to 8-bit. Quantize
+    // back to the 5-bit-aligned values used by the established OpenGL palette.
+    uvec3 color = uvec3(round(rgb * 255.0)) & uvec3(0xf8u);
+    uint packed = (color.r << 16u) | (color.g << 8u) | color.b;
+    for (uint index = 0u; index < kRadarPaletteSize; ++index)
+    {
+        if (packed == kRadarPalette[index])
+            return true;
+    }
+    return false;
+}
+
 void main()
 {
+    if (pushConstants.drawMode == 8u)
+    {
+        vec2 centered = fragUv * 2.0 - 1.0;
+        float distanceSquared = dot(centered, centered);
+        if (distanceSquared > 1.0)
+            discard;
+        float sourceRadius = float(pushConstants.radarSourceRadius);
+        vec2 sourceUv = vec2(
+            (128.0 + centered.x * sourceRadius) / 256.0,
+            (194.0 + float(pushConstants.radarSourceCenterY)
+                + centered.y * sourceRadius) / 386.0);
+        vec3 rgb = sampleRadarRgb(sourceUv);
+        if (!isRadarPaletteColor(rgb))
+            discard;
+        float alpha = pushConstants.radarOpacity
+            * (1.0 - smoothstep(0.95, 1.0, distanceSquared));
+        outColor = vec4(rgb * alpha, alpha);
+        return;
+    }
+
     if (pushConstants.drawMode == 7u)
     {
         uint x = min(uint(fragUv.x * float(pushConstants.overlayWidth)), pushConstants.overlayWidth - 1u);

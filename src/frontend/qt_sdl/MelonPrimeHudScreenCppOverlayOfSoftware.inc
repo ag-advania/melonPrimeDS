@@ -15,6 +15,12 @@
 
         MelonPrimeHud_RefreshHudEnabledIfNeeded(mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
         MelonPrimeHud_RefreshOverlayFontIfNeeded(mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+        MelonPrimeHud_RefreshRadarConfigIfNeeded(
+            mp->HudConfigState(), instcfg, m_radarCfgEpoch,
+            m_radarEnable, m_radarAnchor,
+            m_radarDstX, m_radarDstY, m_radarDstSize,
+            m_radarOpacity, m_radarSrcRadius,
+            m_radarAnchorDsX, m_radarAnchorDsY);
 
         if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
         {
@@ -33,7 +39,9 @@
                 emuInstance, instcfg, mp,
                 Overlay[0], overlayFont,
                 topStretchX, hudScale,
-                m_hudOriginX, m_hudOriginY);
+                m_hudOriginX, m_hudOriginY,
+                m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
+                &Overlay[1], m_radarSrcRadius);
 
             // Composite only the dirty region (prev cleared + curr drawn).
             const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);

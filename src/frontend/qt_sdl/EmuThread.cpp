@@ -1029,6 +1029,21 @@ void EmuThread::handleMessages()
             glborrow = true;
             break;
 
+#ifdef MELONPRIME_DS
+        case msg_PrepareVideoBackendTransition:
+            // Renderer objects must release their backend resources while the
+            // old presentation backend (and, for OpenGL, its context) is still
+            // alive. The UI thread waits for this message before replacing the
+            // screen panel, so a later Vulkan/GL teardown cannot race an old 3D
+            // renderer that still owns resources from that backend.
+            emuInstance->renderLock.lock();
+            videoRenderer = renderer3D_Software;
+            updateRenderer();
+            videoSettingsDirty = true;
+            emuInstance->renderLock.unlock();
+            break;
+#endif
+
         case msg_BootROM:
             msgResult = 0;
             if (!emuInstance->loadROM(msg.param.value<QStringList>(), true, msgError)) break;
@@ -1157,6 +1172,14 @@ void EmuThread::returnGL()
     glBorrowCond.wakeAll();
     glBorrowMutex.unlock();
 }
+
+#ifdef MELONPRIME_DS
+void EmuThread::prepareVideoBackendTransition()
+{
+    sendMessage(msg_PrepareVideoBackendTransition);
+    waitMessage();
+}
+#endif
 
 void EmuThread::emuRun()
 {
