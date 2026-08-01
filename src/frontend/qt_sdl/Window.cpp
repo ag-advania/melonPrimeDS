@@ -43,6 +43,11 @@
 #include <QDesktopServices>
 #include <QSocketNotifier>
 
+#if defined(MELONPRIME_DS) && defined(_WIN32)
+#include <windows.h>
+#include <dwmapi.h>
+#endif
+
 #include "main.h"
 #include "CheatsDialog.h"
 #include "DateTimeDialog.h"
@@ -97,6 +102,37 @@
 #endif
 
 using namespace melonDS;
+
+#if defined(MELONPRIME_DS) && defined(_WIN32)
+namespace
+{
+void ApplyWindowsFullscreenFramePolicy(QWidget* window, bool fullscreen)
+{
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+
+    // Windows 11 can retain its one-pixel accent border and rounded-corner
+    // clipping after Qt enters fullscreen. That exposes the desktop along the
+    // right/bottom edge and in the corners. These attributes are ignored on
+    // older Windows versions that do not support them.
+    const DWM_WINDOW_CORNER_PREFERENCE cornerPreference =
+        fullscreen ? DWMWCP_DONOTROUND : DWMWCP_DEFAULT;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        &cornerPreference,
+        sizeof(cornerPreference));
+
+    const COLORREF borderColor = fullscreen
+        ? static_cast<COLORREF>(DWMWA_COLOR_NONE)
+        : static_cast<COLORREF>(DWMWA_COLOR_DEFAULT);
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_BORDER_COLOR,
+        &borderColor,
+        sizeof(borderColor));
+}
+}
+#endif
 
 
 
@@ -2658,12 +2694,18 @@ void MainWindow::toggleFullscreen()
     if (!isFullScreen())
     {
         showFullScreen();
+#if defined(MELONPRIME_DS) && defined(_WIN32)
+        ApplyWindowsFullscreenFramePolicy(this, true);
+#endif
         if (hasMenu)
             menuBar()->setFixedHeight(0); // Don't use hide() as menubar actions stop working
     }
     else
     {
         showNormal();
+#if defined(MELONPRIME_DS) && defined(_WIN32)
+        ApplyWindowsFullscreenFramePolicy(this, false);
+#endif
         if (hasMenu)
         {
             int menuBarHeight = menuBar()->sizeHint().height();
