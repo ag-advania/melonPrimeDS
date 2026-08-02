@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
-REPO_ROOT="${SCRIPT_DIR:h:h}"
+REPO_ROOT="${SCRIPT_DIR:h:h:h}"
 cd "$REPO_ROOT"
 
 BUILD_DIR="build-mac-metal-test"

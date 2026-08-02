@@ -376,11 +376,28 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
+    // The per-frame body of drawScreen(). Kept separate so the platform frame
+    // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
+    // it without indenting the whole function.
+    void drawScreenFrame();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);
     void setupScreenLayout() override;
+
+    // GUI-thread-only refresh of the platform presentation surface behind the
+    // panel. setupScreenLayout() cannot do this: initVulkanPresenter() calls it
+    // from the emulation thread, and macOS CoreAnimation state must only be
+    // touched from the GUI thread.
+    void refreshNativeSurfaceGuiThread();
+    void setNativeSurfaceVisibleGuiThread(bool visible);
+    // Callable from the emulation thread; posts to the GUI thread only when the
+    // requested state actually changes.
+    void requestNativeSurfaceVisible(bool visible);
+    void releaseNativeSurface();
+    [[nodiscard]] bool nativeSurfaceReady() const;
 
     struct VulkanState;
     std::unique_ptr<VulkanState> vulkan;

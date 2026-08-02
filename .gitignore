@@ -1,4 +1,9 @@
-build*/
+# Build output directories live at the repository root. Anchored with a leading
+# slash so this does not also swallow source directories that happen to be
+# named "build" further down, such as tools/build/ and docs/development/build/.
+#
+# freebios/build/ has its own explicit rule further down.
+/build*/
 bin
 obj
 *.depend

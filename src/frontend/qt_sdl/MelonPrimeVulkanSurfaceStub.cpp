@@ -1,4 +1,9 @@
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(__APPLE__) // scatter-budget-exempt: unsupported Vulkan surface stub, not input dispatch
+// Fallback Vulkan surface adapter for desktop platforms without a native one.
+// Windows uses MelonPrimeVulkanSurfaceWin32.cpp, Linux uses
+// MelonPrimeVulkanSurfaceLinux.cpp, and macOS uses the MoltenVK/CAMetalLayer
+// adapter in MelonPrimeVulkanSurfaceMacOS.mm.
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) \
+    && !defined(_WIN32) && !defined(__linux__) && !defined(__APPLE__) // scatter-budget-exempt: unsupported Vulkan surface stub, not input dispatch
 
 #include "MelonPrimeVulkanSurface.h"
 
@@ -13,4 +18,4 @@ VkSurfaceKHR CreateVulkanSurface(VkInstance, const VulkanNativeWindowInfo&, std:
 
 } // namespace MelonPrime
 
-#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && __APPLE__; scatter-budget-exempt: unsupported Vulkan surface stub, not input dispatch
+#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && !_WIN32 && !__linux__ && !__APPLE__; scatter-budget-exempt: unsupported Vulkan surface stub, not input dispatch

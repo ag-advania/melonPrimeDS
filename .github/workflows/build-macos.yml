@@ -37,6 +37,13 @@ jobs:
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools
 
+      # Build-time only: the Vulkan renderer is compiled against these headers
+      # but links nothing, so the same headers serve both matrix architectures.
+      # The MoltenVK driver itself is loaded with dlopen() at runtime.
+      - name: Install Vulkan headers
+        run: |
+          brew install vulkan-headers
+
       - name: Set up CMake
         uses: lukka/get-cmake@latest
 

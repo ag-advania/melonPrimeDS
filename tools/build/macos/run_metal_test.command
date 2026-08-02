@@ -2,14 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
-REPO_ROOT="${SCRIPT_DIR:h:h}"
+REPO_ROOT="${SCRIPT_DIR:h:h:h}"
 cd "$REPO_ROOT"
 
 APP="$REPO_ROOT/build-mac-metal-test/melonPrimeDS.app/Contents/MacOS/melonPrimeDS"
 
 if [[ ! -x "$APP" ]]; then
   echo "Metal test binary not found: $APP"
-  echo "Run tools/macos/build_metal_test.command first."
+  echo "Run tools/build/macos/build_metal_test.command first."
   exit 1
 fi
 
@@ -26,6 +26,6 @@ fi
 # MELONPRIME_ALLOW_FORCE_METAL=1 \
 # MELONPRIME_FORCE_METAL_RENDERER=1 \
 # MELONPRIME_FORCE_METAL_PRESENTER=1 \
-# tools/macos/run_metal_test.command /path/to/rom.nds
+# tools/build/macos/run_metal_test.command /path/to/rom.nds
 
 exec "$APP" "$@"
