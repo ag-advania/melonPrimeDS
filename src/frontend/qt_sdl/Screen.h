@@ -373,6 +373,10 @@ public:
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
 
+    // Quiesce all Vulkan panels belonging to one EmuInstance before
+    // its outgoing Vulkan renderer is destroyed.
+    static void PrepareForInstanceRendererTransition(EmuInstance* instance);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
@@ -383,6 +387,7 @@ private:
     // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
     // it without indenting the whole function.
     void drawScreenFrame();
+    void prepareForRendererTransition();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);
     void setupScreenLayout() override;

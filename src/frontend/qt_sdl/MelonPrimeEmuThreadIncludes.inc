@@ -4,6 +4,9 @@
 #include "MelonPrime.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeVideoBackend.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "Screen.h"
+#endif
 #ifdef _WIN32
 #include "MelonPrimeRawWinInternal.h"  // P-11: WinInternal::SetHighTimerResolution()
 #endif
