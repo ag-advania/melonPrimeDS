@@ -226,6 +226,20 @@ bool VulkanContext::Acquire()
         return true;
     }
 
+    // The Windows frontend switches between Vulkan and Software at match
+    // boundaries while keeping the same Vulkan presentation panel alive.
+    // Retain the process-wide device across a zero-client interval: destroying
+    // and immediately recreating it races fullscreen capture/overlay Vulkan
+    // layers on some Windows drivers. Individual clients still wait for idle
+    // and destroy all of their own images, descriptors and command objects.
+#if defined(_WIN32)
+    if (Instance != VK_NULL_HANDLE && Device != VK_NULL_HANDLE && Queue != VK_NULL_HANDLE)
+    {
+        ReferenceCount = 1;
+        return true;
+    }
+#endif
+
     if (!initializeLocked())
         return false;
 
@@ -240,8 +254,17 @@ void VulkanContext::Release()
         return;
 
     ReferenceCount--;
+#if defined(_WIN32)
+    // VulkanContext is a process-lifetime service on Windows. shutdownLocked()
+    // remains responsible for cleaning partial initialization failures, but a
+    // normal last-client release deliberately keeps the device warm. The OS
+    // releases the process-owned instance/device after executable teardown,
+    // avoiding driver and injected-layer callbacks during a live renderer
+    // transition.
+#else
     if (ReferenceCount == 0)
         shutdownLocked();
+#endif
 }
 
 bool VulkanContext::IsReady() const
