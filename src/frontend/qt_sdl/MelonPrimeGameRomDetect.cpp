@@ -131,6 +131,18 @@ namespace MelonPrime {
             m_ptrs.inGame           = GetRamPointer<uint16_t>(ram, m_addrHot.inGame);
             m_ptrs.currentMode      = GetRamPointer<uint8_t>(ram, m_addrHot.currentMode);
             m_ptrs.battleFlowState  = GetRamPointer<uint8_t>(ram, m_addrHot.battleFlowState);
+            // Match black-window state machine inputs. All fixed globals, so
+            // they resolve straight from the ROM address set.
+            m_matchTransitionPtrs.transitionBrightness = GetRamPointer<int32_t>(ram, rom.transitionBrightness);
+            m_matchTransitionPtrs.currentMode          = m_ptrs.currentMode;
+            m_matchTransitionPtrs.pendingMode          = GetRamPointer<uint8_t>(ram, rom.pendingMode);
+            m_matchTransitionPtrs.flowState            = m_ptrs.battleFlowState;
+            m_matchTransitionPtrs.transitionTargetMode = GetRamPointer<uint8_t>(ram, rom.transitionTargetMode);
+            m_matchTransitionPtrs.transitionPhase      = GetRamPointer<uint8_t>(ram, rom.transitionPhase);
+            m_matchTransitionPtrs.transitionType       = GetRamPointer<uint8_t>(ram, rom.transitionType);
+            // A ROM (re)detect re-attaches mid-session; let the window
+            // bootstrap instead of waiting for a pre-match black it missed.
+            m_matchBlackWindow = {};
         }
 
 #ifdef MELONPRIME_DS
