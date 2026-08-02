@@ -60,10 +60,23 @@ public:
         const u8* CaptureLineUses3D = nullptr;
         bool HasCapture3DSource = false;
         bool CaptureScreenSwap = false;
+        bool NativeMenuHeld = false;
         bool Valid = false;
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    void SetMainBg123SuppressedForFrame(bool suppressed) noexcept
+    {
+        SuppressMainBg123ForFrame = suppressed;
+    }
+    void SetNativeMenuHeldForFrame(bool held) noexcept
+    {
+        if (held && !NativeMenuHeldForFrame)
+            NativeMenuStartGeneration = StructuredFrameGeneration + 1u;
+        else if (!held)
+            NativeMenuStartGeneration = 0u;
+        NativeMenuHeldForFrame = held;
+    }
 #endif
 
 private:
@@ -83,6 +96,7 @@ private:
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
+    std::array<u64, 4u * 192u> StructuredCaptureLineGeneration{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
     std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
@@ -93,6 +107,11 @@ private:
     bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
+    bool StructuredFrameNativeMenuHeld = false;
+    bool SuppressMainBg123ForFrame = false;
+    bool NativeMenuHeldForFrame = false;
+    u64 StructuredFrameGeneration = 0;
+    u64 NativeMenuStartGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     void StoreStructuredEnginePixel(

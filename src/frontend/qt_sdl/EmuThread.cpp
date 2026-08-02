@@ -482,6 +482,16 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
             // RunFrameHook + SetKeyMask already done above (P-28).
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            if (auto* vulkanRenderer = dynamic_cast<VulkanRenderer*>(
+                    &emuInstance->nds->GPU.GetRenderer()))
+            {
+                vulkanRenderer->SetNativeMenuHeldForFrame(
+                    melonPrime->IsMetroidMenuHeld());
+                vulkanRenderer->SetMainBg123SuppressedForFrame(
+                    melonPrime->ShouldSuppressVulkanHelmetLayers());
+            }
+#endif
 #else
             // Original melonDS path (no hook).
 #endif

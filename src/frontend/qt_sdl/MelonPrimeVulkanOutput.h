@@ -68,6 +68,7 @@ struct SoftPackedFrameSnapshot
     bool valid = false;
     bool hasCapture3dSource = false;
     bool captureBackedClass4Only = false;
+    bool currentFrameOnly = false;
     std::array<u32, kPixelCount> packedTopPlane0{};
     std::array<u32, kPixelCount> packedTopPlane1{};
     std::array<u32, kPixelCount> packedTopControl{};
@@ -92,6 +93,7 @@ struct SoftPackedFrameSnapshot
         valid = false;
         hasCapture3dSource = false;
         captureBackedClass4Only = false;
+        currentFrameOnly = false;
         packedTopPlane0.fill(0);
         packedTopPlane1.fill(0);
         packedTopControl.fill(0);
@@ -117,6 +119,7 @@ struct SoftPackedFrameSnapshot
         valid = false;
         hasCapture3dSource = false;
         captureBackedClass4Only = false;
+        currentFrameOnly = false;
         capture3dSourceDsFrame.fill(0);
         captureLineUses3dMask.fill(0);
         captureFallbackLines.fill(0);

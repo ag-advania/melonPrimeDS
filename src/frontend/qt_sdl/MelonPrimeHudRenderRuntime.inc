@@ -965,6 +965,12 @@ bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom,
 {
     return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
 }
+
+bool CustomHud_IsHelmetLayerHideConfigured(Config::Table& localCfg)
+{
+    return localCfg.GetBool(kCfgCustomHud)
+        && localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet);
+}
 // One-shot guard: when CustomHUD transitions to disabled, perform a full
 // ForceRestore on the next in-game frame regardless of s_hudPatchApplied,
 // so any out-of-sync RAM state (savestate / persistent RAM / JIT corner
@@ -996,8 +1002,7 @@ void CustomHud_ClampHelmetLayersPreFrame(
     CustomHudConfigState& hudConfig,
     EmuInstance* emu,
     const RomAddresses& rom,
-    uint8_t playerPosition,
-    bool clampForVulkanMenu)
+    uint8_t playerPosition)
 {
     const ScopedHudConfigState active(hudConfig);
     // Gate on the tracker, not the config: the helmet bit is only ever applied
@@ -1012,39 +1017,13 @@ void CustomHud_ClampHelmetLayersPreFrame(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
 
-    // The Vulkan compositor faithfully shows every enabled 2D layer. During
-    // the native START menu BG1-3 can retain Nintendo/ACTIMAGINE-era tiles;
-    // clamp them before RunFrame instead of restoring the helmet instruction.
-    // The score/menu UI itself is on BG0/OBJ and remains visible.
-    if (clampForVulkanMenu)
-    {
-        NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
-        return;
-    }
-
-    // Native pause/score/death/game-over UI needs the original helmet-layer
-    // instruction restored before the game renders this frame. Render() keeps
-    // it restored for the duration of the native UI and reapplies it after the
-    // UI closes.
+    // Native UI frames keep the original pre-frame behavior. Vulkan's stronger
+    // guarantee is presentation-only and lives in the scanline renderer.
     if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
-    {
-        NoHudPatch_Sync(
-            patch,
-            st.nds,
-            st.romGroup,
-            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
-    }
     ReadHudRuntimeAdventurePauseState(rom, st);
     if (st.isAdventure && st.isMapOrUserActionPaused)
-    {
-        NoHudPatch_Sync(
-            patch,
-            st.nds,
-            st.romGroup,
-            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
-    }
 
     NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
 }

@@ -119,6 +119,12 @@ namespace MelonPrime {
             LoadRuntimeConfigSnapshot(localCfg);
 
         ApplyRuntimeConfigSnapshot(snapshot);
+#ifdef MELONPRIME_CUSTOM_HUD
+        // Cold config boundary: the Vulkan scanline renderer consumes only
+        // this cached scalar, including the first frame after an F8 load.
+        m_vulkanHelmetLayerSuppressionConfigured =
+            CustomHud_IsHelmetLayerHideConfigured(localCfg);
+#endif
         ReloadDamageNotifyPurpleConfig();
     }
 
