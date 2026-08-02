@@ -1,0 +1,178 @@
+#version 450
+
+const uint MAX_TEXTURE_DESCRIPTORS = 128u;
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+struct Triangle
+{
+    float x0;
+    float y0;
+    float z0;
+    float w0;
+    float x1;
+    float y1;
+    float z1;
+    float w1;
+    float x2;
+    float y2;
+    float z2;
+    float w2;
+    float u0;
+    float v0;
+    float u1;
+    float v1;
+    float u2;
+    float v2;
+    uint yBounds;
+    uint texLayer;
+    uint color0Rgba8;
+    uint color1Rgba8;
+    uint color2Rgba8;
+    uint flags;
+    uint texArrayIndex;
+    uint texWidth;
+    uint texHeight;
+    uint texParam;
+    uint polyAttr;
+    uint variantKey;
+};
+
+struct SpanSetup
+{
+    float minX;
+    float minY;
+    float maxX;
+    float maxY;
+    uint yMin;
+    uint yMax;
+    uint variantKey;
+    uint valid;
+    float edgeInv0;
+    float edgeInv1;
+    float edgeInv2;
+};
+
+layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outImage;
+
+layout(set = 0, binding = 1, std430) readonly buffer TriangleBuffer
+{
+    Triangle triangles[];
+};
+
+layout(set = 0, binding = 2) uniform usampler2DArray texArrays[MAX_TEXTURE_DESCRIPTORS];
+
+layout(set = 0, binding = 3, std430) readonly buffer ResultBuffer
+{
+    uint resultValues[];
+};
+
+layout(set = 0, binding = 4, std430) buffer BinMaskBuffer
+{
+    uint binMaskValues[];
+};
+
+layout(set = 0, binding = 5, std430) buffer GroupListBuffer
+{
+    uint groupListValues[];
+};
+
+layout(set = 0, binding = 7, std430) readonly buffer SpanSetupBuffer
+{
+    SpanSetup spanSetups[];
+};
+
+layout(push_constant) uniform PushConsts
+{
+    uint width;
+    uint height;
+    uint clearColor;
+    uint clearDepth;
+    uint triangleCount;
+    uint dispCnt;
+    uint alphaRef;
+    uint fogColor;
+    uint fogOffset;
+    uint fogShift;
+    uint clearAttr;
+    uint fogDensityPacked[9];
+    uint edgeColorPacked[8];
+    uint variantKey;
+    uint passIndex;
+    uint triangleBase;
+    uint depthBlendMode;
+} pc;
+
+const uint TILE_SIZE = 8u;
+const uint VARIANT_WILDCARD = 0xFFFFFFFFu;
+const uint VARIANT_PIPELINE_MASK = (1u << 8u) - 1u;
+
+bool variantMatchesPass(uint triangleVariantKey, uint passVariantKey)
+{
+    if (passVariantKey == VARIANT_WILDCARD)
+        return true;
+    return (triangleVariantKey & VARIANT_PIPELINE_MASK) == (passVariantKey & VARIANT_PIPELINE_MASK);
+}
+
+bool spanIntersectsTile(in SpanSetup span, uint linearTile, uint tilesPerLine)
+{
+    uint tileX = linearTile % tilesPerLine;
+    uint tileY = linearTile / tilesPerLine;
+
+    float tileMinX = float(tileX * TILE_SIZE);
+    float tileMinY = float(tileY * TILE_SIZE);
+    float tileMaxX = float(min(pc.width, (tileX + 1u) * TILE_SIZE));
+    float tileMaxY = float(min(pc.height, (tileY + 1u) * TILE_SIZE));
+
+    if (span.maxX < tileMinX || span.maxY < tileMinY)
+        return false;
+    if (span.minX >= tileMaxX || span.minY >= tileMaxY)
+        return false;
+
+    return true;
+}
+
+shared uint sharedMask;
+
+void main()
+{
+    uint localIdx = gl_LocalInvocationID.x;
+
+    if (localIdx == 0u)
+        sharedMask = 0u;
+    barrier();
+
+    uint tilesPerLine = (pc.width + (TILE_SIZE - 1u)) / TILE_SIZE;
+    uint tileLineCount = (pc.height + (TILE_SIZE - 1u)) / TILE_SIZE;
+    uint tileCount = max(1u, tilesPerLine * tileLineCount);
+    uint groupIdx = gl_WorkGroupID.x;
+    uint linearTile = gl_WorkGroupID.y + gl_WorkGroupID.z * tilesPerLine;
+    uint triangleIdx = groupIdx * 32u + localIdx;
+
+    bool binned = false;
+    if (triangleIdx < pc.triangleCount)
+    {
+        uint globalTriangleIdx = pc.triangleBase + triangleIdx;
+        SpanSetup span = spanSetups[globalTriangleIdx];
+        if (span.valid != 0u && variantMatchesPass(span.variantKey, pc.variantKey))
+            binned = spanIntersectsTile(span, linearTile, tilesPerLine);
+    }
+
+    if (binned)
+        atomicOr(sharedMask, 1u << localIdx);
+
+    barrier();
+
+    if (localIdx == 0u)
+    {
+        uint groupCount = max(1u, (pc.triangleCount + 31u) / 32u);
+        binMaskValues[linearTile * groupCount + groupIdx] = sharedMask;
+        if (sharedMask != 0u)
+        {
+            uint tileGroupListBase = tileCount + linearTile * groupCount;
+            uint slot = atomicAdd(groupListValues[linearTile], 1u);
+            if (slot < groupCount)
+                groupListValues[tileGroupListBase + slot] = groupIdx;
+        }
+    }
+}

@@ -109,6 +109,8 @@ jobs:
           ninja:p
           make:p
           pkgconf:p
+          shaderc:p
+          vulkan-headers:p
 
     - name: Restore vcpkg binary cache
       id: restore-vcpkg-binary-cache
@@ -149,6 +151,8 @@ jobs:
       run: |
         cmake --preset=release-mingw-x86_64 \
           -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DMELONPRIME_ENABLE_VULKAN=ON \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
           -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
@@ -166,6 +170,17 @@ jobs:
         cmake --build --preset=release-mingw-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
+
+    - name: Check Vulkan SPIR-V synchronization
+      run: cmake --build --preset=release-mingw-x86_64 --target melonprime_check_vulkan_spirv
+
+    - name: Build with Vulkan completely disabled
+      run: |
+        cmake --preset=release-mingw-x86_64 \
+          -B build/release-mingw-vulkan-off \
+          -DMELONPRIME_ENABLE_VULKAN=OFF \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=ON
+        cmake --build build/release-mingw-vulkan-off --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
 
     - name: Verify developer HUD golden harness is absent from release binary
       run: |

@@ -965,6 +965,12 @@ bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom,
 {
     return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
 }
+
+bool CustomHud_IsHelmetLayerHideConfigured(Config::Table& localCfg)
+{
+    return localCfg.GetBool(kCfgCustomHud)
+        && localCfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet);
+}
 // One-shot guard: when CustomHUD transitions to disabled, perform a full
 // ForceRestore on the next in-game frame regardless of s_hudPatchApplied,
 // so any out-of-sync RAM state (savestate / persistent RAM / JIT corner
@@ -1002,19 +1008,37 @@ void CustomHud_ClampHelmetLayersPreFrame(
     // Gate on the tracker, not the config: the helmet bit is only ever applied
     // by Render() while CustomHUD is enabled, and this avoids a per-frame toml
     // lookup on the hot path.
-    if (!(NoHudPatch_GetAppliedMask(ActiveHudConfigState().noHudPatch) & (1u << NOHUD_HELMET)))
+    auto& patch = ActiveHudConfigState().noHudPatch;
+    const uint16_t appliedMask = NoHudPatch_GetAppliedMask(patch);
+    if (!(appliedMask & (1u << NOHUD_HELMET)))
         return;
 
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
 
-    // Native pause/score/death/game-over UI needs the normal layer state.
+    // Restore the native helmet instruction before native UI is rendered.
+    // Vulkan applies its stronger guarantee presentation-only in the scanline
+    // renderer, without changing the emulated register state.
     if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
     ReadHudRuntimeAdventurePauseState(rom, st);
     if (st.isAdventure && st.isMapOrUserActionPaused)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
 
     NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
 }
@@ -1052,6 +1076,52 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_chPrevPxCy = INT_MIN;
     ResetCrosshairZoomDisplay(0.0f);
     s_hudPatchForceRestorePending = true;
+}
+
+void CustomHud_ReconcilePatchAfterSavestateLoad(
+    CustomHudConfigState& hudConfig,
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    uint8_t playerPosition)
+{
+    const ScopedHudConfigState active(hudConfig);
+    auto& patch = ActiveHudConfigState().noHudPatch;
+
+    // Do not trust the normal applied-mask tracker here. A loaded state can
+    // contain either original or patched ARM9 HUD instructions, regardless of
+    // the CustomHUD setting that is active now.
+    NoHudPatch_InvalidateState(patch);
+    s_hudPatchForceRestorePending = true;
+
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+        return;
+
+    if (!CustomHud_IsEnabled(localCfg)) {
+        CustomHud_RestoreNativeHudState(rom, st);
+        return;
+    }
+
+    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
+        ReadHudRuntimeAdventurePauseState(rom, st);
+
+    uint16_t desiredMask = LoadNoHudMaskFromConfig(localCfg);
+    if (ShouldHideForGameplayState(
+            st.isStartPressed,
+            st.currentHP,
+            st.isGameOver,
+            st.isAdventure,
+            st.isMapOrUserActionPaused))
+    {
+        desiredMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
+    }
+
+    // Perform the full reconciliation before msg_LoadState returns. Waiting
+    // for the next presentation callback would fix the persistent mismatch,
+    // but could still expose one native-HUD frame immediately after F8.
+    NoHudPatch_Sync(patch, st.nds, st.romGroup, desiredMask);
+    CustomHud_MarkNoHudPatchDesired();
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame

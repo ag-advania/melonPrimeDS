@@ -37,6 +37,9 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 #endif // MELONPRIME_DS
 
 
@@ -78,6 +81,9 @@ void VideoSettingsDialog::setEnabled()
     const bool metalComputeRenderer = false;
     const bool metalRenderer = false;
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const bool vulkanRenderer = renderer == renderer3D_Vulkan;
+#endif
     ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
@@ -87,12 +93,58 @@ void VideoSettingsDialog::setEnabled()
 #else
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
+
+    const QString vulkanOutsideMatchMessage = MelonPrime::UiText::Tr(
+        "Vulkan forces software rendering outside matches; the saved setting is not changed.");
+    const QString vulkanSceneTransitionMessage = MelonPrime::UiText::Tr(
+        "During scene transitions, brief visual glitches may occur.");
+    const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
+        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
+    ui->lblRendererNotes->setVisible(vulkanRenderer);
+    ui->lblRendererNotes->setText(vulkanRenderer
+        ? vulkanOutsideMatchMessage + QStringLiteral("\n")
+            + vulkanSceneTransitionMessage + QStringLiteral("\n")
+            + vulkanResolutionMessage
+        : QString());
+
+    // Vulkan uses the software renderer for menus and other non-match screens
+    // regardless of the saved checkbox value. Make that runtime behavior
+    // visible at the renderer choice, and warn about brief scene-transition
+    // artifacts and the known 4x OSD issue while Vulkan is selected.
+    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+    const QString vulkanBaseTooltip = vulkanProbe.Available
+        ? MelonPrime::UiText::Tr(
+            "Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+        : QString::fromStdString(vulkanProbe.Reason);
+    const QString vulkanRendererDescription = vulkanRenderer && vulkanProbe.Available
+        ? vulkanBaseTooltip + QStringLiteral("\n") + vulkanOutsideMatchMessage
+        : vulkanBaseTooltip;
+    rb3DVulkan->setToolTip(vulkanRendererDescription);
+    rb3DVulkan->setWhatsThis(vulkanRendererDescription);
+
+    const QString resolutionBaseTooltip = MelonPrime::UiText::Tr(
+        "The resolution at which the 3D graphics will be rendered. Higher resolutions improve graphics quality when the main window is enlarged, but may also cause glitches.");
+    const QString vulkanResolutionWarning = MelonPrime::UiText::Tr(
+        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
+    const QString resolutionDescription = vulkanRenderer
+        ? resolutionBaseTooltip + QStringLiteral("\n") + vulkanResolutionWarning
+        : resolutionBaseTooltip;
+    ui->cbxGLResolution->setToolTip(resolutionDescription);
+    ui->cbxGLResolution->setWhatsThis(resolutionDescription);
+#else
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+#endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
     // BetterPolygons is implemented by classic OpenGL and both visible Metal
     // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRenderer);
+#else
     ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+#endif
 
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
@@ -114,6 +166,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldVSync = cfg.GetBool("Screen.VSync");
     oldVSyncInterval = cfg.GetInt("Screen.VSyncInterval");
     oldSoftThreaded = cfg.GetBool("3D.Soft.Threaded");
+#ifdef MELONPRIME_DS
+    oldForceSoftwareOutsideMatch = cfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#endif
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
@@ -153,6 +208,37 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->addWidget(ui->cbVSync, 8, 0, 1, 2);
     ui->gridLayout_2->addWidget(ui->label_2, 9, 0, 1, 1);
     ui->gridLayout_2->addWidget(ui->sbVSyncInterval, 9, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // Keep the upstream .ui renderer IDs/layout untouched. Vulkan is appended
+    // after every existing renderer so persisted numeric IDs remain stable.
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    constexpr int vulkanRow = 6;
+#else
+    constexpr int vulkanRow = 4;
+#endif
+    rb3DVulkan = new QRadioButton(ui->groupBox);
+    rb3DVulkan->setObjectName(QStringLiteral("rb3DVulkan"));
+    rb3DVulkan->setText(MelonPrime::UiText::Tr("Vulkan"));
+    rb3DVulkan->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Native Vulkan renderer. Uses the pinned SapphireRhodonite 0.7.0.rc4 implementation.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DVulkan, vulkanRow, 0, 1, 2);
+    grp3DRenderer->addButton(rb3DVulkan, renderer3D_Vulkan);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, vulkanRow + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, vulkanRow + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, vulkanRow + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, vulkanRow + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, vulkanRow + 4, 1, 1, 1);
     ui->gridLayout_2->invalidate();
     ui->gridLayout_2->activate();
     adjustSize();
@@ -203,12 +289,31 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
             : metalTooltip));
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    // A runtime failure is cached so renderer normalization can fall back
+    // without changing the persisted selection.  Reopening this dialog is
+    // the explicit retry boundary: probe the loader/device again before
+    // deciding whether the Vulkan choice remains disabled.
+    MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+    rb3DVulkan->setEnabled(vulkanProbe.Available);
+    rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
+        vulkanProbe.Available
+            ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+            : QString::fromStdString(vulkanProbe.Reason)));
+#endif
+
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
 
     ui->cbVSync->setChecked(oldVSync != 0);
     ui->sbVSyncInterval->setValue(oldVSyncInterval);
 
     ui->cbSoftwareThreaded->setChecked(oldSoftThreaded);
+#ifdef MELONPRIME_DS
+    ui->cbForceSoftwareOutsideMatch->setChecked(oldForceSoftwareOutsideMatch);
+#else
+    ui->cbForceSoftwareOutsideMatch->hide();
+#endif
 
     for (int i = 1; i <= 16; i++)
         ui->cbxGLResolution->addItem(QString("%1x native (%2x%3)").arg(i).arg(256*i).arg(192*i));
@@ -250,31 +355,73 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
         return;
     }
 
-    bool old_gl = UsesGL();
-
     auto& cfg = emuInstance->getGlobalConfig();
+#ifdef MELONPRIME_DS
+    const auto currentBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+#else
+    const bool old_gl = UsesGL();
+#endif
+
     cfg.SetInt("3D.Renderer", oldRenderer);
     cfg.SetBool("Screen.UseGL", oldGLDisplay);
     cfg.SetBool("Screen.VSync", oldVSync);
     cfg.SetInt("Screen.VSyncInterval", oldVSyncInterval);
     cfg.SetBool("3D.Soft.Threaded", oldSoftThreaded);
+#ifdef MELONPRIME_DS
+    cfg.SetBool("3D.ForceSoftwareOutsideMatch", oldForceSoftwareOutsideMatch);
+#endif
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
 
+#ifdef MELONPRIME_DS
+    const auto restoredBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+    emit updateVideoSettings(currentBackend != restoredBackend);
+#else
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 
     closeDlg();
 }
 
 void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool hasVSyncControl = hasOGL;
+    const bool vulkanRenderer =
+        emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Vulkan;
+    hasVSyncControl = hasVSyncControl || vulkanRenderer;
+    ui->cbVSync->setEnabled(hasVSyncControl);
+    // The Qt Vulkan presenter supports FIFO versus MAILBOX/IMMEDIATE, but
+    // Vulkan swapchains do not expose the OpenGL swap-interval setting.
+    ui->sbVSyncInterval->setEnabled(hasOGL && ui->cbVSync->isChecked());
+#else
     ui->cbVSync->setEnabled(hasOGL);
     ui->sbVSyncInterval->setEnabled(hasOGL);
+#endif
 }
 
 void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
+#ifdef MELONPRIME_DS
+    auto& cfg = emuInstance->getGlobalConfig();
+    const auto oldBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (renderer == renderer3D_Vulkan)
+        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+#endif
+    cfg.SetInt("3D.Renderer", renderer);
+
+    setEnabled();
+    setVsyncControlEnable(UsesGL());
+
+    const auto newBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), renderer);
+    emit updateVideoSettings(oldBackend != newBackend);
+#else
     bool old_gl = UsesGL();
 
     auto& cfg = emuInstance->getGlobalConfig();
@@ -283,6 +430,7 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
     setEnabled();
 
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 }
 
 void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
@@ -300,10 +448,15 @@ void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
 void VideoSettingsDialog::on_cbVSync_stateChanged(int state)
 {
     bool vsync = (state != 0);
+#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
     ui->sbVSyncInterval->setEnabled(vsync);
+#endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.VSync", vsync);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    setVsyncControlEnable(UsesGL());
+#endif
 
     emit updateVideoSettings(false);
 }
@@ -322,6 +475,18 @@ void VideoSettingsDialog::on_cbSoftwareThreaded_stateChanged(int state)
     cfg.SetBool("3D.Soft.Threaded", (state != 0));
 
     emit updateVideoSettings(false);
+}
+
+void VideoSettingsDialog::on_cbForceSoftwareOutsideMatch_stateChanged(int state)
+{
+#ifdef MELONPRIME_DS
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("3D.ForceSoftwareOutsideMatch", state != 0);
+
+    emit updateVideoSettings(false);
+#else
+    Q_UNUSED(state);
+#endif
 }
 
 void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)

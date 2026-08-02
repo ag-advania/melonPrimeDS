@@ -119,6 +119,12 @@ namespace MelonPrime {
             LoadRuntimeConfigSnapshot(localCfg);
 
         ApplyRuntimeConfigSnapshot(snapshot);
+#ifdef MELONPRIME_CUSTOM_HUD
+        // Cold config boundary: the Vulkan scanline renderer consumes only
+        // this cached scalar, including the first frame after an F8 load.
+        m_vulkanHelmetLayerSuppressionConfigured =
+            CustomHud_IsHelmetLayerHideConfigured(localCfg);
+#endif
         ReloadDamageNotifyPurpleConfig();
     }
 
@@ -258,6 +264,23 @@ namespace MelonPrime {
     }
 
     void MelonPrimeCore::OnEmuPause() {}
+
+    void MelonPrimeCore::OnSavestateLoaded()
+    {
+#ifdef MELONPRIME_CUSTOM_HUD
+        // Savestates replace emulated ARM9 RAM, but the native-HUD patch
+        // tracker is host-owned and is not serialized. Invalidate it on the
+        // emulation thread, then reconcile the loaded instructions immediately
+        // with the CustomHUD settings that are active now. This ordering keeps
+        // a stale native-HUD frame from escaping after F8 returns.
+        CustomHud_ReconcilePatchAfterSavestateLoad(
+            *m_hudConfigState,
+            emuInstance,
+            localCfg,
+            m_currentRom,
+            m_playerPosition);
+#endif
+    }
 
     COLD_FUNCTION void MelonPrimeCore::ApplyConfigReload()
     {

@@ -33,7 +33,12 @@ namespace melonDS
 ComputeRenderer3D::ComputeRenderer3D(melonDS::GPU3D& gpu3D, GLRenderer& parent)
     : Renderer3D(gpu3D), Parent(parent), Texcache(gpu3D.GPU, TexcacheOpenGLLoader(true))
 {
+#ifndef MELONPRIME_DS
+    // Preserve upstream melonDS initialization semantics. MelonPrimeDS keeps
+    // the -1 member initializer so the first live settings application cannot
+    // treat not-yet-compiled shader handles as an existing shader set.
     ScaleFactor = 0;
+#endif
     HiresCoordinates = false;
 }
 
@@ -322,6 +327,21 @@ void ComputeRenderer3D::Reset()
 
 void ComputeRenderer3D::SetRenderSettings(int scale, bool highResolutionCoordinates)
 {
+#ifdef MELONPRIME_DS
+    // High-resolution coordinates only change which already-calculated vertex
+    // positions SetupYSpan uses. MelonPrimeDS applies this option live during a
+    // match; rebuilding shaders, buffers and Framebuffer for that toggle leaves
+    // its 2D compositor briefly referring to a deleted 3D texture and can copy
+    // the top image into the bottom output. Keep this behavior isolated from
+    // upstream melonDS and make the MelonPrimeDS live toggle resource-free when
+    // the render scale itself did not change.
+    if (ScaleFactor == scale)
+    {
+        HiresCoordinates = highResolutionCoordinates;
+        return;
+    }
+#endif
+
     u8 TileScale;
 
     if (ScaleFactor != -1)
