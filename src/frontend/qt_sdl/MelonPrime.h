@@ -227,12 +227,6 @@ namespace MelonPrime {
         void SetFrameAdvanceFunc(std::function<void()> func);
 
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
-        [[nodiscard]] FORCE_INLINE bool IsPatchMatchActive() const
-        {
-            const uint32_t flags = m_flags.packed;
-            return (flags & StateFlags::BIT_BATTLE_RUNTIME_MODE)
-                && !(flags & StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
-        }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] bool ShouldSuppressVulkanHelmetLayers() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }

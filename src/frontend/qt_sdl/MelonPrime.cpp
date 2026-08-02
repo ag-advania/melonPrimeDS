@@ -239,7 +239,7 @@ namespace MelonPrime {
 
     bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
     {
-        return !IsPatchMatchActive();
+        return !IsInGame();
     }
 
     bool MelonPrimeCore::ShouldSuppressVulkanHelmetLayers() const

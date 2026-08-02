@@ -340,10 +340,14 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(MELONPRIME_DS)
-            const bool rendererIsInMatch = melonPrime->IsPatchMatchActive();
-            if (UNLIKELY(rendererIsInMatch != rendererWasInMatch))
+            // Renderer switching follows the ROM's broad in-game state rather
+            // than the narrower patch lifecycle. This keeps the selected GPU
+            // renderer active through match-end presentation until the game
+            // itself clears its in-game flag.
+            const bool rendererIsInGame = melonPrime->IsInGame();
+            if (UNLIKELY(rendererIsInGame != rendererWasInGame))
             {
-                rendererWasInMatch = rendererIsInMatch;
+                rendererWasInGame = rendererIsInGame;
                 const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
                 bool forceSoftwareOutsideMatch =
                     globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
