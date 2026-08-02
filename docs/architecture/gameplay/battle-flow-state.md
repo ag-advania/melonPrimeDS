@@ -22,6 +22,43 @@ detect into `m_ptrs.currentMode` / `m_ptrs.battleFlowState`.
 `flowState != 0` alone is unsafe in menu — always use the `currentMode == 0x0E` guard.
 Matches game active-match gates (`flowState == 0` = live match, including START scoreboard).
 
+## Match black window (`IsMatchBetweenBlackoutsActive`)
+
+Helpers: `src/frontend/qt_sdl/MelonPrimeBattleFlowState.h`
+(`BattleFlow::UpdateMatchBetweenBlackouts`, `MatchBlackWindowState`, `MatchTransitionPtrs`).
+
+Analysis source: [`Match-Between-Full-Black-Periods-Detection-AllVersions.md`](../../reverse-engineering/mph/Match-Between-Full-Black-Periods-Detection-AllVersions.md).
+
+True from the frame the pre-match full black lifts until the frame the post-match fade reaches
+full black. Drives `BIT_MATCH_BETWEEN_BLACKOUTS` and, through `ShouldForceSoftwareRenderer()`,
+the force-software-outside-match renderer switch in `EmuThread::run()`. The legacy `isInGame`
+flag is **not** part of that gate — it does not match the period the game actually renders a
+battle (it covers lobby/loading frames and drops before the post-match fade completes).
+
+| Concept | Condition |
+|---|---|
+| full black | `transitionType == 1 && (transitionPhase == 2 \|\| 3) && transitionBrightness <= -16` |
+| post-match context | `currentMode == 0x0E && flowState == 2` |
+| start-match context | `!postMatch && (targetMode == 0x0D \|\| 0x0E \|\| currentMode == 0x0D \|\| pendingMode == 0x0D \|\| 0x0E)` |
+
+State machine: `WAIT_START_BLACK` → (start context + full black) → `WAIT_START_BLACK_EXIT` →
+(full black lifts) → `ACTIVE` → (full black in post-match context) → `WAIT_START_BLACK`.
+Exit arms on the post-match fade (`phase == 1`) before testing for full black, so a mode commit
+on the full-black frame cannot make the end edge be missed.
+
+Addresses: `pendingMode`, `transitionBrightness` (s32), `transitionTargetMode`,
+`transitionPhase`, `transitionType` in `MelonPrimeGameRomAddrTable.h`; resolved at ROM detect
+into `m_matchTransitionPtrs`. `currentMode` / `flowState` reuse the existing `m_ptrs` entries.
+
+Hot path: reads are lazy and keyed on `transitionType`. With no darken transition running the
+screen cannot be fully black and the post-match fade cannot arm, so the steady state is one `u8`
+read per frame; the mode/flow context is read only on frames that already tested fully black,
+and is not re-read once armed. The bootstrap (`COLD_FUNCTION`) handles attaching mid-match —
+savestate load, where the pre-match black is already in the past.
+
+`m_matchBlackWindow` resets in `OnEmuStart`, `ResetRuntimeStateForBoot`,
+`DetectRomAndSetAddresses` and `OnSavestateLoaded`.
+
 ## Patch restore on match end
 
 `RunFrameHook` (cold path): while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`:
@@ -77,7 +114,8 @@ and patch registry apply/restore (see `melonprime-patch-system.md`).
 
 ## `RunFrameHook()` sequencing (ROM detected)
 
-1. Read `inGame`; set `BIT_IN_GAME` (keep `wasInGame` for rising-edge join).
+1. Read `inGame`; set `BIT_IN_GAME` (keep `wasInGame` for rising-edge join), then step the match
+   black window and set `BIT_MATCH_BETWEEN_BLACKOUTS`.
 2. **Join:** `isInGame && !BIT_IN_GAME_INIT` and (`!wasInGame` **or** `!BIT_END_OF_GAME_PATCH_RESTORED`)
    → `HandleGameJoinInit()`. Rising edge always re-inits even if `RESTORED` was stale.
 3. **Match-end poll** (only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`):
