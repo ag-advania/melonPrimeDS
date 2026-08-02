@@ -53,10 +53,23 @@ jobs:
             # just rebuilt against (e.g. qt6-qtbase falling behind
             # qt6-qtlanguageserver). `pkgin update` refreshes the local
             # summary against the mirror before resolving dependencies.
+            #
+            # cdn.netbsd.org itself also returns a transient "Service
+            # Unavailable" on pkg_summary.gz often enough to be worth a
+            # retry: pkgin/pkg_add are idempotent (already-installed
+            # packages are skipped), so retrying the whole update+install is
+            # safe. `success` is checked explicitly at the end -- a `while`
+            # loop that merely runs out of iterations exits 0 in POSIX sh,
+            # which would otherwise report the step as passing even after
+            # every attempt failed.
             install_deps: >
-              pkgin -y update && pkgin -y install cmake
+              success=0; i=1; while [ $i -le 5 ]; do
+              if pkgin -y update && pkgin -y install cmake
               extra-cmake-modules pkgconf ninja-build qt6-qtbase
-              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip
+              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip;
+              then success=1; break; fi;
+              echo "pkgin attempt $i failed, retrying in $((i * 10))s..." >&2;
+              sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
 
           - os: openbsd
             os_name: OpenBSD
