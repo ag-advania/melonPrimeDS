@@ -98,17 +98,21 @@ void VideoSettingsDialog::setEnabled()
 
     const QString vulkanOutsideMatchMessage = MelonPrime::UiText::Tr(
         "Vulkan forces software rendering outside matches; the saved setting is not changed.");
+    const QString vulkanSceneTransitionMessage = MelonPrime::UiText::Tr(
+        "During scene transitions, brief visual glitches may occur.");
     const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
         "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
     ui->lblRendererNotes->setVisible(vulkanRenderer);
     ui->lblRendererNotes->setText(vulkanRenderer
-        ? vulkanOutsideMatchMessage + QStringLiteral("\n") + vulkanResolutionMessage
+        ? vulkanOutsideMatchMessage + QStringLiteral("\n")
+            + vulkanSceneTransitionMessage + QStringLiteral("\n")
+            + vulkanResolutionMessage
         : QString());
 
     // Vulkan uses the software renderer for menus and other non-match screens
     // regardless of the saved checkbox value. Make that runtime behavior
-    // visible at the renderer choice, and warn about the known 4x OSD issue
-    // next to the resolution control while Vulkan is selected.
+    // visible at the renderer choice, and warn about brief scene-transition
+    // artifacts and the known 4x OSD issue while Vulkan is selected.
     const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
     const QString vulkanBaseTooltip = vulkanProbe.Available
         ? MelonPrime::UiText::Tr(
