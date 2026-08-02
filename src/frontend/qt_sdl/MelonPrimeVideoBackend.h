@@ -30,6 +30,9 @@ namespace MelonPrime::VideoBackend {
     {
         NativeQt,
         OpenGL,
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        Vulkan,
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
         Metal,
 #endif

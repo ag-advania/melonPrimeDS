@@ -202,6 +202,61 @@ static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     return hudVisible;
 }
 
+static bool MelonPrimeHud_IsRadarPaletteColor(uint32_t rgb)
+{
+    const uint32_t quantizedRgb = rgb & MelonPrime::kRadarPaletteQuantizationMask;
+    for (const uint32_t paletteColor : MelonPrime::kRadarPaletteColors) {
+        if (quantizedRgb == paletteColor)
+            return true;
+    }
+    return false;
+}
+
+static QImage* MelonPrimeHud_PrepareSoftwareRadarSource(
+    const QImage* bottomScreen,
+    QImage* filteredBottomScreen,
+    uint8_t hunterID,
+    int sourceRadius)
+{
+    if (!bottomScreen || bottomScreen->isNull() || bottomScreen->depth() != 32
+        || !filteredBottomScreen || sourceRadius <= 0)
+        return nullptr;
+
+    const int width = bottomScreen->width();
+    const int height = bottomScreen->height();
+    if (filteredBottomScreen->width() != width
+        || filteredBottomScreen->height() != height
+        || filteredBottomScreen->format() != QImage::Format_ARGB32_Premultiplied)
+    {
+        *filteredBottomScreen = QImage(width, height, QImage::Format_ARGB32_Premultiplied);
+        filteredBottomScreen->fill(Qt::transparent);
+    }
+
+    const int safeHunterID = std::min<int>(hunterID, MelonPrime::kHunterCount - 1);
+    const float scaleX = static_cast<float>(width) / 256.0f;
+    const float scaleY = static_cast<float>(height) / 192.0f;
+    const QRect sourceRect(
+        static_cast<int>((MelonPrime::kBtmOverlaySrcCenterX - sourceRadius) * scaleX),
+        static_cast<int>((MelonPrime::kBtmOverlaySrcCenterY[safeHunterID] - sourceRadius) * scaleY),
+        static_cast<int>(sourceRadius * 2 * scaleX),
+        static_cast<int>(sourceRadius * 2 * scaleY));
+    const QRect clippedRect = sourceRect.intersected(bottomScreen->rect());
+    if (clippedRect.isEmpty())
+        return nullptr;
+
+    for (int y = clippedRect.top(); y <= clippedRect.bottom(); ++y) {
+        const auto* sourceLine = reinterpret_cast<const QRgb*>(bottomScreen->constScanLine(y));
+        auto* destinationLine = reinterpret_cast<QRgb*>(filteredBottomScreen->scanLine(y));
+        for (int x = clippedRect.left(); x <= clippedRect.right(); ++x) {
+            const uint32_t rgb = sourceLine[x] & 0x00FFFFFFu;
+            destinationLine[x] = MelonPrimeHud_IsRadarPaletteColor(rgb)
+                ? static_cast<QRgb>(0xFF000000u | rgb)
+                : static_cast<QRgb>(0u);
+        }
+    }
+    return filteredBottomScreen;
+}
+
 template <typename CoreT>
 static QRect MelonPrimeHud_RenderTopOverlay(
     EmuInstance* emuInstance,
@@ -212,13 +267,21 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     float topStretchX,
     float hudScale,
     float hudOriginX,
-    float hudOriginY)
+    float hudOriginY,
+    const QImage* bottomScreen = nullptr,
+    QImage* filteredBottomScreen = nullptr,
+    int radarSourceRadius = 0)
 {
     const float hudOriginXds = hudOriginX / hudScale;
     const float hudOriginYds = hudOriginY / hudScale;
 
     QPainter topP(&overlay);
     topP.setFont(overlayFont);
+    QImage* radarSource = MelonPrimeHud_PrepareSoftwareRadarSource(
+        bottomScreen,
+        filteredBottomScreen,
+        mp->GetHunterID(),
+        radarSourceRadius);
     const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
     const QRect hudDirty = MelonPrime::CustomHud_Render(
         mp->HudConfigState(),
@@ -226,7 +289,7 @@ static QRect MelonPrimeHud_RenderTopOverlay(
         mp->GetCurrentRom(), mp->GetAddrHot(),
         mp->GetPlayerPosition(),
         &topP, nullptr,
-        &overlay, nullptr,
+        &overlay, radarSource,
         mp->IsInGame(),
         topStretchX, hudScale,
         hudOriginXds, hudOriginYds);

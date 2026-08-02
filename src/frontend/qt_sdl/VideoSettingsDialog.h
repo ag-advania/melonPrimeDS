@@ -71,6 +71,7 @@ private slots:
     void on_cbxComputeHiResCoords_stateChanged(int state);
 
     void on_cbSoftwareThreaded_stateChanged(int state);
+    void on_cbForceSoftwareOutsideMatch_stateChanged(int state);
 private:
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
@@ -84,12 +85,16 @@ private:
     QRadioButton* rb3DMetal = nullptr;
     QRadioButton* rb3DMetalCompute = nullptr;
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    QRadioButton* rb3DVulkan = nullptr;
+#endif
 
     int oldRenderer;
     int oldGLDisplay;
     int oldVSync;
     int oldVSyncInterval;
     int oldSoftThreaded;
+    int oldForceSoftwareOutsideMatch;
     int oldGLScale;
     int oldGLBetterPolygons;
     int oldHiresCoordinates;

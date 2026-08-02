@@ -35,6 +35,34 @@ constexpr int kBtmOverlaySrcCenterY[kHunterCount] = {
     kBtmOverlaySrcCenterYWeavel,
 };
 
+// Bottom-screen colors retained by the Custom HUD radar. OpenGL uploads this
+// table to its radar shader; software rendering uses the same packed RGB values
+// for its CPU-side color key. Keep the Vulkan shader table in sync as well.
+constexpr uint32_t kRadarPaletteColors[] = {
+    0xC0F868, // yellow-green
+    0xF8A8A8, // node red middle
+    0xE03030, // node red outer and center
+    0xA0A0A0, // octolith gray top
+    0xC8C8C8, // octolith gray center
+    0x909090, // octolith gray bottom
+    0xF88010, // octolith orange top
+    0xF8D0A0, // octolith orange center
+    0xD86800, // octolith orange bottom
+    0x88E008, // octolith green top
+    0xC8F880, // octolith green center
+    0x68B800, // octolith green bottom
+    0x1098C8, // node blue outer and center
+    0x28D8F8, // node blue middle
+    0xA8A8A8, // node gray
+};
+constexpr int kRadarPaletteColorCount =
+    static_cast<int>(sizeof(kRadarPaletteColors) / sizeof(kRadarPaletteColors[0]));
+// The software and Vulkan compositors expand DS 6-bit channels to the full
+// 8-bit range, while the established OpenGL radar palette is expressed as
+// 5-bit channel values shifted left by three. Ignore those expansion bits so
+// all renderers identify the same source colors.
+constexpr uint32_t kRadarPaletteQuantizationMask = 0x00F8F8F8u;
+
 static_assert(static_cast<int>(HunterId::Weavel) + 1 == kHunterCount,
     "HunterId and kBtmOverlaySrcCenterY must stay in sync");
 
@@ -50,5 +78,3 @@ constexpr uint32_t kHunterFrameColor[kHunterCount] = {
 };
 
 } // namespace MelonPrime
-
-

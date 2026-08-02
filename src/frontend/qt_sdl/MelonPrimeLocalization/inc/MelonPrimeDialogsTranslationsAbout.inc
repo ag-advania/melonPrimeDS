@@ -404,4 +404,3 @@
             {MenuLangId::Hebrew, "סגור"},
         }
     },
-

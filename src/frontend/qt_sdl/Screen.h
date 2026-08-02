@@ -95,6 +95,9 @@ public:
     virtual void drawScreen() {}// = 0;
 
 #ifdef MELONPRIME_DS
+    virtual void beginModalPausePresentation() {}
+    virtual void endModalPausePresentation() {}
+
     void unfocus();
     void beginClose();
 
@@ -215,7 +218,7 @@ protected:
     std::deque<OSDItem> osdItems;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
+    QImage Overlay[2];       // [0]=Top HUD, [1]=software radar color-key scratch
     QFont overlayFont;
     MelonPrimeHudConfigOnScreenEdit* m_hudEditPanel = nullptr;
     // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
@@ -230,7 +233,7 @@ protected:
     bool     m_hudEnabled    = false;
     // overlayFont rebuilt from CustomHud_ResolveBaseFont when this epoch changes.
     uint32_t m_hudFontEpoch  = ~0u;
-    // BtmOverlay config cache (GL path):
+    // BtmOverlay config cache (all renderer paths):
     uint32_t m_radarCfgEpoch = ~0u;
     bool     m_radarEnable    = false;
     int      m_radarAnchor    = 2;
@@ -357,6 +360,49 @@ private:
     std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
 #endif
 };
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+class ScreenPanelVulkan final : public ScreenPanel
+{
+public:
+    explicit ScreenPanelVulkan(QWidget* parent);
+    ~ScreenPanelVulkan() override;
+
+    bool initVulkan();
+    void drawScreen() override;
+    void beginModalPausePresentation() override;
+    void endModalPausePresentation() override;
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    bool event(QEvent* event) override;
+
+private:
+    // The per-frame body of drawScreen(). Kept separate so the platform frame
+    // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
+    // it without indenting the whole function.
+    void drawScreenFrame();
+    bool initVulkanPresenter();
+    void reportVulkanRuntimeFailure(const char* reason);
+    void setupScreenLayout() override;
+
+    // GUI-thread-only refresh of the platform presentation surface behind the
+    // panel. setupScreenLayout() cannot do this: initVulkanPresenter() calls it
+    // from the emulation thread, and macOS CoreAnimation state must only be
+    // touched from the GUI thread.
+    void refreshNativeSurfaceGuiThread();
+    void setNativeSurfaceVisibleGuiThread(bool visible);
+    // Callable from the emulation thread; posts to the GUI thread only when the
+    // requested state actually changes.
+    void requestNativeSurfaceVisible(bool visible);
+    void releaseNativeSurface();
+    [[nodiscard]] bool nativeSurfaceReady() const;
+
+    struct VulkanState;
+    std::unique_ptr<VulkanState> vulkan;
+};
+#endif
 
 
 class ScreenPanelGL : public ScreenPanel

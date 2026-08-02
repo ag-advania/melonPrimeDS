@@ -42,10 +42,18 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata) const
+#else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
+#endif
 {
     u32 coloreffect = 0;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    u32 eva = 0, evb = 0;
+#else
     u32 eva, evb;
+#endif
 
     u32 flag1 = val1 >> 24;
     u32 flag2 = val2 >> 24;
@@ -102,6 +110,15 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    if (metadata != nullptr)
+    {
+        metadata->Mode = coloreffect;
+        metadata->Eva = (coloreffect == 2 || coloreffect == 3) ? GPU2D.EVY : eva;
+        metadata->Evb = evb;
+    }
+#endif
+
     switch (coloreffect)
     {
         case 0: return val1;
@@ -123,8 +140,17 @@ void SoftRenderer2D::DrawScanline(u32 line)
         // if this 2D unit is disabled in POWCNT, the output is a fixed color
         // (black for unit A, white for unit B)
         u32 fillcolor = (GPU2D.Num == 0) ? 0xFF000000 : 0xFF3F3F3F;
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        for (int i = 0; i < 256; i++)
+        {
+            dst[i] = fillcolor;
+            if (Parent.UseStructuredVulkan2D())
+                Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), fillcolor, 0, fillcolor, 7, 0, 0);
+        }
+#else
         for (int i = 0; i < 256; i++)
             dst[i] = fillcolor;
+#endif
 
         return;
     }
@@ -132,8 +158,17 @@ void SoftRenderer2D::DrawScanline(u32 line)
     if (GPU2D.ForcedBlank)
     {
         // forced blank
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        for (int i = 0; i < 256; i++)
+        {
+            dst[i] = 0xFF3F3F3F;
+            if (Parent.UseStructuredVulkan2D())
+                Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), dst[i], 0, dst[i], 7, 0, 0);
+        }
+#else
         for (int i = 0; i < 256; i++)
             dst[i] = 0xFF3F3F3F;
+#endif
 
         return;
     }
@@ -353,7 +388,25 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val1 = BGOBJLine[i];
         u32 val2 = BGOBJLine[256+i];
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        CompositeMetadata metadata{};
+        dst[i] = ColorComposite(i, val1, val2, &metadata);
+        if (Parent.UseStructuredVulkan2D())
+        {
+            Parent.StoreStructuredEnginePixel(
+                GPU2D.Num,
+                line,
+                static_cast<u32>(i),
+                val1,
+                val2,
+                dst[i],
+                metadata.Mode,
+                metadata.Eva,
+                metadata.Evb);
+        }
+#else
         dst[i] = ColorComposite(i, val1, val2);
+#endif
     }
 }
 
@@ -718,7 +771,19 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
 
                     if (!(finalX & ofxmask) && !(finalY & ofymask))
                     {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+                        const u32 pixelByteAddress =
+                            (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
+                        if (Parent.DrawStructuredCapturePixel(GPU2D.Num, &BGOBJLine[i], pixelByteAddress))
+                        {
+                            rotX += rotA;
+                            rotY += rotC;
+                            continue;
+                        }
+                        color = *(u16*)&bgvram[pixelByteAddress];
+#else
                         color = *(u16*)&bgvram[(tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask];
+#endif
 
                         if (color & 0x8000)
                             DrawPixel(&BGOBJLine[i], color & 0x7FFF, 0x01000000<<bgnum);

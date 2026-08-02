@@ -92,15 +92,40 @@ jobs:
         sudo apt update
         sudo apt install --allow-downgrades cmake ninja-build extra-cmake-modules libpcap0.8-dev libsdl2-dev libenet-dev \
           qt6-{base,base-private,multimedia}-dev qt6-wayland libqt6svg6-dev libarchive-dev libzstd-dev libfuse2 libfaad-dev libxi-dev \
-          wayland-protocols libwayland-bin
+          wayland-protocols libwayland-bin libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers xvfb
 
     - name: Configure
-      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON
+      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
 
     - name: Build
       run: |
         cmake --build build
         DESTDIR=AppDir cmake --install build
+
+    - name: Build with Vulkan completely disabled
+      run: |
+        cmake -B build-vulkan-off -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=OFF -DMELONPRIME_FORCE_DISABLE_VULKAN=ON
+        cmake --build build-vulkan-off
+
+    - name: Build Vulkan debug validation configuration
+      if: matrix.arch.name == 'x86_64'
+      run: |
+        cmake -B build-validation -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
+        cmake --build build-validation
+
+    - name: Run Vulkan validation smoke test
+      if: matrix.arch.name == 'x86_64'
+      run: |
+        mkdir -p build-validation/portable
+        printf '3D.Renderer = 3\nScreen.VSync = false\n' > build-validation/portable/melonDS.toml
+        set +e
+        SDL_AUDIODRIVER=dummy timeout 12s xvfb-run -a ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
+        status=$?
+        set -e
+        test "$status" -eq 0 -o "$status" -eq 124
+        grep -F 'VulkanContext: instance API=1.1 validation=1' build-validation/vulkan-validation.log
+        grep -F 'VulkanPresenter: initialized' build-validation/vulkan-validation.log
+        ! grep -E 'VUID-|VulkanValidation:.*(ERROR|Error)' build-validation/vulkan-validation.log
 
     - name: Verify developer HUD golden harness is absent from release binary
       run: |

@@ -239,7 +239,16 @@ namespace MelonPrime {
 
     bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
     {
-        return m_flags.test(StateFlags::BIT_ROM_DETECTED) && !m_flags.test(StateFlags::BIT_IN_GAME);
+        return !IsInGame();
+    }
+
+    bool MelonPrimeCore::ShouldSuppressVulkanHelmetLayers() const
+    {
+#if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_VULKAN)
+        return m_vulkanHelmetLayerSuppressionConfigured;
+#else
+        return false;
+#endif
     }
 
     // =========================================================================
@@ -380,7 +389,10 @@ namespace MelonPrime {
                 // during spawn states, so init writers can briefly restore the
                 // BG1-3 layers and flash the native visor for a frame.
                 CustomHud_ClampHelmetLayersPreFrame(
-                    *m_hudConfigState, emuInstance, m_currentRom, m_playerPosition);
+                    *m_hudConfigState,
+                    emuInstance,
+                    m_currentRom,
+                    m_playerPosition);
 #endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
@@ -463,7 +475,7 @@ namespace MelonPrime {
                     else
                         emuInstance->getNDS()->ReleaseScreen();
                 }
-                InputSetBranchless(INPUT_START, !IsDown(IB_MENU));
+                InputSetBranchless(INPUT_START, !IsMetroidMenuHeld());
             }
 
             // Focus transition: reset input state + raw input layer.

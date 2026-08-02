@@ -77,7 +77,17 @@ private:
         return table;
     }();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    struct CompositeMetadata
+    {
+        u32 Mode = 0;
+        u32 Eva = 0;
+        u32 Evb = 0;
+    };
+    u32 ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata = nullptr) const;
+#else
     u32 ColorComposite(int i, u32 val1, u32 val2) const;
+#endif
 
     template<u32 bgmode> void DrawScanlineBGMode(u32 line);
     void DrawScanlineBGMode6(u32 line);
