@@ -221,6 +221,7 @@ namespace MelonPrime {
         void OnEmuPause();
         void OnEmuUnpause();
         void OnReset();
+        void OnSavestateLoaded();
         void NotifyConfigChanged();
 
         void SetFrameAdvanceFunc(std::function<void()> func);

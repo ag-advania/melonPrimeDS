@@ -1117,10 +1117,21 @@ void EmuThread::handleMessages()
 
         case msg_LoadState:
             msgResult = emuInstance->loadState(msg.param.value<QString>().toStdString());
+#ifdef MELONPRIME_DS
+            if (msgResult)
+                melonPrime->OnSavestateLoaded();
+#endif
             break;
 
         case msg_UndoStateLoad:
             emuInstance->undoStateLoad();
+#ifdef MELONPRIME_DS
+            // Undo also replaces ARM9 RAM from a savestate buffer. The
+            // operation is intentionally a no-op when no backup exists;
+            // reconciling in that case is harmless and still derives the
+            // native-HUD instruction state from the current configuration.
+            melonPrime->OnSavestateLoaded();
+#endif
             msgResult = 1;
             break;
 

@@ -118,6 +118,16 @@ namespace MelonPrime {
     // Reset patch tracking state (call on emu stop/reset).
     void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig);
 
+    // Reconcile host-side patch tracking after savestate RAM replacement.
+    // Every native-HUD instruction is immediately rewritten from the current
+    // configuration, independent of the settings used to save the state.
+    void CustomHud_ReconcilePatchAfterSavestateLoad(
+        CustomHudConfigState& hudConfig,
+        EmuInstance* emu,
+        Config::Table& localCfg,
+        const RomAddresses& rom,
+        uint8_t playerPosition);
+
     // Invalidate cached config (call when settings are saved).
     void CustomHud_InvalidateConfigCache(CustomHudConfigState& hudConfig);
 

@@ -1078,6 +1078,52 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_hudPatchForceRestorePending = true;
 }
 
+void CustomHud_ReconcilePatchAfterSavestateLoad(
+    CustomHudConfigState& hudConfig,
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    uint8_t playerPosition)
+{
+    const ScopedHudConfigState active(hudConfig);
+    auto& patch = ActiveHudConfigState().noHudPatch;
+
+    // Do not trust the normal applied-mask tracker here. A loaded state can
+    // contain either original or patched ARM9 HUD instructions, regardless of
+    // the CustomHUD setting that is active now.
+    NoHudPatch_InvalidateState(patch);
+    s_hudPatchForceRestorePending = true;
+
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+        return;
+
+    if (!CustomHud_IsEnabled(localCfg)) {
+        CustomHud_RestoreNativeHudState(rom, st);
+        return;
+    }
+
+    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
+        ReadHudRuntimeAdventurePauseState(rom, st);
+
+    uint16_t desiredMask = LoadNoHudMaskFromConfig(localCfg);
+    if (ShouldHideForGameplayState(
+            st.isStartPressed,
+            st.currentHP,
+            st.isGameOver,
+            st.isAdventure,
+            st.isMapOrUserActionPaused))
+    {
+        desiredMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
+    }
+
+    // Perform the full reconciliation before msg_LoadState returns. Waiting
+    // for the next presentation callback would fix the persistent mismatch,
+    // but could still expose one native-HUD frame immediately after F8.
+    NoHudPatch_Sync(patch, st.nds, st.romGroup, desiredMask);
+    CustomHud_MarkNoHudPatchDesired();
+}
+
 // P-3: Called from settings dialog save to trigger config re-read next frame
 static void CustomHud_InvalidateConfigCache()
 {
