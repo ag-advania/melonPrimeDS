@@ -40,30 +40,41 @@ jobs:
             # See https://github.com/vmactions/netbsd-vm/issues/2
             # Also, for some reason pkg_add is not in $PATH, so we have
             # to call it using its absolute location.
+            #
+            # pkgin defaults to the "10.0" repository, which is pkgsrc
+            # trunk rebuilt continuously package-by-package rather than as
+            # an atomic batch. That leaves it routinely internally
+            # inconsistent: confirmed via a failing run's
+            # pkg_install-err.log that qt6-qtlanguageserver had already been
+            # rebuilt to require qt6-qtbase>=6.11.1nb1, while qt6-qtbase
+            # itself was still one revision behind on the mirror (pkgsrc.se
+            # shows 6.11.1nb2 was tagged 2026-07-30, so the builder was
+            # mid-rebuild). Retrying does not help -- every attempt hits the
+            # same broken mirror state, not a transient blip. Point pkgin at
+            # the 10.0_2026Q2 quarterly branch instead: those are frozen,
+            # tested snapshots built as a coherent set, so they don't carry
+            # this class of cross-package skew. Re-pin the quarter forward
+            # if this branch is ever retired from the mirror.
             prepare_vm: |
               /usr/sbin/pkg_add pkgin curl
+              echo 'https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/10.0_2026Q2/All' \
+                > /usr/pkg/etc/pkgin/repositories.conf
               mach=$(uname -m | sed "s/evbarm/evbarm-$(uname -p)/")
               for set in xbase xcomp; do
                 curl -sL ${PKG_PATH%%/pkgsrc*}/NetBSD/NetBSD-$(uname -r
                   )/$mach/binary/sets/$set.tar.xz | tar xJpf - -C /
               done
-            # The VM image's baked-in pkgin summary can be stale relative to
-            # the live binary package mirror, which surfaces as "no pkg
-            # found for X>=Y" on a package another requested package was
-            # just rebuilt against (e.g. qt6-qtbase falling behind
-            # qt6-qtlanguageserver). `pkgin update` refreshes the local
-            # summary against the mirror before resolving dependencies.
-            #
-            # cdn.netbsd.org itself also returns a transient "Service
-            # Unavailable" on pkg_summary.gz often enough to be worth a
-            # retry: pkgin/pkg_add are idempotent (already-installed
-            # packages are skipped), so retrying the whole update+install is
-            # safe. `success` is checked explicitly at the end -- a `while`
-            # loop that merely runs out of iterations exits 0 in POSIX sh,
-            # which would otherwise report the step as passing even after
-            # every attempt failed.
+            # `pkgin update` builds the local summary from the
+            # repositories.conf entry above. A short retry covers genuine
+            # transient failures fetching pkg_summary.gz from the CDN
+            # (observed: "Service Unavailable"); pkgin/pkg_add are
+            # idempotent, so retrying the whole update+install is safe.
+            # `success` is checked explicitly at the end -- a `while` loop
+            # that merely runs out of iterations exits 0 in POSIX sh, which
+            # would otherwise report the step as passing even after every
+            # attempt failed.
             install_deps: >
-              success=0; i=1; while [ $i -le 5 ]; do
+              success=0; i=1; while [ $i -le 3 ]; do
               if pkgin -y update && pkgin -y install cmake
               extra-cmake-modules pkgconf ninja-build qt6-qtbase
               qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip;
