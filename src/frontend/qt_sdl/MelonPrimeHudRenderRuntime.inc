@@ -1017,13 +1017,28 @@ void CustomHud_ClampHelmetLayersPreFrame(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
 
-    // Native UI frames keep the original pre-frame behavior. Vulkan's stronger
-    // guarantee is presentation-only and lives in the scanline renderer.
+    // Restore the native helmet instruction before native UI is rendered.
+    // Vulkan applies its stronger guarantee presentation-only in the scanline
+    // renderer, without changing the emulated register state.
     if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
     ReadHudRuntimeAdventurePauseState(rom, st);
     if (st.isAdventure && st.isMapOrUserActionPaused)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
 
     NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
 }

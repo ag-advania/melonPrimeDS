@@ -376,7 +376,6 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
-    bool focusNextPrevChild(bool next) override;
 
 private:
     bool initVulkanPresenter();
