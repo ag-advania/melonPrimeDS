@@ -245,7 +245,9 @@ private:
     int videoRenderer;
     bool videoSettingsDirty;
 #ifdef MELONPRIME_DS
-    bool rendererWasInGame = false;
+    // Previous frame's hardware-renderer period; edge-triggers the
+    // force-software renderer switch.
+    bool rendererWasHardwarePeriod = false;
 #endif
 };
 
