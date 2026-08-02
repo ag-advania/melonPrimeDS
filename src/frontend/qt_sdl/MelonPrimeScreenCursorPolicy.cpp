@@ -90,6 +90,46 @@ RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect)
 
 #endif // _WIN32
 
+namespace {
+
+// MELONPRIME_WINDOWS_CURSOR_PRESENTATION_SYNC_V2
+// QWidget::setCursor() changes Qt's desired cursor, but Windows can keep the
+// currently displayed HCURSOR until another WM_SETCURSOR arrives. Apply the
+// desired state immediately when the pointer belongs to this top-level window.
+// ShowCursor() is intentionally avoided because its counter is process-global.
+void ApplyCursorPresentation(ScreenPanel& panel, Qt::CursorShape shape)
+{
+    panel.setCursor(shape);
+#ifdef _WIN32
+    if (QWidget* const topLevel = panel.window(); topLevel && topLevel != &panel)
+        topLevel->setCursor(shape);
+
+    const HWND panelHwnd = reinterpret_cast<HWND>(panel.winId());
+    if (!panelHwnd)
+        return;
+
+    POINT cursorPosition{};
+    if (!GetCursorPos(&cursorPosition))
+        return;
+
+    const HWND windowUnderCursor = WindowFromPoint(cursorPosition);
+    if (!windowUnderCursor)
+        return;
+
+    const HWND panelRoot = GetAncestor(panelHwnd, GA_ROOT);
+    const HWND cursorRoot = GetAncestor(windowUnderCursor, GA_ROOT);
+    if (!panelRoot || panelRoot != cursorRoot)
+        return;
+
+    if (shape == Qt::BlankCursor)
+        SetCursor(nullptr);
+    else
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+#endif
+}
+
+} // namespace
+
 namespace MelonPrime::ScreenCursorPolicy {
 
 void ContainAimCursorIfNeeded(ScreenPanel& panel)
@@ -135,7 +175,7 @@ void ClipCenter1px(ScreenPanel& panel)
     if (!panel.isActiveVisibleWindowForMelonPrime()
         || (core && !ui.focused))
     {
-        panel.setCursor(Qt::ArrowCursor);
+        ApplyCursorPresentation(panel, Qt::ArrowCursor);
         Suspend(panel);
         return;
     }
@@ -143,7 +183,7 @@ void ClipCenter1px(ScreenPanel& panel)
 #if defined(__linux__)
     panel.resetAimMouseDelta();
 #endif
-    panel.setCursor(Qt::BlankCursor);
+    ApplyCursorPresentation(panel, Qt::BlankCursor);
 
 #if defined(__APPLE__)
     const QPoint c = panel.aimContainmentCenterGlobalForPolicy();
@@ -168,7 +208,7 @@ void ClipCenter1px(ScreenPanel& panel)
                 panel.releaseMouse();
             else if (grabber != nullptr) {
                 // Never interfere with a modal/menu grab.
-                panel.setCursor(Qt::ArrowCursor);
+                ApplyCursorPresentation(panel, Qt::ArrowCursor);
                 return;
             }
         } else {
@@ -179,7 +219,7 @@ void ClipCenter1px(ScreenPanel& panel)
             // Never steal a modal/menu grab. The request remains set and a later
             // activation/click event will retry capture.
             if (QWidget::mouseGrabber() != &panel) {
-                panel.setCursor(Qt::ArrowCursor);
+                ApplyCursorPresentation(panel, Qt::ArrowCursor);
                 return;
             }
         }
@@ -239,7 +279,7 @@ void Suspend(ScreenPanel& panel)
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
-    panel.setCursor(Qt::ArrowCursor);
+    ApplyCursorPresentation(panel, Qt::ArrowCursor);
 }
 
 void Unclip(ScreenPanel& panel)
@@ -260,7 +300,7 @@ void ConfineToBottomScreen(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
-    panel.setCursor(Qt::ArrowCursor);
+    ApplyCursorPresentation(panel, Qt::ArrowCursor);
 #if defined(__linux__)
     panel.setWaylandPointerLockForMelonPrime(false);
     if (QWidget::mouseGrabber() == &panel)
@@ -309,7 +349,7 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
         return;
     }
 
-    panel.setCursor(Qt::ArrowCursor);
+    ApplyCursorPresentation(panel, Qt::ArrowCursor);
     Unclip(panel);
 }
 
