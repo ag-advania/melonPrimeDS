@@ -190,6 +190,12 @@ void NoHudPatch_ResetState(NoHudPatchState& state)
     state = {};
 }
 
+void NoHudPatch_InvalidateState(NoHudPatchState& state)
+{
+    state.appliedMask = 0;
+    state.ramStateKnown = false;
+}
+
 uint16_t NoHudPatch_GetAppliedMask(const NoHudPatchState& state)
 {
     return state.appliedMask;
@@ -198,7 +204,14 @@ uint16_t NoHudPatch_GetAppliedMask(const NoHudPatchState& state)
 void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup, uint16_t desiredMask)
 {
     desiredMask &= NOHUD_MASK_ALL;
-    const uint16_t diff = static_cast<uint16_t>(state.appliedMask ^ desiredMask);
+    // A savestate restores ARM9 instructions but not this host-side tracker.
+    // In that case every entry must be written once: applying only desired
+    // bits would leave stale hide patches from a state saved with different
+    // CustomHUD settings, while trusting appliedMask would leave native HUD
+    // instructions visible when the state was saved with CustomHUD disabled.
+    const uint16_t diff = state.ramStateKnown
+        ? static_cast<uint16_t>(state.appliedMask ^ desiredMask)
+        : NOHUD_MASK_ALL;
     if (diff == 0) return;
 
     const auto& entries = kHudPatch[romGroup];
@@ -210,6 +223,7 @@ void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup
         nds->ARM9Write32(e.addr, wantApply ? e.patchValue : e.restoreValue);
     }
     state.appliedMask = desiredMask;
+    state.ramStateKnown = true;
 }
 
 void NoHudPatch_RestoreAll(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup)
@@ -218,6 +232,7 @@ void NoHudPatch_RestoreAll(NoHudPatchState& state, melonDS::NDS* nds, uint8_t ro
     for (uint8_t i = 0; i < NOHUD_ELEMENT_COUNT; ++i)
         nds->ARM9Write32(entries[i].addr, entries[i].restoreValue);
     state.appliedMask = 0;
+    state.ramStateKnown = true;
 }
 
 } // namespace MelonPrime

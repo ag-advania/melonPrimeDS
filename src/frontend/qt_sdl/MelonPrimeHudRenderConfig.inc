@@ -1173,6 +1173,28 @@ static void RecomputeAnchorPositions(float topStretchX)
     }
 }
 
+static uint16_t LoadNoHudMaskFromConfig(Config::Table& cfg)
+{
+    uint16_t mask = 0;
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet))            mask |= (1u << NOHUD_HELMET);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Ammo))              mask |= (1u << NOHUD_AMMO);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_WeaponIcon))        mask |= (1u << NOHUD_WEAPONICON);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_HP))                mask |= (1u << NOHUD_HP);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair))         mask |= (1u << NOHUD_CROSSHAIR);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle))       mask |= (1u << NOHUD_SCORE_BATTLE);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival))     mask |= (1u << NOHUD_SCORE_SURVIVAL);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter))  mask |= (1u << NOHUD_SCORE_PRIMEHUNTER);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBounty))       mask |= (1u << NOHUD_SCORE_BOUNTY);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreCapture))      mask |= (1u << NOHUD_SCORE_CAPTURE);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreDefender))     mask |= (1u << NOHUD_SCORE_DEFENDER);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreNode))         mask |= (1u << NOHUD_SCORE_NODE);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Bomb))              mask |= (1u << NOHUD_BOMB);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Boost))             mask |= (1u << NOHUD_BOOST);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Cloak))             mask |= (1u << NOHUD_CLOAK);
+    if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_DoubleDamage))      mask |= (1u << NOHUD_DOUBLE_DAMAGE);
+    return mask;
+}
+
 static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, float hudScale = 1.0f)
 {
     auto& c = s_cache;
@@ -1311,26 +1333,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     c.bombIconOpacity     = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudBombIconOpacity);
     c.timeLeftOpacity     = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudTimeLeftOpacity);
     c.timeLimitOpacity    = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudTimeLimitOpacity);
-    {
-        uint16_t m = 0;
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet))            m |= (1u << NOHUD_HELMET);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Ammo))              m |= (1u << NOHUD_AMMO);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_WeaponIcon))        m |= (1u << NOHUD_WEAPONICON);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_HP))                m |= (1u << NOHUD_HP);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair))         m |= (1u << NOHUD_CROSSHAIR);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle))       m |= (1u << NOHUD_SCORE_BATTLE);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival))     m |= (1u << NOHUD_SCORE_SURVIVAL);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter))  m |= (1u << NOHUD_SCORE_PRIMEHUNTER);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBounty))       m |= (1u << NOHUD_SCORE_BOUNTY);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreCapture))      m |= (1u << NOHUD_SCORE_CAPTURE);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreDefender))     m |= (1u << NOHUD_SCORE_DEFENDER);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreNode))         m |= (1u << NOHUD_SCORE_NODE);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Bomb))              m |= (1u << NOHUD_BOMB);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Boost))             m |= (1u << NOHUD_BOOST);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Cloak))             m |= (1u << NOHUD_CLOAK);
-        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_DoubleDamage))      m |= (1u << NOHUD_DOUBLE_DAMAGE);
-        c.noHudMask = m;
-    }
+    c.noHudMask = LoadNoHudMaskFromConfig(cfg);
     RecomputeAnchorPositions(topStretchX);
     // P-17: Rebuild crosshair outline stamp now that geometry is final.
     RebuildCrosshairOutlineStamp(c.crosshair);
