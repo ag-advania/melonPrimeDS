@@ -20,8 +20,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     QImage* topBuffer, QImage* btmBuffer,
     bool isInGame,
     float topStretchX, float hudScale,
-    float hudOriginXds, float hudOriginYds,
-    bool forceHideForMenuHeld)
+    float hudOriginXds, float hudOriginYds)
 {
     const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
@@ -78,23 +77,18 @@ HOT_FUNCTION QRect CustomHud_Render(
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
 
-    // The game's startPressed RAM byte is a transition signal, not a stable
-    // held-key state. Vulkan presents every emulation frame, so use the input
-    // owner's held TAB state there to keep the HUD hidden for the whole native
-    // score-menu interval instead of alternating as the RAM byte changes.
-    const bool hideForNativeUi = forceHideForMenuHeld
-        || ShouldHideForGameplayState(
-            st.isStartPressed,
-            st.currentHP,
-            st.isGameOver,
-            st.isAdventure,
-            st.isMapOrUserActionPaused);
+    const bool hideForNativeUi = ShouldHideForGameplayState(
+        st.isStartPressed,
+        st.currentHP,
+        st.isGameOver,
+        st.isAdventure,
+        st.isMapOrUserActionPaused);
 
-    // Keep the selective patches stable across native-UI transitions. In
-    // particular, toggling the helmet instruction when a raw/Qt TAB snapshot
-    // briefly drops can enable BG1-3 and expose old boot frames on Vulkan.
-    // The per-scanline Vulkan mask handles those layers presentation-only.
-    const uint16_t desiredNoHudMask = c.noHudMask;
+    // Native UI needs the original helmet-layer instruction. Vulkan's held-TAB
+    // path skips this overlay entirely and masks those layers presentation-only.
+    uint16_t desiredNoHudMask = c.noHudMask;
+    if (hideForNativeUi)
+        desiredNoHudMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
     NoHudPatch_Sync(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();

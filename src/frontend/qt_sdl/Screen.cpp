@@ -1844,16 +1844,6 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->frameQueue.clear();
 }
 
-bool ScreenPanelVulkan::focusNextPrevChild(bool next)
-{
-    Q_UNUSED(next);
-    // Tab is an MPH gameplay hotkey. A native Vulkan child otherwise lets Qt
-    // treat key-repeat events as focus traversal, which clears the raw-input
-    // owner and turns a continuous held menu into alternating held/released
-    // frames. Keep keyboard focus on the render panel for the whole hold.
-    return false;
-}
-
 void ScreenPanelVulkan::beginModalPausePresentation()
 {
     if (!vulkan || vulkan->modalPauseOverlay)
@@ -2361,17 +2351,12 @@ void ScreenPanelVulkan::drawScreen()
                         m_topStretchX,
                         m_hudScale,
                         m_hudOriginX,
-                        m_hudOriginY,
-                        nullptr,
-                        nullptr,
-                        0,
-                        vulkanNativeMenuHeld);
+                        m_hudOriginY);
                     overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
                     m_hudPrevDirty = currentDirty;
                     hasOverlay = true;
 
                     if (m_radarEnable && m_hudTopMatrixValid
-                        && !vulkanNativeMenuHeld
                         && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
                             emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                     {
