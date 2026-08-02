@@ -2932,26 +2932,48 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     {
         emuThread->emuPause();
 #ifdef MELONPRIME_DS
-        // Vulkan presentation command buffers and frame references must be
-        // released while the renderer images and shared device still exist.
-        // Publish a null panel first so the paused emulation thread cannot draw
-        // through a panel while its GUI-thread resources are being destroyed.
-        destroyScreenPanel();
-        for (auto child : childwins)
-            child->destroyScreenPanel();
-
-        // Once all presenters are gone, synchronously tear down the current 3D
-        // renderer before creating the replacement backend.
-        emuThread->prepareVideoBackendTransition();
-        for (auto child : childwins)
+        const auto prepareRenderers = [&]()
         {
-            if (child->getWindowID() == 0)
+            emuThread->prepareVideoBackendTransition();
+            for (auto child : childwins)
+            {
+                if (child->getWindowID() == 0)
+                {
+                    auto thread = child->getEmuInstance()->getEmuThread();
+                    thread->prepareVideoBackendTransition();
+                }
+            }
+        };
+        const auto destroyPanels = [&]()
+        {
+            destroyScreenPanel();
+            for (auto child : childwins)
+                child->destroyScreenPanel();
+        };
+
+        if (hadOGL)
+        {
+            // The OpenGL renderer must be destroyed while its context is still
+            // current on the emulation thread. Deinitialize that context before
+            // the GUI thread deletes the panel that owns it.
+            prepareRenderers();
+            emuThread->deinitContext(windowID);
+            for (auto child : childwins)
             {
                 auto thread = child->getEmuInstance()->getEmuThread();
-                thread->prepareVideoBackendTransition();
+                thread->deinitContext(child->windowID);
             }
+            destroyPanels();
         }
-#endif
+        else
+        {
+            // Vulkan command buffers and frame references belong to the GUI
+            // presenter but refer to renderer-owned images/device state. Drop
+            // every presenter first, then replace the renderer synchronously.
+            destroyPanels();
+            prepareRenderers();
+        }
+#else
         if (hadOGL)
         {
             emuThread->deinitContext(windowID);
@@ -2961,6 +2983,7 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
                 thread->deinitContext(child->windowID);
             }
         }
+#endif
 
         createScreenPanel();
         for (auto child : childwins)
