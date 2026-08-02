@@ -34,6 +34,11 @@ constexpr const char* kXlibSurfaceExtension = "VK_KHR_xlib_surface";
 constexpr const char* kMetalSurfaceExtension = "VK_EXT_metal_surface";
 constexpr const char* kPortabilityEnumerationExtension = "VK_KHR_portability_enumeration";
 constexpr const char* kPortabilitySubsetExtension = "VK_KHR_portability_subset";
+// Some Linux build images use headers that do not declare the portability
+// enumeration flag even though the runtime can advertise the extension. Keep
+// the specification-defined bit locally so those builds compile while
+// retaining MoltenVK device enumeration support.
+constexpr VkInstanceCreateFlags kPortabilityEnumerationInstanceFlag = 0x00000001u;
 std::atomic<bool> gForceDisableTimelineSemaphores{false};
 std::atomic<bool> gForceDisableDynamicTextureIndexing{false};
 
@@ -325,7 +330,7 @@ bool VulkanContext::initializeLocked()
     VkInstanceCreateInfo instanceCreateInfo{};
     instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     if (enablePortabilityEnumeration)
-        instanceCreateInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+        instanceCreateInfo.flags |= kPortabilityEnumerationInstanceFlag;
     instanceCreateInfo.pApplicationInfo = &appInfo;
     instanceCreateInfo.enabledExtensionCount = static_cast<u32>(enabledInstanceExtensions.size());
     instanceCreateInfo.ppEnabledExtensionNames = enabledInstanceExtensions.data();
