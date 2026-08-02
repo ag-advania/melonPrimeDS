@@ -351,9 +351,14 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
         return;
     }
 
-    bool old_gl = UsesGL();
-
     auto& cfg = emuInstance->getGlobalConfig();
+#ifdef MELONPRIME_DS
+    const auto currentBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+#else
+    const bool old_gl = UsesGL();
+#endif
+
     cfg.SetInt("3D.Renderer", oldRenderer);
     cfg.SetBool("Screen.UseGL", oldGLDisplay);
     cfg.SetBool("Screen.VSync", oldVSync);
@@ -366,7 +371,13 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
 
+#ifdef MELONPRIME_DS
+    const auto restoredBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
+    emit updateVideoSettings(currentBackend != restoredBackend);
+#else
     emit updateVideoSettings(old_gl != UsesGL());
+#endif
 
     closeDlg();
 }

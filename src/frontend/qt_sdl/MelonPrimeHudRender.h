@@ -67,7 +67,8 @@ namespace MelonPrime {
         float topStretchX = 1.0f,
         float hudScale = 1.0f,
         float hudOriginXds = 0.0f,
-        float hudOriginYds = 0.0f
+        float hudOriginYds = 0.0f,
+        bool forceHideForMenuHeld = false
     );
 
     // Returns true if the custom HUD setting is enabled in config.

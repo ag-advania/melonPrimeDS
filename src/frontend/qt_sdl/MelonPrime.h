@@ -357,6 +357,7 @@ namespace MelonPrime {
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
         [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
+        [[nodiscard]] bool IsMetroidMenuHeld() const noexcept { return IsDown(IB_MENU); }
         [[nodiscard]] CustomHudConfigState& HudConfigState() noexcept
         {
             return *m_hudConfigState;

@@ -270,7 +270,8 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     float hudOriginY,
     const QImage* bottomScreen = nullptr,
     QImage* filteredBottomScreen = nullptr,
-    int radarSourceRadius = 0)
+    int radarSourceRadius = 0,
+    bool forceHideForMenuHeld = false)
 {
     const float hudOriginXds = hudOriginX / hudScale;
     const float hudOriginYds = hudOriginY / hudScale;
@@ -292,7 +293,8 @@ static QRect MelonPrimeHud_RenderTopOverlay(
         &overlay, radarSource,
         mp->IsInGame(),
         topStretchX, hudScale,
-        hudOriginXds, hudOriginYds);
+        hudOriginXds, hudOriginYds,
+        forceHideForMenuHeld);
     if (hudRenderStart)
         MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
     if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())

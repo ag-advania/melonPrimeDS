@@ -95,6 +95,9 @@ public:
     virtual void drawScreen() {}// = 0;
 
 #ifdef MELONPRIME_DS
+    virtual void beginModalPausePresentation() {}
+    virtual void endModalPausePresentation() {}
+
     void unfocus();
     void beginClose();
 
@@ -367,9 +370,12 @@ public:
 
     bool initVulkan();
     void drawScreen() override;
+    void beginModalPausePresentation() override;
+    void endModalPausePresentation() override;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     bool initVulkanPresenter();
