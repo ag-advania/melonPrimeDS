@@ -237,11 +237,6 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnReset() { OnEmuStart(); }
 
-    bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
-    {
-        return !IsInGame();
-    }
-
     bool MelonPrimeCore::ShouldSuppressVulkanHelmetLayers() const
     {
 #if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -334,6 +329,15 @@ namespace MelonPrime {
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
             const bool wasInGame = m_flags.test(StateFlags::BIT_IN_GAME);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
+
+            // Match window: pre-match full black lifts -> ... -> post-match
+            // fade reaches full black. One state-machine step per emulated
+            // frame. The pointer bundle is resolved at ROM detect and the
+            // update reads lazily; the steady state costs one u8 read.
+            m_flags.assign(
+                StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS,
+                BattleFlow::UpdateMatchBetweenBlackouts(
+                    m_matchBlackWindow, m_matchTransitionPtrs));
 
             // Join / rematch: legacy inGame rising edge, or unpause clearing INIT.
             // Rising edge always re-inits (lobby / rematch) even if RESTORED was left set.
