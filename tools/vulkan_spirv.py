@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -113,14 +114,101 @@ def compile_shader(glslc: str, source: Path, stage: str, flags: list[str]) -> by
         output_path.unlink(missing_ok=True)
 
 
-def only_generator_word_diff(expected: bytes, actual: bytes) -> bool:
-    # SPIR-V word 2 is the non-semantic generator identifier.  The pinned NDK
-    # compiler uses shaderc generator 0x000d000a; current shaderc uses
-    # 0x000d000b.  Every instruction byte must still match exactly.
+def canonical_spirv_for_comparison(module: bytes) -> tuple:
+    """Normalize known non-semantic shaderc output drift.
+
+    SPIR-V annotation order has no semantic meaning. shaderc 2026.2 also
+    emits variable-level NonWritable/NonReadable decorations when every member
+    of the pointed-to structure already has the same decoration. Older shaderc
+    versions emit only the member decorations. Normalize those redundant
+    decorations while keeping every executable instruction and every other
+    annotation exact.
+    """
+    if len(module) < 20 or len(module) % 4 != 0:
+        raise RuntimeError("invalid SPIR-V module length")
+
+    words = list(struct.unpack(f"<{len(module) // 4}I", module))
+    if words[0] != 0x07230203:
+        raise RuntimeError("invalid SPIR-V magic")
+
+    instructions = []
+    index = 5
+    while index < len(words):
+        word_count = words[index] >> 16
+        if word_count == 0 or index + word_count > len(words):
+            raise RuntimeError("invalid SPIR-V instruction length")
+        instructions.append(tuple(words[index:index + word_count]))
+        index += word_count
+
+    op_decorate = 71
+    op_member_decorate = 72
+    op_type_struct = 30
+    op_type_pointer = 32
+    op_variable = 59
+    decoration_non_writable = 24
+    decoration_non_readable = 25
+    access_decorations = (decoration_non_writable, decoration_non_readable)
+
+    struct_member_counts = {}
+    pointer_pointees = {}
+    variable_types = {}
+    member_access_decorations = set()
+    for instruction in instructions:
+        opcode = instruction[0] & 0xFFFF
+        if opcode == op_type_struct and len(instruction) >= 2:
+            struct_member_counts[instruction[1]] = len(instruction) - 2
+        elif opcode == op_type_pointer and len(instruction) >= 4:
+            pointer_pointees[instruction[1]] = instruction[3]
+        elif opcode == op_variable and len(instruction) >= 3:
+            variable_types[instruction[2]] = instruction[1]
+        elif (
+            opcode == op_member_decorate
+            and len(instruction) >= 4
+            and instruction[3] in access_decorations
+        ):
+            member_access_decorations.add(
+                (instruction[1], instruction[2], instruction[3])
+            )
+
+    redundant_access_decorations = set()
+    for variable_id, pointer_type_id in variable_types.items():
+        struct_id = pointer_pointees.get(pointer_type_id)
+        member_count = struct_member_counts.get(struct_id, 0)
+        for decoration in access_decorations:
+            if member_count > 0 and all(
+                (struct_id, member, decoration) in member_access_decorations
+                for member in range(member_count)
+            ):
+                redundant_access_decorations.add((variable_id, decoration))
+
+    annotations = []
+    executable_and_layout = []
+    for instruction in instructions:
+        opcode = instruction[0] & 0xFFFF
+        if (
+            opcode == op_decorate
+            and len(instruction) >= 3
+            and (instruction[1], instruction[2]) in redundant_access_decorations
+        ):
+            continue
+        if opcode in (op_decorate, op_member_decorate):
+            annotations.append(instruction)
+        else:
+            executable_and_layout.append(instruction)
+
+    header = words[:5]
+    header[2] = 0  # Non-semantic generator identifier.
     return (
-        len(expected) == len(actual)
-        and expected[:8] == actual[:8]
-        and expected[12:] == actual[12:]
+        tuple(header),
+        tuple(executable_and_layout),
+        tuple(sorted(annotations)),
+    )
+
+
+def only_known_toolchain_diff(expected: bytes, actual: bytes) -> bool:
+    return (
+        canonical_spirv_for_comparison(expected)
+        == canonical_spirv_for_comparison(actual)
     )
 
 
@@ -177,7 +265,7 @@ def main() -> int:
             if errors:
                 raise RuntimeError("\n".join(errors))
 
-        generator_drift = 0
+        toolchain_drift = 0
         for source, stage, symbol, header, flags in SHADERS:
             source_path = ROOT / source
             header_path = ROOT / header
@@ -186,8 +274,8 @@ def main() -> int:
             if args.mode == "check":
                 if checked_in == generated:
                     continue
-                if only_generator_word_diff(checked_in, generated):
-                    generator_drift += 1
+                if only_known_toolchain_diff(checked_in, generated):
+                    toolchain_drift += 1
                     continue
                 raise RuntimeError(f"generated SPIR-V differs: {header}")
 
@@ -202,10 +290,10 @@ def main() -> int:
             update_manifest(manifest, version)
             print(f"updated {MANIFEST.relative_to(ROOT)}")
         else:
-            if generator_drift:
+            if toolchain_drift:
                 print(
-                    f"verified {len(SHADERS)} shaders; {generator_drift} pinned headers differ "
-                    "only in the non-semantic SPIR-V generator word"
+                    f"verified {len(SHADERS)} shaders; {toolchain_drift} pinned headers differ "
+                    "only in normalized SPIR-V toolchain metadata"
                 )
             else:
                 print(f"verified {len(SHADERS)} Vulkan SPIR-V headers byte-for-byte")
