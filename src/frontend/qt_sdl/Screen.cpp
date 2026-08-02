@@ -28,6 +28,7 @@
 #include <QPainter>
 #include <QCursor>
 #include <QGuiApplication>
+#include <QLabel>
 #include <QMetaObject>
 #include <QThread>
 
@@ -1702,6 +1703,7 @@ struct ScreenPanelVulkan::VulkanState
     std::uint32_t surfaceWidth = 0;
     std::uint32_t surfaceHeight = 0;
     QImage overlayFrame;
+    QLabel* modalPauseOverlay = nullptr;
     MelonPrime::VulkanNativeWindowInfo nativeWindow;
     QMutex softwareBufferLock;
     QImage softwareScreen[2] = {
@@ -1822,6 +1824,7 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_OpaquePaintEvent, true);
+    setAttribute(Qt::WA_PaintOnScreen, true);
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize());
@@ -1839,6 +1842,50 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->presenter.Shutdown();
     vulkan->output.shutdown();
     vulkan->frameQueue.clear();
+}
+
+void ScreenPanelVulkan::beginModalPausePresentation()
+{
+    if (!vulkan || vulkan->modalPauseOverlay)
+        return;
+
+    QScreen* targetScreen = windowHandle() ? windowHandle()->screen() : nullptr;
+    if (!targetScreen)
+        targetScreen = QGuiApplication::primaryScreen();
+    if (!targetScreen)
+        return;
+
+    const QPixmap frozenFrame = targetScreen->grabWindow(winId());
+    if (frozenFrame.isNull())
+        return;
+
+    auto* overlay = new QLabel(this);
+    overlay->setAttribute(Qt::WA_NativeWindow, true);
+    overlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    overlay->setAutoFillBackground(false);
+    overlay->setScaledContents(true);
+    overlay->setPixmap(frozenFrame);
+    overlay->setGeometry(rect());
+    overlay->show();
+    overlay->raise();
+    vulkan->modalPauseOverlay = overlay;
+}
+
+void ScreenPanelVulkan::endModalPausePresentation()
+{
+    if (!vulkan || !vulkan->modalPauseOverlay)
+        return;
+
+    QLabel* overlay = vulkan->modalPauseOverlay;
+    vulkan->modalPauseOverlay = nullptr;
+    delete overlay;
+}
+
+void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
+{
+    ScreenPanel::resizeEvent(event);
+    if (vulkan && vulkan->modalPauseOverlay)
+        vulkan->modalPauseOverlay->setGeometry(rect());
 }
 
 void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
@@ -2073,6 +2120,13 @@ void ScreenPanelVulkan::drawScreen()
         return;
     }
 
+    // The native swapchain already owns the last completed image. Rebuilding
+    // from DS staging buffers while paused can surface stale boot/menu pixels;
+    // leave the swapchain untouched until emulation resumes. WA_PaintOnScreen
+    // keeps Qt from erasing the native child when a modal dialog is exposed.
+    if (!emuThread->emuIsRunning())
+        return;
+
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
@@ -2287,12 +2341,17 @@ void ScreenPanelVulkan::drawScreen()
                         m_topStretchX,
                         m_hudScale,
                         m_hudOriginX,
-                        m_hudOriginY);
+                        m_hudOriginY,
+                        nullptr,
+                        nullptr,
+                        0,
+                        mp->IsMetroidMenuHeld());
                     overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
                     m_hudPrevDirty = currentDirty;
                     hasOverlay = true;
 
                     if (m_radarEnable && m_hudTopMatrixValid
+                        && !mp->IsMetroidMenuHeld()
                         && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
                             emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                     {

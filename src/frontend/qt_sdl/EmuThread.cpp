@@ -1036,6 +1036,11 @@ void EmuThread::handleMessages()
             // alive. The UI thread waits for this message before replacing the
             // screen panel, so a later Vulkan/GL teardown cannot race an old 3D
             // renderer that still owns resources from that backend.
+            if (!emuInstance->nds)
+            {
+                videoSettingsDirty = true;
+                break;
+            }
             emuInstance->renderLock.lock();
             videoRenderer = renderer3D_Software;
             updateRenderer();

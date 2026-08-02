@@ -20,7 +20,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     QImage* topBuffer, QImage* btmBuffer,
     bool isInGame,
     float topStretchX, float hudScale,
-    float hudOriginXds, float hudOriginYds)
+    float hudOriginXds, float hudOriginYds,
+    bool forceHideForMenuHeld)
 {
     const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
@@ -77,19 +78,31 @@ HOT_FUNCTION QRect CustomHud_Render(
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
 
-    // Sync BEFORE the gameplay-state early return so the helmet bit is already
-    // applied (and tracked) during loading/spawn frames — the pre-frame layer
-    // clamp in RunFrameHook gates on the applied mask. Per-element patches NOP
-    // individual ARM draw instructions, so the start menu / death / game-over
-    // screens are unaffected by leaving them applied.
-    NoHudPatch_Sync(ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, c.noHudMask);
+    // The game's startPressed RAM byte is a transition signal, not a stable
+    // held-key state. Vulkan presents every emulation frame, so use the input
+    // owner's held TAB state there to keep the HUD hidden for the whole native
+    // score-menu interval instead of alternating as the RAM byte changes.
+    const bool hideForNativeUi = forceHideForMenuHeld
+        || ShouldHideForGameplayState(
+            st.isStartPressed,
+            st.currentHP,
+            st.isGameOver,
+            st.isAdventure,
+            st.isMapOrUserActionPaused);
+
+    // The helmet patch clears BG1-3 in the game's own HUD update. Leaving that
+    // instruction patched while the START/score UI is active can expose stale
+    // layer contents in the Vulkan 2D compositor (including an old ESRB frame).
+    // Restore only that instruction for native UI; the remaining element
+    // patches target gameplay-only draw calls and can stay applied.
+    uint16_t desiredNoHudMask = c.noHudMask;
+    if (hideForNativeUi)
+        desiredNoHudMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
+    NoHudPatch_Sync(
+        ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
-    if (ShouldHideForGameplayState(st.isStartPressed,
-                                   st.currentHP,
-                                   st.isGameOver,
-                                   st.isAdventure,
-                                   st.isMapOrUserActionPaused)) {
+    if (hideForNativeUi) {
         NotifyCrosshairZoomNotDrawn();
         return QRect();
     }

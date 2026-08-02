@@ -1002,19 +1002,38 @@ void CustomHud_ClampHelmetLayersPreFrame(
     // Gate on the tracker, not the config: the helmet bit is only ever applied
     // by Render() while CustomHUD is enabled, and this avoids a per-frame toml
     // lookup on the hot path.
-    if (!(NoHudPatch_GetAppliedMask(ActiveHudConfigState().noHudPatch) & (1u << NOHUD_HELMET)))
+    auto& patch = ActiveHudConfigState().noHudPatch;
+    const uint16_t appliedMask = NoHudPatch_GetAppliedMask(patch);
+    if (!(appliedMask & (1u << NOHUD_HELMET)))
         return;
 
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
 
-    // Native pause/score/death/game-over UI needs the normal layer state.
+    // Native pause/score/death/game-over UI needs the original helmet-layer
+    // instruction restored before the game renders this frame. Render() keeps
+    // it restored for the duration of the native UI and reapplies it after the
+    // UI closes.
     if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
     ReadHudRuntimeAdventurePauseState(rom, st);
     if (st.isAdventure && st.isMapOrUserActionPaused)
+    {
+        NoHudPatch_Sync(
+            patch,
+            st.nds,
+            st.romGroup,
+            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
         return;
+    }
 
     NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
 }

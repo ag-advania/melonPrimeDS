@@ -211,7 +211,12 @@ private:
     QStringList pickROM(bool gba);
     void updateCartInserted(bool gba);
 
+    void destroyScreenPanel();
     void createScreenPanel();
+#ifdef MELONPRIME_DS
+    void beginModalPresentationPause();
+    void endModalPresentationPause();
+#endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     void onVulkanRuntimeFallback();
 #endif
@@ -227,8 +232,9 @@ private:
 
     bool hasOGL;
 
-    bool pauseOnLostFocus;
-    bool pausedManually;
+    bool pauseOnLostFocus = false;
+    bool pausedManually = false;
+    bool pausedForLostFocus = false;
 
     int windowID;
     bool enabledSaved;
@@ -237,6 +243,7 @@ private:
 
     EmuInstance* emuInstance;
     EmuThread* emuThread;
+    QMutex screenPanelLock;
 
     Config::Table& globalCfg;
     Config::Table& localCfg;

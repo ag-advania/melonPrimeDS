@@ -1137,6 +1137,36 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QMainWindow::closeEvent(event);
 }
 
+void MainWindow::destroyScreenPanel()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    ScreenPanel* oldPanel = panel;
+    panel = nullptr;
+    if (!oldPanel)
+        return;
+
+#ifdef MELONPRIME_DS
+    oldPanel->beginClose();
+#endif
+    delete oldPanel;
+}
+
+#ifdef MELONPRIME_DS
+void MainWindow::beginModalPresentationPause()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->beginModalPausePresentation();
+}
+
+void MainWindow::endModalPresentationPause()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->endModalPausePresentation();
+}
+#endif
+
 void MainWindow::createScreenPanel()
 {
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -1147,9 +1177,7 @@ void MainWindow::createScreenPanel()
         &MainWindow::onVulkanRuntimeFallback,
         Qt::UniqueConnection);
 #endif
-    auto oldpanel = panel;
-    panel = nullptr;
-    if (oldpanel) delete oldpanel;
+    destroyScreenPanel();
 
 #ifdef MELONPRIME_DS
     // Metal-plan Phase 1 (melonprime-metal-backend-plan.md): route through the
@@ -1180,6 +1208,7 @@ void MainWindow::createScreenPanel()
 
         if (panelMetal->initMetal())
         {
+            QMutexLocker panelLock(&screenPanelLock);
             panel = panelMetal;
         }
         else
@@ -1198,6 +1227,7 @@ void MainWindow::createScreenPanel()
         panelVulkan->show();
         if (panelVulkan->initVulkan())
         {
+            QMutexLocker panelLock(&screenPanelLock);
             panel = panelVulkan;
         }
         else
@@ -1238,14 +1268,18 @@ void MainWindow::createScreenPanel()
         if (windowID != 0)
             emuThread->returnGL();
 
-        panel = panelGL;
+        {
+            QMutexLocker panelLock(&screenPanelLock);
+            panel = panelGL;
+        }
     }
 
     if (!panel && !hasOGL)
     {
         ScreenPanelNative* panelNative = new ScreenPanelNative(this);
+        panelNative->show();
+        QMutexLocker panelLock(&screenPanelLock);
         panel = panelNative;
-        panel->show();
     }
     setCentralWidget(panel);
 
@@ -1318,6 +1352,7 @@ void MainWindow::releaseGL()
 
 void MainWindow::drawScreen()
 {
+    QMutexLocker panelLock(&screenPanelLock);
     if (!panel) return;
     return panel->drawScreen();
 }
@@ -1456,13 +1491,19 @@ void MainWindow::onAppStateChanged(Qt::ApplicationState state)
     if (state == Qt::ApplicationInactive)
     {
         emuInstance->keyReleaseAll();
-        if (pauseOnLostFocus && emuThread->emuIsRunning())
+        if (pauseOnLostFocus && emuThread->emuIsRunning() && !pausedForLostFocus)
+        {
             emuThread->emuPause();
+            pausedForLostFocus = true;
+        }
     }
     else if (state == Qt::ApplicationActive)
     {
-        if (pauseOnLostFocus && !pausedManually)
+        if (pausedForLostFocus)
+        {
+            pausedForLostFocus = false;
             emuThread->emuUnpause();
+        }
     }
 }
 
@@ -2136,6 +2177,9 @@ void MainWindow::onEnableCheats(bool checked)
 
 void MainWindow::onSetupCheats()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     CheatsDialog* dlg = MP_OPEN_MELONDS_DLG(CheatsDialog, this);
@@ -2145,6 +2189,9 @@ void MainWindow::onSetupCheats()
 void MainWindow::onCheatsDialogFinished(int res)
 {
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onROMInfo()
@@ -2235,6 +2282,9 @@ bool MainWindow::lanWarning(bool host)
 
 void MainWindow::onOpenEmuSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     EmuSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(EmuSettingsDialog, this);
@@ -2272,10 +2322,16 @@ void MainWindow::onEmuSettingsDialogFinished(int res)
         actTitleManager->setEnabled(!globalCfg.GetString("DSi.NANDPath").empty());
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onOpenInputConfig()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
@@ -2286,6 +2342,7 @@ void MainWindow::onOpenInputConfig()
 /* MelonPrimeDS {*/
 void MainWindow::onOpenMetroidInputSettings()
 {
+    beginModalPresentationPause();
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
@@ -2296,6 +2353,7 @@ void MainWindow::onOpenMetroidInputSettings()
 
 void MainWindow::onOpenMetroidOtherSettings()
 {
+    beginModalPresentationPause();
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
@@ -2306,6 +2364,7 @@ void MainWindow::onOpenMetroidOtherSettings()
 
 void MainWindow::onOpenMetroidCustomHudSettings()
 {
+    beginModalPresentationPause();
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
@@ -2373,6 +2432,9 @@ void MainWindow::onInputConfigFinished(int res)
 {
     emuThread->emuUnpause();
 #ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
+#ifdef MELONPRIME_DS
     actMetroidFixSF->setChecked(localCfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze));
     actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
     actMetroidDisableDoubleDamageMultiplier->setChecked(
@@ -2397,6 +2459,9 @@ void MainWindow::onOpenVideoSettings()
 
 void MainWindow::onOpenCameraSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     camStarted[0] = camManager[0]->isStarted();
@@ -2414,6 +2479,9 @@ void MainWindow::onCameraSettingsFinished(int res)
     if (camStarted[1]) camManager[1]->start();
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onOpenAudioSettings()
@@ -2428,6 +2496,9 @@ void MainWindow::onOpenAudioSettings()
 
 void MainWindow::onOpenFirmwareSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     FirmwareSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(FirmwareSettingsDialog, this);
@@ -2440,10 +2511,16 @@ void MainWindow::onFirmwareSettingsFinished(int res)
         onReset();
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onOpenPathSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     PathSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(PathSettingsDialog, this);
@@ -2456,6 +2533,9 @@ void MainWindow::onPathSettingsFinished(int res)
         onReset();
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onUpdateAudioVolume(int vol, int dsisync)
@@ -2486,6 +2566,9 @@ void MainWindow::onAudioSettingsFinished(int res)
 
 void MainWindow::onOpenMPSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     MPSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(MPSettingsDialog, this);
@@ -2499,10 +2582,16 @@ void MainWindow::onMPSettingsFinished(int res)
     MPInterface::Get().SetRecvTimeout(globalCfg.GetInt("MP.RecvTimeout"));
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onOpenWifiSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
 
     WifiSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(WifiSettingsDialog, this);
@@ -2515,10 +2604,16 @@ void MainWindow::onWifiSettingsFinished(int res)
         onReset();
 
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onOpenInterfaceSettings()
 {
+#ifdef MELONPRIME_DS
+    beginModalPresentationPause();
+#endif
     emuThread->emuPause();
     InterfaceSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(InterfaceSettingsDialog, this);
     connect(dlg, &InterfaceSettingsDialog::finished, this, &MainWindow::onInterfaceSettingsFinished);
@@ -2538,6 +2633,9 @@ void MainWindow::onUpdateInterfaceSettings()
 void MainWindow::onInterfaceSettingsFinished(int res)
 {
     emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+    endModalPresentationPause();
+#endif
 }
 
 void MainWindow::onChangeScreenSize()
@@ -2819,10 +2917,16 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     {
         emuThread->emuPause();
 #ifdef MELONPRIME_DS
-        // Tear down the current 3D renderer before its Vulkan presentation
-        // objects or OpenGL context disappear. Keeping this synchronous also
-        // prevents injected graphics layers from observing partially destroyed
-        // backend state during a live renderer switch.
+        // Vulkan presentation command buffers and frame references must be
+        // released while the renderer images and shared device still exist.
+        // Publish a null panel first so the paused emulation thread cannot draw
+        // through a panel while its GUI-thread resources are being destroyed.
+        destroyScreenPanel();
+        for (auto child : childwins)
+            child->destroyScreenPanel();
+
+        // Once all presenters are gone, synchronously tear down the current 3D
+        // renderer before creating the replacement backend.
         emuThread->prepareVideoBackendTransition();
         for (auto child : childwins)
         {
