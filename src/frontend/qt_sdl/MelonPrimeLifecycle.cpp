@@ -157,6 +157,7 @@ namespace MelonPrime {
         InstanceDiagnostics::LogOwnedStates(
             emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
+        m_matchBlackWindow = {};
         // A restarted/reopened ROM begins in menu cursor mode. Supersede any
         // hide/capture request left by the previous match before its next GUI pass.
         isCursorMode = true;
@@ -199,6 +200,7 @@ namespace MelonPrime {
     void MelonPrimeCore::ResetRuntimeStateForBoot()
     {
         m_flags.packed = 0;
+        m_matchBlackWindow = {};
         isCursorMode = true;
         m_threadBridge.ResetCursorPresentationFromEmu();
         m_zoomAimCanZoomCache = {};
@@ -267,6 +269,11 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnSavestateLoaded()
     {
+        // A savestate can land anywhere, including mid-match: the pre-match
+        // full black this window keys off may already be in the past. Re-arm
+        // the bootstrap so the next frame classifies the loaded state.
+        m_matchBlackWindow = {};
+
 #ifdef MELONPRIME_CUSTOM_HUD
         // Savestates replace emulated ARM9 RAM, but the native-HUD patch
         // tracker is host-owned and is not serialized. Invalidate it on the
