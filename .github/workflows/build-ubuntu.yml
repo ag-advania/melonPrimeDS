@@ -121,13 +121,27 @@ jobs:
     # native window owned by Qt so the splash screen can paint without
     # competing with a swapchain), so "VulkanPresenter: initialized" is never
     # reachable without a ROM and must not be asserted here.
+    #
+    # At the 12s mark, timeout sends SIGTERM to xvfb-run, which tears down
+    # its Xvfb server; melonPrimeDS then sees its X connection break and
+    # begins an async shutdown. Platform::Log() writes via plain vprintf()
+    # with no fflush(), and stdout here is a redirected file rather than a
+    # tty, so glibc fully buffers it -- the log lines this step asserts on
+    # can still be sitting in that buffer, unwritten, when xvfb-run's own
+    # exit lets `timeout` return control to this script (confirmed: a run
+    # captured with "Show Vulkan validation log" below had every assertion
+    # satisfied once melonPrimeDS finally exited, moments after the grep
+    # step had already read and failed against an incomplete file). Rather
+    # than patch upstream-owned Platform.cpp's buffering, force melonPrimeDS
+    # itself unbuffered from here with stdbuf so every write() lands
+    # immediately, independent of how or when the process is torn down.
     - name: Run Vulkan validation smoke test
       if: matrix.arch.name == 'x86_64'
       run: |
         mkdir -p build-validation/portable
         printf '3D.Renderer = 3\nScreen.VSync = false\n' > build-validation/portable/melonDS.toml
         set +e
-        SDL_AUDIODRIVER=dummy timeout 12s xvfb-run -a ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
+        SDL_AUDIODRIVER=dummy timeout 12s xvfb-run -a stdbuf -o0 -e0 ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
         status=$?
         set -e
         test "$status" -eq 0 -o "$status" -eq 124
