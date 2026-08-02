@@ -77,19 +77,23 @@ HOT_FUNCTION QRect CustomHud_Render(
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
 
-    // Sync BEFORE the gameplay-state early return so the helmet bit is already
-    // applied (and tracked) during loading/spawn frames — the pre-frame layer
-    // clamp in RunFrameHook gates on the applied mask. Per-element patches NOP
-    // individual ARM draw instructions, so the start menu / death / game-over
-    // screens are unaffected by leaving them applied.
-    NoHudPatch_Sync(ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, c.noHudMask);
+    const bool hideForNativeUi = ShouldHideForGameplayState(
+        st.isStartPressed,
+        st.currentHP,
+        st.isGameOver,
+        st.isAdventure,
+        st.isMapOrUserActionPaused);
+
+    // Native UI needs the original helmet-layer instruction. Vulkan's held-TAB
+    // path skips this overlay entirely and masks those layers presentation-only.
+    uint16_t desiredNoHudMask = c.noHudMask;
+    if (hideForNativeUi)
+        desiredNoHudMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
+    NoHudPatch_Sync(
+        ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
-    if (ShouldHideForGameplayState(st.isStartPressed,
-                                   st.currentHP,
-                                   st.isGameOver,
-                                   st.isAdventure,
-                                   st.isMapOrUserActionPaused)) {
+    if (hideForNativeUi) {
         NotifyCrosshairZoomNotDrawn();
         return QRect();
     }

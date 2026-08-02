@@ -208,6 +208,12 @@ namespace Config
     #endif
         {"3D.Soft.Threaded", true},
     #ifdef MELONPRIME_DS
+        // Keep menu and other non-match screens on the software renderer when
+        // requested. Vulkan enables this behavior at runtime without changing
+        // the saved preference.
+        {"3D.ForceSoftwareOutsideMatch", false},
+    #endif
+    #ifdef MELONPRIME_DS
         {"3D.GL.BetterPolygons", true}, // melonPrimeDS Added
     #endif
         {"3D.GL.HiresCoordinates", true},

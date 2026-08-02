@@ -42,6 +42,11 @@ Raw equivalent:
 cd /Users/admin/git/melonPrimeDS && cmake --build build-mac --parallel 4 2>&1
 ```
 
+## Script Index
+
+Every macOS build/test entry point, including the Metal test scripts, is
+listed in [`tools/build/macos/README.md`](../../../tools/build/macos/README.md).
+
 ## Options Wrapper
 
 For non-default jobs, release builds, or `--open`:
@@ -56,12 +61,38 @@ For non-default jobs, release builds, or `--open`:
 
 Prefer `build-macos-dev.sh` for the normal local dev build unless the user asks for another configuration.
 
+## Vulkan (MoltenVK)
+
+The Vulkan renderer builds alongside the native Metal renderer. It has its own
+script and dependencies; see [`macos-vulkan.md`](macos-vulkan.md).
+
+Metal + Vulkan in one bundle (Finder double-click):
+
+```zsh
+open tools/build/macos/build_macos_metal_n_vulkan.command
+```
+
+```zsh
+./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal
+```
+
+`MELONPRIME_ENABLE_VULKAN` defaults to `ON`, so the scripts above also compile
+the Vulkan renderer in once `vulkan-headers` is installed. Without those
+headers CMake reports `MelonPrime Vulkan backend: disabled` and the build
+continues without it.
+
 ## Dependencies
 
 Install Homebrew packages once:
 
 ```zsh
 brew install cmake ninja pkgconf sdl2 qt libarchive enet zstd faad2 libslirp
+```
+
+For the Vulkan renderer, additionally:
+
+```zsh
+brew install vulkan-headers molten-vk
 ```
 
 Use Homebrew dependencies directly; do not use vcpkg for the local macOS build.
