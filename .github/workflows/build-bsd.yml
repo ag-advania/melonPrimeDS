@@ -40,17 +40,63 @@ jobs:
             # See https://github.com/vmactions/netbsd-vm/issues/2
             # Also, for some reason pkg_add is not in $PATH, so we have
             # to call it using its absolute location.
+            #
+            # The actual root cause of every "no pkg found for X" error seen
+            # chasing this (dbus>=0.91, qt6-qtbase>=6.11.1nb1, ...): this
+            # extraction loop originally built its URL from `$PKG_PATH`, but
+            # that variable is never set in this shell, and every run logged
+            # "sh: PKG_PATH: parameter not set" for it -- meaning the X sets
+            # were NEVER actually being extracted, on any run, since this
+            # workaround was added. `pkg_add`/pkgin's dependency resolver
+            # correctly detects the resulting gap (no /usr/X11R7/lib on the
+            # VM at all) and refuses to treat a package as "found" once its
+            # own X11 client-library requirements can't be satisfied --
+            # which is most of our GUI-facing dependency tree (dbus,
+            # qt6-qtbase, SDL2, qt6-qtmultimedia's transitive deps, ...).
+            # Confirmed by downloading xbase.tar.xz directly: it does
+            # contain usr/X11R7/lib/libX11.so.7, libxcb.so.2, etc. -- the
+            # release set is fine, only the extraction was silently a no-op.
+            # Use the same cdn.NetBSD.org base the pkgin repository below
+            # already resolves to instead of the unset variable.
+            #
+            # Separately (real, independently confirmed, and worth keeping
+            # regardless): pkgin's default "10.0" repository is pkgsrc trunk
+            # rebuilt continuously package-by-package rather than as an
+            # atomic batch, which showed a real qt6-qtbase/qt6-qtlanguageserver
+            # version skew in a failing run's pkg_install-err.log (pkgsrc.se:
+            # qt6-qtbase 6.11.1nb2 was tagged 2026-07-30, so the builder was
+            # mid-rebuild). The 10.0_2026Q2 quarterly branch is a frozen,
+            # tested snapshot built as a coherent set -- verified directly
+            # against its pkg_summary.gz to contain qt6-qtbase-6.11.1nb2,
+            # qt6-qtlanguageserver-6.11.1nb1 (whose >=6.11.1nb1 requirement
+            # that satisfies), and dbus-1.16.2nb2. Re-pin the quarter forward
+            # if this branch is ever retired from the mirror.
             prepare_vm: |
               /usr/sbin/pkg_add pkgin curl
+              echo 'https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/10.0_2026Q2/All' \
+                > /usr/pkg/etc/pkgin/repositories.conf
               mach=$(uname -m | sed "s/evbarm/evbarm-$(uname -p)/")
               for set in xbase xcomp; do
-                curl -sL ${PKG_PATH%%/pkgsrc*}/NetBSD/NetBSD-$(uname -r
+                curl -sL https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$(uname -r
                   )/$mach/binary/sets/$set.tar.xz | tar xJpf - -C /
               done
+            # `pkgin update` builds the local summary from the
+            # repositories.conf entry above. A short retry covers genuine
+            # transient failures fetching pkg_summary.gz from the CDN
+            # (observed: "Service Unavailable"); pkgin/pkg_add are
+            # idempotent, so retrying the whole update+install is safe.
+            # `success` is checked explicitly at the end -- a `while` loop
+            # that merely runs out of iterations exits 0 in POSIX sh, which
+            # would otherwise report the step as passing even after every
+            # attempt failed.
             install_deps: >
-              pkgin -y install cmake extra-cmake-modules pkgconf
-              ninja-build qt6-qtbase qt6-qtmultimedia qt6-qtsvg SDL2
-              libarchive zstd enet faad2 zip
+              success=0; i=1; while [ $i -le 3 ]; do
+              if pkgin -y update && pkgin -y install cmake
+              extra-cmake-modules pkgconf ninja-build qt6-qtbase
+              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip;
+              then success=1; break; fi;
+              echo "pkgin attempt $i failed, retrying in $((i * 10))s..." >&2;
+              sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
 
           - os: openbsd
             os_name: OpenBSD
@@ -88,6 +134,14 @@ jobs:
 
     - name: Install dependencies
       run: ${{ matrix.install_deps }}
+
+    # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
+    # neither the packages nor the reason; the detail only goes to this file
+    # inside the VM. Surface it so a failure here is diagnosable from the CI
+    # log instead of needing a follow-up run just to see what broke.
+    - name: Show NetBSD pkg_install error log
+      if: always() && matrix.os == 'netbsd'
+      run: cat /var/db/pkgin/pkg_install-err.log || true
 
     - name: Configure
       run: >
