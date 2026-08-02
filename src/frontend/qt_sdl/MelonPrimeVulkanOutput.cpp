@@ -1978,47 +1978,6 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
     if (topPacked == nullptr || bottomPacked == nullptr)
         return false;
 
-    const bool topStructuredAboveDominant =
-        screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.topScreenStats);
-    const bool bottomStructuredAboveDominant =
-        screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.bottomScreenStats);
-    for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
-    {
-        const size_t packedRowBase = y * static_cast<size_t>(kAcceleratedStride);
-        const size_t snapshotRowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
-        std::memcpy(
-            topPacked + packedRowBase,
-            softPackedSnapshot.packedTopPlane0.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        std::memcpy(
-            topPacked + packedRowBase + SoftPackedFrameSnapshot::kScreenWidth,
-            softPackedSnapshot.packedTopPlane1.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        std::memcpy(
-            topPacked + packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
-            softPackedSnapshot.packedTopControl.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        topPacked[packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 3u)] =
-            softPackedSnapshot.packedTopLineMeta[y]
-            | (topStructuredAboveDominant ? kMetaFlagStructuredAboveDominant : 0u);
-
-        std::memcpy(
-            bottomPacked + packedRowBase,
-            softPackedSnapshot.packedBottomPlane0.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        std::memcpy(
-            bottomPacked + packedRowBase + SoftPackedFrameSnapshot::kScreenWidth,
-            softPackedSnapshot.packedBottomPlane1.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        std::memcpy(
-            bottomPacked + packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
-            softPackedSnapshot.packedBottomControl.data() + snapshotRowBase,
-            SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
-        bottomPacked[packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 3u)] =
-            softPackedSnapshot.packedBottomLineMeta[y]
-            | (bottomStructuredAboveDominant ? kMetaFlagStructuredAboveDominant : 0u);
-    }
-
     const bool topStructuredHandoffNoCurrent3d =
         !softPackedSnapshot.hasCapture3dSource
         && screenUsesStructuredHandoffWithoutCurrent3d(
@@ -2045,23 +2004,6 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
         !softPackedSnapshot.currentFrameOnly
         && lastValidBottomPackedAvailable
         && bottomPackedCarryState;
-    if (topPackedCarryFromPrevious)
-    {
-        std::memcpy(
-            topPacked,
-            lastValidTopPacked.data(),
-            lastValidTopPacked.size() * sizeof(u32));
-    }
-    if (bottomPackedCarryFromPrevious)
-    {
-        std::memcpy(
-            bottomPacked,
-            lastValidBottomPacked.data(),
-            lastValidBottomPacked.size() * sizeof(u32));
-    }
-    resource.topPackedCarryFromPrevious = topPackedCarryFromPrevious;
-    resource.bottomPackedCarryFromPrevious = bottomPackedCarryFromPrevious;
-
     const auto screenHasReusablePacked2d = [](const SoftPackedScreenStats& stats) {
         return stats.RegularCaptureUses3dLines == 0u
             && stats.VramCaptureUses3dLines == 0u
@@ -2071,22 +2013,84 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
                 || stats.StructuredAboveVisiblePixels > static_cast<u32>(kScreenWidth)
                 || stats.Structured2DOnlyVisiblePixels > static_cast<u32>(kScreenWidth));
     };
-    if (topPackedCarryFromPrevious || screenHasReusablePacked2d(softPackedSnapshot.topScreenStats))
+    const bool cacheCurrentTop = !topPackedCarryFromPrevious
+        && screenHasReusablePacked2d(softPackedSnapshot.topScreenStats);
+    const bool cacheCurrentBottom = !bottomPackedCarryFromPrevious
+        && screenHasReusablePacked2d(softPackedSnapshot.bottomScreenStats);
+
+    // Host-visible Vulkan allocations are commonly write-combined. Reading
+    // the just-written mapped buffers back into the temporal caches cost
+    // several milliseconds per frame on discrete GPUs. Build reusable frames
+    // in ordinary CPU memory first, then perform one-way writes to mapped GPU
+    // memory; carried frames already reside in those CPU caches.
+    u32* topDestination = cacheCurrentTop ? lastValidTopPacked.data() : topPacked;
+    u32* bottomDestination = cacheCurrentBottom ? lastValidBottomPacked.data() : bottomPacked;
+    const bool topStructuredAboveDominant =
+        screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.topScreenStats);
+    const bool bottomStructuredAboveDominant =
+        screenUsesFullRegularComp7WithDominantAbove(softPackedSnapshot.bottomScreenStats);
+    for (size_t y = 0; y < SoftPackedFrameSnapshot::kLineCount; y++)
+    {
+        const size_t packedRowBase = y * static_cast<size_t>(kAcceleratedStride);
+        const size_t snapshotRowBase = y * SoftPackedFrameSnapshot::kScreenWidth;
+        if (!topPackedCarryFromPrevious)
+        {
+            std::memcpy(
+                topDestination + packedRowBase,
+                softPackedSnapshot.packedTopPlane0.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            std::memcpy(
+                topDestination + packedRowBase + SoftPackedFrameSnapshot::kScreenWidth,
+                softPackedSnapshot.packedTopPlane1.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            std::memcpy(
+                topDestination + packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
+                softPackedSnapshot.packedTopControl.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            topDestination[packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 3u)] =
+                softPackedSnapshot.packedTopLineMeta[y]
+                | (topStructuredAboveDominant ? kMetaFlagStructuredAboveDominant : 0u);
+        }
+        if (!bottomPackedCarryFromPrevious)
+        {
+            std::memcpy(
+                bottomDestination + packedRowBase,
+                softPackedSnapshot.packedBottomPlane0.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            std::memcpy(
+                bottomDestination + packedRowBase + SoftPackedFrameSnapshot::kScreenWidth,
+                softPackedSnapshot.packedBottomPlane1.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            std::memcpy(
+                bottomDestination + packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 2u),
+                softPackedSnapshot.packedBottomControl.data() + snapshotRowBase,
+                SoftPackedFrameSnapshot::kScreenWidth * sizeof(melonDS::u32));
+            bottomDestination[packedRowBase + (SoftPackedFrameSnapshot::kScreenWidth * 3u)] =
+                softPackedSnapshot.packedBottomLineMeta[y]
+                | (bottomStructuredAboveDominant ? kMetaFlagStructuredAboveDominant : 0u);
+        }
+    }
+
+    if (topPackedCarryFromPrevious || cacheCurrentTop)
     {
         std::memcpy(
-            lastValidTopPacked.data(),
             topPacked,
+            lastValidTopPacked.data(),
             lastValidTopPacked.size() * sizeof(u32));
-        lastValidTopPackedAvailable = true;
     }
-    if (bottomPackedCarryFromPrevious || screenHasReusablePacked2d(softPackedSnapshot.bottomScreenStats))
+    if (cacheCurrentTop)
+        lastValidTopPackedAvailable = true;
+    if (bottomPackedCarryFromPrevious || cacheCurrentBottom)
     {
         std::memcpy(
-            lastValidBottomPacked.data(),
             bottomPacked,
+            lastValidBottomPacked.data(),
             lastValidBottomPacked.size() * sizeof(u32));
-        lastValidBottomPackedAvailable = true;
     }
+    if (cacheCurrentBottom)
+        lastValidBottomPackedAvailable = true;
+    resource.topPackedCarryFromPrevious = topPackedCarryFromPrevious;
+    resource.bottomPackedCarryFromPrevious = bottomPackedCarryFromPrevious;
     lastPackedScreenSwap = softPackedSnapshot.screenSwapLatched;
     lastPackedScreenSwapValid = true;
     if ((topPackedCarryFromPrevious || bottomPackedCarryFromPrevious)
