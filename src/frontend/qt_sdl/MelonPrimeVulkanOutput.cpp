@@ -2038,10 +2038,12 @@ bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
             || screenUsesPlainStructured3dSlot(softPackedSnapshot.bottomScreenStats))
         && topStructuredHandoffNoCurrent3d;
     const bool topPackedCarryFromPrevious =
-        lastValidTopPackedAvailable
+        !softPackedSnapshot.currentFrameOnly
+        && lastValidTopPackedAvailable
         && topPackedCarryState;
     const bool bottomPackedCarryFromPrevious =
-        lastValidBottomPackedAvailable
+        !softPackedSnapshot.currentFrameOnly
+        && lastValidBottomPackedAvailable
         && bottomPackedCarryState;
     if (topPackedCarryFromPrevious)
     {
@@ -2313,8 +2315,10 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     packedUploadCpuWindow.Add(PerfNowNs() - packedUploadStartNs);
     const bool currentBackendIsGraphics =
         renderer3D.GetActiveBackendMode() == melonDS::VulkanRenderer3D::BackendMode::GraphicsHardware;
+    const bool nativeMenuHeld = softPackedSnapshot.currentFrameOnly;
     const FrameResource* previousResource = nullptr;
-    if (lastPreparedFrame != nullptr && lastPreparedFrame != frame)
+    if (!softPackedSnapshot.currentFrameOnly
+        && lastPreparedFrame != nullptr && lastPreparedFrame != frame)
     {
         const auto previousIt = resources.find(lastPreparedFrame);
         if (previousIt != resources.end())
@@ -2571,8 +2575,9 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && topUsesStructured3d
         && class4BottomAboveMotionActive;
     const bool class4AsymmetricBottomDominantPair =
-        class4BottomDominantAsymmetricMarker
-        || class4BottomDominantAsymmetricCarry;
+        !softPackedSnapshot.currentFrameOnly
+        && (class4BottomDominantAsymmetricMarker
+            || class4BottomDominantAsymmetricCarry);
     const bool class4NoAbovePreservePackedTopVram =
         class4NoAboveVramStructuredPair
         && topUsesVramCapture3d
@@ -2741,6 +2746,12 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && topUsesRegularCapture3d)
     {
         liveSourceScreenSwap = true;
+    }
+    if (nativeMenuHeld)
+    {
+        // The menu remains live: use the renderer's current target and only
+        // suppress stale 2D/capture history through currentFrameOnly.
+        liveSourceScreenSwap = backendRenderScreenSwap;
     }
     const bool topPlainStructuredComp7UsesOppositeLive3d =
         currentBackendIsGraphics
@@ -2917,6 +2928,7 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     }
 
     const bool canReusePreRunSnapshot = hasStablePreviousPreparedFrame
+        && !softPackedSnapshot.currentFrameOnly
         && resource.hasRenderer3dSnapshot
         && frame->renderTimelineValue != 0
         && resource.snapshotFromPreRun
@@ -3048,7 +3060,8 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && topUsesPlainStructuredComp7Slot
         && !live3dOwnerIsTop;
     const bool topNeedsAccumulatedHighres =
-        topCanUseAccumulatedHighres
+        !softPackedSnapshot.currentFrameOnly
+        && topCanUseAccumulatedHighres
         && (!topStructuredHandoffNoCurrent3d || live3dOwnerIsTop)
         && (live3dOwnerIsTop
             || framesSinceTopLive3D <= 1u
@@ -3061,7 +3074,8 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
                 && !live3dOwnerIsTop
                 && !topPlainStructuredComp7PureAlternatingVramPair));
     const bool bottomNeedsAccumulatedHighres =
-        bottomCanUseAccumulatedHighres
+        !softPackedSnapshot.currentFrameOnly
+        && bottomCanUseAccumulatedHighres
         && (!bottomStructuredHandoffNoCurrent3d || !live3dOwnerIsTop)
         && (!live3dOwnerIsTop
             || framesSinceBottomLive3D <= 1u
@@ -3122,12 +3136,13 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         }
     };
 
-    if (topNeedsAccumulatedHighres)
+    if (!softPackedSnapshot.currentFrameOnly && topNeedsAccumulatedHighres)
         latchPreviousLcdSource(lastTopRendererSourceFrame, true);
-    if (bottomNeedsAccumulatedHighres)
+    if (!softPackedSnapshot.currentFrameOnly && bottomNeedsAccumulatedHighres)
         latchPreviousLcdSource(lastBottomRendererSourceFrame, false);
 
-    const bool useAccumulators = resource.snapshotFromGraphicsBackend
+    const bool useAccumulators = !softPackedSnapshot.currentFrameOnly
+        && resource.snapshotFromGraphicsBackend
         && accumulatedHighresWidth == currentSourceWidth
         && accumulatedHighresHeight == currentSourceHeight;
     const bool topAccumulatorAvailable = useAccumulators
@@ -3407,7 +3422,8 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         resource.previousBottomRendererSourceValid = true;
     }
     resource.replayTopComposedFromPrevious =
-        currentBackendIsGraphics
+        !softPackedSnapshot.currentFrameOnly
+        && currentBackendIsGraphics
         && ((topStructuredHandoffIncomplete && !resource.topPackedCarryFromPrevious)
             || topStructuredHandoffBlankCarry
             || topPlainStructuredComp7ReplayComposed
@@ -3415,13 +3431,16 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         && lastTopComposedFrame != nullptr
         && lastTopComposedFrame != frame;
     resource.replayBottomComposedFromPrevious =
-        currentBackendIsGraphics
+        !softPackedSnapshot.currentFrameOnly
+        && currentBackendIsGraphics
         && ((bottomStructuredHandoffIncomplete && !resource.bottomPackedCarryFromPrevious)
             || bottomStructuredHandoffBlankCarry
             || bottomPlainStructuredComp7ReplayComposed)
         && lastBottomComposedFrame != nullptr
         && lastBottomComposedFrame != frame;
-    resource.replayTopComposedFromLatest = topRegularComp7BottomComp2ReplayComposed;
+    resource.replayTopComposedFromLatest =
+        !softPackedSnapshot.currentFrameOnly
+        && topRegularComp7BottomComp2ReplayComposed;
     resource.previousTopComposedFrame =
         (resource.replayTopComposedFromPrevious && !resource.replayTopComposedFromLatest)
             ? lastTopComposedFrame
@@ -3575,13 +3594,18 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
         ? softPackedSnapshot.capture3dSourceDsFrame.data()
         : nullptr;
     const u32* previousPreparedCapture3dSource =
-        !renderer2dDebugControlsActive && previousResource != nullptr && previousResource->hasPreparedCapture3dSource
+        !softPackedSnapshot.currentFrameOnly
+        && !renderer2dDebugControlsActive
+        && previousResource != nullptr
+        && previousResource->hasPreparedCapture3dSource
         ? (previousResource->capture3dMapped != nullptr
             ? static_cast<const u32*>(previousResource->capture3dMapped)
             : previousResource->preparedCapture3dSource.data())
         : nullptr;
     const u32* lastValidPreparedCapture3dSource =
-        renderer2dDebugControlsActive ? nullptr : lastValidCapture3dSource.data();
+        renderer2dDebugControlsActive || softPackedSnapshot.currentFrameOnly
+            ? nullptr
+            : lastValidCapture3dSource.data();
     const bool frameUsesCurrentRegularCapture3d =
         softPackedSnapshot.topScreenStats.RegularCaptureUses3dLines > 0u
         || softPackedSnapshot.topScreenStats.VramCaptureUses3dLines > 0u
@@ -3613,8 +3637,12 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             ? softPackedSnapshot.comp4TopPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidTopComp4Placeholder.data();
-        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidTopComp4PlaceholderLines.data();
+        lastValidComp4Placeholder = renderer2dDebugControlsActive || softPackedSnapshot.currentFrameOnly
+            ? nullptr
+            : lastValidTopComp4Placeholder.data();
+        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive || softPackedSnapshot.currentFrameOnly
+            ? nullptr
+            : lastValidTopComp4PlaceholderLines.data();
     }
     else if (preferBottomComp4Placeholder)
     {
@@ -3622,8 +3650,12 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             ? softPackedSnapshot.comp4BottomPlaceholder.data()
             : nullptr;
         preferredComp4PlaceholderIsTemporal = true;
-        lastValidComp4Placeholder = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4Placeholder.data();
-        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive ? nullptr : lastValidBottomComp4PlaceholderLines.data();
+        lastValidComp4Placeholder = renderer2dDebugControlsActive || softPackedSnapshot.currentFrameOnly
+            ? nullptr
+            : lastValidBottomComp4Placeholder.data();
+        lastValidComp4PlaceholderLines = renderer2dDebugControlsActive || softPackedSnapshot.currentFrameOnly
+            ? nullptr
+            : lastValidBottomComp4PlaceholderLines.data();
     }
     const auto* captureLineUses3dMask = &softPackedSnapshot.captureLineUses3dMask;
     const bool renderer2dCapture3dSourceHasPixels =
@@ -3658,7 +3690,8 @@ bool MelonPrimeVulkanOutput::updatePreparedCapture3dSource(
             && !(preferredComp4LineIsSolidOpaqueBlack && latchedComp4LineHasPixels);
         const bool lineHasPixels = capture3dSourceLineHasAnyUsefulPixel(preparedCapture3dSource, y);
         const bool latchedLineHasPixels =
-            !renderer2dDebugControlsActive
+            !softPackedSnapshot.currentFrameOnly
+            && !renderer2dDebugControlsActive
             && lastValidCapture3dSourceLines[static_cast<size_t>(y)] != 0u
             && capture3dSourceLineHasAnyUsefulPixel(lastValidPreparedCapture3dSource, y);
         const bool previousLineHasPixels = capture3dSourceLineHasAnyUsefulPixel(previousPreparedCapture3dSource, y);

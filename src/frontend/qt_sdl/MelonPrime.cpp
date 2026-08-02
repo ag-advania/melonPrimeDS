@@ -242,6 +242,15 @@ namespace MelonPrime {
         return !IsPatchMatchActive();
     }
 
+    bool MelonPrimeCore::ShouldSuppressVulkanHelmetLayers() const
+    {
+#if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_VULKAN)
+        return m_vulkanHelmetLayerSuppressionConfigured;
+#else
+        return false;
+#endif
+    }
+
     // =========================================================================
     // Per-frame hook and global hotkeys
     // =========================================================================
@@ -379,14 +388,11 @@ namespace MelonPrime {
                 // window. The game's own clamp (patched helmet site) early-outs
                 // during spawn states, so init writers can briefly restore the
                 // BG1-3 layers and flash the native visor for a frame.
-                const bool clampForVulkanMenu = IsMetroidMenuHeld()
-                    && globalCfg.GetInt("3D.Renderer") == renderer3D_Vulkan;
                 CustomHud_ClampHelmetLayersPreFrame(
                     *m_hudConfigState,
                     emuInstance,
                     m_currentRom,
-                    m_playerPosition,
-                    clampForVulkanMenu);
+                    m_playerPosition);
 #endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.

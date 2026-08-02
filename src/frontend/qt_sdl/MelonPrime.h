@@ -233,6 +233,7 @@ namespace MelonPrime {
                 && !(flags & StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
+        [[nodiscard]] bool ShouldSuppressVulkanHelmetLayers() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     // True when the platform raw filter owns aim deltas. ScreenPanel uses
@@ -541,6 +542,10 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        // Loaded only at the cold config boundary. Vulkan reads this scalar
+        // before every frame so an F8 load cannot expose one unmasked frame
+        // while the ARM patch tracker is still being re-established.
+        bool     m_vulkanHelmetLayerSuppressionConfigured = false;
         // The raw/Qt keyboard owner can change at the same time the native
         // START menu changes capture mode. Keep a tiny release grace so a
         // one-frame source handoff cannot pulse START and close/reopen the UI.

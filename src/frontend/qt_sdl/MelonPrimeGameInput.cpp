@@ -22,6 +22,7 @@
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeRawInputState.h"
+#include "MelonPrimeRawHotkeyVkBinding.h"
 #endif
 
 // Unity-owned hook fragments in this file:
@@ -186,8 +187,33 @@ namespace MelonPrime {
 #endif
 
         constexpr uint8_t kMenuHeldGraceFrames = 4;
+#ifdef _WIN32
+        // START is a level-triggered gameplay control, not an edge action.
+        // While Raw Input owns FPS controls, Qt can still be the only layer
+        // retaining Tab across native-child focus traversal or a missed raw
+        // repeat. Merge only this held bit; press edges and every other action
+        // continue to use the single selected input owner above.
+        const uint64_t menuHeldMask = hotDownMask | emuInstance->hotkeyMask;
+        const SmallVkList menuVks = MapQtKeyIntToVks(
+            emuInstance->hkKeyMapping[HK_MetroidMenu]);
+        bool physicalMenuKeyDown = false;
+        for (const UINT vk : menuVks)
+        {
+            if ((GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0)
+            {
+                physicalMenuKeyDown = true;
+                break;
+            }
+        }
+#else
+        const uint64_t menuHeldMask = hotDownMask;
+#endif
         const bool menuHotkeyDown =
-            ((hotDownMask >> HK_MetroidMenu) & 1ULL) != 0;
+            ((menuHeldMask >> HK_MetroidMenu) & 1ULL) != 0
+#ifdef _WIN32
+            || physicalMenuKeyDown
+#endif
+            ;
         if (menuHotkeyDown)
             m_menuHeldGraceFrames = kMenuHeldGraceFrames;
         else if constexpr (!kReentrant)

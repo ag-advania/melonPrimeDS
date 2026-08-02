@@ -1844,6 +1844,16 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->frameQueue.clear();
 }
 
+bool ScreenPanelVulkan::focusNextPrevChild(bool next)
+{
+    Q_UNUSED(next);
+    // Tab is an MPH gameplay hotkey. A native Vulkan child otherwise lets Qt
+    // treat key-repeat events as focus traversal, which clears the raw-input
+    // owner and turns a continuous held menu into alternating held/released
+    // frames. Keep keyboard focus on the render panel for the whole hold.
+    return false;
+}
+
 void ScreenPanelVulkan::beginModalPausePresentation()
 {
     if (!vulkan || vulkan->modalPauseOverlay)
@@ -2171,6 +2181,13 @@ void ScreenPanelVulkan::drawScreen()
         return;
     }
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    auto* mp = emuThread->GetMelonPrimeCore();
+    const bool vulkanNativeMenuHeld = structuredView.NativeMenuHeld;
+#else
+    const bool vulkanNativeMenuHeld = false;
+#endif
+
     {
         QMutexLocker bufferLock(&vulkan->softwareBufferLock);
         vulkan->softwareMode = false;
@@ -2211,6 +2228,10 @@ void ScreenPanelVulkan::drawScreen()
     snapshot.frontBufferLatched = 0;
     snapshot.screenSwapLatched = nds->GPU.ScreenSwap;
     snapshot.valid = true;
+    // The held native MPH menu changes DS display/capture routing without a
+    // stable compositor cadence. Never let its frame select a temporal source:
+    // old VRAM-backed content can otherwise be promoted into Vulkan history.
+    snapshot.currentFrameOnly = vulkanNativeMenuHeld;
     FillStructuredPackedScreen(
         structuredView.Plane[0][0],
         structuredView.Plane[0][1],
@@ -2290,13 +2311,6 @@ void ScreenPanelVulkan::drawScreen()
         surfaceHeight,
         emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    auto* mp = emuThread->GetMelonPrimeCore();
-    const bool vulkanNativeMenuHeld = mp && mp->IsMetroidMenuHeld();
-#else
-    const bool vulkanNativeMenuHeld = false;
-#endif
-
     bool hasOverlay = false;
     MelonPrime::VulkanRadarFrame radarFrame{};
     const qreal dpr = devicePixelRatioF();
@@ -2320,7 +2334,7 @@ void ScreenPanelVulkan::drawScreen()
 #ifdef MELONPRIME_CUSTOM_HUD
         {
             const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
-            if (MelonPrimeHud_CanRenderForCore(mp, editMode))
+            if (!vulkanNativeMenuHeld && MelonPrimeHud_CanRenderForCore(mp, editMode))
             {
                 auto& instcfg = emuInstance->getLocalConfig();
                 MelonPrimeHud_RefreshHudEnabledIfNeeded(

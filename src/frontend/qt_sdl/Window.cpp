@@ -1389,6 +1389,21 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
     emuInstance->onKeyRelease(event);
 }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+bool MainWindow::focusNextPrevChild(bool next)
+{
+    // QWidget consumes Tab for focus traversal before keyPressEvent reaches
+    // MainWindow. With the native Vulkan child active, every auto-repeat could
+    // therefore expose an older swapchain image for one DWM composition. Raw
+    // input owns gameplay Tab, so keep focus stable on this one presentation
+    // path. Modal dialogs have their own window and retain normal traversal.
+    if (dynamic_cast<ScreenPanelVulkan*>(panel) != nullptr)
+        return false;
+
+    return QMainWindow::focusNextPrevChild(next);
+}
+#endif
+
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {

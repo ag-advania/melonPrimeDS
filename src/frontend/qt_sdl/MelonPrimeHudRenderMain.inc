@@ -90,14 +90,11 @@ HOT_FUNCTION QRect CustomHud_Render(
             st.isAdventure,
             st.isMapOrUserActionPaused);
 
-    // On Vulkan, restoring the helmet instruction while TAB is held enables
-    // BG1-3 whose VRAM can still contain old boot-logo frames. Keep that one
-    // patch active for the held native menu; the pre-frame hook clamps the
-    // corresponding DISPCNT bits before Vulkan renders each emulation frame.
-    // Other backends retain the native-UI restoration behavior.
-    uint16_t desiredNoHudMask = c.noHudMask;
-    if (hideForNativeUi && !forceHideForMenuHeld)
-        desiredNoHudMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
+    // Keep the selective patches stable across native-UI transitions. In
+    // particular, toggling the helmet instruction when a raw/Qt TAB snapshot
+    // briefly drops can enable BG1-3 and expose old boot frames on Vulkan.
+    // The per-scanline Vulkan mask handles those layers presentation-only.
+    const uint16_t desiredNoHudMask = c.noHudMask;
     NoHudPatch_Sync(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();

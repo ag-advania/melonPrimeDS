@@ -64,6 +64,7 @@ void SoftRenderer::Reset()
     StructuredCapturePlanes.fill(0);
     StructuredCaptureLineValid.fill(0);
     StructuredCaptureLineUses3D.fill(0);
+    StructuredCaptureLineGeneration.fill(0);
     StructuredEngineLineUsesCapture3D.fill(0);
     StructuredCapture3DSource.fill(0);
     StructuredCapture3DSourceLineValid.fill(0);
@@ -74,6 +75,11 @@ void SoftRenderer::Reset()
     StructuredCaptureScreenSwap = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
+    StructuredFrameNativeMenuHeld = false;
+    SuppressMainBg123ForFrame = false;
+    NativeMenuHeldForFrame = false;
+    StructuredFrameGeneration = 0;
+    NativeMenuStartGeneration = 0;
 #endif
 }
 
@@ -137,6 +143,7 @@ void SoftRenderer::DrawScanline(u32 line)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
         if (structuredVulkan2D && outputLine == 0u)
         {
+            ++StructuredFrameGeneration;
             StructuredCapture3DSource.fill(0);
             StructuredCapture3DSourceLineValid.fill(0);
             StructuredCapture3DSourceValid = false;
@@ -171,7 +178,21 @@ void SoftRenderer::DrawScanline(u32 line)
 #endif
 
         // draw BG/OBJ layers
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        // The MPH native START menu can rewrite DISPCNT after the frontend's
+        // pre-frame helmet clamp. For the Vulkan structured-2D source, mask
+        // BG1-3 at every scanline while the selective helmet patch is active
+        // so a mid-frame rewrite cannot expose stale boot-logo tiles. Restore
+        // the emulated register immediately; this is presentation-only.
+        const u32 savedMainDispCnt = GPU.GPU2D_A.DispCnt;
+        if (SuppressMainBg123ForFrame && structuredVulkan2D)
+            GPU.GPU2D_A.DispCnt &= ~0x0E00u;
+#endif
         Rend2D_A->DrawScanline(line);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (SuppressMainBg123ForFrame && structuredVulkan2D)
+            GPU.GPU2D_A.DispCnt = savedMainDispCnt;
+#endif
         Rend2D_B->DrawScanline(line);
 
         // draw the final screen output
@@ -758,7 +779,11 @@ void SoftRenderer::StoreStructuredCaptureLine(
             {
                 const std::size_t sourceLine = static_cast<std::size_t>(address / 256u);
                 const std::size_t validIndex = static_cast<std::size_t>(sourceBBank) * 192u + sourceLine;
-                if (StructuredCaptureLineValid[validIndex] != 0u)
+                const bool sourceBMetadataUsable =
+                    StructuredCaptureLineValid[validIndex] != 0u
+                    && (!NativeMenuHeldForFrame
+                        || StructuredCaptureLineGeneration[validIndex] >= NativeMenuStartGeneration);
+                if (sourceBMetadataUsable)
                 {
                     const std::size_t sourceBase = static_cast<std::size_t>(sourceBBank) * 3u * StructuredPixelCount;
                     const std::size_t sourceIndex = static_cast<std::size_t>(address);
@@ -790,11 +815,14 @@ void SoftRenderer::StoreStructuredCaptureLine(
         else if (captureMode >= 2u && sourceAHas3D && eva != 0u)
         {
             plane0 = flatOutput;
-            const u16 sourceBPacked = (captureCnt & (1u << 25u)) != 0u
-                ? GPU.DispFIFOBuffer[x]
-                : (sourceBFromVram && sourceBBank < 4u
-                    ? reinterpret_cast<const u16*>(GPU.VRAM[sourceBBank])[(sourceBAddress + x) & 0xFFFFu]
-                    : 0u);
+            const bool sourceBUsesFifo = (captureCnt & (1u << 25u)) != 0u;
+            const u16 sourceBPacked = NativeMenuHeldForFrame
+                ? 0u
+                : sourceBUsesFifo
+                    ? GPU.DispFIFOBuffer[x]
+                    : (sourceBFromVram && sourceBBank < 4u
+                        ? reinterpret_cast<const u16*>(GPU.VRAM[sourceBBank])[(sourceBAddress + x) & 0xFFFFu]
+                        : 0u);
             plane1 = ((sourceBPacked & 0x8000u) != 0u && evb != 0u)
                 ? PackedCaptureColorToColor6(sourceBPacked)
                 : 0u;
@@ -826,6 +854,7 @@ void SoftRenderer::StoreStructuredCaptureLine(
             const std::size_t validIndex = static_cast<std::size_t>(destinationBank) * 192u + destinationLine;
             StructuredCaptureLineValid[validIndex] = 1;
             StructuredCaptureLineUses3D[validIndex] = lineUses3D ? 1 : 0;
+            StructuredCaptureLineGeneration[validIndex] = StructuredFrameGeneration;
         }
     }
 }
@@ -848,7 +877,9 @@ bool SoftRenderer::DrawStructuredCapturePixel(u32 engine, u32* destination, u32 
         if ((mapMask & (1u << bank)) == 0u)
             continue;
         const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + (captureAddress / 256u);
-        if (StructuredCaptureLineValid[validIndex] == 0u)
+        if (StructuredCaptureLineValid[validIndex] == 0u
+            || (NativeMenuHeldForFrame
+                && StructuredCaptureLineGeneration[validIndex] < NativeMenuStartGeneration))
             continue;
 
         const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
@@ -918,7 +949,33 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         const u32 bank = (GPU.GPU2D_A.DispCnt >> 18u) & 0x3u;
         const std::size_t validIndex = static_cast<std::size_t>(bank) * 192u + line;
-        if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u && StructuredCaptureLineValid[validIndex] != 0u)
+        if (NativeMenuHeldForFrame && (GPU.VRAMMap_LCDC & (1u << bank)) != 0u)
+        {
+            // MPH's held START menu temporarily selects an LCDC display bank.
+            // The bank is not refreshed reliably while the menu is static, so
+            // even metadata written after the transition can describe pixels
+            // inherited from a pre-match software-renderer epoch. The intended
+            // main-screen content is the current 3D source; never expose the
+            // raw LCDC bank while the menu key remains held.
+            for (std::size_t x = 0; x < 256u; ++x)
+            {
+                const std::size_t pixelIndex = rowBase + x;
+                StructuredScreenPlanes[destinationBase + pixelIndex] = 0u;
+                StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0u;
+                StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] = 0x40000000u;
+            }
+            const u16 brightness = GPU.MasterBrightnessA;
+            lineMeta =
+                (2u << 16u)
+                | (1u << 22u)
+                | (static_cast<u32>(brightness >> 14u) << 8u)
+                | static_cast<u32>(brightness & 0x1Fu);
+            copiedStructured = true;
+        }
+        else if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u
+            && StructuredCaptureLineValid[validIndex] != 0u
+            && (!NativeMenuHeldForFrame
+                || StructuredCaptureLineGeneration[validIndex] >= NativeMenuStartGeneration))
         {
             const std::size_t captureBase = static_cast<std::size_t>(bank) * 3u * StructuredPixelCount;
             for (std::size_t plane = 0; plane < 3u; ++plane)
@@ -953,7 +1010,10 @@ void SoftRenderer::BuildStructuredScreenLine(
     }
     StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + line] = lineMeta;
     if (line == 191u)
+    {
+        StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
         StructuredFrameValid = true;
+    }
 }
 
 bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept
@@ -972,6 +1032,7 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.CaptureLineUses3D = StructuredCapture3DSourceLineValid.data();
     view.HasCapture3DSource = StructuredCapture3DSourceValid;
     view.CaptureScreenSwap = StructuredCaptureScreenSwap;
+    view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
     view.Valid = true;
     return true;
 }
