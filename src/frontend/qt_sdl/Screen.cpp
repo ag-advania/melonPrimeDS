@@ -24,6 +24,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
 
 #include <QPaintEvent>
 #include <QPainter>
@@ -1729,6 +1730,18 @@ struct ScreenPanelVulkan::VulkanState
 namespace
 {
 
+std::mutex& VulkanPanelRegistryMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::vector<ScreenPanelVulkan*>& VulkanPanelRegistry()
+{
+    static std::vector<ScreenPanelVulkan*> panels;
+    return panels;
+}
+
 void FillStructuredPackedScreen(
     const u32* sourcePlane0,
     const u32* sourcePlane1,
@@ -1827,6 +1840,11 @@ void FillStructuredPackedScreen(
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     : ScreenPanel(parent), vulkan(std::make_unique<VulkanState>())
 {
+    {
+        std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
+        VulkanPanelRegistry().push_back(this);
+    }
+
     setAutoFillBackground(false);
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -1852,14 +1870,77 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
 
 ScreenPanelVulkan::~ScreenPanelVulkan()
 {
+    {
+        std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
+        auto& panels = VulkanPanelRegistry();
+        panels.erase(
+            std::remove(panels.begin(), panels.end(), this),
+            panels.end());
+    }
+
     if (!vulkan)
         return;
-    vulkan->presenter.Shutdown();
-    vulkan->output.shutdown();
-    vulkan->frameQueue.clear();
-    // Ordered after Shutdown(): the VkSurfaceKHR created from the platform
-    // surface must be gone before the surface itself is released.
+
+    prepareForRendererTransition();
+    // Ordered after the complete Vulkan quiesce.
     releaseNativeSurface();
+}
+
+void ScreenPanelVulkan::prepareForRendererTransition()
+{
+    if (!vulkan)
+        return;
+
+    const bool hadPresenter = vulkan->presenterInitialized;
+    const bool hadOutput = vulkan->output.isInitialized();
+
+    // Consumer-to-producer teardown. Presenter commands can sample compositor
+    // images, while compositor commands can sample renderer-owned VkImageViews.
+    vulkan->presenter.Shutdown();
+    vulkan->presenterInitialized = false;
+
+    // shutdown() performs vkDeviceWaitIdle before destroying compositor command
+    // buffers, descriptor sets, frame resources and cached image-view bindings.
+    // This must finish before NDS::SetRenderer destroys VulkanRenderer3D.
+    vulkan->output.shutdown();
+
+    vulkan->frameQueue.clear();
+    vulkan->snapshot.clear();
+    vulkan->consecutiveFailures = 0;
+    vulkan->runtimeFailureReported = false;
+
+    {
+        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
+        vulkan->softwareMode = true;
+        vulkan->hasSoftwareBuffers = false;
+    }
+
+    requestNativeSurfaceVisible(false);
+
+    if (hadPresenter || hadOutput)
+    {
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "Vulkan presentation/output quiesced before renderer transition "
+            "(presenter=%d output=%d)",
+            hadPresenter ? 1 : 0,
+            hadOutput ? 1 : 0);
+    }
+}
+
+void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instance)
+{
+    if (instance == nullptr)
+        return;
+
+    // Destructor unregisters under this lock before deleting VulkanState.
+    std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
+    for (ScreenPanelVulkan* panel : VulkanPanelRegistry())
+    {
+        if (panel == nullptr || panel->emuInstance != instance)
+            continue;
+        panel->prepareForRendererTransition();
+    }
 }
 
 void ScreenPanelVulkan::beginModalPausePresentation()
@@ -2302,12 +2383,40 @@ void ScreenPanelVulkan::drawScreenFrame()
     auto* renderer = dynamic_cast<VulkanRenderer*>(&nds->GPU.GetRenderer());
     VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
 
+    // Fullscreen/native-window changes can schedule one final Vulkan-panel draw
+    // after EmuThread has already replaced the renderer with Software/OpenGL.
+    // RendererOutput may still describe the preceding GPU frame at that point.
+    // Never reacquire VulkanContext from that stale panel pass.
+    if (!renderer || !renderer3D)
+    {
+        if (vulkan->presenterInitialized || vulkan->output.isInitialized())
+            prepareForRendererTransition();
+        else
+            requestNativeSurfaceVisible(false);
+        return;
+    }
+
+    // The transition hook shuts the complete output down before the old Vulkan
+    // renderer dies. Recreate it only after identifying a new Vulkan renderer.
+    if (!vulkan->output.isInitialized() && !vulkan->output.init())
+    {
+        if (vulkan->consecutiveFailures++ == 0)
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "Vulkan output reinitialization failed after renderer transition");
+        }
+        reportVulkanRuntimeFailure(
+            "Vulkan output reinitialization failed after renderer transition");
+        return;
+    }
+
     SoftRenderer::StructuredVulkanFrameView structuredView{};
-    if (!renderer3D || !renderer || !renderer->GetStructuredVulkanFrame(structuredView)
+    if (!renderer->GetStructuredVulkanFrame(structuredView)
         || !structuredView.Valid)
     {
         if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan renderer or 2D source");
+            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan 2D source");
         return;
     }
 
