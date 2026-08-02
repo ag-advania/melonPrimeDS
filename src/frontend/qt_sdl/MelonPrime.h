@@ -22,6 +22,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimeThreadBridge.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeZoomState.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
@@ -152,6 +153,8 @@ namespace MelonPrime {
         uint8_t* weaponChange;
 
         // [Tier 3: Conditional / Rare]
+        // The match black-window state machine reads its own inputs through
+        // MatchTransitionPtrs, not through this struct.
         uint8_t* currentMode;       // isEndOfGame poll (only while in-game init, pre-restore)
         uint8_t* battleFlowState;
         uint8_t* selectedWeapon;
@@ -227,7 +230,19 @@ namespace MelonPrime {
         void SetFrameAdvanceFunc(std::function<void()> func);
 
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
-        [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
+        // True from the frame the pre-match full black lifts until the frame
+        // the post-match fade reaches full black. See
+        // BattleFlow::UpdateMatchBetweenBlackouts.
+        [[nodiscard]] FORCE_INLINE bool IsMatchBetweenBlackoutsActive() const {
+            return m_flags.test(StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS);
+        }
+        // The match window is the definition of "in a match" for the
+        // force-software-outside-match feature; the ROM's in-game flag is not
+        // consulted. Called every frame by EmuThread's renderer-switch edge
+        // check, so it stays inline: one flags load, no call.
+        [[nodiscard]] FORCE_INLINE bool ShouldForceSoftwareRenderer() const {
+            return !IsMatchBetweenBlackoutsActive();
+        }
         [[nodiscard]] bool ShouldSuppressVulkanHelmetLayers() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
@@ -600,12 +615,21 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_STYLUS_MODE = 1u << 11;
             static constexpr uint32_t BIT_LAST_FOCUSED = 1u << 13;
             static constexpr uint32_t BIT_BLOCK_STYLUS = 1u << 14;
+            // Between the pre-match and post-match full blacks; see
+            // IsMatchBetweenBlackoutsActive().
+            static constexpr uint32_t BIT_MATCH_BETWEEN_BLACKOUTS = 1u << 16;
 
             FORCE_INLINE void set(uint32_t bit) { packed |= bit; }
             FORCE_INLINE void clear(uint32_t bit) { packed &= ~bit; }
             FORCE_INLINE void assign(uint32_t bit, bool val) { packed = (packed & ~bit) | (val ? bit : 0u); }
             [[nodiscard]] FORCE_INLINE bool test(uint32_t bit) const { return (packed & bit) != 0; }
         } m_flags{};
+
+        // Drives BIT_MATCH_BETWEEN_BLACKOUTS. Reset with the flags on every
+        // ROM / session / instance lifecycle transition; the pointers are
+        // resolved once per ROM detect.
+        BattleFlow::MatchBlackWindowState m_matchBlackWindow{};
+        BattleFlow::MatchTransitionPtrs m_matchTransitionPtrs{};
 
         // --- Warm: Frame advance + platform ---
         std::function<void()> m_frameAdvanceFunc;

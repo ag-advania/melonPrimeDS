@@ -63,6 +63,11 @@ namespace MelonPrime {
     X(ADDR, baseAimY,                 BaseAimY,                  0x020E03EEu, 0x020E03AEu, 0x020DE52Eu, 0x020DEDAEu, 0x020DEDCEu, 0x020DEE4Eu, 0x020D7C16u) \
     X(ADDR, baseChosenHunter,         BaseChosenHunter,          0x020CD358u, 0x020CD318u, 0x020CB51Cu, 0x020CBDA4u, 0x020CBDC4u, 0x020CBE44u, 0x020C4B88u) \
     X(ADDR, currentMode,              CurrentMode,               0x020E6B30u, 0x020E6AF0u, 0x020E4A04u, 0x020E54CCu, 0x020E54ECu, 0x020E556Cu, 0x020DE31Au) \
+    X(ADDR, pendingMode,              PendingMode,               0x020E6B28u, 0x020E6AE8u, 0x020E49FCu, 0x020E54C4u, 0x020E54E4u, 0x020E5564u, 0x020DE318u) /* u8; main loop continues the current mode while currentMode == pendingMode */ \
+    X(ADDR, transitionBrightness,     TransitionBrightness,      0x020E6B38u, 0x020E6AF8u, 0x020E4A0Cu, 0x020E54D4u, 0x020E54F4u, 0x020E5574u, 0x020DE320u) /* s32 MASTER_BRIGHT factor; <= -16 is fully black */ \
+    X(ADDR, transitionTargetMode,     TransitionTargetMode,      0x020E6B3Cu, 0x020E6AFCu, 0x020E4A10u, 0x020E54D8u, 0x020E54F8u, 0x020E5578u, 0x020DE324u) /* u8 (brightness +4) */ \
+    X(ADDR, transitionPhase,          TransitionPhase,           0x020E6B3Du, 0x020E6AFDu, 0x020E4A11u, 0x020E54D9u, 0x020E54F9u, 0x020E5579u, 0x020DE325u) /* u8 (brightness +5); 1=fade out 2=full black 3=fade in */ \
+    X(ADDR, transitionType,           TransitionType,            0x020E6B3Eu, 0x020E6AFEu, 0x020E4A12u, 0x020E54DAu, 0x020E54FAu, 0x020E557Au, 0x020DE326u) /* u8 (brightness +6); 1=darken */ \
     X(ADDR, battleFlowState,          BattleFlowState,           0x020E6B48u, 0x020E6B08u, 0x020E4A1Cu, 0x020E54E4u, 0x020E5504u, 0x020E5584u, 0x020DE330u) \
     X(ADDR, inGame,                   InGame,                    0x020F0BB0u, 0x020F0B70u, 0x020EEA70u, 0x020EF530u, 0x020EF550u, 0x020EF5D0u, 0x020E81B4u) \
     X(ADDR, isInAdventure,            IsInAdventure,             0x020E9A3Cu, 0x020E99FCu, 0x020E78FCu, 0x020E83BCu, 0x020E83DCu, 0x020E845Cu, 0x020E11F8u) \

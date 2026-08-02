@@ -340,14 +340,15 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(MELONPRIME_DS)
-            // Renderer switching follows the ROM's broad in-game state rather
-            // than the narrower patch lifecycle. This keeps the selected GPU
-            // renderer active through match-end presentation until the game
-            // itself clears its in-game flag.
-            const bool rendererIsInGame = melonPrime->IsInGame();
-            if (UNLIKELY(rendererIsInGame != rendererWasInGame))
+            // Renderer switching follows the match window between the
+            // pre-match and post-match full blacks, not the patch lifecycle or
+            // the ROM's in-game flag. Uses the same predicate as the switch
+            // below so the edge and the decision cannot diverge.
+            const bool rendererIsHardwarePeriod =
+                !melonPrime->ShouldForceSoftwareRenderer();
+            if (UNLIKELY(rendererIsHardwarePeriod != rendererWasHardwarePeriod))
             {
-                rendererWasInGame = rendererIsInGame;
+                rendererWasHardwarePeriod = rendererIsHardwarePeriod;
                 const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
                 bool forceSoftwareOutsideMatch =
                     globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
