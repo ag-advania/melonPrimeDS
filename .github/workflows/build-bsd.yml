@@ -47,10 +47,16 @@ jobs:
                 curl -sL ${PKG_PATH%%/pkgsrc*}/NetBSD/NetBSD-$(uname -r
                   )/$mach/binary/sets/$set.tar.xz | tar xJpf - -C /
               done
+            # The VM image's baked-in pkgin summary can be stale relative to
+            # the live binary package mirror, which surfaces as "no pkg
+            # found for X>=Y" on a package another requested package was
+            # just rebuilt against (e.g. qt6-qtbase falling behind
+            # qt6-qtlanguageserver). `pkgin update` refreshes the local
+            # summary against the mirror before resolving dependencies.
             install_deps: >
-              pkgin -y install cmake extra-cmake-modules pkgconf
-              ninja-build qt6-qtbase qt6-qtmultimedia qt6-qtsvg SDL2
-              libarchive zstd enet faad2 zip
+              pkgin -y update && pkgin -y install cmake
+              extra-cmake-modules pkgconf ninja-build qt6-qtbase
+              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip
 
           - os: openbsd
             os_name: OpenBSD
