@@ -48,6 +48,11 @@
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#include "GPU_Vulkan.h"
+#include "MelonPrimeLocalization.h"
+#include "MelonPrimeVulkanFeatureCheck.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -334,6 +339,28 @@ void EmuThread::run()
         if (LIKELY(!needsCompile)) {
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
+#if defined(MELONPRIME_DS)
+            // Renderer switching follows the ROM's broad in-game state rather
+            // than the narrower patch lifecycle. This keeps the selected GPU
+            // renderer active through match-end presentation until the game
+            // itself clears its in-game flag.
+            const bool rendererIsInGame = melonPrime->IsInGame();
+            if (UNLIKELY(rendererIsInGame != rendererWasInGame))
+            {
+                rendererWasInGame = rendererIsInGame;
+                const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+                bool forceSoftwareOutsideMatch =
+                    globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#if defined(MELONPRIME_ENABLE_VULKAN)
+                // Vulkan's 2D path is deliberately avoided outside a match.
+                // This is a runtime override only; never rewrite the setting.
+                forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
+                    || requestedRenderer == renderer3D_Vulkan;
+#endif
+                if (forceSoftwareOutsideMatch)
+                    videoSettingsDirty = true;
+            }
+#endif
         }
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
 #endif
@@ -345,10 +372,19 @@ void EmuThread::run()
         if (videoSettingsDirty)
         {
 #ifdef MELONPRIME_DS
+            const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+            bool forceSoftwareOutsideMatch =
+                globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            // Vulkan always keeps non-match screens on the known-good software
+            // path. This does not mutate 3D.ForceSoftwareOutsideMatch.
+            forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
+                || requestedRenderer == renderer3D_Vulkan;
+#endif
             if (!useOpenGL)
             {
                 videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-                    globalCfg.GetBool("Screen.UseGL"), globalCfg.GetInt("3D.Renderer"));
+                    globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
                 if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
                     videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
             }
@@ -359,7 +395,12 @@ void EmuThread::run()
 #ifdef MELONPRIME_DS
                 emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
                 videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
+                    requestedRenderer);
+                if (forceSoftwareOutsideMatch
+                    && melonPrime->ShouldForceSoftwareRenderer())
+                {
+                    videoRenderer = renderer3D_Software;
+                }
 #else
                 emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
@@ -377,10 +418,15 @@ void EmuThread::run()
                 // Phase 9 UI exists) instead of only clamping renderers that
                 // actually require one.
                 const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    globalCfg.GetInt("3D.Renderer"));
+                    requestedRenderer);
                 videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
                     ? renderer3D_Software
                     : normalizedRenderer;
+                if (forceSoftwareOutsideMatch
+                    && melonPrime->ShouldForceSoftwareRenderer())
+                {
+                    videoRenderer = renderer3D_Software;
+                }
 #else
                 videoRenderer = 0;
 #endif
@@ -440,6 +486,16 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
             // RunFrameHook + SetKeyMask already done above (P-28).
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            if (auto* vulkanRenderer = dynamic_cast<VulkanRenderer*>(
+                    &emuInstance->nds->GPU.GetRenderer()))
+            {
+                vulkanRenderer->SetNativeMenuHeldForFrame(
+                    melonPrime->IsMetroidMenuHeld());
+                vulkanRenderer->SetMainBg123SuppressedForFrame(
+                    melonPrime->ShouldSuppressVulkanHelmetLayers());
+            }
+#endif
 #else
             // Original melonDS path (no hook).
 #endif
@@ -987,6 +1043,26 @@ void EmuThread::handleMessages()
             glborrow = true;
             break;
 
+#ifdef MELONPRIME_DS
+        case msg_PrepareVideoBackendTransition:
+            // Renderer objects must release their backend resources while the
+            // old presentation backend (and, for OpenGL, its context) is still
+            // alive. The UI thread waits for this message before replacing the
+            // screen panel, so a later Vulkan/GL teardown cannot race an old 3D
+            // renderer that still owns resources from that backend.
+            if (!emuInstance->nds)
+            {
+                videoSettingsDirty = true;
+                break;
+            }
+            emuInstance->renderLock.lock();
+            videoRenderer = renderer3D_Software;
+            updateRenderer();
+            videoSettingsDirty = true;
+            emuInstance->renderLock.unlock();
+            break;
+#endif
+
         case msg_BootROM:
             msgResult = 0;
             if (!emuInstance->loadROM(msg.param.value<QStringList>(), true, msgError)) break;
@@ -1045,10 +1121,21 @@ void EmuThread::handleMessages()
 
         case msg_LoadState:
             msgResult = emuInstance->loadState(msg.param.value<QString>().toStdString());
+#ifdef MELONPRIME_DS
+            if (msgResult)
+                melonPrime->OnSavestateLoaded();
+#endif
             break;
 
         case msg_UndoStateLoad:
             emuInstance->undoStateLoad();
+#ifdef MELONPRIME_DS
+            // Undo also replaces ARM9 RAM from a savestate buffer. The
+            // operation is intentionally a no-op when no backup exists;
+            // reconciling in that case is harmless and still derives the
+            // native-HUD instruction state from the current configuration.
+            melonPrime->OnSavestateLoaded();
+#endif
             msgResult = 1;
             break;
 
@@ -1115,6 +1202,14 @@ void EmuThread::returnGL()
     glBorrowCond.wakeAll();
     glBorrowMutex.unlock();
 }
+
+#ifdef MELONPRIME_DS
+void EmuThread::prepareVideoBackendTransition()
+{
+    sendMessage(msg_PrepareVideoBackendTransition);
+    waitMessage();
+}
+#endif
 
 void EmuThread::emuRun()
 {
@@ -1297,6 +1392,27 @@ void EmuThread::updateRenderer()
             break;
         case renderer3D_MetalCompute:
             nds->SetRenderer(std::make_unique<MetalRenderer>(*nds, true));
+            break;
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        case renderer3D_Vulkan:
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "Renderer selection requested=Vulkan presentation=Vulkan");
+            nds->SetRenderer(std::make_unique<VulkanRenderer>(*nds));
+            if (dynamic_cast<VulkanRenderer*>(&nds->GetRenderer()) == nullptr)
+            {
+                MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
+                    "Vulkan 3D renderer initialization failed");
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "Renderer fallback requested=Vulkan actual=Software stage=3D-renderer-init");
+                const QByteArray vulkanFailureText =
+                    MelonPrime::UiText::Tr("Vulkan initialization failed").toUtf8();
+                emuInstance->osdAddMessage(0, "%s", vulkanFailureText.constData());
+                videoRenderer = renderer3D_Software;
+                emit rendererRuntimeFallback();
+            }
             break;
 #endif
         default: __builtin_unreachable();

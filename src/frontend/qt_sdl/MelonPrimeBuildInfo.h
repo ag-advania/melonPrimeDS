@@ -23,6 +23,19 @@
 #define MELONPRIMEDS_BUILD_TZ "GMT?"
 #endif
 
+// Git provenance (HEAD SHA/branch/dirty state) captured at CMake configure
+// time. Used to stamp diagnostic logs (e.g. vulkan2d.log) so a captured trace
+// can be verified as coming from the binary under test, not a stale build.
+#ifndef MELONPRIMEDS_GIT_SHA
+#define MELONPRIMEDS_GIT_SHA "unknown"
+#endif
+#ifndef MELONPRIMEDS_GIT_BRANCH
+#define MELONPRIMEDS_GIT_BRANCH "unknown"
+#endif
+#ifndef MELONPRIMEDS_GIT_DIRTY
+#define MELONPRIMEDS_GIT_DIRTY "1"
+#endif
+
 // App title pieces (plain string literals, usable in literal concatenation).
 // The full title is assembled as:
 //

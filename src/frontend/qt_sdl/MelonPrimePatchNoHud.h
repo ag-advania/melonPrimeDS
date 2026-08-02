@@ -11,6 +11,10 @@ namespace MelonPrime {
 
     struct NoHudPatchState {
         uint16_t appliedMask = 0;
+        // Savestates replace ARM9 RAM without restoring this host-owned
+        // tracker. False forces the next sync to write every HUD element,
+        // including original instructions for currently-unhidden elements.
+        bool ramStateKnown = true;
     };
 
     // Individual default-HUD elements that can be hidden via ARM9 patches.
@@ -68,6 +72,11 @@ namespace MelonPrime {
     // Reset the internal tracker without touching ARM9 RAM. Called on
     // emu start/stop where the binary is reloaded fresh.
     void NoHudPatch_ResetState(NoHudPatchState& state);
+
+    // Mark ARM9 patch contents unknown after a savestate load/undo. Unlike a
+    // normal lifecycle reset, the restored RAM may contain any mix of patched
+    // and original instructions, so the next sync must reconcile all entries.
+    void NoHudPatch_InvalidateState(NoHudPatchState& state);
 
     // Returns the currently-tracked applied mask.
     uint16_t NoHudPatch_GetAppliedMask(const NoHudPatchState& state);

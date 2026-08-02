@@ -221,12 +221,14 @@ namespace MelonPrime {
         void OnEmuPause();
         void OnEmuUnpause();
         void OnReset();
+        void OnSavestateLoaded();
         void NotifyConfigChanged();
 
         void SetFrameAdvanceFunc(std::function<void()> func);
 
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
+        [[nodiscard]] bool ShouldSuppressVulkanHelmetLayers() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     // True when the platform raw filter owns aim deltas. ScreenPanel uses
@@ -351,6 +353,7 @@ namespace MelonPrime {
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
         [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
+        [[nodiscard]] bool IsMetroidMenuHeld() const noexcept { return IsDown(IB_MENU); }
         [[nodiscard]] CustomHudConfigState& HudConfigState() noexcept
         {
             return *m_hudConfigState;
@@ -531,6 +534,10 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        // Loaded only at the cold config boundary. Vulkan reads this scalar
+        // before every frame so an F8 load cannot expose one unmasked frame
+        // while the ARM patch tracker is still being re-established.
+        bool     m_vulkanHelmetLayerSuppressionConfigured = false;
         bool     m_enableMorphBoostSwipe = true; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         bool     m_enableMorphBoostCustomRawThreshold = false;
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6

@@ -1709,8 +1709,8 @@ Implementation points:
   the native target is not a complete composited top screen yet; replacing source screen 0 outright
   hides the game image. CPU fallback remains in place while full 2D/3D composition parity is
   unfinished.
-- `tools/macos/build_metal_test.command` builds `build-mac-metal-test` with
-  `MELONPRIME_ENABLE_METAL=ON`; `tools/macos/run_metal_test.command` launches the built app with
+- `tools/build/macos/build_metal_test.command` builds `build-mac-metal-test` with
+  `MELONPRIME_ENABLE_METAL=ON`; `tools/build/macos/run_metal_test.command` launches the built app with
   `MELONPRIME_METAL_PERF=1` by default and clears inherited force-Metal renderer/presenter env vars
   unless `MELONPRIME_ALLOW_FORCE_METAL=1` is set, so testers exercise the new UI selection path.
 
