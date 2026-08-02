@@ -41,19 +41,35 @@ jobs:
             # Also, for some reason pkg_add is not in $PATH, so we have
             # to call it using its absolute location.
             #
-            # pkgin defaults to the "10.0" repository, which is pkgsrc
-            # trunk rebuilt continuously package-by-package rather than as
-            # an atomic batch. That leaves it routinely internally
-            # inconsistent: confirmed via a failing run's
-            # pkg_install-err.log that qt6-qtlanguageserver had already been
-            # rebuilt to require qt6-qtbase>=6.11.1nb1, while qt6-qtbase
-            # itself was still one revision behind on the mirror (pkgsrc.se
-            # shows 6.11.1nb2 was tagged 2026-07-30, so the builder was
-            # mid-rebuild). Retrying does not help -- every attempt hits the
-            # same broken mirror state, not a transient blip. Point pkgin at
-            # the 10.0_2026Q2 quarterly branch instead: those are frozen,
-            # tested snapshots built as a coherent set, so they don't carry
-            # this class of cross-package skew. Re-pin the quarter forward
+            # The actual root cause of every "no pkg found for X" error seen
+            # chasing this (dbus>=0.91, qt6-qtbase>=6.11.1nb1, ...): this
+            # extraction loop originally built its URL from `$PKG_PATH`, but
+            # that variable is never set in this shell, and every run logged
+            # "sh: PKG_PATH: parameter not set" for it -- meaning the X sets
+            # were NEVER actually being extracted, on any run, since this
+            # workaround was added. `pkg_add`/pkgin's dependency resolver
+            # correctly detects the resulting gap (no /usr/X11R7/lib on the
+            # VM at all) and refuses to treat a package as "found" once its
+            # own X11 client-library requirements can't be satisfied --
+            # which is most of our GUI-facing dependency tree (dbus,
+            # qt6-qtbase, SDL2, qt6-qtmultimedia's transitive deps, ...).
+            # Confirmed by downloading xbase.tar.xz directly: it does
+            # contain usr/X11R7/lib/libX11.so.7, libxcb.so.2, etc. -- the
+            # release set is fine, only the extraction was silently a no-op.
+            # Use the same cdn.NetBSD.org base the pkgin repository below
+            # already resolves to instead of the unset variable.
+            #
+            # Separately (real, independently confirmed, and worth keeping
+            # regardless): pkgin's default "10.0" repository is pkgsrc trunk
+            # rebuilt continuously package-by-package rather than as an
+            # atomic batch, which showed a real qt6-qtbase/qt6-qtlanguageserver
+            # version skew in a failing run's pkg_install-err.log (pkgsrc.se:
+            # qt6-qtbase 6.11.1nb2 was tagged 2026-07-30, so the builder was
+            # mid-rebuild). The 10.0_2026Q2 quarterly branch is a frozen,
+            # tested snapshot built as a coherent set -- verified directly
+            # against its pkg_summary.gz to contain qt6-qtbase-6.11.1nb2,
+            # qt6-qtlanguageserver-6.11.1nb1 (whose >=6.11.1nb1 requirement
+            # that satisfies), and dbus-1.16.2nb2. Re-pin the quarter forward
             # if this branch is ever retired from the mirror.
             prepare_vm: |
               /usr/sbin/pkg_add pkgin curl
@@ -61,7 +77,7 @@ jobs:
                 > /usr/pkg/etc/pkgin/repositories.conf
               mach=$(uname -m | sed "s/evbarm/evbarm-$(uname -p)/")
               for set in xbase xcomp; do
-                curl -sL ${PKG_PATH%%/pkgsrc*}/NetBSD/NetBSD-$(uname -r
+                curl -sL https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$(uname -r
                   )/$mach/binary/sets/$set.tar.xz | tar xJpf - -C /
               done
             # `pkgin update` builds the local summary from the
