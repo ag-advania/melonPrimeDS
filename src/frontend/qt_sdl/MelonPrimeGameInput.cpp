@@ -118,6 +118,7 @@ namespace MelonPrime {
             m_input.down = 0;
             m_input.press = 0;
             m_input.moveIndex = 0;
+            m_menuHeldGraceFrames = 0;
             m_input.mouseX = 0;
             m_input.mouseY = 0;
             m_input.wheelDelta = 0;
@@ -183,6 +184,17 @@ namespace MelonPrime {
         else
             m_input.press = 0;
 #endif
+
+        constexpr uint8_t kMenuHeldGraceFrames = 4;
+        const bool menuHotkeyDown =
+            ((hotDownMask >> HK_MetroidMenu) & 1ULL) != 0;
+        if (menuHotkeyDown)
+            m_menuHeldGraceFrames = kMenuHeldGraceFrames;
+        else if constexpr (!kReentrant)
+        {
+            if (m_menuHeldGraceFrames > 0)
+                --m_menuHeldGraceFrames;
+        }
 
         const InputProjection::ProjectedDownState downState =
             InputProjection::ProjectDownState(hotDownMask);

@@ -2290,6 +2290,13 @@ void ScreenPanelVulkan::drawScreen()
         surfaceHeight,
         emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    auto* mp = emuThread->GetMelonPrimeCore();
+    const bool vulkanNativeMenuHeld = mp && mp->IsMetroidMenuHeld();
+#else
+    const bool vulkanNativeMenuHeld = false;
+#endif
+
     bool hasOverlay = false;
     MelonPrime::VulkanRadarFrame radarFrame{};
     const qreal dpr = devicePixelRatioF();
@@ -2312,7 +2319,6 @@ void ScreenPanelVulkan::drawScreen()
 
 #ifdef MELONPRIME_CUSTOM_HUD
         {
-            auto* mp = emuThread->GetMelonPrimeCore();
             const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
             if (MelonPrimeHud_CanRenderForCore(mp, editMode))
             {
@@ -2345,13 +2351,13 @@ void ScreenPanelVulkan::drawScreen()
                         nullptr,
                         nullptr,
                         0,
-                        mp->IsMetroidMenuHeld());
+                        vulkanNativeMenuHeld);
                     overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
                     m_hudPrevDirty = currentDirty;
                     hasOverlay = true;
 
                     if (m_radarEnable && m_hudTopMatrixValid
-                        && !mp->IsMetroidMenuHeld()
+                        && !vulkanNativeMenuHeld
                         && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
                             emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                     {

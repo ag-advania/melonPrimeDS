@@ -93,13 +93,15 @@ namespace MelonPrime {
     bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 
     // Per-frame, before RunFrame: keep the native helmet layers off across the
-    // spawn window. No-op unless the helmet hide patch is currently applied;
-    // start/death/pause frames are left untouched so native UI stays intact.
+    // spawn window. No-op unless the helmet hide patch is currently applied.
+    // Vulkan can additionally request the same clamp while its native START
+    // menu is held, preventing stale BG1-3 contents from being composited.
     void CustomHud_ClampHelmetLayersPreFrame(
         CustomHudConfigState& hudConfig,
         EmuInstance* emu,
         const RomAddresses& rom,
-        uint8_t playerPosition);
+        uint8_t playerPosition,
+        bool clampForVulkanMenu);
 
     // Ensure the no-HUD patch is reverted when custom HUD is disabled.
     // Call every frame from Screen.cpp even when the HUD overlay is not rendered.

@@ -357,7 +357,10 @@ namespace MelonPrime {
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
         [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
-        [[nodiscard]] bool IsMetroidMenuHeld() const noexcept { return IsDown(IB_MENU); }
+        [[nodiscard]] bool IsMetroidMenuHeld() const noexcept
+        {
+            return m_menuHeldGraceFrames > 0;
+        }
         [[nodiscard]] CustomHudConfigState& HudConfigState() noexcept
         {
             return *m_hudConfigState;
@@ -538,6 +541,10 @@ namespace MelonPrime {
         // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
         // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        // The raw/Qt keyboard owner can change at the same time the native
+        // START menu changes capture mode. Keep a tiny release grace so a
+        // one-frame source handoff cannot pulse START and close/reopen the UI.
+        uint8_t  m_menuHeldGraceFrames = 0;
         bool     m_enableMorphBoostSwipe = true; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         bool     m_enableMorphBoostCustomRawThreshold = false;
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6
