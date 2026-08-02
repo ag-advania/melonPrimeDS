@@ -90,13 +90,13 @@ HOT_FUNCTION QRect CustomHud_Render(
             st.isAdventure,
             st.isMapOrUserActionPaused);
 
-    // The helmet patch clears BG1-3 in the game's own HUD update. Leaving that
-    // instruction patched while the START/score UI is active can expose stale
-    // layer contents in the Vulkan 2D compositor (including an old ESRB frame).
-    // Restore only that instruction for native UI; the remaining element
-    // patches target gameplay-only draw calls and can stay applied.
+    // On Vulkan, restoring the helmet instruction while TAB is held enables
+    // BG1-3 whose VRAM can still contain old boot-logo frames. Keep that one
+    // patch active for the held native menu; the pre-frame hook clamps the
+    // corresponding DISPCNT bits before Vulkan renders each emulation frame.
+    // Other backends retain the native-UI restoration behavior.
     uint16_t desiredNoHudMask = c.noHudMask;
-    if (hideForNativeUi)
+    if (hideForNativeUi && !forceHideForMenuHeld)
         desiredNoHudMask &= static_cast<uint16_t>(~(1u << NOHUD_HELMET));
     NoHudPatch_Sync(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);

@@ -996,7 +996,8 @@ void CustomHud_ClampHelmetLayersPreFrame(
     CustomHudConfigState& hudConfig,
     EmuInstance* emu,
     const RomAddresses& rom,
-    uint8_t playerPosition)
+    uint8_t playerPosition,
+    bool clampForVulkanMenu)
 {
     const ScopedHudConfigState active(hudConfig);
     // Gate on the tracker, not the config: the helmet bit is only ever applied
@@ -1010,6 +1011,16 @@ void CustomHud_ClampHelmetLayersPreFrame(
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
+
+    // The Vulkan compositor faithfully shows every enabled 2D layer. During
+    // the native START menu BG1-3 can retain Nintendo/ACTIMAGINE-era tiles;
+    // clamp them before RunFrame instead of restoring the helmet instruction.
+    // The score/menu UI itself is on BG0/OBJ and remains visible.
+    if (clampForVulkanMenu)
+    {
+        NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
+        return;
+    }
 
     // Native pause/score/death/game-over UI needs the original helmet-layer
     // instruction restored before the game renders this frame. Render() keeps
