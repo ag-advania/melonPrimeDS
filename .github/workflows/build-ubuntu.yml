@@ -127,6 +127,20 @@ jobs:
         grep -F 'VulkanPresenter: initialized' build-validation/vulkan-validation.log
         ! grep -E 'VUID-|VulkanValidation:.*(ERROR|Error)' build-validation/vulkan-validation.log
 
+    # Temporary diagnostics: the smoke test above never prints the log it
+    # asserts against, so a failure gives no evidence to act on. Surface it
+    # regardless of the assertion outcome.
+    - name: Show Vulkan validation log
+      if: always() && matrix.arch.name == 'x86_64'
+      run: cat build-validation/vulkan-validation.log || true
+
+    - uses: actions/upload-artifact@v7
+      if: always() && matrix.arch.name == 'x86_64'
+      with:
+        name: vulkan-validation-log-${{ matrix.arch.name }}
+        path: build-validation/vulkan-validation.log
+        archive: false
+
     - name: Verify developer HUD golden harness is absent from release binary
       run: |
         ! strings AppDir/usr/bin/melonPrimeDS | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
