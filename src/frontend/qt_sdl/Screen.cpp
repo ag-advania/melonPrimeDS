@@ -2731,7 +2731,12 @@ void ScreenPanelGL::drawScreen()
 {
     refreshClipForGameStateChange();
 
-    if (!glContext) return;
+    // During a live Vulkan -> OpenGL switch, the paused emulation loop can ask
+    // the newly published panel to draw before msg_InitGL has initialized its
+    // shaders and textures. Running the HUD path in that window poisons its
+    // upload-size cache even though every GL upload failed, leaving Custom HUD
+    // permanently blank after the transition.
+    if (!glContext || !glInited) return;
 
     auto emuThread = emuInstance->getEmuThread();
 

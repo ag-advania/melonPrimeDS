@@ -2,6 +2,18 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
+    // A live Vulkan -> OpenGL transition publishes the new panel before the
+    // emulation thread finishes initOpenGL(). Reset the CPU-side upload state
+    // together with the real GL objects so no dimensions or dirty tracking
+    // from an earlier/pre-initialization presentation attempt can suppress the
+    // first valid Custom HUD upload.
+    overlayTexW = 0;
+    overlayTexH = 0;
+    m_hudPrevDirty = QRect();
+    m_hudUploadedRect = QRect();
+    m_hudUploadedHash = 0;
+    m_hudUploadedValid = false;
+
     // Create 2 overlay textures (GL_TEXTURE_2D, 256x192 each, one per screen)
     glGenTextures(2, overlayTextures);
     for (int i = 0; i < 2; i++) {
