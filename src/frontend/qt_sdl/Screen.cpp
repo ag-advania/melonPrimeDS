@@ -23,6 +23,7 @@
 #include <utility>
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 
 #include <QPaintEvent>
 #include <QPainter>
@@ -56,6 +57,9 @@
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanOutput.h"
 #include "MelonPrimeVulkanSurfacePresenter.h"
+#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
+#include "MelonPrimeVulkanSurfaceMacOS.h"
+#endif
 #endif
 
 #include "main_shaders.h"
@@ -1711,6 +1715,9 @@ struct ScreenPanelVulkan::VulkanState
         QImage(256, 192, QImage::Format_RGB32),
     };
     QTransform softwareScreenTransform[kMaxScreenTransforms];
+    // Emulation-thread view of whether the Vulkan surface should be on screen,
+    // so a show/hide is only posted to the GUI thread on a real transition.
+    bool surfaceVisibleRequested = false;
     bool initialized = false;
     bool presenterInitialized = false;
     bool softwareMode = true;
@@ -1824,7 +1831,15 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_OpaquePaintEvent, true);
+#if !defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation surface, not input dispatch
     setAttribute(Qt::WA_PaintOnScreen, true);
+#endif
+    // On macOS WA_PaintOnScreen is deliberately not set: Qt's macOS backend has
+    // no on-screen paint support, so QWidget::paintEngine() returns null under
+    // it and QPainter silently stops working. This panel needs QPainter -- the
+    // splash screen, the software-rendered screens (Vulkan runs the software
+    // renderer outside matches), and the OSD all go through paintEvent(). The
+    // MoltenVK CAMetalLayer is composited above that as a sublayer instead.
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize());
@@ -1842,6 +1857,9 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     vulkan->presenter.Shutdown();
     vulkan->output.shutdown();
     vulkan->frameQueue.clear();
+    // Ordered after Shutdown(): the VkSurfaceKHR created from the platform
+    // surface must be gone before the surface itself is released.
+    releaseNativeSurface();
 }
 
 void ScreenPanelVulkan::beginModalPausePresentation()
@@ -1884,8 +1902,107 @@ void ScreenPanelVulkan::endModalPausePresentation()
 void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
 {
     ScreenPanel::resizeEvent(event);
+    refreshNativeSurfaceGuiThread();
     if (vulkan && vulkan->modalPauseOverlay)
         vulkan->modalPauseOverlay->setGeometry(rect());
+}
+
+bool ScreenPanelVulkan::event(QEvent* event)
+{
+    const bool handled = ScreenPanel::event(event);
+    switch (event->type())
+    {
+    case QEvent::WinIdChange:
+    case QEvent::Show:
+    case QEvent::WindowStateChange:
+    case QEvent::ScreenChangeInternal:
+        // Qt rebuilds the native window across these transitions. The macOS
+        // presentation layer has to be re-hosted on the new native handle;
+        // platforms whose surface is derived from the window handle itself
+        // recreate their swapchain through the existing dirty/resize path.
+        refreshNativeSurfaceGuiThread();
+        break;
+    default:
+        break;
+    }
+    return handled;
+}
+
+void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
+{
+    if (!vulkan || !vulkan->initialized)
+        return;
+
+#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
+    auto& nativeWindow = vulkan->nativeWindow;
+    if (nativeWindow.type != MelonPrime::VulkanNativeWindowType::Metal)
+        return;
+
+    // winId() is re-read every time: Qt rebuilds the native view across
+    // fullscreen and screen transitions, and CreateOrAttachLayer() re-parents
+    // the same layer rather than making a new one, so the VkSurfaceKHR created
+    // from it stays valid.
+    nativeWindow.window = MelonPrime::VulkanMacOS::CreateOrAttachLayer(
+        nativeWindow.window,
+        reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId())));
+
+    MelonPrime::VulkanMacOS::UpdateLayerGeometry(
+        nativeWindow.window,
+        static_cast<double>(devicePixelRatioF()),
+        width(),
+        height());
+#endif
+}
+
+void ScreenPanelVulkan::setNativeSurfaceVisibleGuiThread(bool visible)
+{
+    if (!vulkan)
+        return;
+
+#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
+    if (vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Metal)
+        return;
+    MelonPrime::VulkanMacOS::SetLayerHidden(vulkan->nativeWindow.window, !visible);
+    if (!visible)
+    {
+        // The panel owns the software/splash drawing again.
+        update();
+    }
+#else
+    (void)visible;
+#endif
+}
+
+void ScreenPanelVulkan::requestNativeSurfaceVisible(bool visible)
+{
+    if (!vulkan || vulkan->surfaceVisibleRequested == visible)
+        return;
+
+    vulkan->surfaceVisibleRequested = visible;
+    QMetaObject::invokeMethod(
+        this,
+        [this, visible]() { setNativeSurfaceVisibleGuiThread(visible); },
+        Qt::QueuedConnection);
+}
+
+bool ScreenPanelVulkan::nativeSurfaceReady() const
+{
+    return vulkan
+        && vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
+        && vulkan->nativeWindow.window != nullptr;
+}
+
+void ScreenPanelVulkan::releaseNativeSurface()
+{
+    if (!vulkan)
+        return;
+
+#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
+    auto& nativeWindow = vulkan->nativeWindow;
+    if (nativeWindow.type == MelonPrime::VulkanNativeWindowType::Metal)
+        MelonPrime::VulkanMacOS::DestroyLayer(nativeWindow.window);
+    nativeWindow.window = nullptr;
+#endif
 }
 
 void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
@@ -1947,6 +2064,14 @@ bool ScreenPanelVulkan::initVulkan()
 #if defined(_WIN32)
     nativeWindow.type = MelonPrime::VulkanNativeWindowType::Win32;
     nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
+#elif defined(__APPLE__)
+    // MoltenVK presents only to a CAMetalLayer, so instead of a raw window
+    // handle the panel gets a layer composited over its NSView; the layer
+    // itself is built on the GUI thread by refreshNativeSurfaceGuiThread().
+    // The native Metal renderer builds a separate panel with a separate layer,
+    // so the two backends never contend for this view.
+    nativeWindow.type = MelonPrime::VulkanNativeWindowType::Metal;
+    nativeWindow.window = nullptr;
 #elif defined(__linux__)
     const QString platformName = QGuiApplication::platformName();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -1993,6 +2118,10 @@ bool ScreenPanelVulkan::initVulkan()
 #endif
 
     vulkan->initialized = true;
+    // GUI thread here (MainWindow::createScreenPanel): safe to build the
+    // platform presentation surface before the emulation thread first asks the
+    // presenter to initialize.
+    refreshNativeSurfaceGuiThread();
     return true;
 }
 
@@ -2096,6 +2225,15 @@ void ScreenPanelVulkan::setupScreenLayout()
 
 void ScreenPanelVulkan::drawScreen()
 {
+#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan frame boundary, not input dispatch
+    MelonPrime::VulkanMacOS::RunInAutoreleasePool([this]() { drawScreenFrame(); });
+#else
+    drawScreenFrame();
+#endif
+}
+
+void ScreenPanelVulkan::drawScreenFrame()
+{
     refreshClipForGameStateChange();
     if (!vulkan || !vulkan->initialized)
         return;
@@ -2116,6 +2254,7 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->softwareMode = true;
             vulkan->hasSoftwareBuffers = false;
         }
+        requestNativeSurfaceVisible(false);
         QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
         return;
     }
@@ -2155,6 +2294,7 @@ void ScreenPanelVulkan::drawScreen()
             vulkan->hasSoftwareBuffers = true;
         }
         vulkan->consecutiveFailures = 0;
+        requestNativeSurfaceVisible(false);
         QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
         return;
     }
@@ -2183,6 +2323,21 @@ void ScreenPanelVulkan::drawScreen()
         vulkan->softwareMode = false;
         vulkan->hasSoftwareBuffers = false;
     }
+    if (!nativeSurfaceReady())
+    {
+        // The GUI thread has not (re)built the platform presentation surface
+        // yet -- on macOS the CAMetalLayer is re-hosted after Qt recreates the
+        // native view. This is recoverable, so ask for a refresh and retry on
+        // the next frame instead of permanently disabling Vulkan.
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Warn, "Vulkan presentation surface is not ready yet");
+        QMetaObject::invokeMethod(
+            this,
+            [this]() { refreshNativeSurfaceGuiThread(); },
+            Qt::QueuedConnection);
+        return;
+    }
+
     if (!initVulkanPresenter())
     {
         if (vulkan->consecutiveFailures++ == 0)
@@ -2422,6 +2577,10 @@ void ScreenPanelVulkan::drawScreen()
     {
         vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
         vulkan->consecutiveFailures = 0;
+        // Only reveal the platform presentation surface once a frame has
+        // actually reached the swapchain, so it never flashes uninitialized
+        // content over the software output it replaces.
+        requestNativeSurfaceVisible(true);
     }
     else
     {

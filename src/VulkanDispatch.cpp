@@ -3,9 +3,12 @@
 #include "VulkanDispatch.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "Platform.h"
 
@@ -999,6 +1002,91 @@ void ConfigureDriver(const DriverConfiguration& configuration)
     gConfiguration = configuration;
 }
 
+namespace
+{
+std::vector<std::string> loaderCandidatePaths()
+{
+    std::vector<std::string> candidates;
+
+    // Explicit override first: the only supported way to point a build at a
+    // loader the search order below would not reach.
+    if (const char* override = std::getenv("MELONPRIME_VULKAN_LOADER");
+        override != nullptr && override[0] != '\0')
+    {
+        candidates.emplace_back(override);
+    }
+
+    const char* sdkRoot = std::getenv("VULKAN_SDK");
+
+#if defined(_WIN32)
+    candidates.emplace_back("vulkan-1.dll");
+#elif defined(__APPLE__)
+    // macOS runs Vulkan through MoltenVK. dlopen() by bare name only searches
+    // the default dyld paths, which cover /usr/local/lib (Intel Homebrew) but
+    // not /opt/homebrew/lib (Apple Silicon Homebrew), so the known install
+    // prefixes are listed explicitly.
+    //
+    // The Khronos loader is preferred over MoltenVK because it supports
+    // layers; loading MoltenVK directly is the fallback for machines with only
+    // the driver installed, and for a self-contained app bundle.
+    if (sdkRoot != nullptr && sdkRoot[0] != '\0')
+    {
+        const std::string sdk(sdkRoot);
+        candidates.emplace_back(sdk + "/lib/libvulkan.1.dylib");
+        candidates.emplace_back(sdk + "/lib/libMoltenVK.dylib");
+    }
+    candidates.emplace_back("@executable_path/../Frameworks/libvulkan.1.dylib");
+    candidates.emplace_back("libvulkan.1.dylib");
+    candidates.emplace_back("libvulkan.dylib");
+    candidates.emplace_back("/opt/homebrew/lib/libvulkan.1.dylib");
+    candidates.emplace_back("/usr/local/lib/libvulkan.1.dylib");
+    // The bundle's own MoltenVK comes after every loader candidate on
+    // purpose: it is the fallback that makes the app self-contained, but an
+    // installed loader must still win so validation layers remain reachable
+    // in a debug build.
+    candidates.emplace_back("@executable_path/../Frameworks/libMoltenVK.dylib");
+    candidates.emplace_back("libMoltenVK.dylib");
+    candidates.emplace_back("/opt/homebrew/lib/libMoltenVK.dylib");
+    candidates.emplace_back("/usr/local/lib/libMoltenVK.dylib");
+#else
+    if (sdkRoot != nullptr && sdkRoot[0] != '\0')
+        candidates.emplace_back(std::string(sdkRoot) + "/lib/libvulkan.so.1");
+    candidates.emplace_back("libvulkan.so.1");
+    candidates.emplace_back("libvulkan.so");
+#endif
+
+    return candidates;
+}
+
+#if defined(__APPLE__)
+// A Khronos loader with no registered ICD opens and resolves symbols fine but
+// exposes no platform surface extension, so presentation would fail much later
+// with a confusing message. Reject such a loader here and keep trying, so the
+// MoltenVK candidates further down the list still get their chance.
+bool loaderExposesPresentationSurface()
+{
+    if (vkEnumerateInstanceExtensionProperties == nullptr)
+        return false;
+
+    u32 extensionCount = 0;
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr) != VK_SUCCESS
+        || extensionCount == 0)
+        return false;
+
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()) != VK_SUCCESS)
+        return false;
+
+    for (const VkExtensionProperties& extension : extensions)
+    {
+        if (std::strcmp(extension.extensionName, "VK_EXT_metal_surface") == 0)
+            return true;
+    }
+    return false;
+}
+#endif
+} // namespace
+
 bool Initialize()
 {
     std::scoped_lock guard(gLock);
@@ -1013,40 +1101,53 @@ bool Initialize()
         );
     }
 
-#if defined(_WIN32)
-    constexpr const char* loaderCandidates[] = { "vulkan-1.dll" };
-#elif defined(__APPLE__)
-    constexpr const char* loaderCandidates[] = {
-        "libvulkan.1.dylib", "libvulkan.dylib", "libMoltenVK.dylib"
-    };
-#else
-    constexpr const char* loaderCandidates[] = { "libvulkan.so.1", "libvulkan.so" };
-#endif
-
-    for (const char* candidate : loaderCandidates)
+    bool loaderReady = false;
+    for (const std::string& candidate : loaderCandidatePaths())
     {
-        if (openLoader(candidate))
-            break;
+        if (!openLoader(candidate.c_str()))
+            continue;
+
+        vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(loadSymbol("vkGetInstanceProcAddr"));
+        if (vkGetInstanceProcAddr == nullptr)
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "VulkanDriver: %s has no vkGetInstanceProcAddr; trying the next candidate",
+                candidate.c_str()
+            );
+            closeLoader();
+            continue;
+        }
+
+        loadGlobalSymbols();
+#if defined(__APPLE__)
+        if (!loaderExposesPresentationSurface())
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "VulkanDriver: %s exposes no VK_EXT_metal_surface (missing ICD?); trying the next candidate",
+                candidate.c_str()
+            );
+            closeLoader();
+            vkGetInstanceProcAddr = nullptr;
+            continue;
+        }
+#endif
+        loaderReady = true;
+        break;
     }
 
-    if (gVulkanHandle == nullptr)
+    if (!loaderReady)
     {
+        vkGetInstanceProcAddr = nullptr;
         Platform::Log(
             Platform::LogLevel::Error,
-            "VulkanDriver: failed to open desktop Vulkan loader error=%s",
+            "VulkanDriver: failed to open a usable desktop Vulkan loader error=%s",
             loaderError()
         );
         return false;
     }
 
-    vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(loadSymbol("vkGetInstanceProcAddr"));
-    if (vkGetInstanceProcAddr == nullptr)
-    {
-        Platform::Log(Platform::LogLevel::Error, "VulkanDriver: vkGetInstanceProcAddr not found");
-        return false;
-    }
-
-    loadGlobalSymbols();
     gInitialized = true;
     Platform::Log(
         Platform::LogLevel::Warn,

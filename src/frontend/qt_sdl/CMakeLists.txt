@@ -147,8 +147,20 @@ set(MELONPRIME_VULKAN_ACTIVE OFF)
 if (MELONPRIME_FORCE_DISABLE_VULKAN)
     set(MELONPRIME_VULKAN_ACTIVE OFF)
 elseif (MELONPRIME_ENABLE_VULKAN)
+    # Only the headers are needed at build time: the loader (or MoltenVK on
+    # macOS) is opened with dlopen()/LoadLibrary() at runtime by
+    # VulkanDispatch, so no import library is linked here.
+    #
+    # HINTS cover the LunarG SDK on every platform plus Homebrew's
+    # vulkan-headers on macOS, whose prefixes CMake does not search by default
+    # on Apple Silicon.
     find_path(MELONPRIME_VULKAN_INCLUDE_DIR
         NAMES vulkan/vulkan.h
+        HINTS
+            ENV VULKAN_SDK
+            /opt/homebrew
+            /usr/local
+        PATH_SUFFIXES include
         DOC "Directory containing the Vulkan headers")
     if (MELONPRIME_VULKAN_INCLUDE_DIR)
         set(MELONPRIME_VULKAN_ACTIVE ON)
@@ -370,6 +382,34 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanSurfaceWin32.cpp
         MelonPrimeVulkanSurfaceLinux.cpp
         MelonPrimeVulkanSurfaceStub.cpp)
+
+    if (APPLE)
+        # Vulkan on macOS is MoltenVK, which can only present to a
+        # CAMetalLayer. The adapter that owns that layer is Objective-C++, so
+        # it is compiled here (with ARC, like every other MelonPrime .mm) and
+        # links the AppKit/QuartzCore frameworks it needs.
+        #
+        # This is independent of MELONPRIME_METAL_ACTIVE: the Vulkan and Metal
+        # renderers coexist, each with its own screen panel, presentation
+        # layer, and video setting. Building one does not require the other.
+        find_library(MELONPRIME_VULKAN_QUARTZCORE_LIB QuartzCore)
+        find_library(MELONPRIME_VULKAN_APPKIT_LIB AppKit)
+        find_library(MELONPRIME_VULKAN_METAL_LIB Metal)
+        if (NOT MELONPRIME_VULKAN_QUARTZCORE_LIB
+            OR NOT MELONPRIME_VULKAN_APPKIT_LIB
+            OR NOT MELONPRIME_VULKAN_METAL_LIB)
+            message(FATAL_ERROR
+                "MelonPrime Vulkan on macOS requires the QuartzCore, AppKit and Metal frameworks")
+        endif()
+        target_link_libraries(melonDS PRIVATE
+            ${MELONPRIME_VULKAN_QUARTZCORE_LIB}
+            ${MELONPRIME_VULKAN_APPKIT_LIB}
+            ${MELONPRIME_VULKAN_METAL_LIB})
+        target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceMacOS.mm)
+        set_source_files_properties(
+            MelonPrimeVulkanSurfaceMacOS.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    endif()
 
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if (Python3_Interpreter_FOUND)

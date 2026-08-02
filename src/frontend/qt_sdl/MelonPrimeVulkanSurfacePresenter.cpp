@@ -31,6 +31,8 @@ const char* NativeWindowTypeName(VulkanNativeWindowType type)
         return "Xlib";
     case VulkanNativeWindowType::Wayland:
         return "Wayland";
+    case VulkanNativeWindowType::Metal:
+        return "Metal";
     default:
         return "Unknown";
     }
@@ -46,6 +48,8 @@ const char* SurfaceExtensionName(VulkanNativeWindowType type)
         return "VK_KHR_xlib_surface";
     case VulkanNativeWindowType::Wayland:
         return "VK_KHR_wayland_surface";
+    case VulkanNativeWindowType::Metal:
+        return "VK_EXT_metal_surface";
     default:
         return "unknown";
     }

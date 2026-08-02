@@ -14,12 +14,16 @@ enum class VulkanNativeWindowType
     Win32,
     Xlib,
     Wayland,
+    Metal,
 };
 
 struct VulkanNativeWindowInfo
 {
     VulkanNativeWindowType type = VulkanNativeWindowType::Unknown;
     void* display = nullptr;
+    // Win32: HWND. Xlib: Window. Wayland: wl_surface*.
+    // Metal (macOS): the CAMetalLayer the presenter owns, created and attached
+    // to the panel's NSView by MelonPrimeVulkanSurfaceMacOS.
     void* window = nullptr;
 };
 
