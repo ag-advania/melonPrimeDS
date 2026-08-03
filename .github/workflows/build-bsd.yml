@@ -102,10 +102,25 @@ jobs:
 
           - os: openbsd
             os_name: OpenBSD
+            # pkg_add pulls individual package files straight from the
+            # OpenBSD CDN mirror as it walks the dependency tree, rather
+            # than resolving against a prefetched summary like pkgin does.
+            # A single mirror hiccup on one leaf package (observed:
+            # "ftp: connect: No route to host" fetching zimg-3.0.6, a
+            # transitive dep of qt6-qtmultimedia's ffmpeg) aborts that
+            # package and cascades into "can't resolve" failures for every
+            # package that (transitively) depends on it, even though
+            # everything else installed fine. Retry the whole install a
+            # few times; pkg_add skips packages it already installed, so
+            # re-running only needs to fetch what failed.
             install_deps: >
-              pkg_add -v cmake kf6-extra-cmake-modules pkgconf ninja
+              success=0; i=1; while [ $i -le 3 ]; do
+              if pkg_add -v cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-qtbase qt6-qtmultimedia qt6-qtsvg sdl2 libarchive zstd
-              enet faad zip
+              enet faad zip;
+              then success=1; break; fi;
+              echo "pkg_add attempt $i failed, retrying in $((i * 10))s..." >&2;
+              sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
 
     name: ${{ matrix.os_name }} / ${{ matrix.arch }}
     runs-on: ubuntu-latest
