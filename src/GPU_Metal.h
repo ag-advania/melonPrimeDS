@@ -70,6 +70,7 @@ private:
     bool ComposeMetalFullGpuOutput();
 
     bool ConfigureMetalCaptureState(void* preferredDevice);
+    void PublishCaptureTexturesTo3D();
     void BeginMetalCaptureFrame();
     void CaptureMetalDisplayCaptureLine(u32 line);
     bool EncodeMetalDisplayCapture(

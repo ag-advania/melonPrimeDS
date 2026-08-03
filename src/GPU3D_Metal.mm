@@ -972,6 +972,21 @@ void MetalRenderer3D::Reset()
         ClearNativeTarget();
 }
 
+// MELONPRIME_METAL_COMPUTE_VRAM_COHERENCY_V1
+// The Metal compute renderer consumes the shared VRAM dirty tracking when it
+// renders a frame, which leaves this renderer's texture cache unable to tell
+// what changed. On a frame that falls back to this renderer, drop the cache so
+// every texture is re-decoded from the (already coherent) flat VRAM instead of
+// showing stale texels.
+void MetalRenderer3D::InvalidateTexcache() noexcept
+{
+    if (!State)
+        return;
+    if (State->Texcache)
+        State->Texcache->Reset();
+    State->ClearBitmapDirty = 0x3;
+}
+
 void MetalRenderer3D::SetThreaded(bool threaded) noexcept
 {
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
