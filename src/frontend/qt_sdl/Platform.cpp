@@ -313,7 +313,28 @@ Thread* Thread_Create(std::function<void()> func)
 void Thread_Free(Thread* thread)
 {
     QThread* t = (QThread*) thread;
+    if (!t)
+        return;
+#ifdef MELONPRIME_DS
+    // MELONPRIME_QTHREAD_FREE_NO_TERMINATE_V1
+    // Every Thread_Free() caller signals the thread to return and then calls
+    // Thread_Wait() first, so the thread entry function has already returned by
+    // the time we get here. Qt (6.11 at least) does not clear the stored
+    // pthread handle when a thread finishes, so QThread::terminate() still
+    // issues a real pthread_cancel() against the dead thread. That races the OS
+    // reclaiming the just-exited thread's stack, and pthread_cancel() then
+    // dereferences the unmapped pthread struct and takes the process down --
+    // observed as a SIGSEGV inside pthread_cancel while a renderer switch was
+    // destroying SoftRenderer3D. When the stack has not been reclaimed yet it
+    // merely logs "QThread::start: Thread termination error (No such process)".
+    //
+    // wait() is both sufficient and safe: it returns immediately for a thread
+    // that already finished, and blocks (instead of cancelling) in the case a
+    // future caller forgets its own Thread_Wait().
+    t->wait();
+#else
     t->terminate();
+#endif
     delete t;
 }
 
