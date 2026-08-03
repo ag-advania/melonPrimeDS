@@ -75,10 +75,12 @@ jobs:
               /usr/sbin/pkg_add pkgin curl
               echo 'https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/10.0_2026Q2/All' \
                 > /usr/pkg/etc/pkgin/repositories.conf
+              base=https://cdn.NetBSD.org/pub/NetBSD
               mach=$(uname -m | sed "s/evbarm/evbarm-$(uname -p)/")
+              rel=NetBSD-$(uname -r)
               for set in xbase xcomp; do
-                curl -sL https://cdn.NetBSD.org/pub/NetBSD/NetBSD-$(uname -r
-                  )/$mach/binary/sets/$set.tar.xz | tar xJpf - -C /
+                curl -sL $base/$rel/$mach/binary/sets/$set.tar.xz |
+                  tar xJpf - -C /
               done
             # `pkgin update` builds the local summary from the
             # repositories.conf entry above. A short retry covers genuine
