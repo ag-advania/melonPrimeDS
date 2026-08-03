@@ -1165,6 +1165,15 @@ void MainWindow::endModalPresentationPause()
     if (panel)
         panel->endModalPausePresentation();
 }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+void MainWindow::setHudEditModeActive(bool active)
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->setHudEditModeActive(active);
+}
+#endif
 #endif
 
 void MainWindow::createScreenPanel()
@@ -2447,6 +2456,10 @@ void MainWindow::onInputConfigFinished(int res)
 {
     emuThread->emuUnpause();
 #ifdef MELONPRIME_DS
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Balances the "Edit HUD Layout" hand-off; emulation drives the panel again.
+    setHudEditModeActive(false);
+#endif
     endModalPresentationPause();
 #endif
 #ifdef MELONPRIME_DS

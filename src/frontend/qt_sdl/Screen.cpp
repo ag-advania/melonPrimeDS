@@ -327,6 +327,23 @@ void ScreenPanel::refreshClipForGameStateChange()
 #endif
 }
 
+#ifdef MELONPRIME_CUSTOM_HUD
+void ScreenPanel::setHudEditModeActive(bool active)
+{
+    if (!active || closing || !qApp || qApp->closingDown())
+        return;
+
+    // CustomHud_EnterEditMode asks for cursor mode through the thread bridge,
+    // but that command is only consumed by the emulation thread's input pass --
+    // and the settings dialog has emulation paused for the whole editor
+    // session, so it is never read. Aim capture would therefore stay armed:
+    // the focus-in that follows the dialog hiding re-clips the pointer to the
+    // panel centre and blanks it, leaving the editor unusable. Release it here,
+    // on the GUI thread that owns cursor state.
+    MelonPrime::ScreenCursorPolicy::Unclip(*this);
+}
+#endif
+
 void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const
 {
     if (closing || !qApp || qApp->closingDown())
@@ -1725,6 +1742,12 @@ struct ScreenPanelVulkan::VulkanState
     bool hasSoftwareBuffers = false;
     bool runtimeFailureReported = false;
     unsigned consecutiveFailures = 0;
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Set from the GUI thread when the Custom HUD on-screen editor takes over
+    // the panel, read by the emulation thread's draw pass. The editor runs with
+    // emulation paused, so the panel must keep composing and presenting.
+    std::atomic_bool hudEditLivePresentation{false};
+#endif
 };
 
 namespace
@@ -1948,6 +1971,13 @@ void ScreenPanelVulkan::beginModalPausePresentation()
     if (!vulkan || vulkan->modalPauseOverlay)
         return;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // The on-screen HUD editor owns the panel and keeps it presenting live; a
+    // frozen grab on top would hide every edit the user makes.
+    if (vulkan->hudEditLivePresentation.load(std::memory_order_relaxed))
+        return;
+#endif
+
     QScreen* targetScreen = windowHandle() ? windowHandle()->screen() : nullptr;
     if (!targetScreen)
         targetScreen = QGuiApplication::primaryScreen();
@@ -1979,6 +2009,24 @@ void ScreenPanelVulkan::endModalPausePresentation()
     vulkan->modalPauseOverlay = nullptr;
     delete overlay;
 }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+void ScreenPanelVulkan::setHudEditModeActive(bool active)
+{
+    ScreenPanel::setHudEditModeActive(active);
+    if (!vulkan)
+        return;
+
+    vulkan->hudEditLivePresentation.store(active, std::memory_order_relaxed);
+    if (!active)
+        return;
+
+    // Drop the modal-pause freeze: from here the panel presents every paused
+    // draw pass itself, which is both what makes the editor overlay visible and
+    // what keeps the native Vulkan child repainted while the dialog is around.
+    endModalPausePresentation();
+}
+#endif
 
 void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
 {
@@ -2344,7 +2392,18 @@ void ScreenPanelVulkan::drawScreenFrame()
     // from DS staging buffers while paused can surface stale boot/menu pixels;
     // leave the swapchain untouched until emulation resumes. WA_PaintOnScreen
     // keeps Qt from erasing the native child when a modal dialog is exposed.
-    if (!emuThread->emuIsRunning())
+    //
+    // The Custom HUD on-screen editor is the one paused state that must keep
+    // drawing: the settings dialog pauses emulation before handing the panel to
+    // the editor, so without this the editor overlay would never reach the
+    // screen at all (OpenGL/software gate on emuIsActive() and keep drawing).
+#ifdef MELONPRIME_CUSTOM_HUD
+    const bool hudEditLivePresentation =
+        vulkan->hudEditLivePresentation.load(std::memory_order_relaxed);
+#else
+    constexpr bool hudEditLivePresentation = false;
+#endif
+    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
         return;
 
     auto* nds = emuInstance->getNDS();
@@ -2588,7 +2647,11 @@ void ScreenPanelVulkan::drawScreenFrame()
 #ifdef MELONPRIME_CUSTOM_HUD
         {
             const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
-            if (!vulkanNativeMenuHeld && MelonPrimeHud_CanRenderForCore(mp, editMode))
+            // The held native MPH menu suppresses the gameplay HUD, but never
+            // the layout editor: it is opened from the settings dialog and has
+            // to stay on screen whatever the paused frame happens to show.
+            if ((!vulkanNativeMenuHeld || editMode)
+                && MelonPrimeHud_CanRenderForCore(mp, editMode))
             {
                 auto& instcfg = emuInstance->getLocalConfig();
                 MelonPrimeHud_RefreshHudEnabledIfNeeded(
