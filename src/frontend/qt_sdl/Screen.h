@@ -418,6 +418,12 @@ private:
     // touched from the GUI thread.
     void refreshNativeSurfaceGuiThread();
     void setNativeSurfaceVisibleGuiThread(bool visible);
+#if defined(__linux__)
+    // Emulation thread. Maps the dedicated Vulkan child surface and rebuilds
+    // the presenter when the compositor handed out a new native handle.
+    // Returns false while the GUI thread has not published a usable handle.
+    bool prepareLinuxPresentationSurface();
+#endif
     // Callable from the emulation thread; posts to the GUI thread only when the
     // requested state actually changes.
     void requestNativeSurfaceVisible(bool visible);
