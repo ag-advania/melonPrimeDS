@@ -381,6 +381,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MelonPrimeVulkanSurfacePresenter.cpp
         MelonPrimeVulkanSurfaceWin32.cpp
         MelonPrimeVulkanSurfaceLinux.cpp
+        MelonPrimeVulkanSurfaceHostLinux.cpp
         MelonPrimeVulkanSurfaceStub.cpp)
 
     if (APPLE)

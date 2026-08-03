@@ -113,10 +113,10 @@ passes it to `vkCreateMetalSurfaceEXT`.
 
 ### Why the layer is a sublayer
 
-On Windows and Linux `ScreenPanelVulkan` sets `WA_PaintOnScreen` and presents
-into its own window handle. That does not work on macOS: Qt's macOS backend has
-no on-screen paint support, so `QWidget::paintEngine()` returns null and
-`QPainter` silently fails (`QPainter::begin: Paint device returned engine == 0`).
+On Windows `ScreenPanelVulkan` sets `WA_PaintOnScreen` and presents into its own
+window handle. That does not work on macOS: Qt's macOS backend has no on-screen
+paint support, so `QWidget::paintEngine()` returns null and `QPainter` silently
+fails (`QPainter::begin: Paint device returned engine == 0`).
 
 The panel needs `QPainter`. Vulkan runs the **software** renderer for the
 splash screen and for everything outside a match, and those frames — plus the
@@ -133,13 +133,26 @@ So on macOS only:
   swapchain, and hidden again whenever the renderer falls back to the software
   output, so the two never draw over each other.
 
-Windows and Linux keep the single-widget, layer-free path exactly as before.
+Windows keeps the single-widget, layer-free path exactly as before.
 
-A native child `QWidget` was tried first and rejected. A second `NSView` takes
-part in AppKit hit testing, and AppKit can deliver a mouse event to it after
-its `QPlatformWindow` is gone — that crashed on teardown in
+A native child `QWidget` was tried first and rejected **on macOS**. A second
+`NSView` takes part in AppKit hit testing, and AppKit can deliver a mouse event
+to it after its `QPlatformWindow` is gone — that crashed on teardown in
 `-[QNSView(MouseAPI) handleMouseEvent:]`. The sublayer keeps exactly one
 `NSView`, so that class of problem cannot occur.
+
+Linux reaches the same separation by a different route, for the same reason:
+`MelonPrime::VulkanSurfaceHostLinux` is a dedicated native child widget that
+only Vulkan draws into, and the panel keeps Qt's backing store for its software
+output. Sharing one surface there left the last presented Vulkan frame on screen
+when a match ended and the renderer switched back to software — the game and its
+audio continued into the recap while the picture stayed frozen. The X11/Wayland
+equivalent of the AppKit hit-testing hazard is handled by giving the child
+`WA_TransparentForMouseEvents` and `Qt::NoFocus`: all input, including the
+Wayland pointer lock, stays on the panel and the top-level window. The child's
+native surface is mapped only while Vulkan presents, and because Qt's Wayland
+backend destroys a hidden window's `wl_surface`, the handle is republished (and
+the presenter rebuilt against a generation counter) on every map.
 
 `VulkanContext` already enabled `VK_EXT_metal_surface`,
 `VK_KHR_portability_enumeration`, and `VK_KHR_portability_subset` on Apple
