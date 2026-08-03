@@ -4,6 +4,7 @@
 // MELONPRIME_METAL_PRESENT_RATE_CONTROL_V1
 // MELONPRIME_METAL_OPENEMU_NONBLOCKING_PRESENTER_V1
 // MELONPRIME_METAL_GPU_RADAR_COLOR_KEY_V1
+// MELONPRIME_METAL_GPU_RADAR_FOREGROUND_V1
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -1189,29 +1190,6 @@ void ScreenPanelMetal::drawScreen()
 
         overlayPainter.end();
 
-#ifdef MELONPRIME_CUSTOM_HUD
-        if (gpuRadarEnabledForFrame
-            && displayedTextureForFrame
-            && m->radarPipeline)
-        {
-            // Draw before the remaining CPU-generated HUD so its ordering is
-            // unchanged while the expensive colour-key work stays on the GPU.
-            [encoder setRenderPipelineState:m->radarPipeline];
-            [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
-            [encoder setVertexBytes:&gpuRadarUiUniforms
-                              length:sizeof(gpuRadarUiUniforms)
-                             atIndex:1];
-            [encoder setFragmentBytes:&gpuRadarFragmentUniforms
-                                length:sizeof(gpuRadarFragmentUniforms)
-                               atIndex:0];
-            [encoder setFragmentTexture:displayedTextureForFrame atIndex:0];
-            [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
-            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                         vertexStart:0
-                         vertexCount:6];
-        }
-#endif
-
         if (overlayHasContent)
         {
             if (!m->loggedFirstUiOverlay)
@@ -1259,6 +1237,30 @@ void ScreenPanelMetal::drawScreen()
                 [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
             }
         }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        if (gpuRadarEnabledForFrame
+            && displayedTextureForFrame
+            && m->radarPipeline)
+        {
+            // Radar palette pixels are the foreground signal. Draw them after
+            // the CPU-generated Radar SVG/overlay so translucent or opaque SVG
+            // pixels cannot cover the picked blips on Metal/Metal Compute.
+            [encoder setRenderPipelineState:m->radarPipeline];
+            [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
+            [encoder setVertexBytes:&gpuRadarUiUniforms
+                              length:sizeof(gpuRadarUiUniforms)
+                             atIndex:1];
+            [encoder setFragmentBytes:&gpuRadarFragmentUniforms
+                                length:sizeof(gpuRadarFragmentUniforms)
+                               atIndex:0];
+            [encoder setFragmentTexture:displayedTextureForFrame atIndex:0];
+            [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
+            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                         vertexStart:0
+                         vertexCount:6];
+        }
+#endif
 
         [encoder endEncoding];
 
