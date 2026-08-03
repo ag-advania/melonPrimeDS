@@ -61,6 +61,10 @@
 #if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
 #include "MelonPrimeVulkanSurfaceMacOS.h"
 #endif
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+#include "MelonPrimeVulkanSurfaceHostLinux.h"
+#include <QPointer>
+#endif
 #endif
 
 #include "main_shaders.h"
@@ -1727,7 +1731,19 @@ struct ScreenPanelVulkan::VulkanState
     std::uint32_t surfaceHeight = 0;
     QImage overlayFrame;
     QLabel* modalPauseOverlay = nullptr;
+    // Guards nativeWindow/nativeWindowGeneration: the GUI thread publishes the
+    // platform presentation handle, the emulation thread builds swapchains from
+    // it. presenterWindowGeneration stays emulation-thread-owned and records
+    // which generation the live presenter was built against.
+    QMutex nativeWindowLock;
     MelonPrime::VulkanNativeWindowInfo nativeWindow;
+    std::uint64_t nativeWindowGeneration = 0;
+    std::uint64_t presenterWindowGeneration = 0;
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    // Vulkan draws only here; the panel itself keeps Qt's backing store for its
+    // software output. Owned as a Qt child, cleared in releaseNativeSurface().
+    QPointer<MelonPrime::VulkanSurfaceHostLinux> linuxSurfaceHost;
+#endif
     QMutex softwareBufferLock;
     QImage softwareScreen[2] = {
         QImage(256, 192, QImage::Format_RGB32),
@@ -1742,7 +1758,12 @@ struct ScreenPanelVulkan::VulkanState
     bool softwareMode = true;
     bool hasSoftwareBuffers = false;
     bool runtimeFailureReported = false;
+    bool softwarePaintFailureReported = false;
     unsigned consecutiveFailures = 0;
+    // Set when the panel hands presentation back to Qt, cleared by the paint
+    // pass that acts on it, so transition debugging logs one line per handoff
+    // instead of one per frame.
+    std::atomic_bool logSoftwarePaintHandoff{false};
 #ifdef MELONPRIME_CUSTOM_HUD
     // Set from the GUI thread when the Custom HUD on-screen editor takes over
     // the panel, read by the emulation thread's draw pass. The editor runs with
@@ -1753,6 +1774,79 @@ struct ScreenPanelVulkan::VulkanState
 
 namespace
 {
+
+// Opt-in tracing for the Vulkan/software presentation handoff
+// (MELONPRIME_VULKAN_TRANSITION_DEBUG=1). Only state transitions log, never
+// per-frame work, and nothing is emitted unless the variable is set.
+bool VulkanTransitionDebugEnabled()
+{
+    static const bool enabled = []() {
+        const char* const value = std::getenv("MELONPRIME_VULKAN_TRANSITION_DEBUG");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+// Resolves the Vulkan WSI handles of one *mapped* native widget. The caller
+// passes the dedicated Vulkan child surface, never the panel or the top-level
+// window: Qt paints into those, and Vulkan must not share a surface with it.
+MelonPrime::VulkanNativeWindowInfo ResolveLinuxVulkanNativeWindow(QWidget* target)
+{
+    MelonPrime::VulkanNativeWindowInfo info{};
+    if (target == nullptr)
+        return info;
+
+    const QString platformName = QGuiApplication::platformName();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    if (platformName == QStringLiteral("xcb"))
+    {
+        const QX11Application* x11 = qApp->nativeInterface<QX11Application>();
+        info.type = MelonPrime::VulkanNativeWindowType::Xlib;
+        info.display = x11 != nullptr ? x11->display() : nullptr;
+        info.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(target->winId()));
+    }
+#if defined(WAYLAND_ENABLED)
+    else if (platformName == QStringLiteral("wayland"))
+    {
+        const QWaylandApplication* wayland = qApp->nativeInterface<QWaylandApplication>();
+        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+        info.type = MelonPrime::VulkanNativeWindowType::Wayland;
+        info.display = wayland != nullptr ? wayland->display() : nullptr;
+        info.window = pni != nullptr && target->windowHandle() != nullptr
+            ? pni->nativeResourceForWindow("surface", target->windowHandle())
+            : nullptr;
+    }
+#endif
+#else
+    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+    if (platformName == QStringLiteral("xcb"))
+    {
+        info.type = MelonPrime::VulkanNativeWindowType::Xlib;
+        info.display = pni != nullptr
+            ? pni->nativeResourceForWindow("display", target->windowHandle())
+            : nullptr;
+        info.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(target->winId()));
+    }
+    else if (platformName == QStringLiteral("wayland"))
+    {
+        info.type = MelonPrime::VulkanNativeWindowType::Wayland;
+        info.display = pni != nullptr
+            ? pni->nativeResourceForWindow("display", target->windowHandle())
+            : nullptr;
+        info.window = pni != nullptr
+            ? pni->nativeResourceForWindow("surface", target->windowHandle())
+            : nullptr;
+    }
+#endif
+
+    // A handle pair that is not complete is not usable; report it as absent so
+    // the panel retries instead of building a swapchain on half a surface.
+    if (info.display == nullptr || info.window == nullptr)
+        return MelonPrime::VulkanNativeWindowInfo{};
+    return info;
+}
+#endif
 
 std::mutex& VulkanPanelRegistryMutex()
 {
@@ -1882,15 +1976,19 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_OpaquePaintEvent, true);
-#if !defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation surface, not input dispatch
+#if defined(_WIN32) // scatter-budget-exempt: platform Vulkan presentation surface, not input dispatch
     setAttribute(Qt::WA_PaintOnScreen, true);
 #endif
-    // On macOS WA_PaintOnScreen is deliberately not set: Qt's macOS backend has
-    // no on-screen paint support, so QWidget::paintEngine() returns null under
-    // it and QPainter silently stops working. This panel needs QPainter -- the
-    // splash screen, the software-rendered screens (Vulkan runs the software
-    // renderer outside matches), and the OSD all go through paintEvent(). The
-    // MoltenVK CAMetalLayer is composited above that as a sublayer instead.
+    // WA_PaintOnScreen is set only where Vulkan presents straight to this
+    // panel's own native window (Windows/HWND). macOS and Linux composite
+    // Vulkan on a separate surface above the panel, and there the attribute is
+    // actively harmful: it takes the panel off Qt's backing store, and this
+    // panel needs QPainter for the splash screen, the software-rendered screens
+    // (Vulkan runs the software renderer outside matches) and the OSD, all of
+    // which go through paintEvent(). Qt's macOS backend has no on-screen paint
+    // support at all, and native Wayland has none either -- keeping it set on
+    // Linux is what left the last presented Vulkan frame stuck on screen when
+    // the post-match recap switched back to the software renderer.
     setAttribute(Qt::WA_KeyCompression, false);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize());
@@ -1899,6 +1997,16 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     vulkan->framePolicy.AllowStealPending = true;
     vulkan->framePolicy.AllowPreviousFrameReuse = true;
     vulkan->framePolicy.PreferOldestFrame = false;
+
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    // GUI thread (MainWindow::createScreenPanel). The child is created hidden
+    // and stays unmapped until the first Vulkan frame is about to be presented.
+    auto* surfaceHost = new MelonPrime::VulkanSurfaceHostLinux(this);
+    surfaceHost->setGeometry(rect());
+    surfaceHost->setNativeSurfaceChangedCallback(
+        [this]() { refreshNativeSurfaceGuiThread(); });
+    vulkan->linuxSurfaceHost = surfaceHost;
+#endif
 }
 
 ScreenPanelVulkan::~ScreenPanelVulkan()
@@ -2132,6 +2240,30 @@ void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
         static_cast<double>(devicePixelRatioF()),
         width(),
         height());
+#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    auto* host = vulkan->linuxSurfaceHost.data();
+    if (host == nullptr)
+        return;
+
+    host->setGeometry(rect());
+
+    // Only a mapped child has a usable native surface: Qt's Wayland backend
+    // destroys the wl_surface of a hidden window. Publishing an empty handle
+    // while hidden is what keeps the emulation thread from building a swapchain
+    // on a surface that is about to be (or already was) torn down.
+    MelonPrime::VulkanNativeWindowInfo info{};
+    std::uint64_t generation = 0;
+    if (host->isVisible())
+    {
+        info = ResolveLinuxVulkanNativeWindow(host);
+        generation = host->nativeGeneration();
+    }
+
+    {
+        QMutexLocker lock(&vulkan->nativeWindowLock);
+        vulkan->nativeWindow = info;
+        vulkan->nativeWindowGeneration = generation;
+    }
 #endif
 }
 
@@ -2140,6 +2272,14 @@ void ScreenPanelVulkan::setNativeSurfaceVisibleGuiThread(bool visible)
     if (!vulkan)
         return;
 
+    if (VulkanTransitionDebugEnabled())
+    {
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[VulkanTransition] presentation surface %s",
+            visible ? "shown" : "hidden");
+    }
+
 #if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
     if (vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Metal)
         return;
@@ -2147,6 +2287,29 @@ void ScreenPanelVulkan::setNativeSurfaceVisibleGuiThread(bool visible)
     if (!visible)
     {
         // The panel owns the software/splash drawing again.
+        update();
+    }
+#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    auto* host = vulkan->linuxSurfaceHost.data();
+    if (host == nullptr)
+        return;
+
+    if (visible)
+    {
+        host->setGeometry(rect());
+        host->show();
+        host->raise();
+        // Mapping recreates the native surface on Wayland; republish the
+        // handle the emulation thread is about to build a swapchain from.
+        refreshNativeSurfaceGuiThread();
+    }
+    else
+    {
+        // Unmapping hands the screen area back to the panel's backing store.
+        // The handle is dropped by the same refresh path, so a late Vulkan
+        // frame cannot present into a surface Qt is painting over.
+        host->hide();
+        refreshNativeSurfaceGuiThread();
         update();
     }
 #else
@@ -2168,10 +2331,64 @@ void ScreenPanelVulkan::requestNativeSurfaceVisible(bool visible)
 
 bool ScreenPanelVulkan::nativeSurfaceReady() const
 {
-    return vulkan
-        && vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
+    if (!vulkan)
+        return false;
+
+    QMutexLocker lock(&vulkan->nativeWindowLock);
+    return vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
         && vulkan->nativeWindow.window != nullptr;
 }
+
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
+{
+    // Emulation thread, called once per Vulkan frame before the presenter is
+    // used. Unlike Windows (one HWND) and macOS (a layer that is only hidden,
+    // never destroyed), the Linux child surface is unmapped between matches and
+    // Qt may hand back a different native surface on the next map.
+    requestNativeSurfaceVisible(true);
+
+    std::uint64_t nativeGeneration = 0;
+    bool published = false;
+    {
+        QMutexLocker lock(&vulkan->nativeWindowLock);
+        nativeGeneration = vulkan->nativeWindowGeneration;
+        published = vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
+            && vulkan->nativeWindow.window != nullptr;
+    }
+
+    if (vulkan->presenterInitialized
+        && vulkan->presenterWindowGeneration != nativeGeneration)
+    {
+        // The VkSurfaceKHR belongs to a native surface that no longer exists.
+        if (VulkanTransitionDebugEnabled())
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[VulkanTransition] native surface generation %llu -> %llu; rebuilding presenter",
+                static_cast<unsigned long long>(vulkan->presenterWindowGeneration),
+                static_cast<unsigned long long>(nativeGeneration));
+        }
+        vulkan->presenter.Shutdown();
+        vulkan->presenterInitialized = false;
+        vulkan->frameQueue.clear();
+        vulkan->output.invalidateTemporalHistory();
+    }
+
+    if (!published)
+    {
+        // The GUI thread has not mapped the child and republished its handle
+        // yet. This is the normal first frame after a software-to-Vulkan
+        // switch, so retry on the next frame instead of reporting a failure.
+        QMetaObject::invokeMethod(
+            this,
+            [this]() { refreshNativeSurfaceGuiThread(); },
+            Qt::QueuedConnection);
+        return false;
+    }
+    return true;
+}
+#endif
 
 void ScreenPanelVulkan::releaseNativeSurface()
 {
@@ -2183,6 +2400,23 @@ void ScreenPanelVulkan::releaseNativeSurface()
     if (nativeWindow.type == MelonPrime::VulkanNativeWindowType::Metal)
         MelonPrime::VulkanMacOS::DestroyLayer(nativeWindow.window);
     nativeWindow.window = nullptr;
+#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    // Destructor path only, and deliberately after the presenter/output
+    // quiesce: the native child surface must outlive every VkSurfaceKHR and
+    // swapchain built from it. Deleting it here rather than leaving it to
+    // ~QWidget also guarantees no surface-changed callback can run after
+    // VulkanState is gone.
+    if (auto* host = vulkan->linuxSurfaceHost.data(); host != nullptr)
+    {
+        host->setNativeSurfaceChangedCallback(nullptr);
+        vulkan->linuxSurfaceHost = nullptr;
+        delete host;
+    }
+    {
+        QMutexLocker lock(&vulkan->nativeWindowLock);
+        vulkan->nativeWindow = MelonPrime::VulkanNativeWindowInfo{};
+        vulkan->nativeWindowGeneration = 0;
+    }
 #endif
 }
 
@@ -2196,6 +2430,28 @@ void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
             return;
 
         QPainter painter(this);
+        if (!painter.isActive())
+        {
+            // The panel is not on Qt's backing-store path, so every software
+            // frame drawn here is silently discarded and whatever the previous
+            // producer left on the surface stays visible. Report it once: this
+            // is the failure mode that stranded the post-match recap on Linux.
+            if (!vulkan->softwarePaintFailureReported)
+            {
+                vulkan->softwarePaintFailureReported = true;
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "Vulkan panel cannot paint software frames: QPainter is inactive");
+            }
+            return;
+        }
+        if (vulkan->logSoftwarePaintHandoff.exchange(false, std::memory_order_relaxed))
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[VulkanTransition] software paintEvent active=1 buffers=%d",
+                vulkan->hasSoftwareBuffers ? 1 : 0);
+        }
         painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
         if (vulkan->hasSoftwareBuffers)
         {
@@ -2254,48 +2510,12 @@ bool ScreenPanelVulkan::initVulkan()
     nativeWindow.type = MelonPrime::VulkanNativeWindowType::Metal;
     nativeWindow.window = nullptr;
 #elif defined(__linux__)
-    const QString platformName = QGuiApplication::platformName();
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    if (platformName == QStringLiteral("xcb"))
-    {
-        const QX11Application* x11 = qApp->nativeInterface<QX11Application>();
-        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Xlib;
-        nativeWindow.display = x11 != nullptr ? x11->display() : nullptr;
-        nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
-    }
-#if defined(WAYLAND_ENABLED)
-    else if (platformName == QStringLiteral("wayland"))
-    {
-        const QWaylandApplication* wayland = qApp->nativeInterface<QWaylandApplication>();
-        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Wayland;
-        nativeWindow.display = wayland != nullptr ? wayland->display() : nullptr;
-        nativeWindow.window = pni != nullptr && windowHandle() != nullptr
-            ? pni->nativeResourceForWindow("surface", windowHandle())
-            : nullptr;
-    }
-#endif
-#else
-    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-    if (platformName == QStringLiteral("xcb"))
-    {
-        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Xlib;
-        nativeWindow.display = pni != nullptr
-            ? pni->nativeResourceForWindow("display", windowHandle())
-            : nullptr;
-        nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
-    }
-    else if (platformName == QStringLiteral("wayland"))
-    {
-        nativeWindow.type = MelonPrime::VulkanNativeWindowType::Wayland;
-        nativeWindow.display = pni != nullptr
-            ? pni->nativeResourceForWindow("display", windowHandle())
-            : nullptr;
-        nativeWindow.window = pni != nullptr
-            ? pni->nativeResourceForWindow("surface", windowHandle())
-            : nullptr;
-    }
-#endif
+    // Nothing to publish yet. The handle belongs to the dedicated Vulkan child
+    // surface and is only valid while that child is mapped, so
+    // refreshNativeSurfaceGuiThread() publishes it on every map and drops it on
+    // every unmap. Presenting into the panel's own surface -- which Qt paints
+    // the software frames into -- is exactly the sharing this avoids.
+    (void)nativeWindow;
 #endif
 
     vulkan->initialized = true;
@@ -2322,8 +2542,16 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         surfaceHeight = vulkan->surfaceHeight;
     }
 
+    MelonPrime::VulkanNativeWindowInfo nativeWindow;
+    std::uint64_t nativeGeneration = 0;
+    {
+        QMutexLocker lock(&vulkan->nativeWindowLock);
+        nativeWindow = vulkan->nativeWindow;
+        nativeGeneration = vulkan->nativeWindowGeneration;
+    }
+
     if (!vulkan->presenter.Init(
-            vulkan->nativeWindow,
+            nativeWindow,
             surfaceWidth,
             surfaceHeight,
             emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
@@ -2332,6 +2560,9 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     }
 
     vulkan->presenterInitialized = true;
+    // Records which native surface this swapchain belongs to; a later
+    // generation means the surface was replaced and the presenter is stale.
+    vulkan->presenterWindowGeneration = nativeGeneration;
     Platform::Log(
         Platform::LogLevel::Info,
         "Vulkan presentation initialized requested=Vulkan actual=Vulkan path=Qt-native-swapchain");
@@ -2442,8 +2673,10 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     // The native swapchain already owns the last completed image. Rebuilding
     // from DS staging buffers while paused can surface stale boot/menu pixels;
-    // leave the swapchain untouched until emulation resumes. WA_PaintOnScreen
-    // keeps Qt from erasing the native child when a modal dialog is exposed.
+    // leave the swapchain untouched until emulation resumes. The presentation
+    // surface is Vulkan's alone (a separate native child on macOS/Linux,
+    // WA_PaintOnScreen on Windows), so Qt cannot erase it while a modal dialog
+    // is exposed.
     //
     // The Custom HUD on-screen editor is the one paused state that must keep
     // drawing: the settings dialog pauses emulation before handing the panel to
@@ -2467,6 +2700,15 @@ void ScreenPanelVulkan::drawScreenFrame()
     {
         if (vulkan->presenterInitialized)
         {
+            // Post-match handoff: the 3D renderer went back to software, so
+            // Vulkan stops producing and Qt takes the screen area back.
+            if (VulkanTransitionDebugEnabled())
+            {
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "[VulkanTransition] output=CpuBgra; shutting the presenter down");
+                vulkan->logSoftwarePaintHandoff.store(true, std::memory_order_relaxed);
+            }
             vulkan->presenter.Shutdown();
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
@@ -2543,6 +2785,10 @@ void ScreenPanelVulkan::drawScreenFrame()
         vulkan->softwareMode = false;
         vulkan->hasSoftwareBuffers = false;
     }
+#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
+    if (!prepareLinuxPresentationSurface())
+        return;
+#endif
     if (!nativeSurfaceReady())
     {
         // The GUI thread has not (re)built the platform presentation surface
@@ -2560,6 +2806,9 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     if (!initVulkanPresenter())
     {
+        // Never leave a mapped-but-empty presentation surface covering the
+        // software output the panel falls back to.
+        requestNativeSurfaceVisible(false);
         if (vulkan->consecutiveFailures++ == 0)
             Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
         const std::string& reason = vulkan->presenter.LastError();
