@@ -286,6 +286,7 @@ struct HudRuntimeState {
     bool isAdventure;
     bool isMapOrUserActionPaused;
     bool isAdventureCameraScene;
+    bool isAdventureScanVisor;
 };
 
 struct HudRuntimeFrameCache {
@@ -528,6 +529,8 @@ static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
             s_hudRuntimeFrameCache.state.isMapOrUserActionPaused;
         out.isAdventureCameraScene =
             s_hudRuntimeFrameCache.state.isAdventureCameraScene;
+        out.isAdventureScanVisor =
+            s_hudRuntimeFrameCache.state.isAdventureScanVisor;
         return;
     }
 
@@ -536,6 +539,10 @@ static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
         Read8(out.ram, rom.isMapOrUserActionPaused) == 0x01;
     out.isAdventureCameraScene = out.isAdventure &&
         IsCameraSequenceBlockingInput(out.ram, rom);
+    // != 0 rather than == 1: the switch only ever writes 0/1, but the native
+    // regular-HUD gate compares against 0, so this matches the game exactly.
+    out.isAdventureScanVisor = out.isAdventure &&
+        Read8(out.ram, rom.scanVisorState) != 0x00;
 
     if (HudRuntimeFrameCacheMatches(out)) {
         s_hudRuntimeFrameCache.state.isAdventure = out.isAdventure;
@@ -543,6 +550,8 @@ static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
             out.isMapOrUserActionPaused;
         s_hudRuntimeFrameCache.state.isAdventureCameraScene =
             out.isAdventureCameraScene;
+        s_hudRuntimeFrameCache.state.isAdventureScanVisor =
+            out.isAdventureScanVisor;
         s_hudRuntimeFrameCache.adventureValid = true;
     }
 }
@@ -966,6 +975,16 @@ static inline bool ShouldHideForGameplayState(bool isStartPressed,
            (isAdventure && isMapOrUserActionPaused) ||
            currentHP == 0 ||
            isGameOver;
+}
+
+// Single decision point for the Custom HUD crosshair. The whole-overlay hide
+// rules (native UI, adventure camera scenes) return before this is consulted;
+// what remains are the states where the rest of the HUD keeps drawing but the
+// game has no reticle of its own: third person, alt form, morph transition, and
+// an active Scan Visor.
+static inline bool ShouldDrawCustomHudCrosshair(const HudRuntimeState& st)
+{
+    return st.isFirstPerson && !st.isTrans && !st.isAlt && !st.isAdventureScanVisor;
 }
 
 bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
