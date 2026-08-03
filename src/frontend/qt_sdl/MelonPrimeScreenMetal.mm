@@ -315,6 +315,13 @@ struct ScreenPanelMetal::Impl
 
     QImage uiOverlay;
     QImage bottomImage;
+    // Radar colour-key scratch. Mirrors Overlay[1] in the Qt software path;
+    // the Custom HUD radar magnifies this, not the raw bottom screen.
+    QImage radarKeyImage;
+    // Resolved on the HUD config epoch, like the Qt paths' radar cache.
+    // 0 means "radar off", which makes the colour key a no-op.
+    uint32_t radarCfgEpoch = ~0u;
+    int radarColorKeyRadius = 0;
 
     void* attachedView = nullptr; // weak NSView*, owned by Qt
     QMutex layoutMutex;
@@ -963,6 +970,28 @@ void ScreenPanelMetal::drawScreen()
                     if (hasHudCpuBuffersForFrame && bottomCpuBufForFrame)
                         std::memcpy(m->bottomImage.bits(), bottomCpuBufForFrame, 256 * 192 * 4);
 
+                    // Cold config boundary, same epoch gate the Qt paths use.
+                    const uint32_t hudEpoch =
+                        MelonPrime::CustomHud_GetCacheEpoch(mp->HudConfigState());
+                    if (hudEpoch != m->radarCfgEpoch)
+                    {
+                        m->radarCfgEpoch = hudEpoch;
+                        m->radarColorKeyRadius =
+                            MelonPrime::CustomHud_ResolveRadarColorKeyRadius(instcfg);
+                    }
+
+                    // The radar shows only the DS radar blips, so the bottom
+                    // screen has to be colour-keyed down to the radar palette
+                    // before CustomHud_Render magnifies the crop. Handing over
+                    // the raw bottom screen draws the whole map area instead.
+                    QImage* radarSource = hasHudCpuBuffersForFrame
+                        ? MelonPrime::CustomHud_PrepareRadarColorKeySource(
+                              &m->bottomImage,
+                              &m->radarKeyImage,
+                              mp->GetHunterID(),
+                              m->radarColorKeyRadius)
+                        : nullptr;
+
                     if (overlayFont.family().isEmpty())
                         overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
                     overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
@@ -974,7 +1003,7 @@ void ScreenPanelMetal::drawScreen()
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
                         &overlayPainter, nullptr,
-                        &m->uiOverlay, hasHudCpuBuffersForFrame ? &m->bottomImage : nullptr,
+                        &m->uiOverlay, radarSource,
                         mp->IsInGame(),
                         m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                         m_hudScale,
