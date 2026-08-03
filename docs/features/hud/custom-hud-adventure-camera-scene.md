@@ -4,6 +4,9 @@ Adventure mode plays camera scenes (elevator rides, door/cutscene pans, scripted
 looks) during which the game blanks its own HUD, including the crosshair. Custom
 HUD used to keep drawing over those scenes. It now hides for the duration.
 
+The narrower crosshair-only case is
+[Scan Visor](custom-hud-adventure-scan-visor.md).
+
 Hiding here is *not* a hand-back to the native HUD: the NoHUD patch mask,
 including the helmet-layer suppression, stays applied exactly as it was. Only
 the Custom HUD overlay and the radar overlay stop drawing.

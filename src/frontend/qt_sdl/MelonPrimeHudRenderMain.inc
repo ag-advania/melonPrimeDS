@@ -120,7 +120,7 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,
     // radar, and other Custom HUD elements.
-    const bool drawCrosshairThisFrame = st.isFirstPerson && !st.isTrans && !st.isAlt;
+    const bool drawCrosshairThisFrame = ShouldDrawCustomHudCrosshair(st);
     if (drawCrosshairThisFrame) {
         const uint32_t gameFrame = st.nds ? st.nds->NumFrames : 0;
         float crosshairZoomAmount = 0.0f;
@@ -184,7 +184,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     if (!drawCrosshairThisFrame) {
-        // OPT-DR1: Crosshair not drawn this frame (transition/alt) but was last frame.
+        // OPT-DR1: Crosshair not drawn this frame (transition/alt/scan visor)
+        // but was last frame.
         ClearPreviousCrosshairDirty(c.crosshair);
     }
 
