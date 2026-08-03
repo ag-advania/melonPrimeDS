@@ -1,0 +1,206 @@
+name: Nightly Release
+
+# Builds every supported platform from `develop` and republishes the fixed
+# `nightly-release` prerelease. The per-OS build workflows are reused as-is via
+# workflow_call so nightly and normal CI cannot drift apart, and the artifacts
+# they already produce (melonPrimeDS-{macOS,linux,bsd}-all.zip) are published
+# unchanged. The only file this workflow creates is the Windows ZIP, because
+# build-windows.yml uploads the bare melonPrimeDS.exe.
+#
+# Safety: nothing here touches release tags other than `nightly-release`, and
+# the publish job only runs after all four build workflows succeed AND the
+# downloaded payload passes tools/ci/release/verify-nightly-assets.py. If a
+# build fails, the previous Nightly release is left exactly as it was.
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: melonprimeds-nightly-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NIGHTLY_TAG: nightly-release
+  NIGHTLY_NAME: Nightly Build
+
+jobs:
+  windows:
+    name: Build Windows
+    uses: ./.github/workflows/build-windows.yml
+
+  macos:
+    name: Build macOS
+    uses: ./.github/workflows/build-macos.yml
+
+  linux:
+    name: Build Linux
+    uses: ./.github/workflows/build-ubuntu.yml
+
+  bsd:
+    name: Build BSD
+    uses: ./.github/workflows/build-bsd.yml
+
+  publish:
+    name: Publish Nightly release
+    needs: [windows, macos, linux, bsd]
+    # Never publish from a fork that happens to have a develop branch.
+    if: github.repository == 'ag-advania/melonPrimeDS'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      # Uploaded by build-windows.yml as the bare executable; the Nightly
+      # release publishes it as a ZIP instead.
+      - name: Download Windows build
+        uses: actions/download-artifact@v8
+        with:
+          name: melonPrimeDS-windows-x86_64
+          path: staging/windows
+
+      - name: Package Windows build
+        run: |
+          set -euo pipefail
+          test -s staging/windows/melonPrimeDS.exe
+          mkdir -p dist
+          zip -j dist/melonPrimeDS-windows-x86_64.zip staging/windows/melonPrimeDS.exe
+
+      # macOS/Linux/BSD bundles are published exactly as the build workflows
+      # produced them. Owning the bundling stays with those workflows: this job
+      # must never rebuild or repack an *-all.zip.
+      #
+      # The pattern matches melonPrimeDS-{macOS,linux,bsd}-all only — the
+      # per-architecture artifacts are already inside those bundles. It is used
+      # instead of three name-exact downloads so the step does not depend on
+      # whether upload-artifact stored the name with or without the .zip
+      # suffix; merge-multiple lands the files under their own names either way.
+      # skip-decompress keeps each bundle the byte-identical .zip it is instead
+      # of unpacking it here.
+      - name: Download platform bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: melonPrimeDS-*-all*
+          path: dist
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Report artifact acquisition
+        run: |
+          set -euo pipefail
+          echo "Everything downloaded from this run:"
+          find staging dist -type f -printf '  %p (%s bytes)\n' | sort
+          echo
+          echo "Expected release payload:"
+          for f in \
+            melonPrimeDS-windows-x86_64.zip \
+            melonPrimeDS-macOS-all.zip \
+            melonPrimeDS-linux-all.zip \
+            melonPrimeDS-bsd-all.zip
+          do
+            if [ -s "dist/$f" ]; then
+              echo "  obtained: $f"
+            else
+              echo "  MISSING:  $f"
+            fi
+          done
+
+      # The Linux and BSD build/bundle jobs run with continue-on-error, so a
+      # dropped architecture reaches this point looking like success. This is
+      # the gate that catches it, and it runs before anything is published.
+      - name: Verify nightly payload
+        run: python tools/ci/release/verify-nightly-assets.py --dist dist --write-sums
+
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          {
+            echo "Built automatically from the latest develop branch."
+            echo
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "These builds are automatically generated and may contain unfinished or unstable changes."
+          } > nightly-notes.md
+          cat nightly-notes.md
+
+      - name: Move nightly tag to this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${NIGHTLY_TAG}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${NIGHTLY_TAG}" \
+              -f sha="${GITHUB_SHA}" -F force=true >/dev/null
+            echo "Moved existing tag ${NIGHTLY_TAG} to ${GITHUB_SHA}"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${NIGHTLY_TAG}" -f sha="${GITHUB_SHA}" >/dev/null
+            echo "Created tag ${NIGHTLY_TAG} at ${GITHUB_SHA}"
+          fi
+
+      - name: Create or update the Nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${NIGHTLY_TAG}" >/dev/null 2>&1; then
+            gh release edit "${NIGHTLY_TAG}" \
+              --title "${NIGHTLY_NAME}" \
+              --notes-file nightly-notes.md \
+              --prerelease \
+              --draft=false
+          else
+            gh release create "${NIGHTLY_TAG}" \
+              --title "${NIGHTLY_NAME}" \
+              --notes-file nightly-notes.md \
+              --prerelease
+          fi
+
+      # --clobber replaces same-named assets in place, so a partially uploaded
+      # set never leaves the release without a download for a platform.
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${NIGHTLY_TAG}" dist/* --clobber
+
+      # Only after every upload succeeded: drop assets left over from an older
+      # naming scheme so the release lists exactly this run's payload.
+      - name: Remove stale release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          (cd dist && ls -1) > published.txt
+          gh release view "${NIGHTLY_TAG}" --json assets --jq '.assets[].name' > attached.txt
+          while IFS= read -r asset; do
+            [ -n "${asset}" ] || continue
+            if ! grep -Fxq "${asset}" published.txt; then
+              echo "Deleting stale asset: ${asset}"
+              gh release delete-asset "${NIGHTLY_TAG}" "${asset}" --yes
+            fi
+          done < attached.txt
+
+      - name: Summarize
+        run: |
+          set -euo pipefail
+          {
+            echo "### Nightly Build published"
+            echo
+            echo "- Tag: \`${NIGHTLY_TAG}\` -> \`${GITHUB_SHA}\`"
+            echo "- Assets:"
+            (cd dist && ls -1 | sed 's/^/  - /')
+          } >> "${GITHUB_STEP_SUMMARY}"
