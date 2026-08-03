@@ -505,6 +505,19 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     return true;
 }
 
+// The Metal compute 3D renderer samples the capture arrays directly for
+// capture-backed polygon textures. Publishing after every capture (re)configure
+// covers scale changes, renderer resets and the disabled/failed paths, where
+// the compute renderer must fall back to its dummy textures instead of holding
+// a destroyed one.
+void MetalRenderer::PublishCaptureTexturesTo3D()
+{
+    Metal3DSetCaptureTextures(
+        Rend3D.get(),
+        GetMetalCapture128Texture(),
+        GetMetalCapture256Texture());
+}
+
 void MetalRenderer::BeginMetalCaptureFrame()
 {
     if (!CaptureState || !CaptureState->Ready)
