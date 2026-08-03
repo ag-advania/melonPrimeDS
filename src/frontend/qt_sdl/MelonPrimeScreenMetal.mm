@@ -3,6 +3,7 @@
 // MELONPRIME_METAL_OUTPUT_LEASE_V1
 // MELONPRIME_METAL_PRESENT_RATE_CONTROL_V1
 // MELONPRIME_METAL_OPENEMU_NONBLOCKING_PRESENTER_V1
+// MELONPRIME_METAL_GPU_RADAR_COLOR_KEY_V1
 
 #include "MelonPrimeScreenMetal.h"
 
@@ -71,6 +72,10 @@ constexpr float kUiVertices[] = {
 // duplicated here rather than exposed from Screen.cpp just for this presenter.
 constexpr int kMetalOSDMargin = 6;
 constexpr int kMetalLogoWidth = 192;
+constexpr int kMetalRadarSourceCenterX = 128;
+constexpr int kMetalRadarSourceCenterY[] = { 112, 112, 128, 112, 120, 120, 112 };
+constexpr size_t kMetalRadarHunterCount =
+    sizeof(kMetalRadarSourceCenterY) / sizeof(kMetalRadarSourceCenterY[0]);
 
 // Match ScreenPanelGL's screen-space-to-clip transform. Qt's QNSView is
 // flipped and AppKit propagates that state to a replacement backing layer via
@@ -144,6 +149,46 @@ NSString* const kUiShaderSource =
      "                         texture2d<float> tex [[texture(0)]],\n"
      "                         sampler samp [[sampler(0)]]) {\n"
      "    return tex.sample(samp, in.texcoord);\n"
+     "}\n";
+
+NSString* const kRadarShaderSource =
+    @"struct RadarFragmentUniforms {\n"
+     "    float4 source;\n"
+     "    uint4 misc;\n"
+     "};\n"
+     "constant uint kMetalRadarPalette[15] = { 0xC0F868u, 0xF8A8A8u, 0xE03030u, 0xA0A0A0u, 0xC8C8C8u, 0x909090u, 0xF88010u, 0xF8D0A0u, 0xD86800u, 0x88E008u, 0xC8F880u, 0x68B800u, 0x1098C8u, 0x28D8F8u, 0xA8A8A8u };\n"
+     "\n"
+     "bool mp_is_radar_palette_color(float3 rgb) {\n"
+     "    uint3 color = uint3(round(clamp(rgb, float3(0.0), float3(1.0)) * 255.0));\n"
+     "    color &= uint3(0xF8u);\n"
+     "    uint packed = (color.r << 16u) | (color.g << 8u) | color.b;\n"
+     "    for (uint i = 0u; i < 15u; ++i) {\n"
+     "        if (packed == kMetalRadarPalette[i])\n"
+     "            return true;\n"
+     "    }\n"
+     "    return false;\n"
+     "}\n"
+     "\n"
+     "fragment float4 mp_radar_fs(\n"
+     "    UiVOut in [[stage_in]],\n"
+     "    constant RadarFragmentUniforms& u [[buffer(0)]],\n"
+     "    texture2d_array<float> tex [[texture(0)]],\n"
+     "    sampler samp [[sampler(0)]]) {\n"
+     "    float2 centered = in.texcoord * 2.0 - 1.0;\n"
+     "    if (dot(centered, centered) > 1.0)\n"
+     "        discard_fragment();\n"
+     "\n"
+     "    // Keep source addressing in native DS pixels. The normalized coordinate\n"
+     "    // therefore selects the same logical pixel at every internal resolution.\n"
+     "    float2 sourcePixel = floor(u.source.xy + centered * u.source.z);\n"
+     "    sourcePixel = clamp(sourcePixel, float2(0.0), float2(255.0, 191.0));\n"
+     "    float2 sourceUv = (sourcePixel + 0.5) / float2(256.0, 192.0);\n"
+     "    float3 rgb = tex.sample(samp, sourceUv, u.misc.x).rgb;\n"
+     "    if (!mp_is_radar_palette_color(rgb))\n"
+     "        discard_fragment();\n"
+     "\n"
+     "    float alpha = clamp(u.source.w, 0.0, 1.0);\n"
+     "    return float4(rgb * alpha, alpha);\n"
      "}\n";
 
 struct ScreenUniforms
@@ -241,6 +286,14 @@ struct UiUniforms
 };
 static_assert(sizeof(UiUniforms) == 32, "must match the MSL UiUniforms layout exactly");
 
+struct RadarFragmentUniforms
+{
+    float source[4]; // center X/Y, source radius, opacity
+    uint32_t misc[4]; // texture-array layer, reserved
+};
+static_assert(sizeof(RadarFragmentUniforms) == 32,
+    "must match the MSL RadarFragmentUniforms layout exactly");
+
 // OpenEmu deliberately permits only one display command buffer at a time.
 // CAMetalLayer::nextDrawable() can otherwise block the emulation/render thread
 // for more than one display interval when the compositor or GPU is behind.
@@ -304,6 +357,7 @@ struct ScreenPanelMetal::Impl
     CAMetalLayer* layer = nil;
     id<MTLRenderPipelineState> pipeline = nil;
     id<MTLRenderPipelineState> uiPipeline = nil;
+    id<MTLRenderPipelineState> radarPipeline = nil;
     id<MTLSamplerState> nearestSampler = nil;
     id<MTLSamplerState> linearSampler = nil;
     id<MTLBuffer> vertexBuffer = nil;
@@ -314,14 +368,6 @@ struct ScreenPanelMetal::Impl
     int uiTexH = 0;
 
     QImage uiOverlay;
-    QImage bottomImage;
-    // Radar colour-key scratch. Mirrors Overlay[1] in the Qt software path;
-    // the Custom HUD radar magnifies this, not the raw bottom screen.
-    QImage radarKeyImage;
-    // Resolved on the HUD config epoch, like the Qt paths' radar cache.
-    // 0 means "radar off", which makes the colour key a no-op.
-    uint32_t radarCfgEpoch = ~0u;
-    int radarColorKeyRadius = 0;
 
     void* attachedView = nullptr; // weak NSView*, owned by Qt
     QMutex layoutMutex;
@@ -431,6 +477,7 @@ bool ScreenPanelMetal::initMetal()
         NSError* error = nil;
         NSMutableString* shaderSource = [NSMutableString stringWithString:kScreenShaderSource];
         [shaderSource appendString:kUiShaderSource];
+        [shaderSource appendString:kRadarShaderSource];
         id<MTLLibrary> library = [m->device newLibraryWithSource:shaderSource options:nil error:&error];
         if (!library)
         {
@@ -507,6 +554,40 @@ bool ScreenPanelMetal::initMetal()
             return false;
         }
 
+        id<MTLFunction> radarFragmentFn =
+            [library newFunctionWithName:@"mp_radar_fs"];
+        if (!radarFragmentFn)
+        {
+            fprintf(stderr,
+                    "[MelonPrime] metal presenter: Radar shader function missing after compile\n");
+            return false;
+        }
+
+        MTLRenderPipelineDescriptor* radarPipelineDesc =
+            [[MTLRenderPipelineDescriptor alloc] init];
+        radarPipelineDesc.vertexFunction = uiVertexFn;
+        radarPipelineDesc.fragmentFunction = radarFragmentFn;
+        radarPipelineDesc.vertexDescriptor = uiVertexDesc;
+        radarPipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        radarPipelineDesc.colorAttachments[0].blendingEnabled = YES;
+        radarPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
+        radarPipelineDesc.colorAttachments[0].destinationRGBBlendFactor =
+            MTLBlendFactorOneMinusSourceAlpha;
+        radarPipelineDesc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        radarPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        radarPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor =
+            MTLBlendFactorOneMinusSourceAlpha;
+        radarPipelineDesc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+
+        m->radarPipeline =
+            [m->device newRenderPipelineStateWithDescriptor:radarPipelineDesc error:&error];
+        if (!m->radarPipeline)
+        {
+            fprintf(stderr,
+                    "[MelonPrime] metal presenter: Radar pipeline state creation failed\n");
+            return false;
+        }
+
         m->vertexBuffer = [m->device newBufferWithBytes:kScreenVertices
                                                    length:sizeof(kScreenVertices)
                                                   options:MTLResourceStorageModeShared];
@@ -539,6 +620,7 @@ bool ScreenPanelMetal::initMetal()
         m->screenTex[1] = m->screenTex[0];
 
         m->resourcesReady = (m->pipeline != nil && m->uiPipeline != nil &&
+                              m->radarPipeline != nil &&
                               m->vertexBuffer != nil && m->uiVertexBuffer != nil &&
                               m->screenTex[0] != nil && m->screenTex[1] != nil &&
                               m->nearestSampler != nil && m->linearSampler != nil);
@@ -736,10 +818,10 @@ void ScreenPanelMetal::drawScreen()
         }
 
         bool hasCpuBaseFallbackForFrame = false;
-        bool hasHudCpuBuffersForFrame = false;
         void* topCpuBufForFrame = nullptr;
         void* bottomCpuBufForFrame = nullptr;
         id<MTLTexture> finalMetalTextureForFrame = nil;
+        id<MTLTexture> displayedTextureForFrame = nil;
         melonDS::RendererOutputLease rendererOutputLease;
 
         if (emuThread->emuIsActive())
@@ -800,16 +882,12 @@ void ScreenPanelMetal::drawScreen()
                                 (__bridge void*)finalMetalTextureForFrame);
                     }
                 }
-
-                hasHudCpuBuffersForFrame = nds->GPU.GetFramebuffers(&topCpuBufForFrame, &bottomCpuBufForFrame) &&
-                                           topCpuBufForFrame && bottomCpuBufForFrame;
             }
             else if (output.Kind == melonDS::RendererOutputKind::CpuBgra)
             {
                 hasCpuBaseFallbackForFrame = true;
                 topCpuBufForFrame = output.Top;
                 bottomCpuBufForFrame = output.Bottom;
-                hasHudCpuBuffersForFrame = topCpuBufForFrame && bottomCpuBufForFrame;
                 if (metalRendererSelected && !m->loggedNativeTextureFallback)
                 {
                     m->loggedNativeTextureFallback = true;
@@ -894,6 +972,7 @@ void ScreenPanelMetal::drawScreen()
                 [encoder setVertexBuffer:m->vertexBuffer offset:0 atIndex:0];
                 id<MTLTexture> sourceTexture =
                     finalMetalTextureForFrame ? finalMetalTextureForFrame : m->screenTex[0];
+                displayedTextureForFrame = sourceTexture;
                 const bool highResolutionSource =
                     finalMetalTextureForFrame &&
                     finalMetalTextureForFrame.width > 256 &&
@@ -933,6 +1012,11 @@ void ScreenPanelMetal::drawScreen()
         const int logicalW = std::max(1, static_cast<int>(std::ceil(static_cast<double>(w) / static_cast<double>(scale))));
         const int logicalH = std::max(1, static_cast<int>(std::ceil(static_cast<double>(h) / static_cast<double>(scale))));
         bool overlayHasContent = false;
+#ifdef MELONPRIME_CUSTOM_HUD
+        bool gpuRadarEnabledForFrame = false;
+        UiUniforms gpuRadarUiUniforms{};
+        RadarFragmentUniforms gpuRadarFragmentUniforms{};
+#endif
 
         if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
             m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
@@ -964,33 +1048,92 @@ void ScreenPanelMetal::drawScreen()
                 }
                 else
                 {
-                    if (m->bottomImage.width() != 256 || m->bottomImage.height() != 192)
-                        m->bottomImage = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
-
-                    if (hasHudCpuBuffersForFrame && bottomCpuBufForFrame)
-                        std::memcpy(m->bottomImage.bits(), bottomCpuBufForFrame, 256 * 192 * 4);
-
-                    // Cold config boundary, same epoch gate the Qt paths use.
+                    // Keep the Metal path's cached values in the
+                    // ScreenPanel-owned fields shared with OpenGL/Vulkan.
                     const uint32_t hudEpoch =
                         MelonPrime::CustomHud_GetCacheEpoch(mp->HudConfigState());
-                    if (hudEpoch != m->radarCfgEpoch)
+                    if (hudEpoch != m_radarCfgEpoch)
                     {
-                        m->radarCfgEpoch = hudEpoch;
-                        m->radarColorKeyRadius =
-                            MelonPrime::CustomHud_ResolveRadarColorKeyRadius(instcfg);
+                        m_radarCfgEpoch = hudEpoch;
+                        m_radarEnable =
+                            instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
+                        m_radarAnchor =
+                            instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
+                        m_radarDstX =
+                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+                        m_radarDstY =
+                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+                        m_radarDstSize = std::max(
+                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+                        m_radarOpacity = std::clamp(
+                            static_cast<float>(
+                                instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity")),
+                            0.0f, 1.0f);
+                        m_radarSrcRadius =
+                            instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
+                        m_radarAnchorDsX = (m_radarAnchor % 3) * 128.0f;
+                        m_radarAnchorDsY = (m_radarAnchor / 3) * 96.0f;
                     }
 
-                    // The radar shows only the DS radar blips, so the bottom
-                    // screen has to be colour-keyed down to the radar palette
-                    // before CustomHud_Render magnifies the crop. Handing over
-                    // the raw bottom screen draws the whole map area instead.
-                    QImage* radarSource = hasHudCpuBuffersForFrame
-                        ? MelonPrime::CustomHud_PrepareRadarColorKeySource(
-                              &m->bottomImage,
-                              &m->radarKeyImage,
-                              mp->GetHunterID(),
-                              m->radarColorKeyRadius)
-                        : nullptr;
+                    // Metal and Metal Compute share this presenter. Sample the
+                    // renderer-owned logical bottom layer and key on the GPU.
+                    if (displayedTextureForFrame
+                        && m_radarEnable
+                        && m_hudTopMatrixValid
+                        && m_radarSrcRadius > 0
+                        && m_radarOpacity > 0.0f
+                        && kMetalRadarHunterCount > 0
+                        && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                            emuInstance,
+                            mp->GetCurrentRom(),
+                            mp->GetPlayerPosition()))
+                    {
+                        const float* topMtx = m_hudTopMatrix;
+                        const float anchorX =
+                            topMtx[0] * m_radarAnchorDsX
+                            + topMtx[1] * m_radarAnchorDsY
+                            + topMtx[4];
+                        const float anchorY =
+                            topMtx[2] * m_radarAnchorDsX
+                            + topMtx[3] * m_radarAnchorDsY
+                            + topMtx[5];
+                        const float destinationX =
+                            m_hudOriginX
+                            + (anchorX - m_hudOriginX)
+                            + static_cast<float>(m_radarDstX) * m_hudScale;
+                        const float destinationY =
+                            m_hudOriginY
+                            + (anchorY - m_hudOriginY)
+                            + static_cast<float>(m_radarDstY) * m_hudScale;
+                        const float destinationSize =
+                            static_cast<float>(m_radarDstSize) * m_hudScale;
+                        const size_t hunterIndex = std::min<size_t>(
+                            static_cast<size_t>(mp->GetHunterID()),
+                            kMetalRadarHunterCount - 1);
+
+                        gpuRadarUiUniforms.rect[0] = destinationX;
+                        gpuRadarUiUniforms.rect[1] = destinationY;
+                        gpuRadarUiUniforms.rect[2] = destinationSize;
+                        gpuRadarUiUniforms.rect[3] = destinationSize;
+                        gpuRadarUiUniforms.screenSize[0] =
+                            static_cast<float>(logicalW);
+                        gpuRadarUiUniforms.screenSize[1] =
+                            static_cast<float>(logicalH);
+                        gpuRadarUiUniforms.yFlipSign = yFlipSign;
+
+                        gpuRadarFragmentUniforms.source[0] =
+                            static_cast<float>(kMetalRadarSourceCenterX);
+                        gpuRadarFragmentUniforms.source[1] =
+                            static_cast<float>(
+                                kMetalRadarSourceCenterY[hunterIndex]);
+                        gpuRadarFragmentUniforms.source[2] =
+                            static_cast<float>(m_radarSrcRadius);
+                        gpuRadarFragmentUniforms.source[3] = m_radarOpacity;
+                        // Logical screen ownership is stable across ScreenSwap:
+                        // layer 0 is top and layer 1 is bottom.
+                        gpuRadarFragmentUniforms.misc[0] = 1u;
+                        gpuRadarEnabledForFrame = destinationSize > 0.0f;
+                    }
 
                     if (overlayFont.family().isEmpty())
                         overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
@@ -1003,7 +1146,7 @@ void ScreenPanelMetal::drawScreen()
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
                         &overlayPainter, nullptr,
-                        &m->uiOverlay, radarSource,
+                        &m->uiOverlay, nullptr,
                         mp->IsInGame(),
                         m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                         m_hudScale,
@@ -1045,6 +1188,29 @@ void ScreenPanelMetal::drawScreen()
         }
 
         overlayPainter.end();
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        if (gpuRadarEnabledForFrame
+            && displayedTextureForFrame
+            && m->radarPipeline)
+        {
+            // Draw before the remaining CPU-generated HUD so its ordering is
+            // unchanged while the expensive colour-key work stays on the GPU.
+            [encoder setRenderPipelineState:m->radarPipeline];
+            [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
+            [encoder setVertexBytes:&gpuRadarUiUniforms
+                              length:sizeof(gpuRadarUiUniforms)
+                             atIndex:1];
+            [encoder setFragmentBytes:&gpuRadarFragmentUniforms
+                                length:sizeof(gpuRadarFragmentUniforms)
+                               atIndex:0];
+            [encoder setFragmentTexture:displayedTextureForFrame atIndex:0];
+            [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
+            [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                         vertexStart:0
+                         vertexCount:6];
+        }
+#endif
 
         if (overlayHasContent)
         {
