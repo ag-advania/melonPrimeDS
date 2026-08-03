@@ -384,6 +384,15 @@ public:
     void setHudEditModeActive(bool active) override;
 #endif
 
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    // Same contract as ScreenPanelNative/ScreenPanelGL: without these the base
+    // implementation always returns false and the Vulkan renderer has no
+    // Wayland cursor confinement at all (Native Wayland has no QCursor warp or
+    // X11 grab fallback to fall through to).
+    bool setWaylandPointerLockForMelonPrime(bool enabled) override;
+    [[nodiscard]] bool isWaylandPointerLockActiveForMelonPrime() const override;
+#endif
+
     // Quiesce all Vulkan panels belonging to one EmuInstance before
     // its outgoing Vulkan renderer is destroyed.
     static void PrepareForInstanceRendererTransition(EmuInstance* instance);
@@ -409,6 +418,12 @@ private:
     // touched from the GUI thread.
     void refreshNativeSurfaceGuiThread();
     void setNativeSurfaceVisibleGuiThread(bool visible);
+#if defined(__linux__)
+    // Emulation thread. Maps the dedicated Vulkan child surface and rebuilds
+    // the presenter when the compositor handed out a new native handle.
+    // Returns false while the GUI thread has not published a usable handle.
+    bool prepareLinuxPresentationSurface();
+#endif
     // Callable from the emulation thread; posts to the GUI thread only when the
     // requested state actually changes.
     void requestNativeSurfaceVisible(bool visible);
@@ -417,6 +432,12 @@ private:
 
     struct VulkanState;
     std::unique_ptr<VulkanState> vulkan;
+
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    // Deliberately outside VulkanState: OS pointer capture is panel input
+    // state, not a Vulkan GPU resource, and must survive renderer transitions.
+    std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
+#endif
 };
 #endif
 
