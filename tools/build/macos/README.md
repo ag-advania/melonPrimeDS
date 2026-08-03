@@ -6,26 +6,32 @@ double-clickable in Finder; `.sh` files are for the shell.
 Full procedures: [`docs/development/build/macos.md`](../../../docs/development/build/macos.md)
 and [`docs/development/build/macos-vulkan.md`](../../../docs/development/build/macos-vulkan.md).
 
-## Standard build → `build-mac/`
+## Default build: Metal + Vulkan → `build-mac-vulkan/`
+
+This is the default macOS build. Builds both renderers into one bundle; they
+coexist as separate entries under *Settings → Video → 3D renderer*, each with
+its own video settings.
 
 | Script | Purpose |
 | --- | --- |
-| `build-macos-dev.sh` / `.command` | Canonical dev build (Release, developer features ON). Start here. |
-| `build-macos-dev-existing.sh` / `.command` | Incremental rebuild of a configured `build-mac/`. |
-| `build-macos.sh` | Options wrapper: `--jobs N`, `--release`, `--build-only`, `--open`. |
-
-## Metal + Vulkan build → `build-mac-vulkan/`
-
-Builds both renderers into one bundle. They coexist as separate entries under
-*Settings → Video → 3D renderer*, each with its own video settings.
-
-| Script | Purpose |
-| --- | --- |
-| `build_macos_metal_n_vulkan.command` | Double-click entry point. Installs missing Homebrew Vulkan dependencies, configures, builds, bundles MoltenVK, re-signs. |
+| `build_macos_metal_n_vulkan.command` | Double-click entry point. Installs missing Homebrew Vulkan dependencies, configures, builds, bundles MoltenVK, re-signs. **Start here.** |
 | `build_macos_metal_n_vulkan_existing.command` | Incremental rebuild of a configured `build-mac-vulkan/`. |
 | `build-macos-vulkan.sh` | The script both wrappers call. `--help` lists every option (`--jobs`, `--release`, `--debug`, `--with-metal`, `--no-bundle`, `--open`). |
 
-## Metal renderer testing → `build-mac-metal-test/`
+## Other configurations (non-default — use only if requested)
+
+The scripts below are isolated from the default flow: use them only when the
+user asks for that specific configuration.
+
+### Metal-only dev build → `build-mac/`
+
+| Script | Purpose |
+| --- | --- |
+| `build-macos-dev.sh` / `.command` | Metal-only dev build (Release, developer features ON, no Vulkan bundling). |
+| `build-macos-dev-existing.sh` / `.command` | Incremental rebuild of a configured `build-mac/`. |
+| `build-macos.sh` | Options wrapper: `--jobs N`, `--release`, `--build-only`, `--open`. |
+
+### Metal renderer testing → `build-mac-metal-test/`
 
 | Script | Purpose |
 | --- | --- |
