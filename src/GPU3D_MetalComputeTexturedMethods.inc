@@ -14,25 +14,22 @@ void MetalComputeRenderer3D::SetCaptureTextures(
     id<MTLTexture> capture256 =
         capture256Texture ? (__bridge id<MTLTexture>)capture256Texture : nil;
 
-    if (capture128 && capture128.device == State->Device &&
-        capture128.textureType == MTLTextureType2DArray)
-    {
-        State->Capture128Texture = capture128;
-    }
-    else
-    {
-        State->Capture128Texture = State->DummyCapture128Texture;
-    }
+    // These textures belong to MetalRenderer's capture state, which recreates
+    // them on scale changes. Retaining our reference keeps the renderer from
+    // ever encoding with a texture whose owner has already been destroyed.
+    const bool accept128 =
+        capture128 && capture128.device == State->Device &&
+        capture128.textureType == MTLTextureType2DArray;
+    RetainMetalObject(
+        State->Capture128Texture,
+        accept128 ? capture128 : State->DummyCapture128Texture);
 
-    if (capture256 && capture256.device == State->Device &&
-        capture256.textureType == MTLTextureType2DArray)
-    {
-        State->Capture256Texture = capture256;
-    }
-    else
-    {
-        State->Capture256Texture = State->DummyCapture256Texture;
-    }
+    const bool accept256 =
+        capture256 && capture256.device == State->Device &&
+        capture256.textureType == MTLTextureType2DArray;
+    RetainMetalObject(
+        State->Capture256Texture,
+        accept256 ? capture256 : State->DummyCapture256Texture);
 }
 
 bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
@@ -126,6 +123,10 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
         lines[y] = {};
         lines[y].X0 = 0;
         lines[y].X1 = 8;
+        // Whole run is span interior, so the coverage path is not exercised
+        // here; edge coverage is covered by the span/bin interp self-test.
+        lines[y].InsideStart = 0;
+        lines[y].InsideEnd = 8;
         lines[y].Flags =
             (1u << 0u) | (1u << 1u) | (1u << 2u) | (1u << 3u);
         lines[y].Z0 = lines[y].Z1 = 0x123456;
@@ -181,7 +182,7 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
         [encoder setTexture:State->DummyCapture128Texture atIndex:0];
         [encoder setTexture:State->DummyCapture256Texture atIndex:1];
         [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                 threadsPerThreadgroup:MTLSizeMake(tileWidth, lineCount, 1)];
         [encoder endEncoding];
 
         if (!CompleteCommandBuffer(command, label))

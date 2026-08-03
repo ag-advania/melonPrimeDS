@@ -20,6 +20,16 @@ struct FinalPassConfig
 };
 static_assert(sizeof(FinalPassConfig) == 32, "FinalPassConfig must match MSL");
 
+struct NativeResolveConfig
+{
+    uint32_t ScreenWidth;
+    uint32_t ScreenHeight;
+    uint32_t Scale;
+    uint32_t Reserved;
+};
+static_assert(sizeof(NativeResolveConfig) == 16,
+              "NativeResolveConfig must match MSL");
+
 uint32_t ConvertRGB555ToRGB6(uint32_t color)
 {
     uint32_t r = (color << 1u) & 0x3Eu; if (r) r++;
@@ -61,10 +71,54 @@ bool MetalComputeRenderer3D::ComputeFinalReady() const noexcept
            State->SubmittedFinalSlot.load(std::memory_order_acquire) >= 0;
 }
 
+void* MetalComputeRenderer3D::GetComputeNativeResolveTexture() const noexcept
+{
+    if (!State || !State->FinalPassReady)
+        return nullptr;
+    const int slot = State->SubmittedFinalSlot.load(std::memory_order_acquire);
+    if (slot < 0 || slot >= static_cast<int>(kFrameSlotCount) ||
+        !State->Slots[slot].NativeTexture)
+    {
+        return nullptr;
+    }
+    return (__bridge void*)State->Slots[slot].NativeTexture;
+}
+
+bool MetalComputeRenderer3D::ResolveComputeNativeLines()
+{
+    if (!State)
+        return false;
+    if (State->NativeLineReady)
+        return true;
+
+    const int slotIndex = State->NativeLineSlot;
+    if (slotIndex < 0 || slotIndex >= static_cast<int>(kFrameSlotCount))
+        return false;
+
+    auto& slot = State->Slots[slotIndex];
+    if (!slot.NativeColorBuffer)
+        return false;
+
+    // One wait per visible compute frame. The native resolve is encoded in the
+    // same command buffer as the final pass, so no extra submission is needed.
+    if (slot.LastCommand)
+    {
+        [slot.LastCommand waitUntilCompleted];
+        if (slot.LastCommand.status != MTLCommandBufferStatusCompleted)
+            return false;
+    }
+
+    std::memcpy(State->NativeLineBuffer.data(),
+                [slot.NativeColorBuffer contents],
+                State->NativeLineBuffer.size() * sizeof(uint32_t));
+    State->NativeLineReady = true;
+    return true;
+}
+
 bool MetalComputeRenderer3D::RunFinalPassSelfTest()
 {
     if (!State || !State->Device || !State->Queue ||
-        !State->FinalPassPipeline)
+        !State->FinalPassPipeline || !State->NativeResolvePipeline)
     {
         return false;
     }
@@ -93,6 +147,9 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
     id<MTLBuffer> tableBuffer = [State->Device
         newBufferWithBytes:tables length:sizeof(tables)
         options:MTLResourceStorageModeShared];
+    id<MTLBuffer> finalColorBuffer = [State->Device
+        newBufferWithLength:sizeof(uint32_t)
+        options:MTLResourceStorageModeShared];
 
     MTLTextureDescriptor* descriptor =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
@@ -102,8 +159,13 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
     descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
     descriptor.storageMode = MTLStorageModeShared;
     id<MTLTexture> finalTexture = [State->Device newTextureWithDescriptor:descriptor];
+    id<MTLTexture> nativeTexture = [State->Device newTextureWithDescriptor:descriptor];
+    id<MTLBuffer> nativeColorBuffer = [State->Device
+        newBufferWithLength:256u * 192u * sizeof(uint32_t)
+        options:MTLResourceStorageModeShared];
     if (!colorBuffer || !depthBuffer || !attrBuffer ||
-        !tableBuffer || !finalTexture)
+        !tableBuffer || !finalColorBuffer || !finalTexture ||
+        !nativeTexture || !nativeColorBuffer)
     {
         return false;
     }
@@ -122,10 +184,25 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
     [encoder setBuffer:attrBuffer offset:0 atIndex:2];
     [encoder setBuffer:tableBuffer offset:0 atIndex:4];
     [encoder setBytes:&config length:sizeof(config) atIndex:5];
+    [encoder setBuffer:finalColorBuffer offset:0 atIndex:6];
     [encoder setTexture:finalTexture atIndex:0];
     [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
              threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
     [encoder endEncoding];
+
+    // Scale 1: the native resolve must reproduce the final colour exactly.
+    const NativeResolveConfig resolveConfig { 1u, 1u, 1u, 0u };
+    id<MTLComputeCommandEncoder> resolveEncoder = [command computeCommandEncoder];
+    if (!resolveEncoder)
+        return false;
+    [resolveEncoder setComputePipelineState:State->NativeResolvePipeline];
+    [resolveEncoder setBuffer:finalColorBuffer offset:0 atIndex:0];
+    [resolveEncoder setBuffer:nativeColorBuffer offset:0 atIndex:1];
+    [resolveEncoder setBytes:&resolveConfig length:sizeof(resolveConfig) atIndex:2];
+    [resolveEncoder setTexture:nativeTexture atIndex:0];
+    [resolveEncoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(256u * 192u, 64u), 1, 1)
+                  threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    [resolveEncoder endEncoding];
 
     if (!CompleteCommandBuffer(command, "final-pass self-test"))
         return false;
@@ -146,9 +223,23 @@ bool MetalComputeRenderer3D::RunFinalPassSelfTest()
         return false;
     }
 
+    const uint32_t expectedRgb6a5 = 63u | (31u << 24u);
+    const uint32_t finalRgb6a5 =
+        *static_cast<const uint32_t*>([finalColorBuffer contents]);
+    const uint32_t nativeRgb6a5 =
+        *static_cast<const uint32_t*>([nativeColorBuffer contents]);
+    if (finalRgb6a5 != expectedRgb6a5 || nativeRgb6a5 != expectedRgb6a5)
+    {
+        std::fprintf(stderr,
+            "[MelonPrime] metal compute final pass: native-resolve self-test "
+            "mismatch final=%08x native=%08x expected=%08x\n",
+            finalRgb6a5, nativeRgb6a5, expectedRgb6a5);
+        return false;
+    }
+
     std::fprintf(stderr,
         "[MelonPrime] metal compute final pass: self-test PASS "
-        "bgra=%u,%u,%u,%u\n",
-        pixel[0], pixel[1], pixel[2], pixel[3]);
+        "bgra=%u,%u,%u,%u nativeResolve=%08x\n",
+        pixel[0], pixel[1], pixel[2], pixel[3], nativeRgb6a5);
     return true;
 }
