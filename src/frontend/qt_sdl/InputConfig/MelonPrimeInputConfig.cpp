@@ -1480,6 +1480,12 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
             MelonPrime::CustomHud_EnterEditMode(
                 core->HudConfigState(), emuInstance, emuInstance->getLocalConfig());
     }
+    // Opening this dialog paused emulation and froze the screen panel. The
+    // editor is drawn by and clicked on the panel itself, so it needs the panel
+    // presenting again and the aim cursor released for the rest of this
+    // settings session (undone in MainWindow::onInputConfigFinished).
+    if (auto* window = emuInstance->getMainWindow())
+        window->setHudEditModeActive(true);
 #endif
     if (InputConfigDialog::currentDlg)
         InputConfigDialog::currentDlg->hide();

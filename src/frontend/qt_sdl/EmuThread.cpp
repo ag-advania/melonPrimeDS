@@ -881,7 +881,20 @@ void EmuThread::run()
             frameMsPrimedDev = false;
 #endif
 
-            emit windowUpdate();
+#ifdef MELONPRIME_DS
+            // Same backend gate as the running loop above: windowUpdate forces a
+            // panel repaint, which only the Qt-painted software panel needs. The
+            // GL and Vulkan panels own their surface and refresh it from
+            // drawScreen() below, so repainting it in between just blanks it --
+            // visible as a hard flicker once the panel draws while paused (the
+            // Custom HUD on-screen editor).
+            const bool paintedByQt =
+                videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt;
+#else
+            constexpr bool paintedByQt = true;
+#endif
+            if (paintedByQt)
+                emit windowUpdate();
 
 #ifdef MELONPRIME_DS
             snprintf(melontitle, sizeof(melontitle), MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX, MelonPrime::kBuildStamp);
