@@ -4,6 +4,7 @@ Reusable executable tooling lives outside `.claude` and is grouped by purpose:
 
 - `build/windows/`, `build/macos/`, `build/linux/` — supported build wrappers
 - `ci/audits/` — standing CI audits and localization checks
+- `ci/release/` — nightly release payload verification
 - `codegen/hud/` — HUD schema generator
 - `perf/` — performance collection, comparison, and summarization
 - `testing/hud-golden/` — developer HUD golden harness
