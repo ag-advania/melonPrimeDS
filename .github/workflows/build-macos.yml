@@ -2,6 +2,8 @@ name: macOS
 
 on:
   workflow_dispatch:
+  # Called by nightly-release.yml; keep this workflow's own triggers unchanged.
+  workflow_call:
   push:
     branches:
       - main
