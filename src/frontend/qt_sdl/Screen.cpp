@@ -1514,9 +1514,10 @@ void ScreenPanel::calcSplashLayout()
 namespace {
 
 // Resolves the native wl_display/wl_surface handles MelonPrime's Wayland
-// pointer-lock path needs, given the QWindow that owns the surface. Both
-// ScreenPanelGL and ScreenPanelNative call this with their *top-level*
-// window's handle (never a panel's own Qt::WA_NativeWindow subsurface):
+// pointer-lock path needs, given the QWindow that owns the surface.
+// ScreenPanelGL, ScreenPanelNative and ScreenPanelVulkan all call this with
+// their *top-level* window's handle (never a panel's own
+// Qt::WA_NativeWindow subsurface):
 // locking a child subsurface directly caused KWin to fire WindowDeactivate
 // on the main window in windowed mode, which our own Suspend() path read as
 // focus loss and immediately tore the lock back down (see issue #526).
@@ -1863,6 +1864,15 @@ void FillStructuredPackedScreen(
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     : ScreenPanel(parent), vulkan(std::make_unique<VulkanState>())
 {
+    // Constructed before the registry insert so a throwing allocation cannot
+    // leave a half-built panel published in VulkanPanelRegistry().
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
+        [this](std::int32_t dx, std::int32_t dy) {
+            addAimMouseDeltaForMelonPrime(dx, dy);
+        });
+#endif
+
     {
         std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
         VulkanPanelRegistry().push_back(this);
@@ -1893,6 +1903,14 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
 
 ScreenPanelVulkan::~ScreenPanelVulkan()
 {
+    // Ahead of the `if (!vulkan) return` below: releasing the OS pointer
+    // capture must not depend on whether this panel still owns GPU state.
+    // Idempotent, so a prior Suspend() having already unlocked is fine.
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+    if (waylandPointerLock)
+        waylandPointerLock->setLocked(nullptr, nullptr, false);
+#endif
+
     {
         std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
         auto& panels = VulkanPanelRegistry();
@@ -1908,6 +1926,40 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     // Ordered after the complete Vulkan quiesce.
     releaseNativeSurface();
 }
+
+#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
+bool ScreenPanelVulkan::setWaylandPointerLockForMelonPrime(bool enabled)
+{
+    if (!waylandPointerLock)
+        return false;
+
+    if (!enabled)
+        return waylandPointerLock->setLocked(nullptr, nullptr, false);
+
+    // Vulkan presents onto this panel's own Qt::WA_NativeWindow subsurface,
+    // but pointer constraints must target the top-level window's surface --
+    // locking the child subsurface made KWin fire WindowDeactivate on the main
+    // window, which Suspend() reads as focus loss and tears the lock straight
+    // back down (see issue #526). The presentation surface handles in
+    // VulkanState are for display only and are never reused here.
+    QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
+    const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
+    if (!handles.has_value())
+        return false;
+
+    // Hint the panel's own center, expressed in the locked (top-level)
+    // surface's local coordinates, so the compositor recenters the cursor
+    // away from any edge whenever this lock later releases.
+    const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    return waylandPointerLock->setLocked(
+        handles->first, handles->second, true, hint.x(), hint.y());
+}
+
+bool ScreenPanelVulkan::isWaylandPointerLockActiveForMelonPrime() const
+{
+    return waylandPointerLock && waylandPointerLock->isLockActive();
+}
+#endif
 
 void ScreenPanelVulkan::prepareForRendererTransition()
 {
