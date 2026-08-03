@@ -4,6 +4,7 @@
 
 - Windows AI builds must use `tools/build/windows/build-mingw.bat` from the repository root. Use `tools/build/windows/build-mingw-existing.bat` only for an already configured tree and only when CMake, presets, dependencies, toolchains, and feature flags did not change.
 - Keep Windows AI builds at one job unless the user explicitly requests otherwise; parallel C++ compilation can exhaust memory. Do not bootstrap or reinstall `vcpkg` unless requested.
+- macOS AI builds must use `tools/build/macos/build_macos_metal_n_vulkan.command` (`build-macos-vulkan.sh --install-deps --with-metal`), building into `build-mac-vulkan/`. Use `build_macos_metal_n_vulkan_existing.command` only for an already configured `build-mac-vulkan/` tree and only when CMake options, dependencies, or the toolchain did not change. Other macOS entry points under `tools/build/macos/` (`build-mac`, `build-mac-metal-test`, release builds) are non-default: use them only when the user explicitly asks for that specific configuration.
 - Development builds configure `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`; release/distribution builds explicitly use `OFF`.
 - Platform-specific procedures live under [`docs/development/build/`](../../docs/development/build/).
 

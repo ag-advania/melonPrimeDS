@@ -2,15 +2,66 @@
 
 Use this when an AI agent needs to build MelonPrimeDS on macOS and should not reconstruct the command by hand.
 
-## Dev Build (canonical)
+## Default build: Metal + Vulkan (canonical for AI builds)
 
-Fixed dev configure + build. Run from anywhere:
+Builds both the native Metal renderer and the Vulkan (MoltenVK) renderer into
+one bundle. They coexist: Settings -> Video -> 3D renderer lists Metal, Metal
+Compute, and Vulkan as separate choices, each with its own video settings, and
+picking one never changes the others. `libMoltenVK.dylib` is bundled into the
+app so Vulkan runs without a system-wide install.
+
+Build dir: `build-mac-vulkan`. Output: `build-mac-vulkan/melonPrimeDS.app`.
+
+Run from anywhere:
+
+```zsh
+./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal
+```
+
+Finder / double-click:
+
+```zsh
+open tools/build/macos/build_macos_metal_n_vulkan.command
+```
+
+Incremental rebuild only (existing configured `build-mac-vulkan` tree; skip
+this if CMake options, dependencies, or the toolchain changed):
+
+```zsh
+open tools/build/macos/build_macos_metal_n_vulkan_existing.command
+```
+
+```zsh
+./tools/build/macos/build-macos-vulkan.sh --build-only --with-metal
+```
+
+`--help` on `build-macos-vulkan.sh` lists every option (`--jobs`, `--release`,
+`--debug`, `--no-bundle`, `--open`). `MELONPRIME_ENABLE_VULKAN` defaults to
+`ON`; without `vulkan-headers` installed, CMake reports
+`MelonPrime Vulkan backend: disabled` and the build continues Metal-only.
+
+Launch:
+
+```zsh
+open build-mac-vulkan/melonPrimeDS.app
+```
+
+## Other build configurations (non-default — use only if explicitly requested)
+
+These are isolated from the default flow above: use them only when the user
+asks for that specific configuration (a Metal-only tree, Metal renderer
+self-tests, or a release/distribution build), not as a substitute for the
+default build.
+
+### Metal-only dev build → `build-mac/`
+
+No Vulkan bundling; native Metal is still on by default on Apple platforms.
 
 ```zsh
 ./tools/build/macos/build-macos-dev.sh
 ```
 
-Finder / double-click (macOS):
+Finder / double-click:
 
 ```zsh
 open tools/build/macos/build-macos-dev.command
@@ -22,34 +73,11 @@ Incremental rebuild only (existing `build-mac` tree):
 open tools/build/macos/build-macos-dev-existing.command
 ```
 
-This is the checked-in form of:
-
-```zsh
-cd /Users/admin/git/melonPrimeDS && cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix libarchive)" -DUSE_QT6=ON && cmake --build build-mac --parallel 4 2>&1
-```
-
-The script resolves the repo root from its own path instead of hard-coding the path above.
-
-Build-only when `build-mac` is already configured:
-
 ```zsh
 ./tools/build/macos/build-macos-dev-existing.sh
 ```
 
-Raw equivalent:
-
-```zsh
-cd /Users/admin/git/melonPrimeDS && cmake --build build-mac --parallel 4 2>&1
-```
-
-## Script Index
-
-Every macOS build/test entry point, including the Metal test scripts, is
-listed in [`tools/build/macos/README.md`](../../../tools/build/macos/README.md).
-
-## Options Wrapper
-
-For non-default jobs, release builds, or `--open`:
+Options wrapper (non-default jobs, release builds, `--open`):
 
 ```zsh
 ./tools/build/macos/build-macos.sh
@@ -59,27 +87,28 @@ For non-default jobs, release builds, or `--open`:
 ./tools/build/macos/build-macos.sh --open
 ```
 
-Prefer `build-macos-dev.sh` for the normal local dev build unless the user asks for another configuration.
-
-## Vulkan (MoltenVK)
-
-The Vulkan renderer builds alongside the native Metal renderer. It has its own
-script and dependencies; see [`macos-vulkan.md`](macos-vulkan.md).
-
-Metal + Vulkan in one bundle (Finder double-click):
+### Metal renderer self-tests → `build-mac-metal-test/`
 
 ```zsh
-open tools/build/macos/build_macos_metal_n_vulkan.command
+open tools/build/macos/build_metal_test.command
+open tools/build/macos/run_metal_test.command
 ```
 
-```zsh
-./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal
-```
+### Vulkan-only build
 
-`MELONPRIME_ENABLE_VULKAN` defaults to `ON`, so the scripts above also compile
-the Vulkan renderer in once `vulkan-headers` is installed. Without those
-headers CMake reports `MelonPrime Vulkan backend: disabled` and the build
-continues without it.
+`build-macos-vulkan.sh` without `--with-metal` still compiles Metal in (it is
+the macOS default); the flag only adds an explicit check that both renderers
+ended up in the build. There is no separate Vulkan-without-Metal entry point.
+
+## Script Index
+
+Every macOS build/test entry point is listed in
+[`tools/build/macos/README.md`](../../../tools/build/macos/README.md).
+
+## Vulkan (MoltenVK) details
+
+See [`macos-vulkan.md`](macos-vulkan.md) for dependency and runtime-loader
+details behind the default build above.
 
 ## Dependencies
 
@@ -96,16 +125,6 @@ brew install vulkan-headers molten-vk
 ```
 
 Use Homebrew dependencies directly; do not use vcpkg for the local macOS build.
-
-## Output
-
-`build-mac/melonPrimeDS.app`
-
-Launch:
-
-```zsh
-open build-mac/melonPrimeDS.app
-```
 
 ## GitHub Actions
 
