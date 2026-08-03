@@ -20,6 +20,16 @@ struct MPFFinalConfig
     uint fogColor;
 };
 
+// Native (256x192) resolve of the compute final colour, used by GetLine(),
+// display capture, screenshots and the 3D-ownership comparison.
+struct MPFResolveConfig
+{
+    uint screenWidth;
+    uint screenHeight;
+    uint scale;
+    uint reserved;
+};
+
 static inline uint mpf_blend_fog(
     uint color,
     uint depth,
@@ -74,6 +84,7 @@ kernel void mp_compute_final_pass(
     device const uint* resultAttr [[buffer(2)]],
     device const uint* tables [[buffer(4)]],
     constant MPFFinalConfig& config [[buffer(5)]],
+    device uint* finalColorRgb6a5 [[buffer(6)]],
     texture2d<float, access::write> finalTexture [[texture(0)]],
     uint gid [[thread_position_in_grid]])
 {
@@ -192,6 +203,66 @@ kernel void mp_compute_final_pass(
                float(a) / 31.0f),
         uint2(x, y));
 
+    // Keep the DS-native RGB6/A5 encoding for the native resolve, GetLine()
+    // readback and pixel comparisons; the texture write above is display only.
+    finalColorRgb6a5[gid] = r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+// Box-resolves the high-resolution compute result down to the DS native
+// 256x192 grid. At scale 1 this is an exact copy, so the native line buffer is
+// bit-identical to the compute output.
+kernel void mp_compute_native_resolve(
+    device const uint* finalColorRgb6a5 [[buffer(0)]],
+    device uint* nativeColorRgb6a5 [[buffer(1)]],
+    constant MPFResolveConfig& config [[buffer(2)]],
+    texture2d<float, access::write> nativeTexture [[texture(0)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= 256u * 192u)
+        return;
+
+    const uint nx = gid % 256u;
+    const uint ny = gid / 256u;
+    const uint scale = max(config.scale, 1u);
+
+    uint sumR = 0u;
+    uint sumG = 0u;
+    uint sumB = 0u;
+    uint sumA = 0u;
+    uint samples = 0u;
+    for (uint sy = 0u; sy < scale; sy++)
+    {
+        const uint py = ny * scale + sy;
+        if (py >= config.screenHeight)
+            break;
+        for (uint sx = 0u; sx < scale; sx++)
+        {
+            const uint px = nx * scale + sx;
+            if (px >= config.screenWidth)
+                break;
+            const uint value = finalColorRgb6a5[py * config.screenWidth + px];
+            sumR += value & 0x3Fu;
+            sumG += (value >> 8u) & 0x3Fu;
+            sumB += (value >> 16u) & 0x3Fu;
+            sumA += (value >> 24u) & 0x1Fu;
+            samples++;
+        }
+    }
+
+    if (samples == 0u)
+        samples = 1u;
+    const uint r = min(sumR / samples, 63u);
+    const uint g = min(sumG / samples, 63u);
+    const uint b = min(sumB / samples, 63u);
+    const uint a = min(sumA / samples, 31u);
+
+    nativeColorRgb6a5[gid] = r | (g << 8u) | (b << 16u) | (a << 24u);
+    nativeTexture.write(
+        float4(float(r) / 63.0f,
+               float(g) / 63.0f,
+               float(b) / 63.0f,
+               float(a) / 31.0f),
+        uint2(nx, ny));
 }
 
 )MSL";
