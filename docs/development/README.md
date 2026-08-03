@@ -13,3 +13,4 @@
 - [Performance baseline procedure](performance/baseline-procedure.md)
 - [Merge upstream melonDS](git/merge-upstream-melonds.md)
 - [Release notes](release/release-notes.md)
+- [Nightly release](release/nightly-release.md)
