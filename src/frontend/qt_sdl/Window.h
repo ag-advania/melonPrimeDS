@@ -88,6 +88,12 @@ public:
     void loadRecentFilesMenu(bool loadcfg);
     //void updateVideoSettings(bool glchange);
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_CUSTOM_HUD)
+    // Entered/left by the Custom HUD "Edit HUD Layout" button, which hands the
+    // screen panel to the on-screen editor while emulation stays paused.
+    void setHudEditModeActive(bool active);
+#endif
+
 protected:
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
