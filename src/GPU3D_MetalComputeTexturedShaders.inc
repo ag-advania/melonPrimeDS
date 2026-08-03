@@ -2,24 +2,13 @@
 // MELONPRIME_METAL_COMPUTE_COMPLETE_DEPTH_BLEND_V1
 // MELONPRIME_METAL_COMPUTE_SUMMARY_FREE_PRODUCTION_KERNELS_V1
 // Standalone MSL library for the Phase 8C texture-capable tile raster stage.
+// The shared span-math fragment (GPU3D_MetalComputeSpanMath.inc) is prepended
+// to this source at library-creation time. It owns SpanSetupX, the
+// XSpanSetup_* flags and the DS fixed-point interpolation helpers.
 static constexpr const char* kMetalComputeTexturedSource = R"MSL(
-#include <metal_stdlib>
-using namespace metal;
 
 constant uint MPMaxVariants = 256u;
 constant uint MPVariantWorkCountStart = 0u;
-constant uint MPTileSummaryRasterised = 0u;
-constant uint MPTileSummaryTextured = 1u;
-constant uint MPTileSummaryShadowMask = 2u;
-constant uint MPTileSummarySkippedCapacity = 3u;
-constant uint MPTileSummaryCoveredPixels = 4u;
-constant uint MPTileSummaryColorHash = 5u;
-constant uint MPTileSummaryDepthMin = 6u;
-constant uint MPTileSummaryDepthMax = 7u;
-constant uint MPXSpanLinear = 1u << 0u;
-constant uint MPXSpanFillInside = 1u << 1u;
-constant uint MPXSpanFillLeft = 1u << 2u;
-constant uint MPXSpanFillRight = 1u << 3u;
 
 struct MPSpanBinConfig
 {
@@ -28,20 +17,6 @@ struct MPSpanBinConfig
     uint coarseTileCountX, coarseTileCountY, coarseTileW, coarseTileH;
     uint maxWorkTiles, binStride, coarseBinStride, polygonGroups;
     uint alphaRef, dispCnt, tileWorkCapacity, wBuffer;
-};
-
-struct MPSpanSetupX
-{
-    int X0, X1;
-    int EdgeLenL, EdgeLenR, EdgeCovL, EdgeCovR;
-    int XRecip;
-    uint Flags;
-    int Z0, Z1, W0, W1;
-    int ColorR0, ColorG0, ColorB0;
-    int ColorR1, ColorG1, ColorB1;
-    int TexcoordU0, TexcoordV0;
-    int TexcoordU1, TexcoordV1;
-    int CovLInitial, CovRInitial;
 };
 
 struct MPRenderPolygon
@@ -129,39 +104,6 @@ static inline int mp_wrap_coordinate(int value, int size, bool repeat, bool mirr
     const int period = size * 2;
     const int wrapped = mp_positive_mod(value, period);
     return wrapped < size ? wrapped : period - 1 - wrapped;
-}
-
-static inline uint mp_linear_factor(const MPSpanSetupX span, int x)
-{
-    const int width = max(span.X1 - span.X0, 1);
-    return min(uint(max(x - span.X0, 0)) * 256u / uint(width), 256u);
-}
-
-static inline uint mp_perspective_factor(const MPSpanSetupX span, int x)
-{
-    const int width = max(span.X1 - span.X0, 1);
-    const uint offset = uint(clamp(x - span.X0, 0, width));
-    const float w0 = float(max(span.W0, 0));
-    const float w1 = float(max(span.W1, 0));
-    const float denominator = float(offset) * w0 + float(uint(width) - offset) * w1;
-    if (denominator <= 0.0f) return 0u;
-    return min(uint((float(offset) * w0 * 256.0f) / denominator), 256u);
-}
-
-static inline int mp_interpolate(int a, int b, uint factor)
-{
-    return (a * int(256u - factor) + b * int(factor)) >> 8;
-}
-
-static inline uint mp_mul_factor_256(uint value, uint factor)
-{
-    return (value >> 8u) * factor + (((value & 0xFFu) * factor) >> 8u);
-}
-
-static inline uint mp_interpolate_depth(uint a, uint b, uint factor)
-{
-    if (a <= b) return a + mp_mul_factor_256(b - a, factor);
-    return b + mp_mul_factor_256(a - b, 256u - factor);
 }
 
 static inline MPTexel mp_palette_texel(
@@ -309,7 +251,7 @@ static inline MPTexel mp_decode_texture(
 kernel void mp_compute_rasterise_texture_variants(
     device atomic_uint* header [[buffer(0)]],
     device const MPRenderPolygon* polygons [[buffer(1)]],
-    device const MPSpanSetupX* xSpans [[buffer(2)]],
+    device const SpanSetupX* xSpans [[buffer(2)]],
     device const uint2* workDescs [[buffer(3)]],
     device const MPVariantMeta* variants [[buffer(4)]],
     device uint* colorTiles [[buffer(5)]],
@@ -321,8 +263,14 @@ kernel void mp_compute_rasterise_texture_variants(
     device const uint* toonTable [[buffer(12)]],
     texture2d_array<float, access::read> capture128 [[texture(0)]],
     texture2d_array<float, access::read> capture256 [[texture(1)]],
-    uint gid [[thread_position_in_grid]])
+    uint3 groupID [[threadgroup_position_in_grid]],
+    uint3 localID [[thread_position_in_threadgroup]])
 {
+    // One threadgroup per work item, one thread per tile pixel, matching the
+    // OpenGL compute rasteriser's TileSize x TileSize workgroup. Every early
+    // return below is uniform across the threadgroup and the kernel has no
+    // barriers, so divergent exits are safe.
+    const uint gid = groupID.x;
     const uint rawWorkCount = atomic_load_explicit(
         &header[MPVariantWorkCountStart + 3u], memory_order_relaxed);
     const uint workCount = min(rawWorkCount, config.maxWorkTiles);
@@ -341,83 +289,145 @@ kernel void mp_compute_rasterise_texture_variants(
 
     const uint tileArea = config.tileSize * config.tileSize;
     const uint tileBase = originalWorkIndex * tileArea;
-    for (uint pixel = 0u; pixel < tileArea; pixel++)
-    {
-        colorTiles[tileBase + pixel] = 0u;
-        depthTiles[tileBase + pixel] = 0u;
-        attrTiles[tileBase + pixel] = 0u;
-    }
+    const uint localX = localID.x;
+    const uint localY = localID.y;
+    if (localX >= config.tileSize || localY >= config.tileSize) return;
+
+    const uint tilePixel = tileBase + localY * config.tileSize + localX;
+    colorTiles[tilePixel] = 0u;
+    depthTiles[tilePixel] = 0u;
+    attrTiles[tilePixel] = 0u;
 
     const uint tileX = work.x & 0xFFFFu;
     const uint tileY = work.x >> 16u;
-    const uint polyAlphaRaw = (polygon.Attr >> 16u) & 0x1Fu;
-    const bool wireframe = polyAlphaRaw == 0u;
-    const uint polyAlpha = wireframe ? 31u : polyAlphaRaw;
+    // Wireframe polygons (alpha 0) keep alpha 0 through texture blending and
+    // are forced opaque only at the very end, matching the OpenGL compute
+    // rasteriser; substituting 31 earlier changes modulated texture alpha.
+    const uint polyAlpha = (polygon.Attr >> 16u) & 0x1Fu;
     const bool highlightMode = (config.dispCnt & (1u << 1u)) != 0u;
+    const bool wBuffer = config.wBuffer != 0u;
 
-    for (uint localY = 0u; localY < config.tileSize; localY++)
     {
         const uint pixelY = tileY + localY;
         if (pixelY >= config.screenHeight || int(pixelY) < polygon.YTop || int(pixelY) >= polygon.YBot)
-            continue;
+            return;
         const int spanOffsetSigned = int(pixelY) - polygon.YTop;
         if (spanOffsetSigned < 0 || polygon.FirstXSpan + uint(spanOffsetSigned) >= config.numSetupIndices)
-            continue;
+            return;
 
-        const MPSpanSetupX span = xSpans[polygon.FirstXSpan + uint(spanOffsetSigned)];
-        const int insideStart = min(span.X0 + max(span.EdgeLenL, 0), span.X1);
-        const int insideEnd = min(span.X1 - max(span.EdgeLenR, 0), span.X1);
+        const SpanSetupX span = xSpans[polygon.FirstXSpan + uint(spanOffsetSigned)];
 
-        for (uint localX = 0u; localX < config.tileSize; localX++)
         {
             const uint pixelX = tileX + localX;
-            if (pixelX >= config.screenWidth) continue;
+            if (pixelX >= config.screenWidth) return;
             const int x = int(pixelX);
-            if (x < span.X0 || x >= span.X1) continue;
+            if (x < span.X0 || x >= span.X1) return;
 
-            const bool insideLeft = x < insideStart;
-            const bool insideRight = x >= insideEnd;
+            // Wireframe suppression lives in the FillInside flag produced by
+            // InterpSpans, exactly as in the OpenGL compute rasteriser.
+            const bool insideLeft = x < span.InsideStart;
+            const bool insideRight = x >= span.InsideEnd;
             const bool insideBody = !insideLeft && !insideRight;
-            bool fill =
-                (insideLeft && (span.Flags & MPXSpanFillLeft) != 0u) ||
-                (insideRight && (span.Flags & MPXSpanFillRight) != 0u) ||
-                (insideBody && (span.Flags & MPXSpanFillInside) != 0u);
-            if (wireframe && insideBody && int(pixelY) != polygon.YTop && int(pixelY) != polygon.YBot - 1)
-                fill = false;
-            if (!fill) continue;
+            const bool fill =
+                (insideLeft && (span.Flags & XSpanSetup_FillLeft) != 0u) ||
+                (insideRight && (span.Flags & XSpanSetup_FillRight) != 0u) ||
+                (insideBody && (span.Flags & XSpanSetup_FillInside) != 0u);
+            if (!fill) return;
 
             uint attr = 0u;
             if (int(pixelY) == polygon.YTop) attr |= 0x4u;
             else if (int(pixelY) == polygon.YBot - 1) attr |= 0x8u;
-            if (insideLeft) attr |= 0x1u | (31u << 8u);
-            else if (insideRight) attr |= 0x2u | (31u << 8u);
 
-            const uint linearFactor = mp_linear_factor(span, x);
-            const uint perspectiveFactor = (span.Flags & MPXSpanLinear) != 0u
-                ? linearFactor : mp_perspective_factor(span, x);
-            const uint depthFactor = config.wBuffer != 0u ? perspectiveFactor : linearFactor;
-            const uint z0 = uint(max(span.Z0, 0));
-            const uint z1 = uint(max(span.Z1, 0));
-            const uint depth = mp_interpolate_depth(z0, z1, depthFactor);
-            const uint tilePixel = tileBase + localY * config.tileSize + localX;
+            if (insideLeft)
+            {
+                attr |= 0x1u;
+                int cov = span.EdgeCovL;
+                if (cov < 0)
+                {
+                    const int xcov =
+                        span.CovLInitial + (span.EdgeCovL & 0x3FF) * (x - span.X0);
+                    cov = min(xcov >> 5, 31);
+                }
+                attr |= uint(cov) << 8u;
+            }
+            else if (insideRight)
+            {
+                attr |= 0x2u;
+                int cov = span.EdgeCovR;
+                if (cov < 0)
+                {
+                    const int xcov =
+                        span.CovRInitial + (span.EdgeCovR & 0x3FF) * (x - span.InsideEnd);
+                    cov = max(0x1F - (xcov >> 5), 0);
+                }
+                attr |= uint(cov) << 8u;
+            }
+
+            uint depth;
+            int u = span.TexcoordU0;
+            int v = span.TexcoordV0;
+            int vr = span.ColorR0;
+            int vg = span.ColorG0;
+            int vb = span.ColorB0;
+
+            if (span.X0 == span.X1)
+            {
+                depth = uint(span.Z0);
+            }
+            else
+            {
+                const int ifactor = mp_calc_factor_x(span, x);
+                const int idiff = span.X1 - span.X0;
+                const int i = x - span.X0;
+
+                depth = wBuffer
+                    ? mp_interp_z_wbuffer(
+                          span.Z0, span.Z1, ifactor, MPFactorShiftX, false)
+                    : mp_interp_z_zbuffer(
+                          span.Z0, span.Z1, i, span.XRecip, idiff, false);
+
+                if ((span.Flags & XSpanSetup_Linear) == 0u)
+                {
+                    u = mp_interp_attr_persp(
+                        span.TexcoordU0, span.TexcoordU1, ifactor, MPFactorShiftX);
+                    v = mp_interp_attr_persp(
+                        span.TexcoordV0, span.TexcoordV1, ifactor, MPFactorShiftX);
+                    vr = mp_interp_attr_persp(
+                        span.ColorR0, span.ColorR1, ifactor, MPFactorShiftX);
+                    vg = mp_interp_attr_persp(
+                        span.ColorG0, span.ColorG1, ifactor, MPFactorShiftX);
+                    vb = mp_interp_attr_persp(
+                        span.ColorB0, span.ColorB1, ifactor, MPFactorShiftX);
+                }
+                else
+                {
+                    u = mp_interp_attr_linear(
+                        span.TexcoordU0, span.TexcoordU1, i, span.XRecip, idiff, false);
+                    v = mp_interp_attr_linear(
+                        span.TexcoordV0, span.TexcoordV1, i, span.XRecip, idiff, false);
+                    vr = mp_interp_attr_linear(
+                        span.ColorR0, span.ColorR1, i, span.XRecip, idiff, false);
+                    vg = mp_interp_attr_linear(
+                        span.ColorG0, span.ColorG1, i, span.XRecip, idiff, false);
+                    vb = mp_interp_attr_linear(
+                        span.ColorB0, span.ColorB1, i, span.XRecip, idiff, false);
+                }
+            }
 
             if (shadowMask)
             {
                 // DS shadow-mask polygons contribute only coverage/depth. The
                 // complete depth-blend pass consumes 0xFFFFFFFF as the mask
                 // marker and maintains the two-layer stencil state.
-                const uint color = 0xFFFFFFFFu;
-                colorTiles[tilePixel] = color;
+                colorTiles[tilePixel] = 0xFFFFFFFFu;
                 depthTiles[tilePixel] = depth;
                 attrTiles[tilePixel] = 0u;
-
-                continue;
+                return;
             }
 
-            int vr = mp_interpolate(span.ColorR0, span.ColorR1, perspectiveFactor) >> 3;
-            int vg = mp_interpolate(span.ColorG0, span.ColorG1, perspectiveFactor) >> 3;
-            int vb = mp_interpolate(span.ColorB0, span.ColorB1, perspectiveFactor) >> 3;
-            vr = clamp(vr, 0, 63); vg = clamp(vg, 0, 63); vb = clamp(vb, 0, 63);
+            vr = clamp(vr >> 3, 0, 63);
+            vg = clamp(vg >> 3, 0, 63);
+            vb = clamp(vb >> 3, 0, 63);
             const int originalVertexR = vr;
 
             if (variant.BlendMode == 2u)
@@ -435,8 +445,6 @@ kernel void mp_compute_rasterise_texture_variants(
             uint r = uint(vr), g = uint(vg), b = uint(vb), a = polyAlpha;
             if (variant.Textured != 0u)
             {
-                const int u = mp_interpolate(span.TexcoordU0, span.TexcoordU1, perspectiveFactor);
-                const int v = mp_interpolate(span.TexcoordV0, span.TexcoordV1, perspectiveFactor);
                 const MPTexel texel = mp_decode_texture(
                     variant, u >> 4, v >> 4,
                     textureMemory, texturePalette, capture128, capture256);
@@ -468,7 +476,8 @@ kernel void mp_compute_rasterise_texture_variants(
                 g = min(g + ((toon >> 8u) & 0x3Fu), 63u);
                 b = min(b + ((toon >> 16u) & 0x3Fu), 63u);
             }
-            if (a <= config.alphaRef) continue;
+            if (polyAlpha == 0u) a = 31u;
+            if (a <= config.alphaRef) return;
 
             const uint color = min(r, 63u) | (min(g, 63u) << 8u) |
                                (min(b, 63u) << 16u) | (min(a, 31u) << 24u);
