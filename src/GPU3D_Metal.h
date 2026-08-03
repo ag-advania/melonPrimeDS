@@ -45,6 +45,7 @@ public:
     void SetHighResolutionCoordinates(bool enabled) noexcept;
     void SetBetterPolygons(bool betterPolygons) noexcept;
     void SetCpuReadbackRequired(bool required) noexcept;
+    void InvalidateTexcache() noexcept;
     // MELONPRIME_METAL_GPU_RESIDENT_2D_V1
 
     [[nodiscard]] bool LastFrameUsesHighResolution3D() const noexcept;
