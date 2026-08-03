@@ -436,6 +436,7 @@ bool MetalRenderer::Init()
             "[MelonPrime] metal display capture: initialization failed; "
             "capture frames remain on the CPU path\n");
     }
+    PublishCaptureTexturesTo3D();
     return true;
 }
 
@@ -493,6 +494,7 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
     ConfigureMetal2DMirror(preferredDevice);
     ConfigureMetalVisibleOutput(preferredDevice);
     ConfigureMetalCaptureState(preferredDevice);
+    PublishCaptureTexturesTo3D();
 }
 
 void MetalRenderer::ConfigureMetal2DMirror(void* preferredDevice)
