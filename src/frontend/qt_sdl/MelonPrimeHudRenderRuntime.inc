@@ -285,6 +285,7 @@ struct HudRuntimeState {
     bool isTrans;
     bool isAdventure;
     bool isMapOrUserActionPaused;
+    bool isAdventureCameraScene;
 };
 
 struct HudRuntimeFrameCache {
@@ -499,6 +500,25 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     return true;
 }
 
+// Adventure camera scenes (elevator rides, cutscene pans, ...) run a
+// CameraSequence whose flags byte carries BlockInput (bit 2 / 0x04). The native
+// upper-HUD function tests exactly that byte and returns before the crosshair
+// renderer, which is why the game's own reticle disappears during those scenes.
+// Reading the same decision input keeps Custom HUD in sync on every ROM version
+// instead of enumerating scene IDs: the pointer holder is the one global that
+// the sequence activate/end code writes and clears (see
+// docs/features/hud/custom-hud-adventure-camera-scene.md).
+// The pointer is validated against main RAM because it is read straight from
+// emulated memory and may be stale/garbage on a mid-transition frame.
+static inline bool IsCameraSequenceBlockingInput(const melonDS::u8* ram,
+                                                 const RomAddresses& rom)
+{
+    const uint32_t sequence = Read32(ram, rom.currentCameraSequence);
+    if (sequence < 0x02000000u || sequence >= 0x02400000u)
+        return false;
+    return (Read8(ram, sequence) & 0x04u) != 0u;
+}
+
 static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
                                              HudRuntimeState& out)
 {
@@ -506,17 +526,23 @@ static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
         out.isAdventure = s_hudRuntimeFrameCache.state.isAdventure;
         out.isMapOrUserActionPaused =
             s_hudRuntimeFrameCache.state.isMapOrUserActionPaused;
+        out.isAdventureCameraScene =
+            s_hudRuntimeFrameCache.state.isAdventureCameraScene;
         return;
     }
 
     out.isAdventure = Read8(out.ram, rom.isInAdventure) == 0x02;
     out.isMapOrUserActionPaused = out.isAdventure &&
         Read8(out.ram, rom.isMapOrUserActionPaused) == 0x01;
+    out.isAdventureCameraScene = out.isAdventure &&
+        IsCameraSequenceBlockingInput(out.ram, rom);
 
     if (HudRuntimeFrameCacheMatches(out)) {
         s_hudRuntimeFrameCache.state.isAdventure = out.isAdventure;
         s_hudRuntimeFrameCache.state.isMapOrUserActionPaused =
             out.isMapOrUserActionPaused;
+        s_hudRuntimeFrameCache.state.isAdventureCameraScene =
+            out.isAdventureCameraScene;
         s_hudRuntimeFrameCache.adventureValid = true;
     }
 }
@@ -927,6 +953,9 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
     return localCfg.GetBool(kCfgCustomHud);
 }
 
+// States in which the game shows its own UI over the gameplay view. Custom HUD
+// hides, and the native helmet layers are handed back (see the NOHUD_HELMET
+// strip at the call sites).
 static inline bool ShouldHideForGameplayState(bool isStartPressed,
                                              uint16_t currentHP,
                                              bool isGameOver,
@@ -958,7 +987,10 @@ bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& 
     if (!isAdventure)
         return false;
 
-    return Read8(ram, rom.isMapOrUserActionPaused) == 0x01;
+    if (Read8(ram, rom.isMapOrUserActionPaused) == 0x01)
+        return true;
+
+    return IsCameraSequenceBlockingInput(ram, rom);
 }
 
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
