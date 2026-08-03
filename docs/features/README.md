@@ -7,6 +7,7 @@
 - [Morph-ball boost](morph-ball-boost.md)
 - [SF reticle effects reference](sf-reticle-effects-reference.md)
 - [Custom HUD helmet spawn flash](hud/custom-hud-helmet-spawn-flash.md)
+- [Custom HUD adventure camera scenes](hud/custom-hud-adventure-camera-scene.md)
 - [Zoom input methods](input/zoom-input-methods.md)
 - [macOS compute renderer restriction](rendering/macos-compute-renderer-restriction.md)
 

@@ -93,7 +93,10 @@ HOT_FUNCTION QRect CustomHud_Render(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
-    if (hideForNativeUi) {
+    // Adventure camera scenes blank the game's own HUD and crosshair; Custom HUD
+    // follows. Deliberately not folded into hideForNativeUi: no native UI is
+    // coming up here, so the helmet-layer suppression above must stay applied.
+    if (hideForNativeUi || st.isAdventureCameraScene) {
         NotifyCrosshairZoomNotDrawn();
         return QRect();
     }
