@@ -97,6 +97,14 @@ public:
 #ifdef MELONPRIME_DS
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Hand-off for the Custom HUD on-screen editor, which runs while the
+    // settings dialog keeps emulation paused. The emulation thread is stopped
+    // for the whole session, so anything it would normally reconcile (cursor
+    // mode) and anything that stops on pause (Vulkan presentation) has to be
+    // driven from here instead.
+    virtual void setHudEditModeActive(bool active);
+#endif
 
     void unfocus();
     void beginClose();
@@ -372,6 +380,9 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
+#ifdef MELONPRIME_CUSTOM_HUD
+    void setHudEditModeActive(bool active) override;
+#endif
 
     // Quiesce all Vulkan panels belonging to one EmuInstance before
     // its outgoing Vulkan renderer is destroyed.
