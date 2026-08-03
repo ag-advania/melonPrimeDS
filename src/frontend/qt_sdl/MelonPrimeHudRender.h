@@ -91,6 +91,28 @@ namespace MelonPrime {
     // Returns true when the radar overlay should be drawn on the top screen.
     bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 
+    // Radar colour key for the CPU-composited renderer front-ends (software,
+    // the Vulkan software path and Metal). The radar magnifies a crop of the
+    // bottom screen, so everything that is not a known radar palette colour has
+    // to be keyed out first; passing the raw bottom screen shows the whole map
+    // area inside the radar circle instead of just the blips.
+    //
+    // `scratch` is resized/cleared as needed and only the radar crop is written.
+    // Returns `scratch` on success, or nullptr when there is nothing to key.
+    // The renderer-side GL and Vulkan presenters do the same filtering on the
+    // GPU from MelonPrime::kRadarPaletteColors; keep all four in sync.
+    QImage* CustomHud_PrepareRadarColorKeySource(
+        const QImage* bottomScreen,
+        QImage* scratch,
+        uint8_t hunterID,
+        int sourceRadius);
+
+    // Cold config-boundary query: radar source crop radius in DS pixels, or 0
+    // when the radar overlay is switched off. Feed the result straight to
+    // CustomHud_PrepareRadarColorKeySource, which no-ops on 0. Call this when
+    // the HUD config epoch changes (CustomHud_GetCacheEpoch), not per frame.
+    int CustomHud_ResolveRadarColorKeyRadius(Config::Table& localCfg);
+
     // Cold config-boundary query used to cache whether Vulkan should mask the
     // native helmet BG1-3 layers. Never call this from a per-frame hot path.
     bool CustomHud_IsHelmetLayerHideConfigured(Config::Table& localCfg);
