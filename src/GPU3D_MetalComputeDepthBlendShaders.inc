@@ -346,11 +346,9 @@ kernel void mp_compute_depth_blend_complete(
                 {
                     const bool writeDepth =
                         (polygonAttr & (1u << 11u)) != 0u;
-                    bool accepted = false;
-
                     if (!writeSecondLayer)
                     {
-                        accepted |= mpd_plot_translucent(
+                        mpd_plot_translucent(
                             color0,
                             depth0,
                             attr0,
@@ -365,23 +363,16 @@ kernel void mp_compute_depth_blend_complete(
                     if (writeSecondLayer ||
                         (destinationAttr & 0x3u) != 0u)
                     {
-                        const bool secondAccepted =
-                            mpd_plot_translucent(
-                                color1,
-                                depth1,
-                                attr1,
-                                isShadow,
-                                tileColor,
-                                sourceAlpha,
-                                tileDepth,
-                                sourceAttr,
-                                writeDepth);
-                        accepted |= secondAccepted;
-                        if (secondAccepted)
-                    }
-
-                    if (accepted)
-                    {
+                        mpd_plot_translucent(
+                            color1,
+                            depth1,
+                            attr1,
+                            isShadow,
+                            tileColor,
+                            sourceAlpha,
+                            tileDepth,
+                            sourceAttr,
+                            writeDepth);
                     }
                 }
             }

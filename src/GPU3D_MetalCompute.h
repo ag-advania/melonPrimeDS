@@ -69,6 +69,7 @@ public:
 
     [[nodiscard]] bool FoundationReady() const noexcept;
     void* GetComputeFinalTexture() const noexcept;
+    void* GetComputeNativeResolveTexture() const noexcept;
     [[nodiscard]] uint64_t GetComputeFinalSerial() const noexcept;
     [[nodiscard]] bool ComputeFinalReady() const noexcept;
 
@@ -86,6 +87,7 @@ private:
     bool RunCompleteDepthBlendSelfTest();
     bool RunFinalPassSelfTest();
     bool SubmitRealFrameSpanBin();
+    bool ResolveComputeNativeLines();
 };
 
 } // namespace melonDS
