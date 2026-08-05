@@ -23,6 +23,12 @@
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+#define MELONPRIME_HAS_STRUCTURED_SOFT_2D 1
+#endif
+
 namespace melonDS
 {
 
@@ -51,7 +57,7 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     struct StructuredVulkanFrameView
     {
         const u32* Plane[2][3]{};
@@ -62,6 +68,7 @@ public:
         bool CaptureScreenSwap = false;
         bool NativeMenuHeld = false;
         bool Valid = false;
+        u64 Generation = 0;
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
@@ -88,7 +95,7 @@ private:
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};

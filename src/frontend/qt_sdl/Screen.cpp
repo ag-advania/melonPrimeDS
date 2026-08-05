@@ -1641,6 +1641,8 @@ void ScreenPanelNative::drawScreen()
     hasBuffers = (output.Kind == RendererOutputKind::CpuBgra);
     topBuffer = hasBuffers ? output.Top : nullptr;
     bottomBuffer = hasBuffers ? output.Bottom : nullptr;
+    bufferWidth = hasBuffers ? static_cast<int>(std::max(1u, output.Width)) : 256;
+    bufferHeight = hasBuffers ? static_cast<int>(std::max(1u, output.Height)) : 192;
     bufferLock.unlock();
 }
 
@@ -1659,8 +1661,17 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         bufferLock.lock();
         if (hasBuffers)
         {
-            memcpy(screen[0].scanLine(0), topBuffer, 256 * 192 * 4);
-            memcpy(screen[1].scanLine(0), bottomBuffer, 256 * 192 * 4);
+            const int sourceWidth = bufferWidth;
+            const int sourceHeight = bufferHeight;
+            if (screen[0].width() != sourceWidth || screen[0].height() != sourceHeight)
+            {
+                screen[0] = QImage(sourceWidth, sourceHeight, QImage::Format_RGB32);
+                screen[1] = QImage(sourceWidth, sourceHeight, QImage::Format_RGB32);
+            }
+            const std::size_t bytes = static_cast<std::size_t>(sourceWidth)
+                * static_cast<std::size_t>(sourceHeight) * sizeof(u32);
+            memcpy(screen[0].scanLine(0), topBuffer, bytes);
+            memcpy(screen[1].scanLine(0), bottomBuffer, bytes);
         }
         bufferLock.unlock();
 
@@ -3180,6 +3191,8 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, 256, 192, 2, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    screenTextureWidth = 256;
+    screenTextureHeight = 192;
 
 
     OpenGL::CompileVertexFragmentProgram(osdShader,
@@ -3407,9 +3420,28 @@ void ScreenPanelGL::drawScreen()
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
 
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, 256, 192, 1, GL_BGRA,
+            const int outputWidth = static_cast<int>(std::max(1u, output.Width));
+            const int outputHeight = static_cast<int>(std::max(1u, output.Height));
+            if (screenTextureWidth != outputWidth || screenTextureHeight != outputHeight)
+            {
+                glTexImage3D(
+                    GL_TEXTURE_2D_ARRAY,
+                    0,
+                    GL_RGBA,
+                    outputWidth,
+                    outputHeight,
+                    2,
+                    0,
+                    GL_BGRA,
+                    GL_UNSIGNED_BYTE,
+                    nullptr);
+                screenTextureWidth = outputWidth;
+                screenTextureHeight = outputHeight;
+            }
+
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, outputWidth, outputHeight, 1, GL_BGRA,
                 GL_UNSIGNED_BYTE, output.Top);
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, 256, 192, 1, GL_BGRA,
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, outputWidth, outputHeight, 1, GL_BGRA,
                 GL_UNSIGNED_BYTE, output.Bottom);
         }
         else if (output.Kind == RendererOutputKind::OpenGLTextureArray)

@@ -111,11 +111,17 @@ void VideoSettingsDialog::setEnabled()
     const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
         "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
     ui->lblRendererNotes->setVisible(vulkanRenderer);
-    ui->lblRendererNotes->setText(vulkanRenderer
-        ? vulkanOutsideMatchMessage + QStringLiteral("\n")
+    if (vulkanRenderer)
+    {
+        ui->lblRendererNotes->setText(
+            vulkanOutsideMatchMessage + QStringLiteral("\n")
             + vulkanSceneTransitionMessage + QStringLiteral("\n")
-            + vulkanResolutionMessage
-        : QString());
+            + vulkanResolutionMessage);
+    }
+    else
+    {
+        ui->lblRendererNotes->setText(QString());
+    }
 
     // Vulkan uses the software renderer for menus and other non-match screens
     // regardless of the saved checkbox value. Make that runtime behavior
@@ -136,9 +142,9 @@ void VideoSettingsDialog::setEnabled()
         "The resolution at which the 3D graphics will be rendered. Higher resolutions improve graphics quality when the main window is enlarged, but may also cause glitches.");
     const QString vulkanResolutionWarning = MelonPrime::UiText::Tr(
         "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
-    const QString resolutionDescription = vulkanRenderer
-        ? resolutionBaseTooltip + QStringLiteral("\n") + vulkanResolutionWarning
-        : resolutionBaseTooltip;
+    QString resolutionDescription = resolutionBaseTooltip;
+    if (vulkanRenderer)
+        resolutionDescription += QStringLiteral("\n") + vulkanResolutionWarning;
     ui->cbxGLResolution->setToolTip(resolutionDescription);
     ui->cbxGLResolution->setWhatsThis(resolutionDescription);
 #else
@@ -274,7 +280,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DDX12->setObjectName(QStringLiteral("rb3DDX12"));
     rb3DDX12->setText(MelonPrime::UiText::Tr("DirectX 12"));
     rb3DDX12->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Native DirectX 12 renderer. The 3D scene is rasterized on the GPU with compute shaders while the 2D engines stay on the software path, so internal resolution acts as supersampling.</p></body></html>"));
+        "<html><head/><body><p>Native DirectX 12 renderer. The GPU rasterizes 3D and recomposites the software 2D layers at the selected internal resolution.</p></body></html>"));
     ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
     grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
 
@@ -355,7 +361,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DDX12->setEnabled(dx12Probe.Available);
     rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
         dx12Probe.Available
-            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is supported and acts as supersampling.")
+            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.")
             : QString::fromStdString(dx12Probe.Reason)));
 #endif
 

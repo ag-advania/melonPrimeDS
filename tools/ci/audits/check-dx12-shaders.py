@@ -128,6 +128,7 @@ def variants() -> list[tuple[str, str, list[str]]]:
         out.append((f"FinalPass{variant}", "FinalPass", defines))
 
     out.append(("Resolve", "Resolve", ["Resolve"]))
+    out.append(("Compositor", "Compositor", ["Compositor"]))
     return out
 
 

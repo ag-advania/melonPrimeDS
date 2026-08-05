@@ -492,13 +492,13 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
             // RunFrameHook + SetKeyMask already done above (P-28).
-#if defined(MELONPRIME_ENABLE_VULKAN)
-            if (auto* vulkanRenderer = dynamic_cast<VulkanRenderer*>(
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+            if (auto* structuredRenderer = dynamic_cast<SoftRenderer*>(
                     &emuInstance->nds->GPU.GetRenderer()))
             {
-                vulkanRenderer->SetNativeMenuHeldForFrame(
+                structuredRenderer->SetNativeMenuHeldForFrame(
                     melonPrime->IsMetroidMenuHeld());
-                vulkanRenderer->SetMainBg123SuppressedForFrame(
+                structuredRenderer->SetMainBg123SuppressedForFrame(
                     melonPrime->ShouldSuppressVulkanHelmetLayers());
             }
 #endif
@@ -1438,7 +1438,7 @@ void EmuThread::updateRenderer()
         case renderer3D_DX12:
             Platform::Log(
                 Platform::LogLevel::Info,
-                "Renderer selection requested=DX12 presentation=software-2D");
+                "Renderer selection requested=DX12 presentation=high-resolution-composed");
             nds->SetRenderer(std::make_unique<DX12Renderer>(*nds));
             if (dynamic_cast<DX12Renderer*>(&nds->GetRenderer()) == nullptr)
             {

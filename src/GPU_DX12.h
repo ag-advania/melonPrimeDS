@@ -28,11 +28,10 @@ namespace melonDS
 
 class DX12Renderer3D;
 
-// Software 2D + DirectX 12 3D. The 2D engines, display capture and the
-// framebuffers the Qt screen panels present all stay on the existing software
-// path; only Renderer3D is replaced. That is what keeps every other MelonPrime
-// feature -- Custom HUD, OSD, savestates, both presentation backends -- working
-// without a DX12-specific compositor.
+// Software 2D + DirectX 12 3D. The software engines also record structured 2D
+// planes, which the DX12 compute compositor combines with the high-resolution
+// 3D target. Presentation remains on the existing NativeQt/OpenGL panels so
+// Custom HUD, OSD, savestates and window-layout behavior stay shared.
 class DX12Renderer final : public SoftRenderer
 {
 public:
@@ -47,6 +46,7 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    RendererOutput GetOutput() override;
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;

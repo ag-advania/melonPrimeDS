@@ -37,13 +37,10 @@ namespace melonDS
 // (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
 // the same tile-binned pipeline and the same fixed-point math.
 //
-// It is paired with the software 2D renderer (see GPU_DX12.h) rather than a
-// DX12 2D compositor: the 3D scene is rasterized on the GPU at the configured
-// internal resolution, resolved back down to the DS's native 256x192 in the
-// exact word format GetLine() must return, and handed to the existing software
-// compositor. That keeps display capture, savestates, the Custom HUD, the OSD
-// and both Qt presentation paths working unchanged, and makes internal
-// resolution behave as supersampling.
+// It is paired with the software 2D renderer (see GPU_DX12.h). A native-size
+// resolve remains available for display capture, while structured 2D metadata
+// is recomposited with FinalFB at the configured internal resolution for the
+// visible output.
 class DX12Renderer3D : public Renderer3D
 {
 public:
@@ -64,6 +61,15 @@ public:
 
     void RenderFrame() override;
     u32* GetLine(int line) override;
+    [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+
+    bool ComposeStructuredOutput(
+        const std::array<const u32*, 6>& planes,
+        const std::array<const u32*, 2>& lineMeta,
+        u64 generation);
+    [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
+    [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
+    [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
 
     bool NeedsShaderCompile() override { return ShaderStepIdx < ShaderStepCount; }
     void ShaderCompileStep(int& current, int& count) override;
@@ -229,6 +235,7 @@ private:
         ShaderStep_Rasterise0 = ShaderStep_DepthBlend0 + 2,
         ShaderStep_FinalPass0 = ShaderStep_Rasterise0 + RasteriseKind_Count * 2,
         ShaderStep_Resolve = ShaderStep_FinalPass0 + 8,
+        ShaderStep_Compositor,
         ShaderStepCount,
     };
 
@@ -258,6 +265,7 @@ private:
     // The UAV table never changes within a frame; the SRV table only changes
     // when the bound texture array does.
     bool BindFrameUavTable(ID3D12GraphicsCommandList* list);
+    bool BindCompositionUavTable(ID3D12GraphicsCommandList* list);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
@@ -294,12 +302,16 @@ private:
     std::array<DX12::ComPtr<ID3D12PipelineState>, RasteriseKind_Count * 2> PipelineRasterise;
     std::array<DX12::ComPtr<ID3D12PipelineState>, 8> PipelineFinalPass;
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
+    DX12::ComPtr<ID3D12Resource> CompositionInputBuffer;
+    DX12::ComPtr<ID3D12Resource> CompositionOutputBuffer;
+    DX12::ComPtr<ID3D12Resource> CompositionReadbackBuffer;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
@@ -313,9 +325,11 @@ private:
     DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
     DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
     DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
+    DX12::ComPtr<ID3D12Resource> CompositionInputStaging;
     u8* YSpanSetupStagingPtr = nullptr;
     u8* SetupIndicesStagingPtr = nullptr;
     u8* RenderPolygonStagingPtr = nullptr;
+    u32* CompositionInputStagingPtr = nullptr;
 
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
     DX12::ComPtr<ID3D12Resource> DummyTexture;
@@ -357,8 +371,12 @@ private:
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
+    u64 ComposedGeneration = 0;
+    bool ComposedOutputValid = false;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
+    std::array<std::vector<u32>, 2> ComposedColorBuffer;
+    u32 ComposedFrontBuffer = 0;
     alignas(8) u32 ScrolledLine[256]{};
 };
 

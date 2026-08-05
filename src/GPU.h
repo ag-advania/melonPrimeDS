@@ -45,32 +45,39 @@ struct RendererOutput
     RendererOutputKind Kind = RendererOutputKind::None;
     void* Top = nullptr;
     void* Bottom = nullptr;
+    u32 Width = 0;
+    u32 Height = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     u64 FrameSerial = 0;
 #endif
 
-    static RendererOutput CpuBgra(void* top, void* bottom) noexcept
+    static RendererOutput CpuBgra(void* top, void* bottom, u32 width = 256, u32 height = 192) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
-#else
-        return { RendererOutputKind::CpuBgra, top, bottom };
-#endif
+        RendererOutput output;
+        output.Kind = RendererOutputKind::CpuBgra;
+        output.Top = top;
+        output.Bottom = bottom;
+        output.Width = width;
+        output.Height = height;
+        return output;
     }
 
     static RendererOutput OpenGLTextureArray(void* texture) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0 };
-#else
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr };
-#endif
+        RendererOutput output;
+        output.Kind = RendererOutputKind::OpenGLTextureArray;
+        output.Top = texture;
+        return output;
     }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
     {
-        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+        RendererOutput output;
+        output.Kind = RendererOutputKind::MetalTexture;
+        output.Top = texture;
+        output.FrameSerial = frameSerial;
+        return output;
     }
 #endif
 };

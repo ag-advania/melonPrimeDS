@@ -53,7 +53,7 @@ bool DX12Renderer::Init()
 
     Platform::Log(
         Platform::LogLevel::Info,
-        "DX12 renderer init succeeded requested=DX12 actual=DX12 presentation=software-2D\n");
+        "DX12 renderer init succeeded requested=DX12 actual=DX12 presentation=high-resolution-composed\n");
     return true;
 }
 
@@ -78,6 +78,39 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 {
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+}
+
+RendererOutput DX12Renderer::GetOutput()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    StructuredVulkanFrameView view{};
+    if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
+        return {};
+
+    const std::array<const u32*, 6> planes = {
+        view.Plane[0][0],
+        view.Plane[0][1],
+        view.Plane[0][2],
+        view.Plane[1][0],
+        view.Plane[1][1],
+        view.Plane[1][2],
+    };
+    const std::array<const u32*, 2> lineMeta = {
+        view.LineMeta[0],
+        view.LineMeta[1],
+    };
+
+    const bool composed = dx12->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+    const u32* top = dx12->GetComposedScreen(0);
+    const u32* bottom = dx12->GetComposedScreen(1);
+    if ((!composed && (!top || !bottom)) || !top || !bottom)
+        return {};
+
+    return RendererOutput::CpuBgra(
+        const_cast<u32*>(top),
+        const_cast<u32*>(bottom),
+        dx12->GetComposedWidth(),
+        dx12->GetComposedHeight());
 }
 
 bool DX12Renderer::NeedsShaderCompile()
