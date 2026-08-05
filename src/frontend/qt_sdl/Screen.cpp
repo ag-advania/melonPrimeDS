@@ -1622,6 +1622,37 @@ void ScreenPanelNative::setupScreenLayout()
     }
 }
 
+#ifdef MELONPRIME_DS
+void ScreenPanelNative::requestLatestFrameUpdate()
+{
+    latestFrameDirty.store(true, std::memory_order_release);
+    if (!latestFrameUpdatePosted.exchange(true, std::memory_order_acq_rel))
+    {
+        QMetaObject::invokeMethod(
+            this,
+            [this]() { update(); },
+            Qt::QueuedConnection);
+    }
+}
+
+void ScreenPanelNative::finishLatestFramePaint()
+{
+    latestFrameUpdatePosted.store(false, std::memory_order_release);
+
+    // If the producer published another frame while this paint was running,
+    // reserve exactly one follow-up update. A concurrent producer can win the
+    // exchange instead; either way there is still only one queued request.
+    if (latestFrameDirty.exchange(false, std::memory_order_acq_rel)
+        && !latestFrameUpdatePosted.exchange(true, std::memory_order_acq_rel))
+    {
+        QMetaObject::invokeMethod(
+            this,
+            [this]() { update(); },
+            Qt::QueuedConnection);
+    }
+}
+#endif
+
 void ScreenPanelNative::drawScreen()
 {
     refreshClipForGameStateChange();
@@ -1629,7 +1660,12 @@ void ScreenPanelNative::drawScreen()
     auto emuThread = emuInstance->getEmuThread();
     if (!emuThread->emuIsActive())
     {
+        bufferLock.lock();
         hasBuffers = false;
+        bufferLock.unlock();
+#ifdef MELONPRIME_DS
+        requestLatestFrameUpdate();
+#endif
         return;
     }
 
@@ -1644,10 +1680,19 @@ void ScreenPanelNative::drawScreen()
     bufferWidth = hasBuffers ? static_cast<int>(std::max(1u, output.Width)) : 256;
     bufferHeight = hasBuffers ? static_cast<int>(std::max(1u, output.Height)) : 192;
     bufferLock.unlock();
+#ifdef MELONPRIME_DS
+    requestLatestFrameUpdate();
+#endif
 }
 
 void ScreenPanelNative::paintEvent(QPaintEvent * event)
 {
+#ifdef MELONPRIME_DS
+    // Everything published before this point is represented by the buffer
+    // pointers sampled below. Publications during paint request one follow-up.
+    latestFrameDirty.store(false, std::memory_order_release);
+#endif
+
     QPainter painter(this);
 
     painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
@@ -1724,6 +1769,10 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
         osdMutex.unlock();
     }
+
+#ifdef MELONPRIME_DS
+    finishLatestFramePaint();
+#endif
 }
 
 
