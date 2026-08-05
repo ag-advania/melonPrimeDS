@@ -53,7 +53,7 @@ public:
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override {};
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override {};
+    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
@@ -61,7 +61,6 @@ public:
     struct StructuredVulkanFrameView
     {
         const u32* Plane[2][3]{};
-        const u8* CaptureBacked3DMask[2]{};
         const u32* LineMeta[2]{};
         const u32* Capture3DSource = nullptr;
         const u8* CaptureLineUses3D = nullptr;
@@ -98,16 +97,15 @@ private:
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
+    static constexpr std::size_t StructuredCapturePixelCount = 256u * 256u;
+    static constexpr std::size_t StructuredCaptureLineCount = 256u;
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
-    std::array<u8, 2u * StructuredPixelCount> StructuredEngineCaptureBacked3DMask{};
-    std::array<u8, 2u * StructuredPixelCount> StructuredScreenCaptureBacked3DMask{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
-    std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
-    std::array<u8, 4u * StructuredPixelCount> StructuredCaptureBacked3DMask{};
-    std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
-    std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
-    std::array<u64, 4u * 192u> StructuredCaptureLineGeneration{};
+    std::array<u32, 4u * 3u * StructuredCapturePixelCount> StructuredCapturePlanes{};
+    std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineValid{};
+    std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineUses3D{};
+    std::array<u64, 4u * StructuredCaptureLineCount> StructuredCaptureLineGeneration{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
     std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
@@ -141,14 +139,10 @@ private:
         u32 width,
         u32 destinationBank,
         u32 destinationAddress,
-        u32 sourceBAddress,
-        u32 sourceBBank,
-        bool sourceBFromVram,
         const u16* captureOutput);
     [[nodiscard]] bool DrawStructuredCapturePixel(
         u32 engine,
         u32 line,
-        u32 x,
         u32* destination,
         u32 flatByteAddress);
     void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
