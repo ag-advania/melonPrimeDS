@@ -48,6 +48,7 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    void VBlank() override;
     RendererOutput GetOutput() override;
 
     bool NeedsShaderCompile() override;

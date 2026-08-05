@@ -23,6 +23,12 @@ those planes with the high-resolution 3D target and reads back two BGRA screens
 at `256*scale x 192*scale`. `RendererOutput` carries those dimensions, and both
 the `NativeQt` and `OpenGL` panels accept the variable-size buffers.
 
+The compute composition is submitted from `DX12Renderer::VBlank()` on the
+emulation thread. This binds the structured 2D planes and `FinalFB` to the same
+DS frame even when software flips `ScreenSwap` every frame. `GetOutput()` only
+publishes the already-composed front buffer; presentation timing cannot combine
+one frame's screen mapping with another frame's 3D image.
+
 A separate 256x192 resolve remains available for DS display capture and other
 core operations that require the `Renderer3D::GetLine()` contract. Presentation
 therefore gains real internal-resolution output without duplicating the Custom
@@ -159,7 +165,9 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 * actual target/resource creation and first presentation at 1x, 5x, 9x and
   the maximum 16x internal resolution;
 * held capture/menu frames and 100-frame sequences without upper/lower screen
-  alternation, stale-frame replay, black capture rows or a DX12 fallback; and
+  alternation, stale-frame replay, black capture rows or a DX12 fallback;
+* the F1 main-menu savestate while MPH alternates `ScreenSwap` every frame,
+  compared against Software and OpenGL Compute output at 1x, 4x and 16x; and
 * comparison with the Software renderer's physical VRAM capture output. The
   retained structured capture metadata is invalidated at the same CPU/DMA VRAM
   synchronization boundaries used by the OpenGL capture path.
