@@ -111,7 +111,14 @@ RendererOutput DX12Renderer::GetOutput()
     const u32* top = dx12->GetComposedScreen(0);
     const u32* bottom = dx12->GetComposedScreen(1);
     if (!top || !bottom)
-        return {};
+    {
+        // The DX12 pipelines compile incrementally after a ROM starts. Until
+        // the first VBlank can publish a composed frame, keep the native Qt
+        // panel on the initialized software buffers instead of making it draw
+        // its as-yet-uninitialized cached images. Metal uses the same fallback
+        // during its output transition.
+        return SoftRenderer::GetOutput();
+    }
 
     return RendererOutput::CpuBgra(
         const_cast<u32*>(top),

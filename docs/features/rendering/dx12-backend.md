@@ -26,8 +26,10 @@ the `NativeQt` and `OpenGL` panels accept the variable-size buffers.
 The compute composition is submitted from `DX12Renderer::VBlank()` on the
 emulation thread. This binds the structured 2D planes and `FinalFB` to the same
 DS frame even when software flips `ScreenSwap` every frame. `GetOutput()` only
-publishes the already-composed front buffer; presentation timing cannot combine
-one frame's screen mapping with another frame's 3D image.
+publishes the already-composed front buffer once one exists; presentation timing
+cannot combine one frame's screen mapping with another frame's 3D image. During
+incremental pipeline compilation at ROM startup, it temporarily publishes the
+initialized software buffers so Qt never paints an uninitialized cached image.
 
 A separate 256x192 resolve remains available for DS display capture and other
 core operations that require the `Renderer3D::GetLine()` contract. Presentation
