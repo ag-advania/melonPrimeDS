@@ -274,7 +274,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DDX12->setObjectName(QStringLiteral("rb3DDX12"));
     rb3DDX12->setText(MelonPrime::UiText::Tr("DirectX 12"));
     rb3DDX12->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Native DirectX 12 renderer. 3D rendering runs on the GPU while the 2D engines stay on the software path.</p></body></html>"));
+        "<html><head/><body><p>Native DirectX 12 renderer. The 3D scene is rasterized on the GPU with compute shaders while the 2D engines stay on the software path, so internal resolution acts as supersampling.</p></body></html>"));
     ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
     grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
 
@@ -355,7 +355,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DDX12->setEnabled(dx12Probe.Available);
     rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
         dx12Probe.Available
-            ? QStringLiteral("Native DirectX 12 renderer. In development: geometry rasterization is not implemented yet, so only the 3D background layer is drawn.")
+            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is supported and acts as supersampling.")
             : QString::fromStdString(dx12Probe.Reason)));
 #endif
 

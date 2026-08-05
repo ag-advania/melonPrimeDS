@@ -33,7 +33,9 @@
 namespace melonDS
 {
 
-// DirectX 12 3D renderer.
+// DirectX 12 3D renderer: a port of the OpenGL compute renderer
+// (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
+// the same tile-binned pipeline and the same fixed-point math.
 //
 // It is paired with the software 2D renderer (see GPU_DX12.h) rather than a
 // DX12 2D compositor: the 3D scene is rasterized on the GPU at the configured
@@ -42,10 +44,6 @@ namespace melonDS
 // compositor. That keeps display capture, savestates, the Custom HUD, the OSD
 // and both Qt presentation paths working unchanged, and makes internal
 // resolution behave as supersampling.
-//
-// The pipeline is modeled on the OpenGL compute renderer (GPU3D_Compute.cpp),
-// not the fixed-function OpenGL one, so the same tile-binned compute design can
-// be filled in stage by stage.
 class DX12Renderer3D : public Renderer3D
 {
 public:
@@ -73,6 +71,118 @@ public:
 private:
     explicit DX12Renderer3D(melonDS::GPU3D& gpu3D);
 
+    static constexpr int MaxVariants = 256;
+    static constexpr int MaxYSpanSetups = 6144 * 2;
+    static constexpr int BinStride = 2048 / 32;
+    static constexpr int CoarseBinStride = BinStride / 32;
+    static constexpr int CoarseTileCountX = 8;
+
+    // Layout must stay byte-identical to the HLSL BinResult offsets in
+    // GPU3D_DX12_shaders.h.
+    struct BinResultHeader
+    {
+        u32 VariantWorkCount[MaxVariants * 4];
+        u32 SortedWorkOffset[MaxVariants];
+        u32 VariantWorkRealCount[MaxVariants];
+        u32 SortWorkWorkCount[4];
+    };
+
+    // Mirrors the HLSL YSpanSetup / XSpanSetup / Polygon structured-buffer
+    // layouts (tight 4-byte packing in both languages).
+    struct SpanSetupY
+    {
+        s32 Z0, Z1, W0, W1;
+        s32 ColorR0, ColorG0, ColorB0;
+        s32 ColorR1, ColorG1, ColorB1;
+        s32 TexcoordU0, TexcoordV0;
+        s32 TexcoordU1, TexcoordV1;
+
+        s32 I0, I1;
+        u32 Linear;
+        s32 IRecip;
+        s32 W0n, W0d, W1d;
+
+        s32 Increment;
+
+        s32 X0, X1, Y0, Y1;
+        s32 XMin, XMax;
+        s32 DxInitial;
+
+        s32 XCovIncr;
+        u32 IsDummy;
+    };
+
+    struct SpanSetupX
+    {
+        s32 X0, X1;
+        s32 InsideStart, InsideEnd, EdgeCovL, EdgeCovR;
+        s32 XRecip;
+        u32 Flags;
+        s32 Z0, Z1, W0, W1;
+        s32 ColorR0, ColorG0, ColorB0;
+        s32 ColorR1, ColorG1, ColorB1;
+        s32 TexcoordU0, TexcoordV0;
+        s32 TexcoordU1, TexcoordV1;
+        s32 CovLInitial, CovRInitial;
+    };
+
+    struct SetupIndices
+    {
+        u16 PolyIdx, SpanIdxL, SpanIdxR, Y;
+    };
+
+    struct RenderPolygon
+    {
+        s32 FirstXSpan;
+        s32 YTop, YBot;
+
+        s32 XMin, XMax;
+        s32 XMinY, XMaxY;
+
+        u32 Variant;
+        u32 Attr;
+
+        float TextureLayer;
+    };
+
+    static_assert(sizeof(SpanSetupY) == 31 * 4, "SpanSetupY must match the HLSL layout");
+    static_assert(sizeof(SpanSetupX) == 24 * 4, "SpanSetupX must match the HLSL layout");
+    static_assert(sizeof(RenderPolygon) == 10 * 4, "RenderPolygon must match the HLSL layout");
+    static_assert(sizeof(SetupIndices) == 8, "SetupIndices must match the R16G16B16A16_UINT view");
+
+    // One rasterise pipeline per texture/blend combination, exactly like the
+    // OpenGL compute renderer's shader table.
+    enum RasteriseKind
+    {
+        RasteriseKind_NoTexture = 0,
+        RasteriseKind_NoTextureToon,
+        RasteriseKind_NoTextureHighlight,
+        RasteriseKind_UseTextureDecal,
+        RasteriseKind_UseTextureModulate,
+        RasteriseKind_UseTextureToon,
+        RasteriseKind_UseTextureHighlight,
+        RasteriseKind_ShadowMask,
+        RasteriseKind_Count,
+    };
+
+    struct Variant
+    {
+        u32 Texture = 0;
+        u32 WrapS = 0;
+        u32 WrapT = 0;
+        u8 BlendMode = 0;
+        u16 Width = 0;
+        u16 Height = 0;
+
+        bool operator==(const Variant& other) const noexcept
+        {
+            return Texture == other.Texture
+                && WrapS == other.WrapS
+                && WrapT == other.WrapT
+                && BlendMode == other.BlendMode;
+        }
+    };
+
     // Mirrors the OpenGL compute renderer's MetaUniform. Field order and
     // padding match the HLSL cbuffer in GPU3D_DX12_shaders.h.
     struct MetaUniform
@@ -98,30 +208,37 @@ private:
     // Root constants, mirroring the HLSL DispatchUniform cbuffer.
     struct DispatchUniform
     {
-        u32 CurVariant;
-        u32 TexIsCapture;
-        float TextureSize[2];
-        float CaptureYOffset;
-        u32 Pad[3];
+        u32 CurVariant = 0;
+        u32 TexWidth = 8;
+        u32 TexHeight = 8;
+        u32 TexWrapS = 0;
+        u32 TexWrapT = 0;
+        u32 Pad[3] = {};
     };
     static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
 
     enum ShaderStep
     {
-        ShaderStep_ClearPlane = 0,
-        ShaderStep_FinalPass0,
-        ShaderStep_FinalPassLast = ShaderStep_FinalPass0 + 7,
-        ShaderStep_Resolve,
+        ShaderStep_ClearCoarseBinMask = 0,
+        ShaderStep_ClearIndirectWorkCount,
+        ShaderStep_CalcOffsets,
+        ShaderStep_SortWork,
+        ShaderStep_BinCombined,
+        ShaderStep_InterpSpans0,           // +0 Z-buffer, +1 W-buffer
+        ShaderStep_DepthBlend0 = ShaderStep_InterpSpans0 + 2,
+        ShaderStep_Rasterise0 = ShaderStep_DepthBlend0 + 2,
+        ShaderStep_FinalPass0 = ShaderStep_Rasterise0 + RasteriseKind_Count * 2,
+        ShaderStep_Resolve = ShaderStep_FinalPass0 + 8,
         ShaderStepCount,
     };
 
     bool CreateRootSignature();
+    bool CreateCommandSignature();
+    bool CreateFixedResources();
     bool CreateScaleDependentResources();
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
 
-    // Assembles the shared prologue (`#define`s + Common) and compiles one
-    // compute PSO.
     bool BuildPipeline(
         DX12::ComPtr<ID3D12PipelineState>& pipeline,
         const std::string& body,
@@ -129,22 +246,30 @@ private:
         const char* debugName);
 
     void UpdateClearBitmap();
-    void UploadMetaUniform(ID3D12GraphicsCommandList* list);
+    bool UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons);
     void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
     void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
+    void TransitionBuffer(
+        ID3D12GraphicsCommandList* list,
+        ID3D12Resource* resource,
+        D3D12_RESOURCE_STATES before,
+        D3D12_RESOURCE_STATES after);
 
-    // Writes `count` structured-buffer UAV descriptors (null where the resource
-    // is missing) and binds them as the UAV table.
-    struct ViewEntry
-    {
-        ID3D12Resource* Resource = nullptr;
-        // Structured-buffer element count; 0 marks the entry as a 256x256
-        // R32_UINT texture instead.
-        u32 Elements = 0;
-    };
+    // The UAV table never changes within a frame; the SRV table only changes
+    // when the bound texture array does.
+    bool BindFrameUavTable(ID3D12GraphicsCommandList* list);
+    bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
 
-    bool BindUavTable(ID3D12GraphicsCommandList* list, std::initializer_list<ViewEntry> entries);
-    bool BindSrvTable(ID3D12GraphicsCommandList* list, std::initializer_list<ViewEntry> entries);
+    // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
+    void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
+    void SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int from, int to, int side, s32 positions[10][2]) const;
+    void SetupYSpanDummy(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int vertex, int side, s32 positions[10][2]) const;
+
+    // Returns the number of variants collected, filling YSpanSetups /
+    // YSpanIndices / RenderPolygons. `numYSpans` / `numSetupIndices` /
+    // `numPolygons` are outputs; `numPolygons` can be lower than
+    // GPU3D.RenderNumPolygons when the span budget ran out.
+    u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
 
     void EnsureFrameReadback();
 
@@ -157,23 +282,65 @@ private:
     TexcacheDX12 Texcache;
 
     DX12::ComPtr<ID3D12RootSignature> RootSignature;
-    DX12::ComPtr<ID3D12PipelineState> PipelineClearPlane;
+    DX12::ComPtr<ID3D12CommandSignature> DispatchSignature;
+
+    DX12::ComPtr<ID3D12PipelineState> PipelineClearCoarseBinMask;
+    DX12::ComPtr<ID3D12PipelineState> PipelineClearIndirectWorkCount;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCalcOffsets;
+    DX12::ComPtr<ID3D12PipelineState> PipelineSortWork;
+    DX12::ComPtr<ID3D12PipelineState> PipelineBinCombined;
+    std::array<DX12::ComPtr<ID3D12PipelineState>, 2> PipelineInterpSpans;
+    std::array<DX12::ComPtr<ID3D12PipelineState>, 2> PipelineDepthBlend;
+    std::array<DX12::ComPtr<ID3D12PipelineState>, RasteriseKind_Count * 2> PipelineRasterise;
     std::array<DX12::ComPtr<ID3D12PipelineState>, 8> PipelineFinalPass;
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
 
-    // Scale-dependent GPU memory.
-    DX12::ComPtr<ID3D12Resource> ResultBuffer;   // color/depth/attr, 2 layers each
-    DX12::ComPtr<ID3D12Resource> FinalFBBuffer;  // packed r6g6b6a5 at internal res
-    DX12::ComPtr<ID3D12Resource> ResolveBuffer;  // packed r6g6b6a5 at 256x192
+    // GPU-side buffers.
+    DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
+    DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
+    DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
+    DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
+    DX12::ComPtr<ID3D12Resource> BinResultBuffer;
+    DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
+    DX12::ComPtr<ID3D12Resource> XSpanSetupBuffer;
+    DX12::ComPtr<ID3D12Resource> YSpanSetupBuffer;
+    DX12::ComPtr<ID3D12Resource> SetupIndicesBuffer;
+    DX12::ComPtr<ID3D12Resource> RenderPolygonBuffer;
+    DX12::ComPtr<ID3D12Resource> IndirectArgsBuffer;
+
+    // Persistently mapped staging for the three per-frame CPU uploads.
+    DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
+    DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
+    DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
+    u8* YSpanSetupStagingPtr = nullptr;
+    u8* SetupIndicesStagingPtr = nullptr;
+    u8* RenderPolygonStagingPtr = nullptr;
 
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
+    DX12::ComPtr<ID3D12Resource> DummyTexture;
 
     std::unique_ptr<u32[]> ClearBitmap[2];
     u8 ClearBitmapDirty = 0x3;
-    // The textures are created in COPY_DEST, so the first upload of each slot
-    // must not transition into a state it is already in.
     bool ClearBitmapTexInCopyDest[2] = { true, true };
+    bool DummyTextureInitialized = false;
+
+    // CPU-side scratch, mirroring the OpenGL compute renderer's members.
+    std::array<Variant, MaxVariants> Variants{};
+    std::vector<SetupIndices> YSpanIndices;
+    std::unique_ptr<SpanSetupY[]> YSpanSetups;
+    std::unique_ptr<RenderPolygon[]> RenderPolygons;
+
+    int TileSize = 8;
+    int CoarseTileCountY = 4;
+    int CoarseTileArea = 32;
+    int CoarseTileW = 64;
+    int CoarseTileH = 32;
+    int ClearCoarseBinMaskLocalSize = 64;
+    int TilesPerLine = 32;
+    int TileLines = 24;
+    int MaxWorkTiles = 0;
+    int MaxYSpanIndices = 0;
 
     int ScaleFactor = -1;
     int ScreenWidth = 256;
@@ -183,8 +350,11 @@ private:
 
     int ShaderStepIdx = 0;
 
-    // Set when RenderFrame() submitted work whose readback GetLine() still has
-    // to wait for.
+    // Cached for the frame so every dispatch does not re-create descriptors.
+    D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
+    ID3D12Resource* BoundSrvTexture = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE BoundSrvTable{};
+
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
 
