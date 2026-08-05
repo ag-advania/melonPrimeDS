@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include "GPU.h"
 #include "GPU3D_DX12_shaders.h"
@@ -639,10 +640,9 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hire
 
     if (!CreateScaleDependentResources())
     {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "DX12: failed to allocate render targets for %dx internal resolution\n",
-            ScaleFactor);
+        SetRuntimeFailure(
+            "failed to allocate render targets for " + std::to_string(ScaleFactor)
+            + "x internal resolution");
     }
     else
     {
@@ -666,6 +666,19 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hire
 // ---------------------------------------------------------------------------
 // Pipelines
 // ---------------------------------------------------------------------------
+
+void DX12Renderer3D::SetRuntimeFailure(std::string reason)
+{
+    if (RuntimeFailed)
+        return;
+
+    RuntimeFailed = true;
+    RuntimeFailureReason = reason.empty() ? "unspecified DX12 renderer failure" : std::move(reason);
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "DX12: runtime failure: %s\n",
+        RuntimeFailureReason.c_str());
+}
 
 bool DX12Renderer3D::BuildPipeline(
     DX12::ComPtr<ID3D12PipelineState>& pipeline,
@@ -737,27 +750,36 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
 
     const int step = ShaderStepIdx++;
     char name[64];
+    auto build = [this](
+        DX12::ComPtr<ID3D12PipelineState>& pipeline,
+        const std::string& body,
+        const std::vector<std::string>& defines,
+        const char* debugName)
+    {
+        if (!BuildPipeline(pipeline, body, defines, debugName))
+            SetRuntimeFailure(std::string("pipeline creation failed: ") + debugName);
+    };
 
     switch (step)
     {
     case ShaderStep_ClearCoarseBinMask:
-        BuildPipeline(PipelineClearCoarseBinMask, DX12Shaders::ClearCoarseBinMask,
+        build(PipelineClearCoarseBinMask, DX12Shaders::ClearCoarseBinMask,
             { "ClearCoarseBinMask" }, "DX12ClearCoarseBinMask");
         return;
     case ShaderStep_ClearIndirectWorkCount:
-        BuildPipeline(PipelineClearIndirectWorkCount, DX12Shaders::ClearIndirectWorkCount,
+        build(PipelineClearIndirectWorkCount, DX12Shaders::ClearIndirectWorkCount,
             { "ClearIndirectWorkCount" }, "DX12ClearIndirectWorkCount");
         return;
     case ShaderStep_CalcOffsets:
-        BuildPipeline(PipelineCalcOffsets, DX12Shaders::CalcOffsets,
+        build(PipelineCalcOffsets, DX12Shaders::CalcOffsets,
             { "CalculateWorkOffsets" }, "DX12CalcOffsets");
         return;
     case ShaderStep_SortWork:
-        BuildPipeline(PipelineSortWork, DX12Shaders::SortWork,
+        build(PipelineSortWork, DX12Shaders::SortWork,
             { "SortWork" }, "DX12SortWork");
         return;
     case ShaderStep_BinCombined:
-        BuildPipeline(PipelineBinCombined, DX12Shaders::BinCombined,
+        build(PipelineBinCombined, DX12Shaders::BinCombined,
             { "BinCombined" }, "DX12BinCombined");
         return;
     default:
@@ -768,7 +790,7 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
     {
         const int wbuffer = step - ShaderStep_InterpSpans0;
         std::snprintf(name, sizeof(name), "DX12InterpSpans%c", wbuffer ? 'W' : 'Z');
-        BuildPipeline(PipelineInterpSpans[wbuffer], DX12Shaders::InterpSpans,
+        build(PipelineInterpSpans[wbuffer], DX12Shaders::InterpSpans,
             { "InterpSpans", wbuffer ? "WBuffer" : "ZBuffer" }, name);
         return;
     }
@@ -777,7 +799,7 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
     {
         const int wbuffer = step - ShaderStep_DepthBlend0;
         std::snprintf(name, sizeof(name), "DX12DepthBlend%c", wbuffer ? 'W' : 'Z');
-        BuildPipeline(PipelineDepthBlend[wbuffer], DX12Shaders::DepthBlend,
+        build(PipelineDepthBlend[wbuffer], DX12Shaders::DepthBlend,
             { "DepthBlend", wbuffer ? "WBuffer" : "ZBuffer" }, name);
         return;
     }
@@ -826,7 +848,7 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
         }
 
         std::snprintf(name, sizeof(name), "DX12Rasterise%d%c", kind, wbuffer ? 'W' : 'Z');
-        BuildPipeline(PipelineRasterise[index], DX12Shaders::Rasterise, defines, name);
+        build(PipelineRasterise[index], DX12Shaders::Rasterise, defines, name);
         return;
     }
 
@@ -839,19 +861,19 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
         if (variant & 0x4) defines.emplace_back("AntiAliasing");
 
         std::snprintf(name, sizeof(name), "DX12FinalPass%d", variant);
-        BuildPipeline(PipelineFinalPass[variant], DX12Shaders::FinalPass, defines, name);
+        build(PipelineFinalPass[variant], DX12Shaders::FinalPass, defines, name);
         return;
     }
 
     if (step == ShaderStep_Resolve)
     {
-        BuildPipeline(PipelineResolve, DX12Shaders::Resolve, { "Resolve" }, "DX12Resolve");
+        build(PipelineResolve, DX12Shaders::Resolve, { "Resolve" }, "DX12Resolve");
         return;
     }
 
     if (step == ShaderStep_Compositor)
     {
-        BuildPipeline(PipelineCompositor, DX12Shaders::Compositor,
+        build(PipelineCompositor, DX12Shaders::Compositor,
             { "Compositor" }, "DX12Compositor");
         return;
     }
@@ -1727,8 +1749,13 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
 
 void DX12Renderer3D::RenderFrame()
 {
-    if (!Context || !RootSignature || !ResultBuffer || !FinalFBBuffer || !BinResultBuffer)
+    if (RuntimeFailed)
         return;
+    if (!Context || !RootSignature || !ResultBuffer || !FinalFBBuffer || !BinResultBuffer)
+    {
+        SetRuntimeFailure("required frame resources are unavailable");
+        return;
+    }
     if (ShaderStepIdx < ShaderStepCount)
         return; // pipelines are still being compiled
 
@@ -1738,7 +1765,10 @@ void DX12Renderer3D::RenderFrame()
 
     ID3D12GraphicsCommandList* list = Commands.Begin();
     if (!list)
+    {
+        SetRuntimeFailure("could not begin a frame command list");
         return;
+    }
 
     // Begin() waited for the previous submission, so both rings are free to
     // reuse and retired textures can go.
@@ -1764,7 +1794,10 @@ void DX12Renderer3D::RenderFrame()
     // to happen after the setup phase, on whichever list is now current.
     list = Commands.GetList();
     if (!list)
+    {
+        SetRuntimeFailure("frame command list was lost during texture upload");
         return;
+    }
 
     ID3D12DescriptorHeap* heaps[] = { Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
@@ -1801,12 +1834,14 @@ void DX12Renderer3D::RenderFrame()
     if (!UploadMetaUniform(list, numVariants, numPolygons))
     {
         Commands.Submit();
+        SetRuntimeFailure("could not upload the frame uniform block");
         return;
     }
 
     if (!BindFrameUavTable(list) || !BindSrvTable(list, nullptr))
     {
         Commands.Submit();
+        SetRuntimeFailure("could not bind the frame descriptor tables");
         return;
     }
 
@@ -1888,6 +1923,7 @@ void DX12Renderer3D::RenderFrame()
 
             ID3D12PipelineState* prevPipeline = nullptr;
 
+            bool descriptorsValid = true;
             for (u32 i = 0; i < numVariants; i++)
             {
                 const Variant& variant = Variants[i];
@@ -1919,7 +1955,10 @@ void DX12Renderer3D::RenderFrame()
 
                 const DX12TextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
                 if (!BindSrvTable(list, texture ? texture->Resource.Get() : nullptr))
+                {
+                    descriptorsValid = false;
                     break;
+                }
 
                 DispatchUniform variantConstants{};
                 variantConstants.CurVariant = i;
@@ -1932,6 +1971,12 @@ void DX12Renderer3D::RenderFrame()
                 list->ExecuteIndirect(
                     DispatchSignature.Get(), 1, IndirectArgsBuffer.Get(),
                     offsetof(BinResultHeader, VariantWorkCount) + i * 16, nullptr, 0);
+            }
+            if (!descriptorsValid)
+            {
+                Commands.Submit();
+                SetRuntimeFailure("the shader-visible descriptor heap was exhausted");
+                return;
             }
         }
 
@@ -1985,6 +2030,10 @@ void DX12Renderer3D::RenderFrame()
         FrameInFlight = true;
         FrameReadbackValid = false;
     }
+    else
+    {
+        SetRuntimeFailure("frame command submission failed");
+    }
 }
 
 void DX12Renderer3D::EnsureFrameReadback()
@@ -2005,6 +2054,10 @@ void DX12Renderer3D::EnsureFrameReadback()
         D3D12_RANGE noWrite{ 0, 0 };
         ReadbackBuffer->Unmap(0, &noWrite);
     }
+    else
+    {
+        SetRuntimeFailure("native capture readback mapping failed");
+    }
 
     FrameInFlight = false;
     FrameReadbackValid = true;
@@ -2015,6 +2068,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 2>& lineMeta,
     u64 generation)
 {
+    if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
+        return false;
     if (ComposedOutputValid && ComposedGeneration == generation)
         return true;
     if (!Context || !PipelineCompositor || !CompositionInputBuffer
@@ -2022,6 +2077,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         || !CompositionReadbackBuffer || ComposedColorBuffer[0].empty()
         || ComposedColorBuffer[1].empty())
     {
+        SetRuntimeFailure("required compositor resources are unavailable");
         return false;
     }
     for (const u32* plane : planes)
@@ -2048,7 +2104,10 @@ bool DX12Renderer3D::ComposeStructuredOutput(
 
     ID3D12GraphicsCommandList* list = Commands.Begin();
     if (!list)
+    {
+        SetRuntimeFailure("could not begin a compositor command list");
         return false;
+    }
 
     Descriptors.Reset();
     BoundSrvTexture = nullptr;
@@ -2076,6 +2135,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_DEST);
         Commands.Submit();
+        SetRuntimeFailure("could not bind the compositor descriptor table");
         return false;
     }
 
@@ -2109,13 +2169,19 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         D3D12_RESOURCE_STATE_COPY_DEST);
 
     if (!Commands.Submit())
+    {
+        SetRuntimeFailure("compositor command submission failed");
         return false;
+    }
     Commands.WaitIdle();
 
     D3D12_RANGE readRange{ 0, static_cast<SIZE_T>(outputBytes) };
     void* mapped = nullptr;
     if (FAILED(CompositionReadbackBuffer->Map(0, &readRange, &mapped)) || !mapped)
+    {
+        SetRuntimeFailure("compositor readback mapping failed");
         return false;
+    }
     const u32 nextFrontBuffer = ComposedFrontBuffer ^ 1u;
     std::memcpy(
         ComposedColorBuffer[nextFrontBuffer].data(),

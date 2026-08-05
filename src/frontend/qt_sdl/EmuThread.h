@@ -186,6 +186,9 @@ private:
 
     void updateRenderer();
     void compileShaders();
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    bool handleDX12RuntimeFailure();
+#endif
 
     enum EmuStatusKind
     {

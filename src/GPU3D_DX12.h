@@ -70,8 +70,13 @@ public:
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
+    [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
+    [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
+    {
+        return RuntimeFailureReason;
+    }
 
-    bool NeedsShaderCompile() override { return ShaderStepIdx < ShaderStepCount; }
+    bool NeedsShaderCompile() override { return !RuntimeFailed && ShaderStepIdx < ShaderStepCount; }
     void ShaderCompileStep(int& current, int& count) override;
 
 private:
@@ -251,6 +256,7 @@ private:
         const std::string& body,
         const std::vector<std::string>& defines,
         const char* debugName);
+    void SetRuntimeFailure(std::string reason);
 
     void UpdateClearBitmap();
     bool UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons);
@@ -363,6 +369,8 @@ private:
     bool HiresCoordinates = false;
 
     int ShaderStepIdx = 0;
+    bool RuntimeFailed = false;
+    std::string RuntimeFailureReason;
 
     // Cached for the frame so every dispatch does not re-create descriptors.
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};

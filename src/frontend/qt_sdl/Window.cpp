@@ -1185,12 +1185,14 @@ void MainWindow::setHudEditModeActive(bool active)
 
 void MainWindow::createScreenPanel()
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     connect(
         emuThread,
         &EmuThread::rendererRuntimeFallback,
         this,
-        &MainWindow::onVulkanRuntimeFallback,
+        &MainWindow::onRendererRuntimeFallback,
         Qt::UniqueConnection);
 #endif
     destroyScreenPanel();
@@ -3067,8 +3069,10 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     }
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-void MainWindow::onVulkanRuntimeFallback()
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+void MainWindow::onRendererRuntimeFallback()
 {
     if (!emuInstance)
         return;

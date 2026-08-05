@@ -74,6 +74,12 @@ Per frame, in one command list:
 hitching, and they are rebuilt whenever the internal resolution changes (tile
 geometry is baked in as `#define`s, exactly like the OpenGL renderer).
 
+Pipeline creation, scale-dependent allocation, command submission, descriptor
+binding and readback failures are fatal to the DX12 renderer instance. The
+emulation thread reports the stored reason, invalidates its published output and
+switches to the Software renderer instead of continuing with a partial or stale
+DX12 frame.
+
 ## Differences from the OpenGL compute renderer
 
 These are the only intentional behavioral deviations. Everything else — the
@@ -116,9 +122,11 @@ python tools/ci/audits/check-dx12-shaders.py
 ```
 
 It assembles exactly the sources `DX12Renderer3D::BuildPipeline()` builds — same
-`#define` prologue, same per-variant defines — and runs `fxc.exe` over all 34
-variants at several internal resolutions. It skips cleanly when the Windows SDK
-is not installed.
+`#define` prologue, same per-variant defines — and runs `fxc.exe` over all 35
+variants at several internal resolutions. A warning is a failure as well as a
+compile error: warning-free data flow is required because the same source is
+optimized again by the runtime compiler. The audit skips cleanly when the
+Windows SDK is not installed.
 
 ## Internal resolution
 
@@ -140,9 +148,22 @@ presentation panels. This avoids a DX12-specific swapchain and a third HUD/OSD
 implementation, at the cost of readback bandwidth that grows with the square of
 the scale factor.
 
-## Not yet verified
+## Verified scope
 
-The renderer builds cleanly and every shader variant compiles, but the DX12
-output has **not** been observed running: no ROM has been rendered through this
-path, and no comparison against the OpenGL/Software renderers has been made.
-Treat visual correctness, performance and stability as untested.
+The Windows Release build and all 175 shader combinations (35 pipelines at
+1x, 4x, 5x, 9x and 16x) pass on the repository build path. Runtime validation
+on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
+
+* Metroid Prime Hunters (USA) boot, title/menu capture sequences and attract
+  mode at the default 4x internal resolution;
+* actual target/resource creation and first presentation at 1x, 5x, 9x and
+  the maximum 16x internal resolution;
+* held capture/menu frames and 100-frame sequences without upper/lower screen
+  alternation, stale-frame replay, black capture rows or a DX12 fallback; and
+* comparison with the Software renderer's physical VRAM capture output. The
+  retained structured capture metadata is invalidated at the same CPU/DMA VRAM
+  synchronization boundaries used by the OpenGL capture path.
+
+This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
+families. The offline shader audit and runtime feature probe remain the gates
+for those systems.

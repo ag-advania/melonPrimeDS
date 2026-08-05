@@ -11,7 +11,9 @@ them, so the shader set can be validated on any Windows machine with the SDK.
 Usage:
     python tools/ci/audits/check-dx12-shaders.py [--scales 1,4,5,9,16] [--fxc PATH]
 
-Exits non-zero if any variant fails to compile.
+Exits non-zero if any variant fails to compile or emits an HLSL warning. Runtime
+shader warnings otherwise flood the emulator log and can conceal undefined
+shader data-flow on drivers that optimize the same source differently.
 """
 
 from __future__ import annotations
@@ -155,6 +157,7 @@ def main() -> int:
     scales = [int(part) for part in args.scales.split(",") if part.strip()]
 
     failures = 0
+    warnings = 0
     compiled = 0
 
     with tempfile.TemporaryDirectory(prefix="melonprime-dx12-hlsl-") as tmpdir:
@@ -174,18 +177,27 @@ def main() -> int:
                     text=True,
                 )
                 compiled += 1
+                diagnostics = "\n".join(
+                    part.strip() for part in (result.stdout, result.stderr) if part.strip()
+                )
 
                 if result.returncode != 0:
                     failures += 1
                     print(f"[FAIL] scale={scale} {name}")
-                    print(result.stdout.strip())
-                    print(result.stderr.strip())
+                    print(diagnostics)
+                elif re.search(r"\bwarning\s+X\d+", diagnostics, re.IGNORECASE):
+                    warnings += 1
+                    print(f"[WARN] scale={scale} {name}")
+                    print(diagnostics)
                 elif args.verbose:
                     size = os.path.getsize(output_path)
                     print(f"[ ok ] scale={scale:2d} {name:28s} {size} bytes")
 
-    if failures:
-        print(f"\nFAIL: {failures} of {compiled} DX12 shader variants failed to compile")
+    if failures or warnings:
+        print(
+            f"\nFAIL: {failures} compile failures and {warnings} warning-emitting "
+            f"variants out of {compiled} DX12 shader variants"
+        )
         return 1
 
     print(f"PASS: all {compiled} DX12 shader variants compiled ({len(scales)} scales)")
