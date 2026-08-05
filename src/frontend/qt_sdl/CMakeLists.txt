@@ -198,6 +198,48 @@ elseif (MELONPRIME_ENABLE_METAL)
     set(MELONPRIME_METAL_ACTIVE ON)
 endif()
 
+# --- MelonPrime DirectX 12 backend build switch ------------------------------
+# Windows-only, and a hard build gate like the Vulkan/Metal switches: when
+# inactive, no DX12 source, compile definition or library is added to either
+# target, so the OpenGL/Software/Vulkan/Metal paths are untouched and non-Windows
+# builds never see any of it.
+#
+# d3d12.dll / dxgi.dll / d3dcompiler_47.dll are opened with LoadLibrary() at
+# runtime by DX12Context, so only the SDK headers are needed at build time.
+set(_MELONPRIME_ENABLE_DX12_DEFAULT OFF)
+if (WIN32)
+    set(_MELONPRIME_ENABLE_DX12_DEFAULT ON)
+endif()
+option(MELONPRIME_ENABLE_DX12
+    "Build the MelonPrime DirectX 12 renderer"
+    ${_MELONPRIME_ENABLE_DX12_DEFAULT})
+unset(_MELONPRIME_ENABLE_DX12_DEFAULT)
+
+option(MELONPRIME_FORCE_DISABLE_DX12
+    "Completely exclude all MelonPrime DirectX 12 code"
+    OFF)
+
+set(MELONPRIME_DX12_ACTIVE OFF)
+if (MELONPRIME_FORCE_DISABLE_DX12)
+    set(MELONPRIME_DX12_ACTIVE OFF)
+elseif (MELONPRIME_ENABLE_DX12)
+    if (NOT WIN32)
+        message(FATAL_ERROR "MELONPRIME_ENABLE_DX12 is only supported on Windows")
+    endif()
+
+    include(CheckIncludeFileCXX)
+    check_include_file_cxx(d3d12.h MELONPRIME_HAVE_D3D12_H)
+    check_include_file_cxx(dxgi1_6.h MELONPRIME_HAVE_DXGI1_6_H)
+    check_include_file_cxx(d3dcompiler.h MELONPRIME_HAVE_D3DCOMPILER_H)
+
+    if (MELONPRIME_HAVE_D3D12_H AND MELONPRIME_HAVE_DXGI1_6_H AND MELONPRIME_HAVE_D3DCOMPILER_H)
+        set(MELONPRIME_DX12_ACTIVE ON)
+    else()
+        message(WARNING
+            "Direct3D 12 headers were not found; MelonPrime DX12 is excluded from this build")
+    endif()
+endif()
+
 if (USE_QT6)
     find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
     if (WIN32 AND MINGW AND TARGET WrapRt::WrapRt)
@@ -448,6 +490,35 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "MelonPrime Vulkan backend: enabled (headers: ${MELONPRIME_VULKAN_INCLUDE_DIR})")
 else()
     message(STATUS "MelonPrime Vulkan backend: disabled")
+endif()
+
+if (MELONPRIME_DX12_ACTIVE)
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DX12=1)
+    target_compile_definitions(core PUBLIC MELONPRIME_ENABLE_DX12=1)
+
+    if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        # Debug layer on developer builds only. GPU-based validation stays
+        # gated on a debug build inside DX12Context.cpp because it costs an
+        # order of magnitude in frame time.
+        target_compile_definitions(core PRIVATE MELONPRIME_DX12_ENABLE_DEBUG_LAYER=1)
+    endif()
+
+    target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Context.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_DX12.cpp)
+    target_sources(melonDS PRIVATE
+        MelonPrimeDX12FeatureCheck.cpp)
+
+    # Only the GUID symbols are linked; every DX12/DXGI/D3DCompile entry point
+    # is resolved with GetProcAddress at runtime.
+    target_link_libraries(core PUBLIC dxguid)
+    target_link_libraries(melonDS PRIVATE dxguid)
+
+    message(STATUS "MelonPrime DirectX 12 backend: enabled")
+else()
+    message(STATUS "MelonPrime DirectX 12 backend: disabled")
 endif()
 
 if (MELONPRIME_METAL_ACTIVE)

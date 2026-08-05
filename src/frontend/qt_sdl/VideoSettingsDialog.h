@@ -88,6 +88,9 @@ private:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     QRadioButton* rb3DVulkan = nullptr;
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    QRadioButton* rb3DDX12 = nullptr;
+#endif
 
     int oldRenderer;
     int oldGLDisplay;

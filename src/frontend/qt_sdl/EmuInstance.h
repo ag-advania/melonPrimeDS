@@ -127,6 +127,9 @@ enum
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     renderer3D_Vulkan,
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    renderer3D_DX12,
+#endif
     // MELONPRIME_METAL_COMPUTE_UI_V1
     renderer3D_Max,
 };
