@@ -347,116 +347,123 @@ uint Div64_32_32(uint numHi, uint numLo, uint den)
 
 int InterpolateAttrPersp(int y0, int y1, int ifactor)
 {
-    if (y0 == y1)
-        return y0;
-
-    if (y0 < y1)
-        return y0 + (((y1 - y0) * ifactor) >> YFactorShift);
-    else
-        return y1 + (((y0 - y1) * ((1 << YFactorShift) - ifactor)) >> YFactorShift);
+    int result = y0;
+    if (y0 != y1)
+    {
+        result = y0 < y1
+            ? y0 + (((y1 - y0) * ifactor) >> YFactorShift)
+            : y1 + (((y0 - y1) * ((1 << YFactorShift) - ifactor)) >> YFactorShift);
+    }
+    return result;
 }
 
 int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 {
-    if (y0 == y1)
-        return y0;
-
-#ifndef Rasterise
-    irecip = abs(irecip);
-#endif
-
-    uint mulLo, mulHi;
-    if (y0 < y1)
+    int result = y0;
+    if (y0 != y1)
     {
 #ifndef Rasterise
-        uint offset = uint(abs(i));
-#else
-        uint offset = uint(i);
+        irecip = abs(irecip);
 #endif
-        UMul64(uint(y1 - y0) * offset, uint(irecip), mulHi, mulLo);
-        uint sum = mulLo + (3u << 24);
-        if (sum < mulLo) mulHi += 1u;
-        mulLo = sum;
-        return y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-    }
-    else
-    {
+
+        uint mulLo, mulHi;
+        if (y0 < y1)
+        {
 #ifndef Rasterise
-        uint offset = uint(abs(idiff - i));
+            uint offset = uint(abs(i));
 #else
-        uint offset = uint(idiff - i);
+            uint offset = uint(i);
 #endif
-        UMul64(uint(y0 - y1) * offset, uint(irecip), mulHi, mulLo);
-        uint sum = mulLo + (3u << 24);
-        if (sum < mulLo) mulHi += 1u;
-        mulLo = sum;
-        return y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+            UMul64(uint(y1 - y0) * offset, uint(irecip), mulHi, mulLo);
+            uint sum = mulLo + (3u << 24);
+            if (sum < mulLo) mulHi += 1u;
+            mulLo = sum;
+            result = y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+        }
+        else
+        {
+#ifndef Rasterise
+            uint offset = uint(abs(idiff - i));
+#else
+            uint offset = uint(idiff - i);
+#endif
+            UMul64(uint(y0 - y1) * offset, uint(irecip), mulHi, mulLo);
+            uint sum = mulLo + (3u << 24);
+            if (sum < mulLo) mulHi += 1u;
+            mulLo = sum;
+            result = y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+        }
     }
+    return result;
 }
 
 uint InterpolateZZBuffer(int z0, int z1, int i, int irecip, int idiff)
 {
-    if (z0 == z1)
-        return uint(z0);
-
-    uint base, disp, factor;
-    if (z0 < z1)
+    uint result = uint(z0);
+    if (z0 != z1)
     {
-        base = uint(z0);
-        disp = uint(z1 - z0);
-        factor = uint(abs(i));
-    }
-    else
-    {
-        base = uint(z1);
-        disp = uint(z0 - z1);
-        factor = uint(abs(idiff - i));
-    }
+        uint base, disp, factor;
+        if (z0 < z1)
+        {
+            base = uint(z0);
+            disp = uint(z1 - z0);
+            factor = uint(abs(i));
+        }
+        else
+        {
+            base = uint(z1);
+            disp = uint(z0 - z1);
+            factor = uint(abs(idiff - i));
+        }
 
 #ifdef InterpSpans
-    int shiftl = 0;
-    const int shiftr = 22;
-    if (disp > 0x3FFu)
-    {
-        shiftl = int(FindMSB(disp)) - 9;
-        disp >>= shiftl;
-    }
+        int shiftl = 0;
+        const int shiftr = 22;
+        if (disp > 0x3FFu)
+        {
+            shiftl = int(FindMSB(disp)) - 9;
+            disp >>= shiftl;
+        }
 #else
-    disp >>= 9;
-    const int shiftl = 0;
-    const int shiftr = 13;
+        disp >>= 9;
+        const int shiftl = 0;
+        const int shiftr = 13;
 #endif
-    uint mulLo, mulHi;
+        uint mulLo, mulHi;
 
-    UMul64(disp * factor, uint(abs(irecip)) >> 8, mulHi, mulLo);
+        UMul64(disp * factor, uint(abs(irecip)) >> 8, mulHi, mulLo);
 
-    return base + (((mulLo >> shiftr) | (mulHi << (32 - shiftr))) << shiftl);
+        result = base + (((mulLo >> shiftr) | (mulHi << (32 - shiftr))) << shiftl);
+    }
+    return result;
 }
 
 uint InterpolateZWBuffer(int z0, int z1, int ifactor)
 {
-    if (z0 == z1)
-        return uint(z0);
-
+    uint result = uint(z0);
+    if (z0 != z1)
+    {
 #ifdef Rasterise
-    // along x spans the precision is only 8 bit, so the result always fits
-    if (z0 < z1)
-        return uint(z0) + uint(((z1 - z0) * ifactor) >> YFactorShift);
-    else
-        return uint(z1) + uint(((z0 - z1) * ((1 << YFactorShift) - ifactor)) >> YFactorShift);
+        // along x spans the precision is only 8 bit, so the result always fits
+        if (z0 < z1)
+            result = uint(z0) + uint(((z1 - z0) * ifactor) >> YFactorShift);
+        else
+            result = uint(z1) + uint(((z0 - z1) * ((1 << YFactorShift) - ifactor)) >> YFactorShift);
 #else
-    uint mulLo, mulHi;
-    if (z0 < z1)
-    {
-        UMul64(uint(z1 - z0), uint(ifactor), mulHi, mulLo);
-        return uint(z0) + ((mulLo >> YFactorShift) | (mulHi << (32u - YFactorShift)));
-    }
-    else
-    {
-        UMul64(uint(z0 - z1), uint((1 << YFactorShift) - ifactor), mulHi, mulLo);
-        return uint(z1) + ((mulLo >> YFactorShift) | (mulHi << (32u - YFactorShift)));
-    }
+        uint mulLo, mulHi;
+        if (z0 < z1)
+        {
+            UMul64(uint(z1 - z0), uint(ifactor), mulHi, mulLo);
+            result = uint(z0) + ((mulLo >> YFactorShift) | (mulHi << (32u - YFactorShift)));
+        }
+        else
+        {
+            UMul64(uint(z0 - z1), uint((1 << YFactorShift) - ifactor), mulHi, mulLo);
+            result = uint(z1) + ((mulLo >> YFactorShift) | (mulHi << (32u - YFactorShift)));
+        }
 #endif
+    }
+    return result;
 }
 
 #endif // InterpSpans || Rasterise
@@ -476,9 +483,10 @@ int CalcYFactorY(YSpanSetup span, int i)
 
     uint den = uint(abs(i)) * uint(span.W0d) + uint(abs(span.I1 - span.I0 - i)) * uint(span.W1d);
 
-    if (den == 0u)
-        return 0;
-    return int(Div64_32_32(numHi, numLo, den));
+    int factor = 0;
+    if (den != 0u)
+        factor = int(Div64_32_32(numHi, numLo, den));
+    return factor;
 }
 
 int CalculateDx(int y, YSpanSetup span)
@@ -574,21 +582,21 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        if (spanL.Increment > 0x40000)
+        if (spanL.Increment > int(0x40000u))
             EdgeParams_XMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
         else
             EdgeParams_YMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        if (spanR.Increment > 0x40000)
+        if (spanR.Increment > int(0x40000u))
             EdgeParams_XMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
         else
             EdgeParams_YMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
     }
 
     xspan.CovLInitial = (xspan.EdgeCovL >> 12) & 0x3FF;
-    if (xspan.CovLInitial == 0x3FF)
+    if (xspan.CovLInitial == int(0x3FFu))
         xspan.CovLInitial = 0;
     xspan.CovRInitial = (xspan.EdgeCovR >> 12) & 0x3FF;
-    if (xspan.CovRInitial == 0x3FF)
+    if (xspan.CovRInitial == int(0x3FFu))
         xspan.CovRInitial = 0;
 
     xspan.X0 = xl;
@@ -609,9 +617,11 @@ void main(uint3 id : SV_DispatchThreadID)
 
     bool fillAllEdges = polyalpha < 31u || (DispCnt & (3u << 4)) != 0u;
 
-    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= 0x40000)
+    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= int(0x40000u))
         xspan.Flags |= XSpanSetup_FillLeft;
-    if (fillAllEdges || (spanR.X1 >= spanR.X0 && spanR.Increment > 0x40000) || spanR.Increment == 0)
+    if (fillAllEdges
+        || (spanR.X1 >= spanR.X0 && spanR.Increment > int(0x40000u))
+        || spanR.Increment == 0)
         xspan.Flags |= XSpanSetup_FillRight;
 
     if (spanL.I0 == spanL.I1)
@@ -626,7 +636,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+        int i = (spanL.Increment > int(0x40000u) ? xl : y) - spanL.I0;
         int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
@@ -672,7 +682,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+        int i = (spanR.Increment > int(0x40000u) ? xr : y) - spanR.I0;
         int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 
@@ -755,39 +765,34 @@ inline const std::string BinCombined = R"(
 
 bool BinPolygon(Polygon polygon, int2 topLeft, int2 botRight)
 {
-    if (polygon.YTop > botRight.y || polygon.YBot <= topLeft.y)
-        return false;
+    bool binned = polygon.YTop <= botRight.y && polygon.YBot > topLeft.y;
+    if (binned)
+    {
+        int polygonHeight = polygon.YBot - polygon.YTop;
 
-    int polygonHeight = polygon.YBot - polygon.YTop;
+        // Convex polygons: within a tile that does not contain the direction
+        // change, sampling the top-most and bottom-most span is enough to bound
+        // the polygon horizontally.
+        int polyInnerTopY = clamp(topLeft.y - polygon.YTop, 0, max(polygonHeight - 1, 0));
+        int polyInnerBotY = clamp(botRight.y - polygon.YTop, 0, max(polygonHeight - 1, 0));
 
-    // Convex polygons: within a tile that does not contain the direction
-    // change, sampling the top-most and bottom-most span is enough to bound
-    // the polygon horizontally.
-    int polyInnerTopY = clamp(topLeft.y - polygon.YTop, 0, max(polygonHeight - 1, 0));
-    int polyInnerBotY = clamp(botRight.y - polygon.YTop, 0, max(polygonHeight - 1, 0));
+        XSpanSetup xspanTop = XSpanSetups[polygon.FirstXSpan + polyInnerTopY];
+        XSpanSetup xspanBot = XSpanSetups[polygon.FirstXSpan + polyInnerBotY];
 
-    XSpanSetup xspanTop = XSpanSetups[polygon.FirstXSpan + polyInnerTopY];
-    XSpanSetup xspanBot = XSpanSetups[polygon.FirstXSpan + polyInnerBotY];
+        int minXL = (polygon.XMinY >= topLeft.y && polygon.XMinY <= botRight.y)
+            ? polygon.XMin
+            : min(xspanTop.X0, xspanBot.X0);
+        binned = minXL <= botRight.x;
 
-    int minXL;
-    if (polygon.XMinY >= topLeft.y && polygon.XMinY <= botRight.y)
-        minXL = polygon.XMin;
-    else
-        minXL = min(xspanTop.X0, xspanBot.X0);
-
-    if (minXL > botRight.x)
-        return false;
-
-    int maxXR;
-    if (polygon.XMaxY >= topLeft.y && polygon.XMaxY <= botRight.y)
-        maxXR = polygon.XMax;
-    else
-        maxXR = max(xspanTop.X1, xspanBot.X1) - 1;
-
-    if (maxXR < topLeft.x)
-        return false;
-
-    return true;
+        if (binned)
+        {
+            int maxXR = (polygon.XMaxY >= topLeft.y && polygon.XMaxY <= botRight.y)
+                ? polygon.XMax
+                : max(xspanTop.X1, xspanBot.X1) - 1;
+            binned = maxXR >= topLeft.x;
+        }
+    }
+    return binned;
 }
 
 groupshared uint mergedMaskShared;
@@ -965,6 +970,7 @@ int CalcYFactorX(XSpanSetup span, int x)
 {
     x -= span.X0;
 
+    int factor = 0;
     if (span.X0 != span.X1)
     {
         uint numLo = uint(x) * uint(span.W0);
@@ -974,12 +980,10 @@ int CalcYFactorX(XSpanSetup span, int x)
 
         uint den = uint(x) * uint(span.W0) + uint(span.X1 - span.X0 - x) * uint(span.W1);
 
-        if (den == 0u)
-            return 0;
-        return int(Div64_32_32(numHi, numLo, den));
+        if (den != 0u)
+            factor = int(Div64_32_32(numHi, numLo, den));
     }
-
-    return 0;
+    return factor;
 }
 
 #ifdef UseTexture
@@ -989,14 +993,15 @@ int CalcYFactorX(XSpanSetup span, int x)
 // exact.
 int WrapTexCoord(int c, int size, uint mode)
 {
+    int wrapped = clamp(c, 0, size - 1);
     if (mode == 1u)
-        return c & (size - 1);
-    if (mode == 2u)
+        wrapped = c & (size - 1);
+    else if (mode == 2u)
     {
         int m = c & ((size << 1) - 1);
-        return (m >= size) ? ((size << 1) - 1 - m) : m;
+        wrapped = (m >= size) ? ((size << 1) - 1 - m) : m;
     }
-    return clamp(c, 0, size - 1);
+    return wrapped;
 }
 
 uint4 SampleTexture(int u, int v, uint layer)

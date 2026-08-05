@@ -21,6 +21,8 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <string>
+
 #include "GPU_Soft.h"
 
 namespace melonDS
@@ -50,6 +52,8 @@ public:
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
+    [[nodiscard]] bool HasRuntimeFailure() const noexcept;
+    [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept;
 
     [[nodiscard]] DX12Renderer3D* GetDX12Renderer3D() noexcept;
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;

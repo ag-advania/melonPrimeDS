@@ -335,6 +335,10 @@ void EmuThread::run()
         // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
         // GetRenderer().NeedsShaderCompile() is a vtable lookup + indirect call
         // (~15-25 cyc) that returns false 100% of the time after initial compile.
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        if (UNLIKELY(handleDX12RuntimeFailure()))
+            shadersReady = true;
+#endif
         bool needsCompile = UNLIKELY(!shadersReady)
             && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
 #else
@@ -1534,3 +1538,29 @@ void EmuThread::compileShaders()
         (SDL_GetPerformanceCounter() - startTime) * perfCountsSec < 1.0 / 6.0);
     emuInstance->osdAddMessage(0, "Compiling shader %d/%d", currentShader + 1, shadersCount);
 }
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+bool EmuThread::handleDX12RuntimeFailure()
+{
+    auto* dx12 = dynamic_cast<DX12Renderer*>(&emuInstance->nds->GPU.GetRenderer());
+    if (!dx12 || !dx12->HasRuntimeFailure())
+        return false;
+
+    const std::string reason = dx12->GetRuntimeFailureReason();
+    MelonPrime::DX12FeatureCheck::ReportRuntimeFailure(reason);
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "Renderer fallback requested=DX12 actual=Software stage=runtime reason=%s\n",
+        reason.empty() ? "unspecified DX12 renderer failure" : reason.c_str());
+
+    emuInstance->invalidateRendererOutput();
+    videoRenderer = renderer3D_Software;
+    updateRenderer();
+
+    const QByteArray failureText =
+        MelonPrime::UiText::Tr("DirectX 12 initialization failed").toUtf8();
+    emuInstance->osdAddMessage(0, "%s", failureText.constData());
+    emit rendererRuntimeFallback();
+    return true;
+}
+#endif

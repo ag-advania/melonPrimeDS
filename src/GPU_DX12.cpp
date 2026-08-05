@@ -126,6 +126,19 @@ void DX12Renderer::ShaderCompileStep(int& current, int& count)
         Rend3D->ShaderCompileStep(current, count);
 }
 
+bool DX12Renderer::HasRuntimeFailure() const noexcept
+{
+    const auto* dx12 = GetDX12Renderer3D();
+    return dx12 && dx12->HasRuntimeFailure();
+}
+
+const std::string& DX12Renderer::GetRuntimeFailureReason() const noexcept
+{
+    static const std::string empty;
+    const auto* dx12 = GetDX12Renderer3D();
+    return dx12 ? dx12->GetRuntimeFailureReason() : empty;
+}
+
 DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() noexcept
 {
     return dynamic_cast<DX12Renderer3D*>(Rend3D.get());

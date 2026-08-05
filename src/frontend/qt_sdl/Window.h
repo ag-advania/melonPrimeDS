@@ -229,8 +229,10 @@ private:
     void beginModalPresentationPause();
     void endModalPresentationPause();
 #endif
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    void onVulkanRuntimeFallback();
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    void onRendererRuntimeFallback();
 #endif
 #ifdef MELONPRIME_DS
     void localizeMenuText();
