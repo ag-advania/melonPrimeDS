@@ -40,6 +40,9 @@
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "MelonPrimeDX12FeatureCheck.h"
+#endif
 #endif // MELONPRIME_DS
 
 
@@ -84,7 +87,12 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const bool vulkanRenderer = renderer == renderer3D_Vulkan;
 #endif
-    ui->cbGLDisplay->setEnabled(softwareRenderer);
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    const bool dx12Renderer = renderer == renderer3D_DX12;
+#else
+    const bool dx12Renderer = false;
+#endif
+    ui->cbGLDisplay->setEnabled(softwareRenderer || dx12Renderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
     // This controls the Software renderer worker thread. Native Metal and
@@ -94,7 +102,7 @@ void VideoSettingsDialog::setEnabled()
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 
     const QString vulkanOutsideMatchMessage = MelonPrime::UiText::Tr(
         "Vulkan forces software rendering outside matches; the saved setting is not changed.");
@@ -134,7 +142,7 @@ void VideoSettingsDialog::setEnabled()
     ui->cbxGLResolution->setToolTip(resolutionDescription);
     ui->cbxGLResolution->setWhatsThis(resolutionDescription);
 #else
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || dx12Renderer);
 #endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
@@ -149,7 +157,10 @@ void VideoSettingsDialog::setEnabled()
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
     // compute mirror in the same coordinate mode.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer);
+    // The DX12 renderer follows the OpenGL compute renderer's design, so it
+    // shares that renderer's coordinate-mode setting rather than the
+    // BetterPolygons splitting used by the raster paths.
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -243,6 +254,39 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->activate();
     adjustSize();
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Same approach as the Vulkan block above: the upstream .ui rows and the
+    // persisted numeric renderer IDs stay untouched, and DX12 is appended after
+    // every renderer that already exists on this platform. Metal is Apple-only,
+    // so only the Vulkan row has to be accounted for here.
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    constexpr int dx12Row = 5;
+#else
+    constexpr int dx12Row = 4;
+#endif
+    rb3DDX12 = new QRadioButton(ui->groupBox);
+    rb3DDX12->setObjectName(QStringLiteral("rb3DDX12"));
+    rb3DDX12->setText(MelonPrime::UiText::Tr("DirectX 12"));
+    rb3DDX12->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Native DirectX 12 renderer. 3D rendering runs on the GPU while the 2D engines stay on the software path.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
+    grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, dx12Row + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, dx12Row + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, dx12Row + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, dx12Row + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, dx12Row + 4, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #else
@@ -301,6 +345,18 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         vulkanProbe.Available
             ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
             : QString::fromStdString(vulkanProbe.Reason)));
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Reopening this dialog is the explicit retry boundary for a cached DX12
+    // runtime failure, exactly like Vulkan above.
+    MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
+    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+    rb3DDX12->setEnabled(dx12Probe.Available);
+    rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
+        dx12Probe.Available
+            ? QStringLiteral("Native DirectX 12 renderer. In development: geometry rasterization is not implemented yet, so only the 3D background layer is drawn.")
+            : QString::fromStdString(dx12Probe.Reason)));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -412,6 +468,10 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (renderer == renderer3D_Vulkan)
         MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (renderer == renderer3D_DX12)
+        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
 #endif
     cfg.SetInt("3D.Renderer", renderer);
 

@@ -53,6 +53,11 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "GPU_DX12.h"
+#include "MelonPrimeLocalization.h"
+#include "MelonPrimeDX12FeatureCheck.h"
+#endif
 
 #include "Savestate.h"
 #include "EmuInstance.h"
@@ -1424,6 +1429,27 @@ void EmuThread::updateRenderer()
                 const QByteArray vulkanFailureText =
                     MelonPrime::UiText::Tr("Vulkan initialization failed").toUtf8();
                 emuInstance->osdAddMessage(0, "%s", vulkanFailureText.constData());
+                videoRenderer = renderer3D_Software;
+                emit rendererRuntimeFallback();
+            }
+            break;
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        case renderer3D_DX12:
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "Renderer selection requested=DX12 presentation=software-2D");
+            nds->SetRenderer(std::make_unique<DX12Renderer>(*nds));
+            if (dynamic_cast<DX12Renderer*>(&nds->GetRenderer()) == nullptr)
+            {
+                MelonPrime::DX12FeatureCheck::ReportRuntimeFailure(
+                    "DX12 3D renderer initialization failed");
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "Renderer fallback requested=DX12 actual=Software stage=3D-renderer-init");
+                const QByteArray dx12FailureText =
+                    MelonPrime::UiText::Tr("DirectX 12 initialization failed").toUtf8();
+                emuInstance->osdAddMessage(0, "%s", dx12FailureText.constData());
                 videoRenderer = renderer3D_Software;
                 emit rendererRuntimeFallback();
             }
