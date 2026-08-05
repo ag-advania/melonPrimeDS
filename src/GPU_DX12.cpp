@@ -80,12 +80,12 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
 }
 
-RendererOutput DX12Renderer::GetOutput()
+void DX12Renderer::VBlank()
 {
     auto* dx12 = GetDX12Renderer3D();
     StructuredVulkanFrameView view{};
     if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
-        return {};
+        return;
 
     const std::array<const u32*, 6> planes = {
         view.Plane[0][0],
@@ -99,13 +99,18 @@ RendererOutput DX12Renderer::GetOutput()
         view.LineMeta[0],
         view.LineMeta[1],
     };
-    const bool composed = dx12->ComposeStructuredOutput(
-        planes,
-        lineMeta,
-        view.Generation);
+    dx12->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+}
+
+RendererOutput DX12Renderer::GetOutput()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    if (!dx12)
+        return {};
+
     const u32* top = dx12->GetComposedScreen(0);
     const u32* bottom = dx12->GetComposedScreen(1);
-    if ((!composed && (!top || !bottom)) || !top || !bottom)
+    if (!top || !bottom)
         return {};
 
     return RendererOutput::CpuBgra(
