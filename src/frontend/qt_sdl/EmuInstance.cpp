@@ -148,7 +148,11 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     cheatFile = nullptr;
     cheatsOn = localCfg.GetBool("EnableCheats");
 
+#ifdef MELONPRIME_DS
+    doLimitFPS.store(globalCfg.GetBool("LimitFPS"), std::memory_order_relaxed);
+#else
     doLimitFPS = globalCfg.GetBool("LimitFPS");
+#endif
 
     double val = globalCfg.GetDouble("TargetFPS");
     if (val == 0.0)
@@ -175,7 +179,11 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     }
     else slowmoFPS = val;
 
+#ifdef MELONPRIME_DS
+    doAudioSync.store(globalCfg.GetBool("AudioSync"), std::memory_order_relaxed);
+#else
     doAudioSync = globalCfg.GetBool("AudioSync");
+#endif
 
     mpAudioMode = globalCfg.GetInt("MP.AudioMode");
 

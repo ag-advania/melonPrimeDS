@@ -29,6 +29,7 @@
 #include "Config.h"
 #include "SaveManager.h"
 #ifdef MELONPRIME_DS
+#include <atomic>
 #include <cstdint>
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
@@ -384,14 +385,22 @@ public:
     std::unique_ptr<SaveManager> gbaSave;
     std::unique_ptr<SaveManager> firmwareSave;
 
+#ifdef MELONPRIME_DS
+    std::atomic_bool doLimitFPS{true};
+#else
     bool doLimitFPS;
+#endif
     double curFPS;
     double targetFPS;
     double fastForwardFPS;
     double slowmoFPS;
     bool fastForwardToggled;
     bool slowmoToggled;
+#ifdef MELONPRIME_DS
+    std::atomic_bool doAudioSync{false};
+#else
     bool doAudioSync;
+#endif
 private:
 
     std::unique_ptr<melonDS::Savestate> backupState;
@@ -468,10 +477,15 @@ private:
     // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,
     // uint16_t / uint64_t provide single-instruction bitwise ops with zero overhead.
     // Estimated saving: ~1400-2400 cyc/frame in inputProcess() alone.
-    uint16_t keyInputMask, joyInputMask;
+    // Qt publishes keyboard/mouse state from the GUI thread while the
+    // emulation thread consumes it. Keep the published masks atomic; the
+    // joystick and combined masks remain emulation-thread-owned.
+    std::atomic<uint16_t> keyInputMask{0xFFF};
+    uint16_t joyInputMask;
     uint16_t inputMask;
 
-    uint64_t keyHotkeyMask, joyHotkeyMask;
+    std::atomic<uint64_t> keyHotkeyMask{0};
+    uint64_t joyHotkeyMask;
     uint64_t hotkeyMask, lastHotkeyMask;
     uint64_t hotkeyPress, hotkeyRelease;
     uint64_t joyHotkeyPress;
@@ -479,7 +493,7 @@ private:
     uint64_t lastJoyHotkeyMask;
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
-    uint64_t wheelHotkeyPulseMask = 0;
+    std::atomic<uint64_t> wheelHotkeyPulseMask{0};
 #else
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;
