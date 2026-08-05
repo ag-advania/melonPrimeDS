@@ -60,8 +60,11 @@ void SoftRenderer::Reset()
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
+    StructuredEngineCaptureBacked3DMask.fill(0);
+    StructuredScreenCaptureBacked3DMask.fill(0);
     StructuredScreenLineMeta.fill(0);
     StructuredCapturePlanes.fill(0);
+    StructuredCaptureBacked3DMask.fill(0);
     StructuredCaptureLineValid.fill(0);
     StructuredCaptureLineUses3D.fill(0);
     StructuredCaptureLineGeneration.fill(0);
@@ -172,6 +175,12 @@ void SoftRenderer::DrawScanline(u32 line)
         {
             StructuredEngineLineUsesCapture3D[static_cast<std::size_t>(line)] = 0;
             StructuredEngineLineUsesCapture3D[192u + static_cast<std::size_t>(line)] = 0;
+            const std::size_t rowBase = static_cast<std::size_t>(line) * 256u;
+            std::fill_n(StructuredEngineCaptureBacked3DMask.data() + rowBase, 256u, 0u);
+            std::fill_n(
+                StructuredEngineCaptureBacked3DMask.data() + StructuredPixelCount + rowBase,
+                256u,
+                0u);
         }
 #else
         Output3D = Rend3D->GetLine(line);
@@ -842,6 +851,9 @@ void SoftRenderer::StoreStructuredCaptureLine(
         StructuredCapturePlanes[captureBase + destinationIndex] = plane0;
         StructuredCapturePlanes[captureBase + StructuredPixelCount + destinationIndex] = plane1;
         StructuredCapturePlanes[captureBase + (2u * StructuredPixelCount) + destinationIndex] = control;
+        StructuredCaptureBacked3DMask[
+            static_cast<std::size_t>(destinationBank) * StructuredPixelCount + destinationIndex] =
+            (((control >> 24u) & 0x40u) != 0u) ? 1u : 0u;
         lineUses3D = lineUses3D || (((control >> 24u) & 0x40u) != 0u);
         wroteMetadata = true;
     }
@@ -859,9 +871,14 @@ void SoftRenderer::StoreStructuredCaptureLine(
     }
 }
 
-bool SoftRenderer::DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress)
+bool SoftRenderer::DrawStructuredCapturePixel(
+    u32 engine,
+    u32 line,
+    u32 x,
+    u32* destination,
+    u32 flatByteAddress)
 {
-    if (!UseStructuredVulkan2D() || destination == nullptr || engine >= 2u)
+    if (!UseStructuredVulkan2D() || destination == nullptr || engine >= 2u || line >= 192u || x >= 256u)
         return false;
 
     const u32 maskedAddress = flatByteAddress & (engine != 0u ? 0x1FFFFu : 0x7FFFFu);
@@ -895,8 +912,11 @@ bool SoftRenderer::DrawStructuredCapturePixel(u32 engine, u32* destination, u32 
             PushStructuredRawPixel(destination, 0x40000000u);
             if ((controlAlpha & 0x80u) != 0u && above != 0u)
                 PushStructuredRawPixel(destination, above);
-            const u32 line = std::min<u32>(GPU.VCount, 191u);
             StructuredEngineLineUsesCapture3D[static_cast<std::size_t>(engine) * 192u + line] = 1;
+            StructuredEngineCaptureBacked3DMask[
+                static_cast<std::size_t>(engine) * StructuredPixelCount
+                + static_cast<std::size_t>(line) * 256u
+                + x] = 1u;
             return true;
         }
         if ((controlAlpha & 0x80u) != 0u && below != 0u)
@@ -936,6 +956,14 @@ void SoftRenderer::BuildStructuredScreenLine(
                 StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + rowBase,
                 256u * sizeof(u32));
         }
+        std::memcpy(
+            StructuredScreenCaptureBacked3DMask.data()
+                + static_cast<std::size_t>(screen) * StructuredPixelCount
+                + rowBase,
+            StructuredEngineCaptureBacked3DMask.data()
+                + static_cast<std::size_t>(engine) * StructuredPixelCount
+                + rowBase,
+            256u * sizeof(u8));
         const u16 brightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
         lineMeta =
             (1u << 16u)
@@ -964,6 +992,12 @@ void SoftRenderer::BuildStructuredScreenLine(
                 StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0u;
                 StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] = 0x40000000u;
             }
+            std::fill_n(
+                StructuredScreenCaptureBacked3DMask.data()
+                    + static_cast<std::size_t>(screen) * StructuredPixelCount
+                    + rowBase,
+                256u,
+                0u);
             const u16 brightness = GPU.MasterBrightnessA;
             lineMeta =
                 (2u << 16u)
@@ -985,6 +1019,14 @@ void SoftRenderer::BuildStructuredScreenLine(
                     StructuredCapturePlanes.data() + captureBase + (plane * StructuredPixelCount) + rowBase,
                     256u * sizeof(u32));
             }
+            std::memcpy(
+                StructuredScreenCaptureBacked3DMask.data()
+                    + static_cast<std::size_t>(screen) * StructuredPixelCount
+                    + rowBase,
+                StructuredCaptureBacked3DMask.data()
+                    + static_cast<std::size_t>(bank) * StructuredPixelCount
+                    + rowBase,
+                256u * sizeof(u8));
             const u16 brightness = GPU.MasterBrightnessA;
             lineMeta =
                 (2u << 16u)
@@ -998,6 +1040,12 @@ void SoftRenderer::BuildStructuredScreenLine(
 
     if (!copiedStructured)
     {
+        std::fill_n(
+            StructuredScreenCaptureBacked3DMask.data()
+                + static_cast<std::size_t>(screen) * StructuredPixelCount
+                + rowBase,
+            256u,
+            0u);
         for (std::size_t x = 0; x < 256u; ++x)
         {
             const std::size_t pixelIndex = rowBase + x;
@@ -1026,6 +1074,8 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
         const std::size_t screenBase = screen * 3u * StructuredPixelCount;
         for (std::size_t plane = 0; plane < 3u; ++plane)
             view.Plane[screen][plane] = StructuredScreenPlanes.data() + screenBase + (plane * StructuredPixelCount);
+        view.CaptureBacked3DMask[screen] =
+            StructuredScreenCaptureBacked3DMask.data() + screen * StructuredPixelCount;
         view.LineMeta[screen] = StructuredScreenLineMeta.data() + (screen * 192u);
     }
     view.Capture3DSource = StructuredCapture3DSource.data();

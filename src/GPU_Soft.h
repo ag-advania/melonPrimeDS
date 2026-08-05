@@ -61,6 +61,7 @@ public:
     struct StructuredVulkanFrameView
     {
         const u32* Plane[2][3]{};
+        const u8* CaptureBacked3DMask[2]{};
         const u32* LineMeta[2]{};
         const u32* Capture3DSource = nullptr;
         const u8* CaptureLineUses3D = nullptr;
@@ -99,8 +100,11 @@ private:
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
+    std::array<u8, 2u * StructuredPixelCount> StructuredEngineCaptureBacked3DMask{};
+    std::array<u8, 2u * StructuredPixelCount> StructuredScreenCaptureBacked3DMask{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
     std::array<u32, 4u * 3u * StructuredPixelCount> StructuredCapturePlanes{};
+    std::array<u8, 4u * StructuredPixelCount> StructuredCaptureBacked3DMask{};
     std::array<u8, 4u * 192u> StructuredCaptureLineValid{};
     std::array<u8, 4u * 192u> StructuredCaptureLineUses3D{};
     std::array<u64, 4u * 192u> StructuredCaptureLineGeneration{};
@@ -141,7 +145,12 @@ private:
         u32 sourceBBank,
         bool sourceBFromVram,
         const u16* captureOutput);
-    [[nodiscard]] bool DrawStructuredCapturePixel(u32 engine, u32* destination, u32 flatByteAddress);
+    [[nodiscard]] bool DrawStructuredCapturePixel(
+        u32 engine,
+        u32 line,
+        u32 x,
+        u32* destination,
+        u32 flatByteAddress);
     void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
 #endif
 

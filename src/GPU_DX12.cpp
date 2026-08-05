@@ -27,34 +27,6 @@
 namespace melonDS
 {
 
-namespace
-{
-
-bool ScreenUsesDominant3D(const u32* control)
-{
-    if (!control)
-        return false;
-
-    constexpr u32 sampleColumns = 32u;
-    constexpr u32 sampleRows = 24u;
-    u32 samplesUsing3D = 0u;
-    for (u32 sampleY = 0; sampleY < sampleRows; ++sampleY)
-    {
-        const u32 y = sampleY * (192u / sampleRows);
-        for (u32 sampleX = 0; sampleX < sampleColumns; ++sampleX)
-        {
-            const u32 x = sampleX * (256u / sampleColumns);
-            const u32 controlAlpha = control[y * 256u + x] >> 24u;
-            if ((controlAlpha & 0x40u) != 0u)
-                ++samplesUsing3D;
-        }
-    }
-
-    return samplesUsing3D > (sampleColumns * sampleRows) / 2u;
-}
-
-} // namespace
-
 DX12Renderer::DX12Renderer(melonDS::NDS& nds)
     : SoftRenderer(nds)
 {
@@ -127,16 +99,25 @@ RendererOutput DX12Renderer::GetOutput()
         view.LineMeta[0],
         view.LineMeta[1],
     };
+    const std::array<const u8*, 2> captureBacked3DMask = {
+        view.CaptureBacked3DMask[0],
+        view.CaptureBacked3DMask[1],
+    };
+    void* nativeTop = nullptr;
+    void* nativeBottom = nullptr;
+    if (!SoftRenderer::GetFramebuffers(&nativeTop, &nativeBottom))
+        return {};
+    const std::array<const u32*, 2> nativeScreens = {
+        static_cast<const u32*>(nativeTop),
+        static_cast<const u32*>(nativeBottom),
+    };
 
-    const bool bothScreensUseDominant3D =
-        ScreenUsesDominant3D(view.Plane[0][2])
-        && ScreenUsesDominant3D(view.Plane[1][2]);
     const bool composed = dx12->ComposeStructuredOutput(
         planes,
+        captureBacked3DMask,
+        nativeScreens,
         lineMeta,
-        view.Generation,
-        GPU.ScreenSwap,
-        bothScreensUseDominant3D);
+        view.Generation);
     const u32* top = dx12->GetComposedScreen(0);
     const u32* bottom = dx12->GetComposedScreen(1);
     if ((!composed && (!top || !bottom)) || !top || !bottom)
