@@ -10,6 +10,7 @@
 
 - RawInput is the primary relative-aim path. Preserve cursor clip/unclip and focus-loss cleanup.
 - Windows-only sources and APIs remain guarded and excluded from non-Windows builds.
+- The DirectX 12 renderer is Windows-only and gated on `MELONPRIME_ENABLE_DX12`. Keep every DX12 symbol behind `#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)`, resolve D3D12/DXGI/D3DCompile entry points at runtime rather than linking them, and keep the backend paired with the software 2D renderer. Details: [`docs/features/rendering/dx12-backend.md`](../../docs/features/rendering/dx12-backend.md).
 
 ## macOS
 

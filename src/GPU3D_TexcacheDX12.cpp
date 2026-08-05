@@ -120,12 +120,14 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
     {
         // The ring filled up mid-frame. Submitting and waiting is expensive but
         // strictly better than dropping the texture and rendering garbage.
+        //
+        // The pending barriers have to be recorded into the list that is about
+        // to be submitted: dropping them would leave already-copied arrays in
+        // COPY_DEST while the rasterizer samples them.
+        FlushUploadBarriers();
         if (!Commands->Flush())
             return;
         Uploads->Reset();
-        // Every array the previous list transitioned is retired now; the state
-        // tracking below still describes the resources correctly.
-        PendingBarriers.clear();
         mapped = Uploads->Allocate(totalBytes, kPlacementAlignment, offset);
         if (!mapped)
         {
