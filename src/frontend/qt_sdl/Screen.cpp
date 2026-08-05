@@ -1651,6 +1651,19 @@ void ScreenPanelNative::finishLatestFramePaint()
             Qt::QueuedConnection);
     }
 }
+
+void ScreenPanelNative::invalidateRendererOutput()
+{
+    bufferLock.lock();
+    hasBuffers = false;
+    topBuffer = nullptr;
+    bottomBuffer = nullptr;
+    bufferWidth = 256;
+    bufferHeight = 192;
+    bufferLock.unlock();
+
+    requestLatestFrameUpdate();
+}
 #endif
 
 void ScreenPanelNative::drawScreen()
@@ -1660,11 +1673,12 @@ void ScreenPanelNative::drawScreen()
     auto emuThread = emuInstance->getEmuThread();
     if (!emuThread->emuIsActive())
     {
+#ifdef MELONPRIME_DS
+        invalidateRendererOutput();
+#else
         bufferLock.lock();
         hasBuffers = false;
         bufferLock.unlock();
-#ifdef MELONPRIME_DS
-        requestLatestFrameUpdate();
 #endif
         return;
     }

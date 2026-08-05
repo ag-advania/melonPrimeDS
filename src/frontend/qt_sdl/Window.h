@@ -70,6 +70,9 @@ public:
     void releaseGL();
 
     void drawScreen();
+#ifdef MELONPRIME_DS
+    void invalidateRendererOutput();
+#endif
 
     bool preloadROMs(QStringList file, QStringList gbafile, bool boot);
     QStringList splitArchivePath(const QString& filename, bool useMemberSyntax);

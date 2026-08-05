@@ -508,6 +508,17 @@ void EmuInstance::drawScreen()
     }
 }
 
+#ifdef MELONPRIME_DS
+void EmuInstance::invalidateRendererOutput()
+{
+    for (int i = 0; i < kMaxWindows; i++)
+    {
+        if (windowList[i])
+            windowList[i]->invalidateRendererOutput();
+    }
+}
+#endif
+
 
 int EmuInstance::lastSep(const std::string& path)
 {

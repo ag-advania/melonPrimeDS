@@ -95,6 +95,9 @@ public:
     virtual void drawScreen() {}// = 0;
 
 #ifdef MELONPRIME_DS
+    // Drop any borrowed RendererOutput pointers before the renderer that owns
+    // them is replaced. GPU-owned presenters override this only if needed.
+    virtual void invalidateRendererOutput() {}
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -340,6 +343,9 @@ public:
     virtual ~ScreenPanelNative();
 
     void drawScreen() override;
+#ifdef MELONPRIME_DS
+    void invalidateRendererOutput() override;
+#endif
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
     // ScreenPanelNative has no wl_surface of its own (unlike ScreenPanelGL, it

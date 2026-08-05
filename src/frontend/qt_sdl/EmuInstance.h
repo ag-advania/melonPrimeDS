@@ -193,6 +193,9 @@ public:
     void releaseGL();
 
     void drawScreen();
+#ifdef MELONPRIME_DS
+    void invalidateRendererOutput();
+#endif
 
     // return: empty string = setup OK, non-empty = error message
     QString verifySetup();
