@@ -164,6 +164,8 @@ void DX12Renderer3D::Stop()
     FrameReadbackValid = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    ComposedScreenSwap = false;
+    DuplicateScreenStabilizationActive = false;
 }
 
 void DX12Renderer3D::Reset()
@@ -176,6 +178,8 @@ void DX12Renderer3D::Reset()
     FrameReadbackValid = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    ComposedScreenSwap = false;
+    DuplicateScreenStabilizationActive = false;
     ColorBuffer.fill(0);
     for (auto& buffer : ComposedColorBuffer)
         std::fill(buffer.begin(), buffer.end(), 0u);
@@ -443,6 +447,8 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     ComposedFrontBuffer = 0;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    ComposedScreenSwap = false;
+    DuplicateScreenStabilizationActive = false;
 }
 
 bool DX12Renderer3D::CreateScaleDependentResources()
@@ -2013,7 +2019,9 @@ void DX12Renderer3D::EnsureFrameReadback()
 bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 6>& planes,
     const std::array<const u32*, 2>& lineMeta,
-    u64 generation)
+    u64 generation,
+    bool screenSwap,
+    bool bothScreensUseDominant3D)
 {
     if (ComposedOutputValid && ComposedGeneration == generation)
         return true;
@@ -2124,7 +2132,39 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     D3D12_RANGE noWrite{ 0, 0 };
     CompositionReadbackBuffer->Unmap(0, &noWrite);
 
+    // MPH menus alternate the physical owner of the live 3D engine while the
+    // other LCD displays retained 3D. The compact DX12 compositor has only the
+    // current FinalFB, so replacing dominant 3D slots on both screens would
+    // duplicate the current owner onto both LCDs every other frame. Once that
+    // alternating pattern is observed, update only the live owner and retain
+    // the already composed non-live screen from the preceding frame.
+    const bool screenSwapToggled = ComposedOutputValid && screenSwap != ComposedScreenSwap;
+    if (bothScreensUseDominant3D
+        && ComposedOutputValid
+        && (DuplicateScreenStabilizationActive || screenSwapToggled))
+    {
+        if (!DuplicateScreenStabilizationActive)
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "DX12: stabilizing alternating dual-screen 3D ownership\n");
+        }
+        const std::size_t screenPixels = static_cast<std::size_t>(ScreenWidth)
+            * static_cast<std::size_t>(ScreenHeight);
+        const u32 retainedScreen = screenSwap ? 1u : 0u;
+        std::memcpy(
+            ComposedColorBuffer[nextFrontBuffer].data() + retainedScreen * screenPixels,
+            ComposedColorBuffer[ComposedFrontBuffer].data() + retainedScreen * screenPixels,
+            screenPixels * sizeof(u32));
+        DuplicateScreenStabilizationActive = true;
+    }
+    else if (!bothScreensUseDominant3D)
+    {
+        DuplicateScreenStabilizationActive = false;
+    }
+
     ComposedGeneration = generation;
+    ComposedScreenSwap = screenSwap;
     ComposedFrontBuffer = nextFrontBuffer;
     ComposedOutputValid = true;
     return true;

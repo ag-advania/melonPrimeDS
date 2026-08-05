@@ -66,7 +66,9 @@ public:
     bool ComposeStructuredOutput(
         const std::array<const u32*, 6>& planes,
         const std::array<const u32*, 2>& lineMeta,
-        u64 generation);
+        u64 generation,
+        bool screenSwap,
+        bool bothScreensUseDominant3D);
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
@@ -373,6 +375,8 @@ private:
     bool FrameReadbackValid = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
+    bool ComposedScreenSwap = false;
+    bool DuplicateScreenStabilizationActive = false;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
     std::array<std::vector<u32>, 2> ComposedColorBuffer;
