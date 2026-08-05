@@ -1309,7 +1309,10 @@ void MainWindow::createScreenPanel()
 #endif
     panel->osdSetEnabled(showOSD);
 
-    connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(repaint()));
+    // update() coalesces obsolete paint requests and samples the newest
+    // renderer output when Qt is ready. repaint() forced every queued request
+    // to paint immediately, allowing uncapped emulation to delay input events.
+    connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(update()));
 
     connect(this, SIGNAL(screenLayoutChange()), panel, SLOT(onScreenLayoutChanged()));
     emit screenLayoutChange();
