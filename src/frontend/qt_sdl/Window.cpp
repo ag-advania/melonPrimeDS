@@ -962,8 +962,15 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actScreenFiltering->setChecked(windowCfg.GetBool("ScreenFilter"));
         actShowOSD->setChecked(showOSD);
 
+#ifdef MELONPRIME_DS
+        actLimitFramerate->setChecked(
+            emuInstance->doLimitFPS.load(std::memory_order_relaxed));
+        actAudioSync->setChecked(
+            emuInstance->doAudioSync.load(std::memory_order_relaxed));
+#else
         actLimitFramerate->setChecked(emuInstance->doLimitFPS);
         actAudioSync->setChecked(emuInstance->doAudioSync);
+#endif
 #ifdef MELONPRIME_DS
         actMetroidFixSF->setChecked(localCfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze));
         actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
@@ -2776,14 +2783,22 @@ void MainWindow::onChangeShowOSD(bool checked)
 
 void MainWindow::onChangeLimitFramerate(bool checked)
 {
+#ifdef MELONPRIME_DS
+    emuInstance->doLimitFPS.store(checked, std::memory_order_relaxed);
+#else
     emuInstance->doLimitFPS = checked;
-    globalCfg.SetBool("LimitFPS", emuInstance->doLimitFPS);
+#endif
+    globalCfg.SetBool("LimitFPS", checked);
 }
 
 void MainWindow::onChangeAudioSync(bool checked)
 {
+#ifdef MELONPRIME_DS
+    emuInstance->doAudioSync.store(checked, std::memory_order_relaxed);
+#else
     emuInstance->doAudioSync = checked;
-    globalCfg.SetBool("AudioSync", emuInstance->doAudioSync);
+#endif
+    globalCfg.SetBool("AudioSync", checked);
 }
 
 

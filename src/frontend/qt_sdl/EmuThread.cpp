@@ -204,6 +204,15 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
         MelonPrimePerf::FrameBegin();
+        // GUI actions update these flags on the main thread. Snapshot them
+        // once so this frame uses one coherent pacing decision.
+        const bool limitFPS =
+            emuInstance->doLimitFPS.load(std::memory_order_relaxed);
+        const bool audioSync =
+            emuInstance->doAudioSync.load(std::memory_order_relaxed);
+#else
+        const bool limitFPS = emuInstance->doLimitFPS;
+        const bool audioSync = emuInstance->doAudioSync;
 #endif
 
 #ifdef MELONPRIME_DS
@@ -228,7 +237,7 @@ void EmuThread::run()
         // Combined with P-11 (NtSetTimerResolution 0.5ms): jitter drops from
         // ±15ms to ±0.03ms.
         // =================================================================
-        if (emuInstance->doLimitFPS && !isFirstLimiterFrame)
+        if (limitFPS && !isFirstLimiterFrame)
         {
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
             double elapsed = curtime - lastTime;
@@ -613,7 +622,7 @@ void EmuThread::run()
 
         if (slowmo) emuInstance->curFPS = emuInstance->slowmoFPS;
         else if (fastforward) emuInstance->curFPS = emuInstance->fastForwardFPS;
-        else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
+        else if (!limitFPS && !audioSync) emuInstance->curFPS = 1000.0;
         else emuInstance->curFPS = emuInstance->targetFPS;
 
 #ifndef MELONPRIME_DS
@@ -634,7 +643,7 @@ void EmuThread::run()
         }
 #endif
 
-        if (emuInstance->doAudioSync && !(fastforward || slowmo))
+        if (audioSync && !(fastforward || slowmo))
             emuInstance->audioSync();
 
         double frametimeStep = nlines / (emuInstance->curFPS * 263.0);
@@ -688,6 +697,13 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
         MelonPrimePerf::FrameEnd();
+
+        // An unrestricted emulation loop can otherwise consume an entire
+        // core continuously and delay Qt/WM_INPUT delivery long enough to
+        // look like controls have stopped responding. Sleep(0) only yields
+        // the current time slice; it does not add a fixed frame delay.
+        if (!limitFPS)
+            SDL_Delay(0);
 #endif
 
         nframes++;
