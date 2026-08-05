@@ -408,6 +408,13 @@ void EmuThread::run()
                     videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
             }
 #endif
+#ifdef MELONPRIME_DS
+            // ScreenPanelNative borrows CPU output pointers owned by the
+            // current renderer. Clear them before renderLock allows that
+            // renderer to be destroyed; the next draw publishes the new
+            // Software/DX12 output through the latest-frame mailbox.
+            emuInstance->invalidateRendererOutput();
+#endif
             emuInstance->renderLock.lock();
             if (useOpenGL)
             {
@@ -1421,6 +1428,14 @@ void EmuThread::updateRenderer()
 
     if (videoRenderer != lastVideoRenderer)
     {
+#ifdef MELONPRIME_DS
+        const int previousVideoRenderer = lastVideoRenderer;
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "Renderer transition begin previous=%d requested=%d\n",
+            previousVideoRenderer,
+            videoRenderer);
+#endif
         switch (videoRenderer)
         {
         case renderer3D_Software:
@@ -1484,6 +1499,13 @@ void EmuThread::updateRenderer()
 #endif
         default: __builtin_unreachable();
         }
+#ifdef MELONPRIME_DS
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "Renderer transition complete previous=%d actual=%d\n",
+            previousVideoRenderer,
+            videoRenderer);
+#endif
     }
     lastVideoRenderer = videoRenderer;
 

@@ -1376,6 +1376,15 @@ void MainWindow::drawScreen()
     return panel->drawScreen();
 }
 
+#ifdef MELONPRIME_DS
+void MainWindow::invalidateRendererOutput()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->invalidateRendererOutput();
+}
+#endif
+
 void MainWindow::keyPressEvent(QKeyEvent* event)
 {
     if (event->isAutoRepeat()) return;
@@ -1522,6 +1531,12 @@ void MainWindow::onFocusOut()
 
 void MainWindow::onAppStateChanged(Qt::ApplicationState state)
 {
+    // QApplication can deliver a final state transition after closeEvent has
+    // detached this window from its EmuInstance. The old unconditional call
+    // dereferenced nullptr in keyReleaseAll().
+    if (!emuInstance || !emuThread)
+        return;
+
     if (state == Qt::ApplicationInactive)
     {
         emuInstance->keyReleaseAll();
