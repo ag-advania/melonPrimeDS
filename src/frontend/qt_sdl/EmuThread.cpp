@@ -189,15 +189,6 @@ void EmuThread::run()
 #endif
 
 #ifdef MELONPRIME_DS
-    // Native Qt presentation always samples the renderer's latest published
-    // output. Bound GUI wakeups so an unrestricted emulation loop cannot
-    // enqueue hundreds of immediate repaints ahead of input events.
-    constexpr Uint64 kMaxNativePresentHz = 120;
-    Uint64 nativePresentIntervalTicks =
-        SDL_GetPerformanceFrequency() / kMaxNativePresentHz;
-    if (nativePresentIntervalTicks == 0)
-        nativePresentIntervalTicks = 1;
-    Uint64 nextNativePresentTick = 0;
     u32 statsCheckCountdown = 30;
 #else
     u32 winUpdateCount = 0, winUpdateFreq = 1;
@@ -571,17 +562,7 @@ void EmuThread::run()
         MelonCap::Update();
 #endif // MELONCAP
 
-#ifdef MELONPRIME_DS
-        if (videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt)
-        {
-            const Uint64 presentTick = SDL_GetPerformanceCounter();
-            if (presentTick >= nextNativePresentTick)
-            {
-                emit windowUpdate();
-                nextNativePresentTick = presentTick + nativePresentIntervalTicks;
-            }
-        }
-#else
+#ifndef MELONPRIME_DS
         winUpdateCount++;
         if (winUpdateCount >= winUpdateFreq && !useOpenGL)
         {
@@ -928,7 +909,6 @@ void EmuThread::run()
             nframes = 0;
 #ifdef MELONPRIME_DS
             statsCheckCountdown = 30;
-            nextNativePresentTick = 0;
 #endif
             lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
             lastMeasureTime = lastTime;
@@ -942,20 +922,11 @@ void EmuThread::run()
             frameMsPrimedDev = false;
 #endif
 
-#ifdef MELONPRIME_DS
-            // Same backend gate as the running loop above: windowUpdate forces a
-            // panel repaint, which only the Qt-painted software panel needs. The
-            // GL and Vulkan panels own their surface and refresh it from
-            // drawScreen() below, so repainting it in between just blanks it --
-            // visible as a hard flicker once the panel draws while paused (the
-            // Custom HUD on-screen editor).
-            const bool paintedByQt =
-                videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt;
-#else
+#ifndef MELONPRIME_DS
             constexpr bool paintedByQt = true;
-#endif
             if (paintedByQt)
                 emit windowUpdate();
+#endif
 
 #ifdef MELONPRIME_DS
             snprintf(melontitle, sizeof(melontitle), MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX, MelonPrime::kBuildStamp);

@@ -356,6 +356,10 @@ protected:
 
 private:
     void setupScreenLayout() override;
+#ifdef MELONPRIME_DS
+    void requestLatestFrameUpdate();
+    void finishLatestFramePaint();
+#endif
 
     QMutex bufferLock;
     bool hasBuffers;
@@ -366,6 +370,13 @@ private:
 
     QImage screen[2];
     QTransform screenTrans[kMaxScreenTransforms];
+#ifdef MELONPRIME_DS
+    // Single-slot latest-frame mailbox. The emulation thread only posts a Qt
+    // update when no earlier request is awaiting paint; newer frames replace
+    // the published buffer pointers and set dirty for one follow-up paint.
+    std::atomic_bool latestFrameUpdatePosted{false};
+    std::atomic_bool latestFrameDirty{false};
+#endif
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
     std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
 #endif
