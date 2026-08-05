@@ -188,7 +188,20 @@ void EmuThread::run()
     bool   frameMsPrimedDev = false; // skip first interval (start-of-run outlier)
 #endif
 
+#ifdef MELONPRIME_DS
+    // Native Qt presentation always samples the renderer's latest published
+    // output. Bound GUI wakeups so an unrestricted emulation loop cannot
+    // enqueue hundreds of immediate repaints ahead of input events.
+    constexpr Uint64 kMaxNativePresentHz = 120;
+    Uint64 nativePresentIntervalTicks =
+        SDL_GetPerformanceFrequency() / kMaxNativePresentHz;
+    if (nativePresentIntervalTicks == 0)
+        nativePresentIntervalTicks = 1;
+    Uint64 nextNativePresentTick = 0;
+    u32 statsCheckCountdown = 30;
+#else
     u32 winUpdateCount = 0, winUpdateFreq = 1;
+#endif
     u8 dsiVolumeLevel = 0x1F;
 
     char melontitle[160];
@@ -558,17 +571,24 @@ void EmuThread::run()
         MelonCap::Update();
 #endif // MELONCAP
 
-        winUpdateCount++;
 #ifdef MELONPRIME_DS
-        if (winUpdateCount >= winUpdateFreq &&
-            videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt)
+        if (videoBackend == MelonPrime::VideoBackend::PresentationBackend::NativeQt)
+        {
+            const Uint64 presentTick = SDL_GetPerformanceCounter();
+            if (presentTick >= nextNativePresentTick)
+            {
+                emit windowUpdate();
+                nextNativePresentTick = presentTick + nativePresentIntervalTicks;
+            }
+        }
 #else
+        winUpdateCount++;
         if (winUpdateCount >= winUpdateFreq && !useOpenGL)
-#endif
         {
             emit windowUpdate();
             winUpdateCount = 0;
         }
+#endif
 
         // P-38: Batch early-exit for inner-loop hotkeys.
         // Same pattern as P-24 for the outer loop. hotkeyPress is 0 on 99.9%+
@@ -707,20 +727,36 @@ void EmuThread::run()
 #endif
 
         nframes++;
-        if (nframes >= 30)
+#ifdef MELONPRIME_DS
+        bool shouldUpdateStats = false;
+        double statsTime = 0.0;
+        if (UNLIKELY(--statsCheckCountdown == 0))
         {
-            double time = SDL_GetPerformanceCounter() * perfCountsSec;
-            double dt = time - lastMeasureTime;
-            lastMeasureTime = time;
+            statsCheckCountdown = 30;
+            statsTime = SDL_GetPerformanceCounter() * perfCountsSec;
+            shouldUpdateStats = (statsTime - lastMeasureTime) >= 0.5;
+        }
+#else
+        const bool shouldUpdateStats = nframes >= 30;
+        const double statsTime = shouldUpdateStats
+            ? SDL_GetPerformanceCounter() * perfCountsSec
+            : 0.0;
+#endif
+        if (shouldUpdateStats)
+        {
+            double dt = statsTime - lastMeasureTime;
+            lastMeasureTime = statsTime;
 
             u32 fps = round(nframes / dt);
             nframes = 0;
 
+#ifndef MELONPRIME_DS
             float fpstarget = 1.0 / frametimeStep;
 
             winUpdateFreq = fps / (u32)round(fpstarget);
             if (winUpdateFreq < 1)
                 winUpdateFreq = 1;
+#endif
 
             double actualfps = (59.8261 * 263.0) / nlines;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
@@ -890,6 +926,10 @@ void EmuThread::run()
         {
             // paused
             nframes = 0;
+#ifdef MELONPRIME_DS
+            statsCheckCountdown = 30;
+            nextNativePresentTick = 0;
+#endif
             lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
             lastMeasureTime = lastTime;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
