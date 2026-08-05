@@ -41,7 +41,7 @@ constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kSrvTableSize = 6;
 constexpr u32 kUavTableSize = 9;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
-constexpr u32 kCompositionInputDwords = (kStructuredPixelCount * 10u) + (192u * 2u);
+constexpr u32 kCompositionInputDwords = (kStructuredPixelCount * 6u) + (192u * 2u);
 
 constexpr u32 kRootParamDispatchConstants = 0;
 constexpr u32 kRootParamMetaCbv = 1;
@@ -2012,8 +2012,6 @@ void DX12Renderer3D::EnsureFrameReadback()
 
 bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 6>& planes,
-    const std::array<const u8*, 2>& captureBacked3DMask,
-    const std::array<const u32*, 2>& nativeScreens,
     const std::array<const u32*, 2>& lineMeta,
     u64 generation)
 {
@@ -2036,17 +2034,6 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         if (!meta)
             return false;
     }
-    for (const u8* mask : captureBacked3DMask)
-    {
-        if (!mask)
-            return false;
-    }
-    for (const u32* nativeScreen : nativeScreens)
-    {
-        if (!nativeScreen)
-            return false;
-    }
-
     for (std::size_t i = 0; i < planes.size(); ++i)
     {
         std::memcpy(
@@ -2054,26 +2041,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
             planes[i],
             static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
     }
-    u32* maskDestination =
+    u32* metaDestination =
         CompositionInputStagingPtr + (kStructuredPixelCount * planes.size());
-    for (std::size_t screen = 0; screen < captureBacked3DMask.size(); ++screen)
-    {
-        const u8* source = captureBacked3DMask[screen];
-        u32* destination = maskDestination + screen * kStructuredPixelCount;
-        for (std::size_t pixel = 0; pixel < kStructuredPixelCount; ++pixel)
-            destination[pixel] = source[pixel] != 0u ? 1u : 0u;
-    }
-    u32* nativeDestination = maskDestination
-        + captureBacked3DMask.size() * kStructuredPixelCount;
-    for (std::size_t screen = 0; screen < nativeScreens.size(); ++screen)
-    {
-        std::memcpy(
-            nativeDestination + screen * kStructuredPixelCount,
-            nativeScreens[screen],
-            static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
-    }
-    u32* metaDestination = nativeDestination
-        + nativeScreens.size() * kStructuredPixelCount;
     std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
     std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
 

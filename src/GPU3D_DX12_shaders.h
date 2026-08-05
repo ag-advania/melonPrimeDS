@@ -1658,9 +1658,7 @@ void main(uint3 id : SV_DispatchThreadID)
 // high-resolution 3D source produced by FinalPass.
 inline const std::string Compositor = R"(
 static const uint StructuredPixelCount = 256u * 192u;
-static const uint StructuredCaptureMaskBase = StructuredPixelCount * 6u;
-static const uint StructuredNativeScreenBase = StructuredPixelCount * 8u;
-static const uint StructuredLineMetaBase = StructuredPixelCount * 10u;
+static const uint StructuredLineMetaBase = StructuredPixelCount * 6u;
 
 uint Color6R(uint color) { return color & 0x3Fu; }
 uint Color6G(uint color) { return (color >> 8u) & 0x3Fu; }
@@ -1738,21 +1736,9 @@ void main(uint3 id : SV_DispatchThreadID)
     uint control = ResultValue[planeBase + StructuredPixelCount * 2u + nativeIndex];
     uint controlAlpha = control >> 24u;
     uint color = below;
-    uint sourceIndex = screen * StructuredPixelCount + nativeIndex;
 
     if ((controlAlpha & 0x40u) != 0u)
     {
-        // OpenGL keeps display-capture textures separate from the current 3D
-        // render target. The software renderer is the authoritative retained
-        // capture store for DX12, so a capture-backed 3D slot must use its
-        // already composed physical-LCD pixel instead of the current FinalFB.
-        if (ResultValue[StructuredCaptureMaskBase + sourceIndex] != 0u)
-        {
-            ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] =
-                ResultValue[StructuredNativeScreenBase + sourceIndex];
-            return;
-        }
-
         uint xPosition = CurVariant & 0x1FFu;
         int sourceX = (xPosition & 0x100u) != 0u
             ? int(id.x) - int((512u - xPosition) * ScaleFactor)

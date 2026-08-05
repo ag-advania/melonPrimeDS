@@ -99,23 +99,8 @@ RendererOutput DX12Renderer::GetOutput()
         view.LineMeta[0],
         view.LineMeta[1],
     };
-    const std::array<const u8*, 2> captureBacked3DMask = {
-        view.CaptureBacked3DMask[0],
-        view.CaptureBacked3DMask[1],
-    };
-    void* nativeTop = nullptr;
-    void* nativeBottom = nullptr;
-    if (!SoftRenderer::GetFramebuffers(&nativeTop, &nativeBottom))
-        return {};
-    const std::array<const u32*, 2> nativeScreens = {
-        static_cast<const u32*>(nativeTop),
-        static_cast<const u32*>(nativeBottom),
-    };
-
     const bool composed = dx12->ComposeStructuredOutput(
         planes,
-        captureBacked3DMask,
-        nativeScreens,
         lineMeta,
         view.Generation);
     const u32* top = dx12->GetComposedScreen(0);

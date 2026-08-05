@@ -65,8 +65,6 @@ public:
 
     bool ComposeStructuredOutput(
         const std::array<const u32*, 6>& planes,
-        const std::array<const u8*, 2>& captureBacked3DMask,
-        const std::array<const u32*, 2>& nativeScreens,
         const std::array<const u32*, 2>& lineMeta,
         u64 generation);
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;

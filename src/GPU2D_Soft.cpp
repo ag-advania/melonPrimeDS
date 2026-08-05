@@ -777,7 +777,6 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
                         if (Parent.DrawStructuredCapturePixel(
                             GPU2D.Num,
                             line,
-                            static_cast<u32>(i),
                             &BGOBJLine[i],
                             pixelByteAddress))
                         {
