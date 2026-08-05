@@ -57,7 +57,7 @@ void SoftRenderer::Reset()
     Rend2D_A->Reset();
     Rend2D_B->Reset();
     Rend3D->Reset();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
     StructuredScreenLineMeta.fill(0);
@@ -118,7 +118,7 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 
 void SoftRenderer::DrawScanline(u32 line)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
 #endif
     u32 *dstA, *dstB;
@@ -139,7 +139,7 @@ void SoftRenderer::DrawScanline(u32 line)
     if (line < 192)
     {
         // retrieve 3D output
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
         if (structuredVulkan2D && outputLine == 0u)
         {
@@ -178,7 +178,7 @@ void SoftRenderer::DrawScanline(u32 line)
 #endif
 
         // draw BG/OBJ layers
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         // The MPH native START menu can rewrite DISPCNT after the frontend's
         // pre-frame helmet clamp. For the Vulkan structured-2D source, mask
         // BG1-3 at every scanline while the selective helmet patch is active
@@ -189,7 +189,7 @@ void SoftRenderer::DrawScanline(u32 line)
             GPU.GPU2D_A.DispCnt &= ~0x0E00u;
 #endif
         Rend2D_A->DrawScanline(line);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         if (SuppressMainBg123ForFrame && structuredVulkan2D)
             GPU.GPU2D_A.DispCnt = savedMainDispCnt;
 #endif
@@ -200,7 +200,7 @@ void SoftRenderer::DrawScanline(u32 line)
         DrawScanlineB(line, dstB);
 
         // perform display capture if enabled
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         if (GPU.CaptureEnable)
         {
             const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
@@ -249,7 +249,7 @@ void SoftRenderer::DrawScanline(u32 line)
 
     if (GPU.ScreensEnabled)
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
         BuildStructuredScreenLine(0, screenA, outputLine, dstA, line >= 192u);
@@ -267,7 +267,7 @@ void SoftRenderer::DrawScanline(u32 line)
             dstA[i] = 0xFF000000;
             dstB[i] = 0xFF000000;
         }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
         BuildStructuredScreenLine(0, screenA, outputLine, dstA, true);
@@ -399,7 +399,7 @@ void SoftRenderer::DoCapture(u32 line)
     u32* srcA;
     if (captureCnt & (1<<24))
         srcA = Output3D;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     else if (UseStructuredVulkan2D() && StructuredCaptureCompositeLineValid)
         srcA = StructuredCaptureCompositeLine;
 #endif
@@ -407,7 +407,7 @@ void SoftRenderer::DoCapture(u32 line)
         srcA = Output2D[0];
 
     u16* srcB = nullptr;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     u32 structuredSourceBAddress = line * 256u;
     u32 structuredSourceBBank = 4u;
     bool structuredSourceBFromVram = false;
@@ -421,7 +421,7 @@ void SoftRenderer::DoCapture(u32 line)
         if (GPU.VRAMMap_LCDC & (1<<srcvram))
         {
             srcB = (u16*)GPU.VRAM[srcvram];
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
             structuredSourceBBank = srcvram;
             structuredSourceBFromVram = true;
 #endif
@@ -431,7 +431,7 @@ void SoftRenderer::DoCapture(u32 line)
                 offset += (((captureCnt >> 26) & 0x3) << 14);
 
             srcB += (offset & 0xFFFF);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
             structuredSourceBAddress = offset & 0xFFFFu;
 #endif
         }
@@ -535,7 +535,7 @@ void SoftRenderer::DoCapture(u32 line)
         }
         break;
     }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (UseStructuredVulkan2D())
     {
         StoreStructuredCaptureLine(
@@ -592,7 +592,7 @@ void SoftRenderer::ExpandColor(u32* dst)
     }
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 bool SoftRenderer::UseStructuredVulkan2D() const noexcept
 {
     return Rend3D != nullptr && Rend3D->UsesStructured2DMetadata();
@@ -1034,6 +1034,7 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.CaptureScreenSwap = StructuredCaptureScreenSwap;
     view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
     view.Valid = true;
+    view.Generation = StructuredFrameGeneration;
     return true;
 }
 #endif

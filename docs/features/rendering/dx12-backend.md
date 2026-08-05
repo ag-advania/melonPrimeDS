@@ -13,30 +13,29 @@ untouched.
 ## Architecture
 
 ```
-DX12Renderer (: SoftRenderer)        software 2D engines + framebuffers
- └── DX12Renderer3D (: Renderer3D)   tile-binned compute rasterizer on the GPU
+DX12Renderer (: SoftRenderer)        software 2D engines + structured planes
+ └── DX12Renderer3D (: Renderer3D)   3D rasterizer + high-resolution compositor
 ```
 
-Unlike the Vulkan backend, there is **no DX12 2D compositor and no DX12 screen
-panel**. The 3D scene is rasterized at the configured internal resolution,
-downscaled on the GPU to the DS's native 256x192 in the exact word format
-`Renderer3D::GetLine()` must return, read back, and handed to the existing
-software 2D compositor.
+The software 2D engines record the same per-pixel structured planes used by the
+Vulkan backend. After the DS scanlines are complete, a DX12 compute pass combines
+those planes with the high-resolution 3D target and reads back two BGRA screens
+at `256*scale x 192*scale`. `RendererOutput` carries those dimensions, and both
+the `NativeQt` and `OpenGL` panels accept the variable-size buffers.
 
-That choice is what keeps display capture, savestates, the Custom HUD, the OSD
-and both Qt presentation backends (`NativeQt` and `OpenGL`) working with no
-DX12-specific code, and it is only possible because the compute renderer's
-internal color encoding is already identical to the software compositor's
-`Output3D`: `r6 | g6<<8 | b6<<16 | a5<<24`.
+A separate 256x192 resolve remains available for DS display capture and other
+core operations that require the `Renderer3D::GetLine()` contract. Presentation
+therefore gains real internal-resolution output without duplicating the Custom
+HUD, OSD, window-layout, input, or VSync implementations in another screen
+panel.
 
 Consequences:
 
-* Internal resolution behaves as **supersampling**: the resolve pass box-filters
-  each `ScaleFactor x ScaleFactor` block with alpha weighting, so the DS output
-  stays 256x192 but geometry edges are anti-aliased.
-* There is one CPU/GPU sync per frame. It is deferred to the first
-  `GetLine()` call rather than the end of `RenderFrame()`, so the GPU overlaps
-  with whatever the emulation thread does in between.
+* Internal resolution applies to the composed screen output, not only the 3D
+  raster target.
+* The presentation path has one high-resolution GPU readback per newly composed
+  frame. The native resolve is read back only when display capture calls
+  `GetLine()`.
 * `Screen.UseGL` still applies: DX12 needs no GL context, so presentation
   resolves to `NativeQt` or `OpenGL` exactly like the Software renderer.
 
@@ -65,10 +64,12 @@ Per frame, in one command list:
 7. `Rasterise` — one indirect dispatch per variant, 16 pipeline variants
 8. `DepthBlend` (Z/W) — clear plane, depth test, translucency, shadows
 9. `FinalPass` — edge marking / fog / anti-aliasing resolve, 8 variants
-10. `Resolve` — downscale to 256x192 in the software `Output3D` encoding
-11. copy to a readback buffer
+10. `Resolve` — preserve a 256x192 `Output3D` source for display capture
+11. after software 2D scanlines complete, `Compositor` combines the structured
+    planes with the high-resolution `FinalFB`
+12. copy the two high-resolution BGRA screens to the presentation readback
 
-34 compute pipelines in total. They are compiled incrementally through
+35 compute pipelines in total. They are compiled incrementally through
 `ShaderCompileStep()`, so the OSD shows progress instead of the emulator
 hitching, and they are rebuilt whenever the internal resolution changes (tile
 geometry is baked in as `#define`s, exactly like the OpenGL renderer).
@@ -118,6 +119,26 @@ It assembles exactly the sources `DX12Renderer3D::BuildPipeline()` builds — sa
 `#define` prologue, same per-variant defines — and runs `fxc.exe` over all 34
 variants at several internal resolutions. It skips cleanly when the Windows SDK
 is not installed.
+
+## Internal resolution
+
+The `3D.GL.ScaleFactor` setting applies to both the 3D scene and the final
+composed screens. `SetRenderSettings()` logs the active dimensions, e.g.
+
+```
+DX12: internal resolution 4x -> 3D/composed output 1024x768, tiles 128x96 (8px), capture resolve 256x192
+```
+
+The structured planes keep 2D layer ordering, alpha coefficients, brightness,
+display modes, and the position of the 3D slot at native DS granularity. The
+compositor samples those controls at native coordinates while sampling 3D from
+`FinalFB` at full resolution. This preserves pixel-authentic 2D behavior while
+allowing polygon edges and textures to retain the selected internal resolution.
+
+The final images are CPU-visible because they are shared with the existing
+presentation panels. This avoids a DX12-specific swapchain and a third HUD/OSD
+implementation, at the cost of readback bandwidth that grows with the square of
+the scale factor.
 
 ## Not yet verified
 

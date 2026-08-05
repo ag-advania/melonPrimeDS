@@ -1634,16 +1634,150 @@ void main(uint3 id : SV_DispatchThreadID)
     uint result = 0u;
     if (sumA != 0u)
     {
+        // Round to nearest rather than truncating: at high scale factors the
+        // truncation bias is a visible darkening of every supersampled edge.
+        uint half = sumA >> 1;
         uint samples = ScaleFactor * ScaleFactor;
-        uint r = min(sumR / sumA, 63u);
-        uint g = min(sumG / sumA, 63u);
-        uint b = min(sumB / sumA, 63u);
+        uint r = min((sumR + half) / sumA, 63u);
+        uint g = min((sumG + half) / sumA, 63u);
+        uint b = min((sumB + half) / sumA, 63u);
         uint a = min((sumA + (samples >> 1)) / samples, 31u);
         result = r | (g << 8) | (b << 16) | (a << 24);
     }
 
     ResolveOut[outOffset] = result;
 #endif
+}
+)";
+
+// ---------------------------------------------------------------------------
+// High-resolution software-2D / DX12-3D compositor
+// ---------------------------------------------------------------------------
+// ResultValue is rebound to the packed structured-2D input and ResolveOut to
+// the two-screen BGRA output for this dispatch. FinalFB remains the native
+// high-resolution 3D source produced by FinalPass.
+inline const std::string Compositor = R"(
+static const uint StructuredPixelCount = 256u * 192u;
+static const uint StructuredLineMetaBase = StructuredPixelCount * 6u;
+
+uint Color6R(uint color) { return color & 0x3Fu; }
+uint Color6G(uint color) { return (color >> 8u) & 0x3Fu; }
+uint Color6B(uint color) { return (color >> 16u) & 0x3Fu; }
+
+uint PackColor6(uint r, uint g, uint b, uint alpha)
+{
+    return min(r, 63u) | (min(g, 63u) << 8u) | (min(b, 63u) << 16u) | (alpha << 24u);
+}
+
+uint Blend4(uint first, uint second, uint eva, uint evb)
+{
+    return PackColor6(
+        ((Color6R(first) * eva) + (Color6R(second) * evb) + 8u) >> 4u,
+        ((Color6G(first) * eva) + (Color6G(second) * evb) + 8u) >> 4u,
+        ((Color6B(first) * eva) + (Color6B(second) * evb) + 8u) >> 4u,
+        0xFFu);
+}
+
+uint Blend5(uint first, uint second)
+{
+    uint eva = ((first >> 24u) & 0x1Fu) + 1u;
+    uint evb = 32u - eva;
+    return PackColor6(
+        ((Color6R(first) * eva) + (Color6R(second) * evb) + 16u) >> 5u,
+        ((Color6G(first) * eva) + (Color6G(second) * evb) + 16u) >> 5u,
+        ((Color6B(first) * eva) + (Color6B(second) * evb) + 16u) >> 5u,
+        0xFFu);
+}
+
+uint BrightnessUp(uint color, uint factor, uint bias)
+{
+    return PackColor6(
+        Color6R(color) + ((((63u - Color6R(color)) * factor) + bias) >> 4u),
+        Color6G(color) + ((((63u - Color6G(color)) * factor) + bias) >> 4u),
+        Color6B(color) + ((((63u - Color6B(color)) * factor) + bias) >> 4u),
+        0xFFu);
+}
+
+uint BrightnessDown(uint color, uint factor, uint bias)
+{
+    return PackColor6(
+        Color6R(color) - (((Color6R(color) * factor) + bias) >> 4u),
+        Color6G(color) - (((Color6G(color) * factor) + bias) >> 4u),
+        Color6B(color) - (((Color6B(color) * factor) + bias) >> 4u),
+        0xFFu);
+}
+
+uint ToBgra8(uint color)
+{
+    uint r6 = Color6R(color);
+    uint g6 = Color6G(color);
+    uint b6 = Color6B(color);
+    uint r8 = (r6 << 2u) | (r6 >> 4u);
+    uint g8 = (g6 << 2u) | (g6 >> 4u);
+    uint b8 = (b6 << 2u) | (b6 >> 4u);
+    return b8 | (g8 << 8u) | (r8 << 16u) | 0xFF000000u;
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= ScreenWidth || id.y >= ScreenHeight * 2u)
+        return;
+
+    uint screen = id.y / ScreenHeight;
+    uint scaledY = id.y - screen * ScreenHeight;
+    uint nativeX = id.x / ScaleFactor;
+    uint nativeY = scaledY / ScaleFactor;
+    uint nativeIndex = nativeX + nativeY * 256u;
+    uint planeBase = screen * StructuredPixelCount * 3u;
+
+    uint below = ResultValue[planeBase + nativeIndex];
+    uint above = ResultValue[planeBase + StructuredPixelCount + nativeIndex];
+    uint control = ResultValue[planeBase + StructuredPixelCount * 2u + nativeIndex];
+    uint controlAlpha = control >> 24u;
+    uint color = below;
+
+    if ((controlAlpha & 0x40u) != 0u)
+    {
+        uint xPosition = CurVariant & 0x1FFu;
+        int sourceX = (xPosition & 0x100u) != 0u
+            ? int(id.x) - int((512u - xPosition) * ScaleFactor)
+            : int(id.x) + int(xPosition * ScaleFactor);
+        uint pixel3D = 0u;
+        if (TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+            pixel3D = FinalFB[uint(sourceX) + scaledY * ScreenWidth];
+
+        if (((pixel3D >> 24u) & 0x1Fu) != 0u)
+        {
+            uint compositionMode = controlAlpha & 0xFu;
+            uint eva = (control >> 8u) & 0x1Fu;
+            uint evb = (control >> 16u) & 0x1Fu;
+            if (compositionMode == 1u && (controlAlpha & 0x80u) != 0u)
+                color = Blend4(above, pixel3D, eva, evb);
+            else if (compositionMode == 2u)
+                color = BrightnessUp(pixel3D, eva, 8u);
+            else if (compositionMode == 3u)
+                color = BrightnessDown(pixel3D, eva, 7u);
+            else if (compositionMode == 4u)
+                color = Blend5(pixel3D, below);
+            else
+                color = pixel3D;
+        }
+    }
+
+    uint lineMeta = ResultValue[StructuredLineMetaBase + screen * 192u + nativeY];
+    uint displayMode = (lineMeta >> 16u) & 0x3u;
+    if (displayMode != 0u)
+    {
+        uint brightnessMode = (lineMeta >> 8u) & 0x3u;
+        uint brightnessFactor = min(lineMeta & 0x1Fu, 16u);
+        if (brightnessMode == 1u)
+            color = BrightnessUp(color, brightnessFactor, 0u);
+        else if (brightnessMode == 2u)
+            color = BrightnessDown(color, brightnessFactor, 15u);
+    }
+
+    ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] = ToBgra8(color);
 }
 )";
 

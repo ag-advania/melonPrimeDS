@@ -361,6 +361,8 @@ private:
     bool hasBuffers;
     void* topBuffer;
     void* bottomBuffer;
+    int bufferWidth = 256;
+    int bufferHeight = 192;
 
     QImage screen[2];
     QTransform screenTrans[kMaxScreenTransforms];
@@ -486,6 +488,8 @@ private:
 
     GLuint screenVertexBuffer, screenVertexArray;
     GLuint screenTexture;
+    int screenTextureWidth = 256;
+    int screenTextureHeight = 192;
     GLuint screenShaderProgram;
     GLint screenShaderTransformULoc, screenShaderScreenSizeULoc;
 
