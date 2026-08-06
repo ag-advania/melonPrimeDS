@@ -634,7 +634,6 @@ private:
     std::array<VkPipeline, GraphicsShadowBlendBgZeroPipelineCount> GraphicsShadowBlendBgZeroPipelines{};
     std::array<VkPipeline, GraphicsShadowBlendPipelineCount> GraphicsShadowBlendPipelines{};
     std::array<VkPipeline, GraphicsEdgeMarkPipelineCount> GraphicsEdgeMarkPipelines{};
-    std::array<VkPipeline, GraphicsWModeCount> GraphicsOpaqueUiOverlayPipelines{};
     VkPipeline GraphicsClearPipeline = VK_NULL_HANDLE;
     VkPipeline GraphicsStencilBitClearPipeline = VK_NULL_HANDLE;
     VkPipeline GraphicsFinalEdgePipeline = VK_NULL_HANDLE;
@@ -855,10 +854,6 @@ private:
     u64 EarlySubmitMissCount = 0;
     u64 EarlySubmitSkipVCount215Count = 0;
     u32 CaptureDebugLogsRemaining = 0;
-    u32 PaletteUiGateLogCooldown = 0;
-    bool PaletteUiGateLastActive = false;
-    u32 PaletteUiOpaqueReplayLogCooldown = 0;
-    bool PaletteUiOpaqueReplayLastActive = false;
     u32 GraphicsDrawDispatchMissingLogCooldown = 0;
     bool SkipRenderAtVCount215 = false;
     bool InEarlySubmitAttempt = false;
