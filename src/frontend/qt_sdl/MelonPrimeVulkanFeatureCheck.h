@@ -10,7 +10,9 @@ namespace MelonPrime::VulkanFeatureCheck
 struct Result
 {
     bool Available = false;
+    bool NvidiaReflexAvailable = false;
     std::string Reason;
+    std::string NvidiaReflexReason;
 };
 
 // Performs the loader, instance, physical-device, queue, and logical-device

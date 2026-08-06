@@ -195,6 +195,13 @@ public:
     void drawScreen();
 #ifdef MELONPRIME_DS
     void invalidateRendererOutput();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    void beginVulkanReflexFrame(int mode);
+    void markVulkanReflexInputSample();
+    void markVulkanReflexRenderSubmitStart();
+    void markVulkanReflexRenderSubmitEnd();
+    void finishVulkanReflexFrame();
+#endif
 #endif
 
     // return: empty string = setup OK, non-empty = error message

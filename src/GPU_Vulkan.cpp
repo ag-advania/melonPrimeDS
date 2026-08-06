@@ -56,6 +56,7 @@ void VulkanRenderer::PostSavestate()
 
 void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
 {
+    NvidiaReflexMode = settings.NvidiaReflexMode;
     auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get());
     if (!vulkan3D)
         return;

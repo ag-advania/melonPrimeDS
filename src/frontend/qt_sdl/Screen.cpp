@@ -2718,6 +2718,36 @@ void ScreenPanelVulkan::drawScreen()
 #endif
 }
 
+void ScreenPanelVulkan::beginVulkanReflexFrame(int mode)
+{
+    if (vulkan && vulkan->presenterInitialized)
+        vulkan->presenter.BeginNvidiaReflexFrame(mode);
+}
+
+void ScreenPanelVulkan::markVulkanReflexInputSample()
+{
+    if (vulkan && vulkan->presenterInitialized)
+        vulkan->presenter.MarkNvidiaReflexInputSample();
+}
+
+void ScreenPanelVulkan::markVulkanReflexRenderSubmitStart()
+{
+    if (vulkan && vulkan->presenterInitialized)
+        vulkan->presenter.MarkNvidiaReflexRenderSubmitStart();
+}
+
+void ScreenPanelVulkan::markVulkanReflexRenderSubmitEnd()
+{
+    if (vulkan && vulkan->presenterInitialized)
+        vulkan->presenter.MarkNvidiaReflexRenderSubmitEnd();
+}
+
+void ScreenPanelVulkan::finishVulkanReflexFrame()
+{
+    if (vulkan && vulkan->presenterInitialized)
+        vulkan->presenter.FinishNvidiaReflexFrame();
+}
+
 void ScreenPanelVulkan::drawScreenFrame()
 {
     refreshClipForGameStateChange();

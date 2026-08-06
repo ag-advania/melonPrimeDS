@@ -517,6 +517,38 @@ void EmuInstance::invalidateRendererOutput()
             windowList[i]->invalidateRendererOutput();
     }
 }
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+void EmuInstance::beginVulkanReflexFrame(int mode)
+{
+    if (mainWindow)
+        mainWindow->beginVulkanReflexFrame(mode);
+}
+
+void EmuInstance::markVulkanReflexInputSample()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexInputSample();
+}
+
+void EmuInstance::markVulkanReflexRenderSubmitStart()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexRenderSubmitStart();
+}
+
+void EmuInstance::markVulkanReflexRenderSubmitEnd()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexRenderSubmitEnd();
+}
+
+void EmuInstance::finishVulkanReflexFrame()
+{
+    if (mainWindow)
+        mainWindow->finishVulkanReflexFrame();
+}
+#endif
 #endif
 
 

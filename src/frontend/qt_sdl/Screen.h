@@ -100,6 +100,13 @@ public:
     virtual void invalidateRendererOutput() {}
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void beginVulkanReflexFrame(int mode) { (void)mode; }
+    virtual void markVulkanReflexInputSample() {}
+    virtual void markVulkanReflexRenderSubmitStart() {}
+    virtual void markVulkanReflexRenderSubmitEnd() {}
+    virtual void finishVulkanReflexFrame() {}
+#endif
 #ifdef MELONPRIME_CUSTOM_HUD
     // Hand-off for the Custom HUD on-screen editor, which runs while the
     // settings dialog keeps emulation paused. The emulation thread is stopped
@@ -399,6 +406,11 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
+    void beginVulkanReflexFrame(int mode) override;
+    void markVulkanReflexInputSample() override;
+    void markVulkanReflexRenderSubmitStart() override;
+    void markVulkanReflexRenderSubmitEnd() override;
+    void finishVulkanReflexFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
 #endif
