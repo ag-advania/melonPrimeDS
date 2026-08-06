@@ -148,7 +148,11 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     cheatFile = nullptr;
     cheatsOn = localCfg.GetBool("EnableCheats");
 
+#ifdef MELONPRIME_DS
+    doLimitFPS.store(globalCfg.GetBool("LimitFPS"), std::memory_order_relaxed);
+#else
     doLimitFPS = globalCfg.GetBool("LimitFPS");
+#endif
 
     double val = globalCfg.GetDouble("TargetFPS");
     if (val == 0.0)
@@ -175,7 +179,11 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     }
     else slowmoFPS = val;
 
+#ifdef MELONPRIME_DS
+    doAudioSync.store(globalCfg.GetBool("AudioSync"), std::memory_order_relaxed);
+#else
     doAudioSync = globalCfg.GetBool("AudioSync");
+#endif
 
     mpAudioMode = globalCfg.GetInt("MP.AudioMode");
 
@@ -499,6 +507,49 @@ void EmuInstance::drawScreen()
             windowList[i]->drawScreen();
     }
 }
+
+#ifdef MELONPRIME_DS
+void EmuInstance::invalidateRendererOutput()
+{
+    for (int i = 0; i < kMaxWindows; i++)
+    {
+        if (windowList[i])
+            windowList[i]->invalidateRendererOutput();
+    }
+}
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+void EmuInstance::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+{
+    if (mainWindow)
+        mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
+}
+
+void EmuInstance::markVulkanReflexInputSample()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexInputSample();
+}
+
+void EmuInstance::markVulkanReflexRenderSubmitStart()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexRenderSubmitStart();
+}
+
+void EmuInstance::markVulkanReflexRenderSubmitEnd()
+{
+    if (mainWindow)
+        mainWindow->markVulkanReflexRenderSubmitEnd();
+}
+
+void EmuInstance::finishVulkanLowLatencyFrame()
+{
+    if (mainWindow)
+        mainWindow->finishVulkanLowLatencyFrame();
+}
+#endif
+#endif
 
 
 int EmuInstance::lastSep(const std::string& path)

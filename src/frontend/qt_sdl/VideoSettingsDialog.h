@@ -25,6 +25,8 @@
 namespace Ui { class VideoSettingsDialog; }
 class VideoSettingsDialog;
 class EmuInstance;
+class QComboBox;
+class QLabel;
 class QRadioButton;
 
 class VideoSettingsDialog : public QDialog
@@ -72,6 +74,11 @@ private slots:
 
     void on_cbSoftwareThreaded_stateChanged(int state);
     void on_cbForceSoftwareOutsideMatch_stateChanged(int state);
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    void onNvidiaReflexModeChanged(int mode);
+    void onAmdAntiLag2ModeChanged(int mode);
+#endif
 private:
     void setVsyncControlEnable(bool hasOGL);
     void setEnabled();
@@ -88,6 +95,16 @@ private:
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     QRadioButton* rb3DVulkan = nullptr;
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    QRadioButton* rb3DDX12 = nullptr;
+#endif
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    QLabel* lblNvidiaReflex = nullptr;
+    QComboBox* cbxNvidiaReflex = nullptr;
+    QLabel* lblAmdAntiLag2 = nullptr;
+    QComboBox* cbxAmdAntiLag2 = nullptr;
+#endif
 
     int oldRenderer;
     int oldGLDisplay;
@@ -98,6 +115,11 @@ private:
     int oldGLScale;
     int oldGLBetterPolygons;
     int oldHiresCoordinates;
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    int oldNvidiaReflexMode;
+    bool oldAmdAntiLag2Enabled;
+#endif
 };
 
 #endif // VIDEOSETTINGSDIALOG_H

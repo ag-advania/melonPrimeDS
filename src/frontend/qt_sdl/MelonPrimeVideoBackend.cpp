@@ -7,6 +7,10 @@
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "MelonPrimeDX12FeatureCheck.h"
+#endif
+
 #if defined(MELONPRIME_ENABLE_METAL)
 #include <cstdlib>
 #endif
@@ -77,6 +81,14 @@ int NormalizeRendererForPlatform(int requested)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     case renderer3D_Vulkan:
         return MelonPrime::VulkanFeatureCheck::IsRuntimeAvailable()
+            ? requested
+            : renderer3D_Software;
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    case renderer3D_DX12:
+        // A config value carried over from a machine with a D3D12 GPU must not
+        // reach the renderer factory on one without.
+        return MelonPrime::DX12FeatureCheck::IsRuntimeAvailable()
             ? requested
             : renderer3D_Software;
 #endif
