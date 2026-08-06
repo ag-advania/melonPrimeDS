@@ -23,6 +23,7 @@
 
 #include <string>
 
+#include "DX12AmdAntiLag2.h"
 #include "DX12NvidiaReflex.h"
 #include "GPU_Soft.h"
 
@@ -54,6 +55,7 @@ public:
     RendererOutput GetOutput() override;
 
     void BeginReflexFrame();
+    void BeginAmdAntiLag2Frame();
     void MarkReflexInputSample();
     void EndReflexRenderPhase();
     void BeginReflexPresent();
@@ -69,6 +71,7 @@ public:
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
 
 private:
+    DX12AmdAntiLag2 AmdAntiLag2;
     DX12NvidiaReflex NvidiaReflex;
 };
 

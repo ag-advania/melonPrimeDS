@@ -101,11 +101,15 @@ public:
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    virtual void beginVulkanReflexFrame(int mode) { (void)mode; }
+    virtual void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+    {
+        (void)reflexMode;
+        (void)antiLag2Enabled;
+    }
     virtual void markVulkanReflexInputSample() {}
     virtual void markVulkanReflexRenderSubmitStart() {}
     virtual void markVulkanReflexRenderSubmitEnd() {}
-    virtual void finishVulkanReflexFrame() {}
+    virtual void finishVulkanLowLatencyFrame() {}
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
     // Hand-off for the Custom HUD on-screen editor, which runs while the
@@ -406,11 +410,11 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
-    void beginVulkanReflexFrame(int mode) override;
+    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled) override;
     void markVulkanReflexInputSample() override;
     void markVulkanReflexRenderSubmitStart() override;
     void markVulkanReflexRenderSubmitEnd() override;
-    void finishVulkanReflexFrame() override;
+    void finishVulkanLowLatencyFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
 #endif

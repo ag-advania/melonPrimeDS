@@ -57,6 +57,7 @@ void VulkanRenderer::PostSavestate()
 void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
 {
     NvidiaReflexMode = settings.NvidiaReflexMode;
+    AmdAntiLag2Enabled = settings.AmdAntiLag2Enabled;
     auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get());
     if (!vulkan3D)
         return;

@@ -53,6 +53,7 @@ bool DX12Renderer::Init()
     }
 
     auto& context = DX12Context::Get();
+    AmdAntiLag2.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
     NvidiaReflex.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
 
     Platform::Log(
@@ -63,6 +64,7 @@ bool DX12Renderer::Init()
 
 void DX12Renderer::Stop()
 {
+    AmdAntiLag2.Shutdown();
     NvidiaReflex.Shutdown();
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->Stop();
@@ -83,6 +85,7 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 {
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+    AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
 }
 
@@ -180,6 +183,11 @@ const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
 void DX12Renderer::BeginReflexFrame()
 {
     NvidiaReflex.BeginFrame();
+}
+
+void DX12Renderer::BeginAmdAntiLag2Frame()
+{
+    AmdAntiLag2.BeginFrame();
 }
 
 void DX12Renderer::MarkReflexInputSample()

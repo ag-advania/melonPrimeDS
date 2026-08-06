@@ -951,6 +951,9 @@ struct RendererSettings
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     // 0=Off, 1=Reflex low latency, 2=Reflex low latency + GPU clock boost.
     int NvidiaReflexMode;
+    // AMD Radeon Anti-Lag 2. The backend always passes maxFPS=0 so this does
+    // not add a second frame-rate limiter.
+    bool AmdAntiLag2Enabled;
 #endif
 };
 

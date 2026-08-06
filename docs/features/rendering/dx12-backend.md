@@ -92,6 +92,32 @@ frame counter or cross-instance pacing state is introduced. The persisted
 configuration path remains `3D.DX12.NvidiaReflexMode` for compatibility, but
 the value is shared by both native backends.
 
+## AMD Radeon Anti-Lag 2
+
+On a supported AMD Radeon GPU, the same video-settings area exposes an
+independent **AMD Radeon Anti-Lag 2** Off/On option for DirectX 12 and Vulkan.
+It is enabled by default when the driver reports support. Unsupported hardware
+or drivers leave the selected renderer available and disable only this option
+with a diagnostic tooltip.
+
+The DirectX 12 path uses the public AMD Anti-Lag 2 SDK driver ABI without
+shipping or linking an AMD library. `DX12AmdAntiLag2` obtains the interface from
+the active D3D12 device through `AmdExtD3DCreateInterface`, keeps it scoped to
+the renderer, and performs AMD's per-frame null update immediately before late
+input polling. State updates are sent only when On/Off changes, and `maxFPS` is
+always zero so Anti-Lag 2 never adds a frame-rate cap.
+
+The Vulkan path enables the native `VK_AMD_anti_lag` device extension and its
+`antiLag` feature. Every emulated frame receives one monotonically increasing
+frame ID: an INPUT update is issued immediately before late input polling and a
+matching PRESENT update immediately before `vkQueuePresentKHR`. As on DX12,
+`maxFPS` remains zero. Feature state and frame IDs belong to each emulator
+instance; no process-global latency state is introduced.
+
+The persisted configuration path is `3D.AMD.AntiLag2Enabled`. This option does
+not emulate Anti-Lag 2 on NVIDIA or Intel hardware and does not alter the NVIDIA
+Reflex setting.
+
 ## Files
 
 | File | Role |
@@ -99,6 +125,7 @@ the value is shared by both native backends.
 | `src/DX12Common.h` | ComPtr, runtime loading of `d3d12.dll` / `dxgi.dll` / `d3dcompiler_47.dll` |
 | `src/DX12Context.{h,cpp}` | Device, adapter selection, queue, fence, descriptor ring, upload ring, HLSL compile, init logging |
 | `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
+| `src/DX12AmdAntiLag2.{h,cpp}` | Runtime AMD Anti-Lag 2 driver-ABI loading, support probe and per-frame input insertion point |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
 | `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, readback |
 | `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |

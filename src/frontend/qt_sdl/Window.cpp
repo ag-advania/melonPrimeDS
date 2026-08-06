@@ -1387,11 +1387,11 @@ void MainWindow::invalidateRendererOutput()
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-void MainWindow::beginVulkanReflexFrame(int mode)
+void MainWindow::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->beginVulkanReflexFrame(mode);
+        panel->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
 }
 
 void MainWindow::markVulkanReflexInputSample()
@@ -1415,11 +1415,11 @@ void MainWindow::markVulkanReflexRenderSubmitEnd()
         panel->markVulkanReflexRenderSubmitEnd();
 }
 
-void MainWindow::finishVulkanReflexFrame()
+void MainWindow::finishVulkanLowLatencyFrame()
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->finishVulkanReflexFrame();
+        panel->finishVulkanLowLatencyFrame();
 }
 #endif
 #endif

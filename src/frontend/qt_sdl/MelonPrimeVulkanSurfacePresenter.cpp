@@ -94,6 +94,8 @@ bool MelonPrimeVulkanSurfacePresenter::Init(
     setLatencySleepModeNV = context.GetSetLatencySleepModeNV();
     latencySleepNV = context.GetLatencySleepNV();
     setLatencyMarkerNV = context.GetSetLatencyMarkerNV();
+    antiLag2RuntimeAvailable = context.SupportsAmdAntiLag2();
+    antiLagUpdateAMD = context.GetAntiLagUpdateAMD();
 
     surface = CreateVulkanSurface(instance, nativeWindow, lastError);
     if (surface == VK_NULL_HANDLE)
@@ -161,12 +163,15 @@ void MelonPrimeVulkanSurfacePresenter::Shutdown()
     setLatencySleepModeNV = nullptr;
     latencySleepNV = nullptr;
     setLatencyMarkerNV = nullptr;
+    antiLagUpdateAMD = nullptr;
     reflexRuntimeAvailable = false;
     reflexModeApplied = false;
     reflexFrameOpen = false;
     reflexSimulationOpen = false;
     reflexRenderSubmitOpen = false;
     reflexPresentOpen = false;
+    antiLag2RuntimeAvailable = false;
+    antiLag2FrameOpen = false;
     initialized = false;
 }
 
@@ -304,6 +309,7 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
     const VkSwapchainKHR oldSwapchain = swapchain;
     DestroySwapchainGraphicsResources();
     FinishNvidiaReflexFrame();
+    FinishAmdAntiLag2Frame();
     swapchain = nextSwapchain;
     reflexFrameId = 0;
     reflexModeApplied = false;
@@ -343,6 +349,7 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
 void MelonPrimeVulkanSurfacePresenter::DestroySwapchain()
 {
     FinishNvidiaReflexFrame();
+    FinishAmdAntiLag2Frame();
     DestroySwapchainGraphicsResources();
     swapchainImages.clear();
     if (swapchain != VK_NULL_HANDLE)
@@ -1150,6 +1157,42 @@ void MelonPrimeVulkanSurfacePresenter::FinishNvidiaReflexFrame()
     reflexRenderSubmitOpen = false;
 }
 
+void MelonPrimeVulkanSurfacePresenter::SendAmdAntiLag2Update(VkAntiLagStageAMD stage)
+{
+    if (!antiLag2RuntimeAvailable || !antiLag2FrameOpen || antiLagUpdateAMD == nullptr)
+        return;
+
+    VkAntiLagPresentationInfoAMD presentationInfo{};
+    presentationInfo.sType = VK_STRUCTURE_TYPE_ANTI_LAG_PRESENTATION_INFO_AMD;
+    presentationInfo.stage = stage;
+    presentationInfo.frameIndex = antiLag2FrameId;
+
+    VkAntiLagDataAMD data{};
+    data.sType = VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD;
+    data.mode = antiLag2Enabled ? VK_ANTI_LAG_MODE_ON_AMD : VK_ANTI_LAG_MODE_OFF_AMD;
+    data.maxFPS = 0;
+    data.pPresentationInfo = &presentationInfo;
+    antiLagUpdateAMD(device, &data);
+}
+
+void MelonPrimeVulkanSurfacePresenter::BeginAmdAntiLag2Frame(bool enabled)
+{
+    if (!antiLag2RuntimeAvailable || antiLagUpdateAMD == nullptr || device == VK_NULL_HANDLE)
+        return;
+    if (antiLag2FrameOpen)
+        FinishAmdAntiLag2Frame();
+
+    antiLag2Enabled = enabled;
+    ++antiLag2FrameId;
+    antiLag2FrameOpen = true;
+    SendAmdAntiLag2Update(VK_ANTI_LAG_STAGE_INPUT_AMD);
+}
+
+void MelonPrimeVulkanSurfacePresenter::FinishAmdAntiLag2Frame()
+{
+    antiLag2FrameOpen = false;
+}
+
 bool MelonPrimeVulkanSurfacePresenter::Present(
     VulkanFrame* frame,
     MelonPrimeVulkanOutput& output,
@@ -1431,6 +1474,7 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     VkResult presentResult;
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
+        SendAmdAntiLag2Update(VK_ANTI_LAG_STAGE_PRESENT_AMD);
         presentResult = vkQueuePresentKHR(queue, &presentInfo);
     }
     if (reflexPresentOpen)

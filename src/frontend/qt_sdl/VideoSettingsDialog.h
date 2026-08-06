@@ -77,6 +77,7 @@ private slots:
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     void onNvidiaReflexModeChanged(int mode);
+    void onAmdAntiLag2ModeChanged(int mode);
 #endif
 private:
     void setVsyncControlEnable(bool hasOGL);
@@ -101,6 +102,8 @@ private:
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     QLabel* lblNvidiaReflex = nullptr;
     QComboBox* cbxNvidiaReflex = nullptr;
+    QLabel* lblAmdAntiLag2 = nullptr;
+    QComboBox* cbxAmdAntiLag2 = nullptr;
 #endif
 
     int oldRenderer;
@@ -115,6 +118,7 @@ private:
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     int oldNvidiaReflexMode;
+    bool oldAmdAntiLag2Enabled;
 #endif
 };
 

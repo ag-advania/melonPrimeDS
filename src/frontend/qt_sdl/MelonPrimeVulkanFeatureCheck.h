@@ -11,8 +11,10 @@ struct Result
 {
     bool Available = false;
     bool NvidiaReflexAvailable = false;
+    bool AmdAntiLag2Available = false;
     std::string Reason;
     std::string NvidiaReflexReason;
+    std::string AmdAntiLag2Reason;
 };
 
 // Performs the loader, instance, physical-device, queue, and logical-device

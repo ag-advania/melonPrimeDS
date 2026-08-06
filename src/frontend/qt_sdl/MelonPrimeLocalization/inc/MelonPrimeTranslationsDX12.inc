@@ -1,4 +1,4 @@
-    // MelonPrime DirectX 12 / Vulkan NVIDIA Reflex settings.
+    // MelonPrime DirectX 12 / Vulkan low-latency settings.
     {
         "NVIDIA Reflex Low Latency:",
         {
@@ -53,5 +53,53 @@
         "NVIDIA Reflex requires a supported NVIDIA GPU",
         {
             {MenuLangId::Japanese, "NVIDIA Reflexには対応するNVIDIA GPUが必要です"},
+        }
+    },
+    {
+        "AMD Radeon Anti-Lag 2:",
+        {
+            {MenuLangId::Japanese, "AMD Radeon Anti-Lag 2:"},
+        }
+    },
+    {
+        "Available only with DirectX 12 or Vulkan on a supported AMD Radeon GPU.",
+        {
+            {MenuLangId::Japanese, "対応するAMD Radeon GPUでDirectX 12またはVulkanを使用している場合のみ利用できます。"},
+        }
+    },
+    {
+        "AMD Anti-Lag 2 reduces system latency for improved responsiveness.",
+        {
+            {MenuLangId::Japanese, "AMD Anti-Lag 2はシステム遅延を短縮し、操作の応答性を向上させます。"},
+        }
+    },
+    {
+        "AMD Radeon Anti-Lag 2 is unavailable",
+        {
+            {MenuLangId::Japanese, "AMD Radeon Anti-Lag 2を利用できません"},
+        }
+    },
+    {
+        "AMD Radeon Anti-Lag 2 requires a supported AMD Radeon GPU",
+        {
+            {MenuLangId::Japanese, "AMD Radeon Anti-Lag 2には対応するAMD Radeon GPUが必要です"},
+        }
+    },
+    {
+        "Vulkan driver does not support VK_AMD_anti_lag",
+        {
+            {MenuLangId::Japanese, "VulkanドライバーがVK_AMD_anti_lagに対応していません"},
+        }
+    },
+    {
+        "Vulkan driver reports the antiLag feature unavailable",
+        {
+            {MenuLangId::Japanese, "VulkanドライバーがantiLag機能を利用不可と報告しました"},
+        }
+    },
+    {
+        "Vulkan driver did not expose vkAntiLagUpdateAMD",
+        {
+            {MenuLangId::Japanese, "VulkanドライバーがvkAntiLagUpdateAMDを公開していません"},
         }
     },

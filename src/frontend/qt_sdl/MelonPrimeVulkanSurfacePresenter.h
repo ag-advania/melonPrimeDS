@@ -91,6 +91,8 @@ public:
     void MarkNvidiaReflexRenderSubmitStart();
     void MarkNvidiaReflexRenderSubmitEnd();
     void FinishNvidiaReflexFrame();
+    void BeginAmdAntiLag2Frame(bool enabled);
+    void FinishAmdAntiLag2Frame();
 
     [[nodiscard]] bool IsInitialized() const noexcept { return initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return lastError; }
@@ -122,6 +124,7 @@ private:
     bool ApplyNvidiaReflexMode();
     void SendNvidiaReflexMarker(VkLatencyMarkerNV marker);
     void DisableNvidiaReflex(const char* operation, VkResult result);
+    void SendAmdAntiLag2Update(VkAntiLagStageAMD stage);
 
 private:
     bool initialized = false;
@@ -233,6 +236,12 @@ private:
     bool reflexSimulationOpen = false;
     bool reflexRenderSubmitOpen = false;
     bool reflexPresentOpen = false;
+
+    PFN_vkAntiLagUpdateAMD antiLagUpdateAMD = nullptr;
+    std::uint64_t antiLag2FrameId = 0;
+    bool antiLag2RuntimeAvailable = false;
+    bool antiLag2Enabled = true;
+    bool antiLag2FrameOpen = false;
 };
 
 } // namespace MelonPrime
