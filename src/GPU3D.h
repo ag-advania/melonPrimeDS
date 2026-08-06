@@ -333,9 +333,11 @@ public:
     virtual void FinishRendering() {}
     virtual void RestartFrame() {};
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // Optional accelerated-renderer lifecycle hooks. Existing Software and
-    // OpenGL renderers intentionally retain the no-op defaults.
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    // Optional structured-2D accelerated-renderer lifecycle hooks. Vulkan and
+    // DX12 share these hooks; Software and OpenGL retain the no-op defaults.
     virtual void VCount144() {}
     virtual void SetupAccelFrame() {}
     virtual void PrepareCaptureFrame() {}
