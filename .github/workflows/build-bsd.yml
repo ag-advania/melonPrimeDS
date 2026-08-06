@@ -67,15 +67,35 @@ jobs:
             # atomic batch, which showed a real qt6-qtbase/qt6-qtlanguageserver
             # version skew in a failing run's pkg_install-err.log (pkgsrc.se:
             # qt6-qtbase 6.11.1nb2 was tagged 2026-07-30, so the builder was
-            # mid-rebuild). The 10.0_2026Q2 quarterly branch is a frozen,
-            # tested snapshot built as a coherent set -- verified directly
-            # against its pkg_summary.gz to contain qt6-qtbase-6.11.1nb2,
-            # qt6-qtlanguageserver-6.11.1nb1 (whose >=6.11.1nb1 requirement
-            # that satisfies), and dbus-1.16.2nb2. Re-pin the quarter forward
-            # if this branch is ever retired from the mirror.
+            # mid-rebuild). A frozen quarterly branch built as a coherent set
+            # avoids that skew; re-pin the quarter forward if it is ever
+            # retired from the mirror.
+            #
+            # The quarter is pinned to the "11.0" ABI branch (11.0_2026Q2),
+            # matched to the VM's "release: 11.0" below, not "10.0". Both
+            # need to move together:
+            #   - The VM's base OpenSSL soname is tied to its NetBSD major
+            #     release (10.0 ships libcrypto.so.15, 11.0 ships a newer
+            #     one); pkgsrc packages dynamically link against whatever
+            #     the build host's base OpenSSL was, so a "10.0" quarter's
+            #     curl/qt6-qtbase/cmake/etc. fail with "libssl.so.15 ...
+            #     not present" when pkgin runs them on an "11.0" VM release.
+            #   - Going the other way is broken too: the "10.0_2026Q2"
+            #     quarter's libunistring-1.4.2 binary references libc's
+            #     mbrtoc32/mbrtoc16/c16rtomb/c32rtomb, which NetBSD only
+            #     added in 11.0 (2024-08-15, per netbsd.org/changes/
+            #     changes-11.0.html) and never backported to the 10.x
+            #     branch -- so that "10.0"-labelled binary was actually
+            #     built against an 11.0 host, and the final melonPrimeDS
+            #     link fails with "undefined reference to `mbrtoc32'" on a
+            #     genuine "10.0" VM. Confirmed both directories are
+            #     internally consistent and carry every package this
+            #     workflow needs (including libunistring) by listing
+            #     cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/
+            #     11.0_2026Q2/All directly.
             prepare_vm: |
               /usr/sbin/pkg_add pkgin curl
-              echo 'https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/10.0_2026Q2/All' \
+              echo 'https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/11.0_2026Q2/All' \
                 > /usr/pkg/etc/pkgin/repositories.conf
               base=https://cdn.NetBSD.org/pub/NetBSD
               mach=$(uname -m | sed "s/evbarm/evbarm-$(uname -p)/")
@@ -142,19 +162,14 @@ jobs:
         # workspace between host and VM, as with the default, rsync, the
         # workspace is only synced before and after the setup VM step.
         #
-        # NetBSD only: pin the VM's release to 10.0. vmactions/netbsd-vm's
-        # own default release recently moved to 11.0 (see its
-        # conf/default.release.conf), which broke this workflow: the
-        # pkgsrc quarterly branch below is 10.0_2026Q2, built against
-        # NetBSD 10.0's OpenSSL ABI (libcrypto.so.15/libssl.so.15).
-        # NetBSD 11.0's base OpenSSL doesn't provide that soname, so every
-        # pkgsrc package depending on it failed with "not present in this
-        # system" (curl, cmake, qt6-qtbase, ...). The netbsd-vm README
-        # documents the identical ABI break for its own sparc64 image.
-        # Pinning here keeps the VM matched to the already-verified
-        # 10.0_2026Q2 package set instead of drifting with the action's
-        # default; re-evaluate together with the pkgsrc quarter if this
-        # is ever bumped.
+        # NetBSD only: pin the VM's release to 11.0, matched to the
+        # 11.0_2026Q2 pkgsrc quarter set above -- see the long comment on
+        # that quarter pin for why the two must move together (base
+        # OpenSSL soname one direction, libc's mbrtoc32 the other). This
+        # happens to be vmactions/netbsd-vm's own current default (see its
+        # conf/default.release.conf), but it is pinned explicitly rather
+        # than left implicit so a future default bump there can't silently
+        # decouple the VM release from the pkgsrc quarter again.
         with: >
           {
             "arch": ${{ matrix.arch }},
@@ -163,7 +178,7 @@ jobs:
             "prepare": ${{ toJSON(matrix.prepare_vm) }},
             "sync": "nfs",
             "usesh": "true",
-            ${{ matrix.os == 'netbsd' && '"release": "10.0",' || '' }}
+            ${{ matrix.os == 'netbsd' && '"release": "11.0",' || '' }}
           }
 
     - name: Install dependencies
