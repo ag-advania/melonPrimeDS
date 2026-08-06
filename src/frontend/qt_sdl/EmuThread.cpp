@@ -561,8 +561,6 @@ void EmuThread::run()
             {
                 structuredRenderer->SetNativeMenuHeldForFrame(
                     melonPrime->IsMetroidMenuHeld());
-                structuredRenderer->SetMainBg123SuppressedForFrame(
-                    melonPrime->ShouldSuppressVulkanHelmetLayers());
             }
 #endif
 #else

@@ -3046,21 +3046,18 @@ void ScreenPanelVulkan::composeFrameAtVBlank()
             structured.Plane[screen][plane] = structuredView.Plane[screen][plane];
         structured.LineMeta[screen] = structuredView.LineMeta[screen];
     }
-    structured.RenderXPos = nds->GPU.GPU3D.GetRenderXPos();
     structured.Has3D = !nds->GPU.GPU3D.AbortFrame;
     structured.Generation = structuredView.Generation;
 
+    // Composition is always nearest and deterministic. Screen.Filter is a
+    // presentation preference and is applied once, by the presenter, to the
+    // finished image -- the same place the software and OpenGL paths apply it.
     MelonPrime::VulkanCompositionInputs inputs{};
-    const MelonPrime::VulkanFilterMode filtering = filter
-        ? MelonPrime::VulkanFilterMode::Linear
-        : MelonPrime::VulkanFilterMode::Nearest;
     const bool composed = vulkan->output.prepareFrameForPresentation(renderFrame, structured)
         && vulkan->output.buildCompositionInputs(
             renderFrame,
             *renderer3D,
             static_cast<int>(rendererScale),
-            filtering,
-            structured.RenderXPos,
             structured.Has3D,
             inputs)
         && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);

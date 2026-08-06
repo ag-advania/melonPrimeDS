@@ -73,7 +73,6 @@ void SoftRenderer::Reset()
     StructuredCapturePlanes.fill(0);
     StructuredCaptureLineValid.fill(0);
     StructuredCaptureLineUses3D.fill(0);
-    StructuredCaptureLineGeneration.fill(0);
     StructuredEngineLineUsesCapture3D.fill(0);
     std::fill_n(Structured3DPlaceholderLine, 256, StructuredComposition::k3DPlaceholderPixel);
     std::fill_n(StructuredCaptureCompositeLine, 256, 0u);
@@ -81,10 +80,8 @@ void SoftRenderer::Reset()
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     StructuredFrameNativeMenuHeld = false;
-    SuppressMainBg123ForFrame = false;
     NativeMenuHeldForFrame = false;
     StructuredFrameGeneration = 0;
-    NativeMenuStartGeneration = 0;
 #endif
 }
 
@@ -150,7 +147,6 @@ void SoftRenderer::InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 le
         const std::size_t firstLine = static_cast<std::size_t>(block) * 64u;
         std::fill_n(StructuredCaptureLineValid.data() + bankLineBase + firstLine, 64u, 0u);
         std::fill_n(StructuredCaptureLineUses3D.data() + bankLineBase + firstLine, 64u, 0u);
-        std::fill_n(StructuredCaptureLineGeneration.data() + bankLineBase + firstLine, 64u, 0u);
 
         const std::size_t firstPixel = firstLine * 256u;
         for (std::size_t plane = 0; plane < 3u; ++plane)
@@ -245,21 +241,7 @@ void SoftRenderer::DrawScanline(u32 line)
 #endif
 
         // draw BG/OBJ layers
-#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-        // The MPH native START menu can rewrite DISPCNT after the frontend's
-        // pre-frame helmet clamp. For the Vulkan structured-2D source, mask
-        // BG1-3 at every scanline while the selective helmet patch is active
-        // so a mid-frame rewrite cannot expose stale boot-logo tiles. Restore
-        // the emulated register immediately; this is presentation-only.
-        const u32 savedMainDispCnt = GPU.GPU2D_A.DispCnt;
-        if (SuppressMainBg123ForFrame && structuredVulkan2D)
-            GPU.GPU2D_A.DispCnt &= ~0x0E00u;
-#endif
         Rend2D_A->DrawScanline(line);
-#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-        if (SuppressMainBg123ForFrame && structuredVulkan2D)
-            GPU.GPU2D_A.DispCnt = savedMainDispCnt;
-#endif
         Rend2D_B->DrawScanline(line);
 
         // draw the final screen output
@@ -819,7 +801,6 @@ void SoftRenderer::StoreStructuredCaptureLine(
                 static_cast<std::size_t>(destinationBank) * StructuredCaptureLineCount + destinationLine;
             StructuredCaptureLineValid[validIndex] = 1;
             StructuredCaptureLineUses3D[validIndex] = 0;
-            StructuredCaptureLineGeneration[validIndex] = StructuredFrameGeneration;
         }
     }
 }
@@ -851,9 +832,11 @@ bool SoftRenderer::DrawStructuredCapturePixel(
             continue;
         const std::size_t validIndex =
             static_cast<std::size_t>(bank) * StructuredCaptureLineCount + (captureAddress / 256u);
-        if (StructuredCaptureLineValid[validIndex] == 0u
-            || (NativeMenuHeldForFrame
-                && StructuredCaptureLineGeneration[validIndex] < NativeMenuStartGeneration))
+        // Validity is the only test. Rejecting metadata by comparing its
+        // generation against when a game menu opened is a game-state input,
+        // which no reference renderer has; AllocCapture/SyncVRAMCapture now
+        // invalidate retired capture blocks at their real boundaries instead.
+        if (StructuredCaptureLineValid[validIndex] == 0u)
             continue;
 
         const std::size_t captureBase =
@@ -928,37 +911,15 @@ void SoftRenderer::BuildStructuredScreenLine(
         const u32 bank = (GPU.GPU2D_A.DispCnt >> 18u) & 0x3u;
         const std::size_t validIndex =
             static_cast<std::size_t>(bank) * StructuredCaptureLineCount + line;
-        if (NativeMenuHeldForFrame && (GPU.VRAMMap_LCDC & (1u << bank)) != 0u)
-        {
-            // MPH's held START menu temporarily selects an LCDC display bank.
-            // The bank is not refreshed reliably while the menu is static, so
-            // even metadata written after the transition can describe pixels
-            // inherited from a pre-match software-renderer epoch. The intended
-            // main-screen content is the current 3D source; never expose the
-            // raw LCDC bank while the menu key remains held.
-            for (std::size_t x = 0; x < 256u; ++x)
-            {
-                const std::size_t pixelIndex = rowBase + x;
-                StructuredScreenPlanes[destinationBase + pixelIndex] = 0u;
-                StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0u;
-                // Composition mode 0 replaces the pixel with the compositor's
-                // own 3D image, which is the intended main-screen content here.
-                StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] =
-                    (Contract::kControlHas3DSlot | Contract::kCompositionModeReplace)
-                        << Contract::kControlFlagShift;
-            }
-            const u16 brightness = GPU.MasterBrightnessA;
-            lineMeta =
-                (Contract::kDisplayModeVram << Contract::kLineMetaDisplayModeShift)
-                | Contract::kLineMetaVramCaptureUses3D
-                | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
-                | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
-            copiedStructured = true;
-        }
-        else if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u
-            && StructuredCaptureLineValid[validIndex] != 0u
-            && (!NativeMenuHeldForFrame
-                || StructuredCaptureLineGeneration[validIndex] >= NativeMenuStartGeneration))
+        // Composition never depends on what the game is doing. A VRAM-display
+        // line shows the selected LCDC bank, as it does in the software
+        // renderer and in GLRenderer, which reads the capture texture or the
+        // real AuxInput VRAM. Stale metadata from an earlier capture is
+        // prevented at its source instead: AllocCapture and SyncVRAMCapture
+        // both drop the retained blocks through
+        // InvalidateStructuredCaptureBlocks.
+        if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u
+            && StructuredCaptureLineValid[validIndex] != 0u)
         {
             const std::size_t captureBase =
                 static_cast<std::size_t>(bank) * 3u * StructuredCapturePixelCount;
@@ -992,11 +953,22 @@ void SoftRenderer::BuildStructuredScreenLine(
             StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] =
                 Contract::kControlPlain2D << Contract::kControlFlagShift;
         }
-        // A forced-plain line has already been flattened by the software path,
-        // so it is published as display-mode 0: no 3D, no master brightness.
-        lineMeta = (forcePlain ? Contract::kDisplayModeOff : displayMode)
-            << Contract::kLineMetaDisplayModeShift;
+        // Every line that reaches this path carries the software renderer's
+        // final pixel, which DrawScanlineA/DrawScanlineB already ran
+        // ApplyMasterBrightness over. Publishing the real display mode here
+        // would make the compositor apply master brightness a second time on
+        // VRAM- and FIFO-display lines that fell back to the flattened output.
+        // Display-mode 0 is the contract's "already final, do not post-process"
+        // marker, which is also how OpenGL Compute ends up applying brightness
+        // exactly once after selecting the VRAM/FIFO source.
+        lineMeta = Contract::kDisplayModeOff << Contract::kLineMetaDisplayModeShift;
     }
+
+    // The 3D X scroll belongs to this scanline, matching where the software
+    // renderer reads it in SoftRenderer3D::GetLine() and where OpenGL Compute
+    // stores it as CaptureConfig.uSrcAOffset[line].
+    lineMeta |= (static_cast<u32>(GPU.GPU3D.GetRenderXPos()) & Contract::kLineMetaRenderXPosMask)
+        << Contract::kLineMetaRenderXPosShift;
 
     StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + line] = lineMeta;
     if (line == 191u)

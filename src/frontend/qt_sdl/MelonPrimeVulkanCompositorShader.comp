@@ -47,11 +47,6 @@ layout(push_constant) uniform PushConsts
     uint rendererWidth;
     uint rendererHeight;
     uint packedStride;
-    uint filtering;
-    // GPU3D::RenderXPos. The software renderer applies this scroll inside
-    // GetLine(); a hardware compositor samples an unscrolled 3D target and so
-    // must apply it here instead.
-    uint renderXPos;
     // 0 while the 3D frame was aborted, which is the DX12 TexWidth gate.
     uint has3D;
 } pc;
@@ -75,6 +70,8 @@ const uint kLineMetaBrightnessModeShift = 8u;
 const uint kLineMetaBrightnessModeMask = 0x3u;
 const uint kLineMetaDisplayModeShift = 16u;
 const uint kLineMetaDisplayModeMask = 0x3u;
+const uint kLineMetaRenderXPosShift = 23u;
+const uint kLineMetaRenderXPosMask = 0x1FFu;
 
 const uint kBrightnessModeUp = 1u;
 const uint kBrightnessModeDown = 2u;
@@ -85,8 +82,6 @@ const uint kDisplayModeOff = 0u;
 const uint k3DPlaceholderPixel = 0x20000000u;
 const uint k3DLayerSlotPixel = 0x40000000u;
 // --- end structured contract ------------------------------------------------
-
-const uint kFilterLinear = 1u;
 
 // Packed buffer layout, one screen per buffer:
 //   [line * stride + 0   .. + 255]  plane 0 (below)
@@ -181,58 +176,15 @@ uint Sample3D(int scaledX, int scaledY)
     return r | (g << 8u) | (b << 16u) | (a << 24u);
 }
 
-bool PackedTapIsMarker(uint packedColor)
+// Composition is always nearest. The DS composition rules are defined on whole
+// pixels, and the user's Screen.Filter is a presentation preference that the
+// software and OpenGL paths apply to the finished screen -- so the presenter
+// applies it, once, after this pass. Filtering the 2D planes here as well
+// would blur "the 2D under the 3D" into "the final 2D" across every 3D
+// silhouette and then blur the result a second time.
+uint ReadPlane(bool topScreen, int planeOffset, int sourceX, int dsY)
 {
-    uint flags = packedColor >> 24u;
-    return flags == (k3DPlaceholderPixel >> 24u) || flags == (k3DLayerSlotPixel >> 24u);
-}
-
-// Optional bilinear filtering of the 2D planes. This is a presentation
-// preference, not part of the DS composition rules, so it only ever runs on
-// taps that mean the same thing: a tap is rejected when it carries a raw layer
-// marker instead of color, or when its 3D-slot state differs from the pixel
-// being composed. Blending across that boundary would mix "the 2D under the
-// 3D" with "the final 2D" and produce a halo along every 3D silhouette.
-uint SampleFilteredPlane(
-    bool topScreen,
-    int planeOffset,
-    int sourceX,
-    int dsY,
-    int scaledX,
-    int scaledY,
-    uint safeScale,
-    uint nearestSlotBit)
-{
-    uint nearest = ReadPacked(topScreen, dsY, planeOffset + sourceX);
-    if (pc.filtering != kFilterLinear || safeScale <= 1u)
-        return nearest;
-
-    float dsXFloat = (float(scaledX) + 0.5) / float(safeScale) - 0.5;
-    float dsYFloat = (float(scaledY) + 0.5) / float(safeScale) - 0.5;
-    int x0 = int(floor(clamp(dsXFloat, 0.0, float(kDsWidth - 1))));
-    int y0 = int(floor(clamp(dsYFloat, 0.0, float(kDsHeight - 1))));
-    int x1 = min(x0 + 1, kDsWidth - 1);
-    int y1 = min(y0 + 1, kDsHeight - 1);
-    float tx = clamp(dsXFloat - float(x0), 0.0, 1.0);
-    float ty = clamp(dsYFloat - float(y0), 0.0, 1.0);
-
-    ivec2 taps[4] = ivec2[4](ivec2(x0, y0), ivec2(x1, y0), ivec2(x0, y1), ivec2(x1, y1));
-    vec3 colors[4];
-    for (int i = 0; i < 4; i++)
-    {
-        uint tapControl = ReadPacked(topScreen, taps[i].y, kPlaneControlOffset + taps[i].x);
-        uint tapSlotBit = (tapControl >> kControlFlagShift) & kControlHas3DSlot;
-        uint tapColor = ReadPacked(topScreen, taps[i].y, planeOffset + taps[i].x);
-        if (tapSlotBit != nearestSlotBit || PackedTapIsMarker(tapColor))
-            return nearest;
-        colors[i] = vec3(float(Color6R(tapColor)), float(Color6G(tapColor)), float(Color6B(tapColor)));
-    }
-
-    vec3 blended = mix(mix(colors[0], colors[1], tx), mix(colors[2], colors[3], tx), ty);
-    uint r = uint(clamp(floor(blended.r + 0.5), 0.0, 63.0));
-    uint g = uint(clamp(floor(blended.g + 0.5), 0.0, 63.0));
-    uint b = uint(clamp(floor(blended.b + 0.5), 0.0, 63.0));
-    return r | (g << 8u) | (b << 16u) | (nearest & 0xFF000000u);
+    return ReadPacked(topScreen, dsY, planeOffset + sourceX);
 }
 
 uint ComposeScreenPixel(
@@ -247,15 +199,16 @@ uint ComposeScreenPixel(
     uint controlFlags = control >> kControlFlagShift;
     uint slotBit = controlFlags & kControlHas3DSlot;
 
-    uint below = SampleFilteredPlane(
-        topScreen, 0, sourceX, dsY, scaledX, scaledY, safeScale, slotBit);
+    uint lineMeta = ReadPacked(topScreen, dsY, kLineMetaOffset);
+
+    uint below = ReadPlane(topScreen, 0, sourceX, dsY);
     uint color = below;
 
     if (slotBit != 0u)
     {
         // Apply the DS 3D X scroll exactly as SoftRenderer3D::GetLine() does,
         // in output space so it stays correct at every internal resolution.
-        uint xPosition = pc.renderXPos & 0x1FFu;
+        uint xPosition = (lineMeta >> kLineMetaRenderXPosShift) & kLineMetaRenderXPosMask;
         int source3DX = (xPosition & 0x100u) != 0u
             ? scaledX - int((512u - xPosition) * safeScale)
             : scaledX + int(xPosition * safeScale);
@@ -263,8 +216,7 @@ uint ComposeScreenPixel(
 
         if (((pixel3D >> 24u) & 0x1Fu) != 0u)
         {
-            uint above = SampleFilteredPlane(
-                topScreen, kPlaneAboveOffset, sourceX, dsY, scaledX, scaledY, safeScale, slotBit);
+            uint above = ReadPlane(topScreen, kPlaneAboveOffset, sourceX, dsY);
             uint compositionMode = controlFlags & kControlCompositionModeMask;
             uint eva = (control >> kControlEvaShift) & kControlBlendFactorMask;
             uint evb = (control >> kControlEvbShift) & kControlBlendFactorMask;
@@ -285,7 +237,6 @@ uint ComposeScreenPixel(
     // Master brightness is a scanline register, so it is published per line and
     // applied after composition. A display-mode-0 line was already flattened by
     // the software path and must not be touched again.
-    uint lineMeta = ReadPacked(topScreen, dsY, kLineMetaOffset);
     uint displayMode = (lineMeta >> kLineMetaDisplayModeShift) & kLineMetaDisplayModeMask;
     if (displayMode != kDisplayModeOff)
     {

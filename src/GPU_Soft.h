@@ -68,16 +68,10 @@ public:
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
-    void SetMainBg123SuppressedForFrame(bool suppressed) noexcept
-    {
-        SuppressMainBg123ForFrame = suppressed;
-    }
+    // Published to the frontend so the Custom HUD can tell when MPH's native
+    // START menu is held. It never selects composition behaviour.
     void SetNativeMenuHeldForFrame(bool held) noexcept
     {
-        if (held && !NativeMenuHeldForFrame)
-            NativeMenuStartGeneration = StructuredFrameGeneration + 1u;
-        else if (!held)
-            NativeMenuStartGeneration = 0u;
         NativeMenuHeldForFrame = held;
     }
 #endif
@@ -101,7 +95,6 @@ private:
     std::array<u32, 4u * 3u * StructuredCapturePixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineValid{};
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineUses3D{};
-    std::array<u64, 4u * StructuredCaptureLineCount> StructuredCaptureLineGeneration{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
     alignas(8) u32 StructuredCaptureCompositeLine[256]{};
@@ -109,10 +102,8 @@ private:
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     bool StructuredFrameNativeMenuHeld = false;
-    bool SuppressMainBg123ForFrame = false;
     bool NativeMenuHeldForFrame = false;
     u64 StructuredFrameGeneration = 0;
-    u64 NativeMenuStartGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     void StoreStructuredEnginePixel(

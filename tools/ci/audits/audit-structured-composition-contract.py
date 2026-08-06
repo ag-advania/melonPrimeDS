@@ -45,6 +45,8 @@ CONTRACT_NAMES = [
     "kLineMetaBrightnessModeMask",
     "kLineMetaDisplayModeShift",
     "kLineMetaDisplayModeMask",
+    "kLineMetaRenderXPosShift",
+    "kLineMetaRenderXPosMask",
     "kBrightnessModeUp",
     "kBrightnessModeDown",
     "kBrightnessFactorLimit",
@@ -64,6 +66,7 @@ HLSL_EXPECTATIONS = {
     "kLineMetaDisplayModeShift": "uint displayMode = (lineMeta >> 16u) & 0x3u;",
     "kLineMetaBrightnessModeShift": "uint brightnessMode = (lineMeta >> 8u) & 0x3u;",
     "kLineMetaBrightnessFactorMask": "uint brightnessFactor = min(lineMeta & 0x1Fu, 16u);",
+    "kLineMetaRenderXPosShift": "uint xPosition = (lineMeta >> 23u) & 0x1FFu;",
 }
 
 
