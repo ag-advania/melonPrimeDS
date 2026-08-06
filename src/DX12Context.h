@@ -174,6 +174,11 @@ public:
     // Blocks until the last submitted list retired.
     void WaitIdle();
 
+    // Inserts a fresh fence into the shared command queue and waits for it.
+    // Unlike WaitIdle(), this also covers work queued after this context's
+    // most recent Submit(), notably DXGI Present operations.
+    bool WaitQueueIdle();
+
 private:
     bool WaitForFence(u64 value);
 
