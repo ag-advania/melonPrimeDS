@@ -2281,8 +2281,11 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize());
 
+    // One composed frame per emulated frame, presented immediately. Stealing a
+    // frame back off the present queue would re-enter one whose compositor
+    // dispatch is still reading the shared structured planes.
     vulkan->framePolicy.MaxBacklogDepth = 1;
-    vulkan->framePolicy.AllowStealPending = true;
+    vulkan->framePolicy.AllowStealPending = false;
     vulkan->framePolicy.AllowPreviousFrameReuse = true;
     vulkan->framePolicy.PreferOldestFrame = false;
 

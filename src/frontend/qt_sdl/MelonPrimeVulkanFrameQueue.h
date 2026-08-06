@@ -17,13 +17,22 @@ namespace MelonPrime
 
 using namespace melonDS;
 
-// 9 frames should allow the emulator to run up 8x speed. This includes 8 frames ready to present, plus one frame currently being rendered to.
-constexpr std::size_t MELONPRIME_VULKAN_FRAME_QUEUE_SIZE = 9;
+// Composition and presentation each run once per emulated frame, so the queue
+// only ever needs the frame being composed, the frame being presented and the
+// one just retired. This mirrors DX12Renderer3D, which double-buffers its
+// composed output and keeps a single composition input buffer. The old depth of
+// 9 came from the Android host's 8x fast-forward backlog, which this frontend
+// does not use: it only added frames that had to be waited on before the shared
+// structured planes could be rewritten.
+constexpr std::size_t MELONPRIME_VULKAN_FRAME_QUEUE_SIZE = 3;
 
 struct MelonPrimeVulkanFrameQueuePolicy
 {
     u64 MaxBacklogDepth = MELONPRIME_VULKAN_FRAME_QUEUE_SIZE - 1;
-    bool AllowStealPending = true;
+    // Taking a frame back off the present queue re-enters a frame whose
+    // compositor dispatch may still be running. Composition is 1:1 with
+    // presentation here, so there is nothing to steal.
+    bool AllowStealPending = false;
     bool AllowPreviousFrameReuse = true;
     bool AllowDropForDeadline = false;
     bool PreferOldestFrame = false;
