@@ -9557,9 +9557,23 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     rasterAttachmentBarriers[3].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[3].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
+    // MELONPRIME-PC-ADAPT: ColorImage is also read by MelonPrimeVulkanOutput's
+    // compute compositor between 3D frames. Include COMPUTE_SHADER in the source
+    // scope so the next color-attachment write and the GENERAL ->
+    // COLOR_ATTACHMENT_OPTIMAL transition cannot begin before that compositor
+    // read has completed. Submission order alone does not resolve this
+    // cross-stage write-after-read hazard, and a Vulkan access scope is the
+    // intersection of the stage mask and the access mask: the
+    // VK_ACCESS_SHADER_READ_BIT below covers nothing unless the stage that
+    // performed the read is named here. Without COMPUTE_SHADER only fragment
+    // shader reads were synchronized, so the next frame's 3D render could
+    // overwrite the image the compositor was still sampling -- which showed up
+    // as this frame's structured 2D being composited against the next frame's
+    // 3D, putting the background in front of the UI on alternating frames.
     const VkPipelineStageFlags rasterAttachmentSrcStage = ColorImageInitialized
-        ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+        ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
         : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    ColorImageReuseSerial++;
     vkCmdPipelineBarrier(
         commandBuffer,
         rasterAttachmentSrcStage,

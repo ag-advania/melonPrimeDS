@@ -203,6 +203,8 @@ void MelonPrimeVulkanOutput::shutdown()
     timelineValue = 0;
     useTimelineSemaphores = false;
     lastComposedFrame = nullptr;
+    compositorSubmissionSerial = 0;
+    lastLoggedColorImageReuseSerial = 0;
     packedWriteWhileSubmitted = 0;
     generationMismatch = 0;
     fenceRecoveryFailure = 0;
@@ -1050,6 +1052,7 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
 
     outInputs.generation = generation;
     outInputs.rendererSubmissionSerial = renderer3D.GetRenderSubmissionSerial();
+    outInputs.colorImageReuseSerial = renderer3D.GetColorImageReuseSerial();
 
     // The live color target, never a snapshot of an earlier frame. The Vulkan
     // 3D renderer finished this frame's render before the frontend drew, so
@@ -1272,7 +1275,35 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
     resource.submittedGeneration = inputs.generation;
     frame->emulatedGeneration = inputs.generation;
     lastComposedFrame = frame;
+    compositorSubmissionSerial++;
+    logFrameSyncIfNeeded(frame, inputs);
     return true;
+}
+
+void MelonPrimeVulkanOutput::logFrameSyncIfNeeded(
+    const VulkanFrame* frame,
+    const VulkanCompositionInputs& inputs)
+{
+    // Frame identity is a separate concern from GPU ordering, so this only
+    // reports which frame went where. It never gates anything: a matching set
+    // of serials does not mean the GPU accesses were ordered, and the pipeline
+    // barriers do not need serials to be correct.
+    const bool colorTargetReusedSinceLastCompose =
+        inputs.colorImageReuseSerial != lastLoggedColorImageReuseSerial + 1u
+        && lastLoggedColorImageReuseSerial != 0u;
+    lastLoggedColorImageReuseSerial = inputs.colorImageReuseSerial;
+
+    if (!areRendererDebugToolsEnabled() && !colorTargetReusedSinceLastCompose)
+        return;
+
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Warn,
+        "VulkanFrameSync: structured=%llu render3d=%llu compositor=%llu colorReuse=%llu frameId=%llu",
+        static_cast<unsigned long long>(inputs.generation),
+        static_cast<unsigned long long>(inputs.rendererSubmissionSerial),
+        static_cast<unsigned long long>(compositorSubmissionSerial),
+        static_cast<unsigned long long>(inputs.colorImageReuseSerial),
+        frame != nullptr ? static_cast<unsigned long long>(frame->frameId) : 0ull);
 }
 
 bool MelonPrimeVulkanOutput::waitForFrame(const VulkanFrame* frame, u64 timeoutNs)
