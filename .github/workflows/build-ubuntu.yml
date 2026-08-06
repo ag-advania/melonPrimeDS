@@ -16,6 +16,11 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
+  # Ubuntu 22.04's distro headers predate VK_NV_low_latency2 and
+  # VK_AMD_anti_lag. Pin the build-time headers while retaining the distro
+  # Vulkan loader, validation layers and drivers for the runtime smoke test.
+  VULKAN_HEADERS_COMMIT: b5c8f996196ba4aa6d8f97e52b5d3b6e70f7e4e2
+  MELONPRIME_VULKAN_HEADERS_DIR: ${{ github.workspace }}/Vulkan-Headers/include
 #  MELONDS_VERSION_SUFFIX: " RC"
 
 jobs:
@@ -96,8 +101,17 @@ jobs:
           qt6-{base,base-private,multimedia}-dev qt6-wayland libqt6svg6-dev libarchive-dev libzstd-dev libfuse2 libfaad-dev libxi-dev \
           wayland-protocols libwayland-bin libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers xvfb
 
+    - name: Install pinned Vulkan headers
+      run: |
+        git init Vulkan-Headers
+        git -C Vulkan-Headers remote add origin https://github.com/KhronosGroup/Vulkan-Headers.git
+        git -C Vulkan-Headers fetch --depth 1 origin "${VULKAN_HEADERS_COMMIT}"
+        git -C Vulkan-Headers checkout --detach FETCH_HEAD
+        grep -F 'VK_NV_LOW_LATENCY_2_EXTENSION_NAME' "${MELONPRIME_VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h"
+        grep -F 'VK_AMD_ANTI_LAG_EXTENSION_NAME' "${MELONPRIME_VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h"
+
     - name: Configure
-      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
+      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
 
     - name: Build
       run: |
@@ -112,7 +126,7 @@ jobs:
     - name: Build Vulkan debug validation configuration
       if: matrix.arch.name == 'x86_64'
       run: |
-        cmake -B build-validation -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
+        cmake -B build-validation -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
         cmake --build build-validation
 
     # No ROM is loaded here (CI cannot ship one), so this only exercises
