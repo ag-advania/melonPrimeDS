@@ -1,8 +1,8 @@
     // MelonPrime DirectX 12 / NVIDIA Reflex settings.
     {
-        "NVIDIA Reflex:",
+        "NVIDIA Reflex Low Latency:",
         {
-            {MenuLangId::Japanese, "NVIDIA Reflex:"},
+            {MenuLangId::Japanese, "NVIDIA Reflex 低遅延:"},
         }
     },
     {

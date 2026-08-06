@@ -314,7 +314,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 
     lblNvidiaReflex = new QLabel(ui->groupBox_3);
     lblNvidiaReflex->setObjectName(QStringLiteral("lblNvidiaReflex"));
-    lblNvidiaReflex->setText(MelonPrime::UiText::Tr("NVIDIA Reflex:"));
+    lblNvidiaReflex->setText(MelonPrime::UiText::Tr("NVIDIA Reflex Low Latency:"));
     cbxNvidiaReflex = new QComboBox(ui->groupBox_3);
     cbxNvidiaReflex->setObjectName(QStringLiteral("cbxNvidiaReflex"));
     cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("Off"));
