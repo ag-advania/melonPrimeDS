@@ -101,6 +101,12 @@ public:
     // submission order already provides the ordering; this only makes the
     // pairing observable.
     [[nodiscard]] u64 GetRenderSubmissionSerial() const noexcept { return RenderSubmissionSerial; }
+    // Counts how many times ColorImage has been taken back for a new 3D frame.
+    // Paired with the compositor's own serials this shows, in a log, which 3D
+    // submission a composed frame actually consumed. It is a diagnostic only:
+    // the ordering itself comes from the pipeline barrier, never from a serial
+    // comparison.
+    [[nodiscard]] u64 GetColorImageReuseSerial() const noexcept { return ColorImageReuseSerial; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
     [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
     [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
@@ -666,6 +672,7 @@ private:
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
     u64 RenderSubmissionSerial = 0;
+    u64 ColorImageReuseSerial = 0;
 
     VkBuffer ReadbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ReadbackMemory = VK_NULL_HANDLE;

@@ -72,9 +72,13 @@ struct VulkanCompositionInputs
     // checked against it so a dispatch can never mix two frames' 2D and 3D.
     u64 generation{};
     // The 3D renderer's submission serial at the moment these inputs were
-    // built. Recorded so the 3D image can be tied to a specific render
+    // built, and how many times its color target had been taken back for a new
+    // 3D frame. Recorded so the 3D image can be tied to a specific render
     // submission rather than "whatever is in the color target right now".
+    // These are for tracing only: the actual ordering comes from the pipeline
+    // barriers, never from comparing serials.
     u64 rendererSubmissionSerial{};
+    u64 colorImageReuseSerial{};
     VkImage sourceImage{VK_NULL_HANDLE};
     VkImageView sourceImageView{VK_NULL_HANDLE};
     VkBuffer topPackedBuffer{VK_NULL_HANDLE};
@@ -215,6 +219,7 @@ private:
         FrameResource& resource,
         const VulkanCompositionInputs& inputs);
     void consumeFrameGpuTiming(FrameResource& resource);
+    void logFrameSyncIfNeeded(const VulkanFrame* frame, const VulkanCompositionInputs& inputs);
     void logPerformanceIfNeeded();
 
 private:
@@ -259,6 +264,10 @@ private:
     // The frame whose dispatch last read the shared planes. The next frame must
     // wait for it before overwriting them.
     VulkanFrame* lastComposedFrame{nullptr};
+    // Counts compositor dispatches, so a log line can say which composition a
+    // given structured generation and 3D submission ended up in.
+    u64 compositorSubmissionSerial{};
+    u64 lastLoggedColorImageReuseSerial{};
 
     std::unordered_map<VulkanFrame*, FrameResource> resources;
     std::mutex commandPoolLock;
