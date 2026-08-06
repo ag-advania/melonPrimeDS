@@ -62,8 +62,18 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
     if (!vulkan3D)
         return;
 
+    // RendererSettings::Threaded is 3D.Soft.Threaded, the software renderer's
+    // own "use separate thread" option, and no other hardware backend reads it:
+    // GLRenderer::SetRenderSettings and DX12Renderer::SetRenderSettings both
+    // ignore it entirely. Forwarding it here let that unrelated checkbox (which
+    // defaults to on) switch the Vulkan renderer onto the pinned Android
+    // early-submit path, where VCount144 submits the 3D frame and
+    // SkipRenderAtVCount215 then skips the VCount215 submission. That puts the
+    // 3D render on a different scanline than Software, OpenGL Compute and DX12
+    // use, so the structured 2D metadata no longer pairs with the 3D image the
+    // compositor samples. Desktop always submits at VCount215, like they do.
     vulkan3D->SetRenderSettings(
-        settings.Threaded,
+        false,
         settings.BetterPolygons,
         settings.ScaleFactor,
         true,
@@ -80,6 +90,12 @@ void VulkanRenderer::VBlank()
 {
     if (auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get()))
         vulkan3D->Blit(GPU);
+
+    // See SetVBlankHook: the frontend composes here so that the structured 2D
+    // planes finished at scanline 191 are paired with the 3D image that scanline
+    // 215 is about to overwrite.
+    if (VBlankComposeHook)
+        VBlankComposeHook();
 }
 
 RendererOutput VulkanRenderer::GetOutput()

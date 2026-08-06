@@ -661,11 +661,6 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     PendingCaptureReadbackContext = nullptr;
     resetCaptureLineState();
     clearLineCache();
-    LastValidExactCaptureLineCache.fill(0);
-    HasLastValidExactCapture = false;
-    LastValidExactCaptureScreenSwap = false;
-    CurrentCaptureScreenSwapHint = false;
-    HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
@@ -761,19 +756,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         captureEnabled
         && (captureMode != 1u)
         && (captureSource3d || (bg0Uses3d && sourceAContributes));
-    const auto updateExactCaptureFallbackColor = [&]() {
-        const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-        const u32 r = clearColor & 0xFFu;
-        const u32 g = (clearColor >> 8u) & 0xFFu;
-        const u32 b = (clearColor >> 16u) & 0xFFu;
-        const u32 a = (clearColor >> 24u) & 0xFFu;
-        ExactCaptureFallbackPackedColor =
-            (r >> 2u)
-            | ((g >> 2u) << 8u)
-            | ((b >> 2u) << 16u)
-            | ((a >> 3u) << 24u);
-        ExactCaptureFallbackValid = true;
-    };
     FrameIdentical = !textureCacheChanged && gpu.GPU3D.RenderFrameIdentical;
     const bool needsZeroGeometryRefresh =
         gpu.GPU3D.RenderNumPolygons == 0u && LastSubmittedRenderPolygonCount != 0u;
@@ -788,7 +770,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     {
         if (ActiveBackendMode == BackendMode::GraphicsHardware && captureNeedsGpuCaptureLineBase)
         {
-            updateExactCaptureFallbackColor();
             if (!CaptureLinePending && !CaptureLineReady)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
@@ -1049,7 +1030,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-    updateExactCaptureFallbackColor();
     const u32 clearDepth = ((gpu.GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu;
     if (!dispatchRasterAndReadback(
             renderContext,
@@ -1136,13 +1116,15 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
             resetCaptureLineState();
         }
 
-        const auto readyCaptureMatchesHint = [&]() {
-            return !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
-                || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
-        };
-
-        if (!HasCpuFrame && CaptureLineReady && ReadyCaptureLineData != nullptr && readyCaptureMatchesHint())
+        // MELONPRIME-PC-ADAPT: the capture source is this frame's 3D output,
+        // unconditionally, as in every reference renderer. GLRenderer::DoCapture
+        // picks `inputA = OutputTex3D` with no further test, SoftRenderer3D
+        // returns the scanline it just rendered, and DX12 reads back the frame
+        // it just drew. This path used to reject the export whenever its
+        // screen-swap tag disagreed with a hint, which on a game that flips
+        // POWCNT1 every frame discards the capture on one phase and leaves the
+        // capture-backed screen showing something else.
+        if (!HasCpuFrame && CaptureLineReady && ReadyCaptureLineData != nullptr)
         {
             HasCpuFrame = copyReadyCaptureLineToLineCache();
         }
@@ -1161,7 +1143,7 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
 
         if (!HasCpuFrame)
         {
-            if (CaptureLineReady && ReadyCaptureLineData != nullptr && readyCaptureMatchesHint())
+            if (CaptureLineReady && ReadyCaptureLineData != nullptr)
             {
                 // Latch capture export to a stable CPU buffer. Returning the
                 // persistently mapped GPU buffer directly can flicker when threaded
@@ -1174,21 +1156,13 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
             }
             else
             {
-                if (exactCaptureOnly && restoreLastValidExactCaptureToLineCache())
-                {
-                    HasCpuFrame = true;
-                    usedPreviousValidFill = true;
-                }
-                else if (exactCaptureOnly && ExactCaptureFallbackValid)
-                {
-                    fillLineCacheWithCaptureFallbackColor();
-                    HasCpuFrame = true;
-                    usedFallbackFill = true;
-                }
-                else
-                {
-                    clearLineCache();
-                }
+                // No export for this frame. The reference renderers cannot
+                // reach this state at all, because their capture source is a
+                // GPU texture that is always current. Substituting an older
+                // frame's 3D or the clear colour here is what produced content
+                // from a different scene on the capture-backed screen, so this
+                // reports "no 3D coverage" instead.
+                clearLineCache();
             }
         }
 
@@ -1223,12 +1197,6 @@ void VulkanRenderer3D::PrepareCaptureFrame()
     activeBackend().PrepareCaptureFrame();
 }
 
-void VulkanRenderer3D::SetCaptureScreenSwapHint(bool screenSwap)
-{
-    CurrentCaptureScreenSwapHint = screenSwap;
-    HasCurrentCaptureScreenSwapHint = true;
-}
-
 void VulkanRenderer3D::BeginCaptureFrame()
 {
     BeginCaptureFrameActiveBackend();
@@ -1246,11 +1214,9 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
     {
         if (finalizeCaptureLineFrame(exactCaptureOnly))
         {
-            const bool readyMatchesHint =
-                !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
-                || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
-            HasCpuFrame = readyMatchesHint && copyReadyCaptureLineToLineCache();
+            // See GetLineActiveBackend: no reference renderer conditions the
+            // display-capture 3D source on the screen swap.
+            HasCpuFrame = copyReadyCaptureLineToLineCache();
             return;
         }
         if (CaptureLinePending)
@@ -1279,22 +1245,12 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
 
     // graphics_hw must not submit a second late capture export or force a
     // fallback readback from here. The exact capture line export for this
-    // frame is the only valid source for software 2D composition.
+    // frame is the only valid source for software 2D composition: an older
+    // frame's 3D or the clear colour would put another scene's content on the
+    // capture-backed screen, which no reference renderer can do.
     if (exactCaptureOnly)
     {
-        if (restoreLastValidExactCaptureToLineCache())
-        {
-            HasCpuFrame = true;
-        }
-        else if (ExactCaptureFallbackValid)
-        {
-            fillLineCacheWithCaptureFallbackColor();
-            HasCpuFrame = true;
-        }
-        else
-        {
-            clearLineCache();
-        }
+        clearLineCache();
         return;
     }
 
@@ -1320,12 +1276,11 @@ void VulkanRenderer3D::BeginCaptureFrameActiveBackend()
     {
         Log(
             LogLevel::Warn,
-            "VulkanCapture[FrameStart]: pending=%u ready=%u hasCpu=%u fresh=%u fallbackValid=%u mode=%s",
+            "VulkanCapture[FrameStart]: pending=%u ready=%u hasCpu=%u fresh=%u mode=%s",
             CaptureLinePending ? 1u : 0u,
             CaptureLineReady ? 1u : 0u,
             HasCpuFrame ? 1u : 0u,
             ExactCaptureLineCacheFresh ? 1u : 0u,
-            ExactCaptureFallbackValid ? 1u : 0u,
             backendModeName(ActiveBackendMode));
         CaptureDebugLogsRemaining--;
     }
@@ -1400,15 +1355,8 @@ void VulkanRenderer3D::StopActiveBackend(const melonDS::GPU& gpu)
     InEarlySubmitAttempt = false;
     CurrentEarlySubmitContextWaitNs = 0;
     LastSubmittedRenderPolygonCount = 0;
-    ExactCaptureFallbackPackedColor = 0;
-    ExactCaptureFallbackValid = false;
     resetCaptureLineState();
     clearLineCache();
-    LastValidExactCaptureLineCache.fill(0);
-    HasLastValidExactCapture = false;
-    LastValidExactCaptureScreenSwap = false;
-    CurrentCaptureScreenSwapHint = false;
-    HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
@@ -13775,17 +13723,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
         resetCaptureLineState();
         return false;
     }
-    if (ActiveBackendMode == BackendMode::GraphicsHardware
-        && HasCurrentCaptureScreenSwapHint
-        && ReadyCaptureLineScreenSwap != CurrentCaptureScreenSwapHint)
-    {
-        CaptureLineReady = false;
-        ReadyCaptureLineData = nullptr;
-        ReadyCaptureLineBufferSlot = -1;
-        ReadyCaptureLineScreenSwap = false;
-        return false;
-    }
-
     if (CaptureLineDataIsRgba8)
     {
         const size_t pixelCount = LineCache.size();
@@ -13813,9 +13750,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
     ExactCaptureLineCacheFresh = ActiveBackendMode == BackendMode::GraphicsHardware;
     if (ActiveBackendMode == BackendMode::GraphicsHardware)
     {
-        LastValidExactCaptureLineCache = LineCache;
-        HasLastValidExactCapture = true;
-        LastValidExactCaptureScreenSwap = ReadyCaptureLineScreenSwap;
     }
     CaptureLineReady = false;
     ReadyCaptureLineData = nullptr;
@@ -13825,22 +13759,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
     ActiveCapturePathMode = CapturePathMode::CaptureLineExport;
     CapturePathModeCounts[static_cast<size_t>(CapturePathMode::CaptureLineExport)]++;
     clearRawReadbackState();
-    return true;
-}
-
-bool VulkanRenderer3D::restoreLastValidExactCaptureToLineCache()
-{
-    if (!HasLastValidExactCapture)
-        return false;
-    if (HasCurrentCaptureScreenSwapHint
-        && LastValidExactCaptureScreenSwap != CurrentCaptureScreenSwapHint)
-    {
-        return false;
-    }
-
-    LineCache = LastValidExactCaptureLineCache;
-    ExactCaptureLineCachePrepared = true;
-    ExactCaptureLineCacheFresh = false;
     return true;
 }
 
@@ -13900,13 +13818,6 @@ void VulkanRenderer3D::convertReadbackToLineCache()
         }
     }
     ExactCaptureLineCachePrepared = false;
-}
-
-void VulkanRenderer3D::fillLineCacheWithCaptureFallbackColor()
-{
-    std::fill(LineCache.begin(), LineCache.end(), ExactCaptureFallbackPackedColor);
-    ExactCaptureLineCachePrepared = true;
-    ExactCaptureLineCacheFresh = false;
 }
 
 u32 VulkanRenderer3D::buildClearColorRgba8(const melonDS::GPU& gpu) const

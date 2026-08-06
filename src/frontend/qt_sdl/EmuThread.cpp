@@ -408,12 +408,6 @@ void EmuThread::run()
                 const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
                 bool forceSoftwareOutsideMatch =
                     globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
-#if defined(MELONPRIME_ENABLE_VULKAN)
-                // Vulkan's 2D path is deliberately avoided outside a match.
-                // This is a runtime override only; never rewrite the setting.
-                forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
-                    || requestedRenderer == renderer3D_Vulkan;
-#endif
                 if (forceSoftwareOutsideMatch)
                     videoSettingsDirty = true;
             }
@@ -432,12 +426,6 @@ void EmuThread::run()
             const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
             bool forceSoftwareOutsideMatch =
                 globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
-#if defined(MELONPRIME_ENABLE_VULKAN)
-            // Vulkan always keeps non-match screens on the known-good software
-            // path. This does not mutate 3D.ForceSoftwareOutsideMatch.
-            forceSoftwareOutsideMatch = forceSoftwareOutsideMatch
-                || requestedRenderer == renderer3D_Vulkan;
-#endif
             if (!useOpenGL)
             {
                 videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(

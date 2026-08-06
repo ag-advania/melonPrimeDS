@@ -19,9 +19,18 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+#include "MelonPrimeStructuredComposition.h"
+#endif
 
 namespace melonDS
 {
+
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+// Canonical bit layout of the structured 2D contract this renderer publishes.
+// The DX12 and Vulkan compositors decode the same values.
+namespace Contract = StructuredComposition;
+#endif
 
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
     : Renderer(nds.GPU)
@@ -66,13 +75,9 @@ void SoftRenderer::Reset()
     StructuredCaptureLineUses3D.fill(0);
     StructuredCaptureLineGeneration.fill(0);
     StructuredEngineLineUsesCapture3D.fill(0);
-    StructuredCapture3DSource.fill(0);
-    StructuredCapture3DSourceLineValid.fill(0);
-    std::fill_n(Structured3DPlaceholderLine, 256, 0x20000000u);
+    std::fill_n(Structured3DPlaceholderLine, 256, StructuredComposition::k3DPlaceholderPixel);
     std::fill_n(StructuredCaptureCompositeLine, 256, 0u);
     StructuredFrameValid = false;
-    StructuredCapture3DSourceValid = false;
-    StructuredCaptureScreenSwap = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
     StructuredFrameNativeMenuHeld = false;
@@ -93,17 +98,48 @@ void SoftRenderer::Stop()
     memset(Framebuffer[1][1], 0, len);
 }
 
+void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
+{
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    // A new capture region is being claimed here. GLRenderer::AllocCapture
+    // reacts by marking its 2D layer/sprite configuration dirty so nothing
+    // keeps describing the previous capture. The structured path's equivalent
+    // stale state is the retained per-bank capture metadata, so drop it: only
+    // the lines actually captured this frame will write it again, and a smaller
+    // or differently-offset capture would otherwise leave the old 3D-slot
+    // markers visible to DrawStructuredCapturePixel.
+    InvalidateStructuredCaptureBlocks(bank, start, len);
+#else
+    (void)bank;
+    (void)start;
+    (void)len;
+#endif
+}
+
 void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
 {
     (void)complete;
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-    if (!UseStructuredVulkan2D() || bank >= 4u)
-        return;
-
     // The GPU core calls this before a CPU/DMA access replaces or exposes a
     // display-capture block. OpenGL synchronizes its private capture texture at
     // the same boundary; the structured software path must likewise stop using
     // its retained metadata and fall back to the now-authoritative emulated VRAM.
+    InvalidateStructuredCaptureBlocks(bank, start, len);
+#else
+    (void)bank;
+    (void)start;
+    (void)len;
+#endif
+}
+
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+void SoftRenderer::InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 len)
+{
+    if (!UseStructuredVulkan2D() || bank >= 4u)
+        return;
+
+    // `len` is the DS capture size field: 0 means one 128x128 block, otherwise
+    // it counts 64-line blocks, matching GLRenderer's own interpretation.
     const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
     const std::size_t bankLineBase = static_cast<std::size_t>(bank) * StructuredCaptureLineCount;
     const std::size_t bankPlaneBase =
@@ -126,12 +162,8 @@ void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
                 0u);
         }
     }
-#else
-    (void)bank;
-    (void)start;
-    (void)len;
-#endif
 }
+#endif
 
 
 void SoftRenderer::PreSavestate()
@@ -184,9 +216,6 @@ void SoftRenderer::DrawScanline(u32 line)
         if (structuredVulkan2D && outputLine == 0u)
         {
             ++StructuredFrameGeneration;
-            StructuredCapture3DSource.fill(0);
-            StructuredCapture3DSourceLineValid.fill(0);
-            StructuredCapture3DSourceValid = false;
             StructuredCaptureCompositeLineValid = false;
             StructuredCapturePreparedThisFrame = false;
 
@@ -200,8 +229,6 @@ void SoftRenderer::DrawScanline(u32 line)
                     || ((GPU.GPU2D_A.DispCnt & 0x0108u) == 0x0108u));
             if (captureNeeds3D)
             {
-                StructuredCaptureScreenSwap = GPU.ScreenSwap;
-                Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
                 Rend3D->BeginCaptureFrame();
                 Rend3D->PrepareCaptureFrame();
                 StructuredCapturePreparedThisFrame = true;
@@ -255,8 +282,6 @@ void SoftRenderer::DrawScanline(u32 line)
             {
                 if (!StructuredCapturePreparedThisFrame)
                 {
-                    StructuredCaptureScreenSwap = GPU.ScreenSwap;
-                    Rend3D->SetCaptureScreenSwapHint(StructuredCaptureScreenSwap);
                     Rend3D->BeginCaptureFrame();
                     Rend3D->PrepareCaptureFrame();
                     StructuredCapturePreparedThisFrame = true;
@@ -640,7 +665,11 @@ void SoftRenderer::StoreStructuredEnginePixel(
     const std::size_t engineBase = static_cast<std::size_t>(engine) * 3u * StructuredPixelCount;
     u32 plane0 = composed;
     u32 plane1 = 0;
-    u32 controlAlpha = 0x87u;
+    u32 controlAlpha = Contract::kControlPlain2D;
+    // These two tests read the 2D engine's own BG/OBJ pixel flags, not the
+    // structured control word: 0x40 is the 3D layer marker this renderer fed
+    // into the BG pipeline, and 0x80 marks a blend-flagged sprite that only
+    // looks like one.
     const u32 alpha1 = val1 >> 24u;
     const u32 alpha2 = val2 >> 24u;
     const bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
@@ -649,25 +678,28 @@ void SoftRenderer::StoreStructuredEnginePixel(
     if (val1Is3D)
     {
         plane0 = val2;
-        controlAlpha = 0x40u | (compositionMode & 0xFu);
+        controlAlpha = Contract::kControlHas3DSlot
+            | (compositionMode & Contract::kControlCompositionModeMask);
         if ((plane0 & 0x00FFFFFFu) == 0 && (plane0 >> 24u) != 0)
-            controlAlpha |= 0x20u;
+            controlAlpha |= Contract::kControlOpaqueBlackBelow;
     }
-    else if (val2Is3D && compositionMode == 1u)
+    else if (val2Is3D && compositionMode == Contract::kCompositionModeBlend4)
     {
         plane0 = 0;
         plane1 = val1;
-        controlAlpha = 0xC0u | 0x01u;
+        controlAlpha = Contract::kControlHas3DSlot
+            | Contract::kControlAbovePlane
+            | Contract::kCompositionModeBlend4;
         if ((plane1 & 0x00FFFFFFu) == 0 && (plane1 >> 24u) != 0)
-            controlAlpha |= 0x20u;
+            controlAlpha |= Contract::kControlOpaqueBlackBelow;
     }
 
     StructuredEnginePlanes[engineBase + pixelIndex] = plane0;
     StructuredEnginePlanes[engineBase + StructuredPixelCount + pixelIndex] = plane1;
     StructuredEnginePlanes[engineBase + (2u * StructuredPixelCount) + pixelIndex] =
-        ((controlAlpha & 0xFFu) << 24u)
-        | ((evb & 0xFFu) << 16u)
-        | ((eva & 0xFFu) << 8u);
+        ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
+        | ((evb & 0xFFu) << Contract::kControlEvbShift)
+        | ((eva & 0xFFu) << Contract::kControlEvaShift);
 }
 
 namespace
@@ -704,13 +736,6 @@ void SoftRenderer::PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine
         return;
 
     const std::size_t rowBase = static_cast<std::size_t>(line) * 256u;
-    std::memcpy(
-        StructuredCapture3DSource.data() + rowBase,
-        exact3DLine,
-        256u * sizeof(u32));
-    StructuredCapture3DSourceLineValid[static_cast<std::size_t>(line)] = 1;
-    StructuredCapture3DSourceValid = true;
-
     const std::size_t engineBase = 0;
     for (std::size_t x = 0; x < 256u; ++x)
     {
@@ -718,35 +743,37 @@ void SoftRenderer::PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine
         const u32 below = StructuredEnginePlanes[engineBase + index];
         const u32 above = StructuredEnginePlanes[engineBase + StructuredPixelCount + index];
         const u32 control = StructuredEnginePlanes[engineBase + (2u * StructuredPixelCount) + index];
-        const u32 controlAlpha = control >> 24u;
-        if ((controlAlpha & 0x40u) == 0u)
+        const u32 controlAlpha = control >> Contract::kControlFlagShift;
+        if ((controlAlpha & Contract::kControlHas3DSlot) == 0u)
         {
             StructuredCaptureCompositeLine[x] = Output2D[0][x];
             continue;
         }
 
         const u32 exact3D = exact3DLine[x];
-        const u32 compositionMode = controlAlpha & 0xFu;
+        const u32 compositionMode = controlAlpha & Contract::kControlCompositionModeMask;
         if ((exact3D >> 24u) == 0u)
         {
             StructuredCaptureCompositeLine[x] = below;
             continue;
         }
 
+        const u32 eva = (control >> Contract::kControlEvaShift) & Contract::kControlBlendFactorMask;
+        const u32 evb = (control >> Contract::kControlEvbShift) & Contract::kControlBlendFactorMask;
         switch (compositionMode)
         {
-        case 1:
-            StructuredCaptureCompositeLine[x] = (controlAlpha & 0x80u) != 0u
-                ? ColorBlend4(above, exact3D, (control >> 8u) & 0x1Fu, (control >> 16u) & 0x1Fu)
+        case Contract::kCompositionModeBlend4:
+            StructuredCaptureCompositeLine[x] = (controlAlpha & Contract::kControlAbovePlane) != 0u
+                ? ColorBlend4(above, exact3D, eva, evb)
                 : exact3D;
             break;
-        case 2:
-            StructuredCaptureCompositeLine[x] = ColorBrightnessUp(exact3D, (control >> 8u) & 0x1Fu, 0x8u);
+        case Contract::kCompositionModeBrightnessUp:
+            StructuredCaptureCompositeLine[x] = ColorBrightnessUp(exact3D, eva, 0x8u);
             break;
-        case 3:
-            StructuredCaptureCompositeLine[x] = ColorBrightnessDown(exact3D, (control >> 8u) & 0x1Fu, 0x7u);
+        case Contract::kCompositionModeBrightnessDown:
+            StructuredCaptureCompositeLine[x] = ColorBrightnessDown(exact3D, eva, 0x7u);
             break;
-        case 4:
+        case Contract::kCompositionModeBlend5:
             StructuredCaptureCompositeLine[x] = ColorBlend5(exact3D, below);
             break;
         default:
@@ -779,7 +806,8 @@ void SoftRenderer::StoreStructuredCaptureLine(
             PackedCaptureColorToColor6(captureOutput[x]);
         StructuredCapturePlanes[captureBase + StructuredCapturePixelCount + destinationIndex] = 0u;
         StructuredCapturePlanes[
-            captureBase + (2u * StructuredCapturePixelCount) + destinationIndex] = 0x87000000u;
+            captureBase + (2u * StructuredCapturePixelCount) + destinationIndex] =
+            Contract::kControlPlain2D << Contract::kControlFlagShift;
     }
 
     if (copyWidth != 0u)
@@ -838,18 +866,18 @@ bool SoftRenderer::DrawStructuredCapturePixel(
         const u16 packedVRAM = reinterpret_cast<const u16*>(GPU.VRAM[bank])[captureAddress];
         if (Color6ToPackedCaptureColor(below) != packedVRAM)
             continue;
-        const u32 controlAlpha = control >> 24u;
-        if ((controlAlpha & 0x40u) != 0u)
+        const u32 controlAlpha = control >> Contract::kControlFlagShift;
+        if ((controlAlpha & Contract::kControlHas3DSlot) != 0u)
         {
             if (below != 0u)
                 PushStructuredRawPixel(destination, below);
-            PushStructuredRawPixel(destination, 0x40000000u);
-            if ((controlAlpha & 0x80u) != 0u && above != 0u)
+            PushStructuredRawPixel(destination, Contract::k3DLayerSlotPixel);
+            if ((controlAlpha & Contract::kControlAbovePlane) != 0u && above != 0u)
                 PushStructuredRawPixel(destination, above);
             StructuredEngineLineUsesCapture3D[static_cast<std::size_t>(engine) * 192u + line] = 1;
             return true;
         }
-        if ((controlAlpha & 0x80u) != 0u && below != 0u)
+        if ((controlAlpha & Contract::kControlAbovePlane) != 0u && below != 0u)
         {
             PushStructuredRawPixel(destination, below);
             return true;
@@ -888,11 +916,11 @@ void SoftRenderer::BuildStructuredScreenLine(
         }
         const u16 brightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
         lineMeta =
-            (1u << 16u)
-            | (static_cast<u32>(brightness >> 14u) << 8u)
-            | static_cast<u32>(brightness & 0x1Fu);
+            (Contract::kDisplayModeRegular << Contract::kLineMetaDisplayModeShift)
+            | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
+            | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
         if (StructuredEngineLineUsesCapture3D[(static_cast<std::size_t>(engine) * 192u) + line] != 0u)
-            lineMeta |= 1u << 21u;
+            lineMeta |= Contract::kLineMetaRegularCaptureUses3D;
         copiedStructured = true;
     }
     else if (!forcePlain && engine == 0u && displayMode == 2u)
@@ -913,14 +941,18 @@ void SoftRenderer::BuildStructuredScreenLine(
                 const std::size_t pixelIndex = rowBase + x;
                 StructuredScreenPlanes[destinationBase + pixelIndex] = 0u;
                 StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0u;
-                StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] = 0x40000000u;
+                // Composition mode 0 replaces the pixel with the compositor's
+                // own 3D image, which is the intended main-screen content here.
+                StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] =
+                    (Contract::kControlHas3DSlot | Contract::kCompositionModeReplace)
+                        << Contract::kControlFlagShift;
             }
             const u16 brightness = GPU.MasterBrightnessA;
             lineMeta =
-                (2u << 16u)
-                | (1u << 22u)
-                | (static_cast<u32>(brightness >> 14u) << 8u)
-                | static_cast<u32>(brightness & 0x1Fu);
+                (Contract::kDisplayModeVram << Contract::kLineMetaDisplayModeShift)
+                | Contract::kLineMetaVramCaptureUses3D
+                | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
+                | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
             copiedStructured = true;
         }
         else if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u
@@ -940,11 +972,11 @@ void SoftRenderer::BuildStructuredScreenLine(
             }
             const u16 brightness = GPU.MasterBrightnessA;
             lineMeta =
-                (2u << 16u)
-                | (static_cast<u32>(brightness >> 14u) << 8u)
-                | static_cast<u32>(brightness & 0x1Fu);
+                (Contract::kDisplayModeVram << Contract::kLineMetaDisplayModeShift)
+                | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
+                | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
             if (StructuredCaptureLineUses3D[validIndex] != 0u)
-                lineMeta |= 1u << 22u;
+                lineMeta |= Contract::kLineMetaVramCaptureUses3D;
             copiedStructured = true;
         }
     }
@@ -957,9 +989,13 @@ void SoftRenderer::BuildStructuredScreenLine(
             StructuredScreenPlanes[destinationBase + pixelIndex] =
                 (output[x] & 0x00FFFFFFu) | 0x01000000u;
             StructuredScreenPlanes[destinationBase + StructuredPixelCount + pixelIndex] = 0;
-            StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] = 0x87000000u;
+            StructuredScreenPlanes[destinationBase + (2u * StructuredPixelCount) + pixelIndex] =
+                Contract::kControlPlain2D << Contract::kControlFlagShift;
         }
-        lineMeta = (forcePlain ? 0u : displayMode) << 16u;
+        // A forced-plain line has already been flattened by the software path,
+        // so it is published as display-mode 0: no 3D, no master brightness.
+        lineMeta = (forcePlain ? Contract::kDisplayModeOff : displayMode)
+            << Contract::kLineMetaDisplayModeShift;
     }
 
     StructuredScreenLineMeta[(static_cast<std::size_t>(screen) * 192u) + line] = lineMeta;
@@ -982,10 +1018,6 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
             view.Plane[screen][plane] = StructuredScreenPlanes.data() + screenBase + (plane * StructuredPixelCount);
         view.LineMeta[screen] = StructuredScreenLineMeta.data() + (screen * 192u);
     }
-    view.Capture3DSource = StructuredCapture3DSource.data();
-    view.CaptureLineUses3D = StructuredCapture3DSourceLineValid.data();
-    view.HasCapture3DSource = StructuredCapture3DSourceValid;
-    view.CaptureScreenSwap = StructuredCaptureScreenSwap;
     view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
     view.Valid = true;
     view.Generation = StructuredFrameGeneration;

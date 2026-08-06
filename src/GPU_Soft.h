@@ -52,7 +52,7 @@ public:
     void VBlank() override {};
     void VBlankEnd() override {};
 
-    void AllocCapture(u32 bank, u32 start, u32 len) override {};
+    void AllocCapture(u32 bank, u32 start, u32 len) override;
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
 
     bool GetFramebuffers(void** top, void** bottom) override;
@@ -62,10 +62,6 @@ public:
     {
         const u32* Plane[2][3]{};
         const u32* LineMeta[2]{};
-        const u32* Capture3DSource = nullptr;
-        const u8* CaptureLineUses3D = nullptr;
-        bool HasCapture3DSource = false;
-        bool CaptureScreenSwap = false;
         bool NativeMenuHeld = false;
         bool Valid = false;
         u64 Generation = 0;
@@ -107,13 +103,9 @@ private:
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineUses3D{};
     std::array<u64, 4u * StructuredCaptureLineCount> StructuredCaptureLineGeneration{};
     std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
-    std::array<u32, StructuredPixelCount> StructuredCapture3DSource{};
-    std::array<u8, 192u> StructuredCapture3DSourceLineValid{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
     alignas(8) u32 StructuredCaptureCompositeLine[256]{};
     bool StructuredFrameValid = false;
-    bool StructuredCapture3DSourceValid = false;
-    bool StructuredCaptureScreenSwap = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     bool StructuredFrameNativeMenuHeld = false;
@@ -146,6 +138,7 @@ private:
         u32* destination,
         u32 flatByteAddress);
     void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
+    void InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 len);
 #endif
 
     void DrawScanlineA(u32 line, u32* dst);

@@ -85,7 +85,7 @@
       <item row="1" column="0">
        <widget class="QCheckBox" name="cbForceSoftwareOutsideMatch">
         <property name="whatsThis">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use the software renderer outside a Metroid Prime Hunters match. Vulkan always uses this behavior without changing this saved setting.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use the software renderer outside a Metroid Prime Hunters match. When disabled, the selected renderer is used in both match and non-match scenes.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
         <property name="text">
          <string>Use software renderer outside matches</string>
