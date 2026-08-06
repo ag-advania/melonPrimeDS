@@ -86,6 +86,12 @@ public:
         const std::vector<VulkanPresentRegion>& regions,
         const VulkanOverlayFrame* overlay);
 
+    void BeginNvidiaReflexFrame(int mode);
+    void MarkNvidiaReflexInputSample();
+    void MarkNvidiaReflexRenderSubmitStart();
+    void MarkNvidiaReflexRenderSubmitEnd();
+    void FinishNvidiaReflexFrame();
+
     [[nodiscard]] bool IsInitialized() const noexcept { return initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return lastError; }
 
@@ -113,6 +119,9 @@ private:
     bool RecoverSwapchain(const char* stage);
     VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR>& modes) const;
     void SetError(const std::string& value);
+    bool ApplyNvidiaReflexMode();
+    void SendNvidiaReflexMarker(VkLatencyMarkerNV marker);
+    void DisableNvidiaReflex(const char* operation, VkResult result);
 
 private:
     bool initialized = false;
@@ -210,6 +219,20 @@ private:
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence submitFence = VK_NULL_HANDLE;
+
+    PFN_vkSetLatencySleepModeNV setLatencySleepModeNV = nullptr;
+    PFN_vkLatencySleepNV latencySleepNV = nullptr;
+    PFN_vkSetLatencyMarkerNV setLatencyMarkerNV = nullptr;
+    VkSemaphore reflexSleepSemaphore = VK_NULL_HANDLE;
+    std::uint64_t reflexSleepValue = 0;
+    std::uint64_t reflexFrameId = 0;
+    int reflexMode = 1;
+    bool reflexRuntimeAvailable = false;
+    bool reflexModeApplied = false;
+    bool reflexFrameOpen = false;
+    bool reflexSimulationOpen = false;
+    bool reflexRenderSubmitOpen = false;
+    bool reflexPresentOpen = false;
 };
 
 } // namespace MelonPrime

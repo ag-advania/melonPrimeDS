@@ -25,6 +25,10 @@ public:
 
     [[nodiscard]] VulkanRenderer3D* GetVulkanRenderer3D() noexcept;
     [[nodiscard]] const VulkanRenderer3D* GetVulkanRenderer3D() const noexcept;
+    [[nodiscard]] int GetNvidiaReflexMode() const noexcept { return NvidiaReflexMode; }
+
+private:
+    int NvidiaReflexMode = 1;
 };
 
 } // namespace melonDS

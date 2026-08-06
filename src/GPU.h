@@ -947,7 +947,8 @@ struct RendererSettings
     // "improved polygon splitting" (regular OpenGL renderer)
     bool BetterPolygons;
 
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     // 0=Off, 1=Reflex low latency, 2=Reflex low latency + GPU clock boost.
     int NvidiaReflexMode;
 #endif

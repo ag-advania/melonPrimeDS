@@ -1,4 +1,4 @@
-    // MelonPrime DirectX 12 / NVIDIA Reflex settings.
+    // MelonPrime DirectX 12 / Vulkan NVIDIA Reflex settings.
     {
         "NVIDIA Reflex Low Latency:",
         {
@@ -32,9 +32,9 @@
         }
     },
     {
-        "Available only with DirectX 12 on a supported NVIDIA GPU.",
+        "Available only with DirectX 12 or Vulkan on a supported NVIDIA GPU.",
         {
-            {MenuLangId::Japanese, "対応するNVIDIA GPUでDirectX 12を使用している場合のみ利用できます。"},
+            {MenuLangId::Japanese, "対応するNVIDIA GPUでDirectX 12またはVulkanを使用している場合のみ利用できます。"},
         }
     },
     {

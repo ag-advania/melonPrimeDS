@@ -1385,6 +1385,43 @@ void MainWindow::invalidateRendererOutput()
     if (panel)
         panel->invalidateRendererOutput();
 }
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+void MainWindow::beginVulkanReflexFrame(int mode)
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->beginVulkanReflexFrame(mode);
+}
+
+void MainWindow::markVulkanReflexInputSample()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexInputSample();
+}
+
+void MainWindow::markVulkanReflexRenderSubmitStart()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexRenderSubmitStart();
+}
+
+void MainWindow::markVulkanReflexRenderSubmitEnd()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexRenderSubmitEnd();
+}
+
+void MainWindow::finishVulkanReflexFrame()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->finishVulkanReflexFrame();
+}
+#endif
 #endif
 
 void MainWindow::keyPressEvent(QKeyEvent* event)

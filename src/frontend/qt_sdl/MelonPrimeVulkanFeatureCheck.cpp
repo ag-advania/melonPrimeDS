@@ -32,6 +32,8 @@ const Result& Probe()
         gResult.Reason = melonDS::VulkanDispatch::GetLoaderPath().empty()
             ? "Vulkan loader was not found"
             : "Vulkan initialization failed";
+        gResult.NvidiaReflexAvailable = false;
+        gResult.NvidiaReflexReason = gResult.Reason;
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
             "MelonPrime Vulkan probe: available=0 loader=%s reason=%s",
@@ -42,13 +44,19 @@ const Result& Probe()
 
     gResult.Available = context.IsReady();
     gResult.Reason = gResult.Available ? std::string{} : "No compatible Vulkan device was found";
+    gResult.NvidiaReflexAvailable = gResult.Available && context.SupportsNvidiaReflex();
+    gResult.NvidiaReflexReason = gResult.NvidiaReflexAvailable
+        ? std::string{}
+        : context.GetNvidiaReflexUnavailableReason();
     melonDS::Platform::Log(
         gResult.Available ? melonDS::Platform::LogLevel::Info : melonDS::Platform::LogLevel::Error,
-        "MelonPrime Vulkan probe: available=%d loader=%s device=%s queueFamily=%u",
+        "MelonPrime Vulkan probe: available=%d loader=%s device=%s queueFamily=%u reflex=%d reflexReason=\"%s\"",
         gResult.Available ? 1 : 0,
         melonDS::VulkanDispatch::GetLoaderPath().c_str(),
         context.GetDeviceProfile().DeviceName.c_str(),
-        context.GetQueueFamilyIndex());
+        context.GetQueueFamilyIndex(),
+        gResult.NvidiaReflexAvailable ? 1 : 0,
+        gResult.NvidiaReflexReason.c_str());
     context.Release();
     return gResult;
 }
@@ -67,8 +75,10 @@ void ReportRuntimeFailure(std::string reason)
 {
     std::scoped_lock lock(gProbeMutex);
     gResult.Available = false;
+    gResult.NvidiaReflexAvailable = false;
     const std::string diagnostic = reason.empty() ? "unspecified runtime failure" : std::move(reason);
     gResult.Reason = "Vulkan initialization failed";
+    gResult.NvidiaReflexReason = gResult.Reason;
     gProbed = true;
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Error,

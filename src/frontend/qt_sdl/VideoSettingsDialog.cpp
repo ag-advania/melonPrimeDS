@@ -89,6 +89,8 @@ void VideoSettingsDialog::setEnabled()
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const bool vulkanRenderer = renderer == renderer3D_Vulkan;
+#else
+    const bool vulkanRenderer = false;
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     const bool dx12Renderer = renderer == renderer3D_DX12;
@@ -171,24 +173,39 @@ void VideoSettingsDialog::setEnabled()
     // BetterPolygons splitting used by the raster paths.
     ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
 
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
-    const bool reflexEnabled = dx12Renderer
-        && dx12Probe.Available
-        && dx12Probe.NvidiaReflexAvailable;
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    bool reflexEnabled = false;
+    std::string reflexUnavailableReason;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+    {
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        reflexEnabled = vulkanProbe.Available && vulkanProbe.NvidiaReflexAvailable;
+        reflexUnavailableReason = vulkanProbe.NvidiaReflexReason;
+    }
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+    {
+        const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+        reflexEnabled = dx12Probe.Available && dx12Probe.NvidiaReflexAvailable;
+        reflexUnavailableReason = dx12Probe.NvidiaReflexReason;
+    }
+#endif
     lblNvidiaReflex->setEnabled(reflexEnabled);
     cbxNvidiaReflex->setEnabled(reflexEnabled);
 
     const QString reflexDescription = reflexEnabled
         ? MelonPrime::UiText::Tr(
             "NVIDIA Reflex reduces CPU-to-render latency. Boost also requests maximum GPU clocks and can increase power usage.")
-        : (!dx12Renderer
+        : (!(dx12Renderer || vulkanRenderer)
             ? MelonPrime::UiText::Tr(
-                "Available only with DirectX 12 on a supported NVIDIA GPU.")
+                "Available only with DirectX 12 or Vulkan on a supported NVIDIA GPU.")
             : MelonPrime::UiText::Tr(QString::fromStdString(
-                dx12Probe.NvidiaReflexReason.empty()
+                reflexUnavailableReason.empty()
                     ? std::string("NVIDIA Reflex is unavailable")
-                    : dx12Probe.NvidiaReflexReason)));
+                    : reflexUnavailableReason)));
     lblNvidiaReflex->setToolTip(reflexDescription);
     cbxNvidiaReflex->setToolTip(reflexDescription);
 #endif
@@ -214,8 +231,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode);
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
 #endif
 
     grp3DRenderer = new QButtonGroup(this);
@@ -312,6 +330,17 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
     grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
 
+    ui->gridLayout_2->addItem(ui->verticalSpacer, dx12Row + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, dx12Row + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, dx12Row + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, dx12Row + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, dx12Row + 4, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     lblNvidiaReflex = new QLabel(ui->groupBox_3);
     lblNvidiaReflex->setObjectName(QStringLiteral("lblNvidiaReflex"));
     lblNvidiaReflex->setText(MelonPrime::UiText::Tr("NVIDIA Reflex Low Latency:"));
@@ -328,15 +357,6 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         &VideoSettingsDialog::onNvidiaReflexModeChanged);
-
-    ui->gridLayout_2->addItem(ui->verticalSpacer, dx12Row + 1, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->cbGLDisplay, dx12Row + 2, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->cbVSync, dx12Row + 3, 0, 1, 2);
-    ui->gridLayout_2->addWidget(ui->label_2, dx12Row + 4, 0, 1, 1);
-    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, dx12Row + 4, 1, 1, 1);
-    ui->gridLayout_2->invalidate();
-    ui->gridLayout_2->activate();
-    adjustSize();
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -481,8 +501,9 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    cfg.SetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode, oldNvidiaReflexMode);
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, oldNvidiaReflexMode);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -640,11 +661,12 @@ void VideoSettingsDialog::on_cbxComputeHiResCoords_stateChanged(int state)
     emit updateVideoSettings(false);
 }
 
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
 void VideoSettingsDialog::onNvidiaReflexModeChanged(int mode)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode, mode);
+    cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, mode);
     emit updateVideoSettings(false);
 }
 #endif

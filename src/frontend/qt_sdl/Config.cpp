@@ -67,7 +67,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
-        {MelonPrime::CfgKey::Dx12NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
+        {MelonPrime::CfgKey::NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},
@@ -168,7 +168,7 @@ namespace Config
         {"Screen.VSyncInterval", {1, 20}},
         {"3D.GL.ScaleFactor", {1, 16}},
     #ifdef MELONPRIME_DS
-        {MelonPrime::CfgKey::Dx12NvidiaReflexMode, {0, 2}},
+        {MelonPrime::CfgKey::NvidiaReflexMode, {0, 2}},
     #endif
         {"Audio.Interpolation", {0, 4}},
         {"Instance*.Audio.Volume", {0, 256}},

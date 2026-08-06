@@ -74,7 +74,8 @@ private slots:
 
     void on_cbSoftwareThreaded_stateChanged(int state);
     void on_cbForceSoftwareOutsideMatch_stateChanged(int state);
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     void onNvidiaReflexModeChanged(int mode);
 #endif
 private:
@@ -95,6 +96,9 @@ private:
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     QRadioButton* rb3DDX12 = nullptr;
+#endif
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     QLabel* lblNvidiaReflex = nullptr;
     QComboBox* cbxNvidiaReflex = nullptr;
 #endif
@@ -108,7 +112,8 @@ private:
     int oldGLScale;
     int oldGLBetterPolygons;
     int oldHiresCoordinates;
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     int oldNvidiaReflexMode;
 #endif
 };

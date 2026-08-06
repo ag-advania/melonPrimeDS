@@ -72,6 +72,13 @@ public:
     void drawScreen();
 #ifdef MELONPRIME_DS
     void invalidateRendererOutput();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    void beginVulkanReflexFrame(int mode);
+    void markVulkanReflexInputSample();
+    void markVulkanReflexRenderSubmitStart();
+    void markVulkanReflexRenderSubmitEnd();
+    void finishVulkanReflexFrame();
+#endif
 #endif
 
     bool preloadROMs(QStringList file, QStringList gbafile, bool boot);

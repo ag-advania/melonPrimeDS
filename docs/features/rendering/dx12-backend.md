@@ -47,10 +47,10 @@ Consequences:
 * `Screen.UseGL` still applies: DX12 needs no GL context, so presentation
   resolves to `NativeQt` or `OpenGL` exactly like the Software renderer.
 
-## NVIDIA Reflex low latency
+## NVIDIA Reflex Low Latency
 
 On a supported NVIDIA GPU, the video settings dialog exposes the standard
-three Reflex modes while DirectX 12 is selected:
+three Reflex modes while DirectX 12 or Vulkan is selected:
 
 * **Off** — low-latency mode and boost are disabled;
 * **On** — NVAPI low-latency mode is enabled; and
@@ -63,18 +63,34 @@ device with `NvAPI_D3D_GetSleepStatus`. Non-NVIDIA devices, unsupported drivers,
 or missing NVAPI entry points leave DX12 available and disable only the Reflex
 control with a diagnostic tooltip. No NVIDIA library is linked or shipped.
 
-The emulation thread calls `NvAPI_D3D_Sleep` once at the beginning of every
-DX12 frame, immediately before late input polling. It publishes Input Sample,
-Simulation, Render Submit and Present latency markers using a unique process
-frame ID. Sleep and markers remain active in Off mode as NVIDIA recommends;
-the mode flags alone control whether low latency and boost are enabled. The
-minimum interval is always zero, so Reflex does not add a frame-rate cap.
+The Vulkan path uses the native `VK_NV_low_latency2` device extension. It
+requires `VK_KHR_present_id` and timeline semaphore support, enables latency
+mode on each native Vulkan swapchain, associates the final graphics submission
+and `vkQueuePresentKHR` with the same monotonically increasing Present ID, and
+publishes the corresponding latency markers. Unsupported GPUs or drivers leave
+Vulkan available and disable only the Reflex control.
+
+The emulation thread calls the backend sleep operation once at the beginning of
+every Reflex-capable frame, immediately before late input polling. DX12 uses
+`NvAPI_D3D_Sleep`; Vulkan uses `vkLatencySleepNV` followed by a host wait on the
+extension's timeline semaphore. Both paths publish Input Sample, Simulation,
+Render Submit and Present latency markers. Sleep and markers remain active in
+Off mode as NVIDIA recommends; the mode flags alone control whether low latency
+and boost are enabled. The minimum interval is always zero, so Reflex does not
+add a frame-rate cap.
 
 Render Submit markers bracket the D3D12 render/composition work. This backend
 has no DXGI presentation swapchain, so Present markers bracket publication to
 the existing latest-frame Qt mailbox. Reflex can optimize the D3D12 device's
 CPU/GPU scheduling, but the final Qt composition remains the shared
 presentation path rather than a native D3D12 `Present`.
+
+Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
+markers and Present ID cover the real native swapchain submission and present.
+Reflex state belongs to each presenter/emulator instance; no process-global
+frame counter or cross-instance pacing state is introduced. The persisted
+configuration path remains `3D.DX12.NvidiaReflexMode` for compatibility, but
+the value is shared by both native backends.
 
 ## Files
 

@@ -50,12 +50,12 @@
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 #include "GPU_DX12.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeDX12FeatureCheck.h"
 #endif
@@ -324,6 +324,13 @@ void EmuThread::run()
             dx12ReflexRenderer->BeginReflexFrame();
 #endif
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        auto* vulkanReflexRenderer = dynamic_cast<VulkanRenderer*>(
+            &emuInstance->nds->GPU.GetRenderer());
+        if (vulkanReflexRenderer)
+            emuInstance->beginVulkanReflexFrame(vulkanReflexRenderer->GetNvidiaReflexMode());
+#endif
+
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
@@ -373,6 +380,13 @@ void EmuThread::run()
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
             if (dx12ReflexRenderer)
                 dx12ReflexRenderer->MarkReflexInputSample();
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            if (vulkanReflexRenderer)
+            {
+                emuInstance->markVulkanReflexInputSample();
+                emuInstance->markVulkanReflexRenderSubmitStart();
+            }
 #endif
 #if defined(MELONPRIME_DS)
             // Renderer switching follows the match window between the
@@ -490,6 +504,13 @@ void EmuThread::run()
                 dx12ReflexRenderer = nullptr;
             }
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+            if (vulkanReflexRenderer)
+            {
+                emuInstance->finishVulkanReflexFrame();
+                vulkanReflexRenderer = nullptr;
+            }
+#endif
             updateRenderer();
 
 #ifdef MELONPRIME_DS
@@ -559,6 +580,10 @@ void EmuThread::run()
         if (dx12ReflexRenderer)
             dx12ReflexRenderer->EndReflexRenderPhase();
 #endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (vulkanReflexRenderer)
+            emuInstance->markVulkanReflexRenderSubmitEnd();
+#endif
 
 #ifdef MELONPRIME_DS
         // P-25: Save flush throttle — check once per 30 frames (~0.5s).
@@ -592,6 +617,10 @@ void EmuThread::run()
             dx12ReflexRenderer->EndReflexPresent();
             dx12ReflexRenderer->FinishReflexFrame();
         }
+#endif
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        if (vulkanReflexRenderer)
+            emuInstance->finishVulkanReflexFrame();
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1557,8 +1586,9 @@ void EmuThread::updateRenderer()
         .Threaded = cfg.GetBool("3D.Soft.Threaded"),
         .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
         .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons"),
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+        .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode)
 #endif
     };
     nds->GetRenderer().SetRenderSettings(settings);
