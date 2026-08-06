@@ -14,7 +14,7 @@ MelonPrimeVulkanFrameQueue::MelonPrimeVulkanFrameQueue()
 {
     for (auto& frame : frames)
     {
-        freeQueue.push(&frame);
+        recyclableQueue.push(&frame);
     }
 }
 
@@ -24,19 +24,29 @@ MelonPrimeVulkanFrameQueuePolicy MelonPrimeVulkanFrameQueue::sanitizePolicy(Melo
     return policy;
 }
 
+void MelonPrimeVulkanFrameQueue::resetAcquiredFrameLocked(VulkanFrame* frame)
+{
+    // Every acquisition path clears the previous occupant's synchronization
+    // values. Leaving renderTimelineValue behind would let a frame look ready
+    // to present on the strength of the previous frame's submission.
+    frame->frameId = nextFrameId++;
+    frame->queuedAtNs = 0;
+    frame->renderTimelineValue = 0;
+    frame->presentTimelineValue = 0;
+    frame->emulatedGeneration = 0;
+}
+
 VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFrameQueuePolicy& requestedPolicy)
 {
     std::unique_lock lock(frameLock);
     stats.RenderFramesAcquired++;
     const MelonPrimeVulkanFrameQueuePolicy policy = sanitizePolicy(requestedPolicy);
 
-    if (!freeQueue.empty())
+    if (!recyclableQueue.empty())
     {
-        VulkanFrame* frame = freeQueue.front();
-        freeQueue.pop();
-        frame->frameId = nextFrameId++;
-        frame->queuedAtNs = 0;
-        frame->presentTimelineValue = 0;
+        VulkanFrame* frame = recyclableQueue.front();
+        recyclableQueue.pop();
+        resetAcquiredFrameLocked(frame);
         return frame;
     }
 
@@ -50,9 +60,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFr
 
         VulkanFrame* frame = presentQueue.back();
         presentQueue.pop_back();
-        frame->frameId = nextFrameId++;
-        frame->queuedAtNs = 0;
-        frame->presentTimelineValue = 0;
+        resetAcquiredFrameLocked(frame);
         stats.PendingFramesStolenForRender++;
         updateBacklogStatsLocked();
         return frame;
@@ -63,8 +71,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getRenderFrame(const MelonPrimeVulkanFr
         const u64 nowNs = MelonDSAndroid::PerfNowNs();
         VulkanFrame* frame = presentQueue.back();
         presentQueue.pop_back();
-        frame->frameId = nextFrameId++;
-        frame->presentTimelineValue = 0;
+        resetAcquiredFrameLocked(frame);
         stats.PendingFramesStolenForRender++;
         stats.PresentFramesDroppedByPolicy++;
         recordDroppedFrameLocked(frame, PresentDropCause::StealForRender, nowNs);
@@ -101,7 +108,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getPresentFrame(
 
         if (previousFrame)
         {
-            freeQueue.push(previousFrame);
+            recyclableQueue.push(previousFrame);
             previousFrame->queuedAtNs = 0;
             previousFrame = nullptr;
         }
@@ -114,7 +121,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getPresentFrame(
         const u64 staleFrameCount = static_cast<u64>(presentQueue.size());
         for (auto f : presentQueue)
         {
-            freeQueue.push(f);
+            recyclableQueue.push(f);
             recordDroppedFrameLocked(f, PresentDropCause::Stale, nowNs);
         }
         stats.StaleFramesDropped += staleFrameCount;
@@ -144,7 +151,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getPresentFrame(
 
     if (previousFrame)
     {
-        freeQueue.push(previousFrame);
+        recyclableQueue.push(previousFrame);
         previousFrame->queuedAtNs = 0;
         previousFrame = nullptr;
     }
@@ -158,7 +165,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getPresentFrame(
     const u64 staleFrameCount = static_cast<u64>(presentQueue.size());
     for (auto f : presentQueue)
     {
-        freeQueue.push(f);
+        recyclableQueue.push(f);
         recordDroppedFrameLocked(f, PresentDropCause::Stale, nowNs);
     }
     stats.StaleFramesDropped += staleFrameCount;
@@ -228,7 +235,7 @@ VulkanFrame* MelonPrimeVulkanFrameQueue::getPresentCandidate(
         const u64 staleFrameCount = static_cast<u64>(presentQueue.size());
         for (auto f : presentQueue)
         {
-            freeQueue.push(f);
+            recyclableQueue.push(f);
             recordDroppedFrameLocked(f, PresentDropCause::Stale, nowNs);
         }
         stats.StaleFramesDropped += staleFrameCount;
@@ -257,7 +264,7 @@ void MelonPrimeVulkanFrameQueue::recycleRenderFrame(VulkanFrame* frame)
         return;
 
     frame->queuedAtNs = 0;
-    freeQueue.push(frame);
+    recyclableQueue.push(frame);
 }
 
 void MelonPrimeVulkanFrameQueue::commitPresentedFrame(VulkanFrame* frame, const MelonPrimeVulkanFrameQueuePolicy& requestedPolicy)
@@ -276,7 +283,7 @@ void MelonPrimeVulkanFrameQueue::commitPresentedFrame(VulkanFrame* frame, const 
 
     if (previousFrame != nullptr && previousFrame != frame)
     {
-        freeQueue.push(previousFrame);
+        recyclableQueue.push(previousFrame);
         previousFrame->queuedAtNs = 0;
     }
 
@@ -290,7 +297,7 @@ void MelonPrimeVulkanFrameQueue::commitPresentedFrame(VulkanFrame* frame, const 
     {
         for (auto f : presentQueue)
         {
-            freeQueue.push(f);
+            recyclableQueue.push(f);
             if (policy.TreatBacklogTrimAsFastForwardSkip)
             {
                 f->queuedAtNs = 0;
@@ -346,7 +353,7 @@ void MelonPrimeVulkanFrameQueue::deferPresentedFrame(VulkanFrame* frame, const M
         }
         else
         {
-            freeQueue.push(pendingPresentFrame);
+            recyclableQueue.push(pendingPresentFrame);
             stats.PresentFramesDroppedByPolicy++;
             recordDroppedFrameLocked(pendingPresentFrame, PresentDropCause::Deadline, nowNs);
         }
@@ -406,7 +413,7 @@ void MelonPrimeVulkanFrameQueue::discardRenderedFrame(VulkanFrame* frame)
 {
     std::unique_lock lock(frameLock);
     frame->queuedAtNs = 0;
-    freeQueue.push(frame);
+    recyclableQueue.push(frame);
     stats.RenderFramesDiscarded++;
 }
 
@@ -417,21 +424,21 @@ void MelonPrimeVulkanFrameQueue::requestPresentationResync()
     for (auto f : presentQueue)
     {
         f->queuedAtNs = 0;
-        freeQueue.push(f);
+        recyclableQueue.push(f);
     }
 
     presentQueue.clear();
     if (pendingPresentFrame != nullptr)
     {
         pendingPresentFrame->queuedAtNs = 0;
-        freeQueue.push(pendingPresentFrame);
+        recyclableQueue.push(pendingPresentFrame);
         pendingPresentFrame = nullptr;
     }
 
     if (previousFrame != nullptr)
     {
         previousFrame->queuedAtNs = 0;
-        freeQueue.push(previousFrame);
+        recyclableQueue.push(previousFrame);
         previousFrame = nullptr;
     }
 
@@ -450,14 +457,14 @@ void MelonPrimeVulkanFrameQueue::requestFastForwardPresentationTransition()
     for (auto f : presentQueue)
     {
         f->queuedAtNs = 0;
-        freeQueue.push(f);
+        recyclableQueue.push(f);
     }
 
     presentQueue.clear();
     if (pendingPresentFrame != nullptr)
     {
         pendingPresentFrame->queuedAtNs = 0;
-        freeQueue.push(pendingPresentFrame);
+        recyclableQueue.push(pendingPresentFrame);
         pendingPresentFrame = nullptr;
     }
 
@@ -472,7 +479,7 @@ void MelonPrimeVulkanFrameQueue::clear()
     for (auto f : presentQueue)
     {
         f->queuedAtNs = 0;
-        freeQueue.push(f);
+        recyclableQueue.push(f);
     }
 
     presentQueue.clear();
@@ -480,7 +487,7 @@ void MelonPrimeVulkanFrameQueue::clear()
     pendingPresentFrame = nullptr;
     suppressPreviousFrameReuse = false;
     stats = MelonPrimeVulkanFrameQueueStats{};
-    rebuildFreeQueueLocked();
+    rebuildRecyclableQueueLocked();
 
     for (auto& frame : frames)
     {
@@ -513,13 +520,13 @@ void MelonPrimeVulkanFrameQueue::updateBacklogStatsLocked()
     stats.MaxBacklogDepth = std::max(stats.MaxBacklogDepth, backlogDepth);
 }
 
-void MelonPrimeVulkanFrameQueue::rebuildFreeQueueLocked()
+void MelonPrimeVulkanFrameQueue::rebuildRecyclableQueueLocked()
 {
     std::queue<VulkanFrame*> emptyQueue;
-    std::swap(freeQueue, emptyQueue);
+    std::swap(recyclableQueue, emptyQueue);
 
     for (auto& frame : frames)
-        freeQueue.push(&frame);
+        recyclableQueue.push(&frame);
 }
 
 void MelonPrimeVulkanFrameQueue::dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip)
@@ -529,7 +536,7 @@ void MelonPrimeVulkanFrameQueue::dropPendingFramesToBacklogLocked(u64 maxBacklog
     {
         VulkanFrame* frame = presentQueue.back();
         presentQueue.pop_back();
-        freeQueue.push(frame);
+        recyclableQueue.push(frame);
         if (treatAsFastForwardSkip)
         {
             frame->queuedAtNs = 0;

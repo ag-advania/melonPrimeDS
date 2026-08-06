@@ -94,6 +94,13 @@ public:
     [[nodiscard]] size_t GetAsyncRenderContextCount() const noexcept { return AsyncRenderContextCount; }
     [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
     [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
+    // Monotonic count of successful 3D render submissions. The compositor
+    // records it alongside the structured generation so the 3D image it sampled
+    // can be tied to a specific render submission instead of "whatever was in
+    // the color target". The 3D renderer and the compositor share one queue, so
+    // submission order already provides the ordering; this only makes the
+    // pairing observable.
+    [[nodiscard]] u64 GetRenderSubmissionSerial() const noexcept { return RenderSubmissionSerial; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
     [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
     [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
@@ -658,6 +665,7 @@ private:
     u32 ColorImageWidth = 0;
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
+    u64 RenderSubmissionSerial = 0;
 
     VkBuffer ReadbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ReadbackMemory = VK_NULL_HANDLE;

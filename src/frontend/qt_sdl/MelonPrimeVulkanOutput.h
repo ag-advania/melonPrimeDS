@@ -5,6 +5,7 @@
 #ifndef MELONPRIME_VULKAN_OUTPUT_H
 #define MELONPRIME_VULKAN_OUTPUT_H
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -67,6 +68,13 @@ struct StructuredCompositionFrame
 // Resolved GPU handles and scalars for one compositor dispatch.
 struct VulkanCompositionInputs
 {
+    // The emulated frame these inputs describe. Everything downstream is
+    // checked against it so a dispatch can never mix two frames' 2D and 3D.
+    u64 generation{};
+    // The 3D renderer's submission serial at the moment these inputs were
+    // built. Recorded so the 3D image can be tied to a specific render
+    // submission rather than "whatever is in the color target right now".
+    u64 rendererSubmissionSerial{};
     VkImage sourceImage{VK_NULL_HANDLE};
     VkImageView sourceImageView{VK_NULL_HANDLE};
     VkBuffer topPackedBuffer{VK_NULL_HANDLE};
@@ -109,6 +117,7 @@ public:
         const melonDS::VulkanRenderer3D& renderer3D,
         int scale,
         bool has3D,
+        u64 generation,
         VulkanCompositionInputs& outInputs) const;
     bool composeAndSubmitFrame(VulkanFrame* frame, const VulkanCompositionInputs& inputs);
 
@@ -127,6 +136,20 @@ private:
         u32 rendererHeight;
         u32 packedStride;
         u32 has3D;
+    };
+
+    // Who may touch a frame's resources right now.
+    //
+    // Idle       the GPU is not reading this frame's inputs; the emulation
+    //            thread may rewrite the shared structured planes for it.
+    // Recording  its command buffer is open; nothing may be rewritten.
+    // Submitted  its dispatch may still be executing; the packed planes, the
+    //            output image and the bound descriptors must all stay put.
+    enum class SubmissionState : u8
+    {
+        Idle,
+        Recording,
+        Submitted,
     };
 
     struct FrameResource
@@ -150,6 +173,16 @@ private:
         bool descriptorSetReady{};
         bool timestampPending{};
         VkImageView cachedRendererImageView{VK_NULL_HANDLE};
+
+        SubmissionState submissionState{SubmissionState::Idle};
+        // Set true only between acquireFrameForCpuWrite() and the submission
+        // that consumes the write. Asserted wherever the planes are written.
+        bool cpuWriteOwnership{};
+        // The emulated frame this resource's inputs, submission and completed
+        // dispatch belong to. They must agree at every step.
+        u64 preparedGeneration{};
+        u64 submittedGeneration{};
+        u64 completedGeneration{};
     };
 
     bool createSyncObjects();
@@ -165,9 +198,18 @@ private:
     void destroyFrameResources();
     u32 findMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const;
 
+    // Waits for any dispatch still reading the shared structured planes, then
+    // hands the emulation thread the right to rewrite them.
+    bool acquireFrameForCpuWrite(VulkanFrame* frame, u64 timeoutNs = UINT64_MAX);
+    bool waitForResourceSubmission(FrameResource& resource, u64 timeoutNs);
+    // Returns a resource to Idle after recording or submission failed, so a
+    // later reuse cannot block forever on a fence that will never signal.
+    bool recoverFrameResourceAfterAbortedSubmission(FrameResource& resource);
     bool beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs = UINT64_MAX);
     bool submitFrameCommand(VulkanFrame* frame, FrameResource& resource, bool signalTimeline);
-    bool updateCompositorPackedBuffers(const StructuredCompositionFrame& structured);
+    bool updateCompositorPackedBuffers(
+        FrameResource& resource,
+        const StructuredCompositionFrame& structured);
     bool dispatchCompositor(
         VulkanFrame* frame,
         FrameResource& resource,
@@ -225,6 +267,13 @@ private:
     PerfSampleWindow<120> composeCpuWindow;
     PerfSampleWindow<120> waitCpuWindow;
     PerfSampleWindow<120> compositorGpuWindow;
+    // Ownership violations. All must stay at zero; they are surfaced in the
+    // developer performance log rather than being silently tolerated.
+    u64 packedWriteWhileSubmitted = 0;
+    u64 generationMismatch = 0;
+    u64 fenceRecoveryFailure = 0;
+    u64 staleTimelinePresented = 0;
+
     u64 waitFailureInvalidFrame = 0;
     u64 waitFailureTimelineZero = 0;
     u64 waitFailureResourceMissing = 0;
