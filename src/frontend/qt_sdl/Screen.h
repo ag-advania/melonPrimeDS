@@ -399,6 +399,30 @@ private:
 #endif
 };
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+class ScreenPanelDX12 final : public ScreenPanel
+{
+public:
+    explicit ScreenPanelDX12(QWidget* parent);
+    ~ScreenPanelDX12() override;
+
+    bool initDX12();
+    void drawScreen() override;
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
+private:
+    void setupScreenLayout() override;
+    void requestNativeSurfaceVisible(bool visible);
+    void reportRuntimeFailure(const char* reason);
+
+    struct DX12State;
+    std::unique_ptr<DX12State> dx12;
+};
+#endif
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 class ScreenPanelVulkan final : public ScreenPanel
 {

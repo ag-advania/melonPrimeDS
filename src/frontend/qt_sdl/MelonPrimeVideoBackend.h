@@ -33,6 +33,9 @@ namespace MelonPrime::VideoBackend {
 #if defined(MELONPRIME_ENABLE_VULKAN)
         Vulkan,
 #endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        DX12,
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
         Metal,
 #endif

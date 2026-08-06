@@ -125,6 +125,10 @@ PresentationBackend ResolvePresentationBackend(bool useGLConfig, int requestedRe
     if (normalized == renderer3D_Vulkan)
         return PresentationBackend::Vulkan;
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (normalized == renderer3D_DX12)
+        return PresentationBackend::DX12;
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
     if (normalized == renderer3D_Metal || normalized == renderer3D_MetalCompute)
         return PresentationBackend::Metal;
