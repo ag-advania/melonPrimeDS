@@ -73,6 +73,14 @@ struct MelonPrimeVulkanFrameQueueStats
     u64 DroppedFrameAgeSamples = 0;
 };
 
+// A queue slot, not a resource lease.
+//
+// Taking a frame out of this queue only says the frame is no longer needed for
+// presentation. It says nothing about whether the GPU has finished reading the
+// resources MelonPrimeVulkanOutput associates with it. Anything that wants to
+// write those resources must go through
+// MelonPrimeVulkanOutput::acquireFrameForCpuWrite(), which is the only place
+// that consults the submission fence.
 struct VulkanFrame {
     FrameBackend backend{FrameBackend::OpenGlTexture};
     VkImage frameImage{VK_NULL_HANDLE};
@@ -84,6 +92,10 @@ struct VulkanFrame {
     u64 renderTimelineValue{};
     u64 presentTimelineValue{};
     u64 queuedAtNs{};
+    // The emulated frame whose composition was submitted for this slot. Set
+    // when the compositor submits; zero means nothing current has been composed
+    // into it yet, so it must not be presented.
+    u64 emulatedGeneration{};
 };
 
 class MelonPrimeVulkanFrameQueue
@@ -115,7 +127,8 @@ private:
     };
 
     static MelonPrimeVulkanFrameQueuePolicy sanitizePolicy(MelonPrimeVulkanFrameQueuePolicy policy);
-    void rebuildFreeQueueLocked();
+    void rebuildRecyclableQueueLocked();
+    void resetAcquiredFrameLocked(VulkanFrame* frame);
     void dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool treatAsFastForwardSkip);
     void updateBacklogStatsLocked();
     void recordPresentedFrameAgeLocked(VulkanFrame* frame, u64 nowNs);
@@ -125,7 +138,12 @@ private:
     std::mutex frameLock;
     std::condition_variable presentFrameReadyCondition;
     std::array<VulkanFrame, MELONPRIME_VULKAN_FRAME_QUEUE_SIZE> frames{};
-    std::queue<VulkanFrame*> freeQueue{};
+    // Frames that are free to hand out again. "Free" is a queue-level
+    // statement only: a frame lands here as soon as it stops being needed for
+    // presentation, which can be while its compositor dispatch is still
+    // running. MelonPrimeVulkanOutput decides when its resources may actually
+    // be written.
+    std::queue<VulkanFrame*> recyclableQueue{};
     std::deque<VulkanFrame*> presentQueue{};
     VulkanFrame* previousFrame = nullptr;
     VulkanFrame* pendingPresentFrame = nullptr;

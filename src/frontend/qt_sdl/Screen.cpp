@@ -3062,6 +3062,7 @@ void ScreenPanelVulkan::composeFrameAtVBlank()
             *renderer3D,
             static_cast<int>(rendererScale),
             structured.Has3D,
+            structured.Generation,
             inputs)
         && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
     if (!composed)

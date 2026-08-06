@@ -203,6 +203,10 @@ void MelonPrimeVulkanOutput::shutdown()
     timelineValue = 0;
     useTimelineSemaphores = false;
     lastComposedFrame = nullptr;
+    packedWriteWhileSubmitted = 0;
+    generationMismatch = 0;
+    fenceRecoveryFailure = 0;
+    staleTimelinePresented = 0;
     initialized = false;
 }
 
@@ -730,20 +734,120 @@ bool MelonPrimeVulkanOutput::ensureFrameResources(VulkanFrame* frame, u32 width,
     return createFrameResource(frame, width, height);
 }
 
-bool MelonPrimeVulkanOutput::beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs)
+bool MelonPrimeVulkanOutput::waitForResourceSubmission(FrameResource& resource, u64 timeoutNs)
 {
-    const VkResult waitResult = vkWaitForFences(device, 1, &resource.submitFence, VK_TRUE, waitTimeoutNs);
-    if (waitResult != VK_SUCCESS)
+    if (resource.submitFence == VK_NULL_HANDLE)
+        return true;
+
+    // Fast path: a frame that has already completed costs one status query.
+    // A wait only happens when a frame really is reused while still in flight.
+    const VkResult status = vkGetFenceStatus(device, resource.submitFence);
+    if (status == VK_SUCCESS)
+    {
+        consumeFrameGpuTiming(resource);
+        return true;
+    }
+    if (status != VK_NOT_READY)
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
-            "MelonPrimeVulkanOutput: beginFrameCommand fence wait failed (%d, timeoutNs=%llu)",
-            static_cast<int>(waitResult),
-            static_cast<unsigned long long>(waitTimeoutNs));
+            "MelonPrimeVulkanOutput: compositor fence is in an error state (%d)",
+            static_cast<int>(status));
         return false;
     }
 
+    const u64 waitStartNs = PerfNowNs();
+    if (vkWaitForFences(device, 1, &resource.submitFence, VK_TRUE, timeoutNs) != VK_SUCCESS)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "MelonPrimeVulkanOutput: timed out waiting for a compositor dispatch to finish");
+        return false;
+    }
+    waitCpuWindow.Add(PerfNowNs() - waitStartNs);
     consumeFrameGpuTiming(resource);
+    return true;
+}
+
+bool MelonPrimeVulkanOutput::acquireFrameForCpuWrite(VulkanFrame* frame, u64 timeoutNs)
+{
+    if (!initialized || frame == nullptr)
+        return false;
+
+    auto iterator = resources.find(frame);
+    if (iterator == resources.end())
+        return false;
+
+    FrameResource& resource = iterator->second;
+
+    // The frame queue hands frames back for reuse on logical grounds alone --
+    // a backlog trim, a stale drop or a discard all return a frame whose
+    // dispatch may still be running. Whether the emulation thread may write is
+    // decided here, by this resource's fence, and nowhere else.
+    //
+    // The compositor fence is the only one this needs. The surface presenter
+    // reads a frame's output image from its own submission, but it waits on its
+    // own fence before each submit and submits on the same queue under the same
+    // VulkanContext queue lock, so a later compositor dispatch cannot overtake a
+    // present that is still reading. The rare teardown paths (renderer switch,
+    // savestate, swapchain rebuild) go through presenter Shutdown() and
+    // output shutdown(), which drain the device explicitly.
+    if (resource.submissionState == SubmissionState::Submitted)
+    {
+        if (!waitForResourceSubmission(resource, timeoutNs))
+            return false;
+        resource.completedGeneration = resource.submittedGeneration;
+    }
+
+    resource.submissionState = SubmissionState::Idle;
+    resource.cpuWriteOwnership = true;
+    resource.hasPreparedInputs = false;
+    resource.preparedGeneration = 0;
+    return true;
+}
+
+bool MelonPrimeVulkanOutput::recoverFrameResourceAfterAbortedSubmission(FrameResource& resource)
+{
+    // vkResetFences has already run by the time recording or submission can
+    // fail, so the fence would stay unsignalled and the next reuse of this
+    // frame would wait on it forever. Replace it with a fresh signalled fence.
+    if (resource.submitFence != VK_NULL_HANDLE)
+    {
+        vkDestroyFence(device, resource.submitFence, nullptr);
+        resource.submitFence = VK_NULL_HANDLE;
+    }
+
+    VkFenceCreateInfo fenceCreateInfo{};
+    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    if (vkCreateFence(device, &fenceCreateInfo, nullptr, &resource.submitFence) != VK_SUCCESS)
+    {
+        fenceRecoveryFailure++;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "MelonPrimeVulkanOutput: could not recreate a compositor fence after an aborted submission");
+        return false;
+    }
+
+    resource.timestampPending = false;
+    resource.submissionState = SubmissionState::Idle;
+    resource.cpuWriteOwnership = false;
+    resource.hasPreparedInputs = false;
+    resource.preparedGeneration = 0;
+    return true;
+}
+
+bool MelonPrimeVulkanOutput::beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs)
+{
+    // acquireFrameForCpuWrite() already waited for any dispatch still reading
+    // this frame's inputs, so the normal path must not wait a second time.
+    // The guard below only catches a caller that skipped the acquire.
+    assert(resource.submissionState == SubmissionState::Idle);
+    if (resource.submissionState == SubmissionState::Submitted
+        && !waitForResourceSubmission(resource, waitTimeoutNs))
+    {
+        return false;
+    }
 
     if (resource.timestampQueryPool != VK_NULL_HANDLE && resetQueryPool != nullptr)
         resetQueryPool(device, resource.timestampQueryPool, 0, 2);
@@ -751,19 +855,34 @@ bool MelonPrimeVulkanOutput::beginFrameCommand(FrameResource& resource, u64 wait
     if (vkResetFences(device, 1, &resource.submitFence) != VK_SUCCESS)
         return false;
 
+    // From here the fence is unsignalled, so every failure path has to go
+    // through recoverFrameResourceAfterAbortedSubmission().
     if (vkResetCommandBuffer(resource.commandBuffer, 0) != VK_SUCCESS)
+    {
+        (void)recoverFrameResourceAfterAbortedSubmission(resource);
         return false;
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    return vkBeginCommandBuffer(resource.commandBuffer, &beginInfo) == VK_SUCCESS;
+    if (vkBeginCommandBuffer(resource.commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        (void)recoverFrameResourceAfterAbortedSubmission(resource);
+        return false;
+    }
+
+    resource.submissionState = SubmissionState::Recording;
+    return true;
 }
 
 bool MelonPrimeVulkanOutput::submitFrameCommand(VulkanFrame* frame, FrameResource& resource, bool signalTimeline)
 {
     if (vkEndCommandBuffer(resource.commandBuffer) != VK_SUCCESS)
+    {
+        (void)recoverFrameResourceAfterAbortedSubmission(resource);
         return false;
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -792,8 +911,15 @@ bool MelonPrimeVulkanOutput::submitFrameCommand(VulkanFrame* frame, FrameResourc
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
         if (vkQueueSubmit(queue, 1, &submitInfo, resource.submitFence) != VK_SUCCESS)
+        {
+            (void)recoverFrameResourceAfterAbortedSubmission(resource);
             return false;
+        }
     }
+
+    // The GPU now owns this frame's inputs until its fence signals.
+    resource.submissionState = SubmissionState::Submitted;
+    resource.cpuWriteOwnership = false;
 
     if (frame != nullptr)
     {
@@ -813,8 +939,19 @@ bool MelonPrimeVulkanOutput::submitFrameCommand(VulkanFrame* frame, FrameResourc
 }
 
 bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
+    FrameResource& resource,
     const StructuredCompositionFrame& structured)
 {
+    // Writing while the GPU still owns the planes is the defect this whole
+    // state machine exists to prevent, so it is counted, not tolerated.
+    assert(resource.cpuWriteOwnership);
+    assert(resource.submissionState == SubmissionState::Idle);
+    if (!resource.cpuWriteOwnership || resource.submissionState != SubmissionState::Idle)
+    {
+        packedWriteWhileSubmitted++;
+        return false;
+    }
+
     if (topPackedMapped == nullptr || bottomPackedMapped == nullptr || packedBufferSize == 0)
         return false;
 
@@ -839,7 +976,22 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     VulkanFrame* frame,
     const StructuredCompositionFrame& structured)
 {
-    if (!initialized || frame == nullptr || !structured.IsComplete())
+    if (!initialized
+        || frame == nullptr
+        || !structured.IsComplete()
+        || structured.Generation == 0)
+    {
+        return false;
+    }
+
+    // Ownership first, then the write. The structured planes live in one shared
+    // buffer pair that the compute dispatch reads directly, so the emulation
+    // thread may only touch them once the dispatch that was reading them has
+    // finished. Doing this the other way round let a new frame's metadata land
+    // underneath a running dispatch, which then sampled one frame's control
+    // words next to another frame's 2D planes -- the background appearing in
+    // front of the UI on alternating frames.
+    if (!acquireFrameForCpuWrite(frame))
         return false;
 
     auto iterator = resources.find(frame);
@@ -847,44 +999,21 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
         return false;
 
     FrameResource& resource = iterator->second;
-    resource.hasPreparedInputs = false;
-
-    // The structured planes live in one shared, persistently mapped buffer pair
-    // that the compute dispatch reads directly, exactly like DX12's single
-    // CompositionInputBuffer. Whichever frame dispatched last is still the one
-    // reading them, so wait for that dispatch before the emulation thread
-    // overwrites them.
-    //
-    // Without this, the frame queue's recycling (getPresentCandidate() returns
-    // still-queued frames to the free list, and AllowStealPending pulls one off
-    // the present queue) let a new frame's metadata land underneath a running
-    // dispatch. The shader then mixed two frames -- one frame's control words
-    // beside the other frame's 2D planes -- which is what put the background in
-    // front of the UI on alternating frames. DX12 cannot reach this state: it
-    // owns a single input buffer and calls Commands.WaitIdle() after submitting.
-    if (lastComposedFrame != nullptr && lastComposedFrame != frame)
-    {
-        const auto previous = resources.find(lastComposedFrame);
-        if (previous != resources.end() && previous->second.submitFence != VK_NULL_HANDLE)
-        {
-            const u64 fenceWaitStartNs = PerfNowNs();
-            if (vkWaitForFences(device, 1, &previous->second.submitFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
-            {
-                melonDS::Platform::Log(
-                    melonDS::Platform::LogLevel::Error,
-                    "MelonPrimeVulkanOutput: timed out waiting for the previous compositor dispatch");
-                return false;
-            }
-            waitCpuWindow.Add(PerfNowNs() - fenceWaitStartNs);
-        }
-    }
+    assert(resource.submissionState == SubmissionState::Idle);
+    assert(resource.cpuWriteOwnership);
+    assert(resource.preparedGeneration == 0);
 
     const u64 packedUploadStartNs = PerfNowNs();
-    if (!updateCompositorPackedBuffers(structured))
+    if (!updateCompositorPackedBuffers(resource, structured))
+    {
+        resource.cpuWriteOwnership = false;
         return false;
+    }
     packedUploadCpuWindow.Add(PerfNowNs() - packedUploadStartNs);
 
+    resource.preparedGeneration = structured.Generation;
     resource.hasPreparedInputs = true;
+    lastComposedFrame = frame;
     return true;
 }
 
@@ -893,11 +1022,12 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     const melonDS::VulkanRenderer3D& renderer3D,
     int scale,
     bool has3D,
+    u64 generation,
     VulkanCompositionInputs& outInputs) const
 {
     outInputs = {};
 
-    if (!initialized || frame == nullptr || scale < 1)
+    if (!initialized || frame == nullptr || scale < 1 || generation == 0)
         return false;
 
     auto iterator = resources.find(const_cast<VulkanFrame*>(frame));
@@ -907,6 +1037,19 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     const FrameResource& resource = iterator->second;
     if (!resource.hasPreparedInputs || !renderer3D.HasColorTarget())
         return false;
+
+    // These inputs must describe the same emulated frame whose planes are
+    // currently in the shared buffers, and the emulation thread must still own
+    // that write. Anything else would compose two frames together.
+    if (!resource.cpuWriteOwnership
+        || resource.preparedGeneration == 0
+        || resource.preparedGeneration != generation)
+    {
+        return false;
+    }
+
+    outInputs.generation = generation;
+    outInputs.rendererSubmissionSerial = renderer3D.GetRenderSubmissionSerial();
 
     // The live color target, never a snapshot of an earlier frame. The Vulkan
     // 3D renderer finished this frame's render before the frontend drew, so
@@ -939,8 +1082,28 @@ bool MelonPrimeVulkanOutput::composeAndSubmitFrame(VulkanFrame* frame, const Vul
     if (iterator == resources.end())
         return false;
 
+    FrameResource& resource = iterator->second;
+
+    // Never compose a frame whose inputs and submission disagree: that is
+    // exactly how one frame's 2D ends up over another frame's 3D. Drop the
+    // frame instead of guessing which half is current.
+    if (inputs.generation == 0
+        || inputs.generation != resource.preparedGeneration
+        || !resource.cpuWriteOwnership)
+    {
+        generationMismatch++;
+        assert(false && "compositor inputs do not match the prepared frame");
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Error,
+            "MelonPrimeVulkanOutput: generation mismatch (inputs=%llu prepared=%llu owned=%d); dropping the frame",
+            static_cast<unsigned long long>(inputs.generation),
+            static_cast<unsigned long long>(resource.preparedGeneration),
+            resource.cpuWriteOwnership ? 1 : 0);
+        return false;
+    }
+
     const u64 composeStartNs = PerfNowNs();
-    const bool composed = dispatchCompositor(frame, iterator->second, inputs);
+    const bool composed = dispatchCompositor(frame, resource, inputs);
     composeCpuWindow.Add(PerfNowNs() - composeStartNs);
     return composed;
 }
@@ -1106,6 +1269,8 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
         return false;
 
     resource.hasContent = true;
+    resource.submittedGeneration = inputs.generation;
+    frame->emulatedGeneration = inputs.generation;
     lastComposedFrame = frame;
     return true;
 }
@@ -1121,6 +1286,15 @@ bool MelonPrimeVulkanOutput::waitForFrame(const VulkanFrame* frame, u64 timeoutN
     if (frame->renderTimelineValue == 0)
     {
         waitFailureTimelineZero++;
+        return false;
+    }
+
+    // A frame is only presentable once a composition for a real emulated frame
+    // has been submitted into it. getRenderFrame() clears this on acquisition,
+    // so a slot that was recycled without being recomposed cannot slip through.
+    if (frame->emulatedGeneration == 0)
+    {
+        staleTimelinePresented++;
         return false;
     }
 
@@ -1207,7 +1381,7 @@ void MelonPrimeVulkanOutput::logPerformanceIfNeeded()
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Warn,
-        "VulkanPerf[Output]: compose cpu avg=%.3fms p95=%.3fms max=%.3fms packed avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms waitFail(invalid=%llu timelineZero=%llu resourceMissing=%llu finiteTimeout=%llu infinite=%llu)",
+        "VulkanPerf[Output]: compose cpu avg=%.3fms p95=%.3fms max=%.3fms packed avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms ownership(packedWriteWhileSubmitted=%llu generationMismatch=%llu fenceRecoveryFailure=%llu staleTimelinePresented=%llu) waitFail(invalid=%llu timelineZero=%llu resourceMissing=%llu finiteTimeout=%llu infinite=%llu)",
         PerfNsToMs(composeSummary.MeanNs),
         PerfNsToMs(composeSummary.P95Ns),
         PerfNsToMs(composeSummary.MaxNs),
@@ -1220,6 +1394,10 @@ void MelonPrimeVulkanOutput::logPerformanceIfNeeded()
         PerfNsToMs(gpuSummary.MeanNs),
         PerfNsToMs(gpuSummary.P95Ns),
         PerfNsToMs(gpuSummary.MaxNs),
+        static_cast<unsigned long long>(packedWriteWhileSubmitted),
+        static_cast<unsigned long long>(generationMismatch),
+        static_cast<unsigned long long>(fenceRecoveryFailure),
+        static_cast<unsigned long long>(staleTimelinePresented),
         static_cast<unsigned long long>(waitFailureInvalidFrame),
         static_cast<unsigned long long>(waitFailureTimelineZero),
         static_cast<unsigned long long>(waitFailureResourceMissing),

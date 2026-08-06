@@ -10889,6 +10889,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
             Log(LogLevel::Error, "VulkanRenderer3D: graphics vkQueueSubmit failed (%d)", static_cast<int>(submitResult));
             return false;
         }
+        RenderSubmissionSerial++;
     }
 
     if (context != nullptr && Threaded)
