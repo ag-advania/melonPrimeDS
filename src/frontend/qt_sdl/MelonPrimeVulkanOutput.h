@@ -169,6 +169,26 @@ private:
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         VkQueryPool timestampQueryPool{VK_NULL_HANDLE};
 
+        // This frame's own structured planes, persistently mapped.
+        //
+        // They are per-frame precisely so that submitFence is a complete
+        // statement about when they may be rewritten. A single shared pair
+        // cannot work here: acquireFrameForCpuWrite() waits on the fence of the
+        // frame being acquired, so with one shared buffer a dispatch still
+        // reading it from a different slot was never waited for, and the
+        // emulation thread could overwrite below/above/control/lineMeta
+        // underneath it. One dispatch then saw a mix of two generations, which
+        // is what put the background and 3D in front of the UI on alternating
+        // frames. DX12 gets away with one composition input buffer only because
+        // it serializes each composition with Commands.WaitIdle().
+        VkBuffer topPackedBuffer{VK_NULL_HANDLE};
+        VkDeviceMemory topPackedMemory{VK_NULL_HANDLE};
+        void* topPackedMapped{};
+        VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
+        VkDeviceMemory bottomPackedMemory{VK_NULL_HANDLE};
+        void* bottomPackedMapped{};
+        VkDeviceSize packedBufferSize{};
+
         u64 submissionValue{};
         u32 width{};
         u32 height{};
@@ -193,8 +213,6 @@ private:
     bool createCommandObjects();
     bool createCompositorResources();
     void destroyCompositorResources();
-    bool createPackedBuffers();
-    void destroyPackedBuffers();
     bool createTimestampQueryPool(VkQueryPool& queryPool);
     void destroyTimestampQueryPool(VkQueryPool& queryPool);
     bool createFrameResource(VulkanFrame* frame, u32 width, u32 height);
@@ -219,6 +237,10 @@ private:
         FrameResource& resource,
         const VulkanCompositionInputs& inputs);
     void consumeFrameGpuTiming(FrameResource& resource);
+    void logPackedFrameIfNeeded(
+        const VulkanFrame* frame,
+        const FrameResource& resource,
+        const VulkanCompositionInputs& inputs) const;
     void logFrameSyncIfNeeded(const VulkanFrame* frame, const VulkanCompositionInputs& inputs);
     void logPerformanceIfNeeded();
 
@@ -249,21 +271,6 @@ private:
     VkPipelineLayout compositorPipelineLayout{VK_NULL_HANDLE};
     VkPipeline compositorPipeline{VK_NULL_HANDLE};
 
-    // One shared pair of persistently mapped structured planes, mirroring
-    // DX12Renderer3D's single CompositionInputBuffer. Composition happens once
-    // per emulated frame, so a per-frame copy bought nothing and let the
-    // emulation thread overwrite planes a still-running dispatch was reading.
-    VkBuffer topPackedBuffer{VK_NULL_HANDLE};
-    VkDeviceMemory topPackedMemory{VK_NULL_HANDLE};
-    void* topPackedMapped{};
-    VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
-    VkDeviceMemory bottomPackedMemory{VK_NULL_HANDLE};
-    void* bottomPackedMapped{};
-    VkDeviceSize packedBufferSize{};
-
-    // The frame whose dispatch last read the shared planes. The next frame must
-    // wait for it before overwriting them.
-    VulkanFrame* lastComposedFrame{nullptr};
     // Counts compositor dispatches, so a log line can say which composition a
     // given structured generation and 3D submission ended up in.
     u64 compositorSubmissionSerial{};
@@ -280,6 +287,8 @@ private:
     // developer performance log rather than being silently tolerated.
     u64 packedWriteWhileSubmitted = 0;
     u64 generationMismatch = 0;
+    // Composition inputs naming buffers other than the dispatching frame's own.
+    u64 packedBufferIdentityMismatch = 0;
     u64 fenceRecoveryFailure = 0;
     u64 staleTimelinePresented = 0;
 
