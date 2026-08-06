@@ -505,6 +505,7 @@ if (MELONPRIME_DX12_ACTIVE)
 
     target_sources(core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Context.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12NvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_DX12.cpp)

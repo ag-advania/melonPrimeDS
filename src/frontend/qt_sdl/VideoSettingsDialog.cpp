@@ -17,6 +17,8 @@
 */
 
 #include <QFileDialog>
+#include <QComboBox>
+#include <QLabel>
 #include <QRadioButton>
 #include <QtGlobal>
 
@@ -32,6 +34,7 @@
 #include "ui_VideoSettingsDialog.h"
 
 #ifdef MELONPRIME_DS
+#include "MelonPrimeDef.h"
 #include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeLocalization.h"
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -167,6 +170,28 @@ void VideoSettingsDialog::setEnabled()
     // shares that renderer's coordinate-mode setting rather than the
     // BetterPolygons splitting used by the raster paths.
     ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+    const bool reflexEnabled = dx12Renderer
+        && dx12Probe.Available
+        && dx12Probe.NvidiaReflexAvailable;
+    lblNvidiaReflex->setEnabled(reflexEnabled);
+    cbxNvidiaReflex->setEnabled(reflexEnabled);
+
+    const QString reflexDescription = reflexEnabled
+        ? MelonPrime::UiText::Tr(
+            "NVIDIA Reflex reduces CPU-to-render latency. Boost also requests maximum GPU clocks and can increase power usage.")
+        : (!dx12Renderer
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 on a supported NVIDIA GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                dx12Probe.NvidiaReflexReason.empty()
+                    ? std::string("NVIDIA Reflex is unavailable")
+                    : dx12Probe.NvidiaReflexReason)));
+    lblNvidiaReflex->setToolTip(reflexDescription);
+    cbxNvidiaReflex->setToolTip(reflexDescription);
+#endif
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -189,6 +214,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode);
+#endif
 
     grp3DRenderer = new QButtonGroup(this);
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
@@ -283,6 +311,23 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         "<html><head/><body><p>Native DirectX 12 renderer. The GPU rasterizes 3D and recomposites the software 2D layers at the selected internal resolution.</p></body></html>"));
     ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
     grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
+
+    lblNvidiaReflex = new QLabel(ui->groupBox_3);
+    lblNvidiaReflex->setObjectName(QStringLiteral("lblNvidiaReflex"));
+    lblNvidiaReflex->setText(MelonPrime::UiText::Tr("NVIDIA Reflex:"));
+    cbxNvidiaReflex = new QComboBox(ui->groupBox_3);
+    cbxNvidiaReflex->setObjectName(QStringLiteral("cbxNvidiaReflex"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("On"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("On + Boost"));
+    cbxNvidiaReflex->setCurrentIndex(qBound(0, oldNvidiaReflexMode, 2));
+    ui->gridLayout_4->addWidget(lblNvidiaReflex, 4, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxNvidiaReflex, 5, 0, 1, 1);
+    connect(
+        cbxNvidiaReflex,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onNvidiaReflexModeChanged);
 
     ui->gridLayout_2->addItem(ui->verticalSpacer, dx12Row + 1, 0, 1, 2);
     ui->gridLayout_2->addWidget(ui->cbGLDisplay, dx12Row + 2, 0, 1, 2);
@@ -436,6 +481,9 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    cfg.SetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode, oldNvidiaReflexMode);
+#endif
 
 #ifdef MELONPRIME_DS
     const auto restoredBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
@@ -591,3 +639,12 @@ void VideoSettingsDialog::on_cbxComputeHiResCoords_stateChanged(int state)
 
     emit updateVideoSettings(false);
 }
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+void VideoSettingsDialog::onNvidiaReflexModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode, mode);
+    emit updateVideoSettings(false);
+}
+#endif

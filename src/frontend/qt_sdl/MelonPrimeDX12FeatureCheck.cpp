@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "DX12Context.h"
+#include "DX12NvidiaReflex.h"
 #include "Platform.h"
 
 namespace MelonPrime::DX12FeatureCheck
@@ -32,6 +33,8 @@ const Result& Probe()
         gResult.Reason = context.GetFailureReason().empty()
             ? std::string("DirectX 12 is not available on this system")
             : context.GetFailureReason();
+        gResult.NvidiaReflexAvailable = false;
+        gResult.NvidiaReflexReason = gResult.Reason;
         gResult.AdapterName.clear();
 
         melonDS::Platform::Log(
@@ -45,15 +48,21 @@ const Result& Probe()
     gResult.Available = true;
     gResult.Reason.clear();
     gResult.AdapterName = profile.AdapterName;
+    const auto reflex = melonDS::DX12NvidiaReflex::Probe(
+        context.GetDevice(), profile.VendorId);
+    gResult.NvidiaReflexAvailable = reflex.Available;
+    gResult.NvidiaReflexReason = reflex.Reason;
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Info,
-        "MelonPrime DX12 probe: available=1 adapter=\"%s\" featureLevel=%X.%X shaderModel=%u.%u\n",
+        "MelonPrime DX12 probe: available=1 adapter=\"%s\" featureLevel=%X.%X shaderModel=%u.%u reflex=%d reflexReason=\"%s\"\n",
         profile.AdapterName.c_str(),
         (static_cast<unsigned>(profile.FeatureLevel) >> 12) & 0xF,
         (static_cast<unsigned>(profile.FeatureLevel) >> 8) & 0xF,
         (profile.HighestShaderModel >> 4) & 0xF,
-        profile.HighestShaderModel & 0xF);
+        profile.HighestShaderModel & 0xF,
+        gResult.NvidiaReflexAvailable,
+        gResult.NvidiaReflexReason.c_str());
 
     context.Release();
     return gResult;
@@ -75,7 +84,9 @@ void ReportRuntimeFailure(std::string reason)
 
     const std::string diagnostic = reason.empty() ? std::string("unspecified runtime failure") : std::move(reason);
     gResult.Available = false;
+    gResult.NvidiaReflexAvailable = false;
     gResult.Reason = "DirectX 12 initialization failed";
+    gResult.NvidiaReflexReason = gResult.Reason;
     gProbed = true;
 
     melonDS::Platform::Log(

@@ -23,6 +23,7 @@
 
 #include <string>
 
+#include "DX12NvidiaReflex.h"
 #include "GPU_Soft.h"
 
 namespace melonDS
@@ -48,8 +49,16 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
     void SetRenderSettings(RendererSettings& settings) override;
+    void Start3DRendering() override;
     void VBlank() override;
     RendererOutput GetOutput() override;
+
+    void BeginReflexFrame();
+    void MarkReflexInputSample();
+    void EndReflexRenderPhase();
+    void BeginReflexPresent();
+    void EndReflexPresent();
+    void FinishReflexFrame();
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
@@ -58,6 +67,9 @@ public:
 
     [[nodiscard]] DX12Renderer3D* GetDX12Renderer3D() noexcept;
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
+
+private:
+    DX12NvidiaReflex NvidiaReflex;
 };
 
 } // namespace melonDS

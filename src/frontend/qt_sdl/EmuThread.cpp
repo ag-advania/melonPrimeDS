@@ -55,6 +55,7 @@
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 #include "GPU_DX12.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeDX12FeatureCheck.h"
 #endif
@@ -311,6 +312,18 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        // Reflex sleep belongs immediately before late input sampling. Cache
+        // the renderer once for the rest of this frame; renderer transitions
+        // explicitly close the frame before destroying it below.
+        if (UNLIKELY(handleDX12RuntimeFailure()))
+            shadersReady = true;
+        auto* dx12ReflexRenderer = dynamic_cast<DX12Renderer*>(
+            &emuInstance->nds->GPU.GetRenderer());
+        if (dx12ReflexRenderer)
+            dx12ReflexRenderer->BeginReflexFrame();
+#endif
+
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
@@ -335,10 +348,6 @@ void EmuThread::run()
         // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
         // GetRenderer().NeedsShaderCompile() is a vtable lookup + indirect call
         // (~15-25 cyc) that returns false 100% of the time after initial compile.
-#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (UNLIKELY(handleDX12RuntimeFailure()))
-            shadersReady = true;
-#endif
         bool needsCompile = UNLIKELY(!shadersReady)
             && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
 #else
@@ -361,6 +370,10 @@ void EmuThread::run()
         if (LIKELY(!needsCompile)) {
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+            if (dx12ReflexRenderer)
+                dx12ReflexRenderer->MarkReflexInputSample();
+#endif
 #if defined(MELONPRIME_DS)
             // Renderer switching follows the match window between the
             // pre-match and post-match full blacks, not the patch lifecycle or
@@ -467,6 +480,16 @@ void EmuThread::run()
             }
 #endif
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+            if (dx12ReflexRenderer)
+            {
+                // SetRenderSettings may update Reflex mode or recreate DX12
+                // resources. Close this transition frame first so no D3D12
+                // work escapes the RenderSubmit marker interval.
+                dx12ReflexRenderer->FinishReflexFrame();
+                dx12ReflexRenderer = nullptr;
+            }
+#endif
             updateRenderer();
 
 #ifdef MELONPRIME_DS
@@ -532,6 +555,11 @@ void EmuThread::run()
             nlines = emuInstance->nds->RunFrame();
         }
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        if (dx12ReflexRenderer)
+            dx12ReflexRenderer->EndReflexRenderPhase();
+#endif
+
 #ifdef MELONPRIME_DS
         // P-25: Save flush throttle — check once per 30 frames (~0.5s).
         {
@@ -553,7 +581,18 @@ void EmuThread::run()
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::RunFrame);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        if (dx12ReflexRenderer)
+            dx12ReflexRenderer->BeginReflexPresent();
+#endif
         emuInstance->drawScreen();
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        if (dx12ReflexRenderer)
+        {
+            dx12ReflexRenderer->EndReflexPresent();
+            dx12ReflexRenderer->FinishReflexFrame();
+        }
+#endif
 
 #ifdef MELONPRIME_DS
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Draw);
@@ -1517,7 +1556,10 @@ void EmuThread::updateRenderer()
         .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
         .Threaded = cfg.GetBool("3D.Soft.Threaded"),
         .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
-        .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
+        .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons"),
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::Dx12NvidiaReflexMode)
+#endif
     };
     nds->GetRenderer().SetRenderSettings(settings);
 
