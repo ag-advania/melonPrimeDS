@@ -63,7 +63,6 @@ public:
     void SetupAccelFrame() override;
     void PrepareCaptureFrame() override;
     void BeginCaptureFrame() override;
-    void SetCaptureScreenSwapHint(bool screenSwap) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return ActiveBackendMode == BackendMode::GraphicsHardware; }
 
     void SetRenderSettings(
@@ -95,10 +94,6 @@ public:
     [[nodiscard]] size_t GetAsyncRenderContextCount() const noexcept { return AsyncRenderContextCount; }
     [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
     [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
-    [[nodiscard]] bool IsCurrentCaptureScreenSwapHintValid() const noexcept { return HasCurrentCaptureScreenSwapHint; }
-    [[nodiscard]] bool GetCurrentCaptureScreenSwapHint() const noexcept { return CurrentCaptureScreenSwapHint; }
-    [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
-    [[nodiscard]] bool GetLastValidExactCaptureScreenSwap() const noexcept { return LastValidExactCaptureScreenSwap; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
     [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
     [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
@@ -506,9 +501,7 @@ private:
     bool readbackColorTargetToCpu(bool capturePath = false);
     bool readbackResultBufferToCpu();
     bool copyReadyCaptureLineToLineCache();
-    bool restoreLastValidExactCaptureToLineCache();
     void convertReadbackToLineCache();
-    void fillLineCacheWithCaptureFallbackColor();
     u32 buildClearColorRgba8(const melonDS::GPU& gpu) const;
     void clearLineCache();
     void ResetActiveBackend(melonDS::GPU& gpu);
@@ -765,13 +758,6 @@ private:
     std::vector<u32> RawReadbackRgba;
     std::vector<u32> RawResultReadback;
     std::array<u32, 256 * 192> LineCache{};
-    std::array<u32, 256 * 192> LastValidExactCaptureLineCache{};
-    u32 ExactCaptureFallbackPackedColor = 0;
-    bool ExactCaptureFallbackValid = false;
-    bool HasLastValidExactCapture = false;
-    bool LastValidExactCaptureScreenSwap = false;
-    bool CurrentCaptureScreenSwapHint = false;
-    bool HasCurrentCaptureScreenSwapHint = false;
     bool CurrentRenderScreenSwap = false;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
     float TimestampPeriodNs = 0.0f;

@@ -9,6 +9,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+#include "MelonPrimeVulkanFilterMode.h"
 #include "MelonPrimeVulkanSurface.h"
 
 namespace MelonPrime
@@ -16,7 +17,6 @@ namespace MelonPrime
 
 class MelonPrimeVulkanOutput;
 struct VulkanFrame;
-struct VulkanCompositionInputs;
 
 struct VulkanPresentRegion
 {
@@ -77,12 +77,13 @@ public:
         bool vsync);
     void Shutdown();
     void Resize(std::uint32_t width, std::uint32_t height, bool vsync);
+    // Presents an already-composed frame. It takes only the two presentation
+    // knobs it actually uses; the composition state stays with the compositor.
     bool Present(
         VulkanFrame* frame,
         MelonPrimeVulkanOutput& output,
-        const VulkanCompositionInputs& inputs,
-        std::uint32_t sourceWidth,
-        std::uint32_t sourceHeight,
+        VulkanFilterMode filtering,
+        std::uint32_t scale,
         const std::vector<VulkanPresentRegion>& regions,
         const VulkanOverlayFrame* overlay);
 
@@ -108,7 +109,7 @@ private:
     void DestroySwapchainGraphicsResources();
     bool UpdatePresentationDescriptors(
         VkImageView frameImageView,
-        const VulkanCompositionInputs& inputs,
+        VulkanFilterMode filtering,
         VkBuffer overlayBuffer,
         VkDeviceSize overlayBufferSize);
     bool UpdatePresentationVertices(
@@ -157,37 +158,19 @@ private:
         float alpha;
     };
 
+    // Mirrors MelonPrimeVulkanSurfacePresenter.frag. Keep the order identical.
+    // The presenter only blits the already-composed atlas, so it needs none of
+    // the composition state: that lives entirely in the compositor dispatch.
     struct PresenterPushConstants
     {
         std::uint32_t drawMode;
         std::uint32_t scale;
-        std::uint32_t rendererWidth;
-        std::uint32_t rendererHeight;
-        std::uint32_t packedStride;
-        std::uint32_t screenSwap;
         std::uint32_t filtering;
-        std::uint32_t previousTopSourceValid;
-        std::uint32_t previousBottomSourceValid;
-        std::uint32_t captureSourceValid;
-        std::uint32_t captureSourceScreenSwapValid;
-        std::uint32_t captureSourceScreenSwap;
-        std::uint32_t liveSourceScreenSwap;
-        std::uint32_t class4VramStructuredPair;
-        std::uint32_t class4NoAboveVramStructuredPair;
-        std::uint32_t class4PreservePackedVramValid;
-        std::uint32_t class4PreservePackedVramScreenSwap;
-        std::uint32_t topStructuredHandoffNoCurrent3d;
-        std::uint32_t bottomStructuredHandoffNoCurrent3d;
-        std::uint32_t topStructuredHandoffSuppress3d;
-        std::uint32_t bottomStructuredHandoffSuppress3d;
-        float viewportWidth;
-        float viewportHeight;
         std::uint32_t overlayWidth;
         std::uint32_t overlayHeight;
         float radarOpacity;
         std::uint32_t radarSourceCenterY;
         std::uint32_t radarSourceRadius;
-        std::uint32_t radarReserved;
     };
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;

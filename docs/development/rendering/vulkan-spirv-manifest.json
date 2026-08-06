@@ -14,7 +14,7 @@
   "target_environment": "SPIR-V 1.0 (glslc default)",
   "optimization": "none (glslc default; no -O flag)",
   "pinned_compiler": "Android NDK 28.0.13004108 shader-tools/glslc; shaderc generator word 0x000d000a",
-  "desktop_overlay_compiler": "glslc 2024.2; shaderc 3~1.3.290.0; generator word 0x000d000b",
+  "desktop_overlay_compiler": "glslc 2026.2; shaderc 3~1.4.350.0; used for the MelonPrime desktop compositor and surface presenter shaders only",
   "shaders": [
     {
       "source": "src/GPU3D_Vulkan_InterpSpansShader.comp",
@@ -283,17 +283,8 @@
       "symbol": "melonDS_android_vulkan_compositor_comp_spv",
       "header": "src/frontend/qt_sdl/MelonPrimeVulkanCompositorShaderData.h",
       "flags": [],
-      "source_sha256": "977d5b3010e2cafe2ccf4531db8e3ffa33ce08b18d094682f01290ed0f6db805",
-      "header_sha256": "1b985170e493621b6e5c58188b14e310e79defe0ee5541257502ed57296cc327"
-    },
-    {
-      "source": "src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShader.comp",
-      "stage": "comp",
-      "symbol": "melonDS_android_vulkan_accumulate_3d_comp_spv",
-      "header": "src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShaderData.h",
-      "flags": [],
-      "source_sha256": "565a95cc70f38c9f8d1b2b430d2dff7c24867e4a2580044caaf10028bf3acd8f",
-      "header_sha256": "7b8b931fdfe752fa37b9a55275c6a19acc2b9bac791a54db51730a424cf659d5"
+      "source_sha256": "62f9a4ec1228d56822e8df892dcc904d6a9a2dac224d756a1f71810f3641528e",
+      "header_sha256": "4adacce0130b5c6e5efd374d2cd0b2075cf452c12ce170f5a7663cd73937dc2a"
     },
     {
       "source": "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenter.vert",
@@ -310,8 +301,8 @@
       "symbol": "melonDS_android_vulkan_surface_presenter_frag_spv",
       "header": "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenterFragmentShaderData.h",
       "flags": [],
-      "source_sha256": "9f208b8c37ad405d71d8ddb8de79167e47f26c3eea21d3d4d29a9b5803d174b2",
-      "header_sha256": "ae44d117ba3510cbce7b942c6c515beb9fab8e55058891ea94518e4608023c3f"
+      "source_sha256": "fba8d0c26eb3e9fffb4f2b36bacd07aa32a336c1dcb604e3246da7ddd032d67c",
+      "header_sha256": "6f4b1164775f2920aec8027b9e84c46f4c154d3393a516486e02a9aafdbd6102"
     }
   ]
 }
