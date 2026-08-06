@@ -127,11 +127,11 @@ void EmuInstance::inputInit()
 #ifdef MELONPRIME_DS
     static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
 
-    keyInputMask = 0xFFF;
+    keyInputMask.store(0xFFF, std::memory_order_relaxed);
     joyInputMask = 0xFFF;
     inputMask = 0xFFF;
 
-    keyHotkeyMask = 0;
+    keyHotkeyMask.store(0, std::memory_order_relaxed);
     joyHotkeyMask = 0;
     hotkeyMask = 0;
     lastHotkeyMask = 0;
@@ -388,10 +388,10 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
     int key = event->key();
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask &= ~(1u << i);
+            keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask |= (1ULL << i);
+            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
 #else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
@@ -415,11 +415,11 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask |= (1u << i);
+            keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask &= ~(1ULL << i);
+            keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
 #else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
@@ -443,11 +443,11 @@ void EmuInstance::onMousePress(QMouseEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask &= ~(1u << i);
+            keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask |= (1ULL << i);
+            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
 }
 
 void EmuInstance::onMouseRelease(QMouseEvent* event)
@@ -456,11 +456,11 @@ void EmuInstance::onMouseRelease(QMouseEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask |= (1u << i);
+            keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask &= ~(1ULL << i);
+            keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
 }
 
 void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
@@ -471,10 +471,10 @@ void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
         const int key = static_cast<int>(btn) | MelonPrime::InputKey::MouseMark;
         for (int i = 0; i < 12; i++)
             if (key == hkKeyMapping[i])
-                keyInputMask |= (1u << i);
+                keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
         for (int i = 0; i < HK_MAX; i++)
             if (key == hkKeyMapping[i])
-                keyHotkeyMask &= ~(1ULL << i);
+                keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
     };
 
     releaseIfUp(Qt::LeftButton);
@@ -495,20 +495,20 @@ void EmuInstance::onMouseWheel(int delta)
     uint64_t pulse = 0;
     for (int i = 0; i < HK_MAX; i++) {
         if (key == hkKeyMapping[i]) {
-            keyHotkeyMask |= (1ULL << i);
+            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
             pulse |= (1ULL << i);
         }
     }
-    wheelHotkeyPulseMask |= pulse;
+    wheelHotkeyPulseMask.fetch_or(pulse, std::memory_order_relaxed);
 }
 #endif // MELONPRIME_DS
 
 void EmuInstance::keyReleaseAll()
 {
 #ifdef MELONPRIME_DS
-    keyInputMask = 0xFFF;
-    keyHotkeyMask = 0;
-    wheelHotkeyPulseMask = 0;
+    keyInputMask.store(0xFFF, std::memory_order_relaxed);
+    keyHotkeyMask.store(0, std::memory_order_relaxed);
+    wheelHotkeyPulseMask.store(0, std::memory_order_relaxed);
 #else
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
@@ -617,16 +617,17 @@ void EmuInstance::inputProcess()
     lastJoyHotkeyMask = joyHotkeyMask;
 
     // Combined edge detection (keyboard + joystick)
-    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
 
     // Mouse-wheel bindings are impulses: release the virtual key after the
     // edge latch so the next frame sees a clean release.
-    if (wheelHotkeyPulseMask) {
-        keyHotkeyMask &= ~wheelHotkeyPulseMask;
-        wheelHotkeyPulseMask = 0;
+    const uint64_t wheelPulseMask =
+        wheelHotkeyPulseMask.exchange(0, std::memory_order_relaxed);
+    if (wheelPulseMask) {
+        keyHotkeyMask.fetch_and(~wheelPulseMask, std::memory_order_relaxed);
     }
 
 #else
@@ -712,8 +713,8 @@ void EmuInstance::inputRefreshJoystickState()
             joystick = nullptr;
             joyInputMask = 0xFFF;
             joyHotkeyMask = 0;
-            inputMask = keyInputMask & joyInputMask;
-            hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+            inputMask = keyInputMask.load(std::memory_order_relaxed) & joyInputMask;
+            hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
             SDL_UnlockMutex(joyMutex.get());
             return;
         }
@@ -724,7 +725,7 @@ void EmuInstance::inputRefreshJoystickState()
         if (joystickButtonDown(joyMapping[i]))
             joyInputMask &= ~(1u << i);
 
-    inputMask = keyInputMask & joyInputMask;
+    inputMask = keyInputMask.load(std::memory_order_relaxed) & joyInputMask;
 
     joyHotkeyMask = 0;
     for (int i = 0; i < HK_MAX; i++)
@@ -732,7 +733,7 @@ void EmuInstance::inputRefreshJoystickState()
             joyHotkeyMask |= (1ULL << i);
 
     // Refresh combined mask but do NOT recompute edges.
-    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
 
     SDL_UnlockMutex(joyMutex.get());
 }
