@@ -34,8 +34,8 @@ class DX12Renderer3D;
 
 // Software 2D + DirectX 12 3D. The software engines also record structured 2D
 // planes, which the DX12 compute compositor combines with the high-resolution
-// 3D target. Presentation remains on the existing NativeQt/OpenGL panels so
-// Custom HUD, OSD, savestates and window-layout behavior stay shared.
+// 3D target. ScreenPanelDX12 performs the final shared Qt image composition
+// and submits it through a native flip-model DXGI swapchain.
 class DX12Renderer final : public SoftRenderer
 {
 public:

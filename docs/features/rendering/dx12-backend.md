@@ -20,8 +20,9 @@ DX12Renderer (: SoftRenderer)        software 2D engines + structured planes
 The software 2D engines record the same per-pixel structured planes used by the
 Vulkan backend. After the DS scanlines are complete, a DX12 compute pass combines
 those planes with the high-resolution 3D target and reads back two BGRA screens
-at `256*scale x 192*scale`. `RendererOutput` carries those dimensions, and both
-the `NativeQt` and `OpenGL` panels accept the variable-size buffers.
+at `256*scale x 192*scale`. `RendererOutput` carries those dimensions to
+`ScreenPanelDX12`, which performs the established layout/HUD/OSD composition and
+uploads the final window-sized BGRA frame to a native flip-model DXGI swapchain.
 
 The compute composition is submitted from `DX12Renderer::VBlank()` on the
 emulation thread. This binds the structured 2D planes and `FinalFB` to the same
@@ -32,20 +33,24 @@ incremental pipeline compilation at ROM startup, it temporarily publishes the
 initialized software buffers so Qt never paints an uninitialized cached image.
 
 A separate 256x192 resolve remains available for DS display capture and other
-core operations that require the `Renderer3D::GetLine()` contract. Presentation
-therefore gains real internal-resolution output without duplicating the Custom
-HUD, OSD, window-layout, input, or VSync implementations in another screen
-panel.
+core operations that require the `Renderer3D::GetLine()` contract. The DX12
+panel reuses the same QImage/QPainter layout, Custom HUD, radar and OSD helpers
+as the software panel before handing the completed pixels to D3D12. Qt never
+queues or paints active emulation frames; the native child HWND is owned by the
+DXGI swapchain.
 
 Consequences:
 
 * Internal resolution applies to the composed screen output, not only the 3D
   raster target.
 * The presentation path has one high-resolution GPU readback per newly composed
-  frame. The native resolve is read back only when display capture calls
-  `GetLine()`.
-* `Screen.UseGL` still applies: DX12 needs no GL context, so presentation
-  resolves to `NativeQt` or `OpenGL` exactly like the Software renderer.
+  frame plus one window-sized D3D12 upload. The native resolve is read back only
+  when display capture calls `GetLine()`.
+* DX12 selection owns presentation regardless of `Screen.UseGL`; no OpenGL
+  context or Qt frame mailbox is involved.
+* The swapchain uses `DXGI_SWAP_EFFECT_FLIP_DISCARD`, two buffers, maximum frame
+  latency 1 and a frame-latency waitable object. VSync-off uses tearing when the
+  platform reports `DXGI_FEATURE_PRESENT_ALLOW_TEARING`.
 
 ## NVIDIA Reflex Low Latency
 
@@ -79,11 +84,11 @@ Off mode as NVIDIA recommends; the mode flags alone control whether low latency
 and boost are enabled. The minimum interval is always zero, so Reflex does not
 add a frame-rate cap.
 
-Render Submit markers bracket the D3D12 render/composition work. This backend
-has no DXGI presentation swapchain, so Present markers bracket publication to
-the existing latest-frame Qt mailbox. Reflex can optimize the D3D12 device's
-CPU/GPU scheduling, but the final Qt composition remains the shared
-presentation path rather than a native D3D12 `Present`.
+Render Submit markers bracket the D3D12 render/composition work. Present Start
+and Present End are emitted immediately around the real
+`IDXGISwapChain::Present` call on the same D3D12 device and queue used by the
+renderer. CPU layout/HUD/OSD composition and the final upload happen before
+Present Start, so NVIDIA receives an accurate native presentation boundary.
 
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
@@ -131,6 +136,7 @@ Reflex setting.
 | `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |
 | `src/GPU_DX12.{h,cpp}` | `DX12Renderer`, pairing the 3D renderer with software 2D |
 | `src/frontend/qt_sdl/MelonPrimeDX12FeatureCheck.{h,cpp}` | Runtime availability probe for the settings dialog and renderer normalization |
+| `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, D3D12 upload, flip-model DXGI swapchain and actual Present boundary |
 
 ## Pipeline
 
@@ -224,10 +230,11 @@ compositor samples those controls at native coordinates while sampling 3D from
 `FinalFB` at full resolution. This preserves pixel-authentic 2D behavior while
 allowing polygon edges and textures to retain the selected internal resolution.
 
-The final images are CPU-visible because they are shared with the existing
-presentation panels. This avoids a DX12-specific swapchain and a third HUD/OSD
-implementation, at the cost of readback bandwidth that grows with the square of
-the scale factor.
+The high-resolution screen images remain CPU-visible so the DX12 panel can use
+the established layout/HUD/OSD implementation without visual divergence. The
+completed window-sized frame is then uploaded once and presented by DXGI. This
+keeps readback bandwidth proportional to the square of the internal scale while
+removing the Qt paint queue from the live presentation path.
 
 ## Verified scope
 
@@ -250,6 +257,9 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
   sleep and all latency-marker calls on the RTX 5070 Ti. The On request was
   accepted as `lowLatency=1, boost=0`, and On + Boost as
   `lowLatency=1, boost=1`, both with `minimumIntervalUs=0`.
+* native `DXGI_SWAP_EFFECT_FLIP_DISCARD` swapchain creation and live ROM
+  presentation on the RTX 5070 Ti, both while the runtime renderer is Software
+  outside a match and while DX12 is forced for the complete boot sequence.
 
 This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
 families. The offline shader audit and runtime feature probe remain the gates
