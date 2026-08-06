@@ -83,7 +83,7 @@ bool DX12SurfacePresenter::Init(HWND window)
 void DX12SurfacePresenter::Shutdown() noexcept
 {
     if (Context)
-        Commands.WaitIdle();
+        Commands.WaitQueueIdle();
     if (Upload && UploadMapped)
     {
         D3D12_RANGE noWrite{0, 0};
@@ -201,7 +201,16 @@ bool DX12SurfacePresenter::Resize(std::uint32_t width, std::uint32_t height)
     if (!Swapchain || width == 0 || height == 0)
         return false;
 
-    Commands.WaitIdle();
+    // Present is queued after UploadFrame()'s command-list fence. Insert a
+    // new queue fence before releasing the old swap-chain buffers; waiting
+    // only for the upload fence leaves those buffers live on the display
+    // queue and triggers the D3D12 debug layer's final-release corruption
+    // break during resize or renderer switching.
+    if (!Commands.WaitQueueIdle())
+    {
+        Error = "DX12 presentation queue did not become idle before resize";
+        return false;
+    }
     for (auto& buffer : BackBuffers)
         buffer.Reset();
     FrameReady = false;
