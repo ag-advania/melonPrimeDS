@@ -142,16 +142,6 @@ private:
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         VkQueryPool timestampQueryPool{VK_NULL_HANDLE};
 
-        // Persistently mapped structured planes, written once per emulated
-        // frame by the emulation thread and read by the compute dispatch.
-        VkBuffer topPackedBuffer{VK_NULL_HANDLE};
-        VkDeviceMemory topPackedMemory{VK_NULL_HANDLE};
-        void* topPackedMapped{};
-        VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
-        VkDeviceMemory bottomPackedMemory{VK_NULL_HANDLE};
-        void* bottomPackedMapped{};
-        VkDeviceSize packedBufferSize{};
-
         u64 submissionValue{};
         u32 width{};
         u32 height{};
@@ -166,6 +156,8 @@ private:
     bool createCommandObjects();
     bool createCompositorResources();
     void destroyCompositorResources();
+    bool createPackedBuffers();
+    void destroyPackedBuffers();
     bool createTimestampQueryPool(VkQueryPool& queryPool);
     void destroyTimestampQueryPool(VkQueryPool& queryPool);
     bool createFrameResource(VulkanFrame* frame, u32 width, u32 height);
@@ -175,9 +167,7 @@ private:
 
     bool beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs = UINT64_MAX);
     bool submitFrameCommand(VulkanFrame* frame, FrameResource& resource, bool signalTimeline);
-    bool updateCompositorPackedBuffers(
-        FrameResource& resource,
-        const StructuredCompositionFrame& structured);
+    bool updateCompositorPackedBuffers(const StructuredCompositionFrame& structured);
     bool dispatchCompositor(
         VulkanFrame* frame,
         FrameResource& resource,
@@ -211,6 +201,22 @@ private:
     VkDescriptorPool compositorDescriptorPool{VK_NULL_HANDLE};
     VkPipelineLayout compositorPipelineLayout{VK_NULL_HANDLE};
     VkPipeline compositorPipeline{VK_NULL_HANDLE};
+
+    // One shared pair of persistently mapped structured planes, mirroring
+    // DX12Renderer3D's single CompositionInputBuffer. Composition happens once
+    // per emulated frame, so a per-frame copy bought nothing and let the
+    // emulation thread overwrite planes a still-running dispatch was reading.
+    VkBuffer topPackedBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory topPackedMemory{VK_NULL_HANDLE};
+    void* topPackedMapped{};
+    VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory bottomPackedMemory{VK_NULL_HANDLE};
+    void* bottomPackedMapped{};
+    VkDeviceSize packedBufferSize{};
+
+    // The frame whose dispatch last read the shared planes. The next frame must
+    // wait for it before overwriting them.
+    VulkanFrame* lastComposedFrame{nullptr};
 
     std::unordered_map<VulkanFrame*, FrameResource> resources;
     std::mutex commandPoolLock;

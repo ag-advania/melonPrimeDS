@@ -152,7 +152,8 @@ bool MelonPrimeVulkanOutput::init()
         return false;
     }
 
-    if (!createSyncObjects() || !createCommandObjects() || !createCompositorResources())
+    if (!createSyncObjects() || !createCommandObjects() || !createCompositorResources()
+        || !createPackedBuffers())
     {
         shutdown();
         return false;
@@ -201,6 +202,7 @@ void MelonPrimeVulkanOutput::shutdown()
     timestampQueriesSupported = false;
     timelineValue = 0;
     useTimelineSemaphores = false;
+    lastComposedFrame = nullptr;
     initialized = false;
 }
 
@@ -209,6 +211,7 @@ void MelonPrimeVulkanOutput::releaseFrameReferences()
     // Composition never reads another frame's resources, so the only thing a
     // renderer transition has to undo is the cached descriptor binding: the
     // VkImageView it points at belongs to the outgoing 3D renderer.
+    lastComposedFrame = nullptr;
     for (auto& [frame, resource] : resources)
     {
         (void)frame;
@@ -413,8 +416,84 @@ bool MelonPrimeVulkanOutput::createCompositorResources()
     return true;
 }
 
+bool MelonPrimeVulkanOutput::createPackedBuffers()
+{
+    const auto createMappedStorageBuffer = [&](
+        VkBuffer& buffer, VkDeviceMemory& memory, void*& mappedMemory, const char* label) -> bool {
+        VkBufferCreateInfo bufferCreateInfo{};
+        bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferCreateInfo.size = kPackedBufferSize;
+        bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Error,
+                "MelonPrimeVulkanOutput: failed to create the %s packed buffer", label);
+            buffer = VK_NULL_HANDLE;
+            return false;
+        }
+
+        VkMemoryRequirements memoryRequirements{};
+        vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+
+        VkMemoryAllocateInfo memoryAllocateInfo{};
+        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryAllocateInfo.allocationSize = memoryRequirements.size;
+        memoryAllocateInfo.memoryTypeIndex = findMemoryType(
+            memoryRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX
+            || vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory) != VK_SUCCESS
+            || vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS
+            || vkMapMemory(device, memory, 0, kPackedBufferSize, 0, &mappedMemory) != VK_SUCCESS)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Error,
+                "MelonPrimeVulkanOutput: failed to allocate the %s packed buffer", label);
+            return false;
+        }
+
+        return true;
+    };
+
+    if (!createMappedStorageBuffer(topPackedBuffer, topPackedMemory, topPackedMapped, "top")
+        || !createMappedStorageBuffer(bottomPackedBuffer, bottomPackedMemory, bottomPackedMapped, "bottom"))
+    {
+        destroyPackedBuffers();
+        return false;
+    }
+
+    packedBufferSize = kPackedBufferSize;
+    return true;
+}
+
+void MelonPrimeVulkanOutput::destroyPackedBuffers()
+{
+    const auto destroyMappedStorageBuffer = [this](VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped) {
+        if (mapped != nullptr)
+        {
+            vkUnmapMemory(device, memory);
+            mapped = nullptr;
+        }
+        if (buffer != VK_NULL_HANDLE)
+            vkDestroyBuffer(device, buffer, nullptr);
+        if (memory != VK_NULL_HANDLE)
+            vkFreeMemory(device, memory, nullptr);
+        buffer = VK_NULL_HANDLE;
+        memory = VK_NULL_HANDLE;
+    };
+    destroyMappedStorageBuffer(topPackedBuffer, topPackedMemory, topPackedMapped);
+    destroyMappedStorageBuffer(bottomPackedBuffer, bottomPackedMemory, bottomPackedMapped);
+    packedBufferSize = 0;
+}
+
 void MelonPrimeVulkanOutput::destroyCompositorResources()
 {
+    destroyPackedBuffers();
+
     if (compositorPipeline != VK_NULL_HANDLE)
     {
         vkDestroyPipeline(device, compositorPipeline, nullptr);
@@ -452,7 +531,6 @@ bool MelonPrimeVulkanOutput::createFrameResource(VulkanFrame* frame, u32 width, 
     FrameResource resource{};
     resource.width = width;
     resource.height = height;
-    resource.packedBufferSize = kPackedBufferSize;
 
     // Every allocation below is registered in this list so a failure at any
     // step unwinds exactly what was created, in reverse order.
@@ -567,85 +645,6 @@ bool MelonPrimeVulkanOutput::createFrameResource(VulkanFrame* frame, u32 width, 
     }
     rollback.emplace_back([&] { vkFreeDescriptorSets(device, compositorDescriptorPool, 1, &resource.descriptorSet); });
 
-    const auto createMappedStorageBuffer = [&](
-        VkBuffer& buffer, VkDeviceMemory& memory, void*& mappedMemory, const char* label) -> bool {
-        VkBufferCreateInfo bufferCreateInfo{};
-        bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferCreateInfo.size = kPackedBufferSize;
-        bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-        bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS)
-        {
-            melonDS::Platform::Log(
-                melonDS::Platform::LogLevel::Error,
-                "MelonPrimeVulkanOutput: failed to create %s packed buffer", label);
-            buffer = VK_NULL_HANDLE;
-            return false;
-        }
-
-        VkMemoryRequirements memoryRequirements{};
-        vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
-
-        VkMemoryAllocateInfo memoryAllocateInfo{};
-        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memoryAllocateInfo.allocationSize = memoryRequirements.size;
-        memoryAllocateInfo.memoryTypeIndex = findMemoryType(
-            memoryRequirements.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-        if (memoryAllocateInfo.memoryTypeIndex == UINT32_MAX
-            || vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory) != VK_SUCCESS
-            || vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS
-            || vkMapMemory(device, memory, 0, kPackedBufferSize, 0, &mappedMemory) != VK_SUCCESS)
-        {
-            melonDS::Platform::Log(
-                melonDS::Platform::LogLevel::Error,
-                "MelonPrimeVulkanOutput: failed to allocate %s storage buffer memory", label);
-            if (mappedMemory != nullptr)
-            {
-                vkUnmapMemory(device, memory);
-                mappedMemory = nullptr;
-            }
-            if (memory != VK_NULL_HANDLE)
-            {
-                vkFreeMemory(device, memory, nullptr);
-                memory = VK_NULL_HANDLE;
-            }
-            vkDestroyBuffer(device, buffer, nullptr);
-            buffer = VK_NULL_HANDLE;
-            return false;
-        }
-
-        return true;
-    };
-
-    // The rollback entries below capture `resource` itself, not the helper's
-    // reference parameters, so they stay valid after the helper returns.
-    if (!createMappedStorageBuffer(
-            resource.topPackedBuffer, resource.topPackedMemory, resource.topPackedMapped, "top"))
-    {
-        unwind();
-        return false;
-    }
-    rollback.emplace_back([&] {
-        vkUnmapMemory(device, resource.topPackedMemory);
-        vkFreeMemory(device, resource.topPackedMemory, nullptr);
-        vkDestroyBuffer(device, resource.topPackedBuffer, nullptr);
-    });
-
-    if (!createMappedStorageBuffer(
-            resource.bottomPackedBuffer, resource.bottomPackedMemory, resource.bottomPackedMapped, "bottom"))
-    {
-        unwind();
-        return false;
-    }
-    rollback.emplace_back([&] {
-        vkUnmapMemory(device, resource.bottomPackedMemory);
-        vkFreeMemory(device, resource.bottomPackedMemory, nullptr);
-        vkDestroyBuffer(device, resource.bottomPackedBuffer, nullptr);
-    });
-
     (void)createTimestampQueryPool(resource.timestampQueryPool);
 
     const auto insertResult = resources.emplace(frame, resource);
@@ -688,22 +687,6 @@ void MelonPrimeVulkanOutput::destroyFrameResource(VulkanFrame* frame)
     if (resource.commandBuffer != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE)
         vkFreeCommandBuffers(device, commandPool, 1, &resource.commandBuffer);
 
-    const auto destroyMappedStorageBuffer = [this](VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped) {
-        if (mapped != nullptr)
-        {
-            vkUnmapMemory(device, memory);
-            mapped = nullptr;
-        }
-        if (buffer != VK_NULL_HANDLE)
-            vkDestroyBuffer(device, buffer, nullptr);
-        if (memory != VK_NULL_HANDLE)
-            vkFreeMemory(device, memory, nullptr);
-        buffer = VK_NULL_HANDLE;
-        memory = VK_NULL_HANDLE;
-    };
-    destroyMappedStorageBuffer(resource.topPackedBuffer, resource.topPackedMemory, resource.topPackedMapped);
-    destroyMappedStorageBuffer(resource.bottomPackedBuffer, resource.bottomPackedMemory, resource.bottomPackedMapped);
-
     if (resource.imageView != VK_NULL_HANDLE)
         vkDestroyImageView(device, resource.imageView, nullptr);
     if (resource.image != VK_NULL_HANDLE)
@@ -713,6 +696,9 @@ void MelonPrimeVulkanOutput::destroyFrameResource(VulkanFrame* frame)
 
     if (frame != nullptr)
         frame->renderTimelineValue = 0;
+
+    if (lastComposedFrame == frame)
+        lastComposedFrame = nullptr;
 
     resources.erase(iterator);
 }
@@ -827,24 +813,21 @@ bool MelonPrimeVulkanOutput::submitFrameCommand(VulkanFrame* frame, FrameResourc
 }
 
 bool MelonPrimeVulkanOutput::updateCompositorPackedBuffers(
-    FrameResource& resource,
     const StructuredCompositionFrame& structured)
 {
-    if (resource.topPackedMapped == nullptr
-        || resource.bottomPackedMapped == nullptr
-        || resource.packedBufferSize == 0)
+    if (topPackedMapped == nullptr || bottomPackedMapped == nullptr || packedBufferSize == 0)
         return false;
 
     // The mapped memory is host-coherent, so this single pass off the producer's
     // arrays is the whole upload: no intermediate snapshot, no second copy.
     packStructuredScreen(
-        static_cast<melonDS::u32*>(resource.topPackedMapped),
+        static_cast<melonDS::u32*>(topPackedMapped),
         structured.Plane[0][0],
         structured.Plane[0][1],
         structured.Plane[0][2],
         structured.LineMeta[0]);
     packStructuredScreen(
-        static_cast<melonDS::u32*>(resource.bottomPackedMapped),
+        static_cast<melonDS::u32*>(bottomPackedMapped),
         structured.Plane[1][0],
         structured.Plane[1][1],
         structured.Plane[1][2],
@@ -866,8 +849,38 @@ bool MelonPrimeVulkanOutput::prepareFrameForPresentation(
     FrameResource& resource = iterator->second;
     resource.hasPreparedInputs = false;
 
+    // The structured planes live in one shared, persistently mapped buffer pair
+    // that the compute dispatch reads directly, exactly like DX12's single
+    // CompositionInputBuffer. Whichever frame dispatched last is still the one
+    // reading them, so wait for that dispatch before the emulation thread
+    // overwrites them.
+    //
+    // Without this, the frame queue's recycling (getPresentCandidate() returns
+    // still-queued frames to the free list, and AllowStealPending pulls one off
+    // the present queue) let a new frame's metadata land underneath a running
+    // dispatch. The shader then mixed two frames -- one frame's control words
+    // beside the other frame's 2D planes -- which is what put the background in
+    // front of the UI on alternating frames. DX12 cannot reach this state: it
+    // owns a single input buffer and calls Commands.WaitIdle() after submitting.
+    if (lastComposedFrame != nullptr && lastComposedFrame != frame)
+    {
+        const auto previous = resources.find(lastComposedFrame);
+        if (previous != resources.end() && previous->second.submitFence != VK_NULL_HANDLE)
+        {
+            const u64 fenceWaitStartNs = PerfNowNs();
+            if (vkWaitForFences(device, 1, &previous->second.submitFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+            {
+                melonDS::Platform::Log(
+                    melonDS::Platform::LogLevel::Error,
+                    "MelonPrimeVulkanOutput: timed out waiting for the previous compositor dispatch");
+                return false;
+            }
+            waitCpuWindow.Add(PerfNowNs() - fenceWaitStartNs);
+        }
+    }
+
     const u64 packedUploadStartNs = PerfNowNs();
-    if (!updateCompositorPackedBuffers(resource, structured))
+    if (!updateCompositorPackedBuffers(structured))
         return false;
     packedUploadCpuWindow.Add(PerfNowNs() - packedUploadStartNs);
 
@@ -902,9 +915,9 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     outInputs.sourceImageView = renderer3D.GetColorTargetImageView();
     outInputs.rendererWidth = renderer3D.GetColorTargetWidth();
     outInputs.rendererHeight = renderer3D.GetColorTargetHeight();
-    outInputs.topPackedBuffer = resource.topPackedBuffer;
-    outInputs.bottomPackedBuffer = resource.bottomPackedBuffer;
-    outInputs.packedBufferSize = resource.packedBufferSize;
+    outInputs.topPackedBuffer = topPackedBuffer;
+    outInputs.bottomPackedBuffer = bottomPackedBuffer;
+    outInputs.packedBufferSize = packedBufferSize;
     outInputs.packedStride = kPackedStride;
     outInputs.scale = static_cast<u32>(scale);
     // An uninitialized color target holds whatever the allocator handed out, so
@@ -1004,9 +1017,9 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
         packedBarriers[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         packedBarriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         packedBarriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        packedBarriers[i].buffer = i == 0 ? resource.topPackedBuffer : resource.bottomPackedBuffer;
+        packedBarriers[i].buffer = i == 0 ? topPackedBuffer : bottomPackedBuffer;
         packedBarriers[i].offset = 0;
-        packedBarriers[i].size = resource.packedBufferSize;
+        packedBarriers[i].size = packedBufferSize;
     }
 
     vkCmdPipelineBarrier(
@@ -1026,12 +1039,12 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
     input3dImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     VkDescriptorBufferInfo topPackedBufferInfo{};
-    topPackedBufferInfo.buffer = resource.topPackedBuffer;
-    topPackedBufferInfo.range = resource.packedBufferSize;
+    topPackedBufferInfo.buffer = topPackedBuffer;
+    topPackedBufferInfo.range = packedBufferSize;
 
     VkDescriptorBufferInfo bottomPackedBufferInfo{};
-    bottomPackedBufferInfo.buffer = resource.bottomPackedBuffer;
-    bottomPackedBufferInfo.range = resource.packedBufferSize;
+    bottomPackedBufferInfo.buffer = bottomPackedBuffer;
+    bottomPackedBufferInfo.range = packedBufferSize;
 
     // Only the 3D image view can change between frames (renderer restart or a
     // resolution change), so the descriptor set is otherwise written once.
@@ -1093,6 +1106,7 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
         return false;
 
     resource.hasContent = true;
+    lastComposedFrame = frame;
     return true;
 }
 
