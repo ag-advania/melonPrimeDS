@@ -1260,6 +1260,26 @@ void MainWindow::createScreenPanel()
     }
 #endif
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (presentationBackend == MelonPrime::VideoBackend::PresentationBackend::DX12)
+    {
+        ScreenPanelDX12* panelDX12 = new ScreenPanelDX12(this);
+        panelDX12->show();
+        if (panelDX12->initDX12())
+        {
+            QMutexLocker panelLock(&screenPanelLock);
+            panel = panelDX12;
+        }
+        else
+        {
+            Log(
+                Platform::LogLevel::Error,
+                "Failed to init DX12 native presenter; falling back to NativeQt presentation without changing the saved renderer.\n");
+            delete panelDX12;
+        }
+    }
+#endif
+
     if (!panel && hasOGL)
     {
         ScreenPanelGL* panelGL = new ScreenPanelGL(this);
@@ -1301,10 +1321,19 @@ void MainWindow::createScreenPanel()
     }
     setCentralWidget(panel);
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     if (hasMenu)
         actScreenFiltering->setEnabled(
-            hasOGL || presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan);
+            hasOGL
+#if defined(MELONPRIME_ENABLE_VULKAN)
+            || presentationBackend == MelonPrime::VideoBackend::PresentationBackend::Vulkan
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+            || presentationBackend == MelonPrime::VideoBackend::PresentationBackend::DX12
+#endif
+        );
 #else
     if (hasMenu)
         actScreenFiltering->setEnabled(hasOGL);

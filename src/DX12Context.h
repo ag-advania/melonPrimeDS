@@ -62,6 +62,7 @@ public:
     void Release();
 
     [[nodiscard]] bool IsReady() const noexcept { return Device.Get() != nullptr; }
+    [[nodiscard]] IDXGIFactory6* GetFactory() const noexcept { return Factory.Get(); }
     [[nodiscard]] ID3D12Device* GetDevice() const noexcept { return Device.Get(); }
     [[nodiscard]] ID3D12CommandQueue* GetQueue() const noexcept { return Queue.Get(); }
     [[nodiscard]] const DeviceProfile& GetDeviceProfile() const noexcept { return Profile; }
@@ -172,6 +173,11 @@ public:
 
     // Blocks until the last submitted list retired.
     void WaitIdle();
+
+    // Inserts a fresh fence into the shared command queue and waits for it.
+    // Unlike WaitIdle(), this also covers work queued after this context's
+    // most recent Submit(), notably DXGI Present operations.
+    bool WaitQueueIdle();
 
 private:
     bool WaitForFence(u64 value);
