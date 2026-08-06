@@ -26,9 +26,11 @@ public:
     [[nodiscard]] VulkanRenderer3D* GetVulkanRenderer3D() noexcept;
     [[nodiscard]] const VulkanRenderer3D* GetVulkanRenderer3D() const noexcept;
     [[nodiscard]] int GetNvidiaReflexMode() const noexcept { return NvidiaReflexMode; }
+    [[nodiscard]] bool GetAmdAntiLag2Enabled() const noexcept { return AmdAntiLag2Enabled; }
 
 private:
     int NvidiaReflexMode = 1;
+    bool AmdAntiLag2Enabled = true;
 };
 
 } // namespace melonDS

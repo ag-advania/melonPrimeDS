@@ -318,17 +318,22 @@ void EmuThread::run()
         // explicitly close the frame before destroying it below.
         if (UNLIKELY(handleDX12RuntimeFailure()))
             shadersReady = true;
-        auto* dx12ReflexRenderer = dynamic_cast<DX12Renderer*>(
+        auto* dx12LowLatencyRenderer = dynamic_cast<DX12Renderer*>(
             &emuInstance->nds->GPU.GetRenderer());
-        if (dx12ReflexRenderer)
-            dx12ReflexRenderer->BeginReflexFrame();
+        if (dx12LowLatencyRenderer)
+        {
+            dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
+            dx12LowLatencyRenderer->BeginReflexFrame();
+        }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        auto* vulkanReflexRenderer = dynamic_cast<VulkanRenderer*>(
+        auto* vulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(
             &emuInstance->nds->GPU.GetRenderer());
-        if (vulkanReflexRenderer)
-            emuInstance->beginVulkanReflexFrame(vulkanReflexRenderer->GetNvidiaReflexMode());
+        if (vulkanLowLatencyRenderer)
+            emuInstance->beginVulkanLowLatencyFrame(
+                vulkanLowLatencyRenderer->GetNvidiaReflexMode(),
+                vulkanLowLatencyRenderer->GetAmdAntiLag2Enabled());
 #endif
 
 #ifdef MELONPRIME_DS
@@ -378,11 +383,11 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-            if (dx12ReflexRenderer)
-                dx12ReflexRenderer->MarkReflexInputSample();
+            if (dx12LowLatencyRenderer)
+                dx12LowLatencyRenderer->MarkReflexInputSample();
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
-            if (vulkanReflexRenderer)
+            if (vulkanLowLatencyRenderer)
             {
                 emuInstance->markVulkanReflexInputSample();
                 emuInstance->markVulkanReflexRenderSubmitStart();
@@ -495,20 +500,20 @@ void EmuThread::run()
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-            if (dx12ReflexRenderer)
+            if (dx12LowLatencyRenderer)
             {
                 // SetRenderSettings may update Reflex mode or recreate DX12
                 // resources. Close this transition frame first so no D3D12
                 // work escapes the RenderSubmit marker interval.
-                dx12ReflexRenderer->FinishReflexFrame();
-                dx12ReflexRenderer = nullptr;
+                dx12LowLatencyRenderer->FinishReflexFrame();
+                dx12LowLatencyRenderer = nullptr;
             }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-            if (vulkanReflexRenderer)
+            if (vulkanLowLatencyRenderer)
             {
-                emuInstance->finishVulkanReflexFrame();
-                vulkanReflexRenderer = nullptr;
+                emuInstance->finishVulkanLowLatencyFrame();
+                vulkanLowLatencyRenderer = nullptr;
             }
 #endif
             updateRenderer();
@@ -577,11 +582,11 @@ void EmuThread::run()
         }
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12ReflexRenderer)
-            dx12ReflexRenderer->EndReflexRenderPhase();
+        if (dx12LowLatencyRenderer)
+            dx12LowLatencyRenderer->EndReflexRenderPhase();
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (vulkanReflexRenderer)
+        if (vulkanLowLatencyRenderer)
             emuInstance->markVulkanReflexRenderSubmitEnd();
 #endif
 
@@ -607,20 +612,20 @@ void EmuThread::run()
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12ReflexRenderer)
-            dx12ReflexRenderer->BeginReflexPresent();
+        if (dx12LowLatencyRenderer)
+            dx12LowLatencyRenderer->BeginReflexPresent();
 #endif
         emuInstance->drawScreen();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12ReflexRenderer)
+        if (dx12LowLatencyRenderer)
         {
-            dx12ReflexRenderer->EndReflexPresent();
-            dx12ReflexRenderer->FinishReflexFrame();
+            dx12LowLatencyRenderer->EndReflexPresent();
+            dx12LowLatencyRenderer->FinishReflexFrame();
         }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        if (vulkanReflexRenderer)
-            emuInstance->finishVulkanReflexFrame();
+        if (vulkanLowLatencyRenderer)
+            emuInstance->finishVulkanLowLatencyFrame();
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1588,7 +1593,8 @@ void EmuThread::updateRenderer()
         .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons"),
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
-        .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode)
+        .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode),
+        .AmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled)
 #endif
     };
     nds->GetRenderer().SetRenderSettings(settings);

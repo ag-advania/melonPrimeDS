@@ -177,12 +177,16 @@ void VideoSettingsDialog::setEnabled()
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     bool reflexEnabled = false;
     std::string reflexUnavailableReason;
+    bool antiLag2Enabled = false;
+    std::string antiLag2UnavailableReason;
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (vulkanRenderer)
     {
         const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
         reflexEnabled = vulkanProbe.Available && vulkanProbe.NvidiaReflexAvailable;
         reflexUnavailableReason = vulkanProbe.NvidiaReflexReason;
+        antiLag2Enabled = vulkanProbe.Available && vulkanProbe.AmdAntiLag2Available;
+        antiLag2UnavailableReason = vulkanProbe.AmdAntiLag2Reason;
     }
 #endif
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
@@ -191,6 +195,8 @@ void VideoSettingsDialog::setEnabled()
         const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
         reflexEnabled = dx12Probe.Available && dx12Probe.NvidiaReflexAvailable;
         reflexUnavailableReason = dx12Probe.NvidiaReflexReason;
+        antiLag2Enabled = dx12Probe.Available && dx12Probe.AmdAntiLag2Available;
+        antiLag2UnavailableReason = dx12Probe.AmdAntiLag2Reason;
     }
 #endif
     lblNvidiaReflex->setEnabled(reflexEnabled);
@@ -208,6 +214,21 @@ void VideoSettingsDialog::setEnabled()
                     : reflexUnavailableReason)));
     lblNvidiaReflex->setToolTip(reflexDescription);
     cbxNvidiaReflex->setToolTip(reflexDescription);
+
+    lblAmdAntiLag2->setEnabled(antiLag2Enabled);
+    cbxAmdAntiLag2->setEnabled(antiLag2Enabled);
+    const QString antiLag2Description = antiLag2Enabled
+        ? MelonPrime::UiText::Tr(
+            "AMD Anti-Lag 2 reduces system latency for improved responsiveness.")
+        : (!(dx12Renderer || vulkanRenderer)
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 or Vulkan on a supported AMD Radeon GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                antiLag2UnavailableReason.empty()
+                    ? std::string("AMD Radeon Anti-Lag 2 is unavailable")
+                    : antiLag2UnavailableReason)));
+    lblAmdAntiLag2->setToolTip(antiLag2Description);
+    cbxAmdAntiLag2->setToolTip(antiLag2Description);
 #endif
 }
 
@@ -234,6 +255,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
+    oldAmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
 #endif
 
     grp3DRenderer = new QButtonGroup(this);
@@ -357,6 +379,22 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         &VideoSettingsDialog::onNvidiaReflexModeChanged);
+
+    lblAmdAntiLag2 = new QLabel(ui->groupBox_3);
+    lblAmdAntiLag2->setObjectName(QStringLiteral("lblAmdAntiLag2"));
+    lblAmdAntiLag2->setText(MelonPrime::UiText::Tr("AMD Radeon Anti-Lag 2:"));
+    cbxAmdAntiLag2 = new QComboBox(ui->groupBox_3);
+    cbxAmdAntiLag2->setObjectName(QStringLiteral("cbxAmdAntiLag2"));
+    cbxAmdAntiLag2->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxAmdAntiLag2->addItem(MelonPrime::UiText::Tr("On"));
+    cbxAmdAntiLag2->setCurrentIndex(oldAmdAntiLag2Enabled ? 1 : 0);
+    ui->gridLayout_4->addWidget(lblAmdAntiLag2, 6, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxAmdAntiLag2, 7, 0, 1, 1);
+    connect(
+        cbxAmdAntiLag2,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onAmdAntiLag2ModeChanged);
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -504,6 +542,7 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, oldNvidiaReflexMode);
+    cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, oldAmdAntiLag2Enabled);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -667,6 +706,13 @@ void VideoSettingsDialog::onNvidiaReflexModeChanged(int mode)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, mode);
+    emit updateVideoSettings(false);
+}
+
+void VideoSettingsDialog::onAmdAntiLag2ModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, mode != 0);
     emit updateVideoSettings(false);
 }
 #endif

@@ -68,6 +68,7 @@ namespace Config
         {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
         {MelonPrime::CfgKey::NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
+        {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},

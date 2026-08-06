@@ -34,6 +34,8 @@ const Result& Probe()
             : "Vulkan initialization failed";
         gResult.NvidiaReflexAvailable = false;
         gResult.NvidiaReflexReason = gResult.Reason;
+        gResult.AmdAntiLag2Available = false;
+        gResult.AmdAntiLag2Reason = gResult.Reason;
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
             "MelonPrime Vulkan probe: available=0 loader=%s reason=%s",
@@ -48,15 +50,21 @@ const Result& Probe()
     gResult.NvidiaReflexReason = gResult.NvidiaReflexAvailable
         ? std::string{}
         : context.GetNvidiaReflexUnavailableReason();
+    gResult.AmdAntiLag2Available = gResult.Available && context.SupportsAmdAntiLag2();
+    gResult.AmdAntiLag2Reason = gResult.AmdAntiLag2Available
+        ? std::string{}
+        : context.GetAmdAntiLag2UnavailableReason();
     melonDS::Platform::Log(
         gResult.Available ? melonDS::Platform::LogLevel::Info : melonDS::Platform::LogLevel::Error,
-        "MelonPrime Vulkan probe: available=%d loader=%s device=%s queueFamily=%u reflex=%d reflexReason=\"%s\"",
+        "MelonPrime Vulkan probe: available=%d loader=%s device=%s queueFamily=%u reflex=%d reflexReason=\"%s\" antiLag2=%d antiLag2Reason=\"%s\"",
         gResult.Available ? 1 : 0,
         melonDS::VulkanDispatch::GetLoaderPath().c_str(),
         context.GetDeviceProfile().DeviceName.c_str(),
         context.GetQueueFamilyIndex(),
         gResult.NvidiaReflexAvailable ? 1 : 0,
-        gResult.NvidiaReflexReason.c_str());
+        gResult.NvidiaReflexReason.c_str(),
+        gResult.AmdAntiLag2Available ? 1 : 0,
+        gResult.AmdAntiLag2Reason.c_str());
     context.Release();
     return gResult;
 }
@@ -76,9 +84,11 @@ void ReportRuntimeFailure(std::string reason)
     std::scoped_lock lock(gProbeMutex);
     gResult.Available = false;
     gResult.NvidiaReflexAvailable = false;
+    gResult.AmdAntiLag2Available = false;
     const std::string diagnostic = reason.empty() ? "unspecified runtime failure" : std::move(reason);
     gResult.Reason = "Vulkan initialization failed";
     gResult.NvidiaReflexReason = gResult.Reason;
+    gResult.AmdAntiLag2Reason = gResult.Reason;
     gProbed = true;
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Error,

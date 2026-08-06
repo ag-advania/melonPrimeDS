@@ -2718,10 +2718,13 @@ void ScreenPanelVulkan::drawScreen()
 #endif
 }
 
-void ScreenPanelVulkan::beginVulkanReflexFrame(int mode)
+void ScreenPanelVulkan::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
 {
     if (vulkan && vulkan->presenterInitialized)
-        vulkan->presenter.BeginNvidiaReflexFrame(mode);
+    {
+        vulkan->presenter.BeginAmdAntiLag2Frame(antiLag2Enabled);
+        vulkan->presenter.BeginNvidiaReflexFrame(reflexMode);
+    }
 }
 
 void ScreenPanelVulkan::markVulkanReflexInputSample()
@@ -2742,10 +2745,13 @@ void ScreenPanelVulkan::markVulkanReflexRenderSubmitEnd()
         vulkan->presenter.MarkNvidiaReflexRenderSubmitEnd();
 }
 
-void ScreenPanelVulkan::finishVulkanReflexFrame()
+void ScreenPanelVulkan::finishVulkanLowLatencyFrame()
 {
     if (vulkan && vulkan->presenterInitialized)
+    {
         vulkan->presenter.FinishNvidiaReflexFrame();
+        vulkan->presenter.FinishAmdAntiLag2Frame();
+    }
 }
 
 void ScreenPanelVulkan::drawScreenFrame()
