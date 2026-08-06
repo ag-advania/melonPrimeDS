@@ -141,6 +141,20 @@ jobs:
         # As we are using multiple steps, we need to use NFS to sync the
         # workspace between host and VM, as with the default, rsync, the
         # workspace is only synced before and after the setup VM step.
+        #
+        # NetBSD only: pin the VM's release to 10.0. vmactions/netbsd-vm's
+        # own default release recently moved to 11.0 (see its
+        # conf/default.release.conf), which broke this workflow: the
+        # pkgsrc quarterly branch below is 10.0_2026Q2, built against
+        # NetBSD 10.0's OpenSSL ABI (libcrypto.so.15/libssl.so.15).
+        # NetBSD 11.0's base OpenSSL doesn't provide that soname, so every
+        # pkgsrc package depending on it failed with "not present in this
+        # system" (curl, cmake, qt6-qtbase, ...). The netbsd-vm README
+        # documents the identical ABI break for its own sparc64 image.
+        # Pinning here keeps the VM matched to the already-verified
+        # 10.0_2026Q2 package set instead of drifting with the action's
+        # default; re-evaluate together with the pkgsrc quarter if this
+        # is ever bumped.
         with: >
           {
             "arch": ${{ matrix.arch }},
@@ -149,6 +163,7 @@ jobs:
             "prepare": ${{ toJSON(matrix.prepare_vm) }},
             "sync": "nfs",
             "usesh": "true",
+            ${{ matrix.os == 'netbsd' && '"release": "10.0",' || '' }}
           }
 
     - name: Install dependencies
