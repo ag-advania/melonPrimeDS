@@ -962,8 +962,15 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actScreenFiltering->setChecked(windowCfg.GetBool("ScreenFilter"));
         actShowOSD->setChecked(showOSD);
 
+#ifdef MELONPRIME_DS
+        actLimitFramerate->setChecked(
+            emuInstance->doLimitFPS.load(std::memory_order_relaxed));
+        actAudioSync->setChecked(
+            emuInstance->doAudioSync.load(std::memory_order_relaxed));
+#else
         actLimitFramerate->setChecked(emuInstance->doLimitFPS);
         actAudioSync->setChecked(emuInstance->doAudioSync);
+#endif
 #ifdef MELONPRIME_DS
         actMetroidFixSF->setChecked(localCfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze));
         actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
@@ -1178,12 +1185,14 @@ void MainWindow::setHudEditModeActive(bool active)
 
 void MainWindow::createScreenPanel()
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     connect(
         emuThread,
         &EmuThread::rendererRuntimeFallback,
         this,
-        &MainWindow::onVulkanRuntimeFallback,
+        &MainWindow::onRendererRuntimeFallback,
         Qt::UniqueConnection);
 #endif
     destroyScreenPanel();
@@ -1302,7 +1311,10 @@ void MainWindow::createScreenPanel()
 #endif
     panel->osdSetEnabled(showOSD);
 
-    connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(repaint()));
+    // update() coalesces obsolete paint requests and samples the newest
+    // renderer output when Qt is ready. repaint() forced every queued request
+    // to paint immediately, allowing uncapped emulation to delay input events.
+    connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(update()));
 
     connect(this, SIGNAL(screenLayoutChange()), panel, SLOT(onScreenLayoutChanged()));
     emit screenLayoutChange();
@@ -1365,6 +1377,52 @@ void MainWindow::drawScreen()
     if (!panel) return;
     return panel->drawScreen();
 }
+
+#ifdef MELONPRIME_DS
+void MainWindow::invalidateRendererOutput()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->invalidateRendererOutput();
+}
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+void MainWindow::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
+}
+
+void MainWindow::markVulkanReflexInputSample()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexInputSample();
+}
+
+void MainWindow::markVulkanReflexRenderSubmitStart()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexRenderSubmitStart();
+}
+
+void MainWindow::markVulkanReflexRenderSubmitEnd()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->markVulkanReflexRenderSubmitEnd();
+}
+
+void MainWindow::finishVulkanLowLatencyFrame()
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->finishVulkanLowLatencyFrame();
+}
+#endif
+#endif
 
 void MainWindow::keyPressEvent(QKeyEvent* event)
 {
@@ -1512,6 +1570,12 @@ void MainWindow::onFocusOut()
 
 void MainWindow::onAppStateChanged(Qt::ApplicationState state)
 {
+    // QApplication can deliver a final state transition after closeEvent has
+    // detached this window from its EmuInstance. The old unconditional call
+    // dereferenced nullptr in keyReleaseAll().
+    if (!emuInstance || !emuThread)
+        return;
+
     if (state == Qt::ApplicationInactive)
     {
         emuInstance->keyReleaseAll();
@@ -2776,14 +2840,22 @@ void MainWindow::onChangeShowOSD(bool checked)
 
 void MainWindow::onChangeLimitFramerate(bool checked)
 {
+#ifdef MELONPRIME_DS
+    emuInstance->doLimitFPS.store(checked, std::memory_order_relaxed);
+#else
     emuInstance->doLimitFPS = checked;
-    globalCfg.SetBool("LimitFPS", emuInstance->doLimitFPS);
+#endif
+    globalCfg.SetBool("LimitFPS", checked);
 }
 
 void MainWindow::onChangeAudioSync(bool checked)
 {
+#ifdef MELONPRIME_DS
+    emuInstance->doAudioSync.store(checked, std::memory_order_relaxed);
+#else
     emuInstance->doAudioSync = checked;
-    globalCfg.SetBool("AudioSync", emuInstance->doAudioSync);
+#endif
+    globalCfg.SetBool("AudioSync", checked);
 }
 
 
@@ -3034,8 +3106,10 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     }
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-void MainWindow::onVulkanRuntimeFallback()
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+void MainWindow::onRendererRuntimeFallback()
 {
     if (!emuInstance)
         return;

@@ -24,6 +24,11 @@ constexpr std::array<const char*, 1> kRequiredDeviceExtensions = {
 constexpr const char* kTimelineSemaphoreExtension = VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME;
 constexpr const char* kDescriptorIndexingExtension = VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME;
 constexpr const char* kOptionalHostQueryResetExtension = VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME;
+constexpr const char* kNvidiaLowLatencyExtension = VK_NV_LOW_LATENCY_2_EXTENSION_NAME;
+constexpr const char* kPresentIdExtension = VK_KHR_PRESENT_ID_EXTENSION_NAME;
+constexpr u32 kNvidiaVendorId = 0x10DEu;
+constexpr const char* kAmdAntiLagExtension = VK_AMD_ANTI_LAG_EXTENSION_NAME;
+constexpr u32 kAmdVendorId = 0x1002u;
 constexpr const char* kOptionalDebugUtilsExtension = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 constexpr const char* kSurfaceExtension = "VK_KHR_surface";
@@ -515,9 +520,29 @@ bool VulkanContext::initializeLocked()
         hostQueryResetFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
         hostQueryResetFeaturesAvailable.pNext = &descriptorIndexingFeaturesAvailable;
 
+        const bool hasNvidiaLowLatency = hasExtension(kNvidiaLowLatencyExtension, deviceExtensions);
+        const bool hasPresentId = hasExtension(kPresentIdExtension, deviceExtensions);
+        const bool hasAmdAntiLag = hasExtension(kAmdAntiLagExtension, deviceExtensions);
+        VkPhysicalDevicePresentIdFeaturesKHR presentIdFeaturesAvailable{};
+        presentIdFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+        void* availableFeatureChain = static_cast<void*>(&hostQueryResetFeaturesAvailable);
+        if (hasPresentId)
+        {
+            presentIdFeaturesAvailable.pNext = availableFeatureChain;
+            availableFeatureChain = static_cast<void*>(&presentIdFeaturesAvailable);
+        }
+
+        VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeaturesAvailable{};
+        antiLagFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
+        if (hasAmdAntiLag)
+        {
+            antiLagFeaturesAvailable.pNext = availableFeatureChain;
+            availableFeatureChain = static_cast<void*>(&antiLagFeaturesAvailable);
+        }
+
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        deviceFeatures2.pNext = &hostQueryResetFeaturesAvailable;
+        deviceFeatures2.pNext = availableFeatureChain;
         auto getPhysicalDeviceFeatures2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
             vkGetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFeatures2"));
         if (getPhysicalDeviceFeatures2 == nullptr)
@@ -550,6 +575,24 @@ bool VulkanContext::initializeLocked()
         const bool timelineExtensionAvailable = apiAtLeast12 || hasExtension(kTimelineSemaphoreExtension, deviceExtensions);
         const bool enableTimelineSemaphores =
             !ForceDisableTimelineSemaphores && timelineFeatureAvailable && timelineExtensionAvailable;
+
+        const bool enableNvidiaReflex =
+            candidateProfile.VendorId == kNvidiaVendorId
+            && hasNvidiaLowLatency
+            && hasPresentId
+            && presentIdFeaturesAvailable.presentId == VK_TRUE
+            && enableTimelineSemaphores;
+        if (enableNvidiaReflex)
+        {
+            enabledDeviceExtensions.push_back(kNvidiaLowLatencyExtension);
+            enabledDeviceExtensions.push_back(kPresentIdExtension);
+        }
+        const bool enableAmdAntiLag2 =
+            candidateProfile.VendorId == kAmdVendorId
+            && hasAmdAntiLag
+            && antiLagFeaturesAvailable.antiLag == VK_TRUE;
+        if (enableAmdAntiLag2)
+            enabledDeviceExtensions.push_back(kAmdAntiLagExtension);
         if (!enableTimelineSemaphores)
         {
             if (ForceDisableTimelineSemaphores)
@@ -674,6 +717,14 @@ bool VulkanContext::initializeLocked()
         const bool enableHostQueryReset = hasHostQueryReset && hostQueryResetFeaturesAvailable.hostQueryReset == VK_TRUE;
         hostQueryResetFeatures.hostQueryReset = enableHostQueryReset ? VK_TRUE : VK_FALSE;
 
+        VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
+        presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+        presentIdFeatures.presentId = enableNvidiaReflex ? VK_TRUE : VK_FALSE;
+
+        VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
+        antiLagFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
+        antiLagFeatures.antiLag = enableAmdAntiLag2 ? VK_TRUE : VK_FALSE;
+
         void* featureChainHead = nullptr;
         if (enableTimelineSemaphores)
             featureChainHead = static_cast<void*>(&timelineFeatures);
@@ -686,6 +737,16 @@ bool VulkanContext::initializeLocked()
         {
             hostQueryResetFeatures.pNext = featureChainHead;
             featureChainHead = static_cast<void*>(&hostQueryResetFeatures);
+        }
+        if (enableNvidiaReflex)
+        {
+            presentIdFeatures.pNext = featureChainHead;
+            featureChainHead = static_cast<void*>(&presentIdFeatures);
+        }
+        if (enableAmdAntiLag2)
+        {
+            antiLagFeatures.pNext = featureChainHead;
+            featureChainHead = static_cast<void*>(&antiLagFeatures);
         }
 
         if (enableTimelineSemaphores && !apiAtLeast12)
@@ -728,6 +789,44 @@ bool VulkanContext::initializeLocked()
         TimestampPeriod = deviceProperties.limits.timestampPeriod;
         TimestampQueriesSupported = queueSupportsTimestamps;
         TimelineSemaphoresSupported = enableTimelineSemaphores;
+        NvidiaReflexSupported = enableNvidiaReflex;
+        if (NvidiaReflexSupported)
+        {
+            NvidiaReflexUnavailableReason.clear();
+        }
+        else if (candidateProfile.VendorId != kNvidiaVendorId)
+        {
+            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires a supported NVIDIA GPU";
+        }
+        else if (!hasNvidiaLowLatency)
+        {
+            NvidiaReflexUnavailableReason = "Vulkan driver does not support VK_NV_low_latency2";
+        }
+        else if (!hasPresentId || presentIdFeaturesAvailable.presentId != VK_TRUE)
+        {
+            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires VK_KHR_present_id";
+        }
+        else
+        {
+            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires Vulkan timeline semaphores";
+        }
+        AmdAntiLag2Supported = enableAmdAntiLag2;
+        if (AmdAntiLag2Supported)
+        {
+            AmdAntiLag2UnavailableReason.clear();
+        }
+        else if (candidateProfile.VendorId != kAmdVendorId)
+        {
+            AmdAntiLag2UnavailableReason = "AMD Radeon Anti-Lag 2 requires a supported AMD Radeon GPU";
+        }
+        else if (!hasAmdAntiLag)
+        {
+            AmdAntiLag2UnavailableReason = "Vulkan driver does not support VK_AMD_anti_lag";
+        }
+        else
+        {
+            AmdAntiLag2UnavailableReason = "Vulkan driver reports the antiLag feature unavailable";
+        }
         DynamicTextureIndexingSupported = enableDynamicTextureIndexing;
         DeviceProfile = candidateProfile;
         // Keep Qualcomm/Adreno on the compatibility descriptor path unless we
@@ -756,7 +855,7 @@ bool VulkanContext::initializeLocked()
         }
         Platform::Log(
             Platform::LogLevel::Warn,
-            "VulkanContext: selected '%s' (api=%u.%u driver=%#x vendor=%#x device=%#x queueFamily=%u adreno=%d mali=%d powervr=%d g52=%d timeline=%d dynamicIndexing=%d nonUniformTextures=%d forceTimelineOff=%d forceDynamicOff=%d)",
+            "VulkanContext: selected '%s' (api=%u.%u driver=%#x vendor=%#x device=%#x queueFamily=%u adreno=%d mali=%d powervr=%d g52=%d timeline=%d reflex=%d antiLag2=%d dynamicIndexing=%d nonUniformTextures=%d forceTimelineOff=%d forceDynamicOff=%d)",
             deviceProperties.deviceName,
             VK_API_VERSION_MAJOR(deviceProperties.apiVersion),
             VK_API_VERSION_MINOR(deviceProperties.apiVersion),
@@ -769,6 +868,8 @@ bool VulkanContext::initializeLocked()
             DeviceProfile.IsPowerVR ? 1 : 0,
             DeviceProfile.IsMaliG52Class ? 1 : 0,
             TimelineSemaphoresSupported ? 1 : 0,
+            NvidiaReflexSupported ? 1 : 0,
+            AmdAntiLag2Supported ? 1 : 0,
             DynamicTextureIndexingSupported ? 1 : 0,
             NonUniformTextureIndexingSupported ? 1 : 0,
             ForceDisableTimelineSemaphores ? 1 : 0,
@@ -816,6 +917,46 @@ bool VulkanContext::initializeLocked()
     if (ResetQueryPool == nullptr)
         TimestampQueriesSupported = false;
 
+    if (NvidiaReflexSupported)
+    {
+        SetLatencySleepModeNV = reinterpret_cast<PFN_vkSetLatencySleepModeNV>(
+            vkGetDeviceProcAddr(Device, "vkSetLatencySleepModeNV"));
+        LatencySleepNV = reinterpret_cast<PFN_vkLatencySleepNV>(
+            vkGetDeviceProcAddr(Device, "vkLatencySleepNV"));
+        SetLatencyMarkerNV = reinterpret_cast<PFN_vkSetLatencyMarkerNV>(
+            vkGetDeviceProcAddr(Device, "vkSetLatencyMarkerNV"));
+        if (SetLatencySleepModeNV == nullptr || LatencySleepNV == nullptr || SetLatencyMarkerNV == nullptr)
+        {
+            NvidiaReflexSupported = false;
+            NvidiaReflexUnavailableReason = "Vulkan driver did not expose NVIDIA Reflex entry points";
+            SetLatencySleepModeNV = nullptr;
+            LatencySleepNV = nullptr;
+            SetLatencyMarkerNV = nullptr;
+        }
+    }
+
+    if (AmdAntiLag2Supported)
+    {
+        AntiLagUpdateAMD = reinterpret_cast<PFN_vkAntiLagUpdateAMD>(
+            vkGetDeviceProcAddr(Device, "vkAntiLagUpdateAMD"));
+        if (AntiLagUpdateAMD == nullptr)
+        {
+            AmdAntiLag2Supported = false;
+            AmdAntiLag2UnavailableReason = "Vulkan driver did not expose vkAntiLagUpdateAMD";
+        }
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "VulkanContext: NVIDIA Reflex available=%d reason=\"%s\"",
+        NvidiaReflexSupported ? 1 : 0,
+        NvidiaReflexUnavailableReason.c_str());
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "VulkanContext: AMD Radeon Anti-Lag 2 available=%d reason=\"%s\"",
+        AmdAntiLag2Supported ? 1 : 0,
+        AmdAntiLag2UnavailableReason.c_str());
+
     return true;
 }
 
@@ -848,9 +989,17 @@ void VulkanContext::shutdownLocked()
     WaitSemaphores = nullptr;
     GetSemaphoreCounterValueFn = nullptr;
     ResetQueryPool = nullptr;
+    SetLatencySleepModeNV = nullptr;
+    LatencySleepNV = nullptr;
+    SetLatencyMarkerNV = nullptr;
+    AntiLagUpdateAMD = nullptr;
     TimestampPeriod = 0.0f;
     TimestampQueriesSupported = false;
     TimelineSemaphoresSupported = false;
+    NvidiaReflexSupported = false;
+    NvidiaReflexUnavailableReason.clear();
+    AmdAntiLag2Supported = false;
+    AmdAntiLag2UnavailableReason.clear();
     DynamicTextureIndexingSupported = false;
     NonUniformTextureIndexingSupported = false;
     ForceDisableTimelineSemaphores = false;

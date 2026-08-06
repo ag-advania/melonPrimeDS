@@ -54,6 +54,14 @@ public:
     PFN_vkGetSemaphoreCounterValueKHR GetSemaphoreCounterValue() const { return GetSemaphoreCounterValueFn; }
     PFN_vkResetQueryPoolEXT GetResetQueryPool() const { return ResetQueryPool; }
     bool SupportsTimelineSemaphores() const { return TimelineSemaphoresSupported; }
+    bool SupportsNvidiaReflex() const { return NvidiaReflexSupported; }
+    const std::string& GetNvidiaReflexUnavailableReason() const { return NvidiaReflexUnavailableReason; }
+    PFN_vkSetLatencySleepModeNV GetSetLatencySleepModeNV() const { return SetLatencySleepModeNV; }
+    PFN_vkLatencySleepNV GetLatencySleepNV() const { return LatencySleepNV; }
+    PFN_vkSetLatencyMarkerNV GetSetLatencyMarkerNV() const { return SetLatencyMarkerNV; }
+    bool SupportsAmdAntiLag2() const { return AmdAntiLag2Supported; }
+    const std::string& GetAmdAntiLag2UnavailableReason() const { return AmdAntiLag2UnavailableReason; }
+    PFN_vkAntiLagUpdateAMD GetAntiLagUpdateAMD() const { return AntiLagUpdateAMD; }
     bool SupportsDynamicTextureIndexing() const { return DynamicTextureIndexingSupported; }
     bool SupportsNonUniformTextureIndexing() const { return NonUniformTextureIndexingSupported; }
     bool IsTimelineSemaphoreForcedOff() const { return ForceDisableTimelineSemaphores; }
@@ -84,9 +92,17 @@ private:
     PFN_vkWaitSemaphoresKHR WaitSemaphores = nullptr;
     PFN_vkGetSemaphoreCounterValueKHR GetSemaphoreCounterValueFn = nullptr;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
+    PFN_vkSetLatencySleepModeNV SetLatencySleepModeNV = nullptr;
+    PFN_vkLatencySleepNV LatencySleepNV = nullptr;
+    PFN_vkSetLatencyMarkerNV SetLatencyMarkerNV = nullptr;
+    PFN_vkAntiLagUpdateAMD AntiLagUpdateAMD = nullptr;
     float TimestampPeriod = 0.0f;
     bool TimestampQueriesSupported = false;
     bool TimelineSemaphoresSupported = false;
+    bool NvidiaReflexSupported = false;
+    std::string NvidiaReflexUnavailableReason;
+    bool AmdAntiLag2Supported = false;
+    std::string AmdAntiLag2UnavailableReason;
     bool DynamicTextureIndexingSupported = false;
     bool NonUniformTextureIndexingSupported = false;
     bool ForceDisableTimelineSemaphores = false;

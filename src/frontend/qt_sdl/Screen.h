@@ -95,8 +95,22 @@ public:
     virtual void drawScreen() {}// = 0;
 
 #ifdef MELONPRIME_DS
+    // Drop any borrowed RendererOutput pointers before the renderer that owns
+    // them is replaced. GPU-owned presenters override this only if needed.
+    virtual void invalidateRendererOutput() {}
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    virtual void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+    {
+        (void)reflexMode;
+        (void)antiLag2Enabled;
+    }
+    virtual void markVulkanReflexInputSample() {}
+    virtual void markVulkanReflexRenderSubmitStart() {}
+    virtual void markVulkanReflexRenderSubmitEnd() {}
+    virtual void finishVulkanLowLatencyFrame() {}
+#endif
 #ifdef MELONPRIME_CUSTOM_HUD
     // Hand-off for the Custom HUD on-screen editor, which runs while the
     // settings dialog keeps emulation paused. The emulation thread is stopped
@@ -340,6 +354,9 @@ public:
     virtual ~ScreenPanelNative();
 
     void drawScreen() override;
+#ifdef MELONPRIME_DS
+    void invalidateRendererOutput() override;
+#endif
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
     // ScreenPanelNative has no wl_surface of its own (unlike ScreenPanelGL, it
@@ -356,14 +373,27 @@ protected:
 
 private:
     void setupScreenLayout() override;
+#ifdef MELONPRIME_DS
+    void requestLatestFrameUpdate();
+    void finishLatestFramePaint();
+#endif
 
     QMutex bufferLock;
     bool hasBuffers;
     void* topBuffer;
     void* bottomBuffer;
+    int bufferWidth = 256;
+    int bufferHeight = 192;
 
     QImage screen[2];
     QTransform screenTrans[kMaxScreenTransforms];
+#ifdef MELONPRIME_DS
+    // Single-slot latest-frame mailbox. The emulation thread only posts a Qt
+    // update when no earlier request is awaiting paint; newer frames replace
+    // the published buffer pointers and set dirty for one follow-up paint.
+    std::atomic_bool latestFrameUpdatePosted{false};
+    std::atomic_bool latestFrameDirty{false};
+#endif
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
     std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
 #endif
@@ -380,6 +410,11 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
+    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled) override;
+    void markVulkanReflexInputSample() override;
+    void markVulkanReflexRenderSubmitStart() override;
+    void markVulkanReflexRenderSubmitEnd() override;
+    void finishVulkanLowLatencyFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
 #endif
@@ -486,6 +521,8 @@ private:
 
     GLuint screenVertexBuffer, screenVertexArray;
     GLuint screenTexture;
+    int screenTextureWidth = 256;
+    int screenTextureHeight = 192;
     GLuint screenShaderProgram;
     GLint screenShaderTransformULoc, screenShaderScreenSizeULoc;
 

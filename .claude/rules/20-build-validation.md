@@ -22,6 +22,8 @@ Run the checks relevant to the touched surface. The canonical CI audit paths are
 
 After HUD schema changes, run `python tools/codegen/hud/generate-hud-prop-schema.py` and verify the generated `.inc` files and `docs/generated/hud/MelonPrimeHudPropSchemaPhase2a.md` are stable. Always run `git diff --check` before handoff.
 
+After touching `src/GPU3D_DX12_shaders.h` or the DX12 pipeline setup, run `python tools/ci/audits/check-dx12-shaders.py`. The DX12 renderer compiles its HLSL at runtime, so a shader error is otherwise invisible until a D3D12 machine renders a black screen. The audit skips cleanly without the Windows SDK.
+
 Additional focused audits such as `audit-melonprime-thread-boundary.ps1 -Strict` and `audit-melonprime-instance-state.ps1 -Strict` apply when their ownership surface changes.
 
 ## Validation claims

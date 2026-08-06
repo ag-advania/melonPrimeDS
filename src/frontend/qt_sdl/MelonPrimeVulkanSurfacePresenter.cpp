@@ -90,6 +90,12 @@ bool MelonPrimeVulkanSurfacePresenter::Init(
     device = context.GetDevice();
     queue = context.GetQueue();
     queueFamilyIndex = context.GetQueueFamilyIndex();
+    reflexRuntimeAvailable = context.SupportsNvidiaReflex();
+    setLatencySleepModeNV = context.GetSetLatencySleepModeNV();
+    latencySleepNV = context.GetLatencySleepNV();
+    setLatencyMarkerNV = context.GetSetLatencyMarkerNV();
+    antiLag2RuntimeAvailable = context.SupportsAmdAntiLag2();
+    antiLagUpdateAMD = context.GetAntiLagUpdateAMD();
 
     surface = CreateVulkanSurface(instance, nativeWindow, lastError);
     if (surface == VK_NULL_HANDLE)
@@ -154,6 +160,18 @@ void MelonPrimeVulkanSurfacePresenter::Shutdown()
     physicalDevice = VK_NULL_HANDLE;
     device = VK_NULL_HANDLE;
     queue = VK_NULL_HANDLE;
+    setLatencySleepModeNV = nullptr;
+    latencySleepNV = nullptr;
+    setLatencyMarkerNV = nullptr;
+    antiLagUpdateAMD = nullptr;
+    reflexRuntimeAvailable = false;
+    reflexModeApplied = false;
+    reflexFrameOpen = false;
+    reflexSimulationOpen = false;
+    reflexRenderSubmitOpen = false;
+    reflexPresentOpen = false;
+    antiLag2RuntimeAvailable = false;
+    antiLag2FrameOpen = false;
     initialized = false;
 }
 
@@ -257,6 +275,13 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
 
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    VkSwapchainLatencyCreateInfoNV latencyCreateInfo{};
+    if (reflexRuntimeAvailable)
+    {
+        latencyCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV;
+        latencyCreateInfo.latencyModeEnable = VK_TRUE;
+        createInfo.pNext = &latencyCreateInfo;
+    }
     createInfo.surface = surface;
     createInfo.minImageCount = imageCount;
     createInfo.imageFormat = selected.format;
@@ -283,7 +308,11 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
 
     const VkSwapchainKHR oldSwapchain = swapchain;
     DestroySwapchainGraphicsResources();
+    FinishNvidiaReflexFrame();
+    FinishAmdAntiLag2Frame();
     swapchain = nextSwapchain;
+    reflexFrameId = 0;
+    reflexModeApplied = false;
     if (oldSwapchain != VK_NULL_HANDLE)
         vkDestroySwapchainKHR(device, oldSwapchain, nullptr);
 
@@ -304,6 +333,8 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
         SetError("swapchain graphics resource creation failed");
         return false;
     }
+    if (reflexRuntimeAvailable)
+        ApplyNvidiaReflexMode();
     swapchainDirty = false;
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Info,
@@ -317,6 +348,8 @@ bool MelonPrimeVulkanSurfacePresenter::CreateSwapchain()
 
 void MelonPrimeVulkanSurfacePresenter::DestroySwapchain()
 {
+    FinishNvidiaReflexFrame();
+    FinishAmdAntiLag2Frame();
     DestroySwapchainGraphicsResources();
     swapchainImages.clear();
     if (swapchain != VK_NULL_HANDLE)
@@ -524,6 +557,19 @@ bool MelonPrimeVulkanSurfacePresenter::CreateCommandResources()
         return false;
     }
 
+    if (reflexRuntimeAvailable)
+    {
+        VkSemaphoreTypeCreateInfo timelineInfo{};
+        timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineInfo.initialValue = 0;
+        VkSemaphoreCreateInfo reflexSemaphoreInfo{};
+        reflexSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        reflexSemaphoreInfo.pNext = &timelineInfo;
+        if (vkCreateSemaphore(device, &reflexSemaphoreInfo, nullptr, &reflexSleepSemaphore) != VK_SUCCESS)
+            DisableNvidiaReflex("timeline semaphore creation", VK_ERROR_INITIALIZATION_FAILED);
+    }
+
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -543,6 +589,8 @@ void MelonPrimeVulkanSurfacePresenter::DestroyCommandResources()
         vkDestroySemaphore(device, renderFinished, nullptr);
     if (imageAvailable != VK_NULL_HANDLE)
         vkDestroySemaphore(device, imageAvailable, nullptr);
+    if (reflexSleepSemaphore != VK_NULL_HANDLE)
+        vkDestroySemaphore(device, reflexSleepSemaphore, nullptr);
     if (commandBuffer != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE)
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
     if (commandPool != VK_NULL_HANDLE)
@@ -550,6 +598,8 @@ void MelonPrimeVulkanSurfacePresenter::DestroyCommandResources()
     submitFence = VK_NULL_HANDLE;
     renderFinished = VK_NULL_HANDLE;
     imageAvailable = VK_NULL_HANDLE;
+    reflexSleepSemaphore = VK_NULL_HANDLE;
+    reflexSleepValue = 0;
     commandBuffer = VK_NULL_HANDLE;
     commandPool = VK_NULL_HANDLE;
 }
@@ -953,6 +1003,196 @@ bool MelonPrimeVulkanSurfacePresenter::RecoverSwapchain(const char* stage)
     return false;
 }
 
+bool MelonPrimeVulkanSurfacePresenter::ApplyNvidiaReflexMode()
+{
+    if (!reflexRuntimeAvailable || swapchain == VK_NULL_HANDLE || setLatencySleepModeNV == nullptr)
+        return false;
+    if (reflexModeApplied)
+        return true;
+
+    VkLatencySleepModeInfoNV modeInfo{};
+    modeInfo.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV;
+    modeInfo.lowLatencyMode = reflexMode != 0 ? VK_TRUE : VK_FALSE;
+    modeInfo.lowLatencyBoost = reflexMode == 2 ? VK_TRUE : VK_FALSE;
+    modeInfo.minimumIntervalUs = 0;
+    const VkResult result = setLatencySleepModeNV(device, swapchain, &modeInfo);
+    if (result != VK_SUCCESS)
+    {
+        DisableNvidiaReflex("vkSetLatencySleepModeNV", result);
+        return false;
+    }
+
+    reflexModeApplied = true;
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "VulkanPresenter: NVIDIA Reflex mode=%d lowLatency=%d boost=%d minimumIntervalUs=0",
+        reflexMode,
+        modeInfo.lowLatencyMode ? 1 : 0,
+        modeInfo.lowLatencyBoost ? 1 : 0);
+    return true;
+}
+
+void MelonPrimeVulkanSurfacePresenter::DisableNvidiaReflex(const char* operation, VkResult result)
+{
+    if (!reflexRuntimeAvailable)
+        return;
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Error,
+        "VulkanPresenter: NVIDIA Reflex disabled operation=%s VkResult=%d",
+        operation,
+        static_cast<int>(result));
+    reflexRuntimeAvailable = false;
+    reflexModeApplied = false;
+    reflexFrameOpen = false;
+    reflexSimulationOpen = false;
+    reflexRenderSubmitOpen = false;
+    reflexPresentOpen = false;
+}
+
+void MelonPrimeVulkanSurfacePresenter::SendNvidiaReflexMarker(VkLatencyMarkerNV marker)
+{
+    if (!reflexRuntimeAvailable || !reflexFrameOpen || setLatencyMarkerNV == nullptr
+        || swapchain == VK_NULL_HANDLE)
+        return;
+    VkSetLatencyMarkerInfoNV markerInfo{};
+    markerInfo.sType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV;
+    markerInfo.presentID = reflexFrameId;
+    markerInfo.marker = marker;
+    setLatencyMarkerNV(device, swapchain, &markerInfo);
+}
+
+void MelonPrimeVulkanSurfacePresenter::BeginNvidiaReflexFrame(int mode)
+{
+    const int requestedMode = std::clamp(mode, 0, 2);
+    if (requestedMode != reflexMode)
+    {
+        reflexMode = requestedMode;
+        reflexModeApplied = false;
+    }
+    if (!ApplyNvidiaReflexMode() || reflexSleepSemaphore == VK_NULL_HANDLE
+        || latencySleepNV == nullptr)
+        return;
+    if (reflexFrameOpen)
+        FinishNvidiaReflexFrame();
+
+    VkLatencySleepInfoNV sleepInfo{};
+    sleepInfo.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV;
+    sleepInfo.signalSemaphore = reflexSleepSemaphore;
+    sleepInfo.value = ++reflexSleepValue;
+    const VkResult sleepResult = latencySleepNV(device, swapchain, &sleepInfo);
+    if (sleepResult != VK_SUCCESS)
+    {
+        DisableNvidiaReflex("vkLatencySleepNV", sleepResult);
+        return;
+    }
+
+    VkSemaphoreWaitInfo waitInfo{};
+    waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    waitInfo.semaphoreCount = 1;
+    waitInfo.pSemaphores = &reflexSleepSemaphore;
+    waitInfo.pValues = &reflexSleepValue;
+    const auto waitSemaphores = melonDS::VulkanContext::Get().GetWaitSemaphores();
+    const VkResult waitResult = waitSemaphores != nullptr
+        ? waitSemaphores(device, &waitInfo, UINT64_MAX)
+        : VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (waitResult != VK_SUCCESS)
+    {
+        DisableNvidiaReflex("vkWaitSemaphores", waitResult);
+        return;
+    }
+
+    ++reflexFrameId;
+    reflexFrameOpen = true;
+    SendNvidiaReflexMarker(VK_LATENCY_MARKER_SIMULATION_START_NV);
+    reflexSimulationOpen = true;
+}
+
+void MelonPrimeVulkanSurfacePresenter::MarkNvidiaReflexInputSample()
+{
+    if (reflexFrameOpen && reflexSimulationOpen)
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_INPUT_SAMPLE_NV);
+}
+
+void MelonPrimeVulkanSurfacePresenter::MarkNvidiaReflexRenderSubmitStart()
+{
+    if (!reflexFrameOpen || reflexRenderSubmitOpen)
+        return;
+    if (reflexSimulationOpen)
+    {
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_SIMULATION_END_NV);
+        reflexSimulationOpen = false;
+    }
+    SendNvidiaReflexMarker(VK_LATENCY_MARKER_RENDERSUBMIT_START_NV);
+    reflexRenderSubmitOpen = true;
+}
+
+void MelonPrimeVulkanSurfacePresenter::MarkNvidiaReflexRenderSubmitEnd()
+{
+    if (!reflexFrameOpen)
+        return;
+    if (reflexRenderSubmitOpen)
+    {
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_RENDERSUBMIT_END_NV);
+        reflexRenderSubmitOpen = false;
+    }
+    if (reflexSimulationOpen)
+    {
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_SIMULATION_END_NV);
+        reflexSimulationOpen = false;
+    }
+}
+
+void MelonPrimeVulkanSurfacePresenter::FinishNvidiaReflexFrame()
+{
+    if (!reflexFrameOpen)
+        return;
+    if (reflexPresentOpen)
+    {
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_PRESENT_END_NV);
+        reflexPresentOpen = false;
+    }
+    MarkNvidiaReflexRenderSubmitEnd();
+    reflexFrameOpen = false;
+    reflexSimulationOpen = false;
+    reflexRenderSubmitOpen = false;
+}
+
+void MelonPrimeVulkanSurfacePresenter::SendAmdAntiLag2Update(VkAntiLagStageAMD stage)
+{
+    if (!antiLag2RuntimeAvailable || !antiLag2FrameOpen || antiLagUpdateAMD == nullptr)
+        return;
+
+    VkAntiLagPresentationInfoAMD presentationInfo{};
+    presentationInfo.sType = VK_STRUCTURE_TYPE_ANTI_LAG_PRESENTATION_INFO_AMD;
+    presentationInfo.stage = stage;
+    presentationInfo.frameIndex = antiLag2FrameId;
+
+    VkAntiLagDataAMD data{};
+    data.sType = VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD;
+    data.mode = antiLag2Enabled ? VK_ANTI_LAG_MODE_ON_AMD : VK_ANTI_LAG_MODE_OFF_AMD;
+    data.maxFPS = 0;
+    data.pPresentationInfo = &presentationInfo;
+    antiLagUpdateAMD(device, &data);
+}
+
+void MelonPrimeVulkanSurfacePresenter::BeginAmdAntiLag2Frame(bool enabled)
+{
+    if (!antiLag2RuntimeAvailable || antiLagUpdateAMD == nullptr || device == VK_NULL_HANDLE)
+        return;
+    if (antiLag2FrameOpen)
+        FinishAmdAntiLag2Frame();
+
+    antiLag2Enabled = enabled;
+    ++antiLag2FrameId;
+    antiLag2FrameOpen = true;
+    SendAmdAntiLag2Update(VK_ANTI_LAG_STAGE_INPUT_AMD);
+}
+
+void MelonPrimeVulkanSurfacePresenter::FinishAmdAntiLag2Frame()
+{
+    antiLag2FrameOpen = false;
+}
+
 bool MelonPrimeVulkanSurfacePresenter::Present(
     VulkanFrame* frame,
     MelonPrimeVulkanOutput& output,
@@ -1194,6 +1434,13 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    VkLatencySubmissionPresentIdNV latencySubmission{};
+    if (reflexRuntimeAvailable && reflexFrameOpen)
+    {
+        latencySubmission.sType = VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV;
+        latencySubmission.presentID = reflexFrameId;
+        submitInfo.pNext = &latencySubmission;
+    }
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = &imageAvailable;
     submitInfo.pWaitDstStageMask = &waitStage;
@@ -1209,6 +1456,16 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    VkPresentIdKHR presentIdInfo{};
+    if (reflexRuntimeAvailable && reflexFrameOpen)
+    {
+        presentIdInfo.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+        presentIdInfo.swapchainCount = 1;
+        presentIdInfo.pPresentIds = &reflexFrameId;
+        presentInfo.pNext = &presentIdInfo;
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_PRESENT_START_NV);
+        reflexPresentOpen = true;
+    }
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &renderFinished;
     presentInfo.swapchainCount = 1;
@@ -1217,7 +1474,13 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     VkResult presentResult;
     {
         std::scoped_lock queueLock(melonDS::VulkanContext::Get().GetQueueLock());
+        SendAmdAntiLag2Update(VK_ANTI_LAG_STAGE_PRESENT_AMD);
         presentResult = vkQueuePresentKHR(queue, &presentInfo);
+    }
+    if (reflexPresentOpen)
+    {
+        SendNvidiaReflexMarker(VK_LATENCY_MARKER_PRESENT_END_NV);
+        reflexPresentOpen = false;
     }
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
         return RecoverSwapchain("present/recreate");
