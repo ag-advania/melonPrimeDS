@@ -45,12 +45,14 @@
 #include "DSi_I2C.h"
 #include "GPU_Soft.h"
 #include "GPU_OpenGL.h"
+#if defined(MELONPRIME_DS)
+#include "MelonPrimeDef.h"
+#endif
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
