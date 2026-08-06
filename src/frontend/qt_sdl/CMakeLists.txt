@@ -511,7 +511,8 @@ if (MELONPRIME_DX12_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_DX12.cpp)
     target_sources(melonDS PRIVATE
-        MelonPrimeDX12FeatureCheck.cpp)
+        MelonPrimeDX12FeatureCheck.cpp
+        MelonPrimeDX12SurfacePresenter.cpp)
 
     # Only the GUID symbols are linked; every DX12/DXGI/D3DCompile entry point
     # is resolved with GetProcAddress at runtime.

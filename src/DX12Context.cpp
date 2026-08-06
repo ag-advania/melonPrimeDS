@@ -710,6 +710,28 @@ void DX12CommandContext::WaitIdle()
     WaitForFence(SubmittedValue);
 }
 
+bool DX12CommandContext::WaitQueueIdle()
+{
+    if (!Queue || !Fence || !FenceEvent)
+        return true;
+
+    // Finish any list owned by this context before placing the queue-wide
+    // retirement fence. The additional signal is intentional even when
+    // Submit() just signalled: DXGI Present is issued after Submit() and uses
+    // the same direct queue, so waiting only for SubmittedValue can release a
+    // swap-chain buffer while presentation still references it.
+    if (Recording && !Submit())
+        return false;
+
+    const u64 queueIdleValue = ++FenceValue;
+    const HRESULT hr = Queue->Signal(Fence.Get(), queueIdleValue);
+    if (FAILED(hr))
+        return DX12::Fail("ID3D12CommandQueue::Signal(queue idle)", hr);
+
+    SubmittedValue = queueIdleValue;
+    return WaitForFence(queueIdleValue);
+}
+
 ID3D12GraphicsCommandList* DX12CommandContext::Begin()
 {
     if (!List || !Allocator)

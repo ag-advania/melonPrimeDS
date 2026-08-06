@@ -613,17 +613,10 @@ void EmuThread::run()
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::RunFrame);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12LowLatencyRenderer)
-            dx12LowLatencyRenderer->BeginReflexPresent();
-#endif
         emuInstance->drawScreen();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (dx12LowLatencyRenderer)
-        {
-            dx12LowLatencyRenderer->EndReflexPresent();
             dx12LowLatencyRenderer->FinishReflexFrame();
-        }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
