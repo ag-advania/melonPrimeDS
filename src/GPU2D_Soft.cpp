@@ -774,7 +774,11 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
                         const u32 pixelByteAddress =
                             (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
-                        if (Parent.DrawStructuredCapturePixel(GPU2D.Num, &BGOBJLine[i], pixelByteAddress))
+                        if (Parent.DrawStructuredCapturePixel(
+                            GPU2D.Num,
+                            line,
+                            &BGOBJLine[i],
+                            pixelByteAddress))
                         {
                             rotX += rotA;
                             rotY += rotC;

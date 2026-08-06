@@ -17,6 +17,8 @@
 */
 
 #include <QFileDialog>
+#include <QComboBox>
+#include <QLabel>
 #include <QRadioButton>
 #include <QtGlobal>
 
@@ -32,6 +34,7 @@
 #include "ui_VideoSettingsDialog.h"
 
 #ifdef MELONPRIME_DS
+#include "MelonPrimeDef.h"
 #include "MelonPrimeVideoBackend.h"
 #include "MelonPrimeLocalization.h"
 #if defined(MELONPRIME_ENABLE_METAL)
@@ -39,6 +42,9 @@
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "MelonPrimeDX12FeatureCheck.h"
 #endif
 #endif // MELONPRIME_DS
 
@@ -83,8 +89,15 @@ void VideoSettingsDialog::setEnabled()
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     const bool vulkanRenderer = renderer == renderer3D_Vulkan;
+#else
+    const bool vulkanRenderer = false;
 #endif
-    ui->cbGLDisplay->setEnabled(softwareRenderer);
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    const bool dx12Renderer = renderer == renderer3D_DX12;
+#else
+    const bool dx12Renderer = false;
+#endif
+    ui->cbGLDisplay->setEnabled(softwareRenderer || dx12Renderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
     // This controls the Software renderer worker thread. Native Metal and
@@ -94,7 +107,7 @@ void VideoSettingsDialog::setEnabled()
     ui->cbSoftwareThreaded->setEnabled(softwareRenderer);
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 
     const QString vulkanOutsideMatchMessage = MelonPrime::UiText::Tr(
         "Vulkan forces software rendering outside matches; the saved setting is not changed.");
@@ -103,11 +116,17 @@ void VideoSettingsDialog::setEnabled()
     const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
         "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
     ui->lblRendererNotes->setVisible(vulkanRenderer);
-    ui->lblRendererNotes->setText(vulkanRenderer
-        ? vulkanOutsideMatchMessage + QStringLiteral("\n")
+    if (vulkanRenderer)
+    {
+        ui->lblRendererNotes->setText(
+            vulkanOutsideMatchMessage + QStringLiteral("\n")
             + vulkanSceneTransitionMessage + QStringLiteral("\n")
-            + vulkanResolutionMessage
-        : QString());
+            + vulkanResolutionMessage);
+    }
+    else
+    {
+        ui->lblRendererNotes->setText(QString());
+    }
 
     // Vulkan uses the software renderer for menus and other non-match screens
     // regardless of the saved checkbox value. Make that runtime behavior
@@ -128,13 +147,13 @@ void VideoSettingsDialog::setEnabled()
         "The resolution at which the 3D graphics will be rendered. Higher resolutions improve graphics quality when the main window is enlarged, but may also cause glitches.");
     const QString vulkanResolutionWarning = MelonPrime::UiText::Tr(
         "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
-    const QString resolutionDescription = vulkanRenderer
-        ? resolutionBaseTooltip + QStringLiteral("\n") + vulkanResolutionWarning
-        : resolutionBaseTooltip;
+    QString resolutionDescription = resolutionBaseTooltip;
+    if (vulkanRenderer)
+        resolutionDescription += QStringLiteral("\n") + vulkanResolutionWarning;
     ui->cbxGLResolution->setToolTip(resolutionDescription);
     ui->cbxGLResolution->setWhatsThis(resolutionDescription);
 #else
-    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer);
+    ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || dx12Renderer);
 #endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
@@ -149,7 +168,68 @@ void VideoSettingsDialog::setEnabled()
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
     // compute mirror in the same coordinate mode.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer);
+    // The DX12 renderer follows the OpenGL compute renderer's design, so it
+    // shares that renderer's coordinate-mode setting rather than the
+    // BetterPolygons splitting used by the raster paths.
+    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
+
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    bool reflexEnabled = false;
+    std::string reflexUnavailableReason;
+    bool antiLag2Enabled = false;
+    std::string antiLag2UnavailableReason;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+    {
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        reflexEnabled = vulkanProbe.Available && vulkanProbe.NvidiaReflexAvailable;
+        reflexUnavailableReason = vulkanProbe.NvidiaReflexReason;
+        antiLag2Enabled = vulkanProbe.Available && vulkanProbe.AmdAntiLag2Available;
+        antiLag2UnavailableReason = vulkanProbe.AmdAntiLag2Reason;
+    }
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+    {
+        const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+        reflexEnabled = dx12Probe.Available && dx12Probe.NvidiaReflexAvailable;
+        reflexUnavailableReason = dx12Probe.NvidiaReflexReason;
+        antiLag2Enabled = dx12Probe.Available && dx12Probe.AmdAntiLag2Available;
+        antiLag2UnavailableReason = dx12Probe.AmdAntiLag2Reason;
+    }
+#endif
+    lblNvidiaReflex->setEnabled(reflexEnabled);
+    cbxNvidiaReflex->setEnabled(reflexEnabled);
+
+    const QString reflexDescription = reflexEnabled
+        ? MelonPrime::UiText::Tr(
+            "NVIDIA Reflex reduces CPU-to-render latency. Boost also requests maximum GPU clocks and can increase power usage.")
+        : (!(dx12Renderer || vulkanRenderer)
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 or Vulkan on a supported NVIDIA GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                reflexUnavailableReason.empty()
+                    ? std::string("NVIDIA Reflex is unavailable")
+                    : reflexUnavailableReason)));
+    lblNvidiaReflex->setToolTip(reflexDescription);
+    cbxNvidiaReflex->setToolTip(reflexDescription);
+
+    lblAmdAntiLag2->setEnabled(antiLag2Enabled);
+    cbxAmdAntiLag2->setEnabled(antiLag2Enabled);
+    const QString antiLag2Description = antiLag2Enabled
+        ? MelonPrime::UiText::Tr(
+            "AMD Anti-Lag 2 reduces system latency for improved responsiveness.")
+        : (!(dx12Renderer || vulkanRenderer)
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 or Vulkan on a supported AMD Radeon GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                antiLag2UnavailableReason.empty()
+                    ? std::string("AMD Radeon Anti-Lag 2 is unavailable")
+                    : antiLag2UnavailableReason)));
+    lblAmdAntiLag2->setToolTip(antiLag2Description);
+    cbxAmdAntiLag2->setToolTip(antiLag2Description);
+#endif
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
@@ -172,6 +252,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
+    oldAmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
+#endif
 
     grp3DRenderer = new QButtonGroup(this);
     grp3DRenderer->addButton(ui->rb3DSoftware, renderer3D_Software);
@@ -243,6 +328,74 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     ui->gridLayout_2->activate();
     adjustSize();
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Same approach as the Vulkan block above: the upstream .ui rows and the
+    // persisted numeric renderer IDs stay untouched, and DX12 is appended after
+    // every renderer that already exists on this platform. Metal is Apple-only,
+    // so only the Vulkan row has to be accounted for here.
+    ui->gridLayout_2->removeItem(ui->verticalSpacer);
+    ui->gridLayout_2->removeWidget(ui->cbGLDisplay);
+    ui->gridLayout_2->removeWidget(ui->cbVSync);
+    ui->gridLayout_2->removeWidget(ui->label_2);
+    ui->gridLayout_2->removeWidget(ui->sbVSyncInterval);
+
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    constexpr int dx12Row = 5;
+#else
+    constexpr int dx12Row = 4;
+#endif
+    rb3DDX12 = new QRadioButton(ui->groupBox);
+    rb3DDX12->setObjectName(QStringLiteral("rb3DDX12"));
+    rb3DDX12->setText(MelonPrime::UiText::Tr("DirectX 12"));
+    rb3DDX12->setWhatsThis(MelonPrime::UiText::Tr(
+        "<html><head/><body><p>Native DirectX 12 renderer. The GPU rasterizes 3D and recomposites the software 2D layers at the selected internal resolution.</p></body></html>"));
+    ui->gridLayout_2->addWidget(rb3DDX12, dx12Row, 0, 1, 2);
+    grp3DRenderer->addButton(rb3DDX12, renderer3D_DX12);
+
+    ui->gridLayout_2->addItem(ui->verticalSpacer, dx12Row + 1, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbGLDisplay, dx12Row + 2, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->cbVSync, dx12Row + 3, 0, 1, 2);
+    ui->gridLayout_2->addWidget(ui->label_2, dx12Row + 4, 0, 1, 1);
+    ui->gridLayout_2->addWidget(ui->sbVSyncInterval, dx12Row + 4, 1, 1, 1);
+    ui->gridLayout_2->invalidate();
+    ui->gridLayout_2->activate();
+    adjustSize();
+#endif
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    lblNvidiaReflex = new QLabel(ui->groupBox_3);
+    lblNvidiaReflex->setObjectName(QStringLiteral("lblNvidiaReflex"));
+    lblNvidiaReflex->setText(MelonPrime::UiText::Tr("NVIDIA Reflex Low Latency:"));
+    cbxNvidiaReflex = new QComboBox(ui->groupBox_3);
+    cbxNvidiaReflex->setObjectName(QStringLiteral("cbxNvidiaReflex"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("On"));
+    cbxNvidiaReflex->addItem(MelonPrime::UiText::Tr("On + Boost"));
+    cbxNvidiaReflex->setCurrentIndex(qBound(0, oldNvidiaReflexMode, 2));
+    ui->gridLayout_4->addWidget(lblNvidiaReflex, 4, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxNvidiaReflex, 5, 0, 1, 1);
+    connect(
+        cbxNvidiaReflex,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onNvidiaReflexModeChanged);
+
+    lblAmdAntiLag2 = new QLabel(ui->groupBox_3);
+    lblAmdAntiLag2->setObjectName(QStringLiteral("lblAmdAntiLag2"));
+    lblAmdAntiLag2->setText(MelonPrime::UiText::Tr("AMD Radeon Anti-Lag 2:"));
+    cbxAmdAntiLag2 = new QComboBox(ui->groupBox_3);
+    cbxAmdAntiLag2->setObjectName(QStringLiteral("cbxAmdAntiLag2"));
+    cbxAmdAntiLag2->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxAmdAntiLag2->addItem(MelonPrime::UiText::Tr("On"));
+    cbxAmdAntiLag2->setCurrentIndex(oldAmdAntiLag2Enabled ? 1 : 0);
+    ui->gridLayout_4->addWidget(lblAmdAntiLag2, 6, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxAmdAntiLag2, 7, 0, 1, 1);
+    connect(
+        cbxAmdAntiLag2,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onAmdAntiLag2ModeChanged);
+#endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #else
@@ -301,6 +454,18 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         vulkanProbe.Available
             ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
             : QString::fromStdString(vulkanProbe.Reason)));
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Reopening this dialog is the explicit retry boundary for a cached DX12
+    // runtime failure, exactly like Vulkan above.
+    MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
+    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+    rb3DDX12->setEnabled(dx12Probe.Available);
+    rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
+        dx12Probe.Available
+            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.")
+            : QString::fromStdString(dx12Probe.Reason)));
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -374,6 +539,11 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetInt("3D.GL.ScaleFactor", oldGLScale);
     cfg.SetBool("3D.GL.BetterPolygons", oldGLBetterPolygons);
     cfg.SetBool("3D.GL.HiresCoordinates", oldHiresCoordinates);
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, oldNvidiaReflexMode);
+    cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, oldAmdAntiLag2Enabled);
+#endif
 
 #ifdef MELONPRIME_DS
     const auto restoredBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
@@ -412,6 +582,10 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (renderer == renderer3D_Vulkan)
         MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (renderer == renderer3D_DX12)
+        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
 #endif
     cfg.SetInt("3D.Renderer", renderer);
 
@@ -525,3 +699,20 @@ void VideoSettingsDialog::on_cbxComputeHiResCoords_stateChanged(int state)
 
     emit updateVideoSettings(false);
 }
+
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+void VideoSettingsDialog::onNvidiaReflexModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, mode);
+    emit updateVideoSettings(false);
+}
+
+void VideoSettingsDialog::onAmdAntiLag2ModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, mode != 0);
+    emit updateVideoSettings(false);
+}
+#endif
