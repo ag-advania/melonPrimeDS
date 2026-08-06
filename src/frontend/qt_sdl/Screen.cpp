@@ -50,6 +50,13 @@
 #include "Platform.h"
 #include "Config.h"
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "GPU_DX12.h"
+#include "MelonPrimeDX12FeatureCheck.h"
+#include "MelonPrimeDX12SurfacePresenter.h"
+#include <QPointer>
+#endif
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "GPU_Vulkan.h"
 #include "GPU3D_Vulkan.h"
@@ -1788,6 +1795,303 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
     finishLatestFramePaint();
 #endif
 }
+
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+namespace
+{
+class DX12SurfaceHost final : public QWidget
+{
+public:
+    explicit DX12SurfaceHost(QWidget* parent)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_NativeWindow, true);
+        setAttribute(Qt::WA_NoSystemBackground, true);
+        setAttribute(Qt::WA_PaintOnScreen, true);
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        setAutoFillBackground(false);
+    }
+
+    QPaintEngine* paintEngine() const override { return nullptr; }
+
+protected:
+    void paintEvent(QPaintEvent*) override {}
+};
+} // namespace
+
+struct ScreenPanelDX12::DX12State
+{
+    MelonPrime::DX12SurfacePresenter presenter;
+    QPointer<DX12SurfaceHost> surface;
+    QMutex layoutLock;
+    QTransform screenTransform[kMaxScreenTransforms];
+    QMutex fallbackLock;
+    QImage fallbackFrame;
+    QImage logicalFrame;
+    QImage physicalFrame;
+    std::atomic_bool surfaceVisibleRequested{false};
+    bool initialized = false;
+    bool runtimeFailureReported = false;
+};
+
+ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
+    : ScreenPanel(parent), dx12(std::make_unique<DX12State>())
+{
+    setAutoFillBackground(false);
+    setAttribute(Qt::WA_KeyCompression, false);
+    setFocusPolicy(Qt::StrongFocus);
+    setMinimumSize(screenGetMinSize());
+
+    dx12->surface = new DX12SurfaceHost(this);
+    dx12->surface->setGeometry(rect());
+    dx12->surface->hide();
+}
+
+ScreenPanelDX12::~ScreenPanelDX12()
+{
+    if (dx12)
+        dx12->presenter.Shutdown();
+}
+
+bool ScreenPanelDX12::initDX12()
+{
+    if (!dx12 || !dx12->surface)
+        return false;
+    const HWND window = reinterpret_cast<HWND>(dx12->surface->winId());
+    dx12->initialized = dx12->presenter.Init(window);
+    if (!dx12->initialized)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "DX12 native presenter initialization failed reason=%s\n",
+            dx12->presenter.LastError().c_str());
+    }
+    return dx12->initialized;
+}
+
+void ScreenPanelDX12::setupScreenLayout()
+{
+    ScreenPanel::setupScreenLayout();
+    if (!dx12)
+        return;
+
+    QMutexLocker lock(&dx12->layoutLock);
+    for (int index = 0; index < numScreens; ++index)
+    {
+        const float* matrix = screenMatrix[index];
+        dx12->screenTransform[index].setMatrix(
+            matrix[0], matrix[1], 0.0f,
+            matrix[2], matrix[3], 0.0f,
+            matrix[4], matrix[5], 1.0f);
+    }
+}
+
+void ScreenPanelDX12::resizeEvent(QResizeEvent* event)
+{
+    if (dx12 && dx12->surface)
+        dx12->surface->setGeometry(rect());
+    ScreenPanel::resizeEvent(event);
+}
+
+void ScreenPanelDX12::requestNativeSurfaceVisible(bool visible)
+{
+    if (!dx12 || dx12->surfaceVisibleRequested.exchange(visible) == visible)
+        return;
+
+    QMetaObject::invokeMethod(
+        this,
+        [this, visible]() {
+            if (!dx12 || !dx12->surface)
+                return;
+            if (visible)
+            {
+                dx12->surface->setGeometry(rect());
+                dx12->surface->show();
+                dx12->surface->raise();
+            }
+            else
+            {
+                dx12->surface->hide();
+                update();
+            }
+        },
+        Qt::QueuedConnection);
+}
+
+void ScreenPanelDX12::reportRuntimeFailure(const char* reason)
+{
+    if (!dx12 || dx12->runtimeFailureReported)
+        return;
+    dx12->runtimeFailureReported = true;
+    MelonPrime::DX12FeatureCheck::ReportRuntimeFailure(
+        reason ? reason : "DX12 native presentation failed");
+    if (auto* emuThread = emuInstance->getEmuThread())
+    {
+        QMetaObject::invokeMethod(
+            emuThread,
+            [emuThread]() { emit emuThread->rendererRuntimeFallback(); },
+            Qt::QueuedConnection);
+    }
+}
+
+void ScreenPanelDX12::drawScreen()
+{
+    refreshClipForGameStateChange();
+    if (!dx12 || !dx12->initialized)
+        return;
+
+    auto* emuThread = emuInstance->getEmuThread();
+    if (!emuThread->emuIsActive())
+    {
+        requestNativeSurfaceVisible(false);
+        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
+        return;
+    }
+    if (!emuThread->emuIsRunning())
+        return;
+
+    auto* nds = emuInstance->getNDS();
+    if (!nds)
+        return;
+    const RendererOutput output = nds->GPU.GetRendererOutput();
+    if (output.Kind != RendererOutputKind::CpuBgra || !output.Top || !output.Bottom)
+        return;
+
+    const int logicalWidth = std::max(1, width());
+    const int logicalHeight = std::max(1, height());
+    if (dx12->logicalFrame.width() != logicalWidth
+        || dx12->logicalFrame.height() != logicalHeight
+        || dx12->logicalFrame.format() != QImage::Format_RGB32)
+    {
+        dx12->logicalFrame = QImage(logicalWidth, logicalHeight, QImage::Format_RGB32);
+    }
+    dx12->logicalFrame.fill(Qt::black);
+
+    const int sourceWidth = static_cast<int>(std::max(1u, output.Width));
+    const int sourceHeight = static_cast<int>(std::max(1u, output.Height));
+    QImage screen[2] = {
+        QImage(
+            static_cast<uchar*>(output.Top),
+            sourceWidth,
+            sourceHeight,
+            sourceWidth * static_cast<int>(sizeof(u32)),
+            QImage::Format_RGB32),
+        QImage(
+            static_cast<uchar*>(output.Bottom),
+            sourceWidth,
+            sourceHeight,
+            sourceWidth * static_cast<int>(sizeof(u32)),
+            QImage::Format_RGB32),
+    };
+
+    QTransform transforms[kMaxScreenTransforms];
+    {
+        QMutexLocker lock(&dx12->layoutLock);
+        for (int index = 0; index < numScreens; ++index)
+            transforms[index] = dx12->screenTransform[index];
+    }
+
+    QPainter painter(&dx12->logicalFrame);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, filter);
+    const QRect screenRect(0, 0, 256, 192);
+    for (int index = 0; index < numScreens; ++index)
+    {
+        painter.setTransform(transforms[index]);
+        painter.drawImage(screenRect, screen[screenKind[index]]);
+    }
+
+#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
+#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
+
+    osdUpdate();
+    if (osdEnabled)
+    {
+        QMutexLocker osdLock(&osdMutex);
+        int y = kOSDMargin;
+        painter.resetTransform();
+        for (const OSDItem& item : osdItems)
+        {
+            painter.drawImage(kOSDMargin, y, item.bitmap);
+            y += item.bitmap.height();
+        }
+    }
+    painter.end();
+
+    const qreal dpr = devicePixelRatioF();
+    const int physicalWidth = std::max(1, qRound(logicalWidth * dpr));
+    const int physicalHeight = std::max(1, qRound(logicalHeight * dpr));
+    const QImage* presentFrame = &dx12->logicalFrame;
+    if (physicalWidth != logicalWidth || physicalHeight != logicalHeight)
+    {
+        dx12->physicalFrame = dx12->logicalFrame.scaled(
+            physicalWidth,
+            physicalHeight,
+            Qt::IgnoreAspectRatio,
+            filter ? Qt::SmoothTransformation : Qt::FastTransformation);
+        presentFrame = &dx12->physicalFrame;
+    }
+
+    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    if (!dx12->presenter.UploadFrame(
+            presentFrame->constBits(),
+            static_cast<std::uint32_t>(presentFrame->width()),
+            static_cast<std::uint32_t>(presentFrame->height()),
+            static_cast<std::size_t>(presentFrame->bytesPerLine()),
+            vsync))
+    {
+        {
+            QMutexLocker fallbackLock(&dx12->fallbackLock);
+            dx12->fallbackFrame = dx12->logicalFrame.copy();
+        }
+        requestNativeSurfaceVisible(false);
+        reportRuntimeFailure(dx12->presenter.LastError().c_str());
+        return;
+    }
+
+    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+    if (renderer)
+        renderer->BeginReflexPresent();
+    const bool presented = dx12->presenter.Present(vsync);
+    if (renderer)
+        renderer->EndReflexPresent();
+
+    if (!presented)
+    {
+        {
+            QMutexLocker fallbackLock(&dx12->fallbackLock);
+            dx12->fallbackFrame = dx12->logicalFrame.copy();
+        }
+        requestNativeSurfaceVisible(false);
+        reportRuntimeFailure(dx12->presenter.LastError().c_str());
+        return;
+    }
+
+    requestNativeSurfaceVisible(true);
+}
+
+void ScreenPanelDX12::paintEvent(QPaintEvent* event)
+{
+    QPainter painter(this);
+    painter.fillRect(event->rect(), Qt::black);
+
+    auto* emuThread = emuInstance->getEmuThread();
+    if (emuThread->emuIsActive())
+    {
+        QMutexLocker fallbackLock(&dx12->fallbackLock);
+        if (!dx12->fallbackFrame.isNull())
+            painter.drawImage(QPoint(0, 0), dx12->fallbackFrame);
+        return;
+    }
+
+    osdUpdate();
+    QMutexLocker osdLock(&osdMutex);
+    painter.drawPixmap(QRect(splashPos[3], QSize(kLogoWidth, kLogoWidth)), splashLogo);
+    for (int index = 0; index < 3; ++index)
+        painter.drawImage(splashPos[index], splashText[index].bitmap);
+}
+#endif
 
 
 
