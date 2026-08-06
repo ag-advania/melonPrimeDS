@@ -879,8 +879,6 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     const VulkanFrame* frame,
     const melonDS::VulkanRenderer3D& renderer3D,
     int scale,
-    VulkanFilterMode filtering,
-    u32 renderXPos,
     bool has3D,
     VulkanCompositionInputs& outInputs) const
 {
@@ -909,11 +907,9 @@ bool MelonPrimeVulkanOutput::buildCompositionInputs(
     outInputs.packedBufferSize = resource.packedBufferSize;
     outInputs.packedStride = kPackedStride;
     outInputs.scale = static_cast<u32>(scale);
-    outInputs.renderXPos = renderXPos;
     // An uninitialized color target holds whatever the allocator handed out, so
     // treat it exactly like an aborted 3D frame instead of sampling garbage.
     outInputs.has3D = has3D && renderer3D.IsColorTargetInitialized();
-    outInputs.filtering = filtering;
 
     return outInputs.sourceImage != VK_NULL_HANDLE
         && outInputs.sourceImageView != VK_NULL_HANDLE
@@ -1066,8 +1062,6 @@ bool MelonPrimeVulkanOutput::dispatchCompositor(
     pushConstants.rendererWidth = inputs.rendererWidth;
     pushConstants.rendererHeight = inputs.rendererHeight;
     pushConstants.packedStride = inputs.packedStride;
-    pushConstants.filtering = static_cast<u32>(inputs.filtering);
-    pushConstants.renderXPos = inputs.renderXPos;
     pushConstants.has3D = inputs.has3D ? 1u : 0u;
 
     vkCmdPushConstants(

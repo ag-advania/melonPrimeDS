@@ -1742,9 +1742,13 @@ void main(uint3 id : SV_DispatchThreadID)
     uint controlAlpha = control >> 24u;
     uint color = below;
 
+    uint lineMeta = ResultValue[StructuredLineMetaBase + screen * 192u + nativeY];
+
     if ((controlAlpha & 0x40u) != 0u)
     {
-        uint xPosition = CurVariant & 0x1FFu;
+        // The 3D X scroll is published per scanline, because that is where the
+        // DS applies it and where SoftRenderer3D::GetLine() reads it.
+        uint xPosition = (lineMeta >> 23u) & 0x1FFu;
         int sourceX = (xPosition & 0x100u) != 0u
             ? int(id.x) - int((512u - xPosition) * ScaleFactor)
             : int(id.x) + int(xPosition * ScaleFactor);
@@ -1770,7 +1774,6 @@ void main(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint lineMeta = ResultValue[StructuredLineMetaBase + screen * 192u + nativeY];
     uint displayMode = (lineMeta >> 16u) & 0x3u;
     if (displayMode != 0u)
     {

@@ -12,7 +12,6 @@
 #include <vulkan/vulkan.h>
 
 #include "MelonPrimeVulkanFrameQueue.h"
-#include "MelonPrimeVulkanFilterMode.h"
 #include "types.h"
 #include "VulkanPerfStats.h"
 
@@ -44,10 +43,6 @@ struct StructuredCompositionFrame
     const u32* Plane[2][3]{};
     // [screen]; one metadata word per scanline.
     const u32* LineMeta[2]{};
-    // GPU3D::RenderXPos for this frame. The software renderer bakes this scroll
-    // into GetLine(); the compositor samples an unscrolled 3D target, so it has
-    // to apply the same scroll itself.
-    u32 RenderXPos = 0;
     // False when the 3D frame was aborted, which is the DX12 compositor's
     // equivalent gate. The 3D layer then contributes nothing.
     bool Has3D = false;
@@ -81,9 +76,7 @@ struct VulkanCompositionInputs
     u32 scale{};
     u32 rendererWidth{};
     u32 rendererHeight{};
-    u32 renderXPos{};
     bool has3D{};
-    VulkanFilterMode filtering{VulkanFilterMode::Nearest};
 };
 
 class MelonPrimeVulkanOutput
@@ -115,8 +108,6 @@ public:
         const VulkanFrame* frame,
         const melonDS::VulkanRenderer3D& renderer3D,
         int scale,
-        VulkanFilterMode filtering,
-        u32 renderXPos,
         bool has3D,
         VulkanCompositionInputs& outInputs) const;
     bool composeAndSubmitFrame(VulkanFrame* frame, const VulkanCompositionInputs& inputs);
@@ -135,8 +126,6 @@ private:
         u32 rendererWidth;
         u32 rendererHeight;
         u32 packedStride;
-        u32 filtering;
-        u32 renderXPos;
         u32 has3D;
     };
 

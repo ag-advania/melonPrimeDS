@@ -283,8 +283,8 @@
       "symbol": "melonDS_android_vulkan_compositor_comp_spv",
       "header": "src/frontend/qt_sdl/MelonPrimeVulkanCompositorShaderData.h",
       "flags": [],
-      "source_sha256": "62f9a4ec1228d56822e8df892dcc904d6a9a2dac224d756a1f71810f3641528e",
-      "header_sha256": "4adacce0130b5c6e5efd374d2cd0b2075cf452c12ce170f5a7663cd73937dc2a"
+      "source_sha256": "78f7cdd3e054018af7ba138355962866bed0bd4aa743e8ff35223d976a672946",
+      "header_sha256": "38a09282f7e2ada179f61ccaee1f1e60a0dc5049d4c8deecc8d86feda96de02e"
     },
     {
       "source": "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenter.vert",

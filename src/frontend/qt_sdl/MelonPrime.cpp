@@ -237,15 +237,6 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnReset() { OnEmuStart(); }
 
-    bool MelonPrimeCore::ShouldSuppressVulkanHelmetLayers() const
-    {
-#if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_VULKAN)
-        return m_vulkanHelmetLayerSuppressionConfigured;
-#else
-        return false;
-#endif
-    }
-
     // =========================================================================
     // Per-frame hook and global hotkeys
     // =========================================================================

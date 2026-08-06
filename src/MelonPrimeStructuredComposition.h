@@ -116,12 +116,18 @@ inline constexpr u32 kControlPlain2D =
 //   bits 17..16  DS display mode (0 off, 1 regular, 2 VRAM, 3 FIFO)
 //   bit  21      this line's 2D read back a display capture that contained 3D
 //   bit  22      this VRAM-display line's capture block contained 3D
+//   bits 31..23  GPU3D::RenderXPos as it stood while this scanline was drawn
 //
 // Bits 21 and 22 are provenance only. They exist for diagnostics and for
 // display-capture work; a compositor must never branch its per-pixel output on
 // them, because the per-pixel control word already says whether a 3D slot
 // exists. Deciding "this screen probably needs 3D" from line counts is exactly
 // the scene-shape guessing this contract replaced.
+//
+// The 3D X scroll is per scanline because that is where the DS applies it:
+// SoftRenderer3D::GetLine() reads RenderXPos when the line is fetched, and
+// OpenGL Compute keeps uSrcAOffset[line] for display capture. A frame-global
+// value would smear a mid-frame scroll change across all 192 lines.
 inline constexpr u32 kLineMetaBrightnessFactorMask = 0x1Fu;
 inline constexpr u32 kLineMetaBrightnessModeShift = 8;
 inline constexpr u32 kLineMetaBrightnessModeMask = 0x3u;
@@ -129,6 +135,8 @@ inline constexpr u32 kLineMetaDisplayModeShift = 16;
 inline constexpr u32 kLineMetaDisplayModeMask = 0x3u;
 inline constexpr u32 kLineMetaRegularCaptureUses3D = 1u << 21;
 inline constexpr u32 kLineMetaVramCaptureUses3D = 1u << 22;
+inline constexpr u32 kLineMetaRenderXPosShift = 23;
+inline constexpr u32 kLineMetaRenderXPosMask = 0x1FFu;
 
 inline constexpr u32 kBrightnessModeNone = 0;
 inline constexpr u32 kBrightnessModeUp = 1;

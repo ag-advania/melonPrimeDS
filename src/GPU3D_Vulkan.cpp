@@ -10962,13 +10962,16 @@ bool VulkanRenderer3D::submitGraphicsCaptureExportForCurrentFrame()
     if (CaptureLineMapped == nullptr)
         return false;
 
-    const VkResult fenceStatus = vkGetFenceStatus(Device, FrameFence);
-    if (fenceStatus == VK_NOT_READY)
+    // The reference renderers cannot fail to have this frame's 3D available as
+    // display-capture source A: SoftRenderer3D::GetLine() returns the scanline
+    // it just rendered, and GLRenderer::DoCapture() reads OutputTex3D, which is
+    // GPU-ordered behind the render. Giving up here because the render is still
+    // in flight is what leaves the capture-backed screen without its 3D, so wait
+    // for the render instead. Both callers reach this only on frames where
+    // display capture actually consumes 3D, so this never becomes a per-frame
+    // full-pipeline stall.
+    if (!waitForReadbackSource())
         return false;
-    if (fenceStatus != VK_SUCCESS)
-        return false;
-
-    consumeGpuTiming(nullptr);
 
     if (vkResetFences(Device, 1, &FrameFence) != VK_SUCCESS)
         return false;
