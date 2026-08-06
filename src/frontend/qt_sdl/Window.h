@@ -70,6 +70,16 @@ public:
     void releaseGL();
 
     void drawScreen();
+#ifdef MELONPRIME_DS
+    void invalidateRendererOutput();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled);
+    void markVulkanReflexInputSample();
+    void markVulkanReflexRenderSubmitStart();
+    void markVulkanReflexRenderSubmitEnd();
+    void finishVulkanLowLatencyFrame();
+#endif
+#endif
 
     bool preloadROMs(QStringList file, QStringList gbafile, bool boot);
     QStringList splitArchivePath(const QString& filename, bool useMemberSyntax);
@@ -226,8 +236,10 @@ private:
     void beginModalPresentationPause();
     void endModalPresentationPause();
 #endif
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    void onVulkanRuntimeFallback();
+#if defined(MELONPRIME_DS) \
+    && (defined(MELONPRIME_ENABLE_VULKAN) \
+        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    void onRendererRuntimeFallback();
 #endif
 #ifdef MELONPRIME_DS
     void localizeMenuText();

@@ -45,32 +45,39 @@ struct RendererOutput
     RendererOutputKind Kind = RendererOutputKind::None;
     void* Top = nullptr;
     void* Bottom = nullptr;
+    u32 Width = 0;
+    u32 Height = 0;
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     u64 FrameSerial = 0;
 #endif
 
-    static RendererOutput CpuBgra(void* top, void* bottom) noexcept
+    static RendererOutput CpuBgra(void* top, void* bottom, u32 width = 256, u32 height = 192) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::CpuBgra, top, bottom, 0 };
-#else
-        return { RendererOutputKind::CpuBgra, top, bottom };
-#endif
+        RendererOutput output;
+        output.Kind = RendererOutputKind::CpuBgra;
+        output.Top = top;
+        output.Bottom = bottom;
+        output.Width = width;
+        output.Height = height;
+        return output;
     }
 
     static RendererOutput OpenGLTextureArray(void* texture) noexcept
     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr, 0 };
-#else
-        return { RendererOutputKind::OpenGLTextureArray, texture, nullptr };
-#endif
+        RendererOutput output;
+        output.Kind = RendererOutputKind::OpenGLTextureArray;
+        output.Top = texture;
+        return output;
     }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
     {
-        return { RendererOutputKind::MetalTexture, texture, nullptr, frameSerial };
+        RendererOutput output;
+        output.Kind = RendererOutputKind::MetalTexture;
+        output.Top = texture;
+        output.FrameSerial = frameSerial;
+        return output;
     }
 #endif
 };
@@ -939,6 +946,15 @@ struct RendererSettings
 
     // "improved polygon splitting" (regular OpenGL renderer)
     bool BetterPolygons;
+
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+    // 0=Off, 1=Reflex low latency, 2=Reflex low latency + GPU clock boost.
+    int NvidiaReflexMode;
+    // AMD Radeon Anti-Lag 2. The backend always passes maxFPS=0 so this does
+    // not add a second frame-rate limiter.
+    bool AmdAntiLag2Enabled;
+#endif
 };
 
 class Renderer

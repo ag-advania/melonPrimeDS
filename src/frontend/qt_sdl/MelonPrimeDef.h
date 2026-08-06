@@ -15,6 +15,10 @@ namespace MelonPrime {
     // Config key string constants — avoid repeated string construction per frame
     // =========================================================================
     namespace CfgKey {
+        // Keep the original persisted path for config compatibility. The mode
+        // is shared by the native DX12 and Vulkan Reflex implementations.
+        inline constexpr const char* NvidiaReflexMode = "3D.DX12.NvidiaReflexMode";
+        inline constexpr const char* AmdAntiLag2Enabled = "3D.AMD.AntiLag2Enabled";
         inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
