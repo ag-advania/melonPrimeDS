@@ -10,7 +10,9 @@ namespace MelonPrime::DX12FeatureCheck
 struct Result
 {
     bool Available = false;
+    bool NvidiaReflexAvailable = false;
     std::string Reason;
+    std::string NvidiaReflexReason;
     std::string AdapterName;
 };
 

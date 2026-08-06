@@ -20,6 +20,7 @@
 
 #include "GPU_DX12.h"
 
+#include "DX12Context.h"
 #include "GPU3D_DX12.h"
 #include "NDS.h"
 #include "Platform.h"
@@ -51,6 +52,9 @@ bool DX12Renderer::Init()
         return false;
     }
 
+    auto& context = DX12Context::Get();
+    NvidiaReflex.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
+
     Platform::Log(
         Platform::LogLevel::Info,
         "DX12 renderer init succeeded requested=DX12 actual=DX12 presentation=high-resolution-composed\n");
@@ -59,6 +63,7 @@ bool DX12Renderer::Init()
 
 void DX12Renderer::Stop()
 {
+    NvidiaReflex.Shutdown();
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->Stop();
     SoftRenderer::Stop();
@@ -78,6 +83,13 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 {
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+    NvidiaReflex.SetMode(settings.NvidiaReflexMode);
+}
+
+void DX12Renderer::Start3DRendering()
+{
+    NvidiaReflex.MarkRenderSubmitStart();
+    Renderer::Start3DRendering();
 }
 
 void DX12Renderer::VBlank()
@@ -85,7 +97,10 @@ void DX12Renderer::VBlank()
     auto* dx12 = GetDX12Renderer3D();
     StructuredVulkanFrameView view{};
     if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
+    {
+        NvidiaReflex.MarkRenderSubmitEnd();
         return;
+    }
 
     const std::array<const u32*, 6> planes = {
         view.Plane[0][0],
@@ -100,6 +115,7 @@ void DX12Renderer::VBlank()
         view.LineMeta[1],
     };
     dx12->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+    NvidiaReflex.MarkRenderSubmitEnd();
 }
 
 RendererOutput DX12Renderer::GetOutput()
@@ -159,6 +175,36 @@ DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() noexcept
 const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
 {
     return dynamic_cast<const DX12Renderer3D*>(Rend3D.get());
+}
+
+void DX12Renderer::BeginReflexFrame()
+{
+    NvidiaReflex.BeginFrame();
+}
+
+void DX12Renderer::MarkReflexInputSample()
+{
+    NvidiaReflex.MarkInputSample();
+}
+
+void DX12Renderer::EndReflexRenderPhase()
+{
+    NvidiaReflex.EndRenderPhase();
+}
+
+void DX12Renderer::BeginReflexPresent()
+{
+    NvidiaReflex.MarkPresentStart();
+}
+
+void DX12Renderer::EndReflexPresent()
+{
+    NvidiaReflex.MarkPresentEnd();
+}
+
+void DX12Renderer::FinishReflexFrame()
+{
+    NvidiaReflex.FinishFrame();
 }
 
 } // namespace melonDS

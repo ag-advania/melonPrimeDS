@@ -47,12 +47,42 @@ Consequences:
 * `Screen.UseGL` still applies: DX12 needs no GL context, so presentation
   resolves to `NativeQt` or `OpenGL` exactly like the Software renderer.
 
+## NVIDIA Reflex low latency
+
+On a supported NVIDIA GPU, the video settings dialog exposes the standard
+three Reflex modes while DirectX 12 is selected:
+
+* **Off** — low-latency mode and boost are disabled;
+* **On** — NVAPI low-latency mode is enabled; and
+* **On + Boost** — low-latency mode is enabled and the driver is asked to keep
+  the GPU at maximum clocks, which can reduce CPU-bound latency at the cost of
+  additional power use.
+
+`DX12NvidiaReflex` loads `nvapi64.dll` at runtime and probes the active D3D12
+device with `NvAPI_D3D_GetSleepStatus`. Non-NVIDIA devices, unsupported drivers,
+or missing NVAPI entry points leave DX12 available and disable only the Reflex
+control with a diagnostic tooltip. No NVIDIA library is linked or shipped.
+
+The emulation thread calls `NvAPI_D3D_Sleep` once at the beginning of every
+DX12 frame, immediately before late input polling. It publishes Input Sample,
+Simulation, Render Submit and Present latency markers using a unique process
+frame ID. Sleep and markers remain active in Off mode as NVIDIA recommends;
+the mode flags alone control whether low latency and boost are enabled. The
+minimum interval is always zero, so Reflex does not add a frame-rate cap.
+
+Render Submit markers bracket the D3D12 render/composition work. This backend
+has no DXGI presentation swapchain, so Present markers bracket publication to
+the existing latest-frame Qt mailbox. Reflex can optimize the D3D12 device's
+CPU/GPU scheduling, but the final Qt composition remains the shared
+presentation path rather than a native D3D12 `Present`.
+
 ## Files
 
 | File | Role |
 | --- | --- |
 | `src/DX12Common.h` | ComPtr, runtime loading of `d3d12.dll` / `dxgi.dll` / `d3dcompiler_47.dll` |
 | `src/DX12Context.{h,cpp}` | Device, adapter selection, queue, fence, descriptor ring, upload ring, HLSL compile, init logging |
+| `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
 | `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, readback |
 | `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |
@@ -172,7 +202,11 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
   compared against Software and OpenGL Compute output at 1x, 4x and 16x; and
 * comparison with the Software renderer's physical VRAM capture output. The
   retained structured capture metadata is invalidated at the same CPU/DMA VRAM
-  synchronization boundaries used by the OpenGL capture path.
+  synchronization boundaries used by the OpenGL capture path; and
+* NVIDIA Reflex support probing plus successful Off/On/On+Boost mode calls,
+  sleep and all latency-marker calls on the RTX 5070 Ti. The On request was
+  accepted as `lowLatency=1, boost=0`, and On + Boost as
+  `lowLatency=1, boost=1`, both with `minimumIntervalUs=0`.
 
 This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
 families. The offline shader audit and runtime feature probe remain the gates
