@@ -130,12 +130,19 @@ struct AcceleratedSceneBuildConfig
     int Scale = 1;
     bool BetterPolygons = false;
     bool UseHiresCoordinates = false;
+    // Rebuild DS-linear polygons so a hardware rasteriser reproduces the software span
+    // exactly: vertices snapped to the DS pixel grid, right chain extended by one DS
+    // pixel. See docs/features/rendering/vulkan-graphics-ds-raster-semantics.md.
+    bool DsGridLinearPolygons = false;
     s32 MaxFixedX = 0xFFFF;
     s32 MaxFixedY = 0xFFFF;
     AcceleratedCoverageFixConfig CoverageFix{};
 };
 
 [[nodiscard]] bool HasAcceleratedPolygonFlag(const AcceleratedPolygonMeta& polygonMeta, u32 flag) noexcept;
+// Mirrors SoftRenderer3D's Interpolator linear test (GPU3D_Soft.h:98-104) and the
+// kTriangleFlagLinear the Vulkan graphics path reports to the fragment shader.
+[[nodiscard]] bool IsAcceleratedDsLinearPolygon(const Polygon& polygon) noexcept;
 AcceleratedPolygonMeta BuildAcceleratedPolygonMeta(const Polygon& polygon) noexcept;
 u32 BuildAcceleratedVertexAttr(const AcceleratedPolygonMeta& polygonMeta) noexcept;
 AcceleratedLineEndpoints ResolveAcceleratedLineEndpoints(const Polygon& polygon) noexcept;
