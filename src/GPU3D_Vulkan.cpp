@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <unordered_map>
@@ -68,7 +69,18 @@
 namespace MelonDSAndroid
 {
 bool isFastForwardActive() { return false; }
-bool areRendererDebugToolsEnabled() { return false; }
+
+// The Android port drove this from a debug UI. Desktop has none, so gate the existing
+// renderer trace on MELONPRIME_VULKAN_DEBUG=1 instead: read once, so an unset environment
+// costs a single cached bool test per frame and nothing in any per-polygon path.
+bool areRendererDebugToolsEnabled()
+{
+    static const bool enabled = [] {
+        const char* const value = std::getenv("MELONPRIME_VULKAN_DEBUG");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
 bool isRenderer3DDebugFeatureEnabled(melonDS::u32) { return true; }
 bool areRenderer3DDebugControlsActive() { return false; }
 melonDS::u32 getVulkanDiagnosticFlags() { return 0; }
@@ -11735,6 +11747,19 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
         if (polygon == nullptr)
             continue;
 
+        // Debug isolation: MELONPRIME_VULKAN_HIDE_TEX=<texParam> drops every polygon using
+        // that texture, so a specific HUD element can be attributed without a rebuild.
+        {
+            static const u32 hideTexParam = [] {
+                const char* const value = std::getenv("MELONPRIME_VULKAN_HIDE_TEX");
+                return (value != nullptr && value[0] != '\0')
+                    ? static_cast<u32>(std::strtoul(value, nullptr, 0))
+                    : 0xFFFFFFFFu;
+            }();
+            if (polygon->TexParam == hideTexParam)
+                continue;
+        }
+
         const size_t polygonTriangleBase = Triangles.size();
         const AcceleratedPolygonMeta& polygonMeta = sceneDraw.Meta;
         const u32 alpha5 = polygonMeta.Alpha5;
@@ -12386,6 +12411,18 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             LastGraphicsOpaqueLinearDrawCount++;
     }
 
+    // InvalidatePresentationState() only arms the budget on renderer init/mode changes, so
+    // the one burst it produces lands on the boot frame and never on the screen being
+    // investigated. Re-arm periodically while tracing so a snapshot of whatever is on
+    // screen shows up within a few seconds.
+    if (MelonDSAndroid::areRendererDebugToolsEnabled())
+    {
+        static u32 graphicsTraceFrameCounter = 0u;
+        if ((graphicsTraceFrameCounter % 600u) == 0u)
+            CaptureDebugLogsRemaining = 4096u;
+        graphicsTraceFrameCounter++;
+    }
+
     if (MelonDSAndroid::areRendererDebugToolsEnabled() && CaptureDebugLogsRemaining > 0u)
     {
         const u32 firstTranslucentDraw = SharedGraphicsScene.FirstTranslucentDraw == std::numeric_limits<u32>::max()
@@ -12413,7 +12450,9 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             Log(LogLevel::Warn, "VulkanGraphics[%s]: count=%zu", label, drawIndices.size());
             CaptureDebugLogsRemaining--;
 
-            const size_t maxSampleCount = std::strcmp(label, "AlphaBucket") == 0 ? 24u : 3u;
+            // Every draw: sampling a prefix hides exactly the polygon being hunted.
+            (void)label;
+            const size_t maxSampleCount = drawIndices.size();
             const size_t sampleCount = std::min<size_t>(drawIndices.size(), maxSampleCount);
             for (size_t sampleIndex = 0; sampleIndex < sampleCount && CaptureDebugLogsRemaining > 0u; sampleIndex++)
             {
