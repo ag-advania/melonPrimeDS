@@ -157,6 +157,59 @@ def main() -> int:
             f"{SOURCE.name}: dispatchCompositor no longer counts composition "
             "inputs that name another frame's packed buffers")
 
+    # 6b. The descriptor the dispatch binds is this frame's own, and it is
+    #     filled from the same resolved inputs the identity check above covers.
+    #     A descriptor is cached across frames, so one pointing at another
+    #     frame's buffer would persist rather than being a single bad dispatch.
+    for binding, info in ((2, "topPackedBufferInfo"), (3, "bottomPackedBufferInfo")):
+        if f"makeBufferDescriptorWrite(resource.descriptorSet, {binding}, &{info})" not in dispatch:
+            failures.append(
+                f"{SOURCE.name}: dispatchCompositor no longer writes binding "
+                f"{binding} of this frame's own descriptor set")
+    for info, member in (("topPackedBufferInfo", "topPackedBuffer"),
+                         ("bottomPackedBufferInfo", "bottomPackedBuffer")):
+        if f"{info}.buffer = inputs.{member};" not in dispatch:
+            failures.append(
+                f"{SOURCE.name}: {info} is not filled from inputs.{member}")
+
+    # 6c. Host writes are made visible to the compute read, on this frame's
+    #     buffers. Visibility and ownership are separate problems and both are
+    #     required; a barrier alone never made the shared-buffer version safe.
+    if ("packedBarriers[i].buffer = i == 0 ? inputs.topPackedBuffer : inputs.bottomPackedBuffer;"
+            not in dispatch):
+        failures.append(
+            f"{SOURCE.name}: the host-to-compute barrier no longer targets this "
+            "frame's own packed buffers")
+    if ("packedBarriers[i].srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;" not in dispatch
+            or "packedBarriers[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;" not in dispatch):
+        failures.append(
+            f"{SOURCE.name}: the packed-plane barrier no longer makes HOST_WRITE "
+            "visible to SHADER_READ")
+
+    # 6d. Submission hands the planes to the GPU, so the next CPU write has to
+    #     go back through acquireFrameForCpuWrite() and its fence wait.
+    submit = strip_comments(extract_function(
+        source, "bool MelonPrimeVulkanOutput::submitFrameCommand("))
+    if ("resource.submissionState = SubmissionState::Submitted;" not in submit
+            or "resource.cpuWriteOwnership = false;" not in submit):
+        failures.append(
+            f"{SOURCE.name}: submitFrameCommand does not release CPU write "
+            "ownership; the planes could be rewritten while the dispatch reads them")
+    if ("resource.submissionState != SubmissionState::Idle" not in update
+            or "packedWriteWhileSubmitted++" not in update):
+        failures.append(
+            f"{SOURCE.name}: updateCompositorPackedBuffers no longer refuses to "
+            "write a frame whose dispatch is still in flight")
+
+    # 6e. Resource lifetime must not depend on assertions, which compile out of
+    #     release builds. Asserts may check the invariants, never maintain them.
+    for match in re.finditer(r"^\s*assert\((.*)\);\s*$", source_code, re.M):
+        expression = match.group(1)
+        if re.search(r"vk[A-Z]\w*\(|\+\+|--|[^=!<>]=[^=]", expression):
+            failures.append(
+                f"{SOURCE.name}: assert({expression}) has a side effect; release "
+                "builds would then have a different resource lifetime")
+
     # 7. Teardown waits on this frame's fence and frees only this frame's planes.
     destroy = strip_comments(extract_function(
         source, "void MelonPrimeVulkanOutput::destroyFrameResource("))

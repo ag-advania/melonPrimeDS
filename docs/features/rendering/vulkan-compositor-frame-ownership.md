@@ -59,6 +59,24 @@ makes the question meaningless, so the pointer is gone rather than repaired.
 The cost is one extra pair of packed buffers per frame slot, a few megabytes
 total, in exchange for the fence being a complete statement.
 
+## Ownership checklist
+
+Each row is checked by `tools/ci/audits/audit-vulkan-frame-resource-ownership.py`.
+
+| Requirement | Where it holds |
+| --- | --- |
+| No object-level `topPackedBuffer` / `bottomPackedBuffer` / mapping / size | `FrameResource` owns all seven members; the class declares none |
+| One `FrameResource` owns buffer, memory, mapping, descriptor set, command buffer and fence together | `FrameResource` in `MelonPrimeVulkanOutput.h` |
+| A frame's planes are rewritten only after its own fence signals | `acquireFrameForCpuWrite()` waits `resource.submitFence`, then grants `cpuWriteOwnership` |
+| A frame's descriptor references only that frame's buffers | `dispatchCompositor()` fills bindings 2 and 3 from `inputs.*`, which it first verifies equal `resource.*`; the descriptor cache is keyed per resource and a resize destroys the whole `FrameResource` |
+| No rewrite between submit and fence completion | `submitFrameCommand()` clears `cpuWriteOwnership` and sets `Submitted`; `updateCompositorPackedBuffers()` refuses and counts `packedWriteWhileSubmitted` |
+| Host writes are visible to the compute read | `HOST_WRITE` → `SHADER_READ` buffer barrier on `inputs.top/bottomPackedBuffer` |
+| Debug and release have the same resource lifetime | every `assert` is a pure comparison; each one that guards lifetime has a runtime check and counter beside it |
+
+Visibility and ownership are separate requirements. The barrier was already
+present while the buffers were shared, and it did not make that version safe —
+it orders accesses, it does not stop a second writer from existing.
+
 ## Enforcement
 
 - `tools/ci/audits/audit-vulkan-frame-resource-ownership.py` fails if the planes
