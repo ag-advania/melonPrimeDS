@@ -768,6 +768,9 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         && !needsZeroGeometryRefresh;
     if (canReuseIdenticalFrame)
     {
+        // Nothing is redrawn, so ColorImage keeps holding a frame that display
+        // capture for this DS frame may read.
+        ColorImageHasCurrentFrame3D = true;
         if (ActiveBackendMode == BackendMode::GraphicsHardware && captureNeedsGpuCaptureLineBase)
         {
             if (!CaptureLinePending && !CaptureLineReady)
@@ -782,6 +785,10 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         ExactCaptureLineCacheFresh = false;
         HasCpuFrame = false;
     }
+
+    // ColorImage is about to be overwritten. Until this render completes it
+    // holds the previous frame, which display capture must never be given.
+    ColorImageHasCurrentFrame3D = false;
 
     if (!ensureInitialized())
     {
@@ -1071,6 +1078,10 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     LastSubmittedRenderPolygonCount = gpu.GPU3D.RenderNumPolygons;
+
+    // This frame's 3D is now in ColorImage. It stays readable for display
+    // capture until the next render begins at VCount 215.
+    ColorImageHasCurrentFrame3D = true;
 }
 
 void VulkanRenderer3D::RestartFrame(melonDS::GPU& gpu)
@@ -1154,14 +1165,14 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
             {
                 convertReadbackToLineCache();
             }
-            else
+            else if (!ensureExactCaptureExportForCurrentFrame())
             {
-                // No export for this frame. The reference renderers cannot
-                // reach this state at all, because their capture source is a
-                // GPU texture that is always current. Substituting an older
-                // frame's 3D or the clear colour here is what produced content
-                // from a different scene on the capture-backed screen, so this
-                // reports "no 3D coverage" instead.
+                // Still nothing that belongs to this frame. The reference
+                // renderers cannot reach this state, because their capture
+                // source is a GPU texture that is always current. Substituting
+                // an older frame's 3D or the clear colour here is what produced
+                // content from a different scene on the capture-backed screen,
+                // so this reports "no 3D coverage" instead.
                 clearLineCache();
             }
         }
@@ -1200,6 +1211,67 @@ void VulkanRenderer3D::PrepareCaptureFrame()
 void VulkanRenderer3D::BeginCaptureFrame()
 {
     BeginCaptureFrameActiveBackend();
+}
+
+bool VulkanRenderer3D::ensureExactCaptureExportForCurrentFrame()
+{
+    // Display capture is armed by the DS at VCount 0 (GPU.cpp: "if (VCount == 0)
+    // { if (CaptureCnt & (1<<31)) CaptureEnable = true; }"), but RenderFrame()
+    // runs at VCount 215 of the previous scanline sweep. A game may therefore
+    // write DISPCAPCNT after this frame's 3D was rendered, and that arm is
+    // valid. Deciding at VCount 215 whether a 3D capture source would be needed
+    // is a prediction, and when it predicts "no" the frame's 3D used to be
+    // unavailable for the rest of the frame -- so software 2D composited a
+    // capture with no 3D component into VRAM, and that VRAM was displayed as a
+    // background later.
+    //
+    // The reference renderers make no such prediction. DX12Renderer3D::GetLine()
+    // calls EnsureFrameReadback() at the moment capture asks for a line, and
+    // GLRenderer::DoCapture() picks OutputTex3D when the capture runs. This is
+    // the same contract: produce the export when capture actually asks.
+    //
+    // Between VCount 0 and 191 ColorImage still holds this frame's render (the
+    // next one does not start until VCount 215), so a late export here is this
+    // frame's 3D, never an older frame's.
+    if (ActiveBackendMode != BackendMode::GraphicsHardware)
+        return false;
+
+    if (HasCpuFrame && ExactCaptureLineCachePrepared && ExactCaptureLineCacheFresh)
+        return true;
+
+    // Refuse rather than export a stale image. Without this the late path would
+    // reintroduce exactly the cross-frame leak that fresh-tracking prevents.
+    if (!ColorImageHasCurrentFrame3D || !ColorImageInitialized)
+        return false;
+
+    if (!CaptureLinePending && !CaptureLineReady
+        && !submitGraphicsCaptureExportForCurrentFrame())
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    if (CaptureLinePending && !finalizeCaptureLineFrame(true))
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    if (!CaptureLineReady || ReadyCaptureLineData == nullptr)
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    HasCpuFrame = copyReadyCaptureLineToLineCache();
+    if (!HasCpuFrame)
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    LateCaptureExportCount++;
+    return true;
 }
 
 void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
@@ -1243,14 +1315,15 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
     if (exactCaptureOnly && HasCpuFrame && ExactCaptureLineCachePrepared)
         return;
 
-    // graphics_hw must not submit a second late capture export or force a
-    // fallback readback from here. The exact capture line export for this
-    // frame is the only valid source for software 2D composition: an older
-    // frame's 3D or the clear colour would put another scene's content on the
-    // capture-backed screen, which no reference renderer can do.
+    // No export was produced while rendering, because display capture was not
+    // armed yet at VCount 215. Produce it now from this frame's ColorImage,
+    // which is what DX12 and OpenGL do when capture asks. Only an export that
+    // cannot be tied to this frame is refused -- an older frame's 3D or the
+    // clear colour would put another scene on the capture-backed screen.
     if (exactCaptureOnly)
     {
-        clearLineCache();
+        if (!ensureExactCaptureExportForCurrentFrame())
+            clearLineCache();
         return;
     }
 
@@ -2042,6 +2115,7 @@ void VulkanRenderer3D::destroyVulkan()
     TimestampQueriesSupported = false;
     Initialized = false;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
     GraphicsReady = false;
     ActiveTextureDescriptorCount = 0;
     ActiveTextureDescriptors.fill(VkDescriptorImageInfo{});
@@ -2717,7 +2791,7 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
     {
         Log(
             LogLevel::Warn,
-            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s descriptorPath=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu opaqueDraws=%u needOpaqueDraws=%u alphaShadowDraws=%u contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
+            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s descriptorPath=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu opaqueDraws=%u needOpaqueDraws=%u alphaShadowDraws=%u contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu lateCapExport=%llu/%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
             backendModeName(RequestedBackendMode),
             backendModeName(ActiveBackendMode),
             activePathName,
@@ -2745,6 +2819,8 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
             static_cast<unsigned long long>(ReadbackColorRequestCount),
             static_cast<unsigned long long>(ReadbackResultRequestCount),
             static_cast<unsigned long long>(CapturePrepareRequestCount),
+            static_cast<unsigned long long>(LateCaptureExportCount),
+            static_cast<unsigned long long>(LateCaptureExportFailureCount),
             static_cast<unsigned long long>(CaptureEnabledCount),
             static_cast<unsigned long long>(CaptureSource3dCount),
             static_cast<unsigned long long>(CaptureModeCounts[0]),
@@ -2838,7 +2914,7 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
     {
         Log(
             LogLevel::Warn,
-            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s rasterProfile=%s descriptorPath=%s tileLoopMode=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu cpuTiles avg=%llu/%llu (%.1f%%) cpuGroups avg=%llu activeDispatch=%llu%% contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms rasterSpec tex=%llu alpha=%llu shade=%llu all=%llu earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
+            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s rasterProfile=%s descriptorPath=%s tileLoopMode=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu cpuTiles avg=%llu/%llu (%.1f%%) cpuGroups avg=%llu activeDispatch=%llu%% contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu lateCapExport=%llu/%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms rasterSpec tex=%llu alpha=%llu shade=%llu all=%llu earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
             backendModeName(RequestedBackendMode),
             backendModeName(ActiveBackendMode),
             activePathName,
@@ -2870,6 +2946,8 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
             static_cast<unsigned long long>(ReadbackColorRequestCount),
             static_cast<unsigned long long>(ReadbackResultRequestCount),
             static_cast<unsigned long long>(CapturePrepareRequestCount),
+            static_cast<unsigned long long>(LateCaptureExportCount),
+            static_cast<unsigned long long>(LateCaptureExportFailureCount),
             static_cast<unsigned long long>(CaptureEnabledCount),
             static_cast<unsigned long long>(CaptureSource3dCount),
             static_cast<unsigned long long>(CaptureModeCounts[0]),
@@ -5268,6 +5346,7 @@ bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
     ColorImageWidth = width;
     ColorImageHeight = height;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 
     invalidateAllDescriptorSetCaches();
     invalidateAllGraphicsDescriptorSetCaches();
@@ -5369,6 +5448,7 @@ void VulkanRenderer3D::destroyRenderTarget()
     ColorImageWidth = 0;
     ColorImageHeight = 0;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 }
 
 bool VulkanRenderer3D::ensureTriangleBuffer(RenderContext* context, size_t triangleCount)
@@ -7070,6 +7150,7 @@ void VulkanRenderer3D::InvalidatePresentationState(bool discardColorTarget) noex
     LastSubmittedRenderContext = nullptr;
     if (discardColorTarget)
         ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 }
 
 VulkanRenderer3D::TextureSamplingPath VulkanRenderer3D::resolveTextureSamplingPath() const noexcept
