@@ -3,6 +3,7 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <array>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -47,8 +48,25 @@ private:
 
     struct SharedState
     {
+        // One upload submission in flight. Layer uploads no longer block the
+        // emulation thread on a fence; a slot is only waited on when it has to
+        // be reused, and all slots are drained before any image is destroyed.
+        struct UploadSlot
+        {
+            VkBuffer StagingBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory StagingMemory = VK_NULL_HANDLE;
+            VkDeviceSize StagingSize = 0;
+            VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
+            VkFence Fence = VK_NULL_HANDLE;
+            bool InFlight = false;
+        };
+
+        static constexpr size_t UploadSlotCount = 8;
+
         TextureHandle NextHandle = 1;
         std::unordered_map<TextureHandle, TextureArray> TextureArrays;
+        std::array<UploadSlot, UploadSlotCount> UploadSlots{};
+        size_t NextUploadSlot = 0;
 
         bool ContextAcquired = false;
         VkDevice Device = VK_NULL_HANDLE;
@@ -62,6 +80,7 @@ private:
     bool EnsureVulkanState();
     void CleanupVulkanState();
     void DestroyTextureArray(TextureArray& textureArray);
+    void WaitForPendingUploads();
 
 private:
     std::shared_ptr<SharedState> State;

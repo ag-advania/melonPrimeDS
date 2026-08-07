@@ -23,6 +23,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -202,6 +203,22 @@ private:
         VkBuffer WorkOffsetBuffer = VK_NULL_HANDLE;
         VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
         std::array<VkDescriptorImageInfo, MaxTextureDescriptors> TextureInfos{};
+    };
+
+    // A texture resolution that survives across frames. Keyed on the same
+    // TexParam/TexPalette-derived key the texcache itself uses, so a frame that
+    // redraws the same static textures skips the texcache lookup entirely.
+    // Cleared whenever the texcache actually evicts an entry, or on any
+    // reset/teardown that invalidates the underlying VkImages.
+    struct GraphicsResolvedTextureCacheEntry
+    {
+        TexcacheVulkanLoader::TextureHandle Handle = 0;
+        u32 Layer = 0;
+        VkDescriptorImageInfo DescriptorInfo{};
+        bool FallbackUsed = false;
+        bool LayerOpaque = false;
+        u32 Width = 0;
+        u32 Height = 0;
     };
 
     struct GraphicsDescriptorSetCache
@@ -771,6 +788,7 @@ private:
 
     std::array<VkDescriptorImageInfo, MaxTextureDescriptors> ActiveTextureDescriptors{};
     u32 ActiveTextureDescriptorCount = 0;
+    std::unordered_map<u64, GraphicsResolvedTextureCacheEntry> GraphicsResolvedTextureCache;
 
     std::vector<TriangleGpu> Triangles;
     std::vector<GraphicsVertexGpu> GraphicsVertices;

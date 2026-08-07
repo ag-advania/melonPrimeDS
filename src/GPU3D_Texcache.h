@@ -172,10 +172,17 @@ public:
     // The pinned Vulkan renderer must wait until its in-flight command buffers
     // stop referencing cached VkImages before the cache deletes those images.
     // Keep this overload isolated from the Software/OpenGL update path.
+    // invalidatedAny reports whether at least one cache entry was actually
+    // evicted, as opposed to VRAM merely being marked dirty. Callers that hold
+    // their own resolved-texture cache keyed on TexParam/TexPalette need this
+    // to know when those resolutions became stale.
     template <typename BeforeMutationT>
-    bool Update(melonDS::GPU& gpu, BeforeMutationT&& beforeMutation)
+    bool Update(melonDS::GPU& gpu, BeforeMutationT&& beforeMutation, bool* invalidatedAny = nullptr)
     {
         (void)gpu;
+        if (invalidatedAny != nullptr)
+            *invalidatedAny = false;
+
         auto textureDirty = GPU.VRAMDirty_Texture.DeriveState(GPU.VRAMMap_Texture, GPU);
         auto texPalDirty = GPU.VRAMDirty_TexPal.DeriveState(GPU.VRAMMap_TexPal, GPU);
 
@@ -219,6 +226,8 @@ public:
             continue;
 
         invalidateVulkanTexture:
+            if (invalidatedAny != nullptr)
+                *invalidatedAny = true;
             FreeTextures[entry.WidthLog2][entry.HeightLog2].push_back(entry.Texture);
             it = Cache.erase(it);
         }

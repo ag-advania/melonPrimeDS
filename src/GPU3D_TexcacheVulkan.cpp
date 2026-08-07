@@ -102,6 +102,35 @@ void TexcacheVulkanLoader::CleanupVulkanState()
     State->TextureArrays.clear();
     State->NextHandle = 1;
 
+    // vkDeviceWaitIdle above already retired every upload submission, so the
+    // slots can be torn down unconditionally here.
+    for (auto& uploadSlot : State->UploadSlots)
+    {
+        if (uploadSlot.Fence != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
+        {
+            vkDestroyFence(State->Device, uploadSlot.Fence, nullptr);
+            uploadSlot.Fence = VK_NULL_HANDLE;
+        }
+        if (uploadSlot.CommandBuffer != VK_NULL_HANDLE && State->CommandPool != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
+        {
+            vkFreeCommandBuffers(State->Device, State->CommandPool, 1, &uploadSlot.CommandBuffer);
+        }
+        uploadSlot.CommandBuffer = VK_NULL_HANDLE;
+        if (uploadSlot.StagingBuffer != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(State->Device, uploadSlot.StagingBuffer, nullptr);
+            uploadSlot.StagingBuffer = VK_NULL_HANDLE;
+        }
+        if (uploadSlot.StagingMemory != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(State->Device, uploadSlot.StagingMemory, nullptr);
+            uploadSlot.StagingMemory = VK_NULL_HANDLE;
+        }
+        uploadSlot.StagingSize = 0;
+        uploadSlot.InFlight = false;
+    }
+    State->NextUploadSlot = 0;
+
     if (State->UploadFence != VK_NULL_HANDLE && State->Device != VK_NULL_HANDLE)
     {
         vkDestroyFence(State->Device, State->UploadFence, nullptr);
@@ -181,6 +210,30 @@ void TexcacheVulkanLoader::DestroyTextureArray(TextureArray& textureArray)
     textureArray.Width = 0;
     textureArray.Height = 0;
     textureArray.Layers = 0;
+}
+
+void TexcacheVulkanLoader::WaitForPendingUploads()
+{
+    if (State == nullptr || State->Device == VK_NULL_HANDLE)
+        return;
+
+    for (auto& uploadSlot : State->UploadSlots)
+    {
+        if (!uploadSlot.InFlight || uploadSlot.Fence == VK_NULL_HANDLE)
+            continue;
+
+        const VkResult fenceStatus = vkGetFenceStatus(State->Device, uploadSlot.Fence);
+        if (fenceStatus == VK_SUCCESS)
+        {
+            uploadSlot.InFlight = false;
+            continue;
+        }
+        if (fenceStatus != VK_NOT_READY)
+            continue;
+
+        if (vkWaitForFences(State->Device, 1, &uploadSlot.Fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS)
+            uploadSlot.InFlight = false;
+    }
 }
 
 TexcacheVulkanLoader::TextureHandle TexcacheVulkanLoader::GenerateTexture(u32 width, u32 height, u32 layers)
@@ -421,21 +474,127 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     if (layer < textureArray.LayerOpaque.size())
         textureArray.LayerOpaque[layer] = layerOpaque ? 1u : 0u;
 
-    void* mappedMemory = nullptr;
-    if (vkMapMemory(State->Device, textureArray.StagingMemory, 0, textureArray.StagingSize, 0, &mappedMemory) != VK_SUCCESS)
-        return;
-    std::memcpy(mappedMemory, data, layerPixelCount * sizeof(u32));
-    vkUnmapMemory(State->Device, textureArray.StagingMemory);
+    // Pick an upload slot that is not still in flight. Each slot owns its own
+    // staging buffer, command buffer and fence, so consecutive layer uploads
+    // within a frame no longer serialize on a single fence wait. Only when all
+    // slots are busy does this block, and then just on the oldest one.
+    const VkDeviceSize requiredStagingSize = static_cast<VkDeviceSize>(layerPixelCount * sizeof(u32));
+    SharedState::UploadSlot* uploadSlot = nullptr;
+    size_t uploadSlotIndex = State->NextUploadSlot;
+    for (size_t slotOffset = 0; slotOffset < SharedState::UploadSlotCount; slotOffset++)
+    {
+        const size_t candidateIndex = (State->NextUploadSlot + slotOffset) % SharedState::UploadSlotCount;
+        SharedState::UploadSlot& candidate = State->UploadSlots[candidateIndex];
+        if (!candidate.InFlight || candidate.Fence == VK_NULL_HANDLE || vkGetFenceStatus(State->Device, candidate.Fence) == VK_SUCCESS)
+        {
+            candidate.InFlight = false;
+            uploadSlot = &candidate;
+            uploadSlotIndex = candidateIndex;
+            break;
+        }
+    }
+    if (uploadSlot == nullptr)
+    {
+        uploadSlotIndex = State->NextUploadSlot;
+        uploadSlot = &State->UploadSlots[uploadSlotIndex];
+        if (uploadSlot->Fence != VK_NULL_HANDLE
+            && vkWaitForFences(State->Device, 1, &uploadSlot->Fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+        {
+            return;
+        }
+        uploadSlot->InFlight = false;
+    }
+    State->NextUploadSlot = (uploadSlotIndex + 1u) % SharedState::UploadSlotCount;
 
-    if (vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-        || vkResetFences(State->Device, 1, &State->UploadFence) != VK_SUCCESS
-        || vkResetCommandBuffer(State->CommandBuffer, 0) != VK_SUCCESS)
+    if (uploadSlot->Fence == VK_NULL_HANDLE)
+    {
+        VkFenceCreateInfo fenceCreateInfo{};
+        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        if (vkCreateFence(State->Device, &fenceCreateInfo, nullptr, &uploadSlot->Fence) != VK_SUCCESS)
+            return;
+    }
+
+    if (uploadSlot->CommandBuffer == VK_NULL_HANDLE)
+    {
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandPool = State->CommandPool;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandBufferCount = 1;
+        if (vkAllocateCommandBuffers(State->Device, &commandBufferAllocateInfo, &uploadSlot->CommandBuffer) != VK_SUCCESS)
+            return;
+    }
+
+    if (uploadSlot->StagingBuffer == VK_NULL_HANDLE || uploadSlot->StagingSize < requiredStagingSize)
+    {
+        if (uploadSlot->StagingBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(State->Device, uploadSlot->StagingBuffer, nullptr);
+            uploadSlot->StagingBuffer = VK_NULL_HANDLE;
+        }
+        if (uploadSlot->StagingMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(State->Device, uploadSlot->StagingMemory, nullptr);
+            uploadSlot->StagingMemory = VK_NULL_HANDLE;
+        }
+        uploadSlot->StagingSize = 0;
+
+        VkBufferCreateInfo stagingBufferCreateInfo{};
+        stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingBufferCreateInfo.size = requiredStagingSize;
+        stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(State->Device, &stagingBufferCreateInfo, nullptr, &uploadSlot->StagingBuffer) != VK_SUCCESS)
+            return;
+
+        VkMemoryRequirements stagingMemoryRequirements{};
+        vkGetBufferMemoryRequirements(State->Device, uploadSlot->StagingBuffer, &stagingMemoryRequirements);
+
+        VkMemoryAllocateInfo stagingMemoryAllocateInfo{};
+        stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+        stagingMemoryAllocateInfo.memoryTypeIndex = VulkanContext::Get().FindMemoryType(
+            stagingMemoryRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        );
+        if (stagingMemoryAllocateInfo.memoryTypeIndex == UINT32_MAX
+            || vkAllocateMemory(State->Device, &stagingMemoryAllocateInfo, nullptr, &uploadSlot->StagingMemory) != VK_SUCCESS
+            || vkBindBufferMemory(State->Device, uploadSlot->StagingBuffer, uploadSlot->StagingMemory, 0) != VK_SUCCESS)
+        {
+            if (uploadSlot->StagingBuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyBuffer(State->Device, uploadSlot->StagingBuffer, nullptr);
+                uploadSlot->StagingBuffer = VK_NULL_HANDLE;
+            }
+            if (uploadSlot->StagingMemory != VK_NULL_HANDLE)
+            {
+                vkFreeMemory(State->Device, uploadSlot->StagingMemory, nullptr);
+                uploadSlot->StagingMemory = VK_NULL_HANDLE;
+            }
+            uploadSlot->StagingSize = 0;
+            return;
+        }
+
+        uploadSlot->StagingSize = requiredStagingSize;
+    }
+
+    void* mappedMemory = nullptr;
+    if (vkMapMemory(State->Device, uploadSlot->StagingMemory, 0, requiredStagingSize, 0, &mappedMemory) != VK_SUCCESS)
         return;
+    std::memcpy(mappedMemory, data, requiredStagingSize);
+    vkUnmapMemory(State->Device, uploadSlot->StagingMemory);
+
+    if (vkResetFences(State->Device, 1, &uploadSlot->Fence) != VK_SUCCESS
+        || vkResetCommandBuffer(uploadSlot->CommandBuffer, 0) != VK_SUCCESS)
+    {
+        return;
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(State->CommandBuffer, &beginInfo) != VK_SUCCESS)
+    if (vkBeginCommandBuffer(uploadSlot->CommandBuffer, &beginInfo) != VK_SUCCESS)
         return;
 
     constexpr VkPipelineStageFlags kTextureShaderStages =
@@ -456,7 +615,7 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     toTransferBarrier.subresourceRange.baseArrayLayer = layer;
     toTransferBarrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(
-        State->CommandBuffer,
+        uploadSlot->CommandBuffer,
         kTextureShaderStages,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
@@ -481,8 +640,8 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     copyRegion.imageExtent.height = height;
     copyRegion.imageExtent.depth = 1;
     vkCmdCopyBufferToImage(
-        State->CommandBuffer,
-        textureArray.StagingBuffer,
+        uploadSlot->CommandBuffer,
+        uploadSlot->StagingBuffer,
         textureArray.Image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1,
@@ -504,7 +663,7 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
     backToGeneralBarrier.subresourceRange.baseArrayLayer = layer;
     backToGeneralBarrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(
-        State->CommandBuffer,
+        uploadSlot->CommandBuffer,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         kTextureShaderStages,
         0,
@@ -516,20 +675,19 @@ void TexcacheVulkanLoader::UploadTexture(TextureHandle handle, u32 width, u32 he
         &backToGeneralBarrier
     );
 
-    if (vkEndCommandBuffer(State->CommandBuffer) != VK_SUCCESS)
+    if (vkEndCommandBuffer(uploadSlot->CommandBuffer) != VK_SUCCESS)
         return;
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &State->CommandBuffer;
+    submitInfo.pCommandBuffers = &uploadSlot->CommandBuffer;
     {
         std::scoped_lock queueLock(VulkanContext::Get().GetQueueLock());
-        if (vkQueueSubmit(State->Queue, 1, &submitInfo, State->UploadFence) != VK_SUCCESS)
+        if (vkQueueSubmit(State->Queue, 1, &submitInfo, uploadSlot->Fence) != VK_SUCCESS)
             return;
     }
-
-    (void)vkWaitForFences(State->Device, 1, &State->UploadFence, VK_TRUE, UINT64_MAX);
+    uploadSlot->InFlight = true;
 }
 
 void TexcacheVulkanLoader::DeleteTexture(TextureHandle handle)
@@ -541,6 +699,9 @@ void TexcacheVulkanLoader::DeleteTexture(TextureHandle handle)
     if (it == State->TextureArrays.end())
         return;
 
+    // Uploads are no longer waited on at submit time, so any slot still
+    // referencing this image must retire before its VkImage is destroyed.
+    WaitForPendingUploads();
     DestroyTextureArray(it->second);
     State->TextureArrays.erase(it);
 

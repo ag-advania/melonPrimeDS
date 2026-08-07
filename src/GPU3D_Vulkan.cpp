@@ -28,6 +28,7 @@
 #include <cstring>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -650,6 +651,7 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
 {
     (void)gpu;
     Texcache.Reset();
+    GraphicsResolvedTextureCache.clear();
     HasCpuFrame = false;
     FrameIdentical = false;
     LastSubmittedRenderPolygonCount = 0;
@@ -734,10 +736,15 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         logPerformanceIfNeeded();
     });
 
+    bool textureCacheInvalidated = false;
     const bool textureCacheChanged = Texcache.Update(gpu, [&]() {
         if (Initialized && ActiveBackendMode == BackendMode::GraphicsHardware)
             (void)waitForTextureCacheMutationSafePoint();
-    });
+    }, &textureCacheInvalidated);
+    // Only an actual eviction can make a resolved descriptor stale. A dirty
+    // VRAM range whose hash still matches keeps every resolution valid.
+    if (textureCacheInvalidated)
+        GraphicsResolvedTextureCache.clear();
     WarmTextureCache(gpu);
 
     const u32 scale = static_cast<u32>(std::max(1, ScaleFactor));
@@ -2119,6 +2126,7 @@ void VulkanRenderer3D::destroyVulkan()
     GraphicsReady = false;
     ActiveTextureDescriptorCount = 0;
     ActiveTextureDescriptors.fill(VkDescriptorImageInfo{});
+    GraphicsResolvedTextureCache.clear();
     ActiveTextureSamplingPath = TextureSamplingPath::CompatDynamicUniform;
 }
 
@@ -9652,6 +9660,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     VkRect2D scissor{};
     scissor.extent.width = ColorImageWidth;
     scissor.extent.height = ColorImageHeight;
+    const VkRect2D fullGraphicsScissor = scissor;
 
     auto unpackNormalizedByte = [](u32 value) -> float {
         return static_cast<float>(value & 0xFFu) * (1.0f / 255.0f);
@@ -9725,6 +9734,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     u32 boundStencilCompareMask = std::numeric_limits<u32>::max();
     u32 boundStencilWriteMask = std::numeric_limits<u32>::max();
     u32 boundStencilReference = std::numeric_limits<u32>::max();
+    VkRect2D boundGraphicsScissor = fullGraphicsScissor;
     const auto bindGraphicsPipelineCached = [&](VkPipeline pipeline) {
         if (boundGraphicsPipeline == pipeline)
             return;
@@ -9753,6 +9763,90 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
             vkCmdSetStencilReference(commandBuffer, VK_STENCIL_FACE_FRONT_AND_BACK, reference);
             boundStencilReference = reference;
         }
+    };
+    const auto setGraphicsScissorCached = [&](const VkRect2D& nextScissor) {
+        if (boundGraphicsScissor.offset.x == nextScissor.offset.x
+            && boundGraphicsScissor.offset.y == nextScissor.offset.y
+            && boundGraphicsScissor.extent.width == nextScissor.extent.width
+            && boundGraphicsScissor.extent.height == nextScissor.extent.height)
+        {
+            return;
+        }
+
+        vkCmdSetScissor(commandBuffer, 0, 1, &nextScissor);
+        boundGraphicsScissor = nextScissor;
+    };
+    const auto fullGraphicsScissorCached = [&]() {
+        setGraphicsScissorCached(fullGraphicsScissor);
+    };
+    // Conservative per-draw scissor: the padded screen-space bounds of the
+    // draw's own triangles. Purely a rasterization-cost reduction; the padding
+    // keeps it outside anything the polygon can legitimately cover, so it must
+    // not change the rendered image.
+    const auto drawGraphicsScissor = [&](const GraphicsPolygonDraw& draw) -> VkRect2D {
+        VkRect2D drawScissor = fullGraphicsScissor;
+        if (draw.triangleCount == 0u || draw.firstTriangle >= Triangles.size())
+            return drawScissor;
+
+        const u32 triangleEnd = std::min<u32>(
+            static_cast<u32>(Triangles.size()),
+            draw.firstTriangle + draw.triangleCount);
+        u32 yTop = ColorImageHeight;
+        u32 yBottom = 0u;
+        float minX = static_cast<float>(ColorImageWidth);
+        float maxX = 0.0f;
+        bool hasFiniteX = false;
+        for (u32 triangleIndex = draw.firstTriangle; triangleIndex < triangleEnd; triangleIndex++)
+        {
+            const TriangleGpu& triangle = Triangles[triangleIndex];
+            const u32 triangleYBounds = triangle.yBounds;
+            const u32 triangleYTop = triangleYBounds & 0xFFFFu;
+            const u32 triangleYBottom = (triangleYBounds >> 16u) & 0xFFFFu;
+            if (triangleYBottom > triangleYTop)
+            {
+                yTop = std::min(yTop, triangleYTop);
+                yBottom = std::max(yBottom, triangleYBottom);
+            }
+
+            const float triangleMinX = std::min({triangle.x0, triangle.x1, triangle.x2});
+            const float triangleMaxX = std::max({triangle.x0, triangle.x1, triangle.x2});
+            if (std::isfinite(triangleMinX) && std::isfinite(triangleMaxX))
+            {
+                minX = hasFiniteX ? std::min(minX, triangleMinX) : triangleMinX;
+                maxX = hasFiniteX ? std::max(maxX, triangleMaxX) : triangleMaxX;
+                hasFiniteX = true;
+            }
+        }
+
+        if (yBottom <= yTop || yTop >= ColorImageHeight)
+            return drawScissor;
+
+        const u32 yPadding = std::max<u32>(2u, static_cast<u32>(std::max(1, ScaleFactor)));
+        const u32 clippedTop = yTop > yPadding ? yTop - yPadding : 0u;
+        const u32 clippedBottom = std::min<u32>(ColorImageHeight, yBottom + yPadding);
+        if (clippedBottom <= clippedTop)
+            return drawScissor;
+
+        if (hasFiniteX && maxX > minX)
+        {
+            const int32_t xPadding = static_cast<int32_t>(
+                std::max<u32>(4u, static_cast<u32>(std::max(1, ScaleFactor)) * 2u));
+            const int32_t clippedLeft = std::max<int32_t>(
+                0,
+                static_cast<int32_t>(std::floor(minX)) - xPadding);
+            const int32_t clippedRight = std::min<int32_t>(
+                static_cast<int32_t>(ColorImageWidth),
+                static_cast<int32_t>(std::ceil(maxX)) + xPadding);
+            if (clippedRight > clippedLeft)
+            {
+                drawScissor.offset.x = clippedLeft;
+                drawScissor.extent.width = static_cast<u32>(clippedRight - clippedLeft);
+            }
+        }
+
+        drawScissor.offset.y = static_cast<int32_t>(clippedTop);
+        drawScissor.extent.height = clippedBottom - clippedTop;
+        return drawScissor;
     };
 
     const auto opaquePipelineIndexFor = [&](const GraphicsPolygonDraw& draw) -> u32 {
@@ -9938,6 +10032,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
         pushConstants.triangleCount = draw.triangleCount;
         vkCmdPushConstants(commandBuffer, GraphicsPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstants), &pushConstants);
         setStencilStateCached(stencilCompareMask, stencilWriteMask, stencilReference);
+        setGraphicsScissorCached(drawGraphicsScissor(draw));
         vkCmdDraw(commandBuffer, draw.triangleCount * 3u, 1u, draw.firstTriangle * 3u, 0u);
         drawCount++;
         return true;
@@ -10012,6 +10107,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
                     pushConstants.edgeColorPacked[i] = savedEdgeColorPacked[i];
             }
         }
+        setGraphicsScissorCached(drawGraphicsScissor(draw));
         vkCmdDrawIndexed(commandBuffer, draw.edgeIndexCount, 1u, draw.firstEdgeIndex, 0, 0u);
         drawCount++;
         return true;
@@ -10024,6 +10120,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
         bindGraphicsDescriptorSetCached();
         vkCmdPushConstants(commandBuffer, GraphicsPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstants), &pushConstants);
         setStencilStateCached(0x80u, 0x80u, 0x00u);
+        fullGraphicsScissorCached();
         vkCmdDraw(commandBuffer, 3u, 1u, 0u, 0u);
         drawCount++;
     };
@@ -11559,16 +11656,25 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
 {
     struct TextureFrameData
     {
+        TexcacheVulkanLoader::TextureHandle Handle = 0;
+        u32 Layer = 0;
         u32 DescriptorIndex = 0;
+        bool FallbackUsed = false;
+        bool LayerOpaque = false;
+        u32 Width = 0;
+        u32 Height = 0;
     };
 
+    // Keyed on TexParam/TexPalette rather than on the resolved texture handle,
+    // so the key is known before the texcache is consulted. This is the same
+    // key Texcache::GetTexture derives internally.
     struct TextureLookupKey
     {
-        TexcacheVulkanLoader::TextureHandle Handle = 0;
+        u64 Key = 0;
 
         bool operator==(const TextureLookupKey& other) const noexcept
         {
-            return Handle == other.Handle;
+            return Key == other.Key;
         }
     };
 
@@ -11576,7 +11682,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
     {
         size_t operator()(const TextureLookupKey& key) const noexcept
         {
-            return std::hash<u64>{}(key.Handle);
+            return std::hash<u64>{}(key.Key);
         }
     };
 
@@ -11626,6 +11732,19 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
 
     std::unordered_map<TextureLookupKey, TextureFrameData, TextureLookupHasher> textureLookup{};
     textureLookup.reserve(SharedGraphicsScene.Draws.size());
+
+    const auto makeTextureLookupKey = [](u32 texParam, u32 texPalette) -> TextureLookupKey {
+        u32 normalizedTexParam = texParam & ~0xC00F0000u;
+        const u32 textureFormat = (normalizedTexParam >> 26u) & 0x7u;
+        u64 key = normalizedTexParam;
+        if (textureFormat != 7u)
+        {
+            key |= static_cast<u64>(texPalette) << 32u;
+            if (textureFormat == 5u)
+                key &= ~(static_cast<u64>(1u) << 29u);
+        }
+        return TextureLookupKey{key};
+    };
 
     const auto to8From6 = [](u32 c6) -> u32 {
         c6 &= 0x3Fu;
@@ -11728,6 +11847,43 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
         return (polygonYTop & 0xFFFFu) | ((polygonYBot & 0xFFFFu) << 16u);
     };
 
+    // Descriptor slots are a fixed, small budget. Translucent polygons are the
+    // ones that visibly break when they fall back to the 1x1 fallback texture,
+    // so reserve a slot for each distinct translucent texture up front and let
+    // opaque polygons consume only what is left over.
+    std::unordered_set<TextureLookupKey, TextureLookupHasher> reservedAlphaTextureKeys{};
+    reservedAlphaTextureKeys.reserve(std::min<size_t>(SharedGraphicsScene.Draws.size(), MaxActiveTextureDescriptors));
+    for (const AcceleratedSceneDraw& sceneDraw : SharedGraphicsScene.Draws)
+    {
+        const Polygon* polygon = sceneDraw.SourcePolygon;
+        if (polygon == nullptr)
+            continue;
+
+        const AcceleratedPolygonMeta& polygonMeta = sceneDraw.Meta;
+        const bool polygonTexturedByRegs = textureMapsEnabled && (((polygon->TexParam >> 26u) & 0x7u) != 0u);
+        if (!polygonTexturedByRegs)
+            continue;
+        if (!Renderer3DDebugShouldDrawPolygon(
+                polygonMeta,
+                sceneDraw.PrimitiveType == AcceleratedPrimitiveType::Lines,
+                true,
+                highlightEnabled))
+        {
+            continue;
+        }
+
+        const std::optional<u32> debugYBounds = packSceneDrawYBounds(sceneDraw);
+        if (debugYBounds.has_value() && !Renderer3DDebugYBoundsEnabled(*debugYBounds, targetHeight))
+            continue;
+
+        const u32 alpha5 = polygonMeta.Alpha5;
+        const bool polygonUsesGlTranslucentPass =
+            HasAcceleratedPolygonFlag(polygonMeta, AcceleratedPolygonFlagTranslucent);
+        const bool isTranslucent = polygonUsesGlTranslucentPass || (alpha5 != 0u && alpha5 < 0x1Fu);
+        if (isTranslucent)
+            reservedAlphaTextureKeys.insert(makeTextureLookupKey(polygon->TexParam, polygon->TexPalette));
+    }
+
     for (const AcceleratedSceneDraw& sceneDraw : SharedGraphicsScene.Draws)
     {
         const Polygon* polygon = sceneDraw.SourcePolygon;
@@ -11769,15 +11925,6 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
         u32 texHeight = 0u;
         if (polygonTextured)
         {
-            Texcache.GetTexture(
-                gpu,
-                polygon->TexParam,
-                polygon->TexPalette,
-                textureHandle,
-                textureLayer,
-                helper
-            );
-
             texWidth = TextureWidth(polygon->TexParam);
             texHeight = TextureHeight(polygon->TexParam);
             if (texWidth == 0u || texHeight == 0u)
@@ -11786,18 +11933,92 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             }
             else
             {
-                const TextureLookupKey textureKey{textureHandle};
+                const TextureLookupKey textureKey = makeTextureLookupKey(
+                    polygon->TexParam,
+                    polygon->TexPalette);
+                const u32 textureFormat = (polygon->TexParam >> 26u) & 0x7u;
+                const bool color0Transparent = (polygon->TexParam & (1u << 29u)) != 0u;
+                // Only cache resolutions across frames for the plain opaque
+                // paletted formats, where the resolved descriptor cannot depend
+                // on per-polygon blend/alpha state.
+                const bool persistentTextureCacheAllowed =
+                    (textureFormat == 4u || textureFormat == 5u)
+                    && !color0Transparent
+                    && alpha5 == 31u
+                    && blendMode == 0u;
                 auto textureIt = textureLookup.find(textureKey);
                 if (textureIt == textureLookup.end())
                 {
-                    VkDescriptorImageInfo textureDescriptorInfo{};
-                    if (Texcache.GetLoader().GetTextureDescriptor(textureHandle, &textureDescriptorInfo)
-                        && ActiveTextureDescriptorCount < MaxActiveTextureDescriptors)
+                    GraphicsResolvedTextureCacheEntry resolvedTexture{};
+                    bool resolvedTextureValid = false;
+                    const auto persistentTextureIt = persistentTextureCacheAllowed
+                        ? GraphicsResolvedTextureCache.find(textureKey.Key)
+                        : GraphicsResolvedTextureCache.end();
+                    if (persistentTextureIt != GraphicsResolvedTextureCache.end())
+                    {
+                        resolvedTexture = persistentTextureIt->second;
+                        resolvedTextureValid = true;
+                    }
+                    else
+                    {
+                        Texcache.GetTexture(
+                            gpu,
+                            polygon->TexParam,
+                            polygon->TexPalette,
+                            textureHandle,
+                            textureLayer,
+                            helper
+                        );
+
+                        VkDescriptorImageInfo textureDescriptorInfo{};
+                        if (Texcache.GetLoader().GetTextureDescriptor(
+                                textureHandle,
+                                &textureDescriptorInfo))
+                        {
+                            resolvedTexture.Handle = textureHandle;
+                            resolvedTexture.Layer = textureLayer;
+                            resolvedTexture.DescriptorInfo = textureDescriptorInfo;
+                            resolvedTexture.FallbackUsed = false;
+                            resolvedTexture.LayerOpaque = Texcache.GetLoader().IsTextureLayerOpaque(textureHandle, textureLayer);
+                            resolvedTexture.Width = texWidth;
+                            resolvedTexture.Height = texHeight;
+                            resolvedTextureValid = true;
+                            if (persistentTextureCacheAllowed)
+                                GraphicsResolvedTextureCache.emplace(textureKey.Key, resolvedTexture);
+                        }
+                    }
+
+                    const auto reservedAlphaTextureIt = reservedAlphaTextureKeys.find(textureKey);
+                    const bool reservedAlphaTexture = reservedAlphaTextureIt != reservedAlphaTextureKeys.end();
+                    const u32 reservedAlphaTextureCount =
+                        std::min<u32>(static_cast<u32>(reservedAlphaTextureKeys.size()), MaxActiveTextureDescriptors);
+                    const bool descriptorSlotAvailable =
+                        ActiveTextureDescriptorCount < MaxActiveTextureDescriptors
+                        && (reservedAlphaTexture
+                            || (ActiveTextureDescriptorCount + reservedAlphaTextureCount) < MaxActiveTextureDescriptors);
+                    if (resolvedTextureValid && descriptorSlotAvailable)
                     {
                         textureDescriptorIndex = ActiveTextureDescriptorCount;
-                        ActiveTextureDescriptors[textureDescriptorIndex] = textureDescriptorInfo;
+                        ActiveTextureDescriptors[textureDescriptorIndex] = resolvedTexture.DescriptorInfo;
                         ActiveTextureDescriptorCount++;
-                        textureLookup.emplace(textureKey, TextureFrameData{textureDescriptorIndex});
+                        textureHandle = resolvedTexture.Handle;
+                        textureLayer = resolvedTexture.Layer;
+                        textureLayerOpaque = resolvedTexture.LayerOpaque;
+                        texWidth = resolvedTexture.Width;
+                        texHeight = resolvedTexture.Height;
+                        textureLookup.emplace(
+                            textureKey,
+                            TextureFrameData{
+                                textureHandle,
+                                textureLayer,
+                                textureDescriptorIndex,
+                                resolvedTexture.FallbackUsed,
+                                textureLayerOpaque,
+                                texWidth,
+                                texHeight,
+                            });
+                        if (reservedAlphaTexture)
+                            reservedAlphaTextureKeys.erase(reservedAlphaTextureIt);
                     }
                     else
                     {
@@ -11807,14 +12028,30 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                         texHeight = 1u;
                         textureFallbackUsed = true;
                         textureLayerOpaque = true;
+                        textureLookup.emplace(
+                            textureKey,
+                            TextureFrameData{
+                                0,
+                                textureLayer,
+                                textureDescriptorIndex,
+                                true,
+                                textureLayerOpaque,
+                                texWidth,
+                                texHeight,
+                            });
                     }
                 }
                 else
                 {
-                    textureDescriptorIndex = textureIt->second.DescriptorIndex;
+                    const TextureFrameData& textureData = textureIt->second;
+                    textureHandle = textureData.Handle;
+                    textureLayer = textureData.Layer;
+                    textureDescriptorIndex = textureData.DescriptorIndex;
+                    textureFallbackUsed = textureData.FallbackUsed;
+                    textureLayerOpaque = textureData.LayerOpaque;
+                    texWidth = textureData.Width;
+                    texHeight = textureData.Height;
                 }
-                if (!textureFallbackUsed)
-                    textureLayerOpaque = Texcache.GetLoader().IsTextureLayerOpaque(textureHandle, textureLayer);
             }
         }
 
