@@ -11595,6 +11595,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
     sceneBuildConfig.Scale = ScaleFactor;
     sceneBuildConfig.BetterPolygons = BetterPolygons;
     sceneBuildConfig.UseHiresCoordinates = true;
+    sceneBuildConfig.DsGridLinearPolygons = true;
     sceneBuildConfig.MaxFixedX = static_cast<s32>((256u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.MaxFixedY = static_cast<s32>((192u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.CoverageFix.Enabled = CoverageFixEnabled;

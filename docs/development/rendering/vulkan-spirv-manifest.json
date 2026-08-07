@@ -112,8 +112,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_vert_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h",
       "flags": [],
-      "source_sha256": "a176c009c4242bfefac61f4d8ef53c89cb56d24492922628eb6f65cdaa651666",
-      "header_sha256": "13c98a093ba682ac61df18723bc71c84223ece8a0629589457c94a882bf6f303"
+      "source_sha256": "c5113ce02c09b8379031973f20fbf2c4a6dbc5b663bd68d8f3e6f96011d23570",
+      "header_sha256": "00a2d77be2ab3089ba016094d2d8cbbb8cec1a8d276fa6ae087bb9673fecf39c"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -121,8 +121,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_frag_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h",
       "flags": [],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "044cfccc8c75ab144c1b99672a7b64bd1bc773662a2fbf06e6ac9fd7f8120ce0"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "0a96476a341e62c33bdb19f7156a0e284d99ea7f1ff6719456c8e6b4b0862db5"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -132,8 +132,8 @@
       "flags": [
         "-DMELONDS_NO_FRAG_DEPTH=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "676ba2386503fcdea5ef1560f44b25f355c3135726e30dc900d924b7eb399ec4"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "b4494bedc17cb35d88b8cda694c696670070abcd60437b217b9c4b9c44f1277f"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -144,8 +144,8 @@
         "-DMELONDS_NO_FRAG_DEPTH=1",
         "-DMELONDS_DIRECT_TEXTURE_INDEXING=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "659081c3d1db28b3a0f2dff2d0762d64e4541fb45bd2bb4855491abb1c7235c0"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "fbe4d2e0045c6d9a4d54fe03d543e7fedb928ede731f0ab289f38b8a6d4a35d9"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -158,8 +158,8 @@
         "-DMELONDS_FAST_OPAQUE_MODULATE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "075dde31a5ae31f447a5c39348dc5b9e777869a4da5a0f561923425355b02df3"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "3c5d7bc6ac3bb406b052679e4d82221cb3a077e6cfeea5d14d26497bd05a9ef3"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -173,8 +173,8 @@
         "-DMELONDS_FAST_TOON_MODE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "7f266e7f180ff94705f339072e2bed2b418754b5b9e65659e6d3a763f35fcb0b"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "6ff8acf4fea25310beb80c3da63842816606e1b23dae990a6d6572b22a8a7126"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -188,8 +188,8 @@
         "-DMELONDS_FAST_TOON_MODE=2",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "7cdf491f7445953337b278457adf75431107c3578082b859aa1ddebedad6b479"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "79fff6caaccd1b0883078c1b72014b69e13fd11e65ba4bc58f957454c83c3c0a"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -204,8 +204,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "f9cccdad13d1f69fdd8ab642476d4665fa83ee89d986c6ad1d90a70d329ad806"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "6d1c7d5f4bdebd142cc7d076a9bdd850753e4c7c70c963eaaaee390b8f0525dd"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -220,8 +220,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "a96f67aa2c7986a8fd4e386ff103ab304111d74ac75d304770b6fd30103cee88"
+      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
+      "header_sha256": "32031bb4f9ff201ac1364fbb5d23ab982bd6343fab623813e2aa33055169b4dc"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag",
