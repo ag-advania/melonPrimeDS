@@ -121,8 +121,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_frag_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h",
       "flags": [],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "0a96476a341e62c33bdb19f7156a0e284d99ea7f1ff6719456c8e6b4b0862db5"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "019ecbd6df8c3310c249f31095c7a023bba9193ced3a05b0bccade1713b873de"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -132,8 +132,8 @@
       "flags": [
         "-DMELONDS_NO_FRAG_DEPTH=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "b4494bedc17cb35d88b8cda694c696670070abcd60437b217b9c4b9c44f1277f"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "354e681a88bb8502e198bfb3304794110be44dce96ae679b9f7286a21ad06242"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -144,8 +144,8 @@
         "-DMELONDS_NO_FRAG_DEPTH=1",
         "-DMELONDS_DIRECT_TEXTURE_INDEXING=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "fbe4d2e0045c6d9a4d54fe03d543e7fedb928ede731f0ab289f38b8a6d4a35d9"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "bcd7723931799c231b771f6cac7a07bc3eab12fedec7ebdc06a6dc24e45b9396"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -158,8 +158,8 @@
         "-DMELONDS_FAST_OPAQUE_MODULATE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "3c5d7bc6ac3bb406b052679e4d82221cb3a077e6cfeea5d14d26497bd05a9ef3"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "4297a148f1fcb06c4d0179d257cc562869863288ed956af828fc90eee356efb4"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -173,8 +173,8 @@
         "-DMELONDS_FAST_TOON_MODE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "6ff8acf4fea25310beb80c3da63842816606e1b23dae990a6d6572b22a8a7126"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "e5c04712c147c3973461438a6df016f1b696b1ca0bdd2105cddd71f51e154400"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -188,8 +188,8 @@
         "-DMELONDS_FAST_TOON_MODE=2",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "79fff6caaccd1b0883078c1b72014b69e13fd11e65ba4bc58f957454c83c3c0a"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "2ad57bcca1c6432dbf86ee1500c169181ad13ced104d6f8c1cfde7c6c493b33d"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -204,8 +204,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "6d1c7d5f4bdebd142cc7d076a9bdd850753e4c7c70c963eaaaee390b8f0525dd"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "89a6c197e54f818b9beb779b30139d8b9553c9b0820a4a68c31a86ce72d0af17"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -220,8 +220,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "58d5fc10fc8530404c20a36437fdc529d1e41703004686a35e76b04f02fc62ee",
-      "header_sha256": "32031bb4f9ff201ac1364fbb5d23ab982bd6343fab623813e2aa33055169b4dc"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "2cd61b640ccf483a8fb16c099dba66b492069bdeaf5c7fde30968ba25dd5d210"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag",

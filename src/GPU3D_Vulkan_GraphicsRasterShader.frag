@@ -390,14 +390,24 @@ Color6A5 sampleTexture(uint polyAttr)
 #endif
 
     // SoftRenderer3D::TextureLookup() receives S/T as an integer in 1/16-texel units and
-    // reduces it with s >>= 4. fTexcoord carries that same 1/16-texel domain, so snap the
-    // corrected sample back onto the integer grid before shifting instead of flooring a
-    // float texel value. Once one DS pixel maps to one texel the corrected sample lands
-    // exactly on a texel boundary, and flooring it directly turns float noise into an
-    // off-by-one texel that repeat/mirror wrapping then reads from the opposite edge of
-    // the texture.
-    int sampleS = int(floor(texcoord.x + 0.5)) >> 4;
-    int sampleT = int(floor(texcoord.y + 0.5)) >> 4;
+    // reduces it with s >>= 4. fTexcoord carries that same 1/16-texel domain, so reduce it
+    // the same way: truncate to the 1/16 grid, then arithmetic-shift.
+    //
+    // Truncate, not round. GPU3D_Soft.h's Interpolator reaches the 1/16 value through
+    // `v1 + (v0-v1)*(xdiff-x)/xdiff`, and C++ integer division truncates, so the DS value
+    // is floor() of the exact ratio. Rounding to nearest instead promotes a sample that
+    // sits just below a texel boundary into the next texel, which drops a one-pixel line
+    // wherever a span reaches a boundary at a non-integer ratio.
+    //
+    // TEXEL_FLOOR_EPSILON only absorbs float error on the interpolant, so that a ratio
+    // which is exactly an integer - the common 1:1 texel-per-pixel case, where every
+    // sample lands on a texel boundary - cannot fall to the texel below. Its bounds are
+    // fixed, not tuned: above the float32 rounding of the interpolated value, and below
+    // 1/256, the smallest non-zero fraction a DS span can produce (spans span at most 256
+    // pixels, so the interpolation denominator is at most 256).
+    const float TEXEL_FLOOR_EPSILON = 1.0 / 512.0;
+    int sampleS = int(floor(texcoord.x + TEXEL_FLOOR_EPSILON)) >> 4;
+    int sampleT = int(floor(texcoord.y + TEXEL_FLOOR_EPSILON)) >> 4;
 
     sampleS = wrapTexelCoord(sampleS, int(texWidth), repeatS, mirrorS);
     sampleT = wrapTexelCoord(sampleT, int(texHeight), repeatT, mirrorT);

@@ -6,9 +6,9 @@ against the two references that implement DS raster semantics explicitly:
 - `src/GPU3D_Soft.cpp` (`SoftRenderer3D::RenderPolygonScanline`, `TextureLookup`)
 - `src/GPU3D_Compute_shaders.h` (`InterpSpans`, `Rasterise`)
 
-Scope: pixel coverage and S/T integerisation only. No sampler, filtering or diagnostic
-changes. Everything below is derived from the sources listed; nothing here has been
-verified on a GPU.
+Scope: pixel coverage and S/T integerisation only. No sampler or filtering changes.
+Sections 1-6 are derived from the sources listed. Section 6b was measured on hardware
+against the software renderer; section 8 states exactly what was and was not run.
 
 ## 1. Reference span model (software and compute agree exactly)
 
@@ -114,14 +114,9 @@ exclusion lists carved out of this same correction.
   `-0.5` is the fragment-centre-to-integer-grid-point step; `-subpixelOffset` collapses the
   render-scale block onto the DS grid point software sampled. Both terms come from
   `pc.width / 256` and `pc.height / 192`.
-- Integerisation now mirrors `TextureLookup()`:
-
-  ```glsl
-  int sampleS = int(floor(texcoord.x + 0.5)) >> 4;
-  ```
-
-  Snapping back onto the 1/16 grid before the arithmetic shift makes the boundary case
-  deterministic, which is what removes the wrap.
+- Integerisation now mirrors `TextureLookup()`, reducing the 1/16-texel value with an
+  arithmetic shift instead of flooring a float texel. Section 6b gives the exact rounding
+  rule — this section's first version used round-to-nearest, which was wrong.
 
 `usesDsPixelCenteredTranslucentPaletteUi` was renamed `usesTranslucentPaletteUi`: it no
 longer drives UV, only the palette-UI alpha hole fill and blend-alpha encode.
@@ -212,6 +207,41 @@ geometry, so an over-covered fragment still interpolates strictly inside `[A_L, 
 fills the whole horizontal run of an x-major *left* edge across a scanline, which centre
 sampling cannot reproduce.
 
+## 6b. Texel reduction: truncate, with a float-error guard
+
+The first version of section 4's integerisation rounded to nearest
+(`floor(t + 0.5) >> 4`). That is wrong: `GPU3D_Soft.h`'s `Interpolator` produces the
+1/16-texel value with `v1 + (v0-v1)*(xdiff-x)/xdiff`, and C++ integer division truncates,
+so the DS value is `floor()` of the exact ratio, never the nearest integer.
+
+Measured consequence, on the MPH multiplayer hunter-select frame (savestate slot 1),
+texture `0x9530b52` (256x32), quad `pos.y 336..460` / `uv.v 507..-1`:
+
+| DS row | exact ratio | DS (`floor`) | texel | round-to-nearest | texel |
+| --- | --- | --- | --- | --- | --- |
+| 113 | 31.774 | 31 | **1** | 32 | **2** |
+
+That single row is the frame's bottom border. Rounding promoted it past the texel
+boundary, so Vulkan drew the row above the border instead and the box rendered with an
+open bottom edge - one horizontal line missing across DS x 49..207, everything else
+pixel-identical to software.
+
+Plain `floor()` fixes that row but breaks the opposite case. With a 1:1 texel-per-pixel
+span - here `u = 3424*(4x-84)/856`, which reduces to exactly `16*(x-21)` - every sample
+lands exactly on a texel boundary, and float32 evaluation that lands a fraction below it
+floors to the previous texel. Measured: the frame's vertical grid lines moved from
+`x = 67, 88, 109, 120, 131, 133, 215` to `57, 68, 78, 89, 99, 110, 121, 134, 213`.
+
+So the reduction is `floor(t + TEXEL_FLOOR_EPSILON) >> 4`, with the epsilon absorbing
+float error only. Its bounds are fixed rather than tuned: it must exceed the float32
+rounding of the interpolated value, and stay below `1/256` - the smallest non-zero
+fraction a DS span can produce, since a span covers at most 256 pixels and therefore the
+interpolation denominator is at most 256. `1/512` sits inside that window.
+
+Verified on hardware: with this reduction the frame box region (window rows 278..338) is
+pixel-identical to the software renderer, including both the bottom border and the
+vertical grid positions.
+
 ## 7. Known remaining divergences
 
 - **x-major edge runs.** As above: non-axis-aligned DS-linear polygons, and every
@@ -228,11 +258,20 @@ sampling cannot reproduce.
   1.3.290.0).
 - `tools/vulkan_spirv.py check` passes; the nine regenerated headers now match
   byte-for-byte.
-- `GPU3D_AcceleratedFrontend.cpp` passes `g++ -fsyntax-only -std=c++20`.
+- Full build via `tools/build/windows/build-mingw-existing.bat` succeeds. Note the project
+  builds with `-std=gnu++17`, not C++20.
 - `tools/testing/ds-linear-ring-coverage-model.py` passes.
 - `audit-vulkan-compositor-spirv`, `audit-vulkan-capture-export-timing`,
   `audit-vulkan-compositor-colorimage-sync`, `audit-vulkan-frame-resource-ownership`,
   `audit-vulkan-no-post-translucent-opaque-replay`,
   `audit-structured-composition-contract` pass.
-- **Not performed:** any build, and any runtime or visual comparison. The behavioural
-  claims in sections 3 and 4 are derivations from source, not measurements.
+- **Runtime**, MPH multiplayer hunter-select frame (savestate slot 1), Vulkan at 4x versus
+  the software renderer: the frame box region is pixel-identical, for the bottom border row
+  and for the vertical grid positions alike. The residual differences on that screen are
+  confined to the animated title text and hunter row.
+- Bisected on hardware before fixing, to establish the defect predated this work: with the
+  DS-grid snap disabled, and separately with the fragment DS-grid correction disabled, the
+  border row was still missing.
+- **Not verified:** any scene other than that savestate, any render scale other than 4x,
+  and the section 3/4/6 coverage claims, which remain derivations from source rather than
+  measurements.
