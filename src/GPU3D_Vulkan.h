@@ -543,7 +543,12 @@ private:
     float CoverageFixDepthBias = 0.0f;
     bool CoverageFixApplyRepeat = true;
     bool CoverageFixApplyClamp = false;
-    float PassiveCoverageFixRepeatPx = 0.2f;
+    // Keep passive repeat-texture coverage expansion disabled by default.
+    // Expanding textured polygon geometry beyond the DS polygon edge can create
+    // fragments outside the intended coverage and expose wrapped edge texels as
+    // ghost pixels. Vulkan already keeps subpixel geometry at 1x to avoid the
+    // cracks this workaround originally targeted.
+    float PassiveCoverageFixRepeatPx = 0.0f;
     bool Debug3dClearMagenta = false;
     bool Threaded = false;
 
