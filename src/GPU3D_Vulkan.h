@@ -511,6 +511,9 @@ private:
         bool readbackToCpu,
         bool captureReadbackPath = false);
     bool submitGraphicsCaptureExportForCurrentFrame();
+    // Produces this frame's exact capture export on demand, when display
+    // capture turns out to need 3D after the frame was already rendered.
+    bool ensureExactCaptureExportForCurrentFrame();
     bool readbackColorTargetToCpu(bool capturePath = false);
     bool readbackResultBufferToCpu();
     bool copyReadyCaptureLineToLineCache();
@@ -670,6 +673,13 @@ private:
     u32 ColorImageWidth = 0;
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
+    // True while ColorImage holds a completed 3D frame that display capture for
+    // the current DS frame is still allowed to read. The DS arms display
+    // capture at VCount 0, after RenderFrame() has already run at VCount 215,
+    // so whether a capture export is needed cannot be known while rendering.
+    // This is what makes a late export safe: it says the image is this frame's,
+    // not a previous one's.
+    bool ColorImageHasCurrentFrame3D = false;
     u64 RenderSubmissionSerial = 0;
     u64 ColorImageReuseSerial = 0;
 
@@ -837,6 +847,10 @@ private:
     u64 ReadbackColorRequestCount = 0;
     u64 ReadbackResultRequestCount = 0;
     u64 CapturePrepareRequestCount = 0;
+    // Exports produced after the frame was rendered, because display capture
+    // was armed between VCount 215 and VCount 0.
+    u64 LateCaptureExportCount = 0;
+    u64 LateCaptureExportFailureCount = 0;
     std::array<u64, 4> CaptureModeCounts{};
     std::array<u64, 4> CaptureSizeModeCounts{};
     std::array<u64, static_cast<size_t>(RasterExecutionProfile::Count)> RasterExecutionProfileCounts{};
