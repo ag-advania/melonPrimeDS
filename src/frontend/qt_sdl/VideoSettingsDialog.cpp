@@ -109,14 +109,6 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 
-    const QString vulkanResolutionMessage = MelonPrime::UiText::Tr(
-        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
-    ui->lblRendererNotes->setVisible(vulkanRenderer);
-    // Vulkan now composes every DS display state, so the note no longer
-    // mentions a forced software path outside matches. The 4x OSD issue is a
-    // separate unresolved defect and keeps its warning.
-    ui->lblRendererNotes->setText(vulkanRenderer ? vulkanResolutionMessage : QString());
-
     const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
     const QString vulkanBaseTooltip = vulkanProbe.Available
         ? MelonPrime::UiText::Tr(
@@ -126,13 +118,8 @@ void VideoSettingsDialog::setEnabled()
     rb3DVulkan->setToolTip(vulkanRendererDescription);
     rb3DVulkan->setWhatsThis(vulkanRendererDescription);
 
-    const QString resolutionBaseTooltip = MelonPrime::UiText::Tr(
+    const QString resolutionDescription = MelonPrime::UiText::Tr(
         "The resolution at which the 3D graphics will be rendered. Higher resolutions improve graphics quality when the main window is enlarged, but may also cause glitches.");
-    const QString vulkanResolutionWarning = MelonPrime::UiText::Tr(
-        "With Vulkan selected, 4x internal resolution can make in-game OSD text appear squashed.");
-    QString resolutionDescription = resolutionBaseTooltip;
-    if (vulkanRenderer)
-        resolutionDescription += QStringLiteral("\n") + vulkanResolutionWarning;
     ui->cbxGLResolution->setToolTip(resolutionDescription);
     ui->cbxGLResolution->setWhatsThis(resolutionDescription);
 #else
