@@ -12048,8 +12048,10 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             // cannot extrapolate at all: Interpolator::Interpolate only ever returns a
             // point between the span's own endpoints.
             const auto packUvPair = [](float a, float b) -> u32 {
+                // u/v always hold integral values here - they come from Vertex::TexCoords,
+                // an s16 - so a plain cast is exact and avoids a libm call per component.
                 const auto toU16 = [](float value) -> u32 {
-                    const s32 clamped = std::clamp<s32>(static_cast<s32>(std::lround(value)), -32768, 32767);
+                    const s32 clamped = std::clamp<s32>(static_cast<s32>(value), -32768, 32767);
                     return static_cast<u32>(static_cast<u16>(static_cast<s16>(clamped)));
                 };
                 return toU16(a) | (toU16(b) << 16u);
@@ -13193,8 +13195,10 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
             // there. This builder only runs for the non-graphics backend, but the vertex
             // layout is shared, so the field must never be left at zero.
             const auto packUvPair = [](float a, float b) -> u32 {
+                // u/v always hold integral values here - they come from Vertex::TexCoords,
+                // an s16 - so a plain cast is exact and avoids a libm call per component.
                 const auto toU16 = [](float value) -> u32 {
-                    const s32 clamped = std::clamp<s32>(static_cast<s32>(std::lround(value)), -32768, 32767);
+                    const s32 clamped = std::clamp<s32>(static_cast<s32>(value), -32768, 32767);
                     return static_cast<u32>(static_cast<u16>(static_cast<s16>(clamped)));
                 };
                 return toU16(a) | (toU16(b) << 16u);

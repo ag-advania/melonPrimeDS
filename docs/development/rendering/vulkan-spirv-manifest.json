@@ -121,8 +121,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_frag_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h",
       "flags": [],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
-      "header_sha256": "f4fc0839e7e56963c0ea92c5a7964f83d58ce73871561fec847bc534f49cddc5"
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
+      "header_sha256": "b4c5886a541f5eddac676bb10ada4a86efdcb71353069f6ff8465791bc5cf02a"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -132,8 +132,8 @@
       "flags": [
         "-DMELONDS_NO_FRAG_DEPTH=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
-      "header_sha256": "0a28589122216c8a39e48700860b73708f82da5a6e85bcc4853e5e6ebb0d3e83"
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
+      "header_sha256": "31e9c2babc8e53c7eae014568faefe7ced1454d3860626908961ff32d8753c8d"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -144,8 +144,8 @@
         "-DMELONDS_NO_FRAG_DEPTH=1",
         "-DMELONDS_DIRECT_TEXTURE_INDEXING=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
-      "header_sha256": "1fe92d2b58bf4c3dc679ee01506755f6ce68e79c9890ad2f23e8fe9388be81c8"
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
+      "header_sha256": "d619f39468c3f68b525f77da9e638c1ddfeb53b668a70e6c5174ce05fd7bb099"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -158,7 +158,7 @@
         "-DMELONDS_FAST_OPAQUE_MODULATE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
       "header_sha256": "c05b10785fa48ed0605144170f16818b282d1b0b2b84e933811c003186bffd75"
     },
     {
@@ -173,7 +173,7 @@
         "-DMELONDS_FAST_TOON_MODE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
       "header_sha256": "39673c42b7a8d52a5c63570c63e202912e9f9eed67f8f3f86c6739aeb4afb65f"
     },
     {
@@ -188,7 +188,7 @@
         "-DMELONDS_FAST_TOON_MODE=2",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
       "header_sha256": "5962d2fed64110b2bb90532e4cb5cc0dda3fb2e78b987f2bc7107d71def1ee0e"
     },
     {
@@ -204,7 +204,7 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
       "header_sha256": "8b1b7053352cb48b58fcd105046f44b3bb66ed9cbdfced51c045e3c63105d850"
     },
     {
@@ -220,7 +220,7 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "02961d1e01246af4de142ed3ec9e8f49ece5814ce4279e1cb3eb8398e7a993cd",
+      "source_sha256": "cde3abe9db37b004d694a90f77bcd69a3c835229984e84ad11b43b73ac63646a",
       "header_sha256": "d74fa5ffa5fad14840632981e5b9b08f4b82ee73fed237eefe6c8f4d349c59de"
     },
     {

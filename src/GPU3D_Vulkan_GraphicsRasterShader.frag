@@ -381,12 +381,13 @@ Color6A5 sampleTexture(uint polyAttr)
     bool mirrorT = (texParam & (1u << 19u)) != 0u;
 
 #if MELONDS_FAST_OPAQUE_MODULATE == 0
-    vec2 texcoordDdx = dFdx(fTexcoord);
-    vec2 texcoordDdy = dFdy(fTexcoord);
+    // TRI_FLAG_LINEAR is flat, so the whole quad takes the same path and the derivatives
+    // are safe to compute inside the branch. Perspective spans - most of the geometry
+    // during gameplay - then pay nothing for them.
     if ((flags & TRI_FLAG_LINEAR) != 0u)
     {
         vec2 gridDelta = dsSampleGridDelta();
-        texcoord += texcoordDdx * gridDelta.x + texcoordDdy * gridDelta.y;
+        texcoord += dFdx(fTexcoord) * gridDelta.x + dFdy(fTexcoord) * gridDelta.y;
 
         // The correction moves the sample point by up to renderScale render pixels, so
         // where a polygon edge does not land on a DS pixel boundary it can leave the
@@ -430,8 +431,10 @@ Color6A5 sampleTexture(uint polyAttr)
 
     uvec4 texel = fetchTextureArrayTexel(texArrayIndex, ivec3(sampleS, sampleT, int(texLayer)));
 #if MELONDS_FAST_OPAQUE_MODULATE == 0
-    if (usesPaletteUiAlphaHoleFill(flags, polyAttr, texParam)
-        && (texel.a & 0x1Fu) == 0u)
+    // Alpha first: it rejects on one bit test for every opaque texel, which is nearly all
+    // of them, instead of running the whole palette-UI predicate before finding out.
+    if ((texel.a & 0x1Fu) == 0u
+        && usesPaletteUiAlphaHoleFill(flags, polyAttr, texParam))
     {
         int leftS = wrapTexelCoord(sampleS - 1, int(texWidth), repeatS, mirrorS);
         int rightS = wrapTexelCoord(sampleS + 1, int(texWidth), repeatS, mirrorS);
