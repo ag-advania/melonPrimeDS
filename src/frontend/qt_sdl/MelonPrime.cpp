@@ -325,10 +325,18 @@ namespace MelonPrime {
             // fade reaches full black. One state-machine step per emulated
             // frame. The pointer bundle is resolved at ROM detect and the
             // update reads lazily; the steady state costs one u8 read.
-            m_flags.assign(
-                StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS,
-                BattleFlow::UpdateMatchBetweenBlackouts(
-                    m_matchBlackWindow, m_matchTransitionPtrs));
+            //
+            // Gated on the feature that consumes it: with
+            // 3D.ForceSoftwareOutsideMatch off nothing reads the window, so the
+            // state machine (and its transitionType read) is skipped. The
+            // window is re-bootstrapped on the off->on edge, so turning the
+            // feature on mid-match still attaches correctly.
+            if (UNLIKELY(m_forceSoftwareOutsideMatch)) {
+                m_flags.assign(
+                    StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS,
+                    BattleFlow::UpdateMatchBetweenBlackouts(
+                        m_matchBlackWindow, m_matchTransitionPtrs));
+            }
 
             // Join / rematch: legacy inGame rising edge, or unpause clearing INIT.
             // Rising edge always re-inits (lobby / rematch) even if RESTORED was left set.

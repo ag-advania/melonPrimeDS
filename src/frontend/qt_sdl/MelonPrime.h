@@ -240,9 +240,22 @@ namespace MelonPrime {
         // force-software-outside-match feature; the ROM's in-game flag is not
         // consulted. Called every frame by EmuThread's renderer-switch edge
         // check, so it stays inline: one flags load, no call.
+        // Only meaningful while IsForceSoftwareOutsideMatchEnabled() is true —
+        // the window state machine is frozen (and the bit cleared) while the
+        // feature is off.
         [[nodiscard]] FORCE_INLINE bool ShouldForceSoftwareRenderer() const {
             return !IsMatchBetweenBlackoutsActive();
         }
+        // Cached "3D.ForceSoftwareOutsideMatch". The match window has exactly
+        // one consumer (EmuThread's renderer switch), so while the feature is
+        // off nothing reads it and RunFrameHook skips the state machine
+        // entirely — that removes its per-frame transitionType MainRAM read.
+        [[nodiscard]] FORCE_INLINE bool IsForceSoftwareOutsideMatchEnabled() const {
+            return m_forceSoftwareOutsideMatch;
+        }
+        // Emulation-thread only; pushed by EmuThread whenever video settings
+        // are (re)applied, which is where the config value is already read.
+        COLD_FUNCTION void SetForceSoftwareOutsideMatchEnabled(bool enabled);
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     // True when the platform raw filter owns aim deltas. ScreenPanel uses
@@ -628,6 +641,9 @@ namespace MelonPrime {
         // resolved once per ROM detect.
         BattleFlow::MatchBlackWindowState m_matchBlackWindow{};
         BattleFlow::MatchTransitionPtrs m_matchTransitionPtrs{};
+        // Gate for the two above. Written only by
+        // SetForceSoftwareOutsideMatchEnabled (emulation thread, cold).
+        bool m_forceSoftwareOutsideMatch = false;
 
         // --- Warm: Frame advance + platform ---
         std::function<void()> m_frameAdvanceFunc;
