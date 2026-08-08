@@ -338,7 +338,6 @@ public:
         || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     // Optional structured-2D accelerated-renderer lifecycle hooks. Vulkan and
     // DX12 share these hooks; Software and OpenGL retain the no-op defaults.
-    virtual void VCount144() {}
     virtual void SetupAccelFrame() {}
     virtual void PrepareCaptureFrame() {}
     virtual void BeginCaptureFrame() {}

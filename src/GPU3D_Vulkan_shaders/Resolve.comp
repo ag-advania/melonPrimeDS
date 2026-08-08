@@ -1,0 +1,111 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+*/
+
+/*
+    Downscale the internal-resolution 3D image to the DS's native 256x192.
+
+    This is the *display capture* path and nothing else. Everything visible on
+    screen goes through Compositor.comp at the internal resolution; capture, by
+    contrast, has to stay at DS-native semantics because the captured pixels are
+    written back into real VRAM as 15-bit words and can be re-displayed,
+    re-captured or read by the game. VulkanRenderer3D::GetLine() reads this
+    result, and SoftRenderer::DoCapture() consumes it exactly like the software
+    3D renderer's own scanline.
+
+    Build define: Resolve.
+    Host dispatch: (256/8, 192/8, 1) = (32, 24, 1).
+
+    Why an alpha-weighted box filter rather than vkCmdBlitImage:
+
+      * a linear blit samples a 2x2 neighbourhood regardless of the scale
+        factor, so from 4x upward most of the supersampled pixels never
+        contribute at all;
+      * a blit filters colour and alpha independently, so a pixel the 3D layer
+        does not cover (alpha 0, colour whatever the clear left behind) drags
+        the colour of the pixels next to it toward the clear colour, darkening
+        or lightening every silhouette edge.
+
+    Weighting colour by alpha and averaging alpha separately is what the DX12
+    backend's Resolve does (DX12Shaders::Resolve in src/GPU3D_DX12_shaders.h);
+    the arithmetic below is transcribed from it term for term so the two
+    backends produce identical captures.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+#include "PresentationBuffers.glsl"
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= uint(NativeWidth) || id.y >= uint(NativeHeight))
+        return;
+
+    uint outOffset = id.x + id.y * uint(NativeWidth);
+
+    // At 1x the box is a single texel and the filter would be an identity for
+    // every covered pixel, but it would also zero the colour bits of pixels
+    // whose alpha is 0. Nothing downstream reads those bits -- both
+    // SoftRenderer2D and PrepareStructuredCaptureLine reject a 3D pixel with
+    // alpha 0 -- yet an exact copy is free here and keeps 1x bit-identical to
+    // what the previous vkCmdBlitImage path produced.
+    if (ScaleFactor == 1)
+    {
+        PresentationOutput[outOffset] = LoadFinalFB(ivec2(id));
+        return;
+    }
+
+    uint baseX = id.x * uint(ScaleFactor);
+    uint baseY = id.y * uint(ScaleFactor);
+
+    uint sumR = 0u, sumG = 0u, sumB = 0u, sumA = 0u;
+
+    for (uint sy = 0u; sy < uint(ScaleFactor); sy++)
+    {
+        for (uint sx = 0u; sx < uint(ScaleFactor); sx++)
+        {
+            uint texel = LoadFinalFB(ivec2(baseX + sx, baseY + sy));
+            uint a = (texel >> 24) & 0x1Fu;
+
+            // Weight colour by alpha so pixels the 3D layer does not cover
+            // cannot darken the edge of geometry that does.
+            sumR += Color6R(texel) * a;
+            sumG += Color6G(texel) * a;
+            sumB += Color6B(texel) * a;
+            sumA += a;
+        }
+    }
+
+    uint result = 0u;
+    if (sumA != 0u)
+    {
+        // Round to nearest rather than truncating: at high scale factors the
+        // truncation bias is a visible darkening of every supersampled edge.
+        uint halfSum = sumA >> 1;
+        uint samples = uint(ScaleFactor * ScaleFactor);
+        result = PackColor6(
+            (sumR + halfSum) / sumA,
+            (sumG + halfSum) / sumA,
+            (sumB + halfSum) / sumA,
+            min((sumA + (samples >> 1)) / samples, 31u));
+    }
+
+    PresentationOutput[outOffset] = result;
+}

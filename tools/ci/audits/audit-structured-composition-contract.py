@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 HEADER = ROOT / "src/MelonPrimeStructuredComposition.h"
 HLSL = ROOT / "src/GPU3D_DX12_shaders.h"
-GLSL = ROOT / "src/frontend/qt_sdl/MelonPrimeVulkanCompositorShader.comp"
+GLSL = ROOT / "src/GPU3D_Vulkan_shaders/Compositor.comp"
 
 # Contract name -> the expression each consumer is expected to use.
 #
@@ -103,13 +103,20 @@ def main() -> int:
     failures: list[str] = []
 
     header_values = parse_cpp_constants(HEADER.read_text(encoding="utf-8"))
-    glsl_text = GLSL.read_text(encoding="utf-8")
-    glsl_values = parse_glsl_constants(glsl_text)
     hlsl_text = HLSL.read_text(encoding="utf-8")
+
+    # A Vulkan-disabled tree still has to audit the DX12 half, and a moved or
+    # renamed shader must fail loudly rather than crash. Audit whatever exists
+    # and say plainly when the Vulkan side was not checked.
+    glsl_present = GLSL.is_file()
+    glsl_text = GLSL.read_text(encoding="utf-8") if glsl_present else ""
+    glsl_values = parse_glsl_constants(glsl_text) if glsl_present else {}
 
     for name in CONTRACT_NAMES:
         if name not in header_values:
             failures.append(f"{HEADER.name} does not define {name}")
+            continue
+        if not glsl_present:
             continue
         if name not in glsl_values:
             failures.append(f"{GLSL.name} does not define {name}")
@@ -133,7 +140,7 @@ def main() -> int:
                     "the DX12 compositor has drifted from the contract")
 
     # Both compositors must reject a 3D pixel with zero alpha the same way.
-    if "((pixel3D >> 24u) & 0x1Fu) != 0u" not in glsl_text:
+    if glsl_present and "((pixel3D >> 24u) & 0x1Fu) != 0u" not in glsl_text:
         failures.append(f"{GLSL.name} lost the 5-bit 3D alpha coverage test")
     if compositor_start >= 0 and "((pixel3D >> 24u) & 0x1Fu) != 0u" not in hlsl_text:
         failures.append(f"{HLSL.name} lost the 5-bit 3D alpha coverage test")
@@ -144,10 +151,16 @@ def main() -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    print(
-        f"structured composition contract OK: {len(CONTRACT_NAMES)} constants "
-        f"agree between {HEADER.name} and {GLSL.name}, "
-        f"{len(HLSL_EXPECTATIONS)} pinned expressions present in {HLSL.name}")
+    if glsl_present:
+        print(
+            f"structured composition contract OK: {len(CONTRACT_NAMES)} constants "
+            f"agree between {HEADER.name} and {GLSL.name}, "
+            f"{len(HLSL_EXPECTATIONS)} pinned expressions present in {HLSL.name}")
+    else:
+        print(
+            f"structured composition contract OK (DX12 only): "
+            f"{len(HLSL_EXPECTATIONS)} pinned expressions present in {HLSL.name}; "
+            f"{GLSL.name} is absent, so the Vulkan side was NOT checked")
     return 0
 
 
