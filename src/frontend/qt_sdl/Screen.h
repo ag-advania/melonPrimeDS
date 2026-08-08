@@ -116,7 +116,9 @@ public:
     // settings dialog keeps emulation paused. The emulation thread is stopped
     // for the whole session, so anything it would normally reconcile (cursor
     // mode) and anything that stops on pause (Vulkan presentation) has to be
-    // driven from here instead.
+    // driven from here instead. The native-surface backends (Vulkan, DX12)
+    // additionally have to keep presenting while paused, or the editor overlay
+    // never reaches the screen at all.
     virtual void setHudEditModeActive(bool active);
 #endif
 
@@ -408,6 +410,9 @@ public:
 
     bool initDX12();
     void drawScreen() override;
+#ifdef MELONPRIME_CUSTOM_HUD
+    void setHudEditModeActive(bool active) override;
+#endif
 
 protected:
     void paintEvent(QPaintEvent* event) override;

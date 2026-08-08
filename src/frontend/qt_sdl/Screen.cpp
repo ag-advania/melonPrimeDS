@@ -1831,6 +1831,9 @@ struct ScreenPanelDX12::DX12State
     QImage logicalFrame;
     QImage physicalFrame;
     std::atomic_bool surfaceVisibleRequested{false};
+    // Set by the GUI thread while the Custom HUD on-screen editor owns the
+    // panel, read by the emulation thread's paused draw pass.
+    std::atomic_bool hudEditLivePresentation{false};
     bool initialized = false;
     bool runtimeFailureReported = false;
 };
@@ -1935,6 +1938,17 @@ void ScreenPanelDX12::reportRuntimeFailure(const char* reason)
     }
 }
 
+#ifdef MELONPRIME_CUSTOM_HUD
+void ScreenPanelDX12::setHudEditModeActive(bool active)
+{
+    ScreenPanel::setHudEditModeActive(active);
+    if (!dx12)
+        return;
+
+    dx12->hudEditLivePresentation.store(active, std::memory_order_relaxed);
+}
+#endif
+
 void ScreenPanelDX12::drawScreen()
 {
     refreshClipForGameStateChange();
@@ -1948,7 +1962,24 @@ void ScreenPanelDX12::drawScreen()
         QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
         return;
     }
-    if (!emuThread->emuIsRunning())
+
+    // Paused normally means "leave the swapchain showing the last presented
+    // image": nothing new is emulated, and the native child keeps the frame up
+    // even while a modal dialog is exposed.
+    //
+    // The Custom HUD on-screen editor is the exception. The settings dialog
+    // pauses emulation before handing the panel to the editor, so this pass is
+    // the only thing that can ever put the editor overlay on screen; without
+    // this the DX12 panel just keeps presenting the frozen pre-pause frame and
+    // the editor is invisible. Same contract as ScreenPanelVulkan; the
+    // software/OpenGL panels gate on emuIsActive() and keep drawing anyway.
+#ifdef MELONPRIME_CUSTOM_HUD
+    const bool hudEditLivePresentation =
+        dx12->hudEditLivePresentation.load(std::memory_order_relaxed);
+#else
+    constexpr bool hudEditLivePresentation = false;
+#endif
+    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
         return;
 
     auto* nds = emuInstance->getNDS();
