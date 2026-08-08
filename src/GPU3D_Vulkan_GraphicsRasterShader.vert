@@ -34,7 +34,9 @@ layout(location = 2) noperspective out float fDepthLinear;
 layout(location = 3) smooth out float fDepthPerspective;
 layout(location = 4) flat out uvec4 fTriInfo0;
 layout(location = 5) flat out uvec4 fTriInfo1;
-layout(location = 6) flat out uvec2 fUvBounds;
+// Unpacked here rather than in the fragment stage: this runs three times per triangle
+// instead of once per covered fragment.
+layout(location = 6) flat out vec4 fUvBounds;
 
 void main()
 {
@@ -60,5 +62,9 @@ void main()
     fTexcoord = vTexcoord;
     fTriInfo0 = vTriInfo0In;
     fTriInfo1 = uvec4(vTriInfo1In, 0u);
-    fUvBounds = vUvBoundsIn;
+    fUvBounds = vec4(
+        float(bitfieldExtract(int(vUvBoundsIn.x), 0, 16)),
+        float(bitfieldExtract(int(vUvBoundsIn.x), 16, 16)),
+        float(bitfieldExtract(int(vUvBoundsIn.y), 0, 16)),
+        float(bitfieldExtract(int(vUvBoundsIn.y), 16, 16)));
 }
