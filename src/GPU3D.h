@@ -342,7 +342,6 @@ public:
     virtual void SetupAccelFrame() {}
     virtual void PrepareCaptureFrame() {}
     virtual void BeginCaptureFrame() {}
-    virtual void SetCaptureScreenSwapHint(bool screenSwap) { (void)screenSwap; }
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
 #endif
 

@@ -52,7 +52,6 @@ SHADERS = [
     ("src/GPU3D_Vulkan_GraphicsEdgeFogShader.frag", "frag", "melonDS_gpu3d_vulkan_graphics_edge_fog_frag_spv", "src/GPU3D_Vulkan_GraphicsEdgeFogShaderData.h", []),
     ("src/GPU3D_Vulkan_GraphicsFogShader.frag", "frag", "melonDS_gpu3d_vulkan_graphics_fog_frag_spv", "src/GPU3D_Vulkan_GraphicsFogShaderData.h", []),
     ("src/frontend/qt_sdl/MelonPrimeVulkanCompositorShader.comp", "comp", "melonDS_android_vulkan_compositor_comp_spv", "src/frontend/qt_sdl/MelonPrimeVulkanCompositorShaderData.h", []),
-    ("src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShader.comp", "comp", "melonDS_android_vulkan_accumulate_3d_comp_spv", "src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShaderData.h", []),
     ("src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenter.vert", "vert", "melonDS_android_vulkan_surface_presenter_vert_spv", "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenterVertexShaderData.h", []),
     ("src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenter.frag", "frag", "melonDS_android_vulkan_surface_presenter_frag_spv", "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenterFragmentShaderData.h", []),
 ]
