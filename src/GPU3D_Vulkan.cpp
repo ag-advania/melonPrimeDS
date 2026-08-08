@@ -12056,20 +12056,12 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                 };
                 return toU16(a) | (toU16(b) << 16u);
             };
-            // Only linear spans take the DS-grid correction, so only they can extrapolate
-            // and only they read these bounds. Everything else ships the full s16 range,
-            // which makes the fragment clamp inert without costing the min/max here.
-            const bool triangleUsesUvBounds = (triangle.flags & kTriangleFlagLinear) != 0u;
-            const u32 uvBoundsMin = triangleUsesUvBounds
-                ? packUvPair(
-                    std::min({vertex0.u, vertex1.u, vertex2.u}),
-                    std::min({vertex0.v, vertex1.v, vertex2.v}))
-                : 0x80008000u;
-            const u32 uvBoundsMax = triangleUsesUvBounds
-                ? packUvPair(
-                    std::max({vertex0.u, vertex1.u, vertex2.u}),
-                    std::max({vertex0.v, vertex1.v, vertex2.v}))
-                : 0x7FFF7FFFu;
+            const float uvMinU = std::min({vertex0.u, vertex1.u, vertex2.u});
+            const float uvMaxU = std::max({vertex0.u, vertex1.u, vertex2.u});
+            const float uvMinV = std::min({vertex0.v, vertex1.v, vertex2.v});
+            const float uvMaxV = std::max({vertex0.v, vertex1.v, vertex2.v});
+            const u32 uvBoundsMin = packUvPair(uvMinU, uvMinV);
+            const u32 uvBoundsMax = packUvPair(uvMaxU, uvMaxV);
             const auto appendGraphicsVertex = [&](const TriangleVertexData& vertexData) {
                 GraphicsVertexGpu graphicsVertex{};
                 graphicsVertex.x = vertexData.x;
