@@ -162,7 +162,7 @@ jobs:
         set -e
         test "$status" -eq 0 -o "$status" -eq 124
         grep -F 'VulkanContext: instance API=1.1 validation=1' build-validation/vulkan-validation.log
-        grep -F 'MelonPrimeVulkanOutput: sync path initialized' build-validation/vulkan-validation.log
+        grep -F 'MelonPrimeVulkanOutput: initialized' build-validation/vulkan-validation.log
         ! grep -E 'VUID-|VulkanValidation:.*(ERROR|Error)' build-validation/vulkan-validation.log
 
     # The smoke test above redirects the run to a log file it asserts

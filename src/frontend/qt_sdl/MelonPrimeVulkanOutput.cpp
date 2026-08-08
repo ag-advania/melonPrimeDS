@@ -160,6 +160,16 @@ bool MelonPrimeVulkanOutput::init()
 
     initialized = true;
     timelineValue = 0;
+    // init() only runs on (re)acquisition -- panel creation and renderer-
+    // transition recovery, not per frame -- so an Info line here is not a
+    // per-frame log. The Linux CI Vulkan smoke test (no ROM, no swapchain)
+    // asserts on this line as its only positive signal that the compositor
+    // subsystem, not just VulkanContext, finished initializing.
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "MelonPrimeVulkanOutput: initialized (timeline=%d)",
+        useTimelineSemaphores ? 1 : 0
+    );
     return true;
 }
 
