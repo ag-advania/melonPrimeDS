@@ -412,8 +412,8 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
                         int rowIdx = vi + scrollOfs;
                         if (rowIdx >= totalRows) break;
                         float rowY = panelInnerY + vi * kPropRowH;
-                        float ctrlX = rowX + s_dynLabelW;
-                        float ctrlW = s_dynCtrlW;
+                        float ctrlX = rowX + DynLabelW();
+                        float ctrlW = DynCtrlW();
                         QRectF rowRect(ctrlX, rowY, ctrlW, kPropRowH);
                         if (!rowRect.contains(ds)) continue;
 

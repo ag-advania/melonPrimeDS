@@ -322,6 +322,16 @@ struct CustomHudConfigState {
     float editOriginX = 0.0f;
     float editOriginY = 0.0f;
     int editPropScroll = 0;
+    // Dynamic per-element props panel widths (edit mode). The kProp* layout
+    // constants live in MelonPrimeHudConfigOnScreenUnity.inc, which is included
+    // after this fragment, so they cannot be used as member initializers here:
+    // dynWidthsForElem == kDynWidthsNotComputed (-2) means "never computed" and
+    // DynPropsPanelW() falls back to the static kPropPanelW until the first
+    // RecomputeDynamicPanelWidths() call fills these in.
+    float dynLabelW = 0.0f;
+    float dynCtrlW = 0.0f;
+    int dynWidthsForElem = -2;
+    UiText::MenuLangId dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
     bool editMode = false;
     QRectF editRects[14];
     float editHudScale = 1.0f;
@@ -465,6 +475,10 @@ std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
 #define s_editOriginX (ActiveHudConfigState().editOriginX)
 #define s_editOriginY (ActiveHudConfigState().editOriginY)
 #define s_editPropScroll (ActiveHudConfigState().editPropScroll)
+#define s_dynLabelW (ActiveHudConfigState().dynLabelW)
+#define s_dynCtrlW (ActiveHudConfigState().dynCtrlW)
+#define s_dynWidthsForElem (ActiveHudConfigState().dynWidthsForElem)
+#define s_dynWidthsForLang (ActiveHudConfigState().dynWidthsForLang)
 #define s_editMode (ActiveHudConfigState().editMode)
 #define s_editRects (ActiveHudConfigState().editRects)
 #define s_editHudScale (ActiveHudConfigState().editHudScale)
