@@ -2140,7 +2140,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     }
 
     DispatchUniform constants{};
-    constants.CurVariant = GPU3D.RenderXPos;
+    // The 3D X scroll now travels per scanline in the structured line
+    // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
     SetDispatchConstants(list, constants);
     list->SetPipelineState(PipelineCompositor.Get());

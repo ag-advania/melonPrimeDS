@@ -424,6 +424,11 @@ private:
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace melonDS
+{
+class VulkanRenderer;
+}
+
 class ScreenPanelVulkan final : public ScreenPanel
 {
 public:
@@ -466,6 +471,12 @@ private:
     // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
     // it without indenting the whole function.
     void drawScreenFrame();
+    // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
+    // on the emulation thread, because that is the only point where this
+    // frame's structured 2D metadata and this frame's 3D image coexist.
+    void composeFrameAtVBlank();
+    static void ComposeInstanceFrameAtVBlank(EmuInstance* instance);
+    void installVulkanComposeHook(melonDS::VulkanRenderer* renderer);
     void prepareForRendererTransition();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);

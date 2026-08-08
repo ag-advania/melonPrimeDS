@@ -2102,7 +2102,9 @@ struct ScreenPanelVulkan::VulkanState
     MelonPrime::MelonPrimeVulkanFrameQueuePolicy framePolicy;
     MelonPrime::MelonPrimeVulkanOutput output;
     MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
-    MelonPrime::SoftPackedFrameSnapshot snapshot;
+    // Published by the VBlank compose pass, read by the presentation pass.
+    // Both run on the emulation thread; the atomic only documents the handoff.
+    std::atomic<bool> nativeMenuHeld{false};
     QMutex layoutLock;
     std::vector<MelonPrime::VulkanPresentRegion> regions;
     std::uint32_t surfaceWidth = 0;
@@ -2238,99 +2240,6 @@ std::vector<ScreenPanelVulkan*>& VulkanPanelRegistry()
     return panels;
 }
 
-void FillStructuredPackedScreen(
-    const u32* sourcePlane0,
-    const u32* sourcePlane1,
-    const u32* sourceControl,
-    const u32* sourceLineMeta,
-    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane0,
-    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& plane1,
-    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kPixelCount>& control,
-    std::array<u32, MelonPrime::SoftPackedFrameSnapshot::kLineCount>& lineMeta,
-    MelonPrime::SoftPackedScreenStats& stats)
-{
-    constexpr std::size_t pixelCount = MelonPrime::SoftPackedFrameSnapshot::kPixelCount;
-    std::memcpy(plane0.data(), sourcePlane0, pixelCount * sizeof(u32));
-    std::memcpy(plane1.data(), sourcePlane1, pixelCount * sizeof(u32));
-    std::memcpy(control.data(), sourceControl, pixelCount * sizeof(u32));
-    std::memcpy(lineMeta.data(), sourceLineMeta, lineMeta.size() * sizeof(u32));
-    stats = {};
-    for (std::size_t y = 0; y < lineMeta.size(); ++y)
-    {
-        const u32 meta = lineMeta[y];
-        const u32 displayMode = (meta >> 16u) & 0x3u;
-        stats.DisplayModeCounts[displayMode]++;
-        if ((meta & (1u << 21u)) != 0)
-            stats.RegularCaptureUses3dLines++;
-        if (displayMode == 2u && (meta & (1u << 22u)) != 0)
-            stats.VramCaptureUses3dLines++;
-        if ((meta & (1u << 18u)) != 0)
-            stats.ForceLive3dCompMode7Lines++;
-        const int xOffset = static_cast<int>((meta >> 24u) & 0xFFu)
-            - ((((meta >> 16u) & 0x80u) != 0u) ? 256 : 0);
-        if (!stats.HasOffsets)
-        {
-            stats.MinXOffset = xOffset;
-            stats.MaxXOffset = xOffset;
-            stats.HasOffsets = true;
-        }
-        else
-        {
-            stats.MinXOffset = std::min(stats.MinXOffset, xOffset);
-            stats.MaxXOffset = std::max(stats.MaxXOffset, xOffset);
-        }
-    }
-    for (std::size_t index = 0; index < pixelCount; ++index)
-    {
-        const bool plane0Useful = plane0[index] != 0u && plane0[index] != 0x20000000u;
-        const bool plane1Useful = plane1[index] != 0u && plane1[index] != 0x20000000u;
-        if (plane0Useful)
-        {
-            stats.Plane0UsefulPixels++;
-            if ((plane0[index] & 0x00FFFFFFu) != 0u)
-                stats.Plane0VisiblePixels++;
-            else
-                stats.Plane0OpaqueBlackPixels++;
-        }
-        if (plane1Useful)
-        {
-            stats.Plane1UsefulPixels++;
-            if ((plane1[index] & 0x00FFFFFFu) != 0u)
-                stats.Plane1VisiblePixels++;
-            else
-                stats.Plane1OpaqueBlackPixels++;
-        }
-        const u32 controlAlpha = control[index] >> 24u;
-        const u32 compositionMode = controlAlpha & 0xFu;
-        if (compositionMode < stats.CompModeCounts.size())
-            stats.CompModeCounts[compositionMode]++;
-        const bool structuredSlot = (controlAlpha & 0x40u) != 0u;
-        const bool structuredAbove = structuredSlot && (controlAlpha & 0x80u) != 0u;
-        const bool structured2DOnly = !structuredSlot && (controlAlpha & 0x80u) != 0u;
-        if ((controlAlpha & 0x20u) != 0u)
-            stats.ProtectedBlackPixels++;
-        if (structuredSlot)
-            stats.StructuredSlotPixels++;
-        if (structuredAbove)
-        {
-            stats.StructuredAbovePixels++;
-            if (plane1Useful && (plane1[index] & 0x00FFFFFFu) != 0u)
-                stats.StructuredAboveVisiblePixels++;
-            else if (plane1Useful)
-                stats.StructuredAboveBlackPixels++;
-        }
-        if (structured2DOnly)
-        {
-            stats.Structured2DOnlyPixels++;
-            if (plane0Useful && (plane0[index] & 0x00FFFFFFu) != 0u)
-                stats.Structured2DOnlyVisiblePixels++;
-        }
-        if (compositionMode == 4u
-            && plane0[index] == 0x20000000u
-            && plane1[index] == 0x20000000u)
-            stats.CaptureBackedComp4Pixels++;
-    }
-}
 }
 
 ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
@@ -2362,8 +2271,9 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     // Vulkan on a separate surface above the panel, and there the attribute is
     // actively harmful: it takes the panel off Qt's backing store, and this
     // panel needs QPainter for the splash screen, the software-rendered screens
-    // (Vulkan runs the software renderer outside matches) and the OSD, all of
-    // which go through paintEvent(). Qt's macOS backend has no on-screen paint
+    // (still reachable through 3D.ForceSoftwareOutsideMatch and while the
+    // renderer is switching) and the OSD, all of which go through
+    // paintEvent(). Qt's macOS backend has no on-screen paint
     // support at all, and native Wayland has none either -- keeping it set on
     // Linux is what left the last presented Vulkan frame stuck on screen when
     // the post-match recap switched back to the software renderer.
@@ -2371,8 +2281,11 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(screenGetMinSize());
 
+    // One composed frame per emulated frame, presented immediately. Stealing a
+    // frame back off the present queue would re-enter one whose compositor
+    // dispatch is still reading the shared structured planes.
     vulkan->framePolicy.MaxBacklogDepth = 1;
-    vulkan->framePolicy.AllowStealPending = true;
+    vulkan->framePolicy.AllowStealPending = false;
     vulkan->framePolicy.AllowPreviousFrameReuse = true;
     vulkan->framePolicy.PreferOldestFrame = false;
 
@@ -2466,7 +2379,6 @@ void ScreenPanelVulkan::prepareForRendererTransition()
     vulkan->output.shutdown();
 
     vulkan->frameQueue.clear();
-    vulkan->snapshot.clear();
     vulkan->consecutiveFailures = 0;
     vulkan->runtimeFailureReported = false;
 
@@ -2750,7 +2662,7 @@ bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
         vulkan->presenter.Shutdown();
         vulkan->presenterInitialized = false;
         vulkan->frameQueue.clear();
-        vulkan->output.invalidateTemporalHistory();
+        vulkan->output.releaseFrameReferences();
     }
 
     if (!published)
@@ -3058,6 +2970,112 @@ void ScreenPanelVulkan::finishVulkanLowLatencyFrame()
     }
 }
 
+void ScreenPanelVulkan::ComposeInstanceFrameAtVBlank(EmuInstance* instance)
+{
+    if (instance == nullptr)
+        return;
+
+    // Go through the registry rather than capturing a panel pointer: a window
+    // can be closed while the renderer lives on, and every window of this
+    // instance needs its own composed frame from the same emulated frame.
+    std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
+    for (ScreenPanelVulkan* panel : VulkanPanelRegistry())
+    {
+        if (panel == nullptr || panel->emuInstance != instance)
+            continue;
+        panel->composeFrameAtVBlank();
+    }
+}
+
+void ScreenPanelVulkan::installVulkanComposeHook(melonDS::VulkanRenderer* renderer)
+{
+    if (renderer == nullptr || renderer->HasVBlankHook())
+        return;
+
+    EmuInstance* instance = emuInstance;
+    renderer->SetVBlankHook([instance]() { ComposeInstanceFrameAtVBlank(instance); });
+}
+
+void ScreenPanelVulkan::composeFrameAtVBlank()
+{
+    // Emulation thread, at VCount 192. The structured planes were completed at
+    // scanline 191 and the 3D color target still holds the render that belongs
+    // to them; VCount 215 is about to start the next one into the same image.
+    if (!vulkan || !vulkan->initialized || !vulkan->output.isInitialized())
+        return;
+
+    auto* nds = emuInstance->getNDS();
+    if (!nds)
+        return;
+
+    auto* renderer = dynamic_cast<melonDS::VulkanRenderer*>(&nds->GPU.GetRenderer());
+    melonDS::VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
+    if (!renderer || !renderer3D)
+        return;
+
+    SoftRenderer::StructuredVulkanFrameView structuredView{};
+    if (!renderer->GetStructuredVulkanFrame(structuredView) || !structuredView.Valid)
+    {
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan 2D source");
+        return;
+    }
+    vulkan->nativeMenuHeld.store(structuredView.NativeMenuHeld, std::memory_order_relaxed);
+
+    const int configuredScale = std::clamp(
+        emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
+    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
+        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
+        : static_cast<u32>(configuredScale);
+    const u32 outputWidth = 256u * rendererScale;
+    const u32 outputHeight = 386u * rendererScale;
+
+    MelonPrime::VulkanFrame* renderFrame = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
+    if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
+    {
+        if (renderFrame)
+            vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        ++vulkan->consecutiveFailures;
+        return;
+    }
+
+    // Everything the compositor sees comes from this one emulated frame. The
+    // producer already resolved which engine owns which LCD, so there is no
+    // screen-swap value to pass and no frame history to maintain.
+    MelonPrime::StructuredCompositionFrame structured{};
+    for (std::size_t screen = 0; screen < 2u; ++screen)
+    {
+        for (std::size_t plane = 0; plane < 3u; ++plane)
+            structured.Plane[screen][plane] = structuredView.Plane[screen][plane];
+        structured.LineMeta[screen] = structuredView.LineMeta[screen];
+    }
+    structured.Has3D = !nds->GPU.GPU3D.AbortFrame;
+    structured.Generation = structuredView.Generation;
+
+    // Composition is always nearest and deterministic. Screen.Filter is a
+    // presentation preference and is applied once, by the presenter, to the
+    // finished image -- the same place the software and OpenGL paths apply it.
+    MelonPrime::VulkanCompositionInputs inputs{};
+    const bool composed = vulkan->output.prepareFrameForPresentation(renderFrame, structured)
+        && vulkan->output.buildCompositionInputs(
+            renderFrame,
+            *renderer3D,
+            static_cast<int>(rendererScale),
+            structured.Has3D,
+            structured.Generation,
+            inputs)
+        && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
+    if (!composed)
+    {
+        vulkan->frameQueue.discardRenderedFrame(renderFrame);
+        if (vulkan->consecutiveFailures++ == 0)
+            Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
+        return;
+    }
+
+    vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
+}
+
 void ScreenPanelVulkan::drawScreenFrame()
 {
     refreshClipForGameStateChange();
@@ -3073,7 +3091,7 @@ void ScreenPanelVulkan::drawScreenFrame()
             vulkan->presenter.Shutdown();
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
-            vulkan->output.invalidateTemporalHistory();
+            vulkan->output.releaseFrameReferences();
         }
         {
             QMutexLocker bufferLock(&vulkan->softwareBufferLock);
@@ -3126,7 +3144,7 @@ void ScreenPanelVulkan::drawScreenFrame()
             vulkan->presenter.Shutdown();
             vulkan->presenterInitialized = false;
             vulkan->frameQueue.clear();
-            vulkan->output.invalidateTemporalHistory();
+            vulkan->output.releaseFrameReferences();
         }
         {
             QMutexLocker bufferLock(&vulkan->softwareBufferLock);
@@ -3178,18 +3196,15 @@ void ScreenPanelVulkan::drawScreenFrame()
         return;
     }
 
-    SoftRenderer::StructuredVulkanFrameView structuredView{};
-    if (!renderer->GetStructuredVulkanFrame(structuredView)
-        || !structuredView.Valid)
-    {
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan 2D source");
-        return;
-    }
+    // Composition itself runs from the renderer's VBlank hook; this pass only
+    // presents whatever that produced. Installing the hook here rather than at
+    // renderer creation keeps it tied to a panel that is actually drawing.
+    installVulkanComposeHook(renderer);
 
 #ifdef MELONPRIME_CUSTOM_HUD
     auto* mp = emuThread->GetMelonPrimeCore();
-    const bool vulkanNativeMenuHeld = structuredView.NativeMenuHeld;
+    const bool vulkanNativeMenuHeld =
+        vulkan->nativeMenuHeld.load(std::memory_order_relaxed);
 #else
     const bool vulkanNativeMenuHeld = false;
 #endif
@@ -3238,88 +3253,7 @@ void ScreenPanelVulkan::drawScreenFrame()
     const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
         ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
         : static_cast<u32>(configuredScale);
-    const u32 outputWidth = 256u * rendererScale;
-    const u32 outputHeight = 386u * rendererScale;
 
-    MelonPrime::VulkanFrame* renderFrame = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-    if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
-    {
-        if (renderFrame)
-            vulkan->frameQueue.discardRenderedFrame(renderFrame);
-        ++vulkan->consecutiveFailures;
-        return;
-    }
-
-    auto& snapshot = vulkan->snapshot;
-    snapshot.clear();
-    snapshot.frameId = renderFrame->frameId;
-    snapshot.frontBufferLatched = 0;
-    snapshot.screenSwapLatched = nds->GPU.ScreenSwap;
-    snapshot.valid = true;
-    // The held native MPH menu changes DS display/capture routing without a
-    // stable compositor cadence. Never let its frame select a temporal source:
-    // old VRAM-backed content can otherwise be promoted into Vulkan history.
-    snapshot.currentFrameOnly = vulkanNativeMenuHeld;
-    FillStructuredPackedScreen(
-        structuredView.Plane[0][0],
-        structuredView.Plane[0][1],
-        structuredView.Plane[0][2],
-        structuredView.LineMeta[0],
-        snapshot.packedTopPlane0,
-        snapshot.packedTopPlane1,
-        snapshot.packedTopControl,
-        snapshot.packedTopLineMeta,
-        snapshot.topScreenStats);
-    FillStructuredPackedScreen(
-        structuredView.Plane[1][0],
-        structuredView.Plane[1][1],
-        structuredView.Plane[1][2],
-        structuredView.LineMeta[1],
-        snapshot.packedBottomPlane0,
-        snapshot.packedBottomPlane1,
-        snapshot.packedBottomControl,
-        snapshot.packedBottomLineMeta,
-        snapshot.bottomScreenStats);
-    if (structuredView.HasCapture3DSource
-        && structuredView.Capture3DSource != nullptr
-        && structuredView.CaptureLineUses3D != nullptr)
-    {
-        std::memcpy(
-            snapshot.capture3dSourceDsFrame.data(),
-            structuredView.Capture3DSource,
-            snapshot.capture3dSourceDsFrame.size() * sizeof(u32));
-        std::memcpy(
-            snapshot.captureLineUses3dMask.data(),
-            structuredView.CaptureLineUses3D,
-            snapshot.captureLineUses3dMask.size() * sizeof(u8));
-        snapshot.hasCapture3dSource = true;
-    }
-
-    MelonPrime::VulkanCompositionInputs inputs{};
-    const MelonPrime::VulkanFilterMode filtering = filter
-        ? MelonPrime::VulkanFilterMode::Linear
-        : MelonPrime::VulkanFilterMode::Nearest;
-    const bool composed = vulkan->output.prepareFrameForPresentation(
-            renderFrame, nds->GPU, 0, snapshot.screenSwapLatched, snapshot, *renderer3D)
-        && vulkan->output.buildCompositionInputs(
-            renderFrame,
-            *renderer3D,
-            static_cast<int>(rendererScale),
-            filtering,
-            false,
-            false,
-            false,
-            inputs)
-        && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
-    if (!composed)
-    {
-        vulkan->frameQueue.discardRenderedFrame(renderFrame);
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
-        return;
-    }
-
-    vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
     MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(
         vulkan->framePolicy, std::nullopt);
     if (!presentFrame)
@@ -3456,9 +3390,8 @@ void ScreenPanelVulkan::drawScreenFrame()
     if (vulkan->presenter.Present(
             presentFrame,
             vulkan->output,
-            inputs,
-            outputWidth,
-            outputHeight,
+            filter ? MelonPrime::VulkanFilterMode::Linear : MelonPrime::VulkanFilterMode::Nearest,
+            rendererScale,
             regions,
             hasPresentationOverlay ? &overlay : nullptr))
     {
