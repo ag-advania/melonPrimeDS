@@ -283,6 +283,43 @@ namespace MelonPrime {
 #endif
     }
 
+    // Called by EmuThread on every video-settings (re)apply, i.e. exactly where
+    // 3D.ForceSoftwareOutsideMatch is already read. Owns the whole feature
+    // boundary transition so the frame loop only ever sees a cached bool.
+    COLD_FUNCTION void MelonPrimeCore::SetForceSoftwareOutsideMatchEnabled(bool enabled)
+    {
+        if (m_forceSoftwareOutsideMatch == enabled)
+            return;
+
+        m_forceSoftwareOutsideMatch = enabled;
+        // Either direction invalidates the window: while off the state machine
+        // was frozen, so its phase describes a moment that has since passed.
+        m_matchBlackWindow = {};
+
+        if (!enabled) {
+            // Nothing consumes the bit now, and the caller re-resolves the
+            // renderer on this same pass; leave it clear so a later re-enable
+            // cannot inherit a stale "in match" answer.
+            m_flags.clear(StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS);
+            return;
+        }
+
+        // Off->on: classify the current frame immediately (the bootstrap path
+        // handles attaching mid-match) so the caller's renderer decision on
+        // this very pass is already correct. Without this, enabling the option
+        // during a match would force Software for one frame and then bounce the
+        // renderer back on the next edge.
+        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
+            m_flags.assign(
+                StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS,
+                BattleFlow::UpdateMatchBetweenBlackouts(
+                    m_matchBlackWindow, m_matchTransitionPtrs));
+        }
+        else {
+            m_flags.clear(StateFlags::BIT_MATCH_BETWEEN_BLACKOUTS);
+        }
+    }
+
     COLD_FUNCTION void MelonPrimeCore::ApplyConfigReload()
     {
         const bool oldJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);

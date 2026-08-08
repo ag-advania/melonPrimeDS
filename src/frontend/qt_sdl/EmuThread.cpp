@@ -400,16 +400,20 @@ void EmuThread::run()
             // pre-match and post-match full blacks, not the patch lifecycle or
             // the ROM's in-game flag. Uses the same predicate as the switch
             // below so the edge and the decision cannot diverge.
-            const bool rendererIsHardwarePeriod =
-                !melonPrime->ShouldForceSoftwareRenderer();
-            if (UNLIKELY(rendererIsHardwarePeriod != rendererWasHardwarePeriod))
+            //
+            // Only watched while the option is on: off, MelonPrimeCore freezes
+            // the match window (no per-frame MainRAM read) and this edge could
+            // never do anything anyway. The cached flag is pushed from the
+            // videoSettingsDirty block below, which also resyncs the baseline.
+            if (melonPrime->IsForceSoftwareOutsideMatchEnabled())
             {
-                rendererWasHardwarePeriod = rendererIsHardwarePeriod;
-                const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
-                bool forceSoftwareOutsideMatch =
-                    globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
-                if (forceSoftwareOutsideMatch)
+                const bool rendererIsHardwarePeriod =
+                    !melonPrime->ShouldForceSoftwareRenderer();
+                if (UNLIKELY(rendererIsHardwarePeriod != rendererWasHardwarePeriod))
+                {
+                    rendererWasHardwarePeriod = rendererIsHardwarePeriod;
                     videoSettingsDirty = true;
+                }
             }
 #endif
         }
@@ -426,6 +430,16 @@ void EmuThread::run()
             const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
             bool forceSoftwareOutsideMatch =
                 globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+            // Single point where this option enters the emulation thread. The
+            // core owns the on/off transition (window bootstrap on enable,
+            // freeze + clear on disable) and classifies the current frame right
+            // away, so the ShouldForceSoftwareRenderer() calls below already
+            // see the correct answer on the pass that turned the option on.
+            melonPrime->SetForceSoftwareOutsideMatchEnabled(forceSoftwareOutsideMatch);
+            // Resync the edge baseline: this pass applies the renderer that
+            // matches the current window state, so the next frame must only
+            // report a real change.
+            rendererWasHardwarePeriod = !melonPrime->ShouldForceSoftwareRenderer();
             if (!useOpenGL)
             {
                 videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
