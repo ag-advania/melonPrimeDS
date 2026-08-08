@@ -409,22 +409,47 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_include_directories(melonDS PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
     target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
 
+    # New Vulkan backend sources are added here as the clean-room rewrite lands.
+    #
+    # These live in src/ and belong to the core target, like the DX12 and Metal
+    # backends: they are compiled into the emulator core, not the Qt frontend.
+    # The Vulkan loader is never linked -- every entry point is resolved at
+    # runtime by VulkanLoader -- so no library is added alongside them.
     target_sources(core PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanCommon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanLoader.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanFeatureProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanContext.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_AcceleratedFrontend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDevice.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanMemory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDescriptors.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)
-    target_sources(melonDS PRIVATE
-        MelonPrimeVulkanFeatureCheck.cpp
-        MelonPrimeVulkanFrameQueue.cpp
-        MelonPrimeVulkanOutput.cpp
-        MelonPrimeVulkanSurfacePresenter.cpp
-        MelonPrimeVulkanSurfaceWin32.cpp
-        MelonPrimeVulkanSurfaceLinux.cpp
-        MelonPrimeVulkanSurfaceHostLinux.cpp
-        MelonPrimeVulkanSurfaceStub.cpp)
+
+    # Pregenerated SPIR-V for the compute rasterizer. The .comp/.glsl sources
+    # under GPU3D_Vulkan_shaders/ are inputs to the offline generator
+    # (tools/vulkan/compile-shaders.py) and are deliberately NOT listed here:
+    # the SPIR-V words are committed, so the build has no glslang dependency.
+    # Blobs are split one translation unit per stage because a single header
+    # would be ~8 MB that every consumer would re-parse.
+    set(MELONPRIME_VULKAN_SHADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan_shaders/generated)
+    target_sources(core PRIVATE
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderModules.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_CalculateWorkOffsets.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearCoarseBinMask.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearIndirectWorkCount.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Compositor.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Rasterise.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Resolve.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_SortWork.cpp)
+    target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_SHADER_DIR}")
 
     if (APPLE)
         # Vulkan on macOS is MoltenVK, which can only present to a
@@ -448,42 +473,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             ${MELONPRIME_VULKAN_QUARTZCORE_LIB}
             ${MELONPRIME_VULKAN_APPKIT_LIB}
             ${MELONPRIME_VULKAN_METAL_LIB})
-        target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceMacOS.mm)
-        set_source_files_properties(
-            MelonPrimeVulkanSurfaceMacOS.mm
-            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    endif()
-
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if (Python3_Interpreter_FOUND)
-        find_program(MELONPRIME_GLSLC_EXECUTABLE
-            NAMES glslc glslc.exe
-            HINTS ENV VULKAN_SDK
-            PATH_SUFFIXES Bin bin)
-        set(_melonprime_spirv_command
-            "${Python3_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/tools/vulkan_spirv.py")
-        if (MELONPRIME_GLSLC_EXECUTABLE)
-            list(APPEND _melonprime_spirv_command
-                --glslc "${MELONPRIME_GLSLC_EXECUTABLE}")
-        endif()
-
-        add_custom_target(melonprime_regenerate_vulkan_spirv
-            COMMAND ${_melonprime_spirv_command} regenerate
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            COMMENT "Regenerating MelonPrime Vulkan SPIR-V headers"
-            USES_TERMINAL
-            VERBATIM)
-        add_custom_target(melonprime_check_vulkan_spirv
-            COMMAND ${_melonprime_spirv_command} check
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            COMMENT "Checking MelonPrime Vulkan SPIR-V headers"
-            USES_TERMINAL
-            VERBATIM)
-        unset(_melonprime_spirv_command)
-    else()
-        message(WARNING
-            "Python 3 was not found; MelonPrime Vulkan SPIR-V developer targets are unavailable")
+        # The macOS (MoltenVK/CAMetalLayer) presentation adapter source is added
+        # here as the clean-room rewrite lands.
     endif()
 
     message(STATUS

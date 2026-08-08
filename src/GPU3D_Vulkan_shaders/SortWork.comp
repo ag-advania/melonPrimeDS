@@ -1,0 +1,53 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::SortWork
+    (src/GPU3D_Compute_shaders.h), including the MelonPrimeDS clamp.
+    Nothing but the resource bindings changed.
+
+    Build define: SortWork
+    Host dispatch (matching GPU3D_Compute.cpp): indirect, from
+    BinResultHeader::SortWorkWorkCount which CalculateWorkOffsets filled in.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "PolygonBuffer.glsl"
+#include "BinningBuffer.glsl"
+#include "WorkDescBuffer.glsl"
+
+layout (local_size_x = 32) in;
+
+void main()
+{
+    // MelonPrimeDS: same clamp as SortWorkWorkCount - entries past MaxWorkTiles
+    // were dropped by the binning shader and must not be read.
+    if (gl_GlobalInvocationID.x < min(VariantWorkCount[0].w, uint(MaxWorkTiles)))
+    {
+        uvec2 workDesc = WorkDescs[WorkDescsUnsortedStart + gl_GlobalInvocationID.x];
+        int inVariantOffset = int(bitfieldExtract(workDesc.y, 11, 21));
+        int polygonIdx = int(bitfieldExtract(workDesc.y, 0, 11));
+        int variantIdx = Polygons[polygonIdx].Variant;
+
+        int sortedIndex = int(SortedWorkOffset[variantIdx]) + inVariantOffset;
+        WorkDescs[WorkDescsSortedStart + sortedIndex] = uvec2(workDesc.x, bitfieldInsert(workDesc.y, gl_GlobalInvocationID.x, 11, 21));
+    }
+}

@@ -1,0 +1,2303 @@
+{
+  "generator": "tools/vulkan/compile-shaders.py",
+  "targetEnv": "vulkan1.1",
+  "entryPoint": "main",
+  "pipelineCount": 35,
+  "bucketCount": 3,
+  "bucketRepresentativeScale": [
+    1,
+    5,
+    9
+  ],
+  "specializationConstants": [
+    {
+      "name": "ScreenWidth",
+      "id": 0
+    },
+    {
+      "name": "ScreenHeight",
+      "id": 1
+    },
+    {
+      "name": "MaxWorkTiles",
+      "id": 2
+    }
+  ],
+  "pushConstantBytes": 32,
+  "set0Bindings": [
+    {
+      "name": "MetaUniform",
+      "binding": 0
+    },
+    {
+      "name": "PolygonBuffer",
+      "binding": 1
+    },
+    {
+      "name": "XSpanSetupsBuffer",
+      "binding": 2
+    },
+    {
+      "name": "YSpanSetupsBuffer",
+      "binding": 3
+    },
+    {
+      "name": "ColorTileBuffer",
+      "binding": 4
+    },
+    {
+      "name": "DepthTileBuffer",
+      "binding": 5
+    },
+    {
+      "name": "AttrTileBuffer",
+      "binding": 6
+    },
+    {
+      "name": "ResultBuffer",
+      "binding": 7
+    },
+    {
+      "name": "BinResultBuffer",
+      "binding": 8
+    },
+    {
+      "name": "WorkDescBuffer",
+      "binding": 9
+    },
+    {
+      "name": "SetupIndices",
+      "binding": 10
+    },
+    {
+      "name": "FinalFB",
+      "binding": 11
+    },
+    {
+      "name": "StructuredInput",
+      "binding": 12
+    },
+    {
+      "name": "PresentationOutput",
+      "binding": 13
+    }
+  ],
+  "set1Bindings": [
+    {
+      "name": "CurrentTexture",
+      "binding": 0
+    },
+    {
+      "name": "Capture128Texture",
+      "binding": 1
+    },
+    {
+      "name": "Capture256Texture",
+      "binding": 2
+    },
+    {
+      "name": "ClearBitmapColor",
+      "binding": 3
+    },
+    {
+      "name": "ClearBitmapDepth",
+      "binding": 4
+    }
+  ],
+  "uniqueModules": 105,
+  "totalSpirvBytes": 2632024,
+  "generatedFiles": [
+    "GPU3D_Vulkan_ShaderBlobs.h",
+    "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_CalculateWorkOffsets.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_ClearCoarseBinMask.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_ClearIndirectWorkCount.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_Compositor.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_Rasterise.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_Resolve.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_SortWork.cpp",
+    "GPU3D_Vulkan_ShaderModules.cpp",
+    "GPU3D_Vulkan_ShaderModules.h",
+    "manifest.json"
+  ],
+  "variants": [
+    {
+      "pipeline": 0,
+      "name": "InterpSpansZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 0,
+      "words": 13225,
+      "sha256": "aae2a29917528f6b87b158d19bef7f839ee18705c5dbf45f49492a170637dfd8"
+    },
+    {
+      "pipeline": 1,
+      "name": "InterpSpansW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 1,
+      "words": 13009,
+      "sha256": "d63b59ca827e1f8ccc837255ad2d49ff10055d5687af4b4b01c58cb44b2b6beb"
+    },
+    {
+      "pipeline": 2,
+      "name": "BinCombined",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/BinCombined.comp",
+      "entryPoint": "main",
+      "defines": [
+        "BinCombined"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 2,
+      "words": 4752,
+      "sha256": "216e560b232c15e38e76ff236db703927eabccb08b7c190457b46a1e6b3354c8"
+    },
+    {
+      "pipeline": 3,
+      "name": "DepthBlendZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 3,
+      "words": 5375,
+      "sha256": "605c96c25333fa88dc730632eac91f4aa21e02034ef4f1fa283c371550f1b98e"
+    },
+    {
+      "pipeline": 4,
+      "name": "DepthBlendW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 4,
+      "words": 5375,
+      "sha256": "28bed30b59d435105d069883d1af2c8d9318f623b2602bd474a27617860fc7e5"
+    },
+    {
+      "pipeline": 5,
+      "name": "RasteriseNoTextureZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 5,
+      "words": 9040,
+      "sha256": "fc2872a157f2073e28d5f4425ef0bfdf050af2995605b845ee5ab29589219e53"
+    },
+    {
+      "pipeline": 6,
+      "name": "RasteriseNoTextureW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 6,
+      "words": 8832,
+      "sha256": "36bb1d24d272731988892eb42fbbd8dd4d75916bae4f4f7433e8e86e32f16277"
+    },
+    {
+      "pipeline": 7,
+      "name": "RasteriseNoTextureToonZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 7,
+      "words": 9127,
+      "sha256": "dbb57d90bb312c7251b258c1d9c84b9964246db79a10651c18895d3fd379509b"
+    },
+    {
+      "pipeline": 8,
+      "name": "RasteriseNoTextureToonW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 8,
+      "words": 8919,
+      "sha256": "607e8741e78dce15063d5749d70f052e1d48a814ce868c37a9b7c66847ee6569"
+    },
+    {
+      "pipeline": 9,
+      "name": "RasteriseNoTextureHighlightZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 9,
+      "words": 9201,
+      "sha256": "4962d48dc4b67b5489f84e9d569ee54f8a742e7826e0e77849926b13e2f08124"
+    },
+    {
+      "pipeline": 10,
+      "name": "RasteriseNoTextureHighlightW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 10,
+      "words": 8993,
+      "sha256": "f18421cb473f2cd1db72a0c1e73ffcaedfc9ee97696cabcedfa816a05ca902fd"
+    },
+    {
+      "pipeline": 11,
+      "name": "RasteriseUseTextureDecalZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 11,
+      "words": 9789,
+      "sha256": "7a8692adbf6da0fedc8c01c32e36695ada82e24b6019975faf63910701f6748d"
+    },
+    {
+      "pipeline": 12,
+      "name": "RasteriseUseTextureDecalW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 12,
+      "words": 9581,
+      "sha256": "4d01ba83e24db9375fbea342d014aa057797013db3352feac55fac8c11788dbb"
+    },
+    {
+      "pipeline": 13,
+      "name": "RasteriseUseTextureModulateZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 13,
+      "words": 9651,
+      "sha256": "c1541b799877207d9324dd736f7f807acd9a82c3ef7dd4302ad377c5956f20b6"
+    },
+    {
+      "pipeline": 14,
+      "name": "RasteriseUseTextureModulateW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 14,
+      "words": 9443,
+      "sha256": "56ce5ae1197e67d4fc794f0cea667c0c143dd076c970bcdaf7aefc5215fa5d7a"
+    },
+    {
+      "pipeline": 15,
+      "name": "RasteriseUseTextureToonZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 15,
+      "words": 9738,
+      "sha256": "c11c0e7aba28bb4eb450e1b78164a5acda846b8865124d8014645d624b0b1269"
+    },
+    {
+      "pipeline": 16,
+      "name": "RasteriseUseTextureToonW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 16,
+      "words": 9530,
+      "sha256": "c59c1a9127ab47726ef613eff72ccd50e51ef3182d19aa21f30d3bcd4c4ec768"
+    },
+    {
+      "pipeline": 17,
+      "name": "RasteriseUseTextureHighlightZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 17,
+      "words": 9812,
+      "sha256": "e7b51512a4df9b97f3178121632d722edd9ec2e70ffa153ef6a5eea2532f38f2"
+    },
+    {
+      "pipeline": 18,
+      "name": "RasteriseUseTextureHighlightW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 18,
+      "words": 9604,
+      "sha256": "6f165f1d7d43233c0e63f6b95f090dccfed2643cd0f4a061a5b0d0bb81827778"
+    },
+    {
+      "pipeline": 19,
+      "name": "RasteriseShadowMaskZ",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 19,
+      "words": 8774,
+      "sha256": "d2e3d1a179e2935229f2a528a0a5bc0990e04094c0af44852185e5a7155af4ee"
+    },
+    {
+      "pipeline": 20,
+      "name": "RasteriseShadowMaskW",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 20,
+      "words": 8566,
+      "sha256": "ba6f2ebdd5402dad3a50d3606946dd5461f893edab08021df84c4c9de6cfaf2a"
+    },
+    {
+      "pipeline": 21,
+      "name": "ClearCoarseBinMask",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/ClearCoarseBinMask.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearCoarseBinMask"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 21,
+      "words": 812,
+      "sha256": "fe40b6345da76ee41c1013a09a804fd17674e67fb6fa8a91056dade0e56a84ca"
+    },
+    {
+      "pipeline": 22,
+      "name": "ClearIndirectWorkCount",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/ClearIndirectWorkCount.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearIndirectWorkCount"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 22,
+      "words": 763,
+      "sha256": "2a1381f7fa4c04f3ef230cdc3714a6a3bf5d8d8685cb77862aab0702e849fcc2"
+    },
+    {
+      "pipeline": 23,
+      "name": "CalculateWorkOffsets",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/CalculateWorkOffsets.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CalculateWorkOffsets"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 23,
+      "words": 1058,
+      "sha256": "029e6d8096bbe72b92c8d398e9e762392199839cf104e4103e03ea890cf06fe5"
+    },
+    {
+      "pipeline": 24,
+      "name": "SortWork",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/SortWork.comp",
+      "entryPoint": "main",
+      "defines": [
+        "SortWork"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 24,
+      "words": 1302,
+      "sha256": "1f7ffd5d7098abbf425326fd6e1b99b26f26eb1f22664b106c6ce4b2b347d88c"
+    },
+    {
+      "pipeline": 25,
+      "name": "FinalPass0",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 25,
+      "words": 1140,
+      "sha256": "e9d59d3bd2fc3ef056a5d84e3db5f14dfabbfbaf66ad91a04f83ef8dcaa96bc2"
+    },
+    {
+      "pipeline": 26,
+      "name": "FinalPass1",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 26,
+      "words": 2070,
+      "sha256": "69f1151ea5a24642020c2275c6c20fca3c05ff34dfed193d6bb58bea5240bf4c"
+    },
+    {
+      "pipeline": 27,
+      "name": "FinalPass2",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 27,
+      "words": 2019,
+      "sha256": "6d589f514d76768f07842dc18bb89b638a956d70119b028e4977dd434cf6a991"
+    },
+    {
+      "pipeline": 28,
+      "name": "FinalPass3",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 28,
+      "words": 2927,
+      "sha256": "c235652a2c96eff6a298e38fb17b505938093f9ff3b4f5e7e7d5047b2772cee4"
+    },
+    {
+      "pipeline": 29,
+      "name": "FinalPass4",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 29,
+      "words": 1649,
+      "sha256": "5e6d18c4cab46ef70ddc22e550b0981e34cb51305549b07ac0c50f9ec1c06a73"
+    },
+    {
+      "pipeline": 30,
+      "name": "FinalPass5",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 30,
+      "words": 2569,
+      "sha256": "39b9a68dcbaa1c23551a4243091830bc556c10902a62af4c101c952809712217"
+    },
+    {
+      "pipeline": 31,
+      "name": "FinalPass6",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 31,
+      "words": 2522,
+      "sha256": "8865970e621c90dfc68a4bceb904845e67287b23d6231d3a7236e60f10d65b2f"
+    },
+    {
+      "pipeline": 32,
+      "name": "FinalPass7",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 32,
+      "words": 3422,
+      "sha256": "a8e145edcf0939e57b4668c1bdab4665e1674dc90c776e81f4ae71a41f870540"
+    },
+    {
+      "pipeline": 33,
+      "name": "Resolve",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Resolve.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Resolve"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 33,
+      "words": 2210,
+      "sha256": "a9274dc8e5dee4656436cf06a1ec097708e5fce20f260f58fa6347f0a84da993"
+    },
+    {
+      "pipeline": 34,
+      "name": "Compositor",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/Compositor.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Compositor"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 34,
+      "words": 4483,
+      "sha256": "55519866fb5f44b24de78d29a0a025c9c4290358467b8f57ce258bdd363ad48e"
+    },
+    {
+      "pipeline": 0,
+      "name": "InterpSpansZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 35,
+      "words": 13225,
+      "sha256": "c052fcc1ea455d5ffe501dac98bef52a3f87642717cf523761d5413f6405e6aa"
+    },
+    {
+      "pipeline": 1,
+      "name": "InterpSpansW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 36,
+      "words": 13009,
+      "sha256": "ef8f7076a25814c41a289771856634fe0a9467ffccf3c7a800c8a84960b5f271"
+    },
+    {
+      "pipeline": 2,
+      "name": "BinCombined",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/BinCombined.comp",
+      "entryPoint": "main",
+      "defines": [
+        "BinCombined"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 37,
+      "words": 4760,
+      "sha256": "663eba548d0fbb66e6fc8bb9f67c2caacbf4d59c07bb9678fd44873acbeecb1c"
+    },
+    {
+      "pipeline": 3,
+      "name": "DepthBlendZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 38,
+      "words": 5379,
+      "sha256": "e2de46a036e04860d975e3299fdee3c7b1b281bbcbfc03dd6a4f72fba3b81524"
+    },
+    {
+      "pipeline": 4,
+      "name": "DepthBlendW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 39,
+      "words": 5379,
+      "sha256": "4a334a8011e009a464cd8f21a6b01a279966b97d788985e96882cbc616346938"
+    },
+    {
+      "pipeline": 5,
+      "name": "RasteriseNoTextureZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 40,
+      "words": 9040,
+      "sha256": "f2fbb7b76d079d0cfa5699af6ae945fc5fb99711d4ecbe980f6cda291dfe0922"
+    },
+    {
+      "pipeline": 6,
+      "name": "RasteriseNoTextureW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 41,
+      "words": 8832,
+      "sha256": "176971457100f10c14bca9ddefdf2689599b5c9b2659c01f5d7c26e67a43e646"
+    },
+    {
+      "pipeline": 7,
+      "name": "RasteriseNoTextureToonZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 42,
+      "words": 9127,
+      "sha256": "ca7e5829219a3f7ab8ffb71eb6b59f99faed8f831d365d903cb6e079196be841"
+    },
+    {
+      "pipeline": 8,
+      "name": "RasteriseNoTextureToonW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 43,
+      "words": 8919,
+      "sha256": "f4632a574c02b0099b138a23deeaef469d7ad57d4f197682a7f40e344492ca74"
+    },
+    {
+      "pipeline": 9,
+      "name": "RasteriseNoTextureHighlightZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 44,
+      "words": 9201,
+      "sha256": "4dec4578a975d5b520f28c9e16613e2d92b49c2fb3f9f4cba630bb0284157284"
+    },
+    {
+      "pipeline": 10,
+      "name": "RasteriseNoTextureHighlightW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 45,
+      "words": 8993,
+      "sha256": "eee8f978674104146d7a785f25cc202c0f785233a17c76a26f5480dbbc60ee78"
+    },
+    {
+      "pipeline": 11,
+      "name": "RasteriseUseTextureDecalZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 46,
+      "words": 9789,
+      "sha256": "abd5058bf4bcda5f7f7dbb14aff2f1ba19c2ef5cfe5f1b3cbc0f362d875ded66"
+    },
+    {
+      "pipeline": 12,
+      "name": "RasteriseUseTextureDecalW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 47,
+      "words": 9581,
+      "sha256": "8da6cdfccafc08a96348cb56cf3fc6924c0f0a8d8cd5b6a1c6fbbd8129a7bded"
+    },
+    {
+      "pipeline": 13,
+      "name": "RasteriseUseTextureModulateZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 48,
+      "words": 9651,
+      "sha256": "627925c80d103c10c6779dfd10b46bfb7223f8a5266f9835a60ba6657c9d524b"
+    },
+    {
+      "pipeline": 14,
+      "name": "RasteriseUseTextureModulateW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 49,
+      "words": 9443,
+      "sha256": "32ba1473200a323d9ac4482695932b07ebccb4f60cd178d2a3ba91cd36c56f70"
+    },
+    {
+      "pipeline": 15,
+      "name": "RasteriseUseTextureToonZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 50,
+      "words": 9738,
+      "sha256": "e3bfb2146dbcc008e769e4bc3fbdc8d326432deae8c214242001c53a43931a3a"
+    },
+    {
+      "pipeline": 16,
+      "name": "RasteriseUseTextureToonW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 51,
+      "words": 9530,
+      "sha256": "3bfa88ee713caa88d79793db7bade50817956728045e028269c6617ff290a6ff"
+    },
+    {
+      "pipeline": 17,
+      "name": "RasteriseUseTextureHighlightZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 52,
+      "words": 9812,
+      "sha256": "fc9995c7a8a4e1701bae335f5ae11253a8075138d912cb96e33e398b5b03ca83"
+    },
+    {
+      "pipeline": 18,
+      "name": "RasteriseUseTextureHighlightW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 53,
+      "words": 9604,
+      "sha256": "c6e6c0f98381880375e6ba9cdfaa96a885cb376f5ea7715b16d5760fca85d080"
+    },
+    {
+      "pipeline": 19,
+      "name": "RasteriseShadowMaskZ",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 54,
+      "words": 8774,
+      "sha256": "d25292bf1c53e345d0a78a9222ddbd7143a5cc411deecc2dcdffbeac38950ae3"
+    },
+    {
+      "pipeline": 20,
+      "name": "RasteriseShadowMaskW",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 55,
+      "words": 8566,
+      "sha256": "d10dcdc2f3701cc3b8b2fd53d689b6d1020cf26f1ddcaf0a1428165f9442e192"
+    },
+    {
+      "pipeline": 21,
+      "name": "ClearCoarseBinMask",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/ClearCoarseBinMask.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearCoarseBinMask"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 56,
+      "words": 816,
+      "sha256": "429e09150e26ba7179e8e27d189f364108806335c5ad76487020093147fb29f5"
+    },
+    {
+      "pipeline": 22,
+      "name": "ClearIndirectWorkCount",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/ClearIndirectWorkCount.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearIndirectWorkCount"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 57,
+      "words": 767,
+      "sha256": "07b9d576654dba953a72632c35acff771befc08879b05f69a8d45aea2e9ba1d6"
+    },
+    {
+      "pipeline": 23,
+      "name": "CalculateWorkOffsets",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/CalculateWorkOffsets.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CalculateWorkOffsets"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 58,
+      "words": 1062,
+      "sha256": "a4cc4d2951b071704796de6975317c069119b5b03006fd7c69baa37402f46dc6"
+    },
+    {
+      "pipeline": 24,
+      "name": "SortWork",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/SortWork.comp",
+      "entryPoint": "main",
+      "defines": [
+        "SortWork"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 59,
+      "words": 1306,
+      "sha256": "d2ab068b5c27a6f555a238bac48b185ca25021f5f8539c8aff0b1b39227f849f"
+    },
+    {
+      "pipeline": 25,
+      "name": "FinalPass0",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 60,
+      "words": 1140,
+      "sha256": "5c1be27f09866943a7beaedbde477ac5f53dedb35a69bb8d33c57c1978a2bd59"
+    },
+    {
+      "pipeline": 26,
+      "name": "FinalPass1",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 61,
+      "words": 2070,
+      "sha256": "e4bdef31e4ca268f85cacdd4f06c9467e2a67ea08affa571fb972540d326c214"
+    },
+    {
+      "pipeline": 27,
+      "name": "FinalPass2",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 62,
+      "words": 2019,
+      "sha256": "bc2f8e702df7f70ca5ba3c8895845ea43af6be8061c8416da91d6ac0fe25d456"
+    },
+    {
+      "pipeline": 28,
+      "name": "FinalPass3",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 63,
+      "words": 2927,
+      "sha256": "323fa37a434bd6921099225a7fd5e2ee7327713a810834ddbbb84ea5f8a49ade"
+    },
+    {
+      "pipeline": 29,
+      "name": "FinalPass4",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 64,
+      "words": 1649,
+      "sha256": "4803a1bab8aa0f107ccdb96ee9b622c0c2ff823b1f7d4073dc63cc557f6b54f3"
+    },
+    {
+      "pipeline": 30,
+      "name": "FinalPass5",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 65,
+      "words": 2569,
+      "sha256": "77b8893ade14aa3d3782529360db505284b46436cbc470543ec44c22d1bb71de"
+    },
+    {
+      "pipeline": 31,
+      "name": "FinalPass6",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 66,
+      "words": 2522,
+      "sha256": "c09f3f1d4eba91c857e03398ab291da83cfe625af44a6ee1319d05d6c7ddc2fe"
+    },
+    {
+      "pipeline": 32,
+      "name": "FinalPass7",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 67,
+      "words": 3422,
+      "sha256": "10429331cd367492b62680dc3d397b4fa62f9b771272243d84f6cbab3bc62910"
+    },
+    {
+      "pipeline": 33,
+      "name": "Resolve",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Resolve.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Resolve"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 68,
+      "words": 2210,
+      "sha256": "36326fe94d165e34ed5da1715216813c7886a15b82cf346500b0363d60d45afa"
+    },
+    {
+      "pipeline": 34,
+      "name": "Compositor",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/Compositor.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Compositor"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 69,
+      "words": 4483,
+      "sha256": "d42fd4eae8f9969a46eb01e21b483d15c954363711178e70ae53c17309329891"
+    },
+    {
+      "pipeline": 0,
+      "name": "InterpSpansZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 70,
+      "words": 13229,
+      "sha256": "1957cfa006b496c00fcc9b0c84cb504d6fabfd62242fcc992bd1725796da29ed"
+    },
+    {
+      "pipeline": 1,
+      "name": "InterpSpansW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/InterpSpans.comp",
+      "entryPoint": "main",
+      "defines": [
+        "InterpSpans",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 71,
+      "words": 13013,
+      "sha256": "f1e89a24cc50b900e05247de6bd15d97ef3c085c85de05a8e218d841845fb51a"
+    },
+    {
+      "pipeline": 2,
+      "name": "BinCombined",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/BinCombined.comp",
+      "entryPoint": "main",
+      "defines": [
+        "BinCombined"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 72,
+      "words": 4760,
+      "sha256": "6fc6588a72b834b75a6493d7c86921e6a18ef1e0d404cbb872894528f58efcc6"
+    },
+    {
+      "pipeline": 3,
+      "name": "DepthBlendZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 73,
+      "words": 5375,
+      "sha256": "cfdaa737ef431b63c8993c0a8dc74b72f9a76084ed5423d816a68c766083dd82"
+    },
+    {
+      "pipeline": 4,
+      "name": "DepthBlendW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/DepthBlend.comp",
+      "entryPoint": "main",
+      "defines": [
+        "DepthBlend",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 74,
+      "words": 5375,
+      "sha256": "9870aa30db8796b7aabf2f1c2c272c82d34b3d761666be83bea25dc67526b96d"
+    },
+    {
+      "pipeline": 5,
+      "name": "RasteriseNoTextureZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 75,
+      "words": 9044,
+      "sha256": "4edb0bc44ad1fc7e283ca46b8c4d3e246775b90fe93924ec09cd5cbd0d6f69a2"
+    },
+    {
+      "pipeline": 6,
+      "name": "RasteriseNoTextureW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 76,
+      "words": 8836,
+      "sha256": "9e5da32998964f42fc31f64d765970d55e1d4b672b3152f8a277cb3c14c30bf5"
+    },
+    {
+      "pipeline": 7,
+      "name": "RasteriseNoTextureToonZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 77,
+      "words": 9131,
+      "sha256": "5e27854dad25f59025c591dd2ae0c51c19b7ea4ffc7e66c9f5addc82997a306a"
+    },
+    {
+      "pipeline": 8,
+      "name": "RasteriseNoTextureToonW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "NoTexture",
+        "Rasterise",
+        "Toon",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 78,
+      "words": 8923,
+      "sha256": "6d0dd35cf0e1804e8839cfade574fa0abc7f1b687edc5266ca3ee50e1dc4d625"
+    },
+    {
+      "pipeline": 9,
+      "name": "RasteriseNoTextureHighlightZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 79,
+      "words": 9205,
+      "sha256": "64fc6c8d7bbb5b9ed62311c8c13ba434a92931cf31d1c90a4ee2ea4a2f65686f"
+    },
+    {
+      "pipeline": 10,
+      "name": "RasteriseNoTextureHighlightW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "NoTexture",
+        "Rasterise",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 80,
+      "words": 8997,
+      "sha256": "9ad586d73205c9899662f0c5132f031bface019619b4eac0d65f9beff61177ee"
+    },
+    {
+      "pipeline": 11,
+      "name": "RasteriseUseTextureDecalZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 81,
+      "words": 9793,
+      "sha256": "77376c11674d6c5f4bd171375a5d08cdd0e4889770f0e8c8ea105dd89d4b5886"
+    },
+    {
+      "pipeline": 12,
+      "name": "RasteriseUseTextureDecalW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Decal",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 82,
+      "words": 9585,
+      "sha256": "9ac3e294f2ce30841bfa933f2b41ba19650a08a91b1ed57ec2ed2f809daa2299"
+    },
+    {
+      "pipeline": 13,
+      "name": "RasteriseUseTextureModulateZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 83,
+      "words": 9655,
+      "sha256": "6741fd29e672951ab9af5ca25de153cb6cdcbfea100f468dadf89e5a0444f200"
+    },
+    {
+      "pipeline": 14,
+      "name": "RasteriseUseTextureModulateW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Modulate",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 84,
+      "words": 9447,
+      "sha256": "d90207dd74d48d5ed87219ea325d201c3db8f4b9596f68652cb0724681e8a677"
+    },
+    {
+      "pipeline": 15,
+      "name": "RasteriseUseTextureToonZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 85,
+      "words": 9742,
+      "sha256": "9ac07096a2e3f29af68ac0236eb9ad6c435cab675748a760e86c142512541417"
+    },
+    {
+      "pipeline": 16,
+      "name": "RasteriseUseTextureToonW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "Toon",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 86,
+      "words": 9534,
+      "sha256": "23874e0c05d39807e6d9122e77e9a87ca1b6eeb01f2c81ea24fd0da7b313ce13"
+    },
+    {
+      "pipeline": 17,
+      "name": "RasteriseUseTextureHighlightZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 87,
+      "words": 9816,
+      "sha256": "0872ab80e1bfaf2d524cb61bd2a48871b39e4c48e9440a4dbb3602d658107c81"
+    },
+    {
+      "pipeline": 18,
+      "name": "RasteriseUseTextureHighlightW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Highlight",
+        "Rasterise",
+        "UseTexture",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 88,
+      "words": 9608,
+      "sha256": "57ca35828773f8026f8d4570421721079173ed2a653af6c177bf353dc69785ba"
+    },
+    {
+      "pipeline": 19,
+      "name": "RasteriseShadowMaskZ",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "ZBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 89,
+      "words": 8778,
+      "sha256": "fcd94dd248d2fad5839653831aa65f3121de472fabe857b03d1df65ac20a1d05"
+    },
+    {
+      "pipeline": 20,
+      "name": "RasteriseShadowMaskW",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Rasterise.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Rasterise",
+        "ShadowMask",
+        "WBuffer"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 90,
+      "words": 8570,
+      "sha256": "3e1bc37a7fd83361017804b140988ee2132dcf7c3cae381f0d524997b23aaf16"
+    },
+    {
+      "pipeline": 21,
+      "name": "ClearCoarseBinMask",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/ClearCoarseBinMask.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearCoarseBinMask"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 91,
+      "words": 816,
+      "sha256": "d86a84a013c81fea8f79128a8cf5dd965108d45a08558dfd7b8614cef18b0b08"
+    },
+    {
+      "pipeline": 22,
+      "name": "ClearIndirectWorkCount",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/ClearIndirectWorkCount.comp",
+      "entryPoint": "main",
+      "defines": [
+        "ClearIndirectWorkCount"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 92,
+      "words": 767,
+      "sha256": "1fea594565e05412c282717e97d1b5e3c3d39d8066cd2c4a55851106fb36780e"
+    },
+    {
+      "pipeline": 23,
+      "name": "CalculateWorkOffsets",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/CalculateWorkOffsets.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CalculateWorkOffsets"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 93,
+      "words": 1062,
+      "sha256": "1bbdc3ffbd472cb816d520b75b2ccf7994ef429310f82281c4c2ae9f32362d58"
+    },
+    {
+      "pipeline": 24,
+      "name": "SortWork",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/SortWork.comp",
+      "entryPoint": "main",
+      "defines": [
+        "SortWork"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 94,
+      "words": 1306,
+      "sha256": "dafe5d270d3aa85d931c52704920c340526fef03ae86a64c966123579594ebd1"
+    },
+    {
+      "pipeline": 25,
+      "name": "FinalPass0",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 95,
+      "words": 1144,
+      "sha256": "33595b8dbfde48bad81f9d7a9782e636eb228c2d4863e04b5cde3136867c2bac"
+    },
+    {
+      "pipeline": 26,
+      "name": "FinalPass1",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 96,
+      "words": 2074,
+      "sha256": "931665b35691289a2ef1fc25e6c49290a2b4a7653cc9285bbc9863ee0478d26b"
+    },
+    {
+      "pipeline": 27,
+      "name": "FinalPass2",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 97,
+      "words": 2023,
+      "sha256": "cb93e2fd4c4d6843713d06b9ad98028f5be320f83dda162b980bd41d575698be"
+    },
+    {
+      "pipeline": 28,
+      "name": "FinalPass3",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 98,
+      "words": 2931,
+      "sha256": "13b249ad29419e761489c49ddba84bc64a2589cb98e4d88c62b1f893b25e51c1"
+    },
+    {
+      "pipeline": 29,
+      "name": "FinalPass4",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 99,
+      "words": 1653,
+      "sha256": "8e82a2d1060919f049e256b857f764b09f79416a902c22529700b4032bd34ebe"
+    },
+    {
+      "pipeline": 30,
+      "name": "FinalPass5",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 100,
+      "words": 2573,
+      "sha256": "55756b0178a0df5aff88e7740412d468653669eb97af165de571f664447ed537"
+    },
+    {
+      "pipeline": 31,
+      "name": "FinalPass6",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 101,
+      "words": 2526,
+      "sha256": "61665443a6e1af687da1df5507200b0dd331f49a169a8383b9f959732d4875eb"
+    },
+    {
+      "pipeline": 32,
+      "name": "FinalPass7",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/FinalPass.comp",
+      "entryPoint": "main",
+      "defines": [
+        "AntiAliasing",
+        "EdgeMarking",
+        "FinalPass",
+        "Fog"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 102,
+      "words": 3426,
+      "sha256": "9029b4dc82fe2e11c12bbbe7583a554f5c97ec8095e7689f5ea8140ddadc6543"
+    },
+    {
+      "pipeline": 33,
+      "name": "Resolve",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Resolve.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Resolve"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 103,
+      "words": 2210,
+      "sha256": "f462825f8c6319869608470178d56321145bbb5eee4a31af6e7b5f31ca3e13bf"
+    },
+    {
+      "pipeline": 34,
+      "name": "Compositor",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/Compositor.comp",
+      "entryPoint": "main",
+      "defines": [
+        "Compositor"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 104,
+      "words": 4483,
+      "sha256": "72f1ad2c5451f9a62c86520dc3dc2c3b5dbcecd4577b7a6dddc671aceea9192d"
+    }
+  ]
+}

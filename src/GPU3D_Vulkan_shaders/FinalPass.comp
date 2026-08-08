@@ -1,0 +1,194 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::FinalPass
+    (src/GPU3D_Compute_shaders.h).
+
+    Build defines: FinalPass + any combination of EdgeMarking / Fog /
+    AntiAliasing (8 variants).
+
+    Host dispatch (matching GPU3D_Compute.cpp): (ScreenWidth/32, ScreenHeight, 1).
+
+    Vulkan plumbing only: the GL image unit 0 (`layout (binding = 0, rgba8)
+    writeonly uniform image2D FinalFB`) becomes set 0 binding 11, a
+    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE over a VK_FORMAT_R8G8B8A8_UNORM image.
+    The rgba8 format qualifier is unchanged, so the same UNORM conversion of
+    the stored vec4 applies.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "ResultBuffer.glsl"
+
+layout (local_size_x = 32) in;
+
+layout (set = 0, binding = 11, rgba8) writeonly uniform image2D FinalFB;
+
+uint BlendFog(uint color, uint depth)
+{
+    uint densityid = 0, densityfrac = 0;
+
+    if (depth >= FogOffset)
+    {
+        depth -= FogOffset;
+        depth = (depth >> 2) << FogShift;
+
+        densityid = depth >> 17;
+        if (densityid >= 32)
+        {
+            densityid = 32;
+            densityfrac = 0;
+        }
+        else
+        {
+            densityfrac = depth & 0x1FFFFU;
+        }
+    }
+
+    uint density =
+        ((ToonTable[densityid].g * (0x20000U-densityfrac)) +
+         (ToonTable[densityid+1].g * densityfrac)) >> 17;
+    density = min(density, 128U);
+
+    uint colorRB = color & 0x3F003FU;
+    uint colorGA = (color >> 8) & 0x3F003FU;
+
+    uint fogRB = FogColor & 0x3F003FU;
+    uint fogGA = (FogColor >> 8) & 0x1F003FU;
+
+    uint finalColorRB = ((fogRB * density) + (colorRB * (128-density))) >> 7;
+    uint finalColorGA = ((fogGA * density) + (colorGA * (128-density))) >> 7;
+
+    finalColorRB &= 0x3F003FU;
+    finalColorGA &= 0x1F003FU;
+
+    return (DispCnt & (1U<<6)) != 0
+        ? (bitfieldInsert(color, finalColorGA >> 16, 24, 8))
+        : (finalColorRB | (finalColorGA << 8));
+}
+
+void main()
+{
+    int srcX = int(gl_GlobalInvocationID.x);
+    int resultOffset = int(srcX) + int(gl_GlobalInvocationID.y) * ScreenWidth;
+
+    uvec2 color = uvec2(ResultValue[resultOffset+ResultColorStart], ResultValue[resultOffset+FramebufferStride+ResultColorStart]);
+    uvec2 depth = uvec2(ResultValue[resultOffset+ResultDepthStart], ResultValue[resultOffset+FramebufferStride+ResultDepthStart]);
+    uvec2 attr = uvec2(ResultValue[resultOffset+ResultAttrStart], ResultValue[resultOffset+FramebufferStride+ResultAttrStart]);
+
+#ifdef EdgeMarking
+    if ((attr.x & 0xFU) != 0U)
+    {
+        uvec4 otherAttr = uvec4(ClearAttr);
+        uvec4 otherDepth = uvec4(ClearDepth);
+
+        if (srcX > 0U)
+        {
+            otherAttr.x = ResultValue[resultOffset-1+ResultAttrStart];
+            otherDepth.x = ResultValue[resultOffset-1+ResultDepthStart];
+        }
+        if (srcX < ScreenWidth-1)
+        {
+            otherAttr.y = ResultValue[resultOffset+1+ResultAttrStart];
+            otherDepth.y = ResultValue[resultOffset+1+ResultDepthStart];
+        }
+        if (gl_GlobalInvocationID.y > 0U)
+        {
+            otherAttr.z = ResultValue[resultOffset-ScreenWidth+ResultAttrStart];
+            otherDepth.z = ResultValue[resultOffset-ScreenWidth+ResultDepthStart];
+        }
+        if (gl_GlobalInvocationID.y < ScreenHeight-1)
+        {
+            otherAttr.w = ResultValue[resultOffset+ScreenWidth+ResultAttrStart];
+            otherDepth.w = ResultValue[resultOffset+ScreenWidth+ResultDepthStart];
+        }
+
+        uint polyId = bitfieldExtract(attr.x, 24, 6);
+        uvec4 otherPolyId = bitfieldExtract(otherAttr, 24, 6);
+
+        bvec4 polyIdMismatch = notEqual(uvec4(polyId), otherPolyId);
+        bvec4 nearer = lessThan(uvec4(depth.x), otherDepth);
+
+        if ((polyIdMismatch.x && nearer.x)
+            || (polyIdMismatch.y && nearer.y)
+            || (polyIdMismatch.z && nearer.z)
+            || (polyIdMismatch.w && nearer.w))
+        {
+            color.x = ToonTable[polyId >> 3].b | (color.x & 0xFF000000U);
+            attr.x = (attr.x & 0xFFFFE0FFU) | 0x00001000U;
+        }
+    }
+#endif
+
+#ifdef Fog
+    if ((attr.x & (1U<<15)) != 0U)
+    {
+        color.x = BlendFog(color.x, depth.x);
+    }
+
+    if ((attr.x & 0xFU) != 0 && (attr.y & (1U<<15)) != 0U)
+    {
+        color.y = BlendFog(color.y, depth.y);
+    }
+#endif
+
+#ifdef AntiAliasing
+    // resolve anti-aliasing
+    if ((attr.x & 0x3U) != 0)
+    {
+        uint coverage = (attr.x >> 8) & 0x1FU;
+
+        if (coverage != 0)
+        {
+            uint topRB = color.x & 0x3F003FU;
+            uint topG = color.x & 0x003F00U;
+            uint topA = bitfieldExtract(color.x, 24, 5);
+
+            uint botRB = color.y & 0x3F003FU;
+            uint botG = color.y & 0x003F00U;
+            uint botA = bitfieldExtract(color.y, 24, 5);
+
+            coverage++;
+
+            if (botA > 0)
+            {
+                topRB = ((topRB * coverage) + (botRB * (32-coverage))) >> 5;
+                topG = ((topG * coverage) + (botG * (32-coverage))) >> 5;
+
+                topRB &= 0x3F003FU;
+                topG &= 0x003F00U;
+            }
+
+            topA = ((topA * coverage) + (botA * (32-coverage))) >> 5;
+
+            color.x = topRB | topG | (topA << 24);
+        }
+        else
+        {
+            color.x = color.y;
+        }
+    }
+#endif
+
+    vec4 result = vec4(color.x & 0x3FU, bitfieldExtract(color.x, 8, 8), bitfieldExtract(color.x, 16, 8), bitfieldExtract(color.x, 24, 8));
+    result /= vec4(63.0, 63.0, 63.0, 31.0);
+    imageStore(FinalFB, ivec2(gl_GlobalInvocationID.xy), result);
+}

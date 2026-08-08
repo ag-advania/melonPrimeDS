@@ -23,6 +23,17 @@
 
 #include "types.h"
 
+// Whether the software renderer builds the structured 2D planes at all.
+//
+// This lives here rather than in GPU_Soft.h because both the storage owner
+// (GPU_Soft.h) and the producer call sites (GPU2D_Soft.h / GPU2D_Soft.cpp) have
+// to agree on it, and GPU_Soft.h already includes GPU2D_Soft.h, so the
+// dependency cannot run the other way.
+#if defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12))
+#define MELONPRIME_HAS_STRUCTURED_SOFT_2D 1
+#endif
+
 // Canonical bit layout of the structured 2D composition contract.
 //
 // The software 2D renderer deliberately does not flatten the 3D layer into its
@@ -35,7 +46,7 @@
 //
 // Producer:  melonDS::SoftRenderer (src/GPU_Soft.cpp).
 // Consumers: DX12Shaders::Compositor  (src/GPU3D_DX12_shaders.h)
-//            MelonPrimeVulkanCompositorShader.comp
+//            src/GPU3D_Vulkan_shaders/Compositor.comp
 //
 // Both consumers must agree with the producer bit-for-bit, so the numeric
 // values live here and tools/ci/audits/audit-structured-composition-contract.py

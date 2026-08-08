@@ -42,14 +42,14 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata) const
 #else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 #endif
 {
     u32 coloreffect = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     u32 eva = 0, evb = 0;
 #else
     u32 eva, evb;
@@ -110,7 +110,7 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (metadata != nullptr)
     {
         metadata->Mode = coloreffect;
@@ -140,7 +140,7 @@ void SoftRenderer2D::DrawScanline(u32 line)
         // if this 2D unit is disabled in POWCNT, the output is a fixed color
         // (black for unit A, white for unit B)
         u32 fillcolor = (GPU2D.Num == 0) ? 0xFF000000 : 0xFF3F3F3F;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         for (int i = 0; i < 256; i++)
         {
             dst[i] = fillcolor;
@@ -158,7 +158,7 @@ void SoftRenderer2D::DrawScanline(u32 line)
     if (GPU2D.ForcedBlank)
     {
         // forced blank
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         for (int i = 0; i < 256; i++)
         {
             dst[i] = 0xFF3F3F3F;
@@ -388,7 +388,7 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val1 = BGOBJLine[i];
         u32 val2 = BGOBJLine[256+i];
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         CompositeMetadata metadata{};
         dst[i] = ColorComposite(i, val1, val2, &metadata);
         if (Parent.UseStructuredVulkan2D())
@@ -771,7 +771,7 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
 
                     if (!(finalX & ofxmask) && !(finalY & ofymask))
                     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
                         const u32 pixelByteAddress =
                             (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
                         if (Parent.DrawStructuredCapturePixel(

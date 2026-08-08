@@ -1,0 +1,236 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::InterpSpans
+    (src/GPU3D_Compute_shaders.h).
+
+    Build defines: InterpSpans + exactly one of ZBuffer / WBuffer.
+    Host dispatch (matching GPU3D_Compute.cpp): ((numSetupIndices+31)/32, 1, 1).
+
+    Vulkan-forced deviation, the only one in this file:
+    the GL original reads the per-span index table through
+        layout (binding = 0, rgba16ui) uniform readonly uimageBuffer SetupIndices;
+        imageLoad(SetupIndices, int(...))
+    i.e. a GL_RGBA16UI texture buffer bound as an image. Vulkan expresses the
+    same object as a uniform texel buffer, so it becomes
+        layout (set = 0, binding = 10) uniform utextureBuffer SetupIndices;
+        texelFetch(SetupIndices, int(...))
+    Both fetch the same unnormalized uvec4 texel from the same R16G16B16A16_UINT
+    buffer view; only the descriptor type name differs.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "PolygonBuffer.glsl"
+#include "XSpanSetupBuffer.glsl"
+#include "YSpanSetupBuffer.glsl"
+
+layout (local_size_x = 32) in;
+
+layout (set = 0, binding = 10) uniform utextureBuffer SetupIndices;
+
+void main()
+{
+    uvec4 setup = texelFetch(SetupIndices, int(gl_GlobalInvocationID.x));
+
+    YSpanSetup spanL = YSpanSetups[setup.y];
+    YSpanSetup spanR = YSpanSetups[setup.z];
+
+    XSpanSetup xspan;
+    xspan.Flags = 0U;
+
+    int y = int(setup.w);
+
+    int dxl = CalculateDx(y, spanL);
+    int dxr = CalculateDx(y, spanR);
+
+    int xl = CalculateX(dxl, spanL);
+    int xr = CalculateX(dxr, spanR);
+
+    Polygon polygon = Polygons[setup.x];
+
+    int edgeLenL, edgeLenR;
+
+    if (xl > xr)
+    {
+        YSpanSetup tmpSpan = spanL;
+        spanL = spanR;
+        spanR = tmpSpan;
+
+        int tmp = xl;
+        xl = xr;
+        xr = tmp;
+
+        EdgeParams_YMajor(false, dxr, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams_YMajor(true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
+    }
+    else
+    {
+        // edges are the right way
+        if (spanL.Increment > 0x40000)
+            EdgeParams_XMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
+        else
+            EdgeParams_YMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
+        if (spanR.Increment > 0x40000)
+            EdgeParams_XMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
+        else
+            EdgeParams_YMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
+    }
+
+    xspan.CovLInitial = (xspan.EdgeCovL >> 12) & 0x3FF;
+    if (xspan.CovLInitial == 0x3FF)
+        xspan.CovLInitial = 0;
+    xspan.CovRInitial = (xspan.EdgeCovR >> 12) & 0x3FF;
+    if (xspan.CovRInitial == 0x3FF)
+        xspan.CovRInitial = 0;
+
+    xspan.X0 = xl;
+    xspan.X1 = xr + 1;
+
+    uint polyalpha = ((polygon.Attr >> 16) & 0x1FU);
+    bool isWireframe = polyalpha == 0U;
+
+    if (!isWireframe || (y == polygon.YTop || y == polygon.YBot - 1))
+        xspan.Flags |= XSpanSetup_FillInside;
+
+    xspan.InsideStart = xspan.X0 + edgeLenL;
+    if (xspan.InsideStart > xspan.X1)
+        xspan.InsideStart = xspan.X1;
+    xspan.InsideEnd = xspan.X1 - edgeLenR;
+    if (xspan.InsideEnd > xspan.X1)
+        xspan.InsideEnd = xspan.X1;
+
+    bool isShadowMask = ((polygon.Attr & 0x3F000030U) == 0x00000030U);
+    bool fillAllEdges = polyalpha < 31 || (DispCnt & (3U<<4)) != 0U;
+
+    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= 0x40000)
+        xspan.Flags |= XSpanSetup_FillLeft;
+    if (fillAllEdges || (spanR.X1 >= spanR.X0 && spanR.Increment > 0x40000) || spanR.Increment == 0)
+        xspan.Flags |= XSpanSetup_FillRight;
+
+    if (spanL.I0 == spanL.I1)
+    {
+        xspan.TexcoordU0 = spanL.TexcoordU0;
+        xspan.TexcoordV0 = spanL.TexcoordV0;
+        xspan.ColorR0 = spanL.ColorR0;
+        xspan.ColorG0 = spanL.ColorG0;
+        xspan.ColorB0 = spanL.ColorB0;
+        xspan.Z0 = spanL.Z0;
+        xspan.W0 = spanL.W0;
+    }
+    else
+    {
+        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+        int ifactor = CalcYFactorY(spanL, i);
+        int idiff = spanL.I1 - spanL.I0;
+
+#ifdef ZBuffer
+        xspan.Z0 = int(InterpolateZZBuffer(spanL.Z0, spanL.Z1, i, spanL.IRecip, idiff));
+#endif
+#ifdef WBuffer
+        xspan.Z0 = int(InterpolateZWBuffer(spanL.Z0, spanL.Z1, ifactor));
+#endif
+
+        if (!spanL.Linear)
+        {
+            xspan.TexcoordU0 = InterpolateAttrPersp(spanL.TexcoordU0, spanL.TexcoordU1, ifactor);
+            xspan.TexcoordV0 = InterpolateAttrPersp(spanL.TexcoordV0, spanL.TexcoordV1, ifactor);
+
+            xspan.ColorR0 = InterpolateAttrPersp(spanL.ColorR0, spanL.ColorR1, ifactor);
+            xspan.ColorG0 = InterpolateAttrPersp(spanL.ColorG0, spanL.ColorG1, ifactor);
+            xspan.ColorB0 = InterpolateAttrPersp(spanL.ColorB0, spanL.ColorB1, ifactor);
+
+            xspan.W0 = InterpolateAttrPersp(spanL.W0, spanL.W1, ifactor);
+        }
+        else
+        {
+            xspan.TexcoordU0 = InterpolateAttrLinear(spanL.TexcoordU0, spanL.TexcoordU1, i, spanL.IRecip, idiff);
+            xspan.TexcoordV0 = InterpolateAttrLinear(spanL.TexcoordV0, spanL.TexcoordV1, i, spanL.IRecip, idiff);
+
+            xspan.ColorR0 = InterpolateAttrLinear(spanL.ColorR0, spanL.ColorR1, i, spanL.IRecip, idiff);
+            xspan.ColorG0 = InterpolateAttrLinear(spanL.ColorG0, spanL.ColorG1, i, spanL.IRecip, idiff);
+            xspan.ColorB0 = InterpolateAttrLinear(spanL.ColorB0, spanL.ColorB1, i, spanL.IRecip, idiff);
+
+            xspan.W0 = spanL.W0; // linear mode is only taken if W0 == W1
+        }
+    }
+
+    if (spanR.I0 == spanR.I1)
+    {
+        xspan.TexcoordU1 = spanR.TexcoordU0;
+        xspan.TexcoordV1 = spanR.TexcoordV0;
+        xspan.ColorR1 = spanR.ColorR0;
+        xspan.ColorG1 = spanR.ColorG0;
+        xspan.ColorB1 = spanR.ColorB0;
+        xspan.Z1 = spanR.Z0;
+        xspan.W1 = spanR.W0;
+    }
+    else
+    {
+        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+        int ifactor = CalcYFactorY(spanR, i);
+        int idiff = spanR.I1 - spanR.I0;
+
+    #ifdef ZBuffer
+            xspan.Z1 = int(InterpolateZZBuffer(spanR.Z0, spanR.Z1, i, spanR.IRecip, idiff));
+    #endif
+    #ifdef WBuffer
+            xspan.Z1 = int(InterpolateZWBuffer(spanR.Z0, spanR.Z1, ifactor));
+    #endif
+
+        if (!spanR.Linear)
+        {
+            xspan.TexcoordU1 = InterpolateAttrPersp(spanR.TexcoordU0, spanR.TexcoordU1, ifactor);
+            xspan.TexcoordV1 = InterpolateAttrPersp(spanR.TexcoordV0, spanR.TexcoordV1, ifactor);
+
+            xspan.ColorR1 = InterpolateAttrPersp(spanR.ColorR0, spanR.ColorR1, ifactor);
+            xspan.ColorG1 = InterpolateAttrPersp(spanR.ColorG0, spanR.ColorG1, ifactor);
+            xspan.ColorB1 = InterpolateAttrPersp(spanR.ColorB0, spanR.ColorB1, ifactor);
+
+            xspan.W1 = int(InterpolateAttrPersp(spanR.W0, spanR.W1, ifactor));
+        }
+        else
+        {
+            xspan.TexcoordU1 = InterpolateAttrLinear(spanR.TexcoordU0, spanR.TexcoordU1, i, spanR.IRecip, idiff);
+            xspan.TexcoordV1 = InterpolateAttrLinear(spanR.TexcoordV0, spanR.TexcoordV1, i, spanR.IRecip, idiff);
+
+            xspan.ColorR1 = InterpolateAttrLinear(spanR.ColorR0, spanR.ColorR1, i, spanR.IRecip, idiff);
+            xspan.ColorG1 = InterpolateAttrLinear(spanR.ColorG0, spanR.ColorG1, i, spanR.IRecip, idiff);
+            xspan.ColorB1 = InterpolateAttrLinear(spanR.ColorB0, spanR.ColorB1, i, spanR.IRecip, idiff);
+
+            xspan.W1 = spanR.W0;
+        }
+    }
+
+    if (xspan.W0 == xspan.W1 && ((xspan.W0 | xspan.W1) & 0x7F) == 0)
+    {
+        xspan.Flags |= XSpanSetup_Linear;
+// a bit hacky, but when wbuffering we only need to calculate xrecip for linear spans
+#ifdef ZBuffer
+    }
+    {
+#endif
+        uint r;
+        xspan.XRecip = int(Div(1U<<30, uint(xspan.X1 - xspan.X0), r));
+    }
+
+    XSpanSetups[gl_GlobalInvocationID.x] = xspan;
+}

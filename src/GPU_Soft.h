@@ -23,10 +23,10 @@
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
-#if defined(MELONPRIME_DS) \
-    && (defined(MELONPRIME_ENABLE_VULKAN) \
-        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
-#define MELONPRIME_HAS_STRUCTURED_SOFT_2D 1
+#ifdef MELONPRIME_DS
+// Defines MELONPRIME_HAS_STRUCTURED_SOFT_2D, shared with the GPU2D_Soft
+// producer side.
+#include "MelonPrimeStructuredComposition.h"
 #endif
 
 namespace melonDS

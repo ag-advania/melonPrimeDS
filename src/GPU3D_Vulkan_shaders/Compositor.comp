@@ -1,0 +1,237 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    Combine the software renderer's structured 2D planes with this backend's
+    internal-resolution 3D image, at the internal resolution, into the two
+    screens the frontend presents.
+
+    Build define: Compositor.
+    Host dispatch: (ceil(ScreenWidth/8), ceil(ScreenHeight*2/8), 1).
+
+    ------------------------------------------------------------------------
+    Where the rules come from
+    ------------------------------------------------------------------------
+
+    The software 2D engines already resolved every DS rule that decides *what*
+    is on a pixel: BG and OBJ priorities, windows, mosaic, sprite blending
+    flags, the colour-effect selection in SoftRenderer2D::ColorComposite(), the
+    display mode, master brightness and the screen swap. They did it with a
+    placeholder standing in for the 3D layer
+    (StructuredComposition::k3DPlaceholderPixel), so instead of a flattened
+    pixel they publish, per pixel:
+
+        plane 0 "below"    the 2D colour under the 3D slot, or the finished 2D
+                           colour when the pixel has no 3D slot at all
+        plane 1 "above"    the 2D colour layered over the 3D slot (only when
+                           kControlAbovePlane says so)
+        plane 2 "control"  flags + the eva/evb blend coefficients
+
+    ...plus one metadata word per scanline carrying master brightness, the
+    display mode and GPU3D::RenderXPos.
+
+    All this shader adds is the one thing the software renderer could not know:
+    the actual 3D colour, at full internal resolution. That is also why nothing
+    here is deferred to a later frame. The 2D planes and the 3D image are from
+    the same DS frame, composed in the same VBlank, so it does not matter that
+    Metroid Prime Hunters flips POWCNT1 bit 15 every frame -- the producer
+    already mapped engine to LCD for this frame (SoftRenderer::DrawScanline()
+    picks screenA/screenB from GPU.ScreenSwap), and there is no latched previous
+    result for the alternating phase to disagree with.
+
+    Cross-checked against DX12Shaders::Compositor (src/GPU3D_DX12_shaders.h),
+    which implements the same contract on the same producer.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+#include "PresentationBuffers.glsl"
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+// ---------------------------------------------------------------------------
+// The structured composition contract, restated
+// ---------------------------------------------------------------------------
+// C++ consumers include src/MelonPrimeStructuredComposition.h; a shader cannot,
+// so every value is restated here under the contract's own name.
+// tools/ci/audits/audit-structured-composition-contract.py parses both files and
+// fails when any of them disagrees, which is why these are plain `const uint`
+// declarations at column 0 with literal initialisers rather than expressions.
+
+// --- control word (plane 2) ------------------------------------------------
+const uint kControlFlagShift = 24u;
+const uint kControlEvbShift = 16u;
+const uint kControlEvaShift = 8u;
+const uint kControlBlendFactorMask = 0x1Fu;
+const uint kControlCompositionModeMask = 0x0Fu;
+const uint kControlHas3DSlot = 0x40u;
+const uint kControlAbovePlane = 0x80u;
+
+const uint kCompositionModeReplace = 0u;
+const uint kCompositionModeBlend4 = 1u;
+const uint kCompositionModeBrightnessUp = 2u;
+const uint kCompositionModeBrightnessDown = 3u;
+const uint kCompositionModeBlend5 = 4u;
+
+// --- line metadata (one word per scanline per screen) ----------------------
+const uint kLineMetaBrightnessFactorMask = 0x1Fu;
+const uint kLineMetaBrightnessModeShift = 8u;
+const uint kLineMetaBrightnessModeMask = 0x3u;
+const uint kLineMetaDisplayModeShift = 16u;
+const uint kLineMetaDisplayModeMask = 0x3u;
+const uint kLineMetaRenderXPosShift = 23u;
+const uint kLineMetaRenderXPosMask = 0x1FFu;
+
+const uint kBrightnessModeUp = 1u;
+const uint kBrightnessModeDown = 2u;
+const uint kBrightnessFactorLimit = 16u;
+
+const uint kDisplayModeOff = 0u;
+
+// Producer-side markers. This shader never sees them -- they only exist inside
+// the software 2D BG/OBJ pipeline, where they stand in for the 3D layer -- but
+// they are part of the same contract and the audit pins them here so a change
+// to either value cannot land on one side only.
+const uint k3DPlaceholderPixel = 0x20000000u;
+const uint k3DLayerSlotPixel = 0x40000000u;
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
+        return;
+
+    // The output is the two screens stacked, so one dispatch covers both and
+    // the host needs a single copy back. Screen 0 is the top LCD.
+    uint screen = id.y / uint(ScreenHeight);
+    uint scaledY = id.y - screen * uint(ScreenHeight);
+
+    // The 2D planes are native-resolution, so several output pixels share one
+    // structured pixel. That is the point: the 2D layer keeps DS-exact colour
+    // and the 3D layer keeps its full internal resolution.
+    uint nativeX = id.x / uint(ScaleFactor);
+    uint nativeY = scaledY / uint(ScaleFactor);
+    uint nativeIndex = nativeX + nativeY * uint(NativeWidth);
+    uint planeBase = screen * StructuredScreenStride;
+
+    uint below = StructuredInput[planeBase + nativeIndex];
+    uint above = StructuredInput[planeBase + StructuredPlaneStride + nativeIndex];
+    uint control = StructuredInput[planeBase + 2u * StructuredPlaneStride + nativeIndex];
+    uint controlFlags = control >> kControlFlagShift;
+
+    uint lineMeta = StructuredInput[StructuredLineMetaBase + screen * 192u + nativeY];
+
+    // Without a 3D slot plane 0 is already the final 2D colour, so the default
+    // is "the software renderer's answer, unchanged".
+    uint color = below;
+
+    if ((controlFlags & kControlHas3DSlot) != 0u)
+    {
+        // The 3D X scroll travels per scanline because that is where the DS
+        // applies it: SoftRenderer3D::GetLine() reads GPU3D::RenderXPos when
+        // the line is fetched, so a mid-frame write must not smear across the
+        // whole frame. Scaled up because the 3D image is, while RenderXPos is
+        // a native-resolution offset.
+        uint xPosition = (lineMeta >> kLineMetaRenderXPosShift) & kLineMetaRenderXPosMask;
+        int sourceX = (xPosition & 0x100u) != 0u
+            ? int(id.x) - int((512u - xPosition) * uint(ScaleFactor))
+            : int(id.x) + int(xPosition * uint(ScaleFactor));
+
+        // pc.TexWidth is the host's "this frame's 3D image is real" flag: zero
+        // when GPU3D aborted the frame or nothing has been rendered into
+        // FinalFB yet. Reusing a rasterise-stage push-constant field keeps one
+        // 32-byte push range serving every pipeline, and matches how the DX12
+        // compositor signals the same thing.
+        uint pixel3D = 0u;
+        if (pc.TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+            pixel3D = LoadFinalFB(ivec2(sourceX, scaledY));
+
+        // A fully transparent 3D pixel is the case SoftRenderer2D::DrawBG_3D()
+        // skips outright ("if ((c >> 24) == 0) continue"). The producer could
+        // not evaluate that test -- it only ever saw the placeholder -- so it
+        // is evaluated here, and the 2D pixel underneath stands.
+        if (((pixel3D >> 24u) & 0x1Fu) != 0u)
+        {
+            uint compositionMode = controlFlags & kControlCompositionModeMask;
+            uint eva = (control >> kControlEvaShift) & kControlBlendFactorMask;
+            uint evb = (control >> kControlEvbShift) & kControlBlendFactorMask;
+
+            if (compositionMode == kCompositionModeBlend4
+                && (controlFlags & kControlAbovePlane) != 0u)
+            {
+                // ColorComposite() coloreffect 1 with the 3D layer as the
+                // *second* operand: a blend-flagged sprite over 3D. The
+                // producer put the sprite in plane 1 for exactly this case.
+                color = Blend4(above, pixel3D, eva, evb);
+            }
+            else if (compositionMode == kCompositionModeBrightnessUp)
+            {
+                // coloreffect 2, ColorBrightnessUp(val1, EVY, 0x8) with the 3D
+                // layer as val1. eva carries EVY here (see the metadata
+                // assignment in SoftRenderer2D::ColorComposite).
+                color = BrightnessUp(pixel3D, eva, 0x8u);
+            }
+            else if (compositionMode == kCompositionModeBrightnessDown)
+            {
+                color = BrightnessDown(pixel3D, eva, 0x7u);   // coloreffect 3
+            }
+            else if (compositionMode == kCompositionModeBlend5)
+            {
+                // coloreffect 4, the DS's per-pixel 3D alpha blend against
+                // whatever the 2D layer put underneath.
+                color = Blend5(pixel3D, below);
+            }
+            else
+            {
+                // coloreffect 0: the 3D pixel wins outright.
+                //
+                // This branch also absorbs kCompositionModeBlend4 without an
+                // above plane. That combination cannot occur: reaching
+                // coloreffect 1 with the 3D layer as val1 needs
+                // (BlendCnt & target2) to be set in ColorComposite's third
+                // branch, and the second branch already claimed every such
+                // pixel for coloreffect 4.
+                color = pixel3D;
+            }
+        }
+    }
+
+    // Master brightness, GPU_Soft.cpp ApplyMasterBrightness().
+    //
+    // Display mode 0 is the producer's "already final, do not post-process"
+    // marker: a line that fell back to the software renderer's flattened output
+    // has had master brightness applied to it once already, and applying it a
+    // second time here is exactly the double-darkening that marker exists to
+    // prevent (see BuildStructuredScreenLine).
+    uint displayMode = (lineMeta >> kLineMetaDisplayModeShift) & kLineMetaDisplayModeMask;
+    if (displayMode != kDisplayModeOff)
+    {
+        uint brightnessMode = (lineMeta >> kLineMetaBrightnessModeShift) & kLineMetaBrightnessModeMask;
+        uint brightnessFactor = min(lineMeta & kLineMetaBrightnessFactorMask, kBrightnessFactorLimit);
+        if (brightnessMode == kBrightnessModeUp)
+            color = BrightnessUp(color, brightnessFactor, 0x0u);
+        else if (brightnessMode == kBrightnessModeDown)
+            color = BrightnessDown(color, brightnessFactor, 0xFu);
+    }
+
+    PresentationOutput[screen * uint(FramebufferStride) + scaledY * uint(ScreenWidth) + id.x] =
+        ToBgra8(color);
+}

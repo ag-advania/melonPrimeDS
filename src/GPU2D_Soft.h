@@ -20,6 +20,13 @@
 
 #include "GPU2D.h"
 
+#ifdef MELONPRIME_DS
+// Defines MELONPRIME_HAS_STRUCTURED_SOFT_2D. GPU_Soft.h (which owns the
+// structured storage) includes this header, so the macro cannot come from
+// there.
+#include "MelonPrimeStructuredComposition.h"
+#endif
+
 namespace melonDS
 {
 class SoftRenderer;
@@ -77,7 +84,7 @@ private:
         return table;
     }();
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     struct CompositeMetadata
     {
         u32 Mode = 0;
