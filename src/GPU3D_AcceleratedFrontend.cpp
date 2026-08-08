@@ -14,6 +14,21 @@ bool HasAcceleratedPolygonFlag(const AcceleratedPolygonMeta& polygonMeta, u32 fl
     return (polygonMeta.Flags & flag) != 0u;
 }
 
+bool IsAcceleratedDsLinearPolygon(const Polygon& polygon) noexcept
+{
+    if (polygon.NumVertices == 0u)
+        return false;
+
+    const s32 firstW = std::max<s32>(1, polygon.FinalW[0]);
+    for (u32 vertexIndex = 1; vertexIndex < polygon.NumVertices; vertexIndex++)
+    {
+        if (std::max<s32>(1, polygon.FinalW[vertexIndex]) != firstW)
+            return false;
+    }
+
+    return (static_cast<u32>(firstW) & 0x7Fu) == 0u;
+}
+
 AcceleratedPolygonMeta BuildAcceleratedPolygonMeta(const Polygon& polygon) noexcept
 {
     AcceleratedPolygonMeta polygonMeta{};
@@ -150,11 +165,7 @@ AcceleratedCoverageFixState ResolveAcceleratedCoverageFix(
     const u32 alpha5 = (polygon.Attr >> 16u) & 0x1Fu;
     const u32 blendMode = (polygon.Attr >> 4u) & 0x3u;
     const bool depthWriteDisabled = (polygon.Attr & (1u << 11u)) == 0u;
-    bool linearW = polygon.NumVertices > 0u;
-    const s32 firstW = linearW ? std::max<s32>(1, polygon.FinalW[0]) : 1;
-    for (u32 vertexIndex = 1; vertexIndex < polygon.NumVertices && linearW; vertexIndex++)
-        linearW = std::max<s32>(1, polygon.FinalW[vertexIndex]) == firstW;
-    linearW = linearW && ((static_cast<u32>(firstW) & 0x7Fu) == 0u);
+    const bool linearW = IsAcceleratedDsLinearPolygon(polygon);
     const bool paletteUiClamp =
         config.PaletteUiClampEnabled
         && polygon.Translucent
@@ -434,10 +445,28 @@ void BuildAcceleratedScene(
             continue;
         }
 
+        // A DS-linear polygon is rasterised by software as a screen-space span whose
+        // footprint is [XL, XR+1) horizontally and [YTop, YBottom) vertically. Snapping
+        // the vertices to the DS pixel grid and extending the right chain by one DS pixel
+        // makes the hardware rasteriser's centre-sampled coverage identical, and makes the
+        // interpolation denominator XR+1-XL as well, so the fragment stage's DS grid
+        // sample point lands on the exact software attribute value.
+        const bool dsGridLinear = config.DsGridLinearPolygons
+            && polygon->Type != 1
+            && polygon->NumVertices >= 3u
+            && polygon->VTop != polygon->VBottom
+            && polygon->VTop < polygon->NumVertices
+            && polygon->VBottom < polygon->NumVertices
+            && IsAcceleratedDsLinearPolygon(*polygon);
+
         AcceleratedSceneDraw draw{};
         draw.SourcePolygon = polygon;
         draw.Meta = BuildAcceleratedPolygonMeta(*polygon);
-        draw.CoverageFixState = ResolveAcceleratedCoverageFix(*polygon, config.CoverageFix);
+        // The DS footprint is reproduced exactly for these polygons, so the heuristic
+        // coverage expansion must not stack on top of it.
+        draw.CoverageFixState = dsGridLinear
+            ? AcceleratedCoverageFixState{}
+            : ResolveAcceleratedCoverageFix(*polygon, config.CoverageFix);
         if (draw.CoverageFixState.Apply)
         {
             bool polygonTouchesClipEdge = false;
@@ -491,7 +520,9 @@ void BuildAcceleratedScene(
         }
 
         std::vector<u16> polygonVertexIndices{};
-        polygonVertexIndices.reserve(std::max<u32>(polygon->NumVertices + 1u, 3u));
+        // +2 covers the BetterPolygons centre vertex and the two duplicated apexes the
+        // DS-linear ring adds.
+        polygonVertexIndices.reserve(std::max<u32>(polygon->NumVertices + 2u, 3u));
 
         const auto resolveFixedCoords = [&](u32 vertexIndex) -> std::pair<s32, s32> {
             const Vertex* vertex = polygon->Vertices[vertexIndex];
@@ -552,7 +583,14 @@ void BuildAcceleratedScene(
             continue;
         }
 
-        if (config.BetterPolygons && polygon->NumVertices > 3u)
+        // BetterPolygons splits a quad around an interpolated centre to hide perspective
+        // seams. A DS-linear polygon has no perspective across it, and the extra centre
+        // vertex would not sit on the reconstructed DS footprint, so it is skipped there.
+        const bool useBetterPolygons = config.BetterPolygons
+            && polygon->NumVertices > 3u
+            && !dsGridLinear;
+
+        if (useBetterPolygons)
         {
             s64 centerXFixedSum = 0;
             s64 centerYFixedSum = 0;
@@ -645,13 +683,8 @@ void BuildAcceleratedScene(
             }
         }
 
-        for (u32 vertexIndex = 0; vertexIndex < polygon->NumVertices; vertexIndex++)
-        {
+        const auto appendPolygonVertex = [&](u32 vertexIndex, s32 xFixed, s32 yFixed) {
             const Vertex* vertex = polygon->Vertices[vertexIndex];
-            if (vertex == nullptr)
-                continue;
-
-            const auto [xFixed, yFixed] = resolveFixedCoords(vertexIndex);
             const u16 sceneVertexIndex = appendSceneVertex(
                 xFixed,
                 yFixed,
@@ -665,6 +698,101 @@ void BuildAcceleratedScene(
                 static_cast<s16>(vertex->TexCoords[1]),
                 vertexAttrBase);
             polygonVertexIndices.push_back(sceneVertexIndex);
+        };
+
+        if (dsGridLinear)
+        {
+            const u32 ringVertexCount = polygon->NumVertices;
+            // The right chain is walked in the direction SoftRenderer3D::SetupPolygon()
+            // advances SlopeR.
+            const u32 rightStep = polygon->FacingView ? (ringVertexCount - 1u) : 1u;
+
+            bool ringValid = true;
+            for (u32 vertexIndex = 0; vertexIndex < ringVertexCount; vertexIndex++)
+            {
+                if (polygon->Vertices[vertexIndex] == nullptr)
+                {
+                    ringValid = false;
+                    break;
+                }
+            }
+
+            // GPU3D_Soft.cpp:988-990 pushes a vertical right edge one pixel back
+            // (SlopeR.Increment == 0 => xend--), so an axis-aligned span's footprint is
+            // [XL, XR) and snapped vertices already reproduce it under centre sampling.
+            // Only a sloped right edge keeps the inclusive [XL, XR] span that needs the
+            // extra DS pixel. Zero-height edges are skipped: SetupPolygonRightEdge()
+            // advances past them immediately, so they never become the active SlopeR.
+            // Note the compute rasteriser does not implement this rule
+            // (xspan.X1 = xr + 1 unconditionally); software is the reference here.
+            bool rightChainVertical = ringValid;
+            if (ringValid)
+            {
+                u32 ringIndex = polygon->VTop;
+                while (ringIndex != polygon->VBottom && rightChainVertical)
+                {
+                    const u32 nextIndex = (ringIndex + rightStep) % ringVertexCount;
+                    const Vertex* edgeStart = polygon->Vertices[ringIndex];
+                    const Vertex* edgeEnd = polygon->Vertices[nextIndex];
+                    if (edgeStart->FinalPosition[1] != edgeEnd->FinalPosition[1])
+                    {
+                        rightChainVertical =
+                            edgeStart->FinalPosition[0] == edgeEnd->FinalPosition[0];
+                    }
+                    ringIndex = nextIndex;
+                }
+            }
+            const s32 extendFixed = rightChainVertical ? 0 : (safeScale * 16);
+
+            const auto appendSnapped = [&](u32 vertexIndex, s32 extend) {
+                const Vertex* vertex = polygon->Vertices[vertexIndex];
+                appendPolygonVertex(
+                    vertexIndex,
+                    (vertex->FinalPosition[0] * safeScale * 16) + extend,
+                    vertex->FinalPosition[1] * safeScale * 16);
+            };
+
+            if (ringValid && extendFixed == 0)
+            {
+                for (u32 vertexIndex = 0; vertexIndex < ringVertexCount; vertexIndex++)
+                    appendSnapped(vertexIndex, 0);
+            }
+            else if (ringValid)
+            {
+                // Emitting each shared apex twice - once unshifted, once shifted - and
+                // shifting every right-chain vertex is the Minkowski sum of the polygon
+                // with a one-DS-pixel horizontal segment: the left chain keeps XL while
+                // every scanline's right edge becomes XR+1. Both copies carry the source
+                // vertex attributes, which is what makes the interpolation denominator
+                // XR+1-XL, matching software.
+                appendSnapped(polygon->VTop, 0);
+                appendSnapped(polygon->VTop, extendFixed);
+                for (u32 ringIndex = (polygon->VTop + rightStep) % ringVertexCount;
+                     ringIndex != polygon->VBottom;
+                     ringIndex = (ringIndex + rightStep) % ringVertexCount)
+                {
+                    appendSnapped(ringIndex, extendFixed);
+                }
+                appendSnapped(polygon->VBottom, extendFixed);
+                appendSnapped(polygon->VBottom, 0);
+                for (u32 ringIndex = (polygon->VBottom + rightStep) % ringVertexCount;
+                     ringIndex != polygon->VTop;
+                     ringIndex = (ringIndex + rightStep) % ringVertexCount)
+                {
+                    appendSnapped(ringIndex, 0);
+                }
+            }
+        }
+        else
+        {
+            for (u32 vertexIndex = 0; vertexIndex < polygon->NumVertices; vertexIndex++)
+            {
+                if (polygon->Vertices[vertexIndex] == nullptr)
+                    continue;
+
+                const auto [xFixed, yFixed] = resolveFixedCoords(vertexIndex);
+                appendPolygonVertex(vertexIndex, xFixed, yFixed);
+            }
         }
 
         draw.VertexCount = static_cast<u32>(outScene.Vertices.size()) - draw.FirstVertex;
@@ -675,7 +803,7 @@ void BuildAcceleratedScene(
         if (!packedYBounds.has_value())
             continue;
 
-        if (config.BetterPolygons && polygon->NumVertices > 3u && !polygonVertexIndices.empty())
+        if (useBetterPolygons && !polygonVertexIndices.empty())
         {
             const u16 centerVertexIndex = polygonVertexIndices.front();
             const u32 firstOuterIndex = 1u;

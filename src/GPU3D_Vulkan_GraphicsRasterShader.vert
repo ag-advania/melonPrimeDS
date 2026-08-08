@@ -52,7 +52,10 @@ void main()
     fDepthLinear = depth;
     fDepthPerspective = depth;
     fColor = vec3(vColor.rgb) * (1.0 / 255.0);
-    fTexcoord = vTexcoord * (1.0 / 16.0);
+    // Keep S/T in the DS 1/16-texel fixed-point domain that both GPU3D_Soft.cpp and
+    // GPU3D_Compute_shaders.h interpolate in. The fragment stage performs the >>4
+    // texel step with the same bit semantics as SoftRenderer3D::TextureLookup().
+    fTexcoord = vTexcoord;
     fTriInfo0 = vTriInfo0In;
     fTriInfo1 = uvec4(vTriInfo1In, 0u);
 }

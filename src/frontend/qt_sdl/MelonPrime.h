@@ -243,7 +243,6 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool ShouldForceSoftwareRenderer() const {
             return !IsMatchBetweenBlackoutsActive();
         }
-        [[nodiscard]] bool ShouldSuppressVulkanHelmetLayers() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     // True when the platform raw filter owns aim deltas. ScreenPanel uses
@@ -552,7 +551,6 @@ namespace MelonPrime {
         // Loaded only at the cold config boundary. Vulkan reads this scalar
         // before every frame so an F8 load cannot expose one unmasked frame
         // while the ARM patch tracker is still being re-established.
-        bool     m_vulkanHelmetLayerSuppressionConfigured = false;
         bool     m_enableMorphBoostSwipe = true; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         bool     m_enableMorphBoostCustomRawThreshold = false;
         // MELONPRIME_MORPH_BALL_BOOST_ASSIST_SENSITIVITY_AUDIT_FIX_V6

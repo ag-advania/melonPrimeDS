@@ -2,242 +2,93 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
-// Ported from SapphireRhodonite/melonDS-android 0.7.0.rc4.
-#ifndef VULKANOUTPUT_H
-#define VULKANOUTPUT_H
+#ifndef MELONPRIME_VULKAN_OUTPUT_H
+#define MELONPRIME_VULKAN_OUTPUT_H
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <array>
 #include <mutex>
 #include <unordered_map>
-#include <vector>
 #include <vulkan/vulkan.h>
 
 #include "MelonPrimeVulkanFrameQueue.h"
-#include "MelonPrimeVulkanFilterMode.h"
 #include "types.h"
 #include "VulkanPerfStats.h"
 
 namespace melonDS
 {
-class GPU;
 class VulkanRenderer3D;
 }
 
 namespace MelonPrime
 {
 
-struct SoftPackedScreenStats
+// One emulated frame of the structured 2D composition contract, as published by
+// melonDS::SoftRenderer::GetStructuredVulkanFrame(). See
+// src/MelonPrimeStructuredComposition.h for the bit layout.
+//
+// Everything the compositor needs is here, and nothing else is allowed in: the
+// composed image is a pure function of a single emulated frame. There is no
+// screen-swap input because the producer already assigned engines to LCDs, and
+// no previous-frame or scene-statistic input because the per-pixel control word
+// already states where the 3D layer belongs.
+struct StructuredCompositionFrame
 {
-    std::array<u32, 4> DisplayModeCounts{};
-    std::array<u32, 8> CompModeCounts{};
-    int MinXOffset = 0;
-    int MaxXOffset = 0;
-    bool HasOffsets = false;
-    u32 CaptureBackedComp4Pixels = 0;
-    u32 CaptureBackedComp4Lines = 0;
-    u32 RegularCaptureUses3dLines = 0;
-    u32 VramCaptureUses3dLines = 0;
-    u32 ForceLive3dCompMode7Lines = 0;
-    u32 StructuredSlotPixels = 0;
-    u32 StructuredAbovePixels = 0;
-    u32 Structured2DOnlyPixels = 0;
-    u32 Plane0UsefulPixels = 0;
-    u32 Plane0VisiblePixels = 0;
-    u32 Plane0OpaqueBlackPixels = 0;
-    u32 Plane1UsefulPixels = 0;
-    u32 Plane1VisiblePixels = 0;
-    u32 Plane1OpaqueBlackPixels = 0;
-    u32 StructuredAboveVisiblePixels = 0;
-    u32 StructuredAboveBlackPixels = 0;
-    u32 Structured2DOnlyVisiblePixels = 0;
-    u32 ProtectedBlackPixels = 0;
-};
+    static constexpr std::size_t kScreenWidth = 256;
+    static constexpr std::size_t kScreenHeight = 192;
+    static constexpr std::size_t kPixelCount = kScreenWidth * kScreenHeight;
+    static constexpr std::size_t kLineCount = kScreenHeight;
 
-struct SoftPackedFrameSnapshot
-{
-    static constexpr size_t kScreenWidth = 256u;
-    static constexpr size_t kScreenHeight = 192u;
-    static constexpr size_t kPixelCount = kScreenWidth * kScreenHeight;
-    static constexpr size_t kLineCount = kScreenHeight;
+    // [screen][plane]; screen 0 is the top LCD, plane order is below/above/control.
+    const u32* Plane[2][3]{};
+    // [screen]; one metadata word per scanline.
+    const u32* LineMeta[2]{};
+    // False when the 3D frame was aborted, which is the DX12 compositor's
+    // equivalent gate. The 3D layer then contributes nothing.
+    bool Has3D = false;
+    u64 Generation = 0;
 
-    u64 frameId = 0;
-    int frontBufferLatched = -1;
-    bool screenSwapLatched = false;
-    bool valid = false;
-    bool hasCapture3dSource = false;
-    bool captureBackedClass4Only = false;
-    bool currentFrameOnly = false;
-    std::array<u32, kPixelCount> packedTopPlane0{};
-    std::array<u32, kPixelCount> packedTopPlane1{};
-    std::array<u32, kPixelCount> packedTopControl{};
-    std::array<u32, kLineCount> packedTopLineMeta{};
-    std::array<u32, kPixelCount> packedBottomPlane0{};
-    std::array<u32, kPixelCount> packedBottomPlane1{};
-    std::array<u32, kPixelCount> packedBottomControl{};
-    std::array<u32, kLineCount> packedBottomLineMeta{};
-    std::array<u32, kPixelCount> capture3dSourceDsFrame{};
-    std::array<u8, kLineCount> captureLineUses3dMask{};
-    std::array<u8, kLineCount> captureFallbackLines{};
-    std::array<u32, kPixelCount> comp4TopPlaceholder{};
-    std::array<u32, kPixelCount> comp4BottomPlaceholder{};
-    SoftPackedScreenStats topScreenStats{};
-    SoftPackedScreenStats bottomScreenStats{};
-
-    void clear()
+    [[nodiscard]] bool IsComplete() const noexcept
     {
-        frameId = 0;
-        frontBufferLatched = -1;
-        screenSwapLatched = false;
-        valid = false;
-        hasCapture3dSource = false;
-        captureBackedClass4Only = false;
-        currentFrameOnly = false;
-        packedTopPlane0.fill(0);
-        packedTopPlane1.fill(0);
-        packedTopControl.fill(0);
-        packedTopLineMeta.fill(0);
-        packedBottomPlane0.fill(0);
-        packedBottomPlane1.fill(0);
-        packedBottomControl.fill(0);
-        packedBottomLineMeta.fill(0);
-        capture3dSourceDsFrame.fill(0);
-        captureLineUses3dMask.fill(0);
-        captureFallbackLines.fill(0);
-        comp4TopPlaceholder.fill(0);
-        comp4BottomPlaceholder.fill(0);
-        topScreenStats = {};
-        bottomScreenStats = {};
-    }
-
-    void clearForLatch()
-    {
-        frameId = 0;
-        frontBufferLatched = -1;
-        screenSwapLatched = false;
-        valid = false;
-        hasCapture3dSource = false;
-        captureBackedClass4Only = false;
-        currentFrameOnly = false;
-        capture3dSourceDsFrame.fill(0);
-        captureLineUses3dMask.fill(0);
-        captureFallbackLines.fill(0);
-        comp4TopPlaceholder.fill(0);
-        comp4BottomPlaceholder.fill(0);
-        topScreenStats = {};
-        bottomScreenStats = {};
+        for (std::size_t screen = 0; screen < 2u; ++screen)
+        {
+            if (LineMeta[screen] == nullptr)
+                return false;
+            for (std::size_t plane = 0; plane < 3u; ++plane)
+            {
+                if (Plane[screen][plane] == nullptr)
+                    return false;
+            }
+        }
+        return true;
     }
 };
 
-struct PreparedSoftPackedFrameDebugView
-{
-    u64 frameId = 0;
-    int frontBufferLatched = -1;
-    bool screenSwapLatched = false;
-    bool captureBackedClass4Only = false;
-    const u32* capture3dSourceDsFrame = nullptr;
-    const u8* captureLineUses3dMask = nullptr;
-    const u8* captureFallbackLines = nullptr;
-    const u32* comp4TopPlaceholder = nullptr;
-    const u32* comp4BottomPlaceholder = nullptr;
-    SoftPackedScreenStats topScreenStats{};
-    SoftPackedScreenStats bottomScreenStats{};
-    bool valid = false;
-};
-
+// Resolved GPU handles and scalars for one compositor dispatch.
 struct VulkanCompositionInputs
 {
+    // The emulated frame these inputs describe. Everything downstream is
+    // checked against it so a dispatch can never mix two frames' 2D and 3D.
+    u64 generation{};
+    // The 3D renderer's submission serial at the moment these inputs were
+    // built, and how many times its color target had been taken back for a new
+    // 3D frame. Recorded so the 3D image can be tied to a specific render
+    // submission rather than "whatever is in the color target right now".
+    // These are for tracing only: the actual ordering comes from the pipeline
+    // barriers, never from comparing serials.
+    u64 rendererSubmissionSerial{};
+    u64 colorImageReuseSerial{};
     VkImage sourceImage{VK_NULL_HANDLE};
     VkImageView sourceImageView{VK_NULL_HANDLE};
-    VkImage previousTopSourceImage{VK_NULL_HANDLE};
-    VkImageView previousTopSourceImageView{VK_NULL_HANDLE};
-    VkImage previousBottomSourceImage{VK_NULL_HANDLE};
-    VkImageView previousBottomSourceImageView{VK_NULL_HANDLE};
     VkBuffer topPackedBuffer{VK_NULL_HANDLE};
     VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
-    VkBuffer capture3dBuffer{VK_NULL_HANDLE};
     VkDeviceSize packedBufferSize{};
-    VkDeviceSize capture3dBufferSize{};
     u32 packedStride{};
-    u32 screenSwap{};
     u32 scale{};
     u32 rendererWidth{};
     u32 rendererHeight{};
-    VulkanFilterMode filtering{VulkanFilterMode::Nearest};
-    bool previousTopSourceValid{};
-    bool previousBottomSourceValid{};
-    bool currentSourceHasHighres3d{};
-    bool capture3dSourceValid{};
-    bool capture3dSourceScreenSwapValid{};
-    bool capture3dSourceScreenSwap{};
-    bool liveSourceScreenSwap{};
-    bool class4VramStructuredPair{};
-    bool class4NoAboveVramStructuredPair{};
-    bool class4PreservePackedVramValid{};
-    bool class4PreservePackedVramScreenSwap{};
-    bool topStructuredHandoffNoCurrent3d{};
-    bool bottomStructuredHandoffNoCurrent3d{};
-    bool topStructuredHandoffSuppress3d{};
-    bool bottomStructuredHandoffSuppress3d{};
-    bool needsReadback{};
-    bool multiSurface{};
-    bool validationMode{};
-};
-
-struct MelonPrimeVulkanOutputTemporalStats
-{
-    u64 FramesPrepared = 0;
-    u64 FramesWithCapture3dSource = 0;
-    u64 TopNeedsHighres = 0;
-    u64 BottomNeedsHighres = 0;
-    u64 TopPreviousSourceValid = 0;
-    u64 BottomPreviousSourceValid = 0;
-    u64 TopMissingHighresSource = 0;
-    u64 BottomMissingHighresSource = 0;
-    u64 TopStructuredSlot = 0;
-    u64 BottomStructuredSlot = 0;
-    u64 TopStructuredMissingAccumulator = 0;
-    u64 BottomStructuredMissingAccumulator = 0;
-    u64 TopAccumulatorAvailable = 0;
-    u64 BottomAccumulatorAvailable = 0;
-    u64 TopRegularCapture = 0;
-    u64 BottomRegularCapture = 0;
-    u64 TopVramCapture = 0;
-    u64 BottomVramCapture = 0;
-    u64 TopForceLiveCompMode7 = 0;
-    u64 BottomForceLiveCompMode7 = 0;
-    u64 TopCaptureBackedComp4 = 0;
-    u64 BottomCaptureBackedComp4 = 0;
-    u64 PackedTopOwner = 0;
-    u64 PackedBottomOwner = 0;
-    u64 LiveTopOwner = 0;
-    u64 LiveBottomOwner = 0;
-    u64 LiveOwnerOverride = 0;
-    u64 SnapshotFrames = 0;
-    u64 SnapshotTopOwner = 0;
-    u64 SnapshotBottomOwner = 0;
-    u64 SnapshotOwnerDiffersFromLive = 0;
-    u64 TopPlane0UsefulPixels = 0;
-    u64 TopPlane0VisiblePixels = 0;
-    u64 TopPlane0OpaqueBlackPixels = 0;
-    u64 TopPlane1UsefulPixels = 0;
-    u64 TopPlane1VisiblePixels = 0;
-    u64 TopPlane1OpaqueBlackPixels = 0;
-    u64 TopStructuredAboveVisiblePixels = 0;
-    u64 TopStructuredAboveBlackPixels = 0;
-    u64 TopStructured2DOnlyVisiblePixels = 0;
-    u64 TopProtectedBlackPixels = 0;
-    u64 BottomPlane0UsefulPixels = 0;
-    u64 BottomPlane0VisiblePixels = 0;
-    u64 BottomPlane0OpaqueBlackPixels = 0;
-    u64 BottomPlane1UsefulPixels = 0;
-    u64 BottomPlane1VisiblePixels = 0;
-    u64 BottomPlane1OpaqueBlackPixels = 0;
-    u64 BottomStructuredAboveVisiblePixels = 0;
-    u64 BottomStructuredAboveBlackPixels = 0;
-    u64 BottomStructured2DOnlyVisiblePixels = 0;
-    u64 BottomProtectedBlackPixels = 0;
+    bool has3D{};
 };
 
 class MelonPrimeVulkanOutput
@@ -254,66 +105,32 @@ public:
     [[nodiscard]] bool isInitialized() const { return initialized; }
 
     bool ensureFrameResources(VulkanFrame* frame, u32 width, u32 height);
-    void invalidateTemporalHistory();
-    void clearStructuredCaptureHistory();
-    void releaseTemporalFrameReferences();
-    bool captureRenderer3dSnapshot(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+
+    // Drops every cross-frame reference. The composed pixels never depend on
+    // frame history, so this exists only for resource lifetime: a renderer
+    // transition or a savestate can retire the images a queued frame points at.
+    void releaseFrameReferences();
+
+    // Copies this frame's structured planes into the frame's mapped packed
+    // buffers. Nothing is retained between frames.
     bool prepareFrameForPresentation(
         VulkanFrame* frame,
-        const melonDS::GPU& gpu,
-        int frontBuffer,
-        bool frameScreenSwap,
-        SoftPackedFrameSnapshot& softPackedSnapshot,
-        melonDS::VulkanRenderer3D& renderer3D);
-    bool composeAndSubmitFrame(VulkanFrame* frame, const VulkanCompositionInputs& inputs);
+        const StructuredCompositionFrame& structured);
     bool buildCompositionInputs(
         const VulkanFrame* frame,
         const melonDS::VulkanRenderer3D& renderer3D,
         int scale,
-        VulkanFilterMode filtering,
-        bool needsReadback,
-        bool multiSurface,
-        bool validationMode,
+        bool has3D,
+        u64 generation,
         VulkanCompositionInputs& outInputs) const;
-    bool validateFrameSubmission(VulkanFrame* frame, u64 waitTimeoutNs = UINT64_MAX);
-    bool validateCompositorSubmission(VulkanFrame* frame, const melonDS::VulkanRenderer3D& renderer3D, int scale, u64 waitTimeoutNs = UINT64_MAX);
-    bool validateRuntimePath(u32 width, u32 height, const melonDS::VulkanRenderer3D& renderer3D, int scale);
-    bool isFrameReady(const VulkanFrame* frame) const;
+    bool composeAndSubmitFrame(VulkanFrame* frame, const VulkanCompositionInputs& inputs);
+
     bool waitForFrame(const VulkanFrame* frame, u64 timeoutNs);
-    bool isFrameReferencedAsPendingPreviousSource(const VulkanFrame* frame) const;
-    bool readFramePixels(const VulkanFrame* frame, u32* destinationPixels, size_t destinationPixelCount, u64 waitTimeoutNs = UINT64_MAX);
-    bool readPreparedRenderer3dPixels(
-        const VulkanFrame* frame,
-        u32* destinationPixels,
-        size_t destinationPixelCount,
-        u32& outWidth,
-        u32& outHeight,
-        u64 waitTimeoutNs = UINT64_MAX);
-    bool getPreparedRenderer3dCaptureFrame(
-        const VulkanFrame* frame,
-        const u32*& outPixels,
-        u32& outWidth,
-        u32& outHeight) const;
-    bool getPreparedRenderer3dDimensions(const VulkanFrame* frame, u32& outWidth, u32& outHeight) const;
-    bool getPreparedPackedBuffers(
-        const VulkanFrame* frame,
-        const u32*& outTopPacked,
-        const u32*& outBottomPacked,
-        u32& outPackedStride,
-        u32& outPackedHeight,
-        bool& outScreenSwap) const;
-    bool getPreparedSoftPackedFrameDebugView(
-        const VulkanFrame* frame,
-        PreparedSoftPackedFrameDebugView& outView) const;
     [[nodiscard]] VkImage getFrameImage(const VulkanFrame* frame) const;
     [[nodiscard]] VkImageView getFrameImageView(const VulkanFrame* frame) const;
-    MelonPrimeVulkanOutputTemporalStats takeTemporalStatsSnapshotAndReset();
 
 private:
-    static constexpr size_t kPackedScreenWordCount =
-        SoftPackedFrameSnapshot::kLineCount
-        * ((SoftPackedFrameSnapshot::kScreenWidth * 3u) + 1u);
-
+    // Mirrors MelonPrimeVulkanCompositorShader.comp. Keep the order identical.
     struct CompositorPushConstants
     {
         u32 outputWidth;
@@ -322,181 +139,110 @@ private:
         u32 rendererWidth;
         u32 rendererHeight;
         u32 packedStride;
-        u32 screenSwap;
-        u32 filtering;
-        u32 previousTopSourceValid;
-        u32 previousBottomSourceValid;
-        u32 captureSourceValid;
-        u32 captureSourceScreenSwapValid;
-        u32 captureSourceScreenSwap;
-        u32 liveSourceScreenSwap;
-        u32 class4VramStructuredPair;
-        u32 class4NoAboveVramStructuredPair;
-        u32 class4PreservePackedVramValid;
-        u32 class4PreservePackedVramScreenSwap;
-        u32 topStructuredHandoffNoCurrent3d;
-        u32 bottomStructuredHandoffNoCurrent3d;
-        u32 topStructuredHandoffSuppress3d;
-        u32 bottomStructuredHandoffSuppress3d;
+        u32 has3D;
     };
 
-    struct AccumulatePushConstants
+    // Who may touch a frame's resources right now.
+    //
+    // Idle       the GPU is not reading this frame's inputs; the emulation
+    //            thread may rewrite the shared structured planes for it.
+    // Recording  its command buffer is open; nothing may be rewritten.
+    // Submitted  its dispatch may still be executing; the packed planes, the
+    //            output image and the bound descriptors must all stay put.
+    enum class SubmissionState : u8
     {
-        u32 scale;
-        u32 packedStride;
-        u32 topLcd;
+        Idle,
+        Recording,
+        Submitted,
     };
 
     struct FrameResource
     {
+        // Composition output. Produced by the compute dispatch in
+        // VK_IMAGE_LAYOUT_GENERAL, consumed by the surface presenter.
         VkImage image{VK_NULL_HANDLE};
         VkImageView imageView{VK_NULL_HANDLE};
         VkDeviceMemory imageMemory{VK_NULL_HANDLE};
-
-        VkBuffer stagingBuffer{VK_NULL_HANDLE};
-        VkDeviceMemory stagingMemory{VK_NULL_HANDLE};
-        VkDeviceSize stagingSize{};
 
         VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
         VkFence submitFence{VK_NULL_HANDLE};
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
         VkQueryPool timestampQueryPool{VK_NULL_HANDLE};
+
+        // This frame's own structured planes, persistently mapped.
+        //
+        // They are per-frame precisely so that submitFence is a complete
+        // statement about when they may be rewritten. A single shared pair
+        // cannot work here: acquireFrameForCpuWrite() waits on the fence of the
+        // frame being acquired, so with one shared buffer a dispatch still
+        // reading it from a different slot was never waited for, and the
+        // emulation thread could overwrite below/above/control/lineMeta
+        // underneath it. One dispatch then saw a mix of two generations, which
+        // is what put the background and 3D in front of the UI on alternating
+        // frames. DX12 gets away with one composition input buffer only because
+        // it serializes each composition with Commands.WaitIdle().
         VkBuffer topPackedBuffer{VK_NULL_HANDLE};
         VkDeviceMemory topPackedMemory{VK_NULL_HANDLE};
         void* topPackedMapped{};
         VkBuffer bottomPackedBuffer{VK_NULL_HANDLE};
         VkDeviceMemory bottomPackedMemory{VK_NULL_HANDLE};
         void* bottomPackedMapped{};
-        VkBuffer capture3dBuffer{VK_NULL_HANDLE};
-        VkDeviceMemory capture3dMemory{VK_NULL_HANDLE};
-        void* capture3dMapped{};
         VkDeviceSize packedBufferSize{};
-        VkImage renderer3dSnapshot{VK_NULL_HANDLE};
-        VkImageView renderer3dSnapshotView{VK_NULL_HANDLE};
-        VkDeviceMemory renderer3dSnapshotMemory{VK_NULL_HANDLE};
-        u32 snapshotWidth{};
-        u32 snapshotHeight{};
-        VkImage previousTopRendererSourceImage{VK_NULL_HANDLE};
-        VkImageView previousTopRendererSourceImageView{VK_NULL_HANDLE};
-        bool previousTopRendererSourceValid{};
-        VulkanFrame* previousTopSourceFrame{};
-        bool previousTopSourcePending{};
-        VkImage previousBottomRendererSourceImage{VK_NULL_HANDLE};
-        VkImageView previousBottomRendererSourceImageView{VK_NULL_HANDLE};
-        bool previousBottomRendererSourceValid{};
-        VulkanFrame* previousBottomSourceFrame{};
-        bool previousBottomSourcePending{};
-        u64 softPackedFrameId{};
-        int frontBufferLatched{-1};
-        bool captureBackedClass4Only{};
-        bool class4NoAboveVramStructuredPair{};
-        bool class4PreservePackedVramValid{};
-        bool class4PreservePackedVramScreenSwap{};
-        bool topStructuredHandoffNoCurrent3d{};
-        bool bottomStructuredHandoffNoCurrent3d{};
-        bool topStructuredHandoffSuppress3d{};
-        bool bottomStructuredHandoffSuppress3d{};
-        bool topPackedCarryFromPrevious{};
-        bool bottomPackedCarryFromPrevious{};
-        bool topPureAlternatingVramCapture{};
-        bool bottomPureAlternatingVramCapture{};
-        bool hasSoftPackedDebugData{};
-        SoftPackedScreenStats topScreenStats{};
-        SoftPackedScreenStats bottomScreenStats{};
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> capture3dSourceDsFrame{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureLineUses3dMask{};
-        std::array<u8, SoftPackedFrameSnapshot::kLineCount> captureFallbackLines{};
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4TopPlaceholder{};
-        std::array<u32, SoftPackedFrameSnapshot::kPixelCount> comp4BottomPlaceholder{};
 
         u64 submissionValue{};
         u32 width{};
         u32 height{};
-        bool screenSwap{};
-        bool screenSwapToggledFromPrevious{};
         bool hasContent{};
         bool hasPreparedInputs{};
-        bool replayTopComposedFromPrevious{};
-        bool replayBottomComposedFromPrevious{};
-        bool replayTopComposedFromLatest{};
-        VulkanFrame* previousTopComposedFrame{};
-        VulkanFrame* previousBottomComposedFrame{};
-        bool hasRenderer3dSnapshot{};
-        bool renderer3dSnapshotScreenSwap{};
-        bool hasPreparedCapture3dSource{};
-        bool snapshotFromPreRun{};
-        bool snapshotFromInitializedTarget{};
-        bool snapshotFromGraphicsBackend{};
         bool descriptorSetReady{};
         bool timestampPending{};
         VkImageView cachedRendererImageView{VK_NULL_HANDLE};
-        VkImageView cachedPreviousTopRendererImageView{VK_NULL_HANDLE};
-        VkImageView cachedPreviousBottomRendererImageView{VK_NULL_HANDLE};
-        std::array<u32, 256 * 192> preparedCapture3dSource{};
+
+        SubmissionState submissionState{SubmissionState::Idle};
+        // Set true only between acquireFrameForCpuWrite() and the submission
+        // that consumes the write. Asserted wherever the planes are written.
+        bool cpuWriteOwnership{};
+        // The emulated frame this resource's inputs, submission and completed
+        // dispatch belong to. They must agree at every step.
+        u64 preparedGeneration{};
+        u64 submittedGeneration{};
+        u64 completedGeneration{};
     };
 
-private:
     bool createSyncObjects();
     bool createCommandObjects();
     bool createCompositorResources();
+    void destroyCompositorResources();
     bool createTimestampQueryPool(VkQueryPool& queryPool);
     void destroyTimestampQueryPool(VkQueryPool& queryPool);
-    void destroyCompositorResources();
     bool createFrameResource(VulkanFrame* frame, u32 width, u32 height);
     void destroyFrameResource(VulkanFrame* frame);
     void destroyFrameResources();
     u32 findMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const;
 
+    // Waits for any dispatch still reading the shared structured planes, then
+    // hands the emulation thread the right to rewrite them.
+    bool acquireFrameForCpuWrite(VulkanFrame* frame, u64 timeoutNs = UINT64_MAX);
+    bool waitForResourceSubmission(FrameResource& resource, u64 timeoutNs);
+    // Returns a resource to Idle after recording or submission failed, so a
+    // later reuse cannot block forever on a fence that will never signal.
+    bool recoverFrameResourceAfterAbortedSubmission(FrameResource& resource);
     bool beginFrameCommand(FrameResource& resource, u64 waitTimeoutNs = UINT64_MAX);
     bool submitFrameCommand(VulkanFrame* frame, FrameResource& resource, bool signalTimeline);
-    bool updateCompositorPackedBuffers(VulkanFrame* frame, FrameResource& resource, const SoftPackedFrameSnapshot& softPackedSnapshot);
-    bool updatePreparedCapture3dSource(
+    bool updateCompositorPackedBuffers(
         FrameResource& resource,
-        SoftPackedFrameSnapshot& softPackedSnapshot,
-        const FrameResource* previousResource,
-        bool currentBackendIsGraphics,
-        bool currentFrameNeedsCapture3dSource,
-        melonDS::VulkanRenderer3D& renderer3D);
-    bool ensureRenderer3dSnapshot(FrameResource& resource, u32 width, u32 height);
-    void destroyRenderer3dSnapshot(FrameResource& resource);
-    bool recordRenderer3dSnapshotCopy(FrameResource& resource, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
-
-    bool createAccumulateResources();
-    void destroyAccumulateResources();
-    bool ensureAccumulatedHighresImages(u32 width, u32 height);
-    void destroyAccumulatedHighresImage(VkImage& image, VkImageView& view, VkDeviceMemory& memory, bool& valid, bool& layoutReady);
-    bool recordAccumulateMerge(FrameResource& resource, bool topLcd, bool replaceExisting);
-    bool recordDirectPresentationPrep(
+        const StructuredCompositionFrame& structured);
+    bool dispatchCompositor(
         VulkanFrame* frame,
         FrameResource& resource,
-        const melonDS::VulkanRenderer3D& renderer3D,
-        bool snapshotScreenSwap,
-        bool accumulateTopHighres,
-        bool accumulateBottomHighres,
-        bool replaceAccumulatedHighres);
-    bool dispatchCompositor(VulkanFrame* frame, FrameResource& resource, const VulkanCompositionInputs& inputs);
-    void recordTemporalStats(
-        const SoftPackedFrameSnapshot& softPackedSnapshot,
-        const FrameResource& resource,
-        bool topNeedsAccumulatedHighres,
-        bool bottomNeedsAccumulatedHighres,
-        bool topAccumulatorAvailable,
-        bool bottomAccumulatorAvailable,
-        bool packedScreenSwap,
-        bool liveSourceScreenSwap,
-        bool hasRenderer3dSnapshot,
-        bool renderer3dSnapshotScreenSwap);
+        const VulkanCompositionInputs& inputs);
     void consumeFrameGpuTiming(FrameResource& resource);
-    void logPerformanceIfNeeded();
-    bool readResourceImagePixels(
-        FrameResource& resource,
+    void logPackedFrameIfNeeded(
         const VulkanFrame* frame,
-        VkImage image,
-        u32 width,
-        u32 height,
-        u32* destinationPixels,
-        size_t destinationPixelCount,
-        u64 waitTimeoutNs);
+        const FrameResource& resource,
+        const VulkanCompositionInputs& inputs) const;
+    void logFrameSyncIfNeeded(const VulkanFrame* frame, const VulkanCompositionInputs& inputs);
+    void logPerformanceIfNeeded();
 
 private:
     bool initialized{};
@@ -525,70 +271,27 @@ private:
     VkPipelineLayout compositorPipelineLayout{VK_NULL_HANDLE};
     VkPipeline compositorPipeline{VK_NULL_HANDLE};
 
-    VkImage accumulatedTopHighresImage{VK_NULL_HANDLE};
-    VkImageView accumulatedTopHighresView{VK_NULL_HANDLE};
-    VkDeviceMemory accumulatedTopHighresMemory{VK_NULL_HANDLE};
-    bool accumulatedTopHighresValid{false};
-    bool accumulatedTopHighresLayoutReady{false};
-    VkImage accumulatedBottomHighresImage{VK_NULL_HANDLE};
-    VkImageView accumulatedBottomHighresView{VK_NULL_HANDLE};
-    VkDeviceMemory accumulatedBottomHighresMemory{VK_NULL_HANDLE};
-    bool accumulatedBottomHighresValid{false};
-    bool accumulatedBottomHighresLayoutReady{false};
-    u32 accumulatedHighresWidth{0};
-    u32 accumulatedHighresHeight{0};
-
-    VkDescriptorSetLayout accumulateDescriptorSetLayout{VK_NULL_HANDLE};
-    VkDescriptorPool accumulateDescriptorPool{VK_NULL_HANDLE};
-    VkPipelineLayout accumulatePipelineLayout{VK_NULL_HANDLE};
-    VkPipeline accumulatePipeline{VK_NULL_HANDLE};
-    VkDescriptorSet accumulateTopDescriptorSet{VK_NULL_HANDLE};
-    VkDescriptorSet accumulateBottomDescriptorSet{VK_NULL_HANDLE};
-    bool accumulateTopDescriptorReady{false};
-    bool accumulateBottomDescriptorReady{false};
-    VkImageView cachedAccumulateTopSourceView{VK_NULL_HANDLE};
-    VkImageView cachedAccumulateBottomSourceView{VK_NULL_HANDLE};
+    // Counts compositor dispatches, so a log line can say which composition a
+    // given structured generation and 3D submission ended up in.
+    u64 compositorSubmissionSerial{};
+    u64 lastLoggedColorImageReuseSerial{};
 
     std::unordered_map<VulkanFrame*, FrameResource> resources;
     std::mutex commandPoolLock;
-    VulkanFrame* lastPreparedFrame{nullptr};
-    VulkanFrame* lastTopRendererSourceFrame{nullptr};
-    VulkanFrame* lastBottomRendererSourceFrame{nullptr};
-    VulkanFrame* lastTopComposedFrame{nullptr};
-    VulkanFrame* lastBottomComposedFrame{nullptr};
-    std::vector<u32> lastValidTopPacked;
-    std::vector<u32> lastValidBottomPacked;
-    bool lastValidTopPackedAvailable{false};
-    bool lastValidBottomPackedAvailable{false};
-    bool lastPackedScreenSwapValid{false};
-    bool lastPackedScreenSwap{false};
-    u32 framesSinceTopLive3D{1024};
-    u32 framesSinceBottomLive3D{1024};
-    bool class4AsymmetricCadenceActive{};
-    u32 class4AsymmetricCadencePhase{};
-    bool class4BottomAboveHashValid{};
-    u64 class4BottomAboveHash{};
-    u32 class4BottomAboveStableFrames{};
-    bool class4BottomAboveMotionActive{};
-    bool class4NoAboveVramStructuredActive{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidCapture3dSource{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidCapture3dSourceLines{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidTopComp4Placeholder{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidTopComp4PlaceholderLines{};
-    std::array<u32, SoftPackedFrameSnapshot::kPixelCount> lastValidBottomComp4Placeholder{};
-    std::array<u8, SoftPackedFrameSnapshot::kLineCount> lastValidBottomComp4PlaceholderLines{};
-    u32 packedDebugLogsRemaining{};
-    u32 class4PairDebugLogsRemaining{};
-    u32 regularComp7PackedOwnerDebugLogsRemaining{};
-    u32 structuredComp7HandoffDebugLogsRemaining{};
-    u32 ownershipIntroDebugLogsRemaining{};
-    bool regularComp7PackedOwnerDebugActive{};
-    std::mutex temporalStatsLock;
-    MelonPrimeVulkanOutputTemporalStats temporalStats{};
+
     PerfSampleWindow<120> packedUploadCpuWindow;
     PerfSampleWindow<120> composeCpuWindow;
     PerfSampleWindow<120> waitCpuWindow;
     PerfSampleWindow<120> compositorGpuWindow;
+    // Ownership violations. All must stay at zero; they are surfaced in the
+    // developer performance log rather than being silently tolerated.
+    u64 packedWriteWhileSubmitted = 0;
+    u64 generationMismatch = 0;
+    // Composition inputs naming buffers other than the dispatching frame's own.
+    u64 packedBufferIdentityMismatch = 0;
+    u64 fenceRecoveryFailure = 0;
+    u64 staleTimelinePresented = 0;
+
     u64 waitFailureInvalidFrame = 0;
     u64 waitFailureTimelineZero = 0;
     u64 waitFailureResourceMissing = 0;
@@ -598,5 +301,5 @@ private:
 
 }
 
-#endif // VULKANOUTPUT_H
+#endif // MELONPRIME_VULKAN_OUTPUT_H
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN

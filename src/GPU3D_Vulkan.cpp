@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <unordered_map>
@@ -68,7 +69,18 @@
 namespace MelonDSAndroid
 {
 bool isFastForwardActive() { return false; }
-bool areRendererDebugToolsEnabled() { return false; }
+
+// The Android port drove this from a debug UI. Desktop has none, so gate the existing
+// renderer trace on MELONPRIME_VULKAN_DEBUG=1 instead: read once, so an unset environment
+// costs a single cached bool test per frame and nothing in any per-polygon path.
+bool areRendererDebugToolsEnabled()
+{
+    static const bool enabled = [] {
+        const char* const value = std::getenv("MELONPRIME_VULKAN_DEBUG");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
 bool isRenderer3DDebugFeatureEnabled(melonDS::u32) { return true; }
 bool areRenderer3DDebugControlsActive() { return false; }
 melonDS::u32 getVulkanDiagnosticFlags() { return 0; }
@@ -661,11 +673,6 @@ void VulkanRenderer3D::ResetActiveBackend(melonDS::GPU& gpu)
     PendingCaptureReadbackContext = nullptr;
     resetCaptureLineState();
     clearLineCache();
-    LastValidExactCaptureLineCache.fill(0);
-    HasLastValidExactCapture = false;
-    LastValidExactCaptureScreenSwap = false;
-    CurrentCaptureScreenSwapHint = false;
-    HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
@@ -761,19 +768,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         captureEnabled
         && (captureMode != 1u)
         && (captureSource3d || (bg0Uses3d && sourceAContributes));
-    const auto updateExactCaptureFallbackColor = [&]() {
-        const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-        const u32 r = clearColor & 0xFFu;
-        const u32 g = (clearColor >> 8u) & 0xFFu;
-        const u32 b = (clearColor >> 16u) & 0xFFu;
-        const u32 a = (clearColor >> 24u) & 0xFFu;
-        ExactCaptureFallbackPackedColor =
-            (r >> 2u)
-            | ((g >> 2u) << 8u)
-            | ((b >> 2u) << 16u)
-            | ((a >> 3u) << 24u);
-        ExactCaptureFallbackValid = true;
-    };
     FrameIdentical = !textureCacheChanged && gpu.GPU3D.RenderFrameIdentical;
     const bool needsZeroGeometryRefresh =
         gpu.GPU3D.RenderNumPolygons == 0u && LastSubmittedRenderPolygonCount != 0u;
@@ -786,9 +780,11 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         && !needsZeroGeometryRefresh;
     if (canReuseIdenticalFrame)
     {
+        // Nothing is redrawn, so ColorImage keeps holding a frame that display
+        // capture for this DS frame may read.
+        ColorImageHasCurrentFrame3D = true;
         if (ActiveBackendMode == BackendMode::GraphicsHardware && captureNeedsGpuCaptureLineBase)
         {
-            updateExactCaptureFallbackColor();
             if (!CaptureLinePending && !CaptureLineReady)
                 (void)submitGraphicsCaptureExportForCurrentFrame();
         }
@@ -801,6 +797,10 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
         ExactCaptureLineCacheFresh = false;
         HasCpuFrame = false;
     }
+
+    // ColorImage is about to be overwritten. Until this render completes it
+    // holds the previous frame, which display capture must never be given.
+    ColorImageHasCurrentFrame3D = false;
 
     if (!ensureInitialized())
     {
@@ -1049,7 +1049,6 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     const u32 clearColor = Debug3dClearMagenta ? 0xFFFF00FFu : buildClearColorRgba8(gpu);
-    updateExactCaptureFallbackColor();
     const u32 clearDepth = ((gpu.GPU3D.RenderClearAttr2 & 0x7FFFu) * 0x200u) + 0x1FFu;
     if (!dispatchRasterAndReadback(
             renderContext,
@@ -1091,6 +1090,10 @@ void VulkanRenderer3D::RenderFrameActiveBackend(melonDS::GPU& gpu)
     }
 
     LastSubmittedRenderPolygonCount = gpu.GPU3D.RenderNumPolygons;
+
+    // This frame's 3D is now in ColorImage. It stays readable for display
+    // capture until the next render begins at VCount 215.
+    ColorImageHasCurrentFrame3D = true;
 }
 
 void VulkanRenderer3D::RestartFrame(melonDS::GPU& gpu)
@@ -1136,13 +1139,15 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
             resetCaptureLineState();
         }
 
-        const auto readyCaptureMatchesHint = [&]() {
-            return !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
-                || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
-        };
-
-        if (!HasCpuFrame && CaptureLineReady && ReadyCaptureLineData != nullptr && readyCaptureMatchesHint())
+        // MELONPRIME-PC-ADAPT: the capture source is this frame's 3D output,
+        // unconditionally, as in every reference renderer. GLRenderer::DoCapture
+        // picks `inputA = OutputTex3D` with no further test, SoftRenderer3D
+        // returns the scanline it just rendered, and DX12 reads back the frame
+        // it just drew. This path used to reject the export whenever its
+        // screen-swap tag disagreed with a hint, which on a game that flips
+        // POWCNT1 every frame discards the capture on one phase and leaves the
+        // capture-backed screen showing something else.
+        if (!HasCpuFrame && CaptureLineReady && ReadyCaptureLineData != nullptr)
         {
             HasCpuFrame = copyReadyCaptureLineToLineCache();
         }
@@ -1161,7 +1166,7 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
 
         if (!HasCpuFrame)
         {
-            if (CaptureLineReady && ReadyCaptureLineData != nullptr && readyCaptureMatchesHint())
+            if (CaptureLineReady && ReadyCaptureLineData != nullptr)
             {
                 // Latch capture export to a stable CPU buffer. Returning the
                 // persistently mapped GPU buffer directly can flicker when threaded
@@ -1172,23 +1177,15 @@ u32* VulkanRenderer3D::GetLineActiveBackend(int line)
             {
                 convertReadbackToLineCache();
             }
-            else
+            else if (!ensureExactCaptureExportForCurrentFrame())
             {
-                if (exactCaptureOnly && restoreLastValidExactCaptureToLineCache())
-                {
-                    HasCpuFrame = true;
-                    usedPreviousValidFill = true;
-                }
-                else if (exactCaptureOnly && ExactCaptureFallbackValid)
-                {
-                    fillLineCacheWithCaptureFallbackColor();
-                    HasCpuFrame = true;
-                    usedFallbackFill = true;
-                }
-                else
-                {
-                    clearLineCache();
-                }
+                // Still nothing that belongs to this frame. The reference
+                // renderers cannot reach this state, because their capture
+                // source is a GPU texture that is always current. Substituting
+                // an older frame's 3D or the clear colour here is what produced
+                // content from a different scene on the capture-backed screen,
+                // so this reports "no 3D coverage" instead.
+                clearLineCache();
             }
         }
 
@@ -1223,15 +1220,70 @@ void VulkanRenderer3D::PrepareCaptureFrame()
     activeBackend().PrepareCaptureFrame();
 }
 
-void VulkanRenderer3D::SetCaptureScreenSwapHint(bool screenSwap)
-{
-    CurrentCaptureScreenSwapHint = screenSwap;
-    HasCurrentCaptureScreenSwapHint = true;
-}
-
 void VulkanRenderer3D::BeginCaptureFrame()
 {
     BeginCaptureFrameActiveBackend();
+}
+
+bool VulkanRenderer3D::ensureExactCaptureExportForCurrentFrame()
+{
+    // Display capture is armed by the DS at VCount 0 (GPU.cpp: "if (VCount == 0)
+    // { if (CaptureCnt & (1<<31)) CaptureEnable = true; }"), but RenderFrame()
+    // runs at VCount 215 of the previous scanline sweep. A game may therefore
+    // write DISPCAPCNT after this frame's 3D was rendered, and that arm is
+    // valid. Deciding at VCount 215 whether a 3D capture source would be needed
+    // is a prediction, and when it predicts "no" the frame's 3D used to be
+    // unavailable for the rest of the frame -- so software 2D composited a
+    // capture with no 3D component into VRAM, and that VRAM was displayed as a
+    // background later.
+    //
+    // The reference renderers make no such prediction. DX12Renderer3D::GetLine()
+    // calls EnsureFrameReadback() at the moment capture asks for a line, and
+    // GLRenderer::DoCapture() picks OutputTex3D when the capture runs. This is
+    // the same contract: produce the export when capture actually asks.
+    //
+    // Between VCount 0 and 191 ColorImage still holds this frame's render (the
+    // next one does not start until VCount 215), so a late export here is this
+    // frame's 3D, never an older frame's.
+    if (ActiveBackendMode != BackendMode::GraphicsHardware)
+        return false;
+
+    if (HasCpuFrame && ExactCaptureLineCachePrepared && ExactCaptureLineCacheFresh)
+        return true;
+
+    // Refuse rather than export a stale image. Without this the late path would
+    // reintroduce exactly the cross-frame leak that fresh-tracking prevents.
+    if (!ColorImageHasCurrentFrame3D || !ColorImageInitialized)
+        return false;
+
+    if (!CaptureLinePending && !CaptureLineReady
+        && !submitGraphicsCaptureExportForCurrentFrame())
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    if (CaptureLinePending && !finalizeCaptureLineFrame(true))
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    if (!CaptureLineReady || ReadyCaptureLineData == nullptr)
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    HasCpuFrame = copyReadyCaptureLineToLineCache();
+    if (!HasCpuFrame)
+    {
+        LateCaptureExportFailureCount++;
+        return false;
+    }
+
+    LateCaptureExportCount++;
+    return true;
 }
 
 void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
@@ -1246,11 +1298,9 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
     {
         if (finalizeCaptureLineFrame(exactCaptureOnly))
         {
-            const bool readyMatchesHint =
-                !exactCaptureOnly
-                || !HasCurrentCaptureScreenSwapHint
-                || ReadyCaptureLineScreenSwap == CurrentCaptureScreenSwapHint;
-            HasCpuFrame = readyMatchesHint && copyReadyCaptureLineToLineCache();
+            // See GetLineActiveBackend: no reference renderer conditions the
+            // display-capture 3D source on the screen swap.
+            HasCpuFrame = copyReadyCaptureLineToLineCache();
             return;
         }
         if (CaptureLinePending)
@@ -1277,24 +1327,15 @@ void VulkanRenderer3D::PrepareCaptureFrameActiveBackend()
     if (exactCaptureOnly && HasCpuFrame && ExactCaptureLineCachePrepared)
         return;
 
-    // graphics_hw must not submit a second late capture export or force a
-    // fallback readback from here. The exact capture line export for this
-    // frame is the only valid source for software 2D composition.
+    // No export was produced while rendering, because display capture was not
+    // armed yet at VCount 215. Produce it now from this frame's ColorImage,
+    // which is what DX12 and OpenGL do when capture asks. Only an export that
+    // cannot be tied to this frame is refused -- an older frame's 3D or the
+    // clear colour would put another scene on the capture-backed screen.
     if (exactCaptureOnly)
     {
-        if (restoreLastValidExactCaptureToLineCache())
-        {
-            HasCpuFrame = true;
-        }
-        else if (ExactCaptureFallbackValid)
-        {
-            fillLineCacheWithCaptureFallbackColor();
-            HasCpuFrame = true;
-        }
-        else
-        {
+        if (!ensureExactCaptureExportForCurrentFrame())
             clearLineCache();
-        }
         return;
     }
 
@@ -1320,12 +1361,11 @@ void VulkanRenderer3D::BeginCaptureFrameActiveBackend()
     {
         Log(
             LogLevel::Warn,
-            "VulkanCapture[FrameStart]: pending=%u ready=%u hasCpu=%u fresh=%u fallbackValid=%u mode=%s",
+            "VulkanCapture[FrameStart]: pending=%u ready=%u hasCpu=%u fresh=%u mode=%s",
             CaptureLinePending ? 1u : 0u,
             CaptureLineReady ? 1u : 0u,
             HasCpuFrame ? 1u : 0u,
             ExactCaptureLineCacheFresh ? 1u : 0u,
-            ExactCaptureFallbackValid ? 1u : 0u,
             backendModeName(ActiveBackendMode));
         CaptureDebugLogsRemaining--;
     }
@@ -1400,15 +1440,8 @@ void VulkanRenderer3D::StopActiveBackend(const melonDS::GPU& gpu)
     InEarlySubmitAttempt = false;
     CurrentEarlySubmitContextWaitNs = 0;
     LastSubmittedRenderPolygonCount = 0;
-    ExactCaptureFallbackPackedColor = 0;
-    ExactCaptureFallbackValid = false;
     resetCaptureLineState();
     clearLineCache();
-    LastValidExactCaptureLineCache.fill(0);
-    HasLastValidExactCapture = false;
-    LastValidExactCaptureScreenSwap = false;
-    CurrentCaptureScreenSwapHint = false;
-    HasCurrentCaptureScreenSwapHint = false;
     CurrentRenderScreenSwap = false;
     CaptureLineExportCount = 0;
     EarlySubmitAttemptCount = 0;
@@ -1911,15 +1944,6 @@ void VulkanRenderer3D::destroyVulkan()
         }
     }
 
-    for (VkPipeline& pipeline : GraphicsOpaqueUiOverlayPipelines)
-    {
-        if (pipeline != VK_NULL_HANDLE)
-        {
-            vkDestroyPipeline(Device, pipeline, nullptr);
-            pipeline = VK_NULL_HANDLE;
-        }
-    }
-
     for (VkPipeline& pipeline : GraphicsOpaqueFastModulatePipelines)
     {
         if (pipeline != VK_NULL_HANDLE)
@@ -2103,6 +2127,7 @@ void VulkanRenderer3D::destroyVulkan()
     TimestampQueriesSupported = false;
     Initialized = false;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
     GraphicsReady = false;
     ActiveTextureDescriptorCount = 0;
     ActiveTextureDescriptors.fill(VkDescriptorImageInfo{});
@@ -2778,7 +2803,7 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
     {
         Log(
             LogLevel::Warn,
-            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s descriptorPath=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu opaqueDraws=%u needOpaqueDraws=%u alphaShadowDraws=%u contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
+            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s descriptorPath=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu opaqueDraws=%u needOpaqueDraws=%u alphaShadowDraws=%u contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu lateCapExport=%llu/%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
             backendModeName(RequestedBackendMode),
             backendModeName(ActiveBackendMode),
             activePathName,
@@ -2806,6 +2831,8 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
             static_cast<unsigned long long>(ReadbackColorRequestCount),
             static_cast<unsigned long long>(ReadbackResultRequestCount),
             static_cast<unsigned long long>(CapturePrepareRequestCount),
+            static_cast<unsigned long long>(LateCaptureExportCount),
+            static_cast<unsigned long long>(LateCaptureExportFailureCount),
             static_cast<unsigned long long>(CaptureEnabledCount),
             static_cast<unsigned long long>(CaptureSource3dCount),
             static_cast<unsigned long long>(CaptureModeCounts[0]),
@@ -2899,7 +2926,7 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
     {
         Log(
             LogLevel::Warn,
-            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s rasterProfile=%s descriptorPath=%s tileLoopMode=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu cpuTiles avg=%llu/%llu (%.1f%%) cpuGroups avg=%llu activeDispatch=%llu%% contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms rasterSpec tex=%llu alpha=%llu shade=%llu all=%llu earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
+            "VulkanPerf[GPU3D]: backendConfigured=%s backendActive=%s path=%s rasterProfile=%s descriptorPath=%s tileLoopMode=%s captureSource=%s scale=%d render cpu avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms triangles avg=%llu passes avg=%llu p95=%llu cpuTiles avg=%llu/%llu (%.1f%%) cpuGroups avg=%llu activeDispatch=%llu%% contextMisses=%llu late=%llu dropped=%llu readbackColor=%llu readbackResult=%llu capturePrepare=%llu lateCapExport=%llu/%llu captureEnabled=%llu captureSrc3d=%llu capMode=%llu/%llu/%llu/%llu capSize=%llu/%llu/%llu/%llu capExport=%llu capExportCpu avg=%.3fms p95=%.3fms capExportGpu avg=%.3fms p95=%.3fms rasterSpec tex=%llu alpha=%llu shade=%llu all=%llu earlySubmit hit=%llu/%llu miss=%llu skip215=%llu cpu avg=%.3fms p95=%.3fms wait avg=%.3fms p95=%.3fms",
             backendModeName(RequestedBackendMode),
             backendModeName(ActiveBackendMode),
             activePathName,
@@ -2931,6 +2958,8 @@ void VulkanRenderer3D::logPerformanceIfNeeded()
             static_cast<unsigned long long>(ReadbackColorRequestCount),
             static_cast<unsigned long long>(ReadbackResultRequestCount),
             static_cast<unsigned long long>(CapturePrepareRequestCount),
+            static_cast<unsigned long long>(LateCaptureExportCount),
+            static_cast<unsigned long long>(LateCaptureExportFailureCount),
             static_cast<unsigned long long>(CaptureEnabledCount),
             static_cast<unsigned long long>(CaptureSource3dCount),
             static_cast<unsigned long long>(CaptureModeCounts[0]),
@@ -4698,23 +4727,6 @@ bool VulkanRenderer3D::createGraphicsPipelines()
                 Log(LogLevel::Error, "VulkanRenderer3D: failed to create graphics opaque fragment-depth pipeline");
                 return false;
             }
-            if (depthCompareMode == 0u
-                && !createRasterPipeline(
-                    opaqueFragModule,
-                    &opaqueSpecializationInfo,
-                    opaqueBlendAttachments,
-                    false,
-                    VK_COMPARE_OP_ALWAYS,
-                    true,
-                    VK_STENCIL_OP_KEEP,
-                    VK_STENCIL_OP_KEEP,
-                    VK_STENCIL_OP_REPLACE,
-                    VK_COMPARE_OP_ALWAYS,
-                    &GraphicsOpaqueUiOverlayPipelines[wMode]))
-            {
-                Log(LogLevel::Error, "VulkanRenderer3D: failed to create graphics opaque UI overlay pipeline");
-                return false;
-            }
             if (useDirectWBufferTextureIndexing)
             {
                 if (!createRasterPipeline(
@@ -5346,6 +5358,7 @@ bool VulkanRenderer3D::ensureRenderTarget(u32 width, u32 height)
     ColorImageWidth = width;
     ColorImageHeight = height;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 
     invalidateAllDescriptorSetCaches();
     invalidateAllGraphicsDescriptorSetCaches();
@@ -5447,6 +5460,7 @@ void VulkanRenderer3D::destroyRenderTarget()
     ColorImageWidth = 0;
     ColorImageHeight = 0;
     ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 }
 
 bool VulkanRenderer3D::ensureTriangleBuffer(RenderContext* context, size_t triangleCount)
@@ -7148,6 +7162,7 @@ void VulkanRenderer3D::InvalidatePresentationState(bool discardColorTarget) noex
     LastSubmittedRenderContext = nullptr;
     if (discardColorTarget)
         ColorImageInitialized = false;
+    ColorImageHasCurrentFrame3D = false;
 }
 
 VulkanRenderer3D::TextureSamplingPath VulkanRenderer3D::resolveTextureSamplingPath() const noexcept
@@ -9609,9 +9624,23 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     rasterAttachmentBarriers[3].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     rasterAttachmentBarriers[3].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
+    // MELONPRIME-PC-ADAPT: ColorImage is also read by MelonPrimeVulkanOutput's
+    // compute compositor between 3D frames. Include COMPUTE_SHADER in the source
+    // scope so the next color-attachment write and the GENERAL ->
+    // COLOR_ATTACHMENT_OPTIMAL transition cannot begin before that compositor
+    // read has completed. Submission order alone does not resolve this
+    // cross-stage write-after-read hazard, and a Vulkan access scope is the
+    // intersection of the stage mask and the access mask: the
+    // VK_ACCESS_SHADER_READ_BIT below covers nothing unless the stage that
+    // performed the read is named here. Without COMPUTE_SHADER only fragment
+    // shader reads were synchronized, so the next frame's 3D render could
+    // overwrite the image the compositor was still sampling -- which showed up
+    // as this frame's structured 2D being composited against the next frame's
+    // 3D, putting the background in front of the UI on alternating frames.
     const VkPipelineStageFlags rasterAttachmentSrcStage = ColorImageInitialized
-        ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+        ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
         : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    ColorImageReuseSerial++;
     vkCmdPipelineBarrier(
         commandBuffer,
         rasterAttachmentSrcStage,
@@ -9700,7 +9729,6 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
         u32 mainShadowClear = 0;
         u32 mainShadowBlend = 0;
         u32 mainTranslucent = 0;
-        u32 paletteUiOpaqueReplay = 0;
         u32 wBufferFragmentDepth = 0;
     } graphicsPassDebugStats{};
 
@@ -10014,253 +10042,30 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
     const bool clearPlaneAlphaZero = ((clearAttr >> 16u) & 0x1Fu) == 0u;
     const u32 clearPlanePolyId = (clearAttr >> 24u) & 0x3Fu;
     const bool alphaBlendEnabled = (dispCnt & (1u << 3u)) != 0u;
-    const auto drawYBounds = [&](const GraphicsPolygonDraw& draw) -> std::pair<u32, u32> {
-        if (draw.firstTriangle >= Triangles.size())
-            return {0u, 0u};
 
-        const u32 yBounds = Triangles[draw.firstTriangle].yBounds;
-        return {yBounds & 0xFFFFu, (yBounds >> 16u) & 0xFFFFu};
-    };
-    const auto yBoundsOverlap = [&](const GraphicsPolygonDraw& a, const GraphicsPolygonDraw& b) -> bool {
-        const auto [aTop, aBottom] = drawYBounds(a);
-        const auto [bTop, bBottom] = drawYBounds(b);
-        return aBottom > bTop && bBottom > aTop;
-    };
-    const auto drawTopDs = [&](const GraphicsPolygonDraw& draw) -> float {
-        const auto [top, bottom] = drawYBounds(draw);
-        (void)bottom;
-        const float scale = std::max(1.0f, static_cast<float>(ScaleFactor));
-        return static_cast<float>(top) / scale;
-    };
-    const auto drawXBounds = [&](const GraphicsPolygonDraw& draw) -> std::pair<float, float> {
-        if (draw.firstTriangle >= Triangles.size() || draw.triangleCount == 0u)
-            return {0.0f, 0.0f};
-
-        float minX = std::numeric_limits<float>::max();
-        float maxX = std::numeric_limits<float>::lowest();
-        const u32 endTriangle = std::min<u32>(draw.firstTriangle + draw.triangleCount, static_cast<u32>(Triangles.size()));
-        for (u32 triangleIndex = draw.firstTriangle; triangleIndex < endTriangle; triangleIndex++)
-        {
-            const TriangleGpu& tri = Triangles[triangleIndex];
-            minX = std::min(minX, std::min(tri.x0, std::min(tri.x1, tri.x2)));
-            maxX = std::max(maxX, std::max(tri.x0, std::max(tri.x1, tri.x2)));
-        }
-        return {minX, maxX};
-    };
-    const auto xBoundsOverlap = [&](const GraphicsPolygonDraw& a, const GraphicsPolygonDraw& b) -> bool {
-        const auto [aLeft, aRight] = drawXBounds(a);
-        const auto [bLeft, bRight] = drawXBounds(b);
-        return aRight > bLeft && bRight > aLeft;
-    };
-    const auto isClampPaletteUiTriangle = [&](const TriangleGpu& tri) -> bool {
-        const u32 texParam = tri.texParam;
-        const u32 textureFormat = (texParam >> 26u) & 0x7u;
-        const bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-        const bool repeatS = (texParam & (1u << 16u)) != 0u;
-        const bool repeatT = (texParam & (1u << 17u)) != 0u;
-        const bool mirrorS = (texParam & (1u << 18u)) != 0u;
-        const bool mirrorT = (texParam & (1u << 19u)) != 0u;
-        return (tri.flags & kTriangleFlagTextured) != 0u
-            && (textureFormat == 2u || textureFormat == 3u)
-            && color0Transparent
-            && !repeatS
-            && !repeatT
-            && !mirrorS
-            && !mirrorT;
-    };
-    const auto isCompactPaletteUiReplayTriangle = [&](const TriangleGpu& tri) -> bool {
-        if (!isClampPaletteUiTriangle(tri))
-            return false;
-
-        const u32 texturePage = tri.texParam & 0xFFFFu;
-        return texturePage == 0x05C0u
-            || texturePage == 0x85C0u;
-    };
-    const auto isFlatDsUiPlaneTriangle = [&](const TriangleGpu& tri) -> bool {
-        constexpr float kUiPlaneW = 25600.0f;
-        constexpr float kUiPlaneTolerance = 0.5f;
-        return std::abs(tri.w0 - kUiPlaneW) <= kUiPlaneTolerance
-            && std::abs(tri.w1 - kUiPlaneW) <= kUiPlaneTolerance
-            && std::abs(tri.w2 - kUiPlaneW) <= kUiPlaneTolerance;
-    };
-    const auto isCompactTopStatusGlyphTriangle = [&](const TriangleGpu& tri) -> bool {
-        const u32 texParam = tri.texParam;
-        const u32 textureFormat = (texParam >> 26u) & 0x7u;
-        const bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-        const bool repeatS = (texParam & (1u << 16u)) != 0u;
-        const bool repeatT = (texParam & (1u << 17u)) != 0u;
-        const bool mirrorS = (texParam & (1u << 18u)) != 0u;
-        const bool mirrorT = (texParam & (1u << 19u)) != 0u;
-        return (tri.flags & kTriangleFlagTextured) != 0u
-            && textureFormat == 3u
-            && color0Transparent
-            && (texParam & 0xFFFFu) == 0x05C0u
-            && !repeatS
-            && !repeatT
-            && !mirrorS
-            && !mirrorT;
-    };
-    const auto isCompactTopStatusGlyphDraw = [&](const GraphicsPolygonDraw& draw) -> bool {
-        if (draw.firstTriangle >= Triangles.size())
-            return false;
-
-        const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-        const u32 blendMode = (draw.polyAttr >> 4u) & 0x3u;
-        if (alpha5 != 31u
-            || blendMode != 0u
-            || (draw.polyAttr & (1u << 11u)) == 0u
-            || !isCompactTopStatusGlyphTriangle(Triangles[draw.firstTriangle]))
-        {
-            return false;
-        }
-
-        const float scale = std::max(1.0f, static_cast<float>(ScaleFactor));
-        const auto [xMin, xMax] = drawXBounds(draw);
-        const auto [yTop, yBottom] = drawYBounds(draw);
-        const float xMinDs = xMin / scale;
-        const float xMaxDs = xMax / scale;
-        const float yTopDs = static_cast<float>(yTop) / scale;
-        const float yBottomDs = static_cast<float>(yBottom) / scale;
-        return xMinDs >= 38.0f
-            && xMaxDs <= 46.0f
-            && yTopDs >= 6.0f
-            && yBottomDs <= 16.0f;
-    };
-    const auto isCompactTopStatusGlyphOverlay = [&](const GraphicsPolygonDraw& draw) -> bool {
-        if (!clearPlaneAlphaZero
-            || !alphaBlendEnabled
-            || draw.firstTriangle >= Triangles.size()
-            || (draw.flags & AcceleratedPolygonFlagTranslucent) == 0u)
-        {
-            return false;
-        }
-
-        const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-        const u32 blendMode = (draw.polyAttr >> 4u) & 0x3u;
-        return alpha5 == 9u
-            && blendMode == 0u
-            && (draw.polyAttr & (1u << 11u)) != 0u
-            && isCompactTopStatusGlyphTriangle(Triangles[draw.firstTriangle]);
-    };
-    const auto isTranslucentPaletteUiOverlay = [&](const GraphicsPolygonDraw& draw) -> bool {
-        if (!clearPlaneAlphaZero
-            || !alphaBlendEnabled
-            || draw.firstTriangle >= Triangles.size()
-            || (draw.flags & AcceleratedPolygonFlagTranslucent) == 0u)
-        {
-            return false;
-        }
-
-        const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-        const u32 blendMode = (draw.polyAttr >> 4u) & 0x3u;
-        const u32 polyId = (draw.polyAttr >> 24u) & 0x3Fu;
-        return alpha5 > 0u
-            && alpha5 < 31u
-            && blendMode == 0u
-            && polyId >= 3u
-            && (draw.polyAttr & (1u << 11u)) == 0u
-            && isClampPaletteUiTriangle(Triangles[draw.firstTriangle]);
-    };
-    const auto isPaletteUiHelpPanelOverlay = [&](const GraphicsPolygonDraw& draw) -> bool {
-        if (!isTranslucentPaletteUiOverlay(draw))
-            return false;
-
-        const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-        const u32 polyId = (draw.polyAttr >> 24u) & 0x3Fu;
-        const u32 texParam = Triangles[draw.firstTriangle].texParam;
-        return alpha5 == 24u
-            && polyId == 11u
-            && texParam == 0x6DC00200u;
-    };
-    const bool hasLowAlphaPaletteUiOverlay = [&]() -> bool {
-        for (u32 alphaDrawIndex : GraphicsAlphaDrawIndices)
-        {
-            if (alphaDrawIndex >= GraphicsPolygons.size())
-                continue;
-
-            const GraphicsPolygonDraw& alphaDraw = GraphicsPolygons[alphaDrawIndex];
-            if (!isTranslucentPaletteUiOverlay(alphaDraw))
-                continue;
-
-            const u32 alpha5 = (alphaDraw.polyAttr >> 16u) & 0x1Fu;
-            if (alpha5 < 27u)
-                return true;
-        }
-        return false;
-    }();
-    const auto shouldReplayOpaquePaletteUiDraw = [&](const GraphicsPolygonDraw& draw) -> bool {
-        if (!clearPlaneAlphaZero
-            || !alphaBlendEnabled
-            || draw.firstTriangle >= Triangles.size()
-            || (draw.flags & AcceleratedPolygonFlagTranslucent) != 0u)
-        {
-            return false;
-        }
-
-        const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-        const u32 blendMode = (draw.polyAttr >> 4u) & 0x3u;
-        const u32 texParam = draw.firstTriangle < Triangles.size() ? Triangles[draw.firstTriangle].texParam : 0u;
-        const bool compactStatusGlyph = isCompactTopStatusGlyphDraw(draw);
-        const bool paletteUiReplay =
-            alpha5 == 31u
-            && blendMode == 0u
-            && (draw.polyAttr & (1u << 11u)) == 0u
-            && texParam != 0x68C01B10u
-            && texParam != 0x6A5016D0u
-            && isClampPaletteUiTriangle(Triangles[draw.firstTriangle])
-            && isFlatDsUiPlaneTriangle(Triangles[draw.firstTriangle]);
-        if (!compactStatusGlyph && !paletteUiReplay)
-        {
-            return false;
-        }
-        if (paletteUiReplay
-            && !hasLowAlphaPaletteUiOverlay
-            && ((draw.polyAttr >> 24u) & 0x3Fu) != 0u)
-        {
-            return false;
-        }
-
-        bool matchesPaletteUiOverlay = false;
-        for (u32 alphaDrawIndex : GraphicsAlphaDrawIndices)
-        {
-            if (alphaDrawIndex >= GraphicsPolygons.size())
-                continue;
-
-            const GraphicsPolygonDraw& alphaDraw = GraphicsPolygons[alphaDrawIndex];
-            if (compactStatusGlyph)
-            {
-                if (isCompactTopStatusGlyphOverlay(alphaDraw)
-                    && yBoundsOverlap(draw, alphaDraw))
-                {
-                    return true;
-                }
-                continue;
-            }
-
-            if (!isTranslucentPaletteUiOverlay(alphaDraw)
-                || !yBoundsOverlap(draw, alphaDraw))
-            {
-                continue;
-            }
-
-            if (isPaletteUiHelpPanelOverlay(alphaDraw)
-                && xBoundsOverlap(draw, alphaDraw))
-            {
-                return false;
-            }
-            const u32 alpha5 = (alphaDraw.polyAttr >> 16u) & 0x1Fu;
-            if (!hasLowAlphaPaletteUiOverlay && alpha5 >= 27u && drawTopDs(draw) >= 18.0f)
-            {
-                return false;
-            }
-            matchesPaletteUiOverlay = true;
-        }
-        return matchesPaletteUiOverlay;
-    };
-
-    u32 paletteUiOpaqueReplayFirstDraw = 0xFFFFFFFFu;
-    u32 paletteUiOpaqueReplayFirstPolyId = 0xFFFFFFFFu;
-    u32 paletteUiOpaqueReplayFirstTexParam = 0u;
+    // Draw pass order. This is a contract, not an implementation detail:
+    //
+    //   1. opaque polygons          (this loop, exactly once per polygon)
+    //   2. shadow mask / shadow     (DS stencil semantics)
+    //   3. translucent polygons     (with NeedOpaquePass for opaque texels)
+    //   4. edge marking / fog / final
+    //
+    // Nothing may draw a color polygon after step 3 that was already drawn in
+    // step 1. There used to be a fifth "PaletteUiOpaqueReplay" pass here that
+    // re-issued selected opaque draws after the translucent pass with polyAttr
+    // bit 14 forced on, choosing them by guessing which polygons looked like
+    // menu UI: palette texture format, clamped wrapping, a flat W plane, screen
+    // coordinates, specific texture pages and texParam values. Large flat
+    // background polygons satisfy those same conditions, so on frames where the
+    // predicate happened to match, the background was redrawn over the menu it
+    // belonged behind -- and because the predicate depends on the frame's own
+    // translucent overlay list, it alternated with correct frames.
+    //
+    // ComputeRenderer3D has no such pass: every polygon enters the pipeline once
+    // and DepthBlend/FinalPass resolve the ordering from DS polygon metadata.
+    // Vulkan may differ in how it rasterizes, but the polygon semantics must
+    // match. Do not reintroduce foreground/UI inference from texture addresses,
+    // screen coordinates, W values or polygon IDs.
     for (u32 drawIndex : GraphicsOpaqueDrawIndices)
     {
         if (drawIndex >= GraphicsPolygons.size())
@@ -10429,155 +10234,15 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
                 graphicsPassDebugStats.mainTranslucent++;
         }
     }
-
-    for (u32 drawIndex : GraphicsOpaqueDrawIndices)
-    {
-        if (drawIndex >= GraphicsPolygons.size())
-            continue;
-
-        const GraphicsPolygonDraw& draw = GraphicsPolygons[drawIndex];
-        if (!shouldReplayOpaquePaletteUiDraw(draw))
-            continue;
-
-        GraphicsPolygonDraw replayDraw = draw;
-        replayDraw.polyAttr |= 1u << 14u;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        if (isCompactTopStatusGlyphDraw(draw))
-        {
-            const bool wBuffer = replayDraw.triangleCount > 0u
-                && replayDraw.firstTriangle < Triangles.size()
-                && ((Triangles[replayDraw.firstTriangle].flags & kTriangleFlagWBuffer) != 0u);
-            const u32 wMode = wBuffer ? 1u : 0u;
-            pipeline = wMode < GraphicsOpaqueUiOverlayPipelines.size()
-                ? GraphicsOpaqueUiOverlayPipelines[wMode]
-                : VK_NULL_HANDLE;
-        }
-        else
-        {
-            const u32 pipelineIndex = opaquePipelineIndexFor(replayDraw);
-            pipeline = fastOpaqueModulatePipelineFor(replayDraw, pipelineIndex);
-            if (pipeline == VK_NULL_HANDLE)
-            {
-                pipeline = opaquePipelineFor(replayDraw, pipelineIndex);
-            }
-        }
-        if (bindAndDrawGraphics(replayDraw, pipeline, 0xFFu, 0xFFu, (replayDraw.polyAttr >> 24u) & 0x3Fu))
-        {
-            if (graphicsPassDebugStats.paletteUiOpaqueReplay == 0u)
-            {
-                paletteUiOpaqueReplayFirstDraw = drawIndex;
-                paletteUiOpaqueReplayFirstPolyId = (replayDraw.polyAttr >> 24u) & 0x3Fu;
-                paletteUiOpaqueReplayFirstTexParam = Triangles[replayDraw.firstTriangle].texParam;
-            }
-            graphicsPassDebugStats.paletteUiOpaqueReplay++;
-        }
-    }
     GraphicsAlphaCpuWindow.Add(PerfNowNs() - graphicsAlphaCpuStartNs);
     if ((timestampQueryPool != VK_NULL_HANDLE) && timestampPending)
         vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, timestampQueryPool, 6);
-
-    if (MelonDSAndroid::areRendererDebugToolsEnabled())
-    {
-        const bool paletteUiOpaqueReplayActive = graphicsPassDebugStats.paletteUiOpaqueReplay > 0u;
-        if (PaletteUiOpaqueReplayLogCooldown == 0u || paletteUiOpaqueReplayActive != PaletteUiOpaqueReplayLastActive)
-        {
-            Log(
-                LogLevel::Warn,
-                "VulkanGraphics[PaletteUiOpaqueReplay]: active=%u replayed=%u firstDraw=%u firstPolyId=%u firstTexParam=%08X clearAlphaZero=%u alphaBlend=%u",
-                paletteUiOpaqueReplayActive ? 1u : 0u,
-                graphicsPassDebugStats.paletteUiOpaqueReplay,
-                paletteUiOpaqueReplayFirstDraw,
-                paletteUiOpaqueReplayFirstPolyId,
-                paletteUiOpaqueReplayFirstTexParam,
-                clearPlaneAlphaZero ? 1u : 0u,
-                alphaBlendEnabled ? 1u : 0u);
-            PaletteUiOpaqueReplayLogCooldown = paletteUiOpaqueReplayActive ? 60u : 180u;
-            PaletteUiOpaqueReplayLastActive = paletteUiOpaqueReplayActive;
-        }
-        else
-        {
-            PaletteUiOpaqueReplayLogCooldown--;
-        }
-    }
-
-    if (MelonDSAndroid::areRendererDebugToolsEnabled())
-    {
-        u32 paletteUiGateCandidates = 0u;
-        u32 paletteUiGateFirstDraw = 0xFFFFFFFFu;
-        u32 paletteUiGateFirstPolyId = 0xFFFFFFFFu;
-        u32 paletteUiGateFirstAlpha5 = 0xFFFFFFFFu;
-        for (u32 drawIndex : GraphicsAlphaDrawIndices)
-        {
-            if (drawIndex >= GraphicsPolygons.size())
-                continue;
-
-            const GraphicsPolygonDraw& draw = GraphicsPolygons[drawIndex];
-            if (draw.firstTriangle >= Triangles.size())
-                continue;
-
-            const TriangleGpu& tri = Triangles[draw.firstTriangle];
-            const u32 texParam = tri.texParam;
-            const u32 textureFormat = (texParam >> 26u) & 0x7u;
-            const bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-            const bool repeatS = (texParam & (1u << 16u)) != 0u;
-            const bool repeatT = (texParam & (1u << 17u)) != 0u;
-            const bool mirrorS = (texParam & (1u << 18u)) != 0u;
-            const bool mirrorT = (texParam & (1u << 19u)) != 0u;
-            const u32 alpha5 = (draw.polyAttr >> 16u) & 0x1Fu;
-            const u32 blendMode = (draw.polyAttr >> 4u) & 0x3u;
-            const bool depthWriteDisabled = (draw.polyAttr & (1u << 11u)) == 0u;
-            const bool matchesPaletteUiGate =
-                (tri.flags & kTriangleFlagTextured) != 0u
-                && (tri.flags & kTriangleFlagLinear) != 0u
-                && textureFormat == 3u
-                && color0Transparent
-                && depthWriteDisabled
-                && clearPlaneAlphaZero
-                && alphaBlendEnabled
-                && blendMode == 0u
-                && alpha5 > 0u
-                && alpha5 < 31u
-                && !repeatS
-                && !repeatT
-                && !mirrorS
-                && !mirrorT;
-            if (!matchesPaletteUiGate)
-                continue;
-
-            if (paletteUiGateCandidates == 0u)
-            {
-                paletteUiGateFirstDraw = drawIndex;
-                paletteUiGateFirstPolyId = (draw.polyAttr >> 24u) & 0x3Fu;
-                paletteUiGateFirstAlpha5 = alpha5;
-            }
-            paletteUiGateCandidates++;
-        }
-        const bool paletteUiGateActive = paletteUiGateCandidates > 0u;
-        if (PaletteUiGateLogCooldown == 0u || paletteUiGateActive != PaletteUiGateLastActive)
-        {
-            Log(
-                LogLevel::Warn,
-                "VulkanGraphics[PaletteUiGate]: candidates=%u firstDraw=%u firstPolyId=%u firstAlpha5=%u clearAlphaZero=%u alphaBlend=%u",
-                paletteUiGateCandidates,
-                paletteUiGateFirstDraw,
-                paletteUiGateFirstPolyId,
-                paletteUiGateFirstAlpha5,
-                clearPlaneAlphaZero ? 1u : 0u,
-                alphaBlendEnabled ? 1u : 0u);
-            PaletteUiGateLogCooldown = paletteUiGateActive ? 60u : 180u;
-            PaletteUiGateLastActive = paletteUiGateActive;
-        }
-        else
-        {
-            PaletteUiGateLogCooldown--;
-        }
-    }
 
     if (MelonDSAndroid::areRendererDebugToolsEnabled() && CaptureDebugLogsRemaining > 0u)
     {
         Log(
             LogLevel::Warn,
-            "VulkanGraphics[Passes]: clearAlphaZero=%u clearPolyId=%u alphaBlend=%u opaque=%u edge=%u bgZeroShadowMask=%u bgZeroNeedOpaque=%u bgZeroShadowBlend=%u bgZeroTrans=%u bgZeroShadowSkipPolyId=%u mainShadowMask=%u mainNeedOpaque=%u mainShadowClear=%u mainShadowBlend=%u mainTrans=%u paletteUiOpaqueReplay=%u wBufferFragmentDepth=%u",
+            "VulkanGraphics[Passes]: clearAlphaZero=%u clearPolyId=%u alphaBlend=%u opaque=%u edge=%u bgZeroShadowMask=%u bgZeroNeedOpaque=%u bgZeroShadowBlend=%u bgZeroTrans=%u bgZeroShadowSkipPolyId=%u mainShadowMask=%u mainNeedOpaque=%u mainShadowClear=%u mainShadowBlend=%u mainTrans=%u wBufferFragmentDepth=%u",
             clearPlaneAlphaZero ? 1u : 0u,
             clearPlanePolyId,
             alphaBlendEnabled ? 1u : 0u,
@@ -10593,7 +10258,6 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
             graphicsPassDebugStats.mainShadowClear,
             graphicsPassDebugStats.mainShadowBlend,
             graphicsPassDebugStats.mainTranslucent,
-            graphicsPassDebugStats.paletteUiOpaqueReplay,
             graphicsPassDebugStats.wBufferFragmentDepth);
         CaptureDebugLogsRemaining--;
     }
@@ -10941,6 +10605,7 @@ bool VulkanRenderer3D::dispatchGraphicsRasterAndReadback(
             Log(LogLevel::Error, "VulkanRenderer3D: graphics vkQueueSubmit failed (%d)", static_cast<int>(submitResult));
             return false;
         }
+        RenderSubmissionSerial++;
     }
 
     if (context != nullptr && Threaded)
@@ -11014,13 +10679,16 @@ bool VulkanRenderer3D::submitGraphicsCaptureExportForCurrentFrame()
     if (CaptureLineMapped == nullptr)
         return false;
 
-    const VkResult fenceStatus = vkGetFenceStatus(Device, FrameFence);
-    if (fenceStatus == VK_NOT_READY)
+    // The reference renderers cannot fail to have this frame's 3D available as
+    // display-capture source A: SoftRenderer3D::GetLine() returns the scanline
+    // it just rendered, and GLRenderer::DoCapture() reads OutputTex3D, which is
+    // GPU-ordered behind the render. Giving up here because the render is still
+    // in flight is what leaves the capture-backed screen without its 3D, so wait
+    // for the render instead. Both callers reach this only on frames where
+    // display capture actually consumes 3D, so this never becomes a per-frame
+    // full-pipeline stall.
+    if (!waitForReadbackSource())
         return false;
-    if (fenceStatus != VK_SUCCESS)
-        return false;
-
-    consumeGpuTiming(nullptr);
 
     if (vkResetFences(Device, 1, &FrameFence) != VK_SUCCESS)
         return false;
@@ -11939,6 +11607,7 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
     sceneBuildConfig.Scale = ScaleFactor;
     sceneBuildConfig.BetterPolygons = BetterPolygons;
     sceneBuildConfig.UseHiresCoordinates = true;
+    sceneBuildConfig.DsGridLinearPolygons = true;
     sceneBuildConfig.MaxFixedX = static_cast<s32>((256u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.MaxFixedY = static_cast<s32>((192u * scaleFactor * 16u) - 1u);
     sceneBuildConfig.CoverageFix.Enabled = CoverageFixEnabled;
@@ -12077,6 +11746,19 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
         const Polygon* polygon = sceneDraw.SourcePolygon;
         if (polygon == nullptr)
             continue;
+
+        // Debug isolation: MELONPRIME_VULKAN_HIDE_TEX=<texParam> drops every polygon using
+        // that texture, so a specific HUD element can be attributed without a rebuild.
+        {
+            static const u32 hideTexParam = [] {
+                const char* const value = std::getenv("MELONPRIME_VULKAN_HIDE_TEX");
+                return (value != nullptr && value[0] != '\0')
+                    ? static_cast<u32>(std::strtoul(value, nullptr, 0))
+                    : 0xFFFFFFFFu;
+            }();
+            if (polygon->TexParam == hideTexParam)
+                continue;
+        }
 
         const size_t polygonTriangleBase = Triangles.size();
         const AcceleratedPolygonMeta& polygonMeta = sceneDraw.Meta;
@@ -12729,6 +12411,18 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             LastGraphicsOpaqueLinearDrawCount++;
     }
 
+    // InvalidatePresentationState() only arms the budget on renderer init/mode changes, so
+    // the one burst it produces lands on the boot frame and never on the screen being
+    // investigated. Re-arm periodically while tracing so a snapshot of whatever is on
+    // screen shows up within a few seconds.
+    if (MelonDSAndroid::areRendererDebugToolsEnabled())
+    {
+        static u32 graphicsTraceFrameCounter = 0u;
+        if ((graphicsTraceFrameCounter % 600u) == 0u)
+            CaptureDebugLogsRemaining = 4096u;
+        graphicsTraceFrameCounter++;
+    }
+
     if (MelonDSAndroid::areRendererDebugToolsEnabled() && CaptureDebugLogsRemaining > 0u)
     {
         const u32 firstTranslucentDraw = SharedGraphicsScene.FirstTranslucentDraw == std::numeric_limits<u32>::max()
@@ -12756,7 +12450,9 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             Log(LogLevel::Warn, "VulkanGraphics[%s]: count=%zu", label, drawIndices.size());
             CaptureDebugLogsRemaining--;
 
-            const size_t maxSampleCount = std::strcmp(label, "AlphaBucket") == 0 ? 24u : 3u;
+            // Every draw: sampling a prefix hides exactly the polygon being hunted.
+            (void)label;
+            const size_t maxSampleCount = drawIndices.size();
             const size_t sampleCount = std::min<size_t>(drawIndices.size(), maxSampleCount);
             for (size_t sampleIndex = 0; sampleIndex < sampleCount && CaptureDebugLogsRemaining > 0u; sampleIndex++)
             {
@@ -13775,17 +13471,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
         resetCaptureLineState();
         return false;
     }
-    if (ActiveBackendMode == BackendMode::GraphicsHardware
-        && HasCurrentCaptureScreenSwapHint
-        && ReadyCaptureLineScreenSwap != CurrentCaptureScreenSwapHint)
-    {
-        CaptureLineReady = false;
-        ReadyCaptureLineData = nullptr;
-        ReadyCaptureLineBufferSlot = -1;
-        ReadyCaptureLineScreenSwap = false;
-        return false;
-    }
-
     if (CaptureLineDataIsRgba8)
     {
         const size_t pixelCount = LineCache.size();
@@ -13813,9 +13498,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
     ExactCaptureLineCacheFresh = ActiveBackendMode == BackendMode::GraphicsHardware;
     if (ActiveBackendMode == BackendMode::GraphicsHardware)
     {
-        LastValidExactCaptureLineCache = LineCache;
-        HasLastValidExactCapture = true;
-        LastValidExactCaptureScreenSwap = ReadyCaptureLineScreenSwap;
     }
     CaptureLineReady = false;
     ReadyCaptureLineData = nullptr;
@@ -13825,22 +13507,6 @@ bool VulkanRenderer3D::copyReadyCaptureLineToLineCache()
     ActiveCapturePathMode = CapturePathMode::CaptureLineExport;
     CapturePathModeCounts[static_cast<size_t>(CapturePathMode::CaptureLineExport)]++;
     clearRawReadbackState();
-    return true;
-}
-
-bool VulkanRenderer3D::restoreLastValidExactCaptureToLineCache()
-{
-    if (!HasLastValidExactCapture)
-        return false;
-    if (HasCurrentCaptureScreenSwapHint
-        && LastValidExactCaptureScreenSwap != CurrentCaptureScreenSwapHint)
-    {
-        return false;
-    }
-
-    LineCache = LastValidExactCaptureLineCache;
-    ExactCaptureLineCachePrepared = true;
-    ExactCaptureLineCacheFresh = false;
     return true;
 }
 
@@ -13900,13 +13566,6 @@ void VulkanRenderer3D::convertReadbackToLineCache()
         }
     }
     ExactCaptureLineCachePrepared = false;
-}
-
-void VulkanRenderer3D::fillLineCacheWithCaptureFallbackColor()
-{
-    std::fill(LineCache.begin(), LineCache.end(), ExactCaptureFallbackPackedColor);
-    ExactCaptureLineCachePrepared = true;
-    ExactCaptureLineCacheFresh = false;
 }
 
 u32 VulkanRenderer3D::buildClearColorRgba8(const melonDS::GPU& gpu) const

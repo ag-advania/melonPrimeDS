@@ -63,7 +63,6 @@ public:
     void SetupAccelFrame() override;
     void PrepareCaptureFrame() override;
     void BeginCaptureFrame() override;
-    void SetCaptureScreenSwapHint(bool screenSwap) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return ActiveBackendMode == BackendMode::GraphicsHardware; }
 
     void SetRenderSettings(
@@ -95,10 +94,19 @@ public:
     [[nodiscard]] size_t GetAsyncRenderContextCount() const noexcept { return AsyncRenderContextCount; }
     [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
     [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
-    [[nodiscard]] bool IsCurrentCaptureScreenSwapHintValid() const noexcept { return HasCurrentCaptureScreenSwapHint; }
-    [[nodiscard]] bool GetCurrentCaptureScreenSwapHint() const noexcept { return CurrentCaptureScreenSwapHint; }
-    [[nodiscard]] bool IsLastValidExactCaptureAvailable() const noexcept { return HasLastValidExactCapture; }
-    [[nodiscard]] bool GetLastValidExactCaptureScreenSwap() const noexcept { return LastValidExactCaptureScreenSwap; }
+    // Monotonic count of successful 3D render submissions. The compositor
+    // records it alongside the structured generation so the 3D image it sampled
+    // can be tied to a specific render submission instead of "whatever was in
+    // the color target". The 3D renderer and the compositor share one queue, so
+    // submission order already provides the ordering; this only makes the
+    // pairing observable.
+    [[nodiscard]] u64 GetRenderSubmissionSerial() const noexcept { return RenderSubmissionSerial; }
+    // Counts how many times ColorImage has been taken back for a new 3D frame.
+    // Paired with the compositor's own serials this shows, in a log, which 3D
+    // submission a composed frame actually consumed. It is a diagnostic only:
+    // the ordering itself comes from the pipeline barrier, never from a serial
+    // comparison.
+    [[nodiscard]] u64 GetColorImageReuseSerial() const noexcept { return ColorImageReuseSerial; }
     [[nodiscard]] bool EnsureVulkanReadyForValidation();
     [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
     [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
@@ -503,12 +511,13 @@ private:
         bool readbackToCpu,
         bool captureReadbackPath = false);
     bool submitGraphicsCaptureExportForCurrentFrame();
+    // Produces this frame's exact capture export on demand, when display
+    // capture turns out to need 3D after the frame was already rendered.
+    bool ensureExactCaptureExportForCurrentFrame();
     bool readbackColorTargetToCpu(bool capturePath = false);
     bool readbackResultBufferToCpu();
     bool copyReadyCaptureLineToLineCache();
-    bool restoreLastValidExactCaptureToLineCache();
     void convertReadbackToLineCache();
-    void fillLineCacheWithCaptureFallbackColor();
     u32 buildClearColorRgba8(const melonDS::GPU& gpu) const;
     void clearLineCache();
     void ResetActiveBackend(melonDS::GPU& gpu);
@@ -534,7 +543,12 @@ private:
     float CoverageFixDepthBias = 0.0f;
     bool CoverageFixApplyRepeat = true;
     bool CoverageFixApplyClamp = false;
-    float PassiveCoverageFixRepeatPx = 0.2f;
+    // Keep passive repeat-texture coverage expansion disabled by default.
+    // Expanding textured polygon geometry beyond the DS polygon edge can create
+    // fragments outside the intended coverage and expose wrapped edge texels as
+    // ghost pixels. Vulkan already keeps subpixel geometry at 1x to avoid the
+    // cracks this workaround originally targeted.
+    float PassiveCoverageFixRepeatPx = 0.0f;
     bool Debug3dClearMagenta = false;
     bool Threaded = false;
 
@@ -628,7 +642,6 @@ private:
     std::array<VkPipeline, GraphicsShadowBlendBgZeroPipelineCount> GraphicsShadowBlendBgZeroPipelines{};
     std::array<VkPipeline, GraphicsShadowBlendPipelineCount> GraphicsShadowBlendPipelines{};
     std::array<VkPipeline, GraphicsEdgeMarkPipelineCount> GraphicsEdgeMarkPipelines{};
-    std::array<VkPipeline, GraphicsWModeCount> GraphicsOpaqueUiOverlayPipelines{};
     VkPipeline GraphicsClearPipeline = VK_NULL_HANDLE;
     VkPipeline GraphicsStencilBitClearPipeline = VK_NULL_HANDLE;
     VkPipeline GraphicsFinalEdgePipeline = VK_NULL_HANDLE;
@@ -665,6 +678,15 @@ private:
     u32 ColorImageWidth = 0;
     u32 ColorImageHeight = 0;
     bool ColorImageInitialized = false;
+    // True while ColorImage holds a completed 3D frame that display capture for
+    // the current DS frame is still allowed to read. The DS arms display
+    // capture at VCount 0, after RenderFrame() has already run at VCount 215,
+    // so whether a capture export is needed cannot be known while rendering.
+    // This is what makes a late export safe: it says the image is this frame's,
+    // not a previous one's.
+    bool ColorImageHasCurrentFrame3D = false;
+    u64 RenderSubmissionSerial = 0;
+    u64 ColorImageReuseSerial = 0;
 
     VkBuffer ReadbackBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ReadbackMemory = VK_NULL_HANDLE;
@@ -765,13 +787,6 @@ private:
     std::vector<u32> RawReadbackRgba;
     std::vector<u32> RawResultReadback;
     std::array<u32, 256 * 192> LineCache{};
-    std::array<u32, 256 * 192> LastValidExactCaptureLineCache{};
-    u32 ExactCaptureFallbackPackedColor = 0;
-    bool ExactCaptureFallbackValid = false;
-    bool HasLastValidExactCapture = false;
-    bool LastValidExactCaptureScreenSwap = false;
-    bool CurrentCaptureScreenSwapHint = false;
-    bool HasCurrentCaptureScreenSwapHint = false;
     bool CurrentRenderScreenSwap = false;
     PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
     float TimestampPeriodNs = 0.0f;
@@ -837,6 +852,10 @@ private:
     u64 ReadbackColorRequestCount = 0;
     u64 ReadbackResultRequestCount = 0;
     u64 CapturePrepareRequestCount = 0;
+    // Exports produced after the frame was rendered, because display capture
+    // was armed between VCount 215 and VCount 0.
+    u64 LateCaptureExportCount = 0;
+    u64 LateCaptureExportFailureCount = 0;
     std::array<u64, 4> CaptureModeCounts{};
     std::array<u64, 4> CaptureSizeModeCounts{};
     std::array<u64, static_cast<size_t>(RasterExecutionProfile::Count)> RasterExecutionProfileCounts{};
@@ -854,10 +873,6 @@ private:
     u64 EarlySubmitMissCount = 0;
     u64 EarlySubmitSkipVCount215Count = 0;
     u32 CaptureDebugLogsRemaining = 0;
-    u32 PaletteUiGateLogCooldown = 0;
-    bool PaletteUiGateLastActive = false;
-    u32 PaletteUiOpaqueReplayLogCooldown = 0;
-    bool PaletteUiOpaqueReplayLastActive = false;
     u32 GraphicsDrawDispatchMissingLogCooldown = 0;
     bool SkipRenderAtVCount215 = false;
     bool InEarlySubmitAttempt = false;

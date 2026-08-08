@@ -14,7 +14,7 @@
   "target_environment": "SPIR-V 1.0 (glslc default)",
   "optimization": "none (glslc default; no -O flag)",
   "pinned_compiler": "Android NDK 28.0.13004108 shader-tools/glslc; shaderc generator word 0x000d000a",
-  "desktop_overlay_compiler": "glslc 2024.2; shaderc 3~1.3.290.0; generator word 0x000d000b",
+  "desktop_overlay_compiler": "glslc 2026.2; shaderc 3~1.4.350.0; used for the MelonPrime desktop compositor and surface presenter shaders only",
   "shaders": [
     {
       "source": "src/GPU3D_Vulkan_InterpSpansShader.comp",
@@ -112,8 +112,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_vert_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderVertexData.h",
       "flags": [],
-      "source_sha256": "a176c009c4242bfefac61f4d8ef53c89cb56d24492922628eb6f65cdaa651666",
-      "header_sha256": "13c98a093ba682ac61df18723bc71c84223ece8a0629589457c94a882bf6f303"
+      "source_sha256": "c5113ce02c09b8379031973f20fbf2c4a6dbc5b663bd68d8f3e6f96011d23570",
+      "header_sha256": "00a2d77be2ab3089ba016094d2d8cbbb8cec1a8d276fa6ae087bb9673fecf39c"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -121,8 +121,8 @@
       "symbol": "melonDS_gpu3d_vulkan_graphics_raster_frag_spv",
       "header": "src/GPU3D_Vulkan_GraphicsRasterShaderFragmentData.h",
       "flags": [],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "044cfccc8c75ab144c1b99672a7b64bd1bc773662a2fbf06e6ac9fd7f8120ce0"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "019ecbd6df8c3310c249f31095c7a023bba9193ced3a05b0bccade1713b873de"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -132,8 +132,8 @@
       "flags": [
         "-DMELONDS_NO_FRAG_DEPTH=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "676ba2386503fcdea5ef1560f44b25f355c3135726e30dc900d924b7eb399ec4"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "354e681a88bb8502e198bfb3304794110be44dce96ae679b9f7286a21ad06242"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -144,8 +144,8 @@
         "-DMELONDS_NO_FRAG_DEPTH=1",
         "-DMELONDS_DIRECT_TEXTURE_INDEXING=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "659081c3d1db28b3a0f2dff2d0762d64e4541fb45bd2bb4855491abb1c7235c0"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "bcd7723931799c231b771f6cac7a07bc3eab12fedec7ebdc06a6dc24e45b9396"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -158,8 +158,8 @@
         "-DMELONDS_FAST_OPAQUE_MODULATE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "075dde31a5ae31f447a5c39348dc5b9e777869a4da5a0f561923425355b02df3"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "4297a148f1fcb06c4d0179d257cc562869863288ed956af828fc90eee356efb4"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -173,8 +173,8 @@
         "-DMELONDS_FAST_TOON_MODE=1",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "7f266e7f180ff94705f339072e2bed2b418754b5b9e65659e6d3a763f35fcb0b"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "e5c04712c147c3973461438a6df016f1b696b1ca0bdd2105cddd71f51e154400"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -188,8 +188,8 @@
         "-DMELONDS_FAST_TOON_MODE=2",
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "7cdf491f7445953337b278457adf75431107c3578082b859aa1ddebedad6b479"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "2ad57bcca1c6432dbf86ee1500c169181ad13ced104d6f8c1cfde7c6c493b33d"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -204,8 +204,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "f9cccdad13d1f69fdd8ab642476d4665fa83ee89d986c6ad1d90a70d329ad806"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "89a6c197e54f818b9beb779b30139d8b9553c9b0820a4a68c31a86ce72d0af17"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsRasterShader.frag",
@@ -220,8 +220,8 @@
         "-DMELONDS_FAST_TEXTURE_PUSH_CONSTANTS=1",
         "-DMELONDS_FAST_OPAQUE_FULL_ALPHA=1"
       ],
-      "source_sha256": "14a1d57f2db516d98a7db44923f91ccae372a94d7c0a9c5698ab2fca6fd3ee8a",
-      "header_sha256": "a96f67aa2c7986a8fd4e386ff103ab304111d74ac75d304770b6fd30103cee88"
+      "source_sha256": "fa012fedf60b6f2f3c5335261c000cd73097ae7f1fc76d18dfb932055e241260",
+      "header_sha256": "2cd61b640ccf483a8fb16c099dba66b492069bdeaf5c7fde30968ba25dd5d210"
     },
     {
       "source": "src/GPU3D_Vulkan_GraphicsNoColorShader.frag",
@@ -283,17 +283,8 @@
       "symbol": "melonDS_android_vulkan_compositor_comp_spv",
       "header": "src/frontend/qt_sdl/MelonPrimeVulkanCompositorShaderData.h",
       "flags": [],
-      "source_sha256": "977d5b3010e2cafe2ccf4531db8e3ffa33ce08b18d094682f01290ed0f6db805",
-      "header_sha256": "1b985170e493621b6e5c58188b14e310e79defe0ee5541257502ed57296cc327"
-    },
-    {
-      "source": "src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShader.comp",
-      "stage": "comp",
-      "symbol": "melonDS_android_vulkan_accumulate_3d_comp_spv",
-      "header": "src/frontend/qt_sdl/MelonPrimeVulkanAccumulate3dShaderData.h",
-      "flags": [],
-      "source_sha256": "565a95cc70f38c9f8d1b2b430d2dff7c24867e4a2580044caaf10028bf3acd8f",
-      "header_sha256": "7b8b931fdfe752fa37b9a55275c6a19acc2b9bac791a54db51730a424cf659d5"
+      "source_sha256": "78f7cdd3e054018af7ba138355962866bed0bd4aa743e8ff35223d976a672946",
+      "header_sha256": "38a09282f7e2ada179f61ccaee1f1e60a0dc5049d4c8deecc8d86feda96de02e"
     },
     {
       "source": "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenter.vert",
@@ -310,8 +301,8 @@
       "symbol": "melonDS_android_vulkan_surface_presenter_frag_spv",
       "header": "src/frontend/qt_sdl/MelonPrimeVulkanSurfacePresenterFragmentShaderData.h",
       "flags": [],
-      "source_sha256": "9f208b8c37ad405d71d8ddb8de79167e47f26c3eea21d3d4d29a9b5803d174b2",
-      "header_sha256": "ae44d117ba3510cbce7b942c6c515beb9fab8e55058891ea94518e4608023c3f"
+      "source_sha256": "fba8d0c26eb3e9fffb4f2b36bacd07aa32a336c1dcb604e3246da7ddd032d67c",
+      "header_sha256": "6f4b1164775f2920aec8027b9e84c46f4c154d3393a516486e02a9aafdbd6102"
     }
   ]
 }

@@ -72,7 +72,6 @@ layout(location = 2) out float oDepthValue;
 const uint TRI_FLAG_TEXTURED = 1u << 1u;
 const uint TRI_FLAG_DECAL = 1u << 2u;
 const uint TRI_FLAG_LINEAR = 1u << 6u;
-const float LINEAR_TEXEL_COORD_BIAS = 1.0 / 8.0;
 
 struct Color6A5
 {
@@ -283,7 +282,7 @@ Color6A5 unpackToonColor(uint shadeIndex)
 }
 
 #if MELONDS_FAST_OPAQUE_MODULATE == 0
-bool usesDsPixelCenteredTranslucentPaletteUi(uint flags, uint polyAttr, uint texParam)
+bool usesTranslucentPaletteUi(uint flags, uint polyAttr, uint texParam)
 {
     uint textureFormat = (texParam >> 26u) & 0x7u;
     uint polyAlpha = (polyAttr >> 16u) & 0x1Fu;
@@ -317,109 +316,24 @@ bool usesDsPixelCenteredTranslucentPaletteUi(uint flags, uint polyAttr, uint tex
 bool usesPaletteUiAlphaHoleFill(uint flags, uint polyAttr, uint texParam)
 {
     uint polyAlpha = (polyAttr >> 16u) & 0x1Fu;
-    return usesDsPixelCenteredTranslucentPaletteUi(flags, polyAttr, texParam)
+    return usesTranslucentPaletteUi(flags, polyAttr, texParam)
         && polyAlpha >= 21u;
 }
 
-bool usesCompactOpaqueDepthWritePaletteUi(uint flags, uint polyAttr, uint texParam)
-{
-    uint textureFormat = (texParam >> 26u) & 0x7u;
-    uint polyAlpha = (polyAttr >> 16u) & 0x1Fu;
-    uint blendMode = (polyAttr >> 4u) & 0x3u;
-    bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-    bool depthWriteEnabled = (polyAttr & (1u << 11u)) != 0u;
-    bool clearAlphaZero = ((pc.clearAttr >> 16u) & 0x1Fu) == 0u;
-    bool repeatS = (texParam & (1u << 16u)) != 0u;
-    bool repeatT = (texParam & (1u << 17u)) != 0u;
-    bool mirrorS = (texParam & (1u << 18u)) != 0u;
-    bool mirrorT = (texParam & (1u << 19u)) != 0u;
-    bool statusGlyphTexturePage = (texParam & 0xFFFFu) == 0x05C0u;
-
-    return TRANSLUCENT_PASS == 0u
-        && (flags & TRI_FLAG_TEXTURED) != 0u
-        && (flags & TRI_FLAG_LINEAR) != 0u
-        && textureFormat == 3u
-        && color0Transparent
-        && statusGlyphTexturePage
-        && depthWriteEnabled
-        && clearAlphaZero
-        && blendMode == 0u
-        && polyAlpha == 31u
-        && !repeatS
-        && !repeatT
-        && !mirrorS
-        && !mirrorT;
-}
-
-bool usesHighresOpaqueRepeatedModelTexture(uint flags, uint polyAttr, uint texParam)
-{
-    uint textureFormat = (texParam >> 26u) & 0x7u;
-    uint polyAlpha = (polyAttr >> 16u) & 0x1Fu;
-    uint blendMode = (polyAttr >> 4u) & 0x3u;
-    bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-    bool repeatS = (texParam & (1u << 16u)) != 0u;
-    bool repeatT = (texParam & (1u << 17u)) != 0u;
-    bool mirrorS = (texParam & (1u << 18u)) != 0u;
-    bool mirrorT = (texParam & (1u << 19u)) != 0u;
-
-    return TRANSLUCENT_PASS == 0u
-        && (flags & TRI_FLAG_TEXTURED) != 0u
-        && (flags & TRI_FLAG_LINEAR) != 0u
-        && (textureFormat == 4u || textureFormat == 5u)
-        && !color0Transparent
-        && polyAlpha == 31u
-        && blendMode == 0u
-        && (repeatS || repeatT || mirrorS || mirrorT);
-}
-
-bool usesHighresLinearTextBand(uint flags, uint polyAttr, uint texParam, uint texWidth, uint texHeight)
-{
-    uint textureFormat = (texParam >> 26u) & 0x7u;
-    uint polyAlpha = (polyAttr >> 16u) & 0x1Fu;
-    uint blendMode = (polyAttr >> 4u) & 0x3u;
-    bool color0Transparent = (texParam & (1u << 29u)) != 0u;
-    bool depthWriteEnabled = (polyAttr & (1u << 11u)) != 0u;
-    bool depthWriteDisabled = (polyAttr & (1u << 11u)) == 0u;
-    bool repeatS = (texParam & (1u << 16u)) != 0u;
-    bool repeatT = (texParam & (1u << 17u)) != 0u;
-    bool mirrorS = (texParam & (1u << 18u)) != 0u;
-    bool mirrorT = (texParam & (1u << 19u)) != 0u;
-    bool observedTranslucentTextPage =
-        (texParam == 0x79df2000u && texWidth == 256u && texHeight == 64u)
-        || (texParam == 0x7a5f3000u && texWidth == 256u && texHeight == 128u)
-        || (texParam == 0x79df4800u && texWidth == 256u && texHeight == 64u);
-    bool observedOpaqueTextPage =
-        texParam == 0x71df2800u && texWidth == 256u && texHeight == 64u;
-
-    bool commonTextBand =
-        (flags & TRI_FLAG_TEXTURED) != 0u
-        && (flags & TRI_FLAG_LINEAR) != 0u
-        && color0Transparent
-        && blendMode == 0u
-        && repeatS
-        && repeatT
-        && mirrorS
-        && mirrorT;
-
-    return commonTextBand
-        && ((TRANSLUCENT_PASS != 0u
-                && textureFormat == 6u
-                && depthWriteDisabled
-                && polyAlpha == 30u
-                && observedTranslucentTextPage)
-            || (TRANSLUCENT_PASS == 0u
-                && textureFormat == 4u
-                && depthWriteEnabled
-                && polyAlpha == 31u
-                && observedOpaqueTextPage));
-}
-
-vec2 dsPixelCenterDelta()
+// Software (GPU3D_Soft.cpp) and the compute rasteriser (GPU3D_Compute_shaders.h) both
+// evaluate span attributes at the integer pixel coordinate: interpX.SetX(x) there,
+// i = position.x - xspan.X0 here. A hardware rasteriser evaluates them at the fragment
+// centre instead, so every fragment sits half a render pixel past the DS sample point.
+// For linear spans - the ones the DS itself interpolates linearly, equal W with
+// (W & 0x7F) == 0, mirroring SoftRenderer3D's Interpolator - one DS pixel resolves to
+// one texel, so the whole render-scale block collapses onto the DS grid point that
+// software would have sampled. Both terms are derived from the render scale; there is
+// no per-texture or per-resolution constant here.
+vec2 dsSampleGridDelta()
 {
     vec2 renderScale = max(vec2(float(pc.width) * (1.0 / 256.0), float(pc.height) * (1.0 / 192.0)), vec2(1.0));
     vec2 subpixelOffset = mod(gl_FragCoord.xy - vec2(0.5), renderScale);
-    vec2 dsPixelCenterOffset = max((renderScale - vec2(1.0)) * 0.5, vec2(0.0));
-    return dsPixelCenterOffset - subpixelOffset;
+    return -(subpixelOffset + vec2(0.5));
 }
 #endif
 
@@ -466,30 +380,34 @@ Color6A5 sampleTexture(uint polyAttr)
     bool mirrorT = (texParam & (1u << 19u)) != 0u;
 
 #if MELONDS_FAST_OPAQUE_MODULATE == 0
-    if (usesDsPixelCenteredTranslucentPaletteUi(flags, polyAttr, texParam))
+    vec2 texcoordDdx = dFdx(fTexcoord);
+    vec2 texcoordDdy = dFdy(fTexcoord);
+    if ((flags & TRI_FLAG_LINEAR) != 0u)
     {
-        vec2 centerDelta = dsPixelCenterDelta();
-        texcoord += dFdx(fTexcoord) * centerDelta.x + dFdy(fTexcoord) * centerDelta.y;
-    }
-    else if (usesCompactOpaqueDepthWritePaletteUi(flags, polyAttr, texParam))
-    {
-        vec2 centerDelta = dsPixelCenterDelta();
-        texcoord += dFdx(fTexcoord) * centerDelta.x + dFdy(fTexcoord) * centerDelta.y;
-    }
-    else if ((flags & TRI_FLAG_LINEAR) != 0u
-        && (repeatS || repeatT || mirrorS || mirrorT)
-        && !usesHighresOpaqueRepeatedModelTexture(flags, polyAttr, texParam)
-        && !usesHighresLinearTextBand(flags, polyAttr, texParam, texWidth, texHeight))
-    {
-        vec2 renderScale = max(vec2(float(pc.width) * (1.0 / 256.0), float(pc.height) * (1.0 / 192.0)), vec2(1.0));
-        vec2 subpixelOffset = mod(gl_FragCoord.xy - vec2(0.5), renderScale);
-        texcoord += dFdx(fTexcoord) * -subpixelOffset.x + dFdy(fTexcoord) * -subpixelOffset.y;
-        texcoord -= vec2(LINEAR_TEXEL_COORD_BIAS);
+        vec2 gridDelta = dsSampleGridDelta();
+        texcoord += texcoordDdx * gridDelta.x + texcoordDdy * gridDelta.y;
     }
 #endif
 
-    int sampleS = int(floor(texcoord.x));
-    int sampleT = int(floor(texcoord.y));
+    // SoftRenderer3D::TextureLookup() receives S/T as an integer in 1/16-texel units and
+    // reduces it with s >>= 4. fTexcoord carries that same 1/16-texel domain, so reduce it
+    // the same way: truncate to the 1/16 grid, then arithmetic-shift.
+    //
+    // Truncate, not round. GPU3D_Soft.h's Interpolator reaches the 1/16 value through
+    // `v1 + (v0-v1)*(xdiff-x)/xdiff`, and C++ integer division truncates, so the DS value
+    // is floor() of the exact ratio. Rounding to nearest instead promotes a sample that
+    // sits just below a texel boundary into the next texel, which drops a one-pixel line
+    // wherever a span reaches a boundary at a non-integer ratio.
+    //
+    // TEXEL_FLOOR_EPSILON only absorbs float error on the interpolant, so that a ratio
+    // which is exactly an integer - the common 1:1 texel-per-pixel case, where every
+    // sample lands on a texel boundary - cannot fall to the texel below. Its bounds are
+    // fixed, not tuned: above the float32 rounding of the interpolated value, and below
+    // 1/256, the smallest non-zero fraction a DS span can produce (spans span at most 256
+    // pixels, so the interpolation denominator is at most 256).
+    const float TEXEL_FLOOR_EPSILON = 1.0 / 512.0;
+    int sampleS = int(floor(texcoord.x + TEXEL_FLOOR_EPSILON)) >> 4;
+    int sampleT = int(floor(texcoord.y + TEXEL_FLOOR_EPSILON)) >> 4;
 
     sampleS = wrapTexelCoord(sampleS, int(texWidth), repeatS, mirrorS);
     sampleT = wrapTexelCoord(sampleT, int(texHeight), repeatT, mirrorT);

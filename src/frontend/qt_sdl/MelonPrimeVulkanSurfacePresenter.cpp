@@ -621,15 +621,13 @@ std::uint32_t MelonPrimeVulkanSurfacePresenter::FindMemoryType(
 
 bool MelonPrimeVulkanSurfacePresenter::CreatePresentationResources()
 {
-    std::array<VkDescriptorSetLayoutBinding, 8> bindings{};
+    // Binding 0 is the composed atlas, binding 7 the Custom HUD / OSD overlay.
+    // The binding numbers match the fragment shader, which no longer declares
+    // the structured planes or the 3D image: composition happens once, in the
+    // compositor dispatch, and the presenter only shows its result.
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
     bindings[0] = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[1] = {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[2] = {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[3] = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[4] = {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[5] = {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[6] = {6, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    bindings[7] = {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    bindings[1] = {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -638,10 +636,9 @@ bool MelonPrimeVulkanSurfacePresenter::CreatePresentationResources()
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
         return false;
 
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
-    poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3};
-    poolSizes[2] = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4};
+    poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.maxSets = 1;
@@ -777,37 +774,21 @@ void MelonPrimeVulkanSurfacePresenter::DestroyPresentationResources()
 
 bool MelonPrimeVulkanSurfacePresenter::UpdatePresentationDescriptors(
     VkImageView frameImageView,
-    const VulkanCompositionInputs& inputs,
+    VulkanFilterMode filtering,
     VkBuffer overlayDescriptorBuffer,
     VkDeviceSize overlayBufferSize)
 {
-    if (frameImageView == VK_NULL_HANDLE
-        || inputs.sourceImageView == VK_NULL_HANDLE
-        || inputs.topPackedBuffer == VK_NULL_HANDLE
-        || inputs.bottomPackedBuffer == VK_NULL_HANDLE
-        || inputs.capture3dBuffer == VK_NULL_HANDLE)
+    if (frameImageView == VK_NULL_HANDLE || overlayDescriptorBuffer == VK_NULL_HANDLE)
         return false;
 
-    const VkImageView previousTop = inputs.previousTopSourceImageView != VK_NULL_HANDLE
-        ? inputs.previousTopSourceImageView
-        : inputs.sourceImageView;
-    const VkImageView previousBottom = inputs.previousBottomSourceImageView != VK_NULL_HANDLE
-        ? inputs.previousBottomSourceImageView
-        : inputs.sourceImageView;
-    const VkSampler sampler = inputs.filtering == VulkanFilterMode::Nearest
+    const VkSampler sampler = filtering == VulkanFilterMode::Nearest
         ? nearestSampler
         : linearSampler;
-    std::array<VkDescriptorImageInfo, 4> imageInfos{};
+    std::array<VkDescriptorImageInfo, 1> imageInfos{};
     imageInfos[0] = {sampler, frameImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    imageInfos[1] = {VK_NULL_HANDLE, inputs.sourceImageView, VK_IMAGE_LAYOUT_GENERAL};
-    imageInfos[2] = {VK_NULL_HANDLE, previousTop, VK_IMAGE_LAYOUT_GENERAL};
-    imageInfos[3] = {VK_NULL_HANDLE, previousBottom, VK_IMAGE_LAYOUT_GENERAL};
-    std::array<VkDescriptorBufferInfo, 4> bufferInfos{};
-    bufferInfos[0] = {inputs.topPackedBuffer, 0, inputs.packedBufferSize};
-    bufferInfos[1] = {inputs.bottomPackedBuffer, 0, inputs.packedBufferSize};
-    bufferInfos[2] = {inputs.capture3dBuffer, 0, inputs.capture3dBufferSize};
-    bufferInfos[3] = {overlayDescriptorBuffer, 0, overlayBufferSize};
-    std::array<VkWriteDescriptorSet, 8> writes{};
+    std::array<VkDescriptorBufferInfo, 1> bufferInfos{};
+    bufferInfos[0] = {overlayDescriptorBuffer, 0, overlayBufferSize};
+    std::array<VkWriteDescriptorSet, 2> writes{};
     const auto setImageWrite = [&](std::size_t index, std::uint32_t binding, VkDescriptorType type, VkDescriptorImageInfo* info) {
         writes[index].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[index].dstSet = descriptorSet;
@@ -825,13 +806,7 @@ bool MelonPrimeVulkanSurfacePresenter::UpdatePresentationDescriptors(
         writes[index].pBufferInfo = info;
     };
     setImageWrite(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfos[0]);
-    setImageWrite(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &imageInfos[1]);
-    setBufferWrite(2, 2, &bufferInfos[0]);
-    setBufferWrite(3, 3, &bufferInfos[1]);
-    setImageWrite(4, 4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &imageInfos[2]);
-    setBufferWrite(5, 5, &bufferInfos[2]);
-    setImageWrite(6, 6, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &imageInfos[3]);
-    setBufferWrite(7, 7, &bufferInfos[3]);
+    setBufferWrite(1, 7, &bufferInfos[0]);
     vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
     return true;
 }
@@ -939,14 +914,18 @@ void MelonPrimeVulkanSurfacePresenter::DestroyOverlayBuffer()
 
 bool MelonPrimeVulkanSurfacePresenter::UpdateOverlayBuffer(const VulkanOverlayFrame* overlay)
 {
+    const bool hasOverlay = overlay != nullptr && overlay->IsValid();
     overlayDataSize = 0;
     overlayWidth = 0;
     overlayHeight = 0;
-    if (overlay == nullptr || !overlay->IsValid())
-        return true;
 
-    const VkDeviceSize requiredSize = static_cast<VkDeviceSize>(overlay->width)
-        * static_cast<VkDeviceSize>(overlay->height) * sizeof(std::uint32_t);
+    // The descriptor set always binds this buffer, even on frames that draw no
+    // overlay, so it must always be a real allocation. Keeping a minimal one
+    // alive is simpler than binding an unrelated buffer as a stand-in.
+    const VkDeviceSize requiredSize = hasOverlay
+        ? static_cast<VkDeviceSize>(overlay->width)
+            * static_cast<VkDeviceSize>(overlay->height) * sizeof(std::uint32_t)
+        : static_cast<VkDeviceSize>(sizeof(std::uint32_t));
     if (overlayBuffer == VK_NULL_HANDLE || overlayCapacity < requiredSize)
     {
         DestroyOverlayBuffer();
@@ -976,6 +955,9 @@ bool MelonPrimeVulkanSurfacePresenter::UpdateOverlayBuffer(const VulkanOverlayFr
         }
         overlayCapacity = requiredSize;
     }
+
+    if (!hasOverlay)
+        return true;
 
     const std::size_t destinationStride = static_cast<std::size_t>(overlay->width) * sizeof(std::uint32_t);
     auto* destination = static_cast<std::uint8_t*>(mappedOverlayMemory);
@@ -1196,9 +1178,8 @@ void MelonPrimeVulkanSurfacePresenter::FinishAmdAntiLag2Frame()
 bool MelonPrimeVulkanSurfacePresenter::Present(
     VulkanFrame* frame,
     MelonPrimeVulkanOutput& output,
-    const VulkanCompositionInputs& inputs,
-    std::uint32_t sourceWidth,
-    std::uint32_t sourceHeight,
+    VulkanFilterMode filtering,
+    std::uint32_t scale,
     const std::vector<VulkanPresentRegion>& regions,
     const VulkanOverlayFrame* overlay)
 {
@@ -1239,15 +1220,14 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
 
     const VkImage sourceImage = output.getFrameImage(frame);
     const VkImageView sourceImageView = output.getFrameImageView(frame);
-    const VkBuffer overlayDescriptorBuffer = overlayDataSize > 0
-        ? overlayBuffer
-        : inputs.capture3dBuffer;
+    // UpdateOverlayBuffer keeps a minimal allocation alive on frames with no
+    // overlay, so the binding is always valid.
     const VkDeviceSize overlayDescriptorSize = overlayDataSize > 0
         ? overlayDataSize
-        : inputs.capture3dBufferSize;
+        : overlayCapacity;
     if (sourceImage == VK_NULL_HANDLE || sourceImageView == VK_NULL_HANDLE
         || !UpdatePresentationDescriptors(
-            sourceImageView, inputs, overlayDescriptorBuffer, overlayDescriptorSize)
+            sourceImageView, filtering, overlayBuffer, overlayDescriptorSize)
         || !UpdatePresentationVertices(
             regions,
             overlay != nullptr ? &overlay->radar : nullptr,
@@ -1282,17 +1262,11 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
     vertexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     vertexBarrier.buffer = vertexBuffer;
     vertexBarrier.size = VK_WHOLE_SIZE;
-    std::array<VkBufferMemoryBarrier, 3> bufferBarriers{};
+    // Only the vertex buffer and the optional overlay are written by the host
+    // for this draw. The composed atlas is an image, covered by sourceToSample.
+    std::array<VkBufferMemoryBarrier, 2> bufferBarriers{};
     bufferBarriers[0] = vertexBarrier;
-    VkBufferMemoryBarrier& captureBarrier = bufferBarriers[1];
-    captureBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    captureBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    captureBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    captureBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    captureBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    captureBarrier.buffer = inputs.capture3dBuffer;
-    captureBarrier.size = inputs.capture3dBufferSize;
-    std::uint32_t bufferBarrierCount = 2;
+    std::uint32_t bufferBarrierCount = 1;
     if (overlayDataSize > 0)
     {
         VkBufferMemoryBarrier& overlayBarrier = bufferBarriers[bufferBarrierCount++];
@@ -1348,29 +1322,9 @@ bool MelonPrimeVulkanSurfacePresenter::Present(
         0,
         nullptr);
     PresenterPushConstants pushConstants{};
-    pushConstants.drawMode = 1; // pinned BGR compositor atlas -> swapchain RGB
-    pushConstants.scale = inputs.scale;
-    pushConstants.rendererWidth = inputs.rendererWidth;
-    pushConstants.rendererHeight = inputs.rendererHeight;
-    pushConstants.packedStride = inputs.packedStride;
-    pushConstants.screenSwap = inputs.screenSwap;
-    pushConstants.filtering = static_cast<std::uint32_t>(inputs.filtering);
-    pushConstants.previousTopSourceValid = inputs.previousTopSourceValid ? 1u : 0u;
-    pushConstants.previousBottomSourceValid = inputs.previousBottomSourceValid ? 1u : 0u;
-    pushConstants.captureSourceValid = inputs.capture3dSourceValid ? 1u : 0u;
-    pushConstants.captureSourceScreenSwapValid = inputs.capture3dSourceScreenSwapValid ? 1u : 0u;
-    pushConstants.captureSourceScreenSwap = inputs.capture3dSourceScreenSwap ? 1u : 0u;
-    pushConstants.liveSourceScreenSwap = inputs.liveSourceScreenSwap ? 1u : 0u;
-    pushConstants.class4VramStructuredPair = inputs.class4VramStructuredPair ? 1u : 0u;
-    pushConstants.class4NoAboveVramStructuredPair = inputs.class4NoAboveVramStructuredPair ? 1u : 0u;
-    pushConstants.class4PreservePackedVramValid = inputs.class4PreservePackedVramValid ? 1u : 0u;
-    pushConstants.class4PreservePackedVramScreenSwap = inputs.class4PreservePackedVramScreenSwap ? 1u : 0u;
-    pushConstants.topStructuredHandoffNoCurrent3d = inputs.topStructuredHandoffNoCurrent3d ? 1u : 0u;
-    pushConstants.bottomStructuredHandoffNoCurrent3d = inputs.bottomStructuredHandoffNoCurrent3d ? 1u : 0u;
-    pushConstants.topStructuredHandoffSuppress3d = inputs.topStructuredHandoffSuppress3d ? 1u : 0u;
-    pushConstants.bottomStructuredHandoffSuppress3d = inputs.bottomStructuredHandoffSuppress3d ? 1u : 0u;
-    pushConstants.viewportWidth = static_cast<float>(swapchainExtent.width);
-    pushConstants.viewportHeight = static_cast<float>(swapchainExtent.height);
+    pushConstants.drawMode = 1; // composed BGR atlas -> swapchain RGB
+    pushConstants.scale = scale;
+    pushConstants.filtering = static_cast<std::uint32_t>(filtering);
     pushConstants.overlayWidth = overlayWidth;
     pushConstants.overlayHeight = overlayHeight;
     pushConstants.radarOpacity = overlay != nullptr ? overlay->radar.opacity : 0.0f;
