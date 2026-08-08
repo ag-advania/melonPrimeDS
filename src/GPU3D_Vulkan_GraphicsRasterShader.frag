@@ -64,6 +64,7 @@ layout(location = 2) noperspective in float fDepthLinear;
 layout(location = 3) smooth in float fDepthPerspective;
 layout(location = 4) flat in uvec4 fTriInfo0;
 layout(location = 5) flat in uvec4 fTriInfo1;
+layout(location = 6) flat in uvec2 fUvBounds;
 
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oAttr;
@@ -386,6 +387,21 @@ Color6A5 sampleTexture(uint polyAttr)
     {
         vec2 gridDelta = dsSampleGridDelta();
         texcoord += texcoordDdx * gridDelta.x + texcoordDdy * gridDelta.y;
+
+        // The correction moves the sample point by up to renderScale render pixels, so
+        // where a polygon edge does not land on a DS pixel boundary it can leave the
+        // primitive entirely and extrapolate the interpolated S/T. Software cannot do
+        // that: Interpolator::Interpolate only ever returns a value between the span's
+        // own endpoints, so a DS sample is always inside the polygon's S/T range. An
+        // extrapolated sample crosses into a texel the polygon never uses, and with
+        // repeat or mirror wrapping that reads the far side of the texture - an isolated
+        // lit pixel beside the primitive. Hold the sample inside the range this triangle
+        // actually spans.
+        vec2 uvMin = vec2(bitfieldExtract(int(fUvBounds.x), 0, 16),
+                          bitfieldExtract(int(fUvBounds.x), 16, 16));
+        vec2 uvMax = vec2(bitfieldExtract(int(fUvBounds.y), 0, 16),
+                          bitfieldExtract(int(fUvBounds.y), 16, 16));
+        texcoord = clamp(texcoord, uvMin, uvMax);
     }
 #endif
 
