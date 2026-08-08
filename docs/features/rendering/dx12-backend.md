@@ -52,6 +52,24 @@ Consequences:
   latency 1 and a frame-latency waitable object. VSync-off uses tearing when the
   platform reports `DXGI_FEATURE_PRESENT_ALLOW_TEARING`.
 
+### Presentation while paused
+
+`ScreenPanelDX12::drawScreen()` normally returns as soon as emulation is not
+running: nothing new is emulated, and the swapchain keeps showing the last
+presented image even while a modal dialog is exposed, because the native child
+HWND is not Qt's to erase.
+
+The Custom HUD on-screen editor is the one paused state that must keep
+composing. The settings dialog pauses emulation *before* handing the panel to
+the editor, so `EmuThread`'s paused loop (`drawScreen()` every 75 ms) is the
+only thing that can put the editor overlay on screen. `setHudEditModeActive()`
+therefore latches `hudEditLivePresentation`, which lets the paused draw pass
+through; without it the panel just re-presents the frozen pre-pause frame and
+the editor is invisible. `ScreenPanelVulkan` carries the same flag for the same
+reason (it additionally drops its modal-pause freeze overlay, which DX12 does
+not have). The software and OpenGL panels gate on `emuIsActive()` instead and
+keep drawing on their own.
+
 ## NVIDIA Reflex Low Latency
 
 On a supported NVIDIA GPU, the video settings dialog exposes the standard
