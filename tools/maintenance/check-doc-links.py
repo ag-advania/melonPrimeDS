@@ -18,6 +18,42 @@ MANIFEST = ROOT / "docs/archive/migrations/claude-layout-2026-07/manifest.json"
 INLINE_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 REFERENCE_LINK = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "data:")
+FENCE_LINE = re.compile(r"^(\s*)(`{3,}|~{3,})")
+INLINE_CODE_SPAN = re.compile(r"(`+)(?:(?!\1).)*?\1")
+
+
+def non_prose_ranges(text: str) -> list[tuple[int, int]]:
+    """Character ranges (fenced code blocks, inline code spans) to exclude
+    from link scanning. Markdown never renders a link inside either, so text
+    like a diagram label `[right chain](x+S)` inside a ```code fence``` must
+    not be treated as a real link target."""
+    ranges: list[tuple[int, int]] = []
+    offset = 0
+    open_marker: tuple[str, int] | None = None
+    open_start = 0
+    for line in text.splitlines(keepends=True):
+        match = FENCE_LINE.match(line)
+        if match:
+            marker_char = match.group(2)[0]
+            marker_len = len(match.group(2))
+            if open_marker is None:
+                open_marker = (marker_char, marker_len)
+                open_start = offset
+            elif marker_char == open_marker[0] and marker_len >= open_marker[1]:
+                ranges.append((open_start, offset + len(line)))
+                open_marker = None
+        offset += len(line)
+    if open_marker is not None:
+        ranges.append((open_start, len(text)))
+
+    for match in INLINE_CODE_SPAN.finditer(text):
+        ranges.append(match.span())
+
+    return ranges
+
+
+def in_ranges(pos: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(start <= pos < end for start, end in ranges)
 
 
 def markdown_files() -> list[Path]:
@@ -111,9 +147,12 @@ def fix_links() -> int:
             continue
         old_parent = Path(old_source).parent
         text = source.read_text(encoding="utf-8", errors="ignore")
+        excluded = non_prose_ranges(text)
 
         def replace(match: re.Match[str]) -> str:
             nonlocal changed_links
+            if in_ranges(match.start(), excluded):
+                return match.group(0)
             raw = match.group(1)
             target = normalized_target(raw)
             if target is None:
@@ -175,8 +214,15 @@ def main() -> int:
     checked = 0
     for source in markdown_files():
         text = source.read_text(encoding="utf-8", errors="ignore")
-        targets = [match.group(1) for match in INLINE_LINK.finditer(text)]
-        targets.extend(match.group(1) for match in REFERENCE_LINK.finditer(text))
+        excluded = non_prose_ranges(text)
+        targets = [
+            match.group(1) for match in INLINE_LINK.finditer(text)
+            if not in_ranges(match.start(), excluded)
+        ]
+        targets.extend(
+            match.group(1) for match in REFERENCE_LINK.finditer(text)
+            if not in_ranges(match.start(), excluded)
+        )
         for raw in targets:
             target = normalized_target(raw)
             if target is None:
