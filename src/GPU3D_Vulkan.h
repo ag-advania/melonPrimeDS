@@ -339,6 +339,12 @@ private:
         u32 texHeight;
         u32 texParam;
         u32 polyAttr;
+        // Per-triangle S/T bounds, two s16 packed per word (S in the low half, T in the
+        // high half), in the DS 1/16-texel domain. The fragment stage moves its sample
+        // point onto the DS grid, which can push it outside the primitive; software never
+        // extrapolates, because a span only interpolates between its own endpoints.
+        u32 uvBoundsMinPacked;
+        u32 uvBoundsMaxPacked;
     };
 
     struct SpanSetupGpu

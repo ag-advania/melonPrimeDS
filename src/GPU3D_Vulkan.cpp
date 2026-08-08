@@ -4347,12 +4347,13 @@ bool VulkanRenderer3D::createGraphicsPipelines()
             static_cast<u32>(sizeof(GraphicsVertexGpu)),
             VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        const std::array<VkVertexInputAttributeDescription, 5> vertexAttributeDescriptions = {{
+        const std::array<VkVertexInputAttributeDescription, 6> vertexAttributeDescriptions = {{
             {0u, 0u, VK_FORMAT_R32G32B32A32_SFLOAT, 0u},
             {1u, 0u, VK_FORMAT_R32G32_SFLOAT, 16u},
             {2u, 0u, VK_FORMAT_R8G8B8A8_UINT, 24u},
             {3u, 0u, VK_FORMAT_R32G32B32A32_UINT, 28u},
             {4u, 0u, VK_FORMAT_R32G32B32_UINT, 44u},
+            {5u, 0u, VK_FORMAT_R32G32_UINT, 56u},
         }};
         VkPipelineVertexInputStateCreateInfo vertexInputState{};
         vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -5536,12 +5537,13 @@ void VulkanRenderer3D::destroyTriangleBuffer(RenderContext* context)
 
 bool VulkanRenderer3D::ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount)
 {
-    static_assert(sizeof(GraphicsVertexGpu) == 56u, "GraphicsVertexGpu layout must match vertex shader inputs");
+    static_assert(sizeof(GraphicsVertexGpu) == 64u, "GraphicsVertexGpu layout must match vertex shader inputs");
     static_assert(offsetof(GraphicsVertexGpu, x) == 0u, "GraphicsVertexGpu.x offset mismatch");
     static_assert(offsetof(GraphicsVertexGpu, u) == 16u, "GraphicsVertexGpu.u offset mismatch");
     static_assert(offsetof(GraphicsVertexGpu, colorRgba8) == 24u, "GraphicsVertexGpu.colorRgba8 offset mismatch");
     static_assert(offsetof(GraphicsVertexGpu, flags) == 28u, "GraphicsVertexGpu.flags offset mismatch");
     static_assert(offsetof(GraphicsVertexGpu, texHeight) == 44u, "GraphicsVertexGpu.texHeight offset mismatch");
+    static_assert(offsetof(GraphicsVertexGpu, uvBoundsMinPacked) == 56u, "GraphicsVertexGpu.uvBoundsMinPacked offset mismatch");
     VkBuffer& graphicsVertexBuffer = context != nullptr ? context->GraphicsVertexBuffer : GraphicsVertexBuffer;
     VkDeviceMemory& graphicsVertexMemory = context != nullptr ? context->GraphicsVertexMemory : GraphicsVertexMemory;
     VkDeviceSize& graphicsVertexBufferSize = context != nullptr ? context->GraphicsVertexBufferSize : GraphicsVertexBufferSize;
@@ -5603,7 +5605,7 @@ void VulkanRenderer3D::destroyGraphicsVertexBuffer(RenderContext* context)
 
 bool VulkanRenderer3D::ensureGraphicsSceneVertexBuffer(size_t vertexCount)
 {
-    static_assert(sizeof(GraphicsVertexGpu) == 56u, "GraphicsVertexGpu layout must match vertex shader inputs");
+    static_assert(sizeof(GraphicsVertexGpu) == 64u, "GraphicsVertexGpu layout must match vertex shader inputs");
     const size_t requiredVertexCount = std::max<size_t>(1, vertexCount);
     const VkDeviceSize requiredSize = static_cast<VkDeviceSize>(requiredVertexCount * sizeof(GraphicsVertexGpu));
     if (GraphicsSceneVertexBuffer != VK_NULL_HANDLE && GraphicsSceneVertexBufferSize >= requiredSize)
@@ -11890,6 +11892,10 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             graphicsVertex.texHeight = hasTexture ? texHeight : 0u;
             graphicsVertex.texParam = hasTexture ? polygon->TexParam : 0u;
             graphicsVertex.polyAttr = polygonMeta.PolyAttr;
+            // Full s16 range: these vertices back the edge/line draws, which never take the
+            // DS-grid correction, so the fragment clamp must be inert for them.
+            graphicsVertex.uvBoundsMinPacked = 0x80008000u;
+            graphicsVertex.uvBoundsMaxPacked = 0x7FFF7FFFu;
             return graphicsVertex;
         };
 
@@ -12035,6 +12041,25 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
             const auto reciprocalW = [](float w) {
                 return 1.0f / std::max(w, 1.0f);
             };
+            // S/T range this primitive actually spans, in the DS 1/16-texel domain. The
+            // fragment stage clamps its DS-grid-corrected sample to this, so a correction
+            // that lands outside the primitive cannot extrapolate into another texel and,
+            // with repeat or mirror wrapping, read the far side of the texture. Software
+            // cannot extrapolate at all: Interpolator::Interpolate only ever returns a
+            // point between the span's own endpoints.
+            const auto packUvPair = [](float a, float b) -> u32 {
+                const auto toU16 = [](float value) -> u32 {
+                    const s32 clamped = std::clamp<s32>(static_cast<s32>(std::lround(value)), -32768, 32767);
+                    return static_cast<u32>(static_cast<u16>(static_cast<s16>(clamped)));
+                };
+                return toU16(a) | (toU16(b) << 16u);
+            };
+            const float uvMinU = std::min({vertex0.u, vertex1.u, vertex2.u});
+            const float uvMaxU = std::max({vertex0.u, vertex1.u, vertex2.u});
+            const float uvMinV = std::min({vertex0.v, vertex1.v, vertex2.v});
+            const float uvMaxV = std::max({vertex0.v, vertex1.v, vertex2.v});
+            const u32 uvBoundsMin = packUvPair(uvMinU, uvMinV);
+            const u32 uvBoundsMax = packUvPair(uvMaxU, uvMaxV);
             const auto appendGraphicsVertex = [&](const TriangleVertexData& vertexData) {
                 GraphicsVertexGpu graphicsVertex{};
                 graphicsVertex.x = vertexData.x;
@@ -12051,6 +12076,8 @@ void VulkanRenderer3D::buildGraphicsTriangleList(melonDS::GPU& gpu)
                 graphicsVertex.texHeight = triangle.texHeight;
                 graphicsVertex.texParam = triangle.texParam;
                 graphicsVertex.polyAttr = triangle.polyAttr;
+                graphicsVertex.uvBoundsMinPacked = uvBoundsMin;
+                graphicsVertex.uvBoundsMaxPacked = uvBoundsMax;
                 GraphicsVertices.push_back(graphicsVertex);
             };
 
@@ -13162,6 +13189,23 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
                 return 1.0f / std::max(w, 1.0f);
             };
 
+            // Same per-primitive S/T bounds as the graphics scene path; see the comment
+            // there. This builder only runs for the non-graphics backend, but the vertex
+            // layout is shared, so the field must never be left at zero.
+            const auto packUvPair = [](float a, float b) -> u32 {
+                const auto toU16 = [](float value) -> u32 {
+                    const s32 clamped = std::clamp<s32>(static_cast<s32>(std::lround(value)), -32768, 32767);
+                    return static_cast<u32>(static_cast<u16>(static_cast<s16>(clamped)));
+                };
+                return toU16(a) | (toU16(b) << 16u);
+            };
+            const u32 uvBoundsMin = packUvPair(
+                std::min({vertex0.u, vertex1.u, vertex2.u}),
+                std::min({vertex0.v, vertex1.v, vertex2.v}));
+            const u32 uvBoundsMax = packUvPair(
+                std::max({vertex0.u, vertex1.u, vertex2.u}),
+                std::max({vertex0.v, vertex1.v, vertex2.v}));
+
             const auto appendGraphicsVertex = [&](const TriangleVertexData& vertexData) {
                 GraphicsVertexGpu graphicsVertex{};
                 graphicsVertex.x = vertexData.x;
@@ -13178,6 +13222,8 @@ void VulkanRenderer3D::buildTriangleList(melonDS::GPU& gpu)
                 graphicsVertex.texHeight = triangle.texHeight;
                 graphicsVertex.texParam = triangle.texParam;
                 graphicsVertex.polyAttr = triangle.polyAttr;
+                graphicsVertex.uvBoundsMinPacked = uvBoundsMin;
+                graphicsVertex.uvBoundsMaxPacked = uvBoundsMax;
                 GraphicsVertices.push_back(graphicsVertex);
             };
 
