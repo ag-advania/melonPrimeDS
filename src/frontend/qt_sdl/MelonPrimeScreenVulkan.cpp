@@ -37,6 +37,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <vector>
 
@@ -66,6 +67,7 @@
 #include "GPU.h"
 #include "GPU_Vulkan.h"
 #include "MelonPrime.h"
+#include "MelonPrimeConstants.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
 #include "MelonPrimeVulkanSurface.h"
@@ -192,6 +194,11 @@ struct ScreenPanelVulkan::VulkanState
     u32 frameWidth = 0;
     u32 frameHeight = 0;
     bool frameValid = false;
+
+    // One renderer-output lease per presenter frame slot. BeginFrame() waits
+    // that slot's fence before it is replaced, so a compositor buffer remains
+    // immutable until the GPU has finished copying both screens from it.
+    std::array<RendererOutputLease, Vk::FramesInFlight> frameLeases;
 
     // Renderer the VBlank observer is currently installed on, so the hook is
     // (re)installed exactly once per renderer instance.
@@ -443,6 +450,8 @@ void ScreenPanelVulkan::releaseNativeSurface()
     if (!vulkan)
         return;
 
+    for (RendererOutputLease& lease : vulkan->frameLeases)
+        lease.ReleaseNow();
     vulkan->presenter.Shutdown();
     vulkan->initialized = false;
     vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
@@ -482,6 +491,8 @@ bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
             "[Vulkan] native window handle changed (%llu -> %llu); rebuilding the presenter\n",
             vulkan->lastNativeHandle,
             handle);
+        for (RendererOutputLease& lease : vulkan->frameLeases)
+            lease.ReleaseNow();
         vulkan->presenter.Shutdown();
         vulkan->lastNativeHandle = handle;
     }
@@ -756,6 +767,10 @@ void ScreenPanelVulkan::prepareForRendererTransition()
         vulkan->hookedRenderer = nullptr;
     }
 
+    vulkan->presenter.Quiesce();
+    for (RendererOutputLease& lease : vulkan->frameLeases)
+        lease.ReleaseNow();
+
     QMutexLocker lock(&vulkan->frameLock);
     vulkan->frameTop = nullptr;
     vulkan->frameBottom = nullptr;
@@ -982,35 +997,27 @@ void ScreenPanelVulkan::drawScreenFrame()
         vulkan->presenter.SetVSync(vsync);
     }
 
-    // The composed frame. The VBlank observer publishes it for the Vulkan
-    // renderer; any other renderer (during a transition, or when Vulkan fell
-    // back to software while this panel is still the presenter) is read
-    // directly here, because it has no such hook.
+    RendererOutputLease rendererOutputLease = nds->GPU.AcquireRendererOutputLease();
+    const RendererOutput& rendererOutput = rendererOutputLease.Output;
+    const VulkanPresentedFrame* gpuFrame = nullptr;
     const u32* topPixels = nullptr;
     const u32* bottomPixels = nullptr;
     u32 sourceWidth = 0;
     u32 sourceHeight = 0;
+    if (rendererOutput.Kind == RendererOutputKind::VulkanBuffer && rendererOutput.Top)
     {
-        QMutexLocker lock(&vulkan->frameLock);
-        if (vulkan->frameValid)
-        {
-            topPixels = vulkan->frameTop;
-            bottomPixels = vulkan->frameBottom;
-            sourceWidth = vulkan->frameWidth;
-            sourceHeight = vulkan->frameHeight;
-        }
+        gpuFrame = static_cast<const VulkanPresentedFrame*>(rendererOutput.Top);
+        sourceWidth = rendererOutput.Width;
+        sourceHeight = rendererOutput.Height;
     }
-    if (!topPixels && !vulkanRenderer)
+    else if (rendererOutput.Kind == RendererOutputKind::CpuBgra
+        && rendererOutput.Top && rendererOutput.Bottom
+        && rendererOutput.Width > 0 && rendererOutput.Height > 0)
     {
-        const RendererOutput output = nds->GPU.GetRendererOutput();
-        if (output.Kind == RendererOutputKind::CpuBgra && output.Top && output.Bottom
-            && output.Width > 0 && output.Height > 0)
-        {
-            topPixels = static_cast<const u32*>(output.Top);
-            bottomPixels = static_cast<const u32*>(output.Bottom);
-            sourceWidth = output.Width;
-            sourceHeight = output.Height;
-        }
+        topPixels = static_cast<const u32*>(rendererOutput.Top);
+        bottomPixels = static_cast<const u32*>(rendererOutput.Bottom);
+        sourceWidth = rendererOutput.Width;
+        sourceHeight = rendererOutput.Height;
     }
 
     const int logicalWidth = std::max(1, width());
@@ -1027,6 +1034,9 @@ void ScreenPanelVulkan::drawScreenFrame()
             noteFrameStalled("the presenter could not begin a frame (swapchain not ready)");
         return;
     }
+
+    const u32 presenterFrameIndex = vulkan->presenter.GetFrameIndex();
+    vulkan->frameLeases[presenterFrameIndex].ReleaseNow();
 
     // The swapchain may be a different size than the widget for one frame
     // after a resize; every quad below is expressed in the swapchain's own
@@ -1052,7 +1062,25 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
     bool screenUploaded[2] = {false, false};
-    if (topPixels && bottomPixels)
+    if (gpuFrame)
+    {
+        // Retain before recording the first copy. Even if a later upload or
+        // EndFrame fails, this presenter slot keeps the source alive until its
+        // fence is retired or the transition path explicitly quiesces it.
+        vulkan->frameLeases[presenterFrameIndex] = std::move(rendererOutputLease);
+        for (int index = 0; index < screens; ++index)
+        {
+            const int kind = kinds[index] & 1;
+            if (screenUploaded[kind])
+                continue;
+            screenUploaded[kind] = vulkan->presenter.UploadLayerFromBuffer(
+                kind == 0 ? MelonPrime::VulkanPresenter::Layer::ScreenTop
+                          : MelonPrime::VulkanPresenter::Layer::ScreenBottom,
+                *gpuFrame,
+                kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+        }
+    }
+    else if (topPixels && bottomPixels)
     {
         const std::size_t rowBytes = static_cast<std::size_t>(sourceWidth) * sizeof(u32);
         for (int index = 0; index < screens; ++index)
@@ -1087,6 +1115,45 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     QRect hudRect;
     const bool hudVisible = renderHudOverlay(emuThread, bottomPixels ? &bottomScreenImage : nullptr, hudRect);
+    bool gpuRadarVisible = false;
+    MelonPrime::VulkanPresenter::Quad gpuRadarQuad;
+    u32 gpuRadarCenterY = 0;
+    if (gpuFrame && m_radarEnable)
+    {
+        auto* mp = emuThread->GetMelonPrimeCore();
+        const float* topMatrix = nullptr;
+        for (int index = 0; index < screens; ++index)
+        {
+            if ((kinds[index] & 1) == 0)
+            {
+                topMatrix = matrices[index];
+                break;
+            }
+        }
+        if (mp && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
+        {
+            const float anchorX = topMatrix[0] * m_radarAnchorDsX
+                + topMatrix[1] * m_radarAnchorDsY + topMatrix[4];
+            const float anchorY = topMatrix[2] * m_radarAnchorDsX
+                + topMatrix[3] * m_radarAnchorDsY + topMatrix[5];
+            const int destinationX = static_cast<int>(m_hudOriginX) + static_cast<int>(
+                (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
+            const int destinationY = static_cast<int>(m_hudOriginY) + static_cast<int>(
+                (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
+            const float destinationSize = static_cast<float>(m_radarDstSize) * m_hudScale;
+
+            gpuRadarQuad.Axis[0] = destinationSize * scaleX;
+            gpuRadarQuad.Axis[3] = destinationSize * scaleY;
+            gpuRadarQuad.Origin[0] = static_cast<float>(destinationX) * scaleX;
+            gpuRadarQuad.Origin[1] = static_cast<float>(destinationY) * scaleY;
+            gpuRadarQuad.Origin[2] = viewportWidth;
+            gpuRadarQuad.Origin[3] = viewportHeight;
+            const u8 hunter = std::min<u8>(mp->GetHunterID(), MelonPrime::kHunterCount - 1);
+            gpuRadarCenterY = static_cast<u32>(MelonPrime::kBtmOverlaySrcCenterY[hunter]);
+            gpuRadarVisible = m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
+        }
+    }
     bool hudUploaded = false;
     if (hudVisible && !Overlay[0].isNull())
     {
@@ -1148,6 +1215,15 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
+    if (gpuRadarVisible)
+    {
+        vulkan->presenter.DrawRadar(
+            gpuRadarQuad,
+            m_radarOpacity,
+            gpuRadarCenterY,
+            static_cast<u32>(m_radarSrcRadius));
+    }
+
     if (hudUploaded)
     {
         // The overlay covers the whole widget in logical pixels and is stretched

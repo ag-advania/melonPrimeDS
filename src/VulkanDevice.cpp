@@ -22,9 +22,51 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <mutex>
 
 namespace melonDS
 {
+
+struct VulkanDeviceState
+{
+    ~VulkanDeviceState()
+    {
+        if (Device != VK_NULL_HANDLE)
+        {
+            if (DeviceFns.DeviceWaitIdle)
+            {
+                const VkResult res = DeviceFns.DeviceWaitIdle(Device);
+                if (res != VK_SUCCESS)
+                {
+                    Platform::Log(Platform::LogLevel::Warn,
+                        "[Vulkan] vkDeviceWaitIdle during shared-device teardown: %s\n",
+                        Vk::FormatResult(res).c_str());
+                }
+            }
+            if (DeviceFns.DestroyDevice)
+                DeviceFns.DestroyDevice(Device, nullptr);
+        }
+        if (OwnsContextReference && Context)
+            Context->Release();
+    }
+
+    VulkanContext* Context = nullptr;
+    bool OwnsContextReference = false;
+    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    VkDevice Device = VK_NULL_HANDLE;
+    Vk::DeviceDispatch DeviceFns{};
+    VkQueue MainQueue = VK_NULL_HANDLE;
+    u32 MainQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
+    VkQueue PresentQueue = VK_NULL_HANDLE;
+    u32 PresentQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
+    Vk::DeviceProbeResult Profile;
+    std::vector<const char*> EnabledExtensions;
+    VkPhysicalDeviceFeatures EnabledFeatures{};
+    VulkanLowLatencyStatus NvLowLatency2;
+    VulkanLowLatencyStatus AmdAntiLag;
+    mutable std::mutex QueueMutex;
+};
 
 namespace
 {
@@ -37,6 +79,18 @@ constexpr const char* PortabilitySubsetExtensionName = "VK_KHR_portability_subse
 // queue per family, so relative priorities have nothing to arbitrate; 1.0 is
 // the documented "as important as anything else" value.
 constexpr float QueuePriority = 1.0f;
+
+std::mutex SharedDeviceMutex;
+std::weak_ptr<VulkanDeviceState> SharedDevice;
+
+const Vk::DeviceDispatch EmptyDeviceDispatch{};
+const Vk::DeviceProbeResult EmptyDeviceProfile{};
+const std::vector<const char*> EmptyExtensions;
+const VkPhysicalDeviceFeatures EmptyFeatures{};
+const VulkanLowLatencyStatus EmptyLowLatencyStatus{};
+const VkPhysicalDeviceMemoryProperties EmptyMemoryProperties{};
+const VkPhysicalDeviceLimits EmptyLimits{};
+std::mutex EmptyQueueMutex;
 
 const char* DeviceTypeName(VkPhysicalDeviceType type) noexcept
 {
@@ -61,7 +115,99 @@ VulkanDevice::~VulkanDevice()
 
 const Vk::InstanceDispatch& VulkanDevice::InstanceFns() const noexcept
 {
-    return Context->Fns();
+    return State->Context->Fns();
+}
+
+bool VulkanDevice::IsValid() const noexcept
+{
+    return State && State->Device != VK_NULL_HANDLE;
+}
+
+VkDevice VulkanDevice::GetHandle() const noexcept
+{
+    return State ? State->Device : VK_NULL_HANDLE;
+}
+
+VkPhysicalDevice VulkanDevice::GetPhysicalDevice() const noexcept
+{
+    return State ? State->PhysicalDevice : VK_NULL_HANDLE;
+}
+
+const Vk::DeviceDispatch& VulkanDevice::Fns() const noexcept
+{
+    return State ? State->DeviceFns : EmptyDeviceDispatch;
+}
+
+VkQueue VulkanDevice::GetMainQueue() const noexcept
+{
+    return State ? State->MainQueue : VK_NULL_HANDLE;
+}
+
+u32 VulkanDevice::GetMainQueueFamily() const noexcept
+{
+    return State ? State->MainQueueFamily : Vk::QueueFamilySelection::InvalidFamily;
+}
+
+VkQueue VulkanDevice::GetPresentQueue() const noexcept
+{
+    return State ? State->PresentQueue : VK_NULL_HANDLE;
+}
+
+u32 VulkanDevice::GetPresentQueueFamily() const noexcept
+{
+    return State ? State->PresentQueueFamily : Vk::QueueFamilySelection::InvalidFamily;
+}
+
+std::mutex& VulkanDevice::GetQueueMutex() const noexcept
+{
+    return State ? State->QueueMutex : EmptyQueueMutex;
+}
+
+const Vk::DeviceProbeResult& VulkanDevice::GetProfile() const noexcept
+{
+    return State ? State->Profile : EmptyDeviceProfile;
+}
+
+const std::vector<const char*>& VulkanDevice::GetEnabledExtensions() const noexcept
+{
+    return State ? State->EnabledExtensions : EmptyExtensions;
+}
+
+const VkPhysicalDeviceFeatures& VulkanDevice::GetEnabledFeatures() const noexcept
+{
+    return State ? State->EnabledFeatures : EmptyFeatures;
+}
+
+const VulkanLowLatencyStatus& VulkanDevice::GetNvLowLatency2Status() const noexcept
+{
+    return State ? State->NvLowLatency2 : EmptyLowLatencyStatus;
+}
+
+const VulkanLowLatencyStatus& VulkanDevice::GetAmdAntiLagStatus() const noexcept
+{
+    return State ? State->AmdAntiLag : EmptyLowLatencyStatus;
+}
+
+int VulkanDevice::GetMaxScaleFactor() const noexcept
+{
+    return State ? State->Profile.MaxScaleFactor : 0;
+}
+
+const VkPhysicalDeviceMemoryProperties& VulkanDevice::GetMemoryProperties() const noexcept
+{
+    return State ? State->Profile.MemoryProperties : EmptyMemoryProperties;
+}
+
+const VkPhysicalDeviceLimits& VulkanDevice::GetLimits() const noexcept
+{
+    return State ? State->Profile.Properties.limits : EmptyLimits;
+}
+
+bool VulkanDevice::HasSharedDevice(const VulkanContext& context) noexcept
+{
+    std::lock_guard<std::mutex> lock(SharedDeviceMutex);
+    const std::shared_ptr<VulkanDeviceState> shared = SharedDevice.lock();
+    return shared && shared->Context == &context && shared->Device != VK_NULL_HANDLE;
 }
 
 
@@ -73,11 +219,55 @@ bool VulkanDevice::Create(
     Destroy();
 
     FailureReason.clear();
+    std::lock_guard<std::mutex> sharedLock(SharedDeviceMutex);
+
+    if (std::shared_ptr<VulkanDeviceState> shared = SharedDevice.lock())
+    {
+        if (shared->Context != &context)
+        {
+            FailureReason = "a Vulkan logical device from a different instance is still alive";
+            return false;
+        }
+        if ((lowLatency.NvLowLatency2 && !shared->NvLowLatency2.Requested)
+            || (lowLatency.AmdAntiLag && !shared->AmdAntiLag.Requested))
+        {
+            FailureReason =
+                "the shared Vulkan device was created before presentation low-latency "
+                "extensions were requested";
+            return false;
+        }
+        State = std::move(shared);
+        LogStartupSummary(requestedRendererName);
+        return true;
+    }
+
+    State = std::make_shared<VulkanDeviceState>();
+    State->Context = &context;
+    if (!context.Acquire(false))
+    {
+        FailureReason = "could not retain the Vulkan instance for the shared logical device";
+        State.reset();
+        return false;
+    }
+    State->OwnsContextReference = true;
+    VulkanContext*& Context = State->Context;
+    VkPhysicalDevice& PhysicalDevice = State->PhysicalDevice;
+    VkDevice& Device = State->Device;
+    Vk::DeviceDispatch& DeviceFns = State->DeviceFns;
+    VkQueue& MainQueue = State->MainQueue;
+    u32& MainQueueFamily = State->MainQueueFamily;
+    VkQueue& PresentQueue = State->PresentQueue;
+    u32& PresentQueueFamily = State->PresentQueueFamily;
+    Vk::DeviceProbeResult& Profile = State->Profile;
+    std::vector<const char*>& EnabledExtensions = State->EnabledExtensions;
+    VkPhysicalDeviceFeatures& EnabledFeatures = State->EnabledFeatures;
+    VulkanLowLatencyStatus& NvLowLatency2 = State->NvLowLatency2;
+    VulkanLowLatencyStatus& AmdAntiLag = State->AmdAntiLag;
+
     NvLowLatency2 = VulkanLowLatencyStatus{};
     AmdAntiLag = VulkanLowLatencyStatus{};
     NvLowLatency2.Requested = lowLatency.NvLowLatency2;
     AmdAntiLag.Requested = lowLatency.AmdAntiLag;
-    Context = &context;
 
     if (!context.IsReady())
     {
@@ -439,52 +629,55 @@ bool VulkanDevice::Create(
     SetDebugName(VK_OBJECT_TYPE_QUEUE, MainQueue, "melonPrimeDS main queue");
 
     LogStartupSummary(requestedRendererName);
+    SharedDevice = State;
     return true;
 }
 
 
 void VulkanDevice::Destroy()
 {
-    if (Device != VK_NULL_HANDLE)
-    {
-        // Permitted WaitIdle site: teardown. Destroying a device (and, through
-        // the deferred destruction queue, every object still parented to it)
-        // while the GPU may still be executing recorded commands is undefined
-        // behaviour.
-        if (DeviceFns.DeviceWaitIdle)
-        {
-            const VkResult res = DeviceFns.DeviceWaitIdle(Device);
-            if (res != VK_SUCCESS)
-            {
-                // VK_ERROR_DEVICE_LOST is expected here after a TDR; the device
-                // still has to be destroyed, so this is logged and not acted on.
-                Platform::Log(Platform::LogLevel::Warn,
-                    "[Vulkan] vkDeviceWaitIdle during teardown: %s\n",
-                    Vk::FormatResult(res).c_str());
-            }
-        }
+    State.reset();
+}
 
-        if (DeviceFns.DestroyDevice)
-            DeviceFns.DestroyDevice(Device, nullptr);
-        Device = VK_NULL_HANDLE;
+bool VulkanDevice::ResolvePresentSupport(VkSurfaceKHR surface)
+{
+    if (!State || surface == VK_NULL_HANDLE || !State->Context)
+    {
+        FailureReason = "cannot resolve presentation without a shared device and surface";
+        return false;
     }
 
-    DeviceFns = Vk::DeviceDispatch{};
-    MainQueue = VK_NULL_HANDLE;
-    PresentQueue = VK_NULL_HANDLE;
-    MainQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
-    PresentQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
-    EnabledExtensions.clear();
-    EnabledFeatures = VkPhysicalDeviceFeatures{};
-    NvLowLatency2 = VulkanLowLatencyStatus{};
-    AmdAntiLag = VulkanLowLatencyStatus{};
-    PhysicalDevice = VK_NULL_HANDLE;
-    Context = nullptr;
+    VkBool32 supported = VK_FALSE;
+    const VkResult res = State->Context->Fns().GetPhysicalDeviceSurfaceSupportKHR(
+        State->PhysicalDevice, State->MainQueueFamily, surface, &supported);
+    if (res != VK_SUCCESS)
+    {
+        FailureReason = "vkGetPhysicalDeviceSurfaceSupportKHR failed: " + Vk::FormatResult(res);
+        return false;
+    }
+    if (supported != VK_TRUE)
+    {
+        FailureReason =
+            "the existing Vulkan device's main queue cannot present to this surface; "
+            "the presenter must initialize before the renderer on this driver";
+        return false;
+    }
+
+    State->PresentQueueFamily = State->MainQueueFamily;
+    State->PresentQueue = State->MainQueue;
+    return true;
 }
 
 
 void VulkanDevice::LogStartupSummary(const char* requestedRendererName) const
 {
+    if (!State)
+        return;
+    VulkanContext* Context = State->Context;
+    const Vk::DeviceProbeResult& Profile = State->Profile;
+    const auto& EnabledExtensions = State->EnabledExtensions;
+    const u32 PresentQueueFamily = State->PresentQueueFamily;
+    const u32 MainQueueFamily = State->MainQueueFamily;
     const char* requested = requestedRendererName ? requestedRendererName : "Vulkan";
 
     // requested/actual are logged together and in that order so a log excerpt
@@ -555,6 +748,10 @@ void VulkanDevice::LogStartupSummary(const char* requestedRendererName) const
 
 void VulkanDevice::LogLowLatencySummary() const
 {
+    if (!State)
+        return;
+    const VulkanLowLatencyStatus& NvLowLatency2 = State->NvLowLatency2;
+    const VulkanLowLatencyStatus& AmdAntiLag = State->AmdAntiLag;
     // Requested / Supported / Enabled / Actual / Reason, on one line per
     // feature, always emitted for both features whether or not they were asked
     // for. "Actual" is deliberately separate from "Enabled": Enabled is what

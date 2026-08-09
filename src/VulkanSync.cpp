@@ -369,6 +369,16 @@ VkCommandBuffer FrameRing::GetCommandBuffer() const noexcept
 
 FrameContext* FrameRing::BeginFrame()
 {
+    return BeginFrameInternal(true);
+}
+
+FrameContext* FrameRing::TryBeginFrame()
+{
+    return BeginFrameInternal(false);
+}
+
+FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
+{
     if (!Device || Frames.empty())
         return nullptr;
 
@@ -387,12 +397,15 @@ FrameContext* FrameRing::BeginFrame()
 
     if (frame.HasPendingSubmission)
     {
-        // The one blocking call in the frame path: throttles the CPU to
-        // `framesInFlight` frames ahead. Not vkDeviceWaitIdle -- only this
-        // slot's own submission is waited for, so the other in-flight frame
-        // keeps running.
-        const VkResult res =
-            fns.WaitForFences(handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
+        // Renderer/presenter rings throttle the CPU to framesInFlight. The
+        // compositor uses the non-blocking branch and keeps the last published
+        // frame when all of its slots are still executing.
+        const VkResult res = waitForSlot
+            ? fns.WaitForFences(
+                handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds)
+            : fns.GetFenceStatus(handle, frame.InFlightFence);
+        if (!waitForSlot && res == VK_NOT_READY)
+            return nullptr;
         if (res == VK_TIMEOUT)
         {
             Platform::Log(Platform::LogLevel::Error,
@@ -400,10 +413,11 @@ FrameContext* FrameRing::BeginFrame()
                 CurrentIndex);
             return nullptr;
         }
-        if (!MELONPRIME_VK_CHECK("vkWaitForFences", res))
+        if (!MELONPRIME_VK_CHECK(
+                waitForSlot ? "vkWaitForFences" : "vkGetFenceStatus", res))
             return nullptr;
 
-        // Waiting on slot N's fence proves every frame up to and including the
+        // A signalled slot-N fence proves every frame up to and including the
         // one that slot carried has retired, because submissions to a single
         // queue complete in submission order.
         CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
@@ -419,8 +433,8 @@ FrameContext* FrameRing::BeginFrame()
         return nullptr;
 
     // Resetting the pool recycles the command buffer allocated from it; the
-    // buffer must not be in the pending state, which the fence wait above
-    // guarantees.
+    // buffer must not be in the pending state, which the completed-fence check
+    // above guarantees.
     res = fns.ResetCommandPool(handle, frame.CommandPool, 0);
     if (!MELONPRIME_VK_CHECK("vkResetCommandPool", res))
         return nullptr;
@@ -492,7 +506,10 @@ bool FrameRing::SubmitFrame(
         submit.pSignalSemaphores = &signalSemaphore;
     }
 
-    res = fns.QueueSubmit(queue, 1, &submit, frame.InFlightFence);
+    {
+        std::lock_guard<std::mutex> queueLock(Device->GetQueueMutex());
+        res = fns.QueueSubmit(queue, 1, &submit, frame.InFlightFence);
+    }
     if (!MELONPRIME_VK_CHECK("vkQueueSubmit", res))
     {
         // The fence was reset in BeginFrame() and no submission will signal it,

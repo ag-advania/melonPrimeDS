@@ -21,9 +21,14 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <atomic>
+#include <cassert>
 #include <cstring>
+#include <mutex>
 
+#include "GPU.h"
 #include "VulkanContext.h"
+#include "VulkanPresentedFrame.h"
 
 namespace melonDS
 {
@@ -104,6 +109,64 @@ constexpr VkDeviceSize StructuredInputBytes =
 
 } // namespace
 
+struct VulkanRenderer3D::OutputState
+{
+    struct Slot
+    {
+        Vk::Buffer StructuredStaging;
+        Vk::Buffer StructuredInput;
+        Vk::Buffer Composed;
+        VulkanPresentedFrame Frame;
+        std::atomic<u32> PresenterRefs{0};
+    };
+
+    bool Create(const VulkanDevice& device, u32 width, u32 height)
+    {
+        Device = device;
+        const VkDeviceSize screenBytes =
+            static_cast<VkDeviceSize>(width) * height * sizeof(u32);
+
+        for (u32 i = 0; i < Slots.size(); ++i)
+        {
+            Slot& slot = Slots[i];
+            if (!slot.StructuredStaging.Create(Device,
+                    StructuredInputBytes,
+                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    "MelonPrime Vulkan structured staging slot"))
+                return false;
+            if (!slot.StructuredStaging.Map())
+                return false;
+            if (!slot.StructuredInput.Create(Device,
+                    StructuredInputBytes,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+                    "MelonPrime Vulkan structured input slot"))
+                return false;
+            if (!slot.Composed.Create(Device,
+                    screenBytes * 2u,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+                    "MelonPrime Vulkan composed output slot"))
+                return false;
+
+            slot.Frame.Buffer = slot.Composed.GetHandle();
+            slot.Frame.TopOffset = 0;
+            slot.Frame.BottomOffset = screenBytes;
+            slot.Frame.Width = width;
+            slot.Frame.Height = height;
+        }
+        return true;
+    }
+
+    VulkanDevice Device;
+    std::array<Slot, CompositorFramesInFlight> Slots;
+    std::mutex Mutex;
+    int PublishedSlot = -1;
+    u64 NextSerial = 1;
+};
+
 
 // ---------------------------------------------------------------------------
 // Construction / lifetime
@@ -176,7 +239,11 @@ bool VulkanRenderer3D::Init()
     if (!Context || !Context->IsReady() || !Context->HasSelectedDevice())
         return false;
 
-    if (!Device.Create(*Context, "Vulkan"))
+    // Request presentation-related capabilities even when the renderer is the
+    // first shared-device client. The presenter can then attach its surface to
+    // this device instead of having to replace a live renderer device.
+    const VulkanLowLatencyRequest presentationCapabilities{true, true};
+    if (!Device.Create(*Context, "Vulkan", presentationCapabilities))
     {
         Platform::Log(Platform::LogLevel::Error,
             "[Vulkan] renderer init failed stage=3D-device actual=Software reason=%s\n",
@@ -190,14 +257,15 @@ bool VulkanRenderer3D::Init()
     // Same queue family, separate command pool / command buffer / fence. Both
     // rings submit to the same queue, so the compositor's barriers can depend on
     // the rasterizer's earlier submission through submission order.
-    if (!ComposeFrames.Create(Device, Device.GetMainQueueFamily(), 1))
+    if (!ComposeFrames.Create(
+            Device, Device.GetMainQueueFamily(), CompositorFramesInFlight))
         return false;
 
     if (!Layouts.Create(Device.Fns(), Device.GetHandle()))
         return false;
 
     Vk::DescriptorPoolSizing sizing;
-    sizing.FramesInFlight = RendererFramesInFlight;
+    sizing.FramesInFlight = DescriptorFramesInFlight;
     sizing.RasterizerSetsPerFrame = RasterizerSetsPerFrame;
     // Slot 0 carries the untextured binding used by every stage that does not
     // sample a DS texture (DepthBlend still needs the clear-bitmap samplers in
@@ -258,8 +326,6 @@ void VulkanRenderer3D::Stop()
 
     NativeReadback.Destroy();
     NativeResolveBuffer.Destroy();
-    StructuredInputBuffer.Destroy();
-    StructuredStagingBuffer.Destroy();
     DummyCaptureImage.Destroy();
     DummyTextureImage.Destroy();
     ClearBitmapImage[0].Destroy();
@@ -285,10 +351,7 @@ void VulkanRenderer3D::Stop()
     FinalFBHasContent = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
-    ComposedColorBuffer[0].clear();
-    ComposedColorBuffer[1].clear();
-    ComposedColorBuffer[0].shrink_to_fit();
-    ComposedColorBuffer[1].shrink_to_fit();
+    ComposedOutput.reset();
     Initialized = false;
 }
 
@@ -341,7 +404,7 @@ bool VulkanRenderer3D::CreateFixedResources()
     // the cost of staging it, and the host write is made visible to the device
     // by the queue submission's implicit host-write domain operation.
     if (!MetaUniformBuffer.Create(Device,
-            MetaUniformStride * RendererFramesInFlight,
+            MetaUniformStride * DescriptorFramesInFlight,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -429,27 +492,6 @@ bool VulkanRenderer3D::CreateFixedResources()
         return false;
 
     if (!NativeReadback.Create(Device, NativeResolveBytes, "MelonPrime Vulkan native readback"))
-        return false;
-
-    // Compositor input. Staged host-side and copied, for the same reason the
-    // resolve target is device-local: every one of the up to 12.6 million
-    // compositor invocations at 16x reads four words out of this buffer, and
-    // servicing that from host memory over PCIe would dominate the frame.
-    if (!StructuredStagingBuffer.Create(Device,
-            StructuredInputBytes,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            "MelonPrime Vulkan structured staging"))
-        return false;
-    if (!StructuredStagingBuffer.Map())
-        return false;
-
-    if (!StructuredInputBuffer.Create(Device,
-            StructuredInputBytes,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-            "MelonPrime Vulkan structured input"))
         return false;
 
     return true;
@@ -543,28 +585,11 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
             return false;
     }
 
-    // Compositor output and its readback: the two screens stacked, BGRA8, at
-    // the internal resolution. Sized here rather than in CreateFixedResources()
-    // because that size is exactly what changes with the internal resolution.
-    const VkDeviceSize composeBytes = screenPixels * 2 * sizeof(u32);
-    if (!ComposeOutputBuffer.Create(Device,
-            composeBytes,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-            "MelonPrime Vulkan compose output"))
+    auto output = std::make_shared<OutputState>();
+    if (!output->Create(
+            Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight)))
         return false;
-
-    if (!ComposeReadback.Create(Device, composeBytes, "MelonPrime Vulkan compose readback"))
-        return false;
-
-    // Two CPU-side copies so the presentation path can keep reading the
-    // previous frame while the next one is being copied out of the readback
-    // buffer. assign() rather than resize() so a resolution change starts from
-    // black instead of from a reinterpreted older frame.
-    const std::size_t composeWords = static_cast<std::size_t>(screenPixels) * 2u;
-    for (auto& buffer : ComposedColorBuffer)
-        buffer.assign(composeWords, 0xFF000000u);
-    ComposedFrontBuffer = 0;
+    ComposedOutput = std::move(output);
     ComposedOutputValid = false;
     ComposedGeneration = 0;
 
@@ -593,8 +618,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
 {
     // Called from SetRenderSettings() after a WaitIdle and from Stop(), so
     // immediate destruction is safe: nothing in flight can reference these.
-    ComposeReadback.Destroy();
-    ComposeOutputBuffer.Destroy();
+    ComposedOutput.reset();
     FinalFB.Destroy();
     SetupIndicesBuffer.Destroy();
     XSpanSetupBuffer.Destroy();
@@ -1608,10 +1632,11 @@ void VulkanRenderer3D::UpdateClearBitmap(VkCommandBuffer cmd, Vk::StagingRing& s
 }
 
 bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
-    u32 frameIndex, u32 slot, VkBuffer presentationOutput)
+    u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput)
 {
     VkDescriptorSet set = Descriptors.GetRasterizerSet(frameIndex, slot);
-    if (set == VK_NULL_HANDLE || presentationOutput == VK_NULL_HANDLE)
+    if (set == VK_NULL_HANDLE || presentationOutput == VK_NULL_HANDLE
+        || structuredInput == VK_NULL_HANDLE)
         return false;
 
     Vk::DescriptorWriter writer;
@@ -1650,7 +1675,7 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         // left unwritten, but "legally" depends on the shader's final SPIR-V
         // rather than on this file, so all fourteen are always valid.
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::StructuredInput),
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, StructuredInputBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, structuredInput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::PresentationOut),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, presentationOutput, 0, VK_WHOLE_SIZE);
 
@@ -1809,8 +1834,30 @@ void VulkanRenderer3D::RenderFrame()
         RecordInitialTransitions(cmd);
 
     u8 texcacheClearBitmapDirty = 0;
-    Texcache.Update(texcacheClearBitmapDirty);
+    const bool textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
     ClearBitmapDirty |= texcacheClearBitmapDirty;
+
+    const bool canReuseIdenticalFrame =
+        !textureCacheChanged
+        && GPU3D.RenderFrameIdentical
+        && FinalFBHasContent
+        && !NeedsFinalFBTransition
+        && PlaceholdersInitialized;
+    if (canReuseIdenticalFrame)
+    {
+        // Keep the frame-ring fence progression intact while skipping every
+        // 3D upload/dispatch. The compositor still runs at VBlank with the
+        // current structured 2D planes and samples the unchanged FinalFB.
+        PendingFence = frame->InFlightFence;
+        if (Frames.SubmitFrame(Device.GetMainQueue()))
+        {
+            FrameInFlight = true;
+            return;
+        }
+        PendingFence = VK_NULL_HANDLE;
+        SetRuntimeFailure("identical-frame submission failed");
+        return;
+    }
 
     UpdateClearBitmap(cmd, FrameStaging);
 
@@ -1892,8 +1939,9 @@ void VulkanRenderer3D::RenderFrame()
         }
     }
 
-    if (!WriteRasterizerDescriptorSet(
-            frameIndex, RasterizerSetSlot, NativeResolveBuffer.GetHandle()))
+    if (!ComposedOutput || !WriteRasterizerDescriptorSet(
+            frameIndex, RasterizerSetSlot, NativeResolveBuffer.GetHandle(),
+            ComposedOutput->Slots[0].StructuredInput.GetHandle()))
     {
         Frames.SubmitFrame(Device.GetMainQueue());
         SetRuntimeFailure("could not write the rasterizer descriptor set");
@@ -2132,6 +2180,15 @@ void VulkanRenderer3D::RenderFrame()
     if (GPU3D.RenderDispCnt & (1 << 7)) finalPassVariant |= 0x2;
     if (GPU3D.RenderDispCnt & (1 << 5)) finalPassVariant |= 0x1;
 
+    // A compositor submission from the previous DS frame may still be reading
+    // FinalFB. Queue order plus this WAR dependency lets the CPU continue
+    // immediately while preventing FinalPass from overwriting those texels
+    // until the read has completed.
+    FinalFB.RecordLayoutTransition(cmd,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_FinalPass0 + finalPassVariant]);
     fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(ScreenWidth), 32),
@@ -2269,16 +2326,13 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return false;       // pipelines are still being compiled
 
     // The producer bumps its generation once per DS frame. Composing the same
-    // one twice would repeat a whole dispatch and readback for a result that
+    // one twice would repeat a whole composition dispatch for a result that
     // cannot have changed.
     if (ComposedOutputValid && ComposedGeneration == generation)
         return true;
 
     if (Pipelines[VulkanShaders::Pipeline_Compositor] == VK_NULL_HANDLE
-        || !StructuredStagingBuffer.IsValid() || !StructuredInputBuffer.IsValid()
-        || !ComposeOutputBuffer.IsValid() || !ComposeReadback.IsValid()
-        || !FinalFB.IsValid()
-        || ComposedColorBuffer[0].empty() || ComposedColorBuffer[1].empty())
+        || !ComposedOutput || !FinalFB.IsValid())
     {
         SetRuntimeFailure("required compositor resources are unavailable");
         return false;
@@ -2295,7 +2349,18 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
             return false;
     }
 
-    u32* staging = static_cast<u32*>(StructuredStagingBuffer.GetMappedPointer());
+    const u32 nextSlot = static_cast<u32>(
+        (ComposeFrames.GetAbsoluteFrame() - 1u) % CompositorFramesInFlight);
+    if (ComposedOutput->Slots[nextSlot].PresenterRefs.load(std::memory_order_acquire) != 0)
+    {
+        // The presenter is still using this slot. Dropping one composed frame
+        // is preferable to blocking VBlank on presentation; the previously
+        // published frame remains valid and is reused.
+        return false;
+    }
+
+    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
+    u32* staging = static_cast<u32*>(outputSlot.StructuredStaging.GetMappedPointer());
     if (!staging)
     {
         SetRuntimeFailure("the structured staging buffer is not mapped");
@@ -2315,7 +2380,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
     std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
 
-    if (!StructuredStagingBuffer.FlushRange(0, StructuredInputBytes))
+    if (!outputSlot.StructuredStaging.FlushRange(0, StructuredInputBytes))
     {
         SetRuntimeFailure("could not flush the structured staging buffer");
         return false;
@@ -2323,17 +2388,17 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
 
     const Vk::DeviceDispatch& fns = Device.Fns();
 
-    // Waits on the *previous* compose, which the tail of this function already
-    // waited for, so this is free in practice; it is what makes reusing the
-    // command buffer and the descriptor set legal.
-    Vk::FrameContext* frame = ComposeFrames.BeginFrame();
+    Vk::FrameContext* frame = ComposeFrames.TryBeginFrame();
     if (!frame)
+        return false;
+    VkCommandBuffer cmd = frame->CommandBuffer;
+    const u32 frameIndex = ComposeFrames.GetFrameIndex();
+    if (frameIndex != nextSlot)
     {
-        SetRuntimeFailure("could not begin the compositor command buffer");
+        ComposeFrames.SubmitFrame(Device.GetMainQueue());
+        SetRuntimeFailure("the compositor frame ring selected an unexpected slot");
         return false;
     }
-    VkCommandBuffer cmd = frame->CommandBuffer;
-    const u32 frameIndex = Frames.GetFrameIndex();
 
     {
         VkBufferCopy copy{};
@@ -2341,9 +2406,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         copy.dstOffset = 0;
         copy.size = StructuredInputBytes;
         fns.CmdCopyBuffer(cmd,
-            StructuredStagingBuffer.GetHandle(), StructuredInputBuffer.GetHandle(), 1, &copy);
+            outputSlot.StructuredStaging.GetHandle(),
+            outputSlot.StructuredInput.GetHandle(), 1, &copy);
 
-        const VkBuffer structured = StructuredInputBuffer.GetHandle();
+        const VkBuffer structured = outputSlot.StructuredInput.GetHandle();
         BufferBarrier(cmd, &structured, 1,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -2364,7 +2430,8 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     // Set-0 slot 1: identical to the rasterizer's set except that binding 13
     // points at the composed output instead of the native capture buffer.
     if (!WriteRasterizerDescriptorSet(
-            frameIndex, CompositorSetSlot, ComposeOutputBuffer.GetHandle()))
+            frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
+            outputSlot.StructuredInput.GetHandle()))
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
         SetRuntimeFailure("could not write the compositor descriptor set");
@@ -2390,88 +2457,75 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
 
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_Compositor]);
-    // One dispatch covers both screens: the output is the two of them stacked,
-    // so the readback is a single copy.
+    // One dispatch covers both screens in the slot's device-local buffer.
     fns.CmdDispatch(cmd,
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
 
-    const VkDeviceSize composeBytes =
-        static_cast<VkDeviceSize>(ScreenWidth) * ScreenHeight * 2ull * sizeof(u32);
-
-    {
-        const VkBuffer composed = ComposeOutputBuffer.GetHandle();
-        BufferBarrier(cmd, &composed, 1,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-
-        VkBufferCopy copy{};
-        copy.srcOffset = 0;
-        copy.dstOffset = 0;
-        copy.size = composeBytes;
-        fns.CmdCopyBuffer(cmd, composed, ComposeReadback.GetHandle(), 1, &copy);
-
-        // Host visibility is not implicit: the transfer write has to be made
-        // available to the HOST_READ the memcpy below performs.
-        const VkBuffer readback = ComposeReadback.GetHandle();
-        BufferBarrier(cmd, &readback, 1,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
-    }
-
-    VkFence composeFence = frame->InFlightFence;
     if (!ComposeFrames.SubmitFrame(Device.GetMainQueue()))
     {
         SetRuntimeFailure("compositor command submission failed");
         return false;
     }
 
-    // This wait is what publishes the frame, and it is also what keeps the next
-    // RenderFrame() from overwriting FinalFB while the compositor still reads
-    // it: the rasterizer's own ring only waits on the rasterizer's fence, so
-    // the compose has to be complete before this function returns.
-    //
-    // vkWaitForFences on one fence, never vkDeviceWaitIdle / vkQueueWaitIdle.
-    const VkResult res = fns.WaitForFences(
-        Device.GetHandle(), 1, &composeFence, VK_TRUE, 1000000000ull /* 1 s */);
-    if (res != VK_SUCCESS)
     {
-        SetRuntimeFailure("the compositor did not complete in time: " + Vk::FormatResult(res));
-        return false;
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        outputSlot.Frame.Serial = ComposedOutput->NextSerial++;
+        outputSlot.Frame.Generation = generation;
+        ComposedOutput->PublishedSlot = static_cast<int>(nextSlot);
+        ComposedGeneration = generation;
+        ComposedOutputValid = true;
     }
-
-    if (!ComposeReadback.Invalidate())
-    {
-        SetRuntimeFailure("could not invalidate the compositor readback mapping");
-        return false;
-    }
-
-    const u8* src = ComposeReadback.GetData();
-    if (!src)
-    {
-        SetRuntimeFailure("the compositor readback buffer is not mapped");
-        return false;
-    }
-
-    const u32 nextFrontBuffer = ComposedFrontBuffer ^ 1u;
-    std::memcpy(ComposedColorBuffer[nextFrontBuffer].data(), src,
-        static_cast<std::size_t>(composeBytes));
-
-    ComposedGeneration = generation;
-    ComposedFrontBuffer = nextFrontBuffer;
-    ComposedOutputValid = true;
     return true;
 }
 
 const u32* VulkanRenderer3D::GetComposedScreen(u32 screen) const noexcept
 {
-    if (!ComposedOutputValid || screen >= 2u || ComposedColorBuffer[ComposedFrontBuffer].empty())
-        return nullptr;
+    (void)screen;
+    return nullptr;
+}
 
-    const std::size_t pixels =
-        static_cast<std::size_t>(ScreenWidth) * static_cast<std::size_t>(ScreenHeight);
-    return ComposedColorBuffer[ComposedFrontBuffer].data() + (screen * pixels);
+RendererOutput VulkanRenderer3D::GetComposedOutput() const
+{
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    std::lock_guard<std::mutex> lock(state->Mutex);
+    if (state->PublishedSlot < 0)
+        return {};
+    const VulkanPresentedFrame& frame = state->Slots[state->PublishedSlot].Frame;
+    return RendererOutput::VulkanBuffer(
+        const_cast<VulkanPresentedFrame*>(&frame), frame.Width, frame.Height, frame.Serial);
+}
+
+RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
+{
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    std::lock_guard<std::mutex> lock(state->Mutex);
+    if (state->PublishedSlot < 0)
+        return {};
+
+    const int slotIndex = state->PublishedSlot;
+    OutputState::Slot& slot = state->Slots[slotIndex];
+    slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
+
+    auto release = +[](void* opaque) {
+        auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);
+        const u32 previous = leasedSlot->PresenterRefs.fetch_sub(1, std::memory_order_release);
+        assert(previous > 0);
+    };
+
+    return RendererOutputLease(
+        RendererOutput::VulkanBuffer(
+            &slot.Frame, slot.Frame.Width, slot.Frame.Height, slot.Frame.Serial),
+        &slot,
+        release,
+        state);
 }
 
 u32* VulkanRenderer3D::GetLine(int line)

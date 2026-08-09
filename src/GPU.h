@@ -34,6 +34,9 @@ enum class RendererOutputKind
 {
     CpuBgra,
     OpenGLTextureArray,
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    VulkanBuffer,
+#endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     MetalTexture,
 #endif
@@ -47,7 +50,8 @@ struct RendererOutput
     void* Bottom = nullptr;
     u32 Width = 0;
     u32 Height = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL))
     u64 FrameSerial = 0;
 #endif
 
@@ -70,6 +74,20 @@ struct RendererOutput
         return output;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    static RendererOutput VulkanBuffer(
+        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+    {
+        RendererOutput output;
+        output.Kind = RendererOutputKind::VulkanBuffer;
+        output.Top = frame;
+        output.Width = width;
+        output.Height = height;
+        output.FrameSerial = frameSerial;
+        return output;
+    }
+#endif
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
     {
@@ -82,22 +100,24 @@ struct RendererOutput
 #endif
 };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
-// Metal output is consumed by a command queue separate from the renderer
-// queue. Keep its ring slot immutable until that presenter command completes.
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL))
+// GPU-native output is consumed asynchronously by a presenter command. Keep
+// its ring slot immutable until that command's completion fence retires.
 struct RendererOutputLease
 {
     RendererOutput Output;
     void* Context = nullptr;
     void (*ReleaseFn)(void*) = nullptr;
+    std::shared_ptr<void> Owner;
 
     RendererOutputLease() = default;
     RendererOutputLease(
         RendererOutput output,
         void* context,
-        void (*releaseFn)(void*)) noexcept
-        : Output(output), Context(context), ReleaseFn(releaseFn)
+        void (*releaseFn)(void*),
+        std::shared_ptr<void> owner = {}) noexcept
+        : Output(output), Context(context), ReleaseFn(releaseFn), Owner(std::move(owner))
     {
     }
 
@@ -107,7 +127,8 @@ struct RendererOutputLease
     RendererOutputLease(RendererOutputLease&& other) noexcept
         : Output(other.Output),
           Context(other.Context),
-          ReleaseFn(other.ReleaseFn)
+          ReleaseFn(other.ReleaseFn),
+          Owner(std::move(other.Owner))
     {
         other.Context = nullptr;
         other.ReleaseFn = nullptr;
@@ -121,6 +142,7 @@ struct RendererOutputLease
             Output = other.Output;
             Context = other.Context;
             ReleaseFn = other.ReleaseFn;
+            Owner = std::move(other.Owner);
             other.Context = nullptr;
             other.ReleaseFn = nullptr;
         }
@@ -136,6 +158,10 @@ struct RendererOutputLease
     {
         void* context = Context;
         void (*releaseFn)(void*) = ReleaseFn;
+        // Keep the backing state alive until after ReleaseFn has retired the
+        // slot. Vulkan uses this to avoid a heap allocation per frame lease.
+        std::shared_ptr<void> retainedOwner = std::move(Owner);
+        (void)retainedOwner;
         Context = nullptr;
         ReleaseFn = nullptr;
         if (context && releaseFn)
@@ -188,7 +214,8 @@ public:
     //          - values are renderer-specific (ie. OpenGL texture handle)
     bool GetFramebuffers(void** top, void** bottom);
     RendererOutput GetRendererOutput();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL))
     RendererOutputLease AcquireRendererOutputLease();
 #endif
 
@@ -997,7 +1024,8 @@ public:
             return RendererOutput::OpenGLTextureArray(top);
         return {};
     }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL))
     virtual RendererOutputLease AcquireOutputLease()
     {
         return RendererOutputLease(GetOutput(), nullptr, nullptr);
