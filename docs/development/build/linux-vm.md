@@ -81,12 +81,16 @@ Build (optional):
 
 ```bash
 bash /mnt/mp/tools/linux-vm/guest/guest-build-only.sh
+# Equivalent repo-root wrapper:
+bash /mnt/mp/tools/build/linux/build-linux.sh
 ```
 
 This configures Vulkan explicitly and fetches the same pinned Khronos
 `Vulkan-Headers` revision used by Ubuntu CI. The first-time setup command also
 installs the Linux Vulkan runtime packages: `libvulkan-dev`,
-`mesa-vulkan-drivers`, and `vulkan-validationlayers`.
+`mesa-vulkan-drivers`, and `vulkan-validationlayers`. Native Wayland pointer
+lock stays in CMake's `AUTO` mode so missing `wayland-protocols` does not block
+an Xorg VM Vulkan build.
 
 Full deps + build (first time or after clean):
 
@@ -123,6 +127,9 @@ tools/linux-vm/
     guest-mount-share.sh
     guest-run-smoke.sh
     guest-build.sh                  # wrapper → guest-setup-and-build
+  ../build/linux/
+    build-linux.sh                  # repo-root wrapper → Vulkan-enabled configure + build
+    build-linux-existing.sh         # repo-root wrapper → incremental Vulkan-enabled build
 ```
 
 ## Build flags (guest)
@@ -133,7 +140,6 @@ Local VM builds use:
 - `-DMELONPRIME_ENABLE_VULKAN=ON`
 - `-DMELONPRIME_FORCE_DISABLE_VULKAN=OFF`
 - `-DMELONPRIME_VULKAN_INCLUDE_DIR=/mnt/mp/Vulkan-Headers/include` by default
-- `-DMELONPRIME_WAYLAND_POINTER_LOCK=ON`
 - `-DMELONDS_EMBED_BUILD_INFO=ON` with git branch/hash and `MELONDS_BUILD_PROVIDER=LinuxVM`
 - Output: `build-linux/melonPrimeDS` (standalone binary, not AppDir)
 
