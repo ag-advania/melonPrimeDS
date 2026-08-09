@@ -204,9 +204,10 @@ struct ScreenPanelVulkan::VulkanState
     std::atomic_bool modalPauseActive{false};
     std::atomic_bool surfaceHandleDirty{true};
 
-    // Published for the low-latency hooks. Phase 13 consumes them; today they
-    // are the values the emulation thread most recently asked for, which is
-    // what the vendor extensions will need at the same call sites.
+    // The values the emulation thread most recently asked for. The presenter
+    // is the authority once it exists; these are the panel-side record, read by
+    // initVulkanPresenter() so a presenter created mid-session (renderer switch,
+    // native handle change) starts at the current setting instead of off.
     std::atomic_int reflexMode{0};
     std::atomic_bool antiLag2Enabled{false};
 
@@ -345,6 +346,13 @@ bool ScreenPanelVulkan::initVulkanPresenter()
 
     vulkan->lastNativeHandle = static_cast<unsigned long long>(vulkan->surface->winId());
     vulkan->surfaceHandleDirty.store(false, std::memory_order_release);
+
+    // Requested / Supported / Enabled / Actual / Reason for both vendor
+    // extensions, once, as soon as there is a device to report on. Emitted here
+    // rather than inside Init() so it is also printed for a presenter rebuilt
+    // mid-session -- a renderer switch or a new native window handle -- where
+    // the answer can legitimately differ from the one at startup.
+    vulkan->presenter.LogLowLatencyState("presenter ready:");
     return true;
 }
 
@@ -612,34 +620,63 @@ void ScreenPanelVulkan::setHudEditModeActive(bool active)
 // ---------------------------------------------------------------------------
 // Low-latency hooks
 //
-// Phase 13 backs these with VK_NV_low_latency2 and VK_AMD_anti_lag. Until then
-// they record the requested configuration and mark the real submit/present
-// boundaries the vendor markers must attach to -- deliberately NOT Qt paint
-// events, which is the mistake the contract calls out.
+// Thin forwarding to the presenter, which owns the swapchain and therefore
+// owns both vendor extensions. These run on the emulation thread, the same
+// thread that later calls drawScreenFrame(), so the presenter sees one
+// consistent sequence per frame and no locking is needed.
+//
+// The presenter is only touched once it is initialized; a panel that is still
+// coming up, or one whose presenter was torn down by a renderer switch, simply
+// drops the frame's markers rather than opening a Reflex frame that could never
+// be closed.
+//
+// The RENDERSUBMIT_* and PRESENT_* markers are NOT here on purpose: they sit
+// around the real vkQueueSubmit / vkQueuePresentKHR inside
+// VulkanPresenter::EndFrame(). Emitting them from this thread would time Qt
+// bookkeeping instead of GPU work.
 // ---------------------------------------------------------------------------
 
 void ScreenPanelVulkan::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
 {
     if (!vulkan)
         return;
+
+    // Kept for the panel's own diagnostics and so a presenter created later in
+    // this session starts from the current setting rather than a stale one.
     vulkan->reflexMode.store(reflexMode, std::memory_order_relaxed);
     vulkan->antiLag2Enabled.store(antiLag2Enabled, std::memory_order_relaxed);
+
+    if (!vulkan->presenter.IsInitialized())
+        return;
+    vulkan->presenter.BeginLowLatencyFrame(reflexMode, antiLag2Enabled);
 }
 
 void ScreenPanelVulkan::markVulkanReflexInputSample()
 {
+    if (!vulkan || !vulkan->presenter.IsInitialized())
+        return;
+    vulkan->presenter.MarkLowLatencyInputSample();
 }
 
-void ScreenPanelVulkan::markVulkanReflexRenderSubmitStart()
+void ScreenPanelVulkan::markVulkanReflexSimulationStart()
 {
+    if (!vulkan || !vulkan->presenter.IsInitialized())
+        return;
+    vulkan->presenter.MarkLowLatencySimulationStart();
 }
 
-void ScreenPanelVulkan::markVulkanReflexRenderSubmitEnd()
+void ScreenPanelVulkan::markVulkanReflexSimulationEnd()
 {
+    if (!vulkan || !vulkan->presenter.IsInitialized())
+        return;
+    vulkan->presenter.MarkLowLatencySimulationEnd();
 }
 
 void ScreenPanelVulkan::finishVulkanLowLatencyFrame()
 {
+    if (!vulkan || !vulkan->presenter.IsInitialized())
+        return;
+    vulkan->presenter.FinishLowLatencyFrame();
 }
 
 

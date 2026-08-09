@@ -68,13 +68,13 @@ const Vk::InstanceDispatch& VulkanDevice::InstanceFns() const noexcept
 bool VulkanDevice::Create(
     VulkanContext& context,
     const char* requestedRendererName,
-    const LowLatencyRequest& lowLatency)
+    const VulkanLowLatencyRequest& lowLatency)
 {
     Destroy();
 
     FailureReason.clear();
-    NvLowLatency2 = LowLatencyStatus{};
-    AmdAntiLag = LowLatencyStatus{};
+    NvLowLatency2 = VulkanLowLatencyStatus{};
+    AmdAntiLag = VulkanLowLatencyStatus{};
     NvLowLatency2.Requested = lowLatency.NvLowLatency2;
     AmdAntiLag.Requested = lowLatency.AmdAntiLag;
     Context = &context;
@@ -476,8 +476,8 @@ void VulkanDevice::Destroy()
     PresentQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
     EnabledExtensions.clear();
     EnabledFeatures = VkPhysicalDeviceFeatures{};
-    NvLowLatency2 = LowLatencyStatus{};
-    AmdAntiLag = LowLatencyStatus{};
+    NvLowLatency2 = VulkanLowLatencyStatus{};
+    AmdAntiLag = VulkanLowLatencyStatus{};
     PhysicalDevice = VK_NULL_HANDLE;
     Context = nullptr;
 }
@@ -561,7 +561,7 @@ void VulkanDevice::LogLowLatencySummary() const
     // vkCreateDevice accepted, Actual is what the running renderer will use, and
     // the two differ exactly when a requested feature was silently dropped --
     // which is the case a log must never let read as success.
-    const auto describe = [](const char* name, const LowLatencyStatus& status) {
+    const auto describe = [](const char* name, const VulkanLowLatencyStatus& status) {
         Platform::Log(Platform::LogLevel::Info,
             "[Vulkan] %s: requested=%s supported=%s enabled=%s actual=%s reason=%s\n",
             name,

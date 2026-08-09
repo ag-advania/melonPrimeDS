@@ -392,7 +392,7 @@ void EmuThread::run()
             if (vulkanLowLatencyRenderer)
             {
                 emuInstance->markVulkanReflexInputSample();
-                emuInstance->markVulkanReflexRenderSubmitStart();
+                emuInstance->markVulkanReflexSimulationStart();
             }
 #endif
 #if defined(MELONPRIME_DS)
@@ -589,7 +589,7 @@ void EmuThread::run()
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
-            emuInstance->markVulkanReflexRenderSubmitEnd();
+            emuInstance->markVulkanReflexSimulationEnd();
 #endif
 
 #ifdef MELONPRIME_DS

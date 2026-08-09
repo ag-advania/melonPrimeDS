@@ -207,11 +207,19 @@ public:
     // `waitSemaphore` / `waitStageMask` describe the acquire dependency and may
     // be VK_NULL_HANDLE / 0 for a frame that does not present.
     // `signalSemaphore` may be VK_NULL_HANDLE likewise.
+    //
+    // `submitPNext` is chained onto VkSubmitInfo::pNext and must stay alive for
+    // the duration of the call. It exists for VkLatencySubmissionPresentIdNV:
+    // VK_NV_low_latency2 correlates a submission with its present by tagging the
+    // submit itself, so there is no way to attach it from outside this function.
+    // Null -- the default -- produces exactly the submission this ring made
+    // before the parameter existed.
     bool SubmitFrame(
         VkQueue queue,
         VkSemaphore waitSemaphore,
         VkPipelineStageFlags waitStageMask,
-        VkSemaphore signalSemaphore);
+        VkSemaphore signalSemaphore,
+        const void* submitPNext = nullptr);
 
     // Convenience for a frame that neither waits on an acquire nor signals a
     // present: the compute-only path used when the renderer produces a frame

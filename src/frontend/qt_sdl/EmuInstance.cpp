@@ -531,16 +531,16 @@ void EmuInstance::markVulkanReflexInputSample()
         mainWindow->markVulkanReflexInputSample();
 }
 
-void EmuInstance::markVulkanReflexRenderSubmitStart()
+void EmuInstance::markVulkanReflexSimulationStart()
 {
     if (mainWindow)
-        mainWindow->markVulkanReflexRenderSubmitStart();
+        mainWindow->markVulkanReflexSimulationStart();
 }
 
-void EmuInstance::markVulkanReflexRenderSubmitEnd()
+void EmuInstance::markVulkanReflexSimulationEnd()
 {
     if (mainWindow)
-        mainWindow->markVulkanReflexRenderSubmitEnd();
+        mainWindow->markVulkanReflexSimulationEnd();
 }
 
 void EmuInstance::finishVulkanLowLatencyFrame()

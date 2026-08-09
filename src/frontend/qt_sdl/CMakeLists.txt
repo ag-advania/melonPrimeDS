@@ -395,6 +395,11 @@ target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    # Renderer-switch stress driver. Added to the target only in a developer
+    # configure, so a release build cannot contain it even by accident -- the
+    # header's own #ifdef is the second line of defence, not the first.
+    target_sources(melonDS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRendererSwitchStress.cpp)
 endif()
 
 if (MELONPRIME_VULKAN_ACTIVE)
@@ -424,6 +429,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanMemory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDescriptors.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanAmdAntiLag.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)

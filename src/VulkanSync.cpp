@@ -445,7 +445,8 @@ bool FrameRing::SubmitFrame(
     VkQueue queue,
     VkSemaphore waitSemaphore,
     VkPipelineStageFlags waitStageMask,
-    VkSemaphore signalSemaphore)
+    VkSemaphore signalSemaphore,
+    const void* submitPNext)
 {
     if (!Device || Frames.empty() || queue == VK_NULL_HANDLE)
         return false;
@@ -470,6 +471,7 @@ bool FrameRing::SubmitFrame(
 
     VkSubmitInfo submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.pNext = submitPNext;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &frame.CommandBuffer;
 

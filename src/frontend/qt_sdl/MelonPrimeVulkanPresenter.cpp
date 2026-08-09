@@ -206,8 +206,26 @@ bool VulkanPresenter::CreateDeviceObjects()
             : Context->GetFailureReason());
     }
 
-    if (!Device.Create(*Context, "Vulkan presenter"))
+    // Both vendor low-latency extensions are asked for unconditionally rather
+    // than from the current setting, because a device extension can only be
+    // added at vkCreateDevice time. Requesting them is free and changes nothing
+    // on its own: VK_NV_low_latency2 does nothing until vkSetLatencySleepModeNV
+    // turns pacing on, and VK_AMD_anti_lag does nothing until
+    // vkAntiLagUpdateAMD is called. That is precisely what lets the user toggle
+    // either one at runtime without rebuilding the device or the swapchain. On
+    // hardware that lacks one, VulkanDevice records the reason and creates the
+    // identical device it would have created anyway.
+    melonDS::VulkanLowLatencyRequest lowLatency;
+    lowLatency.NvLowLatency2 = true;
+    lowLatency.AmdAntiLag = true;
+
+    if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
         return Fail(Device.GetFailureReason());
+
+    // Neither Initialize() failing is an error: both report why through
+    // GetUnavailableReason(), which LogLowLatencyState() prints.
+    Reflex.Initialize(Device);
+    AntiLag.Initialize(Device);
 
     if (!Device.Fns().CreateSwapchainKHR || !Device.Fns().AcquireNextImageKHR
         || !Device.Fns().QueuePresentKHR)
@@ -720,6 +738,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
 
     VkSwapchainKHR oldSwapchain = Swapchain;
 
+    // Reflex is scoped to a swapchain, so the old one is surrendered before it
+    // is retired below. This also drops any in-flight Reflex frame, which is
+    // correct: its presentID belongs to a swapchain that is going away.
+    Reflex.SetSwapchain(VK_NULL_HANDLE);
+
     VkSwapchainCreateInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     info.surface = Surface.Handle;
@@ -757,6 +780,21 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
+    // VK_NV_low_latency2 requires the swapchain itself to opt in: without
+    // VkSwapchainLatencyCreateInfoNV::latencyModeEnable, vkSetLatencySleepModeNV
+    // and the markers have nothing to attach to. It is set whenever the
+    // extension exists rather than only when Reflex is currently switched on,
+    // so toggling the setting at runtime does not force a swapchain rebuild.
+    // The struct must outlive the vkCreateSwapchainKHR call, hence this scope.
+    VkSwapchainLatencyCreateInfoNV latencyInfo{};
+    if (Reflex.WantsSwapchainLatencyMode())
+    {
+        latencyInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV;
+        latencyInfo.latencyModeEnable = VK_TRUE;
+        latencyInfo.pNext = info.pNext;
+        info.pNext = &latencyInfo;
+    }
+
     VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
     res = fns.CreateSwapchainKHR(Device.GetHandle(), &info, nullptr, &newSwapchain);
 
@@ -771,6 +809,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
 
     Swapchain = newSwapchain;
     SwapchainExtent = extent;
+
+    // Sleep mode is swapchain state and does not survive recreation, so this
+    // re-arms pacing on the new one at whatever mode the user currently has
+    // selected.
+    Reflex.SetSwapchain(Swapchain);
 
     const bool formatChanged = (SurfaceFormat.format != format.format);
     SurfaceFormat = format;
@@ -1323,11 +1366,40 @@ bool VulkanPresenter::EndFrame()
             ? RenderFinished[CurrentImageIndex]
             : VK_NULL_HANDLE;
 
+    // One decision for the whole frame. Reading it once means the submit and
+    // the present can never disagree about whether they are tagged, which would
+    // leave the driver correlating a submission against a present id it never
+    // saw.
+    const bool tagLatency = Reflex.WantsFrameIdChaining();
+    const melonDS::u64 latencyFrameId = Reflex.GetFrameId();
+
+    // VkLatencySubmissionPresentIdNV is what ties this submission to the
+    // present below. It is chained onto the VkSubmitInfo itself, so it has to
+    // travel through FrameRing::SubmitFrame rather than being applied here.
+    VkLatencySubmissionPresentIdNV submitPresentId{};
+    const void* submitPNext = nullptr;
+    if (tagLatency)
+    {
+        submitPresentId.sType = VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV;
+        submitPresentId.presentID = latencyFrameId;
+        submitPNext = &submitPresentId;
+    }
+
+    // RENDERSUBMIT_START sits immediately before the real vkQueueSubmit --
+    // inside FrameRing::SubmitFrame, one call below -- and RENDERSUBMIT_END
+    // immediately after it. Nothing else is between the two markers.
+    if (tagLatency)
+        Reflex.MarkRenderSubmitStart();
+
     const bool submitted = Frames.SubmitFrame(
         Device.GetMainQueue(),
         frame ? frame->ImageAvailable : VK_NULL_HANDLE,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        signalSemaphore);
+        signalSemaphore,
+        submitPNext);
+
+    if (tagLatency)
+        Reflex.MarkRenderSubmitEnd();
 
     FrameOpen = false;
     CurrentCommandBuffer = VK_NULL_HANDLE;
@@ -1346,7 +1418,44 @@ bool VulkanPresenter::EndFrame()
     present.pSwapchains = &Swapchain;
     present.pImageIndices = &CurrentImageIndex;
 
+    // VK_KHR_present_id, which VulkanDevice enables as a hard dependency of
+    // Reflex. This is the other half of the correlation: the same id the
+    // markers carry and the submission was tagged with. One entry per
+    // swapchain, and there is exactly one swapchain here.
+    VkPresentIdKHR presentId{};
+    if (tagLatency)
+    {
+        presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+        presentId.swapchainCount = 1;
+        presentId.pPresentIds = &latencyFrameId;
+        presentId.pNext = present.pNext;
+        present.pNext = &presentId;
+    }
+
+    // Anti-Lag's PRESENT stage is specified to be issued immediately before
+    // vkQueuePresentKHR, with the frame index its INPUT partner used. That
+    // index is the Reflex frame id when Reflex is running and the presenter's
+    // own absolute frame counter otherwise -- see BeginLowLatencyFrame.
+    AntiLag.EndFrame(LowLatencyFrameIndex);
+
+    // PRESENT_START / PRESENT_END bracket the real vkQueuePresentKHR and
+    // nothing else.
+    if (tagLatency)
+        Reflex.MarkPresentStart();
+
     const VkResult res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
+
+    if (tagLatency)
+    {
+        Reflex.MarkPresentEnd();
+        // Only a call that actually reached the presentation engine counts as a
+        // present for vkLatencySleepNV's "once between presents" rule.
+        // VK_SUBOPTIMAL_KHR did present; VK_ERROR_OUT_OF_DATE_KHR did not, but
+        // it retires the swapchain anyway and the rebuild resets the state.
+        if (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
+            Reflex.NotifyPresented();
+    }
+
     if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
     {
         // Neither is an error: the frame reached the presentation engine (or
@@ -1373,6 +1482,199 @@ bool VulkanPresenter::EndFrame()
 
 
 // ---------------------------------------------------------------------------
+// Vendor low-latency frame path
+//
+// The emulation thread calls these around its own frame, through
+// ScreenPanelVulkan. Everything here is a no-op when neither extension is
+// available, which is the normal case on non-NVIDIA / non-AMD hardware.
+// ---------------------------------------------------------------------------
+
+void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+{
+    if (!Initialized || Failed || !Device.IsValid())
+        return;
+
+    // Re-applied every frame from the live config value. Both setters are
+    // no-ops when the value has not changed, so this costs a comparison in the
+    // steady state while still making a settings-dialog change take effect on
+    // the very next frame -- without recreating the device or the swapchain,
+    // neither of which a mid-session setting change should force.
+    Reflex.SetMode(melonDS::VulkanNvidiaReflexModeFromConfig(reflexMode));
+    AntiLag.SetEnabled(antiLag2Enabled);
+
+    // vkLatencySleepNV lives in here, and it must run before any input is read
+    // -- that delay is the entire mechanism. SIMULATION_START is deliberately
+    // NOT emitted here: it belongs after the sleep and after input sampling,
+    // which is MarkLowLatencySimulationStart().
+    Reflex.BeginFrame();
+
+    // Keep the two features on the same frame numbering when both are live.
+    // Reflex bumps its id inside BeginFrame() above; when it is not running,
+    // its id stays put and Anti-Lag needs a counter of its own.
+    if (Reflex.IsActive())
+        LowLatencyFrameIndex = Reflex.GetFrameId();
+    else
+        ++LowLatencyFrameIndex;
+
+    // Anti-Lag's INPUT stage, specified to be issued immediately before the
+    // application reads input -- the same point the Reflex sleep just returned
+    // from. Its PRESENT partner is issued in EndFrame(), just before
+    // vkQueuePresentKHR, with this same index.
+    AntiLag.BeginFrame(LowLatencyFrameIndex);
+
+    LogLowLatencyStateIfChanged();
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    ReportLatencyTimings();
+#endif
+}
+
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+void VulkanPresenter::ReportLatencyTimings()
+{
+    if (!Reflex.IsActive())
+        return;
+
+    // Every 600th frame, so a ten-minute session produces a readable handful of
+    // lines rather than a wall of them. Developer builds only: this exists to
+    // prove the markers are landing, which is not something a shipping user
+    // needs in their log.
+    if (++LatencyTimingCountdown < 600)
+        return;
+    LatencyTimingCountdown = 0;
+
+    VkLatencyTimingsFrameReportNV reports[8]{};
+    const melonDS::u32 count = Reflex.QueryTimings(reports, 8);
+    if (count == 0)
+    {
+        Platform::Log(Platform::LogLevel::Info,
+            "[Vulkan] Reflex timings: driver has no completed frame reports yet\n");
+        return;
+    }
+
+    // The newest complete report. A non-zero presentID that matches the ids the
+    // markers carried, together with non-zero sim/submit/present timestamps, is
+    // the end-to-end evidence that vkSetLatencyMarkerNV, the tagged
+    // vkQueueSubmit and the tagged vkQueuePresentKHR were all correlated by the
+    // driver into one frame.
+    const VkLatencyTimingsFrameReportNV& r = reports[count - 1];
+    Platform::Log(Platform::LogLevel::Info,
+        "[Vulkan] Reflex timings: reports=%u presentID=%llu sim=%llu..%llu "
+        "renderSubmit=%llu..%llu present=%llu..%llu gpuRender=%llu..%llu inputSample=%llu\n",
+        static_cast<unsigned>(count),
+        static_cast<unsigned long long>(r.presentID),
+        static_cast<unsigned long long>(r.simStartTimeUs),
+        static_cast<unsigned long long>(r.simEndTimeUs),
+        static_cast<unsigned long long>(r.renderSubmitStartTimeUs),
+        static_cast<unsigned long long>(r.renderSubmitEndTimeUs),
+        static_cast<unsigned long long>(r.presentStartTimeUs),
+        static_cast<unsigned long long>(r.presentEndTimeUs),
+        static_cast<unsigned long long>(r.gpuRenderStartTimeUs),
+        static_cast<unsigned long long>(r.gpuRenderEndTimeUs),
+        static_cast<unsigned long long>(r.inputSampleTimeUs));
+}
+#endif
+
+
+void VulkanPresenter::MarkLowLatencyInputSample()
+{
+    Reflex.MarkInputSample();
+}
+
+
+void VulkanPresenter::MarkLowLatencySimulationStart()
+{
+    Reflex.MarkSimulationStart();
+}
+
+
+void VulkanPresenter::MarkLowLatencySimulationEnd()
+{
+    Reflex.MarkSimulationEnd();
+}
+
+
+void VulkanPresenter::FinishLowLatencyFrame()
+{
+    // Closes the Reflex frame. Anti-Lag's PRESENT update is not issued here:
+    // it has to sit immediately before vkQueuePresentKHR, so EndFrame() owns
+    // it, and a frame that never presented correctly gets neither.
+    Reflex.FinishFrame();
+}
+
+
+void VulkanPresenter::LogLowLatencyState(const char* context)
+{
+    const melonDS::VulkanLowLatencyStatus& reflexStatus = Device.GetNvLowLatency2Status();
+    const melonDS::VulkanLowLatencyStatus& antiLagStatus = Device.GetAmdAntiLagStatus();
+
+    // "Enabled" is what vkCreateDevice accepted; "actual" is what the frame
+    // path is really doing right now. They differ whenever the extension is
+    // present but the user has the feature switched off, or when a runtime
+    // failure disabled it -- and that gap is the whole reason both columns
+    // exist. A reason from the running module wins over the device's, because
+    // it is the more specific one.
+    const std::string& reflexReason = Reflex.IsAvailable()
+        ? (Reflex.IsActive()
+            ? std::string("pacing frames")
+            : std::string("supported, switched off by NvidiaReflexMode"))
+        : (Reflex.GetUnavailableReason().empty() ? reflexStatus.Reason : Reflex.GetUnavailableReason());
+
+    Platform::Log(Platform::LogLevel::Info,
+        "[Vulkan] %s NVIDIA Reflex (VK_NV_low_latency2): requested=%s supported=%s "
+        "enabled=%s actual=%s mode=%s reason=%s\n",
+        context,
+        reflexStatus.Requested ? "yes" : "no",
+        reflexStatus.Supported ? "yes" : "no",
+        reflexStatus.Enabled ? "yes" : "no",
+        Reflex.IsActive() ? "active" : "inactive",
+        melonDS::VulkanNvidiaReflexModeName(Reflex.GetMode()),
+        reflexReason.empty() ? "not evaluated" : reflexReason.c_str());
+
+    const std::string& antiLagReason = AntiLag.IsAvailable()
+        ? (AntiLag.IsActive()
+            ? std::string("pacing frames")
+            : std::string("supported, switched off by AmdAntiLag2Enabled"))
+        : (AntiLag.GetUnavailableReason().empty() ? antiLagStatus.Reason : AntiLag.GetUnavailableReason());
+
+    Platform::Log(Platform::LogLevel::Info,
+        "[Vulkan] %s AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=%s supported=%s "
+        "enabled=%s actual=%s reason=%s\n",
+        context,
+        antiLagStatus.Requested ? "yes" : "no",
+        antiLagStatus.Supported ? "yes" : "no",
+        antiLagStatus.Enabled ? "yes" : "no",
+        AntiLag.IsActive() ? "active" : "inactive",
+        antiLagReason.empty() ? "not evaluated" : antiLagReason.c_str());
+}
+
+
+void VulkanPresenter::LogLowLatencyStateIfChanged()
+{
+    const int mode = static_cast<int>(Reflex.GetMode());
+    const bool reflexActive = Reflex.IsActive();
+    const bool antiLagActive = AntiLag.IsActive();
+
+    if (LowLatencyStateLogged
+        && mode == LoggedReflexMode
+        && reflexActive == LoggedReflexActive
+        && antiLagActive == LoggedAntiLagActive)
+    {
+        return;
+    }
+
+    LoggedReflexMode = mode;
+    LoggedReflexActive = reflexActive;
+    LoggedAntiLagActive = antiLagActive;
+
+    const bool first = !LowLatencyStateLogged;
+    LowLatencyStateLogged = true;
+    LogLowLatencyState(first ? "low-latency:" : "low-latency changed:");
+}
+
+
+// ---------------------------------------------------------------------------
 // Teardown
 // ---------------------------------------------------------------------------
 
@@ -1384,6 +1686,17 @@ void VulkanPresenter::Shutdown() noexcept
         // object below may still be referenced by work in flight, and there is
         // no cheaper way to be sure it is not.
         Frames.WaitIdle();
+
+        // Both vendor helpers are torn down while the device and the swapchain
+        // are still alive, because both have to talk to the driver on the way
+        // out (turn pacing off, destroy the Reflex timeline semaphore). Doing
+        // it after the device is gone would be a use-after-free; doing it
+        // before the drain above would destroy a semaphore the driver could
+        // still be signalling.
+        Reflex.Shutdown();
+        AntiLag.Shutdown();
+        LowLatencyFrameIndex = 0;
+        LowLatencyStateLogged = false;
 
         const Vk::DeviceDispatch& fns = Device.Fns();
         VkDevice device = Device.GetHandle();

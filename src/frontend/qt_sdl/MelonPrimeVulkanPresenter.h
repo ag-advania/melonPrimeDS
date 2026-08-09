@@ -20,9 +20,11 @@
 #include <vector>
 
 #include "MelonPrimeVulkanSurface.h"
+#include "VulkanAmdAntiLag.h"
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
+#include "VulkanNvidiaReflex.h"
 #include "VulkanSync.h"
 
 class QWidget;
@@ -175,7 +177,48 @@ public:
     // renderer runtime failure.
     [[nodiscard]] bool HasFailed() const noexcept { return Failed; }
 
+    // --- vendor low-latency path -------------------------------------------
+    //
+    // NVIDIA Reflex and AMD Anti-Lag 2 both live here rather than on the 3D
+    // renderer, because both are scoped to the object that owns the swapchain
+    // and the present queue -- which is this class. The renderer only carries
+    // the user's setting; it has no surface and never calls
+    // vkQueuePresentKHR, so it could not drive either extension.
+    //
+    // The emulation thread drives these five in order once per emulated frame,
+    // through ScreenPanelVulkan's Screen.h hooks. RENDERSUBMIT_* and PRESENT_*
+    // are NOT in this list: those are emitted inside EndFrame(), tight around
+    // the real vkQueueSubmit and vkQueuePresentKHR, which is the only place
+    // they can be truthful.
+    //
+    // `reflexMode` is the config value (0 off, 1 on, 2 on+boost) and
+    // `antiLag2Enabled` the config bool; both are re-applied here every frame
+    // so a settings-dialog change takes effect on the next frame without
+    // recreating the device or the swapchain.
+    void BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled);
+    void MarkLowLatencyInputSample();
+    void MarkLowLatencySimulationStart();
+    void MarkLowLatencySimulationEnd();
+    void FinishLowLatencyFrame();
+
+    // Requested / Supported / Enabled / Actual / Reason for both features, as
+    // one line each. Emitted once after Init() and again whenever the effective
+    // state changes, so a log excerpt always says what is really running.
+    void LogLowLatencyState(const char* context);
+
 private:
+    // Emitted only when the effective state actually changed, so a per-frame
+    // caller cannot flood the log.
+    void LogLowLatencyStateIfChanged();
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Periodic vkGetLatencyTimingsNV dump. Developer builds only -- it exists
+    // to prove the markers reach the driver, which a shipping user's log does
+    // not need.
+    void ReportLatencyTimings();
+    melonDS::u32 LatencyTimingCountdown = 0;
+#endif
+
     struct LayerTexture
     {
         melonDS::Vk::Image Image;
@@ -214,6 +257,20 @@ private:
 
     melonDS::VulkanDevice Device;
     melonDS::Vk::FrameRing Frames;
+
+    melonDS::VulkanNvidiaReflex Reflex;
+    melonDS::VulkanAmdAntiLag AntiLag;
+    // Frame index handed to Anti-Lag's INPUT/PRESENT pair. It follows the
+    // Reflex frame id when Reflex is running so both features describe the same
+    // frame, and falls back to its own counter otherwise (an AMD GPU has
+    // Anti-Lag and no Reflex, so that is the normal case for it).
+    melonDS::u64 LowLatencyFrameIndex = 0;
+    // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
+    // logs a transition once instead of every frame.
+    int LoggedReflexMode = -1;
+    bool LoggedReflexActive = false;
+    bool LoggedAntiLagActive = false;
+    bool LowLatencyStateLogged = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR SurfaceFormat{};
