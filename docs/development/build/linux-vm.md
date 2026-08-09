@@ -16,6 +16,7 @@ Scripts live in `tools/linux-vm/`. Run in order:
 
 | Step | Script | Notes |
 |------|--------|-------|
+| **00** | `00-start-vm.command` | Starts the existing VM and prepares `/mnt/mp` when guestcontrol is available; no build |
 | **01** | `01-install-ubuntu.command` | Creates `MelonPrimeDS-Ubuntu2204`, unattended install (~15–40 min) |
 | **02** | `02-guest-finish.command` | Guest Additions; VM may reboot |
 | **03** | `03-fix-shared-folder.command` | **Optional** — if MelonPrimeDS share won't open |
@@ -90,7 +91,9 @@ This configures Vulkan explicitly and fetches the same pinned Khronos
 installs the Linux Vulkan runtime packages: `libvulkan-dev`,
 `mesa-vulkan-drivers`, and `vulkan-validationlayers`. Native Wayland pointer
 lock stays in CMake's `AUTO` mode so missing `wayland-protocols` does not block
-an Xorg VM Vulkan build.
+an Xorg VM Vulkan build. When the `tools/build/linux/` wrappers are run from
+macOS, they set the VirtualBox shared folder source to the current checkout
+before running the VM build.
 
 Full deps + build (first time or after clean):
 
@@ -109,6 +112,7 @@ bash /mnt/mp/tools/linux-vm/guest/guest-run-smoke.sh /mnt/mp
 ```
 tools/linux-vm/
   README.md
+  00-start-vm.{command,sh}           → start existing VM + shared folder prep
   01-install-ubuntu.{command,sh}
   02-guest-finish.{command,sh}      → 02-guest-finish-from-host.sh
   03-fix-shared-folder.{command,sh}

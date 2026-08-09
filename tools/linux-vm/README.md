@@ -7,6 +7,7 @@ VirtualBox needs the macOS GUI session.
 
 | Step | Mac (double-click or Terminal) | Purpose |
 |------|----------------------------------|---------|
+| **00** | `00-start-vm.command` | Start the existing VM and prepare `/mnt/mp` when possible |
 | **01** | `01-install-ubuntu.command` | Create VM, unattended Ubuntu 22.04 install |
 | **02** | `02-guest-finish.command` | Guest Additions + shared-folder prep |
 | **03** | `03-fix-shared-folder.command` | Optional — if shared folder won't open |
@@ -45,7 +46,9 @@ The full and build-only commands configure Vulkan explicitly
 (`libvulkan-dev`, `mesa-vulkan-drivers`, `vulkan-validationlayers`) are
 installed by the full setup command. Native Wayland pointer lock is left in
 CMake's `AUTO` mode so missing `wayland-protocols` does not block an Xorg VM
-Vulkan build.
+Vulkan build. The `tools/build/linux/` wrappers set `HOST_REPO` to the current
+checkout before calling these VM scripts, so the VirtualBox shared folder points
+at the repo you launched from.
 
 **Incremental rebuild** (skip cmake configure — like `build-mingw-existing.bat`):
 
