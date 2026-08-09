@@ -59,7 +59,7 @@ public:
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
 
-    void SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates);
+    void SetRenderSettings(int scale, bool hiresCoordinates);
     [[nodiscard]] int GetScaleFactor() const noexcept { return ScaleFactor; }
 
     void RenderFrame() override;
@@ -228,7 +228,9 @@ private:
         u32 TexHeight = 8;
         u32 TexWrapS = 0;
         u32 TexWrapT = 0;
-        u32 Pad[3] = {};
+        u32 InterpSpanBase = 0;
+        u32 InterpSpanCount = 0;
+        u32 Pad = 0;
     };
     static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
 
@@ -374,7 +376,6 @@ private:
     int ScaleFactor = -1;
     int ScreenWidth = 256;
     int ScreenHeight = 192;
-    bool BetterPolygons = false;
     bool HiresCoordinates = false;
 
     int ShaderStepIdx = 0;

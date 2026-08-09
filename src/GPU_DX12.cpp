@@ -84,7 +84,12 @@ void DX12Renderer::PostSavestate()
 void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 {
     if (auto* dx12 = GetDX12Renderer3D())
-        dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+    {
+        // DX12 rasterizes the original DS polygons as scanline spans. Better
+        // Polygons is a triangle-splitting workaround for raster backends and
+        // is intentionally not part of the DX12 renderer contract.
+        dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+    }
     AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
 }

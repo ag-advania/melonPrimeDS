@@ -120,9 +120,9 @@ cbuffer DispatchUniform : register(b0)
     uint TexHeight;
     uint TexWrapS;   // 0 = clamp, 1 = repeat, 2 = mirrored repeat
     uint TexWrapT;
-    uint DispatchPad0;
-    uint DispatchPad1;
-    uint DispatchPad2;
+    uint InterpSpanBase;
+    uint InterpSpanCount;
+    uint DispatchPad;
 };
 
 struct Polygon
@@ -547,7 +547,11 @@ void EdgeParams_YMajor(bool side, int dx, YSpanSetup span, out int edgelen, out 
 [numthreads(32, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    uint4 setup = SetupIndices.Load(int(id.x));
+    if (id.x >= InterpSpanCount)
+        return;
+
+    uint setupIndex = InterpSpanBase + id.x;
+    uint4 setup = SetupIndices.Load(int(setupIndex));
 
     YSpanSetup spanL = YSpanSetups[setup.y];
     YSpanSetup spanR = YSpanSetups[setup.z];
@@ -734,7 +738,7 @@ void main(uint3 id : SV_DispatchThreadID)
         xspan.XRecip = int(Div(1u << 30, uint(xspan.X1 - xspan.X0), r));
     }
 
-    XSpanSetups[id.x] = xspan;
+    XSpanSetups[setupIndex] = xspan;
 }
 )";
 

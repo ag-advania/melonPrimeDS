@@ -77,6 +77,26 @@ QString HiresCoordinatesDescription()
 } // namespace
 #endif
 
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+namespace
+{
+
+QString DX12BetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting is not used by DirectX 12 because its compute rasterizer "
+        "processes DS polygons directly without splitting them into triangles.");
+}
+
+QString DX12HiresCoordinatesDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Use the DS GPU's high-resolution vertex coordinates with DirectX 12.");
+}
+
+} // namespace
+#endif
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
@@ -160,7 +180,7 @@ void VideoSettingsDialog::setEnabled()
     // original polygon as scanline spans, so enabling it there would be a lie.
     ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#ifdef MELONPRIME_DS
     constexpr const char* originalBetterPolygonsHelp =
         "MelonPrimeOriginalBetterPolygonsHelp";
     if (!ui->cbBetterPolygons->property(originalBetterPolygonsHelp).isValid())
@@ -168,13 +188,18 @@ void VideoSettingsDialog::setEnabled()
         ui->cbBetterPolygons->setProperty(
             originalBetterPolygonsHelp, ui->cbBetterPolygons->whatsThis());
     }
-    const QString betterPolygonsDescription = vulkanRenderer
-        ? VulkanBetterPolygonsDescription()
-        : QString();
+    QString betterPolygonsDescription =
+        ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+        betterPolygonsDescription = VulkanBetterPolygonsDescription();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+        betterPolygonsDescription = DX12BetterPolygonsDescription();
+#endif
     ui->cbBetterPolygons->setToolTip(betterPolygonsDescription);
-    ui->cbBetterPolygons->setWhatsThis(vulkanRenderer
-        ? betterPolygonsDescription
-        : ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString());
+    ui->cbBetterPolygons->setWhatsThis(betterPolygonsDescription);
 #endif
 
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
@@ -183,8 +208,24 @@ void VideoSettingsDialog::setEnabled()
     // the OpenGL compute renderer's coordinate-mode setting.
     ui->cbxComputeHiResCoords->setEnabled(
         computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    const QString hiresCoordinatesDescription = HiresCoordinatesDescription();
+#ifdef MELONPRIME_DS
+    constexpr const char* originalHiresCoordinatesHelp =
+        "MelonPrimeOriginalHiresCoordinatesHelp";
+    if (!ui->cbxComputeHiResCoords->property(originalHiresCoordinatesHelp).isValid())
+    {
+        ui->cbxComputeHiResCoords->setProperty(
+            originalHiresCoordinatesHelp, ui->cbxComputeHiResCoords->whatsThis());
+    }
+    QString hiresCoordinatesDescription =
+        ui->cbxComputeHiResCoords->property(originalHiresCoordinatesHelp).toString();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+        hiresCoordinatesDescription = HiresCoordinatesDescription();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+        hiresCoordinatesDescription = DX12HiresCoordinatesDescription();
+#endif
     ui->cbxComputeHiResCoords->setToolTip(hiresCoordinatesDescription);
     ui->cbxComputeHiResCoords->setWhatsThis(hiresCoordinatesDescription);
 #endif
@@ -251,6 +292,12 @@ void VideoSettingsDialog::setEnabled()
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
 {
     ui->setupUi(this);
+#ifdef MELONPRIME_DS
+    // These controls are shared by OpenGL, Metal, Vulkan, and DirectX 12.
+    // Keep the upstream .ui untouched and localize the backend-neutral label
+    // through MelonPrime's runtime catalog.
+    ui->groupBox_3->setTitle(MelonPrime::UiText::Tr("3D renderer settings"));
+#endif
     // MELONPRIME_METAL_COMPUTE_UI_LAYOUT_V2: rows 4/5 are reserved for native Metal renderers.
     setAttribute(Qt::WA_DeleteOnClose);
 

@@ -56,6 +56,13 @@ constexpr u32 kRootParamMetaCbv = 1;
 constexpr u32 kRootParamSrvTable = 2;
 constexpr u32 kRootParamUavTable = 3;
 
+constexpr u32 kInterpSpansThreadsPerGroup = 32;
+constexpr u32 kMaxDispatchGroupsPerDimension =
+    D3D12_CS_DISPATCH_MAX_THREAD_GROUPS_PER_DIMENSION;
+constexpr u32 kMaxInterpSpansPerDispatch =
+    kInterpSpansThreadsPerGroup * kMaxDispatchGroupsPerDimension;
+static_assert(kMaxInterpSpansPerDispatch == 2097120);
+
 constexpr u32 DivRoundUp(u32 value, u32 divisor) noexcept
 {
     return (value + divisor - 1) / divisor;
@@ -714,10 +721,8 @@ bool DX12Renderer3D::CreateScaleDependentResources()
     return BuildStaticSrvDescriptors();
 }
 
-void DX12Renderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates)
+void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
 {
-    BetterPolygons = betterPolygons;
-
     if (scale == ScaleFactor)
     {
         // Like the OpenGL compute renderer, the high-resolution-coordinates
@@ -1981,7 +1986,18 @@ void DX12Renderer3D::RenderFrame()
 
         // 3. interpolate the per-scanline x spans
         list->SetPipelineState(PipelineInterpSpans[wbuffer ? 1 : 0].Get());
-        list->Dispatch(DivRoundUp(static_cast<u32>(numSetupIndices), 32), 1, 1);
+        const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
+        for (u32 base = 0; base < setupIndexCount;)
+        {
+            const u32 chunkCount = std::min(
+                setupIndexCount - base, kMaxInterpSpansPerDispatch);
+            constants.InterpSpanBase = base;
+            constants.InterpSpanCount = chunkCount;
+            SetDispatchConstants(list, constants);
+            list->Dispatch(
+                DivRoundUp(chunkCount, kInterpSpansThreadsPerGroup), 1, 1);
+            base += chunkCount;
+        }
         InsertUavBarrier(list, XSpanSetupBuffer.Get());
 
         // 4. bin polygons into coarse and fine tiles
