@@ -508,7 +508,7 @@ private:
     void composeFrameAtVBlank();
     static void ComposeInstanceFrameAtVBlank(EmuInstance* instance);
     void installVulkanComposeHook(melonDS::VulkanRenderer* renderer);
-    void prepareForRendererTransition();
+    void prepareForRendererTransition(bool detachRendererObserver = true);
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);
     void setupScreenLayout() override;

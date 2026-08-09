@@ -287,9 +287,10 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
 #endif
 
     // The emulation thread can no longer reach this panel: MainWindow cleared
-    // its `panel` pointer under screenPanelLock before deleting it. Tearing the
-    // presenter down here is therefore the last Vulkan work on any thread.
-    prepareForRendererTransition();
+    // its `panel` pointer under screenPanelLock before deleting it. The
+    // renderer itself might already be gone during application teardown, so do
+    // not dereference the borrowed renderer hook pointer from this destructor.
+    prepareForRendererTransition(false);
     releaseNativeSurface();
 }
 
@@ -769,7 +770,7 @@ void ScreenPanelVulkan::installVulkanComposeHook(melonDS::VulkanRenderer* render
 }
 
 
-void ScreenPanelVulkan::prepareForRendererTransition()
+void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver)
 {
     if (!vulkan)
         return;
@@ -778,11 +779,11 @@ void ScreenPanelVulkan::prepareForRendererTransition()
     // them is destroyed, and take the observer back off it. After this the panel
     // presents black (or the splash) until a new renderer publishes a frame,
     // which is correct: there is no frame to show.
-    if (vulkan->hookedRenderer)
+    if (detachRendererObserver && vulkan->hookedRenderer)
     {
         vulkan->hookedRenderer->SetVBlankObserver(nullptr, nullptr);
-        vulkan->hookedRenderer = nullptr;
     }
+    vulkan->hookedRenderer = nullptr;
 
     vulkan->presenter.Quiesce();
     for (RendererOutputLease& lease : vulkan->frameLeases)

@@ -1146,6 +1146,23 @@ void MainWindow::closeEvent(QCloseEvent* event)
     windowCfg.SetString("Geometry", enc.toStdString());
     Config::Save();
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool closingVulkanPanel = false;
+    {
+        QMutexLocker panelLock(&screenPanelLock);
+        closingVulkanPanel = dynamic_cast<ScreenPanelVulkan*>(panel) != nullptr;
+    }
+    if (closingVulkanPanel && emuInstance->getNumWindows() == 1)
+    {
+        // Closing the final window can delete EmuInstance/NDS before Qt deletes
+        // child widgets. A Vulkan panel still has a borrowed VBlank hook into
+        // the renderer, so quiesce it while the renderer is still alive.
+        if (emuInstance->getNDS())
+            emuThread->prepareVideoBackendTransition();
+        destroyScreenPanel();
+    }
+#endif
+
     emuInstance->deleteWindow(windowID, false);
 
     // emuInstance may be deleted
