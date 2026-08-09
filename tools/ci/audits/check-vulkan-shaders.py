@@ -239,10 +239,13 @@ def main() -> int:
 
     spirv_opt = vss.find_tool("spirv-opt", args.spirv_opt)
 
+    # Built outside the f-string: an f-string replacement field cannot span
+    # lines before Python 3.12, and this audit has to run on older CI images.
+    spirv_opt_label = spirv_opt or "(not found -- per-scale specialization check skipped)"
+
     print(f"glslangValidator: {glslang}")
     print(f"spirv-val:        {spirv_val}")
-    print(f"spirv-opt:        {spirv_opt or '(not found -- per-scale '
-                                           'specialization check skipped)'}")
+    print(f"spirv-opt:        {spirv_opt_label}")
 
     if args.scales:
         scales = [int(part) for part in args.scales.split(",") if part.strip()]

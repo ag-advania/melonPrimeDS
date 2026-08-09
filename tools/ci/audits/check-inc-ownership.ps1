@@ -52,6 +52,7 @@ $expectedMultiParentMap = @{
         'src/frontend/qt_sdl/MelonPrimeHudRender.cpp',
         'src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp',
         'src/frontend/qt_sdl/MelonPrimePatchOsdColor.cpp',
+        'src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp',
         'src/frontend/qt_sdl/Screen.cpp',
         'src/frontend/qt_sdl/Window.cpp'
     )

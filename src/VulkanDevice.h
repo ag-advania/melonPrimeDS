@@ -32,6 +32,35 @@
 namespace melonDS
 {
 
+// Optional vendor low-latency extensions the caller wants enabled.
+//
+// These MUST be decided at vkCreateDevice time -- a device extension cannot be
+// added to a live VkDevice -- so the presenter passes its configuration down to
+// VulkanDevice::Create() rather than trying to turn Reflex on later. Requesting
+// one the hardware does not expose is not an error: the extension is skipped,
+// the reason is recorded, and device creation proceeds unchanged. That is the
+// whole "never fail renderer creation over a vendor feature" rule.
+//
+// Declared at namespace scope rather than nested in VulkanDevice because
+// Create() takes one as a defaulted argument, and a default argument may not
+// name a nested class whose member initializers are not yet complete.
+struct VulkanLowLatencyRequest
+{
+    bool NvLowLatency2 = false;
+    bool AmdAntiLag = false;
+};
+
+// Outcome of one VulkanLowLatencyRequest member, kept so the caller can log
+// Requested / Supported / Enabled / Actual / Reason without re-querying the
+// driver.
+struct VulkanLowLatencyStatus
+{
+    bool Requested = false;
+    bool Supported = false;
+    bool Enabled = false;
+    std::string Reason;
+};
+
 // The logical device, its queues and its dispatch table.
 //
 // One VulkanDevice exists per active Vulkan renderer. It borrows the process
@@ -52,7 +81,10 @@ public:
     //
     // Returns false and fills GetFailureReason() on any failure; nothing is
     // left half-constructed.
-    bool Create(VulkanContext& context, const char* requestedRendererName = "Vulkan");
+    bool Create(
+        VulkanContext& context,
+        const char* requestedRendererName = "Vulkan",
+        const VulkanLowLatencyRequest& lowLatency = VulkanLowLatencyRequest{});
 
     // Waits for the device to go idle and destroys everything. Safe to call
     // more than once.
@@ -96,6 +128,16 @@ public:
     }
     [[nodiscard]] const std::string& GetFailureReason() const noexcept { return FailureReason; }
 
+    // What actually happened to each requested low-latency extension.
+    [[nodiscard]] const VulkanLowLatencyStatus& GetNvLowLatency2Status() const noexcept
+    {
+        return NvLowLatency2;
+    }
+    [[nodiscard]] const VulkanLowLatencyStatus& GetAmdAntiLagStatus() const noexcept
+    {
+        return AmdAntiLag;
+    }
+
     // Highest internal resolution the selected device can actually run.
     [[nodiscard]] int GetMaxScaleFactor() const noexcept { return Profile.MaxScaleFactor; }
 
@@ -119,6 +161,7 @@ public:
 
 private:
     void LogStartupSummary(const char* requestedRendererName) const;
+    void LogLowLatencySummary() const;
 
     VulkanContext* Context = nullptr;
     VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
@@ -133,6 +176,9 @@ private:
     Vk::DeviceProbeResult Profile;
     std::vector<const char*> EnabledExtensions;
     VkPhysicalDeviceFeatures EnabledFeatures{};
+
+    VulkanLowLatencyStatus NvLowLatency2;
+    VulkanLowLatencyStatus AmdAntiLag;
 
     std::string FailureReason;
 };

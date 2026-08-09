@@ -239,6 +239,28 @@ struct DeviceDispatch
     PFN_vkAcquireNextImageKHR           AcquireNextImageKHR = nullptr;
     PFN_vkQueuePresentKHR               QueuePresentKHR = nullptr;
 
+    // --- VK_KHR_timeline_semaphore (optional: VK_NV_low_latency2 dependency) ---
+    //
+    // The instance is created with apiVersion 1.1, so the 1.2-core spellings of
+    // these are not available even on a 1.3 device: the KHR extension is the
+    // only way to get a timeline semaphore here, and VkLatencySleepInfoNV
+    // requires one.
+    // The timeline semaphore itself is created through the core CreateSemaphore
+    // above with a VkSemaphoreTypeCreateInfoKHR in its pNext chain; only the
+    // wait/query commands are extension entry points.
+    PFN_vkWaitSemaphoresKHR             WaitSemaphoresKHR = nullptr;
+    PFN_vkGetSemaphoreCounterValueKHR   GetSemaphoreCounterValueKHR = nullptr;
+
+    // --- VK_NV_low_latency2 (optional: NVIDIA Reflex) ---
+    PFN_vkSetLatencySleepModeNV         SetLatencySleepModeNV = nullptr;
+    PFN_vkLatencySleepNV                LatencySleepNV = nullptr;
+    PFN_vkSetLatencyMarkerNV            SetLatencyMarkerNV = nullptr;
+    PFN_vkGetLatencyTimingsNV           GetLatencyTimingsNV = nullptr;
+    PFN_vkQueueNotifyOutOfBandNV        QueueNotifyOutOfBandNV = nullptr;
+
+    // --- VK_AMD_anti_lag (optional: AMD Radeon Anti-Lag 2) ---
+    PFN_vkAntiLagUpdateAMD              AntiLagUpdateAMD = nullptr;
+
     // --- VK_EXT_debug_utils (optional) ---
     // Consumed through Vk::SetDebugName(); null in a release build, which is
     // the entire opt-out path.

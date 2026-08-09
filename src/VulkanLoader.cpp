@@ -482,6 +482,35 @@ bool LoadDeviceDispatch(
         MELONPRIME_VK_LOAD_DEVICE(QueuePresentKHR,              vkQueuePresentKHR);
     }
 
+    // --- optional low-latency extensions ------------------------------------
+    //
+    // Same contract as every other extension block: the entry points are looked
+    // up only when the extension was actually enabled at vkCreateDevice, and a
+    // null pointer for an enabled extension is a hard failure because it means
+    // the driver contradicted its own extension list. A device that simply does
+    // not have these never reaches here -- VulkanDevice does not put them in
+    // EnabledExtensions -- and that path is a supported configuration, not an
+    // error.
+    if (ExtensionEnabled(enabledExtensions, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME))
+    {
+        MELONPRIME_VK_LOAD_DEVICE(WaitSemaphoresKHR,            vkWaitSemaphoresKHR);
+        MELONPRIME_VK_LOAD_DEVICE(GetSemaphoreCounterValueKHR,  vkGetSemaphoreCounterValueKHR);
+    }
+
+    if (ExtensionEnabled(enabledExtensions, VK_NV_LOW_LATENCY_2_EXTENSION_NAME))
+    {
+        MELONPRIME_VK_LOAD_DEVICE(SetLatencySleepModeNV,        vkSetLatencySleepModeNV);
+        MELONPRIME_VK_LOAD_DEVICE(LatencySleepNV,               vkLatencySleepNV);
+        MELONPRIME_VK_LOAD_DEVICE(SetLatencyMarkerNV,           vkSetLatencyMarkerNV);
+        MELONPRIME_VK_LOAD_DEVICE(GetLatencyTimingsNV,          vkGetLatencyTimingsNV);
+        MELONPRIME_VK_LOAD_DEVICE(QueueNotifyOutOfBandNV,       vkQueueNotifyOutOfBandNV);
+    }
+
+    if (ExtensionEnabled(enabledExtensions, VK_AMD_ANTI_LAG_EXTENSION_NAME))
+    {
+        MELONPRIME_VK_LOAD_DEVICE(AntiLagUpdateAMD,             vkAntiLagUpdateAMD);
+    }
+
     #undef MELONPRIME_VK_LOAD_DEVICE
 
     // VK_EXT_debug_utils is an *instance* extension whose device-level
