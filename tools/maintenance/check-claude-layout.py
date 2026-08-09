@@ -150,6 +150,7 @@ def main() -> int:
     workflow_reference = re.compile(
         r"tools[\\/](?:ci[\\/]audits|codegen[\\/]hud)|docs/generated/hud"
     )
+    WORKFLOW_REFERENCE_FLOOR = 9
     for relative in (".github/workflows/build-windows.yml", ".github/workflows/build-ubuntu.yml"):
         path = ROOT / relative
         if not path.is_file():
@@ -157,8 +158,15 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
         count = len(workflow_reference.findall(text))
-        if count != 9:
-            fail(errors, f"{relative} has {count} migrated audit/generator/report references; expected 9")
+        # A floor, not an equality. The point of this check is that the migrated
+        # tools/ci/audits + tools/codegen/hud + docs/generated/hud paths are the
+        # ones CI invokes and that none of them silently disappears. Wiring an
+        # additional audit into a workflow is exactly the change this ratchet
+        # should permit, so only a drop below the migrated set is a failure.
+        if count < WORKFLOW_REFERENCE_FLOOR:
+            fail(errors,
+                 f"{relative} has {count} migrated audit/generator/report references; "
+                 f"expected at least {WORKFLOW_REFERENCE_FLOOR}")
         if ".claude" in text:
             fail(errors, f"legacy .claude reference remains in {relative}")
         if "tools/archive" in text or "tools\\archive" in text:
@@ -172,7 +180,8 @@ def main() -> int:
 
     print(
         f"Claude layout audit OK: {len(entries)} manifest entries, "
-        f"{markdown_bytes} .claude Markdown bytes, 9+9 workflow references"
+        f"{markdown_bytes} .claude Markdown bytes, "
+        f">= {WORKFLOW_REFERENCE_FLOOR} workflow references per workflow"
     )
     return 0
 

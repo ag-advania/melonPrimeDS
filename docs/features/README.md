@@ -11,5 +11,6 @@
 - [Custom HUD adventure Scan Visor](hud/custom-hud-adventure-scan-visor.md)
 - [Zoom input methods](input/zoom-input-methods.md)
 - [macOS compute renderer restriction](rendering/macos-compute-renderer-restriction.md)
+- [Vulkan backend](rendering/vulkan-backend.md)
 
 Completed feature/refactor evidence is indexed under [`docs/archive/features/`](../archive/features/).

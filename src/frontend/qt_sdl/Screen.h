@@ -102,14 +102,28 @@ public:
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
 #if defined(MELONPRIME_ENABLE_VULKAN)
+    // NVIDIA Reflex / AMD Anti-Lag 2 frame hooks, driven by the emulation
+    // thread once per emulated frame. Only ScreenPanelVulkan implements them;
+    // every other panel inherits these no-ops.
+    //
+    // They cover the part of the frame the emulation thread can see: the
+    // latency sleep, input sampling, and the simulation interval around
+    // NDS::RunFrame(). The RENDERSUBMIT_* and PRESENT_* markers are
+    // deliberately absent, because the emulation thread is not where the real
+    // vkQueueSubmit and vkQueuePresentKHR happen -- VulkanPresenter::EndFrame()
+    // emits those directly around the actual calls, which is the only place
+    // they can be accurate.
+    //
+    // `reflexMode` is the raw config value (0 off, 1 on, 2 on+boost) and is
+    // pushed every frame so a settings change applies on the next one.
     virtual void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
     {
         (void)reflexMode;
         (void)antiLag2Enabled;
     }
     virtual void markVulkanReflexInputSample() {}
-    virtual void markVulkanReflexRenderSubmitStart() {}
-    virtual void markVulkanReflexRenderSubmitEnd() {}
+    virtual void markVulkanReflexSimulationStart() {}
+    virtual void markVulkanReflexSimulationEnd() {}
     virtual void finishVulkanLowLatencyFrame() {}
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -447,8 +461,8 @@ public:
     void endModalPausePresentation() override;
     void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled) override;
     void markVulkanReflexInputSample() override;
-    void markVulkanReflexRenderSubmitStart() override;
-    void markVulkanReflexRenderSubmitEnd() override;
+    void markVulkanReflexSimulationStart() override;
+    void markVulkanReflexSimulationEnd() override;
     void finishVulkanLowLatencyFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;

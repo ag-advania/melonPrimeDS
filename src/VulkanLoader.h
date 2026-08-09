@@ -26,6 +26,21 @@
 
 #include "VulkanCommon.h"
 
+// <windows.h> defines CreateSemaphore as a macro (CreateSemaphoreW under
+// UNICODE, CreateSemaphoreA otherwise), and DeviceDispatch below has a member
+// of exactly that name. A translation unit that pulled in windows.h first
+// therefore compiled the member -- and every use of it -- under the expanded
+// name, so DeviceDispatch had two different definitions in one binary. GCC's
+// LTO -Wodr reports it: "the first difference of corresponding definitions is
+// field 'CreateSemaphoreW'".
+//
+// Undefining it here, before the struct, gives every translation unit the same
+// member name. Nothing in melonPrimeDS calls the Win32 CreateSemaphore; code
+// that ever needs it can name CreateSemaphoreW/A explicitly.
+#if defined(_WIN32) && defined(CreateSemaphore)  // scatter-budget-exempt: windows.h macro collision with a Vulkan entry-point name; not platform input dispatch
+#undef CreateSemaphore
+#endif
+
 namespace melonDS::Vk
 {
 

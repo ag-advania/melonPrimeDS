@@ -88,6 +88,9 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+#include "MelonPrimeRendererSwitchStress.h"
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
@@ -894,6 +897,13 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     createScreenPanel();
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Dormant unless MELONPRIME_RENDERER_SWITCH_STRESS is set, and absent
+    // entirely from release builds. Armed after the first panel exists,
+    // because it drives panel teardown/recreation.
+    MelonPrime::RendererSwitchStress::ArmFromEnvironment(this);
+#endif
+
     if (hasMenu)
     {
         actEjectCart->setEnabled(false);
@@ -1430,18 +1440,18 @@ void MainWindow::markVulkanReflexInputSample()
         panel->markVulkanReflexInputSample();
 }
 
-void MainWindow::markVulkanReflexRenderSubmitStart()
+void MainWindow::markVulkanReflexSimulationStart()
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->markVulkanReflexRenderSubmitStart();
+        panel->markVulkanReflexSimulationStart();
 }
 
-void MainWindow::markVulkanReflexRenderSubmitEnd()
+void MainWindow::markVulkanReflexSimulationEnd()
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->markVulkanReflexRenderSubmitEnd();
+        panel->markVulkanReflexSimulationEnd();
 }
 
 void MainWindow::finishVulkanLowLatencyFrame()

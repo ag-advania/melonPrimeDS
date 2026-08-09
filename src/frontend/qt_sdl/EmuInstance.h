@@ -198,8 +198,8 @@ public:
 #if defined(MELONPRIME_ENABLE_VULKAN)
     void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled);
     void markVulkanReflexInputSample();
-    void markVulkanReflexRenderSubmitStart();
-    void markVulkanReflexRenderSubmitEnd();
+    void markVulkanReflexSimulationStart();
+    void markVulkanReflexSimulationEnd();
     void finishVulkanLowLatencyFrame();
 #endif
 #endif

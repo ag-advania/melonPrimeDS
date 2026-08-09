@@ -66,6 +66,21 @@ jobs:
       shell: pwsh
       run: ./tools/ci/audits/audit-melonprime-srp-performance.ps1
 
+    # The Vulkan backend ships its SPIR-V as committed generated sources, so a
+    # GLSL edit that was never regenerated, or a variant that stopped compiling,
+    # would only show up as a black screen on a machine with a Vulkan GPU. Both
+    # tools skip cleanly when the shader toolchain is missing, so install it.
+    - name: Install Vulkan shader toolchain
+      run: |
+        sudo apt update
+        sudo apt install -y glslang-tools spirv-tools
+
+    - name: Verify committed Vulkan SPIR-V is up to date
+      run: python ./tools/vulkan/compile-shaders.py --check
+
+    - name: Audit Vulkan compute shaders
+      run: python ./tools/ci/audits/check-vulkan-shaders.py
+
     - name: Verify generated HUD schema
       shell: pwsh
       run: |
