@@ -43,7 +43,9 @@ The full and build-only commands configure Vulkan explicitly
 (`MELONPRIME_ENABLE_VULKAN=ON`) and fetch the same pinned Khronos
 `Vulkan-Headers` revision used by Ubuntu CI. Runtime packages
 (`libvulkan-dev`, `mesa-vulkan-drivers`, `vulkan-validationlayers`) are
-installed by the full setup command.
+installed by the full setup command. Native Wayland pointer lock is left in
+CMake's `AUTO` mode so missing `wayland-protocols` does not block an Xorg VM
+Vulkan build.
 
 **Incremental rebuild** (skip cmake configure — like `build-mingw-existing.bat`):
 
