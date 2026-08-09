@@ -11,6 +11,7 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "MelonPrimeDX12SurfacePresenter.h"
+#include "DX12Perf.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -211,6 +212,7 @@ void DX12SurfacePresenter::Shutdown() noexcept
     FrameOpen = false;
     FrameReady = false;
     FirstPresentLogged = false;
+    PerfRecordStart = {};
     Window = nullptr;
     if (Context)
     {
@@ -458,6 +460,9 @@ bool DX12SurfacePresenter::EnsureLayerTexture(
     if (layer.Texture && layer.Width == width && layer.Height == height)
         return true;
 
+    if (layerId == Layer::Hud)
+        melonDS::DX12Perf::AddCounter(melonDS::DX12Perf::Counter::HudTextureRecreateCount);
+
     layer.Texture = Context->CreateTexture2D(
         DXGI_FORMAT_B8G8R8A8_UNORM,
         width,
@@ -542,15 +547,27 @@ bool DX12SurfacePresenter::BeginFrame(std::uint32_t width, std::uint32_t height)
 {
     if (!Initialized || FrameOpen || width == 0 || height == 0)
         return false;
-    if (!WaitForPresentSlot() || !Resize(width, height))
+    {
+        melonDS::DX12Perf::ScopedCpuTimer waitTimer(
+            melonDS::DX12Perf::CpuMetric::PresentSlotWait);
+        if (!WaitForPresentSlot())
+            return false;
+    }
+    if (!Resize(width, height))
         return false;
 
-    OpenList = Commands.Begin();
+    {
+        melonDS::DX12Perf::ScopedCpuTimer waitTimer(
+            melonDS::DX12Perf::CpuMetric::PresentBeginWait);
+        OpenList = Commands.Begin();
+    }
     if (!OpenList)
     {
         Error = "DX12 presentation command list could not begin";
         return false;
     }
+    if (melonDS::DX12Perf::IsEnabled())
+        PerfRecordStart = melonDS::DX12Perf::Clock::now();
     Descriptors.Reset();
     NativeSource = nullptr;
     NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -620,6 +637,8 @@ bool DX12SurfacePresenter::UploadLayer(
     std::uint32_t height,
     std::size_t rowBytes)
 {
+    melonDS::DX12Perf::ScopedCpuTimer hudTimer(
+        melonDS::DX12Perf::CpuMetric::HudUpload, layerId == Layer::Hud);
     if (!FrameOpen || !pixels || width == 0 || height == 0
         || rowBytes < static_cast<std::size_t>(width) * sizeof(std::uint32_t))
     {
@@ -633,6 +652,12 @@ bool DX12SurfacePresenter::UploadLayer(
 
     const auto* source = static_cast<const std::uint8_t*>(pixels);
     const std::size_t copyBytes = static_cast<std::size_t>(width) * sizeof(std::uint32_t);
+    if (layerId == Layer::Hud)
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::HudUploadBytes,
+            static_cast<std::uint64_t>(copyBytes) * height);
+    }
     for (std::uint32_t row = 0; row < height; ++row)
     {
         std::memcpy(
@@ -660,6 +685,23 @@ bool DX12SurfacePresenter::UploadLayer(
     return true;
 }
 
+bool DX12SurfacePresenter::UploadLayerRegion(
+    Layer layer,
+    const void* pixels,
+    std::uint32_t sourceX,
+    std::uint32_t sourceY,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::size_t rowBytes)
+{
+    if (!pixels || rowBytes < (static_cast<std::size_t>(sourceX) + width) * sizeof(std::uint32_t))
+        return false;
+    const auto* source = static_cast<const std::uint8_t*>(pixels)
+        + static_cast<std::size_t>(sourceY) * rowBytes
+        + static_cast<std::size_t>(sourceX) * sizeof(std::uint32_t);
+    return UploadLayer(layer, source, width, height, rowBytes);
+}
+
 bool DX12SurfacePresenter::UploadLayerFromBuffer(
     Layer layerId,
     const melonDS::DX12PresentedFrame& frame,
@@ -669,6 +711,9 @@ bool DX12SurfacePresenter::UploadLayerFromBuffer(
         return false;
     if (!EnsureLayerTexture(layerId, frame.Width, frame.Height))
         return false;
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresentedScreenCopyBytes,
+        static_cast<std::uint64_t>(frame.Width) * frame.Height * sizeof(std::uint32_t));
 
     if (NativeSource && NativeSource != frame.Buffer)
         TransitionNativeSource(D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -779,7 +824,19 @@ bool DX12SurfacePresenter::EndFrame()
 
     OpenList = nullptr;
     FrameOpen = false;
-    if (!Commands.Submit())
+    if (PerfRecordStart != std::chrono::steady_clock::time_point{})
+    {
+        melonDS::DX12Perf::AddDuration(
+            melonDS::DX12Perf::CpuMetric::PresentRecord, PerfRecordStart);
+        PerfRecordStart = {};
+    }
+    bool submitted = false;
+    {
+        melonDS::DX12Perf::ScopedCpuTimer submitTimer(
+            melonDS::DX12Perf::CpuMetric::QueueSubmit);
+        submitted = Commands.Submit();
+    }
+    if (!submitted)
     {
         Error = "DX12 presentation command submission failed";
         return false;
@@ -813,6 +870,7 @@ bool DX12SurfacePresenter::Present(bool vsync)
             flags != 0 ? 1 : 0);
         std::fflush(stdout);
     }
+    melonDS::DX12Perf::MaybeReport();
     return true;
 }
 

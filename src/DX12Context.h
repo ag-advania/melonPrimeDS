@@ -172,10 +172,6 @@ public:
     // nothing is being recorded.
     bool Submit();
 
-    // Submits the open list and immediately waits for it, then reopens a new
-    // list. Used when a transient upload heap runs out mid-frame.
-    bool Flush();
-
     // Blocks until the last submitted list retired.
     void WaitIdle();
 
@@ -211,8 +207,8 @@ public:
     void Reset() noexcept { Head = 0; }
 
     // Returns a mapped CPU pointer plus the matching buffer offset, aligned to
-    // `alignment`. Returns nullptr when the remaining space is insufficient --
-    // callers must then flush the command context and Reset().
+    // `alignment`. Returns nullptr when the remaining space is insufficient;
+    // callers use a retained spill upload rather than waiting mid-frame.
     void* Allocate(u64 size, u64 alignment, u64& outOffset) noexcept;
 
     [[nodiscard]] ID3D12Resource* GetBuffer() const noexcept { return Buffer.Get(); }

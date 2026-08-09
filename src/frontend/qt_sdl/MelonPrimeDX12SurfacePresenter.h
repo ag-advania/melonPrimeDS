@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <string>
 
 #include "DX12Context.h"
@@ -64,6 +65,14 @@ public:
     bool UploadLayer(
         Layer layer,
         const void* pixels,
+        std::uint32_t width,
+        std::uint32_t height,
+        std::size_t rowBytes);
+    bool UploadLayerRegion(
+        Layer layer,
+        const void* pixels,
+        std::uint32_t sourceX,
+        std::uint32_t sourceY,
         std::uint32_t width,
         std::uint32_t height,
         std::size_t rowBytes);
@@ -140,6 +149,7 @@ private:
     bool FrameOpen = false;
     bool FrameReady = false;
     bool FirstPresentLogged = false;
+    std::chrono::steady_clock::time_point PerfRecordStart{};
     std::string Error;
 };
 

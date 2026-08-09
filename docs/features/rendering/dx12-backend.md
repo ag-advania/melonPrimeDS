@@ -47,6 +47,18 @@ and OSD bitmaps use small layer uploads; game screens, screen layout, rotation,
 filtering and DPI scaling stay on the GPU. Qt never queues or paints active
 emulation frames; the native child HWND is owned by the DXGI swapchain.
 
+When `GPU3D.RenderFrameIdentical` is set and the texture/clear state is unchanged,
+DX12 reuses the preceding valid 3D target. Software 2D and the structured
+compositor still run for the current DS frame, so this skips only redundant 3D
+raster work and never replays an earlier two-screen composition.
+
+Texture uploads normally use the 32 MiB linear ring. If it fills, the cache now
+records the copy from a dedicated retained upload resource and releases that
+resource after the submission retires; it no longer submits and synchronously
+waits in the middle of `BuildPolygons()`. The five frame-static SRVs are built
+once per scale-dependent resource generation and copied into each transient
+table; only the decoded texture SRV remains dynamic per texture switch.
+
 Consequences:
 
 * Internal resolution applies to the composed screen output, not only the 3D
@@ -263,6 +275,31 @@ draws the existing layout as transformed quads. QImage remains only for
 CPU-authored premultiplied HUD and OSD layers. The colour-keyed radar is drawn
 after the HUD backing SVG/outline, preserving its foremost layer order without
 making the bottom screen CPU-visible.
+
+The DX12 HUD upload accepts a source subrectangle of the retained full HUD
+image. It copies those rows directly into the D3D12 upload resource, avoiding
+the former intermediate `hudPatch` QImage allocation/copy while keeping the
+same dirty rectangle, texture dimensions, UVs and draw order.
+
+## Performance telemetry
+
+Set `MELONPRIME_PERF=1` to emit one-second `[DX12Perf]` windows. CPU timers cover
+renderer and presenter fence waits, texture-cache update, polygon/span setup,
+span staging copy, descriptor work, structured compositor packing/recording,
+conditional capture wait/map, HUD upload, command submission and presentation
+recording. Counters include frame/identical-frame counts, geometry sizes,
+structured/span/texture/HUD bytes, descriptor writes, compositor drops,
+capture reads, screen-copy bytes, upload overflows/spills and HUD texture
+recreation. The gate is runtime-only and disabled by default.
+
+The 4x Rev 1 F7 audit scene on the RTX 5070 Ti measured zero capture reads,
+zero texture-ring overflows, zero compositor drops and zero steady-state HUD
+texture recreations. That evidence keeps the conditional capture redesign and
+grow-only HUD allocation out of the hot-path change. Directly generating spans
+into mapped upload memory was also tested and rejected: median
+`build_polygons` increased from about 150 us to about 1.09 ms, while the
+existing contiguous staging copy costs about 19 us. The CPU scratch plus bulk
+copy is therefore intentional on this path.
 
 ## Verified scope
 
