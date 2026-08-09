@@ -744,6 +744,23 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin()
     // recorded from it.
     WaitForFence(SubmittedValue);
 
+    return ResetList();
+}
+
+ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
+{
+    if (!List || !Allocator)
+        return nullptr;
+    if (Recording)
+        return List.Get();
+    if (SubmittedValue != 0 && Fence->GetCompletedValue() < SubmittedValue)
+        return nullptr;
+
+    return ResetList();
+}
+
+ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
+{
     if (FAILED(Allocator->Reset()))
         return nullptr;
     if (FAILED(List->Reset(Allocator.Get(), nullptr)))

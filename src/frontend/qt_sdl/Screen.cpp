@@ -1808,11 +1808,16 @@ struct ScreenPanelDX12::DX12State
     MelonPrime::DX12SurfacePresenter presenter;
     QPointer<DX12SurfaceHost> surface;
     QMutex layoutLock;
-    QTransform screenTransform[kMaxScreenTransforms];
+    float screenMatrix[kMaxScreenTransforms][6]{};
+    int screenKind[kMaxScreenTransforms]{};
+    int numScreens = 0;
+    RendererOutputLease frameLease;
     QMutex fallbackLock;
     QImage fallbackFrame;
-    QImage logicalFrame;
-    QImage physicalFrame;
+    QImage hudFrame;
+    QImage hudPatch;
+    QRect hudRect;
+    QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
     // Set by the GUI thread while the Custom HUD on-screen editor owns the
     // panel, read by the emulation thread's paused draw pass.
@@ -1837,7 +1842,10 @@ ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
 ScreenPanelDX12::~ScreenPanelDX12()
 {
     if (dx12)
+    {
         dx12->presenter.Shutdown();
+        dx12->frameLease.ReleaseNow();
+    }
 }
 
 bool ScreenPanelDX12::initDX12()
@@ -1863,13 +1871,11 @@ void ScreenPanelDX12::setupScreenLayout()
         return;
 
     QMutexLocker lock(&dx12->layoutLock);
-    for (int index = 0; index < numScreens; ++index)
+    dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
+    for (int index = 0; index < dx12->numScreens; ++index)
     {
-        const float* matrix = screenMatrix[index];
-        dx12->screenTransform[index].setMatrix(
-            matrix[0], matrix[1], 0.0f,
-            matrix[2], matrix[3], 0.0f,
-            matrix[4], matrix[5], 1.0f);
+        std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+        dx12->screenKind[index] = screenKind[index];
     }
 }
 
@@ -1968,102 +1974,336 @@ void ScreenPanelDX12::drawScreen()
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
-    const RendererOutput output = nds->GPU.GetRendererOutput();
-    if (output.Kind != RendererOutputKind::CpuBgra || !output.Top || !output.Bottom)
+    RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
+    const RendererOutput& output = outputLease.Output;
+    const DX12PresentedFrame* gpuFrame = nullptr;
+    const u32* cpuTop = nullptr;
+    const u32* cpuBottom = nullptr;
+    u32 sourceWidth = output.Width;
+    u32 sourceHeight = output.Height;
+    if (output.Kind == RendererOutputKind::DX12Buffer && output.Top)
+    {
+        gpuFrame = static_cast<const DX12PresentedFrame*>(output.Top);
+        sourceWidth = gpuFrame->Width;
+        sourceHeight = gpuFrame->Height;
+    }
+    else if (output.Kind == RendererOutputKind::CpuBgra && output.Top && output.Bottom)
+    {
+        cpuTop = static_cast<const u32*>(output.Top);
+        cpuBottom = static_cast<const u32*>(output.Bottom);
+    }
+    if ((!gpuFrame && (!cpuTop || !cpuBottom)) || sourceWidth == 0 || sourceHeight == 0)
         return;
+
+    float matrices[kMaxScreenTransforms][6]{};
+    int kinds[kMaxScreenTransforms]{};
+    int screens = 0;
+    {
+        QMutexLocker lock(&dx12->layoutLock);
+        screens = dx12->numScreens;
+        for (int index = 0; index < screens; ++index)
+        {
+            std::memcpy(matrices[index], dx12->screenMatrix[index], sizeof(float) * 6);
+            kinds[index] = dx12->screenKind[index];
+        }
+    }
 
     const int logicalWidth = std::max(1, width());
     const int logicalHeight = std::max(1, height());
-    if (dx12->logicalFrame.width() != logicalWidth
-        || dx12->logicalFrame.height() != logicalHeight
-        || dx12->logicalFrame.format() != QImage::Format_RGB32)
-    {
-        dx12->logicalFrame = QImage(logicalWidth, logicalHeight, QImage::Format_RGB32);
-    }
-    dx12->logicalFrame.fill(Qt::black);
-
-    const int sourceWidth = static_cast<int>(std::max(1u, output.Width));
-    const int sourceHeight = static_cast<int>(std::max(1u, output.Height));
-    QImage screen[2] = {
-        QImage(
-            static_cast<uchar*>(output.Top),
-            sourceWidth,
-            sourceHeight,
-            sourceWidth * static_cast<int>(sizeof(u32)),
-            QImage::Format_RGB32),
-        QImage(
-            static_cast<uchar*>(output.Bottom),
-            sourceWidth,
-            sourceHeight,
-            sourceWidth * static_cast<int>(sizeof(u32)),
-            QImage::Format_RGB32),
-    };
-
-    QTransform transforms[kMaxScreenTransforms];
-    {
-        QMutexLocker lock(&dx12->layoutLock);
-        for (int index = 0; index < numScreens; ++index)
-            transforms[index] = dx12->screenTransform[index];
-    }
-
-    QPainter painter(&dx12->logicalFrame);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, filter);
-    const QRect screenRect(0, 0, 256, 192);
-    for (int index = 0; index < numScreens; ++index)
-    {
-        painter.setTransform(transforms[index]);
-        painter.drawImage(screenRect, screen[screenKind[index]]);
-    }
-
-#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
-#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
-#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
-
-    osdUpdate();
-    if (osdEnabled)
-    {
-        QMutexLocker osdLock(&osdMutex);
-        int y = kOSDMargin;
-        painter.resetTransform();
-        for (const OSDItem& item : osdItems)
-        {
-            painter.drawImage(kOSDMargin, y, item.bitmap);
-            y += item.bitmap.height();
-        }
-    }
-    painter.end();
-
     const qreal dpr = devicePixelRatioF();
-    const int physicalWidth = std::max(1, qRound(logicalWidth * dpr));
-    const int physicalHeight = std::max(1, qRound(logicalHeight * dpr));
-    const QImage* presentFrame = &dx12->logicalFrame;
-    if (physicalWidth != logicalWidth || physicalHeight != logicalHeight)
+    const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
+    const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
+    if (!dx12->presenter.BeginFrame(physicalWidth, physicalHeight))
     {
-        dx12->physicalFrame = dx12->logicalFrame.scaled(
-            physicalWidth,
-            physicalHeight,
-            Qt::IgnoreAspectRatio,
-            filter ? Qt::SmoothTransformation : Qt::FastTransformation);
-        presentFrame = &dx12->physicalFrame;
-    }
-
-    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
-    if (!dx12->presenter.UploadFrame(
-            presentFrame->constBits(),
-            static_cast<std::uint32_t>(presentFrame->width()),
-            static_cast<std::uint32_t>(presentFrame->height()),
-            static_cast<std::size_t>(presentFrame->bytesPerLine()),
-            vsync))
-    {
-        {
-            QMutexLocker fallbackLock(&dx12->fallbackLock);
-            dx12->fallbackFrame = dx12->logicalFrame.copy();
-        }
         requestNativeSurfaceVisible(false);
         reportRuntimeFailure(dx12->presenter.LastError().c_str());
         return;
     }
 
+    // BeginFrame retires the preceding presentation command list, so its
+    // compositor slot can be returned before this frame retains another one.
+    dx12->frameLease.ReleaseNow();
+    if (gpuFrame)
+        dx12->frameLease = std::move(outputLease);
+
+    bool screenUploaded[2]{false, false};
+    for (int index = 0; index < screens; ++index)
+    {
+        const int kind = kinds[index] & 1;
+        if (screenUploaded[kind])
+            continue;
+        const auto layer = kind == 0
+            ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
+            : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom;
+        if (gpuFrame)
+        {
+            screenUploaded[kind] = dx12->presenter.UploadLayerFromBuffer(
+                layer, *gpuFrame, kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+        }
+        else
+        {
+            screenUploaded[kind] = dx12->presenter.UploadLayer(
+                layer,
+                kind == 0 ? static_cast<const void*>(cpuTop) : static_cast<const void*>(cpuBottom),
+                sourceWidth,
+                sourceHeight,
+                static_cast<std::size_t>(sourceWidth) * sizeof(u32));
+        }
+    }
+
+    const float viewportWidth = static_cast<float>(dx12->presenter.GetWidth());
+    const float viewportHeight = static_cast<float>(dx12->presenter.GetHeight());
+    const float scaleX = viewportWidth / static_cast<float>(logicalWidth);
+    const float scaleY = viewportHeight / static_cast<float>(logicalHeight);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    QImage bottomScreenImage;
+    if (cpuBottom)
+    {
+        bottomScreenImage = QImage(
+            reinterpret_cast<const uchar*>(cpuBottom),
+            static_cast<int>(sourceWidth),
+            static_cast<int>(sourceHeight),
+            static_cast<int>(sourceWidth * sizeof(u32)),
+            QImage::Format_RGB32);
+    }
+
+    bool hudUploaded = false;
+    auto* mpForHud = emuThread->GetMelonPrimeCore();
+    const bool hudEditMode = mpForHud
+        && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
+    if (MelonPrimeHud_CanRenderForCore(mpForHud, hudEditMode))
+    {
+        if (dx12->hudFrame.width() != logicalWidth
+            || dx12->hudFrame.height() != logicalHeight
+            || dx12->hudFrame.format() != QImage::Format_ARGB32_Premultiplied)
+        {
+            dx12->hudFrame = QImage(
+                logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
+            dx12->hudFrame.fill(Qt::transparent);
+        }
+        QPainter painter(&dx12->hudFrame);
+        // hudFrame is retained between frames so only the current HUD dirty
+        // rectangle needs uploading. SourceOver would leave old pixels behind
+        // wherever Overlay[0] became transparent (most visibly a moving
+        // crosshair), because transparent source pixels do not erase the
+        // destination. Source replacement makes the transparent pixels clear
+        // the retained image while preserving the dirty-only upload.
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (cpuBottom ? &bottomScreenImage : nullptr)
+#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
+        painter.end();
+
+        auto& instcfg = emuInstance->getLocalConfig();
+        const bool hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
+            emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
+        dx12->hudRect = m_hudPrevDirty.intersected(
+            QRect(0, 0, logicalWidth, logicalHeight));
+        if (hudVisible && !dx12->hudRect.isEmpty())
+        {
+            const int patchWidth = dx12->hudRect.width();
+            const int patchHeight = dx12->hudRect.height();
+            if (dx12->hudPatch.width() != patchWidth
+                || dx12->hudPatch.height() != patchHeight
+                || dx12->hudPatch.format() != QImage::Format_ARGB32_Premultiplied)
+            {
+                dx12->hudPatch = QImage(
+                    patchWidth, patchHeight, QImage::Format_ARGB32_Premultiplied);
+            }
+            const int rowBytes = patchWidth * 4;
+            for (int row = 0; row < patchHeight; ++row)
+            {
+                std::memcpy(
+                    dx12->hudPatch.scanLine(row),
+                    dx12->hudFrame.constScanLine(dx12->hudRect.y() + row)
+                        + dx12->hudRect.x() * 4,
+                    static_cast<std::size_t>(rowBytes));
+            }
+            hudUploaded = dx12->presenter.UploadLayer(
+                MelonPrime::DX12SurfacePresenter::Layer::Hud,
+                dx12->hudPatch.constBits(),
+                static_cast<u32>(patchWidth),
+                static_cast<u32>(patchHeight),
+                static_cast<std::size_t>(dx12->hudPatch.bytesPerLine()));
+        }
+    }
+
+    bool gpuRadarVisible = false;
+    MelonPrime::DX12SurfacePresenter::Quad gpuRadarQuad;
+    u32 gpuRadarCenterY = 0;
+    if (gpuFrame && m_radarEnable)
+    {
+        const float* topMatrix = nullptr;
+        for (int index = 0; index < screens; ++index)
+        {
+            if ((kinds[index] & 1) == 0)
+            {
+                topMatrix = matrices[index];
+                break;
+            }
+        }
+        if (mpForHud && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
+        {
+            if (!screenUploaded[1])
+            {
+                screenUploaded[1] = dx12->presenter.UploadLayerFromBuffer(
+                    MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+                    *gpuFrame,
+                    gpuFrame->BottomOffset);
+            }
+
+            const float anchorX = topMatrix[0] * m_radarAnchorDsX
+                + topMatrix[1] * m_radarAnchorDsY + topMatrix[4];
+            const float anchorY = topMatrix[2] * m_radarAnchorDsX
+                + topMatrix[3] * m_radarAnchorDsY + topMatrix[5];
+            const int destinationX = static_cast<int>(m_hudOriginX) + static_cast<int>(
+                (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
+            const int destinationY = static_cast<int>(m_hudOriginY) + static_cast<int>(
+                (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
+            const float destinationSize = static_cast<float>(m_radarDstSize) * m_hudScale;
+            gpuRadarQuad.Axis[0] = destinationSize * scaleX;
+            gpuRadarQuad.Axis[3] = destinationSize * scaleY;
+            gpuRadarQuad.Origin[0] = static_cast<float>(destinationX) * scaleX;
+            gpuRadarQuad.Origin[1] = static_cast<float>(destinationY) * scaleY;
+            gpuRadarQuad.Origin[2] = viewportWidth;
+            gpuRadarQuad.Origin[3] = viewportHeight;
+            const u8 hunter = std::min<u8>(
+                mpForHud->GetHunterID(), MelonPrime::kHunterCount - 1);
+            gpuRadarCenterY = static_cast<u32>(MelonPrime::kBtmOverlaySrcCenterY[hunter]);
+            gpuRadarVisible = screenUploaded[1]
+                && m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
+        }
+    }
+#endif
+
+    QSize osdSize;
+    bool osdUploaded = false;
+    osdUpdate();
+    if (osdEnabled)
+    {
+        QMutexLocker osdLock(&osdMutex);
+        int stripWidth = 0;
+        int stripHeight = 0;
+        for (const OSDItem& item : osdItems)
+        {
+            if (!item.bitmap.isNull())
+            {
+                stripWidth = std::max(stripWidth, item.bitmap.width());
+                stripHeight += item.bitmap.height();
+            }
+        }
+        if (stripWidth > 0 && stripHeight > 0)
+        {
+            if (dx12->osdStrip.width() != stripWidth
+                || dx12->osdStrip.height() != stripHeight
+                || dx12->osdStrip.format() != QImage::Format_ARGB32_Premultiplied)
+            {
+                dx12->osdStrip = QImage(
+                    stripWidth, stripHeight, QImage::Format_ARGB32_Premultiplied);
+            }
+            dx12->osdStrip.fill(Qt::transparent);
+            int y = 0;
+            for (const OSDItem& item : osdItems)
+            {
+                if (item.bitmap.isNull())
+                    continue;
+                const int rowBytes = item.bitmap.width() * 4;
+                for (int row = 0; row < item.bitmap.height(); ++row)
+                {
+                    std::memcpy(
+                        dx12->osdStrip.scanLine(y + row),
+                        item.bitmap.constScanLine(row),
+                        static_cast<std::size_t>(rowBytes));
+                }
+                y += item.bitmap.height();
+            }
+            osdSize = QSize(stripWidth, stripHeight);
+            osdUploaded = dx12->presenter.UploadLayer(
+                MelonPrime::DX12SurfacePresenter::Layer::Osd,
+                dx12->osdStrip.constBits(),
+                static_cast<u32>(stripWidth),
+                static_cast<u32>(stripHeight),
+                static_cast<std::size_t>(dx12->osdStrip.bytesPerLine()));
+        }
+    }
+
+    dx12->presenter.BeginComposition();
+    for (int index = 0; index < screens; ++index)
+    {
+        const int kind = kinds[index] & 1;
+        if (!screenUploaded[kind])
+            continue;
+        const float* matrix = matrices[index];
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = matrix[0] * 256.0f * scaleX;
+        quad.Axis[1] = matrix[1] * 256.0f * scaleY;
+        quad.Axis[2] = matrix[2] * 192.0f * scaleX;
+        quad.Axis[3] = matrix[3] * 192.0f * scaleY;
+        quad.Origin[0] = matrix[4] * scaleX;
+        quad.Origin[1] = matrix[5] * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            kind == 0 ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
+                      : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Opaque,
+            filter);
+    }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (hudUploaded)
+    {
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;
+        quad.Axis[3] = static_cast<float>(dx12->hudRect.height()) * scaleY;
+        quad.Origin[0] = static_cast<float>(dx12->hudRect.x()) * scaleX;
+        quad.Origin[1] = static_cast<float>(dx12->hudRect.y()) * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            MelonPrime::DX12SurfacePresenter::Layer::Hud,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
+            filter);
+    }
+
+    // The GPU colour-key pass is intentionally after the SVG/frame HUD layer:
+    // picked radar pixels are the foremost Custom HUD layer.
+    if (gpuRadarVisible)
+    {
+        dx12->presenter.DrawRadar(
+            gpuRadarQuad, m_radarOpacity, gpuRadarCenterY,
+            static_cast<u32>(m_radarSrcRadius));
+    }
+#endif
+
+    if (osdUploaded)
+    {
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = static_cast<float>(osdSize.width()) * scaleX;
+        quad.Axis[3] = static_cast<float>(osdSize.height()) * scaleY;
+        quad.Origin[0] = static_cast<float>(kOSDMargin) * scaleX;
+        quad.Origin[1] = static_cast<float>(kOSDMargin) * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            MelonPrime::DX12SurfacePresenter::Layer::Osd,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
+            false);
+    }
+
+    if (!dx12->presenter.EndFrame())
+    {
+        requestNativeSurfaceVisible(false);
+        reportRuntimeFailure(dx12->presenter.LastError().c_str());
+        return;
+    }
+
+    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
     auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
     if (renderer)
         renderer->BeginReflexPresent();
@@ -2073,10 +2313,6 @@ void ScreenPanelDX12::drawScreen()
 
     if (!presented)
     {
-        {
-            QMutexLocker fallbackLock(&dx12->fallbackLock);
-            dx12->fallbackFrame = dx12->logicalFrame.copy();
-        }
         requestNativeSurfaceVisible(false);
         reportRuntimeFailure(dx12->presenter.LastError().c_str());
         return;

@@ -21,11 +21,15 @@
 #include "GPU3D_DX12.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <utility>
 
+#include "DX12PresentedFrame.h"
 #include "GPU.h"
 #include "GPU3D_DX12_shaders.h"
 #include "Platform.h"
@@ -43,6 +47,7 @@ constexpr u32 kSrvTableSize = 6;
 constexpr u32 kUavTableSize = 9;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords = (kStructuredPixelCount * 6u) + (192u * 2u);
+constexpr u32 kCompositorFramesInFlight = 3;
 
 constexpr u32 kRootParamDispatchConstants = 0;
 constexpr u32 kRootParamMetaCbv = 1;
@@ -55,6 +60,93 @@ constexpr u32 DivRoundUp(u32 value, u32 divisor) noexcept
 }
 
 } // namespace
+
+struct DX12Renderer3D::OutputState
+{
+    struct Slot
+    {
+        DX12CommandContext Commands;
+        DX12DescriptorRing Descriptors;
+        DX12::ComPtr<ID3D12Resource> StructuredStaging;
+        DX12::ComPtr<ID3D12Resource> StructuredInput;
+        DX12::ComPtr<ID3D12Resource> Composed;
+        u32* StructuredMapped = nullptr;
+        DX12PresentedFrame Frame;
+        std::atomic<u32> PresenterRefs{0};
+    };
+
+    ~OutputState()
+    {
+        for (Slot& slot : Slots)
+        {
+            slot.Commands.WaitIdle();
+            if (slot.StructuredStaging && slot.StructuredMapped)
+            {
+                D3D12_RANGE noWrite{0, 0};
+                slot.StructuredStaging->Unmap(0, &noWrite);
+                slot.StructuredMapped = nullptr;
+            }
+            slot.Descriptors.Shutdown();
+            slot.Commands.Shutdown();
+        }
+        if (OwnsContextReference && Context)
+            Context->Release();
+    }
+
+    bool Create(DX12Context& context, u32 width, u32 height)
+    {
+        if (!context.Acquire())
+            return false;
+        Context = &context;
+        OwnsContextReference = true;
+
+        ID3D12Device* device = context.GetDevice();
+        const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
+        const u64 screenBytes = static_cast<u64>(width) * height * sizeof(u32);
+        for (Slot& slot : Slots)
+        {
+            if (!slot.Commands.Init(device, context.GetQueue())
+                || !slot.Descriptors.Init(device, 16, true))
+                return false;
+            slot.StructuredInput = context.CreateBuffer(
+                inputBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                L"MelonPrime DX12 structured input slot");
+            slot.StructuredStaging = context.CreateBuffer(
+                inputBytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ,
+                D3D12_RESOURCE_FLAG_NONE,
+                L"MelonPrime DX12 structured staging slot");
+            slot.Composed = context.CreateBuffer(
+                screenBytes * 2u, D3D12_HEAP_TYPE_DEFAULT,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                L"MelonPrime DX12 composed output slot");
+            if (!slot.StructuredInput || !slot.StructuredStaging || !slot.Composed)
+                return false;
+
+            D3D12_RANGE noRead{0, 0};
+            if (FAILED(slot.StructuredStaging->Map(
+                    0, &noRead, reinterpret_cast<void**>(&slot.StructuredMapped)))
+                || !slot.StructuredMapped)
+                return false;
+
+            slot.Frame.Buffer = slot.Composed.Get();
+            slot.Frame.TopOffset = 0;
+            slot.Frame.BottomOffset = screenBytes;
+            slot.Frame.Width = width;
+            slot.Frame.Height = height;
+        }
+        return true;
+    }
+
+    DX12Context* Context = nullptr;
+    bool OwnsContextReference = false;
+    std::array<Slot, kCompositorFramesInFlight> Slots;
+    std::mutex Mutex;
+    int PublishedSlot = -1;
+    u32 NextSlot = 0;
+    u64 NextSerial = 1;
+};
 
 std::unique_ptr<DX12Renderer3D> DX12Renderer3D::New(melonDS::GPU3D& gpu3D)
 {
@@ -131,13 +223,6 @@ void DX12Renderer3D::Stop()
 {
     Commands.WaitIdle();
 
-    if (CompositionInputStaging && CompositionInputStagingPtr)
-    {
-        D3D12_RANGE written{ 0, 0 };
-        CompositionInputStaging->Unmap(0, &written);
-        CompositionInputStagingPtr = nullptr;
-    }
-
     Texcache.Reset();
     TextureHeap.CollectGarbage();
     TextureHeap.Shutdown();
@@ -147,8 +232,6 @@ void DX12Renderer3D::Stop()
 
     ReadbackBuffer.Reset();
     ResolveBuffer.Reset();
-    CompositionInputBuffer.Reset();
-    CompositionInputStaging.Reset();
     IndirectArgsBuffer.Reset();
     BinResultBuffer.Reset();
     ClearBitmapTex[0].Reset();
@@ -178,9 +261,11 @@ void DX12Renderer3D::Reset()
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     ColorBuffer.fill(0);
-    for (auto& buffer : ComposedColorBuffer)
-        std::fill(buffer.begin(), buffer.end(), 0u);
-    ComposedFrontBuffer = 0;
+    if (ComposedOutput)
+    {
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        ComposedOutput->PublishedSlot = -1;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -333,22 +418,6 @@ bool DX12Renderer3D::CreateFixedResources()
     if (!ReadbackBuffer)
         return false;
 
-    const u64 compositionInputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
-    CompositionInputBuffer = Context->CreateBuffer(
-        compositionInputBytes,
-        D3D12_HEAP_TYPE_DEFAULT,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-        L"MelonPrime DX12 structured 2D input");
-    CompositionInputStaging = Context->CreateBuffer(
-        compositionInputBytes,
-        D3D12_HEAP_TYPE_UPLOAD,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 structured 2D staging");
-    if (!CompositionInputBuffer || !CompositionInputStaging)
-        return false;
-
     IndirectArgsBuffer = Context->CreateBuffer(
         sizeof(BinResultHeader),
         D3D12_HEAP_TYPE_DEFAULT,
@@ -393,10 +462,6 @@ bool DX12Renderer3D::CreateFixedResources()
     if (FAILED(YSpanSetupStaging->Map(0, &noRead, &mapped)))
         return false;
     YSpanSetupStagingPtr = static_cast<u8*>(mapped);
-    if (FAILED(CompositionInputStaging->Map(0, &noRead, &mapped)))
-        return false;
-    CompositionInputStagingPtr = static_cast<u32*>(mapped);
-
     return true;
 }
 
@@ -426,8 +491,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
 
     ResultBuffer.Reset();
     FinalFBBuffer.Reset();
-    CompositionOutputBuffer.Reset();
-    CompositionReadbackBuffer.Reset();
+    ComposedOutput.reset();
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
     TileBuffers[2].Reset();
@@ -439,9 +503,6 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     // here is what makes RenderFrame()'s null check catch a partially failed
     // reallocation instead of running against a stale buffer.
     BinResultBuffer.Reset();
-    for (auto& buffer : ComposedColorBuffer)
-        buffer.clear();
-    ComposedFrontBuffer = 0;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
 }
@@ -472,22 +533,10 @@ bool DX12Renderer3D::CreateScaleDependentResources()
     if (!FinalFBBuffer)
         return false;
 
-    CompositionOutputBuffer = Context->CreateBuffer(
-        pixels * 2ull * sizeof(u32),
-        D3D12_HEAP_TYPE_DEFAULT,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-        L"MelonPrime DX12 high-resolution composed output");
-    CompositionReadbackBuffer = Context->CreateBuffer(
-        pixels * 2ull * sizeof(u32),
-        D3D12_HEAP_TYPE_READBACK,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 composed output readback");
-    if (!CompositionOutputBuffer || !CompositionReadbackBuffer)
+    ComposedOutput = std::make_shared<OutputState>();
+    if (!ComposedOutput->Create(
+            *Context, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight)))
         return false;
-    for (auto& buffer : ComposedColorBuffer)
-        buffer.resize(static_cast<std::size_t>(pixels) * 2u);
 
     // The tile heuristic (tiles * 16) is what the OpenGL renderer uses, but at
     // high internal resolutions the resulting allocation can exceed what a GPU
@@ -1135,7 +1184,11 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
     return true;
 }
 
-bool DX12Renderer3D::BindCompositionUavTable(ID3D12GraphicsCommandList* list)
+bool DX12Renderer3D::BindCompositionUavTable(
+    ID3D12GraphicsCommandList* list,
+    DX12DescriptorRing& descriptors,
+    ID3D12Resource* structuredInput,
+    ID3D12Resource* composedOutput)
 {
     struct UavEntry
     {
@@ -1155,7 +1208,7 @@ bool DX12Renderer3D::BindCompositionUavTable(ID3D12GraphicsCommandList* list)
             + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
 
     const UavEntry entries[kUavTableSize] = {
-        { CompositionInputBuffer.Get(),  kCompositionInputDwords,             4, false },
+        { structuredInput,               kCompositionInputDwords,             4, false },
         { FinalFBBuffer.Get(),            pixels,                              4, false },
         { TileBuffers[0].Get(),           tileElements,                        4, false },
         { TileBuffers[1].Get(),           tileElements,                        4, false },
@@ -1163,16 +1216,16 @@ bool DX12Renderer3D::BindCompositionUavTable(ID3D12GraphicsCommandList* list)
         { BinResultBuffer.Get(),          binResultDwords,                     4, true  },
         { WorkDescBuffer.Get(),           static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
         { XSpanSetupBuffer.Get(),         static_cast<u32>(MaxYSpanIndices),   sizeof(SpanSetupX), false },
-        { CompositionOutputBuffer.Get(), pixels * 2u,                         4, false },
+        { composedOutput,                pixels * 2u,                         4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
-    if (!Descriptors.Allocate(kUavTableSize, cpu, gpu))
+    if (!descriptors.Allocate(kUavTableSize, cpu, gpu))
         return false;
 
     ID3D12Device* device = Context->GetDevice();
-    const u32 increment = Descriptors.GetIncrement();
+    const u32 increment = descriptors.GetIncrement();
     for (u32 i = 0; i < kUavTableSize; ++i)
     {
         if (!entries[i].Resource)
@@ -2072,10 +2125,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         return false;
     if (ComposedOutputValid && ComposedGeneration == generation)
         return true;
-    if (!Context || !PipelineCompositor || !CompositionInputBuffer
-        || !CompositionInputStagingPtr || !CompositionOutputBuffer
-        || !CompositionReadbackBuffer || ComposedColorBuffer[0].empty()
-        || ComposedColorBuffer[1].empty())
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!Context || !PipelineCompositor || !state || !FinalFBBuffer)
     {
         SetRuntimeFailure("required compositor resources are unavailable");
         return false;
@@ -2090,51 +2141,74 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         if (!meta)
             return false;
     }
-    for (std::size_t i = 0; i < planes.size(); ++i)
+    u32 slotIndex = 0;
     {
-        std::memcpy(
-            CompositionInputStagingPtr + i * kStructuredPixelCount,
-            planes[i],
-            static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        slotIndex = state->NextSlot;
+        state->NextSlot = (state->NextSlot + 1u) % kCompositorFramesInFlight;
     }
-    u32* metaDestination =
-        CompositionInputStagingPtr + (kStructuredPixelCount * planes.size());
-    std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
-    std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
-
-    ID3D12GraphicsCommandList* list = Commands.Begin();
+    OutputState::Slot& slot = state->Slots[slotIndex];
+    if (slot.PresenterRefs.load(std::memory_order_acquire) != 0)
+    {
+        // Presentation is still reading this slot. Reusing the last published
+        // frame is preferable to blocking the emulation thread.
+        return false;
+    }
+    ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
     if (!list)
     {
-        SetRuntimeFailure("could not begin a compositor command list");
+        // The GPU has not retired this ring slot after three frames. Keep the
+        // previous output and let the emulator continue without a fence wait.
         return false;
     }
 
-    Descriptors.Reset();
+    u32* staging = slot.StructuredMapped;
+    if (!staging)
+    {
+        SetRuntimeFailure("the compositor staging slot is not mapped");
+        return false;
+    }
+    for (std::size_t i = 0; i < planes.size(); ++i)
+    {
+        std::memcpy(
+            staging + i * kStructuredPixelCount,
+            planes[i],
+            static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+    }
+    u32* metaDestination = staging + (kStructuredPixelCount * planes.size());
+    std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
+    std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
+
+    slot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
 
     const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
-    const u64 outputBytes = static_cast<u64>(ScreenWidth)
-        * static_cast<u64>(ScreenHeight) * 2ull * sizeof(u32);
     list->CopyBufferRegion(
-        CompositionInputBuffer.Get(), 0, CompositionInputStaging.Get(), 0, inputBytes);
+        slot.StructuredInput.Get(), 0, slot.StructuredStaging.Get(), 0, inputBytes);
     TransitionBuffer(
         list,
-        CompositionInputBuffer.Get(),
+        slot.StructuredInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    ID3D12DescriptorHeap* heaps[] = { Descriptors.GetHeap() };
+    // The 3D final pass was submitted immediately before this list on the same
+    // queue. This cross-list UAV barrier makes those writes visible without a
+    // CPU fence wait.
+    InsertUavBarrier(list, FinalFBBuffer.Get());
+
+    ID3D12DescriptorHeap* heaps[] = { slot.Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(RootSignature.Get());
-    if (!BindCompositionUavTable(list))
+    if (!BindCompositionUavTable(
+            list, slot.Descriptors, slot.StructuredInput.Get(), slot.Composed.Get()))
     {
         TransitionBuffer(
             list,
-            CompositionInputBuffer.Get(),
+            slot.StructuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_DEST);
-        Commands.Submit();
+        slot.Commands.Submit();
         SetRuntimeFailure("could not bind the compositor descriptor table");
         return false;
     }
@@ -2149,61 +2223,67 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1u);
-    InsertUavBarrier(list, CompositionOutputBuffer.Get());
-
+    InsertUavBarrier(list, slot.Composed.Get());
     TransitionBuffer(
         list,
-        CompositionOutputBuffer.Get(),
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        D3D12_RESOURCE_STATE_COPY_SOURCE);
-    list->CopyBufferRegion(
-        CompositionReadbackBuffer.Get(), 0, CompositionOutputBuffer.Get(), 0, outputBytes);
-    TransitionBuffer(
-        list,
-        CompositionOutputBuffer.Get(),
-        D3D12_RESOURCE_STATE_COPY_SOURCE,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    TransitionBuffer(
-        list,
-        CompositionInputBuffer.Get(),
+        slot.StructuredInput.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_COPY_DEST);
 
-    if (!Commands.Submit())
+    if (!slot.Commands.Submit())
     {
         SetRuntimeFailure("compositor command submission failed");
         return false;
     }
-    Commands.WaitIdle();
 
-    D3D12_RANGE readRange{ 0, static_cast<SIZE_T>(outputBytes) };
-    void* mapped = nullptr;
-    if (FAILED(CompositionReadbackBuffer->Map(0, &readRange, &mapped)) || !mapped)
     {
-        SetRuntimeFailure("compositor readback mapping failed");
-        return false;
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        slot.Frame.Serial = state->NextSerial++;
+        slot.Frame.Generation = generation;
+        state->PublishedSlot = static_cast<int>(slotIndex);
+        ComposedGeneration = generation;
+        ComposedOutputValid = true;
     }
-    const u32 nextFrontBuffer = ComposedFrontBuffer ^ 1u;
-    std::memcpy(
-        ComposedColorBuffer[nextFrontBuffer].data(),
-        mapped,
-        static_cast<std::size_t>(outputBytes));
-    D3D12_RANGE noWrite{ 0, 0 };
-    CompositionReadbackBuffer->Unmap(0, &noWrite);
-
-    ComposedGeneration = generation;
-    ComposedFrontBuffer = nextFrontBuffer;
-    ComposedOutputValid = true;
     return true;
 }
 
-const u32* DX12Renderer3D::GetComposedScreen(u32 screen) const noexcept
+RendererOutput DX12Renderer3D::GetComposedOutput() const
 {
-    if (!ComposedOutputValid || screen >= 2u || ComposedColorBuffer[ComposedFrontBuffer].empty())
-        return nullptr;
-    const std::size_t pixels = static_cast<std::size_t>(ScreenWidth)
-        * static_cast<std::size_t>(ScreenHeight);
-    return ComposedColorBuffer[ComposedFrontBuffer].data() + (screen * pixels);
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    std::lock_guard<std::mutex> lock(state->Mutex);
+    if (state->PublishedSlot < 0)
+        return {};
+    const DX12PresentedFrame& frame = state->Slots[state->PublishedSlot].Frame;
+    return RendererOutput::DX12Buffer(
+        const_cast<DX12PresentedFrame*>(&frame), frame.Width, frame.Height, frame.Serial);
+}
+
+RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
+{
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    std::lock_guard<std::mutex> lock(state->Mutex);
+    if (state->PublishedSlot < 0)
+        return {};
+
+    OutputState::Slot& slot = state->Slots[state->PublishedSlot];
+    slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
+    auto release = +[](void* opaque) {
+        auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);
+        const u32 previous = leasedSlot->PresenterRefs.fetch_sub(1, std::memory_order_release);
+        assert(previous > 0);
+    };
+    return RendererOutputLease(
+        RendererOutput::DX12Buffer(
+            &slot.Frame, slot.Frame.Width, slot.Frame.Height, slot.Frame.Serial),
+        &slot,
+        release,
+        state);
 }
 
 u32* DX12Renderer3D::GetLine(int line)

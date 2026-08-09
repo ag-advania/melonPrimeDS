@@ -160,6 +160,11 @@ public:
     // command list. Returns nullptr if the context is not initialized.
     ID3D12GraphicsCommandList* Begin();
 
+    // Opens the list only when its previous submission has already retired.
+    // Never waits: compositor rings use this to drop a frame instead of
+    // blocking VBlank when the GPU is more than their slot depth behind.
+    ID3D12GraphicsCommandList* TryBegin();
+
     [[nodiscard]] ID3D12GraphicsCommandList* GetList() const noexcept { return List.Get(); }
     [[nodiscard]] bool IsRecording() const noexcept { return Recording; }
 
@@ -181,6 +186,7 @@ public:
 
 private:
     bool WaitForFence(u64 value);
+    ID3D12GraphicsCommandList* ResetList();
 
     ID3D12Device* Device = nullptr;
     ID3D12CommandQueue* Queue = nullptr;

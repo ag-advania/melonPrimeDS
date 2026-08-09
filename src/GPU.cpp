@@ -360,7 +360,8 @@ RendererOutput GPU::GetRendererOutput()
 }
 
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
-    || defined(MELONPRIME_ENABLE_METAL))
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
 RendererOutputLease GPU::AcquireRendererOutputLease()
 {
     return Rend->AcquireOutputLease();
