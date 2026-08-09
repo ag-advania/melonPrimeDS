@@ -436,6 +436,39 @@ if (MELONPRIME_VULKAN_ACTIVE)
     # would be ~8 MB that every consumer would re-parse.
     set(MELONPRIME_VULKAN_SHADER_DIR
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan_shaders/generated)
+    # Frontend-side Vulkan sources: the feature check the settings dialog and
+    # the renderer factory consult, the per-platform WSI surface adapters, the
+    # swapchain/present path and the Qt screen panel. These belong to the
+    # melonDS (Qt frontend) target, not to core: they include QtWidgets and the
+    # MelonPrime HUD/OSD surfaces, which core must never see.
+    #
+    # The presenter's SPIR-V lives in MelonPrimeVulkanPresentShaders/ as a
+    # committed generated header (tools/vulkan/compile-present-shaders.py), so
+    # the .vert/.frag sources are deliberately NOT listed as build inputs.
+    target_sources(melonDS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanFeatureCheck.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceCommon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
+
+    # One platform adapter per target OS. Each is additionally guarded by its
+    # own #if, so an accidental double-add cannot produce duplicate symbols.
+    if (WIN32)
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceWin32.cpp)
+    elseif (APPLE)
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceMacOS.mm)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLinux.cpp)
+    else()
+        # BSD and anything else: no supported WSI extension in this build. The
+        # stub fails loudly at runtime rather than failing to compile.
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceStub.cpp)
+    endif()
+
     target_sources(core PRIVATE
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderModules.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp
@@ -473,8 +506,12 @@ if (MELONPRIME_VULKAN_ACTIVE)
             ${MELONPRIME_VULKAN_QUARTZCORE_LIB}
             ${MELONPRIME_VULKAN_APPKIT_LIB}
             ${MELONPRIME_VULKAN_METAL_LIB})
-        # The macOS (MoltenVK/CAMetalLayer) presentation adapter source is added
-        # here as the clean-room rewrite lands.
+        # MelonPrimeVulkanSurfaceMacOS.mm is the CAMetalLayer adapter; it is
+        # added to the target above, next to the other platform adapters. ARC is
+        # required because it holds Objective-C objects.
+        set_source_files_properties(
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceMacOS.mm
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     endif()
 
     message(STATUS

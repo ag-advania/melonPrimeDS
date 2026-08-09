@@ -20,6 +20,9 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <algorithm>
+#include <cstring>
+
 namespace melonDS
 {
 
@@ -62,11 +65,18 @@ const Vk::InstanceDispatch& VulkanDevice::InstanceFns() const noexcept
 }
 
 
-bool VulkanDevice::Create(VulkanContext& context, const char* requestedRendererName)
+bool VulkanDevice::Create(
+    VulkanContext& context,
+    const char* requestedRendererName,
+    const LowLatencyRequest& lowLatency)
 {
     Destroy();
 
     FailureReason.clear();
+    NvLowLatency2 = LowLatencyStatus{};
+    AmdAntiLag = LowLatencyStatus{};
+    NvLowLatency2.Requested = lowLatency.NvLowLatency2;
+    AmdAntiLag.Requested = lowLatency.AmdAntiLag;
     Context = &context;
 
     if (!context.IsReady())
@@ -174,6 +184,129 @@ bool VulkanDevice::Create(VulkanContext& context, const char* requestedRendererN
     if (Profile.RequiresPortabilitySubset)
         EnabledExtensions.push_back(PortabilitySubsetExtensionName);
 
+    // --- optional vendor low-latency extensions -----------------------------
+    //
+    // Everything below is strictly additive: a device that cannot do any of it
+    // creates exactly the same VkDevice it would have created before. Nothing
+    // here can make Create() return false.
+    //
+    // The feature structs must outlive vkCreateDevice, so they are declared in
+    // this scope rather than inside the blocks that fill them.
+    VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures{};
+    VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
+    VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
+    const void* featureChain = nullptr;
+
+    const auto chain = [&featureChain](auto& feature) {
+        feature.pNext = const_cast<void*>(featureChain);
+        featureChain = &feature;
+    };
+
+    if (lowLatency.NvLowLatency2 || lowLatency.AmdAntiLag)
+    {
+        // One vkGetPhysicalDeviceFeatures2 for everything asked for. Enabling a
+        // feature bit the device reports as unsupported is invalid usage, so the
+        // request is always confirmed against the driver rather than inferred
+        // from the extension being present.
+        timelineFeatures.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR;
+        presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+        presentIdFeatures.pNext = &timelineFeatures;
+        antiLagFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
+        antiLagFeatures.pNext = &presentIdFeatures;
+
+        VkPhysicalDeviceFeatures2 probe{};
+        probe.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        probe.pNext = &antiLagFeatures;
+        context.Fns().GetPhysicalDeviceFeatures2(PhysicalDevice, &probe);
+
+        // The pNext links above were only scaffolding for the query. They are
+        // rebuilt below for the structs that are actually enabled, because a
+        // struct whose feature is unsupported must not reach vkCreateDevice.
+        timelineFeatures.pNext = nullptr;
+        presentIdFeatures.pNext = nullptr;
+        antiLagFeatures.pNext = nullptr;
+    }
+
+    if (lowLatency.NvLowLatency2)
+    {
+        // VK_NV_low_latency2 depends on (Vulkan 1.2 or VK_KHR_timeline_semaphore)
+        // AND VK_KHR_present_id. The instance is created with apiVersion 1.1, so
+        // the 1.2-core route is unavailable by construction and both KHR
+        // extensions have to be enabled explicitly alongside it.
+        const bool hasExtension =
+            Vk::FeatureProbe::HasExtension(available, VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
+        const bool hasTimeline =
+            Vk::FeatureProbe::HasExtension(available, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)
+            && timelineFeatures.timelineSemaphore == VK_TRUE;
+        const bool hasPresentId =
+            needPresent
+            && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME)
+            && presentIdFeatures.presentId == VK_TRUE;
+
+        NvLowLatency2.Supported = hasExtension && hasTimeline && hasPresentId;
+        if (NvLowLatency2.Supported)
+        {
+            EnabledExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+            EnabledExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+            EnabledExtensions.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
+            chain(timelineFeatures);
+            chain(presentIdFeatures);
+            NvLowLatency2.Enabled = true;
+            NvLowLatency2.Reason = "enabled at device creation";
+        }
+        else if (!hasExtension)
+        {
+            NvLowLatency2.Reason =
+                "this GPU does not expose VK_NV_low_latency2 (NVIDIA Reflex is NVIDIA-only)";
+        }
+        else if (!hasTimeline)
+        {
+            NvLowLatency2.Reason =
+                "VK_KHR_timeline_semaphore is unavailable, and VkLatencySleepInfoNV requires a "
+                "timeline semaphore";
+        }
+        else
+        {
+            NvLowLatency2.Reason = needPresent
+                ? std::string("VK_KHR_present_id is unavailable, and VK_NV_low_latency2 depends on it")
+                : std::string("this device was created without presentation support");
+        }
+    }
+    else
+    {
+        NvLowLatency2.Reason = "not requested";
+    }
+
+    if (lowLatency.AmdAntiLag)
+    {
+        const bool hasExtension =
+            Vk::FeatureProbe::HasExtension(available, VK_AMD_ANTI_LAG_EXTENSION_NAME);
+        AmdAntiLag.Supported = hasExtension && antiLagFeatures.antiLag == VK_TRUE;
+        if (AmdAntiLag.Supported)
+        {
+            EnabledExtensions.push_back(VK_AMD_ANTI_LAG_EXTENSION_NAME);
+            chain(antiLagFeatures);
+            AmdAntiLag.Enabled = true;
+            AmdAntiLag.Reason = "enabled at device creation";
+        }
+        else if (!hasExtension)
+        {
+            AmdAntiLag.Reason =
+                "this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)";
+        }
+        else
+        {
+            AmdAntiLag.Reason =
+                "the driver exposes VK_AMD_anti_lag but reports VkPhysicalDeviceAntiLagFeaturesAMD"
+                "::antiLag as unsupported";
+        }
+    }
+    else
+    {
+        AmdAntiLag.Reason = "not requested";
+    }
+
     // --- features -----------------------------------------------------------
     // Deliberately empty.
     //
@@ -190,6 +323,10 @@ bool VulkanDevice::Create(VulkanContext& context, const char* requestedRendererN
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    // Individual feature structs only. A VkPhysicalDeviceFeatures2 here would
+    // force pEnabledFeatures to be null, and the core feature set is still
+    // supplied the 1.0 way below.
+    createInfo.pNext = featureChain;
     createInfo.queueCreateInfoCount = static_cast<u32>(queueInfos.size());
     createInfo.pQueueCreateInfos = queueInfos.data();
     createInfo.enabledExtensionCount = static_cast<u32>(EnabledExtensions.size());
@@ -200,8 +337,56 @@ bool VulkanDevice::Create(VulkanContext& context, const char* requestedRendererN
     // layers are deprecated and the instance layer list already covers
     // validation -- so it is left null on purpose.
 
-    const VkResult res =
+    VkResult res =
         context.Fns().CreateDevice(PhysicalDevice, &createInfo, nullptr, &Device);
+
+    if (res != VK_SUCCESS && (NvLowLatency2.Enabled || AmdAntiLag.Enabled))
+    {
+        // A vendor latency extension must never be the reason the renderer
+        // fails to start. The driver accepted every extension name and every
+        // feature bit when queried, so reaching here means it contradicted
+        // itself; the device is rebuilt without any of the optional additions
+        // and the loss is reported instead of propagated.
+        const std::string firstAttempt = Vk::FormatResult(res);
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] vkCreateDevice rejected the low-latency extensions (%s); "
+            "retrying without them\n",
+            firstAttempt.c_str());
+
+        EnabledExtensions.erase(
+            std::remove_if(
+                EnabledExtensions.begin(),
+                EnabledExtensions.end(),
+                [](const char* name) {
+                    return std::strcmp(name, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_AMD_ANTI_LAG_EXTENSION_NAME) == 0;
+                }),
+            EnabledExtensions.end());
+
+        const std::string retryReason =
+            "vkCreateDevice rejected the extension: " + firstAttempt;
+        if (NvLowLatency2.Enabled)
+        {
+            NvLowLatency2.Enabled = false;
+            NvLowLatency2.Supported = false;
+            NvLowLatency2.Reason = retryReason;
+        }
+        if (AmdAntiLag.Enabled)
+        {
+            AmdAntiLag.Enabled = false;
+            AmdAntiLag.Supported = false;
+            AmdAntiLag.Reason = retryReason;
+        }
+
+        createInfo.pNext = nullptr;
+        createInfo.enabledExtensionCount = static_cast<u32>(EnabledExtensions.size());
+        createInfo.ppEnabledExtensionNames =
+            EnabledExtensions.empty() ? nullptr : EnabledExtensions.data();
+        res = context.Fns().CreateDevice(PhysicalDevice, &createInfo, nullptr, &Device);
+    }
+
     if (res != VK_SUCCESS)
     {
         Device = VK_NULL_HANDLE;
@@ -291,6 +476,8 @@ void VulkanDevice::Destroy()
     PresentQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
     EnabledExtensions.clear();
     EnabledFeatures = VkPhysicalDeviceFeatures{};
+    NvLowLatency2 = LowLatencyStatus{};
+    AmdAntiLag = LowLatencyStatus{};
     PhysicalDevice = VK_NULL_HANDLE;
     Context = nullptr;
 }
@@ -361,6 +548,32 @@ void VulkanDevice::LogStartupSummary(const char* requestedRendererName) const
         Platform::Log(Platform::LogLevel::Info,
             "[Vulkan] portability implementation: VK_KHR_portability_subset enabled\n");
     }
+
+    LogLowLatencySummary();
+}
+
+
+void VulkanDevice::LogLowLatencySummary() const
+{
+    // Requested / Supported / Enabled / Actual / Reason, on one line per
+    // feature, always emitted for both features whether or not they were asked
+    // for. "Actual" is deliberately separate from "Enabled": Enabled is what
+    // vkCreateDevice accepted, Actual is what the running renderer will use, and
+    // the two differ exactly when a requested feature was silently dropped --
+    // which is the case a log must never let read as success.
+    const auto describe = [](const char* name, const LowLatencyStatus& status) {
+        Platform::Log(Platform::LogLevel::Info,
+            "[Vulkan] %s: requested=%s supported=%s enabled=%s actual=%s reason=%s\n",
+            name,
+            status.Requested ? "yes" : "no",
+            status.Supported ? "yes" : "no",
+            status.Enabled ? "yes" : "no",
+            status.Enabled ? "active" : "disabled",
+            status.Reason.empty() ? "not evaluated" : status.Reason.c_str());
+    };
+
+    describe("NVIDIA Reflex (VK_NV_low_latency2)", NvLowLatency2);
+    describe("AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag)", AmdAntiLag);
 }
 
 } // namespace melonDS

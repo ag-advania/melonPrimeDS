@@ -122,25 +122,34 @@ void VulkanRenderer::VBlank()
     // nothing latched from a previous frame to disagree with.
     auto* vulkan = GetVulkanRenderer3D();
     StructuredVulkanFrameView view{};
-    if (!vulkan || !GetStructuredVulkanFrame(view) || !view.Valid)
-        return;
+    if (vulkan && GetStructuredVulkanFrame(view) && view.Valid)
+    {
+        const std::array<const u32*, 6> planes = {
+            view.Plane[0][0],
+            view.Plane[0][1],
+            view.Plane[0][2],
+            view.Plane[1][0],
+            view.Plane[1][1],
+            view.Plane[1][2],
+        };
+        const std::array<const u32*, 2> lineMeta = {
+            view.LineMeta[0],
+            view.LineMeta[1],
+        };
 
-    const std::array<const u32*, 6> planes = {
-        view.Plane[0][0],
-        view.Plane[0][1],
-        view.Plane[0][2],
-        view.Plane[1][0],
-        view.Plane[1][1],
-        view.Plane[1][2],
-    };
-    const std::array<const u32*, 2> lineMeta = {
-        view.LineMeta[0],
-        view.LineMeta[1],
-    };
+        // Generation is carried through so a frame the producer has not
+        // refreshed is never recomposed, and a stale one is never composed at
+        // all.
+        vulkan->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+    }
 
-    // Generation is carried through so a frame the producer has not refreshed
-    // is never recomposed, and a stale one is never composed at all.
-    vulkan->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
+    //
+    // Notified even when nothing was composed this frame: the panel's snapshot
+    // then simply keeps pointing at the previously published surface, which is
+    // still the newest frame that exists.
+    if (VBlankObserverFn)
+        VBlankObserverFn(VBlankObserverData);
 }
 
 RendererOutput VulkanRenderer::GetOutput()

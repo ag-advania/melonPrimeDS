@@ -70,9 +70,33 @@ public:
     [[nodiscard]] VulkanRenderer3D* GetVulkanRenderer3D() noexcept;
     [[nodiscard]] const VulkanRenderer3D* GetVulkanRenderer3D() const noexcept;
 
+    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
+    //
+    // Called at the end of VBlank(), on the emulation thread, immediately after
+    // the compositor has published this frame's composed screens. The
+    // presentation panel (ScreenPanelVulkan) uses it to capture the frame at
+    // the one instant it is guaranteed to be the current one: GetOutput()
+    // returns pointers into a double-buffered surface that the *next* VBlank
+    // overwrites, so the panel snapshots them here rather than holding a
+    // borrowed pointer across a renderer transition.
+    //
+    // A plain function pointer rather than std::function on purpose: this is
+    // called once per DS frame from the emulation thread and must not allocate
+    // or take a lock. Installing and clearing happen on the same thread as the
+    // call, from the panel's renderer-transition path.
+    using VBlankObserver = void (*)(void* userData);
+    void SetVBlankObserver(VBlankObserver observer, void* userData) noexcept
+    {
+        VBlankObserverFn = observer;
+        VBlankObserverData = userData;
+    }
+
 private:
     int NvidiaReflexMode = 0;
     bool AmdAntiLag2Enabled = false;
+
+    VBlankObserver VBlankObserverFn = nullptr;
+    void* VBlankObserverData = nullptr;
 };
 
 } // namespace melonDS

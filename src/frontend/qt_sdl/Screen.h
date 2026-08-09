@@ -45,6 +45,7 @@
 
 class MainWindow;
 class EmuInstance;
+class EmuThread;
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -476,6 +477,17 @@ private:
     // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
     // it without indenting the whole function.
     void drawScreenFrame();
+
+    // Presentation stall watchdog, called from every exit of drawScreenFrame()
+    // so a presenter that came up and then stopped is distinguishable in a log
+    // from one that is deliberately idle. noteFrameIdle() covers the skips the
+    // panel is supposed to perform (no ROM, paused, modal dialog);
+    // noteFrameStalled() names a reason and logs it once after
+    // kPresentationStallFrames consecutive frames. Emulation thread.
+    void noteFrameIdle();
+    void noteFrameStalled(const char* reason);
+    void noteFramePresented();
+
     // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
     // on the emulation thread, because that is the only point where this
     // frame's structured 2D metadata and this frame's 3D image coexist.
@@ -504,6 +516,17 @@ private:
     void requestNativeSurfaceVisible(bool visible);
     void releaseNativeSurface();
     [[nodiscard]] bool nativeSurfaceReady() const;
+
+    // Stacks the OSD message bitmaps into one premultiplied strip so the whole
+    // OSD costs a single upload and a single draw. False when there is nothing
+    // to show. Emulation thread.
+    bool buildOsdStrip(QSize& outSize);
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Renders the Custom HUD into Overlay[0] and reports its dirty rect.
+    // False when the HUD is not visible this frame, in which case the stale
+    // overlay texture must not be drawn. Emulation thread.
+    bool renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty);
+#endif
 
     struct VulkanState;
     std::unique_ptr<VulkanState> vulkan;
