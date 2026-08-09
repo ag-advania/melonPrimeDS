@@ -2102,6 +2102,8 @@ void ScreenPanelDX12::drawScreen()
             QRect(0, 0, logicalWidth, logicalHeight));
         if (hudVisible && !dx12->hudRect.isEmpty())
         {
+            MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
+                MelonPrimePerf::HudPhase::UploadPrepare);
             const int patchWidth = dx12->hudRect.width();
             const int patchHeight = dx12->hudRect.height();
             if (dx12->hudPatch.width() != patchWidth

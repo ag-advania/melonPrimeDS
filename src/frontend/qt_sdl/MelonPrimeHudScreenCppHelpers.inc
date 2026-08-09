@@ -55,6 +55,7 @@ static void MelonPrimeHud_PrepareTopOverlay(
     int outH,
     QRect& prevDirty)
 {
+    MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
     if (overlay.width() != outW || overlay.height() != outH) {
         overlay = QImage(outW, outH, QImage::Format_ARGB32_Premultiplied);
         overlay.fill(Qt::transparent);
@@ -89,6 +90,7 @@ static void MelonPrimeHud_PrepareTopOverlay(
 // resolutions. Pixel-exact, so it can never leave the HUD stale.
 static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
 {
+    MelonPrimePerf::ScopedHudPhase hashTimer(MelonPrimePerf::HudPhase::Hash);
     uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
     const int left  = std::max(0, r.left());
     const int right = std::min(img.width()  - 1, r.right());
@@ -241,7 +243,10 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     if (hudRenderStart)
         MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
     if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())
+    {
         MelonPrimePerf::AddHudDirtyArea(hudDirty.width() * hudDirty.height());
+        MelonPrimePerf::CountCustomHudDrawn();
+    }
     return hudDirty;
 }
 #endif

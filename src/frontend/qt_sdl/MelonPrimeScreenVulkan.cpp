@@ -68,6 +68,7 @@
 #include "GPU_Vulkan.h"
 #include "MelonPrime.h"
 #include "MelonPrimeConstants.h"
+#include "MelonPrimePerfProbe.h"
 #include "VulkanPerf.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
@@ -1184,6 +1185,8 @@ void ScreenPanelVulkan::drawScreenFrame()
         {
             const QRect region = needsInitialUpload ? imageRect : uploadRect;
             VulkanPerf::ScopedCpuTimer hudUploadTimer(VulkanPerf::CpuMetric::HudUpload);
+            MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
+                MelonPrimePerf::HudPhase::UploadPrepare);
             hudUploaded = vulkan->presenter.UploadLayerRegion(
                 layer,
                 Overlay[0].constBits(),
@@ -1433,28 +1436,31 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     const int overlayHeight = std::max(1, height());
     const QRect previousDirty = m_hudPrevDirty;
     bool overlayRecreated = false;
-    if (Overlay[0].width() != overlayWidth
-        || Overlay[0].height() != overlayHeight
-        || Overlay[0].format() != QImage::Format_ARGB32_Premultiplied)
     {
-        Overlay[0] = QImage(overlayWidth, overlayHeight, QImage::Format_ARGB32_Premultiplied);
-        Overlay[0].fill(Qt::transparent);
-        m_hudPrevDirty = QRect();
-        overlayRecreated = true;
-    }
-    else if (!m_hudPrevDirty.isEmpty())
-    {
-        // Direct scanline clear of last frame's dirty region only. Transparent
-        // is 0 in ARGB32_Premultiplied, so memset is the whole operation.
-        const int left = std::max(0, m_hudPrevDirty.left());
-        const int right = std::min(Overlay[0].width() - 1, m_hudPrevDirty.right());
-        const int top = std::max(0, m_hudPrevDirty.top());
-        const int bottom = std::min(Overlay[0].height() - 1, m_hudPrevDirty.bottom());
-        if (left <= right && top <= bottom)
+        MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
+        if (Overlay[0].width() != overlayWidth
+            || Overlay[0].height() != overlayHeight
+            || Overlay[0].format() != QImage::Format_ARGB32_Premultiplied)
         {
-            const std::size_t clearBytes = static_cast<std::size_t>(right - left + 1) * 4u;
-            for (int row = top; row <= bottom; ++row)
-                std::memset(Overlay[0].scanLine(row) + left * 4, 0, clearBytes);
+            Overlay[0] = QImage(overlayWidth, overlayHeight, QImage::Format_ARGB32_Premultiplied);
+            Overlay[0].fill(Qt::transparent);
+            m_hudPrevDirty = QRect();
+            overlayRecreated = true;
+        }
+        else if (!m_hudPrevDirty.isEmpty())
+        {
+            // Direct scanline clear of last frame's dirty region only. Transparent
+            // is 0 in ARGB32_Premultiplied, so memset is the whole operation.
+            const int left = std::max(0, m_hudPrevDirty.left());
+            const int right = std::min(Overlay[0].width() - 1, m_hudPrevDirty.right());
+            const int top = std::max(0, m_hudPrevDirty.top());
+            const int bottom = std::min(Overlay[0].height() - 1, m_hudPrevDirty.bottom());
+            if (left <= right && top <= bottom)
+            {
+                const std::size_t clearBytes = static_cast<std::size_t>(right - left + 1) * 4u;
+                for (int row = top; row <= bottom; ++row)
+                    std::memset(Overlay[0].scanLine(row) + left * 4, 0, clearBytes);
+            }
         }
     }
 
@@ -1467,6 +1473,7 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
             &Overlay[1],
             mp->GetHunterID(),
             m_radarSrcRadius);
+        const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
         dirty = MelonPrime::CustomHud_Render(
             mp->HudConfigState(),
             emuInstance, instcfg,
@@ -1477,6 +1484,15 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
             mp->IsInGame(),
             m_topStretchX, m_hudScale,
             m_hudOriginX / m_hudScale, m_hudOriginY / m_hudScale);
+        if (hudRenderStart)
+            MelonPrimePerf::AddCustomHudRenderTicks(
+                MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
+    }
+
+    if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
+    {
+        MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
+        MelonPrimePerf::CountCustomHudDrawn();
     }
 
     m_hudPrevDirty = dirty;
