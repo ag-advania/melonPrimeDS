@@ -343,6 +343,10 @@ private:
     u8* RenderPolygonStagingPtr = nullptr;
 
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
+    DX12::ComPtr<ID3D12Resource> ClearBitmapUpload[2];
+    u8* ClearBitmapUploadPtr[2] = { nullptr, nullptr };
+    DX12::ComPtr<ID3D12Resource> MetaUniformUpload;
+    u8* MetaUniformUploadPtr = nullptr;
     DX12::ComPtr<ID3D12Resource> DummyTexture;
 
     std::unique_ptr<u32[]> ClearBitmap[2];

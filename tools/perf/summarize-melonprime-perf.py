@@ -63,6 +63,8 @@ HUD_PHASE_RE = re.compile(
     r"hash_p50=(?P<hash_p50>[0-9.]+) hash_p99=(?P<hash_p99>[0-9.]+) "
     r"upload_prepare_p50=(?P<upload_p50>[0-9.]+) "
     r"upload_prepare_p99=(?P<upload_p99>[0-9.]+) "
+    r"(?:total_active_p50=(?P<total_active_p50>[0-9.]+) "
+    r"total_active_p99=(?P<total_active_p99>[0-9.]+) )?"
     r"calls=(?P<calls>[0-9]+) drawn=(?P<drawn>[0-9]+)"
 )
 
@@ -104,6 +106,8 @@ class WindowSample:
     hud_hash_p99_us: float | None = None
     hud_upload_p50_us: float | None = None
     hud_upload_p99_us: float | None = None
+    hud_total_active_p50_us: float | None = None
+    hud_total_active_p99_us: float | None = None
     hud_calls: int = 0
     hud_drawn: int = 0
 
@@ -175,6 +179,9 @@ def parse_lines(lines: Iterable[str]) -> Report:
             sample.hud_hash_p99_us = float(m.group("hash_p99"))
             sample.hud_upload_p50_us = float(m.group("upload_p50"))
             sample.hud_upload_p99_us = float(m.group("upload_p99"))
+            if m.group("total_active_p50") is not None:
+                sample.hud_total_active_p50_us = float(m.group("total_active_p50"))
+                sample.hud_total_active_p99_us = float(m.group("total_active_p99"))
             sample.hud_calls = int(m.group("calls"))
             sample.hud_drawn = int(m.group("drawn"))
             continue
@@ -333,6 +340,16 @@ def summarize_for_tables(report: Report, platform: str) -> list[str]:
             median([w.hud_hash_p50_us or 0.0 for w in phase_windows]),
             median([w.hud_upload_p50_us or 0.0 for w in phase_windows]),
         ),
+        "- HUD same-frame active total median-window p50/p99 us: {:.1f}/{:.1f}".format(
+            median([
+                w.hud_total_active_p50_us or 0.0 for w in phase_windows
+                if w.hud_total_active_p50_us is not None
+            ]),
+            median([
+                w.hud_total_active_p99_us or 0.0 for w in phase_windows
+                if w.hud_total_active_p99_us is not None
+            ]),
+        ),
         "",
         "V5 Phase 0 frame row:",
         "| {} | {} | {} | {} | {} | |".format(
@@ -421,10 +438,14 @@ def print_window_details(windows: list[WindowSample], out: TextIO) -> None:
             ("clear", "hud_clear_p50_us", "hud_clear_p99_us"),
             ("hash", "hud_hash_p50_us", "hud_hash_p99_us"),
             ("upload", "hud_upload_p50_us", "hud_upload_p99_us"),
+            ("same-frame active total", "hud_total_active_p50_us", "hud_total_active_p99_us"),
         ):
+            available = [w for w in phase_windows if getattr(w, p50_attr) is not None]
+            if not available:
+                continue
             print(
-                f"  {label}={median([getattr(w, p50_attr) or 0.0 for w in phase_windows]):.1f}/"
-                f"{median([getattr(w, p99_attr) or 0.0 for w in phase_windows]):.1f}",
+                f"  {label}={median([getattr(w, p50_attr) or 0.0 for w in available]):.1f}/"
+                f"{median([getattr(w, p99_attr) or 0.0 for w in available]):.1f}",
                 file=out,
             )
         print(

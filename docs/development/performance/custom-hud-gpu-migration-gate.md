@@ -11,7 +11,7 @@ Developer builds started with `MELONPRIME_PERF=1` emit one additional line per
 one-second window:
 
 ```text
-[MelonPrimePerf] hud_phase_us state_p50=... state_p99=... qpainter_p50=... qpainter_p99=... clear_p50=... clear_p99=... hash_p50=... hash_p99=... upload_prepare_p50=... upload_prepare_p99=... calls=... drawn=...
+[MelonPrimePerf] hud_phase_us state_p50=... state_p99=... qpainter_p50=... qpainter_p99=... clear_p50=... clear_p99=... hash_p50=... hash_p99=... upload_prepare_p50=... upload_prepare_p99=... total_active_p50=... total_active_p99=... calls=... drawn=...
 ```
 
 The phases are:
@@ -22,6 +22,8 @@ The phases are:
 - `clear`: creation or clearing of the retained CPU overlay;
 - `hash`: OpenGL dirty-region equality hashing;
 - `upload_prepare`: the CPU-visible dirty-region upload or staging operation.
+- `total_active`: the sum of all five measured phases from the same emulation
+  frame, recorded only when that frame actually drew Custom HUD content.
 
 Vulkan, DX12, Metal, OpenGL, and the QPainter fallback all use the same phase
 names. A window with `drawn=0` is not an active-HUD sample. The summarizer
@@ -50,7 +52,8 @@ Hardware and scenario:
 
 The table contains the median of each one-second window's per-frame p50. The
 last column is the sum of the five component medians, not a separately sampled
-end-to-end percentile.
+end-to-end percentile. These historical samples predate `total_active`; new
+runs should use that field instead of adding independently sampled percentiles.
 
 | Outer window | Active frames | state | QPainter | clear | hash | upload prepare | Component sum |
 |---|---:|---:|---:|---:|---:|---:|---:|
