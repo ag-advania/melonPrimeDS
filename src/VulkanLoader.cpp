@@ -21,6 +21,8 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -39,20 +41,18 @@ namespace
 // The versioned soname is tried before the unversioned one on purpose: on
 // Linux, libvulkan.so is part of the *development* package and is frequently
 // absent on a user's machine, while libvulkan.so.1 ships with the runtime. On
-// macOS the plain Vulkan loader is preferred over MoltenVK directly, because
-// the loader is what enables layers and the portability enumeration path;
-// falling straight through to libMoltenVK.dylib still works for a Homebrew or
-// app-bundled MoltenVK with no loader installed.
+// macOS packaged apps try the bundled MoltenVK runtime first so Vulkan does
+// not depend on Homebrew, the Vulkan SDK, or the Finder launch environment.
 const char* const* GetLibraryCandidates(size_t& outCount) noexcept
 {
 #if defined(_WIN32)
     static const char* const names[] = { "vulkan-1.dll" };
 #elif defined(__APPLE__)
     static const char* const names[] = {
+        "@executable_path/../Frameworks/libMoltenVK.dylib",
         "libvulkan.1.dylib",
         "libvulkan.dylib",
         "libMoltenVK.dylib",
-        // Bundled next to the executable inside a .app.
         "@rpath/libvulkan.1.dylib",
     };
 #else
@@ -67,9 +67,21 @@ void* OpenLibrary(const char* name) noexcept
 #if defined(_WIN32)
     return reinterpret_cast<void*>(::LoadLibraryA(name));
 #else
+    (void)::dlerror();
     // RTLD_LOCAL keeps the driver's symbols out of the global namespace so a
     // driver that exports e.g. its own "malloc" cannot interpose on ours.
     return ::dlopen(name, RTLD_NOW | RTLD_LOCAL);
+#endif
+}
+
+std::string GetLibraryOpenError() noexcept
+{
+#if defined(_WIN32)
+    const DWORD error = ::GetLastError();
+    return error ? (std::string("Win32 error ") + std::to_string(error)) : "unknown LoadLibrary failure";
+#else
+    const char* const error = ::dlerror();
+    return error ? std::string(error) : "unknown dlopen failure";
 #endif
 }
 
@@ -136,12 +148,19 @@ bool Library::Open()
 
     size_t candidateCount = 0;
     const char* const* candidates = GetLibraryCandidates(candidateCount);
+    std::vector<std::string> openErrors;
 
     for (size_t i = 0; i < candidateCount && !Handle; i++)
     {
         Handle = OpenLibrary(candidates[i]);
         if (Handle)
+        {
             LibraryName = candidates[i];
+        }
+        else
+        {
+            openErrors.emplace_back(std::string(candidates[i]) + ": " + GetLibraryOpenError());
+        }
     }
 
     if (!Handle)
@@ -155,6 +174,12 @@ bool Library::Open()
         }
         FailureReason += ")";
         Platform::Log(Platform::LogLevel::Info, "[Vulkan] %s\n", FailureReason.c_str());
+        for (const std::string& openError : openErrors)
+        {
+            Platform::Log(Platform::LogLevel::Info,
+                "[Vulkan] loader candidate failed %s\n",
+                openError.c_str());
+        }
         return false;
     }
 

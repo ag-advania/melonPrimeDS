@@ -126,6 +126,16 @@ CMAKE_ARGS=(
     -DMELONPRIME_ENABLE_VULKAN=ON
     -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
 )
+if [[ "$BUNDLE_MOLTENVK" -eq 1 ]]; then
+    CMAKE_ARGS+=(
+        -DMELONPRIME_BUNDLE_MOLTENVK=ON
+        -DMELONPRIME_MOLTENVK_DYLIB="$MOLTENVK_DYLIB"
+    )
+else
+    CMAKE_ARGS+=(
+        -DMELONPRIME_BUNDLE_MOLTENVK=OFF
+    )
+fi
 if [[ "$WITH_METAL" -eq 1 ]]; then
     # Metal is already the macOS default; setting it explicitly keeps the
     # "both renderers" intent visible in the cache and in this log.
@@ -165,19 +175,10 @@ APP_BUNDLE="$REPO_ROOT/$BUILD_DIR/melonPrimeDS.app"
 [[ -d "$APP_BUNDLE" ]] || die "Build finished but $APP_BUNDLE does not exist."
 
 if [[ "$BUNDLE_MOLTENVK" -eq 1 ]]; then
-    # VulkanDispatch tries @executable_path/../Frameworks before the Homebrew
-    # prefixes, so this copy makes the bundle self-contained for Vulkan.
     FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
-    mkdir -p "$FRAMEWORKS_DIR"
-    cp -f "$MOLTENVK_DYLIB" "$FRAMEWORKS_DIR/libMoltenVK.dylib"
+    [[ -f "$FRAMEWORKS_DIR/libMoltenVK.dylib" ]] \
+        || die "CMake did not bundle MoltenVK at $FRAMEWORKS_DIR/libMoltenVK.dylib"
     log "Bundled MoltenVK: $FRAMEWORKS_DIR/libMoltenVK.dylib"
-
-    # Copying into the bundle invalidates the ad-hoc signature applied by the
-    # CMake POST_BUILD step, so re-sign here.
-    if command -v codesign >/dev/null 2>&1; then
-        codesign --force --sign - --deep "$APP_BUNDLE" >/dev/null 2>&1 \
-            || log "WARNING: ad-hoc re-signing failed; the bundle may be quarantined."
-    fi
 fi
 
 log "Bundle: $APP_BUNDLE"

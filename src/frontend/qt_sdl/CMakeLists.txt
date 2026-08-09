@@ -142,6 +142,13 @@ option(MELONPRIME_ENABLE_VULKAN
 option(MELONPRIME_FORCE_DISABLE_VULKAN
     "Completely exclude all MelonPrime Vulkan code"
     OFF)
+option(MELONPRIME_BUNDLE_MOLTENVK
+    "Bundle the MoltenVK runtime into macOS Vulkan app bundles"
+    ON)
+set(MELONPRIME_MOLTENVK_DYLIB "" CACHE FILEPATH
+    "Path to the MoltenVK runtime dylib embedded in macOS Vulkan builds")
+set(MELONPRIME_MOLTENVK_LICENSE "" CACHE FILEPATH
+    "Path to the MoltenVK license file copied into macOS app-bundle notices")
 
 set(MELONPRIME_VULKAN_ACTIVE OFF)
 if (MELONPRIME_FORCE_DISABLE_VULKAN)
@@ -905,6 +912,40 @@ if (APPLE)
     option(MACOS_BUILD_DMG "Build DMG image of the macOS application bundle" OFF)
     option(MACOS_ADHOC_SIGN_BUNDLE "Ad-hoc sign the macOS app bundle after build" ON)
 
+    if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_BUNDLE_MOLTENVK)
+        if (NOT MELONPRIME_MOLTENVK_DYLIB OR NOT EXISTS "${MELONPRIME_MOLTENVK_DYLIB}")
+            message(FATAL_ERROR
+                "macOS Vulkan builds require MELONPRIME_MOLTENVK_DYLIB to point "
+                "at a pinned libMoltenVK.dylib runtime for app-bundle deployment. "
+                "Set MELONPRIME_FORCE_DISABLE_VULKAN=ON for a Metal-only build.")
+        endif()
+
+        add_custom_command(TARGET melonDS POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MELONPRIME_MOLTENVK_DYLIB}"
+                "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Frameworks/libMoltenVK.dylib"
+            COMMENT "Bundling MoltenVK runtime into macOS app bundle..."
+            VERBATIM)
+
+        if (MELONPRIME_MOLTENVK_LICENSE)
+            if (NOT EXISTS "${MELONPRIME_MOLTENVK_LICENSE}")
+                message(FATAL_ERROR
+                    "MELONPRIME_MOLTENVK_LICENSE was set but does not exist: "
+                    "${MELONPRIME_MOLTENVK_LICENSE}")
+            endif()
+            add_custom_command(TARGET melonDS POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Resources/ThirdPartyNotices"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${MELONPRIME_MOLTENVK_LICENSE}"
+                    "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt"
+                COMMENT "Bundling MoltenVK license notice..."
+                VERBATIM)
+        endif()
+    endif()
+
     if (MACOS_BUNDLE_LIBS)
         if (MACOS_BUILD_DMG)
             set(DMGARG "--dmg")
@@ -918,7 +959,7 @@ if (APPLE)
         find_program(CODESIGN_EXECUTABLE codesign)
         if (CODESIGN_EXECUTABLE)
             add_custom_command(TARGET melonDS POST_BUILD
-                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep "$<TARGET_BUNDLE_DIR:melonDS>"
+                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep --timestamp=none "$<TARGET_BUNDLE_DIR:melonDS>"
                 COMMENT "Ad-hoc signing macOS app bundle...")
         else()
             message(WARNING "codesign not found; macOS app bundle will not be ad-hoc signed")
