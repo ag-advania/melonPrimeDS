@@ -107,6 +107,22 @@ The eight rasterise kinds are `NoTexture`, `NoTextureToon`, `NoTextureHighlight`
 `UseTextureDecal`, `UseTextureModulate`, `UseTextureToon`, `UseTextureHighlight`,
 `ShadowMask`.
 
+### Polygon geometry settings
+
+Vulkan deliberately does not consume `3D.GL.BetterPolygons`. That option is a
+center-fan workaround for classic OpenGL and native Metal, where an N-sided DS
+polygon must first be split into GPU triangles and the new internal edges can
+change interpolation. The Vulkan compute rasterizer performs no such split:
+`BuildPolygons()` walks the original polygon's left and right edges and creates
+one X span per scanline, matching `GPU3D_Compute`. Adding the center-fan path
+would replace the compute renderer's native polygon interpolation rather than
+improve it.
+
+The Video Settings dialog therefore disables Improved polygon splitting for
+Vulkan and explains why. `3D.GL.HiresCoordinates` is different: Vulkan uses it
+when producing the polygon edge positions, so Use high resolution coordinates
+remains enabled and applies live without rebuilding resolution-sized resources.
+
 Per frame, one command buffer:
 
 1. `ClearCoarseBinMask` — reset the coarse tile bitmasks

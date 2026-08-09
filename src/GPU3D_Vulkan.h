@@ -69,7 +69,7 @@ public:
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
 
-    void SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates);
+    void SetRenderSettings(int scale, bool hiresCoordinates);
     [[nodiscard]] int GetScaleFactor() const noexcept { return ScaleFactor; }
 
     void RenderFrame() override;
@@ -459,7 +459,6 @@ private:
     int ScaleFactor = -1;
     int ScreenWidth = 256;
     int ScreenHeight = 192;
-    bool BetterPolygons = false;
     bool HiresCoordinates = false;
 
     // --- state -------------------------------------------------------------

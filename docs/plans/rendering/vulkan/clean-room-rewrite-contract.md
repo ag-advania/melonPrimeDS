@@ -160,6 +160,10 @@ That is the mechanism by which high resolution survives to present.
   is the only place that decides.
 - `RendererSettings` carries `ScaleFactor`, `BetterPolygons`,
   `HiresCoordinates`, `NvidiaReflexMode`, `AmdAntiLag2Enabled`.
+  `VulkanRenderer` forwards scale and high-resolution coordinates, but
+  deliberately does not forward `BetterPolygons`: the Vulkan compute path
+  rasterizes original polygon spans and never performs the triangle split that
+  option exists to correct. Video Settings mirrors that contract.
 
 ### 3.4 Presentation panel
 

@@ -48,6 +48,35 @@
 #endif
 #endif // MELONPRIME_DS
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+
+QString VulkanRendererDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Native Vulkan compute renderer. Supports internal-resolution scaling and "
+        "high-resolution coordinates. Polygons are rasterized directly as spans, "
+        "so improved polygon splitting is unnecessary.");
+}
+
+QString VulkanBetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting is not used by Vulkan because its compute rasterizer "
+        "processes DS polygons directly without splitting them into triangles.");
+}
+
+QString HiresCoordinatesDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Use the DS GPU's high-resolution vertex coordinates in renderers that support "
+        "this mode, including Vulkan.");
+}
+
+} // namespace
+#endif
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
@@ -111,8 +140,7 @@ void VideoSettingsDialog::setEnabled()
 
     const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
     const QString vulkanBaseTooltip = vulkanProbe.Available
-        ? MelonPrime::UiText::Tr(
-            "Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+        ? VulkanRendererDescription()
         : QString::fromStdString(vulkanProbe.Reason);
     const QString vulkanRendererDescription = vulkanBaseTooltip;
     rb3DVulkan->setToolTip(vulkanRendererDescription);
@@ -127,21 +155,39 @@ void VideoSettingsDialog::setEnabled()
 #endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
-    // BetterPolygons is implemented by classic OpenGL and both visible Metal
-    // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRenderer);
-#else
+    // BetterPolygons is a center-fan workaround for renderers that must split
+    // DS polygons into GPU triangles. OpenGL Compute and Vulkan rasterize the
+    // original polygon as scanline spans, so enabling it there would be a lie.
     ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    constexpr const char* originalBetterPolygonsHelp =
+        "MelonPrimeOriginalBetterPolygonsHelp";
+    if (!ui->cbBetterPolygons->property(originalBetterPolygonsHelp).isValid())
+    {
+        ui->cbBetterPolygons->setProperty(
+            originalBetterPolygonsHelp, ui->cbBetterPolygons->whatsThis());
+    }
+    const QString betterPolygonsDescription = vulkanRenderer
+        ? VulkanBetterPolygonsDescription()
+        : QString();
+    ui->cbBetterPolygons->setToolTip(betterPolygonsDescription);
+    ui->cbBetterPolygons->setWhatsThis(vulkanRenderer
+        ? betterPolygonsDescription
+        : ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString());
 #endif
 
     // OpenGL Compute uses this directly. Metal and Metal Compute now forward
     // it to the visible Metal raster path; Metal Compute also keeps its hidden
-    // compute mirror in the same coordinate mode.
-    // The DX12 renderer follows the OpenGL compute renderer's design, so it
-    // shares that renderer's coordinate-mode setting rather than the
-    // BetterPolygons splitting used by the raster paths.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
+    // compute mirror in the same coordinate mode. Vulkan and DX12 also follow
+    // the OpenGL compute renderer's coordinate-mode setting.
+    ui->cbxComputeHiResCoords->setEnabled(
+        computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    const QString hiresCoordinatesDescription = HiresCoordinatesDescription();
+    ui->cbxComputeHiResCoords->setToolTip(hiresCoordinatesDescription);
+    ui->cbxComputeHiResCoords->setWhatsThis(hiresCoordinatesDescription);
+#endif
 
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
@@ -284,8 +330,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DVulkan = new QRadioButton(ui->groupBox);
     rb3DVulkan->setObjectName(QStringLiteral("rb3DVulkan"));
     rb3DVulkan->setText(MelonPrime::UiText::Tr("Vulkan"));
-    rb3DVulkan->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Native Vulkan renderer. Uses the pinned SapphireRhodonite 0.7.0.rc4 implementation.</p></body></html>"));
+    rb3DVulkan->setWhatsThis(VulkanRendererDescription());
     ui->gridLayout_2->addWidget(rb3DVulkan, vulkanRow, 0, 1, 2);
     grp3DRenderer->addButton(rb3DVulkan, renderer3D_Vulkan);
 
@@ -422,8 +467,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DVulkan->setEnabled(vulkanProbe.Available);
     rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
         vulkanProbe.Available
-            ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
+            ? VulkanRendererDescription()
             : QString::fromStdString(vulkanProbe.Reason)));
+    rb3DVulkan->setWhatsThis(rb3DVulkan->toolTip());
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)

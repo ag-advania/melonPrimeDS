@@ -95,7 +95,13 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
     AmdAntiLag2Enabled = settings.AmdAntiLag2Enabled;
 
     if (auto* vulkan = GetVulkanRenderer3D())
-        vulkan->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+    {
+        // BetterPolygons is a triangle-splitting workaround for the classic
+        // OpenGL/native Metal raster paths. Vulkan follows GPU3D_Compute and
+        // rasterizes each DS polygon directly as scanline spans, so only the
+        // scale and coordinate-mode settings apply.
+        vulkan->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+    }
 }
 
 void VulkanRenderer::Start3DRendering()
