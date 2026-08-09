@@ -202,6 +202,11 @@ public:
     // not record anything in that case.
     FrameContext* BeginFrame();
 
+    // Non-blocking counterpart for work that is allowed to drop a frame. If
+    // the next slot's fence is not signalled, returns nullptr immediately
+    // without resetting or changing the ring.
+    FrameContext* TryBeginFrame();
+
     // Ends and submits the open command buffer.
     //
     // `waitSemaphore` / `waitStageMask` describe the acquire dependency and may
@@ -248,6 +253,7 @@ public:
     void WaitIdle();
 
 private:
+    FrameContext* BeginFrameInternal(bool waitForSlot);
     void DestroyFrames();
 
     const VulkanDevice* Device = nullptr;

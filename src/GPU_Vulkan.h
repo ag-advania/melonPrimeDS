@@ -53,6 +53,7 @@ public:
     void Start3DRendering() override;
     void VBlank() override;
     RendererOutput GetOutput() override;
+    RendererOutputLease AcquireOutputLease() override;
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;

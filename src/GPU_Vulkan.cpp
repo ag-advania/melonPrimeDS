@@ -158,9 +158,8 @@ RendererOutput VulkanRenderer::GetOutput()
     if (!vulkan)
         return {};
 
-    const u32* top = vulkan->GetComposedScreen(0);
-    const u32* bottom = vulkan->GetComposedScreen(1);
-    if (!top || !bottom)
+    RendererOutput output = vulkan->GetComposedOutput();
+    if (output.Kind == RendererOutputKind::None)
     {
         // The Vulkan pipelines compile incrementally after a ROM starts, so the
         // first few frames have no composed output yet. The software buffers
@@ -171,14 +170,19 @@ RendererOutput VulkanRenderer::GetOutput()
         return SoftRenderer::GetOutput();
     }
 
-    // The internal-resolution surface. Returning 256x192 here would throw away
-    // every pixel the high-resolution 3D path produced, so the width and height
-    // travel with the pointers.
-    return RendererOutput::CpuBgra(
-        const_cast<u32*>(top),
-        const_cast<u32*>(bottom),
-        vulkan->GetComposedWidth(),
-        vulkan->GetComposedHeight());
+    return output;
+}
+
+RendererOutputLease VulkanRenderer::AcquireOutputLease()
+{
+    auto* vulkan = GetVulkanRenderer3D();
+    if (!vulkan)
+        return {};
+
+    RendererOutputLease lease = vulkan->AcquireComposedOutputLease();
+    if (lease.Output.Kind != RendererOutputKind::None)
+        return lease;
+    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 
 bool VulkanRenderer::NeedsShaderCompile()

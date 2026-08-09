@@ -28,7 +28,7 @@ VulkanRenderer (: SoftRenderer)        software 2D engines + structured planes
  └── VulkanRenderer3D (: Renderer3D)   3D rasterizer + high-resolution compositor
 
 ScreenPanelVulkan (: ScreenPanel)      Qt seam, layout/HUD/OSD
- └── VulkanPresenter                   own VkDevice, swapchain, vkQueuePresentKHR
+ └── VulkanPresenter                   shared VkDevice, swapchain, vkQueuePresentKHR
 ```
 
 The software 2D engines record the same per-pixel structured planes the DX12
@@ -36,11 +36,11 @@ backend consumes (`src/MelonPrimeStructuredComposition.h`, namespace
 `StructuredComposition`; gated by `MELONPRIME_HAS_STRUCTURED_SOFT_2D`, which is
 satisfied by *either* Vulkan or DX12 being enabled). After the DS scanlines are
 complete, a Vulkan compute pass combines those planes with the high-resolution
-3D target and reads back two BGRA screens at `256*scale x 192*scale`.
-`RendererOutput` carries those dimensions to `ScreenPanelVulkan`, which performs
-the established layout / Custom HUD / radar / OSD composition and then uploads
-the screens, HUD and OSD as device-local images that are drawn as textured quads
-into an acquired `VkSwapchainKHR` image.
+3D target into one of three device-local BGRA frame buffers at
+`256*scale x 192*scale`. `RendererOutputLease` carries the slot to
+`ScreenPanelVulkan`; the presenter copies both screens directly into its sampled
+images on the same logical device, then draws the established layout / Custom
+HUD / radar / OSD composition into an acquired `VkSwapchainKHR` image.
 
 The compute composition is submitted from `VulkanRenderer::VBlank()` on the
 emulation thread. This binds the structured 2D planes and `FinalFB` to the same
@@ -55,19 +55,17 @@ Consequences:
 
 * Internal resolution applies to the composed screen output, not only the 3D
   raster target.
-* The presentation path has one high-resolution GPU readback per newly composed
-  frame plus per-layer image uploads. The native resolve is read back only when
+* The visible presentation path stays on the GPU: compositor buffer → sampled
+  screen images → swapchain. The native 256x192 resolve is read back only when
   display capture calls `GetLine()`.
 * Vulkan selection owns presentation regardless of `Screen.UseGL`; no OpenGL
   context or Qt frame mailbox is involved, and there is **no CPU readback on the
   final path** — the last call of every frame is a real `vkQueuePresentKHR`.
-* The presenter creates its **own** `VkDevice` from the shared `VulkanContext`
-  rather than borrowing the renderer's. The renderer's device dies on every
-  renderer switch while the panel must keep presenting across those switches
-  (and while no renderer exists at all, for the splash screen). The
-  renderer→presenter handoff is already CPU memory
-  (`RendererOutput::CpuBgra` at the internal resolution), so no device-local
-  resource is shared across the two devices.
+* `VulkanDevice` is a ref-counted view of one process-wide logical device. The
+  presenter normally creates it first with the surface-aware queue selection;
+  renderer switches release only their view. The renderer and presenter share
+  the main queue, whose host submissions are serialized by the device's queue
+  mutex.
 
 ### Presentation while paused
 
@@ -124,7 +122,7 @@ Per frame, one command buffer:
     capture buffer for `GetLine()`
 11. after the software 2D scanlines complete, `Compositor` combines the
     structured planes with the high-resolution `FinalFB`
-12. copy the two high-resolution BGRA screens to the presentation readback
+12. publish the device-local composed buffer as a leased presentation slot
 
 Pipelines are compiled incrementally through `ShaderCompileStep()`, so the OSD
 shows progress instead of the emulator hitching.
@@ -244,7 +242,8 @@ constant stay plumbed in case GPU-side captures are reintroduced.
 permitted `WaitIdle` sites are resolution changes (which destroy every
 resolution-sized resource) and shutdown.
 
-**Frames in flight is 1 for the rasterizer, 2 for the presenter.** `XSpanSetups`,
+**Frames in flight is 1 for the rasterizer, 3 for the compositor output and 2
+for the presenter.** `XSpanSetups`,
 the three tile buffers, `BinResult`, `WorkDescs`, `ResultBuffer` and `FinalFB`
 form a single shared working set; a second in-flight rasterizer frame would be a
 WAR/WAW race on all of them, and duplicating the set costs roughly 1 GB at 16x.
@@ -254,15 +253,15 @@ the same shape DX12 uses. `Vk::FramesInFlight = 2` governs the presenter's
 per-frame CPU-side resources and is deliberately independent of the swapchain
 image count (typically 3 for FIFO).
 
-**The compositor records into its own `Vk::FrameRing`** — own command pool,
-command buffer and fence — rather than the rasterizer's. It has to: the
-structured planes are only complete after all 192 scanlines, long after
-`RenderFrame()` submitted, and reusing the rasterizer's slot would reset the
-fence that `GetLine()`'s capture readback is still waiting on. Both rings submit
-to the same queue, so the compositor's barrier over `FinalFB` picks up the
-rasterizer's writes through submission order. `ComposeStructuredOutput()` waits on
-its own fence before returning, which both publishes the frame and stops the next
-`RenderFrame()` from overwriting `FinalFB` while the compositor still reads it.
+**The compositor records into its own three-slot `Vk::FrameRing`** — each slot
+owns its command buffer/fence, structured staging buffer, device-local structured
+input and composed output. Both rings submit to the same queue, so barriers over
+`FinalFB` provide raster-write → compositor-read and compositor-read → next
+raster-write dependencies through submission order. `ComposeStructuredOutput()`
+submits and returns without a CPU fence wait. A presenter lease prevents slot
+reuse until the presenter's frame fence proves its buffer-to-image copies have
+retired; when all slots are busy, the compositor reuses the last published frame
+instead of blocking VBlank.
 
 **Object lifetime goes through one chokepoint.** `Vk::DeferredDestroyQueue`
 (`src/VulkanSync.h`) takes a handle plus the absolute frame number that last
@@ -385,6 +384,7 @@ pacing state is introduced.
 | `src/VulkanLoader.{h,cpp}` | runtime loader; global / instance / device dispatch tables |
 | `src/VulkanContext.{h,cpp}` | instance, validation layer, debug utils, physical-device selection |
 | `src/VulkanDevice.{h,cpp}` | logical device, queue families, queues, per-device scale ceiling |
+| `src/VulkanPresentedFrame.h` | opaque device-local composed-buffer handoff |
 | `src/VulkanFeatureProbe.{h,cpp}` | extension / feature / format / limit probing and its log |
 | `src/VulkanMemory.{h,cpp}` | allocation, buffers, images, staging, readback |
 | `src/VulkanDescriptors.{h,cpp}` | set layouts, pool sizing, updates — the binding contract |
@@ -454,6 +454,10 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
   the linear-filter format query.
 * **Tile geometry is specialization-constant driven rather than baked**, which is
   what lets three compiled buckets cover sixteen scales.
+* **Identical 3D frames reuse `FinalFB`.** Texture-cache mutation is checked just
+  as in the OpenGL compute renderer; when neither textures nor 3D state changed,
+  raster uploads and dispatches are skipped while the current structured 2D
+  compositor still runs.
 
 ## Known limitations
 
@@ -465,10 +469,6 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
   invocations per workgroup, above the guaranteed 128. These are arithmetic
   predictions about the *guaranteed minimums*, not observed driver failures; the
   host probe is what decides whether a given device may offer those scales.
-* The presenter reads the composed screens back to the CPU before uploading them
-  as layer images, because the panel reuses the established QImage-based layout /
-  HUD / OSD implementation. This is the same trade-off DX12 makes; the final
-  present itself involves no readback.
 * AMD Anti-Lag 2 has never been exercised on AMD hardware, and no non-NVIDIA GPU,
   Linux system or macOS system has run this backend. See the status table in
   [`docs/plans/rendering/vulkan/clean-room-rewrite-contract.md`](../../plans/rendering/vulkan/clean-room-rewrite-contract.md)

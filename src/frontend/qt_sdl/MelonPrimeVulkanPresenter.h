@@ -25,6 +25,7 @@
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
 #include "VulkanNvidiaReflex.h"
+#include "VulkanPresentedFrame.h"
 #include "VulkanSync.h"
 
 class QWidget;
@@ -35,22 +36,11 @@ namespace MelonPrime
 // ---------------------------------------------------------------------------
 // Native Vulkan presentation: swapchain ownership and the final present.
 //
-// Everything the panel wants on screen -- the composed DS screens, the Custom
-// HUD overlay, the OSD strip -- is uploaded into device-local images and drawn
-// as textured quads into the acquired swapchain image. Nothing is read back,
-// nothing is scaled on the CPU, and the last call of every frame is a real
-// vkQueuePresentKHR.
-//
-// Device ownership. The presenter creates its OWN VkDevice from the shared
-// VulkanContext rather than borrowing VulkanRenderer3D's:
-//
-//   * The renderer's device is private to it and dies on every renderer switch,
-//     while the panel has to keep presenting across those switches (and while
-//     no renderer exists at all, for the splash screen).
-//   * The renderer/presenter handoff is already CPU memory --
-//     VulkanRenderer::GetOutput() publishes RendererOutput::CpuBgra at the
-//     internal resolution -- so no device-local resource is shared and there is
-//     nothing to import across devices.
+// The composed DS screens arrive as a leased device-local buffer and are copied
+// directly into sampled images. CPU HUD/OSD sources still use the upload ring;
+// nothing on the visible screen path is read back. The presenter and renderer
+// hold ref-counted views of the same VulkanDevice, and their host queue access
+// is serialized by that device's queue mutex.
 //
 // Thread ownership. Every Vulkan object below is created and destroyed by
 // whichever thread calls Init() / RecreateSwapchain() / Shutdown(), and those
@@ -111,6 +101,7 @@ public:
     // Waits for the device to go idle and destroys everything, including the
     // surface and the instance reference. Safe to call more than once.
     void Shutdown() noexcept;
+    void Quiesce() noexcept;
 
     [[nodiscard]] bool IsInitialized() const noexcept { return Initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return Error; }
@@ -159,6 +150,14 @@ public:
         melonDS::u32 height,
         std::size_t rowBytes);
 
+    // GPU-native screen upload. The composed source buffer belongs to the
+    // renderer but was produced on this presenter's shared main queue, so the
+    // copy needs only a queue-ordered buffer barrier and no CPU fence wait.
+    bool UploadLayerFromBuffer(
+        Layer layer,
+        const melonDS::VulkanPresentedFrame& frame,
+        VkDeviceSize sourceOffset);
+
     // Begins the render pass and clears the whole swapchain image to black,
     // which is what produces the letterbox/pillarbox bars.
     void BeginComposition();
@@ -166,6 +165,9 @@ public:
     // Draws one quad from a previously uploaded layer. Layers are drawn in call
     // order, so the caller controls the compositing order.
     void DrawLayer(Layer layer, const Quad& quad, Blend blend, bool linearFilter);
+    void DrawRadar(
+        const Quad& quad, float opacity, melonDS::u32 sourceCenterY,
+        melonDS::u32 sourceRadius);
 
     // Ends the render pass, submits and presents. Returns false on a hard
     // failure; VK_ERROR_OUT_OF_DATE_KHR / VK_SUBOPTIMAL_KHR are handled
@@ -176,6 +178,10 @@ public:
     // (device lost, surface lost, out of memory). The panel turns this into a
     // renderer runtime failure.
     [[nodiscard]] bool HasFailed() const noexcept { return Failed; }
+    [[nodiscard]] melonDS::u32 GetFrameIndex() const noexcept
+    {
+        return Frames.GetFrameIndex();
+    }
 
     // --- vendor low-latency path -------------------------------------------
     //

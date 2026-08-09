@@ -39,6 +39,8 @@ namespace melonDS
 {
 
 class VulkanContext;
+struct RendererOutput;
+struct RendererOutputLease;
 
 // Vulkan 3D renderer: a clean-room port of the OpenGL compute rasterizer
 // (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
@@ -94,10 +96,11 @@ public:
         const std::array<const u32*, 2>& lineMeta,
         u64 generation);
 
-    // The composed screen, or nullptr before the first successful compose.
-    // Valid until the next ComposeStructuredOutput() call publishes a new front
-    // buffer.
+    // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
+    // returns nullptr here; callers use AcquireComposedOutputLease().
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
 
     // Internal resolution, not 256x192. This is the mechanism by which high
     // resolution survives to present: the display path never sees a
@@ -151,6 +154,8 @@ private:
     // N for frame N-1, and a whole DS frame of software 2D work has run on the
     // emulation thread in between, so CPU and GPU still overlap.
     static constexpr u32 RendererFramesInFlight = 1;
+    static constexpr u32 CompositorFramesInFlight = 3;
+    static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
     // Two set-0 allocations per frame slot. They differ only in what binding 13
     // points at -- the native capture buffer for the rasterizer's Resolve stage,
@@ -346,7 +351,8 @@ private:
     // rasterizer's (bound for the whole RenderFrame() command buffer, including
     // the Resolve stage), slot 1 the compositor's. `presentationOutput` is the
     // buffer bound at binding 13, which is the only thing that differs.
-    bool WriteRasterizerDescriptorSet(u32 frameIndex, u32 slot, VkBuffer presentationOutput);
+    bool WriteRasterizerDescriptorSet(
+        u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput);
     VkDescriptorSet AcquireTextureSet(u32 frameIndex, VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
@@ -375,13 +381,14 @@ private:
     VulkanContext* Context = nullptr;
     VulkanDevice Device;
     Vk::FrameRing Frames;
-    // The compositor records into its own command buffer and its own fence
+    // The compositor records into its own command buffers and fences
     // rather than sharing the rasterizer's. It has to: the structured 2D planes
     // are only complete after all 192 scanlines have been drawn, which is long
     // after RenderFrame() closed and submitted its command buffer, and reusing
     // the rasterizer's slot would reset the fence GetLine()'s capture readback
     // is still waiting on. One frame in flight, for the same reason the
-    // rasterizer keeps one.
+    // rasterizer keeps one. Its three output slots additionally carry their own
+    // structured input, so VBlank can submit without waiting for the prior slot.
     Vk::FrameRing ComposeFrames;
     Vk::DescriptorLayouts Layouts;
     Vk::DescriptorPool Descriptors;
@@ -413,9 +420,6 @@ private:
     // memory for the compositor. Native-resolution and therefore fixed size:
     // the software 2D engines always work at 256x192, whatever the 3D internal
     // resolution is.
-    Vk::Buffer StructuredStagingBuffer;      // host-visible, persistently mapped
-    Vk::Buffer StructuredInputBuffer;        // device-local, set 0 binding 12
-
     // Resolution-dependent resources.
     Vk::Buffer XSpanSetupBuffer;
     Vk::Buffer SetupIndicesBuffer;          // + texel buffer view
@@ -428,8 +432,8 @@ private:
     // Compositor output: the two screens stacked, BGRA8, at the *internal*
     // resolution. Resolution-dependent, so it is created and destroyed with the
     // rest of the scale-sized set.
-    Vk::Buffer ComposeOutputBuffer;
-    Vk::ReadbackBuffer ComposeReadback;
+    struct OutputState;
+    std::shared_ptr<OutputState> ComposedOutput;
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};
@@ -484,11 +488,9 @@ private:
     bool FinalFBHasContent = false;
 
     // --- composed output ---------------------------------------------------
-    // Double-buffered because GetComposedScreen() is read by the presentation
-    // path while VBlank() composes on the emulation thread. The front buffer
-    // only changes once the new frame has been fully copied out.
-    std::array<std::vector<u32>, 2> ComposedColorBuffer;
-    u32 ComposedFrontBuffer = 0;
+    // Published only after the compositor submission has been accepted. GPU
+    // completion is ordered by the shared queue; the presenter lease owns the
+    // slot until its copy command retires.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
 

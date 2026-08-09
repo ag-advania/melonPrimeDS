@@ -73,6 +73,12 @@ VulkanPresenter::~VulkanPresenter()
     Shutdown();
 }
 
+void VulkanPresenter::Quiesce() noexcept
+{
+    if (Device.IsValid())
+        Frames.WaitIdle();
+}
+
 
 bool VulkanPresenter::Fail(const char* operation, VkResult result)
 {
@@ -199,7 +205,8 @@ bool VulkanPresenter::CreateDeviceObjects()
     // headless probe could not evaluate present support at all, so this is the
     // first point where the present queue family is known. Re-selecting is
     // cheap: no logical device has been created from the previous selection.
-    if (!Context->SelectPhysicalDevice(Surface.Handle))
+    const bool sharedDeviceExists = melonDS::VulkanDevice::HasSharedDevice(*Context);
+    if (!sharedDeviceExists && !Context->SelectPhysicalDevice(Surface.Handle))
     {
         return Fail(Context->GetFailureReason().empty()
             ? std::string("no Vulkan device can present to this window")
@@ -220,6 +227,9 @@ bool VulkanPresenter::CreateDeviceObjects()
     lowLatency.AmdAntiLag = true;
 
     if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
+        return Fail(Device.GetFailureReason());
+
+    if (sharedDeviceExists && !Device.ResolvePresentSupport(Surface.Handle))
         return Fail(Device.GetFailureReason());
 
     // Neither Initialize() failing is an error: both report why through
@@ -1276,6 +1286,71 @@ bool VulkanPresenter::UploadLayer(
     return true;
 }
 
+bool VulkanPresenter::UploadLayerFromBuffer(
+    Layer layer, const melonDS::VulkanPresentedFrame& frame, VkDeviceSize sourceOffset)
+{
+    if (!FrameOpen || CompositionOpen || frame.Buffer == VK_NULL_HANDLE
+        || frame.Width == 0 || frame.Height == 0
+        || (layer != Layer::ScreenTop && layer != Layer::ScreenBottom))
+    {
+        return false;
+    }
+
+    LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if (!EnsureLayerImage(texture, frame.Width, frame.Height, LayerDebugName(layer)))
+        return false;
+
+    VkBufferMemoryBarrier sourceBarrier{};
+    sourceBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    sourceBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    sourceBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    sourceBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    sourceBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    sourceBarrier.buffer = frame.Buffer;
+    sourceBarrier.offset = sourceOffset;
+    sourceBarrier.size = static_cast<VkDeviceSize>(frame.Width) * frame.Height * sizeof(u32);
+    Device.Fns().CmdPipelineBarrier(
+        CurrentCommandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 1, &sourceBarrier, 0, nullptr);
+
+    const VkImageLayout currentLayout = texture.Image.GetLayout();
+    texture.Image.RecordLayoutTransition(
+        CurrentCommandBuffer,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        currentLayout == VK_IMAGE_LAYOUT_UNDEFINED
+            ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+            : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        currentLayout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    VkBufferImageCopy copy{};
+    copy.bufferOffset = sourceOffset;
+    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy.imageSubresource.layerCount = 1;
+    copy.imageExtent = {frame.Width, frame.Height, 1};
+    Device.Fns().CmdCopyBufferToImage(
+        CurrentCommandBuffer,
+        frame.Buffer,
+        texture.Image.GetHandle(),
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &copy);
+
+    texture.Image.RecordLayoutTransition(
+        CurrentCommandBuffer,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT);
+
+    texture.HasContent = true;
+    return true;
+}
+
 
 void VulkanPresenter::BeginComposition()
 {
@@ -1343,6 +1418,38 @@ void VulkanPresenter::DrawLayer(Layer layer, const Quad& quad, Blend blend, bool
         0,
         sizeof(Quad),
         &quad);
+    fns.CmdDraw(CurrentCommandBuffer, 4, 1, 0, 0);
+}
+
+void VulkanPresenter::DrawRadar(
+    const Quad& quad, float opacity, u32 sourceCenterY, u32 sourceRadius)
+{
+    if (!CompositionOpen || Failed || sourceRadius == 0 || opacity <= 0.0f)
+        return;
+
+    const LayerTexture& texture = Layers[static_cast<std::size_t>(Layer::ScreenBottom)];
+    if (!texture.Image.IsValid() || !texture.HasContent)
+        return;
+
+    const VkDescriptorSet set = AcquireDescriptorSet(texture.Image.GetView(), SamplerLinear);
+    if (set == VK_NULL_HANDLE)
+        return;
+
+    Quad radar = quad;
+    radar.Tint[0] = opacity;
+    radar.Tint[1] = static_cast<float>(sourceCenterY);
+    radar.Tint[2] = static_cast<float>(sourceRadius);
+    radar.Tint[3] = -1.0f;
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    fns.CmdBindPipeline(CurrentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineBlended);
+    fns.CmdBindDescriptorSets(
+        CurrentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout,
+        0, 1, &set, 0, nullptr);
+    fns.CmdPushConstants(
+        CurrentCommandBuffer, PipelineLayout,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(Quad), &radar);
     fns.CmdDraw(CurrentCommandBuffer, 4, 1, 0, 0);
 }
 
@@ -1443,7 +1550,11 @@ bool VulkanPresenter::EndFrame()
     if (tagLatency)
         Reflex.MarkPresentStart();
 
-    const VkResult res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
+    VkResult res = VK_SUCCESS;
+    {
+        std::lock_guard<std::mutex> queueLock(Device.GetQueueMutex());
+        res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
+    }
 
     if (tagLatency)
     {

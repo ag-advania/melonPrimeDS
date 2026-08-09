@@ -21,6 +21,8 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -63,17 +65,21 @@ struct VulkanLowLatencyStatus
 
 // The logical device, its queues and its dispatch table.
 //
-// One VulkanDevice exists per active Vulkan renderer. It borrows the process
-// wide VulkanContext (instance + physical device) and owns everything below
-// it, so a renderer switch destroys the device without touching the instance.
+// VulkanDevice is a copyable, ref-counted view of one process-wide logical
+// device. Renderer switches release their view while the persistent presenter
+// keeps the device and queue system alive.
+struct VulkanDeviceState;
+
 class VulkanDevice
 {
 public:
     VulkanDevice() = default;
     ~VulkanDevice();
 
-    VulkanDevice(const VulkanDevice&) = delete;
-    VulkanDevice& operator=(const VulkanDevice&) = delete;
+    VulkanDevice(const VulkanDevice&) = default;
+    VulkanDevice& operator=(const VulkanDevice&) = default;
+    VulkanDevice(VulkanDevice&&) noexcept = default;
+    VulkanDevice& operator=(VulkanDevice&&) noexcept = default;
 
     // Creates the logical device on the physical device the context already
     // selected. `requestedRendererName` only feeds the startup log line, which
@@ -86,6 +92,17 @@ public:
         const char* requestedRendererName = "Vulkan",
         const VulkanLowLatencyRequest& lowLatency = VulkanLowLatencyRequest{});
 
+    // True when this process already owns a logical device for `context`.
+    // The presenter uses this to avoid re-selecting the physical device after
+    // the renderer has already created child objects from it.
+    [[nodiscard]] static bool HasSharedDevice(const VulkanContext& context) noexcept;
+
+    // Resolves presentation on a logical device that was created after a
+    // headless physical-device probe. This succeeds when the already-created
+    // main queue can present to `surface`; a VkDevice cannot grow a new queue
+    // family after creation, so a different present-only family is rejected.
+    bool ResolvePresentSupport(VkSurfaceKHR surface);
+
     // Waits for the device to go idle and destroys everything. Safe to call
     // more than once.
     //
@@ -95,91 +112,63 @@ public:
     // behaviour and there is no cheaper correct alternative at teardown.
     void Destroy();
 
-    [[nodiscard]] bool IsValid() const noexcept { return Device != VK_NULL_HANDLE; }
-    [[nodiscard]] VkDevice GetHandle() const noexcept { return Device; }
-    [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const noexcept { return PhysicalDevice; }
-    [[nodiscard]] const Vk::DeviceDispatch& Fns() const noexcept { return DeviceFns; }
+    [[nodiscard]] bool IsValid() const noexcept;
+    [[nodiscard]] VkDevice GetHandle() const noexcept;
+    [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const noexcept;
+    [[nodiscard]] const Vk::DeviceDispatch& Fns() const noexcept;
     [[nodiscard]] const Vk::InstanceDispatch& InstanceFns() const noexcept;
 
     // The queue every submission goes to. When a universal family exists this
     // is also the present queue.
-    [[nodiscard]] VkQueue GetMainQueue() const noexcept { return MainQueue; }
-    [[nodiscard]] u32 GetMainQueueFamily() const noexcept { return MainQueueFamily; }
+    [[nodiscard]] VkQueue GetMainQueue() const noexcept;
+    [[nodiscard]] u32 GetMainQueueFamily() const noexcept;
 
-    [[nodiscard]] VkQueue GetPresentQueue() const noexcept { return PresentQueue; }
-    [[nodiscard]] u32 GetPresentQueueFamily() const noexcept { return PresentQueueFamily; }
+    [[nodiscard]] VkQueue GetPresentQueue() const noexcept;
+    [[nodiscard]] u32 GetPresentQueueFamily() const noexcept;
+
+    // VkQueue host access is externally synchronized by the Vulkan spec. The
+    // renderer and presenter share the same queue, so every QueueSubmit and
+    // QueuePresentKHR call takes this shared mutex.
+    [[nodiscard]] std::mutex& GetQueueMutex() const noexcept;
 
     // True when the main and present queues come from different families, in
     // which case swapchain images need real ownership transfer barriers.
     [[nodiscard]] bool RequiresPresentOwnershipTransfer() const noexcept
     {
-        return PresentQueue != VK_NULL_HANDLE
-            && PresentQueueFamily != MainQueueFamily;
+        return GetPresentQueue() != VK_NULL_HANDLE
+            && GetPresentQueueFamily() != GetMainQueueFamily();
     }
 
-    [[nodiscard]] const Vk::DeviceProbeResult& GetProfile() const noexcept { return Profile; }
-    [[nodiscard]] const std::vector<const char*>& GetEnabledExtensions() const noexcept
-    {
-        return EnabledExtensions;
-    }
-    [[nodiscard]] const VkPhysicalDeviceFeatures& GetEnabledFeatures() const noexcept
-    {
-        return EnabledFeatures;
-    }
+    [[nodiscard]] const Vk::DeviceProbeResult& GetProfile() const noexcept;
+    [[nodiscard]] const std::vector<const char*>& GetEnabledExtensions() const noexcept;
+    [[nodiscard]] const VkPhysicalDeviceFeatures& GetEnabledFeatures() const noexcept;
     [[nodiscard]] const std::string& GetFailureReason() const noexcept { return FailureReason; }
 
     // What actually happened to each requested low-latency extension.
-    [[nodiscard]] const VulkanLowLatencyStatus& GetNvLowLatency2Status() const noexcept
-    {
-        return NvLowLatency2;
-    }
-    [[nodiscard]] const VulkanLowLatencyStatus& GetAmdAntiLagStatus() const noexcept
-    {
-        return AmdAntiLag;
-    }
+    [[nodiscard]] const VulkanLowLatencyStatus& GetNvLowLatency2Status() const noexcept;
+    [[nodiscard]] const VulkanLowLatencyStatus& GetAmdAntiLagStatus() const noexcept;
 
     // Highest internal resolution the selected device can actually run.
-    [[nodiscard]] int GetMaxScaleFactor() const noexcept { return Profile.MaxScaleFactor; }
+    [[nodiscard]] int GetMaxScaleFactor() const noexcept;
 
     // Memory properties, cached because VulkanMemory reads them on every
     // allocation and the query is not free on some drivers.
-    [[nodiscard]] const VkPhysicalDeviceMemoryProperties& GetMemoryProperties() const noexcept
-    {
-        return Profile.MemoryProperties;
-    }
-    [[nodiscard]] const VkPhysicalDeviceLimits& GetLimits() const noexcept
-    {
-        return Profile.Properties.limits;
-    }
+    [[nodiscard]] const VkPhysicalDeviceMemoryProperties& GetMemoryProperties() const noexcept;
+    [[nodiscard]] const VkPhysicalDeviceLimits& GetLimits() const noexcept;
 
     // Attaches a debug name, no-op without VK_EXT_debug_utils.
     template <typename HandleT>
     void SetDebugName(VkObjectType type, HandleT handle, const char* name) const noexcept
     {
-        Vk::SetDebugName(DeviceFns.SetDebugUtilsObjectNameEXT, Device, type, handle, name);
+        const Vk::DeviceDispatch& fns = Fns();
+        Vk::SetDebugName(fns.SetDebugUtilsObjectNameEXT, GetHandle(), type, handle, name);
     }
 
 private:
     void LogStartupSummary(const char* requestedRendererName) const;
     void LogLowLatencySummary() const;
 
-    VulkanContext* Context = nullptr;
-    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    VkDevice Device = VK_NULL_HANDLE;
-    Vk::DeviceDispatch DeviceFns{};
-
-    VkQueue MainQueue = VK_NULL_HANDLE;
-    u32 MainQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
-    VkQueue PresentQueue = VK_NULL_HANDLE;
-    u32 PresentQueueFamily = Vk::QueueFamilySelection::InvalidFamily;
-
-    Vk::DeviceProbeResult Profile;
-    std::vector<const char*> EnabledExtensions;
-    VkPhysicalDeviceFeatures EnabledFeatures{};
-
-    VulkanLowLatencyStatus NvLowLatency2;
-    VulkanLowLatencyStatus AmdAntiLag;
-
+    std::shared_ptr<VulkanDeviceState> State;
     std::string FailureReason;
 };
 
