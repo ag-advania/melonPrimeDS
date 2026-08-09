@@ -68,7 +68,6 @@ namespace Config
         {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
         {MelonPrime::CfgKey::NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
-        {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},
@@ -217,6 +216,7 @@ namespace Config
         // requested. Vulkan enables this behavior at runtime without changing
         // the saved preference.
         {"3D.ForceSoftwareOutsideMatch", false},
+        {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
     #endif
     #ifdef MELONPRIME_DS
         {"3D.GL.BetterPolygons", true}, // melonPrimeDS Added
@@ -924,6 +924,18 @@ namespace Config
     bool Table::GetBool(const std::string& path)
     {
         toml::value& tval = ResolvePath(path);
+#ifdef MELONPRIME_DS
+        // Early Anti-Lag 2 builds accidentally registered this bool in the
+        // integer defaults table. Preserve explicit 0/1 values those builds
+        // may have written instead of replacing both with the new bool default.
+        if (GetDefaultKey(PathPrefix + path) == MelonPrime::CfgKey::AmdAntiLag2Enabled
+            && tval.is_integer())
+        {
+            const int64_t legacy = tval.as_integer();
+            if (legacy == 0 || legacy == 1)
+                tval = legacy != 0;
+        }
+#endif
         if (!tval.is_boolean())
             tval = FindDefault(path, false, DefaultBools);
 

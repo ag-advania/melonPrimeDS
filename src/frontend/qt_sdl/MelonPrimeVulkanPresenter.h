@@ -117,10 +117,20 @@ public:
     // out of date, so a resize drag costs one rebuild at the next frame
     // boundary instead of one per event.
     void NotifySurfaceChanged() noexcept { SwapchainDirty.store(true, std::memory_order_release); }
+    // Published by the GUI thread for truthful swapchain diagnostics. The
+    // presenter never reads QWidget state from its emulation-thread path.
+    void SetWindowFullscreen(bool fullscreen) noexcept
+    {
+        WindowFullscreen.store(fullscreen, std::memory_order_release);
+    }
 
     // Either thread. A changed value marks the swapchain out of date, because
     // the present mode is baked into VkSwapchainCreateInfoKHR.
     void SetVSync(bool enabled) noexcept;
+
+    // Presenter thread. Applies saved preferences without opening a latency
+    // frame; startup uses this before emitting the first effective-state log.
+    void SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled);
 
     // Physical-pixel size of the current swapchain. Zero before the first
     // successful BeginFrame().
@@ -342,6 +352,7 @@ private:
     std::array<LayerTexture, static_cast<std::size_t>(Layer::Count)> Layers;
 
     std::atomic_bool SwapchainDirty{false};
+    std::atomic_bool WindowFullscreen{false};
     std::atomic_bool VSyncRequested{true};
     bool VSyncApplied = true;
 

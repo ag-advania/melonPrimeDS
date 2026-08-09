@@ -86,6 +86,12 @@
         }
     },
     {
+        "VSync Interval is not used by the native Vulkan presenter.",
+        {
+            {MenuLangId::Japanese, "VSync間隔はネイティブVulkanプレゼンターでは使用されません。"},
+        }
+    },
+    {
         "Vulkan driver does not support VK_AMD_anti_lag",
         {
             {MenuLangId::Japanese, "VulkanドライバーがVK_AMD_anti_lagに対応していません"},

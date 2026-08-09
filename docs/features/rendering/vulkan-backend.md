@@ -288,19 +288,28 @@ Present mode is **queried, never assumed**:
 
 | Requested | Chosen | Logged reason |
 |---|---|---|
-| VSync on | `FIFO` | FIFO is the specification-guaranteed VSync mode |
-| VSync off | `MAILBOX` | VSync off, MAILBOX supported (no tearing, no frame-rate cap) |
-| VSync off, no MAILBOX | `IMMEDIATE` | VSync off, MAILBOX unsupported, IMMEDIATE supported |
-| VSync off, neither | `FIFO` | surface supports neither; VSync remains effectively on |
+| VSync on | `FIFO` | VSync on: FIFO |
+| VSync off | `IMMEDIATE` | VSync off: IMMEDIATE supported |
+| VSync off, no IMMEDIATE | `MAILBOX` | IMMEDIATE unavailable; MAILBOX tear-free fallback |
+| VSync off, neither | `FIFO` | only FIFO-compatible path is available |
 
 ```
-[Vulkan] swapchain created extent=284x406 images=3 format=44 Requested VSync=off / Requested Present Mode=MAILBOX>IMMEDIATE / Actual Present Mode=MAILBOX / Reason=VSync off, MAILBOX supported (no tearing, no frame-rate cap)
-[Vulkan] first frame presented extent=256x384 presentMode=MAILBOX
+[Vulkan] presentation: requested-vsync=off available-present-modes=IMMEDIATE,MAILBOX,FIFO selected-present-mode=IMMEDIATE swapchain-images=3 extent=284x406 format=44 window-mode=windowed reason=VSync off: IMMEDIATE supported; VRR actual state is driver/display controlled
+[Vulkan] first frame presented extent=256x384 presentMode=IMMEDIATE
 ```
 
 The present mode is immutable once a swapchain exists, so `SetVSync()` marks the
 swapchain for rebuild rather than trying to mutate it. `ScreenPanelVulkan`
 re-reads `Screen.VSync` every frame, so the Video settings checkbox applies live.
+The OpenGL-style VSync Interval control is disabled with an explanatory tooltip
+while native Vulkan is selected; the saved interval remains available to other
+renderers.
+
+The presenter reports the selected present mode and window mode, but it never
+claims that G-SYNC, FreeSync or another VRR path is active: that state remains
+under driver/display control. `VK_EXT_full_screen_exclusive` is intentionally
+not part of the current implementation. It remains an optional future addition
+rather than a partially enabled presentation path.
 
 GUI-thread events (resize, DPI change, fullscreen transition) only set atomic
 flags; they never touch a Vulkan object. Swapchain recreation happens inside
@@ -369,15 +378,17 @@ Both report requested / supported / enabled / actual / reason and **never fail
 renderer creation**:
 
 ```
-[Vulkan] NVIDIA Reflex (VK_NV_low_latency2): requested=yes supported=yes enabled=yes actual=active reason=enabled at device creation
-[Vulkan] AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=yes supported=no enabled=no actual=disabled reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] presenter NVIDIA Reflex (VK_NV_low_latency2): requested=on supported=yes device-extension-enabled=yes actual=active reason=latency markers active; no frame-rate cap requested
+[Vulkan] presenter AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=on supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
 [Vulkan] NVIDIA Reflex mode=on lowLatencyMode=true lowLatencyBoost=false
 ```
 
 Configuration keys are shared with DX12 for compatibility:
 `3D.DX12.NvidiaReflexMode` and `3D.AMD.AntiLag2Enabled`. Feature state and frame
 IDs belong to each presenter/emulator instance; no process-global latency or
-pacing state is introduced.
+pacing state is introduced. Anti-Lag 2 is a boolean preference; configurations
+written by the early integer-default implementation migrate explicit `0`/`1`
+values to `false`/`true` without changing the user's choice.
 
 ## Performance telemetry and measured policy
 

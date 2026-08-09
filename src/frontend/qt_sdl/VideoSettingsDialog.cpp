@@ -536,9 +536,38 @@ void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
     ui->cbVSync->setEnabled(hasVSyncControl);
     // The Qt Vulkan presenter supports FIFO versus MAILBOX/IMMEDIATE, but
     // Vulkan swapchains do not expose the OpenGL swap-interval setting.
-    ui->sbVSyncInterval->setEnabled(hasOGL && ui->cbVSync->isChecked());
+    const bool intervalEnabled = hasOGL && ui->cbVSync->isChecked();
+    ui->label_2->setEnabled(intervalEnabled);
+    ui->sbVSyncInterval->setEnabled(intervalEnabled);
+
+    // Native Vulkan selects a present mode when the swapchain is created; it
+    // has no OpenGL-style swap interval. Keep the saved value untouched for
+    // other renderers, but make the disabled control explain why it is unused.
+    const QString intervalDescription = vulkanRenderer
+        ? MelonPrime::UiText::Tr(
+            "VSync Interval is not used by the native Vulkan presenter.")
+        : QString();
+    ui->label_2->setToolTip(intervalDescription);
+    ui->sbVSyncInterval->setToolTip(intervalDescription);
+
+    // Keep the same explanation available to keyboard/accessibility users.
+    // Preserve Designer's renderer-neutral What's This text so changing the
+    // radio button back to OpenGL restores its original help instead of
+    // leaving Vulkan guidance attached to another backend.
+    constexpr const char* originalHelpProperty = "MelonPrimeOriginalVSyncIntervalHelp";
+    if (!ui->sbVSyncInterval->property(originalHelpProperty).isValid())
+        ui->sbVSyncInterval->setProperty(originalHelpProperty, ui->sbVSyncInterval->whatsThis());
+    if (!ui->label_2->property(originalHelpProperty).isValid())
+        ui->label_2->setProperty(originalHelpProperty, ui->label_2->whatsThis());
+    ui->sbVSyncInterval->setWhatsThis(vulkanRenderer
+        ? intervalDescription
+        : ui->sbVSyncInterval->property(originalHelpProperty).toString());
+    ui->label_2->setWhatsThis(vulkanRenderer
+        ? intervalDescription
+        : ui->label_2->property(originalHelpProperty).toString());
 #else
     ui->cbVSync->setEnabled(hasOGL);
+    ui->label_2->setEnabled(hasOGL);
     ui->sbVSyncInterval->setEnabled(hasOGL);
 #endif
 }

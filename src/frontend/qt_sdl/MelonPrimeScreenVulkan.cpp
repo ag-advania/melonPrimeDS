@@ -68,6 +68,7 @@
 #include "GPU_Vulkan.h"
 #include "MelonPrime.h"
 #include "MelonPrimeConstants.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimePerfProbe.h"
 #include "VulkanPerf.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -338,8 +339,15 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     // so applying the setting afterwards would build one swapchain with the
     // default mode and immediately throw it away -- and the startup log line
     // would claim a VSync state the user did not ask for.
-    vulkan->vsyncApplied = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    Config::Table config = emuInstance->getGlobalConfig();
+    vulkan->vsyncApplied = config.GetBool("Screen.VSync");
     vulkan->presenter.SetVSync(vulkan->vsyncApplied);
+    vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
+
+    const int reflexMode = config.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
+    const bool antiLag2Enabled = config.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
+    vulkan->reflexMode.store(reflexMode, std::memory_order_relaxed);
+    vulkan->antiLag2Enabled.store(antiLag2Enabled, std::memory_order_relaxed);
 
     if (!vulkan->presenter.Init(vulkan->surface.data()))
     {
@@ -353,10 +361,15 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         return false;
     }
 
+    // Init creates the extension modules and the first swapchain. Apply the
+    // saved preferences before the first effective-state diagnostic so it
+    // never reports the presenter's default Off state as the user's request.
+    vulkan->presenter.SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
+
     vulkan->lastNativeHandle = static_cast<unsigned long long>(vulkan->surface->winId());
     vulkan->surfaceHandleDirty.store(false, std::memory_order_release);
 
-    // Requested / Supported / Enabled / Actual / Reason for both vendor
+    // Requested / Supported / device-extension-enabled / Actual / Reason for both vendor
     // extensions, once, as soon as there is a device to report on. Emitted here
     // rather than inside Init() so it is also printed for a presenter rebuilt
     // mid-session -- a renderer switch or a new native window handle -- where
@@ -408,6 +421,7 @@ void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
     // surface with the native window.
     MelonPrime::VulkanSurface::UpdateGeometry(
         vulkan->presenter.GetPlatformSurface(), vulkan->surface.data());
+    vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
     vulkan->presenter.NotifySurfaceChanged();
 }
 
@@ -571,6 +585,7 @@ bool ScreenPanelVulkan::event(QEvent* event)
             // A move to another monitor, a fullscreen transition or a DPI
             // change all alter the surface's physical pixel size without
             // necessarily producing a resize event first.
+            vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
             vulkan->presenter.NotifySurfaceChanged();
             QMetaObject::invokeMethod(
                 this, [this]() { refreshNativeSurfaceGuiThread(); }, Qt::QueuedConnection);

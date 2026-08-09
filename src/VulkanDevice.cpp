@@ -771,20 +771,18 @@ void VulkanDevice::LogLowLatencySummary() const
         return;
     const VulkanLowLatencyStatus& NvLowLatency2 = State->NvLowLatency2;
     const VulkanLowLatencyStatus& AmdAntiLag = State->AmdAntiLag;
-    // Requested / Supported / Enabled / Actual / Reason, on one line per
-    // feature, always emitted for both features whether or not they were asked
-    // for. "Actual" is deliberately separate from "Enabled": Enabled is what
-    // vkCreateDevice accepted, Actual is what the running renderer will use, and
-    // the two differ exactly when a requested feature was silently dropped --
-    // which is the case a log must never let read as success.
+    // Device-creation diagnostics only: a VkDevice can report whether an
+    // extension was requested and enabled, but it cannot know the user's live
+    // mode or whether the presenter is actively issuing markers. The presenter
+    // emits the separate requested/supported/device-enabled/actual/reason line.
     const auto describe = [](const char* name, const VulkanLowLatencyStatus& status) {
         Platform::Log(Platform::LogLevel::Info,
-            "[Vulkan] %s: requested=%s supported=%s enabled=%s actual=%s reason=%s\n",
+            "[Vulkan] %s device creation: extension-requested=%s supported=%s "
+            "device-extension-enabled=%s reason=%s\n",
             name,
             status.Requested ? "yes" : "no",
             status.Supported ? "yes" : "no",
             status.Enabled ? "yes" : "no",
-            status.Enabled ? "active" : "disabled",
             status.Reason.empty() ? "not evaluated" : status.Reason.c_str());
     };
 
