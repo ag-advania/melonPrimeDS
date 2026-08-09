@@ -291,6 +291,17 @@ recording. Counters include frame/identical-frame counts, geometry sizes,
 structured/span/texture/HUD bytes, descriptor writes, compositor drops,
 capture reads, screen-copy bytes, upload overflows/spills and HUD texture
 recreation. The gate is runtime-only and disabled by default.
+It intentionally is not keyed to the frontend-only developer-feature define:
+the inline probe is included by both core and frontend translation units, so
+giving those units different definitions would violate the C++ ODR. With the
+environment variable unset its hot-path cost is the single disabled branch.
+
+The 32 MiB upload ring is texture-only. The frame uniform and both 256x256
+clear bitmaps use small persistently mapped upload resources whose reuse is
+protected by the existing one-frame-in-flight wait. Texture-ring exhaustion
+therefore falls back to a retained spill upload without starving required
+frame metadata; failure to create or map that spill is propagated as a DX12
+runtime failure instead of silently sampling an incomplete texture.
 
 The 4x Rev 1 F7 audit scene on the RTX 5070 Ti measured zero capture reads,
 zero texture-ring overflows, zero compositor drops and zero steady-state HUD
@@ -300,6 +311,20 @@ into mapped upload memory was also tested and rejected: median
 `build_polygons` increased from about 150 us to about 1.09 ms, while the
 existing contiguous staging copy costs about 19 us. The CPU scratch plus bulk
 copy is therefore intentional on this path.
+
+A forced-overflow run temporarily reduced the texture upload ring to 1 MiB and
+loaded the same F7 state. Its first measured window recorded six overflows and
+151,552 spill bytes while continuing to present complete top/bottom screens and
+the Custom HUD. No renderer fallback, device removal, or D3D12 debug-layer
+error was emitted. The production ring remains 32 MiB.
+
+The identical-frame branch is statically covered and instrumented, but no
+natural positive fixture was found in the available MPH samples: Rev 1 F1-F8,
+original-revision F1/F2/F7/F8, and a 30-second boot/title sequence all emitted
+a GX flush every frame and reported `identical=0`. A forced renderer flag was
+not used because it would freeze genuinely changing 3D and could not establish
+the required stale-frame parity. Positive runtime coverage therefore still
+requires a state that naturally leaves `FlushRequest` clear.
 
 ## Verified scope
 
@@ -339,3 +364,7 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
 families. The offline shader audit and runtime feature probe remain the gates
 for those systems.
+
+The platform-scatter audit reports `used / allowed`; for example `21 / 22`
+with `PASS` means one unit of remaining headroom, not one unresolved platform
+branch.

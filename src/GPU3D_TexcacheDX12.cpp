@@ -45,6 +45,7 @@ void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, D
     Context = context;
     Commands = commands;
     Uploads = uploads;
+    UploadFailed = false;
 }
 
 void DX12TextureHeap::Shutdown()
@@ -57,6 +58,7 @@ void DX12TextureHeap::Shutdown()
     Context = nullptr;
     Commands = nullptr;
     Uploads = nullptr;
+    UploadFailed = false;
 }
 
 u32 DX12TextureHeap::Create(u32 width, u32 height, u32 layers)
@@ -134,10 +136,18 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
             D3D12_RESOURCE_FLAG_NONE,
             L"MelonPrime DX12 texcache spill upload");
         if (!spillUpload)
+        {
+            UploadFailed = true;
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "DX12: could not allocate texture spill upload of %llu bytes\n",
+                static_cast<unsigned long long>(totalBytes));
             return;
+        }
         D3D12_RANGE noRead{0, 0};
         if (FAILED(spillUpload->Map(0, &noRead, &mapped)) || !mapped)
         {
+            UploadFailed = true;
             Platform::Log(
                 Platform::LogLevel::Error,
                 "DX12: could not map texture spill upload of %llu bytes\n",

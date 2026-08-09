@@ -68,6 +68,9 @@ public:
     // been referencing them. Call after the command context went idle.
     void CollectGarbage();
 
+    void ResetUploadFailure() noexcept { UploadFailed = false; }
+    [[nodiscard]] bool HadUploadFailure() const noexcept { return UploadFailed; }
+
     [[nodiscard]] const Entry* Lookup(u32 handle) const noexcept
     {
         if (handle == 0 || handle > Entries.size()) return nullptr;
@@ -87,6 +90,7 @@ private:
     // Oversized/overflow uploads stay alive until the next frame's Begin()
     // retires this command list. This avoids a synchronous mid-frame flush.
     std::vector<DX12::ComPtr<ID3D12Resource>> SpillUploads;
+    bool UploadFailed = false;
 };
 
 class TexcacheDX12Loader

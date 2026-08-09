@@ -43,6 +43,7 @@ enum class HudPhase : uint8_t {
     Clear,
     Hash,
     UploadPrepare,
+    TotalActive,
     Count
 };
 
@@ -91,6 +92,8 @@ struct State {
     static constexpr uint32_t kHudPhaseCap = 120;
     Uint64 hudPhaseTicks[static_cast<uint32_t>(HudPhase::Count)][kHudPhaseCap]{};
     uint32_t hudPhaseCount[static_cast<uint32_t>(HudPhase::Count)]{};
+    Uint64 currentHudPhaseTicks = 0;
+    bool currentHudDrawn = false;
     uint64_t cntCustomHudCalls = 0;
     uint64_t cntCustomHudDrawn = 0;
 
@@ -264,7 +267,8 @@ inline void MaybeReport1Hz()
         "[MelonPrimePerf] hud_phase_us "
         "state_p50=%.1f state_p99=%.1f qpainter_p50=%.1f qpainter_p99=%.1f "
         "clear_p50=%.1f clear_p99=%.1f hash_p50=%.1f hash_p99=%.1f "
-        "upload_prepare_p50=%.1f upload_prepare_p99=%.1f calls=%llu drawn=%llu\n",
+        "upload_prepare_p50=%.1f upload_prepare_p99=%.1f "
+        "total_active_p50=%.1f total_active_p99=%.1f calls=%llu drawn=%llu\n",
         hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.99),
         hudPercentileUs(HudPhase::QPainter, 0.50),
         hudPercentileUs(HudPhase::QPainter, 0.99),
@@ -272,6 +276,8 @@ inline void MaybeReport1Hz()
         hudPercentileUs(HudPhase::Hash, 0.50), hudPercentileUs(HudPhase::Hash, 0.99),
         hudPercentileUs(HudPhase::UploadPrepare, 0.50),
         hudPercentileUs(HudPhase::UploadPrepare, 0.99),
+        hudPercentileUs(HudPhase::TotalActive, 0.50),
+        hudPercentileUs(HudPhase::TotalActive, 0.99),
         static_cast<unsigned long long>(st.cntCustomHudCalls),
         static_cast<unsigned long long>(st.cntCustomHudDrawn));
 
@@ -291,6 +297,8 @@ inline void FrameBegin()
     st.frameOpen = true;
     st.frameStartTick = SDL_GetPerformanceCounter();
     st.sectionOpen = false;
+    st.currentHudPhaseTicks = 0;
+    st.currentHudDrawn = false;
 }
 
 inline void SectionBegin(Section sec)
@@ -327,6 +335,13 @@ inline void FrameEnd()
         return;
 
     const Uint64 endTick = SDL_GetPerformanceCounter();
+    if (st.currentHudDrawn && st.currentHudPhaseTicks)
+    {
+        const uint32_t index = static_cast<uint32_t>(HudPhase::TotalActive);
+        uint32_t& count = st.hudPhaseCount[index];
+        if (count < State::kHudPhaseCap)
+            st.hudPhaseTicks[index][count++] = st.currentHudPhaseTicks;
+    }
     RecordFrameMs(TicksToMs(endTick - st.frameStartTick));
     st.frameOpen = false;
     MaybeReport1Hz();
@@ -411,6 +426,8 @@ inline void AddHudPhaseTicks(HudPhase phase, Uint64 ticks)
     uint32_t& count = st.hudPhaseCount[index];
     if (count < State::kHudPhaseCap)
         st.hudPhaseTicks[index][count++] = ticks;
+    if (phase != HudPhase::TotalActive)
+        st.currentHudPhaseTicks += ticks;
 }
 
 inline void CountCustomHudCall()
@@ -421,8 +438,10 @@ inline void CountCustomHudCall()
 
 inline void CountCustomHudDrawn()
 {
-    if (S().frameOpen)
-        ++S().cntCustomHudDrawn;
+    if (!S().frameOpen)
+        return;
+    ++S().cntCustomHudDrawn;
+    S().currentHudDrawn = true;
 }
 
 class ScopedHudPhase {
@@ -514,7 +533,7 @@ enum class Section : uint8_t {
     DeferredDrain,
     Count
 };
-enum class HudPhase : uint8_t { State, QPainter, Clear, Hash, UploadPrepare, Count };
+enum class HudPhase : uint8_t { State, QPainter, Clear, Hash, UploadPrepare, TotalActive, Count };
 
 inline bool IsEnabled() { return false; }
 inline bool IsFrameActive() { return false; }

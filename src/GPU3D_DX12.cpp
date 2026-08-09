@@ -61,6 +61,11 @@ constexpr u32 DivRoundUp(u32 value, u32 divisor) noexcept
     return (value + divisor - 1) / divisor;
 }
 
+constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
 } // namespace
 
 struct DX12Renderer3D::OutputState
@@ -234,6 +239,29 @@ void DX12Renderer3D::Stop()
     ReleasePipelines();
     ReleaseScaleDependentResources();
 
+    const D3D12_RANGE noWrite{ 0, 0 };
+    if (RenderPolygonStaging && RenderPolygonStagingPtr)
+        RenderPolygonStaging->Unmap(0, &noWrite);
+    if (YSpanSetupStaging && YSpanSetupStagingPtr)
+        YSpanSetupStaging->Unmap(0, &noWrite);
+    if (MetaUniformUpload && MetaUniformUploadPtr)
+        MetaUniformUpload->Unmap(0, &noWrite);
+    for (int slot = 0; slot < 2; ++slot)
+    {
+        if (ClearBitmapUpload[slot] && ClearBitmapUploadPtr[slot])
+            ClearBitmapUpload[slot]->Unmap(0, &noWrite);
+        ClearBitmapUploadPtr[slot] = nullptr;
+        ClearBitmapUpload[slot].Reset();
+    }
+    RenderPolygonStagingPtr = nullptr;
+    YSpanSetupStagingPtr = nullptr;
+    MetaUniformUploadPtr = nullptr;
+    RenderPolygonStaging.Reset();
+    YSpanSetupStaging.Reset();
+    MetaUniformUpload.Reset();
+    RenderPolygonBuffer.Reset();
+    YSpanSetupBuffer.Reset();
+
     ReadbackBuffer.Reset();
     ResolveBuffer.Reset();
     IndirectArgsBuffer.Reset();
@@ -382,8 +410,11 @@ bool DX12Renderer3D::CreateCommandSignature()
 
 bool DX12Renderer3D::CreateFixedResources()
 {
+    constexpr u64 clearBitmapBytes = 256ull * 256ull * sizeof(u32);
+    D3D12_RANGE noRead{ 0, 0 };
     for (int i = 0; i < 2; i++)
     {
+        ClearBitmapTexInCopyDest[i] = true;
         ClearBitmapTex[i] = Context->CreateTexture2D(
             DXGI_FORMAT_R32_UINT,
             256,
@@ -394,7 +425,33 @@ bool DX12Renderer3D::CreateFixedResources()
             i == 0 ? L"MelonPrime DX12 clear bitmap color" : L"MelonPrime DX12 clear bitmap depth");
         if (!ClearBitmapTex[i])
             return false;
+
+        ClearBitmapUpload[i] = Context->CreateBuffer(
+            clearBitmapBytes,
+            D3D12_HEAP_TYPE_UPLOAD,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_FLAG_NONE,
+            i == 0
+                ? L"MelonPrime DX12 clear bitmap color upload"
+                : L"MelonPrime DX12 clear bitmap depth upload");
+        if (!ClearBitmapUpload[i]
+            || FAILED(ClearBitmapUpload[i]->Map(
+                0, &noRead, reinterpret_cast<void**>(&ClearBitmapUploadPtr[i])))
+            || !ClearBitmapUploadPtr[i])
+            return false;
     }
+
+    MetaUniformUpload = Context->CreateBuffer(
+        AlignUp(sizeof(MetaUniform), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+        D3D12_HEAP_TYPE_UPLOAD,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        D3D12_RESOURCE_FLAG_NONE,
+        L"MelonPrime DX12 frame uniform upload");
+    if (!MetaUniformUpload
+        || FAILED(MetaUniformUpload->Map(
+            0, &noRead, reinterpret_cast<void**>(&MetaUniformUploadPtr)))
+        || !MetaUniformUploadPtr)
+        return false;
 
     // Bound at t5 whenever a variant has no texture, so the descriptor table
     // never contains an undefined entry.
@@ -461,7 +518,6 @@ bool DX12Renderer3D::CreateFixedResources()
     if (!RenderPolygonBuffer || !RenderPolygonStaging || !YSpanSetupBuffer || !YSpanSetupStaging)
         return false;
 
-    D3D12_RANGE noRead{ 0, 0 };
     void* mapped = nullptr;
     if (FAILED(RenderPolygonStaging->Map(0, &noRead, &mapped)))
         return false;
@@ -984,12 +1040,11 @@ void DX12Renderer3D::UpdateClearBitmap()
         constexpr u64 rowPitch = 256ull * 4ull; // already 256-byte aligned
         constexpr u64 totalBytes = rowPitch * 256ull;
 
-        u64 offset = 0;
-        void* mapped = Uploads.Allocate(totalBytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, offset);
-        if (!mapped)
+        if (!ClearBitmapUpload[slot] || !ClearBitmapUploadPtr[slot])
             continue;
 
-        std::memcpy(mapped, ClearBitmap[slot].get(), static_cast<size_t>(totalBytes));
+        std::memcpy(
+            ClearBitmapUploadPtr[slot], ClearBitmap[slot].get(), static_cast<size_t>(totalBytes));
 
         if (!ClearBitmapTexInCopyDest[slot])
         {
@@ -1003,9 +1058,9 @@ void DX12Renderer3D::UpdateClearBitmap()
         dst.SubresourceIndex = 0;
 
         D3D12_TEXTURE_COPY_LOCATION src{};
-        src.pResource = Uploads.GetBuffer();
+        src.pResource = ClearBitmapUpload[slot].Get();
         src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        src.PlacedFootprint.Offset = offset;
+        src.PlacedFootprint.Offset = 0;
         src.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_UINT;
         src.PlacedFootprint.Footprint.Width = 256;
         src.PlacedFootprint.Footprint.Height = 256;
@@ -1016,9 +1071,8 @@ void DX12Renderer3D::UpdateClearBitmap()
         TransitionBuffer(list, ClearBitmapTex[slot].Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         ClearBitmapTexInCopyDest[slot] = false;
+        ClearBitmapDirty &= static_cast<u8>(~(1u << slot));
     }
-
-    ClearBitmapDirty = 0;
 }
 
 bool DX12Renderer3D::UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons)
@@ -1076,15 +1130,12 @@ bool DX12Renderer3D::UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numV
         meta.FogColor = fogR | (fogG << 8) | (fogB << 16) | (fogA << 24);
     }
 
-    u64 offset = 0;
-    void* mapped = Uploads.Allocate(
-        sizeof(MetaUniform), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, offset);
-    if (!mapped)
+    if (!MetaUniformUpload || !MetaUniformUploadPtr)
         return false;
 
-    std::memcpy(mapped, &meta, sizeof(meta));
+    std::memcpy(MetaUniformUploadPtr, &meta, sizeof(meta));
     list->SetComputeRootConstantBufferView(
-        kRootParamMetaCbv, Uploads.GetBuffer()->GetGPUVirtualAddress() + offset);
+        kRootParamMetaCbv, MetaUniformUpload->GetGPUVirtualAddress());
     return true;
 }
 
@@ -1819,6 +1870,7 @@ void DX12Renderer3D::RenderFrame()
     Descriptors.Reset();
     Uploads.Reset();
     TextureHeap.CollectGarbage();
+    TextureHeap.ResetUploadFailure();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
 
@@ -1834,6 +1886,12 @@ void DX12Renderer3D::RenderFrame()
     {
         DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
         numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+    }
+    if (TextureHeap.HadUploadFailure())
+    {
+        Commands.Submit();
+        SetRuntimeFailure("could not allocate or map a texture spill upload");
+        return;
     }
     DX12Perf::RecordGeometry(
         numPolygons, numVariants, static_cast<u32>(numYSpans), static_cast<u32>(numSetupIndices));
