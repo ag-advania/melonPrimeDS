@@ -28,6 +28,8 @@
 
 #include "GPU.h"
 #include "VulkanContext.h"
+#include "VulkanFeatureProbe.h"
+#include "VulkanPerf.h"
 #include "VulkanPresentedFrame.h"
 
 namespace melonDS
@@ -769,11 +771,24 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hi
     // The old FinalFB was destroyed; the new one starts UNDEFINED.
     FinalFBHasContent = false;
 
+    const Vk::ResolutionBudget budget = Vk::ResolutionBudget::ForScaleFactor(ScaleFactor);
+    const VkDeviceSize composedScreenBytes =
+        static_cast<VkDeviceSize>(ScreenWidth) * ScreenHeight * sizeof(u32) * 2u;
+    // ResolutionBudget includes one compositor output because the feature
+    // probe must gate its storage-buffer range. Remove it here so this runtime
+    // breakdown does not count that allocation both as raster and compositor.
+    const VkDeviceSize rasterDeviceBytes = budget.TotalDeviceBytes - composedScreenBytes;
+    const VkDeviceSize compositorDeviceBytes =
+        (composedScreenBytes + StructuredInputBytes) * CompositorFramesInFlight;
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] internal resolution %dx -> 3D output %dx%d, tiles %dx%d (%dpx), "
-        "tile-geometry bucket %u, capture resolve 256x192\n",
+        "tile-geometry bucket %u, capture resolve 256x192; memory raster=%.1f MiB "
+        "compositor-device=%.1f MiB compositor-host=%.1f MiB\n",
         ScaleFactor, ScreenWidth, ScreenHeight, TilesPerLine, TileLines, TileSize,
-        TileGeometryBucket);
+        TileGeometryBucket,
+        static_cast<double>(rasterDeviceBytes) / (1024.0 * 1024.0),
+        static_cast<double>(compositorDeviceBytes) / (1024.0 * 1024.0),
+        static_cast<double>(StructuredInputBytes * CompositorFramesInFlight) / (1024.0 * 1024.0));
 }
 
 
@@ -1634,6 +1649,7 @@ void VulkanRenderer3D::UpdateClearBitmap(VkCommandBuffer cmd, Vk::StagingRing& s
 bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
     u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput)
 {
+    VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
     VkDescriptorSet set = Descriptors.GetRasterizerSet(frameIndex, slot);
     if (set == VK_NULL_HANDLE || presentationOutput == VK_NULL_HANDLE
         || structuredInput == VK_NULL_HANDLE)
@@ -1683,6 +1699,8 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         return false;
 
     writer.Flush(Device.Fns(), Device.GetHandle());
+    VulkanPerf::AddCounter(VulkanPerf::Counter::DescriptorWriteCount,
+        static_cast<u64>(Vk::RasterizerBinding::Count));
     return true;
 }
 
@@ -1705,6 +1723,7 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
 
     Vk::DescriptorWriter writer;
     writer.Reset();
+    VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
 
     const VkSampler repeatSampler = Samplers.GetRepeat();
     const bool ok =
@@ -1728,6 +1747,8 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
         return VK_NULL_HANDLE;
 
     writer.Flush(Device.Fns(), Device.GetHandle());
+    VulkanPerf::AddCounter(VulkanPerf::Counter::DescriptorWriteCount,
+        static_cast<u64>(Vk::TextureBinding::Count));
 
     BoundTextureView = textureView;
     BoundSampler = sampler;
@@ -1810,8 +1831,13 @@ void VulkanRenderer3D::RenderFrame()
     }
 
     const Vk::DeviceDispatch& fns = Device.Fns();
+    VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
-    Vk::FrameContext* frame = Frames.BeginFrame();
+    Vk::FrameContext* frame = nullptr;
+    {
+        VulkanPerf::ScopedCpuTimer waitTimer(VulkanPerf::CpuMetric::RasterBeginWait);
+        frame = Frames.BeginFrame();
+    }
     if (!frame)
     {
         SetRuntimeFailure("could not begin a frame command buffer");
@@ -1834,7 +1860,11 @@ void VulkanRenderer3D::RenderFrame()
         RecordInitialTransitions(cmd);
 
     u8 texcacheClearBitmapDirty = 0;
-    const bool textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+    bool textureCacheChanged = false;
+    {
+        VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
+        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+    }
     ClearBitmapDirty |= texcacheClearBitmapDirty;
 
     const bool canReuseIdenticalFrame =
@@ -1849,7 +1879,12 @@ void VulkanRenderer3D::RenderFrame()
         // 3D upload/dispatch. The compositor still runs at VBlank with the
         // current structured 2D planes and samples the unchanged FinalFB.
         PendingFence = frame->InFlightFence;
-        if (Frames.SubmitFrame(Device.GetMainQueue()))
+        bool identicalSubmitted = false;
+        {
+            VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+            identicalSubmitted = Frames.SubmitFrame(Device.GetMainQueue());
+        }
+        if (identicalSubmitted)
         {
             FrameInFlight = true;
             return;
@@ -1867,7 +1902,14 @@ void VulkanRenderer3D::RenderFrame()
     int numYSpans = 0;
     int numSetupIndices = 0;
     u32 numPolygons = 0;
-    const u32 numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+    u32 numVariants = 0;
+    {
+        VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
+        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+    }
+    VulkanPerf::RecordGeometry(
+        numPolygons, numVariants, static_cast<u32>(std::max(numYSpans, 0)),
+        static_cast<u32>(std::max(numSetupIndices, 0)));
     TextureHeap.FlushUploadBarriers();
 
     // The three counts move together: a span record is only useful with an
@@ -2252,7 +2294,12 @@ void VulkanRenderer3D::RenderFrame()
     }
 
     PendingFence = frame->InFlightFence;
-    if (Frames.SubmitFrame(Device.GetMainQueue()))
+    bool submitted = false;
+    {
+        VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+        submitted = Frames.SubmitFrame(Device.GetMainQueue());
+    }
+    if (submitted)
     {
         FrameInFlight = true;
         FrameReadbackValid = false;
@@ -2356,6 +2403,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         // The presenter is still using this slot. Dropping one composed frame
         // is preferable to blocking VBlank on presentation; the previously
         // published frame remains valid and is reused.
+        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
         return false;
     }
 
@@ -2367,18 +2415,22 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    // Pack exactly the layout PresentationBuffers.glsl documents: six
-    // native-resolution planes, then the two per-screen line-metadata arrays.
-    for (std::size_t i = 0; i < planes.size(); i++)
     {
-        std::memcpy(
-            staging + i * StructuredPixelCount,
-            planes[i],
-            static_cast<std::size_t>(StructuredPixelCount) * sizeof(u32));
+        VulkanPerf::ScopedCpuTimer packTimer(VulkanPerf::CpuMetric::ComposePack);
+        // Pack exactly the layout PresentationBuffers.glsl documents: six
+        // native-resolution planes, then the two per-screen line-metadata arrays.
+        for (std::size_t i = 0; i < planes.size(); i++)
+        {
+            std::memcpy(
+                staging + i * StructuredPixelCount,
+                planes[i],
+                static_cast<std::size_t>(StructuredPixelCount) * sizeof(u32));
+        }
+        u32* metaDestination = staging + (planes.size() * StructuredPixelCount);
+        std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
+        std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
     }
-    u32* metaDestination = staging + (planes.size() * StructuredPixelCount);
-    std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
-    std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
+    VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredPackBytes, StructuredInputBytes);
 
     if (!outputSlot.StructuredStaging.FlushRange(0, StructuredInputBytes))
     {
@@ -2390,7 +2442,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
 
     Vk::FrameContext* frame = ComposeFrames.TryBeginFrame();
     if (!frame)
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
         return false;
+    }
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = ComposeFrames.GetFrameIndex();
     if (frameIndex != nextSlot)
@@ -2463,7 +2518,12 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
 
-    if (!ComposeFrames.SubmitFrame(Device.GetMainQueue()))
+    bool composeSubmitted = false;
+    {
+        VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+        composeSubmitted = ComposeFrames.SubmitFrame(Device.GetMainQueue());
+    }
+    if (!composeSubmitted)
     {
         SetRuntimeFailure("compositor command submission failed");
         return false;

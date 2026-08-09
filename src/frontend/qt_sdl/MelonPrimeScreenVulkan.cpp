@@ -68,6 +68,7 @@
 #include "GPU_Vulkan.h"
 #include "MelonPrime.h"
 #include "MelonPrimeConstants.h"
+#include "VulkanPerf.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
 #include "MelonPrimeVulkanSurface.h"
@@ -1171,12 +1172,29 @@ void ScreenPanelVulkan::drawScreenFrame()
     bool hudUploaded = false;
     if (hudVisible && !Overlay[0].isNull())
     {
-        hudUploaded = vulkan->presenter.UploadLayer(
-            MelonPrime::VulkanPresenter::Layer::Hud,
-            Overlay[0].constBits(),
-            static_cast<u32>(Overlay[0].width()),
-            static_cast<u32>(Overlay[0].height()),
-            static_cast<std::size_t>(Overlay[0].bytesPerLine()));
+        const auto layer = MelonPrime::VulkanPresenter::Layer::Hud;
+        const QRect imageRect(0, 0, Overlay[0].width(), Overlay[0].height());
+        const QRect uploadRect = hudRect.intersected(imageRect);
+        const bool needsInitialUpload = !vulkan->presenter.HasLayerContent(layer);
+        if (!needsInitialUpload && uploadRect.isEmpty())
+        {
+            hudUploaded = true;
+        }
+        else
+        {
+            const QRect region = needsInitialUpload ? imageRect : uploadRect;
+            VulkanPerf::ScopedCpuTimer hudUploadTimer(VulkanPerf::CpuMetric::HudUpload);
+            hudUploaded = vulkan->presenter.UploadLayerRegion(
+                layer,
+                Overlay[0].constBits(),
+                static_cast<u32>(Overlay[0].width()),
+                static_cast<u32>(Overlay[0].height()),
+                static_cast<std::size_t>(Overlay[0].bytesPerLine()),
+                static_cast<u32>(region.x()),
+                static_cast<u32>(region.y()),
+                static_cast<u32>(region.width()),
+                static_cast<u32>(region.height()));
+        }
     }
 #endif
 
@@ -1413,6 +1431,8 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     // visible in the black bars.
     const int overlayWidth = std::max(1, width());
     const int overlayHeight = std::max(1, height());
+    const QRect previousDirty = m_hudPrevDirty;
+    bool overlayRecreated = false;
     if (Overlay[0].width() != overlayWidth
         || Overlay[0].height() != overlayHeight
         || Overlay[0].format() != QImage::Format_ARGB32_Premultiplied)
@@ -1420,6 +1440,7 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
         Overlay[0] = QImage(overlayWidth, overlayHeight, QImage::Format_ARGB32_Premultiplied);
         Overlay[0].fill(Qt::transparent);
         m_hudPrevDirty = QRect();
+        overlayRecreated = true;
     }
     else if (!m_hudPrevDirty.isEmpty())
     {
@@ -1459,7 +1480,9 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     }
 
     m_hudPrevDirty = dirty;
-    outDirty = dirty;
+    outDirty = overlayRecreated
+        ? QRect(0, 0, Overlay[0].width(), Overlay[0].height())
+        : dirty.united(previousDirty);
     return true;
 }
 #endif

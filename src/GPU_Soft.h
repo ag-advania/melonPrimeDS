@@ -106,7 +106,7 @@ private:
     u64 StructuredFrameGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
-    void StoreStructuredEnginePixel(
+    inline void StoreStructuredEnginePixel(
         u32 engine,
         u32 line,
         u32 x,
@@ -115,7 +115,51 @@ private:
         u32 composed,
         u32 compositionMode,
         u32 eva,
-        u32 evb);
+        u32 evb)
+    {
+        namespace Contract = StructuredComposition;
+        if (engine >= 2u || line >= 192u || x >= 256u)
+            return;
+
+        const std::size_t pixelIndex = static_cast<std::size_t>(line) * 256u + x;
+        const std::size_t engineBase = static_cast<std::size_t>(engine) * 3u * StructuredPixelCount;
+        u32 plane0 = composed;
+        u32 plane1 = 0;
+        u32 controlAlpha = Contract::kControlPlain2D;
+        // These are the software 2D engine's BG/OBJ flags, not structured
+        // control bits. 0x40 identifies the 3D layer and 0x80 distinguishes a
+        // blend-flagged sprite that only resembles it.
+        const u32 alpha1 = val1 >> 24u;
+        const u32 alpha2 = val2 >> 24u;
+        const bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
+        const bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
+
+        if (val1Is3D)
+        {
+            plane0 = val2;
+            controlAlpha = Contract::kControlHas3DSlot
+                | (compositionMode & Contract::kControlCompositionModeMask);
+            if ((plane0 & 0x00FFFFFFu) == 0 && (plane0 >> 24u) != 0)
+                controlAlpha |= Contract::kControlOpaqueBlackBelow;
+        }
+        else if (val2Is3D && compositionMode == Contract::kCompositionModeBlend4)
+        {
+            plane0 = 0;
+            plane1 = val1;
+            controlAlpha = Contract::kControlHas3DSlot
+                | Contract::kControlAbovePlane
+                | Contract::kCompositionModeBlend4;
+            if ((plane1 & 0x00FFFFFFu) == 0 && (plane1 >> 24u) != 0)
+                controlAlpha |= Contract::kControlOpaqueBlackBelow;
+        }
+
+        StructuredEnginePlanes[engineBase + pixelIndex] = plane0;
+        StructuredEnginePlanes[engineBase + StructuredPixelCount + pixelIndex] = plane1;
+        StructuredEnginePlanes[engineBase + (2u * StructuredPixelCount) + pixelIndex] =
+            ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
+            | ((evb & 0xFFu) << Contract::kControlEvbShift)
+            | ((eva & 0xFFu) << Contract::kControlEvaShift);
+    }
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
     void StoreStructuredCaptureLine(
         u32 line,

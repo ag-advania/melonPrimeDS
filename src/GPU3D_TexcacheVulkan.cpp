@@ -24,6 +24,7 @@
 #include <cstring>
 
 #include "VulkanMemory.h"
+#include "VulkanPerf.h"
 
 namespace melonDS
 {
@@ -387,6 +388,7 @@ void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, con
     VkDevice device = Device->GetHandle();
 
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * TexelBytes;
+    VulkanPerf::AddCounter(VulkanPerf::Counter::TextureUploadBytes, bytes);
 
     // vkCmdCopyBufferToImage requires bufferOffset to be a multiple of 4 and of
     // the texel block size (also 4 here). optimalBufferCopyOffsetAlignment is
@@ -418,6 +420,8 @@ void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, con
         }
         usedScratch = true;
         srcOffset = 0;
+        VulkanPerf::AddCounter(VulkanPerf::Counter::ScratchUploadCount);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::ScratchUploadBytes, bytes);
     }
 
     std::memcpy(mapped, data, static_cast<size_t>(bytes));

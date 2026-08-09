@@ -279,7 +279,10 @@ when its dimensions change, so a steady-state frame creates no images. Each laye
 is drawn as a textured quad with either `Opaque` blending (the composed screens,
 whose alpha carries no coverage) or `Premultiplied`
 (`QImage::Format_ARGB32_Premultiplied` sources, the same factors `ScreenPanelGL`
-uses).
+uses). Custom HUD updates upload the union of the current and previous dirty
+rectangles into the persistent HUD image. This updates both newly painted pixels
+and pixels cleared after an element moved without copying the entire window-sized
+overlay. The radar continues to sample the GPU bottom-screen source directly.
 
 Present mode is **queried, never assumed**:
 
@@ -376,6 +379,40 @@ Configuration keys are shared with DX12 for compatibility:
 IDs belong to each presenter/emulator instance; no process-global latency or
 pacing state is introduced.
 
+## Performance telemetry and measured policy
+
+Set `MELONPRIME_PERF=1` before starting the application to enable the existing
+`[MelonPrimePerf]` frame report and Vulkan's `[VulkanPerf]` stage report. The
+Vulkan report emits 1 Hz p50/p95/p99/max CPU timings for raster-fence wait,
+texture-cache update, polygon preparation, descriptor updates, structured-plane
+packing, software 2D, acquire/image-fence waits, HUD upload and queue submission.
+Its counter line records geometry expansion, copy/upload bytes, descriptor writes,
+texture-staging scratch fallback and compositor drops. The scale-change log also
+splits the raster, compositor-device and compositor-host allocation estimates.
+The gate is off by default and the disabled path does no timestamp sampling.
+
+The 2026-08-09 F7 gameplay baseline used an RTX 5070 Ti, VSync off, Reflex off,
+and the same saved match at 1x/4x/8x/16x. Values below are medians of the emitted
+one-second-window percentiles; they are CPU duration, not GPU timestamps:
+
+| Scale | raster wait p95 | `BuildPolygons` p50 | descriptor update p50 | structured 2D p50 | queue submit p50 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1x | 3.0 us | 102 us | 0.6 us | 3.82 ms | 6.8 us |
+| 4x | 3.1 us | 133 us | 0.6 us | 3.82 ms | 6.8 us |
+| 8x | 3.3 us | 136 us | 0.6 us | 3.83 ms | 6.8 us |
+| 16x | 3.8 us | 193 us | 0.6 us | 3.81 ms | 7.6 us |
+
+No sampled window used texture scratch allocations or dropped a compositor
+frame. At 16x the presenter copied the expected 96 MiB/frame inside device-local
+memory, but acquire/image-fence CPU time and frame delivery stayed stable on this
+GPU. These measurements deliberately reject speculative changes: raster working
+set duplication/pre-wait reordering, fixed-binding descriptor redesign, staging
+growth and direct-image compositor output remain deferred until their respective
+wait, write, fallback, drop or GPU-time counters justify the added complexity.
+`StoreStructuredEnginePixel()` is inline because it is called 98,304 times per
+frame; larger structured-2D changes still require a dedicated A/B capture because
+the reported `structured_2d` interval includes the normal software 2D renderer.
+
 ## Files
 
 | File | Role |
@@ -389,6 +426,7 @@ pacing state is introduced.
 | `src/VulkanMemory.{h,cpp}` | allocation, buffers, images, staging, readback |
 | `src/VulkanDescriptors.{h,cpp}` | set layouts, pool sizing, updates — the binding contract |
 | `src/VulkanSync.{h,cpp}` | frame rings, fences, semaphores, barriers, deferred destruction |
+| `src/VulkanPerf.h` | runtime-gated Vulkan CPU timing and traffic counters |
 | `src/VulkanNvidiaReflex.{h,cpp}` | `VK_NV_low_latency2` |
 | `src/VulkanAmdAntiLag.{h,cpp}` | `VK_AMD_anti_lag` |
 | `src/GPU3D_TexcacheVulkan.{h,cpp}` | texture array behind the shared `Texcache<>` template |

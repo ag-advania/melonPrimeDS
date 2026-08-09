@@ -13,6 +13,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 #include <QWidget>
@@ -21,6 +22,7 @@
 #include "Platform.h"
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
+#include "VulkanPerf.h"
 
 using namespace melonDS;
 
@@ -1080,6 +1082,7 @@ VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(VkImageView view, VkSample
 
 bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
 {
+    VulkanPerf::ScopedCpuTimer beginTimer(VulkanPerf::CpuMetric::PresentBeginTotal);
     if (!Initialized || Failed || !Device.IsValid())
         return false;
     if (FrameOpen)
@@ -1118,13 +1121,17 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     Staging[frameIndex].Reset();
     Device.Fns().ResetDescriptorPool(Device.GetHandle(), DescriptorPools[frameIndex], 0);
 
-    const VkResult res = Device.Fns().AcquireNextImageKHR(
-        Device.GetHandle(),
-        Swapchain,
-        UINT64_MAX,
-        frame->ImageAvailable,
-        VK_NULL_HANDLE,
-        &CurrentImageIndex);
+    VkResult res = VK_SUCCESS;
+    {
+        VulkanPerf::ScopedCpuTimer acquireTimer(VulkanPerf::CpuMetric::PresentAcquire);
+        res = Device.Fns().AcquireNextImageKHR(
+            Device.GetHandle(),
+            Swapchain,
+            UINT64_MAX,
+            frame->ImageAvailable,
+            VK_NULL_HANDLE,
+            &CurrentImageIndex);
+    }
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -1160,8 +1167,13 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VkFence imageFence = ImagesInFlight[CurrentImageIndex];
         if (imageFence != VK_NULL_HANDLE && imageFence != frame->InFlightFence)
         {
-            const VkResult waitRes = Device.Fns().WaitForFences(
-                Device.GetHandle(), 1, &imageFence, VK_TRUE, UINT64_MAX);
+            VkResult waitRes = VK_SUCCESS;
+            {
+                VulkanPerf::ScopedCpuTimer imageWaitTimer(
+                    VulkanPerf::CpuMetric::PresentImageFence);
+                waitRes = Device.Fns().WaitForFences(
+                    Device.GetHandle(), 1, &imageFence, VK_TRUE, UINT64_MAX);
+            }
             if (waitRes != VK_SUCCESS)
             {
                 Frames.SubmitFrame(Device.GetMainQueue());
@@ -1181,7 +1193,16 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
 bool VulkanPresenter::UploadLayer(
     Layer layer, const void* pixels, u32 width, u32 height, std::size_t rowBytes)
 {
-    if (!FrameOpen || CompositionOpen || !pixels || width == 0 || height == 0)
+    return UploadLayerRegion(layer, pixels, width, height, rowBytes, 0, 0, width, height);
+}
+
+
+bool VulkanPresenter::UploadLayerRegion(
+    Layer layer, const void* pixels, u32 width, u32 height, std::size_t rowBytes,
+    u32 x, u32 y, u32 regionWidth, u32 regionHeight)
+{
+    if (!FrameOpen || CompositionOpen || !pixels || width == 0 || height == 0
+        || regionWidth == 0 || regionHeight == 0 || x >= width || y >= height)
         return false;
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
@@ -1203,8 +1224,10 @@ bool VulkanPresenter::UploadLayer(
     // image (the OSD strip is only as tall as its messages). Larger is clamped:
     // copying past the image would be a validation error, and the caller's UV
     // rect is derived from the same clamped size.
-    const u32 copyWidth = std::min(width, texture.Width);
-    const u32 copyHeight = std::min(height, texture.Height);
+    if (x >= texture.Width || y >= texture.Height)
+        return false;
+    const u32 copyWidth = std::min({regionWidth, width - x, texture.Width - x});
+    const u32 copyHeight = std::min({regionHeight, height - y, texture.Height - y});
 
     const VkDeviceSize bytes =
         static_cast<VkDeviceSize>(copyWidth) * copyHeight * 4u;
@@ -1238,7 +1261,8 @@ bool VulkanPresenter::UploadLayer(
 
     // Packed tightly regardless of the source stride, so bufferRowLength can
     // stay 0 and no row-pitch alignment rule applies to the copy.
-    const auto* src = static_cast<const u8*>(pixels);
+    const auto* src = static_cast<const u8*>(pixels)
+        + static_cast<std::size_t>(y) * rowBytes + static_cast<std::size_t>(x) * 4u;
     auto* dst = static_cast<u8*>(mapped);
     const std::size_t dstRow = static_cast<std::size_t>(copyWidth) * 4u;
     for (u32 y = 0; y < copyHeight; ++y)
@@ -1264,6 +1288,8 @@ bool VulkanPresenter::UploadLayer(
     copy.bufferOffset = offset;
     copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copy.imageSubresource.layerCount = 1;
+    copy.imageOffset = {
+        static_cast<std::int32_t>(x), static_cast<std::int32_t>(y), 0};
     copy.imageExtent = {copyWidth, copyHeight, 1};
 
     Device.Fns().CmdCopyBufferToImage(
@@ -1283,6 +1309,8 @@ bool VulkanPresenter::UploadLayer(
         VK_ACCESS_SHADER_READ_BIT);
 
     texture.HasContent = true;
+    if (layer == Layer::Hud)
+        VulkanPerf::AddCounter(VulkanPerf::Counter::HudUploadBytes, bytes);
     return true;
 }
 
@@ -1348,6 +1376,8 @@ bool VulkanPresenter::UploadLayerFromBuffer(
         VK_ACCESS_SHADER_READ_BIT);
 
     texture.HasContent = true;
+    VulkanPerf::AddCounter(VulkanPerf::Counter::PresentedScreenCopyBytes,
+        static_cast<u64>(frame.Width) * frame.Height * sizeof(u32));
     return true;
 }
 
@@ -1498,12 +1528,16 @@ bool VulkanPresenter::EndFrame()
     if (tagLatency)
         Reflex.MarkRenderSubmitStart();
 
-    const bool submitted = Frames.SubmitFrame(
-        Device.GetMainQueue(),
-        frame ? frame->ImageAvailable : VK_NULL_HANDLE,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        signalSemaphore,
-        submitPNext);
+    bool submitted = false;
+    {
+        VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+        submitted = Frames.SubmitFrame(
+            Device.GetMainQueue(),
+            frame ? frame->ImageAvailable : VK_NULL_HANDLE,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            signalSemaphore,
+            submitPNext);
+    }
 
     if (tagLatency)
         Reflex.MarkRenderSubmitEnd();
@@ -1573,6 +1607,8 @@ bool VulkanPresenter::EndFrame()
         // was correctly rejected because the surface changed size), and the
         // swapchain is rebuilt before the next one.
         SwapchainDirty.store(true, std::memory_order_release);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::Frames);
+        VulkanPerf::MaybeReport();
         return true;
     }
     if (res != VK_SUCCESS)
@@ -1588,6 +1624,8 @@ bool VulkanPresenter::EndFrame()
             SwapchainExtent.height,
             PresentModeName(PresentMode));
     }
+    VulkanPerf::AddCounter(VulkanPerf::Counter::Frames);
+    VulkanPerf::MaybeReport();
     return true;
 }
 
