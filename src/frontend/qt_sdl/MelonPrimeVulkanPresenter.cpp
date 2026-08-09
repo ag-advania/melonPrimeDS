@@ -46,6 +46,9 @@ const char* PresentModeName(VkPresentModeKHR mode) noexcept
     case VK_PRESENT_MODE_FIFO_RELAXED_KHR:              return "FIFO_RELAXED";
     case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:     return "SHARED_DEMAND_REFRESH";
     case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR: return "SHARED_CONTINUOUS_REFRESH";
+#ifdef VK_KHR_present_mode_fifo_latest_ready
+    case VK_PRESENT_MODE_FIFO_LATEST_READY_KHR:         return "FIFO_LATEST_READY";
+#endif
     default:                                            return "UNKNOWN";
     }
 }
@@ -623,35 +626,59 @@ bool VulkanPresenter::ChoosePresentMode(
         // FIFO is the only mode the specification requires every surface to
         // support, and it is exactly "VSync on": one present per refresh, no
         // tearing.
-        out = VK_PRESENT_MODE_FIFO_KHR;
-        reason = "FIFO is the specification-guaranteed VSync mode";
-        if (!ListContains(available, VK_PRESENT_MODE_FIFO_KHR))
+        if (ListContains(available, VK_PRESENT_MODE_FIFO_KHR))
         {
-            // A surface without FIFO violates the specification. Rather than
-            // trusting it, fall back to whatever it does report and say so.
-            out = available.empty() ? VK_PRESENT_MODE_FIFO_KHR : available.front();
-            reason = "the surface does not report the mandatory FIFO mode; using its first reported mode";
+            out = VK_PRESENT_MODE_FIFO_KHR;
+            reason = "VSync on: FIFO";
+            return true;
         }
-        return true;
+
+        // A surface without FIFO violates the specification. Keep the
+        // renderer usable if it reports another mode, but make the anomaly
+        // explicit instead of claiming VSync is active.
+        if (!available.empty())
+        {
+            out = available.front();
+            reason = "VSync on: mandatory FIFO was not reported; using first available mode";
+            return true;
+        }
+        return false;
     }
 
-    if (ListContains(available, VK_PRESENT_MODE_MAILBOX_KHR))
-    {
-        out = VK_PRESENT_MODE_MAILBOX_KHR;
-        reason = "VSync off, MAILBOX supported (no tearing, no frame-rate cap)";
-        return true;
-    }
+    // IMMEDIATE is the only present mode whose semantics directly match
+    // "VSync off": it does not wait for VBlank and may tear.
     if (ListContains(available, VK_PRESENT_MODE_IMMEDIATE_KHR))
     {
         out = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        reason = "VSync off, MAILBOX unsupported, IMMEDIATE supported";
+        reason = "VSync off: IMMEDIATE supported";
         return true;
     }
 
-    out = VK_PRESENT_MODE_FIFO_KHR;
-    reason = "VSync off requested but the surface supports neither MAILBOX nor IMMEDIATE; "
-             "presenting with FIFO, so VSync remains effectively on";
-    return true;
+    // MAILBOX remains the low-latency fallback when IMMEDIATE is unavailable.
+    // It replaces queued frames with the newest one, but is still VBlank-bound
+    // and tear-free, so it must not be advertised as literal VSync-off.
+    if (ListContains(available, VK_PRESENT_MODE_MAILBOX_KHR))
+    {
+        out = VK_PRESENT_MODE_MAILBOX_KHR;
+        reason = "VSync off: IMMEDIATE unavailable; using MAILBOX tear-free fallback";
+        return true;
+    }
+
+    if (ListContains(available, VK_PRESENT_MODE_FIFO_KHR))
+    {
+        out = VK_PRESENT_MODE_FIFO_KHR;
+        reason = "VSync off requested but only FIFO-compatible path is available";
+        return true;
+    }
+
+    if (!available.empty())
+    {
+        out = available.front();
+        reason = "No preferred present mode available; using first reported mode";
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -705,7 +732,8 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const bool vsyncRequested = VSyncRequested.load(std::memory_order_acquire);
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::string presentReason;
-    ChoosePresentMode(presentModes, presentMode, presentReason);
+    if (!ChoosePresentMode(presentModes, presentMode, presentReason))
+        return Fail("the surface reported no Vulkan present modes");
 
     VkSurfaceFormatKHR format{};
     {
@@ -916,17 +944,34 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     VSyncApplied = vsyncRequested;
     PresentMode = presentMode;
 
+    std::string availableModeNames;
+    for (VkPresentModeKHR mode : presentModes)
+    {
+        if (!availableModeNames.empty())
+            availableModeNames += ',';
+        const char* modeName = PresentModeName(mode);
+        availableModeNames += modeName;
+        if (std::strcmp(modeName, "UNKNOWN") == 0)
+        {
+            availableModeNames += '(';
+            availableModeNames += std::to_string(static_cast<int>(mode));
+            availableModeNames += ')';
+        }
+    }
+
     Platform::Log(
         Platform::LogLevel::Info,
-        "[Vulkan] swapchain created extent=%ux%u images=%u format=%d "
-        "Requested VSync=%s / Requested Present Mode=%s / Actual Present Mode=%s / Reason=%s\n",
+        "[Vulkan] presentation: requested-vsync=%s available-present-modes=%s "
+        "selected-present-mode=%s swapchain-images=%u extent=%ux%u format=%d "
+        "window-mode=%s reason=%s; VRR actual state is driver/display controlled\n",
+        vsyncRequested ? "on" : "off",
+        availableModeNames.empty() ? "none" : availableModeNames.c_str(),
+        PresentModeName(PresentMode),
+        realImageCount,
         SwapchainExtent.width,
         SwapchainExtent.height,
-        realImageCount,
         static_cast<int>(SurfaceFormat.format),
-        vsyncRequested ? "on" : "off",
-        vsyncRequested ? "FIFO" : "MAILBOX>IMMEDIATE",
-        PresentModeName(PresentMode),
+        WindowFullscreen.load(std::memory_order_acquire) ? "fullscreen" : "windowed",
         presentReason.c_str());
 
     return true;
@@ -1638,6 +1683,13 @@ bool VulkanPresenter::EndFrame()
 // available, which is the normal case on non-NVIDIA / non-AMD hardware.
 // ---------------------------------------------------------------------------
 
+void VulkanPresenter::SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled)
+{
+    Reflex.SetMode(melonDS::VulkanNvidiaReflexModeFromConfig(reflexMode));
+    AntiLag.SetEnabled(antiLag2Enabled);
+}
+
+
 void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
 {
     if (!Initialized || Failed || !Device.IsValid())
@@ -1648,8 +1700,7 @@ void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
     // steady state while still making a settings-dialog change take effect on
     // the very next frame -- without recreating the device or the swapchain,
     // neither of which a mid-session setting change should force.
-    Reflex.SetMode(melonDS::VulkanNvidiaReflexModeFromConfig(reflexMode));
-    AntiLag.SetEnabled(antiLag2Enabled);
+    SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
 
     // vkLatencySleepNV lives in here, and it must run before any input is read
     // -- that delay is the entire mechanism. SIMULATION_START is deliberately
@@ -1758,7 +1809,7 @@ void VulkanPresenter::LogLowLatencyState(const char* context)
     const melonDS::VulkanLowLatencyStatus& reflexStatus = Device.GetNvLowLatency2Status();
     const melonDS::VulkanLowLatencyStatus& antiLagStatus = Device.GetAmdAntiLagStatus();
 
-    // "Enabled" is what vkCreateDevice accepted; "actual" is what the frame
+    // "device-extension-enabled" is what vkCreateDevice accepted; "actual" is what the frame
     // path is really doing right now. They differ whenever the extension is
     // present but the user has the feature switched off, or when a runtime
     // failure disabled it -- and that gap is the whole reason both columns
@@ -1766,32 +1817,31 @@ void VulkanPresenter::LogLowLatencyState(const char* context)
     // it is the more specific one.
     const std::string& reflexReason = Reflex.IsAvailable()
         ? (Reflex.IsActive()
-            ? std::string("pacing frames")
+            ? std::string("latency markers active; no frame-rate cap requested")
             : std::string("supported, switched off by NvidiaReflexMode"))
         : (Reflex.GetUnavailableReason().empty() ? reflexStatus.Reason : Reflex.GetUnavailableReason());
 
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] %s NVIDIA Reflex (VK_NV_low_latency2): requested=%s supported=%s "
-        "enabled=%s actual=%s mode=%s reason=%s\n",
+        "device-extension-enabled=%s actual=%s reason=%s\n",
         context,
-        reflexStatus.Requested ? "yes" : "no",
+        melonDS::VulkanNvidiaReflexModeName(Reflex.GetMode()),
         reflexStatus.Supported ? "yes" : "no",
         reflexStatus.Enabled ? "yes" : "no",
         Reflex.IsActive() ? "active" : "inactive",
-        melonDS::VulkanNvidiaReflexModeName(Reflex.GetMode()),
         reflexReason.empty() ? "not evaluated" : reflexReason.c_str());
 
     const std::string& antiLagReason = AntiLag.IsAvailable()
         ? (AntiLag.IsActive()
-            ? std::string("pacing frames")
+            ? std::string("latency markers active; no frame-rate cap requested")
             : std::string("supported, switched off by AmdAntiLag2Enabled"))
         : (AntiLag.GetUnavailableReason().empty() ? antiLagStatus.Reason : AntiLag.GetUnavailableReason());
 
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] %s AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=%s supported=%s "
-        "enabled=%s actual=%s reason=%s\n",
+        "device-extension-enabled=%s actual=%s reason=%s\n",
         context,
-        antiLagStatus.Requested ? "yes" : "no",
+        AntiLag.IsEnabledRequested() ? "on" : "off",
         antiLagStatus.Supported ? "yes" : "no",
         antiLagStatus.Enabled ? "yes" : "no",
         AntiLag.IsActive() ? "active" : "inactive",

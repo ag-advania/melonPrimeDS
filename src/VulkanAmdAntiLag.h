@@ -68,6 +68,7 @@ public:
     // Available AND switched on by the user AND accepted by the driver: the
     // "Actual" column of the low-latency log line.
     [[nodiscard]] bool IsActive() const noexcept { return Available && Enabled; }
+    [[nodiscard]] bool IsEnabledRequested() const noexcept { return Enabled; }
 
     // Cheap to call every frame with an unchanged value. A real transition is
     // pushed to the driver on the next BeginFrame(), including the transition
