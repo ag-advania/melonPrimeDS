@@ -66,8 +66,9 @@ struct VulkanLowLatencyStatus
 // The logical device, its queues and its dispatch table.
 //
 // VulkanDevice is a copyable, ref-counted view of one process-wide logical
-// device. Renderer switches release their view while the persistent presenter
-// keeps the device and queue system alive.
+// device. On Windows the backing device is deliberately retained for the
+// process lifetime, matching the previous backend's proven renderer-switch
+// rule; other platforms release it when the final view goes away.
 struct VulkanDeviceState;
 
 class VulkanDevice

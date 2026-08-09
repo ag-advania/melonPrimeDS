@@ -83,6 +83,22 @@ constexpr float QueuePriority = 1.0f;
 std::mutex SharedDeviceMutex;
 std::weak_ptr<VulkanDeviceState> SharedDevice;
 
+#if defined(_WIN32)
+// Match the proven lifetime rule used by the previous Vulkan backend:
+// releasing the last renderer/presenter view during a live backend switch must
+// not call vkDestroyDevice on Windows. NVIDIA's driver (and injected graphics
+// layers) can still have transition callbacks on the stack at that point. Keep
+// one deliberately process-lifetime reference and let Windows reclaim the
+// Vulkan device after executable teardown. The pointer itself is intentionally
+// never destroyed, so static-destruction order cannot re-enter the Vulkan
+// loader after VulkanContext has already gone away.
+std::shared_ptr<VulkanDeviceState>& ProcessLifetimeDevice() noexcept
+{
+    static auto* retained = new std::shared_ptr<VulkanDeviceState>();
+    return *retained;
+}
+#endif
+
 const Vk::DeviceDispatch EmptyDeviceDispatch{};
 const Vk::DeviceProbeResult EmptyDeviceProfile{};
 const std::vector<const char*> EmptyExtensions;
@@ -630,6 +646,9 @@ bool VulkanDevice::Create(
 
     LogStartupSummary(requestedRendererName);
     SharedDevice = State;
+#if defined(_WIN32)
+    ProcessLifetimeDevice() = State;
+#endif
     return true;
 }
 
