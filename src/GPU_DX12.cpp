@@ -127,9 +127,8 @@ RendererOutput DX12Renderer::GetOutput()
     if (!dx12)
         return {};
 
-    const u32* top = dx12->GetComposedScreen(0);
-    const u32* bottom = dx12->GetComposedScreen(1);
-    if (!top || !bottom)
+    RendererOutput output = dx12->GetComposedOutput();
+    if (output.Kind == RendererOutputKind::None)
     {
         // The DX12 pipelines compile incrementally after a ROM starts. Until
         // the first VBlank can publish a composed frame, keep the native Qt
@@ -139,11 +138,19 @@ RendererOutput DX12Renderer::GetOutput()
         return SoftRenderer::GetOutput();
     }
 
-    return RendererOutput::CpuBgra(
-        const_cast<u32*>(top),
-        const_cast<u32*>(bottom),
-        dx12->GetComposedWidth(),
-        dx12->GetComposedHeight());
+    return output;
+}
+
+RendererOutputLease DX12Renderer::AcquireOutputLease()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    if (!dx12)
+        return {};
+
+    RendererOutputLease lease = dx12->AcquireComposedOutputLease();
+    if (lease.Output.Kind != RendererOutputKind::None)
+        return lease;
+    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 
 bool DX12Renderer::NeedsShaderCompile()

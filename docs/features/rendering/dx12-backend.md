@@ -19,32 +19,40 @@ DX12Renderer (: SoftRenderer)        software 2D engines + structured planes
 
 The software 2D engines record the same per-pixel structured planes used by the
 Vulkan backend. After the DS scanlines are complete, a DX12 compute pass combines
-those planes with the high-resolution 3D target and reads back two BGRA screens
-at `256*scale x 192*scale`. `RendererOutput` carries those dimensions to
-`ScreenPanelDX12`, which performs the established layout/HUD/OSD composition and
-uploads the final window-sized BGRA frame to a native flip-model DXGI swapchain.
+those planes with the high-resolution 3D target into one of three GPU-resident
+BGRA buffer slots at `256*scale x 192*scale`. A leased `DX12PresentedFrame`
+carries that resource to `ScreenPanelDX12`; the native presenter copies each
+screen into a sampled texture and performs layout, filtering, HUD, radar and OSD
+composition directly into a flip-model DXGI swapchain.
 
 The compute composition is submitted from `DX12Renderer::VBlank()` on the
 emulation thread. This binds the structured 2D planes and `FinalFB` to the same
 DS frame even when software flips `ScreenSwap` every frame. `GetOutput()` only
-publishes the already-composed front buffer once one exists; presentation timing
+publishes the already-composed slot once one exists; presentation timing
 cannot combine one frame's screen mapping with another frame's 3D image. During
 incremental pipeline compilation at ROM startup, it temporarily publishes the
 initialized software buffers so Qt never paints an uninitialized cached image.
 
+Each composition slot owns its own command allocator, descriptors and staging
+buffer. `ComposeStructuredOutput()` opens a slot only when both its GPU fence and
+presenter lease are free; otherwise it keeps the preceding completed output and
+returns without blocking VBlank. Renderer and presenter use the same process-wide
+device and queue, so queue ordering plus explicit UAV/copy transitions replace a
+CPU fence wait.
+
 A separate 256x192 resolve remains available for DS display capture and other
-core operations that require the `Renderer3D::GetLine()` contract. The DX12
-panel reuses the same QImage/QPainter layout, Custom HUD, radar and OSD helpers
-as the software panel before handing the completed pixels to D3D12. Qt never
-queues or paints active emulation frames; the native child HWND is owned by the
-DXGI swapchain.
+core operations that require the `Renderer3D::GetLine()` contract. Its deferred
+readback is deliberately independent from presentation. CPU-authored Custom HUD
+and OSD bitmaps use small layer uploads; game screens, screen layout, rotation,
+filtering and DPI scaling stay on the GPU. Qt never queues or paints active
+emulation frames; the native child HWND is owned by the DXGI swapchain.
 
 Consequences:
 
 * Internal resolution applies to the composed screen output, not only the 3D
   raster target.
-* The presentation path has one high-resolution GPU readback per newly composed
-  frame plus one window-sized D3D12 upload. The native resolve is read back only
+* Normal presentation performs no high-resolution GPU readback, CPU full-frame
+  composition or window-sized re-upload. The native resolve is read back only
   when display capture calls `GetLine()`.
 * DX12 selection owns presentation regardless of `Screen.UseGL`; no OpenGL
   context or Qt frame mailbox is involved.
@@ -105,8 +113,8 @@ add a frame-rate cap.
 Render Submit markers bracket the D3D12 render/composition work. Present Start
 and Present End are emitted immediately around the real
 `IDXGISwapChain::Present` call on the same D3D12 device and queue used by the
-renderer. CPU layout/HUD/OSD composition and the final upload happen before
-Present Start, so NVIDIA receives an accurate native presentation boundary.
+renderer. GPU layout/HUD/OSD composition is submitted before Present Start, so
+NVIDIA receives an accurate native presentation boundary.
 
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
@@ -150,11 +158,12 @@ Reflex setting.
 | `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
 | `src/DX12AmdAntiLag2.{h,cpp}` | Runtime AMD Anti-Lag 2 driver-ABI loading, support probe and per-frame input insertion point |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
-| `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, readback |
+| `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, GPU presentation ring and capture readback |
+| `src/DX12PresentedFrame.h` | Opaque GPU-resource handoff descriptor shared by renderer and presenter |
 | `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |
 | `src/GPU_DX12.{h,cpp}` | `DX12Renderer`, pairing the 3D renderer with software 2D |
 | `src/frontend/qt_sdl/MelonPrimeDX12FeatureCheck.{h,cpp}` | Runtime availability probe for the settings dialog and renderer normalization |
-| `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, D3D12 upload, flip-model DXGI swapchain and actual Present boundary |
+| `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, GPU layer composition, CPU overlay uploads, flip-model DXGI swapchain and actual Present boundary |
 
 ## Pipeline
 
@@ -172,7 +181,7 @@ Per frame, in one command list:
 10. `Resolve` — preserve a 256x192 `Output3D` source for display capture
 11. after software 2D scanlines complete, `Compositor` combines the structured
     planes with the high-resolution `FinalFB`
-12. copy the two high-resolution BGRA screens to the presentation readback
+12. publish the GPU-resident two-screen buffer through a leased ring slot
 
 35 compute pipelines in total. They are compiled incrementally through
 `ShaderCompileStep()`, so the OSD shows progress instead of the emulator
@@ -248,11 +257,12 @@ compositor samples those controls at native coordinates while sampling 3D from
 `FinalFB` at full resolution. This preserves pixel-authentic 2D behavior while
 allowing polygon edges and textures to retain the selected internal resolution.
 
-The high-resolution screen images remain CPU-visible so the DX12 panel can use
-the established layout/HUD/OSD implementation without visual divergence. The
-completed window-sized frame is then uploaded once and presented by DXGI. This
-keeps readback bandwidth proportional to the square of the internal scale while
-removing the Qt paint queue from the live presentation path.
+The high-resolution screen images remain device-local. The presenter copies
+them, queue-ordered, from the renderer's leased buffer to sampled textures and
+draws the existing layout as transformed quads. QImage remains only for
+CPU-authored premultiplied HUD and OSD layers. The colour-keyed radar is drawn
+after the HUD backing SVG/outline, preserving its foremost layer order without
+making the bottom screen CPU-visible.
 
 ## Verified scope
 
@@ -278,6 +288,16 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 * native `DXGI_SWAP_EFFECT_FLIP_DISCARD` swapchain creation and live ROM
   presentation on the RTX 5070 Ti, both while the runtime renderer is Software
   outside a match and while DX12 is forced for the complete boot sequence.
+* the GPU-native handoff at 4x after loading the F7 savestate, including a
+  2560x1344 presentation, warning-free runtime presenter-shader compilation,
+  and a 20-switch DX12/Vulkan/Software stress cycle with every transition and
+  subsequent DX12 `Present` completing without a runtime fallback or D3D12
+  debug-layer error; and
+* one same-savestate, same-window, 4x `MELONPRIME_PERF=1` comparison against the
+  preceding readback/upload binary. The median of the 1 Hz `Draw` section
+  averages fell from 1.727 ms to 0.254 ms. The run was frame-rate limited, and
+  its whole-frame percentiles were noisy, so this is evidence for the removed
+  CPU presentation work rather than a broader FPS claim.
 
 This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
 families. The offline shader audit and runtime feature probe remain the gates

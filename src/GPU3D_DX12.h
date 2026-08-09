@@ -33,6 +33,9 @@
 namespace melonDS
 {
 
+struct RendererOutput;
+struct RendererOutputLease;
+
 // DirectX 12 3D renderer: a port of the OpenGL compute renderer
 // (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
 // the same tile-binned pipeline and the same fixed-point math.
@@ -67,7 +70,8 @@ public:
         const std::array<const u32*, 6>& planes,
         const std::array<const u32*, 2>& lineMeta,
         u64 generation);
-    [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
@@ -271,7 +275,11 @@ private:
     // The UAV table never changes within a frame; the SRV table only changes
     // when the bound texture array does.
     bool BindFrameUavTable(ID3D12GraphicsCommandList* list);
-    bool BindCompositionUavTable(ID3D12GraphicsCommandList* list);
+    bool BindCompositionUavTable(
+        ID3D12GraphicsCommandList* list,
+        DX12DescriptorRing& descriptors,
+        ID3D12Resource* structuredInput,
+        ID3D12Resource* composedOutput);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
@@ -315,9 +323,6 @@ private:
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionInputBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionOutputBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionReadbackBuffer;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
@@ -331,11 +336,9 @@ private:
     DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
     DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
     DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
-    DX12::ComPtr<ID3D12Resource> CompositionInputStaging;
     u8* YSpanSetupStagingPtr = nullptr;
     u8* SetupIndicesStagingPtr = nullptr;
     u8* RenderPolygonStagingPtr = nullptr;
-    u32* CompositionInputStagingPtr = nullptr;
 
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
     DX12::ComPtr<ID3D12Resource> DummyTexture;
@@ -382,9 +385,10 @@ private:
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
 
+    struct OutputState;
+    std::shared_ptr<OutputState> ComposedOutput;
+
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
-    std::array<std::vector<u32>, 2> ComposedColorBuffer;
-    u32 ComposedFrontBuffer = 0;
     alignas(8) u32 ScrolledLine[256]{};
 };
 
