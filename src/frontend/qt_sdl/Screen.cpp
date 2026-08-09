@@ -51,6 +51,7 @@
 #include "Config.h"
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "DX12Perf.h"
 #include "GPU_DX12.h"
 #include "MelonPrimeDX12FeatureCheck.h"
 #include "MelonPrimeDX12SurfacePresenter.h"
@@ -1815,7 +1816,6 @@ struct ScreenPanelDX12::DX12State
     QMutex fallbackLock;
     QImage fallbackFrame;
     QImage hudFrame;
-    QImage hudPatch;
     QRect hudRect;
     QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
@@ -2106,28 +2106,14 @@ void ScreenPanelDX12::drawScreen()
                 MelonPrimePerf::HudPhase::UploadPrepare);
             const int patchWidth = dx12->hudRect.width();
             const int patchHeight = dx12->hudRect.height();
-            if (dx12->hudPatch.width() != patchWidth
-                || dx12->hudPatch.height() != patchHeight
-                || dx12->hudPatch.format() != QImage::Format_ARGB32_Premultiplied)
-            {
-                dx12->hudPatch = QImage(
-                    patchWidth, patchHeight, QImage::Format_ARGB32_Premultiplied);
-            }
-            const int rowBytes = patchWidth * 4;
-            for (int row = 0; row < patchHeight; ++row)
-            {
-                std::memcpy(
-                    dx12->hudPatch.scanLine(row),
-                    dx12->hudFrame.constScanLine(dx12->hudRect.y() + row)
-                        + dx12->hudRect.x() * 4,
-                    static_cast<std::size_t>(rowBytes));
-            }
-            hudUploaded = dx12->presenter.UploadLayer(
+            hudUploaded = dx12->presenter.UploadLayerRegion(
                 MelonPrime::DX12SurfacePresenter::Layer::Hud,
-                dx12->hudPatch.constBits(),
+                dx12->hudFrame.constBits(),
+                static_cast<u32>(dx12->hudRect.x()),
+                static_cast<u32>(dx12->hudRect.y()),
                 static_cast<u32>(patchWidth),
                 static_cast<u32>(patchHeight),
-                static_cast<std::size_t>(dx12->hudPatch.bytesPerLine()));
+                static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
         }
     }
 

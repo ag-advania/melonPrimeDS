@@ -30,6 +30,7 @@
 #include <utility>
 
 #include "DX12PresentedFrame.h"
+#include "DX12Perf.h"
 #include "GPU.h"
 #include "GPU3D_DX12_shaders.h"
 #include "Platform.h"
@@ -42,6 +43,7 @@ namespace
 
 constexpr u64 kUploadRingBytes = 32ull * 1024 * 1024;
 constexpr u32 kDescriptorCount = 8192;
+constexpr u32 kStaticSrvCount = 5;
 
 constexpr u32 kSrvTableSize = 6;
 constexpr u32 kUavTableSize = 9;
@@ -200,6 +202,8 @@ bool DX12Renderer3D::Init()
         return false;
     if (!Descriptors.Init(device, kDescriptorCount, true))
         return false;
+    if (!StaticSrvDescriptors.Init(device, kStaticSrvCount, false))
+        return false;
     if (!CreateRootSignature())
         return false;
     if (!CreateCommandSignature())
@@ -241,11 +245,13 @@ void DX12Renderer3D::Stop()
     RootSignature.Reset();
 
     Descriptors.Shutdown();
+    StaticSrvDescriptors.Shutdown();
     Uploads.Shutdown();
     Commands.Shutdown();
 
     FrameInFlight = false;
     FrameReadbackValid = false;
+    FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
 }
@@ -258,6 +264,7 @@ void DX12Renderer3D::Reset()
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
     FrameReadbackValid = false;
+    FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     ColorBuffer.fill(0);
@@ -505,6 +512,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     BinResultBuffer.Reset();
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    FinalFBHasValidFrame = false;
 }
 
 bool DX12Renderer3D::CreateScaleDependentResources()
@@ -647,7 +655,7 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         return false;
     SetupIndicesStagingPtr = static_cast<u8*>(mapped);
 
-    return true;
+    return BuildStaticSrvDescriptors();
 }
 
 void DX12Renderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates)
@@ -1112,6 +1120,7 @@ void DX12Renderer3D::TransitionBuffer(
 
 bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
 {
+    DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
     struct UavEntry
     {
         ID3D12Resource* Resource;
@@ -1180,6 +1189,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
     }
 
     FrameUavTable = gpu;
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kUavTableSize);
     list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
     return true;
 }
@@ -1190,6 +1200,7 @@ bool DX12Renderer3D::BindCompositionUavTable(
     ID3D12Resource* structuredInput,
     ID3D12Resource* composedOutput)
 {
+    DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
     struct UavEntry
     {
         ID3D12Resource* Resource;
@@ -1254,12 +1265,14 @@ bool DX12Renderer3D::BindCompositionUavTable(
         device->CreateUnorderedAccessView(entries[i].Resource, nullptr, &desc, handle);
     }
 
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kUavTableSize);
     list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
     return true;
 }
 
 bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture)
 {
+    DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
     if (!texture)
         texture = DummyTexture.Get();
 
@@ -1276,54 +1289,11 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     ID3D12Device* device = Context->GetDevice();
     const u32 increment = Descriptors.GetIncrement();
-
-    auto handleAt = [&](u32 index) {
-        return D3D12_CPU_DESCRIPTOR_HANDLE{ cpu.ptr + static_cast<SIZE_T>(index) * increment };
-    };
-
-    // t0/t1: clear bitmap textures
-    for (u32 i = 0; i < 2; i++)
-    {
-        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-        desc.Format = DXGI_FORMAT_R32_UINT;
-        desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        desc.Texture2D.MostDetailedMip = 0;
-        desc.Texture2D.MipLevels = 1;
-        desc.Texture2D.PlaneSlice = 0;
-        desc.Texture2D.ResourceMinLODClamp = 0.0f;
-        device->CreateShaderResourceView(ClearBitmapTex[i].Get(), &desc, handleAt(i));
-    }
-
-    // t2: polygons, t3: y-spans
-    {
-        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-        desc.Format = DXGI_FORMAT_UNKNOWN;
-        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        desc.Buffer.FirstElement = 0;
-        desc.Buffer.NumElements = 2048;
-        desc.Buffer.StructureByteStride = sizeof(RenderPolygon);
-        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        device->CreateShaderResourceView(RenderPolygonBuffer.Get(), &desc, handleAt(2));
-
-        desc.Buffer.NumElements = MaxYSpanSetups;
-        desc.Buffer.StructureByteStride = sizeof(SpanSetupY);
-        device->CreateShaderResourceView(YSpanSetupBuffer.Get(), &desc, handleAt(3));
-    }
-
-    // t4: span indices, viewed as the RGBA16UI texel buffer the shader reads
-    {
-        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-        desc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
-        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        desc.Buffer.FirstElement = 0;
-        desc.Buffer.NumElements = static_cast<UINT>(MaxYSpanIndices);
-        desc.Buffer.StructureByteStride = 0;
-        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        device->CreateShaderResourceView(SetupIndicesBuffer.Get(), &desc, handleAt(4));
-    }
+    device->CopyDescriptorsSimple(
+        kStaticSrvCount,
+        cpu,
+        StaticSrvCpu,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // t5: decoded texture array for the current variant
     {
@@ -1339,11 +1309,14 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
         desc.Texture2DArray.ArraySize = texDesc.DepthOrArraySize;
         desc.Texture2DArray.PlaneSlice = 0;
         desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
-        device->CreateShaderResourceView(texture, &desc, handleAt(5));
+        D3D12_CPU_DESCRIPTOR_HANDLE textureHandle{
+            cpu.ptr + static_cast<SIZE_T>(kStaticSrvCount) * increment };
+        device->CreateShaderResourceView(texture, &desc, textureHandle);
     }
 
     BoundSrvTexture = texture;
     BoundSrvTable = gpu;
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kSrvTableSize);
     list->SetComputeRootDescriptorTable(kRootParamSrvTable, gpu);
     return true;
 }
@@ -1812,11 +1785,29 @@ void DX12Renderer3D::RenderFrame()
     if (ShaderStepIdx < ShaderStepCount)
         return; // pipelines are still being compiled
 
-    u8 texcacheClearBitmapDirty = 0;
-    Texcache.Update(texcacheClearBitmapDirty);
-    ClearBitmapDirty |= texcacheClearBitmapDirty;
+    DX12Perf::SetScale(static_cast<u32>(ScaleFactor));
+    DX12Perf::AddCounter(DX12Perf::Counter::Frames);
 
-    ID3D12GraphicsCommandList* list = Commands.Begin();
+    u8 texcacheClearBitmapDirty = 0;
+    bool textureCacheChanged = false;
+    {
+        DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
+        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+    }
+    ClearBitmapDirty |= texcacheClearBitmapDirty;
+    if (!textureCacheChanged && GPU3D.RenderFrameIdentical
+        && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
+        DX12Perf::MaybeReport();
+        return;
+    }
+
+    ID3D12GraphicsCommandList* list = nullptr;
+    {
+        DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::RasterBeginWait);
+        list = Commands.Begin();
+    }
     if (!list)
     {
         SetRuntimeFailure("could not begin a frame command list");
@@ -1839,12 +1830,17 @@ void DX12Renderer3D::RenderFrame()
     int numYSpans = 0;
     int numSetupIndices = 0;
     u32 numPolygons = 0;
-    const u32 numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+    u32 numVariants = 0;
+    {
+        DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
+        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+    }
+    DX12Perf::RecordGeometry(
+        numPolygons, numVariants, static_cast<u32>(numYSpans), static_cast<u32>(numSetupIndices));
     TextureHeap.FlushUploadBarriers();
 
-    // A texture upload can overflow the upload ring, which submits the list and
-    // opens a fresh one. Everything that sets command-list state therefore has
-    // to happen after the setup phase, on whichever list is now current.
+    // Texture-cache setup can use retained spill uploads if the main upload
+    // ring fills, while continuing to record this same command list.
     list = Commands.GetList();
     if (!list)
     {
@@ -1858,9 +1854,16 @@ void DX12Renderer3D::RenderFrame()
 
     if (numYSpans > 0)
     {
-        std::memcpy(YSpanSetupStagingPtr, YSpanSetups.get(), sizeof(SpanSetupY) * numYSpans);
-        std::memcpy(SetupIndicesStagingPtr, YSpanIndices.data(), sizeof(SetupIndices) * numSetupIndices);
-        std::memcpy(RenderPolygonStagingPtr, RenderPolygons.get(), sizeof(RenderPolygon) * numPolygons);
+        const u64 spanBytes = sizeof(SpanSetupY) * static_cast<u64>(numYSpans)
+            + sizeof(SetupIndices) * static_cast<u64>(numSetupIndices)
+            + sizeof(RenderPolygon) * static_cast<u64>(numPolygons);
+        {
+            DX12Perf::ScopedCpuTimer copyTimer(DX12Perf::CpuMetric::SpanStagingCopy);
+            std::memcpy(YSpanSetupStagingPtr, YSpanSetups.get(), sizeof(SpanSetupY) * numYSpans);
+            std::memcpy(SetupIndicesStagingPtr, YSpanIndices.data(), sizeof(SetupIndices) * numSetupIndices);
+            std::memcpy(RenderPolygonStagingPtr, RenderPolygons.get(), sizeof(RenderPolygon) * numPolygons);
+        }
+        DX12Perf::AddCounter(DX12Perf::Counter::SpanUploadBytes, spanBytes);
 
         TransitionBuffer(list, YSpanSetupBuffer.Get(),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -2078,15 +2081,22 @@ void DX12Renderer3D::RenderFrame()
     TransitionBuffer(list, ResolveBuffer.Get(),
         D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    if (Commands.Submit())
+    bool submitted = false;
+    {
+        DX12Perf::ScopedCpuTimer submitTimer(DX12Perf::CpuMetric::QueueSubmit);
+        submitted = Commands.Submit();
+    }
+    if (submitted)
     {
         FrameInFlight = true;
         FrameReadbackValid = false;
+        FinalFBHasValidFrame = true;
     }
     else
     {
         SetRuntimeFailure("frame command submission failed");
     }
+    DX12Perf::MaybeReport();
 }
 
 void DX12Renderer3D::EnsureFrameReadback()
@@ -2097,8 +2107,13 @@ void DX12Renderer3D::EnsureFrameReadback()
     // Deliberately deferred to the first GetLine() of the frame instead of the
     // end of RenderFrame(): the GPU gets to overlap with whatever the emulation
     // thread does between the two.
-    Commands.WaitIdle();
+    {
+        DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::CaptureWait);
+        Commands.WaitIdle();
+    }
 
+    DX12Perf::ScopedCpuTimer mapTimer(DX12Perf::CpuMetric::CaptureMapCopy);
+    DX12Perf::AddCounter(DX12Perf::Counter::CaptureReadCount);
     D3D12_RANGE readRange{ 0, 256ull * 192ull * 4ull };
     void* mapped = nullptr;
     if (SUCCEEDED(ReadbackBuffer->Map(0, &readRange, &mapped)) && mapped)
@@ -2152,6 +2167,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     {
         // Presentation is still reading this slot. Reusing the last published
         // frame is preferable to blocking the emulation thread.
+        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
         return false;
     }
     ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
@@ -2159,6 +2175,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     {
         // The GPU has not retired this ring slot after three frames. Keep the
         // previous output and let the emulator continue without a fence wait.
+        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
         return false;
     }
 
@@ -2168,16 +2185,24 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         SetRuntimeFailure("the compositor staging slot is not mapped");
         return false;
     }
-    for (std::size_t i = 0; i < planes.size(); ++i)
     {
-        std::memcpy(
-            staging + i * kStructuredPixelCount,
-            planes[i],
-            static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+        DX12Perf::ScopedCpuTimer packTimer(DX12Perf::CpuMetric::ComposePack);
+        for (std::size_t i = 0; i < planes.size(); ++i)
+        {
+            std::memcpy(
+                staging + i * kStructuredPixelCount,
+                planes[i],
+                static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+        }
+        u32* metaDestination = staging + (kStructuredPixelCount * planes.size());
+        std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
+        std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
     }
-    u32* metaDestination = staging + (kStructuredPixelCount * planes.size());
-    std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
-    std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredPackBytes,
+        static_cast<u64>(kCompositionInputDwords) * sizeof(u32));
+
+    DX12Perf::ScopedCpuTimer recordTimer(DX12Perf::CpuMetric::ComposeRecord);
 
     slot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
@@ -2230,7 +2255,12 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_COPY_DEST);
 
-    if (!slot.Commands.Submit())
+    bool submitted = false;
+    {
+        DX12Perf::ScopedCpuTimer submitTimer(DX12Perf::CpuMetric::QueueSubmit);
+        submitted = slot.Commands.Submit();
+    }
+    if (!submitted)
     {
         SetRuntimeFailure("compositor command submission failed");
         return false;
@@ -2244,6 +2274,50 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         ComposedGeneration = generation;
         ComposedOutputValid = true;
     }
+    return true;
+}
+
+bool DX12Renderer3D::BuildStaticSrvDescriptors()
+{
+    StaticSrvDescriptors.Reset();
+    D3D12_GPU_DESCRIPTOR_HANDLE ignored{};
+    if (!StaticSrvDescriptors.Allocate(kStaticSrvCount, StaticSrvCpu, ignored))
+        return false;
+
+    ID3D12Device* device = Context->GetDevice();
+    const u32 increment = StaticSrvDescriptors.GetIncrement();
+    auto handleAt = [&](u32 index) {
+        return D3D12_CPU_DESCRIPTOR_HANDLE{
+            StaticSrvCpu.ptr + static_cast<SIZE_T>(index) * increment };
+    };
+
+    for (u32 i = 0; i < 2; ++i)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_R32_UINT;
+        desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Texture2D.MipLevels = 1;
+        device->CreateShaderResourceView(ClearBitmapTex[i].Get(), &desc, handleAt(i));
+    }
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC spanDesc{};
+    spanDesc.Format = DXGI_FORMAT_UNKNOWN;
+    spanDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    spanDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    spanDesc.Buffer.NumElements = 2048;
+    spanDesc.Buffer.StructureByteStride = sizeof(RenderPolygon);
+    device->CreateShaderResourceView(RenderPolygonBuffer.Get(), &spanDesc, handleAt(2));
+    spanDesc.Buffer.NumElements = MaxYSpanSetups;
+    spanDesc.Buffer.StructureByteStride = sizeof(SpanSetupY);
+    device->CreateShaderResourceView(YSpanSetupBuffer.Get(), &spanDesc, handleAt(3));
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC indexDesc{};
+    indexDesc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+    indexDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    indexDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    indexDesc.Buffer.NumElements = static_cast<UINT>(MaxYSpanIndices);
+    device->CreateShaderResourceView(SetupIndicesBuffer.Get(), &indexDesc, handleAt(4));
     return true;
 }
 

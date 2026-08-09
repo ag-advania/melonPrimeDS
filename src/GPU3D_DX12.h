@@ -252,6 +252,7 @@ private:
     bool CreateCommandSignature();
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
+    bool BuildStaticSrvDescriptors();
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
 
@@ -299,6 +300,7 @@ private:
     DX12CommandContext Commands;
     DX12UploadRing Uploads;
     DX12DescriptorRing Descriptors;
+    DX12DescriptorRing StaticSrvDescriptors;
     DX12TextureHeap TextureHeap;
 
     TexcacheDX12 Texcache;
@@ -379,9 +381,11 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
     ID3D12Resource* BoundSrvTexture = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE BoundSrvTable{};
+    D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
+    bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
 

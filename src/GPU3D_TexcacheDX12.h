@@ -84,6 +84,9 @@ private:
     std::vector<u32> FreeSlots;
     std::vector<u32> PendingBarriers;
     std::vector<DX12::ComPtr<ID3D12Resource>> Graveyard;
+    // Oversized/overflow uploads stay alive until the next frame's Begin()
+    // retires this command list. This avoids a synchronous mid-frame flush.
+    std::vector<DX12::ComPtr<ID3D12Resource>> SpillUploads;
 };
 
 class TexcacheDX12Loader

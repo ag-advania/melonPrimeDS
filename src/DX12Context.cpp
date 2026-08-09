@@ -793,14 +793,6 @@ bool DX12CommandContext::Submit()
     return true;
 }
 
-bool DX12CommandContext::Flush()
-{
-    if (!Submit())
-        return false;
-    WaitIdle();
-    return Begin() != nullptr;
-}
-
 // ---------------------------------------------------------------------------
 // DX12UploadRing
 // ---------------------------------------------------------------------------
