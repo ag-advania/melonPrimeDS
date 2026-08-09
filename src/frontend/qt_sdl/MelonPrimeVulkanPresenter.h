@@ -150,6 +150,24 @@ public:
         melonDS::u32 height,
         std::size_t rowBytes);
 
+    // Updates a persistent layer image without re-uploading unchanged pixels.
+    // Source coordinates are expressed in the full `width` x `height` image.
+    bool UploadLayerRegion(
+        Layer layer,
+        const void* pixels,
+        melonDS::u32 width,
+        melonDS::u32 height,
+        std::size_t rowBytes,
+        melonDS::u32 x,
+        melonDS::u32 y,
+        melonDS::u32 regionWidth,
+        melonDS::u32 regionHeight);
+
+    [[nodiscard]] bool HasLayerContent(Layer layer) const noexcept
+    {
+        return Layers[static_cast<std::size_t>(layer)].HasContent;
+    }
+
     // GPU-native screen upload. The composed source buffer belongs to the
     // renderer but was produced on this presenter's shared main queue, so the
     // copy needs only a queue-ordered buffer barrier and no CPU fence wait.

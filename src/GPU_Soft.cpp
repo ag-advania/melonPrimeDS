@@ -21,6 +21,7 @@
 #include "GPU_ColorOp.h"
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 #include "MelonPrimeStructuredComposition.h"
+#include "VulkanPerf.h"
 #endif
 
 namespace melonDS
@@ -188,6 +189,9 @@ void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
+    const bool measureStructured2D = outputLine < 192u && UseStructuredVulkan2D();
+    if (measureStructured2D && outputLine == 0u)
+        VulkanPerf::BeginStructured2DFrame();
 #endif
     u32 *dstA, *dstB;
     u32 dstoffset = 256 * line;
@@ -321,6 +325,10 @@ void SoftRenderer::DrawScanline(u32 line)
         BuildStructuredScreenLine(1, screenB, outputLine, dstB, true);
 #endif
     }
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    if (measureStructured2D && outputLine == 191u)
+        VulkanPerf::EndStructured2DFrame();
+#endif
 }
 
 void SoftRenderer::DrawSprites(u32 line)
@@ -627,61 +635,6 @@ void SoftRenderer::ExpandColor(u32* dst)
 bool SoftRenderer::UseStructuredVulkan2D() const noexcept
 {
     return Rend3D != nullptr && Rend3D->UsesStructured2DMetadata();
-}
-
-void SoftRenderer::StoreStructuredEnginePixel(
-    u32 engine,
-    u32 line,
-    u32 x,
-    u32 val1,
-    u32 val2,
-    u32 composed,
-    u32 compositionMode,
-    u32 eva,
-    u32 evb)
-{
-    if (engine >= 2u || line >= 192u || x >= 256u)
-        return;
-
-    const std::size_t pixelIndex = static_cast<std::size_t>(line) * 256u + x;
-    const std::size_t engineBase = static_cast<std::size_t>(engine) * 3u * StructuredPixelCount;
-    u32 plane0 = composed;
-    u32 plane1 = 0;
-    u32 controlAlpha = Contract::kControlPlain2D;
-    // These two tests read the 2D engine's own BG/OBJ pixel flags, not the
-    // structured control word: 0x40 is the 3D layer marker this renderer fed
-    // into the BG pipeline, and 0x80 marks a blend-flagged sprite that only
-    // looks like one.
-    const u32 alpha1 = val1 >> 24u;
-    const u32 alpha2 = val2 >> 24u;
-    const bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
-    const bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
-
-    if (val1Is3D)
-    {
-        plane0 = val2;
-        controlAlpha = Contract::kControlHas3DSlot
-            | (compositionMode & Contract::kControlCompositionModeMask);
-        if ((plane0 & 0x00FFFFFFu) == 0 && (plane0 >> 24u) != 0)
-            controlAlpha |= Contract::kControlOpaqueBlackBelow;
-    }
-    else if (val2Is3D && compositionMode == Contract::kCompositionModeBlend4)
-    {
-        plane0 = 0;
-        plane1 = val1;
-        controlAlpha = Contract::kControlHas3DSlot
-            | Contract::kControlAbovePlane
-            | Contract::kCompositionModeBlend4;
-        if ((plane1 & 0x00FFFFFFu) == 0 && (plane1 >> 24u) != 0)
-            controlAlpha |= Contract::kControlOpaqueBlackBelow;
-    }
-
-    StructuredEnginePlanes[engineBase + pixelIndex] = plane0;
-    StructuredEnginePlanes[engineBase + StructuredPixelCount + pixelIndex] = plane1;
-    StructuredEnginePlanes[engineBase + (2u * StructuredPixelCount) + pixelIndex] =
-        ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
-        | ((evb & 0xFFu) << Contract::kControlEvbShift)
-        | ((eva & 0xFFu) << Contract::kControlEvaShift);
 }
 
 namespace
