@@ -1793,6 +1793,18 @@ void VulkanPresenter::Shutdown() noexcept
 {
     if (Device.IsValid())
     {
+        // Vendor pacing state is driver-owned and scoped to this live
+        // device/swapchain. Turn it off before the final device drain so the
+        // drain also retires the state transition itself. Doing this after
+        // DeviceWaitIdle and then immediately destroying the Reflex semaphore
+        // and swapchain left NVIDIA's driver holding active low-latency state
+        // when switching away from Vulkan during gameplay.
+        Reflex.FinishFrame();
+        Reflex.SetMode(VulkanNvidiaReflexMode::Off);
+        AntiLag.SetEnabled(false);
+        AntiLag.EndFrame(LowLatencyFrameIndex);
+        AntiLag.BeginFrame(LowLatencyFrameIndex);
+
         // Teardown is the second sanctioned use of a full device drain: every
         // object below may still be referenced by work in flight, and there is
         // no cheaper way to be sure it is not.

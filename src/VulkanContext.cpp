@@ -76,10 +76,21 @@ void AppendUnique(std::vector<const char*>& list, const char* name)
 
 VulkanContext& VulkanContext::Get()
 {
+#if defined(_WIN32)
+    // The previous Windows backend deliberately kept its Vulkan context warm
+    // for the process lifetime. Do the same here: a live renderer switch must
+    // not unload vulkan-1.dll or destroy the instance while the retained
+    // process-wide VkDevice still exists. Allocating the singleton prevents
+    // C++ static-destruction order from tearing the loader down underneath the
+    // driver; Windows reclaims all three after executable teardown.
+    static auto* instance = new VulkanContext();
+    return *instance;
+#else
     // Function-local static: constructed on first use, destroyed at exit after
     // every renderer has already released its reference.
     static VulkanContext instance;
     return instance;
+#endif
 }
 
 VulkanContext::~VulkanContext()

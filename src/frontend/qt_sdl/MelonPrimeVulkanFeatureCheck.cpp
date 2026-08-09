@@ -17,6 +17,7 @@
 
 #include "Platform.h"
 #include "VulkanContext.h"
+#include "VulkanDevice.h"
 #include "VulkanFeatureProbe.h"
 
 // Platform::Log lives in melonDS::Platform; the frontend spells it unqualified
@@ -189,6 +190,16 @@ void ReportRuntimeFailure(std::string reason)
 void ResetProbeForRetry()
 {
     std::lock_guard<std::mutex> lock(g_mutex);
+
+    // Opening Video Settings calls this to retry a previously failed probe.
+    // A live shared logical device is already stronger evidence than another
+    // physical-device probe, and probing it again while the emulation thread
+    // is actively submitting Vulkan work races NVIDIA's driver during a
+    // Vulkan -> other-backend transition. Keep the successful cached result;
+    // once the last Vulkan client is gone, a later retry can probe normally.
+    if (VulkanDevice::HasSharedDevice(VulkanContext::Get()))
+        return;
+
     g_runtimeFailed = false;
     g_runtimeFailureReason.clear();
     g_probed = false;

@@ -1133,6 +1133,19 @@ void ScreenPanelVulkan::drawScreenFrame()
         if (mp && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
                 emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
         {
+            // The bottom screen is a Custom HUD input even when the active
+            // layout only presents the top screen. DX12 always hands its
+            // bottom QImage to the colour-key pass independently of the
+            // visible screen list; keep that same contract for the native
+            // Vulkan path instead of leaving ScreenBottom empty (or stale).
+            if (!screenUploaded[1])
+            {
+                screenUploaded[1] = vulkan->presenter.UploadLayerFromBuffer(
+                    MelonPrime::VulkanPresenter::Layer::ScreenBottom,
+                    *gpuFrame,
+                    gpuFrame->BottomOffset);
+            }
+
             const float anchorX = topMatrix[0] * m_radarAnchorDsX
                 + topMatrix[1] * m_radarAnchorDsY + topMatrix[4];
             const float anchorY = topMatrix[2] * m_radarAnchorDsX
@@ -1151,7 +1164,8 @@ void ScreenPanelVulkan::drawScreenFrame()
             gpuRadarQuad.Origin[3] = viewportHeight;
             const u8 hunter = std::min<u8>(mp->GetHunterID(), MelonPrime::kHunterCount - 1);
             gpuRadarCenterY = static_cast<u32>(MelonPrime::kBtmOverlaySrcCenterY[hunter]);
-            gpuRadarVisible = m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
+            gpuRadarVisible = screenUploaded[1]
+                && m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
         }
     }
     bool hudUploaded = false;
@@ -1215,15 +1229,6 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    if (gpuRadarVisible)
-    {
-        vulkan->presenter.DrawRadar(
-            gpuRadarQuad,
-            m_radarOpacity,
-            gpuRadarCenterY,
-            static_cast<u32>(m_radarSrcRadius));
-    }
-
     if (hudUploaded)
     {
         // The overlay covers the whole widget in logical pixels and is stretched
@@ -1248,6 +1253,18 @@ void ScreenPanelVulkan::drawScreenFrame()
             quad,
             MelonPrime::VulkanPresenter::Blend::Premultiplied,
             filter);
+    }
+
+    // Match DrawBottomScreenOverlay(): combined outline and SVG frame are
+    // behind the colour-keyed bottom-screen pixels. The CPU HUD image contains
+    // those two backing layers, so draw the native GPU radar after it.
+    if (gpuRadarVisible)
+    {
+        vulkan->presenter.DrawRadar(
+            gpuRadarQuad,
+            m_radarOpacity,
+            gpuRadarCenterY,
+            static_cast<u32>(m_radarSrcRadius));
     }
 #endif
 
