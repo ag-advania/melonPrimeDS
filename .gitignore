@@ -19,6 +19,7 @@ compile_commands.json
 .cache
 artifacts/
 /tmp/
+/Vulkan-Headers/
 __pycache__/
 *.py[cod]
 
