@@ -37,7 +37,10 @@ Every macOS build script is indexed in
 
 Useful options: `--jobs N`, `--release` (developer features off), `--debug`
 (enables the Vulkan validation layer, which also needs `vulkan-loader`),
-`--with-metal`, `--no-bundle`, `--open`. `--help` lists them all.
+`--with-metal`, `--no-bundle`, `--open`. `--help` lists them all. The default
+path bundles MoltenVK through CMake; `--no-bundle` is only for local runtime
+experiments and can reproduce a greyed-out Vulkan setting on machines without
+another Vulkan runtime.
 
 The script fails instead of silently producing a build without the renderer it
 promised: after configuring it checks that CMake resolved the Vulkan headers,
@@ -63,30 +66,22 @@ on a machine without them.
 
 `VulkanDispatch::Initialize()` tries, in order:
 
-1. `$MELONPRIME_VULKAN_LOADER` (explicit override, any platform)
-2. `$VULKAN_SDK/lib/libvulkan.1.dylib`, then `$VULKAN_SDK/lib/libMoltenVK.dylib`
-3. `@executable_path/../Frameworks/libvulkan.1.dylib` (a loader bundled in the app)
-4. `libvulkan.1.dylib`, `libvulkan.dylib` (default dyld search)
-5. `/opt/homebrew/lib/libvulkan.1.dylib`, `/usr/local/lib/libvulkan.1.dylib`
-6. `@executable_path/../Frameworks/libMoltenVK.dylib` (the bundled driver)
-7. `libMoltenVK.dylib`, then the same two Homebrew prefixes
+1. `@executable_path/../Frameworks/libMoltenVK.dylib` (the bundled driver)
+2. `libvulkan.1.dylib`
+3. `libvulkan.dylib`
+4. `libMoltenVK.dylib`
+5. `@rpath/libvulkan.1.dylib`
 
-The Homebrew prefixes are listed explicitly because `dlopen()` by bare name
-searches `/usr/local/lib` but not `/opt/homebrew/lib`, so Apple Silicon
-installs are otherwise invisible.
-
-The bundled MoltenVK sits *after* every loader candidate on purpose. It makes
-the app self-contained, but an installed Khronos loader still wins, so
-validation layers stay reachable in a `--debug` build.
-
-A candidate is rejected and the search continues when it exposes no
-`VK_EXT_metal_surface`. That is what a Khronos loader with no registered ICD
-looks like, and skipping it lets the MoltenVK candidates further down the list
-still succeed instead of failing much later at surface creation.
+The bundled MoltenVK comes first so the app is self-contained when launched
+from Finder or on a clean Mac without Homebrew, the Vulkan SDK, or dyld
+environment variables. If no candidate loads, the log records the `dlopen()`
+failure for each path that was tried.
 
 By default the build script copies `libMoltenVK.dylib` into
-`melonPrimeDS.app/Contents/Frameworks` (candidate 6) and re-signs the bundle,
-so the app runs Vulkan on Macs without Homebrew. Pass `--no-bundle` to skip it.
+`melonPrimeDS.app/Contents/Frameworks` and CMake re-signs the bundle, so the app
+runs Vulkan on Macs without Homebrew. CI uses the official KhronosGroup
+`MoltenVK-macos.tar` release asset pinned to a fixed tag and SHA-256, and
+verifies that the dylib and license notice are present in the final bundle.
 
 ## How presentation works
 

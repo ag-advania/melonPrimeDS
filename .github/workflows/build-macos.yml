@@ -16,6 +16,9 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
+  MOLTENVK_VERSION: v1.4.0
+  MOLTENVK_MACOS_URL: https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.0/MoltenVK-macos.tar
+  MOLTENVK_MACOS_SHA256: f4feaf6a4988352de8e6d49874ccc1cd6a45021e3cb476e8531bef7ecc73e93a
 #  MELONDS_VERSION_SUFFIX: " RC"
 
 jobs:
@@ -46,6 +49,18 @@ jobs:
         run: |
           brew install vulkan-headers
 
+      - name: Fetch pinned MoltenVK runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .deps
+          curl -fL --retry 3 -o .deps/MoltenVK-macos.tar "$MOLTENVK_MACOS_URL"
+          echo "$MOLTENVK_MACOS_SHA256  .deps/MoltenVK-macos.tar" | shasum -a 256 -c -
+          tar -xf .deps/MoltenVK-macos.tar -C .deps
+          test -f .deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib
+          test -f .deps/MoltenVK/LICENSE
+          lipo .deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib -verify_arch "${{ matrix.arch }}"
+
       - name: Set up CMake
         uses: lukka/get-cmake@latest
 
@@ -67,7 +82,17 @@ jobs:
         with:
           configurePreset: release-mac-${{ matrix.arch }}
           buildPreset: release-mac-${{ matrix.arch }}
-          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF']"
+          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF', '-DMELONPRIME_MOLTENVK_DYLIB=${{ github.workspace }}/.deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib', '-DMELONPRIME_MOLTENVK_LICENSE=${{ github.workspace }}/.deps/MoltenVK/LICENSE']"
+
+      - name: Verify bundled MoltenVK
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/release-mac-${{ matrix.arch }}/melonPrimeDS.app"
+          test -f "$app/Contents/Frameworks/libMoltenVK.dylib"
+          test -f "$app/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt"
+          lipo "$app/Contents/Frameworks/libMoltenVK.dylib" -verify_arch "${{ matrix.arch }}"
+          lipo -info "$app/Contents/Frameworks/libMoltenVK.dylib"
 
       - name: Verify app signature
         shell: bash
@@ -129,6 +154,9 @@ jobs:
           lipo {x86_64,arm64}/melonPrimeDS.app/Contents/MacOS/melonPrimeDS -create -output melonPrimeDS
           cp -a arm64/melonPrimeDS.app melonPrimeDS.app
           cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
+          test -f melonPrimeDS.app/Contents/Frameworks/libMoltenVK.dylib
+          test -f melonPrimeDS.app/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt
+          lipo melonPrimeDS.app/Contents/Frameworks/libMoltenVK.dylib -verify_arch x86_64 arm64
           # Arch builds are ad-hoc signed in CMake (MACOS_ADHOC_SIGN_BUNDLE); lipo
           # replaces the main binary so the bundle must be re-signed with --force.
           codesign --force --sign - --deep --timestamp=none melonPrimeDS.app
