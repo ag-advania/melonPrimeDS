@@ -655,10 +655,8 @@ void VulkanRenderer3D::ReleasePipelines()
 // Render settings
 // ---------------------------------------------------------------------------
 
-void VulkanRenderer3D::SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates)
+void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
 {
-    BetterPolygons = betterPolygons;
-
     if (!Initialized)
         return;
 
@@ -1215,6 +1213,13 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
     numYSpans = 0;
     numSetupIndices = 0;
     numPolygons = 0;
+
+    // Unlike classic OpenGL and the native Metal raster paths, this compute
+    // rasterizer never splits an N-sided DS polygon into GPU triangles. It
+    // walks the polygon's left/right edges and interpolates one X span per
+    // scanline, matching GPU3D_Compute. The Better Polygons center-fan option
+    // exists only to reduce errors introduced by triangle splitting, so it is
+    // deliberately not a Vulkan setting here.
 
     // Games spam small textures, so same-sized textures share an array texture
     // and polygons that agree on texture + blend mode + wrap mode share a
