@@ -55,6 +55,17 @@ HUD_RE = re.compile(
     r"dr3_skip=(?P<dr3_skip>[0-9]+) hud_render_us=(?P<hud_render_us>[0-9.]+)"
 )
 
+HUD_PHASE_RE = re.compile(
+    r"\[MelonPrimePerf\] hud_phase_us "
+    r"state_p50=(?P<state_p50>[0-9.]+) state_p99=(?P<state_p99>[0-9.]+) "
+    r"qpainter_p50=(?P<qpainter_p50>[0-9.]+) qpainter_p99=(?P<qpainter_p99>[0-9.]+) "
+    r"clear_p50=(?P<clear_p50>[0-9.]+) clear_p99=(?P<clear_p99>[0-9.]+) "
+    r"hash_p50=(?P<hash_p50>[0-9.]+) hash_p99=(?P<hash_p99>[0-9.]+) "
+    r"upload_prepare_p50=(?P<upload_p50>[0-9.]+) "
+    r"upload_prepare_p99=(?P<upload_p99>[0-9.]+) "
+    r"calls=(?P<calls>[0-9]+) drawn=(?P<drawn>[0-9]+)"
+)
+
 
 @dataclass
 class WindowSample:
@@ -83,6 +94,18 @@ class WindowSample:
     gl_up_b: int = 0
     dr3_skip: int = 0
     hud_render_us: float | None = None
+    hud_state_p50_us: float | None = None
+    hud_state_p99_us: float | None = None
+    hud_qpainter_p50_us: float | None = None
+    hud_qpainter_p99_us: float | None = None
+    hud_clear_p50_us: float | None = None
+    hud_clear_p99_us: float | None = None
+    hud_hash_p50_us: float | None = None
+    hud_hash_p99_us: float | None = None
+    hud_upload_p50_us: float | None = None
+    hud_upload_p99_us: float | None = None
+    hud_calls: int = 0
+    hud_drawn: int = 0
 
 
 @dataclass
@@ -137,6 +160,23 @@ def parse_lines(lines: Iterable[str]) -> Report:
                 sample.dr3_skip = int(hud.group("dr3_skip"))
                 sample.hud_render_us = float(hud.group("hud_render_us"))
             report.windows.append(sample)
+            continue
+
+        m = HUD_PHASE_RE.search(line)
+        if m and report.windows:
+            sample = report.windows[-1]
+            sample.hud_state_p50_us = float(m.group("state_p50"))
+            sample.hud_state_p99_us = float(m.group("state_p99"))
+            sample.hud_qpainter_p50_us = float(m.group("qpainter_p50"))
+            sample.hud_qpainter_p99_us = float(m.group("qpainter_p99"))
+            sample.hud_clear_p50_us = float(m.group("clear_p50"))
+            sample.hud_clear_p99_us = float(m.group("clear_p99"))
+            sample.hud_hash_p50_us = float(m.group("hash_p50"))
+            sample.hud_hash_p99_us = float(m.group("hash_p99"))
+            sample.hud_upload_p50_us = float(m.group("upload_p50"))
+            sample.hud_upload_p99_us = float(m.group("upload_p99"))
+            sample.hud_calls = int(m.group("calls"))
+            sample.hud_drawn = int(m.group("drawn"))
             continue
 
         m = SHUTDOWN_RE.search(line)
@@ -254,7 +294,15 @@ def summarize_for_tables(report: Report, platform: str) -> list[str]:
     dr3_skip_per_frame = (
         sum(w.dr3_skip for w in report.windows) / total_frames if total_frames else 0.0
     )
-    hud_render = [w.hud_render_us for w in report.windows if w.hud_render_us is not None]
+    phase_windows = [
+        w for w in report.windows
+        if w.hud_state_p50_us is not None and w.hud_drawn > 0
+    ]
+    hud_render = [
+        w.hud_render_us for w in phase_windows if w.hud_render_us is not None
+    ] if phase_windows else [
+        w.hud_render_us for w in report.windows if w.hud_render_us is not None
+    ]
 
     return [
         "V6 §8 frame row:",
@@ -276,6 +324,14 @@ def summarize_for_tables(report: Report, platform: str) -> list[str]:
         "- `CustomHud_Render` p50/p99 us: {:.1f}/{:.1f}".format(
             percentile(hud_render, 0.50),
             percentile(hud_render, 0.99),
+        ),
+        "- HUD state/QPainter/clear/hash/upload-prepare median-window p50 us: "
+        "{:.1f}/{:.1f}/{:.1f}/{:.1f}/{:.1f}".format(
+            median([w.hud_state_p50_us or 0.0 for w in phase_windows]),
+            median([w.hud_qpainter_p50_us or 0.0 for w in phase_windows]),
+            median([w.hud_clear_p50_us or 0.0 for w in phase_windows]),
+            median([w.hud_hash_p50_us or 0.0 for w in phase_windows]),
+            median([w.hud_upload_p50_us or 0.0 for w in phase_windows]),
         ),
         "",
         "V5 Phase 0 frame row:",
@@ -348,9 +404,34 @@ def print_window_details(windows: list[WindowSample], out: TextIO) -> None:
                 file=out,
             )
 
-    hud_render = [w.hud_render_us for w in windows if w.hud_render_us is not None]
+    phase_windows = [
+        w for w in windows if w.hud_state_p50_us is not None and w.hud_drawn > 0
+    ]
+    hud_render = [
+        w.hud_render_us for w in phase_windows if w.hud_render_us is not None
+    ] if phase_windows else [w.hud_render_us for w in windows if w.hud_render_us is not None]
     if hud_render:
         print(f"custom HUD render median: {median(hud_render):.1f} us", file=out)
+
+    if phase_windows:
+        print("HUD-active phase median of 1 Hz percentiles (p50/p99 us):", file=out)
+        for label, p50_attr, p99_attr in (
+            ("state", "hud_state_p50_us", "hud_state_p99_us"),
+            ("QPainter", "hud_qpainter_p50_us", "hud_qpainter_p99_us"),
+            ("clear", "hud_clear_p50_us", "hud_clear_p99_us"),
+            ("hash", "hud_hash_p50_us", "hud_hash_p99_us"),
+            ("upload", "hud_upload_p50_us", "hud_upload_p99_us"),
+        ):
+            print(
+                f"  {label}={median([getattr(w, p50_attr) or 0.0 for w in phase_windows]):.1f}/"
+                f"{median([getattr(w, p99_attr) or 0.0 for w in phase_windows]):.1f}",
+                file=out,
+            )
+        print(
+            f"  calls={sum(w.hud_calls for w in phase_windows)} "
+            f"drawn={sum(w.hud_drawn for w in phase_windows)}",
+            file=out,
+        )
 
 
 def main() -> int:

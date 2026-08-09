@@ -35,6 +35,7 @@
 #include "EmuThread.h"
 #include "MelonPrime.h"
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimePerfProbe.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"
 
@@ -1019,9 +1020,12 @@ void ScreenPanelMetal::drawScreen()
         RadarFragmentUniforms gpuRadarFragmentUniforms{};
 #endif
 
-        if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
-            m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
-        m->uiOverlay.fill(Qt::transparent);
+        {
+            MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
+            if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
+                m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
+            m->uiOverlay.fill(Qt::transparent);
+        }
 
         QPainter overlayPainter(&m->uiOverlay);
 
@@ -1141,6 +1145,7 @@ void ScreenPanelMetal::drawScreen()
                     overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
                     overlayPainter.setFont(overlayFont);
 
+                    const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
                     const QRect dirty = MelonPrime::CustomHud_Render(
                         mp->HudConfigState(),
                         emuInstance, instcfg,
@@ -1153,6 +1158,14 @@ void ScreenPanelMetal::drawScreen()
                         m_hudScale,
                         (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
                         (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
+                    if (hudRenderStart)
+                        MelonPrimePerf::AddCustomHudRenderTicks(
+                            MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
+                    if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
+                    {
+                        MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
+                        MelonPrimePerf::CountCustomHudDrawn();
+                    }
                     overlayHasContent = overlayHasContent || !dirty.isEmpty();
                 }
             }
@@ -1215,10 +1228,14 @@ void ScreenPanelMetal::drawScreen()
 
             if (m->uiTex)
             {
-                [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
-                             mipmapLevel:0
-                               withBytes:m->uiOverlay.constBits()
-                             bytesPerRow:m->uiOverlay.bytesPerLine()];
+                {
+                    MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
+                        MelonPrimePerf::HudPhase::UploadPrepare);
+                    [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
+                                 mipmapLevel:0
+                                   withBytes:m->uiOverlay.constBits()
+                                 bytesPerRow:m->uiOverlay.bytesPerLine()];
+                }
 
                 UiUniforms uiUniforms{};
                 uiUniforms.rect[0] = 0.0f;
