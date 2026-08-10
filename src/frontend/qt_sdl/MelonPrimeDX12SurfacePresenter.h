@@ -116,6 +116,7 @@ private:
     bool CreatePipeline(bool blended, melonDS::DX12::ComPtr<ID3D12PipelineState>& output);
     bool Resize(std::uint32_t width, std::uint32_t height);
     bool AcquireBackBuffers();
+    void CloseFrameLatencyWaitable() noexcept;
     bool EnsureLayerTexture(Layer layer, std::uint32_t width, std::uint32_t height);
     bool EnsureLayerUpload(LayerTexture& layer, std::uint32_t width, std::uint32_t height);
     bool WaitForPresentSlot();
@@ -139,7 +140,7 @@ private:
     ID3D12GraphicsCommandList* OpenList = nullptr;
     ID3D12Resource* NativeSource = nullptr;
     D3D12_RESOURCE_STATES NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    HANDLE FrameLatencyWaitable = nullptr; // Owned by DXGI; never CloseHandle().
+    HANDLE FrameLatencyWaitable = nullptr;
     std::uint32_t Width = 0;
     std::uint32_t Height = 0;
     UINT RtvIncrement = 0;

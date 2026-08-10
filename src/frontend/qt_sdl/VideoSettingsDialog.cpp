@@ -624,25 +624,44 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 
 void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && \
+    (defined(MELONPRIME_ENABLE_VULKAN) || \
+     (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     bool hasVSyncControl = hasOGL;
+#if defined(MELONPRIME_ENABLE_VULKAN)
     const bool vulkanRenderer =
         emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Vulkan;
     hasVSyncControl = hasVSyncControl || vulkanRenderer;
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    const bool dx12Renderer =
+        emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_DX12;
+    hasVSyncControl = hasVSyncControl || dx12Renderer;
+#endif
     ui->cbVSync->setEnabled(hasVSyncControl);
-    // The Qt Vulkan presenter supports FIFO versus MAILBOX/IMMEDIATE, but
-    // Vulkan swapchains do not expose the OpenGL swap-interval setting.
+    // Native presenters control synchronization without exposing the OpenGL
+    // swap-interval setting.
     const bool intervalEnabled = hasOGL && ui->cbVSync->isChecked();
     ui->label_2->setEnabled(intervalEnabled);
     ui->sbVSyncInterval->setEnabled(intervalEnabled);
 
-    // Native Vulkan selects a present mode when the swapchain is created; it
-    // has no OpenGL-style swap interval. Keep the saved value untouched for
-    // other renderers, but make the disabled control explain why it is unused.
-    const QString intervalDescription = vulkanRenderer
-        ? MelonPrime::UiText::Tr(
-            "VSync Interval is not used by the native Vulkan presenter.")
-        : QString();
+    // Keep the saved interval untouched for other renderers, but explain why
+    // the disabled control is unused by the selected native presenter.
+    QString intervalDescription;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+    {
+        intervalDescription = MelonPrime::UiText::Tr(
+            "VSync Interval is not used by the native Vulkan presenter.");
+    }
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+    {
+        intervalDescription = MelonPrime::UiText::Tr(
+            "VSync Interval is not used by the native DirectX 12 presenter.");
+    }
+#endif
     ui->label_2->setToolTip(intervalDescription);
     ui->sbVSyncInterval->setToolTip(intervalDescription);
 
@@ -655,10 +674,10 @@ void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
         ui->sbVSyncInterval->setProperty(originalHelpProperty, ui->sbVSyncInterval->whatsThis());
     if (!ui->label_2->property(originalHelpProperty).isValid())
         ui->label_2->setProperty(originalHelpProperty, ui->label_2->whatsThis());
-    ui->sbVSyncInterval->setWhatsThis(vulkanRenderer
+    ui->sbVSyncInterval->setWhatsThis(!intervalDescription.isEmpty()
         ? intervalDescription
         : ui->sbVSyncInterval->property(originalHelpProperty).toString());
-    ui->label_2->setWhatsThis(vulkanRenderer
+    ui->label_2->setWhatsThis(!intervalDescription.isEmpty()
         ? intervalDescription
         : ui->label_2->property(originalHelpProperty).toString());
 #else
@@ -717,13 +736,17 @@ void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
 void VideoSettingsDialog::on_cbVSync_stateChanged(int state)
 {
     bool vsync = (state != 0);
-#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+#if !defined(MELONPRIME_DS) || \
+    (!defined(MELONPRIME_ENABLE_VULKAN) && \
+     (!defined(_WIN32) || !defined(MELONPRIME_ENABLE_DX12)))
     ui->sbVSyncInterval->setEnabled(vsync);
 #endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.VSync", vsync);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && \
+    (defined(MELONPRIME_ENABLE_VULKAN) || \
+     (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     setVsyncControlEnable(UsesGL());
 #endif
 
