@@ -50,6 +50,7 @@ CONTRACT_NAMES = [
     "kBrightnessModeUp",
     "kBrightnessModeDown",
     "kBrightnessFactorLimit",
+    "kDisplayModeVram",
     "k3DPlaceholderPixel",
     "k3DLayerSlotPixel",
 ]
@@ -67,6 +68,8 @@ HLSL_EXPECTATIONS = {
     "kLineMetaBrightnessModeShift": "uint brightnessMode = (lineMeta >> 8u) & 0x3u;",
     "kLineMetaBrightnessFactorMask": "uint brightnessFactor = min(lineMeta & 0x1Fu, 16u);",
     "kLineMetaRenderXPosShift": "uint xPosition = (lineMeta >> 23u) & 0x1FFu;",
+    "kDisplayModeVram": (
+        "if (displayMode == 2u && (captureReference & 0x80000000u) != 0u)"),
 }
 
 

@@ -2131,7 +2131,9 @@ void DX12Renderer3D::RenderFrame()
             for (u32 i = 0; i < numVariants; i++)
             {
                 const Variant& variant = Variants[i];
-                const bool hasTexture = variant.Texture != 0;
+                // Retained display captures bypass Texcache, but they are
+                // still sampled by the textured raster pipeline.
+                const bool hasTexture = variant.Texture != 0 || variant.CaptureType != 0;
                 const int blendMode = std::min<int>(variant.BlendMode, 4);
 
                 int kind;

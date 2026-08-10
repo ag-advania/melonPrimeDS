@@ -239,5 +239,5 @@ void main()
         xspan.XRecip = int(Div(1U<<30, uint(xspan.X1 - xspan.X0), r));
     }
 
-    XSpanSetups[gl_GlobalInvocationID.x] = xspan;
+    XSpanSetups[setupIndex] = xspan;
 }
