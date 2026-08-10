@@ -1,5 +1,6 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
+  "sourceSetSha256": "dd7b9f3484c6e90cb8d2d0d686bf166ac63df92056d3154bd65dc33a3f2595dc",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
   "pipelineCount": 35,
