@@ -342,6 +342,10 @@ public:
     virtual void PrepareCaptureFrame() {}
     virtual void BeginCaptureFrame() {}
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+    // True only when GetLine() returned pixels from the renderer's current
+    // 3D frame. Structured capture must not replace a transparent fallback
+    // with a FinalFB that became available later in the DS frame.
+    [[nodiscard]] virtual bool HasValidCaptureFrame() const noexcept { return true; }
 #endif
 
     // return one scanline of the framebuffer, with X scroll applied

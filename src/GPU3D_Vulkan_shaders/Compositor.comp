@@ -135,6 +135,8 @@ void main()
     uint below = StructuredInput[planeBase + nativeIndex];
     uint above = StructuredInput[planeBase + StructuredPlaneStride + nativeIndex];
     uint control = StructuredInput[planeBase + 2u * StructuredPlaneStride + nativeIndex];
+    uint captureReference = StructuredInput[
+        planeBase + 3u * StructuredPlaneStride + nativeIndex];
     uint controlFlags = control >> kControlFlagShift;
 
     uint lineMeta = StructuredInput[StructuredLineMetaBase + screen * 192u + nativeY];
@@ -161,8 +163,16 @@ void main()
         // 32-byte push range serving every pipeline, and matches how the DX12
         // compositor signals the same thing.
         uint pixel3D = 0u;
-        if (pc.TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+        if ((captureReference & 0x80000000u) != 0u)
+        {
+            pixel3D = LoadCaptureSidecar(
+                captureReference,
+                uvec2(id.x % uint(ScaleFactor), scaledY % uint(ScaleFactor)));
+        }
+        else if (pc.TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+        {
             pixel3D = LoadFinalFB(ivec2(sourceX, scaledY));
+        }
 
         // A fully transparent 3D pixel is the case SoftRenderer2D::DrawBG_3D()
         // skips outright ("if ((c >> 24) == 0) continue"). The producer could

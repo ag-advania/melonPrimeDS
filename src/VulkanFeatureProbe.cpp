@@ -354,6 +354,12 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
     // fixed at 256x192 by definition.
     const VkDeviceSize composeOutputBytes = 4 * 2 * screenPixels;
 
+    // Retained Display Capture: four physical VRAM banks, two generations per
+    // bank for same-bank read-before-write, and ScaleFactor^2 samples for each
+    // native 256x256 cell.
+    const VkDeviceSize captureSidecarBytes =
+        4ull * 2ull * 256ull * 256ull * scale * scale * sizeof(u32);
+
     budget.LargestStorageBuffer = std::max({
         tileMemoryBytes,
         resultBytes,
@@ -363,6 +369,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         ySpanSetupBytes,
         polygonBytes,
         composeOutputBytes,
+        captureSidecarBytes,
     });
 
     budget.TotalDeviceBytes =
@@ -376,6 +383,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         + polygonBytes
         + finalFramebufferBytes
         + composeOutputBytes
+        + captureSidecarBytes
         + MetaUniformBytes;
 
     return budget;

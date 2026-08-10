@@ -27,6 +27,7 @@
 #include <mutex>
 
 #include "GPU.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanPerf.h"
@@ -98,14 +99,18 @@ constexpr int UseTextureKinds[5] = {
 constexpr VkDeviceSize NativeResolveBytes = 256ull * 192ull * 4ull;
 
 // The structured 2D frame the software renderer publishes, as the compositor
-// consumes it: six 256x192 planes (below / above / control, per screen)
-// followed by two 192-entry line-metadata arrays. The layout is mirrored by
-// PresentationBuffers.glsl and by StructuredComposition's plane numbering.
+// consumes it: fourteen 256x192 planes (four per screen, four capture-source
+// planes and two source-B planes), followed by two 192-entry line-metadata
+// arrays and 192 four-word capture commands. The layout is mirrored by
+// PresentationBuffers.glsl and StructuredComposition's plane numbering.
 constexpr u32 StructuredPixelCount = 256u * 192u;
-constexpr u32 StructuredPlaneCount = 6u;
+constexpr u32 StructuredPlaneCount = 14u;
 constexpr u32 StructuredLineMetaCount = 2u * 192u;
+constexpr u32 StructuredCaptureCommandCount = 192u * 4u;
 constexpr u32 StructuredInputWords =
-    StructuredPlaneCount * StructuredPixelCount + StructuredLineMetaCount;
+    StructuredPlaneCount * StructuredPixelCount
+    + StructuredLineMetaCount
+    + StructuredCaptureCommandCount;
 constexpr VkDeviceSize StructuredInputBytes =
     static_cast<VkDeviceSize>(StructuredInputWords) * sizeof(u32);
 
@@ -464,12 +469,11 @@ bool VulkanRenderer3D::CreateFixedResources()
     {
         // Capture128Texture / Capture256Texture (set 1 bindings 1 and 2).
         //
-        // The OpenGL renderer bound the GL 2D engine's display-capture targets
-        // here. This backend is paired with the *software* 2D renderer, which
-        // writes captures straight into real VRAM, so the ordinary texcache
-        // lookup already returns them and pc.TexIsCapture is always 0. The
-        // bindings still have to be valid float array views because
-        // Rasterise.comp declares them.
+        // OpenGL binds the 2D engine's display-capture targets here. Vulkan
+        // instead resolves capture textures through the persistent sidecar,
+        // keyed by the packed capture reference in the raster push constants.
+        // These legacy bindings still have to contain valid float array views
+        // because Rasterise.comp keeps the shared descriptor layout stable.
         Vk::Image::CreateInfo info;
         info.Format = VK_FORMAT_R8G8B8A8_UNORM;
         info.Width = 1;
@@ -595,6 +599,16 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     ComposedOutputValid = false;
     ComposedGeneration = 0;
 
+    const VkDeviceSize captureSidecarBytes = static_cast<VkDeviceSize>(8u)
+        * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor)
+        * sizeof(u32);
+    if (!CaptureSidecarBuffer.Create(Device,
+            captureSidecarBytes,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+            "MelonPrime Vulkan high-resolution capture sidecar"))
+        return false;
+
     // The ring has to hold one frame's worth of every CPU-side upload at once:
     // the two clear-bitmap halves, the Y span records, the per-scanline index
     // table, the polygon records, plus texcache traffic.
@@ -621,6 +635,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     // Called from SetRenderSettings() after a WaitIdle and from Stop(), so
     // immediate destruction is safe: nothing in flight can reference these.
     ComposedOutput.reset();
+    CaptureSidecarBuffer.Destroy();
     FinalFB.Destroy();
     SetupIndicesBuffer.Destroy();
     XSpanSetupBuffer.Destroy();
@@ -727,27 +742,10 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     // bucket and this picks the matching one.
     TileGeometryBucket = VulkanShaders::TileGeometryBucketForScale(static_cast<u32>(ScaleFactor));
 
-    // Span-index budget. The OpenGL renderer uses 64*2048*scale, which at 16x
-    // makes the InterpSpans dispatch 65536 workgroups -- one past the 65535
-    // Vulkan guarantees, and past what several drivers accept on the X
-    // dimension (contract section 5.2, inherited defect 2). The budget is
-    // trimmed to what this device's maxComputeWorkGroupCount[0] can dispatch;
-    // BuildPolygons() already stops adding spans when the budget runs out, so
-    // the effect is a dropped polygon in a pathological frame rather than an
-    // invalid dispatch.
-    const s64 requestedIndices = static_cast<s64>(64) * 2048 * ScaleFactor;
-    const s64 dispatchableIndices =
-        static_cast<s64>(Device.GetLimits().maxComputeWorkGroupCount[0]) * 32;
-    MaxYSpanIndices = static_cast<int>(std::min(requestedIndices, dispatchableIndices));
-    if (requestedIndices > dispatchableIndices)
-    {
-        Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] span index budget trimmed from %lld to %d entries: "
-            "maxComputeWorkGroupCount[0] = %u limits InterpSpans to %lld invocations\n",
-            static_cast<long long>(requestedIndices), MaxYSpanIndices,
-            Device.GetLimits().maxComputeWorkGroupCount[0],
-            static_cast<long long>(dispatchableIndices));
-    }
+    // Preserve the complete OpenGL span budget. InterpSpans is dispatched in
+    // device-sized chunks below, so 16x no longer drops the final 32 spans on
+    // implementations whose X workgroup limit is 65535.
+    MaxYSpanIndices = 64 * 2048 * ScaleFactor;
 
     YSpanIndices.assign(static_cast<size_t>(MaxYSpanIndices), SetupIndices{});
 
@@ -772,19 +770,24 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     const Vk::ResolutionBudget budget = Vk::ResolutionBudget::ForScaleFactor(ScaleFactor);
     const VkDeviceSize composedScreenBytes =
         static_cast<VkDeviceSize>(ScreenWidth) * ScreenHeight * sizeof(u32) * 2u;
+    const VkDeviceSize captureSidecarBytes = 8ull * 256ull * 256ull
+        * static_cast<VkDeviceSize>(ScaleFactor) * ScaleFactor * sizeof(u32);
     // ResolutionBudget includes one compositor output because the feature
     // probe must gate its storage-buffer range. Remove it here so this runtime
     // breakdown does not count that allocation both as raster and compositor.
-    const VkDeviceSize rasterDeviceBytes = budget.TotalDeviceBytes - composedScreenBytes;
+    const VkDeviceSize rasterDeviceBytes =
+        budget.TotalDeviceBytes - composedScreenBytes - captureSidecarBytes;
     const VkDeviceSize compositorDeviceBytes =
         (composedScreenBytes + StructuredInputBytes) * CompositorFramesInFlight;
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] internal resolution %dx -> 3D output %dx%d, tiles %dx%d (%dpx), "
         "tile-geometry bucket %u, capture resolve 256x192; memory raster=%.1f MiB "
+        "capture-sidecar=%.1f MiB "
         "compositor-device=%.1f MiB compositor-host=%.1f MiB\n",
         ScaleFactor, ScreenWidth, ScreenHeight, TilesPerLine, TileLines, TileSize,
         TileGeometryBucket,
         static_cast<double>(rasterDeviceBytes) / (1024.0 * 1024.0),
+        static_cast<double>(captureSidecarBytes) / (1024.0 * 1024.0),
         static_cast<double>(compositorDeviceBytes) / (1024.0 * 1024.0),
         static_cast<double>(StructuredInputBytes * CompositorFramesInFlight) / (1024.0 * 1024.0));
 }
@@ -1228,6 +1231,10 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
     u32 prevVariant = 0;
     u32 prevTexLayer = 0;
     Variant* variants = Variants.data();
+    u32 captureLastVariant[16]{};
+
+    int captureInfo[16];
+    GPU.GetCaptureInfo_Texture(captureInfo);
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1 << 0)) != 0;
 
@@ -1263,18 +1270,60 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
             variant.Texture = 0;
             variant.WrapS = 0;
             variant.WrapT = 0;
+            variant.CaptureReference = 0;
+            variant.CaptureYOffset = 0;
+            variant.CaptureType = 0;
 
             u32* textureLastVariant = nullptr;
             const u32 textype = (polygon->TexParam >> 26) & 0x7;
             if (enableTextureMaps && textype)
             {
-                // Unlike the OpenGL renderer there is no display-capture
-                // texture special case: this backend is paired with the
-                // software 2D renderer, which writes captures straight into
-                // real VRAM, so the ordinary cache lookup already returns them
-                // and Rasterise.comp's pc.TexIsCapture stays 0.
-                Texcache.GetTexture(polygon->TexParam, polygon->TexPalette,
-                    variant.Texture, prevTexLayer, textureLastVariant);
+                const u32 texaddr = polygon->TexParam & 0xFFFFu;
+                const u32 texwidth = TextureWidth(polygon->TexParam);
+                const u32 texheight = TextureHeight(polygon->TexParam);
+                int captureBlock = -1;
+                if (textype == 7u && (texwidth == 128u || texwidth == 256u))
+                {
+                    u32 startBlock = (texaddr << 3u) >> 15u;
+                    const u32 endBlock =
+                        ((texaddr << 3u) + texwidth * texheight * 2u + 0x7FFFu) >> 15u;
+                    for (u32 block = startBlock; block < endBlock && block < 16u; ++block)
+                    {
+                        if (captureInfo[block] != -1)
+                            captureBlock = captureInfo[block];
+                    }
+                }
+
+                if (captureBlock != -1)
+                {
+                    const u32 bank = static_cast<u32>(captureBlock) >> 2u;
+                    const u32 yOffset = texwidth == 128u
+                        ? ((texaddr >> 5u) & 0x7Fu)
+                        : ((texaddr >> 6u) & 0xFFu);
+                    const u32 layerBase = texwidth == 128u
+                        ? (static_cast<u32>(captureBlock) & 3u) * 16384u
+                        : 0u;
+                    const u32 queryAddress = layerBase + yOffset * texwidth;
+                    u32 reference = GPU.GetRenderer().GetCaptureTextureReference(bank, queryAddress);
+                    if (reference != 0u)
+                    {
+                        variant.CaptureType = texwidth == 128u ? 1u : 2u;
+                        variant.CaptureYOffset = static_cast<s32>(yOffset);
+                        variant.CaptureReference =
+                            (reference & ~StructuredComposition::kCaptureReferenceAddressMask)
+                            | layerBase;
+                        prevTexLayer = texwidth == 128u
+                            ? static_cast<u32>(captureBlock)
+                            : bank;
+                        textureLastVariant = &captureLastVariant[captureBlock];
+                    }
+                }
+
+                if (variant.CaptureType == 0u)
+                {
+                    Texcache.GetTexture(polygon->TexParam, polygon->TexPalette,
+                        variant.Texture, prevTexLayer, textureLastVariant);
+                }
 
                 const bool wrapS = (polygon->TexParam >> 16) & 1;
                 const bool wrapT = (polygon->TexParam >> 17) & 1;
@@ -1698,7 +1747,9 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::StructuredInput),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, structuredInput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::PresentationOut),
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, presentationOutput, 0, VK_WHOLE_SIZE);
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, presentationOutput, 0, VK_WHOLE_SIZE)
+        && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::CaptureSidecar),
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CaptureSidecarBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
 
     if (!ok)
         return false;
@@ -1899,6 +1950,14 @@ void VulkanRenderer3D::RenderFrame()
         return;
     }
 
+    // ComposeStructuredOutput may have populated retained capture samples in
+    // the previous queue submission. Make those writes visible before a
+    // capture-derived direct-color texture reads the same persistent buffer.
+    const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+    BufferBarrier(cmd, &captureSidecar, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+
     UpdateClearBitmap(cmd, FrameStaging);
 
     // Polygon/span setup runs on the CPU exactly like the OpenGL compute
@@ -2050,7 +2109,19 @@ void VulkanRenderer3D::RenderFrame()
         // 3. interpolate the per-scanline x spans.
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
-        fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(numSetupIndices), 32), 1, 1);
+        const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
+        const u32 maxPerDispatch = Device.GetLimits().maxComputeWorkGroupCount[0] * 32u;
+        for (u32 base = 0; base < setupIndexCount;)
+        {
+            const u32 count = std::min(setupIndexCount - base, maxPerDispatch);
+            Vk::RasterizerPushConstants spanPush{};
+            spanPush.TexIsCapture = base;
+            spanPush.CaptureYOffset = static_cast<s32>(count);
+            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+                0, Vk::PushConstantSize, &spanPush);
+            fns.CmdDispatch(cmd, DivRoundUp(count, 32), 1, 1);
+            base += count;
+        }
         BufferBarrier(cmd, &xSpans, 1,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -2159,8 +2230,9 @@ void VulkanRenderer3D::RenderFrame()
                 variantPush.TexHeight = variant.Height ? variant.Height : 8;
                 variantPush.TexWrapS = variant.WrapS;
                 variantPush.TexWrapT = variant.WrapT;
-                variantPush.TexIsCapture = 0;
-                variantPush.CaptureYOffset = 0;
+                variantPush.TexIsCapture = variant.CaptureType;
+                variantPush.CaptureYOffset = variant.CaptureYOffset;
+                variantPush.Padding = variant.CaptureReference;
                 fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
                     0, Vk::PushConstantSize, &variantPush);
 
@@ -2246,9 +2318,9 @@ void VulkanRenderer3D::RenderFrame()
     // Presentation does *not* go through here -- ComposeStructuredOutput()
     // samples FinalFB at its full internal resolution. This path exists because
     // display capture writes its result back into real VRAM as 15-bit DS words,
-    // so it has to be 256x192 exactly, and an alpha-weighted box filter is the
-    // only downscale that does not bleed uncovered (alpha 0) pixels into the
-    // colour of the geometry beside them. See Resolve.comp.
+    // so it has to be 256x192 exactly. Match OpenGL's CaptureDownscaleFS by
+    // selecting the centre texel of each internal-resolution pixel block;
+    // averaging here changes the emulated capture contents. See Resolve.comp.
     //
     // FinalFB stays in GENERAL -- it is a storage image on both sides of this
     // barrier -- so only the FinalPass writes have to be made available to the
@@ -2368,8 +2440,9 @@ void VulkanRenderer3D::EnsureFrameReadback()
 }
 
 bool VulkanRenderer3D::ComposeStructuredOutput(
-    const std::array<const u32*, 6>& planes,
+    const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
+    const u32* captureCommands,
     u64 generation)
 {
     if (RuntimeFailed || !Initialized || ScaleFactor <= 0)
@@ -2384,6 +2457,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return true;
 
     if (Pipelines[VulkanShaders::Pipeline_Compositor] == VK_NULL_HANDLE
+        || Pipelines[VulkanShaders::Pipeline_CaptureSidecar] == VK_NULL_HANDLE
         || !ComposedOutput || !FinalFB.IsValid())
     {
         SetRuntimeFailure("required compositor resources are unavailable");
@@ -2400,6 +2474,8 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         if (!meta)
             return false;
     }
+    if (!captureCommands)
+        return false;
 
     const u32 nextSlot = static_cast<u32>(
         (ComposeFrames.GetAbsoluteFrame() - 1u) % CompositorFramesInFlight);
@@ -2434,6 +2510,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         u32* metaDestination = staging + (planes.size() * StructuredPixelCount);
         std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
         std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
+        std::memcpy(
+            metaDestination + 384u,
+            captureCommands,
+            StructuredCaptureCommandCount * sizeof(u32));
     }
     VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredPackBytes, StructuredInputBytes);
 
@@ -2514,6 +2594,28 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     push.TexWidth = (GPU3D.AbortFrame || !FinalFBHasContent) ? 0u : 1u;
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
+
+    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        Pipelines[VulkanShaders::Pipeline_CaptureSidecar]);
+    const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+    for (u32 captureLine = 0; captureLine < 192u; ++captureLine)
+    {
+        if ((captureCommands[captureLine * 4u + 1u]
+                & StructuredComposition::kCaptureCommandValid) == 0u)
+            continue;
+        push.TexHeight = captureLine;
+        fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+            0, Vk::PushConstantSize, &push);
+        fns.CmdDispatch(cmd,
+            DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+            DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
+            1u);
+        BufferBarrier(cmd, &captureSidecar, 1,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    }
 
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_Compositor]);

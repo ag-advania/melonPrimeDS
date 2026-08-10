@@ -31,6 +31,7 @@
 
 #include "DX12PresentedFrame.h"
 #include "DX12Perf.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "GPU.h"
 #include "GPU3D_DX12_shaders.h"
 #include "Platform.h"
@@ -46,9 +47,10 @@ constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
 
 constexpr u32 kSrvTableSize = 6;
-constexpr u32 kUavTableSize = 9;
+constexpr u32 kUavTableSize = 10;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
-constexpr u32 kCompositionInputDwords = (kStructuredPixelCount * 6u) + (192u * 2u);
+constexpr u32 kCompositionInputDwords =
+    (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
 constexpr u32 kCompositorFramesInFlight = 3;
 
 constexpr u32 kRootParamDispatchConstants = 0;
@@ -547,6 +549,7 @@ void DX12Renderer3D::ReleasePipelines()
     for (auto& pso : PipelineRasterise) pso.Reset();
     for (auto& pso : PipelineFinalPass) pso.Reset();
     PipelineResolve.Reset();
+    PipelineCaptureSidecar.Reset();
     PipelineCompositor.Reset();
 }
 
@@ -561,6 +564,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
 
     ResultBuffer.Reset();
     FinalFBBuffer.Reset();
+    CaptureSidecarBuffer.Reset();
     ComposedOutput.reset();
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
@@ -602,6 +606,15 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
         L"MelonPrime DX12 3D framebuffer");
     if (!FinalFBBuffer)
+        return false;
+
+    CaptureSidecarBuffer = Context->CreateBuffer(
+        8ull * 256ull * 256ull * static_cast<u64>(ScaleFactor) * static_cast<u64>(ScaleFactor) * 4ull,
+        D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+        L"MelonPrime DX12 high-resolution capture sidecar");
+    if (!CaptureSidecarBuffer)
         return false;
 
     ComposedOutput = std::make_shared<OutputState>();
@@ -989,6 +1002,13 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
         return;
     }
 
+    if (step == ShaderStep_CaptureSidecar)
+    {
+        build(PipelineCaptureSidecar, DX12Shaders::CaptureSidecar,
+            { "CaptureSidecar" }, "DX12CaptureSidecar");
+        return;
+    }
+
     if (step == ShaderStep_Compositor)
     {
         build(PipelineCompositor, DX12Shaders::Compositor,
@@ -1204,6 +1224,9 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
         { WorkDescBuffer.Get(),    static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
         { XSpanSetupBuffer.Get(),  static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
         { ResolveBuffer.Get(),     256u * 192u,                    4, false },
+        { CaptureSidecarBuffer.Get(),
+            8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
+            4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1283,7 +1306,10 @@ bool DX12Renderer3D::BindCompositionUavTable(
         { BinResultBuffer.Get(),          binResultDwords,                     4, true  },
         { WorkDescBuffer.Get(),           static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
         { XSpanSetupBuffer.Get(),         static_cast<u32>(MaxYSpanIndices),   sizeof(SpanSetupX), false },
-        { composedOutput,                pixels * 2u,                         4, false },
+        { composedOutput,                 pixels * 2u,                         4, false },
+        { CaptureSidecarBuffer.Get(),
+            8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
+            4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1590,6 +1616,10 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
     u32 prevVariant = 0;
     u32 prevTexLayer = 0;
     Variant* variants = Variants.data();
+    u32 captureLastVariant[16]{};
+
+    int captureInfo[16];
+    GPU.GetCaptureInfo_Texture(captureInfo);
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1 << 0)) != 0;
 
@@ -1625,16 +1655,60 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
             variant.Texture = 0;
             variant.WrapS = 0;
             variant.WrapT = 0;
+            variant.CaptureReference = 0;
+            variant.CaptureYOffset = 0;
+            variant.CaptureType = 0;
 
             u32* textureLastVariant = nullptr;
             const u32 textype = (polygon->TexParam >> 26) & 0x7;
             if (enableTextureMaps && textype)
             {
-                // Unlike the OpenGL renderer there is no display-capture
-                // texture special case: the software 2D renderer writes
-                // captures into real VRAM, so the ordinary cache lookup
-                // already returns them.
-                Texcache.GetTexture(polygon->TexParam, polygon->TexPalette, variant.Texture, prevTexLayer, textureLastVariant);
+                const u32 texaddr = polygon->TexParam & 0xFFFFu;
+                const u32 texwidth = TextureWidth(polygon->TexParam);
+                const u32 texheight = TextureHeight(polygon->TexParam);
+                int captureBlock = -1;
+                if (textype == 7u && (texwidth == 128u || texwidth == 256u))
+                {
+                    const u32 startBlock = (texaddr << 3u) >> 15u;
+                    const u32 endBlock =
+                        ((texaddr << 3u) + texwidth * texheight * 2u + 0x7FFFu) >> 15u;
+                    for (u32 block = startBlock; block < endBlock && block < 16u; ++block)
+                    {
+                        if (captureInfo[block] != -1)
+                            captureBlock = captureInfo[block];
+                    }
+                }
+
+                if (captureBlock != -1)
+                {
+                    const u32 bank = static_cast<u32>(captureBlock) >> 2u;
+                    const u32 yOffset = texwidth == 128u
+                        ? ((texaddr >> 5u) & 0x7Fu)
+                        : ((texaddr >> 6u) & 0xFFu);
+                    const u32 layerBase = texwidth == 128u
+                        ? (static_cast<u32>(captureBlock) & 3u) * 16384u
+                        : 0u;
+                    const u32 queryAddress = layerBase + yOffset * texwidth;
+                    u32 reference = GPU.GetRenderer().GetCaptureTextureReference(bank, queryAddress);
+                    if (reference != 0u)
+                    {
+                        variant.CaptureType = texwidth == 128u ? 1u : 2u;
+                        variant.CaptureYOffset = static_cast<s32>(yOffset);
+                        variant.CaptureReference =
+                            (reference & ~StructuredComposition::kCaptureReferenceAddressMask)
+                            | layerBase;
+                        prevTexLayer = texwidth == 128u
+                            ? static_cast<u32>(captureBlock)
+                            : bank;
+                        textureLastVariant = &captureLastVariant[captureBlock];
+                    }
+                }
+
+                if (variant.CaptureType == 0u)
+                {
+                    Texcache.GetTexture(polygon->TexParam, polygon->TexPalette,
+                        variant.Texture, prevTexLayer, textureLastVariant);
+                }
 
                 const bool wrapS = (polygon->TexParam >> 16) & 1;
                 const bool wrapT = (polygon->TexParam >> 17) & 1;
@@ -2096,6 +2170,11 @@ void DX12Renderer3D::RenderFrame()
                 variantConstants.TexHeight = variant.Height ? variant.Height : 8;
                 variantConstants.TexWrapS = variant.WrapS;
                 variantConstants.TexWrapT = variant.WrapT;
+                // The InterpSpans-only fields are reused by Rasterise for the
+                // backend-neutral retained-capture reference.
+                variantConstants.InterpSpanBase = variant.CaptureType;
+                variantConstants.InterpSpanCount = static_cast<u32>(variant.CaptureYOffset);
+                variantConstants.Pad = variant.CaptureReference;
                 SetDispatchConstants(list, variantConstants);
 
                 list->ExecuteIndirect(
@@ -2206,8 +2285,9 @@ void DX12Renderer3D::EnsureFrameReadback()
 }
 
 bool DX12Renderer3D::ComposeStructuredOutput(
-    const std::array<const u32*, 6>& planes,
+    const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
+    const u32* captureCommands,
     u64 generation)
 {
     if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
@@ -2215,7 +2295,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     if (ComposedOutputValid && ComposedGeneration == generation)
         return true;
     const std::shared_ptr<OutputState> state = ComposedOutput;
-    if (!Context || !PipelineCompositor || !state || !FinalFBBuffer)
+    if (!Context || !PipelineCaptureSidecar || !PipelineCompositor
+        || !state || !FinalFBBuffer || !CaptureSidecarBuffer)
     {
         SetRuntimeFailure("required compositor resources are unavailable");
         return false;
@@ -2230,6 +2311,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         if (!meta)
             return false;
     }
+    if (!captureCommands)
+        return false;
     u32 slotIndex = 0;
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
@@ -2271,6 +2354,10 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         u32* metaDestination = staging + (kStructuredPixelCount * planes.size());
         std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
         std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
+        std::memcpy(
+            metaDestination + 384u,
+            captureCommands,
+            192u * StructuredComposition::kCaptureCommandWords * sizeof(u32));
     }
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredPackBytes,
@@ -2295,6 +2382,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     // queue. This cross-list UAV barrier makes those writes visible without a
     // CPU fence wait.
     InsertUavBarrier(list, FinalFBBuffer.Get());
+    InsertUavBarrier(list, CaptureSidecarBuffer.Get());
 
     ID3D12DescriptorHeap* heaps[] = { slot.Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
@@ -2316,6 +2404,21 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     // The 3D X scroll now travels per scanline in the structured line
     // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
+    list->SetPipelineState(PipelineCaptureSidecar.Get());
+    for (u32 captureLine = 0; captureLine < 192u; ++captureLine)
+    {
+        if ((captureCommands[captureLine * StructuredComposition::kCaptureCommandWords + 1u]
+                & StructuredComposition::kCaptureCommandValid) == 0u)
+            continue;
+        constants.TexHeight = captureLine;
+        SetDispatchConstants(list, constants);
+        list->Dispatch(
+            DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+            DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
+            1u);
+        InsertUavBarrier(list, CaptureSidecarBuffer.Get());
+    }
+
     SetDispatchConstants(list, constants);
     list->SetPipelineState(PipelineCompositor.Get());
     list->Dispatch(

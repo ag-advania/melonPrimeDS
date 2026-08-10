@@ -80,6 +80,64 @@ layout (local_size_x = TileSize, local_size_y = TileSize) in;
 layout (set = 1, binding = 0) uniform usampler2DArray CurrentTexture;
 layout (set = 1, binding = 1) uniform sampler2DArray Capture128Texture;
 layout (set = 1, binding = 2) uniform sampler2DArray Capture256Texture;
+layout (std430, set = 0, binding = 14) buffer RasterCaptureSidecarBuffer
+{
+    uint RasterCaptureSidecarPixels[];
+};
+
+#ifdef UseTexture
+int WrapCaptureCoord(int coord, int size, uint mode)
+{
+    if (mode == 0U)
+        return clamp(coord, 0, size - 1);
+
+    if (mode == 1U)
+    {
+        int wrapped = coord % size;
+        return wrapped < 0 ? wrapped + size : wrapped;
+    }
+
+    int period = size * 2;
+    int wrapped = coord % period;
+    if (wrapped < 0)
+        wrapped += period;
+    return wrapped >= size ? period - 1 - wrapped : wrapped;
+}
+
+uvec4 SampleCaptureTexture(int u, int v)
+{
+    int captureWidth = pc.TexIsCapture == 1U ? 128 : 256;
+    int scaleFactor = ScreenWidth / 256;
+    int scaledWidth = captureWidth * scaleFactor;
+
+    // OpenGL samples the retained capture array with NEAREST filtering. Work
+    // in the array's actual high-resolution texel grid so the 12.4 DS texture
+    // coordinates retain their subpixel detail rather than first collapsing
+    // to a native texel.
+    int sx = int(floor(float(u) * float(scaleFactor) / 16.0));
+    int sy = int(floor(
+        (float(v) / 16.0 + float(pc.CaptureYOffset))
+        * float(scaledWidth) / float(pc.TexHeight)));
+    sx = WrapCaptureCoord(sx, scaledWidth, pc.TexWrapS);
+    sy = WrapCaptureCoord(sy, scaledWidth, pc.TexWrapT);
+
+    uint scale = uint(scaleFactor);
+    uint address = (pc._pad & 0xFFFFU)
+        + uint(sy / scaleFactor) * uint(captureWidth)
+        + uint(sx / scaleFactor);
+    uint reference = (pc._pad & 0xFFFF0000U) | (address & 0xFFFFU);
+    uint bank = (reference >> 28U) & 3U;
+    uint version = (reference >> 30U) & 1U;
+    uint cell = ((version * 4U + bank) * 65536U) + address;
+    uint sampleIndex = (uint(sy) % scale) * scale + (uint(sx) % scale);
+    uint packed = RasterCaptureSidecarPixels[cell * scale * scale + sampleIndex];
+    return uvec4(
+        packed & 0x3FU,
+        (packed >> 8U) & 0x3FU,
+        (packed >> 16U) & 0x3FU,
+        (packed >> 24U) & 0x1FU);
+}
+#endif
 
 void main()
 {
@@ -228,13 +286,7 @@ void main()
             // it may require custom handling of texcoord wraparound
             uvec4 texcolor;
             if (pc.TexIsCapture != 0U)
-            {
-                uvf.y += float(pc.CaptureYOffset) / float(pc.TexHeight);
-                if (pc.TexIsCapture == 1U)
-                    texcolor = uvec4(texture(Capture128Texture, vec3(uvf, polygon.TextureLayer)) * vec4(63,63,63,31));
-                else
-                    texcolor = uvec4(texture(Capture256Texture, vec3(uvf, polygon.TextureLayer)) * vec4(63,63,63,31));
-            }
+                texcolor = SampleCaptureTexture(u, v);
             else
                 texcolor = texture(CurrentTexture, vec3(uvf, polygon.TextureLayer));
 

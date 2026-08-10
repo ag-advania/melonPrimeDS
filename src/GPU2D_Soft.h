@@ -59,10 +59,16 @@ private:
     };
 
     alignas(8) u32 BGOBJLine[256*2];
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    alignas(8) u32 BGOBJCaptureReference[256*2]{};
+#endif
 
     alignas(8) u8 WindowMask[256];
 
     alignas(8) u32 OBJLine[256];
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    alignas(8) u32 OBJCaptureReference[256]{};
+#endif
     alignas(8) u8 OBJWindow[256];
 
     u32 NumSprites;
@@ -101,7 +107,7 @@ private:
     void DrawScanlineBGMode7(u32 line);
     void DrawScanline_BGOBJ(u32 line, u32* dst);
 
-    static void DrawPixel(u32* dst, u16 color, u32 flag);
+    void DrawPixel(u32* dst, u16 color, u32 flag, u32 captureReference = 0);
 
     void DrawBG_3D();
     template<bool mosaic> void DrawBG_Text(u32 line, u32 bgnum);
@@ -111,7 +117,8 @@ private:
 
     void ApplySpriteMosaicX();
     void InterleaveSprites(u32 prio);
-    template<bool window> void DrawSpritePixel(int color, u32 pixelattr, s32 xpos);
+    template<bool window> void DrawSpritePixel(
+        int color, u32 pixelattr, s32 xpos, u32 captureReference = 0);
     template<bool window> void DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheight, u32 width, u32 height, s32 xpos, s32 ypos);
     template<bool window> void DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s32 ypos);
 };

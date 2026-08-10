@@ -1602,6 +1602,7 @@ void GPU::CheckCaptureStart()
         // sync it and invalidate it
 
         Rend->SyncVRAMCapture(dstbank, oldstart, oldsize, (oldflags & CBFlag_Complete));
+        Rend->InvalidateVRAMCapture(dstbank, oldstart, oldsize);
         VRAMCBFlagsClear(dstbank, oldstart);
     }
 
@@ -1644,7 +1645,10 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     if (flags & CBFlag_Synced)
     {
         if (write)
+        {
+            Rend->InvalidateVRAMCapture(bank, start, len);
             VRAMCBFlagsClear(bank, start);
+        }
         return;
     }
 
@@ -1678,6 +1682,7 @@ void GPU::SyncAllVRAMCaptures()
         u32 len = (flags >> 6) & 0x3;
 
         Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete));
+        Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
     }
 }

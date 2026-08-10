@@ -65,10 +65,12 @@ public:
     void RenderFrame() override;
     u32* GetLine(int line) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+    [[nodiscard]] bool HasValidCaptureFrame() const noexcept override { return FrameReadbackValid; }
 
     bool ComposeStructuredOutput(
-        const std::array<const u32*, 6>& planes,
+        const std::array<const u32*, 14>& planes,
         const std::array<const u32*, 2>& lineMeta,
+        const u32* captureCommands,
         u64 generation);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
@@ -185,6 +187,9 @@ private:
         u32 Texture = 0;
         u32 WrapS = 0;
         u32 WrapT = 0;
+        u32 CaptureReference = 0;
+        s32 CaptureYOffset = 0;
+        u8 CaptureType = 0;
         u8 BlendMode = 0;
         u16 Width = 0;
         u16 Height = 0;
@@ -194,6 +199,9 @@ private:
             return Texture == other.Texture
                 && WrapS == other.WrapS
                 && WrapT == other.WrapT
+                && CaptureReference == other.CaptureReference
+                && CaptureYOffset == other.CaptureYOffset
+                && CaptureType == other.CaptureType
                 && BlendMode == other.BlendMode;
         }
     };
@@ -246,6 +254,7 @@ private:
         ShaderStep_Rasterise0 = ShaderStep_DepthBlend0 + 2,
         ShaderStep_FinalPass0 = ShaderStep_Rasterise0 + RasteriseKind_Count * 2,
         ShaderStep_Resolve = ShaderStep_FinalPass0 + 8,
+        ShaderStep_CaptureSidecar,
         ShaderStep_Compositor,
         ShaderStepCount,
     };
@@ -320,11 +329,13 @@ private:
     std::array<DX12::ComPtr<ID3D12PipelineState>, RasteriseKind_Count * 2> PipelineRasterise;
     std::array<DX12::ComPtr<ID3D12PipelineState>, 8> PipelineFinalPass;
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
+    DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles

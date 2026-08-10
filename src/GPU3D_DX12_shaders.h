@@ -201,6 +201,7 @@ RWByteAddressBuffer BinResult : register(u5);
 RWStructuredBuffer<uint2> WorkDescs : register(u6);
 RWStructuredBuffer<XSpanSetup> XSpanSetups : register(u7);
 RWStructuredBuffer<uint> ResolveOut : register(u8);
+RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -1010,11 +1011,48 @@ int WrapTexCoord(int c, int size, uint mode)
 
 uint4 SampleTexture(int u, int v, uint layer)
 {
-    // The GL renderer normalizes by the texture size and relies on NEAREST
-    // filtering; floor(u/16) is the same texel and avoids the float round trip.
-    int iu = WrapTexCoord(u >> 4, int(TexWidth), TexWrapS);
-    int iv = WrapTexCoord(v >> 4, int(TexHeight), TexWrapT);
-    return CurrentTexture.Load(int4(iu, iv, int(layer), 0));
+    uint4 result = uint4(0u, 0u, 0u, 0u);
+    // Rasterise reuses the InterpSpans-only constants as
+    // captureType/captureYOffset/captureReference. This keeps the root
+    // constant ABI at eight DWORDs for every compute pipeline.
+    if (InterpSpanBase != 0u)
+    {
+        int captureWidth = InterpSpanBase == 1u ? 128 : 256;
+        int scaledWidth = captureWidth * int(ScaleFactor);
+        int sx = int(floor(float(u) * float(ScaleFactor) / 16.0f));
+        int sy = int(floor(
+            (float(v) / 16.0f + float(int(InterpSpanCount)))
+            * float(scaledWidth) / float(TexHeight)));
+        sx = WrapTexCoord(sx, scaledWidth, TexWrapS);
+        sy = WrapTexCoord(sy, scaledWidth, TexWrapT);
+
+        uint scale = ScaleFactor;
+        uint sxu = uint(sx);
+        uint syu = uint(sy);
+        uint address = (DispatchPad & 0xFFFFu)
+            + (syu / scale) * uint(captureWidth)
+            + (sxu / scale);
+        uint reference = (DispatchPad & 0xFFFF0000u) | (address & 0xFFFFu);
+        uint bank = (reference >> 28u) & 3u;
+        uint version = (reference >> 30u) & 1u;
+        uint cell = ((version * 4u + bank) * 65536u) + address;
+        uint sample = (syu % scale) * scale + (sxu % scale);
+        uint packed = CaptureSidecarBuffer[cell * scale * scale + sample];
+        result = uint4(
+            packed & 0x3Fu,
+            (packed >> 8u) & 0x3Fu,
+            (packed >> 16u) & 0x3Fu,
+            (packed >> 24u) & 0x1Fu);
+    }
+    else
+    {
+        // The GL renderer normalizes by the texture size and relies on NEAREST
+        // filtering; floor(u/16) is the same texel and avoids the float round trip.
+        int iu = WrapTexCoord(u >> 4, int(TexWidth), TexWrapS);
+        int iv = WrapTexCoord(v >> 4, int(TexHeight), TexWrapT);
+        result = CurrentTexture.Load(int4(iu, iv, int(layer), 0));
+    }
+    return result;
 }
 #endif
 
@@ -1616,48 +1654,178 @@ void main(uint3 id : SV_DispatchThreadID)
 
     uint outOffset = id.x + id.y * 256u;
 
-#if ScaleFactor == 1
-    ResolveOut[outOffset] = FinalFB[outOffset];
-#else
-    uint baseX = id.x * ScaleFactor;
-    uint baseY = id.y * ScaleFactor;
-
-    uint sumR = 0u, sumG = 0u, sumB = 0u, sumA = 0u;
-
-    [loop] for (uint sy = 0u; sy < ScaleFactor; sy++)
-    {
-        [loop] for (uint sx = 0u; sx < ScaleFactor; sx++)
-        {
-            uint texel = FinalFB[(baseX + sx) + (baseY + sy) * ScreenWidth];
-            uint a = (texel >> 24) & 0x1Fu;
-
-            // Weight color by alpha so pixels the 3D layer does not cover
-            // cannot darken the edge of geometry that does.
-            sumR += (texel & 0x3Fu) * a;
-            sumG += ((texel >> 8) & 0x3Fu) * a;
-            sumB += ((texel >> 16) & 0x3Fu) * a;
-            sumA += a;
-        }
-    }
-
-    uint result = 0u;
-    if (sumA != 0u)
-    {
-        // Round to nearest rather than truncating: at high scale factors the
-        // truncation bias is a visible darkening of every supersampled edge.
-        uint half = sumA >> 1;
-        uint samples = ScaleFactor * ScaleFactor;
-        uint r = min((sumR + half) / sumA, 63u);
-        uint g = min((sumG + half) / sumA, 63u);
-        uint b = min((sumB + half) / sumA, 63u);
-        uint a = min((sumA + (samples >> 1)) / samples, 31u);
-        result = r | (g << 8) | (b << 16) | (a << 24);
-    }
-
-    ResolveOut[outOffset] = result;
-#endif
+    // Match OpenGL CaptureDownscaleFS: GL_NEAREST at the native output pixel
+    // centre, before RGB5551 conversion by the software capture path.
+    uint centre = ScaleFactor >> 1u;
+    uint sourceX = id.x * ScaleFactor + centre;
+    uint sourceY = id.y * ScaleFactor + centre;
+    ResolveOut[outOffset] = FinalFB[sourceX + sourceY * ScreenWidth];
 }
 )";
+
+// ---------------------------------------------------------------------------
+// High-resolution Display Capture sidecar
+// ---------------------------------------------------------------------------
+inline const std::string CaptureSidecar = R"(
+static const uint CapPixelCount = 256u * 192u;
+static const uint CapSourceBase = CapPixelCount * 8u;
+static const uint CapSourceBNativeBase = CapPixelCount * 12u;
+static const uint CapSourceBReferenceBase = CapPixelCount * 13u;
+static const uint CapLineMetaBase = CapPixelCount * 14u;
+static const uint CapCommandBase = CapLineMetaBase + 384u;
+
+uint CapR(uint c) { return c & 0x3Fu; }
+uint CapG(uint c) { return (c >> 8u) & 0x3Fu; }
+uint CapB(uint c) { return (c >> 16u) & 0x3Fu; }
+uint CapPack(uint r, uint g, uint b, uint a)
+{
+    return min(r, 63u) | (min(g, 63u) << 8u) | (min(b, 63u) << 16u) | (a << 24u);
+}
+uint CapBlend4(uint a, uint b, uint eva, uint evb)
+{
+    return CapPack(((CapR(a)*eva)+(CapR(b)*evb)+8u)>>4u,
+        ((CapG(a)*eva)+(CapG(b)*evb)+8u)>>4u,
+        ((CapB(a)*eva)+(CapB(b)*evb)+8u)>>4u, 0xFFu);
+}
+uint CapBlend5(uint a, uint b)
+{
+    uint eva = ((a >> 24u) & 0x1Fu) + 1u;
+    uint evb = 32u - eva;
+    return CapPack(((CapR(a)*eva)+(CapR(b)*evb)+16u)>>5u,
+        ((CapG(a)*eva)+(CapG(b)*evb)+16u)>>5u,
+        ((CapB(a)*eva)+(CapB(b)*evb)+16u)>>5u, 0xFFu);
+}
+uint CapBrightnessUp(uint c, uint f)
+{
+    return CapPack(CapR(c)+((((63u-CapR(c))*f)+8u)>>4u),
+        CapG(c)+((((63u-CapG(c))*f)+8u)>>4u),
+        CapB(c)+((((63u-CapB(c))*f)+8u)>>4u), 0xFFu);
+}
+uint CapBrightnessDown(uint c, uint f)
+{
+    return CapPack(CapR(c)-(((CapR(c)*f)+7u)>>4u),
+        CapG(c)-(((CapG(c)*f)+7u)>>4u),
+        CapB(c)-(((CapB(c)*f)+7u)>>4u), 0xFFu);
+}
+uint CapLoad(uint reference, uint2 within)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint spp = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return CaptureSidecarBuffer[cell * spp + within.y * ScaleFactor + within.x];
+}
+uint CapLoadSource3D(uint2 position, uint lineMeta)
+{
+    uint xpos = (lineMeta >> 23u) & 0x1FFu;
+    int sx = (xpos & 0x100u) != 0u
+        ? int(position.x) - int((512u - xpos) * ScaleFactor)
+        : int(position.x) + int(xpos * ScaleFactor);
+    return TexWidth != 0u && sx >= 0 && sx < int(ScreenWidth)
+        ? FinalFB[position.y * ScreenWidth + uint(sx)]
+        : 0u;
+}
+uint CapComposeSourceA(
+    uint2 position,
+    uint nativeIndex,
+    uint lineMeta,
+    bool source3DValid)
+{
+    uint below = ResultValue[CapSourceBase + nativeIndex];
+    uint above = ResultValue[CapSourceBase + CapPixelCount + nativeIndex];
+    uint control = ResultValue[CapSourceBase + CapPixelCount * 2u + nativeIndex];
+    uint reference = ResultValue[CapSourceBase + CapPixelCount * 3u + nativeIndex];
+    uint flags = control >> 24u;
+    uint result = below;
+    if ((flags & 0x40u) != 0u)
+    {
+        uint slot = 0u;
+        if ((reference & 0x80000000u) != 0u)
+            slot = CapLoad(reference, position % ScaleFactor);
+        else if (source3DValid)
+            slot = CapLoadSource3D(position, lineMeta);
+        if (((slot >> 24u) & 0x1Fu) != 0u)
+        {
+            uint mode = flags & 0xFu;
+            uint eva = (control >> 8u) & 0x1Fu;
+            uint evb = (control >> 16u) & 0x1Fu;
+            if (mode == 1u && (flags & 0x80u) != 0u)
+                result = CapBlend4(above, slot, eva, evb);
+            else if (mode == 2u)
+                result = CapBrightnessUp(slot, eva);
+            else if (mode == 3u)
+                result = CapBrightnessDown(slot, eva);
+            else if (mode == 4u)
+                result = CapBlend5(slot, below);
+            else
+                result = slot;
+        }
+    }
+    return result;
+}
+uint CapNormalizeCapturedPixel(uint color)
+{
+    uint r = ((color & 0x3Fu) >> 1u) << 1u;
+    uint g = ((((color >> 8u) & 0x3Fu) >> 1u) << 1u);
+    uint b = ((((color >> 16u) & 0x3Fu) >> 1u) << 1u);
+    uint a = (color >> 24u) != 0u ? 31u : 0u;
+    return r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= ScreenWidth || id.y >= ScaleFactor || TexHeight >= 192u)
+        return;
+    uint nativeY = TexHeight;
+    uint scaledY = nativeY * ScaleFactor + id.y;
+    uint nativeX = id.x / ScaleFactor;
+    uint nativeIndex = nativeX + nativeY * 256u;
+    uint commandBase = CapCommandBase + nativeY * 4u;
+    uint captureCnt = ResultValue[commandBase];
+    uint command = ResultValue[commandBase + 1u];
+    uint width = ResultValue[commandBase + 3u];
+    if ((command & 0x80000000u) == 0u || nativeX >= width)
+        return;
+    uint sourceScreen = (command >> 3u) & 1u;
+    bool source3DValid = (command & 0x10u) != 0u;
+    uint lineMeta = ResultValue[CapLineMetaBase + sourceScreen * 192u + nativeY];
+    uint2 position = uint2(id.x, scaledY);
+    uint sourceA = 0u;
+    if ((captureCnt & (1u << 24u)) != 0u)
+        sourceA = source3DValid ? CapLoadSource3D(position, lineMeta) : 0u;
+    else
+        sourceA = CapComposeSourceA(position, nativeIndex, lineMeta, source3DValid);
+    uint refB = ResultValue[CapSourceBReferenceBase + nativeIndex];
+    uint sourceB = (refB & 0x80000000u) != 0u
+        ? CapLoad(refB, uint2(id.x % ScaleFactor, id.y))
+        : ResultValue[CapSourceBNativeBase + nativeIndex];
+    uint mode = (captureCnt >> 29u) & 3u;
+    uint result = sourceA;
+    if (mode == 1u)
+        result = sourceB;
+    else if (mode >= 2u)
+    {
+        uint eva = min(captureCnt & 0x1Fu, 16u);
+        uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
+        uint aa = (sourceA >> 24u) != 0u ? 1u : 0u;
+        uint ab = (sourceB >> 24u) != 0u ? 1u : 0u;
+        uint r = min(((((CapR(sourceA)>>1u)*aa*eva)+((CapR(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint g = min(((((CapG(sourceA)>>1u)*aa*eva)+((CapG(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint b = min(((((CapB(sourceA)>>1u)*aa*eva)+((CapB(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint alpha = ((eva != 0u ? aa : 0u) | (evb != 0u ? ab : 0u)) * 0xFFu;
+        result = r | (g << 8u) | (b << 16u) | (alpha << 24u);
+    }
+    uint address = (ResultValue[commandBase + 2u] + nativeX) & 0xFFFFu;
+    uint bank = command & 3u;
+    uint version = (command >> 2u) & 1u;
+    uint spp = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    CaptureSidecarBuffer[cell * spp + id.y * ScaleFactor + (id.x % ScaleFactor)] =
+        CapNormalizeCapturedPixel(result);
+}
+ )";
 
 // ---------------------------------------------------------------------------
 // High-resolution software-2D / DX12-3D compositor
@@ -1667,7 +1835,7 @@ void main(uint3 id : SV_DispatchThreadID)
 // high-resolution 3D source produced by FinalPass.
 inline const std::string Compositor = R"(
 static const uint StructuredPixelCount = 256u * 192u;
-static const uint StructuredLineMetaBase = StructuredPixelCount * 6u;
+static const uint StructuredLineMetaBase = StructuredPixelCount * 14u;
 
 uint Color6R(uint color) { return color & 0x3Fu; }
 uint Color6G(uint color) { return (color >> 8u) & 0x3Fu; }
@@ -1727,6 +1895,17 @@ uint ToBgra8(uint color)
     return b8 | (g8 << 8u) | (r8 << 16u) | 0xFF000000u;
 }
 
+uint LoadStructuredCapture(uint reference, uint2 within)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint samplesPerPixel = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return CaptureSidecarBuffer[
+        cell * samplesPerPixel + within.y * ScaleFactor + within.x];
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -1738,11 +1917,13 @@ void main(uint3 id : SV_DispatchThreadID)
     uint nativeX = id.x / ScaleFactor;
     uint nativeY = scaledY / ScaleFactor;
     uint nativeIndex = nativeX + nativeY * 256u;
-    uint planeBase = screen * StructuredPixelCount * 3u;
+    uint planeBase = screen * StructuredPixelCount * 4u;
 
     uint below = ResultValue[planeBase + nativeIndex];
     uint above = ResultValue[planeBase + StructuredPixelCount + nativeIndex];
     uint control = ResultValue[planeBase + StructuredPixelCount * 2u + nativeIndex];
+    uint captureReference = ResultValue[
+        planeBase + StructuredPixelCount * 3u + nativeIndex];
     uint controlAlpha = control >> 24u;
     uint color = below;
 
@@ -1757,7 +1938,10 @@ void main(uint3 id : SV_DispatchThreadID)
             ? int(id.x) - int((512u - xPosition) * ScaleFactor)
             : int(id.x) + int(xPosition * ScaleFactor);
         uint pixel3D = 0u;
-        if (TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+        if ((captureReference & 0x80000000u) != 0u)
+            pixel3D = LoadStructuredCapture(
+                captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
+        else if (TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
             pixel3D = FinalFB[uint(sourceX) + scaledY * ScreenWidth];
 
         if (((pixel3D >> 24u) & 0x1Fu) != 0u)

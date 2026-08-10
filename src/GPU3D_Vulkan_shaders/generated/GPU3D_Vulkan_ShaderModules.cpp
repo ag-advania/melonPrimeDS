@@ -80,83 +80,86 @@ const ShaderModule Modules[TileGeometryBucketCount][Pipeline_Count] =
         { detail::Blob031, detail::Blob031_Words }, // FinalPass6
         { detail::Blob032, detail::Blob032_Words }, // FinalPass7
         { detail::Blob033, detail::Blob033_Words }, // Resolve
-        { detail::Blob034, detail::Blob034_Words }, // Compositor
+        { detail::Blob034, detail::Blob034_Words }, // CaptureSidecar
+        { detail::Blob035, detail::Blob035_Words }, // Compositor
     },
     // bucket 1: TileSize 16, CoarseTileCountY 4, CoarseTileArea 32, ClearCoarseBinMaskLocalSize 64
     {
-        { detail::Blob035, detail::Blob035_Words }, // InterpSpansZ
-        { detail::Blob036, detail::Blob036_Words }, // InterpSpansW
-        { detail::Blob037, detail::Blob037_Words }, // BinCombined
-        { detail::Blob038, detail::Blob038_Words }, // DepthBlendZ
-        { detail::Blob039, detail::Blob039_Words }, // DepthBlendW
-        { detail::Blob040, detail::Blob040_Words }, // RasteriseNoTextureZ
-        { detail::Blob041, detail::Blob041_Words }, // RasteriseNoTextureW
-        { detail::Blob042, detail::Blob042_Words }, // RasteriseNoTextureToonZ
-        { detail::Blob043, detail::Blob043_Words }, // RasteriseNoTextureToonW
-        { detail::Blob044, detail::Blob044_Words }, // RasteriseNoTextureHighlightZ
-        { detail::Blob045, detail::Blob045_Words }, // RasteriseNoTextureHighlightW
-        { detail::Blob046, detail::Blob046_Words }, // RasteriseUseTextureDecalZ
-        { detail::Blob047, detail::Blob047_Words }, // RasteriseUseTextureDecalW
-        { detail::Blob048, detail::Blob048_Words }, // RasteriseUseTextureModulateZ
-        { detail::Blob049, detail::Blob049_Words }, // RasteriseUseTextureModulateW
-        { detail::Blob050, detail::Blob050_Words }, // RasteriseUseTextureToonZ
-        { detail::Blob051, detail::Blob051_Words }, // RasteriseUseTextureToonW
-        { detail::Blob052, detail::Blob052_Words }, // RasteriseUseTextureHighlightZ
-        { detail::Blob053, detail::Blob053_Words }, // RasteriseUseTextureHighlightW
-        { detail::Blob054, detail::Blob054_Words }, // RasteriseShadowMaskZ
-        { detail::Blob055, detail::Blob055_Words }, // RasteriseShadowMaskW
-        { detail::Blob056, detail::Blob056_Words }, // ClearCoarseBinMask
-        { detail::Blob057, detail::Blob057_Words }, // ClearIndirectWorkCount
-        { detail::Blob058, detail::Blob058_Words }, // CalculateWorkOffsets
-        { detail::Blob059, detail::Blob059_Words }, // SortWork
-        { detail::Blob060, detail::Blob060_Words }, // FinalPass0
-        { detail::Blob061, detail::Blob061_Words }, // FinalPass1
-        { detail::Blob062, detail::Blob062_Words }, // FinalPass2
-        { detail::Blob063, detail::Blob063_Words }, // FinalPass3
-        { detail::Blob064, detail::Blob064_Words }, // FinalPass4
-        { detail::Blob065, detail::Blob065_Words }, // FinalPass5
-        { detail::Blob066, detail::Blob066_Words }, // FinalPass6
-        { detail::Blob067, detail::Blob067_Words }, // FinalPass7
-        { detail::Blob068, detail::Blob068_Words }, // Resolve
-        { detail::Blob069, detail::Blob069_Words }, // Compositor
+        { detail::Blob036, detail::Blob036_Words }, // InterpSpansZ
+        { detail::Blob037, detail::Blob037_Words }, // InterpSpansW
+        { detail::Blob038, detail::Blob038_Words }, // BinCombined
+        { detail::Blob039, detail::Blob039_Words }, // DepthBlendZ
+        { detail::Blob040, detail::Blob040_Words }, // DepthBlendW
+        { detail::Blob041, detail::Blob041_Words }, // RasteriseNoTextureZ
+        { detail::Blob042, detail::Blob042_Words }, // RasteriseNoTextureW
+        { detail::Blob043, detail::Blob043_Words }, // RasteriseNoTextureToonZ
+        { detail::Blob044, detail::Blob044_Words }, // RasteriseNoTextureToonW
+        { detail::Blob045, detail::Blob045_Words }, // RasteriseNoTextureHighlightZ
+        { detail::Blob046, detail::Blob046_Words }, // RasteriseNoTextureHighlightW
+        { detail::Blob047, detail::Blob047_Words }, // RasteriseUseTextureDecalZ
+        { detail::Blob048, detail::Blob048_Words }, // RasteriseUseTextureDecalW
+        { detail::Blob049, detail::Blob049_Words }, // RasteriseUseTextureModulateZ
+        { detail::Blob050, detail::Blob050_Words }, // RasteriseUseTextureModulateW
+        { detail::Blob051, detail::Blob051_Words }, // RasteriseUseTextureToonZ
+        { detail::Blob052, detail::Blob052_Words }, // RasteriseUseTextureToonW
+        { detail::Blob053, detail::Blob053_Words }, // RasteriseUseTextureHighlightZ
+        { detail::Blob054, detail::Blob054_Words }, // RasteriseUseTextureHighlightW
+        { detail::Blob055, detail::Blob055_Words }, // RasteriseShadowMaskZ
+        { detail::Blob056, detail::Blob056_Words }, // RasteriseShadowMaskW
+        { detail::Blob057, detail::Blob057_Words }, // ClearCoarseBinMask
+        { detail::Blob058, detail::Blob058_Words }, // ClearIndirectWorkCount
+        { detail::Blob059, detail::Blob059_Words }, // CalculateWorkOffsets
+        { detail::Blob060, detail::Blob060_Words }, // SortWork
+        { detail::Blob061, detail::Blob061_Words }, // FinalPass0
+        { detail::Blob062, detail::Blob062_Words }, // FinalPass1
+        { detail::Blob063, detail::Blob063_Words }, // FinalPass2
+        { detail::Blob064, detail::Blob064_Words }, // FinalPass3
+        { detail::Blob065, detail::Blob065_Words }, // FinalPass4
+        { detail::Blob066, detail::Blob066_Words }, // FinalPass5
+        { detail::Blob067, detail::Blob067_Words }, // FinalPass6
+        { detail::Blob068, detail::Blob068_Words }, // FinalPass7
+        { detail::Blob069, detail::Blob069_Words }, // Resolve
+        { detail::Blob070, detail::Blob070_Words }, // CaptureSidecar
+        { detail::Blob071, detail::Blob071_Words }, // Compositor
     },
     // bucket 2: TileSize 32, CoarseTileCountY 6, CoarseTileArea 48, ClearCoarseBinMaskLocalSize 48
     {
-        { detail::Blob070, detail::Blob070_Words }, // InterpSpansZ
-        { detail::Blob071, detail::Blob071_Words }, // InterpSpansW
-        { detail::Blob072, detail::Blob072_Words }, // BinCombined
-        { detail::Blob073, detail::Blob073_Words }, // DepthBlendZ
-        { detail::Blob074, detail::Blob074_Words }, // DepthBlendW
-        { detail::Blob075, detail::Blob075_Words }, // RasteriseNoTextureZ
-        { detail::Blob076, detail::Blob076_Words }, // RasteriseNoTextureW
-        { detail::Blob077, detail::Blob077_Words }, // RasteriseNoTextureToonZ
-        { detail::Blob078, detail::Blob078_Words }, // RasteriseNoTextureToonW
-        { detail::Blob079, detail::Blob079_Words }, // RasteriseNoTextureHighlightZ
-        { detail::Blob080, detail::Blob080_Words }, // RasteriseNoTextureHighlightW
-        { detail::Blob081, detail::Blob081_Words }, // RasteriseUseTextureDecalZ
-        { detail::Blob082, detail::Blob082_Words }, // RasteriseUseTextureDecalW
-        { detail::Blob083, detail::Blob083_Words }, // RasteriseUseTextureModulateZ
-        { detail::Blob084, detail::Blob084_Words }, // RasteriseUseTextureModulateW
-        { detail::Blob085, detail::Blob085_Words }, // RasteriseUseTextureToonZ
-        { detail::Blob086, detail::Blob086_Words }, // RasteriseUseTextureToonW
-        { detail::Blob087, detail::Blob087_Words }, // RasteriseUseTextureHighlightZ
-        { detail::Blob088, detail::Blob088_Words }, // RasteriseUseTextureHighlightW
-        { detail::Blob089, detail::Blob089_Words }, // RasteriseShadowMaskZ
-        { detail::Blob090, detail::Blob090_Words }, // RasteriseShadowMaskW
-        { detail::Blob091, detail::Blob091_Words }, // ClearCoarseBinMask
-        { detail::Blob092, detail::Blob092_Words }, // ClearIndirectWorkCount
-        { detail::Blob093, detail::Blob093_Words }, // CalculateWorkOffsets
-        { detail::Blob094, detail::Blob094_Words }, // SortWork
-        { detail::Blob095, detail::Blob095_Words }, // FinalPass0
-        { detail::Blob096, detail::Blob096_Words }, // FinalPass1
-        { detail::Blob097, detail::Blob097_Words }, // FinalPass2
-        { detail::Blob098, detail::Blob098_Words }, // FinalPass3
-        { detail::Blob099, detail::Blob099_Words }, // FinalPass4
-        { detail::Blob100, detail::Blob100_Words }, // FinalPass5
-        { detail::Blob101, detail::Blob101_Words }, // FinalPass6
-        { detail::Blob102, detail::Blob102_Words }, // FinalPass7
-        { detail::Blob103, detail::Blob103_Words }, // Resolve
-        { detail::Blob104, detail::Blob104_Words }, // Compositor
+        { detail::Blob072, detail::Blob072_Words }, // InterpSpansZ
+        { detail::Blob073, detail::Blob073_Words }, // InterpSpansW
+        { detail::Blob074, detail::Blob074_Words }, // BinCombined
+        { detail::Blob075, detail::Blob075_Words }, // DepthBlendZ
+        { detail::Blob076, detail::Blob076_Words }, // DepthBlendW
+        { detail::Blob077, detail::Blob077_Words }, // RasteriseNoTextureZ
+        { detail::Blob078, detail::Blob078_Words }, // RasteriseNoTextureW
+        { detail::Blob079, detail::Blob079_Words }, // RasteriseNoTextureToonZ
+        { detail::Blob080, detail::Blob080_Words }, // RasteriseNoTextureToonW
+        { detail::Blob081, detail::Blob081_Words }, // RasteriseNoTextureHighlightZ
+        { detail::Blob082, detail::Blob082_Words }, // RasteriseNoTextureHighlightW
+        { detail::Blob083, detail::Blob083_Words }, // RasteriseUseTextureDecalZ
+        { detail::Blob084, detail::Blob084_Words }, // RasteriseUseTextureDecalW
+        { detail::Blob085, detail::Blob085_Words }, // RasteriseUseTextureModulateZ
+        { detail::Blob086, detail::Blob086_Words }, // RasteriseUseTextureModulateW
+        { detail::Blob087, detail::Blob087_Words }, // RasteriseUseTextureToonZ
+        { detail::Blob088, detail::Blob088_Words }, // RasteriseUseTextureToonW
+        { detail::Blob089, detail::Blob089_Words }, // RasteriseUseTextureHighlightZ
+        { detail::Blob090, detail::Blob090_Words }, // RasteriseUseTextureHighlightW
+        { detail::Blob091, detail::Blob091_Words }, // RasteriseShadowMaskZ
+        { detail::Blob092, detail::Blob092_Words }, // RasteriseShadowMaskW
+        { detail::Blob093, detail::Blob093_Words }, // ClearCoarseBinMask
+        { detail::Blob094, detail::Blob094_Words }, // ClearIndirectWorkCount
+        { detail::Blob095, detail::Blob095_Words }, // CalculateWorkOffsets
+        { detail::Blob096, detail::Blob096_Words }, // SortWork
+        { detail::Blob097, detail::Blob097_Words }, // FinalPass0
+        { detail::Blob098, detail::Blob098_Words }, // FinalPass1
+        { detail::Blob099, detail::Blob099_Words }, // FinalPass2
+        { detail::Blob100, detail::Blob100_Words }, // FinalPass3
+        { detail::Blob101, detail::Blob101_Words }, // FinalPass4
+        { detail::Blob102, detail::Blob102_Words }, // FinalPass5
+        { detail::Blob103, detail::Blob103_Words }, // FinalPass6
+        { detail::Blob104, detail::Blob104_Words }, // FinalPass7
+        { detail::Blob105, detail::Blob105_Words }, // Resolve
+        { detail::Blob106, detail::Blob106_Words }, // CaptureSidecar
+        { detail::Blob107, detail::Blob107_Words }, // Compositor
     },
 };
 
@@ -196,6 +199,7 @@ const char* const PipelineNames[Pipeline_Count] =
     "FinalPass6",
     "FinalPass7",
     "Resolve",
+    "CaptureSidecar",
     "Compositor",
 };
 
