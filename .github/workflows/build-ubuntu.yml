@@ -75,8 +75,8 @@ jobs:
         sudo apt update
         sudo apt install -y glslang-tools spirv-tools
 
-    - name: Verify committed Vulkan SPIR-V is up to date
-      run: python ./tools/vulkan/compile-shaders.py --check
+    - name: Verify committed Vulkan SPIR-V source synchronization
+      run: python ./tools/vulkan/compile-shaders.py --check-source-sync
 
     - name: Audit Vulkan compute shaders
       run: python ./tools/ci/audits/check-vulkan-shaders.py

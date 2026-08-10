@@ -28,18 +28,29 @@ The output is deterministic -- stable ordering, no timestamps, no absolute
 paths -- so regenerating without a source change produces no diff.
 
 Usage:
-    python tools/vulkan/compile-shaders.py [--glslang PATH] [--check] [--verbose]
+    python tools/vulkan/compile-shaders.py [--glslang PATH]
+                                           [--check | --check-source-sync]
+                                           [--verbose]
 
 --check recompiles and fails if the committed output is stale, without
 touching the working tree.
+
+--check-source-sync is compiler-version independent. It verifies that the
+committed manifest was generated from the current GLSL/generator inputs and
+that every committed SPIR-V blob still matches the manifest. CI uses this mode
+because different supported glslang releases can emit different, equally valid
+SPIR-V for the same GLSL; shader compilation and spirv-val remain covered by
+tools/ci/audits/check-vulkan-shaders.py.
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -320,14 +331,203 @@ def write_if_changed(path: str, content: str, check_only: bool) -> bool:
     return False
 
 
+def source_set_sha256() -> str:
+    """Hash every input that can change which shader modules are generated.
+
+    Line endings are normalized so Windows and Unix checkouts produce the same
+    fingerprint. Including this generator and vulkan_shader_set.py catches
+    changes to pipeline ordering, injected defines and emitted module layout in
+    addition to edits of the GLSL itself.
+    """
+    generator_dir = os.path.dirname(os.path.abspath(__file__))
+    paths = [
+        os.path.abspath(__file__),
+        os.path.join(generator_dir, "vulkan_shader_set.py"),
+    ]
+    for extension in ("*.comp", "*.glsl"):
+        paths.extend(glob.glob(os.path.join(vss.SHADER_DIR, extension)))
+
+    digest = hashlib.sha256()
+    for path in sorted(set(paths)):
+        relative = os.path.relpath(path, vss.REPO_ROOT).replace(os.sep, "/")
+        with open(path, "rb") as handle:
+            content = handle.read().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def expected_variant_metadata() -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for bucket in range(vss.BUCKET_COUNT):
+        geometry = vss.tile_geometry(bucket)
+        for index, (name, stem, defines) in enumerate(vss.pipelines()):
+            result.append({
+                "pipeline": index,
+                "name": name,
+                "bucket": bucket,
+                "source": f"src/GPU3D_Vulkan_shaders/{stem}.comp",
+                "entryPoint": "main",
+                "defines": sorted(defines),
+                "geometryDefines": geometry,
+            })
+    return result
+
+
+def verify_committed_source_sync(expected_source_hash: str) -> int:
+    """Verify generated-source freshness without depending on glslang output."""
+    manifest_path = os.path.join(vss.GENERATED_DIR, MANIFEST_NAME)
+    failures: list[str] = []
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"FAIL: cannot read {manifest_path}: {error}")
+        return 1
+
+    if manifest.get("sourceSetSha256") != expected_source_hash:
+        failures.append(
+            "shader/generator inputs changed after the committed output was generated"
+        )
+
+    expected_contract = {
+        "generator": "tools/vulkan/compile-shaders.py",
+        "targetEnv": "vulkan1.1",
+        "entryPoint": "main",
+        "pipelineCount": len(vss.pipelines()),
+        "bucketCount": vss.BUCKET_COUNT,
+        "bucketRepresentativeScale": vss.BUCKET_REPRESENTATIVE_SCALE,
+        "specializationConstants": [
+            {"name": name, "id": cid} for name, cid in vss.SPEC_CONSTANTS
+        ],
+        "pushConstantBytes": vss.PUSH_CONSTANT_SIZE,
+        "set0Bindings": [
+            {"name": name, "binding": binding}
+            for name, binding in vss.SET0_BINDINGS
+        ],
+        "set1Bindings": [
+            {"name": name, "binding": binding}
+            for name, binding in vss.SET1_BINDINGS
+        ],
+    }
+    for key, expected in expected_contract.items():
+        if manifest.get(key) != expected:
+            failures.append(f"manifest field {key!r} does not match the generator contract")
+
+    variants = manifest.get("variants")
+    expected_metadata = expected_variant_metadata()
+    if not isinstance(variants, list) or len(variants) != len(expected_metadata):
+        failures.append("manifest variant list has the wrong size")
+        variants = []
+    else:
+        metadata_keys = tuple(expected_metadata[0])
+        actual_metadata = [
+            {key: variant.get(key) for key in metadata_keys}
+            for variant in variants
+        ]
+        if actual_metadata != expected_metadata:
+            failures.append("manifest pipeline/bucket metadata is stale")
+
+    listed_files = manifest.get("generatedFiles")
+    if not isinstance(listed_files, list):
+        failures.append("manifest generatedFiles is missing or invalid")
+        listed_files = []
+    actual_files = sorted(
+        os.path.basename(path)
+        for path in glob.glob(os.path.join(vss.GENERATED_DIR, "GPU3D_Vulkan_Shader*"))
+        if os.path.isfile(path)
+    )
+    actual_files.append(MANIFEST_NAME)
+    actual_files.sort()
+    if sorted(listed_files) != actual_files:
+        failures.append("manifest generatedFiles does not match the committed file set")
+
+    expected_blob_hashes: dict[int, str] = {}
+    for variant in variants:
+        blob = variant.get("blob")
+        digest = variant.get("sha256")
+        if not isinstance(blob, int) or not isinstance(digest, str):
+            failures.append("manifest contains an invalid blob reference")
+            continue
+        previous = expected_blob_hashes.setdefault(blob, digest)
+        if previous != digest:
+            failures.append(f"manifest assigns conflicting hashes to blob {blob}")
+
+    blob_pattern = re.compile(
+        r"const uint32_t Blob(\d{3})\[(\d+)\] = \{(.*?)\};",
+        re.DOTALL,
+    )
+    word_pattern = re.compile(r"0x[0-9a-fA-F]{8}")
+    committed_blobs: dict[int, list[int]] = {}
+    for path in glob.glob(os.path.join(
+            vss.GENERATED_DIR, "GPU3D_Vulkan_ShaderBlobs_*.cpp")):
+        with open(path, "r", encoding="utf-8", newline="") as handle:
+            source = handle.read()
+        for match in blob_pattern.finditer(source):
+            blob = int(match.group(1))
+            declared_words = int(match.group(2))
+            words = [int(token, 16) for token in word_pattern.findall(match.group(3))]
+            if len(words) != declared_words:
+                failures.append(
+                    f"blob {blob} declares {declared_words} words but contains {len(words)}"
+                )
+            if blob in committed_blobs:
+                failures.append(f"blob {blob} is defined more than once")
+            committed_blobs[blob] = words
+
+    unique_modules = manifest.get("uniqueModules")
+    if not isinstance(unique_modules, int):
+        failures.append("manifest uniqueModules is missing or invalid")
+        unique_modules = -1
+    expected_blob_ids = set(range(max(unique_modules, 0)))
+    if set(committed_blobs) != expected_blob_ids:
+        failures.append("committed blob definitions do not match manifest uniqueModules")
+    if set(expected_blob_hashes) != expected_blob_ids:
+        failures.append("manifest variants do not reference every committed blob")
+
+    total_bytes = 0
+    for blob, words in committed_blobs.items():
+        total_bytes += len(words) * 4
+        if not words or words[0] != 0x07230203:
+            failures.append(f"blob {blob} has an invalid SPIR-V magic number")
+            continue
+        packed = struct.pack(f"<{len(words)}I", *words)
+        actual_digest = hashlib.sha256(packed).hexdigest()
+        if expected_blob_hashes.get(blob) != actual_digest:
+            failures.append(f"blob {blob} does not match its manifest SHA-256")
+    if manifest.get("totalSpirvBytes") != total_bytes:
+        failures.append("manifest totalSpirvBytes does not match committed blobs")
+
+    if failures:
+        print("FAIL: committed Vulkan shader output is not source-synchronized:")
+        for failure in failures:
+            print(f"  {failure}")
+        print("Rerun tools/vulkan/compile-shaders.py with the canonical glslang toolchain.")
+        return 1
+
+    print(f"PASS: source fingerprint {expected_source_hash}")
+    print(f"PASS: {len(committed_blobs)} committed SPIR-V modules match manifest hashes")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--glslang", default=None, help="path to glslangValidator")
-    parser.add_argument("--check", action="store_true",
-                        help="fail if the committed output is stale; write nothing")
+    check_group = parser.add_mutually_exclusive_group()
+    check_group.add_argument("--check", action="store_true",
+                             help="recompile and byte-compare committed output")
+    check_group.add_argument(
+        "--check-source-sync", action="store_true",
+        help="verify source fingerprint and committed blob integrity without recompiling")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+
+    source_hash = source_set_sha256()
+    if args.check_source_sync:
+        return verify_committed_source_sync(source_hash)
 
     glslang = vss.find_tool("glslangValidator", args.glslang)
     if not glslang:
@@ -411,6 +611,7 @@ def main() -> int:
 
     manifest = {
         "generator": "tools/vulkan/compile-shaders.py",
+        "sourceSetSha256": source_hash,
         "targetEnv": "vulkan1.1",
         "entryPoint": "main",
         "pipelineCount": len(pipeline_list),

@@ -173,8 +173,8 @@ jobs:
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
-    - name: Check Vulkan SPIR-V synchronization
-      run: cmake --build --preset=release-mingw-x86_64 --target melonprime_check_vulkan_spirv
+    - name: Check Vulkan SPIR-V source synchronization
+      run: python ./tools/vulkan/compile-shaders.py --check-source-sync
 
     - name: Build with Vulkan completely disabled
       run: |
