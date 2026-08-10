@@ -146,7 +146,10 @@ void VideoSettingsDialog::setEnabled()
 #else
     const bool dx12Renderer = false;
 #endif
-    ui->cbGLDisplay->setEnabled(softwareRenderer || dx12Renderer);
+    // Native GPU backends own their presentation path. Screen.UseGL only
+    // selects the display path for the software renderer, so exposing it for
+    // DX12 would present a setting that cannot affect the active backend.
+    ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
     // This controls the Software renderer worker thread. Native Metal and
