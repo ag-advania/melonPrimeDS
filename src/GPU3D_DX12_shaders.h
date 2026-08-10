@@ -1928,8 +1928,15 @@ void main(uint3 id : SV_DispatchThreadID)
     uint color = below;
 
     uint lineMeta = ResultValue[StructuredLineMetaBase + screen * 192u + nativeY];
+    uint displayMode = (lineMeta >> 16u) & 0x3u;
 
-    if ((controlAlpha & 0x40u) != 0u)
+    // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
+    // capture provenance rather than a visibility test, so this path must not
+    // use the ordinary 3D-slot transparent-pixel fallback.
+    if (displayMode == 2u && (captureReference & 0x80000000u) != 0u)
+        color = LoadStructuredCapture(
+            captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
+    else if ((controlAlpha & 0x40u) != 0u)
     {
         // The 3D X scroll is published per scanline, because that is where the
         // DS applies it and where SoftRenderer3D::GetLine() reads it.
@@ -1962,7 +1969,6 @@ void main(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint displayMode = (lineMeta >> 16u) & 0x3u;
     if (displayMode != 0u)
     {
         uint brightnessMode = (lineMeta >> 8u) & 0x3u;

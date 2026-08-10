@@ -1658,6 +1658,7 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     {
         // if this block was written to by the CPU, invalidate the entire capture
         // the renderer will need to use the emulated VRAM contents
+        Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
     }
     else

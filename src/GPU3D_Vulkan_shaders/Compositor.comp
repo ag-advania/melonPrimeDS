@@ -105,6 +105,7 @@ const uint kBrightnessModeDown = 2u;
 const uint kBrightnessFactorLimit = 16u;
 
 const uint kDisplayModeOff = 0u;
+const uint kDisplayModeVram = 2u;
 
 // Producer-side markers. This shader never sees them -- they only exist inside
 // the software 2D BG/OBJ pipeline, where they stand in for the 3D layer -- but
@@ -140,12 +141,23 @@ void main()
     uint controlFlags = control >> kControlFlagShift;
 
     uint lineMeta = StructuredInput[StructuredLineMetaBase + screen * 192u + nativeY];
+    uint displayMode = (lineMeta >> kLineMetaDisplayModeShift) & kLineMetaDisplayModeMask;
 
     // Without a 3D slot plane 0 is already the final 2D colour, so the default
     // is "the software renderer's answer, unchanged".
     uint color = below;
 
-    if ((controlFlags & kControlHas3DSlot) != 0u)
+    // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
+    // capture provenance rather than a visibility test, so this path must not
+    // use the ordinary 3D-slot transparent-pixel fallback.
+    if (displayMode == kDisplayModeVram
+        && (captureReference & 0x80000000u) != 0u)
+    {
+        color = LoadCaptureSidecar(
+            captureReference,
+            uvec2(id.x % uint(ScaleFactor), scaledY % uint(ScaleFactor)));
+    }
+    else if ((controlFlags & kControlHas3DSlot) != 0u)
     {
         // The 3D X scroll travels per scanline because that is where the DS
         // applies it: SoftRenderer3D::GetLine() reads GPU3D::RenderXPos when
@@ -231,7 +243,6 @@ void main()
     // has had master brightness applied to it once already, and applying it a
     // second time here is exactly the double-darkening that marker exists to
     // prevent (see BuildStructuredScreenLine).
-    uint displayMode = (lineMeta >> kLineMetaDisplayModeShift) & kLineMetaDisplayModeMask;
     if (displayMode != kDisplayModeOff)
     {
         uint brightnessMode = (lineMeta >> kLineMetaBrightnessModeShift) & kLineMetaBrightnessModeMask;
