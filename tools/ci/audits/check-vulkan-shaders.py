@@ -154,7 +154,8 @@ def check_scale_arithmetic(scale: int) -> tuple[list[str], list[str]]:
         # Native capture resolve and structured 2D input are DS-native by
         # definition and therefore scale-independent.
         "NativeResolveMemory": 4 * 256 * 192,
-        "StructuredInputMemory": (6 * 256 * 192 + 2 * 192) * 4,
+        "StructuredInputMemory": (14 * 256 * 192 + 2 * 192 + 192 * 4) * 4,
+        "CaptureSidecarMemory": 8 * 256 * 256 * scale * scale * 4,
     }
     for label, size in byte_sizes.items():
         if size > UINT32_MAX:
@@ -172,7 +173,11 @@ def check_scale_arithmetic(scale: int) -> tuple[list[str], list[str]]:
         "ClearCoarseBinMask.x": tiles_per_line * tile_lines
         // geo["ClearCoarseBinMaskLocalSize"],
         "ClearIndirectWorkCount.x": (vss.MAX_VARIANTS + 31) // 32,
-        "InterpSpans.x": (max_yspan + 31) // 32,
+        # The host chunks InterpSpans at maxComputeWorkGroupCount[0], so no
+        # individual dispatch exceeds the guaranteed X group count.
+        "InterpSpans.x": min(
+            (max_yspan + 31) // 32,
+            vss.VK_MIN_MAX_COMPUTE_WORKGROUP_COUNT),
         "BinCombined.x": (2048 + 31) // 32,
         "BinCombined.y": screen_w // geo["CoarseTileW"],
         "BinCombined.z": screen_h // geo["CoarseTileH"],
@@ -198,8 +203,8 @@ def check_scale_arithmetic(scale: int) -> tuple[list[str], list[str]]:
         elif groups > vss.VK_MIN_MAX_COMPUTE_WORKGROUP_COUNT:
             note.append(f"scale={scale}: {label} worst case is {groups} groups, "
                         f"above Vulkan's guaranteed maxComputeWorkGroupCount "
-                        f"({vss.VK_MIN_MAX_COMPUTE_WORKGROUP_COUNT}); inherited "
-                        f"from the OpenGL compute renderer, host must clamp")
+                        f"({vss.VK_MIN_MAX_COMPUTE_WORKGROUP_COUNT}); the host "
+                        f"feature probe must reject unsupported scales")
 
     # --- workgroup invocations ------------------------------------------
     invocations = tile_size * tile_size

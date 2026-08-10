@@ -75,6 +75,7 @@ public:
     void RenderFrame() override;
     u32* GetLine(int line) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+    [[nodiscard]] bool HasValidCaptureFrame() const noexcept override { return FrameReadbackValid; }
 
     // ---------------------------------------------------------------------
     // Structured software 2D + internal-resolution 3D.
@@ -82,7 +83,7 @@ public:
     // Called from VulkanRenderer::VBlank(), which is the one point in the DS
     // frame where this frame's structured 2D planes and this frame's 3D image
     // both exist. `planes` is
-    // {screen0 below/above/control, screen1 below/above/control}, each
+    // screen planes, capture-source planes and source-B provenance, each
     // 256*192 words; `lineMeta` is one 192-word array per screen. `generation`
     // is SoftRenderer's own frame counter -- composing the same generation
     // twice is a no-op, and a stale generation is never composed.
@@ -92,8 +93,9 @@ public:
     // POWCNT1 bit 15 every frame; the producer already resolved engine -> LCD
     // for this frame before publishing.
     bool ComposeStructuredOutput(
-        const std::array<const u32*, 6>& planes,
+        const std::array<const u32*, 14>& planes,
         const std::array<const u32*, 2>& lineMeta,
+        const u32* captureCommands,
         u64 generation);
 
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
@@ -320,6 +322,9 @@ private:
         u32 Texture = 0;        // texture heap handle, 0 = untextured
         u32 WrapS = 0;
         u32 WrapT = 0;
+        u32 CaptureReference = 0;
+        s32 CaptureYOffset = 0;
+        u8 CaptureType = 0;   // 0 = texcache, 1 = 128-wide capture, 2 = 256-wide
         u8 BlendMode = 0;
         u16 Width = 0;
         u16 Height = 0;
@@ -329,6 +334,9 @@ private:
             return Texture == other.Texture
                 && WrapS == other.WrapS
                 && WrapT == other.WrapT
+                && CaptureReference == other.CaptureReference
+                && CaptureYOffset == other.CaptureYOffset
+                && CaptureType == other.CaptureType
                 && BlendMode == other.BlendMode;
         }
     };
@@ -428,6 +436,7 @@ private:
     Vk::Buffer BinResultBuffer;             // storage + indirect dispatch args
     Vk::Buffer WorkDescBuffer;
     Vk::Image FinalFB;                      // internal-resolution RGBA8 storage image
+    Vk::Buffer CaptureSidecarBuffer;         // 4 banks x 2 versions, internal resolution
 
     // Compositor output: the two screens stacked, BGRA8, at the *internal*
     // resolution. Resolution-dependent, so it is created and destroyed with the

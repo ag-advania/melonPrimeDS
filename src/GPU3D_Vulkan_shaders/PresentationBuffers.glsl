@@ -24,6 +24,7 @@
 
     set 0 binding 12  StructuredInput     readonly, written by the host
     set 0 binding 13  PresentationOutput  written by whichever stage is running
+    set 0 binding 14  CaptureSidecar      persistent high-resolution capture data
 
     PresentationOutput is one binding rather than two because the two stages
     never run in the same dispatch and their outputs have different sizes and
@@ -38,10 +39,13 @@
 // The structured 2D frame the software renderer published, packed by the host
 // in exactly this order (VulkanRenderer3D::ComposeStructuredOutput):
 //
-//   [0 .. 3*NativePixelCount)                 screen 0, planes below/above/control
-//   [3*NativePixelCount .. 6*NativePixelCount) screen 1, same three planes
-//   [6*NativePixelCount .. +192)              screen 0 line metadata
-//   [6*NativePixelCount+192 .. +192)          screen 1 line metadata
+//   [0 .. 4*NativePixelCount)                  screen 0, below/above/control/capture-ref
+//   [4*NativePixelCount .. 8*NativePixelCount) screen 1, same four planes
+//   [8*NativePixelCount .. 12*NativePixelCount) engine-A capture source planes
+//   [12*NativePixelCount .. 13*NativePixelCount) capture source-B native colour
+//   [13*NativePixelCount .. 14*NativePixelCount) capture source-B references
+//   [14*NativePixelCount .. +384)              two screen line-metadata arrays
+//   [.. +768)                                  192 four-word capture commands
 //
 // Screen 0 is the top LCD and screen 1 the bottom, already resolved:
 // SoftRenderer::DrawScanline() maps engine -> screen through GPU.ScreenSwap
@@ -56,8 +60,28 @@ layout (std430, set = 0, binding = 13) buffer PresentationOutputBuffer
     uint PresentationOutput[];
 };
 
+layout (std430, set = 0, binding = 14) buffer CaptureSidecarBuffer
+{
+    uint CaptureSidecarPixels[];
+};
+
 const uint StructuredPlaneStride = uint(NativePixelCount);
-const uint StructuredScreenStride = 3u * StructuredPlaneStride;
-const uint StructuredLineMetaBase = 6u * StructuredPlaneStride;
+const uint StructuredScreenStride = 4u * StructuredPlaneStride;
+const uint StructuredCaptureSourceBase = 8u * StructuredPlaneStride;
+const uint StructuredCaptureSourceBNativeBase = 12u * StructuredPlaneStride;
+const uint StructuredCaptureSourceBReferenceBase = 13u * StructuredPlaneStride;
+const uint StructuredLineMetaBase = 14u * StructuredPlaneStride;
+const uint StructuredCaptureCommandBase = StructuredLineMetaBase + 384u;
+
+uint LoadCaptureSidecar(uint reference, uvec2 scaledWithinPixel)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 0x3u;
+    uint version = (reference >> 30u) & 0x1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    uint sampleIndex = scaledWithinPixel.y * uint(ScaleFactor) + scaledWithinPixel.x;
+    return CaptureSidecarPixels[cell * samplesPerPixel + sampleIndex];
+}
 
 #endif // MELONPRIME_VULKAN_PRESENTATIONBUFFERS_GLSL

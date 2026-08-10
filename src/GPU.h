@@ -1030,6 +1030,16 @@ public:
 
     virtual void AllocCapture(u32 bank, u32 start, u32 len) = 0;
     virtual void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) = 0;
+    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) {}
+#ifdef MELONPRIME_DS
+    // Backend-neutral lookup for a retained high-resolution display-capture
+    // pixel. The emulated VRAM remains authoritative; a zero result means the
+    // caller must use the ordinary native texture cache.
+    [[nodiscard]] virtual u32 GetCaptureTextureReference(u32 bank, u32 address) const noexcept
+    {
+        return 0;
+    }
+#endif
 
     // a renderer may render to RAM buffers, or to something else (ie. OpenGL)
     // if the renderer uses RAM buffers, they should be 32-bit BGRA, 256x192 for each screen

@@ -21,7 +21,9 @@
     (src/GPU3D_Compute_shaders.h).
 
     Build defines: InterpSpans + exactly one of ZBuffer / WBuffer.
-    Host dispatch (matching GPU3D_Compute.cpp): ((numSetupIndices+31)/32, 1, 1).
+    Host dispatches chunks no larger than maxComputeWorkGroupCount[0]. For this
+    stage only, pc.TexIsCapture carries the base index and
+    pc.CaptureYOffset carries the chunk count.
 
     Vulkan-forced deviation, the only one in this file:
     the GL original reads the per-span index table through
@@ -49,7 +51,12 @@ layout (set = 0, binding = 10) uniform utextureBuffer SetupIndices;
 
 void main()
 {
-    uvec4 setup = texelFetch(SetupIndices, int(gl_GlobalInvocationID.x));
+    uint localIndex = gl_GlobalInvocationID.x;
+    uint count = uint(pc.CaptureYOffset);
+    if (localIndex >= count)
+        return;
+    uint setupIndex = pc.TexIsCapture + localIndex;
+    uvec4 setup = texelFetch(SetupIndices, int(setupIndex));
 
     YSpanSetup spanL = YSpanSetups[setup.y];
     YSpanSetup spanR = YSpanSetups[setup.z];

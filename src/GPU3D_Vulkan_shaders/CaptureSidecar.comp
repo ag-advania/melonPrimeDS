@@ -1,0 +1,153 @@
+/*
+    High-resolution Display Capture sidecar.
+
+    Native RGBA5551 VRAM remains owned by GPU_Soft.cpp. This pass mirrors the
+    final capture result at the internal resolution so a later bitmap BG or
+    VRAM-display read does not have to enlarge the native copy. The layout and
+    two-version-per-bank lifetime match OpenGL's capture-output textures and
+    CaptureVRAMTex
+    ownership rule, including same-bank read-before-write.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+#include "PresentationBuffers.glsl"
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+uint LoadCaptureSource3D(uvec2 position, uint lineMeta)
+{
+    uint xPosition = (lineMeta >> 23u) & 0x1FFu;
+    int sourceX = (xPosition & 0x100u) != 0u
+        ? int(position.x) - int((512u - xPosition) * uint(ScaleFactor))
+        : int(position.x) + int(xPosition * uint(ScaleFactor));
+    return pc.TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth
+        ? LoadFinalFB(ivec2(sourceX, position.y))
+        : 0u;
+}
+
+uint ComposeSourceA(
+    uint screen,
+    uvec2 id,
+    uint nativeIndex,
+    uint lineMeta,
+    bool source3DValid)
+{
+    uint base = StructuredCaptureSourceBase;
+    uint below = StructuredInput[base + nativeIndex];
+    uint above = StructuredInput[base + StructuredPlaneStride + nativeIndex];
+    uint control = StructuredInput[base + 2u * StructuredPlaneStride + nativeIndex];
+    uint reference = StructuredInput[base + 3u * StructuredPlaneStride + nativeIndex];
+    uint flags = control >> 24u;
+    uint color = below;
+    if ((flags & 0x40u) == 0u)
+        return color;
+
+    uint slot = 0u;
+    if ((reference & 0x80000000u) != 0u)
+        slot = LoadCaptureSidecar(reference, id % uint(ScaleFactor));
+    else if (source3DValid)
+        slot = LoadCaptureSource3D(id, lineMeta);
+    if (((slot >> 24u) & 0x1Fu) == 0u)
+        return below;
+
+    uint mode = flags & 0xFu;
+    uint eva = (control >> 8u) & 0x1Fu;
+    uint evb = (control >> 16u) & 0x1Fu;
+    if (mode == 1u && (flags & 0x80u) != 0u)
+        return Blend4(above, slot, eva, evb);
+    if (mode == 2u)
+        return BrightnessUp(slot, eva, 0x8u);
+    if (mode == 3u)
+        return BrightnessDown(slot, eva, 0x7u);
+    if (mode == 4u)
+        return Blend5(slot, below);
+    return slot;
+}
+
+uint NormalizeCapturedPixel(uint color)
+{
+    // Display Capture writes RGBA5551. Preserve its exact loss of one RGB bit
+    // and expand the alpha bit to the 5-bit alpha consumed by the 3D texture
+    // path. Software 2D pixels carry flags in the rest of their alpha byte, so
+    // testing the whole byte here is intentional and matches DoCapture().
+    uint r = ((color & 0x3Fu) >> 1u) << 1u;
+    uint g = ((((color >> 8u) & 0x3Fu) >> 1u) << 1u);
+    uint b = ((((color >> 16u) & 0x3Fu) >> 1u) << 1u);
+    uint a = (color >> 24u) != 0u ? 31u : 0u;
+    return r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor))
+        return;
+
+    uint nativeY = pc.TexHeight;
+    if (nativeY >= 192u)
+        return;
+    uint scaledY = nativeY * uint(ScaleFactor) + id.y;
+    uint nativeX = id.x / uint(ScaleFactor);
+    uint nativeIndex = nativeX + nativeY * 256u;
+    uint commandBase = StructuredCaptureCommandBase + nativeY * 4u;
+    uint captureCnt = StructuredInput[commandBase];
+    uint command = StructuredInput[commandBase + 1u];
+    uint width = StructuredInput[commandBase + 3u];
+    if ((command & 0x80000000u) == 0u || nativeX >= width)
+        return;
+
+    uint sourceScreen = (command >> 3u) & 1u;
+    bool source3DValid = (command & 0x10u) != 0u;
+    uint lineMeta = StructuredInput[StructuredLineMetaBase + sourceScreen * 192u + nativeY];
+    uint sourceA = ((captureCnt & (1u << 24u)) != 0u)
+        ? (source3DValid ? LoadCaptureSource3D(uvec2(id.x, scaledY), lineMeta) : 0u)
+        : ComposeSourceA(
+            sourceScreen,
+            uvec2(id.x, scaledY),
+            nativeIndex,
+            lineMeta,
+            source3DValid);
+
+    uint sourceBReference = StructuredInput[StructuredCaptureSourceBReferenceBase + nativeIndex];
+    uint sourceB = (sourceBReference & 0x80000000u) != 0u
+        ? LoadCaptureSidecar(
+            sourceBReference,
+            uvec2(id.x % uint(ScaleFactor), id.y))
+        : StructuredInput[StructuredCaptureSourceBNativeBase + nativeIndex];
+
+    uint mode = (captureCnt >> 29u) & 3u;
+    uint result = sourceA;
+    if (mode == 1u)
+    {
+        result = sourceB;
+    }
+    else if (mode >= 2u)
+    {
+        uint eva = min(captureCnt & 0x1Fu, 16u);
+        uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
+        uint alphaA = (sourceA >> 24u) != 0u ? 1u : 0u;
+        uint alphaB = (sourceB >> 24u) != 0u ? 1u : 0u;
+        uint r = min(((((sourceA & 0x3Fu) >> 1u) * alphaA * eva)
+            + (((sourceB & 0x3Fu) >> 1u) * alphaB * evb) + 8u) >> 4u, 31u) << 1u;
+        uint g = min((((((sourceA >> 8u) & 0x3Fu) >> 1u) * alphaA * eva)
+            + ((((sourceB >> 8u) & 0x3Fu) >> 1u) * alphaB * evb) + 8u) >> 4u, 31u) << 1u;
+        uint b = min((((((sourceA >> 16u) & 0x3Fu) >> 1u) * alphaA * eva)
+            + ((((sourceB >> 16u) & 0x3Fu) >> 1u) * alphaB * evb) + 8u) >> 4u, 31u) << 1u;
+        uint alpha = ((eva != 0u ? alphaA : 0u) | (evb != 0u ? alphaB : 0u)) * 0xFFu;
+        result = r | (g << 8u) | (b << 16u) | (alpha << 24u);
+    }
+
+    uint address = (StructuredInput[commandBase + 2u] + nativeX) & 0xFFFFu;
+    uint bank = command & 3u;
+    uint version = (command >> 2u) & 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    uint sampleIndex = id.y * uint(ScaleFactor)
+        + (id.x % uint(ScaleFactor));
+    CaptureSidecarPixels[cell * samplesPerPixel + sampleIndex] =
+        NormalizeCapturedPixel(result);
+}

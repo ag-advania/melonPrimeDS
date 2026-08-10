@@ -80,6 +80,12 @@ void VulkanRenderer::PreSavestate()
 
 void VulkanRenderer::PostSavestate()
 {
+    // Match GLRenderer's savestate lifecycle. Renderer-private images,
+    // high-resolution capture sidecars and structured 2D provenance are not
+    // serialized, so none of them may survive across a loaded GPU state (or a
+    // save that synchronized native VRAM captures). VulkanRenderer3D::Reset()
+    // retires in-flight texture-cache resources without a device-wide idle.
+    SoftRenderer::Reset();
 }
 
 void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
@@ -130,13 +136,21 @@ void VulkanRenderer::VBlank()
     StructuredVulkanFrameView view{};
     if (vulkan && GetStructuredVulkanFrame(view) && view.Valid)
     {
-        const std::array<const u32*, 6> planes = {
+        const std::array<const u32*, 14> planes = {
             view.Plane[0][0],
             view.Plane[0][1],
             view.Plane[0][2],
+            view.Plane[0][3],
             view.Plane[1][0],
             view.Plane[1][1],
             view.Plane[1][2],
+            view.Plane[1][3],
+            view.CaptureSourcePlane[0],
+            view.CaptureSourcePlane[1],
+            view.CaptureSourcePlane[2],
+            view.CaptureSourcePlane[3],
+            view.CaptureSourceBNative,
+            view.CaptureSourceBReference,
         };
         const std::array<const u32*, 2> lineMeta = {
             view.LineMeta[0],
@@ -146,7 +160,7 @@ void VulkanRenderer::VBlank()
         // Generation is carried through so a frame the producer has not
         // refreshed is never recomposed, and a stale one is never composed at
         // all.
-        vulkan->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+        vulkan->ComposeStructuredOutput(planes, lineMeta, view.CaptureCommands, view.Generation);
     }
 
     // MELONPRIME_VULKAN_PRESENT_HOOK_V1

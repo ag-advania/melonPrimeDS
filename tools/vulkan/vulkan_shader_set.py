@@ -46,6 +46,7 @@ SET0_BINDINGS = [
     # own bindings so no existing binding number ever moved.
     ("StructuredInput", 12),
     ("PresentationOutput", 13),
+    ("CaptureSidecar", 14),
 ]
 SET1_BINDINGS = [
     ("CurrentTexture", 0),
@@ -110,11 +111,11 @@ def pipelines() -> list[tuple[str, str, list[str]]]:
     ComputeRenderer3D::ShaderCompileStep() so the two renderers' pipeline
     indices can be compared directly when debugging.
 
-    Indices 33 and 34 are the two *presentation* stages, which have no OpenGL
+    Indices 33..35 are the three *presentation* stages, which have no OpenGL
     compute counterpart: the GL renderer hands its FinalFB texture to the GL 2D
     engine instead. They are appended rather than interleaved so the shared
     prefix keeps matching. The DX12 backend numbers its own steps the same way
-    (ShaderStep_Resolve / ShaderStep_Compositor after ShaderStep_FinalPass0+8).
+    (Resolve / CaptureSidecar / Compositor after ShaderStep_FinalPass0+8).
     """
     out: list[tuple[str, str, list[str]]] = []
 
@@ -150,7 +151,8 @@ def pipelines() -> list[tuple[str, str, list[str]]]:
         out.append((f"FinalPass{variant}", "FinalPass", defines))
 
     out.append(("Resolve", "Resolve", ["Resolve"]))                 # 33
-    out.append(("Compositor", "Compositor", ["Compositor"]))        # 34
+    out.append(("CaptureSidecar", "CaptureSidecar", ["CaptureSidecar"])) # 34
+    out.append(("Compositor", "Compositor", ["Compositor"]))        # 35
 
     return out
 

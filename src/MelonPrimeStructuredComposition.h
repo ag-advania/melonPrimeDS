@@ -65,7 +65,11 @@ namespace melonDS::StructuredComposition
 inline constexpr u32 kPlaneBelow = 0;
 inline constexpr u32 kPlaneAbove = 1;
 inline constexpr u32 kPlaneControl = 2;
-inline constexpr u32 kPlaneCount = 3;
+// Plane 3 identifies a backend-private high-resolution display-capture sample.
+// Zero means that the slot in planes 0/1 is the current frame's 3D image.
+// A non-zero value is packed with PackCaptureReference() below.
+inline constexpr u32 kPlaneCaptureReference = 3;
+inline constexpr u32 kPlaneCount = 4;
 
 inline constexpr u32 kScreenWidth = 256;
 inline constexpr u32 kScreenHeight = 192;
@@ -167,6 +171,34 @@ inline constexpr u32 kDisplayModeFifo = 3;
 // logic decides where the 3D layer lands without ever seeing 3D color.
 inline constexpr u32 k3DPlaceholderPixel = 0x20000000u;
 inline constexpr u32 k3DLayerSlotPixel = 0x40000000u;
+
+// ---------------------------------------------------------------------------
+// High-resolution display-capture sidecar references
+// ---------------------------------------------------------------------------
+// The emulated VRAM remains authoritative and stores the native RGBA5551
+// capture. These references only select the backend-private high-resolution
+// copy of the same capture result. Two versions per bank preserve the old
+// contents while a bank is captured again, matching OpenGL's CaptureVRAMTex
+// same-bank read-before-write rule.
+inline constexpr u32 kCaptureReferenceValid = 1u << 31;
+inline constexpr u32 kCaptureReferenceVersionShift = 30;
+inline constexpr u32 kCaptureReferenceBankShift = 28;
+inline constexpr u32 kCaptureReferenceAddressMask = 0xFFFFu;
+
+constexpr u32 PackCaptureReference(u32 bank, u32 version, u32 address) noexcept
+{
+    return kCaptureReferenceValid
+        | ((version & 1u) << kCaptureReferenceVersionShift)
+        | ((bank & 3u) << kCaptureReferenceBankShift)
+        | (address & kCaptureReferenceAddressMask);
+}
+
+inline constexpr u32 kCaptureCommandWords = 4;
+inline constexpr u32 kCaptureCommandValid = 1u << 31;
+inline constexpr u32 kCaptureCommandDestinationBankShift = 0;
+inline constexpr u32 kCaptureCommandDestinationVersionShift = 2;
+inline constexpr u32 kCaptureCommandSourceScreenShift = 3;
+inline constexpr u32 kCaptureCommandSource3DValid = 1u << 4;
 
 } // namespace melonDS::StructuredComposition
 

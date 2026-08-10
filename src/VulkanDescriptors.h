@@ -76,8 +76,10 @@ enum class RasterizerBinding : u32
                             // two-screen internal-resolution BGRA output. One
                             // binding, two buffers, selected by which
                             // descriptor set the host binds.
+    CaptureSidecar = 14,    // STORAGE_BUFFER: two high-resolution versions of
+                            // each LCDC capture bank, persistent across frames
 
-    Count           = 14
+    Count           = 15
 };
 
 // Set 1 -- texture resources, rebound when the active texture changes.
@@ -117,6 +119,7 @@ inline constexpr std::array<VkDescriptorType, RasterizerBindingCount> Rasterizer
     VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,           // 11 FinalFB
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 12 StructuredInput
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 13 PresentationOut
+    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 14 CaptureSidecar
 };
 
 inline constexpr std::array<VkDescriptorType, TextureBindingCount> TextureBindingTypes = {
