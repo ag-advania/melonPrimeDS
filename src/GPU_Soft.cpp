@@ -201,6 +201,7 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
     const bool measureStructured2D = outputLine < 192u && UseStructuredVulkan2D();
+    bool structuredVramDisplaySnapshotted = false;
     if (measureStructured2D && outputLine == 0u)
         VulkanPerf::BeginStructured2DFrame();
 #endif
@@ -266,6 +267,13 @@ void SoftRenderer::DrawScanline(u32 line)
 
         // perform display capture if enabled
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        if (structuredVulkan2D && GPU.ScreensEnabled)
+        {
+            const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
+            structuredVramDisplaySnapshotted =
+                SnapshotStructuredVramDisplayLine(screenA, outputLine, line);
+        }
+
         if (GPU.CaptureEnable)
         {
             const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
@@ -316,7 +324,9 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
-        BuildStructuredScreenLine(0, screenA, outputLine, dstA, line >= 192u);
+        BuildStructuredScreenLine(
+            0, screenA, outputLine, dstA, line >= 192u,
+            structuredVramDisplaySnapshotted);
         BuildStructuredScreenLine(1, screenB, outputLine, dstB, line >= 192u);
 #endif
         // expand the color from 6-bit to 8-bit
@@ -695,6 +705,78 @@ u16 Color6ToPackedCaptureColor(u32 color)
 
 }
 
+bool SoftRenderer::SnapshotStructuredVramDisplayLine(
+    u32 screen,
+    u32 outputLine,
+    u32 sourceLine)
+{
+    namespace Contract = StructuredComposition;
+    if (!UseStructuredVulkan2D() || screen >= 2u
+        || outputLine >= 192u || sourceLine >= 192u)
+    {
+        return false;
+    }
+
+    const u32 displayControl = GPU.GPU2D_A.DispCnt;
+    if (((displayControl >> 16u) & 0x3u) != Contract::kDisplayModeVram)
+        return false;
+
+    const u32 bank = (displayControl >> 18u) & 0x3u;
+    if ((GPU.VRAMMap_LCDC & (1u << bank)) == 0u)
+        return false;
+
+    const std::size_t destinationRow = static_cast<std::size_t>(outputLine) * 256u;
+    const std::size_t sourceRow = static_cast<std::size_t>(sourceLine) * 256u;
+    const std::size_t screenBase = static_cast<std::size_t>(screen)
+        * Contract::kPlaneCount * StructuredPixelCount;
+    const std::size_t captureBase =
+        static_cast<std::size_t>(bank) * 3u * StructuredCapturePixelCount;
+    const std::size_t stateBase =
+        static_cast<std::size_t>(bank) * StructuredCapturePixelCount;
+    const u16* nativeVram = reinterpret_cast<const u16*>(GPU.VRAM[bank]);
+
+    for (u32 x = 0; x < 256u; ++x)
+    {
+        const std::size_t destination = destinationRow + x;
+        const u32 address = static_cast<u32>(sourceRow + x);
+        const u16 native = nativeVram[address];
+        const std::size_t stateIndex = stateBase + address;
+
+        // VRAM display ignores bit 15 for visibility. Plane 0 therefore always
+        // carries the display-time native RGB fallback, including the half of
+        // a 128-wide row that has no retained high-resolution capture.
+        StructuredScreenPlanes[screenBase + destination] =
+            PackedCaptureColorToColor6(native);
+        StructuredScreenPlanes[screenBase + StructuredPixelCount + destination] = 0u;
+        StructuredScreenPlanes[
+            screenBase + 2u * StructuredPixelCount + destination] =
+            Contract::kControlPlain2D << Contract::kControlFlagShift;
+
+        u32 reference = 0u;
+        if (StructuredCapturePixelValid[stateIndex] != 0u
+            && Color6ToPackedCaptureColor(
+                StructuredCapturePlanes[captureBase + address]) == native)
+        {
+            reference = Contract::PackCaptureReference(
+                bank, StructuredCapturePixelVersion[stateIndex], address);
+        }
+        StructuredScreenPlanes[
+            screenBase + Contract::kPlaneCaptureReference * StructuredPixelCount + destination] =
+            reference;
+    }
+
+    const u16 brightness = GPU.MasterBrightnessA;
+    u32 lineMeta =
+        (Contract::kDisplayModeVram << Contract::kLineMetaDisplayModeShift)
+        | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
+        | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
+    lineMeta |= (static_cast<u32>(GPU.GPU3D.GetRenderXPos())
+            & Contract::kLineMetaRenderXPosMask)
+        << Contract::kLineMetaRenderXPosShift;
+    StructuredScreenLineMeta[static_cast<std::size_t>(screen) * 192u + outputLine] = lineMeta;
+    return true;
+}
+
 void SoftRenderer::PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine)
 {
     StructuredCaptureCompositeLineValid = false;
@@ -941,10 +1023,24 @@ void SoftRenderer::BuildStructuredScreenLine(
     u32 screen,
     u32 line,
     const u32* output,
-    bool forcePlain)
+    bool forcePlain,
+    bool preserveVramSnapshot)
 {
     if (!UseStructuredVulkan2D() || engine >= 2u || screen >= 2u || line >= 192u || output == nullptr)
         return;
+
+    // A VRAM-display line is captured before DoCapture() mutates the bank.
+    // Keep those pixels and their old-generation references intact, but defer
+    // frame publication until after this scanline's capture command exists.
+    if (preserveVramSnapshot)
+    {
+        if (line == 191u)
+        {
+            StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
+            StructuredFrameValid = true;
+        }
+        return;
+    }
 
     const u32 displayMode = engine == 0u
         ? ((GPU.GPU2D_A.DispCnt >> 16u) & 0x3u)
@@ -972,53 +1068,6 @@ void SoftRenderer::BuildStructuredScreenLine(
             | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
             | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
         copiedStructured = true;
-    }
-    else if (!forcePlain && engine == 0u && displayMode == 2u)
-    {
-        const u32 bank = (GPU.GPU2D_A.DispCnt >> 18u) & 0x3u;
-        const std::size_t validIndex =
-            static_cast<std::size_t>(bank) * StructuredCaptureLineCount + line;
-        // Composition never depends on what the game is doing. A VRAM-display
-        // line shows the selected LCDC bank, as it does in the software
-        // renderer and in GLRenderer, which reads the capture texture or the
-        // real AuxInput VRAM. CPU/DMA writes explicitly invalidate retained
-        // blocks, and the per-pixel native comparison below rejects any stale
-        // sidecar reference while preserving read-only capture syncs.
-        if ((GPU.VRAMMap_LCDC & (1u << bank)) != 0u
-            && StructuredCaptureLineValid[validIndex] != 0u)
-        {
-            const std::size_t captureBase =
-                static_cast<std::size_t>(bank) * 3u * StructuredCapturePixelCount;
-            for (std::size_t plane = 0; plane < 3u; ++plane)
-            {
-                std::memcpy(
-                    StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + rowBase,
-                    StructuredCapturePlanes.data()
-                        + captureBase + (plane * StructuredCapturePixelCount) + rowBase,
-                    256u * sizeof(u32));
-            }
-            u32* references = StructuredScreenPlanes.data()
-                + destinationBase + Contract::kPlaneCaptureReference * StructuredPixelCount + rowBase;
-            for (u32 x = 0; x < 256u; ++x)
-            {
-                const u32 address = static_cast<u32>(rowBase) + x;
-                const u16 native = reinterpret_cast<const u16*>(GPU.VRAM[bank])[address];
-                const std::size_t stateIndex =
-                    static_cast<std::size_t>(bank) * StructuredCapturePixelCount + address;
-                references[x] = StructuredCapturePixelValid[stateIndex] != 0u
-                        && Color6ToPackedCaptureColor(
-                            StructuredCapturePlanes[captureBase + address]) == native
-                    ? Contract::PackCaptureReference(
-                        bank, StructuredCapturePixelVersion[stateIndex], address)
-                    : 0u;
-            }
-            const u16 brightness = GPU.MasterBrightnessA;
-            lineMeta =
-                (Contract::kDisplayModeVram << Contract::kLineMetaDisplayModeShift)
-                | (static_cast<u32>(brightness >> 14u) << Contract::kLineMetaBrightnessModeShift)
-                | static_cast<u32>(brightness & Contract::kLineMetaBrightnessFactorMask);
-            copiedStructured = true;
-        }
     }
 
     if (!copiedStructured)

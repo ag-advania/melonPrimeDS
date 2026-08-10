@@ -206,7 +206,15 @@ private:
         const u16* sourceB,
         u32 sourceBBank,
         u32 sourceBAddress);
-    void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
+    [[nodiscard]] bool SnapshotStructuredVramDisplayLine(
+        u32 screen, u32 outputLine, u32 sourceLine);
+    void BuildStructuredScreenLine(
+        u32 engine,
+        u32 screen,
+        u32 line,
+        const u32* output,
+        bool forcePlain = false,
+        bool preserveVramSnapshot = false);
     void InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 len);
 #endif
 
