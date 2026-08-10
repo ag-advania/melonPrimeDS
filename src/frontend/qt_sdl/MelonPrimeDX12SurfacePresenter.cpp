@@ -181,6 +181,8 @@ void DX12SurfacePresenter::Shutdown() noexcept
     if (Context)
         Commands.WaitQueueIdle();
 
+    CloseFrameLatencyWaitable();
+
     for (LayerTexture& layer : Layers)
     {
         if (layer.Upload && layer.UploadMapped)
@@ -202,7 +204,6 @@ void DX12SurfacePresenter::Shutdown() noexcept
         buffer.Reset();
     Swapchain.Reset();
     Commands.Shutdown();
-    FrameLatencyWaitable = nullptr;
     Width = 0;
     Height = 0;
     RtvIncrement = 0;
@@ -219,6 +220,15 @@ void DX12SurfacePresenter::Shutdown() noexcept
         Context->Release();
         Context = nullptr;
     }
+}
+
+void DX12SurfacePresenter::CloseFrameLatencyWaitable() noexcept
+{
+    if (!FrameLatencyWaitable)
+        return;
+
+    ::CloseHandle(FrameLatencyWaitable);
+    FrameLatencyWaitable = nullptr;
 }
 
 bool DX12SurfacePresenter::CreateGraphicsObjects()
@@ -447,6 +457,7 @@ bool DX12SurfacePresenter::Resize(std::uint32_t width, std::uint32_t height)
 
     Width = width;
     Height = height;
+    CloseFrameLatencyWaitable();
     FrameLatencyWaitable = Swapchain->GetFrameLatencyWaitableObject();
     return FrameLatencyWaitable && AcquireBackBuffers();
 }
