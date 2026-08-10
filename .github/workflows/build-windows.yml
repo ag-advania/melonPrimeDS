@@ -174,7 +174,8 @@ jobs:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
     - name: Check Vulkan SPIR-V source synchronization
-      run: python ./tools/vulkan/compile-shaders.py --check-source-sync
+      shell: pwsh
+      run: python .\tools\vulkan\compile-shaders.py --check-source-sync
 
     - name: Build with Vulkan completely disabled
       run: |
