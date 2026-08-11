@@ -127,6 +127,22 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const char* testSoftwareOpenGLDisplayOff =
+        std::getenv("MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF");
+    const bool softwareOpenGLDisplayForcedOff =
+        testSoftwareOpenGLDisplayOff &&
+        testSoftwareOpenGLDisplayOff[0] != '\0' &&
+        std::strcmp(testSoftwareOpenGLDisplayOff, "0") != 0;
+    if (softwareOpenGLDisplayForcedOff)
+    {
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[RasterDiffConfig] softwareOpenGLDisplayForcedOff=1 "
+            "effectiveUseGL=0\n");
+    }
+#endif
+
 #include "MelonPrimeEmuThreadRunSetup.inc"
 
     mainScreenPos[0] = 0;
@@ -148,8 +164,16 @@ void EmuThread::run()
     {
         const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
         videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(requestedRenderer);
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const bool useGLDisplay = softwareOpenGLDisplayForcedOff
+            ? false
+            : globalCfg.GetBool("Screen.UseGL");
+        videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+            useGLDisplay, requestedRenderer);
+#else
         videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
             globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
+#endif
         useOpenGL = MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend);
     }
     if (useOpenGL)
@@ -451,8 +475,16 @@ void EmuThread::run()
             rendererWasHardwarePeriod = !melonPrime->ShouldForceSoftwareRenderer();
             if (!useOpenGL)
             {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+                const bool useGLDisplay = softwareOpenGLDisplayForcedOff
+                    ? false
+                    : globalCfg.GetBool("Screen.UseGL");
+                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                    useGLDisplay, requestedRenderer);
+#else
                 videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
                     globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
+#endif
                 if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
                     videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
             }

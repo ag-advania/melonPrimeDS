@@ -37,6 +37,9 @@ def main() -> int:
     environment["MELONPRIME_FINAL_COMPOSED_DIFFERENTIAL"] = "1"
     environment["MELONPRIME_FORCE_METAL_COMPUTE_RENDERER"] = "1"
     environment["MELONPRIME_METAL_COMPUTE_VISIBLE"] = "1"
+    # The canonical Software reference is the CPU/native-display path. Keep
+    # this explicit even though Metal owns presentation in the candidate run.
+    environment["MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF"] = "1"
     if args.state is not None:
         environment["MELONPRIME_TEST_SAVESTATE"] = str(args.state.resolve())
     if args.custom_hud_off:
@@ -72,6 +75,11 @@ def main() -> int:
             comparison_output = output[marker_offset + len(expected_state_marker):]
     if args.custom_hud_off and "[SavestateDiff] customHudForcedOff=1" not in output:
         failures.append("the diagnostic Custom HUD off override was not observed")
+    if (
+        "[RasterDiffConfig] softwareOpenGLDisplayForcedOff=1 effectiveUseGL=0"
+        not in output
+    ):
+        failures.append("Software OpenGL display was not forced off")
     if "metal compute: complete pipeline ready scale=1" not in output:
         failures.append("Metal Compute foundation did not become ready at 1x")
     if "metal compute visible: CUTOVER active" not in output:
