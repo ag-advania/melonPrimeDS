@@ -136,6 +136,11 @@ jobs:
         cmake --build build
         DESTDIR=AppDir cmake --install build
 
+    - name: Run raster edge executable vectors
+      run: |
+        cmake --build build --target melonprime_raster_edge_vectors
+        ./build/melonprime_raster_edge_vectors
+
     - name: Build with Vulkan completely disabled
       run: |
         cmake -B build-vulkan-off -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=OFF -DMELONPRIME_FORCE_DISABLE_VULKAN=ON

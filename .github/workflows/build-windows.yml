@@ -177,6 +177,11 @@ jobs:
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
+    - name: Run raster edge executable vectors
+      run: |
+        cmake --build --preset=release-mingw-x86_64 --target melonprime_raster_edge_vectors
+        ./build/release-mingw-x86_64/melonprime_raster_edge_vectors.exe
+
     - name: Check Vulkan SPIR-V source synchronization
       shell: pwsh
       run: python .\tools\vulkan\compile-shaders.py --check-source-sync

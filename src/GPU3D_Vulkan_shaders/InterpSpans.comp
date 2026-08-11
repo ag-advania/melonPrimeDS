@@ -49,6 +49,18 @@ layout (local_size_x = 32) in;
 
 layout (set = 0, binding = 10) uniform utextureBuffer SetupIndices;
 
+bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
+{
+    return spanR.Increment == 0
+        && (spanL.Increment != 0 || xl != xr)
+        && xr != 0;
+}
+
+bool IsBottomNonFlatEdge(int y, Polygon polygon, YSpanSetup spanL, YSpanSetup spanR)
+{
+    return y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+}
+
 void main()
 {
     uint localIndex = gl_GlobalInvocationID.x;
@@ -71,6 +83,9 @@ void main()
 
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
+
+    if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
+        xr--;
 
     Polygon polygon = Polygons[setup.x];
 
@@ -124,7 +139,7 @@ void main()
     bool fillAllEdges = isWireframe
         || (polyalpha < 31U && (DispCnt & (1U << 3)) != 0U)
         || (DispCnt & (3U << 4)) != 0U;
-    bool bottomXMajor = y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+    bool bottomXMajor = IsBottomNonFlatEdge(y, polygon, spanL, spanR);
     bool leftNegative = spanL.X1 < spanL.X0;
     bool rightNegative = spanR.X1 < spanR.X0;
     bool leftXMajor = spanL.Increment > 0x40000;
@@ -164,7 +179,7 @@ void main()
     }
     else
     {
-        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+        int i = y - spanL.I0;
         int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
@@ -211,7 +226,7 @@ void main()
     }
     else
     {
-        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+        int i = y - spanR.I0;
         int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 

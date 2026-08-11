@@ -32,6 +32,9 @@ namespace melonDS
 VulkanRenderer::VulkanRenderer(melonDS::NDS& nds)
     : SoftRenderer(nds)
 {
+    if (RasterDifferential::Enabled())
+        DifferentialReference = std::move(Rend3D);
+
     // Replaces the SoftRenderer3D the base constructor installed. A null result
     // leaves Rend3D empty, which Init() reports as a failure so the frontend can
     // fall back to Software with a truthful reason instead of running a dead
@@ -52,6 +55,11 @@ bool VulkanRenderer::Init()
             Platform::LogLevel::Error,
             "Vulkan renderer init failed stage=3D-device actual=Software\n");
         return false;
+    }
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
     }
 
     Platform::Log(
@@ -86,6 +94,11 @@ void VulkanRenderer::PostSavestate()
     // save that synchronized native VRAM captures). VulkanRenderer3D::Reset()
     // retires in-flight texture-cache resources without a device-wide idle.
     SoftRenderer::Reset();
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
+    }
 }
 
 void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
@@ -115,6 +128,8 @@ void VulkanRenderer::Start3DRendering()
     // Renderer::Start3DRendering() drives Rend3D->RenderFrame(). Overridden
     // explicitly so the phase-13 Reflex render-submit marker has an owner and
     // so the call does not depend on which base happens to define it.
+    if (DifferentialReference)
+        DifferentialReference->RenderFrame();
     Renderer::Start3DRendering();
 }
 
@@ -161,6 +176,8 @@ void VulkanRenderer::VBlank()
         // refreshed is never recomposed, and a stale one is never composed at
         // all.
         vulkan->ComposeStructuredOutput(planes, lineMeta, view.CaptureCommands, view.Generation);
+        if (DifferentialReference && vulkan->GetScaleFactor() == 1)
+            DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
     }
 
     // MELONPRIME_VULKAN_PRESENT_HOOK_V1

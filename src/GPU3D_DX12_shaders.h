@@ -24,8 +24,9 @@
 #include <string>
 
 // HLSL port of the OpenGL compute renderer's shader set
-// (GPU3D_Compute_shaders.h). Sources are compiled at runtime with
-// d3dcompiler_47.dll, so the MinGW build needs no shader toolchain.
+// (GPU3D_Compute_shaders.h). The compute variants are compiled offline into
+// GPU3D_DX12_ShaderBlobs.inc; only the native presenter's small VS/PS pair
+// still uses d3dcompiler_47.dll at runtime.
 //
 // The tile-binned pipeline, the fixed-point math and the intermediate buffer
 // layouts are a 1:1 port; the differences are all forced by HLSL:
@@ -524,6 +525,18 @@ int CalculateX(int dx, YSpanSetup span)
     return clamp(x, span.XMin, span.XMax);
 }
 
+bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
+{
+    return spanR.Increment == 0
+        && (spanL.Increment != 0 || xl != xr)
+        && xr != 0;
+}
+
+bool IsBottomNonFlatEdge(int y, Polygon polygon, YSpanSetup spanL, YSpanSetup spanR)
+{
+    return y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+}
+
 void EdgeParams_XMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
@@ -601,6 +614,9 @@ void main(uint3 id : SV_DispatchThreadID)
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
 
+    if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
+        xr--;
+
     Polygon polygon = Polygons[setup.x];
 
     int edgeLenL, edgeLenR;
@@ -651,7 +667,7 @@ void main(uint3 id : SV_DispatchThreadID)
     bool fillAllEdges = isWireframe
         || (polyalpha < 31u && (DispCnt & (1u << 3)) != 0u)
         || (DispCnt & (3u << 4)) != 0u;
-    bool bottomXMajor = y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+    bool bottomXMajor = IsBottomNonFlatEdge(y, polygon, spanL, spanR);
     bool leftNegative = spanL.X1 < spanL.X0;
     bool rightNegative = spanR.X1 < spanR.X0;
     bool leftXMajor = spanL.Increment > int(0x40000u);
@@ -691,7 +707,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanL.Increment > int(0x40000u) ? xl : y) - spanL.I0;
+        int i = y - spanL.I0;
         int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
@@ -737,7 +753,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanR.Increment > int(0x40000u) ? xr : y) - spanR.I0;
+        int i = y - spanR.I0;
         int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 

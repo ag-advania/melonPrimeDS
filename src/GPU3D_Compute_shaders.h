@@ -197,6 +197,13 @@ int CalculateX(int dx, YSpanSetup span)
     return clamp(x, span.XMin, span.XMax);
 }
 
+bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
+{
+    return spanR.Increment == 0
+        && (spanL.Increment != 0 || xl != xr)
+        && xr != 0;
+}
+
 void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
@@ -689,11 +696,17 @@ void main()
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
 
+    // Match GPU3D_Soft: calculate both raw edge positions first, then apply
+    // the conditional right-vertical correction before the swapped test.
+    if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
+        xr--;
+
     Polygon polygon = Polygons[setup.x];
 
     int edgeLenL, edgeLenR;
 
-    if (xl > xr)
+    bool swappedEdges = xl > xr;
+    if (swappedEdges)
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -762,7 +775,7 @@ void main()
     }
     else
     {
-        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+        int i = y - spanL.I0;
         int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
@@ -809,7 +822,7 @@ void main()
     }
     else
     {
-        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+        int i = y - spanR.I0;
         int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 

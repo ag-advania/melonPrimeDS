@@ -23,6 +23,7 @@
 
 #include <string>
 
+#include "GPU3D_RasterDifferential.h"
 #include "GPU_Soft.h"
 
 namespace melonDS
@@ -93,6 +94,8 @@ public:
     }
 
 private:
+    std::unique_ptr<Renderer3D> DifferentialReference;
+    RasterDifferential::State DifferentialState;
     int NvidiaReflexMode = 0;
     bool AmdAntiLag2Enabled = false;
 

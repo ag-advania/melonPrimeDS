@@ -25,6 +25,7 @@
 
 #include "DX12AmdAntiLag2.h"
 #include "DX12NvidiaReflex.h"
+#include "GPU3D_RasterDifferential.h"
 #include "GPU_Soft.h"
 
 namespace melonDS
@@ -72,6 +73,8 @@ public:
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
 
 private:
+    std::unique_ptr<Renderer3D> DifferentialReference;
+    RasterDifferential::State DifferentialState;
     DX12AmdAntiLag2 AmdAntiLag2;
     DX12NvidiaReflex NvidiaReflex;
 };

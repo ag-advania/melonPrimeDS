@@ -20,6 +20,7 @@
 
 #include "GPU.h"
 #include "GPU3D.h"
+#include "GPU3D_RasterEdge.h"
 #include "Platform.h"
 #include <thread>
 #include <atomic>
@@ -279,20 +280,8 @@ private:
             xlen = xmax+1 - xmin;
             ylen = y1 - y0;
 
-            // slope increment has a 18-bit fractional part
-            // note: for some reason, x/y isn't calculated directly,
-            // instead, 1/y is calculated and then multiplied by x
-            // TODO: this is still not perfect (see for example x=169 y=33)
-            if (ylen == 0)
-                Increment = 0;
-            else if (ylen == xlen && xlen != 1)
-                Increment = 0x40000;
-            else
-            {
-                s32 yrecip = (1<<18) / ylen;
-                Increment = (x1-x0) * yrecip;
-                if (Increment < 0) Increment = -Increment;
-            }
+            Increment = RasterEdge::CalculateSlopeIncrement(
+                x0, x1, xmin, xmax, y0, y1);
 
             XMajor = (Increment > 0x40000);
 
@@ -379,31 +368,8 @@ private:
         {
             *length = 1;
 
-            if (Increment == 0)
-            {
-                // for some reason vertical edges' aa values
-                // are inverted too when the edges are swapped
-                if constexpr (swapped)
-                    *coverage = 0;
-                else
-                    *coverage = 31;
-            }
-            else
-            {
-                s32 cov = ((dx >> 9) + (Increment >> 10)) >> 4;
-                if ((cov >> 5) != (dx >> 18)) cov = 31;
-                cov &= 0x1F;
-                if constexpr (swapped)
-                {
-                    if (side ^ Negative) cov = 0x1F - cov;
-                }
-                else
-                {
-                    if (!(side ^ Negative)) cov = 0x1F - cov;
-                }
-
-                *coverage = cov;
-            }
+            *coverage = RasterEdge::CalculateYMajorCoverage(
+                Increment, dx, Negative, side, swapped);
         }
 
         template<bool swapped>

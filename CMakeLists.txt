@@ -107,6 +107,13 @@ option(BUILD_QT_SDL "Build Qt/SDL frontend" ON)
 
 add_subdirectory(src)
 
+# GPU-independent executable contract vectors. Excluded from normal builds;
+# CI and local parity work request the target explicitly.
+add_executable(melonprime_raster_edge_vectors EXCLUDE_FROM_ALL
+    tools/testing/raster-edge-vectors.cpp)
+target_include_directories(melonprime_raster_edge_vectors PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
 if (BUILD_QT_SDL)
     add_subdirectory(src/frontend/qt_sdl)
 endif()

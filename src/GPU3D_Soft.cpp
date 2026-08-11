@@ -763,8 +763,13 @@ void SoftRenderer3D::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
 
     // right vertical edges are pushed 1px to the left as long as either:
     // the left edge slope is not 0, or the span is not 0 pixels wide, and it is not at the leftmost pixel of the screen
-    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend) && (xend != 0))
-        xend--;
+    xend = RasterEdge::AdjustRightVertical(
+        rp->SlopeL.Increment, rp->SlopeR.Increment, xstart, xend);
+
+    const bool bottomNonFlatEdge = RasterEdge::IsBottomNonFlatEdge(
+        y, polygon->YBottom,
+        polygon->Vertices[rp->NextVL]->FinalPosition[0],
+        polygon->Vertices[rp->NextVR]->FinalPosition[0]);
 
     // if the left and right edges are swapped, render backwards.
     if (xstart > xend)
@@ -793,10 +798,10 @@ void SoftRenderer3D::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         else
         {
             l_filledge = (rp->SlopeR.Negative || !rp->SlopeR.XMajor)
-                || (y == polygon->YBottom-1) && rp->SlopeR.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeR.XMajor);
             r_filledge = (!rp->SlopeL.Negative && rp->SlopeL.XMajor)
                 || (!(rp->SlopeL.Negative && rp->SlopeL.XMajor) && rp->SlopeR.Increment==0)
-                || (y == polygon->YBottom-1) && rp->SlopeL.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeL.XMajor);
         }
     }
     else
@@ -821,10 +826,10 @@ void SoftRenderer3D::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         else
         {
             l_filledge = ((rp->SlopeL.Negative || !rp->SlopeL.XMajor)
-                || (y == polygon->YBottom-1) && rp->SlopeL.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]))
+                || (bottomNonFlatEdge && rp->SlopeL.XMajor))
                 || (rp->SlopeL.Increment == rp->SlopeR.Increment) && (xstart+l_edgelen == xend+1);
             r_filledge = (!rp->SlopeR.Negative && rp->SlopeR.XMajor) || (rp->SlopeR.Increment==0)
-                || (y == polygon->YBottom-1) && rp->SlopeR.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeR.XMajor);
         }
     }
 
@@ -988,8 +993,13 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
     // right vertical edges are pushed 1px to the left as long as either:
     // the left edge slope is not 0, or the span is not 0 pixels wide, and it is not at the leftmost pixel of the screen
-    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend) && (xend != 0))
-        xend--;
+    xend = RasterEdge::AdjustRightVertical(
+        rp->SlopeL.Increment, rp->SlopeR.Increment, xstart, xend);
+
+    const bool bottomNonFlatEdge = RasterEdge::IsBottomNonFlatEdge(
+        y, polygon->YBottom,
+        polygon->Vertices[rp->NextVL]->FinalPosition[0],
+        polygon->Vertices[rp->NextVR]->FinalPosition[0]);
 
     // if the left and right edges are swapped, render backwards.
     // on hardware, swapped edges seem to break edge length calculation,
@@ -1028,10 +1038,10 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         else
         {
             l_filledge = (rp->SlopeR.Negative || !rp->SlopeR.XMajor)
-                || (y == polygon->YBottom-1) && rp->SlopeR.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeR.XMajor);
             r_filledge = (!rp->SlopeL.Negative && rp->SlopeL.XMajor)
                 || (!(rp->SlopeL.Negative && rp->SlopeL.XMajor) && rp->SlopeR.Increment==0)
-                || (y == polygon->YBottom-1) && rp->SlopeL.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeL.XMajor);
         }
     }
     else
@@ -1063,10 +1073,10 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         else
         {
             l_filledge = ((rp->SlopeL.Negative || !rp->SlopeL.XMajor)
-                || (y == polygon->YBottom-1) && rp->SlopeL.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]))
+                || (bottomNonFlatEdge && rp->SlopeL.XMajor))
                 || (rp->SlopeL.Increment == rp->SlopeR.Increment) && (xstart+l_edgelen == xend+1);
             r_filledge = (!rp->SlopeR.Negative && rp->SlopeR.XMajor) || (rp->SlopeR.Increment==0)
-                || (y == polygon->YBottom-1) && rp->SlopeR.XMajor && (vlnext->FinalPosition[0] != vrnext->FinalPosition[0]);
+                || (bottomNonFlatEdge && rp->SlopeR.XMajor);
         }
     }
 

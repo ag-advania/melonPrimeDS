@@ -501,6 +501,10 @@ The present-path shaders have their own generator,
 `tools/vulkan/compile-present-shaders.py`, whose output
 (`MelonPrimeVulkanPresentShaderBlobs.h`) is likewise committed.
 
+The GPU-independent edge vectors and the opt-in 1x Software/Vulkan native 3D
+pixel comparison are documented in
+[Raster parity verification](../../development/rendering/raster-parity.md).
+
 ## Differences from the OpenGL compute renderer
 
 These are the only intentional behavioural deviations; the fixed-point math,
@@ -526,9 +530,6 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
 
 ## Known limitations
 
-* The two inherited OpenGL-compute defects above (`BinCombined` shift-width UB at
-  scales 9-16; scale-16 `InterpSpans` worst-case dispatch count) are transcribed
-  deliberately and still need a decision before the highest scales are promoted.
 * From scale 7 the storage buffers exceed Vulkan's guaranteed 128 MB
   `maxStorageBufferRange`, and from scale 9 Rasterise/DepthBlend use 1024
   invocations per workgroup, above the guaranteed 128. These are arithmetic

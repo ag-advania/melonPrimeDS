@@ -338,6 +338,9 @@ requires a state that naturally leaves `FlushRequest` clear.
 
 ## Verified scope
 
+The GPU-independent edge vectors and the opt-in Software/DX12 native 3D pixel
+comparison are documented in [Raster parity verification](../../development/rendering/raster-parity.md).
+
 The Windows Release build and all 108 generated shader modules (36 pipelines in
 three tile-geometry buckets) pass on the repository build path. Runtime validation
 on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:

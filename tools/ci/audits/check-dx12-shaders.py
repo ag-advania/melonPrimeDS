@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Compile every MelonPrime DX12 HLSL tile-geometry variant with fxc.exe.
+"""Compile every committed MelonPrime DX12 HLSL geometry variant with fxc.exe.
 
-The renderer compiles its shaders at runtime through d3dcompiler_47.dll, so a
-syntax or semantic error in GPU3D_DX12_shaders.h would only surface as a black
-screen on a machine with a D3D12 GPU. This script assembles exactly the same
-sources DX12Renderer3D::BuildPipeline() builds -- same `#define` prologue, same
-Common block, same per-variant defines -- and runs the offline compiler over
-them, so the shader set can be validated on any Windows machine with the SDK.
+The compute renderer creates pipelines from committed DXBC. A syntax error or
+stale generated blob would otherwise surface as a black screen only after the
+generated source reached a D3D12 GPU. This script assembles exactly the sources
+tools/dx12/compile-shaders.py commits -- same `#define` prologue, Common block
+and per-variant defines -- and validates every module with the Windows SDK.
 
 Usage:
     python tools/ci/audits/check-dx12-shaders.py [--scales 1,5,9] [--fxc PATH]

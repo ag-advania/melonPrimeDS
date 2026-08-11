@@ -31,6 +31,9 @@ namespace melonDS
 DX12Renderer::DX12Renderer(melonDS::NDS& nds)
     : SoftRenderer(nds)
 {
+    if (RasterDifferential::Enabled())
+        DifferentialReference = std::move(Rend3D);
+
     // Replaces the SoftRenderer3D the base constructor installed. A null result
     // leaves Rend3D empty, which Init() reports as a failure so the frontend can
     // fall back to Software.
@@ -50,6 +53,11 @@ bool DX12Renderer::Init()
             Platform::LogLevel::Error,
             "DX12 renderer init failed stage=3D-device actual=Software\n");
         return false;
+    }
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
     }
 
     auto& context = DX12Context::Get();
@@ -83,6 +91,11 @@ void DX12Renderer::PostSavestate()
     // same here: FinalFB, the high-resolution capture sidecar and structured
     // 2D capture references are derived caches, not serialized DS state.
     SoftRenderer::Reset();
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
+    }
 }
 
 void DX12Renderer::SetRenderSettings(RendererSettings& settings)
@@ -101,6 +114,8 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 void DX12Renderer::Start3DRendering()
 {
     NvidiaReflex.MarkRenderSubmitStart();
+    if (DifferentialReference)
+        DifferentialReference->RenderFrame();
     Renderer::Start3DRendering();
 }
 
@@ -135,6 +150,8 @@ void DX12Renderer::VBlank()
         view.LineMeta[1],
     };
     dx12->ComposeStructuredOutput(planes, lineMeta, view.CaptureCommands, view.Generation);
+    if (DifferentialReference && dx12->GetScaleFactor() == 1)
+        DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "DX12");
     NvidiaReflex.MarkRenderSubmitEnd();
 }
 

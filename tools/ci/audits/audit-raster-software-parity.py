@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ratchet confirmed Software-renderer raster rules in Vulkan and DX12."""
+"""Ratchet confirmed Software raster rules in the compute renderer family."""
 
 from __future__ import annotations
 
@@ -22,6 +22,14 @@ def require(source: str, needle: str, label: str, failures: list[str]) -> None:
 def forbid(source: str, needle: str, label: str, failures: list[str]) -> None:
     if needle in source:
         failures.append(f"{label}: forbidden legacy contract {needle!r}")
+
+
+def require_order(source: str, first: str, second: str, label: str,
+                  failures: list[str]) -> None:
+    first_at = source.find(first)
+    second_at = source.find(second)
+    if first_at < 0 or second_at < 0 or first_at >= second_at:
+        failures.append(f"{label}: expected {first!r} before {second!r}")
 
 
 def software_linear(y0: int, y1: int, offset: int, distance: int) -> int:
@@ -54,6 +62,13 @@ def bounded_batches(costs: tuple[int, ...], capacity: int) -> list[tuple[int, in
 
 def main() -> int:
     failures: list[str] = []
+
+    edge_contract = read("src/GPU3D_RasterEdge.h")
+    soft_header = read("src/GPU3D_Soft.h")
+    soft_cpp = read("src/GPU3D_Soft.cpp")
+    gl_cpp = read("src/GPU3D_Compute.cpp")
+    gl_shader = read("src/GPU3D_Compute_shaders.h")
+    edge_vectors = read("tools/testing/raster-edge-vectors.cpp")
 
     # Includes the audit's reciprocal-rounding counterexample (expected 6).
     vectors = (
@@ -109,6 +124,43 @@ def main() -> int:
         require(source, "BuildPolygonBatches", f"{name} bounded work batching", failures)
         require(source, "assert(polygonTiles <= capacity)",
                 f"{name} single-polygon work guarantee", failures)
+
+    require(edge_contract, "xlen != 1", "one-scanline vertical slope exception", failures)
+    require(edge_contract, "InterpolationOriginOffset",
+            "edge interpolation origin contract", failures)
+    require(soft_header, "RasterEdge::CalculateSlopeIncrement",
+            "Software canonical slope helper", failures)
+    require(soft_cpp, "RasterEdge::AdjustRightVertical",
+            "Software conditional right vertical edge", failures)
+    require(soft_cpp, "RasterEdge::IsBottomNonFlatEdge",
+            "Software bottom non-flat edge helper", failures)
+    for name, source in (("OpenGL Compute", gl_cpp), ("Vulkan", vk_cpp), ("DX12", dx_cpp)):
+        require(source, "RasterEdge::CalculateSlopeIncrement",
+                f"{name} canonical slope helper", failures)
+        require(source, "RasterEdge::ConservativeRightVerticalMin",
+                f"{name} conservative polygon bounds", failures)
+        require(source, "RasterEdge::InterpolationOriginOffset",
+                f"{name} edge interpolation origin", failures)
+        forbid(source, "if (side) span->XMin--;",
+               f"{name} unconditional right vertical decrement", failures)
+        forbid(source, "span->DxInitial = -0x40000;",
+               f"{name} encoded right vertical decrement", failures)
+
+    for name, source in (("OpenGL Compute", gl_shader),
+                         ("Vulkan", vk_interp), ("DX12", dx_shader)):
+        require(source, "ShouldDecrementRightVertical",
+                f"{name} conditional right vertical helper", failures)
+        require_order(source, "ShouldDecrementRightVertical(spanL, spanR, xl, xr)",
+                      "swappedEdges", f"{name} right correction ordering", failures)
+        require(source, "int i = y - spanL.I0;",
+                f"{name} left edge Y interpolation", failures)
+        require(source, "int i = y - spanR.I0;",
+                f"{name} right edge Y interpolation", failures)
+
+    for vector in ("V1 ordinary right vertical", "V2 right vertical at x=0",
+                   "V3 coincident vertical edges", "V4 one-scanline vertical increment",
+                   "V5 swapped vertical AA coverage", "V6 bottom non-flat edge"):
+        require(edge_vectors, vector, f"executable raster vector {vector[:2]}", failures)
 
     require(vk_common, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
             "Vulkan exact linear division", failures)
