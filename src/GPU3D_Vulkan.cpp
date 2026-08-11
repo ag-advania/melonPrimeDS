@@ -2185,7 +2185,15 @@ void VulkanRenderer3D::RenderFrame()
             fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                 Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
             const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
-            const u32 maxPerDispatch = Device.GetLimits().maxComputeWorkGroupCount[0] * 32u;
+            // Some portability implementations (notably MoltenVK) advertise
+            // an X group count whose product with the shader's 32 lanes does
+            // not fit in u32. It wrapped to zero on the affected Mac, so
+            // `base` never advanced and ROM startup recorded push constants
+            // forever. Widen first, then cap to this frame's actual work so
+            // the loop always progresses.
+            const u32 maxPerDispatch = static_cast<u32>(std::min<u64>(
+                setupIndexCount,
+                static_cast<u64>(Device.GetLimits().maxComputeWorkGroupCount[0]) * 32ull));
             for (u32 base = 0; base < setupIndexCount;)
             {
                 const u32 count = std::min(setupIndexCount - base, maxPerDispatch);
