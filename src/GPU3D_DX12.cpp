@@ -49,7 +49,7 @@ constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
 
 constexpr u32 kSrvTableSize = 6;
-constexpr u32 kUavTableSize = 11;
+constexpr u32 kUavTableSize = 12;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
@@ -553,6 +553,7 @@ void DX12Renderer3D::ReleasePipelines()
     PipelineResolve.Reset();
     PipelineCaptureSidecar.Reset();
     PipelineCompositor.Reset();
+    PipelineCorrectCoverage.Reset();
 }
 
 void DX12Renderer3D::ReleaseScaleDependentResources()
@@ -565,6 +566,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     }
 
     ResultBuffer.Reset();
+    ResultWinnerBuffer.Reset();
     FinalFBBuffer.Reset();
     CaptureSidecarBuffer.Reset();
     ComposedOutput.reset();
@@ -600,6 +602,16 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
         L"MelonPrime DX12 result buffer");
     if (!ResultBuffer)
+        return false;
+
+    const u64 resultWinnerBytes = ScaleFactor == 1 ? pixels * 2ull * 4ull : 4ull;
+    ResultWinnerBuffer = Context->CreateBuffer(
+        resultWinnerBytes,
+        D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+        L"MelonPrime DX12 result winners");
+    if (!ResultWinnerBuffer)
         return false;
 
     FinalFBBuffer = Context->CreateBuffer(
@@ -1009,6 +1021,13 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
             { "Compositor" }, "DX12Compositor");
         return;
     }
+
+    if (step == ShaderStep_CorrectCoverage)
+    {
+        build(PipelineCorrectCoverage, DX12Shaders::CorrectCoverage,
+            { "CorrectCoverage" }, "DX12CorrectCoverage");
+        return;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1194,7 @@ DX12Renderer3D::DispatchUniform DX12Renderer3D::MakeDispatchUniform() const noex
     constants.BinningWorkOffsetsStart = constants.BinningMaskStart
         + tileCount * static_cast<u32>(BinStride);
     constants.WorkDescsSortedStart = static_cast<u32>(MaxWorkTiles);
+    constants.MaxWorkTiles = static_cast<u32>(MaxWorkTiles);
     return constants;
 }
 
@@ -1220,6 +1240,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
     };
 
     const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
+    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
     const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
         * static_cast<u32>(MaxWorkTiles);
     const u32 binResultDwords = static_cast<u32>(
@@ -1242,6 +1263,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
             8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
             4, false },
         { BlendStateBuffer.Get(), pixels, 4, false },
+        { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1304,6 +1326,7 @@ bool DX12Renderer3D::BindCompositionUavTable(
     };
 
     const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
+    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
     const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
         * static_cast<u32>(MaxWorkTiles);
     const u32 binResultDwords = static_cast<u32>(
@@ -1326,6 +1349,7 @@ bool DX12Renderer3D::BindCompositionUavTable(
             8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
             4, false },
         { BlendStateBuffer.Get(),            pixels,                              4, false },
+        { ResultWinnerBuffer.Get(),           resultWinnerElements,                4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1772,7 +1796,7 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
         s32 ytop = ScreenHeight, ybot = 0;
         for (u32 v = 0; v < polygon->NumVertices; v++)
         {
-            if (HiresCoordinates)
+            if (HiresCoordinates && ScaleFactor > 1)
             {
                 scaledPositions[v][0] = (polygon->Vertices[v]->HiresPosition[0] * ScaleFactor) >> 4;
                 scaledPositions[v][1] = (polygon->Vertices[v]->HiresPosition[1] * ScaleFactor) >> 4;
@@ -1956,7 +1980,8 @@ void DX12Renderer3D::RenderFrame()
 {
     if (RuntimeFailed)
         return;
-    if (!Context || !RootSignature || !ResultBuffer || !FinalFBBuffer || !BinResultBuffer)
+    if (!Context || !RootSignature || !ResultBuffer || !ResultWinnerBuffer
+        || !FinalFBBuffer || !BinResultBuffer)
     {
         SetRuntimeFailure("required frame resources are unavailable");
         return;
@@ -2275,6 +2300,25 @@ void DX12Renderer3D::RenderFrame()
             1);
         InsertUavBarrier(list, ResultBuffer.Get());
         InsertUavBarrier(list, BlendStateBuffer.Get());
+        InsertUavBarrier(list, TileBuffers[2].Get());
+        InsertUavBarrier(list, ResultWinnerBuffer.Get());
+
+        // Software-exact coverage is defined on the native DS raster grid.
+        // High-resolution targets retain the separate scaled-raster contract,
+        // matching the Metal compute backend.
+        if (ScaleFactor == 1
+            && (GPU3D.RenderDispCnt & (1u << 4)) != 0u
+            && numSetupIndices > 0)
+        {
+            constants = MakeDispatchUniform();
+            constants.CurVariant = batch.FirstPolygon;
+            constants.TexWidth = batch.PolygonCount;
+            constants.TexHeight = static_cast<u32>(numSetupIndices);
+            SetDispatchConstants(list, constants);
+            list->SetPipelineState(PipelineCorrectCoverage.Get());
+            list->Dispatch(DivRoundUp(static_cast<u32>(numSetupIndices), 64), 1, 1);
+            InsertUavBarrier(list, ResultBuffer.Get());
+        }
     }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve

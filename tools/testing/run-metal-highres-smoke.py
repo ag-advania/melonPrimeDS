@@ -23,16 +23,24 @@ def main() -> int:
     )
     parser.add_argument("--seconds", type=float, default=5.0)
     parser.add_argument("--scales", default=",".join(map(str, SCALES)))
+    parser.add_argument("--state", type=Path)
     args = parser.parse_args()
     scales = tuple(int(value) for value in args.scales.split(",") if value)
     if not args.app.is_file() or not args.rom.is_file():
         parser.error("--app and rom must name existing files")
+    if args.state is not None and not args.state.is_file():
+        parser.error("--state must name an existing savestate")
 
     failures: list[str] = []
     for scale in scales:
         environment = os.environ.copy()
         environment["MELONPRIME_FORCE_METAL_COMPUTE_RENDERER"] = "1"
         environment["MELONPRIME_METAL_COMPUTE_TEST_SCALE"] = str(scale)
+        environment["MELONPRIME_METAL_COMPUTE_TRACE_FALLBACKS"] = "1"
+        environment["MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF"] = "1"
+        environment["NSUnbufferedIO"] = "YES"
+        if args.state is not None:
+            environment["MELONPRIME_TEST_SAVESTATE"] = str(args.state.resolve())
         process = subprocess.Popen(
             [str(args.app.resolve()), "--boot", "always", str(args.rom.resolve())],
             stdout=subprocess.PIPE,
@@ -61,15 +69,32 @@ def main() -> int:
             or "GPU failure" in output
             or "command failed" in output
             or "using RasterReference" in output
+            or "RasterReference fallback" in output
+            or "[MetalComputeFallbackTrace]" in output
             or "frame input exceeded span budget" in output
             or "texture variants; falling back" in output
+            or (
+                args.state is not None
+                and f"[SavestateDiff] path={args.state.resolve()} loaded=1"
+                not in output
+            )
         )
         print(f"{'FAIL' if bad else 'PASS'}: Metal Compute scale={scale}")
         if bad:
             failures.append(f"scale {scale}")
             for line in output.splitlines():
-                if "[MelonPrime] metal compute" in line and (
-                    "failed" in line or "fallback" in line or "ready" in line
+                if (
+                    "[MetalComputeFallbackTrace]" in line
+                    or "[SavestateDiff]" in line
+                    or "CUTOVER active" in line
+                    or (
+                        "[MelonPrime] metal compute" in line
+                        and (
+                            "failed" in line
+                            or "fallback" in line
+                            or "ready" in line
+                        )
+                    )
                 ):
                     print(line, file=sys.stderr)
 

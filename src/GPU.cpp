@@ -1405,7 +1405,15 @@ void GPU::SetVCount(u16 val, u16 mask) noexcept
 
     NextVCount = (NextVCount & ~mask) | (val & mask);
 
-    GPU3D.AbortFrame = true; // CHECKME: this probably shouldn't be done if the vcount written is the same as the vcount of the next scanline
+    // The 3D renderer finishes at VCount 192 and does not start the next frame
+    // until VCount 215. A VCOUNT write in that idle interval changes LCD
+    // timing, but there is no in-flight 3D frame to abort. Treating every
+    // write as an abort made games that extend VBlank (Last Raven writes 209
+    // while already at 209) discard the next valid 3D frame periodically.
+    // Keep the conservative abort for writes during the active render window,
+    // including the extended 263..511 VCOUNT range.
+    const bool rendering3D = VCount < 192 || VCount >= 215;
+    GPU3D.AbortFrame |= rendering3D;
     VCountOverride = true;
 }
 

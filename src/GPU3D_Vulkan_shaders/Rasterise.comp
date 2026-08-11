@@ -183,7 +183,9 @@ void main()
                 int cov = xspan.EdgeCovL;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovLInitial + (xspan.EdgeCovL & 0x3FF) * (position.x - xspan.X0);
+                    int coverageStart = max(xspan.X0, 0);
+                    int xcov = xspan.CovLInitial
+                        + (xspan.EdgeCovL & 0x3FF) * (position.x - coverageStart);
                     cov = min(xcov >> 5, 31);
                 }
 
@@ -196,11 +198,17 @@ void main()
                 int cov = xspan.EdgeCovR;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovRInitial + (xspan.EdgeCovR & 0x3FF) * (position.x - xspan.InsideEnd);
+                    int coverageStart = max(max(xspan.InsideStart, xspan.InsideEnd), 0);
+                    int xcov = xspan.CovRInitial
+                        + (xspan.EdgeCovR & 0x3FF) * (position.x - coverageStart);
                     cov = max(0x1F - (xcov >> 5), 0);
                 }
 
                 attr |= uint(cov) << 8;
+            }
+            else if ((DispCnt & (1U << 4)) != 0U && (attr & 0xFU) != 0U)
+            {
+                attr |= 0x1FU << 8;
             }
 
             uint z;
@@ -274,6 +282,11 @@ void main()
             b = vb;
 
 #ifdef UseTexture
+            // Software narrows interpolated S/T to signed 16-bit before
+            // converting from 12.4 fixed point.
+            u = (u << 16) >> 16;
+            v = (v << 16) >> 16;
+
             // See the header comment: these two reproduce the GL host's
             // `1.f/width`, `1.f/height` and `CaptureYOffset/height` bit for bit,
             // because every operand is an integer and every divisor is a power

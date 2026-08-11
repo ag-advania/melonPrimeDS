@@ -48,6 +48,7 @@ SET0_BINDINGS = [
     ("PresentationOutput", 13),
     ("CaptureSidecar", 14),
     ("BlendState", 15),
+    ("ResultWinner", 16),
 ]
 SET1_BINDINGS = [
     ("CurrentTexture", 0),
@@ -117,6 +118,8 @@ def pipelines() -> list[tuple[str, str, list[str]]]:
     engine instead. They are appended rather than interleaved so the shared
     prefix keeps matching. The DX12 backend numbers its own steps the same way
     (Resolve / CaptureSidecar / Compositor after ShaderStep_FinalPass0+8).
+    Index 36 is the native-resolution accepted-AA correction shared in concept
+    with Metal and DX12; appending it keeps every pre-existing index stable.
     """
     out: list[tuple[str, str, list[str]]] = []
 
@@ -154,6 +157,7 @@ def pipelines() -> list[tuple[str, str, list[str]]]:
     out.append(("Resolve", "Resolve", ["Resolve"]))                 # 33
     out.append(("CaptureSidecar", "CaptureSidecar", ["CaptureSidecar"])) # 34
     out.append(("Compositor", "Compositor", ["Compositor"]))        # 35
+    out.append(("CorrectCoverage", "CorrectCoverage", ["CorrectCoverage"])) # 36
 
     return out
 

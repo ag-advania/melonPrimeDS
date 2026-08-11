@@ -1,9 +1,9 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
-  "sourceSetSha256": "f42dc23284da50ef049fcbb2a17c1b10658fc8b997e0af47a09c3f8977bdfcd4",
+  "sourceSetSha256": "2f20448c7f7840d7c0c26e4b2d9fdcc4024b33a5efb71f7157a274116aa61693",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
-  "pipelineCount": 36,
+  "pipelineCount": 37,
   "bucketCount": 3,
   "bucketRepresentativeScale": [
     1,
@@ -89,6 +89,10 @@
     {
       "name": "BlendState",
       "binding": 15
+    },
+    {
+      "name": "ResultWinner",
+      "binding": 16
     }
   ],
   "set1Bindings": [
@@ -113,8 +117,8 @@
       "binding": 4
     }
   ],
-  "uniqueModules": 108,
-  "totalSpirvBytes": 2906400,
+  "uniqueModules": 111,
+  "totalSpirvBytes": 3000172,
   "generatedFiles": [
     "GPU3D_Vulkan_ShaderBlobs.h",
     "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
@@ -123,6 +127,7 @@
     "GPU3D_Vulkan_ShaderBlobs_ClearCoarseBinMask.cpp",
     "GPU3D_Vulkan_ShaderBlobs_ClearIndirectWorkCount.cpp",
     "GPU3D_Vulkan_ShaderBlobs_Compositor.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_CorrectCoverage.cpp",
     "GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp",
     "GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp",
     "GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp",
@@ -210,8 +215,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 3,
-      "words": 6192,
-      "sha256": "b5ec883c4febb81ce69a76804ef76887207dfd722d4fe1c3a8052ba1af460d4d"
+      "words": 6686,
+      "sha256": "704b6a8c9c9889c1e2fd2724841bee7e1ac85e94d06692e4b2f58553416a86c3"
     },
     {
       "pipeline": 4,
@@ -230,8 +235,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 4,
-      "words": 6192,
-      "sha256": "08a7502df9805eed7ffb1add99a1411b9088dff3a3a057493a210bce78a822cf"
+      "words": 6686,
+      "sha256": "68d7c59f2428198d024cc1215f7c6c6b6412eb1b05d6aaac9297471254b66dd9"
     },
     {
       "pipeline": 5,
@@ -251,8 +256,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 5,
-      "words": 9313,
-      "sha256": "5f3073fc7c43e3feb8c47a3114c48d24fc18e7f217368a4d7331d229b14bfbfa"
+      "words": 9467,
+      "sha256": "8e1c06328346483d59b3b56731ae9bc8b7afb558ffb5e5c854a58df483b243b1"
     },
     {
       "pipeline": 6,
@@ -272,8 +277,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 6,
-      "words": 9105,
-      "sha256": "0cf2b7b211ab0bd3391cdc600584660db8dc6eac1cdb1115a74047eb05e063cb"
+      "words": 9259,
+      "sha256": "2c8dc0b2cfe962d3074e20dfe4798e68386b31333672a313ce0ab5987cb6bc5c"
     },
     {
       "pipeline": 7,
@@ -294,8 +299,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 7,
-      "words": 9400,
-      "sha256": "a216b2b3e209d9383c8d68d95f441716904e8217b2e2f874907886246178f055"
+      "words": 9550,
+      "sha256": "9b5caa39de0896d6cc79eaa895ed7960611ce785d9d26aeae881ad725256ebf5"
     },
     {
       "pipeline": 8,
@@ -316,8 +321,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 8,
-      "words": 9192,
-      "sha256": "9fcdecc7b42a0f214427b213fb3114f412b75f5d3770b7d1577ad928dc715b3f"
+      "words": 9342,
+      "sha256": "2a3a795ec5e43a6ebfaac1ddb4d927fdd5e32eae0ea4e78f982df4ed9b5298a2"
     },
     {
       "pipeline": 9,
@@ -338,8 +343,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 9,
-      "words": 9474,
-      "sha256": "1069bee441895550240777ccd8c3a7c9e65384a7df26ca74ff30d3ed327b558d"
+      "words": 9624,
+      "sha256": "d7d6e05035bad20c7b212b3ad475d266b6848431d509cf13e7ed3d7683f0568b"
     },
     {
       "pipeline": 10,
@@ -360,8 +365,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 10,
-      "words": 9266,
-      "sha256": "be0476ec1891777a7a596f547bb667300b92e4d91c2e8c3616b026db941be25a"
+      "words": 9416,
+      "sha256": "253ec085aec7e12f52114df438c2e858fe75f62a92757106053384be9dda3cce"
     },
     {
       "pipeline": 11,
@@ -382,8 +387,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 11,
-      "words": 11010,
-      "sha256": "c9243b1976af2990e89d904d1549c26e8da4fd1d955b7b710861885fbf9ccbb8"
+      "words": 11198,
+      "sha256": "546db0449ee404226f9b70c47d606675fbea6b4a88150f178367c01166d576ef"
     },
     {
       "pipeline": 12,
@@ -404,8 +409,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 12,
-      "words": 10802,
-      "sha256": "208b732a143dc2cf5d8e065bda5f1cbd3f87d4d449b00af5956c15b0e1245acf"
+      "words": 10990,
+      "sha256": "7efa9efd874bf1571fed2d83a4cf915220b3208000e3b772dbde1162332abaaa"
     },
     {
       "pipeline": 13,
@@ -426,8 +431,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 13,
-      "words": 10872,
-      "sha256": "1677e4d24c91140761f2e6d2d278008c12ae7ef3b4fb42c558bf9188154a1055"
+      "words": 11060,
+      "sha256": "fda35dc8fda6a30935b2ece68ae8a42181f04b395a4ac3a5adbd2124a3498f3d"
     },
     {
       "pipeline": 14,
@@ -448,8 +453,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 14,
-      "words": 10664,
-      "sha256": "70eaf0d93dfca45338bbe349dcd3548d9c75f4a4ef82a320dc31745c87f56c28"
+      "words": 10852,
+      "sha256": "b3100f56f1407b558f14dcffa3227e2cb679595e416f4d34ef68eee8da699dd2"
     },
     {
       "pipeline": 15,
@@ -470,8 +475,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 15,
-      "words": 10959,
-      "sha256": "6c666b40cabd8d0c0e61d83a0d48e4233fe637487a1a84070c849ee7b5e0905c"
+      "words": 11143,
+      "sha256": "5e77ede32798d7209909814ff52e82012e5968e0195223479033bc3533b4d87b"
     },
     {
       "pipeline": 16,
@@ -492,8 +497,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 16,
-      "words": 10751,
-      "sha256": "25bbd1fca8ae875690df4e1d0ac9565bcf6841bf699aefe28600a817bd3d5e12"
+      "words": 10935,
+      "sha256": "81b96f735f8fd2259df476e1ba3a8d2a0aae7fb0b75f90d2f71aaf9a860b2bdb"
     },
     {
       "pipeline": 17,
@@ -514,8 +519,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 17,
-      "words": 11033,
-      "sha256": "b9ef3847e9d4c58bc94e8c9e58ab6089f494cbab6bb30f18724e354c4d54008f"
+      "words": 11217,
+      "sha256": "d18c7e5ea2ec3f28651a1ba5ad08cd7e0d7127fd7b726ca6305af526ae107b1a"
     },
     {
       "pipeline": 18,
@@ -536,8 +541,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 18,
-      "words": 10825,
-      "sha256": "3ca84ac84e373aa74e4fd14726db7e05f1f35b8bc365327268bf71e3578918b5"
+      "words": 11009,
+      "sha256": "c2251df605c17ed66b67eb68ac67f9eab2cadb729a306c320d2f6035d810e951"
     },
     {
       "pipeline": 19,
@@ -557,8 +562,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 19,
-      "words": 9047,
-      "sha256": "dbc26809686761a4cc64273411a89dc603561c4b2f550ae173d4432fcb562639"
+      "words": 9201,
+      "sha256": "ecfdcd71951c048905926b338bcc98b33249a85ec13642d99de516c228321874"
     },
     {
       "pipeline": 20,
@@ -578,8 +583,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 20,
-      "words": 8839,
-      "sha256": "a41d01a8b7cf22c0f745f38e59c9786aa0b10d1bf6c344a9bc2e648879bbe4e4"
+      "words": 8993,
+      "sha256": "e94e9cc0b8fa754fc49451add65fc5c4e4b6f71297ec93972e73a007025a8a3a"
     },
     {
       "pipeline": 21,
@@ -879,6 +884,25 @@
       "sha256": "c463b8fc308d65a7a53ea6d526a47c711477074621537389a4a80a0962294d90"
     },
     {
+      "pipeline": 36,
+      "name": "CorrectCoverage",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/CorrectCoverage.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CorrectCoverage"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 36,
+      "words": 4117,
+      "sha256": "0c1f354974393a97c92e18a06db033b0205e81eda9bfec08de0a3673a796024b"
+    },
+    {
       "pipeline": 0,
       "name": "InterpSpansZ",
       "bucket": 1,
@@ -894,7 +918,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 36,
+      "blob": 37,
       "words": 14789,
       "sha256": "bd8c14c069d4e953810a3594240e4910731c4f3e92e8be3e6574d43ee0832564"
     },
@@ -914,7 +938,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 37,
+      "blob": 38,
       "words": 14573,
       "sha256": "ec416d4ae5ebbc7802c5374208be07f0faead2d21de34159f4bf57077f7da554"
     },
@@ -933,7 +957,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 38,
+      "blob": 39,
       "words": 4811,
       "sha256": "61681339d8704a51d189fc0ad72039aafe8393bce2bd67b7df7e393133eb87e0"
     },
@@ -953,9 +977,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 39,
-      "words": 6196,
-      "sha256": "5b194513853f9e57ddcbb2f71f85ca0d777456bc5eaf000ea040ecd61b380378"
+      "blob": 40,
+      "words": 6690,
+      "sha256": "52bd17de44c40875ad6c1d7559edffbd6012a7f255b229f92e12899271dd8158"
     },
     {
       "pipeline": 4,
@@ -973,9 +997,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 40,
-      "words": 6196,
-      "sha256": "b715f7a90874213e624d3a3d2358d68847471e250886c189ed6ccd575309bb1b"
+      "blob": 41,
+      "words": 6690,
+      "sha256": "012eef19fc91751d5cfaca24c6db8b8160f43aa337e4883bcf8b13fd554af9bf"
     },
     {
       "pipeline": 5,
@@ -994,9 +1018,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 41,
-      "words": 9313,
-      "sha256": "582b798950ed1e9d140af0c34993f853c14026a05bae6a6cdecdeac5f2481b9d"
+      "blob": 42,
+      "words": 9467,
+      "sha256": "333b615c49ec66e5ffbf28e2eee17d23ee001726e0c21bf7760e8e09bddc676e"
     },
     {
       "pipeline": 6,
@@ -1015,9 +1039,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 42,
-      "words": 9105,
-      "sha256": "464da8bb62dfa48b085e49679e13ffa3a68e63517076058f7ff667e9b2c76784"
+      "blob": 43,
+      "words": 9259,
+      "sha256": "1dc9cefda7fd2bb94c7b3e5afabd641c10e83d9c4c13292eef31af669befdd53"
     },
     {
       "pipeline": 7,
@@ -1037,9 +1061,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 43,
-      "words": 9400,
-      "sha256": "6692f3e21a5249ef403c3b6c0451f094a6dc321bb0af2162487a150ecc15763b"
+      "blob": 44,
+      "words": 9550,
+      "sha256": "cc0c711fc69ce88494445bfb4b01e71210b389e4139d53b4bd26a2ec65e64d1e"
     },
     {
       "pipeline": 8,
@@ -1059,9 +1083,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 44,
-      "words": 9192,
-      "sha256": "c004a12ca799c277fbd967e31a84a202516b70306702ef905bec433ffb959336"
+      "blob": 45,
+      "words": 9342,
+      "sha256": "db15ab4b55b50984aa8d2f0dd3f4c890707ceb500df51dbea82da3e9ba62ac21"
     },
     {
       "pipeline": 9,
@@ -1081,9 +1105,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 45,
-      "words": 9474,
-      "sha256": "2db61aa58ecf0c961dc70b838d0cf284c3912b112c6a305b915bc6b29dffb976"
+      "blob": 46,
+      "words": 9624,
+      "sha256": "e1de5b23e1df0bb0ad6eb4431ff8ecee7c538c4e3652df25501901f93b056ea0"
     },
     {
       "pipeline": 10,
@@ -1103,9 +1127,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 46,
-      "words": 9266,
-      "sha256": "ea6b808c54fe60104ac8b4bb70971aeefc537fab73996fdac3741e9599d90888"
+      "blob": 47,
+      "words": 9416,
+      "sha256": "9f1bf1e3b644a1b228e8ccc29b9e1d5e59758570bac7f94f76d68cef4f39a076"
     },
     {
       "pipeline": 11,
@@ -1125,9 +1149,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 47,
-      "words": 11006,
-      "sha256": "6d86a39d2918afb6e829bf37eb9ce078891d056eb7980443c4e16ac3c0d6d9ff"
+      "blob": 48,
+      "words": 11194,
+      "sha256": "4dc7ed90010f352aa1c501e834bd11abd9caf8a5f31033569f1d7dbee5f72949"
     },
     {
       "pipeline": 12,
@@ -1147,9 +1171,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 48,
-      "words": 10798,
-      "sha256": "e7084aaa2c8449884225b128991fa27192f9c2e1a4e790226ee304831f33378a"
+      "blob": 49,
+      "words": 10986,
+      "sha256": "657021e7d1bf8e45cada7501e8e3194123dd7c47d4666f8fda02f5defb362123"
     },
     {
       "pipeline": 13,
@@ -1169,9 +1193,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 49,
-      "words": 10868,
-      "sha256": "2e519cdcd0850254f632d495547ff258d526d66954826e331a44521bed86e6d7"
+      "blob": 50,
+      "words": 11056,
+      "sha256": "2b8980e2e92eb33484efb281fc8bc8f793c5c44558538b99d4a720516148cc5a"
     },
     {
       "pipeline": 14,
@@ -1191,9 +1215,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 50,
-      "words": 10660,
-      "sha256": "157fcfa3e1eb33bc0fb768c74402c626c493d17322008f728a4bd4221a1768f3"
+      "blob": 51,
+      "words": 10848,
+      "sha256": "718503fa338bb2da181dfb44f7dc5ae1dd20e029e6a41da91504e51ba74c1452"
     },
     {
       "pipeline": 15,
@@ -1213,9 +1237,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 51,
-      "words": 10955,
-      "sha256": "835537c50c8d086905243bacebedaa675956cf219cdce60fbb963f7f32475ae5"
+      "blob": 52,
+      "words": 11139,
+      "sha256": "d5aebb01bbb8f662832358b5e5c7b1b86b41ad3e9d1adee839678860ccfd2199"
     },
     {
       "pipeline": 16,
@@ -1235,9 +1259,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 52,
-      "words": 10747,
-      "sha256": "1b63edeac7363ae23de494f61dddd64876edba4c2ec263d9cfa9f32c2b3b697f"
+      "blob": 53,
+      "words": 10931,
+      "sha256": "da7eabccfffa1f2dec09d25b230e83b4df1d797aa2f88bfd2fa2ec9c60ecb243"
     },
     {
       "pipeline": 17,
@@ -1257,9 +1281,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 53,
-      "words": 11029,
-      "sha256": "6ff7e85f485775f63be1c046f29fc968ab90e3e3759a4a5371a568f79d86b343"
+      "blob": 54,
+      "words": 11213,
+      "sha256": "e2a67f1e9fabccf3538479529c549c1349add30aa799bd3bb4590640eab3dc11"
     },
     {
       "pipeline": 18,
@@ -1279,9 +1303,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 54,
-      "words": 10821,
-      "sha256": "e590c941e4f285dc566d648203f3c2b018d124cd2541a47517eff0628a12ffec"
+      "blob": 55,
+      "words": 11005,
+      "sha256": "1c5a7a1eea12b69bc7c602a69d684034be740c892eca2390e056510d6758aed8"
     },
     {
       "pipeline": 19,
@@ -1300,9 +1324,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 55,
-      "words": 9047,
-      "sha256": "d6f2b22363363c21dc0cf56d5c0f338de7d0ae7d9c31ed8dc31e7160419a72b6"
+      "blob": 56,
+      "words": 9201,
+      "sha256": "f2d1bf9aecb94ecd1b461b722af2d4212a154718cae3bc61fa811a8061cebf23"
     },
     {
       "pipeline": 20,
@@ -1321,9 +1345,9 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 56,
-      "words": 8839,
-      "sha256": "bf0dfe07e4bd31cebf3cb6b1b9e4fd8d7a5a1bab6a92881b86795214631c68b8"
+      "blob": 57,
+      "words": 8993,
+      "sha256": "3bd048320cb4340125c3da1b83dd40444a9055e893239493e43bef16c8eed16d"
     },
     {
       "pipeline": 21,
@@ -1340,7 +1364,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 57,
+      "blob": 58,
       "words": 816,
       "sha256": "b9aaed4c7ca6fcecf7e08d6c1c41704ffb0126fd29e1d7d45547223ad9404f5f"
     },
@@ -1359,7 +1383,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 58,
+      "blob": 59,
       "words": 767,
       "sha256": "bb62cfd0fce39e37e4f8d98bde87025c932a901d5967166e23fce8b1d2278caa"
     },
@@ -1378,7 +1402,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 59,
+      "blob": 60,
       "words": 1049,
       "sha256": "ca4c85dd9ee4fbfb7b6a28ddf72cab1e96e6ab01f4fc420407289a7d1e0a4408"
     },
@@ -1397,7 +1421,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 60,
+      "blob": 61,
       "words": 1308,
       "sha256": "98c0b0a56d2c11545ba8a39ff0e822876e98e74dc0b2c71146bd6b25429bc226"
     },
@@ -1416,7 +1440,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 61,
+      "blob": 62,
       "words": 1140,
       "sha256": "76788d5273937c54f85de7c552cc64dc7c90689db6585f80f4ef6f7ab8bea780"
     },
@@ -1436,7 +1460,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 62,
+      "blob": 63,
       "words": 2070,
       "sha256": "e3ce4c83979ba5076f81b33351623394dd817554d379e3b86dae3f7b3029a08e"
     },
@@ -1456,7 +1480,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 63,
+      "blob": 64,
       "words": 2019,
       "sha256": "ab90d81bb8b869b02f097390abb2c7f8f46793d2fed22f99a538bf9ae8f3b3e8"
     },
@@ -1477,7 +1501,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 64,
+      "blob": 65,
       "words": 2927,
       "sha256": "3b38b0f2be7fa68e2bdb80906702f9c239d35099b92af816800f3c69f91692aa"
     },
@@ -1497,7 +1521,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 65,
+      "blob": 66,
       "words": 1649,
       "sha256": "06405af2842af1aeda5de2bcdd1f5adb741c685cee611a3b08dfeb00ef77df27"
     },
@@ -1518,7 +1542,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 66,
+      "blob": 67,
       "words": 2569,
       "sha256": "a5bc070431b928740761a2e25c1aa61090abf00c61c93537927e0c1b8fe60ac3"
     },
@@ -1539,7 +1563,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 67,
+      "blob": 68,
       "words": 2522,
       "sha256": "cbcd535c7a42c7acf765cacfd25fbc8533576d952f26ebdd832dd32c98cde5c7"
     },
@@ -1561,7 +1585,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 68,
+      "blob": 69,
       "words": 3422,
       "sha256": "864b1300d7edf8fbd7c6446affa6f11095419305e68efa80b0201db33be7843f"
     },
@@ -1580,7 +1604,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 69,
+      "blob": 70,
       "words": 1404,
       "sha256": "10b35ae6103d49caaa9c4acf835136518244e806ef3d42b9cdda9608603eab4c"
     },
@@ -1599,7 +1623,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 70,
+      "blob": 71,
       "words": 6254,
       "sha256": "e1f6ede7c9a6161789e08cdcdeb6646b281bfa9d9e64f65017443e19a4c65831"
     },
@@ -1618,9 +1642,28 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 71,
+      "blob": 72,
       "words": 5131,
       "sha256": "fc3ff17dda8a8bd29f01a7b489a03f4751d162e86ce292130cda7c748b22ce00"
+    },
+    {
+      "pipeline": 36,
+      "name": "CorrectCoverage",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/CorrectCoverage.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CorrectCoverage"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 73,
+      "words": 4125,
+      "sha256": "22f4e33687b8936e9360095d6a6356f622fe870ed02f4551595fc367d8c5f9a7"
     },
     {
       "pipeline": 0,
@@ -1638,7 +1681,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 72,
+      "blob": 74,
       "words": 14797,
       "sha256": "a97daf0c7e8dfa67c4843ff1f666c387c7d60f3200b181d0848b61651461b97c"
     },
@@ -1658,7 +1701,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 73,
+      "blob": 75,
       "words": 14581,
       "sha256": "8ca146fa2f2876e030a296b20151c58a899e022f7992dcef5bbd736bcce7ef5b"
     },
@@ -1677,7 +1720,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 74,
+      "blob": 76,
       "words": 4815,
       "sha256": "9060dcd616b9c939973a125f3f0e5aec4cc5e7766e2ee1287c7a4f8c64924442"
     },
@@ -1697,9 +1740,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 75,
-      "words": 6200,
-      "sha256": "1a642cfbc38c94beba13b4f18f1f9ead46b350390b929938d22892df987c2ae4"
+      "blob": 77,
+      "words": 6690,
+      "sha256": "d12f6f3bbdc7d414c05456c7ec73b56e91f7cf4efff8d982f365e6ea9c210fec"
     },
     {
       "pipeline": 4,
@@ -1717,9 +1760,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 76,
-      "words": 6200,
-      "sha256": "35ba944ffa768259bea2d873800e12b7b6c43912899b9a72281f83f56349370d"
+      "blob": 78,
+      "words": 6690,
+      "sha256": "9f91b0f618328ddccd2bfe072d6ce312d66de6e8251c94edc50fbcdf9b7e90ba"
     },
     {
       "pipeline": 5,
@@ -1738,9 +1781,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 77,
-      "words": 9317,
-      "sha256": "0248c3590143c49c34888399d46589163a6cc93b358f38c3e421712e413e4881"
+      "blob": 79,
+      "words": 9471,
+      "sha256": "e81a739dd62417d525178915550dc415b3a8ee7e1b2ba7b5a7f4cfc29982203a"
     },
     {
       "pipeline": 6,
@@ -1759,9 +1802,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 78,
-      "words": 9109,
-      "sha256": "c666b2aa873a2ed9ad2b5805c548332b97cf1ba6818e691345671c766e886af9"
+      "blob": 80,
+      "words": 9263,
+      "sha256": "cfbeaad81c1066a71aee4718c16bfa3c59f77c4eb165adc987f02eaa306ff2a0"
     },
     {
       "pipeline": 7,
@@ -1781,9 +1824,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 79,
-      "words": 9404,
-      "sha256": "9318b0d5010ffc533fbda22e86e6d5b138a11b9f1fb4a33e395361c4174ac38b"
+      "blob": 81,
+      "words": 9554,
+      "sha256": "840f89485a7a1069340b1594b7ed8258d67a8950b5d6cb2e148282762b6dec04"
     },
     {
       "pipeline": 8,
@@ -1803,9 +1846,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 80,
-      "words": 9196,
-      "sha256": "0715e8967f304d243d02962faa8c9f2dd5b452465d8d3eb022e9ad14d3780356"
+      "blob": 82,
+      "words": 9346,
+      "sha256": "d7d09da03f8accd96a625267fc4beb08be6ed7972aa4e4ae52c50f882cf3baa2"
     },
     {
       "pipeline": 9,
@@ -1825,9 +1868,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 81,
-      "words": 9478,
-      "sha256": "4d2f7aa929a1f6993ac6ab68cc5018e9ef9736f21a38077f6924c09bc6f01bd0"
+      "blob": 83,
+      "words": 9628,
+      "sha256": "359f2976eb04f7510bb4f8ea3bdc0c4605a8fe84131432103b7eb8f6e2dd378a"
     },
     {
       "pipeline": 10,
@@ -1847,9 +1890,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 82,
-      "words": 9270,
-      "sha256": "87db24f8f0c68d0147073ed3d10bb89388d842d6db80c68b9e091ed3933b7700"
+      "blob": 84,
+      "words": 9420,
+      "sha256": "1edf2cceafa0008380579ee74c9ef155347ba26f883113824c1311540c1b0cce"
     },
     {
       "pipeline": 11,
@@ -1869,9 +1912,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 83,
-      "words": 11014,
-      "sha256": "cfced8decc1e72fd48bffa8b09734e81e3cf772df77c36f8c3157574ba69ebf1"
+      "blob": 85,
+      "words": 11202,
+      "sha256": "675eb07492c2f9ccadd253df7b8bfa8b5c262ab7e2531431ccde207ce7aaea7a"
     },
     {
       "pipeline": 12,
@@ -1891,9 +1934,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 84,
-      "words": 10806,
-      "sha256": "b40f3bf314622c12d7280c38085b3bbfc22bb14fdd649fa2efb4903ed6510d22"
+      "blob": 86,
+      "words": 10994,
+      "sha256": "9ff0bbb3294eace5264b1f3d9f8752f4ecfc5dd194e9afd1569f0ec6aea9fb3e"
     },
     {
       "pipeline": 13,
@@ -1913,9 +1956,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 85,
-      "words": 10876,
-      "sha256": "ced6302319653b779de2b2baf209338a7b25d6438088686f79b0129bea6016d4"
+      "blob": 87,
+      "words": 11064,
+      "sha256": "10de9eee6d08ffc52c5fdc9baf96cd9fa60e045bdbdc6708c40eb0a2878701d1"
     },
     {
       "pipeline": 14,
@@ -1935,9 +1978,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 86,
-      "words": 10668,
-      "sha256": "ec010222d211d8dbf698f912e38984cadea0dff2674cee44c31df423a87dfa50"
+      "blob": 88,
+      "words": 10856,
+      "sha256": "26d1493b9d91f0d648473af11c5ed8b095295de1da32b85f308599fb0c06b7dd"
     },
     {
       "pipeline": 15,
@@ -1957,9 +2000,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 87,
-      "words": 10963,
-      "sha256": "07886e92a3ae74cd12fe3b9e5413b924e2ba00ae589f1928c0e398c837f6ba3d"
+      "blob": 89,
+      "words": 11147,
+      "sha256": "26fb8ed98019897462a17571472bd769a2e1b7099ec374f359f91aeaa4363260"
     },
     {
       "pipeline": 16,
@@ -1979,9 +2022,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 88,
-      "words": 10755,
-      "sha256": "350dd2aecd9a7be58652b667c35c9005918d587c2775d5f57d6e408e6a7a900e"
+      "blob": 90,
+      "words": 10939,
+      "sha256": "530af82d3f6230d09c7009c58da7b831d14ec221ceb001789227d50b6af9316d"
     },
     {
       "pipeline": 17,
@@ -2001,9 +2044,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 89,
-      "words": 11037,
-      "sha256": "d824dbb4404485f56331fad7e8b8d7f2657fe0a79bc83e8e649738b63180f123"
+      "blob": 91,
+      "words": 11221,
+      "sha256": "c3d21e2b82d0dc46f1609ae0269358f4f5e6ae81dfc9c8c48e1b9f98eb9ee0ea"
     },
     {
       "pipeline": 18,
@@ -2023,9 +2066,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 90,
-      "words": 10829,
-      "sha256": "6bdb6d52c1234bd9c676e2d8f5d9089ee8cf7aab893b767209c91f9e0fa70726"
+      "blob": 92,
+      "words": 11013,
+      "sha256": "5fea750c3fa2c0fd942a56295e29282842f5f7c10314b5cb5346e425e91a41cb"
     },
     {
       "pipeline": 19,
@@ -2044,9 +2087,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 91,
-      "words": 9051,
-      "sha256": "1ffd92cd503f814cb5e179c640c00b6b00d09dd91122c08c082e80c9c7c3b053"
+      "blob": 93,
+      "words": 9205,
+      "sha256": "9c4bf4bc3517b4629b512b9b1491a2b66ab842aa30e287e365c417488e355a65"
     },
     {
       "pipeline": 20,
@@ -2065,9 +2108,9 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 92,
-      "words": 8843,
-      "sha256": "2efd51fe08b910450341df52ebd5c807d0fb32fe685c21ffedbbd51ec91c107d"
+      "blob": 94,
+      "words": 8997,
+      "sha256": "73b2cf0d5cc2ec45119c14ea07f4ad49a336f8ff3e71a1a330de43e8b40e291e"
     },
     {
       "pipeline": 21,
@@ -2084,7 +2127,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 93,
+      "blob": 95,
       "words": 820,
       "sha256": "0ab90383636c40a3e697e768bcdabe2f2d040400e22b2fd2393ee6e90927d0fe"
     },
@@ -2103,7 +2146,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 94,
+      "blob": 96,
       "words": 771,
       "sha256": "a80b4858060fa433fd11623fa86dbd8485ea7148e83803770d700e5089a24103"
     },
@@ -2122,7 +2165,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 95,
+      "blob": 97,
       "words": 1053,
       "sha256": "0c275c1c481608ba4a8e4563f0045d3bc473b58970db4038ea2ad99a768a2dd1"
     },
@@ -2141,7 +2184,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 96,
+      "blob": 98,
       "words": 1312,
       "sha256": "b69b0ac5e98e89341b6d7f0dbeb0db80c553fec00bf3730df621599561aa6747"
     },
@@ -2160,7 +2203,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 97,
+      "blob": 99,
       "words": 1148,
       "sha256": "1ae9eb6ca300b12635ffca796149a4152ddabc36e9a82a8db9c2b2d8c96e8f90"
     },
@@ -2180,7 +2223,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 98,
+      "blob": 100,
       "words": 2078,
       "sha256": "aab835669f443d3e2e40ce204d2f8200db9ac88600a00c06512cc51744987706"
     },
@@ -2200,7 +2243,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 99,
+      "blob": 101,
       "words": 2027,
       "sha256": "c3c498074fb7240a71fd7018d687d32f946e9113b7c840c0bdb48a1c8c81a364"
     },
@@ -2221,7 +2264,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 100,
+      "blob": 102,
       "words": 2935,
       "sha256": "086f134f27a8fdd277cc932f92daec4f8a75be76c0bd89edf20f1755ac274e2b"
     },
@@ -2241,7 +2284,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 101,
+      "blob": 103,
       "words": 1657,
       "sha256": "6b75f9aa5aa28cfcedac9292072fe29c1c8d38a3558ceec52296fb9d953015b1"
     },
@@ -2262,7 +2305,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 102,
+      "blob": 104,
       "words": 2577,
       "sha256": "118ebfed518a241bf96dedbbe5a4b0ef3aa7692e2705631eec28bdb2e8a102df"
     },
@@ -2283,7 +2326,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 103,
+      "blob": 105,
       "words": 2530,
       "sha256": "88398b3e2ccb0536ca825e4a80a75afee7ccca4a301610f372a34ad63b888e22"
     },
@@ -2305,7 +2348,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 104,
+      "blob": 106,
       "words": 3430,
       "sha256": "39378fd4a420234a7af348b5914f8000fc1564108d0a52e019b5ab9b7ac25576"
     },
@@ -2324,7 +2367,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 105,
+      "blob": 107,
       "words": 1404,
       "sha256": "844a83c040e88af595a64be21eabb463c1abb440b62d9b739a77dbc9556c87db"
     },
@@ -2343,7 +2386,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 106,
+      "blob": 108,
       "words": 6254,
       "sha256": "09e877da05404f4e693f97fa27928c5d8b17b54177ddba9b665870bb75ce1c52"
     },
@@ -2362,9 +2405,28 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 107,
+      "blob": 109,
       "words": 5131,
       "sha256": "bed75f4624b59e5bb9b3b7216c439cef25bfd79dc1e12a92898a99e80f6c28d3"
+    },
+    {
+      "pipeline": 36,
+      "name": "CorrectCoverage",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/CorrectCoverage.comp",
+      "entryPoint": "main",
+      "defines": [
+        "CorrectCoverage"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 110,
+      "words": 4133,
+      "sha256": "70e40cb46663e9173b6c22b0ebd8d29826360c37e50d5f06e6eca55741ecbf48"
     }
   ]
 }

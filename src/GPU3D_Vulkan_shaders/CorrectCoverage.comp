@@ -1,0 +1,129 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    Native-resolution AA coverage correction. The software rasterizer advances
+    X-major edge coverage only when an opaque pixel survives alpha and depth
+    testing. Rasterise records geometric coverage in parallel; this ordered,
+    one-invocation-per-span pass applies the accepted-pixel progression.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "XSpanSetupBuffer.glsl"
+#include "TileBuffers.glsl"
+#include "ResultBuffer.glsl"
+#include "BinningBuffer.glsl"
+
+layout (set = 0, binding = 10) uniform utextureBuffer SetupIndices;
+
+layout (std430, set = 0, binding = 16) buffer ResultWinnerBuffer
+{
+    uint ResultWinner[];
+};
+
+layout (local_size_x = 64) in;
+
+bool CoverageTilePixel(uint polygonIndex, uint x, uint y, out uint tilePixel)
+{
+    uint tileX = x / uint(TileSize);
+    uint tileY = y / uint(TileSize);
+    uint linearTile = tileX + tileY * uint(TilesPerLine);
+    uint localPolygon = polygonIndex - pc.CurVariant;
+    uint group = localPolygon >> 5U;
+    uint bit = localPolygon & 31U;
+    uint maskIndex = linearTile * uint(BinStride) + group;
+    uint mask = BinningMaskAndOffset[BinningMaskStart + int(maskIndex)];
+    if ((mask & (1U << bit)) == 0U)
+        return false;
+
+    uint lowerMask = bit == 0U ? 0U : ((1U << bit) - 1U);
+    uint ordinal = bitCount(mask & lowerMask);
+    uint workIndex = BinningMaskAndOffset[BinningWorkOffsetsStart + int(maskIndex)] + ordinal;
+    if (workIndex >= uint(MaxWorkTiles))
+        return false;
+
+    uint tileInner = (y % uint(TileSize)) * uint(TileSize) + (x % uint(TileSize));
+    tilePixel = workIndex * uint(TileSize * TileSize) + tileInner;
+    return true;
+}
+
+bool CoverageWasAccepted(uint polygonIndex, uint x, uint y)
+{
+    uint tilePixel;
+    return CoverageTilePixel(polygonIndex, x, y, tilePixel)
+        && ColorTiles[tilePixel] != 0U
+        && (AttrTiles[tilePixel] & 0x80000000U) != 0U;
+}
+
+void WriteWinningCoverage(uint polygonIndex, uint x, uint y, uint coverage)
+{
+    uint pixel = y * uint(ScreenWidth) + x;
+    uint target = 0xFFFFFFFFU;
+    if (ResultWinner[pixel] == polygonIndex)
+        target = pixel;
+    else if (ResultWinner[uint(FramebufferStride) + pixel] == polygonIndex)
+        target = uint(FramebufferStride) + pixel;
+
+    if (target != 0xFFFFFFFFU)
+    {
+        uint attr = ResultValue[ResultAttrStart + target];
+        ResultValue[ResultAttrStart + target] =
+            (attr & ~0x1F00U) | ((coverage & 0x1FU) << 8U);
+    }
+}
+
+void main()
+{
+    uint setupIndex = gl_GlobalInvocationID.x;
+    if (setupIndex >= pc.TexHeight)
+        return;
+
+    uvec4 setup = texelFetch(SetupIndices, int(setupIndex));
+    uint polygonIndex = setup.x;
+    if (polygonIndex < pc.CurVariant || polygonIndex >= pc.CurVariant + pc.TexWidth)
+        return;
+
+    XSpanSetup span = XSpanSetups[setupIndex];
+    uint y = setup.w;
+    if (y >= uint(ScreenHeight))
+        return;
+
+    int x = max(span.X0, 0);
+    int screenEnd = ScreenWidth;
+    int leftEnd = min(min(span.InsideStart, span.X1), screenEnd);
+    if (span.EdgeCovL < 0)
+    {
+        int xcov = span.CovLInitial;
+        for (; x < leftEnd; ++x)
+        {
+            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
+                continue;
+            WriteWinningCoverage(polygonIndex, uint(x), y, min(uint(xcov >> 5), 31U));
+            xcov += span.EdgeCovL & 0x3FF;
+        }
+    }
+    else
+    {
+        x = max(x, leftEnd);
+    }
+
+    int bodyEnd = min(min(span.InsideEnd, span.X1), screenEnd);
+    x = max(x, bodyEnd);
+    int rightEnd = min(span.X1, screenEnd);
+    if (span.EdgeCovR < 0)
+    {
+        int xcov = span.CovRInitial;
+        for (; x < rightEnd; ++x)
+        {
+            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
+                continue;
+            WriteWinningCoverage(
+                polygonIndex, uint(x), y, uint(max(0x1F - (xcov >> 5), 0)));
+            xcov += span.EdgeCovR & 0x3FF;
+        }
+    }
+}

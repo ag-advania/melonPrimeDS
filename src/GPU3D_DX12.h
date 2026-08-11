@@ -259,7 +259,7 @@ private:
         u32 BinningMaskStart = 0;
         u32 BinningWorkOffsetsStart = 0;
         u32 WorkDescsSortedStart = 0;
-        u32 RuntimePadding = 0;
+        u32 MaxWorkTiles = 0;
     };
     static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
     static_assert(DispatchUniformDwords <= 64, "DX12 root constants exceed the API limit");
@@ -284,6 +284,7 @@ private:
         ShaderStep_Resolve = ShaderStep_FinalPass0 + 8,
         ShaderStep_CaptureSidecar,
         ShaderStep_Compositor,
+        ShaderStep_CorrectCoverage,
         ShaderStepCount,
     };
 
@@ -360,9 +361,11 @@ private:
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
     DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
+    DX12::ComPtr<ID3D12Resource> ResultWinnerBuffer; // winning polygon, 2 layers
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
     DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192

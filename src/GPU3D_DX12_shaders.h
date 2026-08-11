@@ -129,7 +129,7 @@ cbuffer DispatchUniform : register(b0)
     uint BinningMaskStart;
     uint BinningWorkOffsetsStart;
     uint WorkDescsSortedStart;
-    uint RuntimePadding;
+    uint MaxWorkTiles;
 };
 
 struct Polygon
@@ -211,6 +211,7 @@ RWStructuredBuffer<XSpanSetup> XSpanSetups : register(u7);
 RWStructuredBuffer<uint> ResolveOut : register(u8);
 RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
 RWStructuredBuffer<uint> BlendContinuationState : register(u10);
+RWStructuredBuffer<uint> ResultWinner : register(u11);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -1151,7 +1152,9 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
                 int cov = xspan.EdgeCovL;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovLInitial + (xspan.EdgeCovL & 0x3FF) * (position.x - xspan.X0);
+                    int coverageStart = max(xspan.X0, 0);
+                    int xcov = xspan.CovLInitial
+                        + (xspan.EdgeCovL & 0x3FF) * (position.x - coverageStart);
                     cov = min(xcov >> 5, 31);
                 }
 
@@ -1164,11 +1167,17 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
                 int cov = xspan.EdgeCovR;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovRInitial + (xspan.EdgeCovR & 0x3FF) * (position.x - xspan.InsideEnd);
+                    int coverageStart = max(max(xspan.InsideStart, xspan.InsideEnd), 0);
+                    int xcov = xspan.CovRInitial
+                        + (xspan.EdgeCovR & 0x3FF) * (position.x - coverageStart);
                     cov = max(0x1F - (xcov >> 5), 0);
                 }
 
                 attr |= uint(cov) << 8;
+            }
+            else if ((DispCnt & (1u << 4)) != 0u && (attr & 0xFu) != 0u)
+            {
+                attr |= 0x1Fu << 8;
             }
 
             uint z;
@@ -1244,6 +1253,11 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
             b = uint(vb);
 
 #ifdef UseTexture
+            // Software narrows interpolated S/T to signed 16-bit before
+            // converting from 12.4 fixed point.
+            u = (u << 16) >> 16;
+            v = (v << 16) >> 16;
+
             uint4 texcolor = SampleTexture(u, v, uint(polygon.TextureLayer));
 
 #ifdef Decal
@@ -1360,7 +1374,8 @@ void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool i
 }
 
 void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2 localId,
-    inout uint2 color, inout uint2 depth, inout uint2 attr, inout uint stencil,
+    inout uint2 color, inout uint2 depth, inout uint2 attr, inout uint2 winner,
+    bool trackCoverage, inout uint stencil,
     inout bool prevIsShadowMask)
 {
     uint tileInnerOffset = localId.x + localId.y * uint(TileSize);
@@ -1421,7 +1436,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     uint dstDepth = writeSecondLayer ? depth.y : depth.x;
                     if (!DepthTestPasses(equalDepthTest, facingView, dstDepth, tileDepth, dstattr))
                     {
-                        if ((dstattr & 0x3u) == 0u || writeSecondLayer)
+                        if ((dstattr & 0xFu) == 0u || writeSecondLayer)
                             continue;
 
                         writeSecondLayer = true;
@@ -1441,23 +1456,31 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
 
                         if (!writeSecondLayer)
                         {
-                            if ((srcAttr & 0x3u) != 0u)
+                            if ((srcAttr & 0xFu) != 0u)
                             {
                                 color.y = color.x;
                                 depth.y = depth.x;
                                 attr.y = attr.x;
+                                if (trackCoverage)
+                                    winner.y = winner.x;
                             }
 
                             color.x = tileColor;
                             depth.x = tileDepth;
                             attr.x = srcAttr;
+                            if (trackCoverage)
+                                winner.x = polygonIdx;
                         }
                         else
                         {
                             color.y = tileColor;
                             depth.y = tileDepth;
                             attr.y = srcAttr;
+                            if (trackCoverage)
+                                winner.y = polygonIdx;
                         }
+                        if (trackCoverage)
+                            AttrTiles[pixelindex] = tileAttr | 0x80000000u;
                     }
                     else
                     {
@@ -1465,7 +1488,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
 
                         if (!writeSecondLayer)
                             PlotTranslucent(color.x, depth.x, attr.x, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
-                        if (writeSecondLayer || (dstattr & 0x3u) != 0u)
+                        if (writeSecondLayer || (dstattr & 0xFu) != 0u)
                             PlotTranslucent(color.y, depth.y, attr.y, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
                     }
                 }
@@ -1477,7 +1500,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     if (!DepthTestPasses(equalDepthTest, facingView, depth.x, tileDepth, attr.x))
                         stencil = 0x1u;
 
-                    if ((dstattr & 0x3u) != 0u)
+                    if ((dstattr & 0xFu) != 0u)
                     {
                         if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, attr.y))
                             stencil |= 0x2u;
@@ -1498,6 +1521,8 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
 
     uint resultOffset = id.x + id.y * ScreenWidth;
     uint2 color, depth, attr;
+    uint2 winner = uint2(0xFFFFFFFFu, 0xFFFFFFFFu);
+    bool trackCoverage = ScreenWidth == 256u && (DispCnt & (1u << 4)) != 0u;
     uint stencil = 0u;
     bool prevIsShadowMask = false;
 
@@ -1512,6 +1537,12 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
         attr = uint2(
             ResultValue[ResultAttrStart + resultOffset],
             ResultValue[ResultAttrStart + resultOffset + FramebufferStride]);
+        if (trackCoverage)
+        {
+            winner = uint2(
+                ResultWinner[resultOffset],
+                ResultWinner[resultOffset + FramebufferStride]);
+        }
         uint continuation = BlendContinuationState[resultOffset];
         stencil = continuation & 0x3u;
         prevIsShadowMask = (continuation & 0x4u) != 0u;
@@ -1544,8 +1575,8 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
         prevIsShadowMask = false;
     }
 
-    ProcessCoarseMask(linearTile, coarseMaskLo, 0u, localId.xy, color, depth, attr, stencil, prevIsShadowMask);
-    ProcessCoarseMask(linearTile, coarseMaskHi, uint(BinStride / 2), localId.xy, color, depth, attr, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskLo, 0u, localId.xy, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskHi, uint(BinStride / 2), localId.xy, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
 
     ResultValue[ResultColorStart + resultOffset] = color.x;
     ResultValue[ResultColorStart + resultOffset + FramebufferStride] = color.y;
@@ -1553,7 +1584,116 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
     ResultValue[ResultDepthStart + resultOffset + FramebufferStride] = depth.y;
     ResultValue[ResultAttrStart + resultOffset] = attr.x;
     ResultValue[ResultAttrStart + resultOffset + FramebufferStride] = attr.y;
+    if (trackCoverage)
+    {
+        ResultWinner[resultOffset] = winner.x;
+        ResultWinner[resultOffset + FramebufferStride] = winner.y;
+    }
     BlendContinuationState[resultOffset] = stencil | (prevIsShadowMask ? 0x4u : 0u);
+}
+)";
+
+// ---------------------------------------------------------------------------
+// Native-resolution accepted-pixel AA coverage correction
+// ---------------------------------------------------------------------------
+inline const std::string CorrectCoverage = R"(
+
+bool CoverageWasAccepted(uint polygonIndex, uint x, uint y)
+{
+    uint tileX = x / uint(TileSize);
+    uint tileY = y / uint(TileSize);
+    uint linearTile = tileX + tileY * TilesPerLine;
+    uint localPolygon = polygonIndex - CurVariant;
+    uint group = localPolygon >> 5u;
+    uint bit = localPolygon & 31u;
+    int maskIndex = int(linearTile * uint(BinStride) + group);
+    uint mask = LoadBinMask(BinningMaskStart + maskIndex);
+    bool accepted = false;
+    if ((mask & (1u << bit)) != 0u)
+    {
+        uint lowerMask = bit == 0u ? 0u : ((1u << bit) - 1u);
+        uint ordinal = countbits(mask & lowerMask);
+        uint workIndex = LoadBinMask(BinningWorkOffsetsStart + maskIndex) + ordinal;
+        if (workIndex < MaxWorkTiles)
+        {
+            uint tileInner =
+                (y % uint(TileSize)) * uint(TileSize) + (x % uint(TileSize));
+            uint tilePixel = workIndex * uint(TileSize * TileSize) + tileInner;
+            accepted = ColorTiles[tilePixel] != 0u
+                && (AttrTiles[tilePixel] & 0x80000000u) != 0u;
+        }
+    }
+    return accepted;
+}
+
+void WriteWinningCoverage(uint polygonIndex, uint x, uint y, uint coverage)
+{
+    uint pixel = y * ScreenWidth + x;
+    uint target = 0xFFFFFFFFu;
+    if (ResultWinner[pixel] == polygonIndex)
+        target = pixel;
+    else if (ResultWinner[FramebufferStride + pixel] == polygonIndex)
+        target = FramebufferStride + pixel;
+
+    if (target != 0xFFFFFFFFu)
+    {
+        uint attr = ResultValue[ResultAttrStart + target];
+        ResultValue[ResultAttrStart + target] =
+            (attr & ~0x1F00u) | ((coverage & 0x1Fu) << 8u);
+    }
+}
+
+[numthreads(64, 1, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    uint setupIndex = id.x;
+    if (setupIndex >= TexHeight)
+        return;
+
+    uint4 setup = SetupIndices[setupIndex];
+    uint polygonIndex = setup.x;
+    if (polygonIndex < CurVariant || polygonIndex >= CurVariant + TexWidth)
+        return;
+
+    XSpanSetup span = XSpanSetups[setupIndex];
+    uint y = setup.w;
+    if (y >= ScreenHeight)
+        return;
+
+    int x = max(span.X0, 0);
+    int screenEnd = int(ScreenWidth);
+    int leftEnd = min(min(span.InsideStart, span.X1), screenEnd);
+    if (span.EdgeCovL < 0)
+    {
+        int xcov = span.CovLInitial;
+        for (; x < leftEnd; ++x)
+        {
+            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
+                continue;
+            WriteWinningCoverage(polygonIndex, uint(x), y, min(uint(xcov >> 5), 31u));
+            xcov += span.EdgeCovL & 0x3FF;
+        }
+    }
+    else
+    {
+        x = max(x, leftEnd);
+    }
+
+    int bodyEnd = min(min(span.InsideEnd, span.X1), screenEnd);
+    x = max(x, bodyEnd);
+    int rightEnd = min(span.X1, screenEnd);
+    if (span.EdgeCovR < 0)
+    {
+        int xcov = span.CovRInitial;
+        for (; x < rightEnd; ++x)
+        {
+            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
+                continue;
+            WriteWinningCoverage(
+                polygonIndex, uint(x), y, uint(max(0x1F - (xcov >> 5), 0)));
+            xcov += span.EdgeCovR & 0x3FF;
+        }
+    }
 }
 )";
 

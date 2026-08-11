@@ -37,6 +37,7 @@ def main() -> int:
     environment["MELONPRIME_FINAL_COMPOSED_DIFFERENTIAL"] = "1"
     environment["MELONPRIME_FORCE_METAL_COMPUTE_RENDERER"] = "1"
     environment["MELONPRIME_METAL_COMPUTE_VISIBLE"] = "1"
+    environment["MELONPRIME_METAL_COMPUTE_TRACE_FALLBACKS"] = "1"
     # The canonical Software reference is the CPU/native-display path. Keep
     # this explicit even though Metal owns presentation in the candidate run.
     environment["MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF"] = "1"
@@ -88,12 +89,16 @@ def main() -> int:
         line for line in comparison_output.splitlines()
         if "RasterReference fallback" in line or "using RasterReference" in line
     ]
-    unexpected_fallbacks = [
-        line for line in fallback_lines
-        if args.state is None or "abort=1" not in line
-    ]
-    if unexpected_fallbacks:
+    if fallback_lines:
         failures.append("a RasterReference fallback was observed")
+    prevented_fallbacks = [
+        line for line in comparison_output.splitlines()
+        if "[MetalComputeFallbackTrace]" in line
+    ]
+    if prevented_fallbacks:
+        failures.append(
+            "Metal Compute could not produce a frame (backend fallback was prevented)"
+        )
     if "GPU failure" in output or "command failed" in output:
         failures.append("a Metal command-buffer failure was observed")
     records = re.findall(

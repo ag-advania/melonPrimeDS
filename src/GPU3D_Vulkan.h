@@ -137,7 +137,8 @@ private:
 
     // Pipelines 0..32 are the compute rasterizer and match
     // ComputeRenderer3D::ShaderCompileStep() index for index; 33 (Resolve) and
-    // 34 (Compositor) are the presentation stages, which the OpenGL compute
+    // 33..35 are the presentation stages, and 36 is the native accepted-AA
+    // correction. The OpenGL compute
     // renderer does not have because it hands FinalFB to the GL 2D engine.
     static constexpr int ShaderStepCount =
         static_cast<int>(VulkanShaders::Pipeline_Count);
@@ -446,6 +447,7 @@ private:
     Vk::Buffer SetupIndicesBuffer;          // + texel buffer view
     Vk::Buffer TileBuffers[3];              // color / depth / attr
     Vk::Buffer ResultBuffer;
+    Vk::Buffer ResultWinnerBuffer;           // winning polygon, two result layers
     Vk::Buffer BinResultBuffer;             // storage + indirect dispatch args
     Vk::Buffer WorkDescBuffer;
     Vk::Buffer BlendStateBuffer;            // stencil + previous-shadow-mask bit per pixel

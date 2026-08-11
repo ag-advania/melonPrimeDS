@@ -492,6 +492,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearCoarseBinMask.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearIndirectWorkCount.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Compositor.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_CorrectCoverage.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp
         ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp

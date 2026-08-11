@@ -535,6 +535,16 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
             "MelonPrime Vulkan ResultBuffer"))
         return false;
 
+    const VkDeviceSize resultWinnerBytes = ScaleFactor == 1
+        ? 4 * 2 * screenPixels
+        : sizeof(u32);
+    if (!ResultWinnerBuffer.Create(Device,
+            resultWinnerBytes,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+            "MelonPrime Vulkan ResultWinner"))
+        return false;
+
     const VkDeviceSize binResultSize =
         sizeof(BinResultHeader)
         + tileGrid * static_cast<VkDeviceSize>(CoarseBinStride) * 4    // BinnedMaskCoarse
@@ -653,6 +663,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     WorkDescBuffer.Destroy();
     BlendStateBuffer.Destroy();
     BinResultBuffer.Destroy();
+    ResultWinnerBuffer.Destroy();
     ResultBuffer.Destroy();
     for (auto& buffer : TileBuffers)
         buffer.Destroy();
@@ -1375,7 +1386,7 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
         s32 ytop = ScreenHeight, ybot = 0;
         for (u32 v = 0; v < polygon->NumVertices; v++)
         {
-            if (HiresCoordinates)
+            if (HiresCoordinates && ScaleFactor > 1)
             {
                 scaledPositions[v][0] = (polygon->Vertices[v]->HiresPosition[0] * ScaleFactor) >> 4;
                 scaledPositions[v][1] = (polygon->Vertices[v]->HiresPosition[1] * ScaleFactor) >> 4;
@@ -1785,7 +1796,7 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         // to run does not use it (Resolve never touches StructuredInput). A
         // descriptor a pipeline does not statically reference may legally be
         // left unwritten, but "legally" depends on the shader's final SPIR-V
-        // rather than on this file, so all sixteen are always valid.
+        // rather than on this file, so all seventeen are always valid.
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::StructuredInput),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, structuredInput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::PresentationOut),
@@ -1793,7 +1804,9 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::CaptureSidecar),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CaptureSidecarBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::BlendState),
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BlendStateBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BlendStateBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
+        && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::ResultWinner),
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ResultWinnerBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
 
     if (!ok)
         return false;
@@ -1924,7 +1937,8 @@ void VulkanRenderer3D::RenderFrame()
         return;
     if (ScaleFactor <= 0 || ShaderStepIdx < ShaderStepCount)
         return;     // pipelines are still being compiled
-    if (!FinalFB.IsValid() || !BinResultBuffer.IsValid() || !ResultBuffer.IsValid())
+    if (!FinalFB.IsValid() || !BinResultBuffer.IsValid() || !ResultBuffer.IsValid()
+        || !ResultWinnerBuffer.IsValid())
     {
         SetRuntimeFailure("required frame resources are unavailable");
         return;
@@ -2361,11 +2375,38 @@ void VulkanRenderer3D::RenderFrame()
             static_cast<u32>(ScreenWidth / TileSize),
             static_cast<u32>(ScreenHeight / TileSize), 1);
 
-        const VkBuffer continued[2] = { ResultBuffer.GetHandle(), blendState };
-        BufferBarrier(cmd, continued, 2,
+        const VkBuffer continued[4] = {
+            ResultBuffer.GetHandle(), blendState,
+            TileBuffers[2].GetHandle(), ResultWinnerBuffer.GetHandle(),
+        };
+        BufferBarrier(cmd, continued, 4,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+        // Software-exact coverage is defined on the native DS raster grid.
+        // High-resolution targets retain the separate scaled-raster contract,
+        // matching the Metal compute backend.
+        if (ScaleFactor == 1
+            && (GPU3D.RenderDispCnt & (1u << 4)) != 0u
+            && numSetupIndices > 0)
+        {
+            Vk::RasterizerPushConstants coveragePush{};
+            coveragePush.CurVariant = batch.FirstPolygon;
+            coveragePush.TexWidth = batch.PolygonCount;
+            coveragePush.TexHeight = static_cast<u32>(numSetupIndices);
+            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+                0, Vk::PushConstantSize, &coveragePush);
+            fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                Pipelines[VulkanShaders::Pipeline_CorrectCoverage]);
+            fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(numSetupIndices), 64), 1, 1);
+
+            const VkBuffer corrected = ResultBuffer.GetHandle();
+            BufferBarrier(cmd, &corrected, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        }
     }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve.

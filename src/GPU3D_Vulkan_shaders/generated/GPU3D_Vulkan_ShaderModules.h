@@ -63,7 +63,8 @@ enum Set0Binding : uint32_t
     Set0Binding_PresentationOutput = 13,
     Set0Binding_CaptureSidecar = 14,
     Set0Binding_BlendState = 15,
-    Set0Binding_Count = 16,
+    Set0Binding_ResultWinner = 16,
+    Set0Binding_Count = 17,
 };
 
 // Descriptor set 1 bindings (sampled images).
@@ -137,7 +138,8 @@ enum Pipeline : uint32_t
     Pipeline_Resolve = 33,
     Pipeline_CaptureSidecar = 34,
     Pipeline_Compositor = 35,
-    Pipeline_Count = 36,
+    Pipeline_CorrectCoverage = 36,
+    Pipeline_Count = 37,
 };
 
 // Tile geometry bucket. Mirrors `range` in

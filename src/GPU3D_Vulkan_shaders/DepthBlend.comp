@@ -46,6 +46,11 @@ layout (std430, set = 0, binding = 15) buffer BlendContinuationBuffer
     uint BlendContinuationState[];
 };
 
+layout (std430, set = 0, binding = 16) buffer ResultWinnerBuffer
+{
+    uint ResultWinner[];
+};
+
 layout (set = 1, binding = 3) uniform usampler2D ClearBitmapColor;
 layout (set = 1, binding = 4) uniform usampler2D ClearBitmapDepth;
 
@@ -104,7 +109,8 @@ void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool i
 }
 
 void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
-    inout uvec2 color, inout uvec2 depth, inout uvec2 attr, inout uint stencil,
+    inout uvec2 color, inout uvec2 depth, inout uvec2 attr, inout uvec2 winner,
+    bool trackCoverage, inout uint stencil,
     inout bool prevIsShadowMask)
 {
     int tileInnerOffset = int(gl_LocalInvocationID.x) + int(gl_LocalInvocationID.y) * TileSize;
@@ -165,7 +171,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
                     uint dstDepth = writeSecondLayer ? depth.y : depth.x;
                     if (!DepthTestPasses(equalDepthTest, facingView, dstDepth, tileDepth, dstattr))
                     {
-                        if ((dstattr & 0x3U) == 0U || writeSecondLayer)
+                        if ((dstattr & 0xFU) == 0U || writeSecondLayer)
                             continue;
 
                         writeSecondLayer = true;
@@ -185,23 +191,31 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
 
                         if (!writeSecondLayer)
                         {
-                            if ((srcAttr & 0x3U) != 0U)
+                            if ((srcAttr & 0xFU) != 0U)
                             {
                                 color.y = color.x;
                                 depth.y = depth.x;
                                 attr.y = attr.x;
+                                if (trackCoverage)
+                                    winner.y = winner.x;
                             }
 
                             color.x = tileColor;
                             depth.x = tileDepth;
                             attr.x = srcAttr;
+                            if (trackCoverage)
+                                winner.x = polygonIdx;
                         }
                         else
                         {
                             color.y = tileColor;
                             depth.y = tileDepth;
                             attr.y = srcAttr;
+                            if (trackCoverage)
+                                winner.y = polygonIdx;
                         }
+                        if (trackCoverage)
+                            AttrTiles[pixelindex] = tileAttr | 0x80000000U;
                     }
                     else
                     {
@@ -212,7 +226,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
                             // blend into both layers
                             PlotTranslucent(color.x, depth.x, attr.x, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
                         }
-                        if (writeSecondLayer || (dstattr & 0x3U) != 0U)
+                        if (writeSecondLayer || (dstattr & 0xFU) != 0U)
                         {
                             PlotTranslucent(color.y, depth.y, attr.y, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
                         }
@@ -226,7 +240,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
                     if (!DepthTestPasses(equalDepthTest, facingView, depth.x, tileDepth, attr.x))
                         stencil = 0x1U;
 
-                    if ((dstattr & 0x3U) != 0U)
+                    if ((dstattr & 0xFU) != 0U)
                     {
                         if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, attr.y))
                             stencil |= 0x2U;
@@ -246,6 +260,8 @@ void main()
 
     int resultOffset = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * ScreenWidth;
     uvec2 color, depth, attr;
+    uvec2 winner = uvec2(0xFFFFFFFFU);
+    bool trackCoverage = ScreenWidth == 256 && (DispCnt & (1U << 4)) != 0U;
     uint stencil = 0U;
     bool prevIsShadowMask = false;
 
@@ -260,6 +276,12 @@ void main()
         attr = uvec2(
             ResultValue[ResultAttrStart+resultOffset],
             ResultValue[ResultAttrStart+resultOffset+FramebufferStride]);
+        if (trackCoverage)
+        {
+            winner = uvec2(
+                ResultWinner[resultOffset],
+                ResultWinner[resultOffset+FramebufferStride]);
+        }
         uint continuation = BlendContinuationState[resultOffset];
         stencil = continuation & 0x3U;
         prevIsShadowMask = (continuation & 0x4U) != 0U;
@@ -287,8 +309,8 @@ void main()
         prevIsShadowMask = false;
     }
 
-    ProcessCoarseMask(linearTile, coarseMaskLo, 0, color, depth, attr, stencil, prevIsShadowMask);
-    ProcessCoarseMask(linearTile, coarseMaskHi, BinStride/2, color, depth, attr, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskLo, 0, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskHi, BinStride/2, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
 
     ResultValue[ResultColorStart+resultOffset] = color.x;
     ResultValue[ResultColorStart+resultOffset+FramebufferStride] = color.y;
@@ -296,5 +318,10 @@ void main()
     ResultValue[ResultDepthStart+resultOffset+FramebufferStride] = depth.y;
     ResultValue[ResultAttrStart+resultOffset] = attr.x;
     ResultValue[ResultAttrStart+resultOffset+FramebufferStride] = attr.y;
+    if (trackCoverage)
+    {
+        ResultWinner[resultOffset] = winner.x;
+        ResultWinner[resultOffset+FramebufferStride] = winner.y;
+    }
     BlendContinuationState[resultOffset] = stencil | (prevIsShadowMask ? 0x4U : 0U);
 }
