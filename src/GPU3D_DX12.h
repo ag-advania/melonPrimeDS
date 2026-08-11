@@ -24,7 +24,6 @@
 #include <array>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "GPU3D.h"
@@ -322,6 +321,7 @@ private:
         ID3D12Resource* structuredInput,
         ID3D12Resource* composedOutput);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
+    void ResetFrameSrvCache() noexcept;
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
@@ -333,7 +333,7 @@ private:
     // `numPolygons` are outputs. Degenerate polygons are compacted out; valid
     // DS input otherwise fits the worst-case span allocations exactly.
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
-    std::vector<PolygonBatch> BuildPolygonBatches(u32 numPolygons) const;
+    u32 BuildPolygonBatches(u32 numPolygons);
 
     void EnsureFrameReadback();
 
@@ -402,6 +402,7 @@ private:
 
     // CPU-side scratch, mirroring the OpenGL compute renderer's members.
     std::array<Variant, MaxVariants> Variants{};
+    std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches{};
     std::vector<SetupIndices> YSpanIndices;
     std::unique_ptr<SpanSetupY[]> YSpanSetups;
     std::unique_ptr<RenderPolygon[]> RenderPolygons;
@@ -430,7 +431,17 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
     ID3D12Resource* BoundSrvTexture = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE BoundSrvTable{};
-    std::unordered_map<ID3D12Resource*, D3D12_GPU_DESCRIPTOR_HANDLE> FrameSrvTables;
+    struct FrameSrvCacheEntry
+    {
+        ID3D12Resource* Texture = nullptr;
+        D3D12_GPU_DESCRIPTOR_HANDLE Table{};
+        u32 Epoch = 0;
+    };
+    static constexpr u32 FrameSrvCacheCapacity = 4096;
+    static_assert((FrameSrvCacheCapacity & (FrameSrvCacheCapacity - 1)) == 0,
+        "SRV cache capacity must be a power of two");
+    std::array<FrameSrvCacheEntry, FrameSrvCacheCapacity> FrameSrvTables{};
+    u32 FrameSrvCacheEpoch = 1;
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
 
     bool FrameInFlight = false;

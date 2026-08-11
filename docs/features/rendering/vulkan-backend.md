@@ -91,12 +91,14 @@ Stages correspond one-for-one with `src/GPU3D_Compute.cpp` /
 | ClearCoarseBinMask / ClearIndirectWorkCount / CalculateWorkOffsets / SortWork | 21-24 | 4 |
 | FinalPass | 25-32 | 8 (edge marking / fog / AA combinations) |
 | **Resolve** | 33 | 1 |
-| **Compositor** | 34 | 1 |
+| **CaptureSidecar** | 34 | 1 |
+| **Compositor** | 35 | 1 |
+| **CorrectCoverage** | 36 | 1 |
 
 The first 33 indices keep the OpenGL compute renderer's ordering, so indices are
 directly comparable when debugging Vulkan against OpenGL Compute, and
-`count = 33` still matches `ComputeRenderer3D::ShaderCompileStep()`. The two
-presentation stages are *appended*, not interleaved: neither exists in
+`count = 33` still matches `ComputeRenderer3D::ShaderCompileStep()`. The four
+native-capture/presentation/parity stages are *appended*, not interleaved: none exists in
 `GPU3D_Compute`. They were designed from the DS display semantics
 (`GPU2D_Soft::ColorComposite`, `GPU_ColorOp.h`, `SoftRenderer::ExpandColor` /
 `ApplyMasterBrightness`) and the structured composition contract; the DX12
@@ -156,7 +158,7 @@ injected as `-D` defines when the SPIR-V is generated offline.
 creation, so there is no runtime cost relative to the OpenGL renderer's baked
 literals, and one bucket covers every scale inside its range.
 
-35 pipelines x 3 buckets = **105 SPIR-V modules** cover all 16 scales. The SPIR-V
+37 pipelines x 3 buckets = **111 SPIR-V modules** cover all 16 scales. The SPIR-V
 is committed, so the build has no glslang dependency; the `.comp` / `.glsl` files
 are inputs to the offline generator only and are deliberately not in any source
 list.
@@ -189,17 +191,13 @@ screen. The refusal goes through `SetRuntimeFailure()`, so the emulation thread
 reports the stored reason and switches to Software rather than continuing with a
 partial frame.
 
-Two defects are inherited verbatim from the OpenGL compute renderer rather than
-"fixed", to keep the 1:1 correspondence that makes the port verifiable. Both are
-flagged in-source:
-
-1. **`BinCombined` shift-width UB at scales 9-16.** The workgroup is sized by
-   `CoarseTileArea` (48 at range 2) but the coarse pass treats invocations as a
-   32-lane ballot, so lanes 32-47 evaluate `1U << localIdx`, undefined in GLSL
-   for shifts >= 32.
-2. **Scale-16 `InterpSpans` worst-case dispatch is 65536 groups**, one over
-   Vulkan's guaranteed `maxComputeWorkGroupCount` of 65535. Reachable only when
-   the span buffer is fully consumed.
+Two formerly inherited OpenGL-compute limits are closed without changing the
+raster result. `BinCombined` restricts the polygon ballot and its shift to lanes
+0-31 while lanes 32-47 still process the extra fine tiles at scales 9-16.
+`InterpSpans` chunks the setup-index stream by the selected device's
+`maxComputeWorkGroupCount[0]`, widening the multiplication before the cap so
+MoltenVK-sized limits cannot wrap. Both rules are enforced by the shader/parity
+audits.
 
 ## Descriptor contract
 
@@ -209,7 +207,7 @@ descriptor-limit checks from the same tables, so one edit propagates to both.
 
 Two sets, split by update frequency: set 0 changes at most once per frame, set 1
 whenever the bound DS texture changes (which can happen many times per frame).
-Merging them would force a rewrite of all fourteen set-0 descriptors on every
+Merging them would force a rewrite of all seventeen set-0 descriptors on every
 texture switch.
 
 | Set 0 binding | Type | Used by |
@@ -228,6 +226,9 @@ texture switch.
 | 11 `FinalFB` | `STORAGE_IMAGE`, `R8G8B8A8_UNORM` | rasterizer, Resolve, Compositor |
 | 12 `StructuredInput` | `STORAGE_BUFFER`, readonly | Compositor |
 | 13 `PresentationOut` | `STORAGE_BUFFER` | Resolve, Compositor |
+| 14 `CaptureSidecar` | `STORAGE_BUFFER` | retained display-capture sampling |
+| 15 `BlendState` | `STORAGE_BUFFER` | cross-batch shadow/stencil continuation |
+| 16 `ResultWinner` | `STORAGE_BUFFER` | native accepted-pixel AA correction |
 
 | Set 1 binding | Type |
 |---|---|
@@ -237,8 +238,9 @@ texture switch.
 | 3 `ClearBitmapColor` | `COMBINED_IMAGE_SAMPLER`, `usampler2D` |
 | 4 `ClearBitmapDepth` | `COMBINED_IMAGE_SAMPLER`, `usampler2D` |
 
-Bindings 12 and 13 were appended for the presentation stages; **no rasterizer
-binding number ever moved**. `PresentationOut` is one binding rather than two
+Bindings 12-16 were appended for presentation, retained capture and native
+coverage correction; **no original rasterizer binding number ever moved**.
+`PresentationOut` is one binding rather than two
 because Resolve and Compositor never run in the same dispatch: the host binds the
 native-resolution capture buffer for one and the two-screen composed buffer for
 the other. That is what the second set-0 allocation is for —
@@ -246,11 +248,10 @@ the other. That is what the second set-0 allocation is for —
 slot 1 the compositor's. Set 1 is not bound at all for the compositor, which
 declares no set-1 resource.
 
-Capture textures (set 1 bindings 1/2) are **inactive by design**, exactly as on
-DX12: this backend pairs with the software 2D renderer, which writes captures
-into real VRAM, so `pc.TexIsCapture` is always 0 and those bindings point at a
-cleared 1x1x1 placeholder array. The bindings and the `CaptureYOffset` push
-constant stay plumbed in case GPU-side captures are reintroduced.
+Capture image samplers (set 1 bindings 1/2) are **inactive by design** and point
+at a cleared 1x1x1 placeholder array. This backend pairs with software 2D, so
+retained display-capture sampling uses binding 14's packed sidecar instead;
+`pc.TexIsCapture`, `CaptureYOffset` and the capture reference select that data.
 
 ## Synchronisation design
 
@@ -511,7 +512,7 @@ python tools/ci/audits/check-vulkan-shaders.py      # all 105 variants compile +
 ```
 
 `check-vulkan-shaders.py` assembles exactly the sources the generator builds —
-same `#define` prologue, same per-variant defines — compiles all 35 pipelines in
+same `#define` prologue, same per-variant defines — compiles all 37 pipelines in
 all 3 tile-geometry buckets, validates every module with `spirv-val`, additionally
 validates the 560 scale-specialized modules for scales 1..16, and prints a
 device-limit note for every scale/resource that exceeds Vulkan's *guaranteed*

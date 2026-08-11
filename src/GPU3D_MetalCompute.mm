@@ -121,11 +121,32 @@ bool UpdateSharedSnapshotIfChanged(
     return true;
 }
 
+bool UpdateSharedSnapshotForVersion(
+    id<MTLBuffer> buffer,
+    const void* source,
+    size_t bytes,
+    uint64_t sourceVersion,
+    uint64_t& bufferVersion)
+{
+    if (bufferVersion == sourceVersion)
+        return true;
+    if (!buffer || !source || bytes > static_cast<size_t>(buffer.length))
+        return false;
+
+    void* destination = [buffer contents];
+    if (!destination)
+        return false;
+    std::memcpy(destination, source, bytes);
+    bufferVersion = sourceVersion;
+    return true;
+}
+
 constexpr uint32_t kVariantWorkCountStart = 0;
 constexpr uint32_t kSortedWorkOffsetStart = kVariantWorkCountStart + kMaxVariants * 4;
 constexpr uint32_t kVariantWorkRealCountStart = kSortedWorkOffsetStart + kMaxVariants;
 constexpr uint32_t kSortWorkCountStart = kVariantWorkRealCountStart + kMaxVariants;
-constexpr uint32_t kBinHeaderWords = kSortWorkCountStart + 4;
+constexpr uint32_t kRasterWorkCountStart = kSortWorkCountStart + 4;
+constexpr uint32_t kBinHeaderWords = kRasterWorkCountStart + 3;
 
 struct FoundationConfig
 {
@@ -283,6 +304,7 @@ constant uint VariantWorkCountStart = 0u;
 constant uint SortedWorkOffsetStart = VariantWorkCountStart + MaxVariants * 4u;
 constant uint VariantWorkRealCountStart = SortedWorkOffsetStart + MaxVariants;
 constant uint SortWorkCountStart = VariantWorkRealCountStart + MaxVariants;
+constant uint RasterWorkCountStart = SortWorkCountStart + 4u;
 
 struct FoundationConfig
 {
@@ -383,6 +405,8 @@ kernel void mp_compute_clear_indirect(
 {
     if (gid < 4u)
         atomic_store_explicit(&header[SortWorkCountStart + gid], 0u, memory_order_relaxed);
+    if (gid < 3u)
+        atomic_store_explicit(&header[RasterWorkCountStart + gid], 0u, memory_order_relaxed);
 
     // VariantWorkCount[1].w is the global sorted-offset allocator even when a
     // frame has only one active variant, so always clear at least slots 0/1.
@@ -432,6 +456,11 @@ kernel void mp_compute_calc_offsets(
         atomic_store_explicit(&header[SortWorkCountStart + 1u], 1u, memory_order_relaxed);
         atomic_store_explicit(&header[SortWorkCountStart + 2u], 1u, memory_order_relaxed);
         atomic_store_explicit(&header[SortWorkCountStart + 3u], 0u, memory_order_relaxed);
+        atomic_store_explicit(&header[RasterWorkCountStart + 0u],
+                              clampedCount,
+                              memory_order_relaxed);
+        atomic_store_explicit(&header[RasterWorkCountStart + 1u], 1u, memory_order_relaxed);
+        atomic_store_explicit(&header[RasterWorkCountStart + 2u], 1u, memory_order_relaxed);
     }
 
     const uint sortedOffset = atomic_fetch_add_explicit(
@@ -1153,8 +1182,8 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> NativeColorBuffer = nil;
         id<MTLTexture> NativeTexture = nil;
         bool VariantMetaSnapshotValid = false;
-        bool TextureMemorySnapshotValid = false;
-        bool TexturePaletteSnapshotValid = false;
+        uint64_t TextureMemoryVersion = 0;
+        uint64_t TexturePaletteVersion = 0;
         bool ToonTableSnapshotValid = false;
         bool FinalTablesSnapshotValid = false;
         id<MTLCommandBuffer> LastCommand = nil;
@@ -1209,6 +1238,8 @@ struct MetalComputeRenderer3D::MetalComputeState
     uint32_t MaxWorkTiles = 32 * 24 * 16;
     uint32_t MaxSetupIndices = 192 * kMaxPolygons;
     uint32_t TileWorkCapacity = 0;
+    uint64_t TextureMemoryVersion = 1;
+    uint64_t TexturePaletteVersion = 1;
     bool HiresCoordinates = false;
     bool Ready = false;
     bool SpanBinReady = false;
@@ -1277,8 +1308,8 @@ void ReleaseFrameSlotResources(SlotT& slot)
     ReleaseMetalObject(slot.NativeColorBuffer);
     ReleaseMetalObject(slot.NativeTexture);
     slot.VariantMetaSnapshotValid = false;
-    slot.TextureMemorySnapshotValid = false;
-    slot.TexturePaletteSnapshotValid = false;
+    slot.TextureMemoryVersion = 0;
+    slot.TexturePaletteVersion = 0;
     slot.ToonTableSnapshotValid = false;
     slot.FinalTablesSnapshotValid = false;
 }
@@ -1808,8 +1839,8 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
             [State->Device newBufferWithLength:kFinalTableWords * sizeof(uint32_t)
                                        options:MTLResourceStorageModeShared];
         slot.VariantMetaSnapshotValid = false;
-        slot.TextureMemorySnapshotValid = false;
-        slot.TexturePaletteSnapshotValid = false;
+        slot.TextureMemoryVersion = 0;
+        slot.TexturePaletteVersion = 0;
         slot.ToonTableSnapshotValid = false;
         slot.FinalTablesSnapshotValid = false;
         MTLTextureDescriptor* finalDescriptor =
@@ -2003,14 +2034,21 @@ bool MetalComputeRenderer3D::RunFoundationSelfTest()
         [encoder setBuffer:polygonVariantBuffer offset:0 atIndex:1];
         [encoder setBuffer:workDescBuffer offset:0 atIndex:2];
         [encoder setBytes:&config length:sizeof(config) atIndex:3];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder dispatchThreadgroupsWithIndirectBuffer:headerBuffer
+                                  indirectBufferOffset:
+                                      kSortWorkCountStart * sizeof(uint32_t)
+                                  threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
         [encoder endEncoding];
     }
     if (!CompleteCommandBuffer(workCommand, "foundation offset/sort self-test"))
         return false;
 
-    if (header[kSortWorkCountStart] != 1 ||
+    if (header[kSortWorkCountStart + 0] != 1 ||
+        header[kSortWorkCountStart + 1] != 1 ||
+        header[kSortWorkCountStart + 2] != 1 ||
+        header[kRasterWorkCountStart + 0] != polygonCount ||
+        header[kRasterWorkCountStart + 1] != 1 ||
+        header[kRasterWorkCountStart + 2] != 1 ||
         header[kVariantWorkRealCountStart + 0] != 2 ||
         header[kVariantWorkRealCountStart + 1] != 1 ||
         header[kVariantWorkRealCountStart + 2] != 1)
@@ -2753,16 +2791,18 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 State->VariantMetaData.data(),
                 variantBytes,
                 slot->VariantMetaSnapshotValid) ||
-            !UpdateSharedSnapshotIfChanged(
+            !UpdateSharedSnapshotForVersion(
                 slot->TextureMemoryBuffer,
                 GPU.VRAMFlat_Texture,
                 sizeof(GPU.VRAMFlat_Texture),
-                slot->TextureMemorySnapshotValid) ||
-            !UpdateSharedSnapshotIfChanged(
+                State->TextureMemoryVersion,
+                slot->TextureMemoryVersion) ||
+            !UpdateSharedSnapshotForVersion(
                 slot->TexturePaletteBuffer,
                 GPU.VRAMFlat_TexPal,
                 sizeof(GPU.VRAMFlat_TexPal),
-                slot->TexturePaletteSnapshotValid) ||
+                State->TexturePaletteVersion,
+                slot->TexturePaletteVersion) ||
             !UpdateSharedSnapshotIfChanged(
                 slot->ToonTableBuffer,
                 toonTable.data(),
@@ -2971,8 +3011,10 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
                 [encoder setBuffer:slot->WorkDescs offset:0 atIndex:2];
                 [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:3];
-                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(State->MaxWorkTiles, 32), 1, 1)
-                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                [encoder dispatchThreadgroupsWithIndirectBuffer:slot->Header
+                                          indirectBufferOffset:
+                                              kSortWorkCountStart * sizeof(uint32_t)
+                                          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
                 [encoder endEncoding];
             }
             if (State->TileRasterReady && polygonGroups > 0)
@@ -2993,8 +3035,13 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:slot->ToonTableBuffer offset:0 atIndex:12];
                 [encoder setTexture:State->Capture128Texture atIndex:0];
                 [encoder setTexture:State->Capture256Texture atIndex:1];
-                [encoder dispatchThreadgroups:MTLSizeMake(State->MaxWorkTiles, 1, 1)
-                         threadsPerThreadgroup:MTLSizeMake(State->TileSize, State->TileSize, 1)];
+                [encoder dispatchThreadgroupsWithIndirectBuffer:slot->Header
+                                          indirectBufferOffset:
+                                              kRasterWorkCountStart * sizeof(uint32_t)
+                                          threadsPerThreadgroup:
+                                              MTLSizeMake(State->TileSize,
+                                                          State->TileSize,
+                                                          1)];
                 [encoder endEncoding];
             }
             if (submitDepthBlend)
@@ -3244,6 +3291,10 @@ void MetalComputeRenderer3D::RenderFrame()
         const bool texPalChanged =
             GPU.MakeVRAMFlat_TexPalCoherent(texPalDirty);
         const bool vramChanged = textureChanged || texPalChanged;
+        if (textureChanged)
+            State->TextureMemoryVersion++;
+        if (texPalChanged)
+            State->TexturePaletteVersion++;
 
         const bool rasterDifferential =
             RasterDifferential::Enabled() && requestedScale == 1;

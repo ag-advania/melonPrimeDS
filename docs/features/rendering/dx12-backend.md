@@ -214,7 +214,7 @@ Per frame, in one command list:
     planes with the high-resolution `FinalFB`
 12. publish the GPU-resident two-screen buffer through a leased ring slot
 
-35 compute pipelines in total. They are compiled incrementally through
+37 compute pipelines in total. They are compiled incrementally through
 `ShaderCompileStep()`, so the OSD shows progress instead of the emulator
 hitching, and they are rebuilt whenever the internal resolution changes (tile
 geometry is baked in as `#define`s, exactly like the OpenGL renderer).
@@ -247,15 +247,16 @@ derivation — is a 1:1 port.
   exposed by the legacy HLSL compiler, and `firstbithigh` / `firstbitlow`
   disagree between shader targets about which end the index is counted from —
   the fixed-point division is exquisitely sensitive to that.
-* **Tile memory falls back instead of failing.** The OpenGL heuristic
+* **Tile memory is bounded without dropping layers.** The OpenGL heuristic
   (`tiles * 16` work tiles) can ask for more than a GPU will hand out at high
-  internal resolutions, so the allocation is halved until it fits. The binning
-  shader already trims work to `MaxWorkTiles` and drops excess layers
-  gracefully.
+  internal resolutions, so the allocation is halved until it fits. The host
+  partitions the ordered polygon stream into conservative consecutive batches
+  that each fit the resulting `MaxWorkTiles`; result and shadow-continuation
+  buffers carry exact state between batches.
 
 ## Build and validation
 
-The 3D renderer does not compile HLSL at runtime. Its 36 compute pipelines are
+The 3D renderer does not compile HLSL at runtime. Its 37 compute pipelines are
 committed as DXBC for the three tile-geometry buckets used by 1x-4x, 5x-8x and
 9x-16x. Screen dimensions, scale and scale-dependent buffer offsets travel in
 `MetaUniform`, so a renderer switch or an internal-resolution change never
@@ -278,7 +279,7 @@ python tools/ci/audits/check-dx12-shaders.py
 ```
 
 It assembles the same sources used to generate the committed table and runs
-`fxc.exe` over all 108 modules (36 pipelines times three tile-geometry buckets).
+`fxc.exe` over all 111 modules (37 pipelines times three tile-geometry buckets).
 A warning is a failure as well as a compile error. The audit skips cleanly when
 the Windows SDK is not installed. CI separately verifies that the committed
 DXBC source hash is current.
@@ -360,7 +361,7 @@ requires a state that naturally leaves `FlushRequest` clear.
 The GPU-independent edge vectors and the opt-in Software/DX12 native 3D pixel
 comparison are documented in [Raster parity verification](../../development/rendering/raster-parity.md).
 
-The Windows Release build and all 108 generated shader modules (36 pipelines in
+The Windows Release build and all 111 generated shader modules (37 pipelines in
 three tile-geometry buckets) pass on the repository build path. Runtime validation
 on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 

@@ -24,6 +24,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -1404,13 +1405,30 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
         return true;
     }
 
-    if (const auto cached = FrameSrvTables.find(texture); cached != FrameSrvTables.end())
+    constexpr u32 cacheMask = FrameSrvCacheCapacity - 1;
+    const auto pointerBits = reinterpret_cast<std::uintptr_t>(texture);
+    u32 cacheIndex = static_cast<u32>((pointerBits >> 4u) & cacheMask);
+    FrameSrvCacheEntry* insertion = nullptr;
+    for (u32 probe = 0; probe < FrameSrvCacheCapacity; ++probe)
     {
-        BoundSrvTexture = texture;
-        BoundSrvTable = cached->second;
-        list->SetComputeRootDescriptorTable(kRootParamSrvTable, BoundSrvTable);
-        return true;
+        FrameSrvCacheEntry& entry = FrameSrvTables[cacheIndex];
+        if (entry.Epoch != FrameSrvCacheEpoch)
+        {
+            insertion = &entry;
+            break;
+        }
+        if (entry.Texture == texture)
+        {
+            BoundSrvTexture = texture;
+            BoundSrvTable = entry.Table;
+            list->SetComputeRootDescriptorTable(kRootParamSrvTable, BoundSrvTable);
+            return true;
+        }
+        cacheIndex = (cacheIndex + 1u) & cacheMask;
     }
+
+    if (!insertion)
+        return false;
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
@@ -1446,10 +1464,21 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     BoundSrvTexture = texture;
     BoundSrvTable = gpu;
-    FrameSrvTables.emplace(texture, gpu);
+    *insertion = { texture, gpu, FrameSrvCacheEpoch };
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kSrvTableSize);
     list->SetComputeRootDescriptorTable(kRootParamSrvTable, gpu);
     return true;
+}
+
+void DX12Renderer3D::ResetFrameSrvCache() noexcept
+{
+    FrameSrvCacheEpoch++;
+    if (FrameSrvCacheEpoch != 0)
+        return;
+
+    for (FrameSrvCacheEntry& entry : FrameSrvTables)
+        entry.Epoch = 0;
+    FrameSrvCacheEpoch = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -1925,16 +1954,18 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
     return numVariants;
 }
 
-std::vector<DX12Renderer3D::PolygonBatch>
-DX12Renderer3D::BuildPolygonBatches(u32 numPolygons) const
+u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
 {
-    std::vector<PolygonBatch> batches;
     if (numPolygons == 0)
-        return batches;
+    {
+        PolygonBatches[0] = { 0, 0 };
+        return 1;
+    }
 
     const u64 capacity = static_cast<u64>(MaxWorkTiles);
     u32 first = 0;
     u32 count = 0;
+    u32 batchCount = 0;
     u64 batchTiles = 0;
 
     for (u32 i = 0; i < numPolygons; ++i)
@@ -1956,7 +1987,7 @@ DX12Renderer3D::BuildPolygonBatches(u32 numPolygons) const
 
         if (count != 0 && batchTiles + polygonTiles > capacity)
         {
-            batches.push_back({ first, count });
+            PolygonBatches[batchCount++] = { first, count };
             first = i;
             count = 0;
             batchTiles = 0;
@@ -1968,8 +1999,8 @@ DX12Renderer3D::BuildPolygonBatches(u32 numPolygons) const
     }
 
     if (count != 0)
-        batches.push_back({ first, count });
-    return batches;
+        PolygonBatches[batchCount++] = { first, count };
+    return batchCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -2026,7 +2057,7 @@ void DX12Renderer3D::RenderFrame()
     TextureHeap.ResetUploadFailure();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
-    FrameSrvTables.clear();
+    ResetFrameSrvCache();
 
     UpdateClearBitmap();
 
@@ -2118,13 +2149,11 @@ void DX12Renderer3D::RenderFrame()
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
-    std::vector<PolygonBatch> polygonBatches = BuildPolygonBatches(numPolygons);
-    if (polygonBatches.empty())
-        polygonBatches.push_back({ 0, 0 });
+    const u32 polygonBatchCount = BuildPolygonBatches(numPolygons);
 
-    for (u32 batchIndex = 0; batchIndex < polygonBatches.size(); ++batchIndex)
+    for (u32 batchIndex = 0; batchIndex < polygonBatchCount; ++batchIndex)
     {
-        const PolygonBatch& batch = polygonBatches[batchIndex];
+        const PolygonBatch& batch = PolygonBatches[batchIndex];
 
         // Reuse the bounded tile working set for a consecutive polygon batch.
         list->SetPipelineState(PipelineClearCoarseBinMask.Get());
@@ -2483,7 +2512,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     slot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
-    FrameSrvTables.clear();
+    ResetFrameSrvCache();
 
     const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
     list->CopyBufferRegion(

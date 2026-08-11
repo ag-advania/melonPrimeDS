@@ -119,6 +119,8 @@ def main() -> int:
         require(source, "MaxVariants = MaxRenderPolygons", f"{name} variant capacity", failures)
         require(source, "MaxYSpanSetups = MaxRenderPolygons * 10",
                 f"{name} y-span setup capacity", failures)
+        require(source, "std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches",
+                f"{name} allocation-free polygon batches", failures)
 
     for name, source in (("Vulkan", vk_cpp), ("DX12", dx_cpp)):
         require(source, "if (polygon->Degenerate)", f"{name} degenerate skip", failures)
@@ -176,9 +178,38 @@ def main() -> int:
             "Metal full-height span budget", failures)
     require(metal_cpp, "PolygonBatches", "Metal bounded work batching", failures)
     require(metal_cpp, "BlendContinuationState", "Metal batch continuation", failures)
+    require(metal_cpp, "kRasterWorkCountStart = kSortWorkCountStart + 4",
+            "Metal raster indirect argument", failures)
+    require(metal_cpp, "dispatchThreadgroupsWithIndirectBuffer:slot->Header",
+            "Metal work-count indirect dispatch", failures)
+    require(metal_cpp, "UpdateSharedSnapshotForVersion",
+            "Metal versioned VRAM snapshot", failures)
+    require(metal_cpp, "State->TextureMemoryVersion++",
+            "Metal texture dirty version", failures)
+    require(metal_cpp, "State->TexturePaletteVersion++",
+            "Metal palette dirty version", failures)
     forbid(metal_cpp, "keepCount", "Metal work-tile layer drop", failures)
     forbid(metal_cpp, "workOffset >= config.maxWorkTiles",
            "Metal work-tile overflow discard", failures)
+    forbid(metal_cpp, "DispatchGroups(State->MaxWorkTiles, 32)",
+           "Metal fixed-capacity sort dispatch", failures)
+    forbid(metal_cpp, "MTLSizeMake(State->MaxWorkTiles, 1, 1)",
+           "Metal fixed-capacity raster dispatch", failures)
+
+    forbid(vk_cpp, "std::vector<PolygonBatch> polygonBatches",
+           "Vulkan per-frame polygon-batch allocation", failures)
+    forbid(vk_cpp, "std::vector<VkDescriptorSet> variantTextureSets",
+           "Vulkan per-frame descriptor allocation", failures)
+    require(vk_header, "TextureSetCacheEntry",
+            "Vulkan frame descriptor reuse", failures)
+    forbid(dx_cpp, "std::vector<PolygonBatch> polygonBatches",
+           "DX12 per-frame polygon-batch allocation", failures)
+    forbid(dx_header, "std::unordered_map<ID3D12Resource*",
+           "DX12 per-frame SRV cache allocation", failures)
+    require(dx_header, "FrameSrvCacheCapacity = 4096",
+            "DX12 fixed SRV cache", failures)
+    require(dx_cpp, "ResetFrameSrvCache()",
+            "DX12 epoch SRV cache reset", failures)
 
     for name, source in (("OpenGL Compute", gl_shader),
                          ("Vulkan", vk_interp), ("DX12", dx_shader)):
@@ -291,7 +322,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
 
-    print("PASS: confirmed Software raster parity rules are ratcheted for Metal, Vulkan and DX12")
+    print("PASS: confirmed Software parity and bounded hot-path rules are ratcheted for Metal, Vulkan and DX12")
     return 0
 
 

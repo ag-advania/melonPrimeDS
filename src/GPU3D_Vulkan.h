@@ -395,7 +395,7 @@ private:
     // YSpanIndices / RenderPolygons. Degenerate polygons are compacted out;
     // valid DS input otherwise fits the worst-case span allocations exactly.
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
-    std::vector<PolygonBatch> BuildPolygonBatches(u32 numPolygons) const;
+    u32 BuildPolygonBatches(u32 numPolygons);
 
     void EnsureFrameReadback();
 
@@ -462,6 +462,8 @@ private:
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};
+    std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches{};
+    std::array<VkDescriptorSet, MaxVariants> VariantTextureSets{};
     std::vector<SetupIndices> YSpanIndices;
     std::unique_ptr<SpanSetupY[]> YSpanSetups;
     std::unique_ptr<RenderPolygon[]> RenderPolygons;
@@ -499,6 +501,14 @@ private:
     bool PlaceholdersInitialized = false;
 
     u32 TextureSetCursor = 0;
+    struct TextureSetCacheEntry
+    {
+        VkImageView View = VK_NULL_HANDLE;
+        VkSampler Sampler = VK_NULL_HANDLE;
+        VkDescriptorSet Set = VK_NULL_HANDLE;
+    };
+    std::array<TextureSetCacheEntry, MaxVariants + 1> TextureSetCache{};
+    u32 TextureSetCacheCount = 0;
     VkImageView BoundTextureView = VK_NULL_HANDLE;
     VkSampler BoundSampler = VK_NULL_HANDLE;
     VkDescriptorSet BoundTextureSet = VK_NULL_HANDLE;

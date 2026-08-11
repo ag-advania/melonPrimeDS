@@ -1514,12 +1514,13 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
     return numVariants;
 }
 
-std::vector<VulkanRenderer3D::PolygonBatch>
-VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons) const
+u32 VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons)
 {
-    std::vector<PolygonBatch> batches;
     if (numPolygons == 0)
-        return batches;
+    {
+        PolygonBatches[0] = { 0, 0 };
+        return 1;
+    }
 
     // A polygon can only be binned into tiles intersecting its completed
     // screen-space bounds. Summing those rectangles is conservative (the
@@ -1528,6 +1529,7 @@ VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons) const
     const u64 capacity = static_cast<u64>(MaxWorkTiles);
     u32 first = 0;
     u32 count = 0;
+    u32 batchCount = 0;
     u64 batchTiles = 0;
 
     for (u32 i = 0; i < numPolygons; ++i)
@@ -1549,7 +1551,7 @@ VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons) const
 
         if (count != 0 && batchTiles + polygonTiles > capacity)
         {
-            batches.push_back({ first, count });
+            PolygonBatches[batchCount++] = { first, count };
             first = i;
             count = 0;
             batchTiles = 0;
@@ -1563,8 +1565,8 @@ VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons) const
     }
 
     if (count != 0)
-        batches.push_back({ first, count });
-    return batches;
+        PolygonBatches[batchCount++] = { first, count };
+    return batchCount;
 }
 
 
@@ -1826,7 +1828,20 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
         return BoundTextureSet;
     }
 
-    if (TextureSetCursor >= Descriptors.GetSizing().TextureSetsPerFrame)
+    for (u32 i = 0; i < TextureSetCacheCount; ++i)
+    {
+        const TextureSetCacheEntry& entry = TextureSetCache[i];
+        if (entry.View == textureView && entry.Sampler == sampler)
+        {
+            BoundTextureView = textureView;
+            BoundSampler = sampler;
+            BoundTextureSet = entry.Set;
+            return entry.Set;
+        }
+    }
+
+    if (TextureSetCursor >= Descriptors.GetSizing().TextureSetsPerFrame
+        || TextureSetCacheCount >= TextureSetCache.size())
         return VK_NULL_HANDLE;
 
     VkDescriptorSet set = Descriptors.GetTextureSet(frameIndex, TextureSetCursor);
@@ -1866,6 +1881,7 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
     BoundTextureView = textureView;
     BoundSampler = sampler;
     BoundTextureSet = set;
+    TextureSetCache[TextureSetCacheCount++] = { textureView, sampler, set };
     return set;
 }
 
@@ -1965,6 +1981,7 @@ void VulkanRenderer3D::RenderFrame()
     // and descriptor sets are free again.
     FrameStaging.Reset();
     TextureSetCursor = 0;
+    TextureSetCacheCount = 0;
     BoundTextureView = VK_NULL_HANDLE;
     BoundSampler = VK_NULL_HANDLE;
     BoundTextureSet = VK_NULL_HANDLE;
@@ -2141,22 +2158,19 @@ void VulkanRenderer3D::RenderFrame()
     const VkBuffer xSpans = XSpanSetupBuffer.GetHandle();
     const VkBuffer blendState = BlendStateBuffer.GetHandle();
 
-    std::vector<PolygonBatch> polygonBatches = BuildPolygonBatches(numPolygons);
-    if (polygonBatches.empty())
-        polygonBatches.push_back({ 0, 0 });
+    const u32 polygonBatchCount = BuildPolygonBatches(numPolygons);
 
     // Descriptor sets are immutable for the frame. Allocate each variant once
     // and reuse it in every work-tile batch; otherwise a pathological frame
     // would turn bounded raster memory into unbounded descriptor consumption.
-    std::vector<VkDescriptorSet> variantTextureSets(numVariants, VK_NULL_HANDLE);
     for (u32 i = 0; i < numVariants; ++i)
     {
         const Variant& variant = Variants[i];
         const VulkanTextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
         VkImageView view = texture ? texture->View : DummyTextureImage.GetView();
-        variantTextureSets[i] = AcquireTextureSet(
+        VariantTextureSets[i] = AcquireTextureSet(
             frameIndex, view, Samplers.Get(variant.WrapS, variant.WrapT));
-        if (variantTextureSets[i] == VK_NULL_HANDLE)
+        if (VariantTextureSets[i] == VK_NULL_HANDLE)
         {
             Frames.SubmitFrame(Device.GetMainQueue());
             SetRuntimeFailure("ran out of per-frame texture descriptor sets");
@@ -2166,9 +2180,9 @@ void VulkanRenderer3D::RenderFrame()
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
-    for (u32 batchIndex = 0; batchIndex < polygonBatches.size(); ++batchIndex)
+    for (u32 batchIndex = 0; batchIndex < polygonBatchCount; ++batchIndex)
     {
-        const PolygonBatch& batch = polygonBatches[batchIndex];
+        const PolygonBatch& batch = PolygonBatches[batchIndex];
 
         // Each batch reuses the bounded bin/tile working set. The result and
         // shadow continuation buffers carry the exact pixel state forward.
@@ -2308,7 +2322,7 @@ void VulkanRenderer3D::RenderFrame()
                     prevPipeline = pipeline;
                 }
 
-                VkDescriptorSet textureSet = variantTextureSets[i];
+                VkDescriptorSet textureSet = VariantTextureSets[i];
                 if (textureSet != currentTextureSet)
                 {
                     fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
