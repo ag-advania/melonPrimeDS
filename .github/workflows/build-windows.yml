@@ -76,6 +76,10 @@ jobs:
       shell: pwsh
       run: python .\tools\ci\audits\audit-raster-software-parity.py
 
+    - name: Audit Custom HUD radar color-key contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-radar-color-key-contract.py
+
     - name: Audit low-latency marker and vendor ABI contract
       shell: pwsh
       run: python .\tools\ci\audits\audit-low-latency-contract.py

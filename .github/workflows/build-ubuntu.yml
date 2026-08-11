@@ -69,6 +69,9 @@ jobs:
     - name: Audit Software raster parity contract
       run: python ./tools/ci/audits/audit-raster-software-parity.py
 
+    - name: Audit Custom HUD radar color-key contract
+      run: python ./tools/ci/audits/audit-radar-color-key-contract.py
+
     - name: Audit low-latency marker and vendor ABI contract
       run: python ./tools/ci/audits/audit-low-latency-contract.py
 

@@ -96,6 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/ci/audits/audit-raster-software-parity.py
+          python3 tools/ci/audits/audit-radar-color-key-contract.py
           cmake --build "build/release-mac-${{ matrix.arch }}" --target melonprime_raster_edge_vectors
           "build/release-mac-${{ matrix.arch }}/melonprime_raster_edge_vectors"
           python3 tools/ci/audits/compile-metal-compute-msl.py
