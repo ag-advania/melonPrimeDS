@@ -147,9 +147,9 @@ public:
             static_cast<unsigned long long>(FramesCompared),
             static_cast<unsigned long long>(MismatchedFrames),
             static_cast<unsigned long long>(MismatchedPixels));
-        // A savestate can replace the reference renderer while a candidate
-        // frame is already in flight. Preserve samples for the first stable
-        // mismatch as well as that one transitional mismatch.
+        // Keep samples for the first two stable failures without flooding a
+        // long-running diagnostic. The load-transition frame is discarded
+        // before reaching this comparison.
         if (mismatchedPixels != 0 && MismatchedFrames <= 2)
         {
             for (u32 i = 0; i < sampleCount; ++i)

@@ -212,7 +212,10 @@ def main() -> int:
                    "V7 exact linear interpolation", "V8 alpha blend disabled",
                    "V9 front facing opaque-back tie", "V10 back facing attribute bit",
                    "V11 seventeen layer bounded batching",
-                   "V12 degenerate compact polygon indices"):
+                   "V12 degenerate compact polygon indices",
+                   "V13 all edge flags preserve second layer",
+                   "V14 accepted-pixel AA progression",
+                   "V15 native quantized coordinates"):
         require(edge_vectors, vector, f"executable raster vector {vector[:2]}", failures)
 
     require(vk_common, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
@@ -237,8 +240,22 @@ def main() -> int:
     require(metal_depth, "alphaBlendEnabled", "Metal alpha blend enable", failures)
     require(metal_depth, "continuationState[gid]",
             "Metal shadow continuation state", failures)
+    require(metal_depth, "(destinationAttr & 0xFu) == 0u",
+            "Metal all-edge second-layer depth test", failures)
+    require(metal_depth, "mp_compute_correct_accepted_coverage",
+            "Metal accepted-pixel AA correction", failures)
+    require(metal_depth, "resultWinner",
+            "Metal AA winning-layer selection", failures)
     require(metal_textured, "MPMaxVariants = 2048u",
             "Metal textured variant capacity", failures)
+    require(metal_textured, "u = int(short(u));",
+            "Metal signed-16 texture coordinate narrowing", failures)
+    require(metal_textured, "max(span.X0, 0)",
+            "Metal clipped left-edge coverage origin", failures)
+    require(metal_textured, "max(max(span.InsideStart, span.InsideEnd), 0)",
+            "Metal overlapping right-edge coverage origin", failures)
+    require(metal_cpp, "State->HiresCoordinates && State->ScaleFactor > 1",
+            "Metal native quantized coordinate selection", failures)
     require(metal_span, "swapped ? 0 : 31", "Metal swapped vertical coverage", failures)
 
     require(vk_interp, "swappedEdges", "Vulkan swapped edge path", failures)

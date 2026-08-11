@@ -43,12 +43,11 @@ def main() -> int:
         try:
             output, _ = process.communicate(timeout=args.seconds)
         except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                output, _ = process.communicate(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                output, _ = process.communicate()
+            # SIGTERM enters Qt's Cocoa quit path and can recursively acquire
+            # its os_unfair_lock while AppKit is still activating. Diagnostic
+            # runners do not need graceful UI teardown, so stop immediately.
+            process.kill()
+            output, _ = process.communicate()
 
         expected = (
             "complete pipeline ready scale=1"

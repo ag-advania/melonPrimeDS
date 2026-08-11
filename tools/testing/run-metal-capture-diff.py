@@ -39,12 +39,9 @@ def main() -> int:
     try:
         output, _ = process.communicate(timeout=args.seconds)
     except subprocess.TimeoutExpired:
-        process.terminate()
-        try:
-            output, _ = process.communicate(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            output, _ = process.communicate()
+        # Avoid Qt/Cocoa's re-entrant graceful-quit path during diagnostics.
+        process.kill()
+        output, _ = process.communicate()
 
     failures: list[str] = []
     required = (
@@ -76,7 +73,7 @@ def main() -> int:
     mismatch_total = sum(int(mismatches) for _, mismatches in records)
     if mismatch_total:
         failures.append(f"CaptureVRAMDiff reported {mismatch_total} mismatched words")
-    if process.returncode not in (0, -15):
+    if process.returncode not in (0, -9):
         failures.append(f"process exited unexpectedly with status {process.returncode}")
 
     if failures:

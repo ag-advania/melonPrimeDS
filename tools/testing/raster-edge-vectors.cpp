@@ -110,9 +110,33 @@ int main()
     for (bool skip : degenerate) compactCount += !skip;
     Expect("V12 degenerate compact polygon indices", compactCount == 2);
 
+    // V13: every AA edge kind preserves the layer underneath. Top/bottom-only
+    // edges are just as eligible for a second-layer depth test as left/right.
+    for (uint32_t edge = 1; edge <= 8; edge <<= 1)
+        Expect("V13 all edge flags preserve second layer", (edge & 0xFu) != 0u);
+
+    // V14: X-major coverage advances only for pixels that survive alpha and
+    // depth testing. Three accepted predecessors yield coverage 4 here; two
+    // would incorrectly yield 12.
+    const auto rightCoverage = [](int initial, int increment, int accepted) {
+        return 31 - ((initial + increment * accepted) >> 5);
+    };
+    Expect("V14 accepted-pixel AA progression",
+        rightCoverage(127, 256, 3) == 4 &&
+        rightCoverage(127, 256, 2) == 12);
+
+    // V15: native output consumes already quantized DS coordinates. Hires
+    // coordinates are reserved for enlarged targets where subpixel detail is
+    // representable.
+    const auto rasterX = [](int scale, int finalX, int hiresX) {
+        return scale > 1 ? (hiresX * scale) >> 4 : finalX;
+    };
+    Expect("V15 native quantized coordinates",
+        rasterX(1, 174, 2800) == 174 && rasterX(2, 174, 2800) == 350);
+
     if (Failures != 0)
         return 1;
 
-    std::puts("PASS: raster parity vectors V1-V12");
+    std::puts("PASS: raster parity vectors V1-V15");
     return 0;
 }

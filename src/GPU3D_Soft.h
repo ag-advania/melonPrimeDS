@@ -44,19 +44,6 @@ public:
 
     u32* GetLine(int line) override;
 
-    [[nodiscard]] u32 DiagnosticRawColor(int layer) const noexcept
-    {
-        return DiagnosticRawColors[layer & 1];
-    }
-    [[nodiscard]] u32 DiagnosticRawDepth(int layer) const noexcept
-    {
-        return DiagnosticRawDepths[layer & 1];
-    }
-    [[nodiscard]] u32 DiagnosticRawAttr(int layer) const noexcept
-    {
-        return DiagnosticRawAttrs[layer & 1];
-    }
-
     void SetupRenderThread();
     void EnableRenderThread();
     void StopRenderThread();
@@ -488,10 +475,6 @@ private:
     u32 ColorBuffer[BufferSize * 2];
     u32 DepthBuffer[BufferSize * 2];
     u32 AttrBuffer[BufferSize * 2];
-
-    u32 DiagnosticRawColors[2] {};
-    u32 DiagnosticRawDepths[2] {};
-    u32 DiagnosticRawAttrs[2] {};
 
     // attribute buffer:
     // bit0-3: edge flags (left/right/top/bottom)
