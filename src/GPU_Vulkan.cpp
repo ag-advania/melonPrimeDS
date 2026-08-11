@@ -115,6 +115,11 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
 
     if (auto* vulkan = GetVulkanRenderer3D())
     {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (RasterDifferential::Enabled())
+            settings.ScaleFactor = 1;
+#endif
+
         // BetterPolygons is a triangle-splitting workaround for the classic
         // OpenGL/native Metal raster paths. Vulkan follows GPU3D_Compute and
         // rasterizes each DS polygon directly as scanline spans, so only the
@@ -175,8 +180,12 @@ void VulkanRenderer::VBlank()
         // Generation is carried through so a frame the producer has not
         // refreshed is never recomposed, and a stale one is never composed at
         // all.
-        vulkan->ComposeStructuredOutput(planes, lineMeta, view.CaptureCommands, view.Generation);
-        if (DifferentialReference && vulkan->GetScaleFactor() == 1)
+        const bool composed = vulkan->ComposeStructuredOutput(
+            planes, lineMeta, view.CaptureCommands, view.Generation);
+        if (composed
+            && DifferentialReference
+            && vulkan->GetScaleFactor() == 1
+            && !GPU.GPU3D.AbortFrame)
             DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
     }
 

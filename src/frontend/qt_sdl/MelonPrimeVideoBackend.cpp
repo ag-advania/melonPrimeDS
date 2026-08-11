@@ -11,7 +11,9 @@
 #include "MelonPrimeDX12FeatureCheck.h"
 #endif
 
-#if defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(MELONPRIME_ENABLE_VULKAN) \
+        && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES))
 #include <cstdlib>
 #endif
 
@@ -33,6 +35,13 @@ bool ShouldForceMetalRendererFromEnv()
 
 int NormalizeRendererForPlatform(int requested)
 {
+#if defined(MELONPRIME_ENABLE_VULKAN) \
+    && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const char* forceVulkan = std::getenv("MELONPRIME_FORCE_VULKAN_RENDERER");
+    if (forceVulkan && forceVulkan[0] == '1')
+        return renderer3D_Vulkan;
+#endif
+
 #if defined(MELONPRIME_ENABLE_METAL)
     const char* forceMetalCompute =
         std::getenv("MELONPRIME_FORCE_METAL_COMPUTE_RENDERER");
