@@ -161,6 +161,8 @@ void VulkanNvidiaReflex::Shutdown() noexcept
     Available = false;
     ModeApplied = false;
     FrameOpen = false;
+    InputSampled = false;
+    SimulationOpen = false;
     FrameId = 0;
     SleepValue = 0;
     Mode = VulkanNvidiaReflexMode::Off;
@@ -174,6 +176,8 @@ void VulkanNvidiaReflex::Disable(std::string reason) noexcept
     Available = false;
     ModeApplied = false;
     FrameOpen = false;
+    InputSampled = false;
+    SimulationOpen = false;
     UnavailableReason = std::move(reason);
 }
 
@@ -203,6 +207,8 @@ void VulkanNvidiaReflex::SetSwapchain(VkSwapchainKHR swapchain)
     // cannot match makes ApplySleepMode() do the call unconditionally.
     ModeApplied = false;
     FrameOpen = false;
+    InputSampled = false;
+    SimulationOpen = false;
     PresentedSinceSleep = true;
 
     if (!Available || Swapchain == VK_NULL_HANDLE)
@@ -286,6 +292,8 @@ void VulkanNvidiaReflex::BeginFrame()
     // as the correlation key for the markers, the submit and the present.
     ++FrameId;
     FrameOpen = true;
+    InputSampled = false;
+    SimulationOpen = false;
 
     // vkLatencySleepNV is specified to be called exactly once between presents.
     // The presenter legitimately skips frames (minimised window, swapchain not
@@ -355,17 +363,26 @@ void VulkanNvidiaReflex::SetMarker(VkLatencyMarkerNV marker)
 
 void VulkanNvidiaReflex::MarkInputSample()
 {
+    if (!FrameOpen || InputSampled || SimulationOpen)
+        return;
     SetMarker(VK_LATENCY_MARKER_INPUT_SAMPLE_NV);
+    InputSampled = true;
 }
 
 void VulkanNvidiaReflex::MarkSimulationStart()
 {
+    if (!FrameOpen || !InputSampled || SimulationOpen)
+        return;
     SetMarker(VK_LATENCY_MARKER_SIMULATION_START_NV);
+    SimulationOpen = true;
 }
 
 void VulkanNvidiaReflex::MarkSimulationEnd()
 {
+    if (!FrameOpen || !SimulationOpen)
+        return;
     SetMarker(VK_LATENCY_MARKER_SIMULATION_END_NV);
+    SimulationOpen = false;
 }
 
 void VulkanNvidiaReflex::MarkRenderSubmitStart()
@@ -392,6 +409,8 @@ void VulkanNvidiaReflex::MarkPresentEnd()
 void VulkanNvidiaReflex::FinishFrame()
 {
     FrameOpen = false;
+    InputSampled = false;
+    SimulationOpen = false;
 }
 
 

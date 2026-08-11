@@ -96,14 +96,16 @@ void RunProbeLocked()
         if (!g_result.NvidiaReflexAvailable)
         {
             g_result.NvidiaReflexReason =
-                device.DeviceName + " does not expose VK_NV_low_latency2";
+                device.DeviceName
+                + " does not meet the VK_NV_low_latency2 timeline semaphore and present ID requirements";
         }
 
         g_result.AmdAntiLag2Available = device.HasAmdAntiLag;
         if (!g_result.AmdAntiLag2Available)
         {
             g_result.AmdAntiLag2Reason =
-                device.DeviceName + " does not expose VK_AMD_anti_lag";
+                device.DeviceName
+                + " does not expose VK_AMD_anti_lag with its antiLag feature enabled";
         }
 
         Platform::Log(

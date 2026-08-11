@@ -59,6 +59,7 @@ public:
     void BeginReflexFrame();
     void BeginAmdAntiLag2Frame();
     void MarkReflexInputSample();
+    void MarkReflexSimulationStart();
     void EndReflexRenderPhase();
     void BeginReflexPresent();
     void EndReflexPresent();

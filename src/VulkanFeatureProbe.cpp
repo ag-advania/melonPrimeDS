@@ -681,8 +681,63 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
                 HasExtension(available, "VK_KHR_portability_subset");
 
             result.HasDebugMarkerSupport = HasExtension(available, VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
-            result.HasNvLowLatency2 = HasExtension(available, "VK_NV_low_latency2");
-            result.HasAmdAntiLag = HasExtension(available, "VK_AMD_anti_lag");
+
+            // These booleans feed the settings UI, so they must describe the
+            // feature that vkCreateDevice can actually enable rather than only
+            // the headline extension name. Otherwise a driver exposing the
+            // extension but not one of its required feature bits produces an
+            // enabled UI control which is disabled again at runtime.
+            const bool hasNvExtension = HasExtension(available, VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
+            const bool hasTimelineExtension =
+                HasExtension(available, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+            const bool hasPresentIdExtension =
+                HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME);
+            const bool hasAmdExtension = HasExtension(available, VK_AMD_ANTI_LAG_EXTENSION_NAME);
+
+            VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures{};
+            VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
+            VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
+            void* featureChain = nullptr;
+
+            const auto chain = [&featureChain](auto& feature) {
+                feature.pNext = featureChain;
+                featureChain = &feature;
+            };
+
+            if (hasNvExtension)
+            {
+                timelineFeatures.sType =
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR;
+                presentIdFeatures.sType =
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+                chain(timelineFeatures);
+                chain(presentIdFeatures);
+            }
+            if (hasAmdExtension)
+            {
+                antiLagFeatures.sType =
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
+                chain(antiLagFeatures);
+            }
+
+            if (featureChain && fns.GetPhysicalDeviceFeatures2)
+            {
+                VkPhysicalDeviceFeatures2 features{};
+                features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+                features.pNext = featureChain;
+                fns.GetPhysicalDeviceFeatures2(physicalDevice, &features);
+            }
+
+            // VulkanContext requests API 1.1, so VK_KHR_timeline_semaphore is
+            // required even when the physical device also supports Vulkan 1.2.
+            result.HasNvLowLatency2 =
+                hasNvExtension
+                && hasTimelineExtension
+                && timelineFeatures.timelineSemaphore == VK_TRUE
+                && hasPresentIdExtension
+                && presentIdFeatures.presentId == VK_TRUE;
+            result.HasAmdAntiLag =
+                hasAmdExtension && antiLagFeatures.antiLag == VK_TRUE;
         }
     }
 

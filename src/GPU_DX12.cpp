@@ -236,6 +236,11 @@ void DX12Renderer::MarkReflexInputSample()
     NvidiaReflex.MarkInputSample();
 }
 
+void DX12Renderer::MarkReflexSimulationStart()
+{
+    NvidiaReflex.MarkSimulationStart();
+}
+
 void DX12Renderer::EndReflexRenderPhase()
 {
     NvidiaReflex.EndRenderPhase();

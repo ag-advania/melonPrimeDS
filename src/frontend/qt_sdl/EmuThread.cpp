@@ -349,6 +349,17 @@ void EmuThread::run()
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        // Reflex INPUT_SAMPLE marks the point immediately before the first
+        // input read. It must precede both SDL's joystick refresh and the raw
+        // mouse/keyboard reads in RunFrameHook().
+        if (dx12LowLatencyRenderer)
+            dx12LowLatencyRenderer->MarkReflexInputSample();
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+        if (vulkanLowLatencyRenderer)
+            emuInstance->markVulkanReflexInputSample();
+#endif
         emuInstance->inputRefreshJoystickState();
 #endif
 
@@ -386,14 +397,11 @@ void EmuThread::run()
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
             if (dx12LowLatencyRenderer)
-                dx12LowLatencyRenderer->MarkReflexInputSample();
+                dx12LowLatencyRenderer->MarkReflexSimulationStart();
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
             if (vulkanLowLatencyRenderer)
-            {
-                emuInstance->markVulkanReflexInputSample();
                 emuInstance->markVulkanReflexSimulationStart();
-            }
 #endif
 #if defined(MELONPRIME_DS)
             // Renderer switching follows the match window between the

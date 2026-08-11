@@ -50,10 +50,12 @@ public:
     [[nodiscard]] const std::string& GetUnavailableReason() const noexcept { return UnavailableReason; }
 
     // Call order for an emulated frame:
-    // BeginFrame -> MarkInputSample -> MarkRenderSubmitStart/End ->
+    // BeginFrame (sleep only) -> MarkInputSample -> input polling ->
+    // MarkSimulationStart -> MarkRenderSubmitStart/End ->
     // MarkPresentStart/End -> FinishFrame.
     void BeginFrame();
     void MarkInputSample();
+    void MarkSimulationStart();
     void MarkRenderSubmitStart();
     void MarkRenderSubmitEnd();
     void EndRenderPhase();
@@ -83,6 +85,7 @@ private:
     bool Available = false;
     bool ModeApplied = false;
     bool FrameOpen = false;
+    bool InputSampled = false;
     bool SimulationOpen = false;
     bool RenderSubmitOpen = false;
     bool PresentOpen = false;

@@ -131,7 +131,7 @@ public:
     // Per emulated frame, in this order:
     //
     //   BeginFrame()            latency sleep, before any input is read
-    //   MarkInputSample()       the frame's input snapshot was taken
+    //   MarkInputSample()       immediately before the first input read
     //   MarkSimulationStart()   emulation begins
     //   MarkSimulationEnd()     emulation returned
     //   MarkRenderSubmitStart() immediately before vkQueueSubmit
@@ -203,6 +203,8 @@ private:
     bool Available = false;
     bool ModeApplied = false;
     bool FrameOpen = false;
+    bool InputSampled = false;
+    bool SimulationOpen = false;
     bool PresentedSinceSleep = true;
 };
 

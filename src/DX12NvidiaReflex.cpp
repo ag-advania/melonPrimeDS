@@ -8,9 +8,10 @@
     Software Foundation, either version 3 of the License, or (at your option)
     any later version.
 
-    The minimal NVAPI ABI declarations below are derived from NVIDIA's public
-    NVAPI headers. They are used only to dynamically call the NVIDIA display
-    driver; no NVAPI binary is redistributed or linked.
+    The minimal NVAPI ABI declarations below are pinned to NVIDIA's public
+    NVAPI headers at commit cd6918f60b3c9a0476fdfe7e89bb32330602049d
+    (nvapi.h dated 2026-06-01). They are used only to dynamically call the
+    NVIDIA display driver; no NVAPI binary is redistributed or linked.
 
     SPDX-FileCopyrightText: Copyright (c) 2019-2026 NVIDIA CORPORATION & AFFILIATES.
     SPDX-License-Identifier: MIT
@@ -274,6 +275,7 @@ void DX12NvidiaReflex::Shutdown() noexcept
     Available = false;
     ModeApplied = false;
     FrameOpen = false;
+    InputSampled = false;
     SimulationOpen = false;
     RenderSubmitOpen = false;
     PresentOpen = false;
@@ -335,14 +337,24 @@ void DX12NvidiaReflex::BeginFrame()
 
     FrameId = nvapi.AllocateFrameId();
     FrameOpen = true;
-    if (SendMarker(Marker::SimulationStart))
-        SimulationOpen = true;
+    InputSampled = false;
+    SimulationOpen = false;
 }
 
 void DX12NvidiaReflex::MarkInputSample()
 {
-    if (FrameOpen && SimulationOpen)
-        SendMarker(Marker::InputSample);
+    if (!FrameOpen || InputSampled || SimulationOpen)
+        return;
+    if (SendMarker(Marker::InputSample))
+        InputSampled = true;
+}
+
+void DX12NvidiaReflex::MarkSimulationStart()
+{
+    if (!FrameOpen || !InputSampled || SimulationOpen)
+        return;
+    if (SendMarker(Marker::SimulationStart))
+        SimulationOpen = true;
 }
 
 void DX12NvidiaReflex::MarkRenderSubmitStart()
@@ -398,6 +410,7 @@ void DX12NvidiaReflex::FinishFrame()
     MarkPresentEnd();
     EndRenderPhase();
     FrameOpen = false;
+    InputSampled = false;
     SimulationOpen = false;
     RenderSubmitOpen = false;
     PresentOpen = false;
@@ -437,6 +450,7 @@ void DX12NvidiaReflex::DisableForRuntimeFailure(const char* operation, int statu
     Available = false;
     ModeApplied = false;
     FrameOpen = false;
+    InputSampled = false;
     SimulationOpen = false;
     RenderSubmitOpen = false;
     PresentOpen = false;
