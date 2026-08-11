@@ -117,10 +117,18 @@ The emulation thread calls the backend sleep operation once at the beginning of
 every Reflex-capable frame, immediately before late input polling. DX12 uses
 `NvAPI_D3D_Sleep`; Vulkan uses `vkLatencySleepNV` followed by a host wait on the
 extension's timeline semaphore. Both paths publish Input Sample, Simulation,
-Render Submit and Present latency markers. Sleep and markers remain active in
-Off mode as NVIDIA recommends; the mode flags alone control whether low latency
-and boost are enabled. The minimum interval is always zero, so Reflex does not
-add a frame-rate cap.
+Render Submit and Present latency markers. Both paths keep Sleep, marker and
+frame-correlation calls active in Off mode as NVIDIA requires; the mode flags
+only control low-latency pacing and boost. The minimum interval is always zero,
+so Reflex does not add a frame-rate cap.
+
+The two backends use the same engine boundaries: Sleep completes first,
+Input Sample is emitted immediately before `inputRefreshJoystickState()` (the
+first late input read), and Simulation Start is emitted only after
+`RunFrameHook()` and `SetKeyMask()` have captured that input for the emulated
+frame. The Reflex helpers reject duplicate or out-of-order Input Sample and
+Simulation markers, so a future call-site move cannot silently create an
+invalid marker timeline.
 
 Render Submit markers bracket the D3D12 render/composition work. Present Start
 and Present End are emitted immediately around the real
@@ -149,6 +157,17 @@ the active D3D12 device through `AmdExtD3DCreateInterface`, keeps it scoped to
 the renderer, and performs AMD's per-frame null update immediately before late
 input polling. State updates are sent only when On/Off changes, and `maxFPS` is
 always zero so Anti-Lag 2 never adds a frame-rate cap.
+
+The local ABI is pinned to AMD's public `ffx_antilag2_dx12.h` at commit
+`390aa4a8c8655d0ae6e90079db2c85e103a96da3`. It was rechecked on 2026-08-11
+against AMD's v2.0.4 publication: the interface GUID, 32-byte v1 state
+structure, version/mode values, null per-frame update, initialization and
+shutdown contracts are unchanged. The newer v2 structure concerns frame
+generation signalling, which this emulator does not use.
+
+The minimal DX12 Reflex ABI is likewise pinned to NVIDIA's public NVAPI commit
+`cd6918f60b3c9a0476fdfe7e89bb32330602049d` (`nvapi.h`, 2026-06-01), including
+the structure sizes, version values, marker enumeration and QueryInterface IDs.
 
 The Vulkan path enables the native `VK_AMD_anti_lag` device extension and its
 `antiLag` feature. Every emulated frame receives one monotonically increasing

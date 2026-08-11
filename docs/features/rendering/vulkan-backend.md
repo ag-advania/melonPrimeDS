@@ -383,12 +383,33 @@ mode on each swapchain, associates the final graphics submission and
 publishes Input Sample / Simulation / Render Submit / Present markers. The
 emulation thread calls `vkLatencySleepNV` followed by a host wait on the
 extension's timeline semaphore once per frame, immediately before late input
-polling. Minimum interval is always zero, so Reflex never adds a frame-rate cap.
+polling. Input Sample is placed immediately before the first input read;
+Simulation Start follows `RunFrameHook()` and `SetKeyMask()`. The helper rejects
+duplicate or reversed Input Sample / Simulation markers. Minimum interval is
+always zero, so Reflex never adds a frame-rate cap.
 
 **AMD Anti-Lag 2** uses the native `VK_AMD_anti_lag` device extension and its
 `antiLag` feature. Every emulated frame gets one monotonically increasing frame
 ID: an INPUT update immediately before late input polling, a matching PRESENT
 update immediately before `vkQueuePresentKHR`. `maxFPS` is always zero.
+
+The Anti-Lag 2 name is intentional. AMD's current product page lists Vulkan
+support from Adrenalin 24.9.1 onward and identifies `VK_AMD_anti_lag` as the
+Vulkan integration used for Anti-Lag 2. The Khronos extension description uses
+the older Anti-Lag / Anti-Lag+ terminology, but that does not require a
+different user-facing product label.
+
+Reflex Off disables `lowLatencyMode` and boost but deliberately continues
+`vkLatencySleepNV`, latency markers, submission Present ID and
+`VkPresentIdKHR`. NVIDIA's Reflex QA contract requires those calls and PCL
+timestamps to keep updating in all three UI modes; with pacing disabled the
+sleep semaphore is released without adding the low-latency delay.
+
+The settings probe evaluates the same optional-feature dependencies as device
+creation: the NVIDIA control requires the low-latency extension, timeline
+semaphore extension+feature and present-ID extension+feature; the AMD control
+requires both `VK_AMD_anti_lag` and `antiLag`. Thus a partial driver exposure is
+disabled in the UI instead of failing only when the logical device is created.
 
 Both report requested / supported / enabled / actual / reason and **never fail
 renderer creation**:

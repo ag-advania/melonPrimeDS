@@ -1711,7 +1711,7 @@ void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
     // Keep the two features on the same frame numbering when both are live.
     // Reflex bumps its id inside BeginFrame() above; when it is not running,
     // its id stays put and Anti-Lag needs a counter of its own.
-    if (Reflex.IsActive())
+    if (Reflex.WantsFrameIdChaining())
         LowLatencyFrameIndex = Reflex.GetFrameId();
     else
         ++LowLatencyFrameIndex;
@@ -1733,7 +1733,7 @@ void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
 void VulkanPresenter::ReportLatencyTimings()
 {
-    if (!Reflex.IsActive())
+    if (!Reflex.IsFramePathAvailable())
         return;
 
     // Every 600th frame, so a ten-minute session produces a readable handful of
@@ -1818,7 +1818,7 @@ void VulkanPresenter::LogLowLatencyState(const char* context)
     const std::string& reflexReason = Reflex.IsAvailable()
         ? (Reflex.IsActive()
             ? std::string("latency markers active; no frame-rate cap requested")
-            : std::string("supported, switched off by NvidiaReflexMode"))
+            : std::string("latency markers active; low-latency pacing switched off by NvidiaReflexMode"))
         : (Reflex.GetUnavailableReason().empty() ? reflexStatus.Reason : Reflex.GetUnavailableReason());
 
     Platform::Log(Platform::LogLevel::Info,

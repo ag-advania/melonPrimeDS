@@ -112,6 +112,14 @@ public:
             && Mode != VulkanNvidiaReflexMode::Off && ModeApplied;
     }
 
+    // Sleep, latency markers and Present ID correlation remain live in Off
+    // mode, as required by NVIDIA's Reflex QA contract. IsActive() above only
+    // describes whether low-latency pacing itself is enabled.
+    [[nodiscard]] bool IsFramePathAvailable() const noexcept
+    {
+        return Available && Swapchain != VK_NULL_HANDLE && ModeApplied;
+    }
+
     [[nodiscard]] VulkanNvidiaReflexMode GetMode() const noexcept { return Mode; }
 
     // Safe to call every frame with an unchanged value; the driver is only
@@ -140,8 +148,8 @@ public:
     //   MarkPresentEnd()        immediately after vkQueuePresentKHR
     //   FinishFrame()
     //
-    // All eight are no-ops unless IsActive(). Markers carry GetFrameId(), and
-    // the same value is chained into the submission
+    // All eight are no-ops unless IsFramePathAvailable(). Markers carry
+    // GetFrameId(), and the same value is chained into the submission
     // (VkLatencySubmissionPresentIdNV) and the present (VkPresentIdKHR), which
     // is what lets the driver correlate the three.
     void BeginFrame();
@@ -162,7 +170,10 @@ public:
     // The presenter calls this to decide whether to chain
     // VkLatencySubmissionPresentIdNV / VkPresentIdKHR onto this frame's submit
     // and present.
-    [[nodiscard]] bool WantsFrameIdChaining() const noexcept { return IsActive() && FrameOpen; }
+    [[nodiscard]] bool WantsFrameIdChaining() const noexcept
+    {
+        return IsFramePathAvailable() && FrameOpen;
+    }
 
     // Driver-side latency reports, newest last, for the frames whose markers
     // the driver has finished correlating. Fills at most `maxCount` entries and

@@ -280,7 +280,7 @@ bool VulkanNvidiaReflex::ApplySleepMode()
 
 void VulkanNvidiaReflex::BeginFrame()
 {
-    if (!IsActive())
+    if (!IsFramePathAvailable())
     {
         FrameOpen = false;
         return;
@@ -347,7 +347,7 @@ void VulkanNvidiaReflex::BeginFrame()
 
 void VulkanNvidiaReflex::SetMarker(VkLatencyMarkerNV marker)
 {
-    if (!FrameOpen || !IsActive())
+    if (!FrameOpen || !IsFramePathAvailable())
         return;
 
     VkSetLatencyMarkerInfoNV info{};
@@ -416,7 +416,8 @@ void VulkanNvidiaReflex::FinishFrame()
 
 u32 VulkanNvidiaReflex::QueryTimings(VkLatencyTimingsFrameReportNV* out, u32 maxCount)
 {
-    if (!out || maxCount == 0 || !IsActive() || !Device->Fns().GetLatencyTimingsNV)
+    if (!out || maxCount == 0 || !IsFramePathAvailable()
+        || !Device->Fns().GetLatencyTimingsNV)
         return 0;
 
     const Vk::DeviceDispatch& fns = Device->Fns();

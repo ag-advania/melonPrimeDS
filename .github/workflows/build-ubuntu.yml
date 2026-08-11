@@ -69,6 +69,9 @@ jobs:
     - name: Audit Software raster parity contract
       run: python ./tools/ci/audits/audit-raster-software-parity.py
 
+    - name: Audit low-latency marker and vendor ABI contract
+      run: python ./tools/ci/audits/audit-low-latency-contract.py
+
     # The Vulkan backend ships its SPIR-V as committed generated sources, so a
     # GLSL edit that was never regenerated, or a variant that stopped compiling,
     # would only show up as a black screen on a machine with a Vulkan GPU. Both
