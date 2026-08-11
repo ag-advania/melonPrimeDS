@@ -16,6 +16,7 @@ struct MPDRenderPolygon
     uint Variant;
     uint Attr;
     float TextureLayer;
+    uint FacingView;
 };
 
 struct MPDConfig
@@ -39,6 +40,8 @@ struct MPDConfig
     uint clearBitmapX;
     uint clearBitmapY;
     uint wBuffer;
+    uint firstPolygon;
+    uint continuation;
 };
 
 static inline uint mpd_read8(
@@ -74,10 +77,17 @@ static inline bool mpd_depth_pass(
     uint destinationDepth,
     uint sourceDepth,
     bool equalDepth,
+    bool facingView,
+    uint destinationAttr,
     bool wBuffer)
 {
     if (!equalDepth)
-        return sourceDepth < destinationDepth;
+    {
+        return facingView &&
+            (destinationAttr & 0x00400010u) == 0x00000010u
+            ? sourceDepth <= destinationDepth
+            : sourceDepth < destinationDepth;
+    }
 
     const uint difference = destinationDepth > sourceDepth
         ? destinationDepth - sourceDepth
@@ -94,7 +104,8 @@ static inline bool mpd_plot_translucent(
     uint sourceAlpha,
     uint tileDepth,
     uint sourceAttr,
-    bool writeDepth)
+    bool writeDepth,
+    bool alphaBlendEnabled)
 {
     uint blendAttr =
         (sourceAttr & 0xE0F0u) |
@@ -123,7 +134,7 @@ static inline bool mpd_plot_translucent(
     const uint destinationA = color & 0x1F000000u;
 
     const uint alpha = (sourceAlpha >> 24u) + 1u;
-    if (destinationA != 0u)
+    if (destinationA != 0u && alphaBlendEnabled)
     {
         sourceRB =
             ((sourceRB * alpha) +
@@ -150,6 +161,7 @@ kernel void mp_compute_depth_blend_complete(
     device uint* resultColor [[buffer(6)]],
     device uint* resultDepth [[buffer(7)]],
     device uint* resultAttr [[buffer(8)]],
+    device uint* continuationState [[buffer(9)]],
     constant MPDConfig& config [[buffer(10)]],
     device const uchar* textureMemory [[buffer(11)]],
     uint gid [[thread_position_in_grid]])
@@ -178,7 +190,23 @@ kernel void mp_compute_depth_blend_complete(
     uint attr0 = config.clearAttr;
     uint attr1 = 0u;
 
-    if ((config.dispCnt & (1u << 14u)) != 0u)
+    uint stencil = 0u;
+    bool previousWasShadowMask = false;
+
+    if (config.continuation != 0u)
+    {
+        const uint layerStride = pixelCount;
+        color0 = resultColor[gid];
+        color1 = resultColor[layerStride + gid];
+        depth0 = resultDepth[gid];
+        depth1 = resultDepth[layerStride + gid];
+        attr0 = resultAttr[gid];
+        attr1 = resultAttr[layerStride + gid];
+        const uint state = continuationState[gid];
+        stencil = state & 0x3u;
+        previousWasShadowMask = (state & 0x4u) != 0u;
+    }
+    else if ((config.dispCnt & (1u << 14u)) != 0u)
     {
         const uint scale =
             max(config.screenWidth / 256u, 1u);
@@ -212,10 +240,6 @@ kernel void mp_compute_depth_blend_complete(
         depth0 = config.clearDepth;
     }
 
-    uint stencil = 0u;
-    bool previousWasShadowMask = false;
-
-
     for (uint group = 0u;
          group < config.polygonGroups;
          group++)
@@ -240,7 +264,7 @@ kernel void mp_compute_depth_blend_complete(
             }
 
             const uint polygonIndex =
-                group * 32u + bit;
+                config.firstPolygon + group * 32u + bit;
             if (polygonIndex >= config.numPolygons)
                 continue;
 
@@ -255,6 +279,7 @@ kernel void mp_compute_depth_blend_complete(
             const MPDRenderPolygon polygon =
                 polygons[polygonIndex];
             const uint polygonAttr = polygon.Attr;
+            const bool facingView = polygon.FacingView != 0u;
             const bool isShadowMask =
                 (polygonAttr & 0x3F000030u) ==
                 0x00000030u;
@@ -292,6 +317,8 @@ kernel void mp_compute_depth_blend_complete(
                         destinationDepth,
                         tileDepth,
                         equalDepth,
+                        facingView,
+                        destinationAttr,
                         config.wBuffer != 0u))
                 {
                     if ((destinationAttr & 0x3u) == 0u ||
@@ -306,6 +333,8 @@ kernel void mp_compute_depth_blend_complete(
                             depth1,
                             tileDepth,
                             equalDepth,
+                            facingView,
+                            destinationAttr,
                             config.wBuffer != 0u))
                     {
                         continue;
@@ -313,7 +342,8 @@ kernel void mp_compute_depth_blend_complete(
                 }
 
                 const uint sourceAttr =
-                    polygonAttr & 0x3F008000u;
+                    (polygonAttr & 0x3F008000u) |
+                    (facingView ? 0u : (1u << 4u));
                 const uint sourceAlpha =
                     tileColor & 0x1F000000u;
 
@@ -357,7 +387,8 @@ kernel void mp_compute_depth_blend_complete(
                             sourceAlpha,
                             tileDepth,
                             sourceAttr,
-                            writeDepth);
+                            writeDepth,
+                            (config.dispCnt & (1u << 3u)) != 0u);
                     }
 
                     if (writeSecondLayer ||
@@ -372,7 +403,8 @@ kernel void mp_compute_depth_blend_complete(
                             sourceAlpha,
                             tileDepth,
                             sourceAttr,
-                            writeDepth);
+                            writeDepth,
+                            (config.dispCnt & (1u << 3u)) != 0u);
                     }
                 }
             }
@@ -385,6 +417,8 @@ kernel void mp_compute_depth_blend_complete(
                         depth0,
                         tileDepth,
                         equalDepth,
+                        facingView,
+                        attr0,
                         config.wBuffer != 0u))
                 {
                     stencil = 0x1u;
@@ -395,6 +429,8 @@ kernel void mp_compute_depth_blend_complete(
                         depth1,
                         tileDepth,
                         equalDepth,
+                        facingView,
+                        attr1,
                         config.wBuffer != 0u))
                 {
                     stencil |= 0x2u;
@@ -410,6 +446,8 @@ kernel void mp_compute_depth_blend_complete(
     resultDepth[layerStride + gid] = depth1;
     resultAttr[gid] = attr0;
     resultAttr[layerStride + gid] = attr1;
+    continuationState[gid] =
+        stencil | (previousWasShadowMask ? 0x4u : 0u);
 
 }
 )MSL";

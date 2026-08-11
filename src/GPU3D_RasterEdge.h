@@ -102,6 +102,24 @@ constexpr bool IsBottomNonFlatEdge(
     return y == polygonYBottom - 1 && leftNextX != rightNextX;
 }
 
+constexpr s32 InterpolateLinearExact(
+    s32 value0, s32 value1, s32 offset, s32 distance) noexcept
+{
+    if (distance == 0 || value0 == value1)
+        return value0;
+    const s64 denominator = distance < 0 ? -static_cast<s64>(distance) : distance;
+    if (value0 < value1)
+    {
+        const s64 sample = offset < 0 ? -static_cast<s64>(offset) : offset;
+        return value0 + static_cast<s32>(
+            (static_cast<s64>(value1 - value0) * sample) / denominator);
+    }
+    const s64 remaining = static_cast<s64>(distance) - offset;
+    const s64 sample = remaining < 0 ? -remaining : remaining;
+    return value1 + static_cast<s32>(
+        (static_cast<s64>(value0 - value1) * sample) / denominator);
+}
+
 } // namespace melonDS::RasterEdge
 
 #endif // GPU3D_RASTER_EDGE_H

@@ -34,6 +34,10 @@ bool ShouldForceMetalRendererFromEnv()
 int NormalizeRendererForPlatform(int requested)
 {
 #if defined(MELONPRIME_ENABLE_METAL)
+    const char* forceMetalCompute =
+        std::getenv("MELONPRIME_FORCE_METAL_COMPUTE_RENDERER");
+    if (forceMetalCompute && forceMetalCompute[0] == '1')
+        return renderer3D_MetalCompute;
     if (ShouldForceMetalRendererFromEnv())
         return renderer3D_Metal;
 

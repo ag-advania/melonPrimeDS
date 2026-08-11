@@ -64,6 +64,13 @@ jobs:
       - name: Set up CMake
         uses: lukka/get-cmake@latest
 
+      - name: Install Metal compiler toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
+
       - name: Restore vcpkg cache
         id: restore-vcpkg-cache
         uses: actions/cache/restore@v4
@@ -83,6 +90,15 @@ jobs:
           configurePreset: release-mac-${{ matrix.arch }}
           buildPreset: release-mac-${{ matrix.arch }}
           configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF', '-DMELONPRIME_MOLTENVK_DYLIB=${{ github.workspace }}/.deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib', '-DMELONPRIME_MOLTENVK_LICENSE=${{ github.workspace }}/.deps/MoltenVK/LICENSE']"
+
+      - name: Verify raster parity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/ci/audits/audit-raster-software-parity.py
+          cmake --build "build/release-mac-${{ matrix.arch }}" --target melonprime_raster_edge_vectors
+          "build/release-mac-${{ matrix.arch }}/melonprime_raster_edge_vectors"
+          python3 tools/ci/audits/compile-metal-compute-msl.py
 
       - name: Verify bundled MoltenVK
         shell: bash

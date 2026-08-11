@@ -27,6 +27,8 @@
 #import <Metal/Metal.h>
 
 #include "GPU3D_MetalCompute.h"
+#include "GPU3D_RasterEdge.h"
+#include "GPU3D_RasterDifferential.h"
 
 #include <algorithm>
 #include <array>
@@ -45,9 +47,9 @@ namespace melonDS
 namespace
 {
 
-constexpr uint32_t kMaxVariants = 256;
+constexpr uint32_t kMaxVariants = 2048;
 constexpr uint32_t kMaxPolygons = 2048;
-constexpr uint32_t kMaxYSpanSetups = 6144 * 2;
+constexpr uint32_t kMaxYSpanSetups = kMaxPolygons * 10;
 constexpr uint32_t kRasteriseChunkSize = 32768;
 constexpr uint32_t kBinStride = 2048 / 32;
 constexpr uint32_t kCoarseBinStride = kBinStride / 32;
@@ -143,8 +145,16 @@ struct SpanBinConfig
     uint32_t DispCnt;
     uint32_t TileWorkCapacity;
     uint32_t WBuffer;
+    uint32_t FirstPolygon;
+    uint32_t BatchPolygonCount;
 };
-static_assert(sizeof(SpanBinConfig) == 80, "MSL SpanBinConfig layout mismatch");
+static_assert(sizeof(SpanBinConfig) == 88, "MSL SpanBinConfig layout mismatch");
+
+struct PolygonBatch
+{
+    uint32_t FirstPolygon;
+    uint32_t PolygonCount;
+};
 
 struct SpanSetupY
 {
@@ -203,8 +213,9 @@ struct RenderPolygon
     uint32_t Variant;
     uint32_t Attr;
     float TextureLayer;
+    uint32_t FacingView;
 };
-static_assert(sizeof(RenderPolygon) == 40, "MSL RenderPolygon layout mismatch");
+static_assert(sizeof(RenderPolygon) == 44, "MSL RenderPolygon layout mismatch");
 
 struct WorkDesc
 {
@@ -254,7 +265,7 @@ struct VariantKey
 // the SpanSetupY/SpanSetupX declarations and the XSpanSetup_* flag constants.
 static constexpr const char* kMetalComputeSource = R"MSL(
 
-constant uint MaxVariants = 256u;
+constant uint MaxVariants = 2048u;
 constant uint VariantWorkCountStart = 0u;
 constant uint SortedWorkOffsetStart = VariantWorkCountStart + MaxVariants * 4u;
 constant uint VariantWorkRealCountStart = SortedWorkOffsetStart + MaxVariants;
@@ -290,6 +301,8 @@ struct SpanBinConfig
     uint dispCnt;
     uint tileWorkCapacity;
     uint wBuffer;
+    uint firstPolygon;
+    uint batchPolygonCount;
 };
 
 struct SetupIndices
@@ -309,6 +322,7 @@ struct RenderPolygon
     uint Variant;
     uint Attr;
     float TextureLayer;
+    uint FacingView;
 };
 
 struct VariantMeta
@@ -457,6 +471,16 @@ static inline int CalculateX(int dx, thread const SpanSetupY& span)
     return clamp(x, span.XMin, span.XMax);
 }
 
+static inline bool ShouldDecrementRightVertical(
+    thread const SpanSetupY& spanL,
+    thread const SpanSetupY& spanR,
+    int xL,
+    int xR)
+{
+    return spanR.Increment == 0 &&
+        (spanL.Increment != 0 || xL != xR) && xR != 0;
+}
+
 // Full DS X-span setup. Structurally identical to the OpenGL compute
 // InterpSpans shader (GPU3D_Compute_shaders.h): edge coverage, fill flags and
 // fixed-point perspective/linear attribute interpolation along Y.
@@ -484,13 +508,17 @@ kernel void mp_compute_interp_spans_geometry(
     int xL = CalculateX(dxL, spanL);
     int xR = CalculateX(dxR, spanR);
 
+    if (ShouldDecrementRightVertical(spanL, spanR, xL, xR))
+        xR--;
+
     SpanSetupX out = {};
     out.Flags = 0u;
 
     int edgeLenL = 1;
     int edgeLenR = 1;
 
-    if (xL > xR)
+    const bool swappedEdges = xL > xR;
+    if (swappedEdges)
     {
         // Crossed edges: swap sides and take the y-major coverage of each.
         const SpanSetupY tmpSpan = spanL;
@@ -501,20 +529,13 @@ kernel void mp_compute_interp_spans_geometry(
         xL = xR;
         xR = tmpX;
 
-        mp_edge_params_ymajor(false, dxR, spanL, edgeLenL, out.EdgeCovL);
-        mp_edge_params_ymajor(true, dxL, spanR, edgeLenR, out.EdgeCovR);
+        mp_edge_params(true, true, dxR, spanL, edgeLenL, out.EdgeCovL);
+        mp_edge_params(false, true, dxL, spanR, edgeLenR, out.EdgeCovR);
     }
     else
     {
-        if (spanL.Increment > 0x40000)
-            mp_edge_params_xmajor(false, dxL, spanL, edgeLenL, out.EdgeCovL);
-        else
-            mp_edge_params_ymajor(false, dxL, spanL, edgeLenL, out.EdgeCovL);
-
-        if (spanR.Increment > 0x40000)
-            mp_edge_params_xmajor(true, dxR, spanR, edgeLenR, out.EdgeCovR);
-        else
-            mp_edge_params_ymajor(true, dxR, spanR, edgeLenR, out.EdgeCovR);
+        mp_edge_params(false, false, dxL, spanL, edgeLenL, out.EdgeCovL);
+        mp_edge_params(true, false, dxR, spanR, edgeLenR, out.EdgeCovR);
     }
 
     out.CovLInitial = (out.EdgeCovL >> 12) & 0x3FF;
@@ -535,16 +556,35 @@ kernel void mp_compute_interp_spans_geometry(
     out.InsideStart = min(out.X0 + edgeLenL, out.X1);
     out.InsideEnd = min(out.X1 - edgeLenR, out.X1);
 
-    const bool fillAllEdges =
-        polyAlpha < 31u || (config.dispCnt & (3u << 4u)) != 0u;
-    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= 0x40000)
-        out.Flags |= XSpanSetup_FillLeft;
-    if (fillAllEdges ||
-        (spanR.X1 >= spanR.X0 && spanR.Increment > 0x40000) ||
-        spanR.Increment == 0)
+    const bool fillAllEdges = isWireframe ||
+        (polyAlpha < 31u && (config.dispCnt & (1u << 3u)) != 0u) ||
+        (config.dispCnt & (3u << 4u)) != 0u;
+    const bool bottomXMajor =
+        y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+    const bool leftNegative = spanL.X1 < spanL.X0;
+    const bool rightNegative = spanR.X1 < spanR.X0;
+    const bool leftXMajor = spanL.Increment > 0x40000;
+    const bool rightXMajor = spanR.Increment > 0x40000;
+    bool fillLeft;
+    bool fillRight;
+    if (swappedEdges)
     {
-        out.Flags |= XSpanSetup_FillRight;
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor);
+        fillRight = (!rightNegative && rightXMajor) ||
+            (!(rightNegative && rightXMajor) && spanL.Increment == 0) ||
+            (bottomXMajor && rightXMajor);
     }
+    else
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor) ||
+            (spanL.Increment == spanR.Increment && out.X0 + edgeLenL == out.X1);
+        fillRight = (!rightNegative && rightXMajor) || spanR.Increment == 0 ||
+            (bottomXMajor && rightXMajor);
+    }
+    if (fillAllEdges || fillLeft)
+        out.Flags |= XSpanSetup_FillLeft;
+    if (fillAllEdges || fillRight)
+        out.Flags |= XSpanSetup_FillRight;
 
     if (spanL.I0 == spanL.I1)
     {
@@ -558,7 +598,7 @@ kernel void mp_compute_interp_spans_geometry(
     }
     else
     {
-        const int i = (spanL.Increment > 0x40000 ? xL : y) - spanL.I0;
+        const int i = y - spanL.I0;
         const int ifactor = mp_calc_factor_y(spanL, i);
         const int idiff = spanL.I1 - spanL.I0;
 
@@ -612,7 +652,7 @@ kernel void mp_compute_interp_spans_geometry(
     }
     else
     {
-        const int i = (spanR.Increment > 0x40000 ? xR : y) - spanR.I0;
+        const int i = y - spanR.I0;
         const int ifactor = mp_calc_factor_y(spanR, i);
         const int idiff = spanR.I1 - spanR.I0;
 
@@ -726,8 +766,10 @@ kernel void mp_compute_bin_combined(
 
     if (localIdx < 32u)
     {
-        const uint polygonIdx = groupIdx * 32u + localIdx;
-        if (polygonIdx < config.numPolygons &&
+        const uint localPolygonIdx = groupIdx * 32u + localIdx;
+        const uint polygonIdx = config.firstPolygon + localPolygonIdx;
+        if (localPolygonIdx < config.batchPolygonCount &&
+            polygonIdx < config.numPolygons &&
             BinPolygon(polygons[polygonIdx], coarseTopLeft, coarseBotRight, xSpans))
         {
             atomic_fetch_or_explicit(&mergedMaskShared, 1u << localIdx, memory_order_relaxed);
@@ -749,7 +791,7 @@ kernel void mp_compute_bin_combined(
     {
         const uint bit = ctz(mergedMask);
         mergedMask &= ~(1u << bit);
-        const uint polygonIdx = groupIdx * 32u + bit;
+        const uint polygonIdx = config.firstPolygon + groupIdx * 32u + bit;
         if (polygonIdx < config.numPolygons &&
             BinPolygon(polygons[polygonIdx], fineTopLeft, fineBotRight, xSpans))
         {
@@ -769,20 +811,8 @@ kernel void mp_compute_bin_combined(
         workOffset = atomic_fetch_add_explicit(
             &header[VariantWorkCountStart + 3u], requested, memory_order_relaxed);
 
-        // Fork Fix E: preserve buffer bounds before publishing mask/offset.
-        if (workOffset >= config.maxWorkTiles)
-        {
-            binnedMask = 0u;
-        }
-        else
-        {
-            const uint keepCount = config.maxWorkTiles - workOffset;
-            while (popcount(binnedMask) > keepCount)
-            {
-                const uint topBit = 31u - clz(binnedMask);
-                binnedMask &= ~(1u << topBit);
-            }
-        }
+        // A conservative host-side proof partitions consecutive polygons so
+        // every batch fits this bounded work buffer without dropping a bit.
     }
 
     fineMask[maskIndex] = binnedMask;
@@ -801,7 +831,7 @@ kernel void mp_compute_bin_combined(
     {
         const uint bit = ctz(binnedMask);
         binnedMask &= ~(1u << bit);
-        const uint polygonIdx = groupIdx * 32u + bit;
+        const uint polygonIdx = config.firstPolygon + groupIdx * 32u + bit;
         const uint variantIdx = min(polygons[polygonIdx].Variant, config.numVariants - 1u);
         const uint inVariantOffset = atomic_fetch_add_explicit(
             &header[VariantWorkCountStart + variantIdx * 4u + 2u],
@@ -949,20 +979,17 @@ void SetupYSpanDummy(
     int32_t positions[10][2])
 {
     span = {};
-    int32_t x0 = positions[vertex][0];
-    if (side)
-    {
-        span.DxInitial = -0x40000;
-        x0--;
-    }
+    const int32_t x0 = positions[vertex][0];
 
     span.X0 = span.X1 = x0;
     span.XMin = span.XMax = x0;
     span.Y0 = span.Y1 = positions[vertex][1];
 
-    if (span.XMin < renderPolygon.XMin)
+    const int32_t boundsXMin =
+        RasterEdge::ConservativeRightVerticalMin(x0, side != 0);
+    if (boundsXMin < renderPolygon.XMin)
     {
-        renderPolygon.XMin = span.XMin;
+        renderPolygon.XMin = boundsXMin;
         renderPolygon.XMinY = span.Y0;
     }
     if (span.XMax > renderPolygon.XMax)
@@ -1013,15 +1040,15 @@ void SetupYSpan(
     else
     {
         span.XMin = span.X0;
-        if (side)
-            span.XMin--;
         span.XMax = span.XMin;
         minXY = maxXY = span.Y0;
     }
 
-    if (span.XMin < renderPolygon.XMin)
+    const int32_t boundsXMin = RasterEdge::ConservativeRightVerticalMin(
+        span.XMin, side && span.X0 == span.X1);
+    if (boundsXMin < renderPolygon.XMin)
     {
-        renderPolygon.XMin = span.XMin;
+        renderPolygon.XMin = boundsXMin;
         renderPolygon.XMinY = minXY;
     }
     if (span.XMax > renderPolygon.XMax)
@@ -1032,17 +1059,8 @@ void SetupYSpan(
 
     const int32_t xlen = span.XMax + 1 - span.XMin;
     const int32_t ylen = span.Y1 - span.Y0;
-    if (ylen == 0)
-        span.Increment = 0;
-    else if (ylen == xlen)
-        span.Increment = 0x40000;
-    else
-    {
-        const int32_t yrecip = (1 << 18) / ylen;
-        span.Increment = (span.X1 - span.X0) * yrecip;
-        if (span.Increment < 0)
-            span.Increment = -span.Increment;
-    }
+    span.Increment = RasterEdge::CalculateSlopeIncrement(
+        span.X0, span.X1, span.XMin, span.XMax, span.Y0, span.Y1);
 
     const bool xMajor = span.Increment > 0x40000;
     if (side)
@@ -1052,7 +1070,7 @@ void SetupYSpan(
         else if (span.Increment != 0)
             span.DxInitial = negative ? 0x40000 : 0;
         else
-            span.DxInitial = -0x40000;
+            span.DxInitial = 0;
     }
     else
     {
@@ -1062,26 +1080,13 @@ void SetupYSpan(
             span.DxInitial = negative ? 0x40000 : 0;
     }
 
-    if (xMajor)
-    {
-        if (side)
-        {
-            span.I0 = span.X0 - 1;
-            span.I1 = span.X1 - 1;
-        }
-        else
-        {
-            span.I0 = span.X0;
-            span.I1 = span.X1;
-        }
-        if (xlen != 0)
-            span.XCovIncr = (ylen << 10) / xlen;
-    }
-    else
-    {
-        span.I0 = span.Y0;
-        span.I1 = span.Y1;
-    }
+    if (xMajor && xlen != 0)
+        span.XCovIncr = (ylen << 10) / xlen;
+
+    const int32_t interpolationOffset = RasterEdge::InterpolationOriginOffset(
+        span.Increment, side != 0, negative);
+    span.I0 = span.Y0 - interpolationOffset;
+    span.I1 = span.Y1 - interpolationOffset;
 
     span.IRecip = span.I0 != span.I1 ? (1 << 30) / (span.I1 - span.I0) : 0;
     span.Linear = (span.W0 == span.W1) && !(span.W0 & 0x7E) && !(span.W1 & 0x7E);
@@ -1129,6 +1134,7 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> DepthBlendColor = nil;
         id<MTLBuffer> DepthBlendDepth = nil;
         id<MTLBuffer> DepthBlendAttr = nil;
+        id<MTLBuffer> BlendContinuationState = nil;
         id<MTLBuffer> FinalColorBuffer = nil;
         id<MTLBuffer> NativeColorBuffer = nil;
         id<MTLTexture> NativeTexture = nil;
@@ -1171,6 +1177,8 @@ struct MetalComputeRenderer3D::MetalComputeState
     std::vector<RenderPolygon> PolygonData;
     std::vector<VariantKey> VariantData;
     std::vector<VariantMeta> VariantMetaData;
+    std::array<PolygonBatch, kMaxPolygons> PolygonBatches {};
+    uint32_t PolygonBatchCount = 0;
 
     uint32_t RequestedScaleFactor = 1;
     uint32_t ScaleFactor = 1;
@@ -1184,7 +1192,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     uint32_t TilesPerLine = 32;
     uint32_t TileLines = 24;
     uint32_t MaxWorkTiles = 32 * 24 * 16;
-    uint32_t MaxSetupIndices = 64 * 2048;
+    uint32_t MaxSetupIndices = 192 * kMaxPolygons;
     uint32_t TileWorkCapacity = 0;
     bool HiresCoordinates = false;
     bool Ready = false;
@@ -1215,6 +1223,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     bool NativeLineReady = false;
     std::array<uint32_t, 256u * 192u> NativeLineBuffer {};
     std::array<uint32_t, 256u> NativeScrolledLine {};
+    RasterDifferential::State RasterDiff;
 };
 
 namespace
@@ -1247,6 +1256,7 @@ void ReleaseFrameSlotResources(SlotT& slot)
     ReleaseMetalObject(slot.DepthBlendColor);
     ReleaseMetalObject(slot.DepthBlendDepth);
     ReleaseMetalObject(slot.DepthBlendAttr);
+    ReleaseMetalObject(slot.BlendContinuationState);
     ReleaseMetalObject(slot.FinalColorBuffer);
     ReleaseMetalObject(slot.NativeColorBuffer);
     ReleaseMetalObject(slot.NativeTexture);
@@ -1625,15 +1635,25 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     State->ScreenWidth = 256u * State->ScaleFactor;
     State->ScreenHeight = 192u * State->ScaleFactor;
 
-    const uint32_t range = static_cast<uint32_t>((scale >= 5) + (scale >= 9));
+    uint32_t range = static_cast<uint32_t>((scale >= 5) + (scale >= 9));
+    const NSUInteger maxRasterThreads = State->TextureRasterPipeline
+        ? State->TextureRasterPipeline.maxTotalThreadsPerThreadgroup
+        : 0u;
+    while (range > 0u)
+    {
+        const NSUInteger candidateTileSize = 8u << range;
+        if (candidateTileSize * candidateTileSize <= maxRasterThreads)
+            break;
+        range--;
+    }
     State->TileSize = 8u << range;
-    State->CoarseTileCountY = 4u + ((range >> 1u) << 1u);
+    State->CoarseTileCountY = 4u + (scale >= 9 ? 2u : 0u);
     State->CoarseTileArea = kCoarseTileCountX * State->CoarseTileCountY;
     State->CoarseTileW = kCoarseTileCountX * State->TileSize;
     State->CoarseTileH = State->CoarseTileCountY * State->TileSize;
     State->TilesPerLine = State->ScreenWidth / State->TileSize;
     State->TileLines = State->ScreenHeight / State->TileSize;
-    State->MaxSetupIndices = 64u * 2048u * State->ScaleFactor;
+    State->MaxSetupIndices = State->ScreenHeight * kMaxPolygons;
 
     // Binning and tile consumption must agree on one work count. Deriving
     // MaxWorkTiles from the tile-memory budget (instead of capping consumption
@@ -1788,6 +1808,9 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.DepthBlendAttr =
             [State->Device newBufferWithLength:twoLayerPixelBytes
                                        options:MTLResourceStorageModePrivate];
+        slot.BlendContinuationState =
+            [State->Device newBufferWithLength:screenPixelBytes
+                                       options:MTLResourceStorageModePrivate];
         slot.FinalColorBuffer =
             [State->Device newBufferWithLength:screenPixelBytes
                                        options:MTLResourceStorageModePrivate];
@@ -1813,7 +1836,8 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
             !slot.ToonTableBuffer || !slot.FinalTablesBuffer ||
             !slot.FinalTexture || !slot.ColorTiles || !slot.DepthTiles ||
             !slot.AttrTiles || !slot.DepthBlendColor || !slot.DepthBlendDepth ||
-            !slot.DepthBlendAttr || !slot.FinalColorBuffer ||
+            !slot.DepthBlendAttr || !slot.BlendContinuationState ||
+            !slot.FinalColorBuffer ||
             !slot.NativeColorBuffer || !slot.NativeTexture)
         {
             std::fprintf(stderr,
@@ -2019,7 +2043,8 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         64, 32, 8, 8, 4,
         8, 4, 64, 32,
         maxWorkTiles, kBinStride, kCoarseBinStride, 1,
-        0, 0, maxWorkTiles, 0
+        0, 0, maxWorkTiles, 0,
+        0, 1
     };
     const FoundationConfig foundationConfig { 1, maxWorkTiles, tileCount, kRasteriseChunkSize };
 
@@ -2106,15 +2131,15 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         return false;
 
     const auto* outX = static_cast<const SpanSetupX*>([xBuffer contents]);
-    constexpr int32_t expectedXRecip = static_cast<int32_t>((1u << 30) / 32u);
+    constexpr int32_t expectedXRecip = static_cast<int32_t>((1u << 30) / 31u);
     for (uint32_t i = 0; i < setupCount; i++)
     {
-        // Both edges are vertical (Increment == 0), so DS coverage is the full
-        // 31 on each side, the span is filled inside and on both edges, and the
-        // one-pixel edge runs put InsideStart/InsideEnd one pixel in.
-        const bool geometryOk = outX[i].X0 == 16 && outX[i].X1 == 48;
+        // Software conditionally moves a non-coincident right vertical edge
+        // left after both X values are known. Coverage remains 31 on both
+        // unswapped sides and the edge runs put the inside interval one pixel in.
+        const bool geometryOk = outX[i].X0 == 16 && outX[i].X1 == 47;
         const bool edgesOk =
-            outX[i].InsideStart == 17 && outX[i].InsideEnd == 47 &&
+            outX[i].InsideStart == 17 && outX[i].InsideEnd == 46 &&
             outX[i].EdgeCovL == 31 && outX[i].EdgeCovR == 31 &&
             outX[i].CovLInitial == 0 && outX[i].CovRInitial == 0;
         // Linear | Inside | Left | Right (both dummy edges carry W == 0).
@@ -2200,6 +2225,8 @@ bool MetalComputeRenderer3D::IsThreaded() const noexcept
 
 void MetalComputeRenderer3D::SetScaleFactor(int scale) noexcept
 {
+    if (RasterDifferential::Enabled())
+        scale = 1;
     scale = std::max(1, scale);
     if (State)
         State->RequestedScaleFactor = static_cast<uint32_t>(scale);
@@ -2284,7 +2311,9 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     if (!State || !State->SpanBinReady)
         return false;
 
-    const uint32_t polygonCount = std::min<uint32_t>(GPU3D.RenderNumPolygons, kMaxPolygons);
+    const uint32_t inputPolygonCount =
+        std::min<uint32_t>(GPU3D.RenderNumPolygons, kMaxPolygons);
+    uint32_t polygonCount = 0;
     uint32_t numYSpans = 0;
     uint32_t numSetupIndices = 0;
     State->VariantData.clear();
@@ -2306,19 +2335,21 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         return true;
     };
 
-    for (uint32_t polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
+    for (uint32_t sourcePolygonIndex = 0;
+         sourcePolygonIndex < inputPolygonCount; sourcePolygonIndex++)
     {
-        Polygon* polygon = GPU3D.RenderPolygonRAM[polygonIndex];
-        RenderPolygon& outputPolygon = State->PolygonData[polygonIndex];
-        outputPolygon = {};
-        if (!polygon || polygon->NumVertices < 2 || polygon->NumVertices > 10)
+        Polygon* polygon = GPU3D.RenderPolygonRAM[sourcePolygonIndex];
+        if (!polygon || polygon->Degenerate ||
+            polygon->NumVertices < 2 || polygon->NumVertices > 10)
         {
-            outputPolygon.YTop = 1;
-            outputPolygon.YBot = 0;
             continue;
         }
+        const uint32_t polygonIndex = polygonCount++;
+        RenderPolygon& outputPolygon = State->PolygonData[polygonIndex];
+        outputPolygon = {};
         outputPolygon.FirstXSpan = numSetupIndices;
         outputPolygon.Attr = polygon->Attr;
+        outputPolygon.FacingView = polygon->FacingView ? 1u : 0u;
 
         const uint32_t textype = (polygon->TexParam >> 26) & 0x7u;
         uint32_t captureKind = 0;
@@ -2558,50 +2589,52 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     const uint32_t variantCount =
         static_cast<uint32_t>(State->VariantData.size());
 
-    // Conservative upper bound on the work items binning can emit this frame:
-    // each polygon can touch at most the tiles covered by its bounding box.
-    // Binning is finer than the bounding box, so exceeding this bound is
-    // impossible. Rather than let the GPU drop the overflow (which would show
-    // as missing polygons), skip the compute frame entirely and let the Metal
-    // raster renderer produce a complete image.
+    // Partition the ordered polygon stream into consecutive batches whose
+    // conservative bounding-box tile sum fits the fixed tile scratch. The
+    // exact bin test can only remove tiles, so no GPU-side work may be dropped.
+    State->PolygonBatchCount = 0;
+    uint32_t batchFirst = 0;
+    uint32_t batchCount = 0;
+    uint64_t batchTiles = 0;
+    const int32_t tileSize = static_cast<int32_t>(State->TileSize);
+    for (uint32_t polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
     {
-        uint64_t estimatedWork = 0;
-        const int32_t tileSize = static_cast<int32_t>(State->TileSize);
-        const int32_t maxTileX = static_cast<int32_t>(State->TilesPerLine) - 1;
-        const int32_t maxTileY = static_cast<int32_t>(State->TileLines) - 1;
-        for (uint32_t polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
+        const RenderPolygon& polygon = State->PolygonData[polygonIndex];
+        const int32_t minX = std::clamp(
+            polygon.XMin, 0, static_cast<int32_t>(State->ScreenWidth) - 1);
+        const int32_t maxX = std::clamp(
+            polygon.XMax, 0, static_cast<int32_t>(State->ScreenWidth) - 1);
+        const int32_t minY = std::clamp(
+            polygon.YTop, 0, static_cast<int32_t>(State->ScreenHeight) - 1);
+        const int32_t maxY = std::clamp(
+            polygon.YBot - 1, 0, static_cast<int32_t>(State->ScreenHeight) - 1);
+        uint64_t polygonTiles = 0;
+        if (minX <= maxX && minY <= maxY)
         {
-            const RenderPolygon& polygon = State->PolygonData[polygonIndex];
-            if (polygon.YBot <= polygon.YTop || polygon.XMax < polygon.XMin)
-                continue;
-            const int32_t tileX0 = std::clamp(polygon.XMin / tileSize, 0, maxTileX);
-            const int32_t tileX1 = std::clamp(polygon.XMax / tileSize, 0, maxTileX);
-            const int32_t tileY0 = std::clamp(polygon.YTop / tileSize, 0, maxTileY);
-            const int32_t tileY1 =
-                std::clamp((polygon.YBot - 1) / tileSize, 0, maxTileY);
-            estimatedWork +=
-                static_cast<uint64_t>(tileX1 - tileX0 + 1) *
-                static_cast<uint64_t>(tileY1 - tileY0 + 1);
+            polygonTiles =
+                static_cast<uint64_t>(maxX / tileSize - minX / tileSize + 1) *
+                static_cast<uint64_t>(maxY / tileSize - minY / tileSize + 1);
         }
-
-        if (estimatedWork > State->MaxWorkTiles)
-        {
-            if (!State->LoggedWorkCapacity)
-            {
-                State->LoggedWorkCapacity = true;
-                std::fprintf(stderr,
-                    "[MelonPrime] metal compute: frame work bound %llu exceeds "
-                    "tile work capacity %u (scale=%u polygons=%u); falling back "
-                    "to the Metal raster renderer for affected frames instead "
-                    "of dropping work\n",
-                    static_cast<unsigned long long>(estimatedWork),
-                    State->MaxWorkTiles,
-                    State->ScaleFactor,
-                    polygonCount);
-            }
+        if (polygonTiles > State->MaxWorkTiles)
             return true;
+        if (batchCount != 0 && batchTiles + polygonTiles > State->MaxWorkTiles)
+        {
+            State->PolygonBatches[State->PolygonBatchCount++] =
+                { batchFirst, batchCount };
+            batchFirst = polygonIndex;
+            batchCount = 0;
+            batchTiles = 0;
         }
+        batchTiles += polygonTiles;
+        batchCount++;
     }
+    if (batchCount != 0)
+    {
+        State->PolygonBatches[State->PolygonBatchCount++] =
+            { batchFirst, batchCount };
+    }
+    if (State->PolygonBatchCount == 0)
+        State->PolygonBatches[State->PolygonBatchCount++] = { 0, 0 };
 
     {
         MetalComputeState::FrameSlot* slot = nullptr;
@@ -2670,8 +2703,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         // Binning only runs when there are X-spans to bin. Reporting zero
         // polygon groups in that case keeps the depth-blend pass from reading
         // fine-mask words this frame never wrote.
-        const uint32_t polygonGroups =
-            numSetupIndices > 0 ? DispatchGroups(polygonCount, 32) : 0u;
         const uint32_t coarseTilesX = State->ScreenWidth / State->CoarseTileW;
         const uint32_t coarseTilesY = State->ScreenHeight / State->CoarseTileH;
         const uint32_t tileCount = State->TilesPerLine * State->TileLines;
@@ -2682,7 +2713,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             tileCount,
             kRasteriseChunkSize,
         };
-        const SpanBinConfig spanConfig {
+        const SpanBinConfig baseSpanConfig {
             polygonCount,
             variantCount,
             numSetupIndices,
@@ -2698,7 +2729,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             State->MaxWorkTiles,
             kBinStride,
             kCoarseBinStride,
-            polygonGroups,
+            0u,
             GPU3D.RenderAlphaRef,
             GPU3D.RenderDispCnt,
             State->TileWorkCapacity,
@@ -2706,6 +2737,8 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                     GPU3D.RenderPolygonRAM[0]->WBuffer
                 ? 1u
                 : 0u,
+            0u,
+            0u,
         };
 
         uint32_t clearR = (GPU3D.RenderClearAttr1 << 1) & 0x3Eu;
@@ -2741,13 +2774,13 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             ConvertFogColorToRGB6A5(GPU3D.RenderFogColor),
         };
 
-        const CompleteDepthBlendConfig depthBlendConfig {
+        const CompleteDepthBlendConfig baseDepthBlendConfig {
             State->ScreenWidth,
             State->ScreenHeight,
             State->TileSize,
             State->TilesPerLine,
             kBinStride,
-            polygonGroups,
+            0u,
             State->MaxWorkTiles,
             State->TileWorkCapacity,
             polygonCount,
@@ -2762,15 +2795,13 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             GPU3D.RenderDispCnt,
             (GPU3D.RenderClearAttr2 >> 16u) & 0xFFu,
             (GPU3D.RenderClearAttr2 >> 24u) & 0xFFu,
-            spanConfig.WBuffer,
+            baseSpanConfig.WBuffer,
+            0u,
+            0u,
         };
 
         // Tile scratch and layer buffers belong to this slot, so a frame never
         // has to wait for the previous compute frame to retire.
-        const bool submitTileRaster =
-            State->TileRasterReady &&
-            polygonGroups > 0 &&
-            numSetupIndices > 0;
         const bool submitDepthBlend = State->DepthBlendReady;
         const bool submitFinalPass =
             submitDepthBlend && State->FinalPassReady;
@@ -2783,24 +2814,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         }
         command.label = @"MelonPrime Metal Compute Frame";
 
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->ClearIndirectPipeline];
-            [encoder setBuffer:slot->Header offset:0 atIndex:0];
-            [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(variantCount, 32), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-            [encoder endEncoding];
-        }
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->ClearCoarseMaskPipeline];
-            [encoder setBuffer:slot->CoarseMask offset:0 atIndex:0];
-            [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(tileCount, 64), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-            [encoder endEncoding];
-        }
         if (numSetupIndices > 0)
         {
             id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2808,94 +2821,126 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             [encoder setBuffer:slot->SetupIndices offset:0 atIndex:0];
             [encoder setBuffer:slot->YSpans offset:0 atIndex:1];
             [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
-            [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:3];
+            [encoder setBytes:&baseSpanConfig length:sizeof(baseSpanConfig) atIndex:3];
             [encoder setBuffer:slot->Polygons offset:0 atIndex:4];
             [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(numSetupIndices, 32), 1, 1)
                      threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
             [encoder endEncoding];
         }
-        if (polygonGroups > 0 && numSetupIndices > 0)
+        for (uint32_t batchIndex = 0;
+             batchIndex < State->PolygonBatchCount; batchIndex++)
         {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->BinCombinedPipeline];
-            [encoder setBuffer:slot->Header offset:0 atIndex:0];
-            [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
-            [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
-            [encoder setBuffer:slot->CoarseMask offset:0 atIndex:3];
-            [encoder setBuffer:slot->FineMask offset:0 atIndex:4];
-            [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:5];
-            [encoder setBuffer:slot->WorkDescs offset:0 atIndex:6];
-            [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:7];
-            [encoder dispatchThreadgroups:MTLSizeMake(polygonGroups, coarseTilesX, coarseTilesY)
-                     threadsPerThreadgroup:MTLSizeMake(State->CoarseTileArea, 1, 1)];
-            [encoder endEncoding];
-        }
-        if (polygonGroups > 0 && numSetupIndices > 0)
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->CalcOffsetsPipeline];
-            [encoder setBuffer:slot->Header offset:0 atIndex:0];
-            [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(variantCount, 32), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-            [encoder endEncoding];
-        }
-        if (polygonGroups > 0 && numSetupIndices > 0)
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->SortWorkPolygonsPipeline];
-            [encoder setBuffer:slot->Header offset:0 atIndex:0];
-            [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
-            [encoder setBuffer:slot->WorkDescs offset:0 atIndex:2];
-            [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:3];
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(State->MaxWorkTiles, 32), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-            [encoder endEncoding];
-        }
-        if (submitTileRaster)
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->TextureRasterPipeline];
-            [encoder setBuffer:slot->Header offset:0 atIndex:0];
-            [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
-            [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
-            [encoder setBuffer:slot->WorkDescs offset:0 atIndex:3];
-            [encoder setBuffer:slot->VariantMetaBuffer offset:0 atIndex:4];
-            [encoder setBuffer:slot->ColorTiles offset:0 atIndex:5];
-            [encoder setBuffer:slot->DepthTiles offset:0 atIndex:6];
-            [encoder setBuffer:slot->AttrTiles offset:0 atIndex:7];
-            [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
-            [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:10];
-            [encoder setBuffer:slot->TexturePaletteBuffer offset:0 atIndex:11];
-            [encoder setBuffer:slot->ToonTableBuffer offset:0 atIndex:12];
-            [encoder setTexture:State->Capture128Texture atIndex:0];
-            [encoder setTexture:State->Capture256Texture atIndex:1];
-            // One threadgroup per work item, one thread per tile pixel.
-            [encoder dispatchThreadgroups:MTLSizeMake(State->MaxWorkTiles, 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(State->TileSize, State->TileSize, 1)];
-            [encoder endEncoding];
-        }
-        if (submitDepthBlend)
-        {
-            id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:State->CompleteDepthBlendPipeline];
-            [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
-            [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
-            [encoder setBuffer:slot->Polygons offset:0 atIndex:2];
-            [encoder setBuffer:slot->ColorTiles offset:0 atIndex:3];
-            [encoder setBuffer:slot->DepthTiles offset:0 atIndex:4];
-            [encoder setBuffer:slot->AttrTiles offset:0 atIndex:5];
-            [encoder setBuffer:slot->DepthBlendColor offset:0 atIndex:6];
-            [encoder setBuffer:slot->DepthBlendDepth offset:0 atIndex:7];
-            [encoder setBuffer:slot->DepthBlendAttr offset:0 atIndex:8];
-            [encoder setBytes:&depthBlendConfig
-                       length:sizeof(depthBlendConfig)
-                      atIndex:10];
-            [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:11];
-            const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
-            [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
-                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-            [encoder endEncoding];
+            const PolygonBatch batch = State->PolygonBatches[batchIndex];
+            const uint32_t polygonGroups = numSetupIndices > 0
+                ? DispatchGroups(batch.PolygonCount, 32) : 0u;
+            SpanBinConfig spanConfig = baseSpanConfig;
+            spanConfig.PolygonGroups = polygonGroups;
+            spanConfig.FirstPolygon = batch.FirstPolygon;
+            spanConfig.BatchPolygonCount = batch.PolygonCount;
+            CompleteDepthBlendConfig depthBlendConfig = baseDepthBlendConfig;
+            depthBlendConfig.PolygonGroups = polygonGroups;
+            depthBlendConfig.FirstPolygon = batch.FirstPolygon;
+            depthBlendConfig.Continuation = batchIndex != 0 ? 1u : 0u;
+
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->ClearIndirectPipeline];
+                [encoder setBuffer:slot->Header offset:0 atIndex:0];
+                [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
+                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(variantCount, 32), 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                [encoder endEncoding];
+            }
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->ClearCoarseMaskPipeline];
+                [encoder setBuffer:slot->CoarseMask offset:0 atIndex:0];
+                [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
+                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(tileCount, 64), 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                [encoder endEncoding];
+            }
+            if (polygonGroups > 0)
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->BinCombinedPipeline];
+                [encoder setBuffer:slot->Header offset:0 atIndex:0];
+                [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
+                [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
+                [encoder setBuffer:slot->CoarseMask offset:0 atIndex:3];
+                [encoder setBuffer:slot->FineMask offset:0 atIndex:4];
+                [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:5];
+                [encoder setBuffer:slot->WorkDescs offset:0 atIndex:6];
+                [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:7];
+                [encoder dispatchThreadgroups:MTLSizeMake(polygonGroups, coarseTilesX, coarseTilesY)
+                         threadsPerThreadgroup:MTLSizeMake(State->CoarseTileArea, 1, 1)];
+                [encoder endEncoding];
+            }
+            if (polygonGroups > 0)
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->CalcOffsetsPipeline];
+                [encoder setBuffer:slot->Header offset:0 atIndex:0];
+                [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
+                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(variantCount, 32), 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                [encoder endEncoding];
+            }
+            if (polygonGroups > 0)
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->SortWorkPolygonsPipeline];
+                [encoder setBuffer:slot->Header offset:0 atIndex:0];
+                [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
+                [encoder setBuffer:slot->WorkDescs offset:0 atIndex:2];
+                [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:3];
+                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(State->MaxWorkTiles, 32), 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+                [encoder endEncoding];
+            }
+            if (State->TileRasterReady && polygonGroups > 0)
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->TextureRasterPipeline];
+                [encoder setBuffer:slot->Header offset:0 atIndex:0];
+                [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
+                [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
+                [encoder setBuffer:slot->WorkDescs offset:0 atIndex:3];
+                [encoder setBuffer:slot->VariantMetaBuffer offset:0 atIndex:4];
+                [encoder setBuffer:slot->ColorTiles offset:0 atIndex:5];
+                [encoder setBuffer:slot->DepthTiles offset:0 atIndex:6];
+                [encoder setBuffer:slot->AttrTiles offset:0 atIndex:7];
+                [encoder setBytes:&spanConfig length:sizeof(spanConfig) atIndex:9];
+                [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:10];
+                [encoder setBuffer:slot->TexturePaletteBuffer offset:0 atIndex:11];
+                [encoder setBuffer:slot->ToonTableBuffer offset:0 atIndex:12];
+                [encoder setTexture:State->Capture128Texture atIndex:0];
+                [encoder setTexture:State->Capture256Texture atIndex:1];
+                [encoder dispatchThreadgroups:MTLSizeMake(State->MaxWorkTiles, 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(State->TileSize, State->TileSize, 1)];
+                [encoder endEncoding];
+            }
+            if (submitDepthBlend)
+            {
+                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+                [encoder setComputePipelineState:State->CompleteDepthBlendPipeline];
+                [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
+                [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
+                [encoder setBuffer:slot->Polygons offset:0 atIndex:2];
+                [encoder setBuffer:slot->ColorTiles offset:0 atIndex:3];
+                [encoder setBuffer:slot->DepthTiles offset:0 atIndex:4];
+                [encoder setBuffer:slot->AttrTiles offset:0 atIndex:5];
+                [encoder setBuffer:slot->DepthBlendColor offset:0 atIndex:6];
+                [encoder setBuffer:slot->DepthBlendDepth offset:0 atIndex:7];
+                [encoder setBuffer:slot->DepthBlendAttr offset:0 atIndex:8];
+                [encoder setBuffer:slot->BlendContinuationState offset:0 atIndex:9];
+                [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:10];
+                [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:11];
+                const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
+                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
+                         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                [encoder endEncoding];
+            }
         }
         if (submitFinalPass)
         {
@@ -3088,6 +3133,11 @@ void MetalComputeRenderer3D::RenderFrame()
             GPU.MakeVRAMFlat_TexPalCoherent(texPalDirty);
         const bool vramChanged = textureChanged || texPalChanged;
 
+        const bool rasterDifferential =
+            RasterDifferential::Enabled() && requestedScale == 1;
+        if (rasterDifferential)
+            RasterReference.RenderSoftwareReferenceFrame();
+
         const bool previousFrameWasCompute =
             State->LastFrameComputeVisible;
         if (GPU3D.RenderFrameIdentical &&
@@ -3096,6 +3146,11 @@ void MetalComputeRenderer3D::RenderFrame()
             ComputeFinalReady())
         {
             State->LastFrameComputeVisible = true;
+            if (rasterDifferential)
+            {
+                State->RasterDiff.CompareFrame(
+                    *this, RasterReference.GetSoftwareReference(), "MetalCompute");
+            }
             return;
         }
 
@@ -3110,6 +3165,11 @@ void MetalComputeRenderer3D::RenderFrame()
         if (finalSubmitted)
         {
             State->LastFrameComputeVisible = true;
+            if (rasterDifferential)
+            {
+                State->RasterDiff.CompareFrame(
+                    *this, RasterReference.GetSoftwareReference(), "MetalCompute");
+            }
             if (!State->LoggedVisibleCutover)
             {
                 State->LoggedVisibleCutover = true;

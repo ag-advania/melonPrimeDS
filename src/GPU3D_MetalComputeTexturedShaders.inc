@@ -7,7 +7,7 @@
 // XSpanSetup_* flags and the DS fixed-point interpolation helpers.
 static constexpr const char* kMetalComputeTexturedSource = R"MSL(
 
-constant uint MPMaxVariants = 256u;
+constant uint MPMaxVariants = 2048u;
 constant uint MPVariantWorkCountStart = 0u;
 
 struct MPSpanBinConfig
@@ -17,6 +17,7 @@ struct MPSpanBinConfig
     uint coarseTileCountX, coarseTileCountY, coarseTileW, coarseTileH;
     uint maxWorkTiles, binStride, coarseBinStride, polygonGroups;
     uint alphaRef, dispCnt, tileWorkCapacity, wBuffer;
+    uint firstPolygon, batchPolygonCount;
 };
 
 struct MPRenderPolygon
@@ -28,6 +29,7 @@ struct MPRenderPolygon
     uint Variant;
     uint Attr;
     float TextureLayer;
+    uint FacingView;
 };
 
 struct MPVariantMeta

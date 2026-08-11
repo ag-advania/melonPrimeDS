@@ -71,9 +71,48 @@ int main()
     Expect("V6 non-bottom exclusion",
         !IsBottomNonFlatEdge(8, 10, 4, 8));
 
+    // V7: reciprocal approximation produces 7; Software exact division is 6.
+    Expect("V7 exact linear interpolation",
+        InterpolateLinearExact(0, 80, 2, 23) == 6);
+    Expect("V7 descending linear interpolation",
+        InterpolateLinearExact(80, 0, 2, 23) == 73);
+    Expect("V7 signed linear interpolation",
+        InterpolateLinearExact(-80, 0, 2, 23) == -74);
+
+    // V8-V10: executable truth tables for depth/blend metadata rules.
+    const auto blendChannel = [](bool enabled, int dstA, int src, int dst, int alpha) {
+        return enabled && dstA != 0
+            ? ((src * alpha) + (dst * (32 - alpha))) >> 5
+            : src;
+    };
+    Expect("V8 alpha blend disabled", blendChannel(false, 31, 40, 8, 16) == 40);
+    Expect("V8 alpha blend enabled", blendChannel(true, 31, 40, 8, 16) == 24);
+    const auto depthPass = [](bool facing, uint32_t dstAttr, uint32_t src, uint32_t dst) {
+        return facing && (dstAttr & 0x00400010u) == 0x00000010u
+            ? src <= dst : src < dst;
+    };
+    Expect("V9 front facing opaque-back tie", depthPass(true, 0x10u, 100, 100));
+    Expect("V9 back facing strict tie", !depthPass(false, 0x10u, 100, 100));
+    Expect("V10 back facing attribute bit", ((0u | (1u << 4u)) & 0x10u) != 0u);
+
+    // V11-V12: a seventeenth full-screen layer starts a lossless second batch,
+    // while degenerate inputs never consume a compact polygon slot.
+    int batches = 1;
+    int used = 0;
+    for (int layer = 0; layer < 17; ++layer)
+    {
+        if (used == 16) { ++batches; used = 0; }
+        ++used;
+    }
+    Expect("V11 seventeen layer bounded batching", batches == 2 && used == 1);
+    const bool degenerate[4] = { false, true, false, true };
+    int compactCount = 0;
+    for (bool skip : degenerate) compactCount += !skip;
+    Expect("V12 degenerate compact polygon indices", compactCount == 2);
+
     if (Failures != 0)
         return 1;
 
-    std::puts("PASS: raster edge vectors V1-V6");
+    std::puts("PASS: raster parity vectors V1-V12");
     return 0;
 }

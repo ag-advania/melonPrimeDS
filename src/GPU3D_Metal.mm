@@ -1174,6 +1174,16 @@ void MetalRenderer3D::RenderFrame()
     }
 }
 
+void MetalRenderer3D::RenderSoftwareReferenceFrame()
+{
+    Delegate.RenderFrame();
+}
+
+Renderer3D& MetalRenderer3D::GetSoftwareReference() noexcept
+{
+    return Delegate;
+}
+
 void MetalRenderer3D::FinishRendering()
 {
     if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())

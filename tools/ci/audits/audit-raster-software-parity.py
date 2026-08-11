@@ -109,6 +109,10 @@ def main() -> int:
     dx_header = read("src/GPU3D_DX12.h")
     dx_cpp = read("src/GPU3D_DX12.cpp")
     dx_shader = read("src/GPU3D_DX12_shaders.h")
+    metal_cpp = read("src/GPU3D_MetalCompute.mm")
+    metal_span = read("src/GPU3D_MetalComputeSpanMath.inc")
+    metal_textured = read("src/GPU3D_MetalComputeTexturedShaders.inc")
+    metal_depth = read("src/GPU3D_MetalComputeDepthBlendShaders.inc")
 
     for name, source in (("Vulkan", vk_header), ("DX12", dx_header)):
         require(source, "u32 FacingView;", f"{name} facing upload", failures)
@@ -157,6 +161,25 @@ def main() -> int:
         forbid(source, "span->DxInitial = -0x40000;",
                f"{name} encoded right vertical decrement", failures)
 
+    require(metal_cpp, "RasterEdge::CalculateSlopeIncrement",
+            "Metal canonical slope helper", failures)
+    require(metal_cpp, "RasterEdge::ConservativeRightVerticalMin",
+            "Metal conservative polygon bounds", failures)
+    require(metal_cpp, "RasterEdge::InterpolationOriginOffset",
+            "Metal edge interpolation origin", failures)
+    require(metal_cpp, "polygon->Degenerate", "Metal degenerate skip", failures)
+    require(metal_cpp, "const uint32_t polygonIndex = polygonCount++;",
+            "Metal compact polygon index", failures)
+    require(metal_cpp, "kMaxVariants = 2048", "Metal variant capacity", failures)
+    require(metal_cpp, "kMaxPolygons * 10", "Metal y-span capacity", failures)
+    require(metal_cpp, "State->ScreenHeight * kMaxPolygons",
+            "Metal full-height span budget", failures)
+    require(metal_cpp, "PolygonBatches", "Metal bounded work batching", failures)
+    require(metal_cpp, "BlendContinuationState", "Metal batch continuation", failures)
+    forbid(metal_cpp, "keepCount", "Metal work-tile layer drop", failures)
+    forbid(metal_cpp, "workOffset >= config.maxWorkTiles",
+           "Metal work-tile overflow discard", failures)
+
     for name, source in (("OpenGL Compute", gl_shader),
                          ("Vulkan", vk_interp), ("DX12", dx_shader)):
         require(source, "ShouldDecrementRightVertical",
@@ -168,6 +191,16 @@ def main() -> int:
         require(source, "int i = y - spanR.I0;",
                 f"{name} right edge Y interpolation", failures)
 
+    require(metal_cpp, "ShouldDecrementRightVertical",
+            "Metal conditional right vertical helper", failures)
+    require_order(metal_cpp,
+                  "ShouldDecrementRightVertical(spanL, spanR, xL, xR)",
+                  "swappedEdges", "Metal right correction ordering", failures)
+    require(metal_cpp, "int i = y - spanL.I0;",
+            "Metal left edge Y interpolation", failures)
+    require(metal_cpp, "int i = y - spanR.I0;",
+            "Metal right edge Y interpolation", failures)
+
     require(gl_shader, "#ifdef MELONPRIME_DS\nR\"(\nbool ShouldDecrementRightVertical",
             "OpenGL Compute guarded parity shader helper", failures)
     require(gl_shader, "#else\nR\"(        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;",
@@ -175,19 +208,38 @@ def main() -> int:
 
     for vector in ("V1 ordinary right vertical", "V2 right vertical at x=0",
                    "V3 coincident vertical edges", "V4 one-scanline vertical increment",
-                   "V5 swapped vertical AA coverage", "V6 bottom non-flat edge"):
+                   "V5 swapped vertical AA coverage", "V6 bottom non-flat edge",
+                   "V7 exact linear interpolation", "V8 alpha blend disabled",
+                   "V9 front facing opaque-back tie", "V10 back facing attribute bit",
+                   "V11 seventeen layer bounded batching",
+                   "V12 degenerate compact polygon indices"):
         require(edge_vectors, vector, f"executable raster vector {vector[:2]}", failures)
 
     require(vk_common, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
             "Vulkan exact linear division", failures)
     require(dx_shader, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
             "DX12 exact linear division", failures)
+    require(metal_span, "numerator / ulong(denominator)",
+            "Metal exact linear division", failures)
+    forbid(metal_span, "3u << 24u", "Metal reciprocal linear approximation", failures)
 
     for name, source in (("Vulkan", vk_depth), ("DX12", dx_shader)):
         require(source, "0x00400010", f"{name} front-facing tie rule", failures)
         require(source, "tileDepth <= dstDepth", f"{name} front-facing <=", failures)
         require(source, "srcAttr |= 1", f"{name} back-facing destination attr", failures)
         require(source, "DispCnt & (1", f"{name} alpha blend enable", failures)
+
+    require(metal_depth, "0x00400010u", "Metal front-facing tie rule", failures)
+    require(metal_depth, "sourceDepth <= destinationDepth",
+            "Metal front-facing <=", failures)
+    require(metal_depth, "facingView ? 0u : (1u << 4u)",
+            "Metal back-facing destination attr", failures)
+    require(metal_depth, "alphaBlendEnabled", "Metal alpha blend enable", failures)
+    require(metal_depth, "continuationState[gid]",
+            "Metal shadow continuation state", failures)
+    require(metal_textured, "MPMaxVariants = 2048u",
+            "Metal textured variant capacity", failures)
+    require(metal_span, "swapped ? 0 : 31", "Metal swapped vertical coverage", failures)
 
     require(vk_interp, "swappedEdges", "Vulkan swapped edge path", failures)
     require(dx_shader, "swappedEdges", "DX12 swapped edge path", failures)
@@ -222,7 +274,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
 
-    print("PASS: confirmed Software raster parity rules are ratcheted for Vulkan and DX12")
+    print("PASS: confirmed Software raster parity rules are ratcheted for Metal, Vulkan and DX12")
     return 0
 
 

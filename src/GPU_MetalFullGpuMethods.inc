@@ -134,7 +134,7 @@ bool MetalRenderer::InitializeMetalFullGpuOutput()
         FullGpuState = std::make_unique<MetalFullGpuState>();
 
     const char* env = std::getenv("MELONPRIME_METAL_FULL_GPU");
-    FullGpuState->Requested = env && env[0] == '1';
+    FullGpuState->Requested = CaptureVRAMDiffEnabled() || (env && env[0] == '1');
     if (!FullGpuState->Requested)
         return true;
 
@@ -248,7 +248,7 @@ void MetalRenderer::Start3DRendering()
 
     Metal3DSetCpuReadbackRequired(
         Rend3D.get(),
-        !FullGpuState->FrameActive);
+        !FullGpuState->FrameActive || CaptureVRAMDiffEnabled());
     Rend3D->RenderFrame();
 }
 
@@ -271,6 +271,11 @@ void MetalRenderer::DrawScanline(u32 line)
             CaptureMetalDisplayCaptureLine(line);
             if (!MetalCaptureFrameSupported())
                 FullGpuState->FrameValid = false;
+            if (CaptureVRAMDiffEnabled())
+            {
+                SoftRenderer::DrawScanline(line);
+                CaptureSoftwareDisplayCaptureLine(line);
+            }
         }
         return;
     }
@@ -286,6 +291,8 @@ void MetalRenderer::DrawSprites(u32 line)
         {
             Metal2D_A->CaptureSpriteScanlineState(static_cast<int>(line));
             Metal2D_B->CaptureSpriteScanlineState(static_cast<int>(line));
+            if (CaptureVRAMDiffEnabled())
+                SoftRenderer::DrawSprites(line);
         }
         return;
     }

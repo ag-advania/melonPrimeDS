@@ -58,7 +58,14 @@ public:
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
+protected:
+    [[nodiscard]] const u32* GetSoftwareCaptureSourceLine(bool source3D) const noexcept
+    {
+        return source3D ? Output3D : Output2D[0];
+    }
+
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+public:
     [[nodiscard]] u32 GetCaptureTextureReference(
         u32 bank, u32 address) const noexcept override;
 
