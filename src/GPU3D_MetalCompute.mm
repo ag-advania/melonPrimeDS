@@ -1134,6 +1134,7 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> DepthBlendColor = nil;
         id<MTLBuffer> DepthBlendDepth = nil;
         id<MTLBuffer> DepthBlendAttr = nil;
+        id<MTLBuffer> DepthBlendWinner = nil;
         id<MTLBuffer> BlendContinuationState = nil;
         id<MTLBuffer> FinalColorBuffer = nil;
         id<MTLBuffer> NativeColorBuffer = nil;
@@ -1163,6 +1164,7 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLComputePipelineState> BinCombinedPipeline = nil;
     id<MTLComputePipelineState> TextureRasterPipeline = nil;
     id<MTLComputePipelineState> CompleteDepthBlendPipeline = nil;
+    id<MTLComputePipelineState> CorrectCoveragePipeline = nil;
     id<MTLComputePipelineState> FinalPassPipeline = nil;
     id<MTLComputePipelineState> NativeResolvePipeline = nil;
 
@@ -1256,6 +1258,7 @@ void ReleaseFrameSlotResources(SlotT& slot)
     ReleaseMetalObject(slot.DepthBlendColor);
     ReleaseMetalObject(slot.DepthBlendDepth);
     ReleaseMetalObject(slot.DepthBlendAttr);
+    ReleaseMetalObject(slot.DepthBlendWinner);
     ReleaseMetalObject(slot.BlendContinuationState);
     ReleaseMetalObject(slot.FinalColorBuffer);
     ReleaseMetalObject(slot.NativeColorBuffer);
@@ -1313,6 +1316,7 @@ MetalComputeRenderer3D::~MetalComputeRenderer3D()
     ReleaseMetalObject(State->BinCombinedPipeline);
     ReleaseMetalObject(State->TextureRasterPipeline);
     ReleaseMetalObject(State->CompleteDepthBlendPipeline);
+    ReleaseMetalObject(State->CorrectCoveragePipeline);
     ReleaseMetalObject(State->FinalPassPipeline);
     ReleaseMetalObject(State->NativeResolvePipeline);
     ReleaseMetalObject(State->Library);
@@ -1518,6 +1522,10 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device,
         State->CompleteDepthBlendLibrary,
         @"mp_compute_depth_blend_complete");
+    State->CorrectCoveragePipeline = BuildComputePipeline(
+        State->Device,
+        State->CompleteDepthBlendLibrary,
+        @"mp_compute_correct_accepted_coverage");
     State->FinalPassPipeline = BuildComputePipeline(
         State->Device, State->FinalPassLibrary,
         @"mp_compute_final_pass");
@@ -1529,7 +1537,8 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         !State->CalcOffsetsPipeline || !State->SortWorkPipeline ||
         !State->SortWorkPolygonsPipeline || !State->InterpSpansPipeline ||
         !State->BinCombinedPipeline || !State->TextureRasterPipeline ||
-        !State->CompleteDepthBlendPipeline || !State->FinalPassPipeline ||
+        !State->CompleteDepthBlendPipeline || !State->CorrectCoveragePipeline ||
+        !State->FinalPassPipeline ||
         !State->NativeResolvePipeline)
     {
         return false;
@@ -1545,6 +1554,7 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->BinCombinedPipeline.maxTotalThreadsPerThreadgroup,
         State->TextureRasterPipeline.maxTotalThreadsPerThreadgroup,
         State->CompleteDepthBlendPipeline.maxTotalThreadsPerThreadgroup,
+        State->CorrectCoveragePipeline.maxTotalThreadsPerThreadgroup,
         State->FinalPassPipeline.maxTotalThreadsPerThreadgroup,
         State->NativeResolvePipeline.maxTotalThreadsPerThreadgroup,
     });
@@ -1801,11 +1811,14 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
 
         slot.DepthBlendColor =
             [State->Device newBufferWithLength:twoLayerPixelBytes
-                                       options:MTLResourceStorageModePrivate];
+                                       options:MTLResourceStorageModeShared];
         slot.DepthBlendDepth =
             [State->Device newBufferWithLength:twoLayerPixelBytes
-                                       options:MTLResourceStorageModePrivate];
+                                       options:MTLResourceStorageModeShared];
         slot.DepthBlendAttr =
+            [State->Device newBufferWithLength:twoLayerPixelBytes
+                                       options:MTLResourceStorageModeShared];
+        slot.DepthBlendWinner =
             [State->Device newBufferWithLength:twoLayerPixelBytes
                                        options:MTLResourceStorageModePrivate];
         slot.BlendContinuationState =
@@ -1837,6 +1850,7 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
             !slot.FinalTexture || !slot.ColorTiles || !slot.DepthTiles ||
             !slot.AttrTiles || !slot.DepthBlendColor || !slot.DepthBlendDepth ||
             !slot.DepthBlendAttr || !slot.BlendContinuationState ||
+            !slot.DepthBlendWinner ||
             !slot.FinalColorBuffer ||
             !slot.NativeColorBuffer || !slot.NativeTexture)
         {
@@ -2215,7 +2229,13 @@ void MetalComputeRenderer3D::Reset()
 
 void MetalComputeRenderer3D::SetThreaded(bool threaded) noexcept
 {
-    RasterReference.SetThreaded(threaded);
+    // Differential verification must consume the exact polygon/texture RAM
+    // snapshot that the compute submission below will read.  A nested software
+    // render thread can still be walking RenderPolygonRAM after the owning 3D
+    // render thread releases earlier scanlines, allowing the next frame to
+    // replace later polygons and producing a false cross-frame comparison.
+    RasterReference.SetThreaded(
+        RasterDifferential::Enabled() ? false : threaded);
 }
 
 bool MetalComputeRenderer3D::IsThreaded() const noexcept
@@ -2466,7 +2486,12 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         int32_t ybot = 0;
         for (uint32_t vertex = 0; vertex < nverts; vertex++)
         {
-            if (State->HiresCoordinates)
+            // Native 1x output must use the DS-quantized coordinates that the
+            // Software renderer consumes. HiresPosition preserves subpixel
+            // detail for enlarged targets, but rounding it back down at 1x is
+            // not guaranteed to reproduce FinalPosition (notably for moving
+            // HUD geometry).
+            if (State->HiresCoordinates && State->ScaleFactor > 1)
             {
                 positions[vertex][0] =
                     (polygon->Vertices[vertex]->HiresPosition[0] * static_cast<int32_t>(State->ScaleFactor)) >> 4;
@@ -2636,6 +2661,40 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     if (State->PolygonBatchCount == 0)
         State->PolygonBatches[State->PolygonBatchCount++] = { 0, 0 };
 
+    if (RasterDifferential::DiagnosticSavestateReady.load(
+            std::memory_order_acquire))
+    {
+        static bool loggedDiagnosticPolygons = false;
+        if (!loggedDiagnosticPolygons)
+        {
+            loggedDiagnosticPolygons = true;
+            constexpr int sampleX = 166;
+            constexpr int sampleY = 101;
+            for (uint32_t polygonIndex = 0;
+                 polygonIndex < State->PolygonData.size(); polygonIndex++)
+            {
+                const RenderPolygon& polygon = State->PolygonData[polygonIndex];
+                if (sampleX < polygon.XMin || sampleX > polygon.XMax ||
+                    sampleY < polygon.YTop || sampleY >= polygon.YBot)
+                {
+                    continue;
+                }
+                const VariantMeta& variant = State->VariantMetaData[polygon.Variant];
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "[RasterDiffPolygon] index=%u bounds=(%d,%d,%d,%d) "
+                    "attr=%08X facing=%u variant=%u textured=%u blend=%u "
+                    "texParam=%08X format=%u capture=%u\n",
+                    polygonIndex, polygon.XMin, polygon.XMax,
+                    polygon.YTop, polygon.YBot, polygon.Attr,
+                    polygon.FacingView, polygon.Variant, variant.Textured,
+                    variant.BlendMode, variant.TexParam,
+                    (variant.TexParam >> 26u) & 0x7u,
+                    variant.CaptureKind);
+            }
+        }
+    }
+
     {
         MetalComputeState::FrameSlot* slot = nullptr;
         uint32_t slotIndex = 0;
@@ -2798,6 +2857,8 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             baseSpanConfig.WBuffer,
             0u,
             0u,
+            0u,
+            numSetupIndices,
         };
 
         // Tile scratch and layer buffers belong to this slot, so a frame never
@@ -2841,6 +2902,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             depthBlendConfig.PolygonGroups = polygonGroups;
             depthBlendConfig.FirstPolygon = batch.FirstPolygon;
             depthBlendConfig.Continuation = batchIndex != 0 ? 1u : 0u;
+            depthBlendConfig.BatchPolygonCount = batch.PolygonCount;
 
             {
                 id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -2936,10 +2998,30 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:slot->BlendContinuationState offset:0 atIndex:9];
                 [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:10];
                 [encoder setBuffer:slot->TextureMemoryBuffer offset:0 atIndex:11];
+                [encoder setBuffer:slot->DepthBlendWinner offset:0 atIndex:12];
                 const uint32_t pixelCount = State->ScreenWidth * State->ScreenHeight;
                 [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(pixelCount, 64), 1, 1)
                          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
                 [encoder endEncoding];
+
+                if (State->ScaleFactor == 1 &&
+                    (GPU3D.RenderDispCnt & (1u << 4u)) != 0u &&
+                    numSetupIndices > 0)
+                {
+                    encoder = [command computeCommandEncoder];
+                    [encoder setComputePipelineState:State->CorrectCoveragePipeline];
+                    [encoder setBuffer:slot->FineMask offset:0 atIndex:0];
+                    [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:1];
+                    [encoder setBuffer:slot->SetupIndices offset:0 atIndex:2];
+                    [encoder setBuffer:slot->XSpans offset:0 atIndex:3];
+                    [encoder setBuffer:slot->AttrTiles offset:0 atIndex:4];
+                    [encoder setBuffer:slot->DepthBlendAttr offset:0 atIndex:5];
+                    [encoder setBuffer:slot->DepthBlendWinner offset:0 atIndex:6];
+                    [encoder setBytes:&depthBlendConfig length:sizeof(depthBlendConfig) atIndex:7];
+                    [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(numSetupIndices, 64), 1, 1)
+                             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                    [encoder endEncoding];
+                }
             }
         }
         if (submitFinalPass)
@@ -3135,6 +3217,25 @@ void MetalComputeRenderer3D::RenderFrame()
 
         const bool rasterDifferential =
             RasterDifferential::Enabled() && requestedScale == 1;
+        const uint32_t savedDifferentialDispCnt = GPU3D.RenderDispCnt;
+        struct DifferentialDispCntRestore
+        {
+            uint32_t& Value;
+            uint32_t Saved;
+            ~DifferentialDispCntRestore() { Value = Saved; }
+        } differentialDispCntRestore {
+            GPU3D.RenderDispCnt, savedDifferentialDispCnt };
+        if (rasterDifferential)
+        {
+            static const uint32_t clearMask = [] {
+                const char* value = std::getenv(
+                    "MELONPRIME_RASTER_TEST_DISPCNT_CLEAR_MASK");
+                return value && value[0] != '\0'
+                    ? static_cast<uint32_t>(std::strtoul(value, nullptr, 0))
+                    : 0u;
+            }();
+            GPU3D.RenderDispCnt &= ~clearMask;
+        }
         if (rasterDifferential)
             RasterReference.RenderSoftwareReferenceFrame();
 
@@ -3150,6 +3251,68 @@ void MetalComputeRenderer3D::RenderFrame()
             {
                 State->RasterDiff.CompareFrame(
                     *this, RasterReference.GetSoftwareReference(), "MetalCompute");
+                static bool loggedRawDiagnostic = false;
+                static uint32_t rawDiagnosticAttempts = 0;
+                rawDiagnosticAttempts++;
+                if (!loggedRawDiagnostic && rawDiagnosticAttempts >= 2 &&
+                    RasterDifferential::DiagnosticSavestateReady.load(
+                        std::memory_order_acquire))
+                {
+                    loggedRawDiagnostic = true;
+                    constexpr uint32_t sampleX = 163;
+                    constexpr uint32_t sampleY = 101;
+                    constexpr uint32_t nativePixels = 256u * 192u;
+                    const uint32_t pixel = sampleY * 256u + sampleX;
+                    const int diagnosticSlot = State->NativeLineSlot;
+                    auto& frameSlot = State->Slots[diagnosticSlot];
+                    const auto* colors = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendColor contents]);
+                    const auto* depths = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendDepth contents]);
+                    const auto* attrs = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendAttr contents]);
+                    auto& software = static_cast<SoftRenderer3D&>(
+                        RasterReference.GetSoftwareReference());
+                    for (int layer = 0; layer < 2; layer++)
+                    {
+                        const uint32_t index = pixel + uint32_t(layer) * nativePixels;
+                        Platform::Log(
+                            Platform::LogLevel::Info,
+                            "[RasterDiffRaw] layer=%d metal=(%08X,%08X,%08X) "
+                            "software=(%08X,%08X,%08X)\n",
+                            layer, colors[index], depths[index], attrs[index],
+                            software.DiagnosticRawColor(layer),
+                            software.DiagnosticRawDepth(layer),
+                            software.DiagnosticRawAttr(layer));
+                    }
+                    const auto* xSpans = static_cast<const SpanSetupX*>(
+                        [frameSlot.XSpans contents]);
+                    for (uint32_t polygonIndex = 0;
+                         polygonIndex < State->PolygonData.size(); polygonIndex++)
+                    {
+                        const RenderPolygon& polygon =
+                            State->PolygonData[polygonIndex];
+                        if (int(sampleX) < polygon.XMin ||
+                            int(sampleX) > polygon.XMax ||
+                            int(sampleY) < polygon.YTop ||
+                            int(sampleY) >= polygon.YBot)
+                        {
+                            continue;
+                        }
+                        const uint32_t spanIndex = polygon.FirstXSpan +
+                            (sampleY - uint32_t(polygon.YTop));
+                        const SpanSetupX& span = xSpans[spanIndex];
+                        Platform::Log(
+                            Platform::LogLevel::Info,
+                            "[RasterDiffSpan] polygon=%u span=%u x=%d..%d "
+                            "inside=%d..%d edgeCov=(%08X,%08X) init=(%d,%d) "
+                            "flags=%08X\n",
+                            polygonIndex, spanIndex, span.X0, span.X1,
+                            span.InsideStart, span.InsideEnd,
+                            uint32_t(span.EdgeCovL), uint32_t(span.EdgeCovR),
+                            span.CovLInitial, span.CovRInitial, span.Flags);
+                    }
+                }
             }
             return;
         }
@@ -3169,6 +3332,69 @@ void MetalComputeRenderer3D::RenderFrame()
             {
                 State->RasterDiff.CompareFrame(
                     *this, RasterReference.GetSoftwareReference(), "MetalCompute");
+                static bool loggedSubmittedRawDiagnostic = false;
+                static uint32_t submittedRawDiagnosticAttempts = 0;
+                submittedRawDiagnosticAttempts++;
+                if (!loggedSubmittedRawDiagnostic &&
+                    submittedRawDiagnosticAttempts >= 2 &&
+                    RasterDifferential::DiagnosticSavestateReady.load(
+                        std::memory_order_acquire))
+                {
+                    loggedSubmittedRawDiagnostic = true;
+                    constexpr uint32_t sampleX = 163;
+                    constexpr uint32_t sampleY = 101;
+                    constexpr uint32_t nativePixels = 256u * 192u;
+                    const uint32_t pixel = sampleY * 256u + sampleX;
+                    const int diagnosticSlot = State->NativeLineSlot;
+                    auto& frameSlot = State->Slots[diagnosticSlot];
+                    const auto* colors = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendColor contents]);
+                    const auto* depths = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendDepth contents]);
+                    const auto* attrs = static_cast<const uint32_t*>(
+                        [frameSlot.DepthBlendAttr contents]);
+                    auto& software = static_cast<SoftRenderer3D&>(
+                        RasterReference.GetSoftwareReference());
+                    for (int layer = 0; layer < 2; layer++)
+                    {
+                        const uint32_t index = pixel + uint32_t(layer) * nativePixels;
+                        Platform::Log(
+                            Platform::LogLevel::Info,
+                            "[RasterDiffRaw] layer=%d metal=(%08X,%08X,%08X) "
+                            "software=(%08X,%08X,%08X)\n",
+                            layer, colors[index], depths[index], attrs[index],
+                            software.DiagnosticRawColor(layer),
+                            software.DiagnosticRawDepth(layer),
+                            software.DiagnosticRawAttr(layer));
+                    }
+                    const auto* xSpans = static_cast<const SpanSetupX*>(
+                        [frameSlot.XSpans contents]);
+                    for (uint32_t polygonIndex = 0;
+                         polygonIndex < State->PolygonData.size(); polygonIndex++)
+                    {
+                        const RenderPolygon& polygon =
+                            State->PolygonData[polygonIndex];
+                        if (int(sampleX) < polygon.XMin ||
+                            int(sampleX) > polygon.XMax ||
+                            int(sampleY) < polygon.YTop ||
+                            int(sampleY) >= polygon.YBot)
+                        {
+                            continue;
+                        }
+                        const uint32_t spanIndex = polygon.FirstXSpan +
+                            (sampleY - uint32_t(polygon.YTop));
+                        const SpanSetupX& span = xSpans[spanIndex];
+                        Platform::Log(
+                            Platform::LogLevel::Info,
+                            "[RasterDiffSpanSubmitted] polygon=%u span=%u x=%d..%d "
+                            "inside=%d..%d edgeCov=(%08X,%08X) init=(%d,%d) "
+                            "flags=%08X\n",
+                            polygonIndex, spanIndex, span.X0, span.X1,
+                            span.InsideStart, span.InsideEnd,
+                            uint32_t(span.EdgeCovL), uint32_t(span.EdgeCovR),
+                            span.CovLInitial, span.CovRInitial, span.Flags);
+                    }
+                }
             }
             if (!State->LoggedVisibleCutover)
             {

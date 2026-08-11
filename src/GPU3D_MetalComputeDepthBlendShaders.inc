@@ -42,6 +42,30 @@ struct MPDConfig
     uint wBuffer;
     uint firstPolygon;
     uint continuation;
+    uint batchPolygonCount;
+    uint numSetupIndices;
+};
+
+struct MPDSetupIndices
+{
+    ushort PolyIdx;
+    ushort SpanIdxL;
+    ushort SpanIdxR;
+    ushort Y;
+};
+
+struct MPDXSpanSetup
+{
+    int X0, X1;
+    int InsideStart, InsideEnd, EdgeCovL, EdgeCovR;
+    int XRecip;
+    uint Flags;
+    int Z0, Z1, W0, W1;
+    int ColorR0, ColorG0, ColorB0;
+    int ColorR1, ColorG1, ColorB1;
+    int TexcoordU0, TexcoordV0;
+    int TexcoordU1, TexcoordV1;
+    int CovLInitial, CovRInitial;
 };
 
 static inline uint mpd_read8(
@@ -157,13 +181,14 @@ kernel void mp_compute_depth_blend_complete(
     device const MPDRenderPolygon* polygons [[buffer(2)]],
     device const uint* colorTiles [[buffer(3)]],
     device const uint* depthTiles [[buffer(4)]],
-    device const uint* attrTiles [[buffer(5)]],
+    device uint* attrTiles [[buffer(5)]],
     device uint* resultColor [[buffer(6)]],
     device uint* resultDepth [[buffer(7)]],
     device uint* resultAttr [[buffer(8)]],
     device uint* continuationState [[buffer(9)]],
     constant MPDConfig& config [[buffer(10)]],
     device const uchar* textureMemory [[buffer(11)]],
+    device uint* resultWinner [[buffer(12)]],
     uint gid [[thread_position_in_grid]])
 {
     const uint pixelCount =
@@ -189,6 +214,8 @@ kernel void mp_compute_depth_blend_complete(
     uint depth1 = 0u;
     uint attr0 = config.clearAttr;
     uint attr1 = 0u;
+    uint winner0 = 0xFFFFFFFFu;
+    uint winner1 = 0xFFFFFFFFu;
 
     uint stencil = 0u;
     bool previousWasShadowMask = false;
@@ -202,6 +229,8 @@ kernel void mp_compute_depth_blend_complete(
         depth1 = resultDepth[layerStride + gid];
         attr0 = resultAttr[gid];
         attr1 = resultAttr[layerStride + gid];
+        winner0 = resultWinner[gid];
+        winner1 = resultWinner[layerStride + gid];
         const uint state = continuationState[gid];
         stencil = state & 0x3u;
         previousWasShadowMask = (state & 0x4u) != 0u;
@@ -321,7 +350,7 @@ kernel void mp_compute_depth_blend_complete(
                         destinationAttr,
                         config.wBuffer != 0u))
                 {
-                    if ((destinationAttr & 0x3u) == 0u ||
+                    if ((destinationAttr & 0xFu) == 0u ||
                         writeSecondLayer)
                     {
                         continue;
@@ -353,23 +382,27 @@ kernel void mp_compute_depth_blend_complete(
                         sourceAttr | tileAttr;
                     if (!writeSecondLayer)
                     {
-                        if ((opaqueAttr & 0x3u) != 0u)
+                        if ((opaqueAttr & 0xFu) != 0u)
                         {
                             color1 = color0;
                             depth1 = depth0;
                             attr1 = attr0;
+                            winner1 = winner0;
                         }
 
                         color0 = tileColor;
                         depth0 = tileDepth;
                         attr0 = opaqueAttr;
+                        winner0 = polygonIndex;
                     }
                     else
                     {
                         color1 = tileColor;
                         depth1 = tileDepth;
                         attr1 = opaqueAttr;
+                        winner1 = polygonIndex;
                     }
+                    attrTiles[tilePixel] = tileAttr | 0x80000000u;
 
                 }
                 else
@@ -392,7 +425,7 @@ kernel void mp_compute_depth_blend_complete(
                     }
 
                     if (writeSecondLayer ||
-                        (destinationAttr & 0x3u) != 0u)
+                        (destinationAttr & 0xFu) != 0u)
                     {
                         mpd_plot_translucent(
                             color1,
@@ -424,7 +457,7 @@ kernel void mp_compute_depth_blend_complete(
                     stencil = 0x1u;
                 }
 
-                if ((destinationAttr & 0x3u) != 0u &&
+                if ((destinationAttr & 0xFu) != 0u &&
                     !mpd_depth_pass(
                         depth1,
                         tileDepth,
@@ -446,8 +479,158 @@ kernel void mp_compute_depth_blend_complete(
     resultDepth[layerStride + gid] = depth1;
     resultAttr[gid] = attr0;
     resultAttr[layerStride + gid] = attr1;
+    resultWinner[gid] = winner0;
+    resultWinner[layerStride + gid] = winner1;
     continuationState[gid] =
         stencil | (previousWasShadowMask ? 0x4u : 0u);
 
+}
+
+static inline bool mpd_coverage_tile_pixel(
+    device const uint* fineMask,
+    device const uint* workOffsets,
+    constant MPDConfig& config,
+    uint polygonIndex,
+    uint x,
+    uint y,
+    thread uint& tilePixel)
+{
+    const uint tileX = x / config.tileSize;
+    const uint tileY = y / config.tileSize;
+    const uint linearTile = tileX + tileY * config.tilesPerLine;
+    const uint localPolygon = polygonIndex - config.firstPolygon;
+    const uint group = localPolygon >> 5u;
+    const uint bit = localPolygon & 31u;
+    const uint maskIndex = linearTile * config.binStride + group;
+    const uint mask = fineMask[maskIndex];
+    if ((mask & (1u << bit)) == 0u)
+        return false;
+    const uint lowerMask = bit == 0u ? 0u : ((1u << bit) - 1u);
+    const uint ordinal = popcount(mask & lowerMask);
+    const uint workIndex = workOffsets[maskIndex] + ordinal;
+    if (workIndex >= min(config.maxWorkTiles, config.tileWorkCapacity))
+        return false;
+    const uint tileInner =
+        (y % config.tileSize) * config.tileSize + (x % config.tileSize);
+    tilePixel = workIndex * config.tileSize * config.tileSize + tileInner;
+    return true;
+}
+
+static inline bool mpd_coverage_was_accepted(
+    device const uint* fineMask,
+    device const uint* workOffsets,
+    device const uint* attrTiles,
+    constant MPDConfig& config,
+    uint polygonIndex,
+    uint x,
+    uint y)
+{
+    uint tilePixel = 0u;
+    return mpd_coverage_tile_pixel(
+               fineMask, workOffsets, config,
+               polygonIndex, x, y, tilePixel) &&
+           (attrTiles[tilePixel] & 0x80000000u) != 0u;
+}
+
+static inline void mpd_write_winning_coverage(
+    device uint* resultAttr,
+    device const uint* resultWinner,
+    constant MPDConfig& config,
+    uint polygonIndex,
+    uint x,
+    uint y,
+    uint coverage)
+{
+    const uint pixel = y * config.screenWidth + x;
+    const uint layerStride = config.screenWidth * config.screenHeight;
+    uint target = 0xFFFFFFFFu;
+    if (resultWinner[pixel] == polygonIndex)
+        target = pixel;
+    else if (resultWinner[layerStride + pixel] == polygonIndex)
+        target = layerStride + pixel;
+    if (target != 0xFFFFFFFFu)
+    {
+        resultAttr[target] =
+            (resultAttr[target] & ~0x1F00u) | ((coverage & 0x1Fu) << 8u);
+    }
+}
+
+// Software advances X-major AA coverage only after an opaque edge pixel has
+// survived alpha and depth testing. The raster pass records geometric
+// coverage; this ordered per-span pass applies the accepted-pixel progression
+// without serialising the much larger color/depth blend workload.
+kernel void mp_compute_correct_accepted_coverage(
+    device const uint* fineMask [[buffer(0)]],
+    device const uint* workOffsets [[buffer(1)]],
+    device const MPDSetupIndices* setupIndices [[buffer(2)]],
+    device const MPDXSpanSetup* xSpans [[buffer(3)]],
+    device const uint* attrTiles [[buffer(4)]],
+    device uint* resultAttr [[buffer(5)]],
+    device const uint* resultWinner [[buffer(6)]],
+    constant MPDConfig& config [[buffer(7)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= config.numSetupIndices)
+        return;
+    const MPDSetupIndices setup = setupIndices[gid];
+    const uint polygonIndex = uint(setup.PolyIdx);
+    if (polygonIndex < config.firstPolygon ||
+        polygonIndex >= config.firstPolygon + config.batchPolygonCount)
+    {
+        return;
+    }
+
+    const MPDXSpanSetup span = xSpans[gid];
+    const uint y = uint(setup.Y);
+    if (y >= config.screenHeight)
+        return;
+
+    int x = max(span.X0, 0);
+    const int screenEnd = int(config.screenWidth);
+    const int leftEnd = min(min(span.InsideStart, span.X1), screenEnd);
+    if (span.EdgeCovL < 0)
+    {
+        int xcov = span.CovLInitial;
+        for (; x < leftEnd; x++)
+        {
+            if (!mpd_coverage_was_accepted(
+                    fineMask, workOffsets, attrTiles, config,
+                    polygonIndex, uint(x), y))
+            {
+                continue;
+            }
+            const uint coverage = min(uint(xcov >> 5), 31u);
+            mpd_write_winning_coverage(
+                resultAttr, resultWinner, config,
+                polygonIndex, uint(x), y, coverage);
+            xcov += span.EdgeCovL & 0x3FF;
+        }
+    }
+    else
+    {
+        x = max(x, leftEnd);
+    }
+
+    const int bodyEnd = min(min(span.InsideEnd, span.X1), screenEnd);
+    x = max(x, bodyEnd);
+    const int rightEnd = min(span.X1, screenEnd);
+    if (span.EdgeCovR < 0)
+    {
+        int xcov = span.CovRInitial;
+        for (; x < rightEnd; x++)
+        {
+            if (!mpd_coverage_was_accepted(
+                    fineMask, workOffsets, attrTiles, config,
+                    polygonIndex, uint(x), y))
+            {
+                continue;
+            }
+            const uint coverage = uint(max(0x1F - (xcov >> 5), 0));
+            mpd_write_winning_coverage(
+                resultAttr, resultWinner, config,
+                polygonIndex, uint(x), y, coverage);
+            xcov += span.EdgeCovR & 0x3FF;
+        }
+    }
 }
 )MSL";

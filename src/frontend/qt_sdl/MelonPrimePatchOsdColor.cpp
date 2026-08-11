@@ -4,6 +4,7 @@
 #include "MelonPrimePatchState.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeHudRender.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeOsdColorSchema.inc"
 #include "MelonPrimePerfProbe.h"
@@ -204,7 +205,7 @@ void OsdColor_ApplyOnce(MelonPrimePatchState& state,
 
     // OsdColor patches are part of the Custom HUD feature; force-disable when
     // CustomHUD itself is off so toggling it cleanly restores all OSD literals.
-    const bool customHudEnabled = localCfg.GetBool(MP_HUD_PROP_KEY_CustomHUD);
+    const bool customHudEnabled = CustomHud_IsEnabled(localCfg);
     const bool globalEnabled = customHudEnabled && localCfg.GetBool(kCfgOsdColorEnable);
     const bool h211Enabled   = customHudEnabled && localCfg.GetBool(kCfgOsdColorH211Enable);
 

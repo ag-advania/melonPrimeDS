@@ -959,6 +959,15 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
 static constexpr const char* kCfgCustomHud = MP_HUD_PROP_KEY_CustomHUD;
 bool CustomHud_IsEnabled(Config::Table& localCfg)
 {
+    // Dormant diagnostic override used by the real-ROM raster differential.
+    // Cache the process environment once so the normal per-frame HUD query
+    // remains a single predictable branch plus the existing config lookup.
+    static const bool diagnosticForcedOff = [] {
+        const char* value = std::getenv("MELONPRIME_TEST_CUSTOM_HUD_OFF");
+        return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
+    }();
+    if (diagnosticForcedOff)
+        return false;
     return localCfg.GetBool(kCfgCustomHud);
 }
 
@@ -1264,4 +1273,3 @@ uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig)
 {
     return hudConfig.cacheEpoch;
 }
-

@@ -12,6 +12,7 @@
 #ifndef GPU3D_RASTER_DIFFERENTIAL_H
 #define GPU3D_RASTER_DIFFERENTIAL_H
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 
@@ -30,6 +31,22 @@ inline bool Enabled() noexcept
     return enabled;
 }
 
+inline bool WaitForDiagnosticSavestate() noexcept
+{
+    static const bool wait = [] {
+        const char* value = std::getenv("MELONPRIME_TEST_SAVESTATE");
+        return value && value[0] != '\0';
+    }();
+    return wait;
+}
+
+inline std::atomic<bool> DiagnosticSavestateReady { false };
+
+inline void NotifyDiagnosticSavestateLoaded() noexcept
+{
+    DiagnosticSavestateReady.store(true, std::memory_order_release);
+}
+
 class State
 {
 public:
@@ -42,6 +59,21 @@ public:
 
     bool CompareFrame(Renderer3D& candidate, Renderer3D& reference, const char* backend)
     {
+        if (WaitForDiagnosticSavestate())
+        {
+            if (!DiagnosticSavestateReady.load(std::memory_order_acquire))
+                return true;
+            if (!SavestateTransitionDiscarded)
+            {
+                SavestateTransitionDiscarded = true;
+                Reset();
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "[RasterDiffTransition] discarded=1 reason=savestate-load\n");
+                return true;
+            }
+        }
+
         constexpr u64 FnvOffset = 1469598103934665603ull;
         constexpr u64 FnvPrime = 1099511628211ull;
 
@@ -115,7 +147,10 @@ public:
             static_cast<unsigned long long>(FramesCompared),
             static_cast<unsigned long long>(MismatchedFrames),
             static_cast<unsigned long long>(MismatchedPixels));
-        if (mismatchedPixels != 0 && MismatchedFrames == 1)
+        // A savestate can replace the reference renderer while a candidate
+        // frame is already in flight. Preserve samples for the first stable
+        // mismatch as well as that one transitional mismatch.
+        if (mismatchedPixels != 0 && MismatchedFrames <= 2)
         {
             for (u32 i = 0; i < sampleCount; ++i)
             {
@@ -133,6 +168,7 @@ private:
     u64 FramesCompared = 0;
     u64 MismatchedFrames = 0;
     u64 MismatchedPixels = 0;
+    bool SavestateTransitionDiscarded = false;
 };
 
 } // namespace melonDS::RasterDifferential

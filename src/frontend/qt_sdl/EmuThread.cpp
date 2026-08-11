@@ -47,6 +47,7 @@
 #include "GPU_OpenGL.h"
 #if defined(MELONPRIME_DS)
 #include "MelonPrimeDef.h"
+#include "GPU3D_RasterDifferential.h"
 #endif
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "GPU_Metal.h"
@@ -1601,6 +1602,38 @@ void EmuThread::updateRenderer()
 #endif
     };
     nds->GetRenderer().SetRenderSettings(settings);
+
+#if defined(MELONPRIME_DS)
+    // Dormant real-ROM differential hook. Loading here guarantees the ROM and
+    // selected renderer both exist before the savestate replaces emulated
+    // state, without relying on macOS function-key routing.
+    static bool testSavestateAttempted = false;
+    const char* testSavestate = std::getenv("MELONPRIME_TEST_SAVESTATE");
+    if (!testSavestateAttempted && testSavestate && testSavestate[0] != '\0')
+    {
+        testSavestateAttempted = true;
+        const char* testCustomHudOff =
+            std::getenv("MELONPRIME_TEST_CUSTOM_HUD_OFF");
+        const bool customHudForcedOff = testCustomHudOff &&
+            testCustomHudOff[0] != '\0' &&
+            std::strcmp(testCustomHudOff, "0") != 0;
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[SavestateDiff] customHudForcedOff=%u\n",
+            customHudForcedOff ? 1u : 0u);
+        const bool loaded = emuInstance->loadState(testSavestate);
+        if (loaded)
+        {
+            melonPrime->OnSavestateLoaded();
+            RasterDifferential::NotifyDiagnosticSavestateLoaded();
+        }
+        Platform::Log(
+            loaded ? Platform::LogLevel::Info : Platform::LogLevel::Error,
+            "[SavestateDiff] path=%s loaded=%u\n",
+            testSavestate,
+            loaded ? 1u : 0u);
+    }
+#endif
 
 #include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
 }

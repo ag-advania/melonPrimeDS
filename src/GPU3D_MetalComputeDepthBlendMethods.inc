@@ -29,9 +29,11 @@ struct CompleteDepthBlendConfig
     uint32_t WBuffer;
     uint32_t FirstPolygon;
     uint32_t Continuation;
+    uint32_t BatchPolygonCount;
+    uint32_t NumSetupIndices;
 };
 static_assert(
-    sizeof(CompleteDepthBlendConfig) == 72,
+    sizeof(CompleteDepthBlendConfig) == 80,
     "CompleteDepthBlendConfig must match MSL");
 
 } // namespace
@@ -85,7 +87,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         polygonCount,
         0, 0xFFFFFFu, 0,
         0, 0, 0, 0,
-        0, 0,
+        0, 0, polygonCount, 0,
     };
 
     id<MTLBuffer> fine =
@@ -131,6 +133,10 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         [State->Device
             newBufferWithLength:2u * sizeof(uint32_t)
                         options:MTLResourceStorageModeShared];
+    id<MTLBuffer> resultWinner =
+        [State->Device
+            newBufferWithLength:2u * sizeof(uint32_t)
+                        options:MTLResourceStorageModeShared];
 
     const uint16_t zeroTexture = 0;
     id<MTLBuffer> textureMemory =
@@ -145,7 +151,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
 
     if (!fine || !offsets || !polygonBuffer ||
         !colors || !depths || !attrs ||
-        !resultColor || !resultDepth || !resultAttr || !continuation ||
+        !resultColor || !resultDepth || !resultAttr || !resultWinner || !continuation ||
         !textureMemory)
     {
         return false;
@@ -154,6 +160,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     std::memset([resultColor contents], 0, resultColor.length);
     std::memset([resultDepth contents], 0, resultDepth.length);
     std::memset([resultAttr contents], 0, resultAttr.length);
+    std::memset([resultWinner contents], 0xFF, resultWinner.length);
 
     id<MTLCommandBuffer> command =
         [State->Queue commandBuffer];
@@ -184,6 +191,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
            length:sizeof(config)
           atIndex:10];
     [encoder setBuffer:textureMemory offset:0 atIndex:11];
+    [encoder setBuffer:resultWinner offset:0 atIndex:12];
     [encoder
         dispatchThreadgroups:MTLSizeMake(1, 1, 1)
         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];

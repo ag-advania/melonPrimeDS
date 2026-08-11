@@ -17,6 +17,7 @@
 */
 
 #include "GPU3D_Soft.h"
+#include "GPU3D_RasterDifferential.h"
 
 #include <algorithm>
 #include <stdio.h>
@@ -1070,6 +1071,30 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         }
     }
 
+    static bool loggedDiagnosticGeometry = false;
+    if (!loggedDiagnosticGeometry &&
+        RasterDifferential::DiagnosticSavestateReady.load(
+            std::memory_order_acquire))
+    {
+        if (y == 101 && xstart <= 166 && xend >= 166)
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[RasterDiffSoftSpan] polygon=%td x=%d..%d edgeLen=(%d,%d) "
+                "edgeCov=(%08X,%08X) fill=(%u,%u) attr=%08X "
+                "boundsY=(%d,%d) texParam=%08X\n",
+                rp - PolygonList, xstart, xend, l_edgelen, r_edgelen,
+                uint32_t(l_edgecov), uint32_t(r_edgecov),
+                l_filledge ? 1u : 0u, r_filledge ? 1u : 0u,
+                polygon->Attr, polygon->YTop, polygon->YBottom,
+                polygon->TexParam);
+        }
+        else if (y > 101)
+        {
+            loggedDiagnosticGeometry = true;
+        }
+    }
+
     // interpolate attributes along Y
 
     s32 rl = interp_start->Interpolate(vlcur->FinalColor[0], vlnext->FinalColor[0]);
@@ -1200,6 +1225,19 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
             if ((dstattr & 0xF) && (pixeladdr < BufferSize))
                 PlotTranslucentPixel(pixeladdr+BufferSize, color, z, polyattr, polygon->IsShadow);
         }
+        if (y == 101 && x >= 163 && x <= 166 &&
+            RasterDifferential::DiagnosticSavestateReady.load(
+                std::memory_order_acquire))
+        {
+            const u32 base = FirstPixelOffset + y * ScanlineWidth + x;
+            Platform::Log(Platform::LogLevel::Info,
+                "[RasterDiffSoftPlot] part=L polygon=%td xy=(%d,%d) selectedLayer=%u "
+                "top=(%08X,%08X,%08X) bottom=(%08X,%08X,%08X)\n",
+                rp - PolygonList, x, y, pixeladdr >= BufferSize ? 1u : 0u,
+                ColorBuffer[base], DepthBuffer[base], AttrBuffer[base],
+                ColorBuffer[base + BufferSize], DepthBuffer[base + BufferSize],
+                AttrBuffer[base + BufferSize]);
+        }
     }
 
     // part 2: polygon inside
@@ -1288,6 +1326,19 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
             // blend with bottom pixel too, if needed
             if ((dstattr & 0xF) && (pixeladdr < BufferSize))
                 PlotTranslucentPixel(pixeladdr+BufferSize, color, z, polyattr, polygon->IsShadow);
+        }
+        if (y == 101 && x >= 163 && x <= 166 &&
+            RasterDifferential::DiagnosticSavestateReady.load(
+                std::memory_order_acquire))
+        {
+            const u32 base = FirstPixelOffset + y * ScanlineWidth + x;
+            Platform::Log(Platform::LogLevel::Info,
+                "[RasterDiffSoftPlot] part=I polygon=%td xy=(%d,%d) selectedLayer=%u "
+                "top=(%08X,%08X,%08X) bottom=(%08X,%08X,%08X)\n",
+                rp - PolygonList, x, y, pixeladdr >= BufferSize ? 1u : 0u,
+                ColorBuffer[base], DepthBuffer[base], AttrBuffer[base],
+                ColorBuffer[base + BufferSize], DepthBuffer[base + BufferSize],
+                AttrBuffer[base + BufferSize]);
         }
     }
 
@@ -1387,6 +1438,19 @@ void SoftRenderer3D::RenderPolygonScanline(RendererPolygon* rp, s32 y)
             // blend with bottom pixel too, if needed
             if ((dstattr & 0xF) && (pixeladdr < BufferSize))
                 PlotTranslucentPixel(pixeladdr+BufferSize, color, z, polyattr, polygon->IsShadow);
+        }
+        if (y == 101 && x >= 163 && x <= 166 &&
+            RasterDifferential::DiagnosticSavestateReady.load(
+                std::memory_order_acquire))
+        {
+            const u32 base = FirstPixelOffset + y * ScanlineWidth + x;
+            Platform::Log(Platform::LogLevel::Info,
+                "[RasterDiffSoftPlot] part=R polygon=%td xy=(%d,%d) selectedLayer=%u "
+                "top=(%08X,%08X,%08X) bottom=(%08X,%08X,%08X)\n",
+                rp - PolygonList, x, y, pixeladdr >= BufferSize ? 1u : 0u,
+                ColorBuffer[base], DepthBuffer[base], AttrBuffer[base],
+                ColorBuffer[base + BufferSize], DepthBuffer[base + BufferSize],
+                AttrBuffer[base + BufferSize]);
         }
     }
 
@@ -1723,6 +1787,17 @@ void SoftRenderer3D::RenderPolygons(bool threaded, Polygon** polygons, int npoly
     for (s32 y = 1; y < 192; y++)
     {
         RenderScanline(y, j);
+        if (y - 1 == 101)
+        {
+            constexpr int sampleX = 163;
+            const u32 pixeladdr = FirstPixelOffset + 101 * ScanlineWidth + sampleX;
+            for (int layer = 0; layer < 2; layer++)
+            {
+                DiagnosticRawColors[layer] = ColorBuffer[pixeladdr + layer * BufferSize];
+                DiagnosticRawDepths[layer] = DepthBuffer[pixeladdr + layer * BufferSize];
+                DiagnosticRawAttrs[layer] = AttrBuffer[pixeladdr + layer * BufferSize];
+            }
+        }
         ScanlineFinalPass(y-1);
 
         if (threaded)
