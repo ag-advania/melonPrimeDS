@@ -128,13 +128,24 @@ def main() -> int:
     require(edge_contract, "xlen != 1", "one-scanline vertical slope exception", failures)
     require(edge_contract, "InterpolationOriginOffset",
             "edge interpolation origin contract", failures)
-    require(soft_header, "RasterEdge::CalculateSlopeIncrement",
-            "Software canonical slope helper", failures)
-    require(soft_cpp, "RasterEdge::AdjustRightVertical",
-            "Software conditional right vertical edge", failures)
-    require(soft_cpp, "RasterEdge::IsBottomNonFlatEdge",
-            "Software bottom non-flat edge helper", failures)
-    for name, source in (("OpenGL Compute", gl_cpp), ("Vulkan", vk_cpp), ("DX12", dx_cpp)):
+    require(soft_header, "else if (ylen == xlen && xlen != 1)",
+            "Software one-scanline vertical slope reference", failures)
+    require(soft_cpp, "rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend) && (xend != 0)",
+            "Software conditional right vertical reference", failures)
+    require(soft_cpp, "y == polygon->YBottom-1",
+            "Software bottom edge reference", failures)
+    require(gl_cpp, "RasterEdge::CalculateSlopeIncrement",
+            "OpenGL Compute canonical slope helper", failures)
+    require(gl_cpp, "RasterEdge::ConservativeRightVerticalMin",
+            "OpenGL Compute conservative polygon bounds", failures)
+    require(gl_cpp, "RasterEdge::InterpolationOriginOffset",
+            "OpenGL Compute edge interpolation origin", failures)
+    require(gl_cpp, "#ifndef MELONPRIME_DS\n        if (side) span->XMin--;",
+            "OpenGL Compute guarded upstream vertical setup", failures)
+    require(gl_cpp, "#ifdef MELONPRIME_DS\n            span->DxInitial = 0;\n#else\n            span->DxInitial = -0x40000;",
+            "OpenGL Compute guarded upstream vertical origin", failures)
+
+    for name, source in (("Vulkan", vk_cpp), ("DX12", dx_cpp)):
         require(source, "RasterEdge::CalculateSlopeIncrement",
                 f"{name} canonical slope helper", failures)
         require(source, "RasterEdge::ConservativeRightVerticalMin",
@@ -156,6 +167,11 @@ def main() -> int:
                 f"{name} left edge Y interpolation", failures)
         require(source, "int i = y - spanR.I0;",
                 f"{name} right edge Y interpolation", failures)
+
+    require(gl_shader, "#ifdef MELONPRIME_DS\nR\"(\nbool ShouldDecrementRightVertical",
+            "OpenGL Compute guarded parity shader helper", failures)
+    require(gl_shader, "#else\nR\"(        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;",
+            "OpenGL Compute guarded upstream interpolation", failures)
 
     for vector in ("V1 ordinary right vertical", "V2 right vertical at x=0",
                    "V3 coincident vertical edges", "V4 one-scanline vertical increment",

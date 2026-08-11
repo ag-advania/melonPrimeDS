@@ -196,14 +196,18 @@ int CalculateX(int dx, YSpanSetup span)
         x += dx >> 18;
     return clamp(x, span.XMin, span.XMax);
 }
-
+)"
+#ifdef MELONPRIME_DS
+R"(
 bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
 {
     return spanR.Increment == 0
         && (spanL.Increment != 0 || xl != xr)
         && xr != 0;
 }
-
+)"
+#endif
+R"(
 void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
@@ -695,18 +699,30 @@ void main()
 
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
-
+)"
+#ifdef MELONPRIME_DS
+R"(
     // Match GPU3D_Soft: calculate both raw edge positions first, then apply
     // the conditional right-vertical correction before the swapped test.
     if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
         xr--;
-
+)"
+#endif
+R"(
     Polygon polygon = Polygons[setup.x];
 
     int edgeLenL, edgeLenR;
 
-    bool swappedEdges = xl > xr;
+)"
+#ifdef MELONPRIME_DS
+R"(    bool swappedEdges = xl > xr;
     if (swappedEdges)
+)"
+#else
+R"(    if (xl > xr)
+)"
+#endif
+R"(
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -775,8 +791,15 @@ void main()
     }
     else
     {
-        int i = y - spanL.I0;
-        int ifactor = CalcYFactorY(spanL, i);
+)"
+#ifdef MELONPRIME_DS
+R"(        int i = y - spanL.I0;
+)"
+#else
+R"(        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+)"
+#endif
+R"(        int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
 #ifdef ZBuffer
@@ -822,8 +845,15 @@ void main()
     }
     else
     {
-        int i = y - spanR.I0;
-        int ifactor = CalcYFactorY(spanR, i);
+)"
+#ifdef MELONPRIME_DS
+R"(        int i = y - spanR.I0;
+)"
+#else
+R"(        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+)"
+#endif
+R"(        int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 
     #ifdef ZBuffer

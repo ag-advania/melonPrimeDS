@@ -24,10 +24,11 @@
 namespace melonDS::RasterEdge
 {
 
-// Canonical DS slope setup shared by the software renderer and the CPU setup
-// stages of the compute renderers. The xlen != 1 exception is observable for a
-// one-scanline vertical edge: it is vertical (Increment == 0), not a 45-degree
-// edge (Increment == 0x40000).
+// Canonical DS slope setup mirrored from the upstream Software renderer and
+// used by MelonPrime's compute-renderer CPU setup stages. Keeping Software
+// itself untouched reduces conflicts when pulling upstream renderer updates.
+// The xlen != 1 exception is observable for a one-scanline vertical edge: it
+// is vertical (Increment == 0), not a 45-degree edge (Increment == 0x40000).
 constexpr s32 CalculateSlopeIncrement(
     s32 x0, s32 x1, s32 xMin, s32 xMax, s32 y0, s32 y1) noexcept
 {

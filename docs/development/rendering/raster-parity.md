@@ -4,10 +4,16 @@ Vulkan and DirectX 12 use the same DS scanline rules as the Software renderer,
 but shader compilation alone cannot prove that their native 3D pixels match.
 The repository therefore has two complementary executable checks.
 
+The corresponding OpenGL Compute edge changes are selected only when
+`MELONPRIME_DS` is defined. The non-MelonPrime branch retains the upstream
+melonDS span setup and shader interpolation so future upstream updates can be
+merged without silently changing their renderer contract.
+
 ## GPU-independent edge vectors
 
-`melonprime_raster_edge_vectors` executes the canonical edge helpers used by
-Software and by the CPU setup stages of OpenGL Compute, Vulkan and DX12. It
+`melonprime_raster_edge_vectors` executes the canonical edge helpers mirrored
+from Software and used by the MelonPrime CPU setup stages of OpenGL Compute,
+Vulkan and DX12. Software itself remains the untouched upstream reference. It
 covers the ordinary/right-at-zero/coincident vertical cases, the one-scanline
 vertical slope exception, the Software interpolation origin used by 45-degree
 and X-major edges, swapped vertical AA coverage and the non-flat bottom X-major
