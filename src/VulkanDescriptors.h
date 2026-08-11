@@ -78,8 +78,10 @@ enum class RasterizerBinding : u32
                             // descriptor set the host binds.
     CaptureSidecar = 14,    // STORAGE_BUFFER: two high-resolution versions of
                             // each LCDC capture bank, persistent across frames
+    BlendState = 15,        // STORAGE_BUFFER: stencil/shadow continuation state
+                            // retained across bounded polygon batches
 
-    Count           = 15
+    Count           = 16
 };
 
 // Set 1 -- texture resources, rebound when the active texture changes.
@@ -120,6 +122,7 @@ inline constexpr std::array<VkDescriptorType, RasterizerBindingCount> Rasterizer
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 12 StructuredInput
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 13 PresentationOut
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 14 CaptureSidecar
+    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 15 BlendState
 };
 
 inline constexpr std::array<VkDescriptorType, TextureBindingCount> TextureBindingTypes = {

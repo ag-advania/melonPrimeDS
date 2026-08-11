@@ -96,14 +96,17 @@ int CalculateX(int dx, YSpanSetup span)
     return clamp(x, span.XMin, span.XMax);
 }
 
-void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+void EdgeParams_XMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
-    int len;
-    if (side != negative)
-        len = (dx >> 18) - ((dx-span.Increment) >> 18);
-    else
-        len = ((dx+span.Increment) >> 18) - (dx >> 18);
+    int len = 1;
+    if (!swapped || side)
+    {
+        if (side != negative)
+            len = (dx >> 18) - ((dx-span.Increment) >> 18);
+        else
+            len = ((dx+span.Increment) >> 18) - (dx >> 18);
+    }
     edgelen = len;
 
     int xlen = span.XMax + 1 - span.XMin;
@@ -114,26 +117,37 @@ void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out 
     uint r;
     int startcov = int(Div(uint(((startx << 10) + 0x1FF) * (span.Y1 - span.Y0)), uint(xlen), r));
     edgecov = (1<<31) | ((startcov & 0x3FF) << 12) | (span.XCovIncr & 0x3FF);
+    if (swapped)
+        edgelen = 1;
 }
 
-void EdgeParams_YMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+void EdgeParams_YMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
     edgelen = 1;
 
     if (span.Increment == 0)
     {
-        edgecov = 31;
+        edgecov = swapped ? 0 : 31;
     }
     else
     {
         int cov = ((dx >> 9) + (span.Increment >> 10)) >> 4;
         if ((cov >> 5) != (dx >> 18)) cov = 31;
         cov &= 0x1F;
-        if (side == negative) cov = 0x1F - cov;
+        if (swapped ? (side != negative) : (side == negative))
+            cov = 0x1F - cov;
 
         edgecov = cov;
     }
+}
+
+void EdgeParams(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+{
+    if (span.Increment > 0x40000)
+        EdgeParams_XMajor(side, swapped, dx, span, edgelen, edgecov);
+    else
+        EdgeParams_YMajor(side, swapped, dx, span, edgelen, edgecov);
 }
 #endif
 

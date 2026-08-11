@@ -128,12 +128,12 @@ public:
 private:
     explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D);
 
-    static constexpr int MaxVariants = 256;
-    static constexpr int MaxYSpanSetups = 6144 * 2;
+    static constexpr int MaxRenderPolygons = 2048;
+    static constexpr int MaxVariants = MaxRenderPolygons;
+    static constexpr int MaxYSpanSetups = MaxRenderPolygons * 10;
     static constexpr int BinStride = 2048 / 32;
     static constexpr int CoarseBinStride = BinStride / 32;
     static constexpr int CoarseTileCountX = 8;
-    static constexpr int MaxRenderPolygons = 2048;
 
     // Pipelines 0..32 are the compute rasterizer and match
     // ComputeRenderer3D::ShaderCompileStep() index for index; 33 (Resolve) and
@@ -240,6 +240,7 @@ private:
         u32 Attr;
 
         float TextureLayer;
+        u32 FacingView;
     };
 
     static_assert(sizeof(SpanSetupY) == 31 * 4, "SpanSetupY must match the std430 YSpanSetup layout");
@@ -251,9 +252,10 @@ private:
     static_assert(alignof(SpanSetupX) == 4, "SpanSetupX must not gain alignment padding");
     static_assert(offsetof(SpanSetupX, Flags) == 7 * 4, "XSpanSetup.Flags is the 8th 4-byte slot");
 
-    static_assert(sizeof(RenderPolygon) == 10 * 4, "RenderPolygon must match the std430 Polygon layout");
+    static_assert(sizeof(RenderPolygon) == 11 * 4, "RenderPolygon must match the std430 Polygon layout");
     static_assert(alignof(RenderPolygon) == 4, "RenderPolygon must not gain alignment padding");
     static_assert(offsetof(RenderPolygon, TextureLayer) == 9 * 4, "Polygon.TextureLayer is the 10th slot");
+    static_assert(offsetof(RenderPolygon, FacingView) == 10 * 4, "Polygon.FacingView is the 11th slot");
 
     static_assert(sizeof(SetupIndices) == 8, "SetupIndices must match one R16G16B16A16_UINT texel");
 
@@ -261,15 +263,19 @@ private:
     // BinningMaskAndOffset[] runtime array starts immediately after this.
     struct BinResultHeader
     {
-        u32 VariantWorkCount[MaxVariants * 4];      // uvec4[256], offset 0
-        u32 SortedWorkOffset[MaxVariants];          // offset 4096
-        u32 VariantWorkRealCount[MaxVariants];      // offset 5120 (MelonPrimeDS #2047 split)
-        u32 SortWorkWorkCount[4];                   // uvec4, offset 6144
+        u32 VariantWorkCount[MaxVariants * 4];
+        u32 SortedWorkOffset[MaxVariants];
+        u32 VariantWorkRealCount[MaxVariants];
+        u32 SortWorkWorkCount[4];
     };
-    static_assert(sizeof(BinResultHeader) == 6160, "BinResultHeader must match the std430 offsets");
-    static_assert(offsetof(BinResultHeader, SortedWorkOffset) == 4096, "SortedWorkOffset offset");
-    static_assert(offsetof(BinResultHeader, VariantWorkRealCount) == 5120, "VariantWorkRealCount offset");
-    static_assert(offsetof(BinResultHeader, SortWorkWorkCount) == 6144, "SortWorkWorkCount must stay uvec4-aligned");
+    static_assert(sizeof(BinResultHeader) == MaxVariants * 24 + 16,
+        "BinResultHeader must match the std430 offsets");
+    static_assert(offsetof(BinResultHeader, SortedWorkOffset) == MaxVariants * 16,
+        "SortedWorkOffset offset");
+    static_assert(offsetof(BinResultHeader, VariantWorkRealCount) == MaxVariants * 20,
+        "VariantWorkRealCount offset");
+    static_assert(offsetof(BinResultHeader, SortWorkWorkCount) == MaxVariants * 24,
+        "SortWorkWorkCount must stay uvec4-aligned");
 
     // Common.glsl :: MetaUniform, std140.
     //
@@ -341,6 +347,12 @@ private:
         }
     };
 
+    struct PolygonBatch
+    {
+        u32 FirstPolygon = 0;
+        u32 PolygonCount = 0;
+    };
+
     // --- lifecycle ---------------------------------------------------------
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
@@ -379,9 +391,10 @@ private:
     void SetupYSpanDummy(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int vertex, int side, s32 positions[10][2]) const;
 
     // Returns the number of variants collected, filling YSpanSetups /
-    // YSpanIndices / RenderPolygons. `numPolygons` can be lower than
-    // GPU3D.RenderNumPolygons when the span budget ran out.
+    // YSpanIndices / RenderPolygons. Degenerate polygons are compacted out;
+    // valid DS input otherwise fits the worst-case span allocations exactly.
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
+    std::vector<PolygonBatch> BuildPolygonBatches(u32 numPolygons) const;
 
     void EnsureFrameReadback();
 
@@ -435,6 +448,7 @@ private:
     Vk::Buffer ResultBuffer;
     Vk::Buffer BinResultBuffer;             // storage + indirect dispatch args
     Vk::Buffer WorkDescBuffer;
+    Vk::Buffer BlendStateBuffer;            // stencil + previous-shadow-mask bit per pixel
     Vk::Image FinalFB;                      // internal-resolution RGBA8 storage image
     Vk::Buffer CaptureSidecarBuffer;         // 4 banks x 2 versions, internal resolution
 

@@ -40,10 +40,10 @@ namespace
 constexpr u32 CoarseTileCountX = 8;             // GPU3D_Compute.h
 constexpr u32 BinStride = 2048 / 32;            // GPU3D_Compute.h
 constexpr u32 CoarseBinStride = BinStride / 32; // GPU3D_Compute.h
-constexpr u32 MaxVariants = 256;                // GPU3D_Compute.h
+constexpr u32 MaxVariants = 2048;               // GPU3D_Vulkan.h
 
-// sizeof(ComputeRenderer3D::BinResultHeader): VariantWorkCount[256*4] +
-// SortedWorkOffset[256] + VariantWorkRealCount[256] + SortWorkWorkCount[4],
+// sizeof(VulkanRenderer3D::BinResultHeader): VariantWorkCount[2048*4] +
+// SortedWorkOffset[2048] + VariantWorkRealCount[2048] + SortWorkWorkCount[4],
 // all u32.
 constexpr VkDeviceSize BinResultHeaderBytes =
     (static_cast<VkDeviceSize>(MaxVariants) * 4 + MaxVariants + MaxVariants + 4) * 4;
@@ -52,14 +52,14 @@ constexpr VkDeviceSize BinResultHeaderBytes =
 // 4-byte scalars respectively, no padding.
 constexpr VkDeviceSize SpanSetupXBytes = 24 * 4;
 constexpr VkDeviceSize SpanSetupYBytes = 31 * 4;
-constexpr VkDeviceSize MaxYSpanSetups = 6144 * 2;   // GPU3D_Compute.h
+constexpr VkDeviceSize MaxYSpanSetups = 2048 * 10;  // GPU3D_Vulkan.h
 
-// GPU3D_Compute.cpp: maxYSpanIndices = 64 * 2048 * ScaleFactor.
-constexpr VkDeviceSize YSpanIndicesPerScale = 64 * 2048;
+// GPU3D_Vulkan.cpp: ScreenHeight * MaxRenderPolygons.
+constexpr VkDeviceSize YSpanIndicesPerScale = 192 * 2048;
 
 // RenderPolygons[2048], u32-sized fields; the polygon SSBO mirrors it.
 constexpr VkDeviceSize RenderPolygonCount = 2048;
-constexpr VkDeviceSize RenderPolygonBytes = 12 * 4;  // GPU3D_Compute.h RenderPolygon
+constexpr VkDeviceSize RenderPolygonBytes = 11 * 4;  // GPU3D_Vulkan.h RenderPolygon
 
 // GPU3D_Texcache.h: texture arrays are capped at 64 layers and 1024x1024.
 constexpr u32 TexcacheMaxArrayLayers = 64;
@@ -359,6 +359,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
     // native 256x256 cell.
     const VkDeviceSize captureSidecarBytes =
         4ull * 2ull * 256ull * 256ull * scale * scale * sizeof(u32);
+    const VkDeviceSize blendStateBytes = screenPixels * sizeof(u32);
 
     budget.LargestStorageBuffer = std::max({
         tileMemoryBytes,
@@ -370,6 +371,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         polygonBytes,
         composeOutputBytes,
         captureSidecarBytes,
+        blendStateBytes,
     });
 
     budget.TotalDeviceBytes =
@@ -384,6 +386,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         + finalFramebufferBytes
         + composeOutputBytes
         + captureSidecarBytes
+        + blendStateBytes
         + MetaUniformBytes;
 
     return budget;

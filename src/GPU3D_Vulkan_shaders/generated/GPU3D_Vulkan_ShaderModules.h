@@ -62,7 +62,8 @@ enum Set0Binding : uint32_t
     Set0Binding_StructuredInput = 12,
     Set0Binding_PresentationOutput = 13,
     Set0Binding_CaptureSidecar = 14,
-    Set0Binding_Count = 15,
+    Set0Binding_BlendState = 15,
+    Set0Binding_Count = 16,
 };
 
 // Descriptor set 1 bindings (sampled images).

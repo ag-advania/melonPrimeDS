@@ -609,6 +609,16 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
             "MelonPrime Vulkan high-resolution capture sidecar"))
         return false;
 
+    // DepthBlend is run once per bounded polygon batch. Preserve the two-bit
+    // shadow stencil and the previous-shadow-mask flag between batches so a
+    // boundary is observationally identical to one unbounded pass.
+    if (!BlendStateBuffer.Create(Device,
+            screenPixels * 4,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+            "MelonPrime Vulkan depth-blend continuation state"))
+        return false;
+
     // The ring has to hold one frame's worth of every CPU-side upload at once:
     // the two clear-bitmap halves, the Y span records, the per-scanline index
     // table, the polygon records, plus texcache traffic.
@@ -640,6 +650,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     SetupIndicesBuffer.Destroy();
     XSpanSetupBuffer.Destroy();
     WorkDescBuffer.Destroy();
+    BlendStateBuffer.Destroy();
     BinResultBuffer.Destroy();
     ResultBuffer.Destroy();
     for (auto& buffer : TileBuffers)
@@ -742,10 +753,11 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     // bucket and this picks the matching one.
     TileGeometryBucket = VulkanShaders::TileGeometryBucketForScale(static_cast<u32>(ScaleFactor));
 
-    // Preserve the complete OpenGL span budget. InterpSpans is dispatched in
-    // device-sized chunks below, so 16x no longer drops the final 32 spans on
-    // implementations whose X workgroup limit is 65535.
-    MaxYSpanIndices = 64 * 2048 * ScaleFactor;
+    // A valid DS polygon can cover every output scanline. Size this from the
+    // actual worst case instead of OpenGL's 64-lines-per-polygon heuristic so
+    // span setup never silently drops later polygons. InterpSpans is already
+    // dispatched in device-sized chunks.
+    MaxYSpanIndices = ScreenHeight * MaxRenderPolygons;
 
     YSpanIndices.assign(static_cast<size_t>(MaxYSpanIndices), SetupIndices{});
 
@@ -1237,10 +1249,18 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
     GPU.GetCaptureInfo_Texture(captureInfo);
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1 << 0)) != 0;
+    Polygon* previousPolygon = nullptr;
 
-    for (u32 i = 0; i < GPU3D.RenderNumPolygons; i++)
+    for (u32 sourceIndex = 0; sourceIndex < GPU3D.RenderNumPolygons; sourceIndex++)
     {
-        Polygon* polygon = GPU3D.RenderPolygonRAM[i];
+        Polygon* polygon = GPU3D.RenderPolygonRAM[sourceIndex];
+        if (polygon->Degenerate)
+            continue;
+
+        // Software omits degenerate polygons before rasterisation. Keep the
+        // GPU polygon/index buffers compact so every setup and work descriptor
+        // still addresses a valid contiguous record.
+        const u32 i = numPolygons;
 
         const u32 nverts = polygon->NumVertices;
         u32 vtop = polygon->VTop, vbot = polygon->VBottom;
@@ -1250,17 +1270,17 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
 
         RenderPolygons[i].FirstXSpan = static_cast<u32>(numSetupIndices);
         RenderPolygons[i].Attr = polygon->Attr;
+        RenderPolygons[i].FacingView = polygon->FacingView ? 1u : 0u;
 
         bool foundVariant = false;
-        if (i > 0)
+        if (previousPolygon)
         {
             // If the whole texture attribute matches, the texture layer matches
             // too, so the previous polygon's variant can be reused directly.
-            Polygon* prevPolygon = GPU3D.RenderPolygonRAM[i - 1];
-            foundVariant = prevPolygon->TexParam == polygon->TexParam
-                && prevPolygon->TexPalette == polygon->TexPalette
-                && (prevPolygon->Attr & 0x30) == (polygon->Attr & 0x30)
-                && prevPolygon->IsShadowMask == polygon->IsShadowMask;
+            foundVariant = previousPolygon->TexParam == polygon->TexParam
+                && previousPolygon->TexPalette == polygon->TexPalette
+                && (previousPolygon->Attr & 0x30) == (polygon->Attr & 0x30)
+                && previousPolygon->IsShadowMask == polygon->IsShadowMask;
         }
 
         if (!foundVariant)
@@ -1505,13 +1525,67 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
             }
         }
 
-        // Only polygons whose spans were actually set up may be handed to the
-        // binning shader; a span-budget overflow drops the rest instead of
-        // letting the GPU read uninitialised polygon records.
+        // Counts are committed only after the complete polygon is built. The
+        // arrays cover the valid DS worst case; the guards above remain a
+        // malformed-input defence and never expose partial GPU records.
         numPolygons = i + 1;
+        previousPolygon = polygon;
     }
 
     return numVariants;
+}
+
+std::vector<VulkanRenderer3D::PolygonBatch>
+VulkanRenderer3D::BuildPolygonBatches(u32 numPolygons) const
+{
+    std::vector<PolygonBatch> batches;
+    if (numPolygons == 0)
+        return batches;
+
+    // A polygon can only be binned into tiles intersecting its completed
+    // screen-space bounds. Summing those rectangles is conservative (the
+    // precise convex test can only remove tiles), so the resulting batch is
+    // mathematically guaranteed to fit the fixed GPU working set.
+    const u64 capacity = static_cast<u64>(MaxWorkTiles);
+    u32 first = 0;
+    u32 count = 0;
+    u64 batchTiles = 0;
+
+    for (u32 i = 0; i < numPolygons; ++i)
+    {
+        const RenderPolygon& polygon = RenderPolygons[i];
+        const s32 minX = std::clamp(polygon.XMin, 0, ScreenWidth - 1);
+        const s32 maxX = std::clamp(polygon.XMax, 0, ScreenWidth - 1);
+        const s32 minY = std::clamp(polygon.YTop, 0, ScreenHeight - 1);
+        const s32 maxY = static_cast<s32>(std::clamp<s64>(
+            static_cast<s64>(polygon.YBot) - 1, 0, ScreenHeight - 1));
+
+        u64 polygonTiles = 0;
+        if (minX <= maxX && minY <= maxY)
+        {
+            const u64 tileColumns = static_cast<u64>(maxX / TileSize - minX / TileSize + 1);
+            const u64 tileRows = static_cast<u64>(maxY / TileSize - minY / TileSize + 1);
+            polygonTiles = tileColumns * tileRows;
+        }
+
+        if (count != 0 && batchTiles + polygonTiles > capacity)
+        {
+            batches.push_back({ first, count });
+            first = i;
+            count = 0;
+            batchTiles = 0;
+        }
+
+        // MaxWorkTiles is at least one complete screen of tiles, so a single
+        // polygon always fits even when it covers the entire display.
+        assert(polygonTiles <= capacity);
+        batchTiles += polygonTiles;
+        ++count;
+    }
+
+    if (count != 0)
+        batches.push_back({ first, count });
+    return batches;
 }
 
 
@@ -1743,13 +1817,15 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         // to run does not use it (Resolve never touches StructuredInput). A
         // descriptor a pipeline does not statically reference may legally be
         // left unwritten, but "legally" depends on the shader's final SPIR-V
-        // rather than on this file, so all fourteen are always valid.
+        // rather than on this file, so all sixteen are always valid.
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::StructuredInput),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, structuredInput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::PresentationOut),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, presentationOutput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::CaptureSidecar),
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CaptureSidecarBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CaptureSidecarBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
+        && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::BlendState),
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BlendStateBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
 
     if (!ok)
         return false;
@@ -2081,22 +2157,50 @@ void VulkanRenderer3D::RenderFrame()
     const VkBuffer binResult = BinResultBuffer.GetHandle();
     const VkBuffer workDesc = WorkDescBuffer.GetHandle();
     const VkBuffer xSpans = XSpanSetupBuffer.GetHandle();
+    const VkBuffer blendState = BlendStateBuffer.GetHandle();
 
-    // 1. reset the coarse bin mask.
-    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Pipelines[VulkanShaders::Pipeline_ClearCoarseBinMask]);
-    fns.CmdDispatch(cmd,
-        static_cast<u32>(TilesPerLine * TileLines / ClearCoarseBinMaskLocalSize), 1, 1);
-    // Unconditional: even with no polygons this frame, DepthBlend reads the
-    // coarse masks this just wrote.
-    BufferBarrier(cmd, &binResult, 1,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    std::vector<PolygonBatch> polygonBatches = BuildPolygonBatches(numPolygons);
+    if (polygonBatches.empty())
+        polygonBatches.push_back({ 0, 0 });
+
+    // Descriptor sets are immutable for the frame. Allocate each variant once
+    // and reuse it in every work-tile batch; otherwise a pathological frame
+    // would turn bounded raster memory into unbounded descriptor consumption.
+    std::vector<VkDescriptorSet> variantTextureSets(numVariants, VK_NULL_HANDLE);
+    for (u32 i = 0; i < numVariants; ++i)
+    {
+        const Variant& variant = Variants[i];
+        const VulkanTextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
+        VkImageView view = texture ? texture->View : DummyTextureImage.GetView();
+        variantTextureSets[i] = AcquireTextureSet(
+            frameIndex, view, Samplers.Get(variant.WrapS, variant.WrapT));
+        if (variantTextureSets[i] == VK_NULL_HANDLE)
+        {
+            Frames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("ran out of per-frame texture descriptor sets");
+            return;
+        }
+    }
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
-    if (numYSpans > 0)
+    for (u32 batchIndex = 0; batchIndex < polygonBatches.size(); ++batchIndex)
     {
+        const PolygonBatch& batch = polygonBatches[batchIndex];
+
+        // Each batch reuses the bounded bin/tile working set. The result and
+        // shadow continuation buffers carry the exact pixel state forward.
+        fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+            Pipelines[VulkanShaders::Pipeline_ClearCoarseBinMask]);
+        fns.CmdDispatch(cmd,
+            static_cast<u32>(TilesPerLine * TileLines / ClearCoarseBinMaskLocalSize), 1, 1);
+        BufferBarrier(cmd, &binResult, 1,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+        if (batch.PolygonCount > 0)
+        {
         // 2. reset the per-variant indirect work counts.
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[VulkanShaders::Pipeline_ClearIndirectWorkCount]);
@@ -2106,31 +2210,40 @@ void VulkanRenderer3D::RenderFrame()
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-        // 3. interpolate the per-scanline x spans.
-        fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-            Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
-        const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
-        const u32 maxPerDispatch = Device.GetLimits().maxComputeWorkGroupCount[0] * 32u;
-        for (u32 base = 0; base < setupIndexCount;)
+        // X spans are frame-global and are generated only before the first
+        // polygon batch.
+        if (batchIndex == 0)
         {
-            const u32 count = std::min(setupIndexCount - base, maxPerDispatch);
-            Vk::RasterizerPushConstants spanPush{};
-            spanPush.TexIsCapture = base;
-            spanPush.CaptureYOffset = static_cast<s32>(count);
-            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
-                0, Vk::PushConstantSize, &spanPush);
-            fns.CmdDispatch(cmd, DivRoundUp(count, 32), 1, 1);
-            base += count;
+            fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
+            const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
+            const u32 maxPerDispatch = Device.GetLimits().maxComputeWorkGroupCount[0] * 32u;
+            for (u32 base = 0; base < setupIndexCount;)
+            {
+                const u32 count = std::min(setupIndexCount - base, maxPerDispatch);
+                Vk::RasterizerPushConstants spanPush{};
+                spanPush.TexIsCapture = base;
+                spanPush.CaptureYOffset = static_cast<s32>(count);
+                fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+                    0, Vk::PushConstantSize, &spanPush);
+                fns.CmdDispatch(cmd, DivRoundUp(count, 32), 1, 1);
+                base += count;
+            }
+            BufferBarrier(cmd, &xSpans, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
         }
-        BufferBarrier(cmd, &xSpans, 1,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 
         // 4. bin polygons into coarse and fine tiles.
+        Vk::RasterizerPushConstants batchPush{};
+        batchPush.CurVariant = batch.FirstPolygon;
+        batchPush.TexWidth = batch.PolygonCount;
+        fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+            0, Vk::PushConstantSize, &batchPush);
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[VulkanShaders::Pipeline_BinCombined]);
         fns.CmdDispatch(cmd,
-            DivRoundUp(numPolygons, 32),
+            DivRoundUp(batch.PolygonCount, 32),
             static_cast<u32>(ScreenWidth / CoarseTileW),
             static_cast<u32>(ScreenHeight / CoarseTileH));
         {
@@ -2172,7 +2285,6 @@ void VulkanRenderer3D::RenderFrame()
         {
             const bool highlightMode = (GPU3D.RenderDispCnt & (1 << 1)) != 0;
             VkPipeline prevPipeline = VK_NULL_HANDLE;
-            bool descriptorsValid = true;
 
             for (u32 i = 0; i < numVariants; i++)
             {
@@ -2206,16 +2318,7 @@ void VulkanRenderer3D::RenderFrame()
                     prevPipeline = pipeline;
                 }
 
-                const VulkanTextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
-                VkImageView view = texture ? texture->View : DummyTextureImage.GetView();
-                VkSampler sampler = Samplers.Get(variant.WrapS, variant.WrapT);
-
-                VkDescriptorSet textureSet = AcquireTextureSet(frameIndex, view, sampler);
-                if (textureSet == VK_NULL_HANDLE)
-                {
-                    descriptorsValid = false;
-                    break;
-                }
+                VkDescriptorSet textureSet = variantTextureSets[i];
                 if (textureSet != currentTextureSet)
                 {
                     fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2248,12 +2351,6 @@ void VulkanRenderer3D::RenderFrame()
                     offsetof(BinResultHeader, VariantWorkCount) + i * 16);
             }
 
-            if (!descriptorsValid)
-            {
-                Frames.SubmitFrame(Device.GetMainQueue());
-                SetRuntimeFailure("ran out of per-frame texture descriptor sets");
-                return;
-            }
         }
 
         const VkBuffer tiles[3] = {
@@ -2264,32 +2361,35 @@ void VulkanRenderer3D::RenderFrame()
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
 
-    // 8. depth test / blend the binned tiles into the result buffer.
+        // 8. depth test / blend the binned tiles into the result buffer.
     //
     // DepthBlend reads set 1's clear-bitmap samplers, so the base set is
     // rebound in case the rasterise loop left a texture bound. (Every texture
     // set carries the same clear-bitmap descriptors, so this is about keeping
     // the bound state predictable rather than about correctness.)
-    if (currentTextureSet != baseTextureSet)
-    {
-        fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Layouts.GetPipelineLayout(),
-            Vk::TextureSetIndex, 1, &baseTextureSet, 0, nullptr);
-        currentTextureSet = baseTextureSet;
-    }
-    fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
-        0, Vk::PushConstantSize, &push);
+        if (currentTextureSet != baseTextureSet)
+        {
+            fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Layouts.GetPipelineLayout(),
+                Vk::TextureSetIndex, 1, &baseTextureSet, 0, nullptr);
+            currentTextureSet = baseTextureSet;
+        }
+        Vk::RasterizerPushConstants blendPush{};
+        blendPush.CurVariant = batch.FirstPolygon;
+        blendPush.TexHeight = batchIndex != 0 ? 1u : 0u;
+        fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+            0, Vk::PushConstantSize, &blendPush);
 
-    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-        Pipelines[wbuffer ? VulkanShaders::Pipeline_DepthBlendW : VulkanShaders::Pipeline_DepthBlendZ]);
-    fns.CmdDispatch(cmd,
-        static_cast<u32>(ScreenWidth / TileSize),
-        static_cast<u32>(ScreenHeight / TileSize), 1);
+        fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+            Pipelines[wbuffer ? VulkanShaders::Pipeline_DepthBlendW : VulkanShaders::Pipeline_DepthBlendZ]);
+        fns.CmdDispatch(cmd,
+            static_cast<u32>(ScreenWidth / TileSize),
+            static_cast<u32>(ScreenHeight / TileSize), 1);
 
-    {
-        const VkBuffer result = ResultBuffer.GetHandle();
-        BufferBarrier(cmd, &result, 1,
+        const VkBuffer continued[2] = { ResultBuffer.GetHandle(), blendState };
+        BufferBarrier(cmd, continued, 2,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve.

@@ -17,9 +17,9 @@
 */
 
 /*
-    1:1 re-expression of ComputeRendererShaders::BinCombined
-    (src/GPU3D_Compute_shaders.h), including the MelonPrimeDS MaxWorkTiles
-    clamp. Nothing but the resource bindings changed.
+    Software-parity derivative of ComputeRendererShaders::BinCombined
+    (src/GPU3D_Compute_shaders.h). The host supplies a bounded consecutive
+    polygon batch so no work-tile overflow clamp is needed.
 
     Build defines: BinCombined, CoarseTileArea
     CoarseTileArea must be a compile-time literal because it selects
@@ -28,13 +28,10 @@
     Host dispatch (matching GPU3D_Compute.cpp):
         ((RenderNumPolygons+31)/32, ScreenWidth/CoarseTileW, ScreenHeight/CoarseTileH)
 
-    NOTE (transcribed as-is, do not "fix"): the workgroup is sized by the coarse
-    tile area (32 at scale 1-8, 48 at scale 9-16) but the coarse binning pass
-    treats the same invocations as a 32-lane polygon ballot. For
-    CoarseTileArea == 48, lanes 32..47 evaluate `1U << localIdx`, whose result
-    GLSL leaves undefined for shift counts >= 32. This is the behavior of the
-    OpenGL compute renderer this file ports, and the DS output must match it
-    bit for bit, so it is preserved verbatim rather than corrected here.
+    The workgroup is sized by the coarse tile area (32 at scale 1-8, 48 at
+    scale 9-16). Only lanes 0..31 build the 32-polygon ballot; every lane still
+    handles one fine tile. Keeping those responsibilities separate avoids
+    undefined shifts at 9x-16x without dropping the extra fine-tile workers.
 */
 
 #version 450
@@ -121,13 +118,14 @@ void main()
         mergedMaskShared = 0U;
     barrier();
 
-    int polygonIdx = groupIdx * 32 + localIdx;
+    int localPolygonIdx = groupIdx * 32 + localIdx;
+    int polygonIdx = int(pc.CurVariant) + localPolygonIdx;
 
     ivec2 coarseTopLeft = coarseTile * ivec2(CoarseTileW, CoarseTileH);
     ivec2 coarseBotRight = coarseTopLeft + ivec2(CoarseTileW-1, CoarseTileH-1);
 
     bool binned = false;
-    if (polygonIdx < NumPolygons)
+    if (localIdx < 32 && localPolygonIdx < int(pc.TexWidth) && polygonIdx < NumPolygons)
     {
         binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
     }
@@ -148,7 +146,7 @@ void main()
         int bit = findLSB(mergedMask);
         mergedMask &= ~(1U << bit);
 
-        int polygonIdx = groupIdx * 32 + bit;
+        int polygonIdx = int(pc.CurVariant) + groupIdx * 32 + bit;
 
         if (BinPolygon(Polygons[polygonIdx], fineTileTopLeft, fineTileBotRight))
             binnedMask |= 1U << bit;
@@ -156,32 +154,13 @@ void main()
 
     int linearTile = fineTile.x + fineTile.y * TilesPerLine + coarseTile.x * CoarseTileCountX + coarseTile.y * TilesPerLine * CoarseTileCountY;
 
-    // MelonPrimeDS: clamp the work-tile allocation to the MaxWorkTiles budget.
-    // TileMemory and WorkDescs are sized for MaxWorkTiles entries, but the
-    // heuristic (tiles * 16) can be exceeded when many same-screen-filling
-    // translucent polygons stack up (point-blank explosion / death effects),
-    // which previously caused out-of-bounds tile writes -> mosaic garbage.
-    // The allocation is trimmed *before* the mask/coarse-mask/offset stores so
-    // every downstream consumer (DepthBlend pairs mask bits with sequential
-    // slots) sees a consistent, fully-written set. Excess polygons in a tile
-    // drop gracefully (missing layer) instead of corrupting the frame.
-    // VariantWorkCount[0].w may overshoot MaxWorkTiles; both consumers
-    // (SortWorkWorkCount in CalcOffsets, the SortWork guard) clamp with min().
+    // The host partitions consecutive polygons using a conservative sum of
+    // their screen-space tile bounding boxes. Therefore every invocation in
+    // this batch is guaranteed to fit MaxWorkTiles; no polygon layer may be
+    // discarded here merely because the fixed working set is full.
     uint workOffset = 0U;
     if (binnedMask != 0U)
-    {
         workOffset = atomicAdd(VariantWorkCount[0].w, uint(bitCount(binnedMask)));
-        if (workOffset >= uint(MaxWorkTiles))
-        {
-            binnedMask = 0U;
-        }
-        else
-        {
-            uint keepCount = uint(MaxWorkTiles) - workOffset;
-            while (uint(bitCount(binnedMask)) > keepCount)
-                binnedMask &= ~(1U << uint(findMSB(binnedMask)));
-        }
-    }
 
     BinningMaskAndOffset[BinningMaskStart + linearTile * BinStride + groupIdx] = binnedMask;
     int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
@@ -200,7 +179,7 @@ void main()
             int bit = findLSB(binnedMask);
             binnedMask &= ~(1U << bit);
 
-            int polygonIdx = groupIdx * 32 + bit;
+            int polygonIdx = int(pc.CurVariant) + groupIdx * 32 + bit;
             int variantIdx = Polygons[polygonIdx].Variant;
 
             int inVariantOffset = int(atomicAdd(VariantWorkCount[variantIdx].z, 1));

@@ -78,9 +78,11 @@ void ResolveEntryPoints()
         return;
     }
 
-    // The renderer compiles its HLSL at runtime. d3dcompiler_47.dll ships with
-    // every Windows version that has D3D12, but a stripped system could still
-    // be missing it, so this stays a separate, non-fatal-at-load failure.
+    // The compute renderer uses committed DXBC. The native presenter still
+    // compiles its small vertex/pixel shader during initialization.
+    // d3dcompiler_47.dll ships with every Windows version that has D3D12, but a
+    // stripped system could still be missing it, so this stays a separate,
+    // non-fatal-at-load failure.
     static const char* const kCompilerNames[] = { "d3dcompiler_47.dll", "d3dcompiler_46.dll" };
     for (const char* name : kCompilerNames)
     {

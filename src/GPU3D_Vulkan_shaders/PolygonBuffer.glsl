@@ -23,7 +23,7 @@
     Vulkan plumbing only: GL SSBO binding 0 -> set 0 binding 1.
 
     std430 layout is byte-identical to ComputeRenderer3D::RenderPolygon:
-    ten 4-byte scalars, base alignment 4, array stride 40.
+    eleven 4-byte scalars, base alignment 4, array stride 44.
 */
 
 #ifndef MELONPRIME_VULKAN_POLYGONBUFFER_GLSL
@@ -42,6 +42,7 @@ struct Polygon
     uint Attr;
 
     float TextureLayer;
+    uint FacingView;
 };
 
 layout (std430, set = 0, binding = 1) readonly buffer PolygonBuffer

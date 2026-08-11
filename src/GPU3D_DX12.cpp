@@ -34,6 +34,7 @@
 #include "MelonPrimeStructuredComposition.h"
 #include "GPU.h"
 #include "GPU3D_DX12_shaders.h"
+#include "GPU3D_DX12_ShaderBlobs.inc"
 #include "Platform.h"
 
 namespace melonDS
@@ -47,7 +48,7 @@ constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
 
 constexpr u32 kSrvTableSize = 6;
-constexpr u32 kUavTableSize = 10;
+constexpr u32 kUavTableSize = 11;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
@@ -570,6 +571,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     TileBuffers[1].Reset();
     TileBuffers[2].Reset();
     WorkDescBuffer.Reset();
+    BlendStateBuffer.Reset();
     XSpanSetupBuffer.Reset();
     SetupIndicesBuffer.Reset();
     SetupIndicesStaging.Reset();
@@ -624,8 +626,9 @@ bool DX12Renderer3D::CreateScaleDependentResources()
 
     // The tile heuristic (tiles * 16) is what the OpenGL renderer uses, but at
     // high internal resolutions the resulting allocation can exceed what a GPU
-    // will hand out. Halve it until it fits: the binning shader already trims
-    // work to MaxWorkTiles and drops excess layers gracefully.
+    // will hand out. Halve it until it fits. Correctness no longer depends on
+    // this heuristic: BuildPolygonBatches partitions the frame against the
+    // capacity actually allocated, without discarding polygon layers.
     int workTiles = TilesPerLine * TileLines * 16;
     const int minWorkTiles = TilesPerLine * TileLines;
     bool allocated = false;
@@ -683,6 +686,15 @@ bool DX12Renderer3D::CreateScaleDependentResources()
     if (!WorkDescBuffer)
         return false;
 
+    BlendStateBuffer = Context->CreateBuffer(
+        pixels * 4ull,
+        D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+        L"MelonPrime DX12 depth-blend continuation state");
+    if (!BlendStateBuffer)
+        return false;
+
     const u64 binResultBytes = sizeof(BinResultHeader)
         + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
         + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
@@ -696,9 +708,9 @@ bool DX12Renderer3D::CreateScaleDependentResources()
     if (!BinResultBuffer)
         return false;
 
-    // Same guess as the OpenGL renderer: real hardware could not draw all 2048
-    // polygons on every line either.
-    MaxYSpanIndices = 64 * 2048 * ScaleFactor;
+    // Worst case: every valid DS polygon covers every output scanline. The
+    // previous 64-lines-per-polygon heuristic silently truncated the frame.
+    MaxYSpanIndices = ScreenHeight * MaxRenderPolygons;
     YSpanIndices.resize(MaxYSpanIndices);
 
     XSpanSetupBuffer = Context->CreateBuffer(
@@ -747,6 +759,9 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
 
     Commands.WaitIdle();
 
+    const int previousTileSize = TileSize;
+    const bool pipelinesReady = ShaderStepIdx >= ShaderStepCount;
+
     ScaleFactor = scale;
     ScreenWidth = 256 * ScaleFactor;
     ScreenHeight = 192 * ScaleFactor;
@@ -766,8 +781,14 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     TilesPerLine = ScreenWidth >> tileShift;
     TileLines = ScreenHeight >> tileShift;
 
-    ReleasePipelines();
-    ShaderStepIdx = 0;
+    // Screen dimensions are runtime constants. Pipelines only differ when the
+    // numthreads tile geometry crosses 5x or 9x, so keep the complete PSO set
+    // for scale changes within a bucket.
+    if (!pipelinesReady || TileSize != previousTileSize)
+    {
+        ReleasePipelines();
+        ShaderStepIdx = 0;
+    }
 
     if (!CreateScaleDependentResources())
     {
@@ -813,53 +834,25 @@ void DX12Renderer3D::SetRuntimeFailure(std::string reason)
 
 bool DX12Renderer3D::BuildPipeline(
     DX12::ComPtr<ID3D12PipelineState>& pipeline,
-    const std::string& body,
-    const std::vector<std::string>& defines,
+    int shaderVariant,
     const char* debugName)
 {
+    static_assert(ShaderStepCount == static_cast<int>(DX12ShaderBlobs::VariantCount));
     pipeline.Reset();
 
     if (!Context || !RootSignature)
         return false;
 
-    std::string source;
-    source.reserve(body.size() + DX12Shaders::Common.size() + 1024);
-
-    auto appendDefine = [&source](const char* name, int value)
-    {
-        source += "#define ";
-        source += name;
-        source += ' ';
-        source += std::to_string(value);
-        source += '\n';
-    };
-
-    appendDefine("ScreenWidth", ScreenWidth);
-    appendDefine("ScreenHeight", ScreenHeight);
-    appendDefine("ScaleFactor", ScaleFactor);
-    appendDefine("TileSize", TileSize);
-    appendDefine("CoarseTileCountY", CoarseTileCountY);
-    appendDefine("CoarseTileArea", CoarseTileArea);
-    appendDefine("ClearCoarseBinMaskLocalSize", ClearCoarseBinMaskLocalSize);
-    appendDefine("MaxWorkTiles", MaxWorkTiles);
-
-    for (const std::string& define : defines)
-    {
-        source += "#define ";
-        source += define;
-        source += " 1\n";
-    }
-    source += DX12Shaders::Common;
-    source += body;
-
-    auto blob = Context->CompileShader(source, "main", "cs_5_1", {}, debugName);
-    if (!blob)
+    const u32 geometryBucket = TileSize == 8 ? 0u : (TileSize == 16 ? 1u : 2u);
+    const DX12ShaderBlobs::Blob blob = DX12ShaderBlobs::Get(
+        geometryBucket, static_cast<u32>(shaderVariant));
+    if (!blob.Data || blob.Size == 0)
         return false;
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = RootSignature.Get();
-    desc.CS.pShaderBytecode = blob->GetBufferPointer();
-    desc.CS.BytecodeLength = blob->GetBufferSize();
+    desc.CS.pShaderBytecode = blob.Data;
+    desc.CS.BytecodeLength = blob.Size;
     desc.NodeMask = 0;
     desc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
 
@@ -881,13 +874,13 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
 
     const int step = ShaderStepIdx++;
     char name[64];
-    auto build = [this](
+    auto build = [this, step](
         DX12::ComPtr<ID3D12PipelineState>& pipeline,
-        const std::string& body,
-        const std::vector<std::string>& defines,
+        const std::string&,
+        const std::vector<std::string>&,
         const char* debugName)
     {
-        if (!BuildPipeline(pipeline, body, defines, debugName))
+        if (!BuildPipeline(pipeline, step, debugName))
             SetRuntimeFailure(std::string("pipeline creation failed: ") + debugName);
     };
 
@@ -1164,6 +1157,26 @@ bool DX12Renderer3D::UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numV
     return true;
 }
 
+DX12Renderer3D::DispatchUniform DX12Renderer3D::MakeDispatchUniform() const noexcept
+{
+    DispatchUniform constants{};
+    const u32 framebufferStride = static_cast<u32>(ScreenWidth * ScreenHeight);
+    const u32 tileCount = static_cast<u32>(TilesPerLine * TileLines);
+    constants.ScreenWidth = static_cast<u32>(ScreenWidth);
+    constants.ScreenHeight = static_cast<u32>(ScreenHeight);
+    constants.ScaleFactor = static_cast<u32>(ScaleFactor);
+    constants.TilesPerLine = static_cast<u32>(TilesPerLine);
+    constants.TileLines = static_cast<u32>(TileLines);
+    constants.FramebufferStride = framebufferStride;
+    constants.ResultDepthStart = framebufferStride * 2u;
+    constants.ResultAttrStart = framebufferStride * 4u;
+    constants.BinningMaskStart = tileCount * static_cast<u32>(CoarseBinStride);
+    constants.BinningWorkOffsetsStart = constants.BinningMaskStart
+        + tileCount * static_cast<u32>(BinStride);
+    constants.WorkDescsSortedStart = static_cast<u32>(MaxWorkTiles);
+    return constants;
+}
+
 void DX12Renderer3D::SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants)
 {
     list->SetComputeRoot32BitConstants(kRootParamDispatchConstants, DispatchUniformDwords, &constants, 0);
@@ -1227,6 +1240,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
         { CaptureSidecarBuffer.Get(),
             8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
             4, false },
+        { BlendStateBuffer.Get(), pixels, 4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1310,6 +1324,7 @@ bool DX12Renderer3D::BindCompositionUavTable(
         { CaptureSidecarBuffer.Get(),
             8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
             4, false },
+        { BlendStateBuffer.Get(),            pixels,                              4, false },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1364,6 +1379,14 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
         return true;
     }
 
+    if (const auto cached = FrameSrvTables.find(texture); cached != FrameSrvTables.end())
+    {
+        BoundSrvTexture = texture;
+        BoundSrvTable = cached->second;
+        list->SetComputeRootDescriptorTable(kRootParamSrvTable, BoundSrvTable);
+        return true;
+    }
+
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
     if (!Descriptors.Allocate(kSrvTableSize, cpu, gpu))
@@ -1398,6 +1421,7 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     BoundSrvTexture = texture;
     BoundSrvTable = gpu;
+    FrameSrvTables.emplace(texture, gpu);
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kSrvTableSize);
     list->SetComputeRootDescriptorTable(kRootParamSrvTable, gpu);
     return true;
@@ -1622,10 +1646,17 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
     GPU.GetCaptureInfo_Texture(captureInfo);
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1 << 0)) != 0;
+    Polygon* previousPolygon = nullptr;
 
-    for (u32 i = 0; i < GPU3D.RenderNumPolygons; i++)
+    for (u32 sourceIndex = 0; sourceIndex < GPU3D.RenderNumPolygons; sourceIndex++)
     {
-        Polygon* polygon = GPU3D.RenderPolygonRAM[i];
+        Polygon* polygon = GPU3D.RenderPolygonRAM[sourceIndex];
+        if (polygon->Degenerate)
+            continue;
+
+        // Match Software's early degenerate rejection while preserving the
+        // dense indices consumed by setup, binning and depth/blend stages.
+        const u32 i = numPolygons;
 
         const u32 nverts = polygon->NumVertices;
         u32 vtop = polygon->VTop, vbot = polygon->VBottom;
@@ -1635,17 +1666,17 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
 
         RenderPolygons[i].FirstXSpan = numSetupIndices;
         RenderPolygons[i].Attr = polygon->Attr;
+        RenderPolygons[i].FacingView = polygon->FacingView ? 1u : 0u;
 
         bool foundVariant = false;
-        if (i > 0)
+        if (previousPolygon)
         {
             // If the whole texture attribute matches, the texture layer will
             // also match.
-            Polygon* prevPolygon = GPU3D.RenderPolygonRAM[i - 1];
-            foundVariant = prevPolygon->TexParam == polygon->TexParam
-                && prevPolygon->TexPalette == polygon->TexPalette
-                && (prevPolygon->Attr & 0x30) == (polygon->Attr & 0x30)
-                && prevPolygon->IsShadowMask == polygon->IsShadowMask;
+            foundVariant = previousPolygon->TexParam == polygon->TexParam
+                && previousPolygon->TexPalette == polygon->TexPalette
+                && (previousPolygon->Attr & 0x30) == (polygon->Attr & 0x30)
+                && previousPolygon->IsShadowMask == polygon->IsShadowMask;
         }
 
         if (!foundVariant)
@@ -1890,13 +1921,62 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
             }
         }
 
-        // Only polygons that actually got their spans set up may be handed to
-        // the binning shader; a span-budget overflow drops the rest instead of
-        // letting the GPU read uninitialised polygon records.
+        // Counts are committed only after the complete polygon is built. The
+        // arrays cover the valid DS worst case (2048 polygons, ten edges and
+        // every output scanline); the guards above remain defensive for
+        // malformed input and must never expose partial records to the GPU.
         numPolygons = i + 1;
+        previousPolygon = polygon;
     }
 
     return numVariants;
+}
+
+std::vector<DX12Renderer3D::PolygonBatch>
+DX12Renderer3D::BuildPolygonBatches(u32 numPolygons) const
+{
+    std::vector<PolygonBatch> batches;
+    if (numPolygons == 0)
+        return batches;
+
+    const u64 capacity = static_cast<u64>(MaxWorkTiles);
+    u32 first = 0;
+    u32 count = 0;
+    u64 batchTiles = 0;
+
+    for (u32 i = 0; i < numPolygons; ++i)
+    {
+        const RenderPolygon& polygon = RenderPolygons[i];
+        const s32 minX = std::clamp(polygon.XMin, 0, ScreenWidth - 1);
+        const s32 maxX = std::clamp(polygon.XMax, 0, ScreenWidth - 1);
+        const s32 minY = std::clamp(polygon.YTop, 0, ScreenHeight - 1);
+        const s32 maxY = static_cast<s32>(std::clamp<s64>(
+            static_cast<s64>(polygon.YBot) - 1, 0, ScreenHeight - 1));
+
+        u64 polygonTiles = 0;
+        if (minX <= maxX && minY <= maxY)
+        {
+            const u64 tileColumns = static_cast<u64>(maxX / TileSize - minX / TileSize + 1);
+            const u64 tileRows = static_cast<u64>(maxY / TileSize - minY / TileSize + 1);
+            polygonTiles = tileColumns * tileRows;
+        }
+
+        if (count != 0 && batchTiles + polygonTiles > capacity)
+        {
+            batches.push_back({ first, count });
+            first = i;
+            count = 0;
+            batchTiles = 0;
+        }
+
+        assert(polygonTiles <= capacity);
+        batchTiles += polygonTiles;
+        ++count;
+    }
+
+    if (count != 0)
+        batches.push_back({ first, count });
+    return batches;
 }
 
 // ---------------------------------------------------------------------------
@@ -1952,6 +2032,7 @@ void DX12Renderer3D::RenderFrame()
     TextureHeap.ResetUploadFailure();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
+    FrameSrvTables.clear();
 
     UpdateClearBitmap();
 
@@ -2038,46 +2119,59 @@ void DX12Renderer3D::RenderFrame()
         return;
     }
 
-    DispatchUniform constants{};
+    DispatchUniform constants = MakeDispatchUniform();
     SetDispatchConstants(list, constants);
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
-    // 1. reset the coarse bin mask
-    list->SetPipelineState(PipelineClearCoarseBinMask.Get());
-    list->Dispatch(
-        static_cast<UINT>(TilesPerLine * TileLines / ClearCoarseBinMaskLocalSize), 1, 1);
-    // Unconditional: with no polygons this frame, DepthBlend still reads the
-    // coarse masks the clear just wrote.
-    InsertUavBarrier(list, BinResultBuffer.Get());
+    std::vector<PolygonBatch> polygonBatches = BuildPolygonBatches(numPolygons);
+    if (polygonBatches.empty())
+        polygonBatches.push_back({ 0, 0 });
 
-    if (numYSpans > 0)
+    for (u32 batchIndex = 0; batchIndex < polygonBatches.size(); ++batchIndex)
     {
+        const PolygonBatch& batch = polygonBatches[batchIndex];
+
+        // Reuse the bounded tile working set for a consecutive polygon batch.
+        list->SetPipelineState(PipelineClearCoarseBinMask.Get());
+        list->Dispatch(
+            static_cast<UINT>(TilesPerLine * TileLines / ClearCoarseBinMaskLocalSize), 1, 1);
+        InsertUavBarrier(list, BinResultBuffer.Get());
+
+        if (batch.PolygonCount > 0)
+        {
         // 2. reset the indirect work counts
         list->SetPipelineState(PipelineClearIndirectWorkCount.Get());
         list->Dispatch(DivRoundUp(numVariants, 32), 1, 1);
         InsertUavBarrier(list, BinResultBuffer.Get());
 
-        // 3. interpolate the per-scanline x spans
-        list->SetPipelineState(PipelineInterpSpans[wbuffer ? 1 : 0].Get());
-        const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
-        for (u32 base = 0; base < setupIndexCount;)
+        if (batchIndex == 0)
         {
-            const u32 chunkCount = std::min(
-                setupIndexCount - base, kMaxInterpSpansPerDispatch);
-            constants.InterpSpanBase = base;
-            constants.InterpSpanCount = chunkCount;
-            SetDispatchConstants(list, constants);
-            list->Dispatch(
-                DivRoundUp(chunkCount, kInterpSpansThreadsPerGroup), 1, 1);
-            base += chunkCount;
+            // X spans are shared by every batch and are generated once.
+            list->SetPipelineState(PipelineInterpSpans[wbuffer ? 1 : 0].Get());
+            const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
+            for (u32 base = 0; base < setupIndexCount;)
+            {
+                const u32 chunkCount = std::min(
+                    setupIndexCount - base, kMaxInterpSpansPerDispatch);
+                constants.InterpSpanBase = base;
+                constants.InterpSpanCount = chunkCount;
+                SetDispatchConstants(list, constants);
+                list->Dispatch(
+                    DivRoundUp(chunkCount, kInterpSpansThreadsPerGroup), 1, 1);
+                base += chunkCount;
+            }
+            InsertUavBarrier(list, XSpanSetupBuffer.Get());
         }
-        InsertUavBarrier(list, XSpanSetupBuffer.Get());
 
         // 4. bin polygons into coarse and fine tiles
+        constants = MakeDispatchUniform();
+        constants.CurVariant = batch.FirstPolygon;
+        constants.TexWidth = batch.PolygonCount;
+        SetDispatchConstants(list, constants);
         list->SetPipelineState(PipelineBinCombined.Get());
         list->Dispatch(
-            DivRoundUp(numPolygons, 32),
+            DivRoundUp(batch.PolygonCount, 32),
             static_cast<UINT>(ScreenWidth / CoarseTileW),
             static_cast<UINT>(ScreenHeight / CoarseTileH));
         InsertUavBarrier(list, BinResultBuffer.Get());
@@ -2166,7 +2260,7 @@ void DX12Renderer3D::RenderFrame()
                     break;
                 }
 
-                DispatchUniform variantConstants{};
+                DispatchUniform variantConstants = MakeDispatchUniform();
                 variantConstants.CurVariant = i;
                 variantConstants.TexWidth = variant.Width ? variant.Width : 8;
                 variantConstants.TexHeight = variant.Height ? variant.Height : 8;
@@ -2199,14 +2293,20 @@ void DX12Renderer3D::RenderFrame()
         InsertUavBarrier(list, TileBuffers[2].Get());
     }
 
-    // 8. depth test / blend the binned tiles into the result buffer
-    SetDispatchConstants(list, constants);
-    list->SetPipelineState(PipelineDepthBlend[wbuffer ? 1 : 0].Get());
-    list->Dispatch(
-        static_cast<UINT>(ScreenWidth / TileSize),
-        static_cast<UINT>(ScreenHeight / TileSize),
-        1);
-    InsertUavBarrier(list, ResultBuffer.Get());
+        // 8. Continue from the preceding batch's exact two-layer result and
+        // shadow state. Batch zero initializes from the configured clear.
+        constants = MakeDispatchUniform();
+        constants.CurVariant = batch.FirstPolygon;
+        constants.TexHeight = batchIndex != 0 ? 1u : 0u;
+        SetDispatchConstants(list, constants);
+        list->SetPipelineState(PipelineDepthBlend[wbuffer ? 1 : 0].Get());
+        list->Dispatch(
+            static_cast<UINT>(ScreenWidth / TileSize),
+            static_cast<UINT>(ScreenHeight / TileSize),
+            1);
+        InsertUavBarrier(list, ResultBuffer.Get());
+        InsertUavBarrier(list, BlendStateBuffer.Get());
+    }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve
     u32 finalPassVariant = 0;
@@ -2370,6 +2470,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     slot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
+    FrameSrvTables.clear();
 
     const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
     list->CopyBufferRegion(
@@ -2402,7 +2503,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    DispatchUniform constants{};
+    DispatchUniform constants = MakeDispatchUniform();
     // The 3D X scroll now travels per scanline in the structured line
     // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;

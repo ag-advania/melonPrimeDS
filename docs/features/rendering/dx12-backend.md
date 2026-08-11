@@ -236,9 +236,20 @@ derivation — is a 1:1 port.
 
 ## Build and validation
 
-The renderer compiles its HLSL at runtime with `d3dcompiler_47.dll`, so the
-MinGW build needs no shader toolchain and no DX12 import libraries — every entry
-point is resolved with `GetProcAddress`, and only `dxguid` is linked.
+The 3D renderer does not compile HLSL at runtime. Its 36 compute pipelines are
+committed as DXBC for the three tile-geometry buckets used by 1x-4x, 5x-8x and
+9x-16x. Screen dimensions, scale and scale-dependent buffer offsets travel in
+`MetaUniform`, so a renderer switch or an internal-resolution change never
+starts an HLSL compiler. Regenerate the table after changing the shader source:
+
+```bash
+python tools/dx12/compile-shaders.py
+```
+
+The small native-presentation vertex/pixel shader is still compiled during
+presenter initialization through `d3dcompiler_47.dll`. The MinGW build needs no
+DX12 import libraries: entry points are resolved with `GetProcAddress`, and only
+`dxguid` is linked.
 
 Because a shader error would only show up as a black screen on a machine with a
 D3D12 GPU, the shader set has an offline audit:
@@ -247,12 +258,11 @@ D3D12 GPU, the shader set has an offline audit:
 python tools/ci/audits/check-dx12-shaders.py
 ```
 
-It assembles exactly the sources `DX12Renderer3D::BuildPipeline()` builds — same
-`#define` prologue, same per-variant defines — and runs `fxc.exe` over all 35
-variants at several internal resolutions. A warning is a failure as well as a
-compile error: warning-free data flow is required because the same source is
-optimized again by the runtime compiler. The audit skips cleanly when the
-Windows SDK is not installed.
+It assembles the same sources used to generate the committed table and runs
+`fxc.exe` over all 108 modules (36 pipelines times three tile-geometry buckets).
+A warning is a failure as well as a compile error. The audit skips cleanly when
+the Windows SDK is not installed. CI separately verifies that the committed
+DXBC source hash is current.
 
 ## Internal resolution
 
@@ -328,8 +338,8 @@ requires a state that naturally leaves `FlushRequest` clear.
 
 ## Verified scope
 
-The Windows Release build and all 175 shader combinations (35 pipelines at
-1x, 4x, 5x, 9x and 16x) pass on the repository build path. Runtime validation
+The Windows Release build and all 108 generated shader modules (36 pipelines in
+three tile-geometry buckets) pass on the repository build path. Runtime validation
 on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 
 * Metroid Prime Hunters (USA) boot, title/menu capture sequences and attract

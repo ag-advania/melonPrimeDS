@@ -72,6 +72,10 @@ jobs:
       shell: pwsh
       run: .\tools\ci\audits\audit-melonprime-srp-performance.ps1
 
+    - name: Audit Software raster parity contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-raster-software-parity.py
+
     - name: Verify generated HUD schema
       shell: pwsh
       run: |
@@ -176,6 +180,14 @@ jobs:
     - name: Check Vulkan SPIR-V source synchronization
       shell: pwsh
       run: python .\tools\vulkan\compile-shaders.py --check-source-sync
+
+    - name: Check DX12 generated shader source synchronization
+      shell: pwsh
+      run: python .\tools\dx12\compile-shaders.py --check-source-sync
+
+    - name: Compile all DX12 shader geometry variants
+      shell: pwsh
+      run: python .\tools\ci\audits\check-dx12-shaders.py
 
     - name: Build with Vulkan completely disabled
       run: |

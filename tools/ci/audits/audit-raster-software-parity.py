@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Ratchet confirmed Software-renderer raster rules in Vulkan and DX12."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def read(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def require(source: str, needle: str, label: str, failures: list[str]) -> None:
+    if needle not in source:
+        failures.append(f"{label}: missing {needle!r}")
+
+
+def forbid(source: str, needle: str, label: str, failures: list[str]) -> None:
+    if needle in source:
+        failures.append(f"{label}: forbidden legacy contract {needle!r}")
+
+
+def software_linear(y0: int, y1: int, offset: int, distance: int) -> int:
+    if distance == 0 or y0 == y1:
+        return y0
+    if y0 < y1:
+        return y0 + ((y1 - y0) * offset) // distance
+    return y1 + ((y0 - y1) * (distance - offset)) // distance
+
+
+def bounded_batches(costs: tuple[int, ...], capacity: int) -> list[tuple[int, int]]:
+    batches: list[tuple[int, int]] = []
+    first = 0
+    count = 0
+    used = 0
+    for index, cost in enumerate(costs):
+        if count and used + cost > capacity:
+            batches.append((first, count))
+            first = index
+            count = 0
+            used = 0
+        if cost > capacity:
+            raise ValueError("a single polygon must fit one full-screen tile set")
+        used += cost
+        count += 1
+    if count:
+        batches.append((first, count))
+    return batches
+
+
+def main() -> int:
+    failures: list[str] = []
+
+    # Includes the audit's reciprocal-rounding counterexample (expected 6).
+    vectors = (
+        (0, 80, 2, 23, 6),
+        (80, 0, 2, 23, 73),
+        (-80, 0, 2, 23, -74),
+        (0, -80, 2, 23, -7),
+        (17, 17, 9, 23, 17),
+        (0x10000, 0x7FFFF, 22, 23, 504341),
+    )
+    for y0, y1, offset, distance, expected in vectors:
+        actual = software_linear(y0, y1, offset, distance)
+        if actual != expected:
+            failures.append(
+                f"linear vector {(y0, y1, offset, distance)}: "
+                f"expected {expected}, got {actual}"
+            )
+
+    # Seventeen full-screen layers exceed the historical tiles*16 heuristic.
+    # The parity contract must preserve all layers and their original order by
+    # producing a second batch, never by truncating the seventeenth polygon.
+    batches = bounded_batches((1,) * 17, 16)
+    if batches != [(0, 16), (16, 1)]:
+        failures.append(f"work batching vector: expected [(0, 16), (16, 1)], got {batches}")
+    covered = [index for first, count in batches for index in range(first, first + count)]
+    if covered != list(range(17)):
+        failures.append(f"work batching order/loss: got {covered}")
+
+    vk_header = read("src/GPU3D_Vulkan.h")
+    vk_cpp = read("src/GPU3D_Vulkan.cpp")
+    vk_common = read("src/GPU3D_Vulkan_shaders/Common.glsl")
+    vk_depth = read("src/GPU3D_Vulkan_shaders/DepthBlend.comp")
+    vk_interp = read("src/GPU3D_Vulkan_shaders/InterpSpans.comp")
+    vk_edge = read("src/GPU3D_Vulkan_shaders/YSpanSetupBuffer.glsl")
+    vk_bin = read("src/GPU3D_Vulkan_shaders/BinCombined.comp")
+    vk_probe = read("src/VulkanFeatureProbe.cpp")
+
+    dx_header = read("src/GPU3D_DX12.h")
+    dx_cpp = read("src/GPU3D_DX12.cpp")
+    dx_shader = read("src/GPU3D_DX12_shaders.h")
+
+    for name, source in (("Vulkan", vk_header), ("DX12", dx_header)):
+        require(source, "u32 FacingView;", f"{name} facing upload", failures)
+        require(source, "MaxVariants = MaxRenderPolygons", f"{name} variant capacity", failures)
+        require(source, "MaxYSpanSetups = MaxRenderPolygons * 10",
+                f"{name} y-span setup capacity", failures)
+
+    for name, source in (("Vulkan", vk_cpp), ("DX12", dx_cpp)):
+        require(source, "if (polygon->Degenerate)", f"{name} degenerate skip", failures)
+        require(source, "const u32 i = numPolygons;", f"{name} compact polygon index", failures)
+        require(source, "MaxYSpanIndices = ScreenHeight * MaxRenderPolygons;",
+                f"{name} full-height span budget", failures)
+        require(source, "BuildPolygonBatches", f"{name} bounded work batching", failures)
+        require(source, "assert(polygonTiles <= capacity)",
+                f"{name} single-polygon work guarantee", failures)
+
+    require(vk_common, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
+            "Vulkan exact linear division", failures)
+    require(dx_shader, "Div64_32_32(numeratorHi, numeratorLo, denominator)",
+            "DX12 exact linear division", failures)
+
+    for name, source in (("Vulkan", vk_depth), ("DX12", dx_shader)):
+        require(source, "0x00400010", f"{name} front-facing tie rule", failures)
+        require(source, "tileDepth <= dstDepth", f"{name} front-facing <=", failures)
+        require(source, "srcAttr |= 1", f"{name} back-facing destination attr", failures)
+        require(source, "DispCnt & (1", f"{name} alpha blend enable", failures)
+
+    require(vk_interp, "swappedEdges", "Vulkan swapped edge path", failures)
+    require(dx_shader, "swappedEdges", "DX12 swapped edge path", failures)
+    require(vk_edge, "swapped ? 0 : 31", "Vulkan swapped vertical coverage", failures)
+    require(dx_shader, "swapped ? 0 : 31", "DX12 swapped vertical coverage", failures)
+    require(vk_interp, "polyalpha < 31U && (DispCnt & (1U << 3))",
+            "Vulkan translucent edge condition", failures)
+    require(dx_shader, "polyalpha < 31u && (DispCnt & (1u << 3))",
+            "DX12 translucent edge condition", failures)
+
+    require(vk_bin, "localIdx < 32 && localPolygonIdx < int(pc.TexWidth)",
+            "Vulkan 48-lane ballot guard", failures)
+    require(dx_shader, "localIdx < 32 && uint(localPolygonIdx) < TexWidth",
+            "DX12 48-lane ballot guard", failures)
+    require(vk_depth, "BlendContinuationState[resultOffset]",
+            "Vulkan batch shadow continuation", failures)
+    require(dx_shader, "BlendContinuationState[resultOffset]",
+            "DX12 batch shadow continuation", failures)
+    forbid(vk_bin, "keepCount", "Vulkan work-tile layer drop", failures)
+    forbid(dx_shader, "keepCount", "DX12 work-tile layer drop", failures)
+    forbid(vk_bin, "workOffset >= uint(MaxWorkTiles)",
+           "Vulkan work-tile overflow discard", failures)
+    forbid(dx_shader, "workOffset >= uint(MaxWorkTiles)",
+           "DX12 work-tile overflow discard", failures)
+    require(vk_probe, "YSpanIndicesPerScale = 192 * 2048",
+            "Vulkan device-probe span budget", failures)
+    require(vk_probe, "MaxVariants = 2048", "Vulkan device-probe variant budget", failures)
+
+    if failures:
+        print("Software raster parity audit FAILED:")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+
+    print("PASS: confirmed Software raster parity rules are ratcheted for Vulkan and DX12")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

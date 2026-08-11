@@ -76,7 +76,8 @@ void main()
 
     int edgeLenL, edgeLenR;
 
-    if (xl > xr)
+    bool swappedEdges = xl > xr;
+    if (swappedEdges)
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -86,20 +87,14 @@ void main()
         xl = xr;
         xr = tmp;
 
-        EdgeParams_YMajor(false, dxr, spanL, edgeLenL, xspan.EdgeCovL);
-        EdgeParams_YMajor(true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(true, true, dxr, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(false, true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
     }
     else
     {
         // edges are the right way
-        if (spanL.Increment > 0x40000)
-            EdgeParams_XMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        else
-            EdgeParams_YMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        if (spanR.Increment > 0x40000)
-            EdgeParams_XMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
-        else
-            EdgeParams_YMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(false, false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(true, false, dxr, spanR, edgeLenR, xspan.EdgeCovR);
     }
 
     xspan.CovLInitial = (xspan.EdgeCovL >> 12) & 0x3FF;
@@ -126,11 +121,35 @@ void main()
         xspan.InsideEnd = xspan.X1;
 
     bool isShadowMask = ((polygon.Attr & 0x3F000030U) == 0x00000030U);
-    bool fillAllEdges = polyalpha < 31 || (DispCnt & (3U<<4)) != 0U;
+    bool fillAllEdges = isWireframe
+        || (polyalpha < 31U && (DispCnt & (1U << 3)) != 0U)
+        || (DispCnt & (3U << 4)) != 0U;
+    bool bottomXMajor = y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+    bool leftNegative = spanL.X1 < spanL.X0;
+    bool rightNegative = spanR.X1 < spanR.X0;
+    bool leftXMajor = spanL.Increment > 0x40000;
+    bool rightXMajor = spanR.Increment > 0x40000;
 
-    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= 0x40000)
+    bool fillLeft;
+    bool fillRight;
+    if (swappedEdges)
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor);
+        fillRight = (!rightNegative && rightXMajor)
+            || (!(rightNegative && rightXMajor) && spanL.Increment == 0)
+            || (bottomXMajor && rightXMajor);
+    }
+    else
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor)
+            || (spanL.Increment == spanR.Increment && xspan.X0 + edgeLenL == xspan.X1);
+        fillRight = (!rightNegative && rightXMajor) || spanR.Increment == 0
+            || (bottomXMajor && rightXMajor);
+    }
+
+    if (fillAllEdges || fillLeft)
         xspan.Flags |= XSpanSetup_FillLeft;
-    if (fillAllEdges || (spanR.X1 >= spanR.X0 && spanR.Increment > 0x40000) || spanR.Increment == 0)
+    if (fillAllEdges || fillRight)
         xspan.Flags |= XSpanSetup_FillRight;
 
     if (spanL.I0 == spanL.I1)

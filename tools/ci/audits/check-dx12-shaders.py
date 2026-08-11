@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile every MelonPrime DX12 HLSL variant with fxc.exe.
+"""Compile every MelonPrime DX12 HLSL tile-geometry variant with fxc.exe.
 
 The renderer compiles its shaders at runtime through d3dcompiler_47.dll, so a
 syntax or semantic error in GPU3D_DX12_shaders.h would only surface as a black
@@ -9,7 +9,7 @@ Common block, same per-variant defines -- and runs the offline compiler over
 them, so the shader set can be validated on any Windows machine with the SDK.
 
 Usage:
-    python tools/ci/audits/check-dx12-shaders.py [--scales 1,4,5,9,16] [--fxc PATH]
+    python tools/ci/audits/check-dx12-shaders.py [--scales 1,5,9] [--fxc PATH]
 
 Exits non-zero if any variant fails to compile or emits an HLSL warning. Runtime
 shader warnings otherwise flood the emulator log and can conceal undefined
@@ -74,24 +74,15 @@ def parse_shaders(path: str) -> dict[str, str]:
 
 def geometry(scale: int) -> dict[str, int]:
     """Mirrors DX12Renderer3D::SetRenderSettings()'s tile geometry derivation."""
-    screen_w = 256 * scale
-    screen_h = 192 * scale
     rng = (1 if scale >= 5 else 0) + (1 if scale >= 9 else 0)
     tile_size = 8 << rng
     coarse_tile_count_y = 4 + ((rng >> 1) << 1)
     clear_local = 64 - ((rng >> 1) << 4)
-    tile_shift = 3 + rng
-    tiles_per_line = screen_w >> tile_shift
-    tile_lines = screen_h >> tile_shift
     return {
-        "ScreenWidth": screen_w,
-        "ScreenHeight": screen_h,
-        "ScaleFactor": scale,
         "TileSize": tile_size,
         "CoarseTileCountY": coarse_tile_count_y,
         "CoarseTileArea": 8 * coarse_tile_count_y,
         "ClearCoarseBinMaskLocalSize": clear_local,
-        "MaxWorkTiles": tiles_per_line * tile_lines * 16,
     }
 
 
@@ -109,8 +100,14 @@ def variants() -> list[tuple[str, str, list[str]]]:
         suffix = "W" if wbuffer else "Z"
         buf = "WBuffer" if wbuffer else "ZBuffer"
         out.append((f"InterpSpans{suffix}", "InterpSpans", ["InterpSpans", buf]))
+    for wbuffer in (0, 1):
+        suffix = "W" if wbuffer else "Z"
+        buf = "WBuffer" if wbuffer else "ZBuffer"
         out.append((f"DepthBlend{suffix}", "DepthBlend", ["DepthBlend", buf]))
-        for kind_name, kind_defines in RASTERISE_KINDS:
+    for kind_name, kind_defines in RASTERISE_KINDS:
+        for wbuffer in (0, 1):
+            suffix = "W" if wbuffer else "Z"
+            buf = "WBuffer" if wbuffer else "ZBuffer"
             out.append(
                 (
                     f"Rasterise{kind_name}{suffix}",
@@ -130,6 +127,7 @@ def variants() -> list[tuple[str, str, list[str]]]:
         out.append((f"FinalPass{variant}", "FinalPass", defines))
 
     out.append(("Resolve", "Resolve", ["Resolve"]))
+    out.append(("CaptureSidecar", "CaptureSidecar", ["CaptureSidecar"]))
     out.append(("Compositor", "Compositor", ["Compositor"]))
     return out
 
@@ -142,7 +140,7 @@ def build_source(shaders: dict[str, str], geo: dict[str, int], body_key: str, de
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scales", default="1,4,5,9,16",
+    parser.add_argument("--scales", default="1,5,9",
                         help="comma-separated internal resolution scales to validate")
     parser.add_argument("--fxc", default=None, help="path to fxc.exe")
     parser.add_argument("--verbose", action="store_true")

@@ -50,6 +50,10 @@
         9   storage buffer            WorkDescBuffer     (std430)
         10  uniform texel buffer      SetupIndices       (rgba16ui)
         11  storage image             FinalFB            (rgba8)
+        12  storage buffer readonly   StructuredInput    (std430)
+        13  storage buffer            PresentationOutput (std430)
+        14  storage buffer            CaptureSidecar     (std430)
+        15  storage buffer            BlendState         (std430)
       set 1
         0   usampler2DArray           CurrentTexture
         1   sampler2DArray            Capture128Texture
@@ -126,7 +130,7 @@ const int TileLines = ScreenHeight/TileSize;
 const int BinStride = 2048/32;
 const int CoarseBinStride = BinStride/32;
 
-const int MaxVariants = 256;
+const int MaxVariants = 2048;
 
 layout (std140, set = 0, binding = 0) uniform MetaUniform
 {
@@ -302,11 +306,8 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
     if (y0 == y1)
         return y0;
 
-#ifndef Rasterise
-    irecip = abs(irecip);
-#endif
-
-    uint mulLo, mulHi, carry;
+    uint numeratorLo, numeratorHi;
+    uint denominator = uint(abs(idiff));
     if (y0 < y1)
     {
 #ifndef Rasterise
@@ -314,11 +315,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(i);
 #endif
-        umulExtended(uint(y1-y0)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3U<<24, carry);
-        mulHi += carry;
-        return y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y0 + int(((int64_t(y1-y0) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y1 - y0), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y0 + int(quotient);
     }
     else
     {
@@ -327,11 +335,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(idiff-i);
 #endif
-        umulExtended(uint(y0-y1)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3<<24, carry);
-        mulHi += carry;
-        return y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y1 + int(((int64_t(y0-y1) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y0 - y1), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y1 + int(quotient);
     }
 }
 

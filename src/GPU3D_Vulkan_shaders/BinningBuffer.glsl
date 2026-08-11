@@ -26,11 +26,11 @@
     Vulkan plumbing only: GL SSBO binding 6 -> set 0 binding 8.
 
     std430 offsets match ComputeRenderer3D::BinResultHeader byte for byte:
-        VariantWorkCount[256]      uvec4  0     .. 4095   (stride 16)
-        SortedWorkOffset[256]      uint   4096  .. 5119
-        VariantWorkRealCount[256]  uint   5120  .. 6143
-        SortWorkWorkCount          uvec4  6144  .. 6159   (16-byte aligned)
-        BinningMaskAndOffset[]     uint   6160  ..
+        VariantWorkCount[MaxVariants]      uvec4 (stride 16)
+        SortedWorkOffset[MaxVariants]      uint
+        VariantWorkRealCount[MaxVariants]  uint
+        SortWorkWorkCount                  uvec4 (16-byte aligned)
+        BinningMaskAndOffset[]             uint
 */
 
 #ifndef MELONPRIME_VULKAN_BINNINGBUFFER_GLSL

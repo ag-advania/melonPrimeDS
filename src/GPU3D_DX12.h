@@ -24,6 +24,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "GPU3D.h"
@@ -88,8 +89,9 @@ public:
 private:
     explicit DX12Renderer3D(melonDS::GPU3D& gpu3D);
 
-    static constexpr int MaxVariants = 256;
-    static constexpr int MaxYSpanSetups = 6144 * 2;
+    static constexpr int MaxRenderPolygons = 2048;
+    static constexpr int MaxVariants = MaxRenderPolygons;
+    static constexpr int MaxYSpanSetups = MaxRenderPolygons * 10;
     static constexpr int BinStride = 2048 / 32;
     static constexpr int CoarseBinStride = BinStride / 32;
     static constexpr int CoarseTileCountX = 8;
@@ -160,11 +162,12 @@ private:
         u32 Attr;
 
         float TextureLayer;
+        u32 FacingView;
     };
 
     static_assert(sizeof(SpanSetupY) == 31 * 4, "SpanSetupY must match the HLSL layout");
     static_assert(sizeof(SpanSetupX) == 24 * 4, "SpanSetupX must match the HLSL layout");
-    static_assert(sizeof(RenderPolygon) == 10 * 4, "RenderPolygon must match the HLSL layout");
+    static_assert(sizeof(RenderPolygon) == 11 * 4, "RenderPolygon must match the HLSL layout");
     static_assert(sizeof(SetupIndices) == 8, "SetupIndices must match the R16G16B16A16_UINT view");
 
     // One rasterise pipeline per texture/blend combination, exactly like the
@@ -239,8 +242,33 @@ private:
         u32 InterpSpanBase = 0;
         u32 InterpSpanCount = 0;
         u32 Pad = 0;
+
+        // Scale-dependent values are root constants because raster and
+        // compositor command lists are recorded independently. Neither list
+        // may rely on a shared, mutable upload-buffer CBV.
+        u32 ScreenWidth = 0;
+        u32 ScreenHeight = 0;
+        u32 ScaleFactor = 0;
+        u32 TilesPerLine = 0;
+
+        u32 TileLines = 0;
+        u32 FramebufferStride = 0;
+        u32 ResultDepthStart = 0;
+        u32 ResultAttrStart = 0;
+
+        u32 BinningMaskStart = 0;
+        u32 BinningWorkOffsetsStart = 0;
+        u32 WorkDescsSortedStart = 0;
+        u32 RuntimePadding = 0;
     };
     static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
+    static_assert(DispatchUniformDwords <= 64, "DX12 root constants exceed the API limit");
+
+    struct PolygonBatch
+    {
+        u32 FirstPolygon = 0;
+        u32 PolygonCount = 0;
+    };
 
     enum ShaderStep
     {
@@ -269,13 +297,13 @@ private:
 
     bool BuildPipeline(
         DX12::ComPtr<ID3D12PipelineState>& pipeline,
-        const std::string& body,
-        const std::vector<std::string>& defines,
+        int shaderVariant,
         const char* debugName);
     void SetRuntimeFailure(std::string reason);
 
     void UpdateClearBitmap();
     bool UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons);
+    [[nodiscard]] DispatchUniform MakeDispatchUniform() const noexcept;
     void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
     void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
     void TransitionBuffer(
@@ -301,9 +329,10 @@ private:
 
     // Returns the number of variants collected, filling YSpanSetups /
     // YSpanIndices / RenderPolygons. `numYSpans` / `numSetupIndices` /
-    // `numPolygons` are outputs; `numPolygons` can be lower than
-    // GPU3D.RenderNumPolygons when the span budget ran out.
+    // `numPolygons` are outputs. Degenerate polygons are compacted out; valid
+    // DS input otherwise fits the worst-case span allocations exactly.
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
+    std::vector<PolygonBatch> BuildPolygonBatches(u32 numPolygons) const;
 
     void EnsureFrameReadback();
 
@@ -341,6 +370,7 @@ private:
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
+    DX12::ComPtr<ID3D12Resource> BlendStateBuffer;
     DX12::ComPtr<ID3D12Resource> XSpanSetupBuffer;
     DX12::ComPtr<ID3D12Resource> YSpanSetupBuffer;
     DX12::ComPtr<ID3D12Resource> SetupIndicesBuffer;
@@ -397,6 +427,7 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
     ID3D12Resource* BoundSrvTexture = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE BoundSrvTable{};
+    std::unordered_map<ID3D12Resource*, D3D12_GPU_DESCRIPTOR_HANDLE> FrameSrvTables;
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
 
     bool FrameInFlight = false;

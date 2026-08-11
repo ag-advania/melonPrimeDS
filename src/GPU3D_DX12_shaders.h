@@ -45,22 +45,19 @@
 namespace melonDS::DX12Shaders
 {
 
-// Prepended to every shader. The renderer appends its own `#define`s for
-// ScreenWidth/ScreenHeight/TileSize/... before this block.
+// Prepended to every shader. The renderer only specializes values required by
+// HLSL numthreads. Screen dimensions and scale-dependent buffer offsets are
+// frame constants, so changing resolution never requires recompiling HLSL.
 inline const std::string Common = R"(
 
 static const int CoarseTileCountX = 8;
 static const int CoarseTileW = (CoarseTileCountX * TileSize);
 static const int CoarseTileH = (CoarseTileCountY * TileSize);
 
-static const uint FramebufferStride = ScreenWidth * ScreenHeight;
-static const int TilesPerLine = ScreenWidth / TileSize;
-static const int TileLines = ScreenHeight / TileSize;
-
 static const int BinStride = 2048 / 32;
 static const int CoarseBinStride = BinStride / 32;
 
-static const int MaxVariants = 256;
+static const int MaxVariants = 2048;
 
 // Must stay <= 65535: matches the OpenGL renderer's split dispatch for the
 // driver group-count limit (melonDS issue #2047). Kept identical so the
@@ -68,24 +65,17 @@ static const int MaxVariants = 256;
 static const uint RasteriseChunkSize = 32768u;
 
 static const uint ResultColorStart = 0u;
-static const uint ResultDepthStart = ResultColorStart + FramebufferStride * 2u;
-static const uint ResultAttrStart  = ResultDepthStart + FramebufferStride * 2u;
-
 // Byte offsets into the bin-result buffer. It mixes a fixed header with a
 // trailing flexible array, so it is bound as a RWByteAddressBuffer rather than
 // a structured buffer. Layout matches BinResultHeader in GPU3D_DX12.h.
-static const uint BinVariantWorkCountBase     = 0u;                  // uint4[256]
-static const uint BinSortedWorkOffsetBase     = 4096u;               // uint[256]
-static const uint BinVariantWorkRealCountBase = 5120u;               // uint[256]
-static const uint BinSortWorkWorkCountBase    = 6144u;               // uint4
-static const uint BinMaskAndOffsetBase        = 6160u;               // uint[]
+static const uint BinVariantWorkCountBase     = 0u;                         // uint4[MaxVariants]
+static const uint BinSortedWorkOffsetBase     = uint(MaxVariants) * 16u;    // uint[MaxVariants]
+static const uint BinVariantWorkRealCountBase = uint(MaxVariants) * 20u;    // uint[MaxVariants]
+static const uint BinSortWorkWorkCountBase    = uint(MaxVariants) * 24u;    // uint4
+static const uint BinMaskAndOffsetBase        = uint(MaxVariants) * 24u + 16u;
 
 static const int BinningCoarseMaskStart = 0;
-static const int BinningMaskStart = BinningCoarseMaskStart + TilesPerLine * TileLines * CoarseBinStride;
-static const int BinningWorkOffsetsStart = BinningMaskStart + TilesPerLine * TileLines * BinStride;
-
 static const uint WorkDescsUnsortedStart = 0u;
-static const uint WorkDescsSortedStart = WorkDescsUnsortedStart + MaxWorkTiles;
 
 static const uint XSpanSetup_Linear = 1u << 0;
 static const uint XSpanSetup_FillInside = 1u << 1;
@@ -110,6 +100,7 @@ cbuffer MetaUniform : register(b1)
     uint FogShift;
     uint FogColor;
     float2 ClearBitmapOffset;
+
 };
 
 // Per-dispatch root constants.
@@ -123,6 +114,21 @@ cbuffer DispatchUniform : register(b0)
     uint InterpSpanBase;
     uint InterpSpanCount;
     uint DispatchPad;
+
+    uint ScreenWidth;
+    uint ScreenHeight;
+    uint ScaleFactor;
+    uint TilesPerLine;
+
+    uint TileLines;
+    uint FramebufferStride;
+    uint ResultDepthStart;
+    uint ResultAttrStart;
+
+    uint BinningMaskStart;
+    uint BinningWorkOffsetsStart;
+    uint WorkDescsSortedStart;
+    uint RuntimePadding;
 };
 
 struct Polygon
@@ -137,6 +143,7 @@ struct Polygon
     uint Attr;
 
     float TextureLayer;
+    uint FacingView;
 };
 
 struct XSpanSetup
@@ -202,6 +209,7 @@ RWStructuredBuffer<uint2> WorkDescs : register(u6);
 RWStructuredBuffer<XSpanSetup> XSpanSetups : register(u7);
 RWStructuredBuffer<uint> ResolveOut : register(u8);
 RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
+RWStructuredBuffer<uint> BlendContinuationState : register(u10);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -363,11 +371,8 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
     int result = y0;
     if (y0 != y1)
     {
-#ifndef Rasterise
-        irecip = abs(irecip);
-#endif
-
-        uint mulLo, mulHi;
+        uint numeratorLo, numeratorHi;
+        uint denominator = uint(abs(idiff));
         if (y0 < y1)
         {
 #ifndef Rasterise
@@ -375,11 +380,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
             uint offset = uint(i);
 #endif
-            UMul64(uint(y1 - y0) * offset, uint(irecip), mulHi, mulLo);
-            uint sum = mulLo + (3u << 24);
-            if (sum < mulLo) mulHi += 1u;
-            mulLo = sum;
-            result = y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+            UMul64(uint(y1 - y0), offset, numeratorHi, numeratorLo);
+            uint quotient;
+            if (numeratorHi == 0u)
+            {
+                uint remainder;
+                quotient = Div(numeratorLo, denominator, remainder);
+            }
+            else
+            {
+                quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+            }
+            result = y0 + int(quotient);
         }
         else
         {
@@ -388,11 +400,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
             uint offset = uint(idiff - i);
 #endif
-            UMul64(uint(y0 - y1) * offset, uint(irecip), mulHi, mulLo);
-            uint sum = mulLo + (3u << 24);
-            if (sum < mulLo) mulHi += 1u;
-            mulLo = sum;
-            result = y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+            UMul64(uint(y0 - y1), offset, numeratorHi, numeratorLo);
+            uint quotient;
+            if (numeratorHi == 0u)
+            {
+                uint remainder;
+                quotient = Div(numeratorLo, denominator, remainder);
+            }
+            else
+            {
+                quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+            }
+            result = y1 + int(quotient);
         }
     }
     return result;
@@ -505,14 +524,17 @@ int CalculateX(int dx, YSpanSetup span)
     return clamp(x, span.XMin, span.XMax);
 }
 
-void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+void EdgeParams_XMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
-    int len;
-    if (side != negative)
-        len = (dx >> 18) - ((dx - span.Increment) >> 18);
-    else
-        len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    int len = 1;
+    if (!swapped || side)
+    {
+        if (side != negative)
+            len = (dx >> 18) - ((dx - span.Increment) >> 18);
+        else
+            len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    }
     edgelen = len;
 
     int xlen = span.XMax + 1 - span.XMin;
@@ -523,26 +545,37 @@ void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out 
     uint r;
     int startcov = int(Div(uint(((startx << 10) + 0x1FF) * (span.Y1 - span.Y0)), uint(xlen), r));
     edgecov = int(1u << 31) | ((startcov & 0x3FF) << 12) | (span.XCovIncr & 0x3FF);
+    if (swapped)
+        edgelen = 1;
 }
 
-void EdgeParams_YMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+void EdgeParams_YMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
     edgelen = 1;
 
     if (span.Increment == 0)
     {
-        edgecov = 31;
+        edgecov = swapped ? 0 : 31;
     }
     else
     {
         int cov = ((dx >> 9) + (span.Increment >> 10)) >> 4;
         if ((cov >> 5) != (dx >> 18)) cov = 31;
         cov &= 0x1F;
-        if (side == negative) cov = 0x1F - cov;
+        if (swapped ? (side != negative) : (side == negative))
+            cov = 0x1F - cov;
 
         edgecov = cov;
     }
+}
+
+void EdgeParams(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+{
+    if (span.Increment > int(0x40000u))
+        EdgeParams_XMajor(side, swapped, dx, span, edgelen, edgecov);
+    else
+        EdgeParams_YMajor(side, swapped, dx, span, edgelen, edgecov);
 }
 
 [numthreads(32, 1, 1)]
@@ -572,7 +605,8 @@ void main(uint3 id : SV_DispatchThreadID)
 
     int edgeLenL, edgeLenR;
 
-    if (xl > xr)
+    bool swappedEdges = xl > xr;
+    if (swappedEdges)
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -582,19 +616,13 @@ void main(uint3 id : SV_DispatchThreadID)
         xl = xr;
         xr = tmp;
 
-        EdgeParams_YMajor(false, dxr, spanL, edgeLenL, xspan.EdgeCovL);
-        EdgeParams_YMajor(true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(true, true, dxr, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(false, true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
     }
     else
     {
-        if (spanL.Increment > int(0x40000u))
-            EdgeParams_XMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        else
-            EdgeParams_YMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        if (spanR.Increment > int(0x40000u))
-            EdgeParams_XMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
-        else
-            EdgeParams_YMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(false, false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(true, false, dxr, spanR, edgeLenR, xspan.EdgeCovR);
     }
 
     xspan.CovLInitial = (xspan.EdgeCovL >> 12) & 0x3FF;
@@ -620,13 +648,35 @@ void main(uint3 id : SV_DispatchThreadID)
     if (xspan.InsideEnd > xspan.X1)
         xspan.InsideEnd = xspan.X1;
 
-    bool fillAllEdges = polyalpha < 31u || (DispCnt & (3u << 4)) != 0u;
+    bool fillAllEdges = isWireframe
+        || (polyalpha < 31u && (DispCnt & (1u << 3)) != 0u)
+        || (DispCnt & (3u << 4)) != 0u;
+    bool bottomXMajor = y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+    bool leftNegative = spanL.X1 < spanL.X0;
+    bool rightNegative = spanR.X1 < spanR.X0;
+    bool leftXMajor = spanL.Increment > int(0x40000u);
+    bool rightXMajor = spanR.Increment > int(0x40000u);
 
-    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= int(0x40000u))
+    bool fillLeft;
+    bool fillRight;
+    if (swappedEdges)
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor);
+        fillRight = (!rightNegative && rightXMajor)
+            || (!(rightNegative && rightXMajor) && spanL.Increment == 0)
+            || (bottomXMajor && rightXMajor);
+    }
+    else
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor)
+            || (spanL.Increment == spanR.Increment && xspan.X0 + edgeLenL == xspan.X1);
+        fillRight = (!rightNegative && rightXMajor) || spanR.Increment == 0
+            || (bottomXMajor && rightXMajor);
+    }
+
+    if (fillAllEdges || fillLeft)
         xspan.Flags |= XSpanSetup_FillLeft;
-    if (fillAllEdges
-        || (spanR.X1 >= spanR.X0 && spanR.Increment > int(0x40000u))
-        || spanR.Increment == 0)
+    if (fillAllEdges || fillRight)
         xspan.Flags |= XSpanSetup_FillRight;
 
     if (spanL.I0 == spanL.I1)
@@ -741,6 +791,7 @@ void main(uint3 id : SV_DispatchThreadID)
 
     XSpanSetups[setupIndex] = xspan;
 }
+
 )";
 
 // ---------------------------------------------------------------------------
@@ -814,13 +865,14 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
         mergedMaskShared = 0u;
     GroupMemoryBarrierWithGroupSync();
 
-    int polygonIdx = groupIdx * 32 + localIdx;
+    int localPolygonIdx = groupIdx * 32 + localIdx;
+    int polygonIdx = int(CurVariant) + localPolygonIdx;
 
     int2 coarseTopLeft = coarseTile * int2(CoarseTileW, CoarseTileH);
     int2 coarseBotRight = coarseTopLeft + int2(CoarseTileW - 1, CoarseTileH - 1);
 
     bool binned = false;
-    if (uint(polygonIdx) < NumPolygons)
+    if (localIdx < 32 && uint(localPolygonIdx) < TexWidth && uint(polygonIdx) < NumPolygons)
         binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
 
     if (binned)
@@ -842,7 +894,7 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
         int bit = int(FindLSB(mergedMask));
         mergedMask &= ~(1u << uint(bit));
 
-        int binPolygonIdx = groupIdx * 32 + bit;
+        int binPolygonIdx = int(CurVariant) + groupIdx * 32 + bit;
 
         if (BinPolygon(Polygons[binPolygonIdx], fineTileTopLeft, fineTileBotRight))
             binnedMask |= 1u << uint(bit);
@@ -851,27 +903,12 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
     int linearTile = fineTile.x + fineTile.y * TilesPerLine
         + coarseTile.x * CoarseTileCountX + coarseTile.y * TilesPerLine * CoarseTileCountY;
 
-    // Clamp the work-tile allocation to the MaxWorkTiles budget. The tile
-    // buffers and WorkDescs are sized for MaxWorkTiles entries, but the
-    // tiles*16 heuristic can be exceeded when many screen-filling translucent
-    // polygons stack up. Trimming before the mask/offset stores keeps every
-    // downstream consumer seeing a consistent set; excess polygons in a tile
-    // just drop a layer instead of corrupting the frame.
+    // The host partitions consecutive polygons using a conservative sum of
+    // their tile bounding boxes, so this batch cannot exceed MaxWorkTiles.
+    // Dropping a layer here would differ from Software rendering.
     uint workOffset = 0u;
     if (binnedMask != 0u)
-    {
         BinResult.InterlockedAdd(BinVariantWorkCountBase + 12u, uint(countbits(binnedMask)), workOffset);
-        if (workOffset >= uint(MaxWorkTiles))
-        {
-            binnedMask = 0u;
-        }
-        else
-        {
-            uint keepCount = uint(MaxWorkTiles) - workOffset;
-            while (uint(countbits(binnedMask)) > keepCount)
-                binnedMask &= ~(1u << FindMSB(binnedMask));
-        }
-    }
 
     StoreBinMask(BinningMaskStart + linearTile * BinStride + groupIdx, binnedMask);
     int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
@@ -896,7 +933,7 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
             int bit = int(FindLSB(binnedMask));
             binnedMask &= ~(1u << uint(bit));
 
-            int workPolygonIdx = groupIdx * 32 + bit;
+            int workPolygonIdx = int(CurVariant) + groupIdx * 32 + bit;
             uint variantIdx = Polygons[workPolygonIdx].Variant;
 
             uint inVariantOffset;
@@ -920,9 +957,7 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         if (id.x == 0u)
         {
-            // [0].w can overshoot MaxWorkTiles when the binning shader clamped
-            // the allocation; only the first MaxWorkTiles entries were written.
-            uint total = min(BinResult.Load(BinVariantWorkCountBase + 12u), uint(MaxWorkTiles));
+            uint total = BinResult.Load(BinVariantWorkCountBase + 12u);
             BinResult.Store4(BinSortWorkWorkCountBase, uint4((total + 31u) / 32u, 1u, 1u, 0u));
         }
 
@@ -948,9 +983,7 @@ inline const std::string SortWork = R"(
 [numthreads(32, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    // Entries past MaxWorkTiles were dropped by the binning shader and must
-    // not be read.
-    uint total = min(BinResult.Load(BinVariantWorkCountBase + 12u), uint(MaxWorkTiles));
+    uint total = BinResult.Load(BinVariantWorkCountBase + 12u);
     if (id.x < total)
     {
         uint2 workDesc = WorkDescs[WorkDescsUnsortedStart + id.x];
@@ -1265,9 +1298,16 @@ bool DepthTestEqual(uint dstDepth, uint tileDepth)
 #endif
 }
 
-bool DepthTestPasses(bool equalDepthTest, uint dstDepth, uint tileDepth)
+bool DepthTestPasses(bool equalDepthTest, bool facingView, uint dstDepth, uint tileDepth, uint dstAttr)
 {
-    return equalDepthTest ? DepthTestEqual(dstDepth, tileDepth) : (tileDepth < dstDepth);
+    bool passes = false;
+    if (equalDepthTest)
+        passes = DepthTestEqual(dstDepth, tileDepth);
+    else if (facingView && (dstAttr & 0x00400010u) == 0x00000010u)
+        passes = tileDepth <= dstDepth;
+    else
+        passes = tileDepth < dstDepth;
+    return passes;
 }
 
 void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool isShadow,
@@ -1293,7 +1333,7 @@ void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool i
         uint dstA = color & 0x1F000000u;
 
         uint alpha = (srcA >> 24) + 1u;
-        if (dstA != 0u)
+        if (dstA != 0u && (DispCnt & (1u << 3)) != 0u)
         {
             srcRB = ((srcRB * alpha) + (dstRB * (32u - alpha))) >> 5;
             srcG = ((srcG * alpha) + (dstG * (32u - alpha))) >> 5;
@@ -1328,11 +1368,12 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
             uint tileColor = ColorTiles[pixelindex];
             workIdx++;
 
-            uint polygonIdx = fineIdx + (coarseBit + coarseOffset) * 32u;
+            uint polygonIdx = CurVariant + fineIdx + (coarseBit + coarseOffset) * 32u;
 
             if (tileColor != 0u)
             {
                 uint polygonAttr = Polygons[polygonIdx].Attr;
+                bool facingView = Polygons[polygonIdx].FacingView != 0u;
 
                 bool isShadowMask = ((polygonAttr & 0x3F000030u) == 0x00000030u);
                 bool prevIsShadowMaskOld = prevIsShadowMask;
@@ -1362,18 +1403,20 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     }
 
                     uint dstDepth = writeSecondLayer ? depth.y : depth.x;
-                    if (!DepthTestPasses(equalDepthTest, dstDepth, tileDepth))
+                    if (!DepthTestPasses(equalDepthTest, facingView, dstDepth, tileDepth, dstattr))
                     {
                         if ((dstattr & 0x3u) == 0u || writeSecondLayer)
                             continue;
 
                         writeSecondLayer = true;
                         dstattr = attr.y;
-                        if (!DepthTestPasses(equalDepthTest, depth.y, tileDepth))
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, dstattr))
                             continue;
                     }
 
                     uint srcAttr = (polygonAttr & 0x3F008000u);
+                    if (!facingView)
+                        srcAttr |= 1u << 4;
 
                     uint srcA = tileColor & 0x1F000000u;
                     if (srcA == 0x1F000000u)
@@ -1415,12 +1458,12 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     if (!prevIsShadowMaskOld)
                         stencil = 0u;
 
-                    if (!DepthTestPasses(equalDepthTest, depth.x, tileDepth))
+                    if (!DepthTestPasses(equalDepthTest, facingView, depth.x, tileDepth, attr.x))
                         stencil = 0x1u;
 
                     if ((dstattr & 0x3u) != 0u)
                     {
-                        if (!DepthTestPasses(equalDepthTest, depth.y, tileDepth))
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, attr.y))
                             stencil |= 0x2u;
                     }
                 }
@@ -1437,10 +1480,29 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
     uint coarseMaskLo = LoadBinMask(BinningCoarseMaskStart + linearTile * CoarseBinStride + 0);
     uint coarseMaskHi = LoadBinMask(BinningCoarseMaskStart + linearTile * CoarseBinStride + 1);
 
-    uint2 color, depth;
-    uint2 attr = uint2(ClearAttr, 0u);
-    if ((DispCnt & (1u << 14)) != 0u)
+    uint resultOffset = id.x + id.y * ScreenWidth;
+    uint2 color, depth, attr;
+    uint stencil = 0u;
+    bool prevIsShadowMask = false;
+
+    if (TexHeight != 0u)
     {
+        color = uint2(
+            ResultValue[ResultColorStart + resultOffset],
+            ResultValue[ResultColorStart + resultOffset + FramebufferStride]);
+        depth = uint2(
+            ResultValue[ResultDepthStart + resultOffset],
+            ResultValue[ResultDepthStart + resultOffset + FramebufferStride]);
+        attr = uint2(
+            ResultValue[ResultAttrStart + resultOffset],
+            ResultValue[ResultAttrStart + resultOffset + FramebufferStride]);
+        uint continuation = BlendContinuationState[resultOffset];
+        stencil = continuation & 0x3u;
+        prevIsShadowMask = (continuation & 0x4u) != 0u;
+    }
+    else if ((DispCnt & (1u << 14)) != 0u)
+    {
+        attr = uint2(ClearAttr, 0u);
         // The GL renderer divides both axes by ScreenWidth so the 256x256
         // bitmap keeps square texels over the 256x192 screen. GL_REPEAT plus
         // GL_NEAREST is reproduced with an explicit wrap and a Load().
@@ -1457,21 +1519,25 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
     {
         color = uint2(ClearColor, 0u);
         depth = uint2(ClearDepth, 0u);
+        attr = uint2(ClearAttr, 0u);
     }
 
-    uint stencil = 0u;
-    bool prevIsShadowMask = false;
+    if (TexHeight == 0u)
+    {
+        stencil = 0u;
+        prevIsShadowMask = false;
+    }
 
     ProcessCoarseMask(linearTile, coarseMaskLo, 0u, localId.xy, color, depth, attr, stencil, prevIsShadowMask);
     ProcessCoarseMask(linearTile, coarseMaskHi, uint(BinStride / 2), localId.xy, color, depth, attr, stencil, prevIsShadowMask);
 
-    uint resultOffset = id.x + id.y * ScreenWidth;
     ResultValue[ResultColorStart + resultOffset] = color.x;
     ResultValue[ResultColorStart + resultOffset + FramebufferStride] = color.y;
     ResultValue[ResultDepthStart + resultOffset] = depth.x;
     ResultValue[ResultDepthStart + resultOffset + FramebufferStride] = depth.y;
     ResultValue[ResultAttrStart + resultOffset] = attr.x;
     ResultValue[ResultAttrStart + resultOffset + FramebufferStride] = attr.y;
+    BlendContinuationState[resultOffset] = stencil | (prevIsShadowMask ? 0x4u : 0u);
 }
 )";
 
@@ -1948,7 +2014,7 @@ void main(uint3 id : SV_DispatchThreadID)
         if ((captureReference & 0x80000000u) != 0u)
             pixel3D = LoadStructuredCapture(
                 captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
-        else if (TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+        else if (TexWidth != 0u && sourceX >= 0 && sourceX < int(ScreenWidth))
             pixel3D = FinalFB[uint(sourceX) + scaledY * ScreenWidth];
 
         if (((pixel3D >> 24u) & 0x1Fu) != 0u)

@@ -47,6 +47,7 @@ SET0_BINDINGS = [
     ("StructuredInput", 12),
     ("PresentationOutput", 13),
     ("CaptureSidecar", 14),
+    ("BlendState", 15),
 ]
 SET1_BINDINGS = [
     ("CurrentTexture", 0),
@@ -205,8 +206,8 @@ def host_geometry(scale: int) -> dict[str, int]:
         "MaxWorkTiles": (tiles_per_line * tile_lines) << 4,
         "CoarseTileW": COARSE_TILE_COUNT_X * tile_size,
         "CoarseTileH": geo["CoarseTileCountY"] * tile_size,
-        # eh those are pretty bad guesses (comment from GPU3D_Compute.cpp)
-        "MaxYSpanIndices": 64 * 2048 * scale,
+        # Every valid DS polygon may cover the full output height.
+        "MaxYSpanIndices": screen_h * 2048,
     })
     return geo
 

@@ -17,9 +17,8 @@
 */
 
 /*
-    1:1 re-expression of ComputeRendererShaders::CalcOffsets
-    (src/GPU3D_Compute_shaders.h), including the MelonPrimeDS clamp and the
-    split rasterise dispatch. Nothing but the resource bindings changed.
+    Software-parity derivative of ComputeRendererShaders::CalcOffsets
+    (src/GPU3D_Compute_shaders.h), including the split rasterise dispatch.
 
     Build define: CalculateWorkOffsets
     Host dispatch (matching GPU3D_Compute.cpp): ((numVariants+31)/32, 1, 1).
@@ -41,9 +40,7 @@ void main()
         {
             // a bit of a cheat putting this here, but this shader won't run that often
 
-            // MelonPrimeDS: [0].w can overshoot MaxWorkTiles when the binning shader
-            // clamps the allocation; only the first MaxWorkTiles entries were written.
-            SortWorkWorkCount = uvec4((min(VariantWorkCount[0].w, uint(MaxWorkTiles)) + 31) / 32, 1, 1, 0);
+            SortWorkWorkCount = uvec4((VariantWorkCount[0].w + 31) / 32, 1, 1, 0);
         }
         SortedWorkOffset[gl_GlobalInvocationID.x] = atomicAdd(VariantWorkCount[1].w, VariantWorkCount[gl_GlobalInvocationID.x].z);
 

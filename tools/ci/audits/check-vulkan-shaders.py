@@ -156,6 +156,7 @@ def check_scale_arithmetic(scale: int) -> tuple[list[str], list[str]]:
         "NativeResolveMemory": 4 * 256 * 192,
         "StructuredInputMemory": (14 * 256 * 192 + 2 * 192 + 192 * 4) * 4,
         "CaptureSidecarMemory": 8 * 256 * 256 * scale * scale * 4,
+        "BlendContinuationState": screen_w * screen_h * 4,
     }
     for label, size in byte_sizes.items():
         if size > UINT32_MAX:

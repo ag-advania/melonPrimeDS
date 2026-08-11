@@ -506,11 +506,8 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
     if (y0 == y1)
         return y0;
 
-#ifndef Rasterise
-    irecip = abs(irecip);
-#endif
-
-    uint mulLo, mulHi, carry;
+    uint numeratorLo, numeratorHi;
+    uint denominator = uint(abs(idiff));
     if (y0 < y1)
     {
 #ifndef Rasterise
@@ -518,11 +515,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(i);
 #endif
-        umulExtended(uint(y1-y0)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3U<<24, carry);
-        mulHi += carry;
-        return y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y0 + int(((int64_t(y1-y0) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y1 - y0), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y0 + int(quotient);
     }
     else
     {
@@ -531,11 +535,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(idiff-i);
 #endif
-        umulExtended(uint(y0-y1)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3<<24, carry);
-        mulHi += carry;
-        return y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y1 + int(((int64_t(y0-y1) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y0 - y1), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y1 + int(quotient);
     }
 }
 
@@ -961,7 +972,7 @@ void main()
     ivec2 coarseBotRight = coarseTopLeft + ivec2(CoarseTileW-1, CoarseTileH-1);
 
     bool binned = false;
-    if (polygonIdx < NumPolygons)
+    if (localIdx < 32 && polygonIdx < NumPolygons)
     {
         binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
     }
