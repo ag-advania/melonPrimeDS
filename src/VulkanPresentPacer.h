@@ -13,26 +13,11 @@
 #include <string>
 
 #include "VulkanDevice.h"
+#include "VulkanPresentPacingPolicy.h"
 #include "VulkanPresentTimingModel.h"
 
 namespace melonDS
 {
-
-enum class VulkanPresentPacingPolicy : int
-{
-    TelemetryOnly = 0,
-    PresentWait = 1,
-    JustInTime = 2,
-    JustInTimeFifoLatestReady = 3,
-};
-
-enum class VulkanPacingAuthority : int
-{
-    GenericHost = 0,
-    NvidiaReflex,
-    AmdAntiLag2,
-    GenericPresentTiming,
-};
 
 // Result of one vkGetSwapchainTimingPropertiesEXT call.
 //
@@ -57,30 +42,6 @@ enum class VulkanRefreshDynamics : int
     VariableRefresh,
     FixedRefresh,
     DynamicRefresh,
-};
-
-// Why a target presentation time was not requested this frame. Reported in the
-// developer summary so an A/B session can tell "JIT is off because the policy
-// says so" apart from "JIT is off because this driver never answered".
-enum class VulkanJitFallbackReason : int
-{
-    None = 0,
-    TelemetryOnlyPolicy,
-    VendorLatencyApiOwnsPacing,
-    NotNormalSpeed,
-    PresentId2Unsupported,
-    PresentWait2Unsupported,
-    PresentTimingUnsupported,
-    AbsoluteTimingUnsupportedDevice,
-    AbsoluteTimingUnsupportedSurface,
-    NonFifoPresentMode,
-    NoFrameInterval,
-    TimingPropertiesNotReady,
-    TimeDomainsNotReady,
-    NoValidTargetStage,
-    BootstrapWaitingForFeedback,
-    DomainChanged,
-    TimingQueryFailed,
 };
 
 // Vendor-neutral presentation pacing for one swapchain.
@@ -115,7 +76,12 @@ public:
     [[nodiscard]] VkSwapchainCreateFlagsKHR GetSwapchainCreateFlags() const noexcept;
     [[nodiscard]] bool ShouldUseFifoLatestReady() const noexcept;
 
-    void OnSwapchainCreated(VkSwapchainKHR swapchain, VkPresentModeKHR presentMode);
+    // `imageCount` sizes the optional timing-results queue: a report only frees
+    // its slot once the presentation engine has completed it, which can take
+    // several refreshes, so a swapchain with more images in flight needs more
+    // slots before it starts rejecting presents.
+    void OnSwapchainCreated(
+        VkSwapchainKHR swapchain, VkPresentModeKHR presentMode, u32 imageCount);
     void OnSwapchainDestroyed() noexcept;
 
     // Called immediately before late input sampling. Returns true when the
@@ -142,10 +108,16 @@ public:
     [[nodiscard]] bool IsTargetSchedulingActive() const noexcept;
 
 private:
-    void SelectAuthority(bool reflexActive, bool antiLagActive, bool normalSpeed) noexcept;
+    // Snapshots every capability the pure resolver needs. Building it is a few
+    // bool copies; it is not a driver query.
+    [[nodiscard]] VulkanPacingCapabilities BuildCapabilities() const noexcept;
+    [[nodiscard]] VulkanPacingDecision ResolveDecision(
+        bool reflexActive, bool antiLagActive, bool normalSpeed) const noexcept;
     VulkanTimingRefreshResult RefreshTimingProperties();
     bool RefreshTimeDomains();
     void SelectTargetPresentStage() noexcept;
+    void ApplyTimingQueueSize(u32 size);
+    [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
     void ResetTimingLifecycle() noexcept;
     void ReportPastTiming();
     u64 EvaluateTargetTime(u64 sequence) noexcept;
@@ -171,11 +143,16 @@ private:
     bool PresentId2Surface = false;
     bool PresentWait2Surface = false;
     bool PresentTimingSurface = false;
-    bool PresentTimingRuntimeEnabled = false;
     bool PresentTimingRelative = false;
-    bool PresentTimingAbsolute = false;
+    bool PresentTimingAbsoluteSurface = false;
     bool WaitRuntimeEnabled = false;
     VkPresentStageFlagsEXT PresentStageQueries = 0;
+
+    // Attaching timing metadata to presents and draining the results queue are
+    // separate switches. A full results queue retires the former while the
+    // latter must keep running -- draining is exactly what makes room again.
+    bool TimingMetadataEnabled = false;
+    bool TimingResultsQueryEnabled = false;
 
     // Sticky across swapchain recreation: once a surface has proved that the
     // timing lifecycle cannot complete, re-selecting FIFO_LATEST_READY for it
@@ -198,6 +175,9 @@ private:
 
     // --- Phase 3/4: feedback and target scheduling ---------------------------
     VulkanPresentTimingModel TimingModel;
+    // Resolved once per frame in BeginFrame() and reused by PreparePresent(),
+    // so the wait decision and the scheduling decision can never disagree.
+    VulkanPacingDecision LastDecision{};
     u64 TargetFrameIntervalNs = 0;
     u64 LastTargetTimeNs = 0;
     bool FifoFamilyPresentMode = true;
@@ -214,7 +194,17 @@ private:
     u64 LastFeedbackStageTimeNs = 0;
     u32 TimingReportCountdown = 0;
     u32 WaitTimeouts = 0;
+
+    // --- optional timing-results queue --------------------------------------
+    // Recovery is bounded. A queue that fills once is worth one attempt at a
+    // larger queue; a queue that keeps filling means this driver reports too
+    // slowly for the emulator's present rate, and retrying forever would just
+    // pay the rejected-present cost every frame.
+    static constexpr u32 MaxTimingQueueRecoveries = 3;
+    u32 TimingQueueSize = 0;
     u32 TimingQueueFullCount = 0;
+    u32 TimingQueueRecoveries = 0;
+    bool TimingQueueRecoveryPending = false;
     std::string WaitDisabledReason;
 };
 

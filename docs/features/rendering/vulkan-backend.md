@@ -415,7 +415,8 @@ extension, feature bit, entry point, or surface capability falls back to the
 legacy surface query and host limiter without disabling Vulkan.
 
 The optional late-wait authority is selected once per frame in this order:
-NVIDIA Reflex, AMD Anti-Lag 2, generic present timing, no optional late wait.
+NVIDIA Reflex, AMD Anti-Lag 2, generic present timing (claimed by either the
+bounded wait or target-time scheduling), no optional late wait.
 The existing host limiter remains the sole exact frame-rate cap whenever the FPS
 limit is enabled; vendor latency APIs and the bounded present wait must not turn
 that toggle into unlimited rendering. Generic `vkWaitForPresent2KHR` is bounded
@@ -465,16 +466,36 @@ come from. The target time domain is `SWAPCHAIN_LOCAL`, falling back to
 `PRESENT_STAGE_LOCAL`, and the stage is the most display-visible one the surface
 reports.
 
+The bounded present wait and target-time scheduling are **independent
+capabilities**, resolved together once per frame by `ResolveVulkanPresentPacing()`
+in `VulkanPresentPacingPolicy.h` -- a pure constexpr function with no Vulkan
+includes, executed by the same test binary as the timing model.
+`VK_KHR_present_wait2` waits on the *previous* present; `VK_EXT_present_timing`
+schedules *this* one, and its dependencies are `VK_KHR_swapchain`,
+`VK_KHR_present_id2`, `VK_KHR_get_surface_capabilities2` and
+`VK_KHR_calibrated_timestamps` -- not the wait. A driver exposing only present
+timing therefore gets full target-time scheduling with the wait simply skipped,
+and a runtime failure that retires the wait does not retire the scheduler.
+
 Scheduling requires all of: a `JustInTime` policy, normal speed, a non-zero
-frame interval, present ID 2 and present wait 2 surface support, the
-`presentAtAbsoluteTime` device feature and surface capability, a FIFO-family
-present mode, ready timing properties and time domains, a valid target stage,
-and a feedback baseline. Anything missing falls back to `targetTime = 0` and is
-recorded as a named reason in the developer log -- never to a renderer failure
-or a software fallback. `FIFO_LATEST_READY` is selected only for VSync when that
-whole capability and lifecycle path is in place, since time-based image
-selection is the reason the mode exists; a baseline is deliberately not part of
-that gate, because one cannot exist before the first present.
+frame interval, present ID 2 surface support, the `presentAtAbsoluteTime` device
+feature and surface capability, a FIFO-family present mode, ready timing
+properties and time domains, a valid target stage, and a feedback baseline.
+Anything missing falls back to `targetTime = 0` and is recorded as a named
+reason in the developer log -- never to a renderer failure or a software
+fallback. `FIFO_LATEST_READY` is selected only for VSync when that whole
+capability and lifecycle path is in place, since time-based image selection is
+the reason the mode exists; a baseline is deliberately not part of that gate,
+because one cannot exist before the first present.
+
+The optional results queue is sized from the swapchain image count (16 to 64
+slots), because a report holds its slot until the presentation engine completes
+it. Release builds request timestamps for the target stage only; developer
+builds request every stage the surface offers, which is why the extra telemetry
+costs queue pressure that shipping users do not pay. If the queue fills anyway,
+the present is retried without timing metadata, draining continues -- draining
+is what frees slots -- and the queue is grown once per full event, at most three
+times per swapchain, before timing settles into off.
 
 The settings probe evaluates the same optional-feature dependencies as device
 creation: the NVIDIA control requires the low-latency extension, timeline
@@ -499,9 +520,12 @@ limiter as the exact FPS cap:
 | Value | Policy | Bounded `PresentWait2` | `targetTime` | Present mode |
 |---|---|---|---|---|
 | `0` | `TelemetryOnly` (default) | no | 0 | FIFO |
-| `1` | `PresentWait` | yes | 0 | FIFO |
-| `2` | `JustInTime` | yes | absolute | FIFO |
-| `3` | `JustInTimeFifoLatestReady` | yes | absolute | `FIFO_LATEST_READY` |
+| `1` | `PresentWait` | when supported | 0 | FIFO |
+| `2` | `JustInTime` | when supported | absolute | FIFO |
+| `3` | `JustInTimeFifoLatestReady` | when supported | absolute | `FIFO_LATEST_READY` |
+
+"when supported" is per-capability, not per-policy: the `JustInTime` rows keep
+their absolute `targetTime` on a surface with no `VK_KHR_present_wait2`.
 
 The default stays telemetry-only until the target-time path has been validated
 on real hardware. Feature state and frame

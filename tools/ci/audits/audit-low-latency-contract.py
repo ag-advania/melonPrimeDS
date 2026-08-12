@@ -83,6 +83,8 @@ def main() -> int:
     dx12 = read("src/DX12NvidiaReflex.cpp")
     vulkan = read("src/VulkanNvidiaReflex.cpp")
     vulkan_pacer = read("src/VulkanPresentPacer.cpp")
+    vulkan_pacing_policy = read("src/VulkanPresentPacingPolicy.h")
+    vulkan_timing_tests = read("tools/testing/vulkan-present-timing-tests.cpp")
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
@@ -177,10 +179,52 @@ def main() -> int:
     )
     require(
         "{MelonPrime::CfgKey::VulkanPresentPacingPolicy, 0}" in config
-        and "TelemetryOnly = 0" in read("src/VulkanPresentPacer.h")
+        and "TelemetryOnly = 0" in vulkan_pacing_policy
         and "JustInTimeFifoLatestReady" in vulkan_pacer
         and "PresentPacer.ShouldUseFifoLatestReady()" in vulkan_presenter,
         "Vulkan behavioural pacing must default to telemetry-only and gate FIFO latest-ready",
+        failures,
+    )
+    # VK_EXT_present_timing depends on VK_KHR_swapchain, VK_KHR_present_id2,
+    # VK_KHR_get_surface_capabilities2 and VK_KHR_calibrated_timestamps -- not on
+    # VK_KHR_present_wait2. The two were once resolved by a single condition, so a
+    # driver exposing only present timing lost target-time scheduling entirely.
+    require(
+        "PresentWait2Surface" not in function_body(
+            vulkan_pacing_policy,
+            "constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(",
+            "constexpr VulkanPacingDecision ResolveVulkanPresentPacing(",
+        )
+        and "bool BoundedPresentWait = false;" in vulkan_pacing_policy
+        and "bool TargetTimeScheduling = false;" in vulkan_pacing_policy,
+        "Vulkan target-time scheduling must not require VK_KHR_present_wait2",
+        failures,
+    )
+    require(
+        "if (!decision.BoundedPresentWait)" in vulkan_pacer
+        and "if (!LastDecision.TargetTimeScheduling)" in vulkan_pacer
+        and "ResolveVulkanPresentPacing(" in vulkan_pacer
+        and "PresentWait2Surface" not in function_body(
+            vulkan_pacer,
+            "u64 VulkanPresentPacer::EvaluateTargetTime(u64 sequence) noexcept",
+            "u64 VulkanPresentPacer::PreparePresent(",
+        ),
+        "the pacer must resolve wait and target scheduling from one shared, independent decision",
+        failures,
+    )
+    require(
+        "TestTargetTimeDoesNotRequirePresentWait2" in vulkan_timing_tests
+        and "caps.PresentWait2Surface = false;" in vulkan_timing_tests
+        and "TestBoundedWaitWithoutPresentTiming" in vulkan_timing_tests,
+        "the capability matrix must test target-time scheduling without present_wait2",
+        failures,
+    )
+    require(
+        "TimingQueueSizeFor(imageCount)" in vulkan_pacer
+        and "TimingResultsQueryEnabled" in vulkan_pacer
+        and "MaxTimingQueueRecoveries" in read("src/VulkanPresentPacer.h")
+        and "TimingQueueRecoveryPending = recoverable;" in vulkan_pacer,
+        "a full present timing queue must keep draining and recover a bounded number of times",
         failures,
     )
     # --- target-time presentation scheduling contract -----------------------
@@ -225,7 +269,7 @@ def main() -> int:
             function_body(
                 vulkan_pacer,
                 "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
-                "void VulkanPresentPacer::SelectAuthority(",
+                "VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities(",
             ),
             ["ResetTimingLifecycle();"],
         )
@@ -235,18 +279,27 @@ def main() -> int:
         failures,
     )
     require(
-        all(token in vulkan_pacer for token in (
+        all(token in vulkan_pacing_policy for token in (
             "VulkanJitFallbackReason::VendorLatencyApiOwnsPacing",
-            "authority == VulkanPacingAuthority::NvidiaReflex",
-            "authority == VulkanPacingAuthority::AmdAntiLag2",
-        )),
-        "active Reflex or Anti-Lag 2 must keep generic target scheduling off",
+            "if (reflexActive)",
+            "if (antiLagActive)",
+        ))
+        and ordered(
+            vulkan_pacing_policy,
+            [
+                "VulkanPacingAuthority::NvidiaReflex, false, false",
+                "VulkanPacingAuthority::AmdAntiLag2, false, false",
+            ],
+        )
+        and "TestVendorLatencyApisWin" in vulkan_timing_tests,
+        "active Reflex or Anti-Lag 2 must keep both generic mechanisms off",
         failures,
     )
     require(
         "bool IsFifoFamily(VkPresentModeKHR mode) noexcept" in vulkan_pacer
-        and "VulkanJitFallbackReason::NonFifoPresentMode" in vulkan_pacer
-        and "if (!FifoFamilyPresentMode)" in vulkan_pacer,
+        and "caps.FifoPresentMode = FifoFamilyPresentMode;" in vulkan_pacer
+        and "VulkanJitFallbackReason::NonFifoPresentMode" in vulkan_pacing_policy
+        and "if (!caps.FifoPresentMode)" in vulkan_pacing_policy,
         "target-time scheduling must stay inactive outside the FIFO present-mode family",
         failures,
     )

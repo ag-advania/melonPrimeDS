@@ -22,6 +22,21 @@ namespace
 constexpr u64 MaxPresentWaitNs = 2'000'000; // A driver stall must never hang input.
 constexpr u32 TimingLogPeriodFrames = 600;
 
+// Optional timing-results queue sizing. A report holds its slot until the
+// presentation engine completes it, which can span several refreshes, so the
+// floor covers a normal swapchain and the per-image term covers deeper ones.
+// The ceiling exists because a queue the emulator can never fill is just
+// driver memory it will not use.
+constexpr u32 MinTimingQueueSize = 16;
+constexpr u32 MaxTimingQueueSize = 64;
+constexpr u32 TimingQueueImageFactor = 4;
+
+constexpr u32 TimingQueueSizeFor(u32 imageCount) noexcept
+{
+    const u32 scaled = imageCount * TimingQueueImageFactor;
+    return std::min(MaxTimingQueueSize, std::max(MinTimingQueueSize, scaled));
+}
+
 // One present stage the target time is expressed against, most display-visible
 // first. Requesting a stage the surface does not report is invalid usage, so
 // the first supported entry wins and an empty intersection means no target
@@ -61,18 +76,20 @@ bool IsFifoFamily(VkPresentModeKHR mode) noexcept
     }
 }
 
+// Deliberately an if-chain, not a switch: on an SDK older than
+// VK_EXT_present_timing the two swapchain domains come from
+// VulkanModernPresentCompat.h as casts rather than enumerators, and a switch
+// over them warns about case values outside the enumerated type.
 [[maybe_unused]] const char* TimeDomainName(VkTimeDomainKHR domain) noexcept
 {
-    switch (domain)
-    {
-    case VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT: return "SWAPCHAIN_LOCAL";
-    case VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT: return "PRESENT_STAGE_LOCAL";
-    case VK_TIME_DOMAIN_DEVICE_KHR: return "DEVICE";
-    case VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR: return "CLOCK_MONOTONIC";
-    case VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR: return "CLOCK_MONOTONIC_RAW";
-    case VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR: return "QUERY_PERFORMANCE_COUNTER";
-    default: return "unknown";
-    }
+    if (domain == VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT) return "SWAPCHAIN_LOCAL";
+    if (domain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT) return "PRESENT_STAGE_LOCAL";
+    if (domain == VK_TIME_DOMAIN_DEVICE_KHR) return "DEVICE";
+    if (domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR) return "CLOCK_MONOTONIC";
+    if (domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR) return "CLOCK_MONOTONIC_RAW";
+    if (domain == VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR)
+        return "QUERY_PERFORMANCE_COUNTER";
+    return "unknown";
 }
 
 } // namespace
@@ -119,11 +136,14 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
     {
     case VulkanJitFallbackReason::None: return "none";
     case VulkanJitFallbackReason::TelemetryOnlyPolicy: return "telemetry-only policy";
+    case VulkanJitFallbackReason::PresentWaitPolicyNoTarget:
+        return "present-wait policy requests no target time";
     case VulkanJitFallbackReason::VendorLatencyApiOwnsPacing:
         return "vendor latency API owns pacing";
     case VulkanJitFallbackReason::NotNormalSpeed: return "not normal speed";
     case VulkanJitFallbackReason::PresentId2Unsupported: return "present_id2 unsupported";
-    case VulkanJitFallbackReason::PresentWait2Unsupported: return "present_wait2 unsupported";
+    case VulkanJitFallbackReason::PresentWait2Unsupported:
+        return "present_wait2 unsupported (optional bounded wait only)";
     case VulkanJitFallbackReason::PresentTimingUnsupported: return "present timing unsupported";
     case VulkanJitFallbackReason::AbsoluteTimingUnsupportedDevice:
         return "absolute timing unsupported by device";
@@ -181,10 +201,12 @@ void VulkanPresentPacer::Shutdown() noexcept
     PresentId2Surface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
-    PresentTimingRuntimeEnabled = false;
     PresentTimingRelative = false;
-    PresentTimingAbsolute = false;
+    PresentTimingAbsoluteSurface = false;
+    TimingMetadataEnabled = false;
+    TimingResultsQueryEnabled = false;
     PresentStageQueries = 0;
+    TargetPresentStage = 0;
     TargetSchedulingLifecycleFailed = false;
     WaitRuntimeEnabled = false;
     WaitDisabledReason.clear();
@@ -212,10 +234,12 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
     PresentId2Surface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
-    PresentTimingRuntimeEnabled = false;
     PresentTimingRelative = false;
-    PresentTimingAbsolute = false;
+    PresentTimingAbsoluteSurface = false;
+    TimingMetadataEnabled = false;
+    TimingResultsQueryEnabled = false;
     PresentStageQueries = 0;
+    TargetPresentStage = 0;
 
     const Vk::InstanceDispatch& fns = Device->InstanceFns();
     if (Caps2Available)
@@ -260,12 +284,16 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
                 && wait2.presentWait2Supported == VK_TRUE;
             PresentTimingSurface = PresentTimingDevice && PresentId2Surface
                 && timing.presentTimingSupported == VK_TRUE;
-            PresentTimingRuntimeEnabled = PresentTimingSurface;
+            TimingMetadataEnabled = PresentTimingSurface;
+            TimingResultsQueryEnabled = PresentTimingSurface;
             PresentTimingRelative = PresentTimingSurface
                 && timing.presentAtRelativeTimeSupported == VK_TRUE;
-            PresentTimingAbsolute = PresentTimingSurface && AbsoluteTimingDevice
+            PresentTimingAbsoluteSurface = PresentTimingSurface
                 && timing.presentAtAbsoluteTimeSupported == VK_TRUE;
             PresentStageQueries = PresentTimingSurface ? timing.presentStageQueries : 0;
+            // The stage the targets are expressed against is a property of the
+            // surface, so it is known here -- before any swapchain exists.
+            SelectTargetPresentStage();
             WaitRuntimeEnabled = PresentWait2Surface;
             return true;
         }
@@ -310,10 +338,46 @@ bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept
         return false;
     if (TargetSchedulingLifecycleFailed)
         return false;
+    // Deliberately independent of VK_KHR_present_wait2: the bounded wait is a
+    // different mechanism and its absence must not cost this present mode.
     return PresentTimingSurface && PresentId2Surface && LatestReadyDevice
-        && PresentTimingAbsolute && TimeDomainQueryAvailable
+        && PresentTimingAbsoluteSurface && AbsoluteTimingDevice && TimeDomainQueryAvailable
         && Device != nullptr
         && Device->Fns().SetSwapchainPresentTimingQueueSizeEXT != nullptr;
+}
+
+VkPresentStageFlagsEXT VulkanPresentPacer::RequestedStageQueries() const noexcept
+{
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Developer builds want the whole picture: the periodic summary exists to
+    // show where a frame actually spent its time inside the presentation engine.
+    return PresentStageQueries;
+#else
+    // Production only needs the one stage the target times are expressed
+    // against. Every additional stage is another timestamp the engine has to
+    // complete before the report frees its results-queue slot.
+    return TargetPresentStage != 0 ? TargetPresentStage : PresentStageQueries;
+#endif
+}
+
+void VulkanPresentPacer::ApplyTimingQueueSize(u32 size)
+{
+    if (!Device || Swapchain == VK_NULL_HANDLE
+        || !Device->Fns().SetSwapchainPresentTimingQueueSizeEXT)
+    {
+        return;
+    }
+
+    const VkResult result = Device->Fns().SetSwapchainPresentTimingQueueSizeEXT(
+        Device->GetHandle(), Swapchain, size);
+    if (result != VK_SUCCESS)
+    {
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] present timing queue sizing to %u failed: %s; telemetry remains optional\n",
+            size, Vk::FormatResult(result).c_str());
+        return;
+    }
+    TimingQueueSize = size;
 }
 
 void VulkanPresentPacer::ResetTimingLifecycle() noexcept
@@ -330,7 +394,9 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TimeDomainsRetryPending = false;
     TargetTimeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
     TargetTimeDomainId = 0;
-    TargetPresentStage = 0;
+    TimingQueueSize = 0;
+    TimingQueueRecoveries = 0;
+    TimingQueueRecoveryPending = false;
     RefreshDurationNs = 0;
     RefreshIntervalNs = 0;
     LastTargetTimeNs = 0;
@@ -342,7 +408,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
 }
 
 void VulkanPresentPacer::OnSwapchainCreated(
-    VkSwapchainKHR swapchain, VkPresentModeKHR presentMode)
+    VkSwapchainKHR swapchain, VkPresentModeKHR presentMode, u32 imageCount)
 {
     ResetTimingLifecycle();
     Swapchain = swapchain;
@@ -355,21 +421,15 @@ void VulkanPresentPacer::OnSwapchainCreated(
     WaitTimeouts = 0;
     TimingQueueFullCount = 0;
     WaitRuntimeEnabled = PresentWait2Surface;
-    PresentTimingRuntimeEnabled = PresentTimingSurface;
+    TimingMetadataEnabled = PresentTimingSurface;
+    TimingResultsQueryEnabled = PresentTimingSurface;
     LoggedFallbackReason = VulkanJitFallbackReason::None;
     LoggedTargetSchedulingActive = false;
     WaitDisabledReason.clear();
 
-    if (PresentTimingSurface && Device->Fns().SetSwapchainPresentTimingQueueSizeEXT)
+    if (PresentTimingSurface)
     {
-        const VkResult sizeResult = Device->Fns().SetSwapchainPresentTimingQueueSizeEXT(
-            Device->GetHandle(), Swapchain, 16);
-        if (sizeResult != VK_SUCCESS)
-        {
-            Platform::Log(Platform::LogLevel::Warn,
-                "[Vulkan] present timing queue sizing failed: %s; telemetry remains optional\n",
-                Vk::FormatResult(sizeResult).c_str());
-        }
+        ApplyTimingQueueSize(TimingQueueSizeFor(imageCount));
         // Both queries are allowed to answer VK_NOT_READY here: a swapchain
         // need not know its refresh timing or its time domains until it has
         // presented at least once. That is a pending state, not an error, and
@@ -392,32 +452,41 @@ void VulkanPresentPacer::OnSwapchainDestroyed() noexcept
                     std::memory_order_release);
 }
 
-void VulkanPresentPacer::SelectAuthority(
-    bool reflexActive, bool antiLagActive, bool normalSpeed) noexcept
+VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
 {
-    VulkanPacingAuthority selected = VulkanPacingAuthority::GenericHost;
-    if (reflexActive)
-        selected = VulkanPacingAuthority::NvidiaReflex;
-    else if (antiLagActive)
-        selected = VulkanPacingAuthority::AmdAntiLag2;
-    else if (normalSpeed
-        && GetPolicy() != VulkanPresentPacingPolicy::TelemetryOnly
-        && WaitRuntimeEnabled && PresentId2Surface && Swapchain != VK_NULL_HANDLE)
-    {
-        selected = VulkanPacingAuthority::GenericPresentTiming;
-    }
-    Authority.store(static_cast<int>(selected), std::memory_order_release);
+    VulkanPacingCapabilities caps;
+    caps.SwapchainValid = Swapchain != VK_NULL_HANDLE;
+    caps.PresentId2Surface = PresentId2Surface;
+    caps.PresentWait2Surface = PresentWait2Surface;
+    caps.PresentWaitRuntimeEnabled = WaitRuntimeEnabled;
+    caps.PresentTimingSurface = PresentTimingSurface;
+    caps.TimingMetadataEnabled = TimingMetadataEnabled;
+    caps.AbsoluteTimingDevice = AbsoluteTimingDevice;
+    caps.AbsoluteTimingSurface = PresentTimingAbsoluteSurface;
+    caps.FifoPresentMode = FifoFamilyPresentMode;
+    caps.TimingPropertiesReady = TimingPropertiesReady;
+    caps.TimeDomainsReady = TimeDomainsReady && TimingModel.HasTimeDomain();
+    caps.TargetStageValid = TargetPresentStage != 0;
+    caps.FrameIntervalKnown = TargetFrameIntervalNs != 0;
+    return caps;
+}
+
+VulkanPacingDecision VulkanPresentPacer::ResolveDecision(
+    bool reflexActive, bool antiLagActive, bool normalSpeed) const noexcept
+{
+    return ResolveVulkanPresentPacing(
+        GetPolicy(), reflexActive, antiLagActive, normalSpeed, BuildCapabilities());
 }
 
 bool VulkanPresentPacer::BeginFrame(
     bool reflexActive, bool antiLagActive, bool normalSpeed, u64 targetFrameIntervalNs)
 {
-    SelectAuthority(reflexActive, antiLagActive, normalSpeed);
-
     // The emulator's own frame interval, straight from the frame limiter. It is
     // zero for fast-forward, slow motion and unlimited FPS, and that zero is
     // what turns target scheduling off for those modes: the presentation engine
     // must never be handed a cadence the emulator is not running at.
+    //
+    // Set before the decision is resolved, because it is one of the inputs.
     TargetFrameIntervalNs = normalSpeed ? targetFrameIntervalNs : 0;
 
     // Telemetry-only is the safe default: collect periodic timing reports even
@@ -433,9 +502,19 @@ bool VulkanPresentPacer::BeginFrame(
     if (TimeDomainsRetryPending && LastPresentedId != 0)
         RefreshTimeDomains();
 
+    const VulkanPacingDecision decision =
+        ResolveDecision(reflexActive, antiLagActive, normalSpeed);
+    LastDecision = decision;
+    Authority.store(static_cast<int>(decision.Authority), std::memory_order_release);
+    FallbackReason = decision.Reason;
+
     LogTargetSchedulingIfChanged();
 
-    if (GetAuthority() != VulkanPacingAuthority::GenericPresentTiming)
+    // The bounded wait and target-time scheduling are independent mechanisms:
+    // VK_KHR_present_wait2 waits on the *previous* present, VK_EXT_present_timing
+    // schedules *this* one. A driver that exposes only the latter still gets
+    // full target-time presentation; it simply skips the wait below.
+    if (!decision.BoundedPresentWait)
         return false;
 
     // A skipped frame must not wait for the same present twice. Only a present
@@ -481,88 +560,18 @@ bool VulkanPresentPacer::BeginFrame(
 
 u64 VulkanPresentPacer::EvaluateTargetTime(u64 sequence) noexcept
 {
-    // Every reason the target time is zero is recorded rather than merged into
-    // one "unavailable", because during A/B testing the interesting question is
-    // always which of these is the one blocking the path.
-    const VulkanPresentPacingPolicy policy = GetPolicy();
-    if (policy != VulkanPresentPacingPolicy::JustInTime
-        && policy != VulkanPresentPacingPolicy::JustInTimeFifoLatestReady)
+    // The capability decision was made once at the top of this frame, against
+    // the same pure resolver the authority came from. Re-deriving it here is
+    // how the two used to drift apart.
+    //
+    // Note what is absent: VK_KHR_present_wait2. Target-time presentation
+    // depends on VK_EXT_present_timing, VK_KHR_present_id2,
+    // VK_KHR_get_surface_capabilities2 and VK_KHR_calibrated_timestamps -- not
+    // on the previous-present wait. A surface offering only present timing gets
+    // scheduling with no wait rather than nothing at all.
+    if (!LastDecision.TargetTimeScheduling)
     {
-        // TelemetryOnly and PresentWait both keep targetTime at zero by
-        // definition; neither promises a scheduled presentation time.
-        FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
-        return 0;
-    }
-
-    const VulkanPacingAuthority authority = GetAuthority();
-    if (authority == VulkanPacingAuthority::NvidiaReflex
-        || authority == VulkanPacingAuthority::AmdAntiLag2)
-    {
-        // Reflex and Anti-Lag 2 already own frame pacing end to end. Adding a
-        // second scheduler on top would fight their driver-side model.
-        FallbackReason = VulkanJitFallbackReason::VendorLatencyApiOwnsPacing;
-        return 0;
-    }
-    if (authority != VulkanPacingAuthority::GenericPresentTiming)
-    {
-        FallbackReason = VulkanJitFallbackReason::NotNormalSpeed;
-        return 0;
-    }
-    if (!PresentId2Surface)
-    {
-        FallbackReason = VulkanJitFallbackReason::PresentId2Unsupported;
-        return 0;
-    }
-    if (!PresentWait2Surface)
-    {
-        FallbackReason = VulkanJitFallbackReason::PresentWait2Unsupported;
-        return 0;
-    }
-    if (!PresentTimingRuntimeEnabled)
-    {
-        FallbackReason = PresentTimingSurface
-            ? VulkanJitFallbackReason::TimingQueryFailed
-            : VulkanJitFallbackReason::PresentTimingUnsupported;
-        return 0;
-    }
-    if (!AbsoluteTimingDevice)
-    {
-        FallbackReason = VulkanJitFallbackReason::AbsoluteTimingUnsupportedDevice;
-        return 0;
-    }
-    if (!PresentTimingAbsolute)
-    {
-        FallbackReason = VulkanJitFallbackReason::AbsoluteTimingUnsupportedSurface;
-        return 0;
-    }
-    if (!FifoFamilyPresentMode)
-    {
-        FallbackReason = VulkanJitFallbackReason::NonFifoPresentMode;
-        return 0;
-    }
-    if (TargetFrameIntervalNs == 0)
-    {
-        FallbackReason = VulkanJitFallbackReason::NoFrameInterval;
-        return 0;
-    }
-    if (!TimingPropertiesReady)
-    {
-        FallbackReason = VulkanJitFallbackReason::TimingPropertiesNotReady;
-        return 0;
-    }
-    if (!TimeDomainsReady || !TimingModel.HasTimeDomain())
-    {
-        FallbackReason = VulkanJitFallbackReason::TimeDomainsNotReady;
-        return 0;
-    }
-    if (TargetTimeDomain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT && TargetPresentStage == 0)
-    {
-        FallbackReason = VulkanJitFallbackReason::NoValidTargetStage;
-        return 0;
-    }
-    if (TargetPresentStage == 0)
-    {
-        FallbackReason = VulkanJitFallbackReason::NoValidTargetStage;
+        FallbackReason = LastDecision.Reason;
         return 0;
     }
 
@@ -601,11 +610,11 @@ u64 VulkanPresentPacer::PreparePresent(
     // presents. Only the latter may be multiplied by the frame interval.
     metadata.Sequence = TimingModel.BeginPresent(metadata.LogicalId);
 
-    if (PresentTimingRuntimeEnabled)
+    if (TimingMetadataEnabled)
     {
         metadata.TargetTimeNs = EvaluateTargetTime(metadata.Sequence);
         metadata.Timing.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT;
-        metadata.Timing.presentStageQueries = PresentStageQueries;
+        metadata.Timing.presentStageQueries = RequestedStageQueries();
         if (metadata.TargetTimeNs != 0)
         {
             // NEAREST_REFRESH_CYCLE rather than a hand-written cadence: at 60
@@ -667,9 +676,20 @@ bool VulkanPresentPacer::PrepareRetryWithoutTiming(
     metadata.TimingAttached = false;
     metadata.TargetTimeNs = 0;
     ++TimingQueueFullCount;
-    PresentTimingRuntimeEnabled = false;
+    TimingMetadataEnabled = false;
     TargetSchedulingActive.store(false, std::memory_order_release);
-    WaitDisabledReason = "present timing results queue full; timing metadata disabled";
+
+    // Draining stays on: it is what frees the slots. Recovery is attempted from
+    // the next drain, a bounded number of times, by growing the queue rather
+    // than by simply re-enabling metadata into the same full queue. Re-enabling
+    // without more room would reject the very next present again, and that
+    // reject-retry pair would then repeat every frame.
+    const bool recoverable = TimingQueueRecoveries < MaxTimingQueueRecoveries
+        && TimingQueueSize < MaxTimingQueueSize;
+    TimingQueueRecoveryPending = recoverable;
+    WaitDisabledReason = recoverable
+        ? "present timing results queue full; timing metadata paused pending a larger queue"
+        : "present timing results queue full; timing metadata disabled for this swapchain";
     Platform::Log(Platform::LogLevel::Warn,
         "[Vulkan] %s; retrying present without optional timing metadata\n",
         WaitDisabledReason.c_str());
@@ -762,8 +782,11 @@ bool VulkanPresentPacer::RefreshTimeDomains()
         return false;
     }
 
-    // Two-call enumeration, once per swapchain or per counter change. The
-    // temporary vectors are deliberate: this never runs on the present path.
+    // Two-call enumeration. The temporary vectors are deliberate: this is not a
+    // steady-state per-frame allocation. It runs on swapchain creation, on a
+    // pending VK_NOT_READY retry, and when the driver bumps timeDomainsCounter
+    // -- all of which are lifecycle events, though the last two are noticed
+    // from inside the per-frame drain rather than outside the frame.
     VkSwapchainTimeDomainPropertiesEXT properties{};
     properties.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT;
     u64 counter = 0;
@@ -860,7 +883,9 @@ void VulkanPresentPacer::SelectTargetPresentStage() noexcept
 
 void VulkanPresentPacer::ReportPastTiming()
 {
-    if (!PresentTimingRuntimeEnabled || Swapchain == VK_NULL_HANDLE)
+    // Draining is gated separately from attaching metadata: a full queue pauses
+    // metadata but must keep draining, because draining is what makes room.
+    if (!TimingResultsQueryEnabled || Swapchain == VK_NULL_HANDLE)
         return;
 
     // The timing-results queue is finite. Drain it every frame even in release
@@ -888,7 +913,11 @@ void VulkanPresentPacer::ReportPastTiming()
         Device->GetHandle(), &info, &properties);
     if (result != VK_SUCCESS && result != VK_INCOMPLETE)
     {
-        PresentTimingRuntimeEnabled = false;
+        // A failing query is not recoverable by draining: stop both switches so
+        // the driver is not asked again every frame.
+        TimingMetadataEnabled = false;
+        TimingResultsQueryEnabled = false;
+        TimingQueueRecoveryPending = false;
         TargetSchedulingActive.store(false, std::memory_order_release);
         FallbackReason = VulkanJitFallbackReason::TimingQueryFailed;
         WaitDisabledReason = "present timing report query failed: " + Vk::FormatResult(result);
@@ -962,6 +991,33 @@ void VulkanPresentPacer::ReportPastTiming()
             RefreshTimeDomains();
     }
 
+    // Queue-full recovery. This drain freed slots, so the queue can now be
+    // grown and metadata switched back on. Bounded by MaxTimingQueueRecoveries
+    // and by the size ceiling: a driver whose reports complete too slowly for
+    // this present rate settles into telemetry-off instead of oscillating.
+    if (TimingQueueRecoveryPending && reportCount > 0)
+    {
+        TimingQueueRecoveryPending = false;
+        const u32 grown = std::min(MaxTimingQueueSize, std::max(
+            MinTimingQueueSize, TimingQueueSize * 2));
+        if (grown > TimingQueueSize)
+        {
+            const u32 previous = TimingQueueSize;
+            ApplyTimingQueueSize(grown);
+            if (TimingQueueSize > previous)
+            {
+                ++TimingQueueRecoveries;
+                TimingMetadataEnabled = PresentTimingSurface;
+                WaitDisabledReason.clear();
+                Platform::Log(Platform::LogLevel::Info,
+                    "[Vulkan] present timing results queue grown to %u after %u full events; "
+                    "timing metadata re-enabled (recovery %u/%u)\n",
+                    TimingQueueSize, TimingQueueFullCount,
+                    TimingQueueRecoveries, MaxTimingQueueRecoveries);
+            }
+        }
+    }
+
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     if (reportCount > 0)
     {
@@ -1003,12 +1059,24 @@ void VulkanPresentPacer::DisableWait(const char* reason)
 {
     WaitRuntimeEnabled = false;
     WaitDisabledReason = reason ? reason : "runtime failure";
-    Authority.store(static_cast<int>(VulkanPacingAuthority::GenericHost),
-                    std::memory_order_release);
-    TargetSchedulingActive.store(false, std::memory_order_release);
+
+    // Only the bounded wait is retired here. Target-time scheduling is a
+    // separate capability and keeps running if the policy asks for it -- losing
+    // the previous-present wait says nothing about whether the presentation
+    // engine can still honour a deadline. The next BeginFrame re-resolves the
+    // authority from the updated capability set.
+    if (!LastDecision.TargetTimeScheduling)
+    {
+        Authority.store(static_cast<int>(VulkanPacingAuthority::GenericHost),
+                        std::memory_order_release);
+        TargetSchedulingActive.store(false, std::memory_order_release);
+    }
     Platform::Log(Platform::LogLevel::Warn,
-        "[Vulkan] generic present wait disabled: %s; falling back to host pacing\n",
-        WaitDisabledReason.c_str());
+        "[Vulkan] generic present wait disabled: %s; %s\n",
+        WaitDisabledReason.c_str(),
+        LastDecision.TargetTimeScheduling
+            ? "target-time scheduling continues without it"
+            : "falling back to host pacing");
 }
 
 void VulkanPresentPacer::LogTargetSchedulingIfChanged()
@@ -1021,16 +1089,24 @@ void VulkanPresentPacer::LogTargetSchedulingIfChanged()
     LoggedFallbackReason = FallbackReason;
 
     Platform::Log(Platform::LogLevel::Info,
-        "[Vulkan] present JIT: policy=%s authority=%s state=%s timingReady=%s "
+        "[Vulkan] present JIT: policy=%s authority=%s state=%s targetScheduling=%s "
+        "boundedWait=%s optionalWait=%s timingReady=%s "
         "timeDomainsReady=%s absoluteSupported=%s targetStage=%s timeDomain=%s "
         "domainId=%llu frameIntervalNs=%llu baselineId=%llu baselineSequence=%llu "
         "baselineTime=%llu targetTime=%llu fallback=%s\n",
         VulkanPresentPacingPolicyName(GetPolicy()),
         VulkanPacingAuthorityName(GetAuthority()),
         active ? "TargetSchedulingActive" : "TelemetryBootstrap",
+        LastDecision.TargetTimeScheduling ? "capable" : "off",
+        LastDecision.BoundedPresentWait ? "on" : "off",
+        // The bounded wait is optional and independent: reporting it here is
+        // what keeps a wait-less driver from looking like a broken JIT setup.
+        LastDecision.OptionalWaitUnavailable
+            ? VulkanJitFallbackReasonName(VulkanJitFallbackReason::PresentWait2Unsupported)
+            : "available",
         TimingPropertiesReady ? "yes" : "no",
         TimeDomainsReady ? "yes" : "no",
-        PresentTimingAbsolute ? "yes" : "no",
+        PresentTimingAbsoluteSurface ? "yes" : "no",
         PresentStageName(TargetPresentStage),
         TimeDomainName(TargetTimeDomain),
         static_cast<unsigned long long>(TargetTimeDomainId),
@@ -1048,15 +1124,17 @@ void VulkanPresentPacer::LogState(const char* context) const
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] %s generic present pacing: policy=%s authority=%s caps2=%s "
         "present-id2=%s present-wait2=%s present-timing=%s absolute-timing=%s "
-        "fifo-latest-ready=%s presentMode=%d reason=%s\n",
+        "target-stage=%s timing-queue=%u fifo-latest-ready=%s presentMode=%d reason=%s\n",
         context ? context : "state:",
         VulkanPresentPacingPolicyName(GetPolicy()),
         VulkanPacingAuthorityName(GetAuthority()),
         Caps2Available ? "yes" : "no",
         PresentId2Surface ? "yes" : "no",
         PresentWait2Surface ? "yes" : "no",
-        PresentTimingRuntimeEnabled ? "yes" : "no",
-        PresentTimingAbsolute ? "yes" : "no",
+        TimingMetadataEnabled ? "yes" : "no",
+        (PresentTimingAbsoluteSurface && AbsoluteTimingDevice) ? "yes" : "no",
+        PresentStageName(TargetPresentStage),
+        TimingQueueSize,
         (PresentMode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR) ? "yes" : "no",
         static_cast<int>(PresentMode),
         WaitDisabledReason.empty() ? "available capabilities are optional" : WaitDisabledReason.c_str());

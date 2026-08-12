@@ -865,7 +865,10 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // re-arms pacing on the new one at whatever mode the user currently has
     // selected.
     Reflex.SetSwapchain(Swapchain);
-    PresentPacer.OnSwapchainCreated(Swapchain, presentMode);
+    // imageCount is what was requested; the driver may give more. It is only
+    // used to size the optional timing-results queue, where erring low simply
+    // means the pacer grows the queue once after the first full event.
+    PresentPacer.OnSwapchainCreated(Swapchain, presentMode, imageCount);
 
     const bool formatChanged = (SurfaceFormat.format != format.format);
     SurfaceFormat = format;
