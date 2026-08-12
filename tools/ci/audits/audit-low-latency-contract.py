@@ -2,6 +2,7 @@
 """Guard Vulkan/DX12 low-latency marker ordering and pinned vendor ABIs."""
 
 from pathlib import Path
+import hashlib
 import sys
 
 
@@ -42,6 +43,79 @@ def main() -> int:
     vulkan = read("src/VulkanNvidiaReflex.cpp")
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
+    xell = read("src/DX12IntelXeLL.cpp")
+    screen = read("src/frontend/qt_sdl/Screen.cpp")
+    video_settings = read("src/frontend/qt_sdl/VideoSettingsDialog.cpp")
+    config = read("src/frontend/qt_sdl/Config.cpp")
+    cmake = read("src/frontend/qt_sdl/CMakeLists.txt")
+
+    require(
+        ordered(
+            emu,
+            [
+                "if (UNLIKELY(videoSettingsDirty))",
+                "applyPendingVideoSettings();",
+                "BeginReflexFrame();",
+                "beginVulkanLowLatencyFrame(",
+            ],
+        ),
+        "Pending renderer settings must be applied before DX12/Vulkan low-latency Begin",
+        failures,
+    )
+    require(
+        ordered(
+            emu,
+            [
+                "BeginIntelXeLLFrame();",
+                "MarkIntelXeLLInputSample();",
+                "inputRefreshJoystickState();",
+            ],
+        ),
+        "Intel XeLL must Sleep/start Simulation -> Input Sample -> input",
+        failures,
+    )
+    require(
+        ordered(
+            xell,
+            [
+                "void DX12IntelXeLL::BeginFrame()",
+                "Functions->Sleep(",
+                "SendMarker(Marker::SimulationStart)",
+            ],
+        ),
+        "Intel XeLL must call xellSleep before the first marker for a frame",
+        failures,
+    )
+    require(
+        ordered(
+            screen,
+            [
+                "BeginIntelXeLLPresent();",
+                "presenter.Present(vsync)",
+                "EndIntelXeLLPresent();",
+            ],
+        ),
+        "Intel XeLL PRESENT markers must bracket the DXGI Present call",
+        failures,
+    )
+    require(
+        all(
+            f"Marker::{marker}" in xell
+            for marker in (
+                "SimulationStart",
+                "SimulationEnd",
+                "RenderSubmitStart",
+                "RenderSubmitEnd",
+                "PresentStart",
+                "PresentEnd",
+                "InputSample",
+            )
+        )
+        and "if (!RenderSubmitStarted)\n        MarkRenderSubmitStart();" in xell
+        and "if (!PresentStarted)\n        MarkPresentStart();" in xell,
+        "Intel XeLL must deliver the complete required marker set on early-exit frames",
+        failures,
+    )
 
     require(
         ordered(
@@ -124,6 +198,35 @@ def main() -> int:
         "AMD Anti-Lag 2 v2.0.4 ABI recheck is not recorded",
         failures,
     )
+    require(
+        "8fe81bdbbaf00b3c1b733fd0d830c333dc84e6f0" in xell
+        and "XeLL 1.3.2.10" in xell,
+        "Intel XeLL ABI source/version is not pinned",
+        failures,
+    )
+    require(
+        "IntelXeLLEnabled" in config
+        and "onIntelXeLLModeChanged" in video_settings
+        and "Intel Xe Low Latency (XeLL):" in video_settings,
+        "Intel XeLL persisted config and UI toggle must remain wired",
+        failures,
+    )
+    require(
+        "DX12IntelXeLL.cpp" in cmake
+        and "Bundling Intel XeLL runtime and notices" in cmake,
+        "Intel XeLL source/runtime deployment is missing from CMake",
+        failures,
+    )
+
+    xell_runtime = ROOT / "res/third_party/intel-xell/libxell.dll"
+    require(xell_runtime.is_file(), "Intel XeLL runtime DLL is missing", failures)
+    if xell_runtime.is_file():
+        digest = hashlib.sha256(xell_runtime.read_bytes()).hexdigest()
+        require(
+            digest == "d2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7",
+            "Intel XeLL runtime DLL does not match pinned XeSS SDK 3.0.2",
+            failures,
+        )
 
     if failures:
         print("Low-latency contract audit FAILED:")

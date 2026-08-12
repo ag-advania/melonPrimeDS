@@ -347,6 +347,42 @@
         }
     },
     {
+        "Intel Xe Low Latency (XeLL):",
+        {
+            {MenuLangId::Japanese, "Intel Xe低遅延（XeLL）:"},
+        }
+    },
+    {
+        "Intel Xe Low Latency (XeLL) reduces render-queue and presentation latency on supported Intel Arc GPUs.",
+        {
+            {MenuLangId::Japanese, "Intel Xe Low Latency（XeLL）は、対応するIntel Arc GPUでレンダーキューと表示の遅延を短縮します。"},
+        }
+    },
+    {
+        "Available only with DirectX 12 on a supported Intel Arc GPU.",
+        {
+            {MenuLangId::Japanese, "対応するIntel Arc GPUでDirectX 12を使用している場合のみ利用できます。"},
+        }
+    },
+    {
+        "Intel XeLL is unavailable",
+        {
+            {MenuLangId::Japanese, "Intel XeLLを利用できません"},
+        }
+    },
+    {
+        "Intel XeLL requires a supported Intel Arc GPU",
+        {
+            {MenuLangId::Japanese, "Intel XeLLには対応するIntel Arc GPUが必要です"},
+        }
+    },
+    {
+        "Intel XeLL runtime libxell.dll is missing or could not be loaded",
+        {
+            {MenuLangId::Japanese, "Intel XeLLランタイムのlibxell.dllが見つからないか、読み込めませんでした"},
+        }
+    },
+    {
         "VSync Interval is not used by the native Vulkan presenter.",
         {
             {MenuLangId::Japanese, "VSync間隔はネイティブVulkanプレゼンターでは使用されません。"},

@@ -143,6 +143,41 @@ frame counter or cross-instance pacing state is introduced. The persisted
 configuration path remains `3D.DX12.NvidiaReflexMode` for compatibility, but
 the value is shared by both native backends.
 
+## Intel Xe Low Latency (XeLL)
+
+On a supported Intel Arc GPU, selecting DirectX 12 exposes an independent
+**Intel Xe Low Latency (XeLL)** Off/On option. It is disabled by default and
+must be explicitly enabled by the user. The
+control is disabled with the exact probe failure reason on non-Intel adapters,
+unsupported Intel drivers, or when the XeLL runtime is missing. Cross-vendor
+XeLL is deliberately not offered: Intel requires active XeSS Frame Generation
+for that mode, and MelonPrimeDS does not implement XeSS-FG.
+
+`DX12IntelXeLL` dynamically loads the unmodified `libxell.dll` shipped beside
+the executable and creates one context for the active D3D12 device. The ABI and
+runtime are pinned to Intel XeSS SDK 3.0.2 / XeLL 1.3.2.10 at commit
+`8fe81bdbbaf00b3c1b733fd0d830c333dc84e6f0`. CMake verifies the runtime SHA-256
+and copies the DLL plus Intel's license and third-party notices into the build
+output. No MSVC import library is linked, so the integration works in the
+project's supported MinGW build.
+
+Each emulated frame calls `xellSleep` before late input polling, then publishes
+Simulation Start and Input Sample. Render Submit markers follow the D3D12 render
+and high-resolution composition boundary; Present markers directly bracket the
+flip-model `IDXGISwapChain::Present` call. All calls for a frame share one
+monotonically increasing per-renderer frame ID. Calls remain active in Off mode,
+as Intel recommends, while `xellSetSleepMode` controls latency reduction.
+
+`minimumIntervalUs` is zero. MelonPrime's existing limiter runs before
+`xellSleep`, matching Intel's required order without adding a second limiter.
+Before changing sleep mode or destroying the context, the renderer inserts and
+waits for a queue-wide fence that also retires native-presenter work. The saved
+configuration key is `3D.Intel.XeLLEnabled`.
+
+Reflex and Anti-Lag 2 remain vendor-gated, so only XeLL can be active on the
+supported Intel path. This also satisfies Intel's requirement not to combine
+XeLL with another latency-reduction implementation.
+
 ## AMD Radeon Anti-Lag 2
 
 On a supported AMD Radeon GPU, the same video-settings area exposes an
@@ -188,6 +223,7 @@ Reflex setting.
 | `src/DX12Context.{h,cpp}` | Device, adapter selection, queue, fence, descriptor ring, upload ring, HLSL compile, init logging |
 | `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
 | `src/DX12AmdAntiLag2.{h,cpp}` | Runtime AMD Anti-Lag 2 driver-ABI loading, support probe and per-frame input insertion point |
+| `src/DX12IntelXeLL.{h,cpp}` | Runtime XeLL loading, Intel support probe, sleep-mode state and complete frame-marker lifecycle |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
 | `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, GPU presentation ring and capture readback |
 | `src/DX12PresentedFrame.h` | Opaque GPU-resource handoff descriptor shared by renderer and presenter |

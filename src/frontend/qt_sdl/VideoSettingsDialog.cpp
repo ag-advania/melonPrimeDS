@@ -239,6 +239,10 @@ void VideoSettingsDialog::setEnabled()
     std::string reflexUnavailableReason;
     bool antiLag2Enabled = false;
     std::string antiLag2UnavailableReason;
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    bool intelXeLLEnabled = false;
+    std::string intelXeLLUnavailableReason;
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (vulkanRenderer)
     {
@@ -257,6 +261,8 @@ void VideoSettingsDialog::setEnabled()
         reflexUnavailableReason = dx12Probe.NvidiaReflexReason;
         antiLag2Enabled = dx12Probe.Available && dx12Probe.AmdAntiLag2Available;
         antiLag2UnavailableReason = dx12Probe.AmdAntiLag2Reason;
+        intelXeLLEnabled = dx12Probe.Available && dx12Probe.IntelXeLLAvailable;
+        intelXeLLUnavailableReason = dx12Probe.IntelXeLLReason;
     }
 #endif
     lblNvidiaReflex->setEnabled(reflexEnabled);
@@ -289,6 +295,23 @@ void VideoSettingsDialog::setEnabled()
                     : antiLag2UnavailableReason)));
     lblAmdAntiLag2->setToolTip(antiLag2Description);
     cbxAmdAntiLag2->setToolTip(antiLag2Description);
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    lblIntelXeLL->setEnabled(intelXeLLEnabled);
+    cbxIntelXeLL->setEnabled(intelXeLLEnabled);
+    const QString intelXeLLDescription = intelXeLLEnabled
+        ? MelonPrime::UiText::Tr(
+            "Intel Xe Low Latency (XeLL) reduces render-queue and presentation latency on supported Intel Arc GPUs.")
+        : (!dx12Renderer
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 on a supported Intel Arc GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                intelXeLLUnavailableReason.empty()
+                    ? std::string("Intel XeLL is unavailable")
+                    : intelXeLLUnavailableReason)));
+    lblIntelXeLL->setToolTip(intelXeLLDescription);
+    cbxIntelXeLL->setToolTip(intelXeLLDescription);
+#endif
 #endif
 }
 
@@ -322,6 +345,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
     oldAmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    oldIntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled);
 #endif
 
     grp3DRenderer = new QButtonGroup(this);
@@ -460,6 +486,24 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         &VideoSettingsDialog::onAmdAntiLag2ModeChanged);
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    lblIntelXeLL = new QLabel(ui->groupBox_3);
+    lblIntelXeLL->setObjectName(QStringLiteral("lblIntelXeLL"));
+    lblIntelXeLL->setText(MelonPrime::UiText::Tr("Intel Xe Low Latency (XeLL):"));
+    cbxIntelXeLL = new QComboBox(ui->groupBox_3);
+    cbxIntelXeLL->setObjectName(QStringLiteral("cbxIntelXeLL"));
+    cbxIntelXeLL->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxIntelXeLL->addItem(MelonPrime::UiText::Tr("On"));
+    cbxIntelXeLL->setCurrentIndex(oldIntelXeLLEnabled ? 1 : 0);
+    ui->gridLayout_4->addWidget(lblIntelXeLL, 8, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxIntelXeLL, 9, 0, 1, 1);
+    connect(
+        cbxIntelXeLL,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onIntelXeLLModeChanged);
+#endif
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -609,6 +653,9 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, oldNvidiaReflexMode);
     cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, oldAmdAntiLag2Enabled);
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, oldIntelXeLLEnabled);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -831,6 +878,15 @@ void VideoSettingsDialog::onAmdAntiLag2ModeChanged(int mode)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, mode != 0);
+    emit updateVideoSettings(false);
+}
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+void VideoSettingsDialog::onIntelXeLLModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, mode != 0);
     emit updateVideoSettings(false);
 }
 #endif

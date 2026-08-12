@@ -2298,10 +2298,16 @@ void ScreenPanelDX12::drawScreen()
     const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
     auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
     if (renderer)
+    {
         renderer->BeginReflexPresent();
+        renderer->BeginIntelXeLLPresent();
+    }
     const bool presented = dx12->presenter.Present(vsync);
     if (renderer)
+    {
         renderer->EndReflexPresent();
+        renderer->EndIntelXeLLPresent();
+    }
 
     if (!presented)
     {

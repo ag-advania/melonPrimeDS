@@ -44,7 +44,12 @@ DX12Renderer::DX12Renderer(melonDS::NDS& nds)
         Rend3D.reset();
 }
 
-DX12Renderer::~DX12Renderer() = default;
+DX12Renderer::~DX12Renderer()
+{
+    if (auto* dx12 = GetDX12Renderer3D())
+        dx12->WaitForQueueIdle();
+    IntelXeLL.Shutdown();
+}
 
 bool DX12Renderer::Init()
 {
@@ -63,6 +68,7 @@ bool DX12Renderer::Init()
 
     auto& context = DX12Context::Get();
     AmdAntiLag2.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
+    IntelXeLL.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
     NvidiaReflex.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
 
     Platform::Log(
@@ -73,6 +79,10 @@ bool DX12Renderer::Init()
 
 void DX12Renderer::Stop()
 {
+    FinishIntelXeLLFrame();
+    if (auto* dx12 = GetDX12Renderer3D())
+        dx12->WaitForQueueIdle();
+    IntelXeLL.Shutdown();
     AmdAntiLag2.Shutdown();
     NvidiaReflex.Shutdown();
     if (auto* dx12 = GetDX12Renderer3D())
@@ -109,11 +119,25 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
     }
     AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
+    if (auto* dx12 = GetDX12Renderer3D())
+    {
+        if (!dx12->WaitForQueueIdle())
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "Intel XeLL state change skipped because the DX12 queue did not become idle\n");
+        }
+        else
+        {
+            IntelXeLL.SetEnabled(settings.IntelXeLLEnabled);
+        }
+    }
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
 }
 
 void DX12Renderer::Start3DRendering()
 {
+    IntelXeLL.MarkRenderSubmitStart();
     NvidiaReflex.MarkRenderSubmitStart();
     Renderer::Start3DRendering();
     if (DifferentialReference)
@@ -130,6 +154,7 @@ void DX12Renderer::VBlank()
     StructuredVulkanFrameView view{};
     if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
     {
+        IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
         return;
     }
@@ -184,6 +209,7 @@ void DX12Renderer::VBlank()
                 GPU.GPU3D.RenderClearAttr2);
         }
     }
+    IntelXeLL.MarkRenderSubmitEnd();
     NvidiaReflex.MarkRenderSubmitEnd();
 }
 
@@ -263,9 +289,19 @@ void DX12Renderer::BeginAmdAntiLag2Frame()
     AmdAntiLag2.BeginFrame();
 }
 
+void DX12Renderer::BeginIntelXeLLFrame()
+{
+    IntelXeLL.BeginFrame();
+}
+
 void DX12Renderer::MarkReflexInputSample()
 {
     NvidiaReflex.MarkInputSample();
+}
+
+void DX12Renderer::MarkIntelXeLLInputSample()
+{
+    IntelXeLL.MarkInputSample();
 }
 
 void DX12Renderer::MarkReflexSimulationStart()
@@ -278,6 +314,11 @@ void DX12Renderer::EndReflexRenderPhase()
     NvidiaReflex.EndRenderPhase();
 }
 
+void DX12Renderer::EndIntelXeLLRenderPhase()
+{
+    IntelXeLL.EndRenderPhase();
+}
+
 void DX12Renderer::BeginReflexPresent()
 {
     NvidiaReflex.MarkPresentStart();
@@ -288,9 +329,24 @@ void DX12Renderer::EndReflexPresent()
     NvidiaReflex.MarkPresentEnd();
 }
 
+void DX12Renderer::BeginIntelXeLLPresent()
+{
+    IntelXeLL.MarkPresentStart();
+}
+
+void DX12Renderer::EndIntelXeLLPresent()
+{
+    IntelXeLL.MarkPresentEnd();
+}
+
 void DX12Renderer::FinishReflexFrame()
 {
     NvidiaReflex.FinishFrame();
+}
+
+void DX12Renderer::FinishIntelXeLLFrame()
+{
+    IntelXeLL.FinishFrame();
 }
 
 } // namespace melonDS

@@ -63,6 +63,10 @@ public:
 
     void SetRenderSettings(int scale, bool hiresCoordinates);
     [[nodiscard]] int GetScaleFactor() const noexcept { return ScaleFactor; }
+    // Required before changing or destroying XeLL state. This queue-wide
+    // fence also retires native-presenter work submitted through the shared
+    // direct queue.
+    bool WaitForQueueIdle();
 
     void RenderFrame() override;
     u32* GetLine(int line) override;

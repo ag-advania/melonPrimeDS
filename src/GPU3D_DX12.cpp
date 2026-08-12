@@ -1428,6 +1428,11 @@ bool DX12Renderer3D::BindStaticSrvTable(ID3D12GraphicsCommandList* list)
     return true;
 }
 
+bool DX12Renderer3D::WaitForQueueIdle()
+{
+    return Commands.WaitQueueIdle();
+}
+
 bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);

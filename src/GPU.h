@@ -1001,6 +1001,11 @@ struct RendererSettings
     // AMD Radeon Anti-Lag 2. The backend always passes maxFPS=0 so this does
     // not add a second frame-rate limiter.
     bool AmdAntiLag2Enabled;
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Intel Xe Low Latency. The DX12 backend uses minimumIntervalUs=0 because
+    // MelonPrime's existing limiter runs before xellSleep.
+    bool IntelXeLLEnabled;
+#endif
 #endif
 };
 

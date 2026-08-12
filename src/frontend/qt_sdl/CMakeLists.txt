@@ -551,6 +551,7 @@ if (MELONPRIME_DX12_ACTIVE)
     target_sources(core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Context.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12AmdAntiLag2.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12IntelXeLL.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12NvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
@@ -558,6 +559,45 @@ if (MELONPRIME_DX12_ACTIVE)
     target_sources(melonDS PRIVATE
         MelonPrimeDX12FeatureCheck.cpp
         MelonPrimeDX12SurfacePresenter.cpp)
+
+    set(MELONPRIME_XELL_RUNTIME_DIR
+        "${CMAKE_SOURCE_DIR}/res/third_party/intel-xell")
+    set(MELONPRIME_XELL_RUNTIME
+        "${MELONPRIME_XELL_RUNTIME_DIR}/libxell.dll")
+    set(MELONPRIME_XELL_LICENSE
+        "${MELONPRIME_XELL_RUNTIME_DIR}/LICENSE.txt")
+    set(MELONPRIME_XELL_THIRD_PARTY
+        "${MELONPRIME_XELL_RUNTIME_DIR}/third-party-programs.txt")
+    foreach(XELL_FILE
+        "${MELONPRIME_XELL_RUNTIME}"
+        "${MELONPRIME_XELL_LICENSE}"
+        "${MELONPRIME_XELL_THIRD_PARTY}")
+        if (NOT EXISTS "${XELL_FILE}")
+            message(FATAL_ERROR
+                "MelonPrime Intel XeLL runtime file is missing: ${XELL_FILE}")
+        endif()
+    endforeach()
+    file(SHA256 "${MELONPRIME_XELL_RUNTIME}" MELONPRIME_XELL_RUNTIME_SHA256)
+    if (NOT MELONPRIME_XELL_RUNTIME_SHA256 STREQUAL
+        "d2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7")
+        message(FATAL_ERROR
+            "Intel XeLL runtime hash does not match pinned XeSS SDK 3.0.2")
+    endif()
+
+    add_custom_command(TARGET melonDS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_RUNTIME}"
+            "$<TARGET_FILE_DIR:melonDS>/libxell.dll"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_LICENSE}"
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices/Intel-XeSS-SDK-LICENSE.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_THIRD_PARTY}"
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices/Intel-XeSS-SDK-third-party-programs.txt"
+        COMMENT "Bundling Intel XeLL runtime and notices..."
+        VERBATIM)
 
     # Only the GUID symbols are linked; every DX12/DXGI/D3DCompile entry point
     # is resolved with GetProcAddress at runtime.

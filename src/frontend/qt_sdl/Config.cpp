@@ -217,6 +217,7 @@ namespace Config
         // the saved preference.
         {"3D.ForceSoftwareOutsideMatch", false},
         {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
+        {MelonPrime::CfgKey::IntelXeLLEnabled, false},
     #endif
     #ifdef MELONPRIME_DS
         {"3D.GL.BetterPolygons", true}, // melonPrimeDS Added

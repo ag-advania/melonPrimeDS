@@ -24,6 +24,7 @@
 #include <string>
 
 #include "DX12AmdAntiLag2.h"
+#include "DX12IntelXeLL.h"
 #include "DX12NvidiaReflex.h"
 #include "GPU3D_RasterDifferential.h"
 #include "GPU_Soft.h"
@@ -58,12 +59,18 @@ public:
 
     void BeginReflexFrame();
     void BeginAmdAntiLag2Frame();
+    void BeginIntelXeLLFrame();
     void MarkReflexInputSample();
+    void MarkIntelXeLLInputSample();
     void MarkReflexSimulationStart();
     void EndReflexRenderPhase();
+    void EndIntelXeLLRenderPhase();
     void BeginReflexPresent();
     void EndReflexPresent();
+    void BeginIntelXeLLPresent();
+    void EndIntelXeLLPresent();
     void FinishReflexFrame();
+    void FinishIntelXeLLFrame();
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
@@ -77,6 +84,7 @@ private:
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     DX12AmdAntiLag2 AmdAntiLag2;
+    DX12IntelXeLL IntelXeLL;
     DX12NvidiaReflex NvidiaReflex;
 };
 

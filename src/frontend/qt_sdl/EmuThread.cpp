@@ -232,6 +232,107 @@ void EmuThread::run()
 
 #include "MelonPrimeEmuThreadFrameState.inc"
 
+    // Keep renderer creation/settings in one cold path. The frame loop invokes
+    // this before opening any low-latency frame so a newly-created DX12/Vulkan
+    // renderer can apply its saved driver preferences before Sleep/INPUT_SAMPLE.
+    auto applyPendingVideoSettings = [&]() {
+#ifdef MELONPRIME_DS
+        const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
+        bool forceSoftwareOutsideMatch =
+            globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
+        // Single point where this option enters the emulation thread. The
+        // core owns the on/off transition (window bootstrap on enable,
+        // freeze + clear on disable) and classifies the current frame right
+        // away, so the ShouldForceSoftwareRenderer() calls below already
+        // see the correct answer on the pass that turned the option on.
+        melonPrime->SetForceSoftwareOutsideMatchEnabled(forceSoftwareOutsideMatch);
+        // Resync the edge baseline: this pass applies the renderer that
+        // matches the current window state, so the next frame must only
+        // report a real change.
+        rendererWasHardwarePeriod = !melonPrime->ShouldForceSoftwareRenderer();
+        if (!useOpenGL)
+        {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            const bool useGLDisplay = softwareOpenGLDisplayForcedOff
+                ? false
+                : globalCfg.GetBool("Screen.UseGL");
+            videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                useGLDisplay, requestedRenderer);
+#else
+            videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
+                globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
+#endif
+            if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
+                videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
+        }
+#endif
+#ifdef MELONPRIME_DS
+        // ScreenPanelNative borrows CPU output pointers owned by the current
+        // renderer. Clear them before renderLock allows that renderer to be
+        // destroyed; the next draw publishes the new Software/DX12 output
+        // through the latest-frame mailbox.
+        emuInstance->invalidateRendererOutput();
+#endif
+        emuInstance->renderLock.lock();
+        if (useOpenGL)
+        {
+#ifdef MELONPRIME_DS
+            emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
+            videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+                requestedRenderer);
+            if (forceSoftwareOutsideMatch
+                && melonPrime->ShouldForceSoftwareRenderer())
+            {
+                videoRenderer = renderer3D_Software;
+            }
+#else
+            emuInstance->setVSyncGL(true);
+            videoRenderer = globalCfg.GetInt("3D.Renderer");
+#endif
+        }
+#ifdef OGLRENDERER_ENABLED
+        else
+        {
+#ifdef MELONPRIME_DS
+            // Metal-plan Phase 8 fix: no live GL context this iteration
+            // (`useOpenGL` only flips via msg_InitGL/msg_DeInitGL, not
+            // here). Before this fix, `videoRenderer` was unconditionally
+            // forced to 0 whenever `!useOpenGL`, silently discarding a
+            // renderer that doesn't need a GL context at all (Metal, once
+            // Phase 9 UI exists) instead of only clamping renderers that
+            // actually require one.
+            const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
+                requestedRenderer);
+            videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
+                ? renderer3D_Software
+                : normalizedRenderer;
+            if (forceSoftwareOutsideMatch
+                && melonPrime->ShouldForceSoftwareRenderer())
+            {
+                videoRenderer = renderer3D_Software;
+            }
+#else
+            videoRenderer = 0;
+#endif
+        }
+#else
+        {
+            videoRenderer = 0;
+        }
+#endif
+
+        updateRenderer();
+
+#ifdef MELONPRIME_DS
+        // P-39 fix: Reset shadersReady so the new renderer's
+        // NeedsShaderCompile() is actually checked.
+        shadersReady = false;
+#endif
+
+        videoSettingsDirty = false;
+        emuInstance->renderLock.unlock();
+    };
+
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
@@ -339,6 +440,17 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
+        // Startup and settings changes must create/configure the renderer
+        // before the frame's low-latency Begin calls. In particular, the first
+        // hardware-rendered frame must include Sleep, INPUT_SAMPLE and the
+        // matching simulation markers instead of starting midway through it.
+        if (UNLIKELY(videoSettingsDirty))
+        {
+            if (useOpenGL)
+                emuInstance->makeCurrentGL();
+            applyPendingVideoSettings();
+        }
+
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Reflex sleep belongs immediately before late input sampling. Cache
         // the renderer once for the rest of this frame; renderer transitions
@@ -351,6 +463,7 @@ void EmuThread::run()
         {
             dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
             dx12LowLatencyRenderer->BeginReflexFrame();
+            dx12LowLatencyRenderer->BeginIntelXeLLFrame();
         }
 #endif
 
@@ -379,7 +492,10 @@ void EmuThread::run()
         // input read. It must precede both SDL's joystick refresh and the raw
         // mouse/keyboard reads in RunFrameHook().
         if (dx12LowLatencyRenderer)
+        {
             dx12LowLatencyRenderer->MarkReflexInputSample();
+            dx12LowLatencyRenderer->MarkIntelXeLLInputSample();
+        }
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
@@ -456,94 +572,12 @@ void EmuThread::run()
         if (useOpenGL)
             emuInstance->makeCurrentGL();
 
-        // update render settings if needed
+        // RunFrameHook may discover a ForceSoftwareOutsideMatch edge after
+        // this frame's low-latency path has already begun. Preserve that
+        // transition timing, but close the old renderer's frame before it is
+        // destroyed. Other pending settings were already applied above.
         if (videoSettingsDirty)
         {
-#ifdef MELONPRIME_DS
-            const int requestedRenderer = globalCfg.GetInt("3D.Renderer");
-            bool forceSoftwareOutsideMatch =
-                globalCfg.GetBool("3D.ForceSoftwareOutsideMatch");
-            // Single point where this option enters the emulation thread. The
-            // core owns the on/off transition (window bootstrap on enable,
-            // freeze + clear on disable) and classifies the current frame right
-            // away, so the ShouldForceSoftwareRenderer() calls below already
-            // see the correct answer on the pass that turned the option on.
-            melonPrime->SetForceSoftwareOutsideMatchEnabled(forceSoftwareOutsideMatch);
-            // Resync the edge baseline: this pass applies the renderer that
-            // matches the current window state, so the next frame must only
-            // report a real change.
-            rendererWasHardwarePeriod = !melonPrime->ShouldForceSoftwareRenderer();
-            if (!useOpenGL)
-            {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-                const bool useGLDisplay = softwareOpenGLDisplayForcedOff
-                    ? false
-                    : globalCfg.GetBool("Screen.UseGL");
-                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-                    useGLDisplay, requestedRenderer);
-#else
-                videoBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-                    globalCfg.GetBool("Screen.UseGL"), requestedRenderer);
-#endif
-                if (MelonPrime::VideoBackend::IsOpenGLPresentation(videoBackend))
-                    videoBackend = MelonPrime::VideoBackend::FromLegacyOpenGLFlag(false);
-            }
-#endif
-#ifdef MELONPRIME_DS
-            // ScreenPanelNative borrows CPU output pointers owned by the
-            // current renderer. Clear them before renderLock allows that
-            // renderer to be destroyed; the next draw publishes the new
-            // Software/DX12 output through the latest-frame mailbox.
-            emuInstance->invalidateRendererOutput();
-#endif
-            emuInstance->renderLock.lock();
-            if (useOpenGL)
-            {
-#ifdef MELONPRIME_DS
-                emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
-                videoRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    requestedRenderer);
-                if (forceSoftwareOutsideMatch
-                    && melonPrime->ShouldForceSoftwareRenderer())
-                {
-                    videoRenderer = renderer3D_Software;
-                }
-#else
-                emuInstance->setVSyncGL(true);
-                videoRenderer = globalCfg.GetInt("3D.Renderer");
-#endif
-            }
-#ifdef OGLRENDERER_ENABLED
-            else
-            {
-#ifdef MELONPRIME_DS
-                // Metal-plan Phase 8 fix: no live GL context this iteration
-                // (`useOpenGL` only flips via msg_InitGL/msg_DeInitGL, not
-                // here). Before this fix, `videoRenderer` was unconditionally
-                // forced to 0 whenever `!useOpenGL`, silently discarding a
-                // renderer that doesn't need a GL context at all (Metal, once
-                // Phase 9 UI exists) instead of only clamping renderers that
-                // actually require one.
-                const int normalizedRenderer = MelonPrime::VideoBackend::NormalizeRendererForPlatform(
-                    requestedRenderer);
-                videoRenderer = MelonPrime::VideoBackend::RendererRequiresOpenGLContext(normalizedRenderer)
-                    ? renderer3D_Software
-                    : normalizedRenderer;
-                if (forceSoftwareOutsideMatch
-                    && melonPrime->ShouldForceSoftwareRenderer())
-                {
-                    videoRenderer = renderer3D_Software;
-                }
-#else
-                videoRenderer = 0;
-#endif
-            }
-#else
-            {
-                videoRenderer = 0;
-            }
-#endif
-
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
             if (dx12LowLatencyRenderer)
             {
@@ -551,6 +585,7 @@ void EmuThread::run()
                 // resources. Close this transition frame first so no D3D12
                 // work escapes the RenderSubmit marker interval.
                 dx12LowLatencyRenderer->FinishReflexFrame();
+                dx12LowLatencyRenderer->FinishIntelXeLLFrame();
                 dx12LowLatencyRenderer = nullptr;
             }
 #endif
@@ -561,16 +596,7 @@ void EmuThread::run()
                 vulkanLowLatencyRenderer = nullptr;
             }
 #endif
-            updateRenderer();
-
-#ifdef MELONPRIME_DS
-            // P-39 fix: Reset shadersReady so the new renderer's
-            // NeedsShaderCompile() is actually checked.
-            shadersReady = false;
-#endif
-
-            videoSettingsDirty = false;
-            emuInstance->renderLock.unlock();
+            applyPendingVideoSettings();
         }
 
 #ifndef MELONPRIME_DS
@@ -626,7 +652,10 @@ void EmuThread::run()
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (dx12LowLatencyRenderer)
+        {
             dx12LowLatencyRenderer->EndReflexRenderPhase();
+            dx12LowLatencyRenderer->EndIntelXeLLRenderPhase();
+        }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
@@ -657,7 +686,10 @@ void EmuThread::run()
         emuInstance->drawScreen();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (dx12LowLatencyRenderer)
+        {
             dx12LowLatencyRenderer->FinishReflexFrame();
+            dx12LowLatencyRenderer->FinishIntelXeLLFrame();
+        }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
@@ -1630,7 +1662,10 @@ void EmuThread::updateRenderer()
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
         .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode),
-        .AmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled)
+        .AmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled),
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        .IntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled)
+#endif
 #endif
     };
     nds->GetRenderer().SetRenderSettings(settings);
