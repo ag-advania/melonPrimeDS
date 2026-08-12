@@ -23,19 +23,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [freebsd, netbsd, openbsd]
+        flavor: [freebsd, netbsd, openbsd]
         # The emulated aarch64 VMs are quite slow, so disable aarch64
         # runs for now.
         arch: [x86_64] #, aarch64]
         include:
-          - os: freebsd
+          - flavor: freebsd
             os_name: FreeBSD
             install_deps: >
               pkg install -y cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-base qt6-multimedia qt6-svg sdl2 libarchive zstd enet
               faad2 zip
 
-          - os: netbsd
+          - flavor: netbsd
             os_name: NetBSD
             # The NetBSD VM image does not come with X sets by default,
             # so download and unpack the sets we need manually.
@@ -122,7 +122,7 @@ jobs:
               echo "pkgin attempt $i failed, retrying in $((i * 10))s..." >&2;
               sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
 
-          - os: openbsd
+          - flavor: openbsd
             os_name: OpenBSD
             # pkg_add pulls individual package files straight from the
             # OpenBSD CDN mirror as it walks the dependency tree, rather
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        shell: ${{ matrix.os }} {0}
+        shell: ${{ matrix.flavor }} {0}
 
     steps:
     - uses: actions/checkout@v6
@@ -159,7 +159,7 @@ jobs:
       continue-on-error: true
       uses: jenseng/dynamic-uses@v1
       with: &vm_start_with
-        uses: vmactions/${{ matrix.os }}-vm@v1
+        uses: vmactions/${{ matrix.flavor }}-vm@v1
         # As we are using multiple steps, we need to use NFS to sync the
         # workspace between host and VM, as with the default, rsync, the
         # workspace is only synced before and after the setup VM step.
@@ -180,7 +180,7 @@ jobs:
             "prepare": ${{ toJSON(matrix.prepare_vm) }},
             "sync": "nfs",
             "usesh": "true",
-            ${{ matrix.os == 'netbsd' && '"release": "11.0",' || '' }}
+            ${{ matrix.flavor == 'netbsd' && '"release": "11.0",' || '' }}
           }
 
     # vmactions/*-vm downloads its anyvm.py bootstrapper from GitHub on
@@ -202,7 +202,7 @@ jobs:
     # inside the VM. Surface it so a failure here is diagnosable from the CI
     # log instead of needing a follow-up run just to see what broke.
     - name: Show NetBSD pkg_install error log
-      if: always() && matrix.os == 'netbsd'
+      if: always() && matrix.flavor == 'netbsd'
       run: cat /var/db/pkgin/pkg_install-err.log || true
 
     - name: Configure
@@ -247,9 +247,9 @@ jobs:
           exit 1
         fi
 
-        package_dir="/tmp/melonPrimeDS-bsd-package-${{ matrix.os }}-${{ matrix.arch }}"
-        local_zip="/tmp/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
-        workspace_zip="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
+        package_dir="/tmp/melonPrimeDS-bsd-package-${{ matrix.flavor }}-${{ matrix.arch }}"
+        local_zip="/tmp/melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip"
+        workspace_zip="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip"
 
         rm -rf "$package_dir"
         rm -f "$local_zip" "$workspace_zip"
@@ -277,8 +277,8 @@ jobs:
     - name: Upload binary
       uses: actions/upload-artifact@v7
       with:
-        name: melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip
-        path: melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip
+        name: melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip
+        path: melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip
         archive: false
 
   all-artifacts:
