@@ -7,16 +7,26 @@
     InterpSpans point.
 */
 
+#ifndef MELONPRIME_DS
+#define MELONPRIME_DS 1
+#endif
+
 #include <cstdio>
 #include <cstdint>
+#include <algorithm>
+#include <array>
+#include <vector>
 
 #include "GPU3D_FixedVariantIndex.h"
 #include "GPU3D_RasterEdge.h"
+#include "MelonPrimeStructuredComposition.h"
 
 namespace
 {
 
 int Failures = 0;
+
+namespace Contract = melonDS::StructuredComposition;
 
 void Expect(const char* name, bool condition)
 {
@@ -179,9 +189,102 @@ int main()
         [](std::uint32_t candidate) { return candidate == 9; }, staleIndex);
     Expect("V17 fixed variant epoch rollover", rolloverOkay && staleIndex == 9);
 
+    // V18-V19: the scanline-time LCD routing table preserves screen swap,
+    // engine reversal, fallback display modes, and mid-frame route changes.
+    std::vector<std::uint32_t> RoutingEnginePlanes(
+        2u * Contract::kPlaneCount * Contract::kScreenPixelCount);
+    std::vector<std::uint32_t> RoutingFallbackPlanes(
+        2u * Contract::kPlaneCount * Contract::kScreenPixelCount);
+    std::vector<std::uint32_t> RoutingPackedPlanes(
+        2u * Contract::kPlaneCount * Contract::kScreenPixelCount);
+    std::array<std::uint8_t, 2u * Contract::kScreenHeight> RoutingSources{};
+    Contract::ScreenRoutingView routing{};
+    for (std::uint32_t engine = 0; engine < 2u; ++engine)
+    {
+        for (std::uint32_t plane = 0; plane < Contract::kPlaneCount; ++plane)
+        {
+            const std::size_t base =
+                (engine * Contract::kPlaneCount + plane) * Contract::kScreenPixelCount;
+            routing.EnginePlane[engine][plane] = RoutingEnginePlanes.data() + base;
+            for (std::size_t pixel = 0; pixel < Contract::kScreenPixelCount; ++pixel)
+            {
+                RoutingEnginePlanes[base + pixel] =
+                    0x10000000u | (engine << 24u) | (plane << 20u)
+                    | static_cast<std::uint32_t>(pixel);
+            }
+        }
+    }
+    for (std::uint32_t screen = 0; screen < 2u; ++screen)
+    {
+        for (std::uint32_t plane = 0; plane < Contract::kPlaneCount; ++plane)
+        {
+            const std::size_t base =
+                (screen * Contract::kPlaneCount + plane) * Contract::kScreenPixelCount;
+            routing.FallbackPlane[screen][plane] = RoutingFallbackPlanes.data() + base;
+            for (std::size_t pixel = 0; pixel < Contract::kScreenPixelCount; ++pixel)
+            {
+                RoutingFallbackPlanes[base + pixel] =
+                    0xF0000000u | (screen << 24u) | (plane << 20u)
+                    | static_cast<std::uint32_t>(pixel);
+            }
+        }
+        routing.ScreenSource[screen] =
+            RoutingSources.data() + screen * Contract::kScreenHeight;
+    }
+
+    std::fill_n(RoutingSources.data(), Contract::kScreenHeight,
+        Contract::kScreenSourceEngineA);
+    std::fill_n(RoutingSources.data() + Contract::kScreenHeight, Contract::kScreenHeight,
+        Contract::kScreenSourceEngineB);
+    auto pack = Contract::PackRoutedScreenPlanes(RoutingPackedPlanes.data(), routing);
+    bool constantRoutesOkay = pack.Valid && pack.RouteRuns == 2u;
+    for (std::uint32_t screen = 0; screen < 2u; ++screen)
+    {
+        for (std::uint32_t plane = 0; plane < Contract::kPlaneCount; ++plane)
+        {
+            const std::size_t base =
+                (screen * Contract::kPlaneCount + plane) * Contract::kScreenPixelCount;
+            const std::uint32_t* expected = routing.EnginePlane[screen][plane];
+            constantRoutesOkay &= RoutingPackedPlanes[base] == expected[0];
+            constantRoutesOkay &= RoutingPackedPlanes[base + Contract::kScreenPixelCount - 1u]
+                == expected[Contract::kScreenPixelCount - 1u];
+        }
+    }
+    Expect("V18 screen swap and reverse engine routes", constantRoutesOkay);
+
+    std::fill_n(RoutingSources.data(), 96u, Contract::kScreenSourceEngineB);
+    std::fill_n(RoutingSources.data() + 96u, 96u, Contract::kScreenSourceFallback);
+    std::fill_n(RoutingSources.data() + Contract::kScreenHeight, 64u,
+        Contract::kScreenSourceFallback);
+    std::fill_n(RoutingSources.data() + Contract::kScreenHeight + 64u, 64u,
+        Contract::kScreenSourceEngineA);
+    std::fill_n(RoutingSources.data() + Contract::kScreenHeight + 128u, 64u,
+        Contract::kScreenSourceEngineB);
+    pack = Contract::PackRoutedScreenPlanes(RoutingPackedPlanes.data(), routing);
+    bool mixedRoutesOkay = pack.Valid && pack.RouteRuns == 5u;
+    const auto packed = [&](std::uint32_t screen, std::uint32_t plane, std::uint32_t line) {
+        return RoutingPackedPlanes[
+            (screen * Contract::kPlaneCount + plane) * Contract::kScreenPixelCount
+            + line * Contract::kScreenWidth];
+    };
+    for (std::uint32_t plane = 0; plane < Contract::kPlaneCount; ++plane)
+    {
+        mixedRoutesOkay &= packed(0u, plane, 95u)
+            == routing.EnginePlane[1][plane][95u * Contract::kScreenWidth];
+        mixedRoutesOkay &= packed(0u, plane, 96u)
+            == routing.FallbackPlane[0][plane][96u * Contract::kScreenWidth];
+        mixedRoutesOkay &= packed(1u, plane, 63u)
+            == routing.FallbackPlane[1][plane][63u * Contract::kScreenWidth];
+        mixedRoutesOkay &= packed(1u, plane, 64u)
+            == routing.EnginePlane[0][plane][64u * Contract::kScreenWidth];
+        mixedRoutesOkay &= packed(1u, plane, 128u)
+            == routing.EnginePlane[1][plane][128u * Contract::kScreenWidth];
+    }
+    Expect("V19 mixed regular fallback and mid-frame routes", mixedRoutesOkay);
+
     if (Failures != 0)
         return 1;
 
-    std::puts("PASS: raster parity vectors V1-V17");
+    std::puts("PASS: raster parity vectors V1-V19");
     return 0;
 }

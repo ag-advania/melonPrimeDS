@@ -77,8 +77,13 @@ public:
         const u32* CaptureSourceBReference = nullptr;
         const u32* CaptureCommands = nullptr;
         const u32* LineMeta[2]{};
+        StructuredComposition::ScreenRoutingView ScreenRouting{};
         bool NativeMenuHeld = false;
         bool Valid = false;
+        u64 ScreenRouteCopyBytes = 0;
+        u64 ScreenRouteCopyNanoseconds = 0;
+        u32 StructuredRegularLines = 0;
+        u32 StructuredFallbackLines = 0;
         u64 Generation = 0;
     };
 
@@ -106,6 +111,7 @@ private:
     static constexpr std::size_t StructuredCaptureLineCount = 256u;
     std::array<u32, 2u * StructuredComposition::kPlaneCount * StructuredPixelCount> StructuredEnginePlanes{};
     std::array<u32, 2u * StructuredComposition::kPlaneCount * StructuredPixelCount> StructuredScreenPlanes{};
+    std::array<u8, 2u * StructuredComposition::kScreenHeight> StructuredScreenSource{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
     std::array<u32, 4u * 3u * StructuredCapturePixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineValid{};
@@ -124,6 +130,10 @@ private:
     bool StructuredCapture3DValid = false;
     bool StructuredFrameNativeMenuHeld = false;
     bool NativeMenuHeldForFrame = false;
+    u64 StructuredScreenRouteCopyBytes = 0;
+    u64 StructuredScreenRouteCopyNanoseconds = 0;
+    u32 StructuredRegularLines = 0;
+    u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;

@@ -21,6 +21,7 @@
 #include "GPU_DX12.h"
 
 #include "DX12Context.h"
+#include "DX12Perf.h"
 #include "GPU3D_DX12.h"
 #include "NDS.h"
 #include "Platform.h"
@@ -154,7 +155,19 @@ void DX12Renderer::VBlank()
         view.LineMeta[1],
     };
     const bool composed = dx12->ComposeStructuredOutput(
-        planes, lineMeta, view.CaptureCommands, view.Generation);
+        planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredScreenRouteCopyBytes,
+        view.ScreenRouteCopyBytes);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredScreenRouteCopyNanoseconds,
+        view.ScreenRouteCopyNanoseconds);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredRegularLines,
+        view.StructuredRegularLines);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredFallbackLines,
+        view.StructuredFallbackLines);
     if (composed && DifferentialReference && dx12->GetScaleFactor() == 1)
     {
         const bool exact = DifferentialState.CompareFrame(

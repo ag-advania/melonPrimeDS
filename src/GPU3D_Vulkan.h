@@ -28,6 +28,7 @@
 
 #include "GPU3D.h"
 #include "GPU3D_FixedVariantIndex.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "GPU3D_TexcacheVulkan.h"
 #include "GPU3D_Vulkan_ShaderModules.h"
 #include "VulkanCommon.h"
@@ -92,11 +93,12 @@ public:
     // Deliberately *not* deferred: nothing here latches a previous frame's
     // result. That is what makes the composition immune to MPH flipping
     // POWCNT1 bit 15 every frame; the producer already resolved engine -> LCD
-    // for this frame before publishing.
+    // for this frame into the published per-scanline routing table.
     bool ComposeStructuredOutput(
         const std::array<const u32*, 14>& planes,
         const std::array<const u32*, 2>& lineMeta,
         const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
         u64 generation);
 
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore

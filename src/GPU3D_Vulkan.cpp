@@ -2626,6 +2626,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
     const u32* captureCommands,
+    const StructuredComposition::ScreenRoutingView& screenRouting,
     u64 generation)
 {
     if (RuntimeFailed || !Initialized || ScaleFactor <= 0)
@@ -2681,9 +2682,16 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
 
     {
         VulkanPerf::ScopedCpuTimer packTimer(VulkanPerf::CpuMetric::ComposePack);
-        // Pack exactly the layout PresentationBuffers.glsl documents: six
-        // native-resolution planes, then the two per-screen line-metadata arrays.
-        for (std::size_t i = 0; i < planes.size(); i++)
+        // Pack exactly the layout PresentationBuffers.glsl documents: eight
+        // routed screen planes, six capture/provenance planes, then the two
+        // per-screen line-metadata arrays and capture commands.
+        const StructuredComposition::ScreenPackResult screenPack =
+            StructuredComposition::PackRoutedScreenPlanes(staging, screenRouting);
+        if (!screenPack.Valid)
+            return false;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredRouteRuns, screenPack.RouteRuns);
+        for (std::size_t i = 8u; i < planes.size(); i++)
         {
             std::memcpy(
                 staging + i * StructuredPixelCount,

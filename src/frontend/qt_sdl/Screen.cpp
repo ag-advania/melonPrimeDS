@@ -2069,6 +2069,7 @@ void ScreenPanelDX12::drawScreen()
     }
 
     bool hudUploaded = false;
+    bool hudVisible = false;
     auto* mpForHud = emuThread->GetMelonPrimeCore();
     const bool hudEditMode = mpForHud
         && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
@@ -2096,7 +2097,7 @@ void ScreenPanelDX12::drawScreen()
         painter.end();
 
         auto& instcfg = emuInstance->getLocalConfig();
-        const bool hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
+        hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
             emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
         dx12->hudRect = m_hudPrevDirty.intersected(
             QRect(0, 0, logicalWidth, logicalHeight));
@@ -2120,7 +2121,10 @@ void ScreenPanelDX12::drawScreen()
     bool gpuRadarVisible = false;
     MelonPrime::DX12SurfacePresenter::Quad gpuRadarQuad;
     u32 gpuRadarCenterY = 0;
-    if (gpuFrame && m_radarEnable)
+    // Keep the native colour-key pass under the same visibility contract as
+    // the CPU HUD image. BtmOverlayEnable remains configured when CustomHUD is
+    // toggled off and must not independently paint the top screen.
+    if (gpuFrame && hudVisible && m_radarEnable)
     {
         const float* topMatrix = nullptr;
         for (int index = 0; index < screens; ++index)

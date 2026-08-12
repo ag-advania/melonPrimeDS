@@ -54,6 +54,11 @@ enum class Counter : u32
     YSpans,
     SetupIndices,
     StructuredPackBytes,
+    StructuredScreenRouteCopyBytes,
+    StructuredScreenRouteCopyNanoseconds,
+    StructuredRegularLines,
+    StructuredFallbackLines,
+    StructuredRouteRuns,
     HudUploadBytes,
     TextureUploadBytes,
     ScratchUploadCount,
@@ -251,11 +256,16 @@ inline void MaybeReport()
     };
     std::fprintf(stderr,
         "[VulkanPerf] counters scale=%u frames=%llu polygons=%llu variants=%llu y_spans=%llu "
-        "setup_indices=%llu structured_pack_B=%llu hud_upload_B=%llu texture_upload_B=%llu "
+        "setup_indices=%llu structured_pack_B=%llu route_copy_B=%llu route_copy_ns=%llu "
+        "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu compose_drops=%llu "
         "screen_copy_B=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::Polygons), count(Counter::Variants),
         count(Counter::YSpans), count(Counter::SetupIndices), count(Counter::StructuredPackBytes),
+        count(Counter::StructuredScreenRouteCopyBytes),
+        count(Counter::StructuredScreenRouteCopyNanoseconds),
+        count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
+        count(Counter::StructuredRouteRuns),
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
         count(Counter::ScratchUploadCount), count(Counter::ScratchUploadBytes),
         count(Counter::DescriptorWriteCount), count(Counter::CompositorDropCount),
@@ -295,6 +305,11 @@ enum class Counter : u32
     YSpans,
     SetupIndices,
     StructuredPackBytes,
+    StructuredScreenRouteCopyBytes,
+    StructuredScreenRouteCopyNanoseconds,
+    StructuredRegularLines,
+    StructuredFallbackLines,
+    StructuredRouteRuns,
     HudUploadBytes,
     TextureUploadBytes,
     ScratchUploadCount,

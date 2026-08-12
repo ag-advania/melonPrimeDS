@@ -2489,6 +2489,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
     const u32* captureCommands,
+    const StructuredComposition::ScreenRoutingView& screenRouting,
     u64 generation)
 {
     if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
@@ -2545,7 +2546,13 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     }
     {
         DX12Perf::ScopedCpuTimer packTimer(DX12Perf::CpuMetric::ComposePack);
-        for (std::size_t i = 0; i < planes.size(); ++i)
+        const StructuredComposition::ScreenPackResult screenPack =
+            StructuredComposition::PackRoutedScreenPlanes(staging, screenRouting);
+        if (!screenPack.Valid)
+            return false;
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::StructuredRouteRuns, screenPack.RouteRuns);
+        for (std::size_t i = 8u; i < planes.size(); ++i)
         {
             std::memcpy(
                 staging + i * kStructuredPixelCount,

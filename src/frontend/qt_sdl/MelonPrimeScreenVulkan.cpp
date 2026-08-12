@@ -1136,7 +1136,10 @@ void ScreenPanelVulkan::drawScreenFrame()
     bool gpuRadarVisible = false;
     MelonPrime::VulkanPresenter::Quad gpuRadarQuad;
     u32 gpuRadarCenterY = 0;
-    if (gpuFrame && m_radarEnable)
+    // The native colour-key pass is part of the Custom HUD, just like the CPU
+    // overlay rendered above. Do not let a remembered radar preference draw
+    // over the top screen while CustomHUD itself is disabled.
+    if (gpuFrame && hudVisible && m_radarEnable)
     {
         auto* mp = emuThread->GetMelonPrimeCore();
         const float* topMatrix = nullptr;

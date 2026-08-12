@@ -54,6 +54,11 @@ enum class Counter : u32
     SetupIndices,
     SpanUploadBytes,
     StructuredPackBytes,
+    StructuredScreenRouteCopyBytes,
+    StructuredScreenRouteCopyNanoseconds,
+    StructuredRegularLines,
+    StructuredFallbackLines,
+    StructuredRouteRuns,
     TextureUploadBytes,
     UploadOverflowCount,
     UploadSpillBytes,
@@ -230,13 +235,19 @@ inline void MaybeReport()
     std::fprintf(stderr,
         "[DX12Perf] counters scale=%u frames=%llu identical=%llu polygons=%llu variants=%llu "
         "y_spans=%llu setup_indices=%llu span_upload_B=%llu structured_pack_B=%llu "
+        "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
+        "route_runs=%llu "
         "texture_upload_B=%llu upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
         "compose_drops=%llu capture_reads=%llu screen_copy_B=%llu hud_upload_B=%llu "
         "hud_recreates=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::IdenticalFrames),
         count(Counter::Polygons), count(Counter::Variants), count(Counter::YSpans),
         count(Counter::SetupIndices), count(Counter::SpanUploadBytes),
-        count(Counter::StructuredPackBytes), count(Counter::TextureUploadBytes),
+        count(Counter::StructuredPackBytes),
+        count(Counter::StructuredScreenRouteCopyBytes),
+        count(Counter::StructuredScreenRouteCopyNanoseconds),
+        count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
+        count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
         count(Counter::UploadOverflowCount), count(Counter::UploadSpillBytes),
         count(Counter::DescriptorWriteCount), count(Counter::CompositorDropCount),
         count(Counter::CaptureReadCount), count(Counter::PresentedScreenCopyBytes),
@@ -258,7 +269,9 @@ enum class CpuMetric : u32 { RasterBeginWait, TexcacheUpdate, BuildPolygons, Spa
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, IdenticalFrames, Polygons, Variants, YSpans, SetupIndices,
-    SpanUploadBytes, StructuredPackBytes, TextureUploadBytes, UploadOverflowCount,
+    SpanUploadBytes, StructuredPackBytes, StructuredScreenRouteCopyBytes,
+    StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
+    StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount, CompositorDropCount, CaptureReadCount,
     PresentedScreenCopyBytes, HudUploadBytes, HudTextureRecreateCount, Count };
 inline bool IsEnabled() noexcept { return false; }

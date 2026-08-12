@@ -70,6 +70,7 @@ void SoftRenderer::Reset()
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
+    StructuredScreenSource.fill(Contract::kScreenSourceFallback);
     StructuredScreenLineMeta.fill(0);
     StructuredCapturePlanes.fill(0);
     StructuredCaptureLineValid.fill(0);
@@ -88,6 +89,10 @@ void SoftRenderer::Reset()
     StructuredCapture3DValid = false;
     StructuredFrameNativeMenuHeld = false;
     NativeMenuHeldForFrame = false;
+    StructuredScreenRouteCopyBytes = 0;
+    StructuredScreenRouteCopyNanoseconds = 0;
+    StructuredRegularLines = 0;
+    StructuredFallbackLines = 0;
     StructuredFrameGeneration = 0;
 #endif
 }
@@ -236,6 +241,10 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredCaptureCommands.fill(0);
             StructuredCaptureSourceBNative.fill(0);
             StructuredCaptureSourceBReference.fill(0);
+            StructuredScreenRouteCopyBytes = 0;
+            StructuredScreenRouteCopyNanoseconds = 0;
+            StructuredRegularLines = 0;
+            StructuredFallbackLines = 0;
 
             const u32 captureMode = (GPU.CaptureCnt >> 29u) & 0x3u;
             const bool sourceAContributes = captureMode == 0u
@@ -1034,6 +1043,9 @@ void SoftRenderer::BuildStructuredScreenLine(
     // frame publication until after this scanline's capture command exists.
     if (preserveVramSnapshot)
     {
+        StructuredScreenSource[static_cast<std::size_t>(screen) * 192u + line] =
+            Contract::kScreenSourceFallback;
+        ++StructuredFallbackLines;
         if (line == 191u)
         {
             StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
@@ -1046,8 +1058,6 @@ void SoftRenderer::BuildStructuredScreenLine(
         ? ((GPU.GPU2D_A.DispCnt >> 16u) & 0x3u)
         : ((GPU.GPU2D_B.DispCnt >> 16u) & 0x1u);
     const std::size_t rowBase = static_cast<std::size_t>(line) * 256u;
-    const std::size_t sourceBase = static_cast<std::size_t>(engine)
-        * Contract::kPlaneCount * StructuredPixelCount;
     const std::size_t destinationBase = static_cast<std::size_t>(screen)
         * Contract::kPlaneCount * StructuredPixelCount;
 
@@ -1055,13 +1065,9 @@ void SoftRenderer::BuildStructuredScreenLine(
     u32 lineMeta = 0u;
     if (!forcePlain && displayMode == 1u)
     {
-        for (std::size_t plane = 0; plane < Contract::kPlaneCount; ++plane)
-        {
-            std::memcpy(
-                StructuredScreenPlanes.data() + destinationBase + (plane * StructuredPixelCount) + rowBase,
-                StructuredEnginePlanes.data() + sourceBase + (plane * StructuredPixelCount) + rowBase,
-                256u * sizeof(u32));
-        }
+        StructuredScreenSource[static_cast<std::size_t>(screen) * 192u + line] =
+            static_cast<u8>(engine);
+        ++StructuredRegularLines;
         const u16 brightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
         lineMeta =
             (Contract::kDisplayModeRegular << Contract::kLineMetaDisplayModeShift)
@@ -1072,6 +1078,9 @@ void SoftRenderer::BuildStructuredScreenLine(
 
     if (!copiedStructured)
     {
+        StructuredScreenSource[static_cast<std::size_t>(screen) * 192u + line] =
+            Contract::kScreenSourceFallback;
+        ++StructuredFallbackLines;
         for (std::size_t x = 0; x < 256u; ++x)
         {
             const std::size_t pixelIndex = rowBase + x;
@@ -1117,7 +1126,19 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     {
         const std::size_t screenBase = screen * Contract::kPlaneCount * StructuredPixelCount;
         for (std::size_t plane = 0; plane < Contract::kPlaneCount; ++plane)
+        {
             view.Plane[screen][plane] = StructuredScreenPlanes.data() + screenBase + (plane * StructuredPixelCount);
+            view.ScreenRouting.FallbackPlane[screen][plane] = view.Plane[screen][plane];
+            const std::size_t engineABase = plane * StructuredPixelCount;
+            const std::size_t engineBBase =
+                Contract::kPlaneCount * StructuredPixelCount + engineABase;
+            view.ScreenRouting.EnginePlane[0][plane] =
+                StructuredEnginePlanes.data() + engineABase;
+            view.ScreenRouting.EnginePlane[1][plane] =
+                StructuredEnginePlanes.data() + engineBBase;
+        }
+        view.ScreenRouting.ScreenSource[screen] =
+            StructuredScreenSource.data() + screen * Contract::kScreenHeight;
         view.LineMeta[screen] = StructuredScreenLineMeta.data() + (screen * 192u);
     }
     for (std::size_t plane = 0; plane < Contract::kPlaneCount; ++plane)
@@ -1127,6 +1148,10 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.CaptureCommands = StructuredCaptureCommands.data();
     view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
     view.Valid = true;
+    view.ScreenRouteCopyBytes = StructuredScreenRouteCopyBytes;
+    view.ScreenRouteCopyNanoseconds = StructuredScreenRouteCopyNanoseconds;
+    view.StructuredRegularLines = StructuredRegularLines;
+    view.StructuredFallbackLines = StructuredFallbackLines;
     view.Generation = StructuredFrameGeneration;
     return true;
 }

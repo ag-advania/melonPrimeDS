@@ -28,6 +28,7 @@
 
 #include "GPU3D.h"
 #include "GPU3D_FixedVariantIndex.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
 #include "GPU3D_TexcacheDX12.h"
 
@@ -72,6 +73,7 @@ public:
         const std::array<const u32*, 14>& planes,
         const std::array<const u32*, 2>& lineMeta,
         const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
         u64 generation);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();

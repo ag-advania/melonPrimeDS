@@ -23,6 +23,9 @@
 
 #include "types.h"
 
+#include <cstddef>
+#include <cstring>
+
 // Whether the software renderer builds the structured 2D planes at all.
 //
 // This lives here rather than in GPU_Soft.h because both the storage owner
@@ -74,6 +77,89 @@ inline constexpr u32 kPlaneCount = 4;
 inline constexpr u32 kScreenWidth = 256;
 inline constexpr u32 kScreenHeight = 192;
 inline constexpr u32 kScreenPixelCount = kScreenWidth * kScreenHeight;
+
+// A screen line either aliases one of the two engine-owned structured plane
+// sets or uses the screen-owned fallback produced for off/VRAM/FIFO/plain
+// output. The producer records this at scanline time; consumers must not infer
+// it later from POWCNT1 because games may change LCD routing within a frame.
+inline constexpr u8 kScreenSourceEngineA = 0u;
+inline constexpr u8 kScreenSourceEngineB = 1u;
+inline constexpr u8 kScreenSourceFallback = 2u;
+
+struct ScreenRoutingView
+{
+    const u32* EnginePlane[2][kPlaneCount]{};
+    const u32* FallbackPlane[2][kPlaneCount]{};
+    const u8* ScreenSource[2]{};
+};
+
+struct ScreenPackResult
+{
+    bool Valid = false;
+    u32 RouteRuns = 0;
+};
+
+// Pack the first eight compositor planes in screen-major/plane-major order.
+// Route runs are found once per screen, then copied across all four planes, so
+// the common two-constant-route frame uses eight large memcpy calls rather
+// than 1,536 scanline-sized calls.
+inline ScreenPackResult PackRoutedScreenPlanes(
+    u32* destination,
+    const ScreenRoutingView& routing) noexcept
+{
+    ScreenPackResult result{};
+    if (!destination)
+        return result;
+
+    for (u32 screen = 0; screen < 2u; ++screen)
+    {
+        if (!routing.ScreenSource[screen])
+            return result;
+
+        u32 firstLine = 0u;
+        while (firstLine < kScreenHeight)
+        {
+            const u8 source = routing.ScreenSource[screen][firstLine];
+            if (source > kScreenSourceFallback)
+                return result;
+
+            u32 endLine = firstLine + 1u;
+            while (endLine < kScreenHeight
+                && routing.ScreenSource[screen][endLine] == source)
+            {
+                ++endLine;
+            }
+
+            const std::size_t firstPixel =
+                static_cast<std::size_t>(firstLine) * kScreenWidth;
+            const std::size_t copyBytes =
+                static_cast<std::size_t>(endLine - firstLine)
+                * kScreenWidth * sizeof(u32);
+            for (u32 plane = 0; plane < kPlaneCount; ++plane)
+            {
+                const u32* sourcePlane = source == kScreenSourceFallback
+                    ? routing.FallbackPlane[screen][plane]
+                    : routing.EnginePlane[source][plane];
+                if (!sourcePlane)
+                    return result;
+
+                u32* destinationPlane = destination
+                    + (static_cast<std::size_t>(screen * kPlaneCount + plane)
+                        * kScreenPixelCount);
+                std::memcpy(
+                    destinationPlane + firstPixel,
+                    sourcePlane + firstPixel,
+                    copyBytes);
+            }
+
+            ++result.RouteRuns;
+            firstLine = endLine;
+        }
+    }
+
+    result.Valid = true;
+    return result;
+}
 
 // ---------------------------------------------------------------------------
 // Control word (plane 2)

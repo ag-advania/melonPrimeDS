@@ -23,6 +23,10 @@ ROOT = Path(__file__).resolve().parents[3]
 HEADER = ROOT / "src/MelonPrimeStructuredComposition.h"
 HLSL = ROOT / "src/GPU3D_DX12_shaders.h"
 GLSL = ROOT / "src/GPU3D_Vulkan_shaders/Compositor.comp"
+SOFT_HEADER = ROOT / "src/GPU_Soft.h"
+SOFT_SOURCE = ROOT / "src/GPU_Soft.cpp"
+VULKAN_SOURCE = ROOT / "src/GPU3D_Vulkan.cpp"
+DX12_SOURCE = ROOT / "src/GPU3D_DX12.cpp"
 
 # Contract name -> the expression each consumer is expected to use.
 #
@@ -107,6 +111,10 @@ def main() -> int:
 
     header_values = parse_cpp_constants(HEADER.read_text(encoding="utf-8"))
     hlsl_text = HLSL.read_text(encoding="utf-8")
+    soft_header_text = SOFT_HEADER.read_text(encoding="utf-8")
+    soft_source_text = SOFT_SOURCE.read_text(encoding="utf-8")
+    vulkan_source_text = VULKAN_SOURCE.read_text(encoding="utf-8")
+    dx12_source_text = DX12_SOURCE.read_text(encoding="utf-8")
 
     # A Vulkan-disabled tree still has to audit the DX12 half, and a moved or
     # renamed shader must fail loudly rather than crash. Audit whatever exists
@@ -147,6 +155,42 @@ def main() -> int:
         failures.append(f"{GLSL.name} lost the 5-bit 3D alpha coverage test")
     if compositor_start >= 0 and "((pixel3D >> 24u) & 0x1Fu) != 0u" not in hlsl_text:
         failures.append(f"{HLSL.name} lost the 5-bit 3D alpha coverage test")
+
+    # REPERF-07 ratchet: ordinary display lines alias engine storage through a
+    # per-scanline route table. Only fallback modes own screen-plane pixels.
+    routing_expectations = {
+        SOFT_HEADER.name: [
+            "StructuredScreenSource",
+            "ScreenRoutingView ScreenRouting",
+        ],
+        SOFT_SOURCE.name: [
+            "Contract::kScreenSourceFallback",
+            "static_cast<u8>(engine)",
+            "view.ScreenRouting.EnginePlane[0][plane]",
+            "view.CaptureSourcePlane[plane] = StructuredEnginePlanes.data()",
+        ],
+        VULKAN_SOURCE.name: ["PackRoutedScreenPlanes(staging, screenRouting)"],
+        DX12_SOURCE.name: ["PackRoutedScreenPlanes(staging, screenRouting)"],
+    }
+    source_texts = {
+        SOFT_HEADER.name: soft_header_text,
+        SOFT_SOURCE.name: soft_source_text,
+        VULKAN_SOURCE.name: vulkan_source_text,
+        DX12_SOURCE.name: dx12_source_text,
+    }
+    for filename, expectations in routing_expectations.items():
+        for expectation in expectations:
+            if expectation not in source_texts[filename]:
+                failures.append(
+                    f"REPERF-07: {filename} lost routing contract {expectation!r}")
+
+    build_start = soft_source_text.find("void SoftRenderer::BuildStructuredScreenLine(")
+    build_end = soft_source_text.find(
+        "bool SoftRenderer::GetStructuredVulkanFrame", build_start)
+    build_body = soft_source_text[build_start:build_end]
+    if "std::memcpy" in build_body or "memcpy(" in build_body:
+        failures.append(
+            "REPERF-07: BuildStructuredScreenLine reintroduced an engine-to-screen memcpy")
 
     if failures:
         print("structured composition contract audit FAILED:", file=sys.stderr)

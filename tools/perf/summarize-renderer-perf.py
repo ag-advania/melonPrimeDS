@@ -3,6 +3,8 @@
 
 Example:
   python tools/perf/summarize-renderer-perf.py perf.log --last-windows 300
+  python tools/perf/summarize-renderer-perf.py run1.log run2.log \
+      --skip-first-windows 60 --last-windows 300
 
 The renderer emits one percentile row per CPU metric and one counter row per
 reporting window. Selecting the last N rows for each metric makes a timed run
@@ -38,11 +40,19 @@ FRAME_RE = re.compile(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("log", type=Path)
+    parser.add_argument("logs", type=Path, nargs="+")
     parser.add_argument("--last-windows", type=int, default=300)
+    parser.add_argument(
+        "--skip-first-windows",
+        type=int,
+        default=0,
+        help="discard this many warmup windows independently from each log",
+    )
     args = parser.parse_args()
     if args.last_windows <= 0:
         parser.error("--last-windows must be positive")
+    if args.skip_first_windows < 0:
+        parser.error("--skip-first-windows must not be negative")
 
     metrics: dict[str, list[dict[str, float | int]]] = defaultdict(list)
     counters: list[dict[str, int]] = []
@@ -50,34 +60,44 @@ def main() -> int:
     backends: set[str] = set()
     scales: set[int] = set()
 
-    with args.log.open("r", encoding="utf-8", errors="replace") as source:
-        for raw_line in source:
-            line = raw_line.rstrip("\r\n")
-            if match := CPU_RE.match(line):
-                backends.add(match.group("backend").removesuffix("Perf"))
-                scales.add(int(match.group("scale")))
-                metrics[match.group("name")].append({
-                    "p50": float(match.group("p50")),
-                    "p95": float(match.group("p95")),
-                    "p99": float(match.group("p99")),
-                    "max": float(match.group("max")),
-                    "n": int(match.group("n")),
-                })
-            elif match := COUNTER_RE.match(line):
-                backends.add(match.group("backend").removesuffix("Perf"))
-                scales.add(int(match.group("scale")))
-                counters.append({
-                    item.group("name"): int(item.group("value"))
-                    for item in VALUE_RE.finditer(match.group("body"))
-                })
-            elif match := FRAME_RE.match(line):
-                frame_windows.append({
-                    "p50": float(match.group("p50")),
-                    "p95": float(match.group("p95")),
-                    "p99": float(match.group("p99")),
-                    "max": float(match.group("max")),
-                    "n": int(match.group("n")),
-                })
+    for log in args.logs:
+        log_metrics: dict[str, list[dict[str, float | int]]] = defaultdict(list)
+        log_counters: list[dict[str, int]] = []
+        log_frames: list[dict[str, float | int]] = []
+        with log.open("r", encoding="utf-8", errors="replace") as source:
+            for raw_line in source:
+                line = raw_line.rstrip("\r\n")
+                if match := CPU_RE.match(line):
+                    backends.add(match.group("backend").removesuffix("Perf"))
+                    scales.add(int(match.group("scale")))
+                    log_metrics[match.group("name")].append({
+                        "p50": float(match.group("p50")),
+                        "p95": float(match.group("p95")),
+                        "p99": float(match.group("p99")),
+                        "max": float(match.group("max")),
+                        "n": int(match.group("n")),
+                    })
+                elif match := COUNTER_RE.match(line):
+                    backends.add(match.group("backend").removesuffix("Perf"))
+                    scales.add(int(match.group("scale")))
+                    log_counters.append({
+                        item.group("name"): int(item.group("value"))
+                        for item in VALUE_RE.finditer(match.group("body"))
+                    })
+                elif match := FRAME_RE.match(line):
+                    log_frames.append({
+                        "p50": float(match.group("p50")),
+                        "p95": float(match.group("p95")),
+                        "p99": float(match.group("p99")),
+                        "max": float(match.group("max")),
+                        "n": int(match.group("n")),
+                    })
+
+        skip = args.skip_first_windows
+        for name, rows in log_metrics.items():
+            metrics[name].extend(rows[skip:])
+        counters.extend(log_counters[skip:])
+        frame_windows.extend(log_frames[skip:])
 
     if len(backends) != 1 or len(scales) != 1 or not metrics:
         raise SystemExit(

@@ -25,6 +25,7 @@
 #include "GPU3D_Vulkan.h"
 #include "NDS.h"
 #include "Platform.h"
+#include "VulkanPerf.h"
 
 namespace melonDS
 {
@@ -154,8 +155,9 @@ void VulkanRenderer::VBlank()
     // drives which LCD -- and Metroid Prime Hunters flips POWCNT1 bit 15 every
     // frame, so that assignment alternates while the control word does not.
     // SoftRenderer::DrawScanline() already resolved engine -> LCD for *this*
-    // frame before it filled the planes, so there is nothing left to guess and
-    // nothing latched from a previous frame to disagree with.
+    // frame into a per-scanline route table. The packer follows that table, so
+    // there is nothing left to guess and no previous-frame assignment to
+    // disagree with.
     auto* vulkan = GetVulkanRenderer3D();
     StructuredVulkanFrameView view{};
     if (vulkan && GetStructuredVulkanFrame(view) && view.Valid)
@@ -185,7 +187,19 @@ void VulkanRenderer::VBlank()
         // refreshed is never recomposed, and a stale one is never composed at
         // all.
         const bool composed = vulkan->ComposeStructuredOutput(
-            planes, lineMeta, view.CaptureCommands, view.Generation);
+            planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredScreenRouteCopyBytes,
+            view.ScreenRouteCopyBytes);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredScreenRouteCopyNanoseconds,
+            view.ScreenRouteCopyNanoseconds);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredRegularLines,
+            view.StructuredRegularLines);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredFallbackLines,
+            view.StructuredFallbackLines);
         if (composed
             && DifferentialReference
             && vulkan->GetScaleFactor() == 1
