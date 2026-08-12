@@ -133,9 +133,13 @@ void VulkanRenderer::Start3DRendering()
     // Renderer::Start3DRendering() drives Rend3D->RenderFrame(). Overridden
     // explicitly so the phase-13 Reflex render-submit marker has an owner and
     // so the call does not depend on which base happens to define it.
-    if (DifferentialReference)
-        DifferentialReference->RenderFrame();
     Renderer::Start3DRendering();
+    if (DifferentialReference)
+    {
+        // Vulkan's texture cache must be the sole destructive dirty-state
+        // consumer. The software oracle then renders from the coherent mirrors.
+        static_cast<SoftRenderer3D*>(DifferentialReference.get())->RenderReferenceFrame();
+    }
 }
 
 void VulkanRenderer::VBlank()

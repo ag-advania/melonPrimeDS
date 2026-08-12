@@ -1176,7 +1176,9 @@ void MetalRenderer3D::RenderFrame()
 
 void MetalRenderer3D::RenderSoftwareReferenceFrame()
 {
-    Delegate.RenderFrame();
+    // Metal Compute has already consumed the shared VRAM dirty state and made
+    // the flat mirrors coherent before invoking this diagnostic reference.
+    Delegate.RenderReferenceFrame();
 }
 
 Renderer3D& MetalRenderer3D::GetSoftwareReference() noexcept

@@ -113,6 +113,9 @@ def main() -> int:
     metal_span = read("src/GPU3D_MetalComputeSpanMath.inc")
     metal_textured = read("src/GPU3D_MetalComputeTexturedShaders.inc")
     metal_depth = read("src/GPU3D_MetalComputeDepthBlendShaders.inc")
+    metal_wrapper = read("src/GPU3D_Metal.mm")
+    vk_wrapper = read("src/GPU_Vulkan.cpp")
+    dx_wrapper = read("src/GPU_DX12.cpp")
 
     for name, source in (("Vulkan", vk_header), ("DX12", dx_header)):
         require(source, "u32 FacingView;", f"{name} facing upload", failures)
@@ -200,8 +203,10 @@ def main() -> int:
            "Vulkan per-frame polygon-batch allocation", failures)
     forbid(vk_cpp, "std::vector<VkDescriptorSet> variantTextureSets",
            "Vulkan per-frame descriptor allocation", failures)
-    require(vk_header, "TextureSetCacheEntry",
-            "Vulkan frame descriptor reuse", failures)
+    require(vk_header, "TextureSetCacheCapacity = 4096",
+            "Vulkan fixed descriptor cache", failures)
+    require(vk_cpp, "TextureSetCacheEpoch++",
+            "Vulkan epoch descriptor cache reset", failures)
     forbid(dx_cpp, "std::vector<PolygonBatch> polygonBatches",
            "DX12 per-frame polygon-batch allocation", failures)
     forbid(dx_header, "std::unordered_map<ID3D12Resource*",
@@ -210,6 +215,27 @@ def main() -> int:
             "DX12 fixed SRV cache", failures)
     require(dx_cpp, "ResetFrameSrvCache()",
             "DX12 epoch SRV cache reset", failures)
+
+    require(soft_header, "void RenderReferenceFrame();",
+            "Software coherent-mirror differential entry point", failures)
+    require(soft_cpp, "void SoftRenderer3D::RenderReferenceFrame()",
+            "Software synchronous differential implementation", failures)
+    for name, source in (("Vulkan", vk_wrapper), ("DX12", dx_wrapper)):
+        require_order(source, "Renderer::Start3DRendering();",
+                      "RenderReferenceFrame();",
+                      f"{name} accelerated-first differential order", failures)
+    require(metal_wrapper, "Delegate.RenderReferenceFrame();",
+            "Metal coherent-mirror differential reference", failures)
+    require(dx_wrapper, "if (composed && DifferentialReference",
+            "DX12 composed-output differential gate", failures)
+
+    signed_right_coverage = "max(31 - (xcov >> 5), 0)"
+    if dx_shader.count(signed_right_coverage) != 2:
+        failures.append(
+            "DX12 signed right-edge coverage: expected exactly two signed clamps"
+        )
+    forbid(dx_shader, "max(0x1F - (xcov >> 5), 0)",
+           "DX12 unsigned right-edge coverage underflow", failures)
 
     for name, source in (("OpenGL Compute", gl_shader),
                          ("Vulkan", vk_interp), ("DX12", dx_shader)):

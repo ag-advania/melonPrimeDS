@@ -24,6 +24,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstring>
+#include <functional>
 #include <mutex>
 
 #include "GPU.h"
@@ -1828,9 +1829,21 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
         return BoundTextureSet;
     }
 
-    for (u32 i = 0; i < TextureSetCacheCount; ++i)
+    constexpr u32 cacheMask = TextureSetCacheCapacity - 1;
+    const std::size_t viewHash = std::hash<VkImageView>{}(textureView);
+    const std::size_t samplerHash = std::hash<VkSampler>{}(sampler);
+    u32 cacheIndex = static_cast<u32>(
+        (viewHash ^ (samplerHash + 0x9E3779B9u + (viewHash << 6u) + (viewHash >> 2u)))
+        & cacheMask);
+    TextureSetCacheEntry* insertion = nullptr;
+    for (u32 probe = 0; probe < TextureSetCacheCapacity; ++probe)
     {
-        const TextureSetCacheEntry& entry = TextureSetCache[i];
+        TextureSetCacheEntry& entry = TextureSetCache[cacheIndex];
+        if (entry.Epoch != TextureSetCacheEpoch)
+        {
+            insertion = &entry;
+            break;
+        }
         if (entry.View == textureView && entry.Sampler == sampler)
         {
             BoundTextureView = textureView;
@@ -1838,10 +1851,11 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
             BoundTextureSet = entry.Set;
             return entry.Set;
         }
+        cacheIndex = (cacheIndex + 1u) & cacheMask;
     }
 
     if (TextureSetCursor >= Descriptors.GetSizing().TextureSetsPerFrame
-        || TextureSetCacheCount >= TextureSetCache.size())
+        || !insertion)
         return VK_NULL_HANDLE;
 
     VkDescriptorSet set = Descriptors.GetTextureSet(frameIndex, TextureSetCursor);
@@ -1881,7 +1895,7 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
     BoundTextureView = textureView;
     BoundSampler = sampler;
     BoundTextureSet = set;
-    TextureSetCache[TextureSetCacheCount++] = { textureView, sampler, set };
+    *insertion = { textureView, sampler, set, TextureSetCacheEpoch };
     return set;
 }
 
@@ -1981,7 +1995,13 @@ void VulkanRenderer3D::RenderFrame()
     // and descriptor sets are free again.
     FrameStaging.Reset();
     TextureSetCursor = 0;
-    TextureSetCacheCount = 0;
+    TextureSetCacheEpoch++;
+    if (TextureSetCacheEpoch == 0)
+    {
+        for (TextureSetCacheEntry& entry : TextureSetCache)
+            entry.Epoch = 0;
+        TextureSetCacheEpoch = 1;
+    }
     BoundTextureView = VK_NULL_HANDLE;
     BoundSampler = VK_NULL_HANDLE;
     BoundTextureSet = VK_NULL_HANDLE;

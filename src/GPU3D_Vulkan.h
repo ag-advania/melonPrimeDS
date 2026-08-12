@@ -506,9 +506,15 @@ private:
         VkImageView View = VK_NULL_HANDLE;
         VkSampler Sampler = VK_NULL_HANDLE;
         VkDescriptorSet Set = VK_NULL_HANDLE;
+        u32 Epoch = 0;
     };
-    std::array<TextureSetCacheEntry, MaxVariants + 1> TextureSetCache{};
-    u32 TextureSetCacheCount = 0;
+    static constexpr u32 TextureSetCacheCapacity = 4096;
+    static_assert((TextureSetCacheCapacity & (TextureSetCacheCapacity - 1)) == 0,
+        "texture-set cache capacity must be a power of two");
+    static_assert(TextureSetCacheCapacity > MaxVariants + 1,
+        "texture-set cache must retain an empty probe terminator");
+    std::array<TextureSetCacheEntry, TextureSetCacheCapacity> TextureSetCache{};
+    u32 TextureSetCacheEpoch = 1;
     VkImageView BoundTextureView = VK_NULL_HANDLE;
     VkSampler BoundSampler = VK_NULL_HANDLE;
     VkDescriptorSet BoundTextureSet = VK_NULL_HANDLE;

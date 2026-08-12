@@ -31,17 +31,22 @@ Copy-Item -LiteralPath (Resolve-Path $Executable) -Destination $runExecutable -F
 Screen.VSync = false
 "@ | Set-Content -LiteralPath (Join-Path $runDir 'melonDS.toml') -Encoding utf8
 
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class RasterDiffNative {
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+$testSavestate = $null
+if ($LoadSlot -gt 0) {
+    $testSavestate = [System.IO.Path]::ChangeExtension(
+        (Resolve-Path $RomPath).Path, ".ml$LoadSlot")
+    if (!(Test-Path -LiteralPath $testSavestate)) {
+        throw "Savestate slot $LoadSlot was not found: $testSavestate"
+    }
 }
-'@
-
 $oldDifferential = $env:MELONPRIME_RASTER_DIFFERENTIAL
+$oldTestSavestate = $env:MELONPRIME_TEST_SAVESTATE
 $env:MELONPRIME_RASTER_DIFFERENTIAL = '1'
+if ($testSavestate) {
+    # Let the dormant frontend hook load the state after the ROM and renderer
+    # exist. This also tells RasterDifferential to discard the load transition.
+    $env:MELONPRIME_TEST_SAVESTATE = $testSavestate
+}
 $process = $null
 try {
     $process = Start-Process -FilePath $runExecutable `
@@ -58,13 +63,6 @@ try {
         throw 'Emulator window was not created.'
     }
 
-    if ($LoadSlot -gt 0) {
-        Start-Sleep -Seconds 3
-        $virtualKey = 0x70 + $LoadSlot - 1
-        [RasterDiffNative]::SetForegroundWindow($process.MainWindowHandle) | Out-Null
-        [RasterDiffNative]::PostMessage($process.MainWindowHandle, 0x0100, [IntPtr]$virtualKey, [IntPtr]0) | Out-Null
-        [RasterDiffNative]::PostMessage($process.MainWindowHandle, 0x0101, [IntPtr]$virtualKey, [IntPtr]0) | Out-Null
-    }
     Start-Sleep -Seconds $PostLoadSeconds
 }
 finally {
@@ -76,6 +74,7 @@ finally {
         }
     }
     $env:MELONPRIME_RASTER_DIFFERENTIAL = $oldDifferential
+    $env:MELONPRIME_TEST_SAVESTATE = $oldTestSavestate
 }
 
 $lines = @()
@@ -88,6 +87,17 @@ if (Test-Path $stderr) {
 }
 if ($lines.Count -eq 0) {
     throw "No RasterDiff frames were reported. Logs: $stdout, $stderr"
+}
+if ($testSavestate) {
+    $allLog = @()
+    if (Test-Path $stdout) { $allLog += Get-Content -LiteralPath $stdout }
+    if (Test-Path $stderr) { $allLog += Get-Content -LiteralPath $stderr }
+    if (!($allLog | Where-Object { $_ -match '\[SavestateDiff\].*loaded=1' })) {
+        throw "Savestate slot $LoadSlot was not loaded successfully. Logs: $stdout, $stderr"
+    }
+    if (!($allLog | Where-Object { $_ -match '\[RasterDiffTransition\].*savestate-load' })) {
+        throw "Raster differential did not discard the savestate transition. Logs: $stdout, $stderr"
+    }
 }
 
 $mismatches = @($lines | Where-Object { $_ -match 'mismatchedPixels=([1-9][0-9]*)' })

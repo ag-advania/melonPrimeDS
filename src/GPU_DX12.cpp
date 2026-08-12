@@ -114,9 +114,13 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 void DX12Renderer::Start3DRendering()
 {
     NvidiaReflex.MarkRenderSubmitStart();
-    if (DifferentialReference)
-        DifferentialReference->RenderFrame();
     Renderer::Start3DRendering();
+    if (DifferentialReference)
+    {
+        // DX12's texture cache owns the destructive VRAM dirty snapshot. The
+        // software oracle runs only after those flat mirrors are coherent.
+        static_cast<SoftRenderer3D*>(DifferentialReference.get())->RenderReferenceFrame();
+    }
 }
 
 void DX12Renderer::VBlank()
@@ -149,9 +153,24 @@ void DX12Renderer::VBlank()
         view.LineMeta[0],
         view.LineMeta[1],
     };
-    dx12->ComposeStructuredOutput(planes, lineMeta, view.CaptureCommands, view.Generation);
-    if (DifferentialReference && dx12->GetScaleFactor() == 1)
-        DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "DX12");
+    const bool composed = dx12->ComposeStructuredOutput(
+        planes, lineMeta, view.CaptureCommands, view.Generation);
+    if (composed && DifferentialReference && dx12->GetScaleFactor() == 1)
+    {
+        const bool exact = DifferentialState.CompareFrame(
+            *Rend3D, *DifferentialReference, "DX12");
+        if (!exact)
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
+                "clear1=%08X clear2=%08X\n",
+                GPU.GPU3D.RenderDispCnt,
+                GPU.GPU3D.RenderNumPolygons,
+                GPU.GPU3D.RenderClearAttr1,
+                GPU.GPU3D.RenderClearAttr2);
+        }
+    }
     NvidiaReflex.MarkRenderSubmitEnd();
 }
 

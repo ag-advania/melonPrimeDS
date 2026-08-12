@@ -7,9 +7,11 @@
 ## 結論
 
 三つの backend は、Software renderer の固定小数点補間、depth/blend、shadow、edge/fog/AA、
-native capture を再現するための parity 修正と回帰ラチェットを既に持つ。監査時点の
+native capture を再現するための parity 修正と回帰ラチェットを持つ。監査後の
 Vulkan 111 shader variants と DX12 111 shader variants はコンパイルを通過し、静的な
-Software parity audit も通過した。
+Software parity audit も通過した。さらに USA Rev 1 の F4/F5/F7/F8 state を用いた native 1x
+実ROM比較では、Vulkan 2,282 frame / 112,164,864 px、DX12 2,129 frame / 104,644,608 px が
+Software と完全一致した。
 
 一方、正確性を変えずに除去できるホットパス上の無駄を三件確認した。最優先は Metal
 Compute の fixed-capacity dispatch である。Metal は binning 後の実 work count を GPU 上で
@@ -61,16 +63,17 @@ scene / GPU に依存するため、macOS 実機測定なしに速度向上率�
 version を進める。slot version と renderer version が異なる時だけ snapshot をコピーする。
 これにより内容の同一性を推測せず、既存 dirty/coherency 契約をそのまま利用して定常時の全領域比較を除く。
 
-### P2: Vulkan / DX12 の CPU span orchestration がフレームごとに一時 vector を確保する
+### P2: Vulkan / DX12 の CPU orchestration と descriptor lookup に不要な仕事がある
 
 **根拠:** 両 backend の `BuildPolygonBatches()` は local `std::vector` を返し、Vulkan はさらに
 `variantTextureSets` を local vector として生成する。最大要素数はいずれも DS polygon 上限 2,048 で
-既知であり、Metal は既に固定 `std::array` を使う。
+既知であり、Metal は既に固定 `std::array` を使う。また、Vulkan の frame-local texture descriptor
+cache は同じ `(image view, sampler)` を再利用できる一方、各 miss で登録済みentryを先頭から線形探索する。
 
 **修正方針:** renderer instance 所有の `std::array<..., MaxRenderPolygons>` と count に置き換える。
 allocation lifetime だけを変え、batch partition と descriptor selection の順序は変えない。DX12 の
-per-frame SRV cache は固定容量・epoch付きopen addressingへ変更し、node allocationと毎frameの全消去を
-避ける。Vulkan texture descriptorも `(image view, sampler)` が同じvariant間でframe内再利用する。
+per-frame SRV cache と Vulkan texture descriptor cache は、固定容量・epoch付きopen addressingへ変更し、
+node allocation、毎frameの全消去、線形全件探索を避ける。
 
 ## 実装結果
 
@@ -85,14 +88,69 @@ per-frame SRV cache は固定容量・epoch付きopen addressingへ変更し、n
 - Metal texture / palette snapshotはrenderer versionとslot versionが不一致の時だけコピーする。
   dirty trackerが変化なしと確定したframeでは640 KiBの`memcmp`を行わない。
 - Vulkan / DX12 polygon batchesとVulkan variant descriptor tableをinstance scratchへ移し、local
-  vector allocationを除去した。Vulkanは同一view/sampler descriptorを再利用し、DX12は4,096-entryの
-  epoch付き固定SRV cacheを使う。
+  vector allocationを除去した。Vulkanの同一view/sampler descriptorとDX12 SRVはいずれも
+  4,096-entryのepoch付き固定hashで再利用し、node allocation、全table clear、線形全件探索を避ける。
 - `audit-raster-software-parity.py` に、bounded batching、allocation-free scratch、Metal indirect
   dispatch、versioned VRAM snapshotを後退させないsource ratchetを追加した。
 
 work index、work descriptor、polygon order、shader内bounds check、depth/blend/final outputには変更を
 加えていない。したがって最適化で減るのは空dispatch、重複descriptor work、CPU allocation/比較であり、
 Software parityを定義する演算経路は同一である。
+
+## 実ROM比較で追加検出した正確性問題
+
+静的監査だけで完了とはせず、accelerated output と `SoftRenderer3D` を同一frameで全画素比較する
+dormant diagnosticを実ROMへ適用した。その過程で次の三件を修正した。
+
+- 比較用Software rendererがaccelerated rendererより先に`VRAMDirty::DeriveState()`を消費していた。
+  これではcandidate側texture cacheのdirty入力を奪い、かつSoftware側の二度目のderiveは変化なしに
+  見える。accelerated rendererを先に実行し、coherent flat mirrorを直接同期renderする
+  `RenderReferenceFrame()`を追加した。通常のSoftware rendererの実行経路は変更していない。
+- DX12は最初のstructured compositionがまだ取得できないframeでも比較していた。
+  `ComposeStructuredOutput()`が成功したframeだけを比較対象にした。
+- DX12 HLSLの右端coverage clamp二箇所が`max(0x1F - (xcov >> 5), 0)`だった。HLSLではhex literalが
+  unsignedとなるため、coverageが32を越えると負値ではなく`0xFFFFFFFF`へwrapし、下位5 bitが31に
+  戻る。signed decimal literalを使う`max(31 - (xcov >> 5), 0)`へ変更した。F7で稀に発生した
+  1 px差分はこれで解消した。
+
+diagnostic runnerはwindow messageによるF-key疑似入力を廃止し、ROMとrenderer初期化後に指定stateを
+直接ロードする。load成功とtransition frame破棄をlogで必ず確認するため、F-key focus/routing失敗を
+「比較成功」と誤認しない。
+
+## 修正後の実測
+
+### native 1x 全画素比較
+
+Windows / NVIDIA GeForce RTX 5070 Ti、Metroid Prime Hunters USA Rev 1、各stateロード後10秒。
+各frameは256x192の49,152 pxで、`nonZeroPixels > 0`、candidate/reference hash一致、累積差分0を
+runnerが検査した。元ROM/stateは変更せず隔離コピーで実行した。
+
+| State | Vulkan | DX12 |
+|---|---:|---:|
+| F4 / slot 4 | 569 frame、差分0 | 554 frame、差分0 |
+| F5 / slot 5 | 572 frame、差分0 | 552 frame、差分0 |
+| F7 / slot 7 | 572 frame、差分0 | 554 frame、差分0 |
+| F8 / slot 8 | 569 frame、差分0 | 469 frame、差分0 |
+| 合計 | 2,282 frame / 112,164,864 px | 2,129 frame / 104,644,608 px |
+
+DXBC再生成後の最終Windows実行ファイルでもF7を再ロードし、Vulkan 331 frame、DX12 312 frameの
+追加smokeが差分0だった。この追加分は上表の10秒run集計には含めていない。
+
+### 修正後performance telemetry smoke
+
+同じF7 stateをSoftware oracleなし、native 1x、`MELONPRIME_PERF=1`で各14個の1 Hz windowだけ採取した。
+これは10分soakのformal baselineではなく、短時間の修正後sanity measurementである。従って速度向上率や
+backend間優劣には使用しない。
+
+| Backend | frame shutdown p50 / p95 / p99 | build polygons | descriptor update | raster begin wait | queue submit |
+|---|---:|---:|---:|---:|---:|
+| Vulkan | 16.610 / 17.541 / 18.253 ms | 118.05 us | 0.10 us | 3.90 us | 14.00 us |
+| DX12 | 16.539 / 18.973 / 19.491 ms | 124.78 us | 1.20 us | 14.20 us | 50.00 us |
+
+CPU列は14 windowの各p50のmedian。Vulkan/DX12ともtexture cache updateは0.30 us、upload overflow、
+spill、compose drop、capture readは0だった。今回の変更前と同一条件のformal baselineがないため、
+定量的な改善率は主張しない。削減量として確定できるのは、Metal定常frameの640 KiB比較、Metalの
+capacity全域empty dispatch、両backendのframe-local allocation、Vulkan descriptor miss時の線形探索である。
 
 ## 維持する設計
 
@@ -111,14 +169,16 @@ Software parityを定義する演算経路は同一である。
 | `audit-raster-software-parity.py` | PASS | Metal / Vulkan / DX12 の静的 parity contract |
 | `check-vulkan-shaders.py` | PASS | 111 variants compile、111 SPIR-V validate、scale-specialized 592 modules validate |
 | `check-dx12-shaders.py` | PASS | 111 variants compile |
-| `compile-metal-compute-msl.py` | 未実行 | Windows には `xcrun metal` がないため。macOSで必須 |
+| `compile-metal-compute-msl.py` | 実行不可 | Windowsに`xcrun metal`がなく、macOSで必須 |
 | Windows MinGW Release build | PASS | developer features ON、Vulkan / DX12 translation unitsを再コンパイル |
 | `melonprime_raster_edge_vectors` | PASS | V1-V15を再ビルドして実行 |
 | `check-doc-links.py` | PASS | 437 local links |
+| `check-inc-ownership.ps1` | PASS | PowerShell 7.6.3、90 `.inc` ownership rules |
+| `audit-melonprime-srp-performance.ps1` | PASS | SRP / performance source audit |
 | `git diff --check` | PASS | whitespace errorなし |
-| `check-inc-ownership.ps1` / `audit-melonprime-srp-performance.ps1` | 環境制約 | Windows PowerShell 5.1に`Path.GetRelativePath`がなく起動前提を満たさない |
-| native ROM pixel differential | 未実行 | ROM path / agreed savestate が監査環境に指定されていないため |
-| macOS GPU timing | 未実行 | Windows監査環境のため。`MELONPRIME_PERF=1` の同一scene比較をmacOSで行う必要あり |
+| native ROM pixel differential | PASS | F4/F5/F7/F8、Vulkan 2,282 frame、DX12 2,129 frame、全差分0 |
+| Windows perf smoke | PASS | F7、各14秒、formal baselineではない |
+| Metal runtime / macOS GPU timing | 実行不可 | Windows監査環境。macOS実機の継続gate |
 
 Vulkan audit が出す device-limit notes は failure ではない。runtime feature probe が実 device limit と
 memory budgetからscale ceilingを決め、未対応scaleを拒否する既存契約に対応する。
@@ -130,5 +190,6 @@ memory budgetからscale ceilingを決め、未対応scaleを拒否する既存�
 3. fixed-capacity Sort / Raster dispatch と per-frame batch/descriptor vectorの除去: **達成**。
 4. dirty-derived versionが不一致のslotだけMetal VRAM snapshotを更新: **達成**。
 5. Windows repository entry point buildと`git diff --check`: **達成**。
-6. Metal MSL offline compile / 実ROM differential / macOS timing: **macOS・ROM fixtureでの継続ゲート**。
-   現監査では未実行であり、速度向上の実測値やmacOS runtime成功として扱わない。
+6. Vulkan / DX12実ROM differential: **達成**。F4/F5/F7/F8の合計4,411 frameがSoftwareと完全一致。
+7. Metal MSL offline compile / Metal実ROM differential / macOS timing: **macOS実機での継続ゲート**。
+   Windows監査では実行不能であり、Metalの速度向上率やruntime成功として扱わない。

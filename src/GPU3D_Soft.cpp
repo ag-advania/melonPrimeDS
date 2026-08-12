@@ -1764,6 +1764,19 @@ void SoftRenderer3D::RenderFrame()
     }
 }
 
+void SoftRenderer3D::RenderReferenceFrame()
+{
+    // A differential reference is deliberately synchronous. In normal use
+    // SetRenderSettings already disables its thread, but make the diagnostic
+    // safe if a caller retained a threaded software renderer.
+    if (RenderThreadRunning.load(std::memory_order_relaxed))
+        SetThreaded(false);
+
+    FrameIdentical = false;
+    ClearBuffers();
+    RenderPolygons(false, &GPU3D.RenderPolygonRAM[0], GPU3D.RenderNumPolygons);
+}
+
 void SoftRenderer3D::RestartFrame()
 {
     SetupRenderThread();

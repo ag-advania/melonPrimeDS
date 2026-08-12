@@ -1170,7 +1170,8 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
                     int coverageStart = max(max(xspan.InsideStart, xspan.InsideEnd), 0);
                     int xcov = xspan.CovRInitial
                         + (xspan.EdgeCovR & 0x3FF) * (position.x - coverageStart);
-                    cov = max(0x1F - (xcov >> 5), 0);
+                    // Keep this signed: hexadecimal HLSL literals are unsigned.
+                    cov = max(31 - (xcov >> 5), 0);
                 }
 
                 attr |= uint(cov) << 8;
@@ -1660,38 +1661,41 @@ void main(uint3 id : SV_DispatchThreadID)
     if (y >= ScreenHeight)
         return;
 
-    int x = max(span.X0, 0);
+    int leftStart = max(span.X0, 0);
     int screenEnd = int(ScreenWidth);
     int leftEnd = min(min(span.InsideStart, span.X1), screenEnd);
     if (span.EdgeCovL < 0)
     {
         int xcov = span.CovLInitial;
-        for (; x < leftEnd; ++x)
+        for (int x = leftStart; x < leftEnd; ++x)
         {
-            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
-                continue;
-            WriteWinningCoverage(polygonIndex, uint(x), y, min(uint(xcov >> 5), 31u));
-            xcov += span.EdgeCovL & 0x3FF;
+            if (CoverageWasAccepted(polygonIndex, uint(x), y))
+            {
+                WriteWinningCoverage(
+                    polygonIndex, uint(x), y, min(uint(xcov >> 5), 31u));
+                xcov += span.EdgeCovL & 0x3FF;
+            }
         }
-    }
-    else
-    {
-        x = max(x, leftEnd);
     }
 
     int bodyEnd = min(min(span.InsideEnd, span.X1), screenEnd);
-    x = max(x, bodyEnd);
+    int rightStart = max(max(leftStart, leftEnd), bodyEnd);
     int rightEnd = min(span.X1, screenEnd);
     if (span.EdgeCovR < 0)
     {
         int xcov = span.CovRInitial;
-        for (; x < rightEnd; ++x)
+        for (int x = rightStart; x < rightEnd; ++x)
         {
-            if (!CoverageWasAccepted(polygonIndex, uint(x), y))
-                continue;
-            WriteWinningCoverage(
-                polygonIndex, uint(x), y, uint(max(0x1F - (xcov >> 5), 0)));
-            xcov += span.EdgeCovR & 0x3FF;
+            if (CoverageWasAccepted(polygonIndex, uint(x), y))
+            {
+                // Hex literals are unsigned in HLSL. Keep the subtraction
+                // signed so coverage below zero clamps to zero instead of
+                // wrapping to 0xFFFFFFFF (whose low five bits are 31).
+                WriteWinningCoverage(
+                    polygonIndex, uint(x), y,
+                    uint(max(31 - (xcov >> 5), 0)));
+                xcov += span.EdgeCovR & 0x3FF;
+            }
         }
     }
 }
