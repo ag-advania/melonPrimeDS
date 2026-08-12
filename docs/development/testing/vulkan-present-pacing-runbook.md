@@ -77,12 +77,32 @@ direction, same HUD, same resolution, same audio. Do not change it midway.
 ## Status
 
 A first session ran on 2026-08-13 (RTX 5070 Ti, driver 610.74.0.0, loader
-1.4.357). Core validation reported **0 errors** for policies 0-3 with Reflex on
-and off, after fixing one VUID it found; see the runtime-status section in
-[`vulkan-backend.md`](../../features/rendering/vulkan-backend.md). That session
-covered startup, ROM load and steady-state presentation only. The event matrix
-below (fullscreen, resize, F2, renderer switching, speed modes), the
-synchronization pass and every latency number remain **NOT RUN**.
+1.4.357). See the runtime-status section in
+[`vulkan-backend.md`](../../features/rendering/vulkan-backend.md) for details.
+
+| Item | Result |
+|---|---|
+| Validation layer enabled and confirmed in log | yes |
+| Core validation, policies 0/1/2/3, Reflex off | **0 errors** |
+| Core validation, Reflex on | **0 errors** |
+| Synchronization validation, policies 0/2/3, Reflex on+boost | **0 hazards** |
+| VSync off control — `IMMEDIATE`, target scheduling off | as specified |
+| Reflex on → `authority=NvidiaReflex`, both generic mechanisms off | as specified |
+| Device loss / software fallback / recreate storm | none |
+
+One VUID was found and fixed during the session
+(`VUID-VkPresentTimingInfoEXT-timeDomainId-12400`).
+
+The session covered startup, ROM load and steady-state presentation. Still
+**NOT RUN**: the event matrix below (fullscreen, resize, DPI, minimize, F2,
+renderer switching), the speed modes, and every latency number in Phases 2-3 —
+all of which need a person driving the emulator.
+
+One expectation in the source instructions cannot be observed on this surface:
+with VSync off the fallback reason reads `absolute timing unsupported by
+surface` rather than `present mode is not FIFO`. Both conditions hold; the
+classifier reports the earlier one in its debug order. Once a surface supports
+absolute timing, the non-FIFO reason becomes the visible one.
 
 ## Phase 1 — Validation Layer
 
@@ -149,6 +169,26 @@ swapchain rebuild loop. Do not try to provoke this.
 Only after Pass A is clean. Enable Synchronization Validation and repeat a short
 matrix: policies 0 and 2, policy 3 if supported, Reflex on, resize, fullscreen,
 renderer switch. Overhead is higher again — no numbers from this pass either.
+
+Put a `vk_layer_settings.txt` next to the executable (the loader reads it from
+the process working directory):
+
+```text
+khronos_validation.validate_core = true
+khronos_validation.validate_sync = true
+khronos_validation.report_flags = error,warn,perf
+khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
+khronos_validation.log_filename = C:\tmp\vk-sync-run.log
+```
+
+An empty log file is only evidence of "no findings" once you have proved the
+settings are being read at all. Add `info` to `report_flags` for one control
+run: the layer then prints a `CURRENT-VALIDATION-ENABLED` banner listing the
+enabled checks, and **Synchronization** must appear in it. Without that control,
+an empty log is indistinguishable from a settings file the loader never found.
+
+**Delete the file when the pass is over.** Left in place it silently enables
+sync validation for every later run of that binary.
 
 GPU-Assisted Validation is not required for present pacing. If used at all, use
 a separate run.

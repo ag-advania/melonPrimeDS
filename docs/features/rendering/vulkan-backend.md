@@ -606,9 +606,18 @@ yet measure target-time presentation. Relative-time scheduling
 (`VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT`), which this device
 does advertise, is the obvious next avenue.
 
+Synchronization validation was then enabled as a second pass (layer banner
+confirming `Core Checks, Synchronization, Stateless Parameter, Object lifetime,
+Thread Safety, Handle Wrapping`) and re-run across policies 0, 2 and 3 plus
+Reflex On+Boost: **0 hazards**. With VSync off the swapchain correctly selects
+`IMMEDIATE` and target scheduling stays off; with Reflex on the authority is
+`NvidiaReflex` and both generic mechanisms are off, which is the runtime proof
+of the vendor-authority rule. No device loss, software fallback or swapchain
+recreate storm in any run.
+
 Not yet covered, and still NOT RUN: the fullscreen/resize/DPI/minimize event
-matrix, F2 and renderer-switch cycling, fast-forward and slow-motion, the
-synchronization-validation pass, and all latency measurement.
+matrix, F2 and renderer-switch cycling, fast-forward and slow-motion, and all
+latency measurement — each needs a person driving the emulator.
 
 The 2026-08-09 F7 gameplay baseline used an RTX 5070 Ti, VSync off, Reflex off,
 and the same saved match at 1x/4x/8x/16x. Values below are medians of the emitted
