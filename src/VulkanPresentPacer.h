@@ -110,6 +110,31 @@ public:
     [[nodiscard]] VulkanPacingAuthority GetAuthority() const noexcept;
     [[nodiscard]] bool IsTargetSchedulingActive() const noexcept;
 
+    // Everything the A/B latency capture records about pacing state for one
+    // frame. Reading it must not change any of it, which is why this is a
+    // by-value snapshot rather than a set of accessors: an A/B build and a
+    // normal build must present identically.
+    struct StateSnapshot
+    {
+        int Policy = 0;
+        int Authority = 0;
+        int PresentMode = 0;
+        bool TargetTimeScheduling = false;
+        bool BoundedPresentWait = false;
+        int FallbackReason = 0;
+        u64 TargetTimeNs = 0;
+        u64 FeedbackPresentId = 0;
+        u64 FeedbackStageTimeNs = 0;
+        u64 BaselineSequence = 0;
+        u64 PresentSequence = 0;
+        u64 FrameIntervalNs = 0;
+        u32 WaitTimeouts = 0;
+        u32 TimingQueueSize = 0;
+        u32 TimingQueueFullCount = 0;
+        u32 TimingQueueRecoveries = 0;
+    };
+    [[nodiscard]] StateSnapshot CaptureState() const noexcept;
+
 private:
     // Snapshots every capability the pure resolver needs. Building it is a few
     // bool copies; it is not a driver query.
@@ -212,6 +237,13 @@ private:
     // queue there is nothing to attach metadata to, so this gates both.
     bool TimingQueueAllocated = false;
     u32 TimingQueueSize = 0;
+    // Presents accepted with timing metadata whose report has not come back.
+    //
+    // Presentation timing feedback is asynchronous and the extension promises
+    // only that a result becomes available in finite time -- never when. One
+    // empty poll therefore does not prove the queue is drained, so the decision
+    // to stop polling is made from this counter instead.
+    u64 OutstandingTimedPresents = 0;
     u32 TimingQueueFullCount = 0;
     u32 TimingQueueRecoveries = 0;
     bool TimingQueueRecoveryPending = false;

@@ -133,6 +133,17 @@ set(SOURCES_QT_SDL
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
+# Per-frame CSV capture for Vulkan present-pacing A/B measurement.
+#
+# Deliberately separate from MELONPRIME_ENABLE_DEVELOPER_FEATURES. Developer
+# features make the pacer request every present stage the surface supports,
+# which changes driver work and timing-queue pressure -- so a developer build is
+# not a valid thing to measure a shipping build's latency with. This option adds
+# logging only and must never alter presentation behaviour.
+option(MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE
+    "Record per-frame Vulkan present pacing timings to CSV for A/B measurement"
+    OFF)
+
 # --- MelonPrime Vulkan backend build switch ---------------------------------
 # This is a complete build gate. When inactive, no Vulkan source, include path,
 # compile definition, or loader dependency is added to either target.
@@ -410,6 +421,16 @@ if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRendererSwitchStress.cpp)
 endif()
 
+if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE)
+    # Both targets: the capture object lives in core next to the pacer, and the
+    # presenter in melonDS drives its marker points.
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_VULKAN_LATENCY_CAPTURE=1)
+    target_compile_definitions(core PRIVATE MELONPRIME_VULKAN_LATENCY_CAPTURE=1)
+    message(STATUS
+        "MelonPrime: Vulkan latency capture ENABLED. This build writes a per-frame "
+        "CSV and is intended for A/B measurement only.")
+endif()
+
 if (MELONPRIME_VULKAN_ACTIVE)
     target_compile_definitions(melonDS PRIVATE
         MELONPRIME_ENABLE_VULKAN=1
@@ -440,6 +461,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanAmdAntiLag.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentLatencyCapture.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)

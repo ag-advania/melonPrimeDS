@@ -25,6 +25,7 @@
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
 #include "VulkanNvidiaReflex.h"
+#include "VulkanPresentLatencyCapture.h"
 #include "VulkanPresentPacer.h"
 #include "VulkanPresentedFrame.h"
 #include "VulkanSync.h"
@@ -307,6 +308,9 @@ private:
     melonDS::VulkanNvidiaReflex Reflex;
     melonDS::VulkanAmdAntiLag AntiLag;
     melonDS::VulkanPresentPacer PresentPacer;
+    // A/B measurement instrument. Stateless and free unless the build defines
+    // MELONPRIME_VULKAN_LATENCY_CAPTURE; it never influences what is presented.
+    melonDS::VulkanPresentLatencyCapture LatencyCapture;
     // Frame index handed to Anti-Lag's INPUT/PRESENT pair. It follows the
     // Reflex frame id when Reflex is running so both features describe the same
     // frame, and falls back to its own counter otherwise (an AMD GPU has

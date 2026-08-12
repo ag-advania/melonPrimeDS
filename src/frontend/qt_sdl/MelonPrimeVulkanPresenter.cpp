@@ -1587,6 +1587,9 @@ bool VulkanPresenter::EndFrame()
     // immediately after it. Nothing else is between the two markers.
     if (tagLatency)
         Reflex.MarkRenderSubmitStart();
+    // Unconditional, unlike the Reflex marker above: the A/B capture has to
+    // measure the policies Reflex is not tagging frames for.
+    LatencyCapture.MarkRenderSubmitStart();
 
     bool submitted = false;
     {
@@ -1601,6 +1604,7 @@ bool VulkanPresenter::EndFrame()
 
     if (tagLatency)
         Reflex.MarkRenderSubmitEnd();
+    LatencyCapture.MarkRenderSubmitEnd();
 
     FrameOpen = false;
     CurrentCommandBuffer = VK_NULL_HANDLE;
@@ -1649,6 +1653,7 @@ bool VulkanPresenter::EndFrame()
     // nothing else.
     if (tagLatency)
         Reflex.MarkPresentStart();
+    LatencyCapture.MarkPresentStart();
 
     VkResult res = VK_SUCCESS;
     {
@@ -1658,6 +1663,15 @@ bool VulkanPresenter::EndFrame()
             res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
     }
     PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
+    LatencyCapture.MarkPresentEnd();
+
+    // Only a present the engine accepted is a measurable frame. Recording the
+    // rejected ones would mix "displayed at time T" with "never displayed".
+    if (LatencyCapture.IsEnabled() && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
+    {
+        LatencyCapture.SetReflexMode(static_cast<int>(Reflex.GetMode()));
+        LatencyCapture.Commit(genericPresentMetadata.LogicalId, PresentPacer.CaptureState());
+    }
 
     if (tagLatency)
     {
@@ -1825,18 +1839,25 @@ void VulkanPresenter::ReportLatencyTimings()
 void VulkanPresenter::MarkLowLatencyInputSample()
 {
     Reflex.MarkInputSample();
+    // The A/B capture takes host timestamps at the same points as the Reflex
+    // markers, so every policy -- including the ones Reflex is not running for
+    // -- produces the same measurement fields. Compiled out entirely unless the
+    // capture build flag is on.
+    LatencyCapture.MarkInputSample();
 }
 
 
 void VulkanPresenter::MarkLowLatencySimulationStart()
 {
     Reflex.MarkSimulationStart();
+    LatencyCapture.MarkSimulationStart();
 }
 
 
 void VulkanPresenter::MarkLowLatencySimulationEnd()
 {
     Reflex.MarkSimulationEnd();
+    LatencyCapture.MarkSimulationEnd();
 }
 
 

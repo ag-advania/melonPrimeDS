@@ -400,6 +400,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TimingQueueSize = 0;
     TimingQueueRecoveries = 0;
     TimingQueueRecoveryPending = false;
+    OutstandingTimedPresents = 0;
     RefreshDurationNs = 0;
     RefreshIntervalNs = 0;
     LastTargetTimeNs = 0;
@@ -637,11 +638,19 @@ u64 VulkanPresentPacer::PreparePresent(
     // presents. Only the latter may be multiplied by the frame interval.
     metadata.Sequence = TimingModel.BeginPresent(metadata.LogicalId);
 
-    if (TimingMetadataEnabled)
+    // VkPresentTimingInfoEXT::timeDomainId must always be an ID that
+    // vkGetSwapchainTimeDomainPropertiesEXT returned -- not only when a target
+    // time is requested. Attaching the struct before the enumeration succeeded
+    // would present a zero ID, which the validation layer rejects with
+    // VUID-VkPresentTimingInfoEXT-timeDomainId-12400. Telemetry therefore waits
+    // for the domains, which are enumerated at swapchain creation and retried
+    // after the first accepted present if the driver answered VK_NOT_READY.
+    if (TimingMetadataEnabled && TimeDomainsReady)
     {
         metadata.TargetTimeNs = EvaluateTargetTime(metadata.Sequence);
         metadata.Timing.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT;
         metadata.Timing.presentStageQueries = RequestedStageQueries();
+        metadata.Timing.timeDomainId = TargetTimeDomainId;
         if (metadata.TargetTimeNs != 0)
         {
             // NEAREST_REFRESH_CYCLE rather than a hand-written cadence: at 60
@@ -651,7 +660,8 @@ u64 VulkanPresentPacer::PreparePresent(
             metadata.Timing.flags =
                 VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT;
             metadata.Timing.targetTime = metadata.TargetTimeNs;
-            metadata.Timing.timeDomainId = TargetTimeDomainId;
+            // Only meaningful alongside a target time, and only for the
+            // per-stage domain. Left zero otherwise rather than guessed.
             metadata.Timing.targetTimeDomainPresentStage =
                 TargetTimeDomain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT
                     ? TargetPresentStage
@@ -731,6 +741,11 @@ void VulkanPresentPacer::NotifyPresentResult(
         if (metadata.LogicalId != 0)
             LastPresentedId = metadata.LogicalId;
         TimingModel.CommitPresent();
+        // Only an accepted present with timing metadata occupies a results-queue
+        // slot and owes a report. The retry path clears TimingAttached before
+        // re-presenting, so a queue-full retry is not counted.
+        if (metadata.TimingAttached)
+            ++OutstandingTimedPresents;
         return;
     }
 
@@ -1004,6 +1019,11 @@ void VulkanPresentPacer::ReportPastTiming()
 
     const u32 reportCount = std::min<u32>(
         properties.presentationTimingCount, static_cast<u32>(reports.size()));
+
+    // Each returned report retires one timed present and frees its slot,
+    // whether or not it carries a timestamp this pacer can use.
+    OutstandingTimedPresents -= std::min<u64>(OutstandingTimedPresents, reportCount);
+
     for (u32 i = 0; i < reportCount; ++i)
     {
         const VkPastPresentationTimingEXT& report = reports[i];
@@ -1080,14 +1100,17 @@ void VulkanPresentPacer::ReportPastTiming()
     }
 
     // Nothing left to poll for: metadata is off for good, no recovery is armed,
-    // and the queue has drained empty. Every further call would query a
-    // swapchain that can no longer produce a report.
-    if (!TimingMetadataEnabled && !TimingQueueRecoveryPending && reportCount == 0)
+    // and every timed present has been reported. The outstanding counter is
+    // what makes this provable -- an empty poll on its own does not, because
+    // the extension only guarantees a result appears in finite time, with no
+    // relationship to when it is asked for.
+    if (!TimingMetadataEnabled && !TimingQueueRecoveryPending
+        && OutstandingTimedPresents == 0 && reportCount == 0)
     {
         TimingResultsQueryEnabled = false;
         TargetSchedulingActive.store(false, std::memory_order_release);
         Platform::Log(Platform::LogLevel::Info,
-            "[Vulkan] present timing results drained after %u queue-full events; "
+            "[Vulkan] all timed presents reported after %u queue-full events; "
             "stopping per-frame timing polling for this swapchain\n",
             TimingQueueFullCount);
     }
@@ -1222,6 +1245,28 @@ VulkanPacingAuthority VulkanPresentPacer::GetAuthority() const noexcept
 bool VulkanPresentPacer::IsTargetSchedulingActive() const noexcept
 {
     return TargetSchedulingActive.load(std::memory_order_acquire);
+}
+
+VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState() const noexcept
+{
+    StateSnapshot snapshot;
+    snapshot.Policy = static_cast<int>(GetPolicy());
+    snapshot.Authority = static_cast<int>(GetAuthority());
+    snapshot.PresentMode = static_cast<int>(PresentMode);
+    snapshot.TargetTimeScheduling = LastDecision.TargetTimeScheduling;
+    snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
+    snapshot.FallbackReason = static_cast<int>(FallbackReason);
+    snapshot.TargetTimeNs = LastTargetTimeNs;
+    snapshot.FeedbackPresentId = LastFeedbackId;
+    snapshot.FeedbackStageTimeNs = LastFeedbackStageTimeNs;
+    snapshot.BaselineSequence = TimingModel.GetBaselineSequence();
+    snapshot.PresentSequence = TimingModel.GetCommittedSequence();
+    snapshot.FrameIntervalNs = TargetFrameIntervalNs;
+    snapshot.WaitTimeouts = WaitTimeouts;
+    snapshot.TimingQueueSize = TimingQueueSize;
+    snapshot.TimingQueueFullCount = TimingQueueFullCount;
+    snapshot.TimingQueueRecoveries = TimingQueueRecoveries;
+    return snapshot;
 }
 
 } // namespace melonDS

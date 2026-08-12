@@ -561,6 +561,55 @@ texture-staging scratch fallback and compositor drops. The scale-change log also
 splits the raster, compositor-device and compositor-host allocation estimates.
 The gate is off by default and the disabled path does no timestamp sampling.
 
+For present-pacing A/B measurement there is a separate build option,
+`MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE` (default OFF). It writes one CSV row
+per accepted present -- host marker timestamps plus the pacing state the frame
+was presented under -- and adds nothing else: stage queries, pacing decisions and
+frame content are identical to a build without it. It is deliberately **not**
+tied to `MELONPRIME_ENABLE_DEVELOPER_FEATURES`, because developer builds request
+every present stage the surface supports and so are not a valid stand-in for a
+shipping build's timing. `MELONPRIME_LATENCY_RUN_ID` and `MELONPRIME_LATENCY_CSV`
+name the run and its output; `tools/perf/aggregate-vulkan-latency.py` turns the
+CSVs into per-run and per-mode percentiles.
+
+The Validation Layer and NVIDIA A/B procedure, including which build may produce
+latency numbers and which may not, is
+[`docs/development/testing/vulkan-present-pacing-runbook.md`](../../development/testing/vulkan-present-pacing-runbook.md).
+Validation needs `CMAKE_BUILD_TYPE=Debug` (preset `debug-mingw-x86_64`, script
+`tools/build/windows/build-mingw-validation.bat`); a successful release build
+says nothing about whether validation ran.
+
+### Runtime status, 2026-08-13
+
+First Validation Layer session on real hardware: RTX 5070 Ti, driver
+610.74.0.0, Vulkan loader 1.4.357, `VK_LAYER_KHRONOS_validation` enabled and
+confirmed in the log. Each pacing policy plus Reflex on and off was run with a
+ROM loaded. **Core validation errors: 0** in every configuration, after one real
+defect this session found and fixed:
+
+> `VUID-VkPresentTimingInfoEXT-timeDomainId-12400` — `timeDomainId` must always
+> be an ID returned by `vkGetSwapchainTimeDomainPropertiesEXT`, including on
+> presents that request no target time. It was only being set inside the
+> target-time branch, so every telemetry present submitted zero. Timing metadata
+> is now attached only once the time domains are enumerated, and carries the
+> selected ID unconditionally.
+
+This driver exposes every generic present capability at device level -- present
+ID 2, present wait 2, calibrated timestamps, present timing,
+`presentAtAbsoluteTime`, `presentAtRelativeTime` and FIFO latest-ready -- but
+the **surface** reports `presentAtAbsoluteTimeSupported = false`. Target-time
+scheduling therefore stays off with `fallback=absolute timing unsupported by
+surface`, and `FIFO_LATEST_READY` is correctly not selected. That is the
+capability gate working, not a failure; but it does mean the `JustInTime`
+policies currently behave as `PresentWait` on this driver, so an A/B here cannot
+yet measure target-time presentation. Relative-time scheduling
+(`VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT`), which this device
+does advertise, is the obvious next avenue.
+
+Not yet covered, and still NOT RUN: the fullscreen/resize/DPI/minimize event
+matrix, F2 and renderer-switch cycling, fast-forward and slow-motion, the
+synchronization-validation pass, and all latency measurement.
+
 The 2026-08-09 F7 gameplay baseline used an RTX 5070 Ti, VSync off, Reflex off,
 and the same saved match at 1x/4x/8x/16x. Values below are medians of the emitted
 one-second-window percentiles; they are CPU duration, not GPU timestamps:

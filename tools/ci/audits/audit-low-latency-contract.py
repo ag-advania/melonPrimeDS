@@ -259,7 +259,7 @@ def main() -> int:
         failures,
     )
     require(
-        "!TimingMetadataEnabled && !TimingQueueRecoveryPending && reportCount == 0" in vulkan_pacer
+        "!TimingMetadataEnabled && !TimingQueueRecoveryPending" in vulkan_pacer
         and "TimingResultsQueryEnabled = false;" in vulkan_pacer,
         "timing polling must stop once metadata is off for good and the queue has drained",
         failures,
@@ -275,6 +275,31 @@ def main() -> int:
         and 'Fail("vkWaitForPresent2KHR", VK_ERROR_DEVICE_LOST);' in vulkan_presenter
         and "TestBeginResultRouting" in vulkan_timing_tests,
         "present-wait device loss must not share the swapchain-out-of-date result",
+        failures,
+    )
+    # An empty poll does not prove the results queue is drained: presentation
+    # timing feedback is asynchronous and only promised to arrive in finite time.
+    require(
+        "OutstandingTimedPresents" in vulkan_pacer_header
+        and "if (metadata.TimingAttached)" in vulkan_pacer
+        and "++OutstandingTimedPresents;" in vulkan_pacer
+        and "OutstandingTimedPresents == 0 && reportCount == 0" in vulkan_pacer,
+        "stopping timing polling must be decided from outstanding timed presents",
+        failures,
+    )
+    # The A/B capture must be measurable without developer features, because
+    # developer features change what the pacer asks the driver for.
+    require(
+        "MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE" in cmake
+        and "MELONPRIME_VULKAN_LATENCY_CAPTURE=1" in cmake
+        and "MELONPRIME_VULKAN_LATENCY_CAPTURE" not in read("src/VulkanPresentPacer.cpp")
+        and "MELONPRIME_VULKAN_LATENCY_CAPTURE"
+            not in function_body(
+                vulkan_pacer,
+                "VkPresentStageFlagsEXT VulkanPresentPacer::RequestedStageQueries()",
+                "bool VulkanPresentPacer::ApplyTimingQueueSize(u32 size)",
+            ),
+        "the latency capture flag must be independent of pacing and stage-query behaviour",
         failures,
     )
     require(

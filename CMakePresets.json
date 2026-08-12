@@ -48,6 +48,25 @@
       }
     },
     {
+      "name": "debug-mingw-x86_64",
+      "inherits": "release-mingw-x86_64",
+      "displayName": "Windows MinGW Debug (x64)",
+      "description": "Debug MinGW build. CMAKE_BUILD_TYPE=Debug is what defines MELONDS_VULKAN_ENABLE_VALIDATION, so this is the preset the Vulkan Validation Layer workflow uses. Never measure latency with it. Requires release-mingw-x86_64 to have been built first: its vcpkg tree is reused rather than rebuilt, because the MinGW triplet is release-only and a second dependency set would take hours to produce identical libraries.",
+      "binaryDir": "${sourceDir}/build/debug-mingw-x86_64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/release-mingw-x86_64/vcpkg_installed",
+        "VCPKG_MANIFEST_INSTALL": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
+        "ENABLE_DEBUG_DEPS": {
+          "type": "BOOL",
+          "value": "OFF"
+        }
+      }
+    },
+    {
       "name": "base-windows",
       "inherits": "base-vcpkg",
       "description": "Base settings for Windows VS builds",
@@ -140,6 +159,11 @@
       "name": "release-mingw-x86_64",
       "configurePreset": "release-mingw-x86_64",
       "displayName": "MinGW Release (x86_64)"
+    },
+    {
+      "name": "debug-mingw-x86_64",
+      "configurePreset": "debug-mingw-x86_64",
+      "displayName": "MinGW Debug (x86_64)"
     },
     {
       "name": "release-windows-x86_64",
