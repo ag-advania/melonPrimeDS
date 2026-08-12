@@ -155,8 +155,10 @@ jobs:
       name: Check out sources
 
     - name: Start ${{ matrix.os_name }} VM
+      id: start_vm
+      continue-on-error: true
       uses: jenseng/dynamic-uses@v1
-      with:
+      with: &vm_start_with
         uses: vmactions/${{ matrix.os }}-vm@v1
         # As we are using multiple steps, we need to use NFS to sync the
         # workspace between host and VM, as with the default, rsync, the
@@ -180,6 +182,17 @@ jobs:
             "usesh": "true",
             ${{ matrix.os == 'netbsd' && '"release": "11.0",' || '' }}
           }
+
+    # vmactions/*-vm downloads its anyvm.py bootstrapper from GitHub on
+    # every run (not cached) and its own internal retry -- 4 attempts with
+    # exponential backoff, confirmed in CI logs -- has still been observed
+    # to lose to a transient "socket hang up" and fail the step outright,
+    # on a run where every other job succeeded. Retry the whole step once
+    # more before letting the job fail.
+    - name: Retry ${{ matrix.os_name }} VM start
+      if: steps.start_vm.outcome == 'failure'
+      uses: jenseng/dynamic-uses@v1
+      with: *vm_start_with
 
     - name: Install dependencies
       run: ${{ matrix.install_deps }}

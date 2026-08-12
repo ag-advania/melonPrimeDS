@@ -226,12 +226,24 @@ jobs:
         wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${{ matrix.arch.name }}.AppImage
         chmod a+x linuxdeploy-*.AppImage
 
+        # appimagetool (invoked internally by linuxdeploy's "appimage" output
+        # plugin below) downloads this runtime from GitHub on every run and
+        # has no retry of its own; observed failing the whole build outright
+        # on a transient blip ("Failed to download runtime: server returned
+        # status code 0"). Fetch it ourselves with retries and hand it to
+        # the plugin via LDAI_RUNTIME_FILE so a blip here doesn't fail the
+        # AppImage step.
+        wget --tries=5 --waitretry=5 --retry-connrefused \
+          -O runtime-${{ matrix.arch.name }} \
+          https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${{ matrix.arch.name }}
+
     - name: Build the AppImage
       env:
         EXTRA_PLATFORM_PLUGINS: libqwayland-egl.so;libqwayland-generic.so
         EXTRA_QT_PLUGINS: waylandcompositor
         OUTPUT: melonPrimeDS-${{ matrix.arch.name }}.AppImage
         QMAKE: /usr/lib/qt6/bin/qmake
+        LDAI_RUNTIME_FILE: ${{ github.workspace }}/runtime-${{ matrix.arch.name }}
       run: |
         ./linuxdeploy-${{ matrix.arch.name }}.AppImage --appdir AppDir --plugin qt --output appimage
 
