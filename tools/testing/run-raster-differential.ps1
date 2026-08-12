@@ -88,8 +88,8 @@ if (Test-Path $stderr) {
 if ($lines.Count -eq 0) {
     throw "No RasterDiff frames were reported. Logs: $stdout, $stderr"
 }
+$allLog = @()
 if ($testSavestate) {
-    $allLog = @()
     if (Test-Path $stdout) { $allLog += Get-Content -LiteralPath $stdout }
     if (Test-Path $stderr) { $allLog += Get-Content -LiteralPath $stderr }
     if (!($allLog | Where-Object { $_ -match '\[SavestateDiff\].*loaded=1' })) {
@@ -104,6 +104,13 @@ $mismatches = @($lines | Where-Object { $_ -match 'mismatchedPixels=([1-9][0-9]*
 if ($mismatches.Count -ne 0) {
     $mismatches | Select-Object -First 10 | ForEach-Object { Write-Error $_ }
     throw "$Renderer raster differential failed in $($mismatches.Count) frame(s)."
+}
+if ($allLog.Count -eq 0) {
+    if (Test-Path $stdout) { $allLog += Get-Content -LiteralPath $stdout }
+    if (Test-Path $stderr) { $allLog += Get-Content -LiteralPath $stderr }
+}
+if ($allLog | Where-Object { $_ -match 'variant index disagreed with legacy insertion order' }) {
+    throw "$Renderer variant index did not preserve the legacy per-polygon sequence."
 }
 if (-not ($lines | Where-Object { $_ -match 'nonZeroPixels=([1-9][0-9]*)' })) {
     throw "$Renderer raster differential only observed empty frames."

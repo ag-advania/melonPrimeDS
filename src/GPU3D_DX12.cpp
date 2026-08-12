@@ -35,6 +35,7 @@
 #include "MelonPrimeStructuredComposition.h"
 #include "GPU.h"
 #include "GPU3D_RasterEdge.h"
+#include "GPU3D_RasterDifferential.h"
 #include "GPU3D_DX12_shaders.h"
 #include "GPU3D_DX12_ShaderBlobs.inc"
 #include "Platform.h"
@@ -48,8 +49,7 @@ namespace
 constexpr u64 kUploadRingBytes = 32ull * 1024 * 1024;
 constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
-
-constexpr u32 kSrvTableSize = 6;
+constexpr u32 kTextureSrvCount = 1;
 constexpr u32 kUavTableSize = 12;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
@@ -58,8 +58,9 @@ constexpr u32 kCompositorFramesInFlight = 3;
 
 constexpr u32 kRootParamDispatchConstants = 0;
 constexpr u32 kRootParamMetaCbv = 1;
-constexpr u32 kRootParamSrvTable = 2;
-constexpr u32 kRootParamUavTable = 3;
+constexpr u32 kRootParamStaticSrvTable = 2;
+constexpr u32 kRootParamTextureSrvTable = 3;
+constexpr u32 kRootParamUavTable = 4;
 
 constexpr u32 kInterpSpansThreadsPerGroup = 32;
 constexpr u32 kMaxDispatchGroupsPerDimension =
@@ -325,12 +326,19 @@ bool DX12Renderer3D::CreateRootSignature()
     if (!entry.D3D12SerializeRootSignature)
         return false;
 
-    D3D12_DESCRIPTOR_RANGE srvRange{};
-    srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    srvRange.NumDescriptors = kSrvTableSize;
-    srvRange.BaseShaderRegister = 0;
-    srvRange.RegisterSpace = 0;
-    srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    D3D12_DESCRIPTOR_RANGE staticSrvRange{};
+    staticSrvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    staticSrvRange.NumDescriptors = kStaticSrvCount;
+    staticSrvRange.BaseShaderRegister = 0;
+    staticSrvRange.RegisterSpace = 0;
+    staticSrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE textureSrvRange{};
+    textureSrvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    textureSrvRange.NumDescriptors = kTextureSrvCount;
+    textureSrvRange.BaseShaderRegister = 5;
+    textureSrvRange.RegisterSpace = 0;
+    textureSrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     D3D12_DESCRIPTOR_RANGE uavRange{};
     uavRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
@@ -339,7 +347,7 @@ bool DX12Renderer3D::CreateRootSignature()
     uavRange.RegisterSpace = 0;
     uavRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER params[4]{};
+    D3D12_ROOT_PARAMETER params[5]{};
 
     params[kRootParamDispatchConstants].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
     params[kRootParamDispatchConstants].Constants.ShaderRegister = 0;
@@ -352,10 +360,15 @@ bool DX12Renderer3D::CreateRootSignature()
     params[kRootParamMetaCbv].Descriptor.RegisterSpace = 0;
     params[kRootParamMetaCbv].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-    params[kRootParamSrvTable].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    params[kRootParamSrvTable].DescriptorTable.NumDescriptorRanges = 1;
-    params[kRootParamSrvTable].DescriptorTable.pDescriptorRanges = &srvRange;
-    params[kRootParamSrvTable].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    params[kRootParamStaticSrvTable].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[kRootParamStaticSrvTable].DescriptorTable.NumDescriptorRanges = 1;
+    params[kRootParamStaticSrvTable].DescriptorTable.pDescriptorRanges = &staticSrvRange;
+    params[kRootParamStaticSrvTable].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    params[kRootParamTextureSrvTable].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[kRootParamTextureSrvTable].DescriptorTable.NumDescriptorRanges = 1;
+    params[kRootParamTextureSrvTable].DescriptorTable.pDescriptorRanges = &textureSrvRange;
+    params[kRootParamTextureSrvTable].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     params[kRootParamUavTable].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     params[kRootParamUavTable].DescriptorTable.NumDescriptorRanges = 1;
@@ -363,7 +376,7 @@ bool DX12Renderer3D::CreateRootSignature()
     params[kRootParamUavTable].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC desc{};
-    desc.NumParameters = 4;
+    desc.NumParameters = 5;
     desc.pParameters = params;
     desc.NumStaticSamplers = 0;
     desc.pStaticSamplers = nullptr;
@@ -1393,6 +1406,28 @@ bool DX12Renderer3D::BindCompositionUavTable(
     return true;
 }
 
+bool DX12Renderer3D::BindStaticSrvTable(ID3D12GraphicsCommandList* list)
+{
+    static_assert(
+        kStaticSrvCount + (MaxVariants + 1) * kTextureSrvCount + kUavTableSize <=
+            kDescriptorCount,
+        "the shader-visible heap must cover every texture variant plus dummy binding");
+    DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
+    D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
+    D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
+    if (!Descriptors.Allocate(kStaticSrvCount, cpu, gpu))
+        return false;
+
+    Context->GetDevice()->CopyDescriptorsSimple(
+        kStaticSrvCount,
+        cpu,
+        StaticSrvCpu,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kStaticSrvCount);
+    list->SetComputeRootDescriptorTable(kRootParamStaticSrvTable, gpu);
+    return true;
+}
+
 bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
@@ -1401,7 +1436,7 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     if (texture == BoundSrvTexture && BoundSrvTable.ptr != 0)
     {
-        list->SetComputeRootDescriptorTable(kRootParamSrvTable, BoundSrvTable);
+        list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, BoundSrvTable);
         return true;
     }
 
@@ -1421,7 +1456,7 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
         {
             BoundSrvTexture = texture;
             BoundSrvTable = entry.Table;
-            list->SetComputeRootDescriptorTable(kRootParamSrvTable, BoundSrvTable);
+            list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, BoundSrvTable);
             return true;
         }
         cacheIndex = (cacheIndex + 1u) & cacheMask;
@@ -1432,16 +1467,10 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
-    if (!Descriptors.Allocate(kSrvTableSize, cpu, gpu))
+    if (!Descriptors.Allocate(kTextureSrvCount, cpu, gpu))
         return false;
 
     ID3D12Device* device = Context->GetDevice();
-    const u32 increment = Descriptors.GetIncrement();
-    device->CopyDescriptorsSimple(
-        kStaticSrvCount,
-        cpu,
-        StaticSrvCpu,
-        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // t5: decoded texture array for the current variant
     {
@@ -1457,16 +1486,14 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
         desc.Texture2DArray.ArraySize = texDesc.DepthOrArraySize;
         desc.Texture2DArray.PlaneSlice = 0;
         desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
-        D3D12_CPU_DESCRIPTOR_HANDLE textureHandle{
-            cpu.ptr + static_cast<SIZE_T>(kStaticSrvCount) * increment };
-        device->CreateShaderResourceView(texture, &desc, textureHandle);
+        device->CreateShaderResourceView(texture, &desc, cpu);
     }
 
     BoundSrvTexture = texture;
     BoundSrvTable = gpu;
     *insertion = { texture, gpu, FrameSrvCacheEpoch };
-    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kSrvTableSize);
-    list->SetComputeRootDescriptorTable(kRootParamSrvTable, gpu);
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kTextureSrvCount);
+    list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, gpu);
     return true;
 }
 
@@ -1662,6 +1689,7 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
     u32 prevVariant = 0;
     u32 prevTexLayer = 0;
     Variant* variants = Variants.data();
+    VariantLookup.Reset();
     u32 captureLastVariant[16]{};
 
     int captureInfo[16];
@@ -1780,14 +1808,37 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
 
             if (!foundVariant)
             {
-                for (int j = static_cast<int>(numVariants) - 1; j >= 0; j--)
+                const u32 variantHash = HashVariant(variant);
+                u32 indexedVariant = 0;
+                const bool indexedFound = VariantLookup.Find(variantHash,
+                    [&](u32 index) noexcept {
+                        return index < numVariants && variants[index] == variant;
+                    }, indexedVariant);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+                if (RasterDifferential::Enabled())
                 {
-                    if (variants[j] == variant)
+                    bool legacyFound = false;
+                    u32 legacyIndex = 0;
+                    for (u32 candidate = numVariants; candidate != 0; --candidate)
                     {
-                        foundVariant = true;
-                        prevVariant = static_cast<u32>(j);
-                        break;
+                        if (variants[candidate - 1] == variant)
+                        {
+                            legacyFound = true;
+                            legacyIndex = candidate - 1;
+                            break;
+                        }
                     }
+                    if (indexedFound != legacyFound ||
+                        (indexedFound && indexedVariant != legacyIndex))
+                    {
+                        SetRuntimeFailure("variant index disagreed with legacy insertion order");
+                    }
+                }
+#endif
+                if (indexedFound)
+                {
+                    foundVariant = true;
+                    prevVariant = indexedVariant;
                 }
 
                 if (!foundVariant && numVariants < MaxVariants)
@@ -1796,6 +1847,11 @@ u32 DX12Renderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& num
                     variants[numVariants] = variant;
                     variants[numVariants].Width = static_cast<u16>(TextureWidth(polygon->TexParam));
                     variants[numVariants].Height = static_cast<u16>(TextureHeight(polygon->TexParam));
+                    const bool inserted = VariantLookup.Insert(
+                        variantHash, numVariants,
+                        [&](u32 index) noexcept { return HashVariant(variants[index]); });
+                    assert(inserted);
+                    (void)inserted;
                     numVariants++;
                 }
 
@@ -2137,7 +2193,8 @@ void DX12Renderer3D::RenderFrame()
         return;
     }
 
-    if (!BindFrameUavTable(list) || !BindSrvTable(list, nullptr))
+    if (!BindFrameUavTable(list) || !BindStaticSrvTable(list) ||
+        !BindSrvTable(list, nullptr))
     {
         Commands.Submit();
         SetRuntimeFailure("could not bind the frame descriptor tables");

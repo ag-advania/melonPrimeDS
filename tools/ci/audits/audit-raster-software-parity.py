@@ -69,6 +69,7 @@ def main() -> int:
     gl_cpp = read("src/GPU3D_Compute.cpp")
     gl_shader = read("src/GPU3D_Compute_shaders.h")
     edge_vectors = read("tools/testing/raster-edge-vectors.cpp")
+    variant_index = read("src/GPU3D_FixedVariantIndex.h")
 
     # Includes the audit's reciprocal-rounding counterexample (expected 6).
     vectors = (
@@ -215,6 +216,61 @@ def main() -> int:
             "DX12 fixed SRV cache", failures)
     require(dx_cpp, "ResetFrameSrvCache()",
             "DX12 epoch SRV cache reset", failures)
+    require(dx_cpp, "kRootParamStaticSrvTable = 2",
+            "DX12 static SRV root table", failures)
+    require(dx_cpp, "kRootParamTextureSrvTable = 3",
+            "DX12 texture SRV root table", failures)
+    require(dx_cpp, "textureSrvRange.BaseShaderRegister = 5",
+            "DX12 texture SRV t5 register", failures)
+    require(dx_cpp, "BindStaticSrvTable(list)",
+            "DX12 once-per-frame static SRV bind", failures)
+    require(dx_cpp, "Descriptors.Allocate(kTextureSrvCount, cpu, gpu)",
+            "DX12 one-descriptor texture tables", failures)
+    require(dx_cpp, "(MaxVariants + 1) * kTextureSrvCount + kUavTableSize",
+            "DX12 full variant descriptor headroom", failures)
+    forbid(dx_cpp, "kSrvTableSize = 6",
+           "DX12 replicated six-descriptor texture tables", failures)
+
+    require(variant_index, "class FixedVariantIndex",
+            "shared fixed variant index", failures)
+    require(variant_index, "class AdaptiveVariantIndex",
+            "L1-sized adaptive variant index", failures)
+    require(variant_index, "std::array<Entry, Capacity> Entries",
+            "allocation-free variant index storage", failures)
+    require(variant_index, "if (CurrentGeneration != 0)",
+            "variant epoch reset", failures)
+    require(variant_index, "entry.Generation = 0",
+            "variant epoch rollover clear", failures)
+    for name, header, source in (("Vulkan", vk_header, vk_cpp),
+                                 ("DX12", dx_header, dx_cpp)):
+        require(header, "VariantIndexCapacity = 4096",
+                f"{name} fixed variant index capacity", failures)
+        require(source, "VariantLookup.Reset()",
+                f"{name} epoch variant index reset", failures)
+        require(source, "VariantLookup.Find(variantHash",
+                f"{name} indexed variant lookup", failures)
+        require(source, "variant index disagreed with legacy insertion order",
+                f"{name} differential variant-sequence verifier", failures)
+        require_order(source, "variants[numVariants] = variant;",
+                      "VariantLookup.Insert(\n                        variantHash, numVariants",
+                      f"{name} canonical variant insertion order", failures)
+        forbid(source,
+               "for (int j = static_cast<int>(numVariants) - 1; j >= 0; j--)",
+               f"{name} linear variant fallback", failures)
+    require(metal_cpp, "VariantIndexCapacity = 4096",
+            "Metal fixed variant index capacity", failures)
+    require(metal_cpp, "State->VariantLookup.Reset()",
+            "Metal epoch variant index reset", failures)
+    require(metal_cpp, "State->VariantLookup.Find(variantHash",
+            "Metal indexed variant lookup", failures)
+    require(metal_cpp, "variant index disagreed with legacy insertion order",
+            "Metal differential variant-sequence verifier", failures)
+    require_order(metal_cpp, "State->VariantData.push_back(key);",
+                  "State->VariantLookup.Insert(\n                variantHash, variantIndex",
+                  "Metal canonical variant insertion order", failures)
+    forbid(metal_cpp,
+           "std::find(State->VariantData.begin(), State->VariantData.end(), key)",
+           "Metal linear variant fallback", failures)
 
     require(soft_header, "void RenderReferenceFrame();",
             "Software coherent-mirror differential entry point", failures)
@@ -272,7 +328,9 @@ def main() -> int:
                    "V12 degenerate compact polygon indices",
                    "V13 all edge flags preserve second layer",
                    "V14 accepted-pixel AA progression",
-                   "V15 native quantized coordinates"):
+                   "V15 native quantized coordinates",
+                   "V16 fixed variant collision and insertion order",
+                   "V17 fixed variant epoch rollover"):
         require(edge_vectors, vector, f"executable raster vector {vector[:2]}", failures)
 
     require(vk_common, "Div64_32_32(numeratorHi, numeratorLo, denominator)",

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU3D_FixedVariantIndex.h"
 #include "DX12Context.h"
 #include "GPU3D_TexcacheDX12.h"
 
@@ -208,6 +209,18 @@ private:
         }
     };
 
+    static u32 HashVariant(const Variant& variant) noexcept
+    {
+        u32 hash = 0x811C9DC5u;
+        hash = MixVariantHash(hash, variant.Texture);
+        hash = MixVariantHash(hash, variant.WrapS);
+        hash = MixVariantHash(hash, variant.WrapT);
+        hash = MixVariantHash(hash, variant.CaptureReference);
+        hash = MixVariantHash(hash, static_cast<u32>(variant.CaptureYOffset));
+        hash = MixVariantHash(hash, variant.CaptureType);
+        return MixVariantHash(hash, variant.BlendMode);
+    }
+
     // Mirrors the OpenGL compute renderer's MetaUniform. Field order and
     // padding match the HLSL cbuffer in GPU3D_DX12_shaders.h.
     struct MetaUniform
@@ -320,6 +333,7 @@ private:
         DX12DescriptorRing& descriptors,
         ID3D12Resource* structuredInput,
         ID3D12Resource* composedOutput);
+    bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
     void ResetFrameSrvCache() noexcept;
 
@@ -402,6 +416,10 @@ private:
 
     // CPU-side scratch, mirroring the OpenGL compute renderer's members.
     std::array<Variant, MaxVariants> Variants{};
+    static constexpr u32 VariantIndexCapacity = 4096;
+    static_assert(VariantIndexCapacity > MaxVariants,
+        "variant index must retain an empty probe terminator");
+    AdaptiveVariantIndex<64, VariantIndexCapacity, 32> VariantLookup{};
     std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches{};
     std::vector<SetupIndices> YSpanIndices;
     std::unique_ptr<SpanSetupY[]> YSpanSetups;

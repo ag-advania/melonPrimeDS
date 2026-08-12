@@ -27,12 +27,14 @@
 #import <Metal/Metal.h>
 
 #include "GPU3D_MetalCompute.h"
+#include "GPU3D_FixedVariantIndex.h"
 #include "GPU3D_RasterEdge.h"
 #include "GPU3D_RasterDifferential.h"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -292,6 +294,18 @@ struct VariantKey
                CaptureYOffset == other.CaptureYOffset;
     }
 };
+
+uint32_t HashVariantKey(const VariantKey& key) noexcept
+{
+    uint32_t hash = 0x811C9DC5u;
+    hash = MixVariantHash(hash, key.TexParam);
+    hash = MixVariantHash(hash, key.TexPalette);
+    hash = MixVariantHash(hash, key.BlendMode);
+    hash = MixVariantHash(hash, key.Textured);
+    hash = MixVariantHash(hash, key.CaptureKind);
+    hash = MixVariantHash(hash, key.CaptureLayer);
+    return MixVariantHash(hash, key.CaptureYOffset);
+}
 
 #include "GPU3D_MetalComputeSpanMath.inc"
 
@@ -1220,6 +1234,10 @@ struct MetalComputeRenderer3D::MetalComputeState
     std::vector<SetupIndices> SetupIndexData;
     std::vector<RenderPolygon> PolygonData;
     std::vector<VariantKey> VariantData;
+    static constexpr uint32_t VariantIndexCapacity = 4096;
+    static_assert(VariantIndexCapacity > kMaxVariants,
+        "variant index must retain an empty probe terminator");
+    AdaptiveVariantIndex<64, VariantIndexCapacity, 32> VariantLookup {};
     std::vector<VariantMeta> VariantMetaData;
     std::array<PolygonBatch, kMaxPolygons> PolygonBatches {};
     uint32_t PolygonBatchCount = 0;
@@ -2388,6 +2406,7 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
     uint32_t numYSpans = 0;
     uint32_t numSetupIndices = 0;
     State->VariantData.clear();
+    State->VariantLookup.Reset();
 
     const bool enableTextureMaps = (GPU3D.RenderDispCnt & (1u << 0)) != 0;
     int captureInfo[16] = {};
@@ -2473,8 +2492,37 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
         };
 
         uint32_t variantIndex = 0;
-        auto variantIt = std::find(State->VariantData.begin(), State->VariantData.end(), key);
-        if (variantIt == State->VariantData.end())
+        const uint32_t variantHash = HashVariantKey(key);
+        const bool foundVariant = State->VariantLookup.Find(variantHash,
+            [&](uint32_t index) noexcept {
+                return index < State->VariantData.size() &&
+                    State->VariantData[index] == key;
+            }, variantIndex);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (RasterDifferential::Enabled())
+        {
+            bool legacyFound = false;
+            uint32_t legacyIndex = 0;
+            for (uint32_t candidate = 0;
+                 candidate < State->VariantData.size(); ++candidate)
+            {
+                if (State->VariantData[candidate] == key)
+                {
+                    legacyFound = true;
+                    legacyIndex = candidate;
+                    break;
+                }
+            }
+            if (foundVariant != legacyFound ||
+                (foundVariant && variantIndex != legacyIndex))
+            {
+                std::fprintf(stderr,
+                    "[MetalCompute] variant index disagreed with legacy insertion order\n");
+                return true;
+            }
+        }
+#endif
+        if (!foundVariant)
         {
             if (State->VariantData.size() >= kMaxVariants)
             {
@@ -2495,10 +2543,13 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             }
             variantIndex = static_cast<uint32_t>(State->VariantData.size());
             State->VariantData.push_back(key);
-        }
-        else
-        {
-            variantIndex = static_cast<uint32_t>(variantIt - State->VariantData.begin());
+            const bool inserted = State->VariantLookup.Insert(
+                variantHash, variantIndex,
+                [&](uint32_t index) noexcept {
+                    return HashVariantKey(State->VariantData[index]);
+                });
+            assert(inserted);
+            (void)inserted;
         }
         outputPolygon.Variant = variantIndex;
         State->VariantMetaData[variantIndex] = {

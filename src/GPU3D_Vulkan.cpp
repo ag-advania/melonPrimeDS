@@ -29,6 +29,7 @@
 
 #include "GPU.h"
 #include "GPU3D_RasterEdge.h"
+#include "GPU3D_RasterDifferential.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
@@ -1223,6 +1224,7 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
     u32 prevVariant = 0;
     u32 prevTexLayer = 0;
     Variant* variants = Variants.data();
+    VariantLookup.Reset();
     u32 captureLastVariant[16]{};
 
     int captureInfo[16];
@@ -1342,14 +1344,37 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
 
             if (!foundVariant)
             {
-                for (int j = static_cast<int>(numVariants) - 1; j >= 0; j--)
+                const u32 variantHash = HashVariant(variant);
+                u32 indexedVariant = 0;
+                const bool indexedFound = VariantLookup.Find(variantHash,
+                    [&](u32 index) noexcept {
+                        return index < numVariants && variants[index] == variant;
+                    }, indexedVariant);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+                if (RasterDifferential::Enabled())
                 {
-                    if (variants[j] == variant)
+                    bool legacyFound = false;
+                    u32 legacyIndex = 0;
+                    for (u32 candidate = numVariants; candidate != 0; --candidate)
                     {
-                        foundVariant = true;
-                        prevVariant = static_cast<u32>(j);
-                        break;
+                        if (variants[candidate - 1] == variant)
+                        {
+                            legacyFound = true;
+                            legacyIndex = candidate - 1;
+                            break;
+                        }
                     }
+                    if (indexedFound != legacyFound ||
+                        (indexedFound && indexedVariant != legacyIndex))
+                    {
+                        SetRuntimeFailure("variant index disagreed with legacy insertion order");
+                    }
+                }
+#endif
+                if (indexedFound)
+                {
+                    foundVariant = true;
+                    prevVariant = indexedVariant;
                 }
 
                 if (!foundVariant && numVariants < MaxVariants)
@@ -1358,6 +1383,11 @@ u32 VulkanRenderer3D::BuildPolygons(int& numYSpans, int& numSetupIndices, u32& n
                     variants[numVariants] = variant;
                     variants[numVariants].Width = static_cast<u16>(TextureWidth(polygon->TexParam));
                     variants[numVariants].Height = static_cast<u16>(TextureHeight(polygon->TexParam));
+                    const bool inserted = VariantLookup.Insert(
+                        variantHash, numVariants,
+                        [&](u32 index) noexcept { return HashVariant(variants[index]); });
+                    assert(inserted);
+                    (void)inserted;
                     numVariants++;
                 }
 

@@ -8,7 +8,9 @@
 */
 
 #include <cstdio>
+#include <cstdint>
 
+#include "GPU3D_FixedVariantIndex.h"
 #include "GPU3D_RasterEdge.h"
 
 namespace
@@ -134,9 +136,52 @@ int main()
     Expect("V15 native quantized coordinates",
         rasterX(1, 174, 2800) == 174 && rasterX(2, 174, 2800) == 350);
 
+    // V16: the fixed variant index preserves first-seen canonical order at
+    // the full 2,048-variant budget, even under an adversarial single bucket.
+    melonDS::AdaptiveVariantIndex<64, 4096, 32> variantIndex;
+    std::uint32_t canonicalKeys[2048] = {};
+    std::uint32_t canonicalCount = 0;
+    bool variantSequenceOkay = true;
+    for (std::uint32_t pass = 0; pass < 2; ++pass)
+    {
+        for (std::uint32_t position = 0; position < 2048; ++position)
+        {
+            const std::uint32_t key = pass == 0 ? position : 2047u - position;
+            std::uint32_t index = 0;
+            const bool found = variantIndex.Find(0,
+                [&](std::uint32_t candidate) {
+                    return candidate < canonicalCount && canonicalKeys[candidate] == key;
+                }, index);
+            if (!found)
+            {
+                index = canonicalCount;
+                canonicalKeys[canonicalCount++] = key;
+                variantSequenceOkay &= variantIndex.Insert(
+                    0, index, [](std::uint32_t) { return 0u; });
+            }
+            variantSequenceOkay &= index == key;
+        }
+    }
+    Expect("V16 fixed variant collision and insertion order",
+        variantSequenceOkay && canonicalCount == 2048);
+
+    // V17: a deliberately tiny epoch type makes rollover executable instead
+    // of waiting 2^32 frames. Wrapped entries must never become visible again.
+    melonDS::FixedVariantIndex<8, std::uint8_t> rolloverIndex;
+    bool rolloverOkay = rolloverIndex.Insert(3, 7);
+    for (int reset = 0; reset < 255; ++reset)
+        rolloverIndex.Reset();
+    std::uint32_t staleIndex = 0;
+    rolloverOkay &= !rolloverIndex.Find(3,
+        [](std::uint32_t) { return true; }, staleIndex);
+    rolloverOkay &= rolloverIndex.Insert(3, 9);
+    rolloverOkay &= rolloverIndex.Find(3,
+        [](std::uint32_t candidate) { return candidate == 9; }, staleIndex);
+    Expect("V17 fixed variant epoch rollover", rolloverOkay && staleIndex == 9);
+
     if (Failures != 0)
         return 1;
 
-    std::puts("PASS: raster parity vectors V1-V15");
+    std::puts("PASS: raster parity vectors V1-V17");
     return 0;
 }
