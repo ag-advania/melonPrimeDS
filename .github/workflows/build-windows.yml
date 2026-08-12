@@ -140,9 +140,22 @@ jobs:
         mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
 
     - name: Set up vcpkg
+      id: setup_vcpkg
+      continue-on-error: true
       uses: lukka/run-vcpkg@v11
-      with:
+      with: &vcpkg_setup_with
         vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+
+    # run-vcpkg's bootstrap downloads a prebuilt vcpkg.exe from GitHub on
+    # every cold checkout (not cached) and has no retry of its own; observed
+    # failing the whole step outright on a transient blip
+    # (WinHttpReceiveResponse 0x2F78, "server returned an invalid or
+    # unrecognized response"). Retry the whole step once more before letting
+    # the job fail.
+    - name: Retry setting up vcpkg
+      if: steps.setup_vcpkg.outcome == 'failure'
+      uses: lukka/run-vcpkg@v11
+      with: *vcpkg_setup_with
 
     - name: Cache vcpkg downloads
       uses: actions/cache@v4
