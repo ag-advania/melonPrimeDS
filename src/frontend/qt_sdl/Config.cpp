@@ -71,6 +71,8 @@ namespace Config
         // Developer experiments are opt-in. Compatibility keeps the existing
         // host limiter and DXGI waitable-object pacing authoritative.
         {MelonPrime::CfgKey::IntelXeLLPacingPolicy, 0},
+        // 0=telemetry only; behavioural WSI pacing is an explicit A/B opt-in.
+        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, 0},
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},
@@ -173,6 +175,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         {MelonPrime::CfgKey::NvidiaReflexMode, {0, 2}},
         {MelonPrime::CfgKey::IntelXeLLPacingPolicy, {0, 4}},
+        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, {0, 3}},
     #endif
         {"Audio.Interpolation", {0, 4}},
         {"Instance*.Audio.Volume", {0, 256}},

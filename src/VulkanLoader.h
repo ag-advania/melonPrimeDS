@@ -107,6 +107,9 @@ struct InstanceDispatch
     PFN_vkGetPhysicalDeviceSurfaceFormatsKHR            GetPhysicalDeviceSurfaceFormatsKHR = nullptr;
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR       GetPhysicalDeviceSurfacePresentModesKHR = nullptr;
 
+    // --- modern optional WSI capability/timestamp queries ---
+    PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR GetPhysicalDeviceSurfaceCapabilities2KHR = nullptr;
+
     // --- platform WSI ---
     // Only the entry point for the platform block this translation unit was
     // compiled with exists; see the note in VulkanCommon.h about why the
@@ -253,6 +256,14 @@ struct DeviceDispatch
     PFN_vkGetSwapchainImagesKHR         GetSwapchainImagesKHR = nullptr;
     PFN_vkAcquireNextImageKHR           AcquireNextImageKHR = nullptr;
     PFN_vkQueuePresentKHR               QueuePresentKHR = nullptr;
+
+    // --- vendor-neutral present pacing / telemetry (optional) ---
+    PFN_vkWaitForPresent2KHR                    WaitForPresent2KHR = nullptr;
+    PFN_vkGetCalibratedTimestampsKHR            GetCalibratedTimestampsKHR = nullptr;
+    PFN_vkSetSwapchainPresentTimingQueueSizeEXT SetSwapchainPresentTimingQueueSizeEXT = nullptr;
+    PFN_vkGetSwapchainTimingPropertiesEXT       GetSwapchainTimingPropertiesEXT = nullptr;
+    PFN_vkGetSwapchainTimeDomainPropertiesEXT   GetSwapchainTimeDomainPropertiesEXT = nullptr;
+    PFN_vkGetPastPresentationTimingEXT          GetPastPresentationTimingEXT = nullptr;
 
     // --- VK_KHR_timeline_semaphore (optional: VK_NV_low_latency2 dependency) ---
     //

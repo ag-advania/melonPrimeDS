@@ -65,6 +65,7 @@ struct VulkanDeviceState
     VkPhysicalDeviceFeatures EnabledFeatures{};
     VulkanLowLatencyStatus NvLowLatency2;
     VulkanLowLatencyStatus AmdAntiLag;
+    bool GenericPresentTimingRequested = false;
     mutable std::mutex QueueMutex;
 };
 
@@ -245,7 +246,8 @@ bool VulkanDevice::Create(
             return false;
         }
         if ((lowLatency.NvLowLatency2 && !shared->NvLowLatency2.Requested)
-            || (lowLatency.AmdAntiLag && !shared->AmdAntiLag.Requested))
+            || (lowLatency.AmdAntiLag && !shared->AmdAntiLag.Requested)
+            || (lowLatency.GenericPresentTiming && !shared->GenericPresentTimingRequested))
         {
             FailureReason =
                 "the shared Vulkan device was created before presentation low-latency "
@@ -284,6 +286,7 @@ bool VulkanDevice::Create(
     AmdAntiLag = VulkanLowLatencyStatus{};
     NvLowLatency2.Requested = lowLatency.NvLowLatency2;
     AmdAntiLag.Requested = lowLatency.AmdAntiLag;
+    State->GenericPresentTimingRequested = lowLatency.GenericPresentTiming;
 
     if (!context.IsReady())
     {
@@ -401,6 +404,10 @@ bool VulkanDevice::Create(
     VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures{};
     VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
     VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
+    VkPhysicalDevicePresentId2FeaturesKHR presentId2Features{};
+    VkPhysicalDevicePresentWait2FeaturesKHR presentWait2Features{};
+    VkPhysicalDevicePresentTimingFeaturesEXT presentTimingFeatures{};
+    VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR latestReadyFeatures{};
     const void* featureChain = nullptr;
 
     const auto chain = [&featureChain](auto& feature) {
@@ -408,22 +415,51 @@ bool VulkanDevice::Create(
         featureChain = &feature;
     };
 
-    if (lowLatency.NvLowLatency2 || lowLatency.AmdAntiLag)
+    if (lowLatency.NvLowLatency2 || lowLatency.AmdAntiLag
+        || lowLatency.GenericPresentTiming)
     {
         // One vkGetPhysicalDeviceFeatures2 for everything asked for. Enabling a
         // feature bit the device reports as unsupported is invalid usage, so the
         // request is always confirmed against the driver rather than inferred
         // from the extension being present.
+        void* probeChain = nullptr;
+        const auto chainProbe = [&probeChain](auto& feature) {
+            feature.pNext = probeChain;
+            probeChain = &feature;
+        };
+
         timelineFeatures.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR;
         presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
-        presentIdFeatures.pNext = &timelineFeatures;
         antiLagFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
-        antiLagFeatures.pNext = &presentIdFeatures;
+        presentId2Features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR;
+        presentWait2Features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR;
+        presentTimingFeatures.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT;
+        latestReadyFeatures.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR;
+
+        if (Vk::FeatureProbe::HasExtension(available, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME))
+            chainProbe(timelineFeatures);
+        if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME))
+            chainProbe(presentIdFeatures);
+        if (Vk::FeatureProbe::HasExtension(available, VK_AMD_ANTI_LAG_EXTENSION_NAME))
+            chainProbe(antiLagFeatures);
+        if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
+            chainProbe(presentId2Features);
+        if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
+            chainProbe(presentWait2Features);
+        if (Vk::FeatureProbe::HasExtension(available, VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
+            chainProbe(presentTimingFeatures);
+        if (Vk::FeatureProbe::HasExtension(
+                available, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME))
+            chainProbe(latestReadyFeatures);
 
         VkPhysicalDeviceFeatures2 probe{};
         probe.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        probe.pNext = &antiLagFeatures;
+        probe.pNext = probeChain;
         context.Fns().GetPhysicalDeviceFeatures2(PhysicalDevice, &probe);
 
         // The pNext links above were only scaffolding for the query. They are
@@ -432,6 +468,10 @@ bool VulkanDevice::Create(
         timelineFeatures.pNext = nullptr;
         presentIdFeatures.pNext = nullptr;
         antiLagFeatures.pNext = nullptr;
+        presentId2Features.pNext = nullptr;
+        presentWait2Features.pNext = nullptr;
+        presentTimingFeatures.pNext = nullptr;
+        latestReadyFeatures.pNext = nullptr;
     }
 
     if (lowLatency.NvLowLatency2)
@@ -482,6 +522,68 @@ bool VulkanDevice::Create(
     else
     {
         NvLowLatency2.Reason = "not requested";
+    }
+
+    bool genericPresentExtensionsEnabled = false;
+    if (lowLatency.GenericPresentTiming && needPresent)
+    {
+        const bool hasCaps2 = Vk::ExtensionEnabled(
+            context.GetEnabledInstanceExtensions(),
+            VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+        const bool hasPresentId2 = hasCaps2
+            && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_2_EXTENSION_NAME)
+            && presentId2Features.presentId2 == VK_TRUE;
+
+        if (hasPresentId2)
+        {
+            EnabledExtensions.push_back(VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
+            chain(presentId2Features);
+            genericPresentExtensionsEnabled = true;
+        }
+
+        const bool hasPresentWait2 = hasPresentId2
+            && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME)
+            && presentWait2Features.presentWait2 == VK_TRUE;
+        if (hasPresentWait2)
+        {
+            EnabledExtensions.push_back(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
+            chain(presentWait2Features);
+        }
+
+        const bool hasCalibratedTimestamps = Vk::FeatureProbe::HasExtension(
+            available, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+        const bool hasPresentTiming = hasCaps2 && hasPresentId2 && hasCalibratedTimestamps
+            && Vk::FeatureProbe::HasExtension(available, VK_EXT_PRESENT_TIMING_EXTENSION_NAME)
+            && presentTimingFeatures.presentTiming == VK_TRUE;
+        if (hasPresentTiming)
+        {
+            EnabledExtensions.push_back(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+            EnabledExtensions.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
+            chain(presentTimingFeatures);
+        }
+
+        const bool hasLatestReady = hasPresentTiming
+            && Vk::FeatureProbe::HasExtension(
+                available, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME)
+            && latestReadyFeatures.presentModeFifoLatestReady == VK_TRUE;
+        if (hasLatestReady)
+        {
+            EnabledExtensions.push_back(
+                VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+            chain(latestReadyFeatures);
+        }
+
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[Vulkan] generic present device capabilities: caps2=%s present-id2=%s "
+            "present-wait2=%s calibrated-timestamps=%s present-timing=%s "
+            "fifo-latest-ready=%s\n",
+            hasCaps2 ? "yes" : "no",
+            hasPresentId2 ? "yes" : "no",
+            hasPresentWait2 ? "yes" : "no",
+            hasCalibratedTimestamps ? "yes" : "no",
+            hasPresentTiming ? "yes" : "no",
+            hasLatestReady ? "yes" : "no");
     }
 
     if (lowLatency.AmdAntiLag)
@@ -546,7 +648,8 @@ bool VulkanDevice::Create(
     VkResult res =
         context.Fns().CreateDevice(PhysicalDevice, &createInfo, nullptr, &Device);
 
-    if (res != VK_SUCCESS && (NvLowLatency2.Enabled || AmdAntiLag.Enabled))
+    if (res != VK_SUCCESS
+        && (NvLowLatency2.Enabled || AmdAntiLag.Enabled || genericPresentExtensionsEnabled))
     {
         // A vendor latency extension must never be the reason the renderer
         // fails to start. The driver accepted every extension name and every
@@ -567,7 +670,13 @@ bool VulkanDevice::Create(
                     return std::strcmp(name, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0
-                        || std::strcmp(name, VK_AMD_ANTI_LAG_EXTENSION_NAME) == 0;
+                        || std::strcmp(name, VK_AMD_ANTI_LAG_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_PRESENT_ID_2_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_EXT_PRESENT_TIMING_EXTENSION_NAME) == 0
+                        || std::strcmp(
+                            name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0;
                 }),
             EnabledExtensions.end());
 

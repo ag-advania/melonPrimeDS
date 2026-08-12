@@ -25,6 +25,7 @@
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
 #include "VulkanNvidiaReflex.h"
+#include "VulkanPresentPacer.h"
 #include "VulkanPresentedFrame.h"
 #include "VulkanSync.h"
 
@@ -131,6 +132,11 @@ public:
     // Presenter thread. Applies saved preferences without opening a latency
     // frame; startup uses this before emitting the first effective-state log.
     void SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled);
+    void SetGenericPresentPacingPolicy(int policy) noexcept { PresentPacer.SetPolicy(policy); }
+    [[nodiscard]] bool ShouldBypassHostLimiter(bool normalSpeed) const noexcept
+    {
+        return PresentPacer.ShouldBypassHostLimiter(normalSpeed);
+    }
 
     // Physical-pixel size of the current swapchain. Zero before the first
     // successful BeginFrame().
@@ -229,7 +235,7 @@ public:
     // `antiLag2Enabled` the config bool; both are re-applied here every frame
     // so a settings-dialog change takes effect on the next frame without
     // recreating the device or the swapchain.
-    void BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled);
+    void BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled, bool normalSpeed);
     void MarkLowLatencyInputSample();
     void MarkLowLatencySimulationStart();
     void MarkLowLatencySimulationEnd();
@@ -294,6 +300,7 @@ private:
 
     melonDS::VulkanNvidiaReflex Reflex;
     melonDS::VulkanAmdAntiLag AntiLag;
+    melonDS::VulkanPresentPacer PresentPacer;
     // Frame index handed to Anti-Lag's INPUT/PRESENT pair. It follows the
     // Reflex frame id when Reflex is running so both features describe the same
     // frame, and falls back to its own counter otherwise (an AMD GPU has

@@ -230,6 +230,7 @@ bool VulkanPresenter::CreateDeviceObjects()
     melonDS::VulkanLowLatencyRequest lowLatency;
     lowLatency.NvLowLatency2 = true;
     lowLatency.AmdAntiLag = true;
+    lowLatency.GenericPresentTiming = true;
 
     if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
         return Fail(Device.GetFailureReason());
@@ -241,6 +242,7 @@ bool VulkanPresenter::CreateDeviceObjects()
     // GetUnavailableReason(), which LogLowLatencyState() prints.
     Reflex.Initialize(Device);
     AntiLag.Initialize(Device);
+    PresentPacer.Initialize(Device, Surface.Handle);
 
     if (!Device.Fns().CreateSwapchainKHR || !Device.Fns().AcquireNextImageKHR
         || !Device.Fns().QueuePresentKHR)
@@ -688,10 +690,9 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const Vk::DeviceDispatch& fns = Device.Fns();
 
     VkSurfaceCapabilitiesKHR caps{};
-    VkResult res = instanceFns.GetPhysicalDeviceSurfaceCapabilitiesKHR(
-        Device.GetPhysicalDevice(), Surface.Handle, &caps);
-    if (res != VK_SUCCESS)
-        return Fail("vkGetPhysicalDeviceSurfaceCapabilitiesKHR", res);
+    if (!PresentPacer.QuerySurfaceCapabilities(caps))
+        return Fail("the Vulkan surface capability query failed");
+    VkResult res = VK_SUCCESS;
 
     VkExtent2D extent = caps.currentExtent;
     if (extent.width == 0xFFFFFFFFu || extent.height == 0xFFFFFFFFu)
@@ -732,8 +733,16 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const bool vsyncRequested = VSyncRequested.load(std::memory_order_acquire);
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::string presentReason;
-    if (!ChoosePresentMode(presentModes, presentMode, presentReason))
+    if (vsyncRequested && PresentPacer.ShouldUseFifoLatestReady()
+        && ListContains(presentModes, VK_PRESENT_MODE_FIFO_LATEST_READY_KHR))
+    {
+        presentMode = VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
+        presentReason = "VSync on: verified present-timing path selected FIFO_LATEST_READY";
+    }
+    else if (!ChoosePresentMode(presentModes, presentMode, presentReason))
+    {
         return Fail("the surface reported no Vulkan present modes");
+    }
 
     VkSurfaceFormatKHR format{};
     {
@@ -782,9 +791,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // is retired below. This also drops any in-flight Reflex frame, which is
     // correct: its presentID belongs to a swapchain that is going away.
     Reflex.SetSwapchain(VK_NULL_HANDLE);
+    PresentPacer.OnSwapchainDestroyed();
 
     VkSwapchainCreateInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    info.flags = PresentPacer.GetSwapchainCreateFlags();
     info.surface = Surface.Handle;
     info.minImageCount = imageCount;
     info.imageFormat = format.format;
@@ -854,6 +865,7 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // re-arms pacing on the new one at whatever mode the user currently has
     // selected.
     Reflex.SetSwapchain(Swapchain);
+    PresentPacer.OnSwapchainCreated(Swapchain, presentMode);
 
     const bool formatChanged = (SurfaceFormat.format != format.format);
     SurfaceFormat = format;
@@ -1608,12 +1620,18 @@ bool VulkanPresenter::EndFrame()
     // Reflex. This is the other half of the correlation: the same id the
     // markers carry and the submission was tagged with. One entry per
     // swapchain, and there is exactly one swapchain here.
+    melonDS::VulkanPresentPacer::PresentMetadata genericPresentMetadata{};
+    const melonDS::u64 logicalPresentId = PresentPacer.PreparePresent(
+        present, tagLatency ? latencyFrameId : 0, genericPresentMetadata);
+
     VkPresentIdKHR presentId{};
     if (tagLatency)
     {
         presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
         presentId.swapchainCount = 1;
-        presentId.pPresentIds = &latencyFrameId;
+        presentId.pPresentIds = logicalPresentId != 0
+            ? &genericPresentMetadata.LogicalId
+            : &latencyFrameId;
         presentId.pNext = present.pNext;
         present.pNext = &presentId;
     }
@@ -1633,7 +1651,10 @@ bool VulkanPresenter::EndFrame()
     {
         std::lock_guard<std::mutex> queueLock(Device.GetQueueMutex());
         res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
+        if (PresentPacer.PrepareRetryWithoutTiming(res, genericPresentMetadata))
+            res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
     }
+    PresentPacer.NotifyPresentResult(res, logicalPresentId);
 
     if (tagLatency)
     {
@@ -1690,7 +1711,8 @@ void VulkanPresenter::SetLowLatencyPreferences(int reflexMode, bool antiLag2Enab
 }
 
 
-void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+void VulkanPresenter::BeginLowLatencyFrame(
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed)
 {
     if (!Initialized || Failed || !Device.IsValid())
         return;
@@ -1701,6 +1723,11 @@ void VulkanPresenter::BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
     // the very next frame -- without recreating the device or the swapchain,
     // neither of which a mid-session setting change should force.
     SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
+
+    // Exactly one pacing authority is selected. Generic wait is never layered
+    // over Reflex or Anti-Lag, and it runs here before every fresh input read.
+    if (PresentPacer.BeginFrame(Reflex.IsActive(), AntiLag.IsActive(), normalSpeed))
+        SwapchainDirty.store(true, std::memory_order_release);
 
     // vkLatencySleepNV lives in here, and it must run before any input is read
     // -- that delay is the entire mechanism. SIMULATION_START is deliberately
@@ -1846,6 +1873,8 @@ void VulkanPresenter::LogLowLatencyState(const char* context)
         antiLagStatus.Enabled ? "yes" : "no",
         AntiLag.IsActive() ? "active" : "inactive",
         antiLagReason.empty() ? "not evaluated" : antiLagReason.c_str());
+
+    PresentPacer.LogState(context);
 }
 
 
@@ -1906,6 +1935,7 @@ void VulkanPresenter::Shutdown() noexcept
         // still be signalling.
         Reflex.Shutdown();
         AntiLag.Shutdown();
+        PresentPacer.Shutdown();
         LowLatencyFrameIndex = 0;
         LowLatencyStateLogged = false;
 

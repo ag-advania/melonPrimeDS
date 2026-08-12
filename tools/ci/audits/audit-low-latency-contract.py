@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Vulkan/DX12 low-latency marker ordering and pinned vendor ABIs."""
+"""Guard Vulkan/DX12 low-latency ordering, pacing ownership, and pinned ABIs."""
 
 from pathlib import Path
 import hashlib
@@ -82,6 +82,11 @@ def main() -> int:
     emu = read("src/frontend/qt_sdl/EmuThread.cpp")
     dx12 = read("src/DX12NvidiaReflex.cpp")
     vulkan = read("src/VulkanNvidiaReflex.cpp")
+    vulkan_pacer = read("src/VulkanPresentPacer.cpp")
+    vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
+    vulkan_compat = read("src/VulkanModernPresentCompat.h")
+    vulkan_device = read("src/VulkanDevice.cpp")
+    vulkan_loader = read("src/VulkanLoader.cpp")
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
     xell = read("src/DX12IntelXeLL.cpp")
@@ -106,6 +111,57 @@ def main() -> int:
             ],
         ),
         "Pending renderer settings must be applied before DX12/Vulkan low-latency Begin",
+        failures,
+    )
+    require(
+        ordered(
+            vulkan_presenter,
+            [
+                "SetLowLatencyPreferences(reflexMode, antiLag2Enabled);",
+                "PresentPacer.BeginFrame(Reflex.IsActive(), AntiLag.IsActive(), normalSpeed)",
+                "Reflex.BeginFrame();",
+                "AntiLag.BeginFrame(LowLatencyFrameIndex);",
+            ],
+        ),
+        "Vulkan must select one pacing authority and run generic wait before vendor/input markers",
+        failures,
+    )
+    require(
+        all(token in vulkan_pacer for token in (
+            "VulkanPacingAuthority::NvidiaReflex",
+            "VulkanPacingAuthority::AmdAntiLag2",
+            "VulkanPacingAuthority::GenericPresentTiming",
+            "VulkanPacingAuthority::GenericHost",
+            "MaxPresentWaitNs = 2'000'000",
+            "LastPresentedId == LastWaitedId",
+            "VK_ERROR_OUT_OF_DATE_KHR",
+            "VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT",
+            "PrepareRetryWithoutTiming",
+        )),
+        "Vulkan generic pacing must keep priority, bounded timeout, skipped-present, reset, and timing-queue guards",
+        failures,
+    )
+    require(
+        "{MelonPrime::CfgKey::VulkanPresentPacingPolicy, 0}" in config
+        and "TelemetryOnly = 0" in read("src/VulkanPresentPacer.h")
+        and "JustInTimeFifoLatestReady" in vulkan_pacer
+        and "PresentPacer.ShouldUseFifoLatestReady()" in vulkan_presenter,
+        "Vulkan behavioural pacing must default to telemetry-only and gate FIFO latest-ready",
+        failures,
+    )
+    require(
+        "header version\n    359 (2026)" in vulkan_compat
+        and "VK_KHR_PRESENT_ID_2_EXTENSION_NAME" in vulkan_compat
+        and "VK_EXT_PRESENT_TIMING_EXTENSION_NAME" in vulkan_compat,
+        "modern Vulkan compatibility declarations must remain pinned and complete",
+        failures,
+    )
+    require(
+        "GenericPresentTimingRequested" in vulkan_device
+        and "!shared->GenericPresentTimingRequested" in vulkan_device
+        and "out.WaitForPresent2KHR = reinterpret_cast" in vulkan_loader
+        and "MELONPRIME_VK_LOAD_DEVICE(WaitForPresent2KHR" not in vulkan_loader,
+        "optional generic WSI support and entry points must remain fail-soft",
         failures,
     )
     require(

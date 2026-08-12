@@ -116,10 +116,17 @@ public:
     //
     // `reflexMode` is the raw config value (0 off, 1 on, 2 on+boost) and is
     // pushed every frame so a settings change applies on the next one.
-    virtual void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+    virtual void beginVulkanLowLatencyFrame(
+        int reflexMode, bool antiLag2Enabled, bool normalSpeed)
     {
         (void)reflexMode;
         (void)antiLag2Enabled;
+        (void)normalSpeed;
+    }
+    [[nodiscard]] virtual bool vulkanPacingBypassesHostLimiter(bool normalSpeed) const
+    {
+        (void)normalSpeed;
+        return false;
     }
     virtual void markVulkanReflexInputSample() {}
     virtual void markVulkanReflexSimulationStart() {}
@@ -459,7 +466,9 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
-    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled) override;
+    void beginVulkanLowLatencyFrame(
+        int reflexMode, bool antiLag2Enabled, bool normalSpeed) override;
+    [[nodiscard]] bool vulkanPacingBypassesHostLimiter(bool normalSpeed) const override;
     void markVulkanReflexInputSample() override;
     void markVulkanReflexSimulationStart() override;
     void markVulkanReflexSimulationEnd() override;

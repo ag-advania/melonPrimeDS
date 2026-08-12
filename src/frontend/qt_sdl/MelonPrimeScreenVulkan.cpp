@@ -344,6 +344,8 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     vulkan->vsyncApplied = config.GetBool("Screen.VSync");
     vulkan->presenter.SetVSync(vulkan->vsyncApplied);
     vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
+    vulkan->presenter.SetGenericPresentPacingPolicy(
+        config.GetInt(MelonPrime::CfgKey::VulkanPresentPacingPolicy));
 
     const int reflexMode = config.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
     const bool antiLag2Enabled = config.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
@@ -665,7 +667,8 @@ void ScreenPanelVulkan::setHudEditModeActive(bool active)
 // bookkeeping instead of GPU work.
 // ---------------------------------------------------------------------------
 
-void ScreenPanelVulkan::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed)
 {
     if (!vulkan)
         return;
@@ -677,7 +680,13 @@ void ScreenPanelVulkan::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2
 
     if (!vulkan->presenter.IsInitialized())
         return;
-    vulkan->presenter.BeginLowLatencyFrame(reflexMode, antiLag2Enabled);
+    vulkan->presenter.BeginLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
+}
+
+bool ScreenPanelVulkan::vulkanPacingBypassesHostLimiter(bool normalSpeed) const
+{
+    return vulkan && vulkan->presenter.IsInitialized()
+        && vulkan->presenter.ShouldBypassHostLimiter(normalSpeed);
 }
 
 void ScreenPanelVulkan::markVulkanReflexInputSample()

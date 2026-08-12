@@ -50,6 +50,9 @@ struct VulkanLowLatencyRequest
 {
     bool NvLowLatency2 = false;
     bool AmdAntiLag = false;
+    // Vendor-neutral WSI stack. This only enables optional device capabilities;
+    // the presenter policy decides whether it is telemetry-only or may wait.
+    bool GenericPresentTiming = false;
 };
 
 // Outcome of one VulkanLowLatencyRequest member, kept so the caller can log

@@ -519,10 +519,16 @@ void EmuInstance::invalidateRendererOutput()
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-void EmuInstance::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+void EmuInstance::beginVulkanLowLatencyFrame(
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed)
 {
     if (mainWindow)
-        mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
+        mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
+}
+
+bool EmuInstance::vulkanPacingBypassesHostLimiter(bool normalSpeed)
+{
+    return mainWindow && mainWindow->vulkanPacingBypassesHostLimiter(normalSpeed);
 }
 
 void EmuInstance::markVulkanReflexInputSample()

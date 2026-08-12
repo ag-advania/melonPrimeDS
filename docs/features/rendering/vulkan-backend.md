@@ -406,6 +406,25 @@ Reflex Off disables `lowLatencyMode` and boost but deliberately continues
 timestamps to keep updating in all three UI modes; with pacing disabled the
 sleep semaphore is released without adding the low-latency delay.
 
+**Vendor-neutral present pacing** is surface-scoped and optional. The instance
+enables `VK_KHR_get_surface_capabilities2` when available; device creation then
+probes and conditionally enables `VK_KHR_present_id2`,
+`VK_KHR_present_wait2`, `VK_KHR_calibrated_timestamps`,
+`VK_EXT_present_timing`, and `VK_KHR_present_mode_fifo_latest_ready`. A missing
+extension, feature bit, entry point, or surface capability falls back to the
+legacy surface query and host limiter without disabling Vulkan.
+
+The pacing authority is selected once per frame in this order: NVIDIA Reflex,
+AMD Anti-Lag 2, generic present timing, existing host pacing. Generic
+`vkWaitForPresent2KHR` is bounded to 2 ms, runs immediately before late input,
+waits each accepted Present ID at most once, and resets on swapchain recreation
+or out-of-date results. Fast-forward, slow-motion, and unlimited-FPS frames never
+use the refresh-bound generic path. `FIFO_LATEST_READY` is selected only for
+VSync when the timing extension and surface capability path are both verified.
+Timing reports are drained every frame (logged every 600 developer frames); if
+the optional results queue is nevertheless full, the same image and Present ID
+are retried once without timing metadata instead of failing the presenter.
+
 The settings probe evaluates the same optional-feature dependencies as device
 creation: the NVIDIA control requires the low-latency extension, timeline
 semaphore extension+feature and present-ID extension+feature; the AMD control
@@ -421,8 +440,11 @@ renderer creation**:
 [Vulkan] NVIDIA Reflex mode=on lowLatencyMode=true lowLatencyBoost=false
 ```
 
-Configuration keys are shared with DX12 for compatibility:
-`3D.DX12.NvidiaReflexMode` and `3D.AMD.AntiLag2Enabled`. Feature state and frame
+Configuration keys are `3D.DX12.NvidiaReflexMode` and
+`3D.AMD.AntiLag2Enabled` (shared with DX12 for compatibility), plus the
+developer A/B key `3D.Vulkan.PresentPacingPolicy`: `0` telemetry-only (default),
+`1` bounded present wait, `2` just-in-time pacing, `3` just-in-time plus
+FIFO-latest-ready. Feature state and frame
 IDs belong to each presenter/emulator instance; no process-global latency or
 pacing state is introduced. Anti-Lag 2 is a boolean preference; configurations
 written by the early integer-default implementation migrate explicit `0`/`1`
@@ -478,6 +500,8 @@ the reported `structured_2d` interval includes the normal software 2D renderer.
 | `src/VulkanPerf.h` | runtime-gated Vulkan CPU timing and traffic counters |
 | `src/VulkanNvidiaReflex.{h,cpp}` | `VK_NV_low_latency2` |
 | `src/VulkanAmdAntiLag.{h,cpp}` | `VK_AMD_anti_lag` |
+| `src/VulkanPresentPacer.{h,cpp}` | vendor-neutral present IDs, timing telemetry, bounded input-adjacent wait and authority selection |
+| `src/VulkanModernPresentCompat.h` | Khronos header-359 declarations missing from the minimum supported Vulkan SDK |
 | `src/GPU3D_TexcacheVulkan.{h,cpp}` | texture array behind the shared `Texcache<>` template |
 | `src/GPU3D_Vulkan.{h,cpp}` | the renderer: span setup, dispatch orchestration, `VkPipelineCache`, shader modules |
 | `src/GPU3D_Vulkan_shaders/*.comp,*.glsl` | GLSL sources — offline generator inputs only |
@@ -561,3 +585,9 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
   Linux system or macOS system has run this backend. See the status table in
   [`docs/plans/rendering/vulkan/clean-room-rewrite-contract.md`](../../plans/rendering/vulkan/clean-room-rewrite-contract.md)
   for the complete verified/unverified breakdown.
+* The modern vendor-neutral WSI extensions compile against both the minimum
+  Vulkan header and Vulkan SDK 1.4.357. Surface capability, device enablement,
+  and swapchain creation were runtime-validated on an NVIDIA RTX 5070 Ti driver
+  exposing the complete present-id2/wait2/timing stack. Frame-level timing/wait
+  behaviour and Intel/AMD/Linux/MoltenVK paths remain unverified, so the default
+  remains telemetry-only.

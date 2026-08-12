@@ -220,6 +220,12 @@ bool VulkanContext::BuildInstanceExtensionList(
     {
         AppendUnique(EnabledInstanceExtensions, SurfaceExtensionName);
 
+        // Optional capability plumbing for present_id2 / present_wait2 /
+        // present_timing. Its absence never disables Vulkan; the presenter
+        // falls back to the legacy surface query and host pacing.
+        if (ContainsExtension(available, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
+            AppendUnique(EnabledInstanceExtensions, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+
 #if defined(_WIN32)
         AppendUnique(EnabledInstanceExtensions, Win32SurfaceExtensionName);
 #elif defined(__APPLE__)

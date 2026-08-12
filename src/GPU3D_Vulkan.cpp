@@ -252,7 +252,7 @@ bool VulkanRenderer3D::Init()
     // Request presentation-related capabilities even when the renderer is the
     // first shared-device client. The presenter can then attach its surface to
     // this device instead of having to replace a live renderer device.
-    const VulkanLowLatencyRequest presentationCapabilities{true, true};
+    const VulkanLowLatencyRequest presentationCapabilities{true, true, true};
     if (!Device.Create(*Context, "Vulkan", presentationCapabilities))
     {
         Platform::Log(Platform::LogLevel::Error,

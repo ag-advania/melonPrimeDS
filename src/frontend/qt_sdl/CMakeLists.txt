@@ -439,6 +439,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanAmdAntiLag.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)

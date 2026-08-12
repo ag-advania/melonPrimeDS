@@ -327,6 +327,16 @@ bool LoadInstanceDispatch(
         MELONPRIME_VK_LOAD_INSTANCE_EXT(GetPhysicalDeviceSurfacePresentModesKHR, vkGetPhysicalDeviceSurfacePresentModesKHR);
     }
 
+    if (ExtensionEnabled(enabledExtensions, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
+    {
+        // Optional WSI pacing must remain fail-soft even if a broken loader
+        // advertises the extension but omits its command. The presenter sees
+        // the null dispatch and falls back to the legacy surface query.
+        out.GetPhysicalDeviceSurfaceCapabilities2KHR =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR>(
+                get("vkGetPhysicalDeviceSurfaceCapabilities2KHR"));
+    }
+
     // Braces are mandatory around every one of these: the macro expands to two
     // statements, so an unbraced `if` would silently run the null check
     // unconditionally.
@@ -505,6 +515,38 @@ bool LoadDeviceDispatch(
         MELONPRIME_VK_LOAD_DEVICE(GetSwapchainImagesKHR,        vkGetSwapchainImagesKHR);
         MELONPRIME_VK_LOAD_DEVICE(AcquireNextImageKHR,          vkAcquireNextImageKHR);
         MELONPRIME_VK_LOAD_DEVICE(QueuePresentKHR,              vkQueuePresentKHR);
+    }
+
+    if (ExtensionEnabled(enabledExtensions, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
+    {
+        out.WaitForPresent2KHR = reinterpret_cast<PFN_vkWaitForPresent2KHR>(
+            get("vkWaitForPresent2KHR"));
+    }
+
+    if (ExtensionEnabled(enabledExtensions, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME))
+    {
+        out.GetCalibratedTimestampsKHR =
+            reinterpret_cast<PFN_vkGetCalibratedTimestampsKHR>(
+                get("vkGetCalibratedTimestampsKHR"));
+    }
+
+    if (ExtensionEnabled(enabledExtensions, VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
+    {
+        // These are deliberately best-effort. An incomplete optional dispatch
+        // disables only the affected telemetry/pacing path in
+        // VulkanPresentPacer::Initialize, never the renderer.
+        out.SetSwapchainPresentTimingQueueSizeEXT =
+            reinterpret_cast<PFN_vkSetSwapchainPresentTimingQueueSizeEXT>(
+                get("vkSetSwapchainPresentTimingQueueSizeEXT"));
+        out.GetSwapchainTimingPropertiesEXT =
+            reinterpret_cast<PFN_vkGetSwapchainTimingPropertiesEXT>(
+                get("vkGetSwapchainTimingPropertiesEXT"));
+        out.GetSwapchainTimeDomainPropertiesEXT =
+            reinterpret_cast<PFN_vkGetSwapchainTimeDomainPropertiesEXT>(
+                get("vkGetSwapchainTimeDomainPropertiesEXT"));
+        out.GetPastPresentationTimingEXT =
+            reinterpret_cast<PFN_vkGetPastPresentationTimingEXT>(
+                get("vkGetPastPresentationTimingEXT"));
     }
 
     // --- optional low-latency extensions ------------------------------------

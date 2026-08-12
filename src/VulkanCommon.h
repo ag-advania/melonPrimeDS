@@ -66,6 +66,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "VulkanModernPresentCompat.h"
+
 #include "Platform.h"
 #include "types.h"
 
