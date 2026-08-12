@@ -360,12 +360,12 @@ VkPresentStageFlagsEXT VulkanPresentPacer::RequestedStageQueries() const noexcep
 #endif
 }
 
-void VulkanPresentPacer::ApplyTimingQueueSize(u32 size)
+bool VulkanPresentPacer::ApplyTimingQueueSize(u32 size)
 {
     if (!Device || Swapchain == VK_NULL_HANDLE
         || !Device->Fns().SetSwapchainPresentTimingQueueSizeEXT)
     {
-        return;
+        return false;
     }
 
     const VkResult result = Device->Fns().SetSwapchainPresentTimingQueueSizeEXT(
@@ -373,11 +373,13 @@ void VulkanPresentPacer::ApplyTimingQueueSize(u32 size)
     if (result != VK_SUCCESS)
     {
         Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] present timing queue sizing to %u failed: %s; telemetry remains optional\n",
+            "[Vulkan] present timing queue sizing to %u failed: %s\n",
             size, Vk::FormatResult(result).c_str());
-        return;
+        return false;
     }
     TimingQueueSize = size;
+    TimingQueueAllocated = true;
+    return true;
 }
 
 void VulkanPresentPacer::ResetTimingLifecycle() noexcept
@@ -394,6 +396,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TimeDomainsRetryPending = false;
     TargetTimeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
     TargetTimeDomainId = 0;
+    TimingQueueAllocated = false;
     TimingQueueSize = 0;
     TimingQueueRecoveries = 0;
     TimingQueueRecoveryPending = false;
@@ -421,21 +424,42 @@ void VulkanPresentPacer::OnSwapchainCreated(
     WaitTimeouts = 0;
     TimingQueueFullCount = 0;
     WaitRuntimeEnabled = PresentWait2Surface;
-    TimingMetadataEnabled = PresentTimingSurface;
-    TimingResultsQueryEnabled = PresentTimingSurface;
+    TimingMetadataEnabled = false;
+    TimingResultsQueryEnabled = false;
     LoggedFallbackReason = VulkanJitFallbackReason::None;
     LoggedTargetSchedulingActive = false;
     WaitDisabledReason.clear();
 
     if (PresentTimingSurface)
     {
-        ApplyTimingQueueSize(TimingQueueSizeFor(imageCount));
-        // Both queries are allowed to answer VK_NOT_READY here: a swapchain
-        // need not know its refresh timing or its time domains until it has
-        // presented at least once. That is a pending state, not an error, and
-        // BeginFrame retries it once results start arriving.
-        RefreshTimingProperties();
-        RefreshTimeDomains();
+        // The results queue must exist before any present may request timing:
+        // a present with a non-zero presentStageQueries needs a slot to report
+        // into. If the initial allocation fails there is no queue at all, so
+        // both switches stay off rather than attaching metadata the swapchain
+        // cannot service -- and, importantly, no recovery is armed, because the
+        // recovery trigger is a drained report that could never arrive.
+        // The renderer itself continues; only target-time pacing is lost.
+        if (ApplyTimingQueueSize(TimingQueueSizeFor(imageCount)))
+        {
+            TimingMetadataEnabled = true;
+            TimingResultsQueryEnabled = true;
+            // Both queries are allowed to answer VK_NOT_READY here: a swapchain
+            // need not know its refresh timing or its time domains until it has
+            // presented at least once. That is a pending state, not an error,
+            // and BeginFrame retries it once results start arriving.
+            RefreshTimingProperties();
+            RefreshTimeDomains();
+        }
+        else
+        {
+            TimingQueueRecoveryPending = false;
+            TargetSchedulingLifecycleFailed = true;
+            WaitDisabledReason =
+                "present timing results queue could not be allocated; "
+                "target-time pacing is off for this swapchain";
+            Platform::Log(Platform::LogLevel::Warn,
+                "[Vulkan] %s\n", WaitDisabledReason.c_str());
+        }
     }
 
     LogState("swapchain ready:");
@@ -478,7 +502,7 @@ VulkanPacingDecision VulkanPresentPacer::ResolveDecision(
         GetPolicy(), reflexActive, antiLagActive, normalSpeed, BuildCapabilities());
 }
 
-bool VulkanPresentPacer::BeginFrame(
+VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     bool reflexActive, bool antiLagActive, bool normalSpeed, u64 targetFrameIntervalNs)
 {
     // The emulator's own frame interval, straight from the frame limiter. It is
@@ -515,12 +539,12 @@ bool VulkanPresentPacer::BeginFrame(
     // schedules *this* one. A driver that exposes only the latter still gets
     // full target-time presentation; it simply skips the wait below.
     if (!decision.BoundedPresentWait)
-        return false;
+        return VulkanPacerBeginResult::Continue;
 
     // A skipped frame must not wait for the same present twice. Only a present
     // that QueuePresentKHR actually accepted advances LastPresentedId.
     if (LastPresentedId == 0 || LastPresentedId == LastWaitedId)
-        return false;
+        return VulkanPacerBeginResult::Continue;
 
     VkPresentWait2InfoKHR wait{};
     wait.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR;
@@ -535,27 +559,30 @@ bool VulkanPresentPacer::BeginFrame(
         Device->GetHandle(), Swapchain, &wait);
     LastWaitedId = LastPresentedId;
     if (result == VK_SUCCESS)
-        return false;
+        return VulkanPacerBeginResult::Continue;
     if (result == VK_TIMEOUT)
     {
         ++WaitTimeouts;
-        return false;
+        return VulkanPacerBeginResult::Continue;
     }
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
-        return true;
+        return VulkanPacerBeginResult::SwapchainOutOfDate;
     if (result == VK_ERROR_DEVICE_LOST)
     {
-        // Not an optional-feature failure. Surfacing it lets the presenter's
-        // existing runtime-failure path handle a lost device instead of the
-        // pacer quietly downgrading itself and continuing on a dead device.
+        // A lost device is not a stale swapchain, and rebuilding a swapchain on
+        // it would just fail again. Report it as its own class so the caller
+        // routes it into the existing Vulkan runtime-failure path. The pacer
+        // deliberately does NOT call DisableWait() here: downgrading an
+        // optional feature would imply the renderer can carry on, which is
+        // exactly the wrong conclusion to draw from device loss.
         Platform::Log(Platform::LogLevel::Error,
             "[Vulkan] vkWaitForPresent2KHR reported VK_ERROR_DEVICE_LOST\n");
-        DisableWait("VK_ERROR_DEVICE_LOST");
-        return true;
+        TargetSchedulingActive.store(false, std::memory_order_release);
+        return VulkanPacerBeginResult::DeviceLost;
     }
 
     DisableWait(Vk::FormatResult(result).c_str());
-    return false;
+    return VulkanPacerBeginResult::Continue;
 }
 
 u64 VulkanPresentPacer::EvaluateTargetTime(u64 sequence) noexcept
@@ -790,45 +817,80 @@ bool VulkanPresentPacer::RefreshTimeDomains()
     VkSwapchainTimeDomainPropertiesEXT properties{};
     properties.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT;
     u64 counter = 0;
-    VkResult result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
-        Device->GetHandle(), Swapchain, &properties, &counter);
-    if (result == VK_NOT_READY)
+    std::vector<VkTimeDomainKHR> domains;
+    std::vector<u64> domainIds;
+    u32 count = 0;
+
+    // Standard count/allocate/query enumeration, retried on VK_INCOMPLETE.
+    // VK_INCOMPLETE means more domains existed than the array could hold, and
+    // the preferred domain may be one of the truncated ones -- accepting the
+    // subset would silently keep target scheduling off until the next counter
+    // change. The retry count is bounded so a driver that grows its list every
+    // call cannot spin here.
+    constexpr int MaxTimeDomainEnumerateAttempts = 3;
+    bool enumerated = false;
+    for (int attempt = 0; attempt < MaxTimeDomainEnumerateAttempts; ++attempt)
     {
-        TimeDomainsRetryPending = true;
-        return false;
-    }
-    if (result != VK_SUCCESS || properties.timeDomainCount == 0)
-    {
-        TimeDomainsRetryPending = false;
-        TimeDomainsReady = false;
-        TimingModel.ClearTimeDomain();
-        if (result != VK_SUCCESS)
+        properties.timeDomainCount = 0;
+        properties.pTimeDomains = nullptr;
+        properties.pTimeDomainIds = nullptr;
+        VkResult result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
+            Device->GetHandle(), Swapchain, &properties, &counter);
+        if (result == VK_NOT_READY)
         {
-            TargetSchedulingLifecycleFailed = true;
-            Platform::Log(Platform::LogLevel::Warn,
-                "[Vulkan] vkGetSwapchainTimeDomainPropertiesEXT failed (%s); "
-                "target-time scheduling stays off\n",
-                Vk::FormatResult(result).c_str());
+            TimeDomainsRetryPending = true;
+            return false;
         }
-        return false;
+        if (result != VK_SUCCESS || properties.timeDomainCount == 0)
+        {
+            TimeDomainsRetryPending = false;
+            TimeDomainsReady = false;
+            TimingModel.ClearTimeDomain();
+            if (result != VK_SUCCESS)
+            {
+                TargetSchedulingLifecycleFailed = true;
+                Platform::Log(Platform::LogLevel::Warn,
+                    "[Vulkan] vkGetSwapchainTimeDomainPropertiesEXT failed (%s); "
+                    "target-time scheduling stays off\n",
+                    Vk::FormatResult(result).c_str());
+            }
+            return false;
+        }
+
+        domains.assign(properties.timeDomainCount, VK_TIME_DOMAIN_DEVICE_KHR);
+        domainIds.assign(properties.timeDomainCount, 0);
+        properties.pTimeDomains = domains.data();
+        properties.pTimeDomainIds = domainIds.data();
+        result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
+            Device->GetHandle(), Swapchain, &properties, &counter);
+        if (result == VK_SUCCESS)
+        {
+            count = std::min<u32>(properties.timeDomainCount,
+                                  static_cast<u32>(domains.size()));
+            enumerated = true;
+            break;
+        }
+        if (result != VK_INCOMPLETE)
+        {
+            TimeDomainsRetryPending = false;
+            TimeDomainsReady = false;
+            TimingModel.ClearTimeDomain();
+            return false;
+        }
     }
 
-    std::vector<VkTimeDomainKHR> domains(properties.timeDomainCount);
-    std::vector<u64> domainIds(properties.timeDomainCount);
-    properties.pTimeDomains = domains.data();
-    properties.pTimeDomainIds = domainIds.data();
-    result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
-        Device->GetHandle(), Swapchain, &properties, &counter);
-    if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+    if (!enumerated)
     {
-        TimeDomainsRetryPending = false;
+        // The list kept growing. Leave the retry armed rather than committing
+        // to a domain chosen from a list known to be truncated.
+        TimeDomainsRetryPending = true;
         TimeDomainsReady = false;
         TimingModel.ClearTimeDomain();
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] swapchain time-domain enumeration kept returning VK_INCOMPLETE; "
+            "retrying on the next timing report\n");
         return false;
     }
-
-    const u32 count = std::min<u32>(properties.timeDomainCount,
-                                    static_cast<u32>(domains.size()));
 
     // SWAPCHAIN_LOCAL first: it is the domain the swapchain's own presentation
     // timestamps live in, so a reported stage time can be projected forward
@@ -995,27 +1057,39 @@ void VulkanPresentPacer::ReportPastTiming()
     // grown and metadata switched back on. Bounded by MaxTimingQueueRecoveries
     // and by the size ceiling: a driver whose reports complete too slowly for
     // this present rate settles into telemetry-off instead of oscillating.
-    if (TimingQueueRecoveryPending && reportCount > 0)
+    // TimingQueueAllocated separates the two failure classes: growth is only
+    // meaningful on a queue that was allocated in the first place.
+    if (TimingQueueRecoveryPending && reportCount > 0 && TimingQueueAllocated)
     {
         TimingQueueRecoveryPending = false;
         const u32 grown = std::min(MaxTimingQueueSize, std::max(
             MinTimingQueueSize, TimingQueueSize * 2));
-        if (grown > TimingQueueSize)
+        // A failed growth is not a failed allocation: the previous queue is
+        // still there and still working, so only the re-enable is skipped.
+        if (grown > TimingQueueSize && ApplyTimingQueueSize(grown))
         {
-            const u32 previous = TimingQueueSize;
-            ApplyTimingQueueSize(grown);
-            if (TimingQueueSize > previous)
-            {
-                ++TimingQueueRecoveries;
-                TimingMetadataEnabled = PresentTimingSurface;
-                WaitDisabledReason.clear();
-                Platform::Log(Platform::LogLevel::Info,
-                    "[Vulkan] present timing results queue grown to %u after %u full events; "
-                    "timing metadata re-enabled (recovery %u/%u)\n",
-                    TimingQueueSize, TimingQueueFullCount,
-                    TimingQueueRecoveries, MaxTimingQueueRecoveries);
-            }
+            ++TimingQueueRecoveries;
+            TimingMetadataEnabled = PresentTimingSurface;
+            WaitDisabledReason.clear();
+            Platform::Log(Platform::LogLevel::Info,
+                "[Vulkan] present timing results queue grown to %u after %u full events; "
+                "timing metadata re-enabled (recovery %u/%u)\n",
+                TimingQueueSize, TimingQueueFullCount,
+                TimingQueueRecoveries, MaxTimingQueueRecoveries);
         }
+    }
+
+    // Nothing left to poll for: metadata is off for good, no recovery is armed,
+    // and the queue has drained empty. Every further call would query a
+    // swapchain that can no longer produce a report.
+    if (!TimingMetadataEnabled && !TimingQueueRecoveryPending && reportCount == 0)
+    {
+        TimingResultsQueryEnabled = false;
+        TargetSchedulingActive.store(false, std::memory_order_release);
+        Platform::Log(Platform::LogLevel::Info,
+            "[Vulkan] present timing results drained after %u queue-full events; "
+            "stopping per-frame timing polling for this swapchain\n",
+            TimingQueueFullCount);
     }
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES

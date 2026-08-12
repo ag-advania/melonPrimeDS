@@ -84,14 +84,17 @@ public:
         VkSwapchainKHR swapchain, VkPresentModeKHR presentMode, u32 imageCount);
     void OnSwapchainDestroyed() noexcept;
 
-    // Called immediately before late input sampling. Returns true when the
-    // swapchain was reported out of date and should be rebuilt.
+    // Called immediately before late input sampling.
+    //
+    // The result distinguishes a swapchain that must be rebuilt from a device
+    // that was lost; route it through VulkanPacerActionFor() rather than
+    // treating any non-Continue value as "recreate the swapchain".
     //
     // `targetFrameIntervalNs` is the emulator's own frame interval, or 0 when
     // the host is not running at a fixed rate. It is never derived from the
     // display refresh rate: the DS frame rate is a property of the emulated
     // machine and its configured TargetFPS, not of the monitor.
-    bool BeginFrame(
+    [[nodiscard]] VulkanPacerBeginResult BeginFrame(
         bool reflexActive, bool antiLagActive, bool normalSpeed, u64 targetFrameIntervalNs);
 
     // Adds present_id2 and timing metadata to VkPresentInfoKHR. `preferredId`
@@ -116,7 +119,11 @@ private:
     VulkanTimingRefreshResult RefreshTimingProperties();
     bool RefreshTimeDomains();
     void SelectTargetPresentStage() noexcept;
-    void ApplyTimingQueueSize(u32 size);
+    // Returns false when the driver refused the requested queue size. The
+    // caller must distinguish the initial allocation (no queue exists, so no
+    // present may carry timing metadata) from a growth attempt (the previous
+    // queue is still valid and keeps being used).
+    [[nodiscard]] bool ApplyTimingQueueSize(u32 size);
     [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
     void ResetTimingLifecycle() noexcept;
     void ReportPastTiming();
@@ -201,6 +208,9 @@ private:
     // slowly for the emulator's present rate, and retrying forever would just
     // pay the rejected-present cost every frame.
     static constexpr u32 MaxTimingQueueRecoveries = 3;
+    // A present that requests timing needs a results-queue slot. Without a
+    // queue there is nothing to attach metadata to, so this gates both.
+    bool TimingQueueAllocated = false;
     u32 TimingQueueSize = 0;
     u32 TimingQueueFullCount = 0;
     u32 TimingQueueRecoveries = 0;

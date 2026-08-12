@@ -83,6 +83,7 @@ def main() -> int:
     dx12 = read("src/DX12NvidiaReflex.cpp")
     vulkan = read("src/VulkanNvidiaReflex.cpp")
     vulkan_pacer = read("src/VulkanPresentPacer.cpp")
+    vulkan_pacer_header = read("src/VulkanPresentPacer.h")
     vulkan_pacing_policy = read("src/VulkanPresentPacingPolicy.h")
     vulkan_timing_tests = read("tools/testing/vulkan-present-timing-tests.cpp")
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
@@ -222,9 +223,65 @@ def main() -> int:
     require(
         "TimingQueueSizeFor(imageCount)" in vulkan_pacer
         and "TimingResultsQueryEnabled" in vulkan_pacer
-        and "MaxTimingQueueRecoveries" in read("src/VulkanPresentPacer.h")
+        and "MaxTimingQueueRecoveries" in vulkan_pacer_header
         and "TimingQueueRecoveryPending = recoverable;" in vulkan_pacer,
         "a full present timing queue must keep draining and recover a bounded number of times",
+        failures,
+    )
+    # A present that requests timing needs a results-queue slot. Enabling
+    # metadata after a failed initial allocation attaches timing to a swapchain
+    # that cannot service it, and arms a recovery whose trigger -- a drained
+    # report -- can never arrive.
+    require(
+        "[[nodiscard]] bool ApplyTimingQueueSize(u32 size);" in vulkan_pacer_header
+        and ordered(
+            function_body(
+                vulkan_pacer,
+                "void VulkanPresentPacer::OnSwapchainCreated(",
+                "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
+            ),
+            [
+                "if (ApplyTimingQueueSize(TimingQueueSizeFor(imageCount)))",
+                "TimingMetadataEnabled = true;",
+                "TimingResultsQueryEnabled = true;",
+                "else",
+                "TimingQueueRecoveryPending = false;",
+            ],
+        ),
+        "a failed initial timing queue allocation must leave timing metadata disabled",
+        failures,
+    )
+    require(
+        "TimingQueueAllocated" in vulkan_pacer_header
+        and "TimingQueueRecoveryPending && reportCount > 0 && TimingQueueAllocated"
+            in vulkan_pacer,
+        "queue growth must be distinguished from the initial allocation",
+        failures,
+    )
+    require(
+        "!TimingMetadataEnabled && !TimingQueueRecoveryPending && reportCount == 0" in vulkan_pacer
+        and "TimingResultsQueryEnabled = false;" in vulkan_pacer,
+        "timing polling must stop once metadata is off for good and the queue has drained",
+        failures,
+    )
+    # VK_ERROR_DEVICE_LOST and VK_ERROR_OUT_OF_DATE_KHR are different failure
+    # classes: rebuilding a swapchain on a lost device just repeats the failure.
+    require(
+        "enum class VulkanPacerBeginResult" in vulkan_pacing_policy
+        and "VulkanPacerActionFor" in vulkan_pacing_policy
+        and "return VulkanPacerBeginResult::SwapchainOutOfDate;" in vulkan_pacer
+        and "return VulkanPacerBeginResult::DeviceLost;" in vulkan_pacer
+        and "pacerAction.FailRenderer" in vulkan_presenter
+        and 'Fail("vkWaitForPresent2KHR", VK_ERROR_DEVICE_LOST);' in vulkan_presenter
+        and "TestBeginResultRouting" in vulkan_timing_tests,
+        "present-wait device loss must not share the swapchain-out-of-date result",
+        failures,
+    )
+    require(
+        "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
+        and "if (result != VK_INCOMPLETE)" in vulkan_pacer
+        and "if (!enumerated)" in vulkan_pacer,
+        "time-domain enumeration must retry a bounded number of times on VK_INCOMPLETE",
         failures,
     )
     # --- target-time presentation scheduling contract -----------------------

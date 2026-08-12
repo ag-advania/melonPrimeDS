@@ -495,7 +495,22 @@ builds request every stage the surface offers, which is why the extra telemetry
 costs queue pressure that shipping users do not pay. If the queue fills anyway,
 the present is retried without timing metadata, draining continues -- draining
 is what frees slots -- and the queue is grown once per full event, at most three
-times per swapchain, before timing settles into off.
+times per swapchain, before timing settles into off. Once metadata is off for
+good and the queue has drained empty, the per-frame results query stops too.
+
+A **failed initial queue allocation** is different from a failed growth. Without
+a queue no present may carry timing at all, so both the metadata and the results
+query stay off and no recovery is armed -- the recovery trigger is a drained
+report, which could never arrive. A failed growth leaves the previous queue in
+place and only skips the re-enable. Either way the renderer keeps running; only
+target-time pacing is lost.
+
+Failure classes are kept apart on the way out, too. `BeginFrame()` returns
+`Continue`, `SwapchainOutOfDate` or `DeviceLost` rather than a bool, and the
+presenter routes them through `VulkanPacerActionFor()`: an out-of-date swapchain
+is rebuilt, while `VK_ERROR_DEVICE_LOST` from `vkWaitForPresent2KHR` goes to the
+existing Vulkan runtime-failure path. Rebuilding a swapchain on a lost device
+only repeats the failure every frame, which is what a shared bool result caused.
 
 The settings probe evaluates the same optional-feature dependencies as device
 creation: the NVIDIA control requires the low-latency extension, timeline

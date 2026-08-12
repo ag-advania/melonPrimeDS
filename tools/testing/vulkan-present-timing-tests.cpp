@@ -507,6 +507,30 @@ void TestFallbackReasonsAreSpecific()
 }
 
 
+// A lost device and a stale swapchain are different failure classes. They once
+// shared a single `true` return, which routed device loss into the swapchain
+// rebuild loop -- where it would fail again on every following frame.
+void TestBeginResultRouting()
+{
+    const VulkanPacerBeginAction cont =
+        VulkanPacerActionFor(VulkanPacerBeginResult::Continue);
+    Require(!cont.RebuildSwapchain && !cont.FailRenderer,
+        "a normal frame must neither rebuild the swapchain nor fail the renderer");
+
+    const VulkanPacerBeginAction outOfDate =
+        VulkanPacerActionFor(VulkanPacerBeginResult::SwapchainOutOfDate);
+    Require(outOfDate.RebuildSwapchain && !outOfDate.FailRenderer,
+        "an out-of-date swapchain must be rebuilt, not treated as a failure");
+
+    const VulkanPacerBeginAction deviceLost =
+        VulkanPacerActionFor(VulkanPacerBeginResult::DeviceLost);
+    Require(deviceLost.FailRenderer,
+        "device loss must reach the renderer's runtime-failure path");
+    Require(!deviceLost.RebuildSwapchain,
+        "device loss must never be answered with a swapchain rebuild");
+}
+
+
 // VSync off means IMMEDIATE or MAILBOX, where "present at this time" has no
 // defined meaning -- but telemetry and the bounded wait are still fine.
 void TestNonFifoKeepsWaitButNotTarget()
@@ -541,6 +565,7 @@ int main()
     TestVendorLatencyApisWin();
     TestSpeedAndPolicyGates();
     TestFallbackReasonsAreSpecific();
+    TestBeginResultRouting();
     TestNonFifoKeepsWaitButNotTarget();
 
     if (Failures != 0)
