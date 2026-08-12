@@ -195,43 +195,37 @@ bool DX12Context::PickAdapter(
 {
     const auto& entry = DX12::LoadEntryPoints();
 
-    // Pass 1: hardware adapters, highest performance first. Pass 2: anything
-    // left (which is where WARP shows up) so a machine with only the software
-    // rasterizer still gets a working, if slow, DX12 renderer.
-    for (int pass = 0; pass < 2; pass++)
+    // Native DX12 is a real-time GPU backend. Never silently accept WARP or
+    // Microsoft Basic Render Driver: they can initialize successfully while
+    // running at single-digit FPS, which is worse than the explicit software
+    // renderer and makes a transient hardware-adapter conflict look healthy.
+    for (UINT i = 0; ; i++)
     {
-        const bool allowSoftware = (pass == 1);
+        DX12::ComPtr<IDXGIAdapter1> adapter;
+        HRESULT hr = factory->EnumAdapterByGpuPreference(
+            i,
+            DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+            IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
+        if (hr == DXGI_ERROR_NOT_FOUND)
+            break;
+        if (FAILED(hr))
+            break;
 
-        for (UINT i = 0; ; i++)
-        {
-            DX12::ComPtr<IDXGIAdapter1> adapter;
-            HRESULT hr = factory->EnumAdapterByGpuPreference(
-                i,
-                DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
-                IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
-            if (hr == DXGI_ERROR_NOT_FOUND)
-                break;
-            if (FAILED(hr))
-                break;
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc)))
+            continue;
+        if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
+            continue;
 
-            DXGI_ADAPTER_DESC1 desc{};
-            if (FAILED(adapter->GetDesc1(&desc)))
-                continue;
+        // Probe without creating: D3D12CreateDevice with a null out-pointer
+        // only reports whether the adapter supports the feature level.
+        if (FAILED(entry.D3D12CreateDevice(
+                adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
+            continue;
 
-            const bool isSoftware = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
-            if (isSoftware != allowSoftware)
-                continue;
-
-            // Probe without creating: D3D12CreateDevice with a null out-pointer
-            // only reports whether the adapter supports the feature level.
-            if (FAILED(entry.D3D12CreateDevice(
-                    adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
-                continue;
-
-            outAdapter = adapter;
-            outDesc = desc;
-            return true;
-        }
+        outAdapter = adapter;
+        outDesc = desc;
+        return true;
     }
 
     return false;

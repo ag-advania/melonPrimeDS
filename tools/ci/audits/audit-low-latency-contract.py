@@ -86,6 +86,7 @@ def main() -> int:
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
+    dx12_context = read("src/DX12Context.cpp")
     vulkan_loader = read("src/VulkanLoader.cpp")
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
@@ -118,7 +119,8 @@ def main() -> int:
             vulkan_presenter,
             [
                 "SetLowLatencyPreferences(reflexMode, antiLag2Enabled);",
-                "PresentPacer.BeginFrame(Reflex.IsActive(), AntiLag.IsActive(), normalSpeed)",
+                "PresentPacer.BeginFrame(",
+                "Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs)",
                 "Reflex.BeginFrame();",
                 "AntiLag.BeginFrame(LowLatencyFrameIndex);",
             ],
@@ -142,11 +144,141 @@ def main() -> int:
         failures,
     )
     require(
+        "bypassVulkanHostLimiter" not in emu
+        and "ShouldBypassHostLimiter" not in vulkan_pacer,
+        "Vulkan latency waits must never bypass the exact host FPS limiter",
+        failures,
+    )
+    require(
+        "if (oldRenderer == renderer3D_Vulkan)" in video_settings
+        and "if (oldRenderer == renderer3D_DX12)" in video_settings
+        and ordered(
+            function_body(
+                video_settings,
+                "void VideoSettingsDialog::onChange3DRenderer(int renderer)",
+                "void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)",
+            ),
+            [
+                "emit updateVideoSettings(true);",
+                "setEnabled();",
+            ],
+        ),
+        "Video Settings must not probe a foreign native backend before its synchronous transition",
+        failures,
+    )
+    require(
+        "ReleaseRetainedDeviceForBackendTransition();" in read("src/frontend/qt_sdl/Window.cpp")
+        and "retired.swap(ProcessLifetimeDevice());" in vulkan_device
+        and "SharedDevice.reset();" in vulkan_device
+        and "DXGI_ADAPTER_FLAG_SOFTWARE" in dx12_context
+        and "if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)" in dx12_context,
+        "quiesced Vulkan-to-DX12 transitions must release the retained device and reject software DX12 adapters",
+        failures,
+    )
+    require(
         "{MelonPrime::CfgKey::VulkanPresentPacingPolicy, 0}" in config
         and "TelemetryOnly = 0" in read("src/VulkanPresentPacer.h")
         and "JustInTimeFifoLatestReady" in vulkan_pacer
         and "PresentPacer.ShouldUseFifoLatestReady()" in vulkan_presenter,
         "Vulkan behavioural pacing must default to telemetry-only and gate FIFO latest-ready",
+        failures,
+    )
+    # --- target-time presentation scheduling contract -----------------------
+    # The JustInTime policies are named after requesting a presentation
+    # deadline. These checks exist because the path once carried the name while
+    # leaving VkPresentTimingInfoEXT::targetTime at zero, which is indis-
+    # tinguishable from telemetry-only at runtime unless somebody reads the log.
+    require(
+        all(token in vulkan_pacer for token in (
+            "metadata.Timing.targetTime = metadata.TargetTimeNs;",
+            "VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT",
+            "metadata.Timing.timeDomainId = TargetTimeDomainId;",
+            "metadata.Timing.targetTimeDomainPresentStage =",
+        )),
+        "the Vulkan JustInTime path must request a real target presentation time",
+        failures,
+    )
+    require(
+        "TargetFrameIntervalNs = normalSpeed ? targetFrameIntervalNs : 0;" in vulkan_pacer
+        and "storedFrametimeStep * 1'000'000'000.0" in emu
+        and "16'666'667" not in vulkan_pacer
+        and "16'666'667" not in vulkan_presenter,
+        "the presentation target interval must come from the frame limiter, never a 60 FPS constant",
+        failures,
+    )
+    require(
+        "properties.timingPropertiesCounter != TimingPropertiesCounter" in vulkan_pacer
+        and "properties.timeDomainsCounter != TimeDomainsCounter" in vulkan_pacer
+        and "RefreshTimeDomains()" in vulkan_pacer,
+        "swapchain timing properties and time domains must be re-queried when their counters change",
+        failures,
+    )
+    require(
+        "if (result == VK_NOT_READY)" in vulkan_pacer
+        and "TimingPropertiesRetryPending = true;" in vulkan_pacer
+        and "TimeDomainsRetryPending = true;" in vulkan_pacer,
+        "VK_NOT_READY must be a pending retry state, never a fatal timing failure",
+        failures,
+    )
+    require(
+        ordered(
+            function_body(
+                vulkan_pacer,
+                "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
+                "void VulkanPresentPacer::SelectAuthority(",
+            ),
+            ["ResetTimingLifecycle();"],
+        )
+        and "TimingModel.Reset();" in vulkan_pacer
+        and "TimingModel.ClearTimeDomain();" in vulkan_pacer,
+        "swapchain destruction must reset the whole timing and time-domain model",
+        failures,
+    )
+    require(
+        all(token in vulkan_pacer for token in (
+            "VulkanJitFallbackReason::VendorLatencyApiOwnsPacing",
+            "authority == VulkanPacingAuthority::NvidiaReflex",
+            "authority == VulkanPacingAuthority::AmdAntiLag2",
+        )),
+        "active Reflex or Anti-Lag 2 must keep generic target scheduling off",
+        failures,
+    )
+    require(
+        "bool IsFifoFamily(VkPresentModeKHR mode) noexcept" in vulkan_pacer
+        and "VulkanJitFallbackReason::NonFifoPresentMode" in vulkan_pacer
+        and "if (!FifoFamilyPresentMode)" in vulkan_pacer,
+        "target-time scheduling must stay inactive outside the FIFO present-mode family",
+        failures,
+    )
+    require(
+        ordered(
+            function_body(
+                vulkan_pacer,
+                "bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept",
+                "void VulkanPresentPacer::ResetTimingLifecycle() noexcept",
+            ),
+            [
+                "VulkanPresentPacingPolicy::JustInTimeFifoLatestReady",
+                "TargetSchedulingLifecycleFailed",
+                "PresentTimingAbsolute",
+                "TimeDomainQueryAvailable",
+            ],
+        ),
+        "FIFO_LATEST_READY must be gated on the target-time scheduling capability path",
+        failures,
+    )
+    require(
+        "VK_ERROR_DEVICE_LOST" in vulkan_pacer
+        and "TimingModel.AbandonPresent();" in vulkan_pacer
+        and "TimingModel.CommitPresent();" in vulkan_pacer,
+        "device loss must surface and rejected presents must not consume a presentation sequence",
+        failures,
+    )
+    require(
+        "VulkanPresentTimingModel" in read("src/VulkanPresentTimingModel.h")
+        and "melonprime_vulkan_present_timing_tests" in cmake
+        and "melonprime_vulkan_present_timing_check" in cmake,
+        "the pure presentation timing model must be built and executed by every Vulkan build",
         failures,
     )
     require(
@@ -351,10 +483,11 @@ def main() -> int:
         and "IntelXeLLPacingPolicy =" in emu
         and "MELONPRIME_ENABLE_DEVELOPER_FEATURES" in emu
         and "Compatibility" in pacing
+        and "NvidiaReflex, false, true, false" in pacing
         and "ResolveDX12LowLatencyPacing" in pacing
         and "ShouldBypassDX12HostLimiter" in emu
         and "ShouldBypassPresentWait" in screen,
-        "developer-only XeLL pacing matrix must default to Compatibility and gate real waits",
+        "DX12 pacing must avoid duplicate Reflex/DXGI waits while XeLL experiments default to Compatibility",
         failures,
     )
     require(

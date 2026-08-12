@@ -66,6 +66,7 @@ struct VulkanDeviceState
     VulkanLowLatencyStatus NvLowLatency2;
     VulkanLowLatencyStatus AmdAntiLag;
     bool GenericPresentTimingRequested = false;
+    VulkanPresentTimingDeviceFeatures PresentTimingFeatures{};
     mutable std::mutex QueueMutex;
 };
 
@@ -85,14 +86,14 @@ std::mutex SharedDeviceMutex;
 std::weak_ptr<VulkanDeviceState> SharedDevice;
 
 #if defined(_WIN32)
-// Match the proven lifetime rule used by the previous Vulkan backend:
-// releasing the last renderer/presenter view during a live backend switch must
-// not call vkDestroyDevice on Windows. NVIDIA's driver (and injected graphics
-// layers) can still have transition callbacks on the stack at that point. Keep
-// one deliberately process-lifetime reference and let Windows reclaim the
-// Vulkan device after executable teardown. The pointer itself is intentionally
-// never destroyed, so static-destruction order cannot re-enter the Vulkan
-// loader after VulkanContext has already gone away.
+// On Windows, backend switching can leave driver or injected-layer callbacks
+// alive beyond the last frontend Vulkan view, so releasing that view during a
+// live switch must not call vkDestroyDevice from inside the transition. Keep
+// one deliberately retained reference. Normal shutdown lets Windows reclaim
+// it, while a synchronous graphics-backend transition releases it explicitly
+// only after both presenter and renderer destruction stacks have unwound. The
+// pointer itself is intentionally never destroyed, so static-destruction order
+// cannot re-enter the Vulkan loader after VulkanContext has already gone away.
 std::shared_ptr<VulkanDeviceState>& ProcessLifetimeDevice() noexcept
 {
     static auto* retained = new std::shared_ptr<VulkanDeviceState>();
@@ -205,6 +206,13 @@ const VulkanLowLatencyStatus& VulkanDevice::GetAmdAntiLagStatus() const noexcept
     return State ? State->AmdAntiLag : EmptyLowLatencyStatus;
 }
 
+const VulkanPresentTimingDeviceFeatures&
+    VulkanDevice::GetPresentTimingFeatures() const noexcept
+{
+    static const VulkanPresentTimingDeviceFeatures EmptyPresentTimingFeatures{};
+    return State ? State->PresentTimingFeatures : EmptyPresentTimingFeatures;
+}
+
 int VulkanDevice::GetMaxScaleFactor() const noexcept
 {
     return State ? State->Profile.MaxScaleFactor : 0;
@@ -225,6 +233,28 @@ bool VulkanDevice::HasSharedDevice(const VulkanContext& context) noexcept
     std::lock_guard<std::mutex> lock(SharedDeviceMutex);
     const std::shared_ptr<VulkanDeviceState> shared = SharedDevice.lock();
     return shared && shared->Context == &context && shared->Device != VK_NULL_HANDLE;
+}
+
+void VulkanDevice::ReleaseRetainedDeviceForBackendTransition() noexcept
+{
+#if defined(_WIN32)
+    std::shared_ptr<VulkanDeviceState> retired;
+    {
+        std::lock_guard<std::mutex> lock(SharedDeviceMutex);
+        retired.swap(ProcessLifetimeDevice());
+        SharedDevice.reset();
+    }
+
+    if (retired)
+    {
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[Vulkan] releasing retained device at quiesced backend-transition boundary\n");
+        // Destroy outside SharedDeviceMutex: the state releases its retained
+        // VulkanContext reference after vkDestroyDevice completes.
+        retired.reset();
+    }
+#endif
 }
 
 
@@ -560,6 +590,14 @@ bool VulkanDevice::Create(
             EnabledExtensions.push_back(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
             EnabledExtensions.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
             chain(presentTimingFeatures);
+            // Remember which scheduling modes the feature struct actually
+            // enabled. Target-time presentation is only legal for the ones
+            // enabled here, and the pacer cannot re-query a live device.
+            State->PresentTimingFeatures.PresentTiming = true;
+            State->PresentTimingFeatures.PresentAtAbsoluteTime =
+                presentTimingFeatures.presentAtAbsoluteTime == VK_TRUE;
+            State->PresentTimingFeatures.PresentAtRelativeTime =
+                presentTimingFeatures.presentAtRelativeTime == VK_TRUE;
         }
 
         const bool hasLatestReady = hasPresentTiming
@@ -577,12 +615,15 @@ bool VulkanDevice::Create(
             Platform::LogLevel::Info,
             "[Vulkan] generic present device capabilities: caps2=%s present-id2=%s "
             "present-wait2=%s calibrated-timestamps=%s present-timing=%s "
+            "present-at-absolute-time=%s present-at-relative-time=%s "
             "fifo-latest-ready=%s\n",
             hasCaps2 ? "yes" : "no",
             hasPresentId2 ? "yes" : "no",
             hasPresentWait2 ? "yes" : "no",
             hasCalibratedTimestamps ? "yes" : "no",
             hasPresentTiming ? "yes" : "no",
+            State->PresentTimingFeatures.PresentAtAbsoluteTime ? "yes" : "no",
+            State->PresentTimingFeatures.PresentAtRelativeTime ? "yes" : "no",
             hasLatestReady ? "yes" : "no");
     }
 
@@ -694,6 +735,10 @@ bool VulkanDevice::Create(
             AmdAntiLag.Supported = false;
             AmdAntiLag.Reason = retryReason;
         }
+        // The retry device has no VK_EXT_present_timing, so no scheduling mode
+        // survives it either. Leaving these set would let the pacer request a
+        // target time through entry points this device never enabled.
+        State->PresentTimingFeatures = VulkanPresentTimingDeviceFeatures{};
 
         createInfo.pNext = nullptr;
         createInfo.enabledExtensionCount = static_cast<u32>(EnabledExtensions.size());

@@ -99,8 +99,16 @@ typedef struct VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR {
 #define VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_PROPERTIES_EXT ((VkStructureType)1000208006)
 #define VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_EXT ((VkStructureType)1000208007)
 #define VK_STRUCTURE_TYPE_PRESENT_TIMING_SURFACE_CAPABILITIES_EXT ((VkStructureType)1000208008)
+#define VK_STRUCTURE_TYPE_SWAPCHAIN_CALIBRATED_TIMESTAMP_INFO_EXT ((VkStructureType)1000208009)
 #define VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT ((VkSwapchainCreateFlagBitsKHR)0x00000200)
 #define VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT ((VkResult)-1000208000)
+
+// VK_EXT_present_timing extends VkTimeDomainKHR (which VK_KHR_calibrated_
+// timestamps already declares) with the two domains a swapchain can schedule
+// against. Absolute target-time presentation needs these names, so they are
+// part of the same compatibility block as the rest of the extension.
+#define VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT ((VkTimeDomainKHR)1000208000)
+#define VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT ((VkTimeDomainKHR)1000208001)
 
 typedef VkFlags VkPresentStageFlagsEXT;
 typedef VkFlags VkPastPresentationTimingFlagsEXT;
@@ -130,6 +138,14 @@ typedef struct VkPresentTimingSurfaceCapabilitiesEXT {
     VkBool32 presentAtRelativeTimeSupported;
     VkPresentStageFlagsEXT presentStageQueries;
 } VkPresentTimingSurfaceCapabilitiesEXT;
+
+typedef struct VkSwapchainCalibratedTimestampInfoEXT {
+    VkStructureType sType;
+    const void* pNext;
+    VkSwapchainKHR swapchain;
+    VkPresentStageFlagsEXT presentStage;
+    uint64_t timeDomainId;
+} VkSwapchainCalibratedTimestampInfoEXT;
 
 typedef struct VkSwapchainTimingPropertiesEXT {
     VkStructureType sType;

@@ -496,10 +496,27 @@ void EmuThread::run()
         auto* vulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(
             &emuInstance->nds->GPU.GetRenderer());
         if (vulkanLowLatencyRenderer)
+        {
+            // The frame interval the Vulkan present pacer schedules against is
+            // the emulator's own, never the display's. storedFrametimeStep is
+            // the frame limiter's runtime source of truth (it already accounts
+            // for TargetFPS and the current scanline count), so no 60 FPS
+            // constant appears here. Outside normal speed it is deliberately
+            // zero: the presentation engine must not be told to hold frames to
+            // a cadence the emulator is not running at.
+            const bool vulkanNormalSpeed = limitFPS && !fastforward && !slowmo;
+            const long long roundedIntervalNs = vulkanNormalSpeed
+                ? std::llround(storedFrametimeStep * 1'000'000'000.0)
+                : 0LL;
+            const melonDS::u64 targetFrameIntervalNs = roundedIntervalNs > 0
+                ? static_cast<melonDS::u64>(roundedIntervalNs)
+                : 0;
             emuInstance->beginVulkanLowLatencyFrame(
                 vulkanLowLatencyRenderer->GetNvidiaReflexMode(),
                 vulkanLowLatencyRenderer->GetAmdAntiLag2Enabled(),
-                limitFPS && !fastforward && !slowmo);
+                vulkanNormalSpeed,
+                targetFrameIntervalNs);
+        }
 #endif
 
 #ifdef MELONPRIME_DS

@@ -520,10 +520,13 @@ void EmuInstance::invalidateRendererOutput()
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
 void EmuInstance::beginVulkanLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed)
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
 {
     if (mainWindow)
-        mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
+    {
+        mainWindow->beginVulkanLowLatencyFrame(
+            reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+    }
 }
 
 void EmuInstance::markVulkanReflexInputSample()

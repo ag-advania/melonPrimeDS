@@ -443,9 +443,13 @@ void TestPacingResolver()
             && ShouldBypassDX12HostLimiter(recommended, false),
         "XeLL-owned caps must remain authoritative across speed transitions");
 
-    Require(ResolveDX12LowLatencyPacing(true, true, true, Policy::IntelRecommended).Authority
-            == Authority::NvidiaReflex,
-        "active NVIDIA Reflex must win the authority resolver");
+    const auto reflex = ResolveDX12LowLatencyPacing(
+        true, true, true, Policy::IntelRecommended);
+    Require(reflex.Authority == Authority::NvidiaReflex
+            && !reflex.BypassHostLimiter
+            && reflex.BypassPresentWait
+            && !reflex.XeLLOwnsFrameCap,
+        "active NVIDIA Reflex must keep the FPS cap and avoid a second driver wait");
     Require(ResolveDX12LowLatencyPacing(false, true, true, Policy::IntelRecommended).Authority
             == Authority::AmdAntiLag2,
         "active AMD Anti-Lag 2 must win over XeLL");

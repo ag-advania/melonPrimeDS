@@ -1654,7 +1654,7 @@ bool VulkanPresenter::EndFrame()
         if (PresentPacer.PrepareRetryWithoutTiming(res, genericPresentMetadata))
             res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
     }
-    PresentPacer.NotifyPresentResult(res, logicalPresentId);
+    PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
     if (tagLatency)
     {
@@ -1712,7 +1712,7 @@ void VulkanPresenter::SetLowLatencyPreferences(int reflexMode, bool antiLag2Enab
 
 
 void VulkanPresenter::BeginLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed)
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed, u64 targetFrameIntervalNs)
 {
     if (!Initialized || Failed || !Device.IsValid())
         return;
@@ -1724,10 +1724,16 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // neither of which a mid-session setting change should force.
     SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
 
-    // Exactly one pacing authority is selected. Generic wait is never layered
-    // over Reflex or Anti-Lag, and it runs here before every fresh input read.
-    if (PresentPacer.BeginFrame(Reflex.IsActive(), AntiLag.IsActive(), normalSpeed))
+    // Exactly one optional late-wait authority is selected. The generic wait is
+    // never layered over Reflex or Anti-Lag, and it runs here before every
+    // fresh input read. The host frame limiter is a separate responsibility and
+    // still owns the emulation rate: presentation scheduling decides when a
+    // finished frame is shown, not how fast the DS runs.
+    if (PresentPacer.BeginFrame(
+            Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs))
+    {
         SwapchainDirty.store(true, std::memory_order_release);
+    }
 
     // vkLatencySleepNV lives in here, and it must run before any input is read
     // -- that delay is the entire mechanism. SIMULATION_START is deliberately

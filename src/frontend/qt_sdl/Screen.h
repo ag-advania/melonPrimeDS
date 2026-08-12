@@ -116,12 +116,21 @@ public:
     //
     // `reflexMode` is the raw config value (0 off, 1 on, 2 on+boost) and is
     // pushed every frame so a settings change applies on the next one.
+    //
+    // `targetFrameIntervalNs` is the emulator's frame interval for this frame,
+    // or 0 when it is not running at a fixed rate. The Vulkan present pacer
+    // needs the emulator's own cadence -- never the display refresh rate -- to
+    // compute a presentation target time.
     virtual void beginVulkanLowLatencyFrame(
-        int reflexMode, bool antiLag2Enabled, bool normalSpeed)
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs)
     {
         (void)reflexMode;
         (void)antiLag2Enabled;
         (void)normalSpeed;
+        (void)targetFrameIntervalNs;
     }
     virtual void markVulkanReflexInputSample() {}
     virtual void markVulkanReflexSimulationStart() {}
@@ -462,7 +471,10 @@ public:
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
     void beginVulkanLowLatencyFrame(
-        int reflexMode, bool antiLag2Enabled, bool normalSpeed) override;
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs) override;
     void markVulkanReflexInputSample() override;
     void markVulkanReflexSimulationStart() override;
     void markVulkanReflexSimulationEnd() override;

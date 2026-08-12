@@ -230,7 +230,18 @@ public:
     // `antiLag2Enabled` the config bool; both are re-applied here every frame
     // so a settings-dialog change takes effect on the next frame without
     // recreating the device or the swapchain.
-    void BeginLowLatencyFrame(int reflexMode, bool antiLag2Enabled, bool normalSpeed);
+    //
+    // `targetFrameIntervalNs` is the emulator's own frame interval for this
+    // frame, taken from the frame limiter's step rather than from the display
+    // refresh rate -- the DS frame rate follows the configured TargetFPS, not
+    // the monitor. It is zero whenever the emulator is not running at a fixed
+    // rate (fast-forward, slow motion, unlimited FPS), which is what keeps
+    // target-time presentation scheduling off in those modes.
+    void BeginLowLatencyFrame(
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs);
     void MarkLowLatencyInputSample();
     void MarkLowLatencySimulationStart();
     void MarkLowLatencySimulationEnd();

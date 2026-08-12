@@ -467,6 +467,27 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
 
+    # Execute the target-time presentation arithmetic on every Vulkan build.
+    # VulkanPresentTimingModel holds no Vulkan objects on purpose, so sequence
+    # accounting, baseline rebasing, staleness and overflow are validated with
+    # no driver, no GPU and no window system -- the parts of target-time pacing
+    # that a static audit cannot see and that runtime testing on one machine
+    # would only exercise for that machine's display.
+    add_executable(melonprime_vulkan_present_timing_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-present-timing-tests.cpp)
+    target_include_directories(melonprime_vulkan_present_timing_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_vulkan_present_timing_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1)
+    set_target_properties(melonprime_vulkan_present_timing_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_present_timing_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_present_timing_tests>
+        DEPENDS melonprime_vulkan_present_timing_tests
+        COMMENT "Running Vulkan present timing model tests..."
+        VERBATIM)
+
     # One platform adapter per target OS. Each is additionally guarded by its
     # own #if, so an accidental double-add cannot produce duplicate symbols.
     if (WIN32)

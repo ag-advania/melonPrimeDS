@@ -55,6 +55,20 @@ struct VulkanLowLatencyRequest
     bool GenericPresentTiming = false;
 };
 
+// Which VK_EXT_present_timing scheduling modes the logical device actually
+// enabled.
+//
+// A VkDevice cannot be asked what it was created with, and requesting a target
+// presentation time through a mode the feature struct did not enable is invalid
+// usage. The device records the answer once so the pacer can gate absolute
+// target-time scheduling without re-probing the physical device every frame.
+struct VulkanPresentTimingDeviceFeatures
+{
+    bool PresentTiming = false;
+    bool PresentAtAbsoluteTime = false;
+    bool PresentAtRelativeTime = false;
+};
+
 // Outcome of one VulkanLowLatencyRequest member, kept so the caller can log
 // Requested / Supported / Enabled / Actual / Reason without re-querying the
 // driver.
@@ -69,9 +83,9 @@ struct VulkanLowLatencyStatus
 // The logical device, its queues and its dispatch table.
 //
 // VulkanDevice is a copyable, ref-counted view of one process-wide logical
-// device. On Windows the backing device is deliberately retained for the
-// process lifetime, matching the previous backend's proven renderer-switch
-// rule; other platforms release it when the final view goes away.
+// device. On Windows the backing device is deliberately retained so a renderer
+// switch cannot destroy it from inside the transition it is unwinding; other
+// platforms release it when the final view goes away.
 struct VulkanDeviceState;
 
 class VulkanDevice
@@ -100,6 +114,13 @@ public:
     // The presenter uses this to avoid re-selecting the physical device after
     // the renderer has already created child objects from it.
     [[nodiscard]] static bool HasSharedDevice(const VulkanContext& context) noexcept;
+
+    // Windows retains one shared-device reference so destroying the final
+    // renderer/presenter view cannot re-enter the driver from its destructor.
+    // A synchronous backend transition calls this only after both views have
+    // been destroyed and their stacks have unwound, allowing DX12 to acquire
+    // the hardware adapter instead of falling through to a software device.
+    static void ReleaseRetainedDeviceForBackendTransition() noexcept;
 
     // Resolves presentation on a logical device that was created after a
     // headless physical-device probe. This succeeds when the already-created
@@ -151,6 +172,12 @@ public:
     // What actually happened to each requested low-latency extension.
     [[nodiscard]] const VulkanLowLatencyStatus& GetNvLowLatency2Status() const noexcept;
     [[nodiscard]] const VulkanLowLatencyStatus& GetAmdAntiLagStatus() const noexcept;
+
+    // Which present-timing scheduling modes vkCreateDevice actually enabled.
+    // All false when the extension was skipped or dropped by the fail-soft
+    // retry, which keeps target-time presentation off rather than invalid.
+    [[nodiscard]] const VulkanPresentTimingDeviceFeatures&
+        GetPresentTimingFeatures() const noexcept;
 
     // Highest internal resolution the selected device can actually run.
     [[nodiscard]] int GetMaxScaleFactor() const noexcept;

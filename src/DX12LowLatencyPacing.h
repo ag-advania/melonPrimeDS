@@ -58,7 +58,12 @@ constexpr DX12LowLatencyPacingDecision ResolveDX12LowLatencyPacing(
     DX12IntelXeLLPacingPolicy intelPolicy)
 {
     if (nvidiaReflexActive)
-        return {DX12LowLatencyPacingAuthority::NvidiaReflex, false, false, false};
+    {
+        // Reflex already performs its driver-directed sleep immediately before
+        // late input. Keep the host limiter as the exact FPS cap, but do not
+        // layer the DXGI frame-latency wait on top of the Reflex wait.
+        return {DX12LowLatencyPacingAuthority::NvidiaReflex, false, true, false};
+    }
     if (amdAntiLag2Active)
         return {DX12LowLatencyPacingAuthority::AmdAntiLag2, false, false, false};
     if (!intelXeLLActive)

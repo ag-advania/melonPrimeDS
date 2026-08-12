@@ -414,16 +414,67 @@ probes and conditionally enables `VK_KHR_present_id2`,
 extension, feature bit, entry point, or surface capability falls back to the
 legacy surface query and host limiter without disabling Vulkan.
 
-The pacing authority is selected once per frame in this order: NVIDIA Reflex,
-AMD Anti-Lag 2, generic present timing, existing host pacing. Generic
-`vkWaitForPresent2KHR` is bounded to 2 ms, runs immediately before late input,
-waits each accepted Present ID at most once, and resets on swapchain recreation
-or out-of-date results. Fast-forward, slow-motion, and unlimited-FPS frames never
-use the refresh-bound generic path. `FIFO_LATEST_READY` is selected only for
-VSync when the timing extension and surface capability path are both verified.
+The optional late-wait authority is selected once per frame in this order:
+NVIDIA Reflex, AMD Anti-Lag 2, generic present timing, no optional late wait.
+The existing host limiter remains the sole exact frame-rate cap whenever the FPS
+limit is enabled; vendor latency APIs and the bounded present wait must not turn
+that toggle into unlimited rendering. Generic `vkWaitForPresent2KHR` is bounded
+to 2 ms, runs immediately before late input, waits each accepted Present ID at
+most once, and resets on swapchain recreation or out-of-date results.
+Fast-forward, slow-motion, and unlimited-FPS frames never use the refresh-bound
+generic path.
 Timing reports are drained every frame (logged every 600 developer frames); if
 the optional results queue is nevertheless full, the same image and Present ID
 are retried once without timing metadata instead of failing the presenter.
+
+**Target-time presentation scheduling** is what separates the `JustInTime`
+policies from `PresentWait`: they request an absolute presentation time through
+`VkPresentTimingInfoEXT::targetTime` rather than only bounding a wait.
+
+The frame interval the targets are spaced by is the emulator's own, taken from
+the frame limiter's `storedFrametimeStep` and passed down through
+`beginVulkanLowLatencyFrame()`. It is never derived from the display refresh
+rate: the DS frame rate follows the configured TargetFPS, and a 144 Hz monitor
+must not change how fast the machine runs. Outside normal speed the interval is
+zero, which is what turns scheduling off for fast-forward, slow motion and
+unlimited FPS. The flag is
+`VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT`, so choosing
+which refresh cycle to land on stays the presentation engine's decision instead
+of a hand-written 2/3 cadence in the emulator.
+
+Targets are computed as `baseline stage time + N x frame interval`, where `N`
+counts **accepted presents**, not emulated frames. The logical Present ID is the
+Reflex frame ID when Reflex is running and therefore skips values whenever a
+frame is simulated but not presented; a small fixed ring maps reported IDs back
+to presentation sequence numbers. The baseline is rebased onto every new
+complete timing report, so rounding error and clock drift cannot accumulate, and
+a rejected or queue-full present releases its reserved sequence instead of
+leaving a hole in the cadence. `VulkanPresentTimingModel` holds this arithmetic
+with no Vulkan objects at all and is executed by
+`melonprime_vulkan_present_timing_tests` on every Vulkan build.
+
+Both lifecycle queries behind it are dynamic. `vkGetSwapchainTimingPropertiesEXT`
+and `vkGetSwapchainTimeDomainPropertiesEXT` may answer `VK_NOT_READY` before the
+first present -- a pending state, not a failure -- and are retried once presents
+are being accepted. `timingPropertiesCounter` and `timeDomainsCounter` from each
+drained results batch are compared against the stored values, so a refresh-rate
+change, fullscreen transition, power-state change or VRR/FRR switch re-queries
+them. A time-domain change or a report answered in an unexpected domain drops
+the baseline rather than projecting a target on a clock the timestamps did not
+come from. The target time domain is `SWAPCHAIN_LOCAL`, falling back to
+`PRESENT_STAGE_LOCAL`, and the stage is the most display-visible one the surface
+reports.
+
+Scheduling requires all of: a `JustInTime` policy, normal speed, a non-zero
+frame interval, present ID 2 and present wait 2 surface support, the
+`presentAtAbsoluteTime` device feature and surface capability, a FIFO-family
+present mode, ready timing properties and time domains, a valid target stage,
+and a feedback baseline. Anything missing falls back to `targetTime = 0` and is
+recorded as a named reason in the developer log -- never to a renderer failure
+or a software fallback. `FIFO_LATEST_READY` is selected only for VSync when that
+whole capability and lifecycle path is in place, since time-based image
+selection is the reason the mode exists; a baseline is deliberately not part of
+that gate, because one cannot exist before the first present.
 
 The settings probe evaluates the same optional-feature dependencies as device
 creation: the NVIDIA control requires the low-latency extension, timeline
@@ -442,9 +493,18 @@ renderer creation**:
 
 Configuration keys are `3D.DX12.NvidiaReflexMode` and
 `3D.AMD.AntiLag2Enabled` (shared with DX12 for compatibility), plus the
-developer A/B key `3D.Vulkan.PresentPacingPolicy`: `0` telemetry-only (default),
-`1` bounded present wait, `2` just-in-time pacing, `3` just-in-time plus
-FIFO-latest-ready. Feature state and frame
+developer A/B key `3D.Vulkan.PresentPacingPolicy`. All four keep the host frame
+limiter as the exact FPS cap:
+
+| Value | Policy | Bounded `PresentWait2` | `targetTime` | Present mode |
+|---|---|---|---|---|
+| `0` | `TelemetryOnly` (default) | no | 0 | FIFO |
+| `1` | `PresentWait` | yes | 0 | FIFO |
+| `2` | `JustInTime` | yes | absolute | FIFO |
+| `3` | `JustInTimeFifoLatestReady` | yes | absolute | `FIFO_LATEST_READY` |
+
+The default stays telemetry-only until the target-time path has been validated
+on real hardware. Feature state and frame
 IDs belong to each presenter/emulator instance; no process-global latency or
 pacing state is introduced. Anti-Lag 2 is a boolean preference; configurations
 written by the early integer-default implementation migrate explicit `0`/`1`

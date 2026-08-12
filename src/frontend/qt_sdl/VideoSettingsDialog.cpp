@@ -161,11 +161,17 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 
-    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
-    const QString vulkanBaseTooltip = vulkanProbe.Available
-        ? VulkanRendererDescription()
-        : QString::fromStdString(vulkanProbe.Reason);
-    const QString vulkanRendererDescription = vulkanBaseTooltip;
+    // Do not create a Vulkan device merely to refresh help text while a
+    // foreign native backend is live. The selected backend has already been
+    // probed by renderer normalization; unselected backends are deliberately
+    // deferred until their transition has torn down the old renderer.
+    QString vulkanRendererDescription = VulkanRendererDescription();
+    if (vulkanRenderer)
+    {
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        if (!vulkanProbe.Available)
+            vulkanRendererDescription = QString::fromStdString(vulkanProbe.Reason);
+    }
     rb3DVulkan->setToolTip(vulkanRendererDescription);
     rb3DVulkan->setWhatsThis(vulkanRendererDescription);
 
@@ -584,30 +590,47 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // A runtime failure is cached so renderer normalization can fall back
-    // without changing the persisted selection.  Reopening this dialog is
-    // the explicit retry boundary: probe the loader/device again before
-    // deciding whether the Vulkan choice remains disabled.
-    MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
-    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
-    rb3DVulkan->setEnabled(vulkanProbe.Available);
-    rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
-        vulkanProbe.Available
-            ? VulkanRendererDescription()
-            : QString::fromStdString(vulkanProbe.Reason)));
+    // Opening Video Settings must not probe a foreign GPU API. Creating a
+    // second native device while the active renderer owns its queues can
+    // destabilize the live driver (observed as VK_ERROR_DEVICE_LOST when a
+    // DX12 probe ran over Vulkan). Retry only the selected backend; choices
+    // that are not active remain selectable and are probed during transition.
+    if (oldRenderer == renderer3D_Vulkan)
+    {
+        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        rb3DVulkan->setEnabled(vulkanProbe.Available);
+        rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
+            vulkanProbe.Available
+                ? VulkanRendererDescription()
+                : QString::fromStdString(vulkanProbe.Reason)));
+    }
+    else
+    {
+        rb3DVulkan->setEnabled(true);
+        rb3DVulkan->setToolTip(VulkanRendererDescription());
+    }
     rb3DVulkan->setWhatsThis(rb3DVulkan->toolTip());
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    // Reopening this dialog is the explicit retry boundary for a cached DX12
-    // runtime failure, exactly like Vulkan above.
-    MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
-    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
-    rb3DDX12->setEnabled(dx12Probe.Available);
-    rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
-        dx12Probe.Available
-            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.")
-            : QString::fromStdString(dx12Probe.Reason)));
+    const QString dx12Description = MelonPrime::UiText::Tr(
+        "Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.");
+    if (oldRenderer == renderer3D_DX12)
+    {
+        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
+        const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+        rb3DDX12->setEnabled(dx12Probe.Available);
+        rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
+            dx12Probe.Available
+                ? dx12Description
+                : QString::fromStdString(dx12Probe.Reason)));
+    }
+    else
+    {
+        rb3DDX12->setEnabled(true);
+        rb3DDX12->setToolTip(dx12Description);
+    }
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -773,8 +796,6 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
 #ifdef MELONPRIME_DS
     auto& cfg = emuInstance->getGlobalConfig();
-    const auto oldBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (renderer == renderer3D_Vulkan)
         MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
@@ -785,12 +806,15 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 #endif
     cfg.SetInt("3D.Renderer", renderer);
 
+    // The direct signal performs the synchronous backend transition. Keep all
+    // selected-backend feature probes after it so the old native device has
+    // been destroyed before another graphics API creates or acquires one. A
+    // renderer radio-button change always rebuilds presentation; computing
+    // the new backend here would itself run the selected backend's probe.
+    emit updateVideoSettings(true);
+
     setEnabled();
     setVsyncControlEnable(UsesGL());
-
-    const auto newBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-        cfg.GetBool("Screen.UseGL"), renderer);
-    emit updateVideoSettings(oldBackend != newBackend);
 #else
     bool old_gl = UsesGL();
 
