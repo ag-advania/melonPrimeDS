@@ -46,6 +46,10 @@ public:
 
     bool SetMode(int mode);
     [[nodiscard]] bool IsAvailable() const noexcept { return Available; }
+    [[nodiscard]] bool IsActive() const noexcept
+    {
+        return Available && ModeApplied && Mode != DX12NvidiaReflexMode::Off;
+    }
     [[nodiscard]] DX12NvidiaReflexMode GetMode() const noexcept { return Mode; }
     [[nodiscard]] const std::string& GetUnavailableReason() const noexcept { return UnavailableReason; }
 

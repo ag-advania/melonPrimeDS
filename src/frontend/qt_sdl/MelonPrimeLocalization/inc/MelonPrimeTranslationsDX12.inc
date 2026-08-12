@@ -383,6 +383,48 @@
         }
     },
     {
+        "Intel XeLL pacing policy:",
+        {
+            {MenuLangId::Japanese, "Intel XeLLペーシングポリシー:"},
+        }
+    },
+    {
+        "Compatibility",
+        {
+            {MenuLangId::Japanese, "互換モード"},
+        }
+    },
+    {
+        "Bypass DXGI wait (experimental)",
+        {
+            {MenuLangId::Japanese, "DXGI待機を迂回（実験的）"},
+        }
+    },
+    {
+        "Bypass host limiter (experimental)",
+        {
+            {MenuLangId::Japanese, "ホストリミッターを迂回（実験的）"},
+        }
+    },
+    {
+        "XeLL frame cap (experimental)",
+        {
+            {MenuLangId::Japanese, "XeLLフレーム上限（実験的）"},
+        }
+    },
+    {
+        "Intel recommended (experimental)",
+        {
+            {MenuLangId::Japanese, "Intel推奨（実験的）"},
+        }
+    },
+    {
+        "Developer-only Intel XeLL pacing experiments. Compatibility remains the default until Intel Arc hardware validation is complete.",
+        {
+            {MenuLangId::Japanese, "開発者向けのIntel XeLLペーシング実験です。Intel Arc実機検証が完了するまで互換モードが既定です。"},
+        }
+    },
+    {
         "VSync Interval is not used by the native Vulkan presenter.",
         {
             {MenuLangId::Japanese, "VSync間隔はネイティブVulkanプレゼンターでは使用されません。"},

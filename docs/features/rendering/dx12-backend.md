@@ -168,11 +168,37 @@ flip-model `IDXGISwapChain::Present` call. All calls for a frame share one
 monotonically increasing per-renderer frame ID. Calls remain active in Off mode,
 as Intel recommends, while `xellSetSleepMode` controls latency reduction.
 
-`minimumIntervalUs` is zero. MelonPrime's existing limiter runs before
-`xellSleep`, matching Intel's required order without adding a second limiter.
+Compatibility mode keeps `minimumIntervalUs` at zero. MelonPrime's existing
+limiter runs before `xellSleep`, matching Intel's required order without adding
+a second limiter. Developer builds additionally expose four hardware-validation
+experiments: bypass only the DXGI frame-latency wait, bypass only the host
+limiter, transfer the host frame cap to XeLL, or Intel-recommended mode (XeLL
+owns the cap and both generic waits are bypassed). These paths take effect only
+after the runtime reports XeLL actually enabled. Compatibility remains value
+zero and the release default; release builds ignore a stored experimental value.
+The pure host-limiter bypass is restricted to normal speed; policies that give
+XeLL the frame cap instead update `minimumIntervalUs` on fast-forward and
+slow-motion transitions without calling `xellSetSleepMode` in steady state.
 Before changing sleep mode or destroying the context, the renderer inserts and
 waits for a queue-wide fence that also retires native-presenter work. The saved
-configuration key is `3D.Intel.XeLLEnabled`.
+configuration keys are `3D.Intel.XeLLEnabled` and the developer-only
+`3D.Intel.XeLLPacingPolicy`.
+
+The runtime wrapper exposes an injectable XeLL API table. The Windows DX12
+build runs the production lifecycle against a fake backend on every build,
+covering normal, 3D-work-free, skipped-present, present-failure, symbol/version,
+sleep-mode, marker-failure, cleanup, monotonically increasing frame IDs and
+pacing-policy cases without requiring Intel hardware. The low-latency CI audit
+also verifies the DLL hash, PE exports, ABI assertions, license/notices and
+default-Off configuration.
+
+Logs distinguish requested state, runtime presence, vendor probe support,
+context creation, applied sleep mode, actual enabled state, minimum interval,
+frame ID, runtime version, adapter IDs and driver version. They deliberately
+report `hardwareValidation=pending`: fake-backend and static tests prove the
+integration contract, not Intel Arc runtime behavior or a latency improvement.
+The Arc acceptance procedure is documented in
+[`intel-arc-xell-validation.md`](../../development/testing/intel-arc-xell-validation.md).
 
 Reflex and Anti-Lag 2 remain vendor-gated, so only XeLL can be active on the
 supported Intel path. This also satisfies Intel's requirement not to combine
@@ -224,6 +250,7 @@ Reflex setting.
 | `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
 | `src/DX12AmdAntiLag2.{h,cpp}` | Runtime AMD Anti-Lag 2 driver-ABI loading, support probe and per-frame input insertion point |
 | `src/DX12IntelXeLL.{h,cpp}` | Runtime XeLL loading, Intel support probe, sleep-mode state and complete frame-marker lifecycle |
+| `src/DX12LowLatencyPacing.h` | Single DX12 pacing-authority resolver and developer XeLL comparison policies |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
 | `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, GPU presentation ring and capture readback |
 | `src/DX12PresentedFrame.h` | Opaque GPU-resource handoff descriptor shared by renderer and presenter |

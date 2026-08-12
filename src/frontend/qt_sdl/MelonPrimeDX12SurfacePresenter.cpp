@@ -213,6 +213,12 @@ void DX12SurfacePresenter::Shutdown() noexcept
     FrameOpen = false;
     FrameReady = false;
     FirstPresentLogged = false;
+    PresentWaitStateLogged = false;
+    LastPresentWaitEnabled = true;
+    PresentModeLogged = false;
+    LastPresentVsync = false;
+    PresentResultLogged = false;
+    LastPresentResult = S_OK;
     PerfRecordStart = {};
     Window = nullptr;
     if (Context)
@@ -554,10 +560,24 @@ bool DX12SurfacePresenter::WaitForPresentSlot()
     }
 }
 
-bool DX12SurfacePresenter::BeginFrame(std::uint32_t width, std::uint32_t height)
+bool DX12SurfacePresenter::BeginFrame(
+    std::uint32_t width,
+    std::uint32_t height,
+    bool waitForPresentSlot)
 {
     if (!Initialized || FrameOpen || width == 0 || height == 0)
         return false;
+    if (!PresentWaitStateLogged || LastPresentWaitEnabled != waitForPresentSlot)
+    {
+        PresentWaitStateLogged = true;
+        LastPresentWaitEnabled = waitForPresentSlot;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "DX12 presentation pacing frameLatencyWaitActive=%d policyValidation=%s\n",
+            waitForPresentSlot ? 1 : 0,
+            waitForPresentSlot ? "compatibility" : "developer-experiment");
+    }
+    if (waitForPresentSlot)
     {
         melonDS::DX12Perf::ScopedCpuTimer waitTimer(
             melonDS::DX12Perf::CpuMetric::PresentSlotWait);
@@ -863,8 +883,33 @@ bool DX12SurfacePresenter::Present(bool vsync)
 
     const UINT syncInterval = vsync ? 1u : 0u;
     const UINT flags = !vsync && TearingSupported ? DXGI_PRESENT_ALLOW_TEARING : 0u;
+    if (!PresentModeLogged || LastPresentVsync != vsync)
+    {
+        PresentModeLogged = true;
+        LastPresentVsync = vsync;
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "DX12 presentation mode vsync=%d syncInterval=%u allowTearing=%d "
+            "frameLatencyWaitActive=%d\n",
+            vsync ? 1 : 0,
+            syncInterval,
+            flags != 0 ? 1 : 0,
+            LastPresentWaitEnabled ? 1 : 0);
+    }
     const HRESULT hr = Swapchain->Present(syncInterval, flags);
     FrameReady = false;
+    if (!PresentResultLogged || LastPresentResult != hr)
+    {
+        PresentResultLogged = true;
+        LastPresentResult = hr;
+        melonDS::Platform::Log(
+            FAILED(hr) ? melonDS::Platform::LogLevel::Error
+                       : melonDS::Platform::LogLevel::Info,
+            "DX12 presentation result HRESULT=0x%08lX success=%d occluded=%d\n",
+            static_cast<unsigned long>(hr),
+            SUCCEEDED(hr) ? 1 : 0,
+            hr == DXGI_STATUS_OCCLUDED ? 1 : 0);
+    }
     if (hr == DXGI_STATUS_OCCLUDED)
         return true;
     if (FAILED(hr))

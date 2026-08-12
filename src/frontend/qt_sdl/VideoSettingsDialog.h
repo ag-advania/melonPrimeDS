@@ -81,6 +81,9 @@ private slots:
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     void onIntelXeLLModeChanged(int mode);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void onIntelXeLLPacingPolicyChanged(int policy);
+#endif
 #endif
 private:
     void setVsyncControlEnable(bool hasOGL);
@@ -111,6 +114,10 @@ private:
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     QLabel* lblIntelXeLL = nullptr;
     QComboBox* cbxIntelXeLL = nullptr;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    QLabel* lblIntelXeLLPacingPolicy = nullptr;
+    QComboBox* cbxIntelXeLLPacingPolicy = nullptr;
+#endif
 #endif
 
     int oldRenderer;
@@ -129,6 +136,9 @@ private:
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     bool oldIntelXeLLEnabled;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    int oldIntelXeLLPacingPolicy;
+#endif
 #endif
 };
 

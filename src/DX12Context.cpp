@@ -372,15 +372,19 @@ bool DX12Context::CreateDevice()
     }
     Profile.VendorId = desc.VendorId;
     Profile.DeviceId = desc.DeviceId;
+    LARGE_INTEGER driverVersion{};
+    if (SUCCEEDED(Adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion)))
+        Profile.DriverVersion = static_cast<u64>(driverVersion.QuadPart);
     Profile.DedicatedVideoMemory = desc.DedicatedVideoMemory;
     Profile.IsSoftwareAdapter = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
 
     Platform::Log(
         Platform::LogLevel::Info,
-        "DX12: adapter=\"%s\" vendor=%04X device=%04X vram=%lluMB featureLevel=%X.%X shaderModel=%u.%u software=%d debugLayer=%d\n",
+        "DX12: adapter=\"%s\" vendor=%04X device=%04X driver=%016llX vram=%lluMB featureLevel=%X.%X shaderModel=%u.%u software=%d debugLayer=%d\n",
         Profile.AdapterName.c_str(),
         Profile.VendorId,
         Profile.DeviceId,
+        static_cast<unsigned long long>(Profile.DriverVersion),
         static_cast<unsigned long long>(Profile.DedicatedVideoMemory >> 20),
         (static_cast<unsigned>(Profile.FeatureLevel) >> 12) & 0xF,
         (static_cast<unsigned>(Profile.FeatureLevel) >> 8) & 0xF,

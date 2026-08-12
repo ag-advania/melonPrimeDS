@@ -1005,6 +1005,9 @@ struct RendererSettings
     // Intel Xe Low Latency. The DX12 backend uses minimumIntervalUs=0 because
     // MelonPrime's existing limiter runs before xellSleep.
     bool IntelXeLLEnabled;
+    // Developer builds may select an unvalidated XeLL pacing experiment.
+    // Release builds always pass Compatibility regardless of stored config.
+    int IntelXeLLPacingPolicy;
 #endif
 #endif
 };

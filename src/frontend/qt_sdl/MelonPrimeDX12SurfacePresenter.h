@@ -61,7 +61,10 @@ public:
     bool Init(HWND window);
     void Shutdown() noexcept;
 
-    bool BeginFrame(std::uint32_t width, std::uint32_t height);
+    bool BeginFrame(
+        std::uint32_t width,
+        std::uint32_t height,
+        bool waitForPresentSlot = true);
     bool UploadLayer(
         Layer layer,
         const void* pixels,
@@ -150,6 +153,12 @@ private:
     bool FrameOpen = false;
     bool FrameReady = false;
     bool FirstPresentLogged = false;
+    bool PresentWaitStateLogged = false;
+    bool LastPresentWaitEnabled = true;
+    bool PresentModeLogged = false;
+    bool LastPresentVsync = false;
+    bool PresentResultLogged = false;
+    HRESULT LastPresentResult = S_OK;
     std::chrono::steady_clock::time_point PerfRecordStart{};
     std::string Error;
 };

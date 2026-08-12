@@ -1974,6 +1974,7 @@ void ScreenPanelDX12::drawScreen()
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
+    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
     RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
     const RendererOutput& output = outputLease.Output;
     const DX12PresentedFrame* gpuFrame = nullptr;
@@ -2013,7 +2014,9 @@ void ScreenPanelDX12::drawScreen()
     const qreal dpr = devicePixelRatioF();
     const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
     const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
-    if (!dx12->presenter.BeginFrame(physicalWidth, physicalHeight))
+    const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
+    if (!dx12->presenter.BeginFrame(
+            physicalWidth, physicalHeight, waitForPresentSlot))
     {
         requestNativeSurfaceVisible(false);
         reportRuntimeFailure(dx12->presenter.LastError().c_str());
@@ -2296,7 +2299,6 @@ void ScreenPanelDX12::drawScreen()
     }
 
     const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
-    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
     if (renderer)
     {
         renderer->BeginReflexPresent();

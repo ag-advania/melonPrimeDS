@@ -22,6 +22,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <SDL2/SDL.h>
 
@@ -348,6 +350,40 @@ void EmuThread::run()
         const bool audioSync = emuInstance->doAudioSync;
 #endif
 
+        // Startup and settings changes must create/configure the renderer
+        // before either the pacing authority or the frame's low-latency Begin
+        // calls are selected.
+        if (UNLIKELY(videoSettingsDirty))
+        {
+            if (useOpenGL)
+                emuInstance->makeCurrentGL();
+            applyPendingVideoSettings();
+        }
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+        if (UNLIKELY(handleDX12RuntimeFailure()))
+            shadersReady = true;
+        auto* dx12LowLatencyRenderer = dynamic_cast<DX12Renderer*>(
+            &emuInstance->nds->GPU.GetRenderer());
+        bool bypassHostLimiter = false;
+        if (dx12LowLatencyRenderer)
+        {
+            const long long roundedIntervalUs = std::llround(storedFrametimeStep * 1000000.0);
+            const std::uint32_t minimumIntervalUs = limitFPS
+                ? static_cast<std::uint32_t>(std::clamp(
+                    roundedIntervalUs,
+                    1LL,
+                    static_cast<long long>(std::numeric_limits<std::uint32_t>::max())))
+                : 0;
+            // This is a discrete transition only: fast-forward/slow-motion
+            // update storedFrametimeStep at the end of the preceding frame.
+            dx12LowLatencyRenderer->UpdateIntelXeLLFrameCap(minimumIntervalUs);
+            bypassHostLimiter = ShouldBypassDX12HostLimiter(
+                dx12LowLatencyRenderer->GetLowLatencyPacingDecision(),
+                !fastforward && !slowmo);
+        }
+#endif
+
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-13: Late-Poll Frame Limiter — sleep BEFORE input, not after.
@@ -370,7 +406,11 @@ void EmuThread::run()
         // Combined with P-11 (NtSetTimerResolution 0.5ms): jitter drops from
         // ±15ms to ±0.03ms.
         // =================================================================
-        if (limitFPS && !isFirstLimiterFrame)
+        if (limitFPS
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+            && !bypassHostLimiter
+#endif
+            && !isFirstLimiterFrame)
         {
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
             double elapsed = curtime - lastTime;
@@ -440,25 +480,10 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
-        // Startup and settings changes must create/configure the renderer
-        // before the frame's low-latency Begin calls. In particular, the first
-        // hardware-rendered frame must include Sleep, INPUT_SAMPLE and the
-        // matching simulation markers instead of starting midway through it.
-        if (UNLIKELY(videoSettingsDirty))
-        {
-            if (useOpenGL)
-                emuInstance->makeCurrentGL();
-            applyPendingVideoSettings();
-        }
-
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        // Reflex sleep belongs immediately before late input sampling. Cache
-        // the renderer once for the rest of this frame; renderer transitions
-        // explicitly close the frame before destroying it below.
-        if (UNLIKELY(handleDX12RuntimeFailure()))
-            shadersReady = true;
-        auto* dx12LowLatencyRenderer = dynamic_cast<DX12Renderer*>(
-            &emuInstance->nds->GPU.GetRenderer());
+        // Low-latency sleep belongs immediately before late input sampling.
+        // The renderer is cached for the rest of this frame; transitions close
+        // the frame explicitly before destroying it below.
         if (dx12LowLatencyRenderer)
         {
             dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
@@ -1664,7 +1689,13 @@ void EmuThread::updateRenderer()
         .NvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode),
         .AmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled),
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        .IntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled)
+        .IntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled),
+        .IntelXeLLPacingPolicy =
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            cfg.GetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy)
+#else
+            0
+#endif
 #endif
 #endif
     };

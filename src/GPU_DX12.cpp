@@ -119,6 +119,9 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
     }
     AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
+    IntelXeLLPacingPolicy = DX12IntelXeLLPacingPolicyFromConfig(
+        settings.IntelXeLLPacingPolicy);
+    IntelXeLLRequestedIntervalUs = 0;
     if (auto* dx12 = GetDX12Renderer3D())
     {
         if (!dx12->WaitForQueueIdle())
@@ -129,10 +132,11 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         }
         else
         {
-            IntelXeLL.SetEnabled(settings.IntelXeLLEnabled);
+            IntelXeLL.SetSleepMode(settings.IntelXeLLEnabled, 0);
         }
     }
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
+    LogLowLatencyPacingStateIfChanged();
 }
 
 void DX12Renderer::Start3DRendering()
@@ -287,6 +291,7 @@ void DX12Renderer::BeginReflexFrame()
 void DX12Renderer::BeginAmdAntiLag2Frame()
 {
     AmdAntiLag2.BeginFrame();
+    LogLowLatencyPacingStateIfChanged();
 }
 
 void DX12Renderer::BeginIntelXeLLFrame()
@@ -347,6 +352,79 @@ void DX12Renderer::FinishReflexFrame()
 void DX12Renderer::FinishIntelXeLLFrame()
 {
     IntelXeLL.FinishFrame();
+}
+
+void DX12Renderer::UpdateIntelXeLLFrameCap(std::uint32_t minimumIntervalUs)
+{
+    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
+    const std::uint32_t requestedInterval = decision.XeLLOwnsFrameCap
+        ? minimumIntervalUs
+        : 0;
+    if (IntelXeLLRequestedIntervalUs == requestedInterval)
+        return;
+
+    const DX12IntelXeLLStatus status = IntelXeLL.GetStatus();
+    if (!status.ContextCreated || !status.SleepModeApplied)
+        return;
+
+    auto* dx12 = GetDX12Renderer3D();
+    if (!dx12 || !dx12->WaitForQueueIdle())
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "Intel XeLL frame-cap transition skipped because the DX12 queue did not become idle\n");
+        return;
+    }
+
+    if (IntelXeLL.SetSleepMode(status.Requested, requestedInterval))
+    {
+        IntelXeLLRequestedIntervalUs = requestedInterval;
+        LogLowLatencyPacingStateIfChanged();
+    }
+}
+
+DX12LowLatencyPacingDecision DX12Renderer::GetLowLatencyPacingDecision() const noexcept
+{
+    return ResolveDX12LowLatencyPacing(
+        NvidiaReflex.IsActive(),
+        AmdAntiLag2.IsActive(),
+        IntelXeLL.IsActive(),
+        IntelXeLLPacingPolicy);
+}
+
+void DX12Renderer::LogLowLatencyPacingStateIfChanged()
+{
+    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
+    if (PacingDecisionLogged
+        && decision.Authority == LastLoggedPacingDecision.Authority
+        && decision.BypassHostLimiter == LastLoggedPacingDecision.BypassHostLimiter
+        && decision.BypassPresentWait == LastLoggedPacingDecision.BypassPresentWait
+        && decision.XeLLOwnsFrameCap == LastLoggedPacingDecision.XeLLOwnsFrameCap)
+    {
+        return;
+    }
+
+    LastLoggedPacingDecision = decision;
+    PacingDecisionLogged = true;
+    const DX12IntelXeLLStatus xell = IntelXeLL.GetStatus();
+    const auto& profile = DX12Context::Get().GetDeviceProfile();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "DX12 low-latency pacing adapter=\"%s\" vendor=%04X device=%04X driver=%016llX "
+        "authority=%s xellPolicy=%s xellRequested=%d xellActual=%d "
+        "minimumIntervalUs=%u hostLimiterBypass=%d frameLatencyWaitBypass=%d "
+        "hardwareValidation=pending\n",
+        profile.AdapterName.c_str(),
+        profile.VendorId,
+        profile.DeviceId,
+        static_cast<unsigned long long>(profile.DriverVersion),
+        DX12LowLatencyPacingAuthorityName(decision.Authority),
+        DX12IntelXeLLPacingPolicyName(IntelXeLLPacingPolicy),
+        xell.Requested ? 1 : 0,
+        xell.ActualEnabled ? 1 : 0,
+        xell.MinimumIntervalUs,
+        decision.BypassHostLimiter ? 1 : 0,
+        decision.BypassPresentWait ? 1 : 0);
 }
 
 } // namespace melonDS

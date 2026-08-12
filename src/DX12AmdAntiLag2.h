@@ -42,6 +42,10 @@ public:
     void BeginFrame();
 
     [[nodiscard]] bool IsAvailable() const noexcept { return Available; }
+    [[nodiscard]] bool IsActive() const noexcept
+    {
+        return Available && StateApplied && AppliedEnabled;
+    }
     [[nodiscard]] const std::string& GetUnavailableReason() const noexcept { return UnavailableReason; }
 
 private:

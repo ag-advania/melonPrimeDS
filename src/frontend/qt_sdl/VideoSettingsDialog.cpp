@@ -311,6 +311,15 @@ void VideoSettingsDialog::setEnabled()
                     : intelXeLLUnavailableReason)));
     lblIntelXeLL->setToolTip(intelXeLLDescription);
     cbxIntelXeLL->setToolTip(intelXeLLDescription);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool intelXeLLPacingEnabled = intelXeLLEnabled && cbxIntelXeLL->currentIndex() != 0;
+    lblIntelXeLLPacingPolicy->setEnabled(intelXeLLPacingEnabled);
+    cbxIntelXeLLPacingPolicy->setEnabled(intelXeLLPacingEnabled);
+    const QString intelXeLLPacingDescription = MelonPrime::UiText::Tr(
+        "Developer-only Intel XeLL pacing experiments. Compatibility remains the default until Intel Arc hardware validation is complete.");
+    lblIntelXeLLPacingPolicy->setToolTip(intelXeLLPacingDescription);
+    cbxIntelXeLLPacingPolicy->setToolTip(intelXeLLPacingDescription);
+#endif
 #endif
 #endif
 }
@@ -348,6 +357,9 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     oldIntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    oldIntelXeLLPacingPolicy = cfg.GetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy);
+#endif
 #endif
 
     grp3DRenderer = new QButtonGroup(this);
@@ -503,6 +515,26 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         &VideoSettingsDialog::onIntelXeLLModeChanged);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    lblIntelXeLLPacingPolicy = new QLabel(ui->groupBox_3);
+    lblIntelXeLLPacingPolicy->setObjectName(QStringLiteral("lblIntelXeLLPacingPolicy"));
+    lblIntelXeLLPacingPolicy->setText(MelonPrime::UiText::Tr("Intel XeLL pacing policy:"));
+    cbxIntelXeLLPacingPolicy = new QComboBox(ui->groupBox_3);
+    cbxIntelXeLLPacingPolicy->setObjectName(QStringLiteral("cbxIntelXeLLPacingPolicy"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Compatibility"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Bypass DXGI wait (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Bypass host limiter (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("XeLL frame cap (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Intel recommended (experimental)"));
+    cbxIntelXeLLPacingPolicy->setCurrentIndex(qBound(0, oldIntelXeLLPacingPolicy, 4));
+    ui->gridLayout_4->addWidget(lblIntelXeLLPacingPolicy, 10, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxIntelXeLLPacingPolicy, 11, 0, 1, 1);
+    connect(
+        cbxIntelXeLLPacingPolicy,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onIntelXeLLPacingPolicyChanged);
+#endif
 #endif
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
@@ -656,6 +688,9 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, oldIntelXeLLEnabled);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    cfg.SetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy, oldIntelXeLLPacingPolicy);
+#endif
 #endif
 
 #ifdef MELONPRIME_DS
@@ -887,6 +922,17 @@ void VideoSettingsDialog::onIntelXeLLModeChanged(int mode)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, mode != 0);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    setEnabled();
+#endif
     emit updateVideoSettings(false);
 }
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+void VideoSettingsDialog::onIntelXeLLPacingPolicyChanged(int policy)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy, policy);
+    emit updateVideoSettings(false);
+}
+#endif
 #endif

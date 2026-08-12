@@ -560,6 +560,26 @@ if (MELONPRIME_DX12_ACTIVE)
         MelonPrimeDX12FeatureCheck.cpp
         MelonPrimeDX12SurfacePresenter.cpp)
 
+    # Execute the production XeLL state machine against an injected fake API
+    # on every Windows DX12 build. This validates successful and failing driver
+    # paths without requiring Intel Arc hardware or loading Intel's runtime.
+    add_executable(melonprime_xell_state_machine_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/xell-state-machine-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12IntelXeLL.cpp)
+    target_include_directories(melonprime_xell_state_machine_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_xell_state_machine_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_DX12=1
+        MELONPRIME_ENABLE_DEVELOPER_FEATURES=1)
+    set_target_properties(melonprime_xell_state_machine_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_xell_state_machine_check ALL
+        COMMAND $<TARGET_FILE:melonprime_xell_state_machine_tests>
+        DEPENDS melonprime_xell_state_machine_tests
+        COMMENT "Running Intel XeLL fake API state-machine tests..."
+        VERBATIM)
+
     set(MELONPRIME_XELL_RUNTIME_DIR
         "${CMAKE_SOURCE_DIR}/res/third_party/intel-xell")
     set(MELONPRIME_XELL_RUNTIME

@@ -58,6 +58,10 @@
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12) \
+    && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+#include "MelonPrimeDX12FeatureCheck.h"
+#endif
 
 #include "Config.h"
 
@@ -370,6 +374,24 @@ int main(int argc, char** argv)
 
     MelonApplication melon(argc, argv);
     pathInit();
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12) \
+    && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // Hardware-independent builds can exercise the real D3D12 adapter and
+    // production XeLL vendor-negative path without opening a window or ROM.
+    if (std::getenv("MELONPRIME_TEST_XELL_NEGATIVE_PATH"))
+    {
+        const auto& result = MelonPrime::DX12FeatureCheck::Probe();
+        const bool passed = result.Available && !result.IntelXeLLAvailable;
+        std::fprintf(
+            passed ? stdout : stderr,
+            "Intel XeLL production negative-path test %s adapter=\"%s\" reason=\"%s\"\n",
+            passed ? "PASS" : "FAIL",
+            result.AdapterName.c_str(),
+            result.IntelXeLLReason.c_str());
+        return passed ? 0 : 1;
+    }
+#endif
 
 #if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (const auto goldenOut = melonPrimeHudGoldenOutputPath(argc, argv); goldenOut.has_value())

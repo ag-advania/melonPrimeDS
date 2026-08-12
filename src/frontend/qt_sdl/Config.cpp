@@ -68,6 +68,9 @@ namespace Config
         {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
         {MelonPrime::CfgKey::NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
+        // Developer experiments are opt-in. Compatibility keeps the existing
+        // host limiter and DXGI waitable-object pacing authoritative.
+        {MelonPrime::CfgKey::IntelXeLLPacingPolicy, 0},
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},
@@ -169,6 +172,7 @@ namespace Config
         {"3D.GL.ScaleFactor", {1, 16}},
     #ifdef MELONPRIME_DS
         {MelonPrime::CfgKey::NvidiaReflexMode, {0, 2}},
+        {MelonPrime::CfgKey::IntelXeLLPacingPolicy, {0, 4}},
     #endif
         {"Audio.Interpolation", {0, 4}},
         {"Instance*.Audio.Volume", {0, 256}},

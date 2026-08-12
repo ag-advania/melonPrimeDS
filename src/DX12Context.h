@@ -41,6 +41,7 @@ public:
         std::string AdapterName;
         u32 VendorId = 0;
         u32 DeviceId = 0;
+        u64 DriverVersion = 0;
         u64 DedicatedVideoMemory = 0;
         D3D_FEATURE_LEVEL FeatureLevel = D3D_FEATURE_LEVEL_11_0;
         // Highest shader model the device reports, as a packed 0xMm value
