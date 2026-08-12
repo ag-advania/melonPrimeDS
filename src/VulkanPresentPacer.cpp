@@ -296,12 +296,6 @@ bool VulkanPresentPacer::BeginFrame(
     return false;
 }
 
-bool VulkanPresentPacer::ShouldBypassHostLimiter(bool normalSpeed) const noexcept
-{
-    return normalSpeed
-        && GetAuthority() != VulkanPacingAuthority::GenericHost;
-}
-
 u64 VulkanPresentPacer::PreparePresent(
     VkPresentInfoKHR& present, u64 preferredId, PresentMetadata& metadata)
 {

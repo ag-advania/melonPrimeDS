@@ -74,7 +74,6 @@ public:
     void invalidateRendererOutput();
 #if defined(MELONPRIME_ENABLE_VULKAN)
     void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled, bool normalSpeed);
-    [[nodiscard]] bool vulkanPacingBypassesHostLimiter(bool normalSpeed);
     void markVulkanReflexInputSample();
     void markVulkanReflexSimulationStart();
     void markVulkanReflexSimulationEnd();

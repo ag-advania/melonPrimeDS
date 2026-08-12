@@ -133,11 +133,6 @@ public:
     // frame; startup uses this before emitting the first effective-state log.
     void SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled);
     void SetGenericPresentPacingPolicy(int policy) noexcept { PresentPacer.SetPolicy(policy); }
-    [[nodiscard]] bool ShouldBypassHostLimiter(bool normalSpeed) const noexcept
-    {
-        return PresentPacer.ShouldBypassHostLimiter(normalSpeed);
-    }
-
     // Physical-pixel size of the current swapchain. Zero before the first
     // successful BeginFrame().
     [[nodiscard]] melonDS::u32 GetWidth() const noexcept { return SwapchainExtent.width; }

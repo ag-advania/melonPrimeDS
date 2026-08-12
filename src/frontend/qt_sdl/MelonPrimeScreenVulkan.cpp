@@ -683,12 +683,6 @@ void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
     vulkan->presenter.BeginLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
 }
 
-bool ScreenPanelVulkan::vulkanPacingBypassesHostLimiter(bool normalSpeed) const
-{
-    return vulkan && vulkan->presenter.IsInitialized()
-        && vulkan->presenter.ShouldBypassHostLimiter(normalSpeed);
-}
-
 void ScreenPanelVulkan::markVulkanReflexInputSample()
 {
     if (!vulkan || !vulkan->presenter.IsInitialized())

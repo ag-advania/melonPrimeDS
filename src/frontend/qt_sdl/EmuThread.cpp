@@ -384,14 +384,6 @@ void EmuThread::run()
         }
 #endif
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        auto* vulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(
-            &emuInstance->nds->GPU.GetRenderer());
-        const bool bypassVulkanHostLimiter = vulkanLowLatencyRenderer
-            && emuInstance->vulkanPacingBypassesHostLimiter(
-                limitFPS && !fastforward && !slowmo);
-#endif
-
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-13: Late-Poll Frame Limiter — sleep BEFORE input, not after.
@@ -417,9 +409,6 @@ void EmuThread::run()
         if (limitFPS
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
             && !bypassHostLimiter
-#endif
-#if defined(MELONPRIME_ENABLE_VULKAN)
-            && !bypassVulkanHostLimiter
 #endif
             && !isFirstLimiterFrame)
         {
@@ -504,6 +493,8 @@ void EmuThread::run()
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+        auto* vulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(
+            &emuInstance->nds->GPU.GetRenderer());
         if (vulkanLowLatencyRenderer)
             emuInstance->beginVulkanLowLatencyFrame(
                 vulkanLowLatencyRenderer->GetNvidiaReflexMode(),

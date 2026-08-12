@@ -93,6 +93,7 @@
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
+#include "VulkanDevice.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
@@ -1449,12 +1450,6 @@ void MainWindow::beginVulkanLowLatencyFrame(
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
         panel->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
-}
-
-bool MainWindow::vulkanPacingBypassesHostLimiter(bool normalSpeed)
-{
-    QMutexLocker panelLock(&screenPanelLock);
-    return panel && panel->vulkanPacingBypassesHostLimiter(normalSpeed);
 }
 
 void MainWindow::markVulkanReflexInputSample()
@@ -3121,6 +3116,15 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
             destroyPanels();
             prepareRenderers();
         }
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_VULKAN)
+        // Vulkan's Windows safety reference intentionally outlives the last
+        // presenter/renderer destructor. We are now past both synchronous
+        // teardown stacks, so release it before another native API enumerates
+        // adapters. Otherwise D3D12 can see only Microsoft Basic Render Driver
+        // and appear to work at single-digit FPS.
+        VulkanDevice::ReleaseRetainedDeviceForBackendTransition();
+#endif
 #else
         if (hadOGL)
         {

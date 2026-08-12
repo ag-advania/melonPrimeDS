@@ -123,11 +123,6 @@ public:
         (void)antiLag2Enabled;
         (void)normalSpeed;
     }
-    [[nodiscard]] virtual bool vulkanPacingBypassesHostLimiter(bool normalSpeed) const
-    {
-        (void)normalSpeed;
-        return false;
-    }
     virtual void markVulkanReflexInputSample() {}
     virtual void markVulkanReflexSimulationStart() {}
     virtual void markVulkanReflexSimulationEnd() {}
@@ -468,7 +463,6 @@ public:
     void endModalPausePresentation() override;
     void beginVulkanLowLatencyFrame(
         int reflexMode, bool antiLag2Enabled, bool normalSpeed) override;
-    [[nodiscard]] bool vulkanPacingBypassesHostLimiter(bool normalSpeed) const override;
     void markVulkanReflexInputSample() override;
     void markVulkanReflexSimulationStart() override;
     void markVulkanReflexSimulationEnd() override;

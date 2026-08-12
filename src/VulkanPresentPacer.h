@@ -63,7 +63,6 @@ public:
     // Called immediately before late input sampling. Returns true when the
     // swapchain was reported out of date and should be rebuilt.
     bool BeginFrame(bool reflexActive, bool antiLagActive, bool normalSpeed);
-    [[nodiscard]] bool ShouldBypassHostLimiter(bool normalSpeed) const noexcept;
 
     // Adds present_id2 and timing telemetry to VkPresentInfoKHR. `preferredId`
     // is the Reflex correlation id when available, otherwise zero.

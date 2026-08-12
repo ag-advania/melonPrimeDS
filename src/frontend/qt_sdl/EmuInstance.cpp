@@ -526,11 +526,6 @@ void EmuInstance::beginVulkanLowLatencyFrame(
         mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled, normalSpeed);
 }
 
-bool EmuInstance::vulkanPacingBypassesHostLimiter(bool normalSpeed)
-{
-    return mainWindow && mainWindow->vulkanPacingBypassesHostLimiter(normalSpeed);
-}
-
 void EmuInstance::markVulkanReflexInputSample()
 {
     if (mainWindow)
