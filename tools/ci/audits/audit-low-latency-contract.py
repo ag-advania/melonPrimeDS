@@ -452,6 +452,33 @@ def main() -> int:
         "the aggregator must reject captures whose target columns contradict each other",
         failures,
     )
+    # VK_NV_low_latency2 puts PRESENT_END "when vkQueuePresentKHR returns". Any
+    # pacer or capture bookkeeping placed before the end markers is folded into
+    # both the Reflex latency report and the host input-to-present figure, which
+    # moves the boundary the A/B is measuring.
+    require(
+        ordered(
+            function_body(
+                vulkan_presenter,
+                "    if (tagLatency)\n        Reflex.MarkPresentStart();",
+                "if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)",
+            ),
+            [
+                "Reflex.MarkPresentStart();",
+                "LatencyCapture.MarkPresentStart();",
+                "res = fns.QueuePresentKHR(",
+                "PresentPacer.PrepareRetryWithoutTiming(",
+                "res = fns.QueuePresentKHR(",
+                "LatencyCapture.MarkPresentEnd();",
+                "Reflex.MarkPresentEnd();",
+                "PresentPacer.NotifyPresentResult(",
+                "LatencyCapture.Commit(",
+                "Reflex.NotifyPresented();",
+            ],
+        ),
+        "present end markers must close immediately after the final QueuePresent returns",
+        failures,
+    )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
         and "if (result != VK_INCOMPLETE)" in vulkan_pacer

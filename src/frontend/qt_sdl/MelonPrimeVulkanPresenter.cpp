@@ -1650,7 +1650,13 @@ bool VulkanPresenter::EndFrame()
     AntiLag.EndFrame(LowLatencyFrameIndex);
 
     // PRESENT_START / PRESENT_END bracket the real vkQueuePresentKHR and
-    // nothing else.
+    // nothing else. VK_NV_low_latency2 specifies PRESENT_START "just before
+    // vkQueuePresentKHR" and PRESENT_END "when vkQueuePresentKHR returns", so
+    // both the Reflex marker and the host capture timestamp close the span the
+    // instant the call comes back -- before any pacer or capture bookkeeping.
+    // Putting that bookkeeping inside the span would fold post-present CPU work
+    // into every Reflex latency report and into the host input-to-present
+    // figure the A/B compares, shifting the very boundary being measured.
     if (tagLatency)
         Reflex.MarkPresentStart();
     LatencyCapture.MarkPresentStart();
@@ -1662,11 +1668,21 @@ bool VulkanPresenter::EndFrame()
         if (PresentPacer.PrepareRetryWithoutTiming(res, genericPresentMetadata))
             res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
     }
-    PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
+
+    // Nothing may be inserted between the final QueuePresent returning and
+    // these two lines. On the queue-full retry path the span covers both calls
+    // and ends when the second one returns; the present is one presentation
+    // either way, so it gets one marker pair.
     LatencyCapture.MarkPresentEnd();
+    if (tagLatency)
+        Reflex.MarkPresentEnd();
+
+    PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
     // Only a present the engine accepted is a measurable frame. Recording the
     // rejected ones would mix "displayed at time T" with "never displayed".
+    // This runs after NotifyPresentResult so the row's presentation sequence is
+    // the one this present just committed.
     if (LatencyCapture.IsEnabled() && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
     {
         LatencyCapture.SetReflexMode(static_cast<int>(Reflex.GetMode()));
@@ -1675,16 +1691,12 @@ bool VulkanPresenter::EndFrame()
             PresentPacer.CaptureState(genericPresentMetadata));
     }
 
-    if (tagLatency)
-    {
-        Reflex.MarkPresentEnd();
-        // Only a call that actually reached the presentation engine counts as a
-        // present for vkLatencySleepNV's "once between presents" rule.
-        // VK_SUBOPTIMAL_KHR did present; VK_ERROR_OUT_OF_DATE_KHR did not, but
-        // it retires the swapchain anyway and the rebuild resets the state.
-        if (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
-            Reflex.NotifyPresented();
-    }
+    // Not a marker: this is vkLatencySleepNV's "once between presents"
+    // bookkeeping, so it deliberately sits outside the PRESENT span.
+    // VK_SUBOPTIMAL_KHR did present; VK_ERROR_OUT_OF_DATE_KHR did not, but it
+    // retires the swapchain anyway and the rebuild resets the state.
+    if (tagLatency && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
+        Reflex.NotifyPresented();
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
     {

@@ -350,6 +350,19 @@ the target columns themselves, and **exits non-zero** with the offending rows
 listed if any run contradicts itself. A run flagged this way is `INVALID`, not a
 slower or faster result — do not compare it.
 
+### Where the present span ends
+
+`present_end_time_us` and the Reflex `PRESENT_END` marker are both taken the
+instant the final `vkQueuePresentKHR` returns, before any pacer or capture
+bookkeeping. `VK_NV_low_latency2` defines `PRESENT_END` as "when
+vkQueuePresentKHR returns", and the host proxy below is only meaningful with the
+same boundary — otherwise post-present CPU work lands inside every measured
+interval.
+
+So `input_to_present` covers input sampling through the present call returning,
+and nothing after it. On the queue-full retry path the span covers both calls
+and closes when the second returns: one presentation, one marker pair.
+
 ### What the numbers are and are not
 
 `vkGetLatencyTimingsNV` and the capture CSV are **software marker timings**. They
