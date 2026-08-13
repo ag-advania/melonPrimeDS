@@ -85,14 +85,22 @@ class RunStats:
         self.queue_recoveries = 0
         self.queue_size = 0
         self.wait_timeouts_at_warmup = 0
+        self.swapchain_generation: int | None = None
+        self.swapchain_recreations_in_window = 0
         self._load(warmup)
 
     def _load(self, warmup: int) -> None:
         with self.path.open(newline="", encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
 
+        if rows and "swapchain_generation" not in rows[0]:
+            self.problems.append(
+                f"{self.path.name}: missing required swapchain_generation column"
+            )
+
         previous_present_end: int | None = None
         for index, row in enumerate(rows):
+            generation = self._read_swapchain_generation(row, index)
             if index < warmup:
                 self.dropped_warmup += 1
                 previous_present_end = as_int(row, "present_end_time_us")
@@ -112,6 +120,23 @@ class RunStats:
             self.target_active += applied
             self.bounded_wait += as_int(row, "bounded_wait")
             self.bounded_wait_attempted += as_int(row, "bounded_wait_attempted")
+
+            # These lifecycle counters are cumulative only within a swapchain.
+            # A recreation resets them to zero, so subtracting the warm-up value
+            # from the final row would silently undercount an A/B window that
+            # crossed that boundary. Reject the run and collect it again without
+            # a recreation instead of presenting a plausible but false total.
+            if generation is not None:
+                if self.swapchain_generation is None:
+                    self.swapchain_generation = generation
+                elif generation != self.swapchain_generation:
+                    self.swapchain_recreations_in_window += 1
+                    self.problems.append(
+                        f"{self.path.name}:{index}: swapchain_generation changed "
+                        f"from {self.swapchain_generation} to {generation} "
+                        "inside the measured window; lifecycle counters reset"
+                    )
+                    self.swapchain_generation = generation
 
             # Only a row that actually applied a target may name the run's mode.
             # A row claiming a mode without having applied one is a producer
@@ -141,6 +166,30 @@ class RunStats:
             input_us = as_int(row, "input_sample_time_us")
             if input_us and present_end > input_us:
                 self.input_to_present_ms.append((present_end - input_us) / 1000.0)
+
+    def _read_swapchain_generation(
+        self, row: dict[str, str], index: int
+    ) -> int | None:
+        if "swapchain_generation" not in row:
+            return None
+        raw = row.get("swapchain_generation")
+        if raw is None or not raw.strip():
+            self.problems.append(
+                f"{self.path.name}:{index}: missing swapchain_generation value"
+            )
+            return None
+        try:
+            generation = int(raw)
+        except ValueError:
+            self.problems.append(
+                f"{self.path.name}:{index}: invalid swapchain_generation={raw!r}"
+            )
+            return None
+        if generation <= 0:
+            self.problems.append(
+                f"{self.path.name}:{index}: swapchain_generation={generation} is not positive"
+            )
+        return generation
 
     def _check_row(self, row: dict[str, str], index: int, applied: int, mode: int) -> None:
         """Validate one row against what the capture is supposed to guarantee.
@@ -250,6 +299,8 @@ class RunStats:
             # The runbook's "< 1%" threshold, computed the way the runbook
             # defines it: timeouts per wait that actually ran.
             "wait_timeout_rate": round(self.wait_timeout_rate, 6),
+            "swapchain_generation": self.swapchain_generation or 0,
+            "swapchain_recreations_in_window": self.swapchain_recreations_in_window,
             "timing_queue_size": self.queue_size,
             "timing_queue_full_count": self.queue_full,
             "timing_queue_recovery_count": self.queue_recoveries,

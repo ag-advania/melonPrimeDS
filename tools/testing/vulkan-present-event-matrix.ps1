@@ -20,6 +20,12 @@
     all | resize | minimize | fullscreen | idle
     "idle" is the control: same runtime, no window events.
 
+.PARAMETER ValidateSync
+    Enable core and Synchronization Validation through vk_layer_settings.txt,
+    require the layer's CURRENT-VALIDATION-ENABLED banner to list
+    Synchronization, and fail on SYNC-HAZARD messages. The temporary settings
+    file is restored or removed when the run ends.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
         -Rom "C:\roms\game.nds" -Phase minimize -Tag min-run1
@@ -39,6 +45,7 @@ param(
     [int]$Policy = 2,
     [string]$Tag = "event-matrix",
     [int]$WarmupSeconds = 18,
+    [switch]$ValidateSync,
     [string]$OutDir = $env:TEMP
 )
 
@@ -50,6 +57,14 @@ $dir = (Resolve-Path $BuildDir).Path
 $exe = Join-Path $dir 'melonPrimeDS.exe'
 if (-not (Test-Path $exe)) { throw "melonPrimeDS.exe not found in $dir" }
 $out = Join-Path $OutDir "vk-$Tag.out.log"
+$err = Join-Path $OutDir "vk-$Tag.err.log"
+$layerSettings = Join-Path $dir 'vk_layer_settings.txt'
+$hadLayerSettings = Test-Path -LiteralPath $layerSettings
+$originalLayerSettings = if ($hadLayerSettings) {
+    [System.IO.File]::ReadAllBytes($layerSettings)
+} else {
+    $null
+}
 
 Add-Type @"
 using System;
@@ -93,10 +108,21 @@ Emu.ExternalBIOSEnable = false
 "@
 Set-Content -Path (Join-Path $dir 'melonDS.toml') -Value $cfg -NoNewline
 
-$proc = Start-Process -FilePath $exe -ArgumentList "`"$Rom`"" -WorkingDirectory $dir `
-        -PassThru -RedirectStandardOutput $out -RedirectStandardError (Join-Path $OutDir "vk-$Tag.err.log")
-
+$proc = $null
 try {
+    if ($ValidateSync) {
+        $syncCfg = @"
+khronos_validation.validate_core = true
+khronos_validation.validate_sync = true
+khronos_validation.report_flags = error,warn,perf,info
+khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
+"@
+        Set-Content -LiteralPath $layerSettings -Value $syncCfg -NoNewline -Encoding ASCII
+    }
+
+    $proc = Start-Process -FilePath $exe -ArgumentList "`"$Rom`"" -WorkingDirectory $dir `
+            -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+
     # The first swapchain, shader warm-up and the ROM's own boot all have to be
     # past before window events mean anything.
     Start-Sleep -Seconds $WarmupSeconds
@@ -145,19 +171,47 @@ try {
     Start-Sleep -Seconds 3
 }
 finally {
-    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+    if ($null -ne $proc -and -not $proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
     Start-Sleep -Seconds 2
+    if ($ValidateSync) {
+        if ($hadLayerSettings) {
+            [System.IO.File]::WriteAllBytes($layerSettings, $originalLayerSettings)
+        } elseif (Test-Path -LiteralPath $layerSettings) {
+            Remove-Item -LiteralPath $layerSettings -Force
+        }
+    }
 }
 
-$log = Get-Content $out -ErrorAction SilentlyContinue
-$recreations = ($log | Select-String -SimpleMatch 'swapchain ready').Count
-$vuids = ($log | Select-String -Pattern 'VUID-[A-Za-z0-9-]+' -AllMatches).Matches.Value
-$deviceLost = ($log | Select-String -SimpleMatch 'DEVICE_LOST').Count
+$logPaths = @($out, $err) | Where-Object { Test-Path -LiteralPath $_ }
+$log = Get-Content -LiteralPath $logPaths -ErrorAction SilentlyContinue
+$recreations = @($log | Select-String -SimpleMatch 'swapchain ready').Count
+$vuids = @(
+    $log | Select-String -Pattern 'VUID-[A-Za-z0-9-]+' -AllMatches |
+        ForEach-Object { $_.Matches | ForEach-Object { $_.Value } }
+)
+$syncHazards = @(
+    $log | Select-String -Pattern 'SYNC-HAZARD' -AllMatches |
+        ForEach-Object { $_.Matches | ForEach-Object { $_.Value } }
+)
+$deviceLost = @($log | Select-String -SimpleMatch 'DEVICE_LOST').Count
+$syncBanner = @($log | Select-String -SimpleMatch 'CURRENT-VALIDATION-ENABLED')
+$syncEnabled = @($log | Select-String -SimpleMatch 'Synchronization')
 
 Write-Host ""
 Write-Host "log            : $out"
+Write-Host "error log      : $err"
 Write-Host "swapchain rebuilds: $recreations"
 Write-Host "device lost       : $deviceLost"
+if ($ValidateSync) {
+    if ($syncBanner.Count -gt 0 -and $syncEnabled.Count -gt 0) {
+        Write-Host "sync validation   : enabled (banner confirmed)"
+    } else {
+        Write-Host "sync validation   : NOT CONFIRMED (banner missing)"
+    }
+    Write-Host "sync hazards      : $($syncHazards.Count)"
+}
 if ($vuids.Count -eq 0) {
     Write-Host "validation        : clean"
 } else {
@@ -165,5 +219,6 @@ if ($vuids.Count -eq 0) {
     $vuids | Group-Object | Sort-Object Count -Descending |
         ForEach-Object { Write-Host ("  {0,4}x {1}" -f $_.Count, $_.Name) }
 }
-if ($deviceLost -gt 0 -or $vuids.Count -gt 0) { exit 1 }
+if ($deviceLost -gt 0 -or $vuids.Count -gt 0 -or $syncHazards.Count -gt 0) { exit 1 }
+if ($ValidateSync -and ($syncBanner.Count -eq 0 -or $syncEnabled.Count -eq 0)) { exit 1 }
 exit 0

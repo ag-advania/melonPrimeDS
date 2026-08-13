@@ -85,18 +85,23 @@ A first session ran on 2026-08-13 (RTX 5070 Ti, driver 610.74.0.0, loader
 | Validation layer enabled and confirmed in log | yes |
 | Core validation, policies 0/1/2/3, Reflex off | **0 errors** |
 | Core validation, Reflex on | **0 errors** |
-| Synchronization validation, policies 0/2/3, Reflex on+boost | **0 hazards** |
+| Synchronization validation, current-tree minimize/restore | **PASS**; banner confirmed, VUID 0, `SYNC-HAZARD` 0, `DEVICE_LOST` 0 |
 | VSync off control — `IMMEDIATE`, target scheduling off | as specified |
 | Reflex on → `authority=NvidiaReflex`, both generic mechanisms off | as specified |
 | Device loss / software fallback / recreate storm | none |
+| Automated window matrix at the recorded fix | 4 phases clean; current-tree Sync gate also clean |
 
 One VUID was found and fixed during the session
 (`VUID-VkPresentTimingInfoEXT-timeDomainId-12400`).
 
-The session covered startup, ROM load and steady-state presentation. Still
-**NOT RUN**: the event matrix below (fullscreen, resize, DPI, minimize, F2,
-renderer switching), the speed modes, and every latency number in Phases 2-3 —
-all of which need a person driving the emulator.
+The historical session covered startup, ROM load and steady-state presentation.
+The window-driven subset is now automated and has a separate after-fix archive:
+resize x40, minimize/restore x20, fullscreen x8 and idle control. The remaining
+rows are still **NOT RUN** in the archive and need a person driving the
+emulator: DPI, Video Settings, renderer switching, ROM lifecycle, speed modes,
+and every latency number in Phases 2-3. The current-tree synchronization gate is
+recorded in `docs/archive/audits/vulkan/2026-08-13-event-matrix/vk-min-sync-final2.*`.
+It is a targeted minimize/restore gate; the full policy/manual matrix remains open.
 
 One expectation in the source instructions cannot be observed on this surface:
 with VSync off the fallback reason reads `absolute timing unsupported by
@@ -191,9 +196,9 @@ attempt does not repeat them:
   `HKKey_SlowMo` entry in `Config.cpp`, only the joystick one. The Slow Motion
   row can only be driven by a pad.
 
-All four automated phases are **clean** — no VUID, no device loss, no software
-fallback, no recreate storm. Evidence and the full history of the one defect
-these phases did find are in
+The archived four-phase core-validation matrix is **clean** — no VUID, no device
+loss, no software fallback, no recreate storm. Evidence and the full history of
+the one defect these phases did find are in
 [`docs/archive/audits/vulkan/2026-08-13-event-matrix/`](../../archive/audits/vulkan/2026-08-13-event-matrix/README.md).
 
 That defect was `VUID-vkQueuePresentKHR-pWaitSemaphores-03268`, 20 messages over
@@ -201,12 +206,17 @@ That defect was `VUID-vkQueuePresentKHR-pWaitSemaphores-03268`, 20 messages over
 semaphore whose wait the rejected call had already enqueued. It was never a
 swapchain-lifecycle bug — minimize/restore merely overflowed the present-timing
 results queue often enough to expose it. Fixed by dropping the wait semaphores
-on the retry, and held by a contract in `audit-low-latency-contract.py`.
+on the retry, and held by a contract in `audit-low-latency-contract.py`. The
+current-tree follow-up additionally pauses timing metadata before the results
+queue is full, so Synchronization Validation does not encounter the
+retry-as-a-second-present hazard.
 
-When re-running the minimize phase, check it is not a vacuous pass: the retry
-path should still fire (`grep 'retrying present without optional timing
-metadata'`). A clean run with zero retries has not exercised it. Measured across
-three runs: 9, 10 and 10 retries.
+The archived post-semaphore-fix core run intentionally exercised the retry path
+(9, 10 and 10 retries across three runs) and stayed clean. On the current tree,
+the new capacity guard is expected to prevent an actual driver queue-full error:
+the Sync gate must instead show `queue at capacity`, a subsequent queue growth,
+and `queue-full errors=0`. This proves the pressure/recovery path without
+re-entering the validation hazard that motivated the follow-up.
 
 Minimize/restore is the **only** phase that fills the present-timing results
 queue, because presents stall while the window is hidden. Running free (`-NoVSync`,
@@ -240,6 +250,16 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 khronos_validation.log_filename = C:\tmp\vk-sync-run.log
 ```
 
+For the reproducible window stress, use the harness switch below. It writes the
+same core/sync settings next to the Debug executable, requires the validation
+banner to list **Synchronization**, scans both stdout and stderr for VUIDs and
+`SYNC-HAZARD`, and restores/removes the temporary settings file afterward:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
+  -Rom <rom> -Phase minimize -ValidateSync -Tag min-sync1
+```
+
 An empty log file is only evidence of "no findings" once you have proved the
 settings are being read at all. Add `info` to `report_flags` for one control
 run: the layer then prints a `CURRENT-VALIDATION-ENABLED` banner listing the
@@ -248,6 +268,23 @@ an empty log is indistinguishable from a settings file the loader never found.
 
 **Delete the file when the pass is over.** Left in place it silently enables
 sync validation for every later run of that binary.
+
+Current-tree targeted gate result (2026-08-13, Debug build with
+`MELONDS_VULKAN_ENABLE_VALIDATION=1`):
+
+```text
+Phase=minimize, minimize/restore x20, swapchain rebuilds=26
+CURRENT-VALIDATION-ENABLED: confirmed; Synchronization listed
+VUID=0, SYNC-HAZARD=0, DEVICE_LOST=0, exit=0
+queue-at-capacity events=22, queue growth events=10 (16 -> 32)
+queue-full errors=0
+```
+
+The first current-tree attempt exposed 20 `SYNC-HAZARD-WRITE-AFTER-PRESENT`
+messages on the retry-as-a-second-present path and was correctly rejected. The
+capacity guard fixed that path; the final log is archived as
+`vk-min-sync-final2.out.log` / `.err.log`. This targeted gate does not close
+the manual lifecycle rows or the full Phase 3 A/B matrix.
 
 GPU-Assisted Validation is not required for present pacing. If used at all, use
 a separate run.
@@ -425,6 +462,18 @@ attempted waits, not against every frame. The aggregator reports it directly as
 subtracting its value at the warm-up boundary is what keeps warm-up timeouts
 from being charged to the measured window. Use `wait_timeout_rate`; deriving a
 rate from `wait_timeout_count` directly will overstate it.
+
+### Swapchain-local counters
+
+`wait_timeout_count`, `timing_queue_full_count` and
+`timing_queue_recovery_count` reset when the swapchain is recreated. Every
+latency-capture row therefore carries a monotonic `swapchain_generation`.
+`aggregate-vulkan-latency.py` treats a generation change inside the measured
+window as `INVALID`; it never subtracts a post-recreate counter from the
+warm-up baseline and reports a plausible but incomplete total. Re-run that
+mode without a measured-window recreation. A recreation at or before the warm-up
+boundary is allowed because the measured baseline then belongs to one current
+swapchain.
 
 ### Where the present span ends
 

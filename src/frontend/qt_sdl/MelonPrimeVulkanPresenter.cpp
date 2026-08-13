@@ -1643,12 +1643,6 @@ bool VulkanPresenter::EndFrame()
         present.pNext = &presentId;
     }
 
-    // Anti-Lag's PRESENT stage is specified to be issued immediately before
-    // vkQueuePresentKHR, with the frame index its INPUT partner used. That
-    // index is the Reflex frame id when Reflex is running and the presenter's
-    // own absolute frame counter otherwise -- see BeginLowLatencyFrame.
-    AntiLag.EndFrame(LowLatencyFrameIndex);
-
     // PRESENT_START / PRESENT_END bracket the real vkQueuePresentKHR and
     // nothing else. VK_NV_low_latency2 specifies PRESENT_START "just before
     // vkQueuePresentKHR" and PRESENT_END "when vkQueuePresentKHR returns".
@@ -1667,6 +1661,14 @@ bool VulkanPresenter::EndFrame()
     VkResult res = VK_SUCCESS;
     {
         std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());
+
+        // Anti-Lag's PRESENT stage is specified to be issued immediately before
+        // vkQueuePresentKHR, with the frame index its INPUT partner used. Keep
+        // the update under the same queue lock so contention cannot separate
+        // the vendor marker from the queue operation. The index is the Reflex
+        // frame id when Reflex is running and the presenter's own absolute
+        // frame counter otherwise -- see BeginLowLatencyFrame.
+        AntiLag.EndFrame(LowLatencyFrameIndex);
 
         if (tagLatency)
             Reflex.MarkPresentStart();

@@ -21,6 +21,31 @@ fired **9 times** in that same clean run
 (`present timing results queue full; retrying present without optional timing
 metadata`).
 
+## Current-tree Synchronization Validation follow-up
+
+The current tree was then run with the reproducible harness gate:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
+  -Rom C:\DSMPH\melonPrimeDS最新版\balancedRom.nds `
+  -BuildDir build\debug-mingw-vulkan-validation2 `
+  -Phase minimize -ValidateSync -Tag min-sync-final2 -WarmupSeconds 18 `
+  -OutDir docs\archive\audits\vulkan\2026-08-13-event-matrix
+```
+
+Result: 26 rebuilds, validation banner confirmed with **Synchronization**,
+VUID 0, `SYNC-HAZARD` 0, `DEVICE_LOST` 0, and exit 0. The run recorded 22
+queue-at-capacity pauses and 10 queue-growth recoveries (16 -> 32), with
+`queue-full errors=0`.
+
+The first current-tree Sync attempt found 20
+`SYNC-HAZARD-WRITE-AFTER-PRESENT` messages when the queue-full retry was
+re-presenting the same image. The follow-up now pauses timing metadata before
+the results queue is full and counts only complete timing reports as released
+slots. The final logs are `vk-min-sync-final2.out.log` and
+`vk-min-sync-final2.err.log`; the failed diagnostic run is retained as
+`vk-min-sync-current.out.log` / `.err.log`.
+
 ## The defect that was open, and its cause
 
 ```text
@@ -45,6 +70,10 @@ The fix drops `waitSemaphoreCount`/`pWaitSemaphores` on the retry. Ordering
 survives: the wait the first call enqueued is already ahead of the retry on the
 same present queue, and queue operations start in submission order, so the
 retried presentation still follows the rendering it depends on.
+
+The retry remains as a defensive fallback, but normal queue pressure is handled
+before `vkQueuePresentKHR` reaches the full queue. This avoids turning the
+rejected retry into a second present write under Synchronization Validation.
 
 It looked like a swapchain-lifecycle bug only because minimize/restore is what
 made the timing queue overflow often enough to be visible.
@@ -74,7 +103,9 @@ semaphore and the double-wait is unambiguous.
 ## Regression protection
 
 `tools/ci/audits/audit-low-latency-contract.py` requires the retry path to clear
-both `present.waitSemaphoreCount` and `present.pWaitSemaphores`.
+both `present.waitSemaphoreCount` and `present.pWaitSemaphores`, and requires
+the capacity guard plus complete-report accounting that keeps the retry path
+from being the normal queue-pressure route.
 
 ## Reproducing
 

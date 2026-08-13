@@ -174,6 +174,9 @@ bool VulkanPresentLatencyCapture::Flush()
     //   relative_accumulator_*  target_value_ns == relative_quanta *
     //                           target_generation_refresh_interval_ns
     //                           can be verified per present
+    //   swapchain_generation    timing counters are cumulative only within
+    //                           one swapchain; the aggregator invalidates a
+    //                           measured window that crosses a recreation
     std::fprintf(file,
         "run_id,sample_index,present_id,"
         "input_sample_time_us,sim_start_time_us,sim_end_time_us,"
@@ -182,7 +185,7 @@ bool VulkanPresentLatencyCapture::Flush()
         "gpu_render_start_time_us,gpu_render_end_time_us,"
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
         "bounded_wait_attempted,"
-        "present_mode,fallback_reason,"
+        "present_mode,fallback_reason,swapchain_generation,"
         "target_mode,target_value_ns,"
         "target_generation_refresh_interval_ns,target_generation_refresh_duration_ns,"
         "relative_quanta,relative_accumulator_before_ns,relative_accumulator_after_ns,"
@@ -228,6 +231,7 @@ bool VulkanPresentLatencyCapture::Flush()
             p.BoundedWaitAttempted ? 1 : 0,
             p.PresentMode,
             p.FallbackReason,
+            static_cast<unsigned long long>(p.SwapchainGeneration),
             p.TargetMode,
             static_cast<unsigned long long>(p.TargetValueNs),
             static_cast<unsigned long long>(p.TargetGenerationRefreshIntervalNs),

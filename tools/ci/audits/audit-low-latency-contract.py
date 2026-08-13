@@ -84,6 +84,7 @@ def main() -> int:
     vulkan = read("src/VulkanNvidiaReflex.cpp")
     vulkan_pacer = read("src/VulkanPresentPacer.cpp")
     vulkan_pacer_header = read("src/VulkanPresentPacer.h")
+    vulkan_latency_capture = read("src/VulkanPresentLatencyCapture.cpp")
     vulkan_pacing_policy = read("src/VulkanPresentPacingPolicy.h")
     vulkan_timing_tests = read("tools/testing/vulkan-present-timing-tests.cpp")
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
@@ -253,9 +254,24 @@ def main() -> int:
     )
     require(
         "TimingQueueAllocated" in vulkan_pacer_header
-        and "TimingQueueRecoveryPending && reportCount > 0 && TimingQueueAllocated"
+        and "TimingQueueRecoveryPending = false;" in function_body(
+            vulkan_pacer,
+            "if (TimingQueueRecoveryPending && completedReportCount > 0 && TimingQueueAllocated)",
+            "    // Nothing left to poll for",
+        )
+        and "TimingQueueRecoveryPending && completedReportCount > 0 && TimingQueueAllocated"
             in vulkan_pacer,
         "queue growth must be distinguished from the initial allocation",
+        failures,
+    )
+    require(
+        all(token in vulkan_pacer for token in (
+            "OutstandingTimedPresents >= TimingQueueSize",
+            "present timing results queue at capacity",
+            "completedReportCount",
+            "reportComplete == VK_TRUE",
+        )),
+        "timing metadata must pause before a full queue forces a retry-present sync hazard",
         failures,
     )
     require(
@@ -495,6 +511,9 @@ def main() -> int:
                 # makes that boundary checkable here rather than implied by a
                 # closing brace.
                 "queueLock(Device.GetQueueMutex());",
+                # AMD PRESENT must be associated with the queue operation
+                # after queue ownership is acquired, not behind contention.
+                "AntiLag.EndFrame(LowLatencyFrameIndex);",
                 "Reflex.MarkPresentStart();",
                 "LatencyCapture.MarkPresentStart();",
                 "res = fns.QueuePresentKHR(",
@@ -510,6 +529,42 @@ def main() -> int:
             ],
         ),
         "present markers must bracket only QueuePresent, inside the queue lock",
+        failures,
+    )
+    require(
+        all(token in vulkan_latency_capture for token in (
+            "swapchain_generation",
+            "p.SwapchainGeneration",
+        ))
+        and vulkan_pacer_header.count("u64 SwapchainGeneration = 0;") >= 2
+        and ordered(
+            function_body(
+                vulkan_pacer,
+                "void VulkanPresentPacer::OnSwapchainCreated(",
+                "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
+            ),
+            ["++SwapchainGeneration;", "ResetTimingLifecycle();"],
+        )
+        and "snapshot.SwapchainGeneration = SwapchainGeneration;" in vulkan_pacer
+        and all(token in read("tools/perf/aggregate-vulkan-latency.py") for token in (
+            "missing required swapchain_generation column",
+            "swapchain_generation changed",
+            "swapchain_recreations_in_window",
+            "lifecycle counters reset",
+        )),
+        "latency capture must identify swapchain generations and invalidate reset-crossing runs",
+        failures,
+    )
+    event_matrix = read("tools/testing/vulkan-present-event-matrix.ps1")
+    require(
+        all(token in event_matrix for token in (
+            "[switch]$ValidateSync",
+            "validate_sync = true",
+            "CURRENT-VALIDATION-ENABLED",
+            "SYNC-HAZARD",
+            "$err",
+        )),
+        "the event matrix must support confirmed Synchronization Validation and scan stderr",
         failures,
     )
     # The bounded wait is skipped whenever there is nothing to wait on, so the

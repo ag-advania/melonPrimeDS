@@ -143,6 +143,11 @@ public:
         int Policy = 0;
         int Authority = 0;
         int PresentMode = 0;
+        // Monotonic for the lifetime of this pacer. The timing counters below
+        // are reset for every swapchain, so the capture must be able to reject
+        // a measured window that crosses a recreation rather than treating a
+        // reset counter as a run total.
+        u64 SwapchainGeneration = 0;
         bool TargetTimeScheduling = false;
         // Allowed by the policy and capabilities this frame.
         bool BoundedPresentWait = false;
@@ -211,6 +216,11 @@ private:
     VkSurfaceKHR Surface = VK_NULL_HANDLE;
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // This is deliberately not part of ResetTimingLifecycle(): it identifies
+    // the lifecycle that was reset and remains observable in the next capture
+    // row. Initialize/Shutdown may reuse the pacer, so lifetime monotonicity is
+    // more useful than a swapchain-local 0/1 flag.
+    u64 SwapchainGeneration = 0;
 
     std::atomic<int> Policy{static_cast<int>(VulkanPresentPacingPolicy::TelemetryOnly)};
     std::atomic<int> Authority{static_cast<int>(VulkanPacingAuthority::GenericHost)};

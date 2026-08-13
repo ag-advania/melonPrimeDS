@@ -446,6 +446,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
 void VulkanPresentPacer::OnSwapchainCreated(
     VkSwapchainKHR swapchain, VkPresentModeKHR presentMode, u32 imageCount)
 {
+    ++SwapchainGeneration;
     ResetTimingLifecycle();
     Swapchain = swapchain;
     PresentMode = presentMode;
@@ -754,6 +755,26 @@ u64 VulkanPresentPacer::PreparePresent(
     // The logical ID counts emulation frames; the sequence counts accepted
     // presents. Only the latter may be multiplied by the frame interval.
     metadata.Sequence = TimingModel.BeginPresent(metadata.LogicalId);
+
+    // VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT is returned after the present
+    // operation has already enqueued its semaphore waits. Retrying that same
+    // image without the waits is required for VUID-03268, but synchronization
+    // validation quite reasonably still sees the first call as a present write.
+    // Avoid making that retry the normal queue-pressure path: once every slot
+    // is represented by an accepted present whose result is still outstanding,
+    // stop attaching optional timing metadata before vkQueuePresentKHR is
+    // called. The render/present path keeps running, while ReportPastTiming()
+    // drains the queue and arms the bounded growth recovery below.
+    if (TimingMetadataEnabled && TimingQueueAllocated && TimingQueueSize != 0
+        && OutstandingTimedPresents >= TimingQueueSize)
+    {
+        TimingMetadataEnabled = false;
+        TimingQueueRecoveryPending = true;
+        WaitDisabledReason =
+            "present timing results queue at capacity; timing metadata paused pending drain";
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] %s\n", WaitDisabledReason.c_str());
+    }
 
     // VkPresentTimingInfoEXT::timeDomainId must always be an ID that
     // vkGetSwapchainTimeDomainPropertiesEXT returned -- not only when a target
@@ -1180,9 +1201,17 @@ void VulkanPresentPacer::ReportPastTiming()
     const u32 reportCount = std::min<u32>(
         properties.presentationTimingCount, static_cast<u32>(reports.size()));
 
-    // Each returned report retires one timed present and frees its slot,
-    // whether or not it carries a timestamp this pacer can use.
-    OutstandingTimedPresents -= std::min<u64>(OutstandingTimedPresents, reportCount);
+    // With ALLOW_PARTIAL_RESULTS, a returned entry may still be incomplete and
+    // therefore still owns its queue slot. Only complete entries release a slot
+    // and decrement the accepted-present count.
+    u32 completedReportCount = 0;
+    for (u32 i = 0; i < reportCount; ++i)
+    {
+        if (reports[i].reportComplete == VK_TRUE)
+            ++completedReportCount;
+    }
+    OutstandingTimedPresents -= std::min<u64>(
+        OutstandingTimedPresents, completedReportCount);
 
     for (u32 i = 0; i < reportCount; ++i)
     {
@@ -1239,23 +1268,26 @@ void VulkanPresentPacer::ReportPastTiming()
     // this present rate settles into telemetry-off instead of oscillating.
     // TimingQueueAllocated separates the two failure classes: growth is only
     // meaningful on a queue that was allocated in the first place.
-    if (TimingQueueRecoveryPending && reportCount > 0 && TimingQueueAllocated)
+    if (TimingQueueRecoveryPending && completedReportCount > 0 && TimingQueueAllocated)
     {
         TimingQueueRecoveryPending = false;
         const u32 grown = std::min(MaxTimingQueueSize, std::max(
             MinTimingQueueSize, TimingQueueSize * 2));
         // A failed growth is not a failed allocation: the previous queue is
-        // still there and still working, so only the re-enable is skipped.
+        // still there and still working, so only the re-enable is skipped. If
+        // the ceiling has already been reached, clearing the pending bit also
+        // lets the normal drained-queue stop condition retire polling.
         if (grown > TimingQueueSize && ApplyTimingQueueSize(grown))
         {
             ++TimingQueueRecoveries;
             TimingMetadataEnabled = PresentTimingSurface;
             WaitDisabledReason.clear();
             Platform::Log(Platform::LogLevel::Info,
-                "[Vulkan] present timing results queue grown to %u after %u full events; "
-                "timing metadata re-enabled (recovery %u/%u)\n",
-                TimingQueueSize, TimingQueueFullCount,
-                TimingQueueRecoveries, MaxTimingQueueRecoveries);
+                "[Vulkan] present timing results queue grown to %u after draining; "
+                "timing metadata re-enabled (recovery %u/%u, queue-full errors=%u)\n",
+                TimingQueueSize,
+                TimingQueueRecoveries, MaxTimingQueueRecoveries,
+                TimingQueueFullCount);
         }
     }
 
@@ -1426,6 +1458,7 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
     snapshot.Policy = static_cast<int>(GetPolicy());
     snapshot.Authority = static_cast<int>(GetAuthority());
     snapshot.PresentMode = static_cast<int>(PresentMode);
+    snapshot.SwapchainGeneration = SwapchainGeneration;
     snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
     snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;
     snapshot.FallbackReason = static_cast<int>(FallbackReason);
