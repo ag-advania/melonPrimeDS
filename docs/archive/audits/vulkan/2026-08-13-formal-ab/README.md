@@ -80,8 +80,18 @@ The window/fullscreen/minimize matrix and targeted Sync follow-up were clean.
 
 DPI is explicitly `NOT RUN`: WMI exposed one physical monitor, so there was no
 genuine cross-DPI monitor transition available. This is not represented as a
-pass. AMD Anti-Lag runtime, Intel Vulkan, Linux, and MoltenVK were also not run
-on this NVIDIA/Windows host and remain separate gates.
+pass. AMD Anti-Lag runtime, Intel Vulkan, and physical macOS/MoltenVK runtime
+were also not run on this host and remain separate gates. Current-SHA
+cross-platform CI build and smoke evidence is recorded in
+[`ci/README.md`](ci/README.md); it does not replace those hardware/runtime
+gates.
+
+## Current-SHA CI follow-up
+
+The audited implementation SHA `4a503debf15abd4120e1bf4e19629f396800bf33` was
+verified by the manually dispatched Ubuntu, macOS, and Windows workflows on
+2026-08-13. The run-level evidence and limitations are recorded in
+[`ci/README.md`](ci/README.md).
 
 ## Reproduction and evidence
 

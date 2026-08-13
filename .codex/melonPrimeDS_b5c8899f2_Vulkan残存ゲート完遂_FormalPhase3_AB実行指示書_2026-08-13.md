@@ -40,12 +40,12 @@ Relative JIT NVIDIA runtime      PASS
 Measurement-integrity tooling    PASS
 New blocking P0/P1               NONE FOUND
 New P3 documentation mismatch    OPEN / NON-BLOCKING
-Manual Phase 1                   PARTIAL / NOT RUN
-Formal NVIDIA Phase 3 A/B        NOT RUN / NOT READY
+Manual Phase 1                   PASS except DPI NOT RUN
+Formal NVIDIA Phase 3 A/B        COMPLETE
 AMD actual runtime               NOT RUN
-Latency benefit                  NOT MEASURED
+Latency benefit                  NO WINNER / threshold not met
 Default pacing                   TelemetryOnly
-GitHub Actions                   NOT VERIFIED
+GitHub Actions                   PASS at audited implementation SHA
 ```
 
 したがって、今後の主作業は**コード修正ではなく、残存validationと正式measurement**である。
@@ -1951,8 +1951,10 @@ default TelemetryOnly
 ```markdown
 - [ ] AMD runtime — NOT RUN; host exposes NVIDIA only
 - [ ] Intel Vulkan — NOT RUN; no Intel Vulkan device
-- [ ] Linux — NOT RUN; no WSL distribution or Linux runner is available
-- [ ] MoltenVK — NOT RUN; no macOS/MoltenVK host is available
+- [ ] Linux hardware/vendor runtime — NOT RUN; hosted CI build + llvmpipe/Xvfb
+      validation smoke PASS, but no AMD/Intel Linux device was exercised
+- [ ] MoltenVK/macOS runtime — NOT RUN; hosted CI bundle verification PASS,
+      but no macOS runtime host was exercised
 ```
 
 。
@@ -1993,6 +1995,11 @@ DEFAULT:
 
 OVERALL INSTRUCTION:
     OPEN — external hardware/platform gates remain
+
+CURRENT-SHA HOSTED CI:
+    Ubuntu PASS — build + x86_64 Xvfb Vulkan validation smoke
+    macOS PASS — x86_64/arm64/universal + MoltenVK bundle verification
+    Windows PASS — Vulkan-enabled release build
 ```
 
 。
@@ -2076,11 +2083,15 @@ system-latency or cross-vendor claim.
 ```text
 NOT RUN — AMD Anti-Lag runtime (NVIDIA GPU only).
 NOT RUN — Intel Vulkan runtime.
-NOT RUN — Linux.
-NOT RUN — MoltenVK/macOS.
+PARTIAL — Linux hosted CI build + Xvfb/llvmpipe Vulkan validation smoke PASS;
+          Linux hardware/vendor runtime NOT RUN.
+PARTIAL — macOS hosted CI MoltenVK bundle verification PASS;
+          physical macOS/MoltenVK runtime NOT RUN.
 ```
 
 These are separate shipping-default/generalization gates. Their absence does
-not invalidate the completed NVIDIA Formal Phase 3 result, but it prevents a
-cross-vendor recommendation or a default change.
+not invalidate the completed NVIDIA Formal Phase 3 result, but the remaining
+hardware/runtime gaps prevent a cross-vendor recommendation or a default
+change. Hosted CI evidence is summarized in
+`docs/archive/audits/vulkan/2026-08-13-formal-ab/ci/README.md`.
 ```

@@ -14,10 +14,26 @@ Local alternate-runtime checks:
 - docker command: unavailable
 - qemu-system-x86_64 command: unavailable
 - virsh command: unavailable
-- no .github/workflows directory entries for a Linux/macOS/AMD/Intel runner
+- workflow definitions are present for Ubuntu/macOS/Windows; no AMD/Intel-
+  specific hardware runner is configured
+
+Current-SHA hosted CI follow-up (4a503debf15abd4120e1bf4e19629f396800bf33):
+- Ubuntu workflow 31707409936: PASS; x86_64/aarch64 builds and x86_64 Xvfb
+  Vulkan validation smoke passed. The smoke selected Mesa llvmpipe (CPU), so
+  this is Linux build/validation-path evidence, not AMD/Intel hardware evidence.
+- macOS workflow 31707412897: PASS; x86_64, arm64, and universal bundles
+  passed pinned MoltenVK v1.4.0 dylib/license, lipo architecture, and bundle
+  signature checks. macOS runtime was not executed.
+- Windows workflow 31707415459: PASS; current-SHA Vulkan-enabled Windows
+  release build completed. No replacement for the local NVIDIA formal A/B
+  capture or the missing AMD/Intel hardware runs.
 
 Consequences:
 - AMD Anti-Lag runtime cannot be executed on this NVIDIA-only host.
 - Intel Vulkan cannot be executed without an Intel Vulkan device.
-- Linux and MoltenVK/macOS runtime gates cannot be executed locally.
-- These are NOT RUN, not PASS and not converted into synthetic results.
+- Linux hardware/vendor runtime and the physical macOS/MoltenVK runtime gates
+  cannot be executed locally; hosted CI covers only the build/validation or
+  bundle checks stated above.
+- The hardware/runtime gaps remain NOT RUN, not PASS and are not converted
+  into synthetic results; the hosted CI checks above remain explicitly
+  limited to their stated build/smoke/bundle scope.
