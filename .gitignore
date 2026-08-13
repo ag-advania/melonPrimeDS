@@ -19,6 +19,7 @@ compile_commands.json
 .cache
 artifacts/
 /tmp/
+/.deps/
 /Vulkan-Headers/
 __pycache__/
 *.py[cod]
@@ -26,6 +27,16 @@ __pycache__/
 *.exe
 
 .DS_Store
+
+# Local ROM/save and PC screenshot evidence must never be committed.
+*.sav
+*.nds
+**/screenshot*.png
+**/*-screen*.png
+**/Screen Shot*.png
+/docs/archive/audits/**/*.png
+# Runtime logs can echo local ROM/home paths; keep this machine's raw logs local.
+/docs/archive/audits/vulkan/2026-08-14-intel-macbook/**/*.log
 
 .vs
 .vscode
