@@ -199,12 +199,50 @@ jobs:
       if: always() && matrix.arch.name == 'x86_64'
       run: cat build-validation/vulkan-validation.log || true
 
-    - uses: actions/upload-artifact@v7
+    # This diagnostic artifact is useful evidence, but a transient GitHub
+    # artifact-service timeout must not prevent the release binary from being
+    # uploaded. Retry the upload explicitly: upload-artifact@v7 does not have
+    # a retry-limit input, and retrying with overwrite handles a partial first
+    # attempt that created the artifact before the request timed out.
+    - name: Upload Vulkan validation log (attempt 1)
+      id: upload_vulkan_validation_log_1
       if: always() && matrix.arch.name == 'x86_64'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
         path: build-validation/vulkan-validation.log
         archive: false
+
+    - name: Wait before retrying Vulkan validation log upload
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_1.outcome == 'failure'
+      run: sleep 15
+
+    - name: Upload Vulkan validation log (attempt 2)
+      id: upload_vulkan_validation_log_2
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: vulkan-validation-log-${{ matrix.arch.name }}
+        path: build-validation/vulkan-validation.log
+        archive: false
+        overwrite: true
+
+    - name: Wait before final Vulkan validation log upload retry
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_2.outcome == 'failure'
+      run: sleep 15
+
+    - name: Upload Vulkan validation log (attempt 3)
+      id: upload_vulkan_validation_log_3
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_2.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: vulkan-validation-log-${{ matrix.arch.name }}
+        path: build-validation/vulkan-validation.log
+        archive: false
+        overwrite: true
 
     - name: Verify developer HUD golden harness is absent from release binary
       run: |
