@@ -1675,7 +1675,7 @@ bool VulkanPresenter::EndFrame()
         res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
         // On the queue-full retry path the span covers both calls and ends when
         // the second returns; one presentation gets one marker pair.
-        if (PresentPacer.PrepareRetryWithoutTiming(res, genericPresentMetadata))
+        if (PresentPacer.PrepareRetryWithoutTiming(res, present, genericPresentMetadata))
             res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
 
         LatencyCapture.MarkPresentEnd();

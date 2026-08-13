@@ -450,7 +450,16 @@ frame is simulated but not presented; a small fixed ring maps reported IDs back
 to presentation sequence numbers. The baseline is rebased onto every new
 complete timing report, so rounding error and clock drift cannot accumulate, and
 a rejected or queue-full present releases its reserved sequence instead of
-leaving a hole in the cadence. `VulkanPresentTimingModel` holds this arithmetic
+leaving a hole in the cadence.
+
+A queue-full present is retried once with the timing chain removed, keeping the
+same image, logical ID and reserved sequence — but **not** the same wait
+semaphores. `VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT` refuses the presentation
+while still enqueueing the semaphore waits the call was given, so re-waiting
+them would ask for a signal nothing produces. Ordering holds without them: the
+first call's wait is already ahead of the retry on the same present queue.
+
+`VulkanPresentTimingModel` holds this arithmetic
 with no Vulkan objects at all and is executed by
 `melonprime_vulkan_present_timing_tests` on every Vulkan build.
 

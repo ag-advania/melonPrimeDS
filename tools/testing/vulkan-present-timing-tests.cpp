@@ -115,6 +115,10 @@ void TestLogicalIdGapIsNotASequenceGap()
 // VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT does not enqueue the image. Retrying
 // with the same image and logical ID must reuse the same presentation sequence:
 // counting the retry would leave a permanent one-frame hole in the cadence.
+// (The wait semaphores are the one thing the retry may not reuse -- the
+// rejected call still enqueued their waits. That is enforced as a source
+// contract in audit-low-latency-contract.py, since it lives in the Vulkan call
+// path rather than in this device-free model.)
 void TestRetryReusesSequence()
 {
     VulkanPresentTimingModel model = MakeModel();

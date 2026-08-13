@@ -169,22 +169,21 @@ count. Run each phase separately: attributing a failure to "resize" or to
 - [ ] Vulkan ↔ Software x20, ↔ OpenGL Compute, ↔ DX12 where the build has it
 - [ ] ROM launch, savestate load, reset, close, reopen
 
-**Known open defect.** The minimize/restore phase reproduces
-`VUID-vkQueuePresentKHR-pWaitSemaphores-03268` — a present waiting on a
-render-finished semaphore with no pending signal — at roughly one per cycle
-(20 messages over 22 rebuilds). Resize is clean (0 over 42 rebuilds), so the
-trigger is the zero-extent path specifically, not swapchain recreation in
-general. It reproduces identically on the commit before the present markers were
-moved inside the queue lock, so it is not caused by that change. No device loss,
-no software fallback, no recreate storm accompanies it.
+All four automated phases are **clean** — no VUID, no device loss, no software
+fallback, no recreate storm. Evidence and the full history of the one defect
+these phases did find are in
+[`docs/archive/audits/vulkan/2026-08-13-event-matrix/`](../../archive/audits/vulkan/2026-08-13-event-matrix/README.md).
 
-One hypothesis has already been tested and **disproved**: deferring the
-render-finished semaphores' destruction until after the old swapchain is
-destroyed (so a queued present's wait is released first) changed nothing —
-still 20 over 22. Whatever the cause is, it is not that ordering alone.
+That defect was `VUID-vkQueuePresentKHR-pWaitSemaphores-03268`, 20 messages over
+22 rebuilds in minimize/restore: the queue-full retry re-presented on a wait
+semaphore whose wait the rejected call had already enqueued. It was never a
+swapchain-lifecycle bug — minimize/restore merely overflowed the present-timing
+results queue often enough to expose it. Fixed by dropping the wait semaphores
+on the retry, and held by a contract in `audit-low-latency-contract.py`.
 
-This must be closed before the formal A/B, because the gate above requires zero
-core-validation errors.
+When re-running the minimize phase, check it is not a vacuous pass: the retry
+path should still fire (`grep 'retrying present without optional timing
+metadata'`). A clean run with zero retries has not exercised it.
 
 Watch especially for VUIDs touching `VkPresentId2KHR`, `VkPresentTimingInfoEXT`,
 `VkPresentTimingsInfoEXT`, `presentStageQueries`, `targetTime`, `timeDomainId`,

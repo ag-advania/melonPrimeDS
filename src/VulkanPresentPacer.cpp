@@ -836,16 +836,29 @@ u64 VulkanPresentPacer::PreparePresent(
 }
 
 bool VulkanPresentPacer::PrepareRetryWithoutTiming(
-    VkResult result, PresentMetadata& metadata)
+    VkResult result, VkPresentInfoKHR& present, PresentMetadata& metadata)
 {
     if (result != VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT || !metadata.TimingAttached)
         return false;
 
-    // The failed call did not enqueue the image or consume its present ID.
-    // Remove only VkPresentTimingsInfoEXT and let the caller retry once with
-    // the same wait semaphore, image, logical ID and presentation sequence --
+    // The failed call did not enqueue the image or consume its present ID, so
+    // the retry keeps the same image, logical ID and presentation sequence --
     // the sequence is only committed once a present is actually accepted, so a
     // retry cannot leave a hole in the cadence.
+    //
+    // The wait semaphores are the exception, and they must be dropped. A
+    // rejected vkQueuePresentKHR still enqueues the semaphore wait operations
+    // it was given; only the presentation itself is refused. Re-waiting them
+    // asks for a second signal that nothing will ever produce, which deadlocks
+    // the present queue and which the validation layer reports as
+    // VUID-vkQueuePresentKHR-pWaitSemaphores-03268. Ordering survives the
+    // removal: the wait the first call enqueued is already ahead of the retry
+    // on the same queue, and queue operations start in submission order, so
+    // the retried presentation still follows the rendering it depends on.
+    present.waitSemaphoreCount = 0;
+    present.pWaitSemaphores = nullptr;
+
+    // Remove only VkPresentTimingsInfoEXT from the chain.
     metadata.Id2.pNext = metadata.Timings.pNext;
     metadata.TimingAttached = false;
     metadata.TargetValueNs = 0;

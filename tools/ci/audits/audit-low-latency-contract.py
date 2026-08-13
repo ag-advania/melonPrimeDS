@@ -442,6 +442,29 @@ def main() -> int:
         "a queue-full retry must clear every target field the capture reads",
         failures,
     )
+    # A rejected vkQueuePresentKHR still enqueues the semaphore waits it was
+    # given. A retry that re-waits them asks for a second signal nothing will
+    # produce: the present queue deadlocks and validation reports
+    # VUID-vkQueuePresentKHR-pWaitSemaphores-03268 (observed 20 times over 22
+    # swapchain rebuilds in the minimize/restore event-matrix phase). Ordering
+    # is preserved without them because the first call's wait is already ahead
+    # of the retry on the same present queue.
+    require(
+        ordered(
+            function_body(
+                vulkan_pacer,
+                "bool VulkanPresentPacer::PrepareRetryWithoutTiming(",
+                "void VulkanPresentPacer::NotifyPresentResult(",
+            ),
+            [
+                "present.waitSemaphoreCount = 0;",
+                "present.pWaitSemaphores = nullptr;",
+            ],
+        ),
+        "a queue-full retry must drop the wait semaphores the rejected present "
+        "already enqueued waits for",
+        failures,
+    )
     require(
         all(token in read("tools/perf/aggregate-vulkan-latency.py") for token in (
             "if applied and row_mode != 0:",

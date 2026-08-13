@@ -124,8 +124,10 @@ public:
     u64 PreparePresent(VkPresentInfoKHR& present, u64 preferredId, PresentMetadata& metadata);
     // A full optional timing-results queue rejects the present itself. Drop
     // only timing metadata so the caller can retry the same image, the same
-    // logical ID and the same presentation sequence.
-    bool PrepareRetryWithoutTiming(VkResult result, PresentMetadata& metadata);
+    // logical ID and the same presentation sequence. The wait semaphores are
+    // dropped too: see the definition for why the retry must not re-wait them.
+    bool PrepareRetryWithoutTiming(
+        VkResult result, VkPresentInfoKHR& present, PresentMetadata& metadata);
     void NotifyPresentResult(VkResult result, const PresentMetadata& metadata) noexcept;
 
     void LogState(const char* context) const;
