@@ -224,7 +224,7 @@ jobs:
           portable="$PWD/x86_64/portable"
           log="$RUNNER_TEMP/melonprime-moltenvk-intel-runtime.log"
           mkdir -p "$portable"
-          printf '3D.Renderer = 5\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
+          printf '3D.Renderer = 5\n3D.GL.ScaleFactor = 1\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
           python3 - "$app/Contents/MacOS/melonPrimeDS" "$log" <<'PY'
           import os
           import signal
