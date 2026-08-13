@@ -1,5 +1,5 @@
 date=2026-08-14
-source_revision=7f56b91b14bb223db1fa2194761f15c050a70de5
+source_revision=c72dd79b464d8335e62baad53ba7be9b92657f1a
 branch=develop_remakeVulkan_ver2
 host_arch=x86_64
 mac_model=MacBookPro15,2
@@ -24,6 +24,7 @@ vulkan_headers=1.4.357.0
 vulkan_loader=1.4.357.0
 vulkan_validationlayers=1.4.357.0 installed after initial Debug attempt
 release_build_command=./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal --release --jobs 2
+developer_fixwifi_build_command=./tools/build/macos/build-macos-vulkan.sh --with-metal --jobs 2
 debug_build_command=./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal --debug --jobs 2 --build-dir build-mac-vulkan-debug
 release_executable_sha256=258e13e3f771245cdccbeb1ab489c741bfd5b3e9e6968b85171b695da63b0714
 release_local_moltenvk_sha256=23504976fd92acf2add38b6b3772f00a068b2c4a786ec4882bc22aa65461f286

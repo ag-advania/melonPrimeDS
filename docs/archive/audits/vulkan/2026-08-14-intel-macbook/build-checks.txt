@@ -12,6 +12,13 @@ Release result:
   bundled local libMoltenVK.dylib: x86_64.
   codesign --verify --deep --strict: PASS.
 
+FixWifi guarded developer result:
+  ./tools/build/macos/build-macos-vulkan.sh --with-metal --jobs 2
+  206/206 build steps completed.
+  Developer features ON; FixWifi status OSD path compiled.
+  Vulkan present-timing model tests PASS.
+  Bundle contains libMoltenVK.dylib and passed deep strict codesign verification.
+
 Pinned runtime result:
   MoltenVK 1.4.0 archive checksum verified.
   pinned app executable: x86_64.

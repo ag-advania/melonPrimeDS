@@ -1,0 +1,37 @@
+FixWifi version and restore-value audit — 2026-08-14
+
+Source and reference comparison:
+  The implementation contains 51 apply words and 51 restore words.
+  For JP1.0, US1.0, and EU1.0, all apply and restore values match the
+  completed mphCodex WiFi patch proposal and cheat sections; no transcription
+  mismatch was found.
+  JP1.1, US1.1, EU1.1, and KR1.0 are intentionally unsupported by this patch
+  because those revisions already contain the corrected behavior. They have
+  no FixWifi target base and therefore do not receive any ARM9 writes.
+
+Runtime signature finding:
+  AMHJ Rev.00 / JP1.0 / checksum 0xD75F539D
+  JP1.0 target base: 0x020662EC
+  observed first target word: 0xE2466005
+  expected apply word:       0xE2052007
+  expected restore word:     0xE3A01001
+
+The observed word is neither known state. The old implementation checked only
+the first apply word and then wrote all 51 words, so this ROM was corrupted.
+The fixed implementation validates every target word once per ROM state and
+rejects the whole patch if any word is outside the apply/restore pair.
+
+Lifecycle/performance:
+  - emulator reset, stop/start, and boot reset clear the cached state;
+  - ROM re-detection clears patch bookkeeping, including same-group ROMs;
+  - changing ROM group also invalidates the local state;
+  - after Applied, Rejected, or Unsupported is cached, the out-of-game frame
+    path performs no 51-word ARM9 scan;
+  - developer builds emit one OSD message per status transition:
+    FixWifi Applied / FixWifi Rejected / FixWifi Unsupported.
+
+Runtime result:
+  The unguarded WifiBitset=true path reproduced first-frame Vulkan followed by
+  ARM9 data abort on this AMHJ ROM. A WifiBitset=false 30-second A/B and the
+  final guarded WifiBitset=true build both reached first frame without an ARM9
+  data abort.

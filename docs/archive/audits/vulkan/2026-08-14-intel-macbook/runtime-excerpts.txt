@@ -23,9 +23,21 @@ Pinned MoltenVK 1.4.0, no ROM and AMHP Rev.01:
   DEVICE_LOST, SIGABRT, SIGSEGV, or Vulkan runtime-failure finding was seen.
 
 Additional AMHJ Rev.00 trial:
-  Vulkan window remained white and an ARM9 data abort was logged.
-  The isolated software-renderer run showed game imagery. This is a
-  ROM-specific failure finding, not a blanket Intel/MoltenVK verdict.
+  In the unguarded build, the Vulkan window remained white and an ARM9 data
+  abort was logged. Disabling WifiBitset removed the abort in a 30-second A/B.
+  The isolated software-renderer run showed game imagery. This was a
+  ROM-specific FixWifi failure, not a blanket Intel/MoltenVK verdict.
+
+FixWifi guarded follow-up:
+  AMHJ Rev.00 matched the JP1.0 checksum entry 0xD75F539D.
+  At the JP1.0 target 0x020662EC, the ROM word was 0xE2466005, while the
+  patch table expected apply 0xE2052007 or restore 0xE3A01001.
+  The guarded build therefore rejected the layout and performed no ARM9
+  writes. With WifiBitset=true, Vulkan reached its first frame and no ARM9
+  data abort was observed during the 30-second smoke; the process exited
+  cleanly.
+  The developer-features build includes a one-shot OSD status transition:
+  FixWifi Applied / FixWifi Rejected / FixWifi Unsupported.
 
 Current GenericPresentTiming:
   present-id2=yes, present-wait2=yes, present-timing=no,

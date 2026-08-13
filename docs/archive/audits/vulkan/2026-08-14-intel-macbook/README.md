@@ -11,21 +11,25 @@ session were not run. Validation is **BLOCKED** because this app directly
 opens the bundled MoltenVK library; installing the Khronos validation layer and
 setting `VK_LAYER_PATH` did not make that layer visible to the app.
 
-The additional Japanese ROM trial produced a white Vulkan window and an ARM9
-data-abort finding, while the same ROM reached visible output with the
-software renderer. This is recorded as a ROM-specific **FAIL** and is not
-generalized to the working AMHP Vulkan trial.
+The additional Japanese ROM trial reproduced a white Vulkan window and an
+ARM9 data-abort finding in the unguarded build. The failure was isolated to
+`FixWifi`: the detected JP1.0 group selected a 51-word patch even though the
+ROM's target words did not match either the apply or restore signatures. The
+guarded build now rejects that layout without writing ARM9 memory; with
+`WifiBitset = true`, Vulkan reached its first frame and produced no ARM9 data
+abort during the 30-second smoke. The same ROM also reached visible output
+with the software renderer.
 
 ## Fixed capture
 
 | Item | Value |
 |---|---|
-| source SHA | `7f56b91b14bb223db1fa2194761f15c050a70de5` |
+| source SHA | `c72dd79b464d8335e62baad53ba7be9b92657f1a` |
 | branch | `develop_remakeVulkan_ver2` |
 | host | MacBookPro15,2, macOS 15.7.7 (24G720), x86_64 |
 | CPU / memory | Intel Core i5-8259U, 4 cores, 16 GB |
 | GPU | Intel Iris Plus Graphics 655, Metal 3, internal Retina 2560×1600 |
-| build | Release, Ninja, developer features OFF, Metal + Vulkan, jobs 2 |
+| build | Release guard smoke plus final Developer-features-ON OSD build, Ninja, Metal + Vulkan, jobs 2 |
 | current local runtime | MoltenVK 1.4.2, bundled in the release app |
 | shipping-pin runtime | MoltenVK 1.4.0, bundled and ad-hoc signed for this smoke |
 | primary ROM evidence | AMHP Rev.01, SHA-256 `4c0510ae0389f793bf95bd095d8ecd29868cd85f3b15f8f72999685e813790c9` |
@@ -42,13 +46,15 @@ the redacted excerpt set below.
 
 | Gate | Result | Runtime / GPU | Notes |
 |---|---|---|---|
-| Build x86_64 | PASS | release / Intel host | 211/211; CMake Vulkan and Metal gates enabled |
+| Build x86_64 | PASS | release + developer / Intel host | baseline 211/211; final developer build 206/206; CMake Vulkan and Metal gates enabled |
 | Bundle/sign | PASS | local MoltenVK 1.4.2 | bundled dylib; x86_64 executable/dylib; deep strict signature verified |
 | no-ROM startup | PASS | local 1.4.2 | instance, surface, device, swapchain, IMMEDIATE present, presenter ready |
 | Vulkan presenter ready | PASS | Intel Iris Plus 655 via MoltenVK | `VK_EXT_metal_surface`; actual renderer Vulkan |
 | ROM launch | PASS | AMHP / local 1.4.2 and pinned 1.4.0 | first frame presented; Vulkan renderer reached |
 | visual Vulkan output | PASS | AMHP / Intel Iris Plus 655 | valid intro/game imagery observed in local ignored screenshots; parity not claimed |
-| additional Japanese ROM | FAIL | AMHJ / local 1.4.2 | white Vulkan output plus ARM9 data abort; software run showed imagery |
+| additional Japanese ROM | PASS (guarded) | AMHJ / local 1.4.2 | first frame presented with `WifiBitset=true`; no ARM9 data abort in 30 seconds |
+| FixWifi signature/lifecycle guard | PASS | developer + release builds | full 51-word check only once per ROM state; reset/re-detect clears cache; mismatch skips all writes |
+| FixWifi developer OSD | PASS (build) | developer features ON | emits `FixWifi Applied`, `FixWifi Rejected`, or `FixWifi Unsupported` once per state transition |
 | match gameplay | NOT RUN | — | no controlled human match was completed |
 | match-end recap | NOT RUN | — | no controlled match lifecycle |
 | resize/fullscreen/minimize | NOT RUN | — | required matrix not completed |
@@ -67,6 +73,7 @@ The sanitized, repository-safe evidence is:
 - [`platform-availability.txt`](platform-availability.txt)
 - [`build-checks.txt`](build-checks.txt)
 - [`runtime-excerpts.txt`](runtime-excerpts.txt)
+- [`fixwifi-verification.txt`](fixwifi-verification.txt)
 - [`validation-excerpts.txt`](validation-excerpts.txt)
 - [`MoltenVK-LICENSE.txt`](pinned-1.4.0/MoltenVK-LICENSE.txt)
 
