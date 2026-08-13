@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <limits>
 #include <string>
+#include <vector>
 
 #include "VulkanPresentPacingPolicy.h"
 #include "VulkanPresentTimingModel.h"
@@ -301,6 +302,7 @@ void TestHistoryWraparound()
 using Policy = VulkanPresentPacingPolicy;
 using Authority = VulkanPacingAuthority;
 using Reason = VulkanJitFallbackReason;
+using TargetMode = VulkanTargetSchedulingMode;
 
 // A driver that supports everything, with a swapchain that is up and reporting.
 VulkanPacingCapabilities FullCapabilities()
@@ -314,6 +316,8 @@ VulkanPacingCapabilities FullCapabilities()
     caps.TimingMetadataEnabled = true;
     caps.AbsoluteTimingDevice = true;
     caps.AbsoluteTimingSurface = true;
+    caps.RelativeTimingDevice = true;
+    caps.RelativeTimingSurface = true;
     caps.FifoPresentMode = true;
     caps.TimingPropertiesReady = true;
     caps.TimeDomainsReady = true;
@@ -464,12 +468,18 @@ void TestFallbackReasonsAreSpecific()
          Reason::PresentId2Unsupported},
         {"swapchain", [](VulkanPacingCapabilities& c) { c.SwapchainValid = false; },
          Reason::PresentId2Unsupported},
-        {"absolute timing device",
-         [](VulkanPacingCapabilities& c) { c.AbsoluteTimingDevice = false; },
-         Reason::AbsoluteTimingUnsupportedDevice},
-        {"absolute timing surface",
-         [](VulkanPacingCapabilities& c) { c.AbsoluteTimingSurface = false; },
-         Reason::AbsoluteTimingUnsupportedSurface},
+        {"every device timing mode",
+         [](VulkanPacingCapabilities& c) {
+             c.AbsoluteTimingDevice = false;
+             c.RelativeTimingDevice = false;
+         },
+         Reason::NoTargetTimingModeDevice},
+        {"every surface timing mode",
+         [](VulkanPacingCapabilities& c) {
+             c.AbsoluteTimingSurface = false;
+             c.RelativeTimingSurface = false;
+         },
+         Reason::NoTargetTimingModeSurface},
         {"present mode", [](VulkanPacingCapabilities& c) { c.FifoPresentMode = false; },
          Reason::NonFifoPresentMode},
         {"timing properties",
@@ -504,6 +514,335 @@ void TestFallbackReasonsAreSpecific()
     absent.TimingMetadataEnabled = false;
     Require(Resolve(Policy::JustInTime, absent).Reason == Reason::PresentTimingUnsupported,
         "a surface without present timing must be unsupported, not failed");
+}
+
+
+// THE regression this mode selection exists for, and a direct reproduction of
+// the RTX 5070 Ti / driver 610.74.0.0 surface that motivated it: the device
+// advertises presentAtAbsoluteTime, but the surface does not support it. Before
+// relative scheduling that combination produced no target at all, so the
+// JustInTime policies were indistinguishable from PresentWait.
+void TestRelativeFallbackWhenSurfaceLacksAbsolute()
+{
+    VulkanPacingCapabilities caps = FullCapabilities();
+    caps.AbsoluteTimingSurface = false;
+
+    const VulkanPacingDecision decision = Resolve(Policy::JustInTime, caps);
+    Require(decision.TargetMode == TargetMode::Relative,
+        "a surface without absolute timing must fall back to relative scheduling");
+    Require(decision.TargetTimeScheduling,
+        "relative scheduling must count as target scheduling");
+    Require(decision.Reason == Reason::None,
+        "falling back to relative is a supported outcome, not a fallback reason");
+    Require(decision.Authority == Authority::GenericPresentTiming,
+        "relative scheduling must claim the generic authority");
+
+    // The same must hold for the latest-ready variant, whose whole purpose is
+    // time-based image selection.
+    const VulkanPacingDecision latestReady =
+        Resolve(Policy::JustInTimeFifoLatestReady, caps);
+    Require(latestReady.TargetMode == TargetMode::Relative,
+        "FIFO_LATEST_READY JIT must also reach relative scheduling");
+}
+
+
+// Absolute is a preference, not a tie-break: whenever it is available it wins,
+// because its targets are expressed in the units the feedback baseline measures.
+void TestAbsolutePreferredOverRelative()
+{
+    const VulkanPacingCapabilities caps = FullCapabilities();
+    Require(SelectVulkanTargetSchedulingMode(caps) == TargetMode::Absolute,
+        "absolute must win when both modes are available");
+
+    const VulkanPacingDecision decision = Resolve(Policy::JustInTime, caps);
+    Require(decision.TargetMode == TargetMode::Absolute,
+        "the resolver must prefer absolute scheduling");
+
+    // Device-level absolute without surface support is not absolute.
+    VulkanPacingCapabilities deviceOnly = FullCapabilities();
+    deviceOnly.AbsoluteTimingSurface = false;
+    Require(SelectVulkanTargetSchedulingMode(deviceOnly) == TargetMode::Relative,
+        "absolute needs both device and surface support");
+
+    // ...and the same asymmetry applies to relative.
+    VulkanPacingCapabilities relativeSurfaceOnly = FullCapabilities();
+    relativeSurfaceOnly.AbsoluteTimingSurface = false;
+    relativeSurfaceOnly.RelativeTimingDevice = false;
+    Require(SelectVulkanTargetSchedulingMode(relativeSurfaceOnly) == TargetMode::None,
+        "relative needs both device and surface support");
+}
+
+
+// Neither mode available: no target, but the bounded wait is untouched.
+void TestNoTimingModeKeepsBoundedWait()
+{
+    VulkanPacingCapabilities caps = FullCapabilities();
+    caps.AbsoluteTimingSurface = false;
+    caps.RelativeTimingSurface = false;
+
+    const VulkanPacingDecision decision = Resolve(Policy::JustInTime, caps);
+    Require(decision.TargetMode == TargetMode::None && !decision.TargetTimeScheduling,
+        "without either mode there is no target scheduling");
+    Require(decision.BoundedPresentWait,
+        "losing both timing modes must not cost the bounded present wait");
+    Require(decision.Reason == Reason::NoTargetTimingModeSurface,
+        "the surface must be named as the level that lacks the modes");
+}
+
+
+// Vendor latency APIs and abnormal speed suppress relative exactly as they
+// suppress absolute -- a new mode must not open a new bypass.
+void TestRelativeSuppressedByVendorAndSpeed()
+{
+    const VulkanPacingCapabilities caps = FullCapabilities();
+    VulkanPacingCapabilities relativeOnly = FullCapabilities();
+    relativeOnly.AbsoluteTimingSurface = false;
+
+    const VulkanPacingDecision reflex = ResolveVulkanPresentPacing(
+        Policy::JustInTime, true, false, true, relativeOnly);
+    Require(reflex.Authority == Authority::NvidiaReflex
+            && reflex.TargetMode == TargetMode::None,
+        "active Reflex must suppress relative scheduling too");
+
+    const VulkanPacingDecision antiLag = ResolveVulkanPresentPacing(
+        Policy::JustInTime, false, true, true, relativeOnly);
+    Require(antiLag.Authority == Authority::AmdAntiLag2
+            && antiLag.TargetMode == TargetMode::None,
+        "active Anti-Lag 2 must suppress relative scheduling too");
+
+    const VulkanPacingDecision fastForward = ResolveVulkanPresentPacing(
+        Policy::JustInTime, false, false, false, relativeOnly);
+    Require(fastForward.TargetMode == TargetMode::None,
+        "abnormal speed must suppress relative scheduling");
+
+    Require(Resolve(Policy::TelemetryOnly, caps).TargetMode == TargetMode::None,
+        "telemetry-only must request no target in either mode");
+    Require(Resolve(Policy::PresentWait, relativeOnly).TargetMode == TargetMode::None,
+        "the present-wait policy must not silently enable relative scheduling");
+
+    // Non-FIFO present modes have no defined target semantics for either mode.
+    VulkanPacingCapabilities immediate = relativeOnly;
+    immediate.FifoPresentMode = false;
+    const VulkanPacingDecision vsyncOff = Resolve(Policy::JustInTime, immediate);
+    Require(vsyncOff.TargetMode == TargetMode::None,
+        "relative targets must not be sent outside the FIFO family");
+    Require(vsyncOff.BoundedPresentWait,
+        "the bounded wait does not depend on the present mode");
+}
+
+
+// ---------------------------------------------------------------------------
+// Relative cadence quantizer
+// ---------------------------------------------------------------------------
+
+// Runs `frames` presents and returns the requested durations, committing each.
+std::vector<VulkanRelativeCadence::Request> RunCadence(
+    VulkanRelativeCadence& cadence, int frames)
+{
+    std::vector<VulkanRelativeCadence::Request> requests;
+    for (int i = 0; i < frames; ++i)
+    {
+        requests.push_back(cadence.Prepare());
+        cadence.Commit();
+    }
+    return requests;
+}
+
+
+// 60 FPS on 144 Hz is 2.4 refreshes per frame. Rounding to 2 would run 17% fast
+// and rounding to 3 25% slow, so the remainder has to be spread instead. The
+// invariant that matters is the accumulated error, not one specific pattern.
+void TestRelativeCadence60On144()
+{
+    constexpr u64 refresh = 6'944'444;  // 144 Hz
+    VulkanRelativeCadence cadence;
+    cadence.Configure(refresh, refresh, Interval60Fps);
+
+    constexpr int frames = 300;
+    const auto requests = RunCadence(cadence, frames);
+
+    u64 totalQuanta = 0;
+    for (const auto& request : requests)
+    {
+        Require(request.DurationNs != 0,
+            "a relative duration must never be zero -- zero means no target");
+        Require(request.Quantized,
+            "a finite refresh interval must produce a quantized duration");
+        Require(request.DurationNs % refresh == 0,
+            "durations must be whole refresh intervals on a fixed-refresh display");
+        Require(request.Quanta == 2 || request.Quanta == 3,
+            "60 FPS on 144 Hz must alternate between 2 and 3 refreshes");
+        totalQuanta += request.Quanta;
+    }
+
+    // Long-run average must be 2.4 refreshes per frame, i.e. the total duration
+    // must track the emulator's own interval to within one refresh.
+    const u64 totalDuration = totalQuanta * refresh;
+    const u64 expected = Interval60Fps * frames;
+    const u64 error = totalDuration > expected
+        ? totalDuration - expected
+        : expected - totalDuration;
+    Require(error < refresh,
+        "accumulated cadence error must stay under one refresh quantum");
+
+    // Both quanta must actually occur; a run of only 2s would be the rounding
+    // bug this exists to prevent.
+    bool sawTwo = false;
+    bool sawThree = false;
+    for (const auto& request : requests)
+    {
+        sawTwo = sawTwo || request.Quanta == 2;
+        sawThree = sawThree || request.Quanta == 3;
+    }
+    Require(sawTwo && sawThree,
+        "the fractional remainder must produce a mixed cadence, not a fixed round");
+}
+
+
+// Integer ratios must be exact, with no fractional drift at all.
+void TestRelativeCadenceIntegerRatios()
+{
+    constexpr u64 refresh120 = 8'333'333;
+    VulkanRelativeCadence onOneTwenty;
+    onOneTwenty.Configure(refresh120, refresh120, Interval60Fps);
+    for (const auto& request : RunCadence(onOneTwenty, 60))
+    {
+        Require(request.Quanta == 2,
+            "60 FPS on 120 Hz must always take exactly 2 refresh cycles");
+    }
+
+    constexpr u64 refresh60 = 16'666'667;
+    VulkanRelativeCadence onSixty;
+    onSixty.Configure(refresh60, refresh60, Interval60Fps);
+    for (const auto& request : RunCadence(onSixty, 60))
+    {
+        Require(request.Quanta == 1,
+            "60 FPS on 60 Hz must always take exactly 1 refresh cycle");
+    }
+}
+
+
+// A display slower than the emulator cannot show every frame. The scheduler
+// must ask for the next cycle it can have rather than computing zero quanta,
+// because zero is the extension's "no target requested" value.
+void TestRelativeCadenceDisplaySlowerThanTarget()
+{
+    constexpr u64 refresh50Hz = 20'000'000;
+    VulkanRelativeCadence cadence;
+    cadence.Configure(refresh50Hz, refresh50Hz, Interval60Fps);
+
+    for (const auto& request : RunCadence(cadence, 60))
+    {
+        Require(request.DurationNs >= refresh50Hz,
+            "a slow display must still get at least one refresh interval");
+        Require(request.DurationNs != 0, "the duration must never be zero");
+        Require(request.Quanta == 1, "one refresh is the most a slow display can give");
+    }
+}
+
+
+// Variable refresh has no grid to quantize onto, and unknown refresh must not
+// have one invented.
+void TestRelativeCadenceVariableAndUnknownRefresh()
+{
+    VulkanRelativeCadence vrrFast;
+    vrrFast.Configure(VulkanRelativeCadence::VariableRefreshInterval, 4'000'000,
+                      Interval60Fps);
+    const VulkanRelativeCadence::Request fast = vrrFast.Prepare();
+    Require(fast.DurationNs == Interval60Fps,
+        "VRR faster than the emulator must use the emulator's own interval");
+    Require(!fast.Quantized,
+        "a VRR duration has no refresh cycle to snap to");
+
+    VulkanRelativeCadence vrrSlow;
+    vrrSlow.Configure(VulkanRelativeCadence::VariableRefreshInterval, 25'000'000,
+                      Interval60Fps);
+    Require(vrrSlow.Prepare().DurationNs == 25'000'000,
+        "VRR must not ask for less than the display's minimum cycle");
+
+    VulkanRelativeCadence unknown;
+    unknown.Configure(0, 0, Interval60Fps);
+    const VulkanRelativeCadence::Request raw = unknown.Prepare();
+    Require(raw.DurationNs == Interval60Fps,
+        "an unknown refresh interval must fall back to the raw frame interval");
+    Require(!raw.Quantized,
+        "an unquantized duration must not ask for the nearest refresh cycle");
+
+    VulkanRelativeCadence noInterval;
+    noInterval.Configure(6'944'444, 6'944'444, 0);
+    Require(noInterval.Prepare().DurationNs == 0,
+        "without an emulator frame interval there is no relative duration");
+}
+
+
+// The transactional contract, matching presentation sequence numbering: a
+// rejected present releases its cadence step, and a queue-full retry that is
+// finally accepted commits exactly once.
+void TestRelativeCadenceTransactions()
+{
+    constexpr u64 refresh = 6'944'444;
+    VulkanRelativeCadence cadence;
+    cadence.Configure(refresh, refresh, Interval60Fps);
+
+    // Drive to the point where the next frame would take the extra refresh.
+    RunCadence(cadence, 2);
+    const u64 accumulatorBefore = cadence.GetAccumulatorNs();
+
+    const VulkanRelativeCadence::Request rejected = cadence.Prepare();
+    cadence.Abandon();
+    Require(cadence.GetAccumulatorNs() == accumulatorBefore,
+        "a rejected present must not consume a cadence step");
+
+    const VulkanRelativeCadence::Request retried = cadence.Prepare();
+    Require(retried.Quanta == rejected.Quanta && retried.DurationNs == rejected.DurationNs,
+        "the next attempt must recompute the same cadence step");
+
+    // A queue-full retry re-prepares the same frame before it is accepted.
+    const VulkanRelativeCadence::Request retryWithoutTiming = cadence.Prepare();
+    Require(retryWithoutTiming.Quanta == retried.Quanta,
+        "re-preparing the same frame must not advance the cadence");
+    cadence.Commit();
+    const u64 afterCommit = cadence.GetAccumulatorNs();
+    cadence.Commit();
+    Require(cadence.GetAccumulatorNs() == afterCommit,
+        "a second commit for the same present must be a no-op");
+}
+
+
+// A phase accumulated against one refresh grid or one emulator rate describes
+// nothing on another. Re-configuring must restart it.
+void TestRelativeCadenceResets()
+{
+    constexpr u64 refresh144 = 6'944'444;
+    VulkanRelativeCadence cadence;
+    cadence.Configure(refresh144, refresh144, Interval60Fps);
+    RunCadence(cadence, 3);
+    Require(cadence.GetAccumulatorNs() != 0, "a fraction must have accumulated");
+
+    // Refresh-rate change, as a timingPropertiesCounter bump would deliver.
+    constexpr u64 refresh120 = 8'333'333;
+    cadence.Configure(refresh120, refresh120, Interval60Fps);
+    Require(cadence.GetAccumulatorNs() == 0,
+        "a refresh interval change must reset the fractional accumulator");
+
+    RunCadence(cadence, 3);
+    // TargetFPS change.
+    cadence.Configure(refresh120, refresh120, Interval60Fps / 2);
+    Require(cadence.GetAccumulatorNs() == 0,
+        "a frame interval change must reset the fractional accumulator");
+
+    RunCadence(cadence, 3);
+    cadence.Reset();
+    Require(cadence.GetAccumulatorNs() == 0 && cadence.GetPendingQuanta() == 0,
+        "an explicit reset must clear the cadence entirely");
+
+    // Re-configuring with identical values is not a change and must not reset.
+    cadence.Configure(refresh120, refresh120, Interval60Fps / 2);
+    RunCadence(cadence, 3);
+    const u64 accumulated = cadence.GetAccumulatorNs();
+    cadence.Configure(refresh120, refresh120, Interval60Fps / 2);
+    Require(cadence.GetAccumulatorNs() == accumulated,
+        "re-configuring with the same values must preserve the phase");
 }
 
 
@@ -567,6 +906,17 @@ int main()
     TestFallbackReasonsAreSpecific();
     TestBeginResultRouting();
     TestNonFifoKeepsWaitButNotTarget();
+
+    TestRelativeFallbackWhenSurfaceLacksAbsolute();
+    TestAbsolutePreferredOverRelative();
+    TestNoTimingModeKeepsBoundedWait();
+    TestRelativeSuppressedByVendorAndSpeed();
+    TestRelativeCadence60On144();
+    TestRelativeCadenceIntegerRatios();
+    TestRelativeCadenceDisplaySlowerThanTarget();
+    TestRelativeCadenceVariableAndUnknownRefresh();
+    TestRelativeCadenceTransactions();
+    TestRelativeCadenceResets();
 
     if (Failures != 0)
     {

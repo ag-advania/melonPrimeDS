@@ -40,6 +40,166 @@ enum class VulkanPresentFeedbackResult
     DomainMismatch,
 };
 
+// Refresh-quantized cadence for relative target scheduling.
+//
+// A relative target is a duration -- "keep the previous image visible for at
+// least this long" -- not a point in time. On a fixed-refresh display the
+// presentation engine can only act on refresh boundaries, so the duration is
+// quantized to whole refresh intervals.
+//
+// The hard part is that the emulator's frame rate is rarely an integer divisor
+// of the display's. 60 FPS on 144 Hz is 2.4 refreshes per frame: always asking
+// for 2 runs fast (13.89 ms), always asking for 3 runs slow (20.83 ms), and
+// rounding to 2 loses 17% of the frame time on every frame. A fractional
+// accumulator spreads the remainder instead, producing 2,2,3,2,3... so that the
+// long-run average is exactly the emulator's interval and the accumulated error
+// never exceeds one refresh.
+//
+// Preparation is transactional for the same reason presentation sequence
+// numbering is: a present the engine rejects never happened, and a queue-full
+// retry re-presents the same frame. Either would otherwise consume a cadence
+// step that was never displayed and permanently shift the phase.
+class VulkanRelativeCadence
+{
+public:
+    // Refresh interval sentinels reported by vkGetSwapchainTimingPropertiesEXT.
+    static constexpr u64 VariableRefreshInterval = (std::numeric_limits<u64>::max)();
+
+    // Re-configuring with different inputs restarts the fraction: a phase
+    // accumulated against a 144 Hz grid means nothing on a 120 Hz one, and the
+    // same is true after a TargetFPS change.
+    void Configure(u64 refreshIntervalNs, u64 refreshDurationNs, u64 frameIntervalNs) noexcept
+    {
+        if (refreshIntervalNs == RefreshIntervalNs
+            && refreshDurationNs == RefreshDurationNs
+            && frameIntervalNs == FrameIntervalNs)
+        {
+            return;
+        }
+        RefreshIntervalNs = refreshIntervalNs;
+        RefreshDurationNs = refreshDurationNs;
+        FrameIntervalNs = frameIntervalNs;
+        Reset();
+    }
+
+    void Reset() noexcept
+    {
+        AccumulatorNs = 0;
+        PendingAccumulatorNs = 0;
+        PendingQuanta = 0;
+        Pending = false;
+    }
+
+    struct Request
+    {
+        u64 DurationNs = 0;
+        // True only when the duration is a whole number of refresh intervals,
+        // which is the condition for also asking for the nearest refresh cycle.
+        bool Quantized = false;
+        u64 Quanta = 0;
+    };
+
+    // Computes the duration this frame should request. Call once per prepared
+    // present; the result is not applied until Commit().
+    Request Prepare() noexcept
+    {
+        Request request;
+        if (FrameIntervalNs == 0)
+            return request;
+
+        if (RefreshIntervalNs == 0)
+        {
+            // The swapchain does not know its refresh granularity. Ask for the
+            // emulator's own interval rather than inventing a quantum: a
+            // fabricated grid would be wrong in a way nothing could detect.
+            request.DurationNs = FrameIntervalNs;
+            PendingQuanta = 0;
+            PendingAccumulatorNs = AccumulatorNs;
+            Pending = true;
+            return request;
+        }
+
+        if (RefreshIntervalNs == VariableRefreshInterval)
+        {
+            // Variable refresh: there is no fixed grid to quantize onto, and
+            // rounding to one would fight the display. RefreshDuration is the
+            // shortest cycle the display can do, so it is the floor.
+            request.DurationNs = FrameIntervalNs > RefreshDurationNs
+                ? FrameIntervalNs
+                : RefreshDurationNs;
+            PendingQuanta = 0;
+            PendingAccumulatorNs = AccumulatorNs;
+            Pending = true;
+            return request;
+        }
+
+        u64 quanta = FrameIntervalNs / RefreshIntervalNs;
+        const u64 remainder = FrameIntervalNs % RefreshIntervalNs;
+        u64 accumulator = AccumulatorNs + remainder;
+        if (accumulator >= RefreshIntervalNs)
+        {
+            ++quanta;
+            accumulator -= RefreshIntervalNs;
+        }
+
+        // Never zero. Zero is the extension's "no target requested" value, and
+        // a display slower than the emulator (60 FPS on a 50 Hz panel) would
+        // otherwise compute zero quanta. One refresh means "the next cycle you
+        // can", which is the most the hardware can give.
+        if (quanta == 0)
+            quanta = 1;
+
+        // Overflow guard: a pathological refresh interval must degrade to no
+        // target rather than wrap into a small duration.
+        if (quanta > (std::numeric_limits<u64>::max)() / RefreshIntervalNs)
+            return Request{};
+
+        request.DurationNs = quanta * RefreshIntervalNs;
+        request.Quantized = true;
+        request.Quanta = quanta;
+        PendingQuanta = quanta;
+        PendingAccumulatorNs = accumulator;
+        Pending = true;
+        return request;
+    }
+
+    // The present was accepted. Exactly one commit per accepted present, even
+    // if the timing metadata was stripped by a queue-full retry: the frame was
+    // still displayed, so the cadence advances with it.
+    void Commit() noexcept
+    {
+        if (!Pending)
+            return;
+        AccumulatorNs = PendingAccumulatorNs;
+        Pending = false;
+        PendingQuanta = 0;
+    }
+
+    // The present was rejected. The cadence step is released so the next
+    // attempt computes the same one.
+    void Abandon() noexcept
+    {
+        Pending = false;
+        PendingAccumulatorNs = 0;
+        PendingQuanta = 0;
+    }
+
+    [[nodiscard]] u64 GetAccumulatorNs() const noexcept { return AccumulatorNs; }
+    [[nodiscard]] u64 GetPendingQuanta() const noexcept { return PendingQuanta; }
+    [[nodiscard]] u64 GetRefreshIntervalNs() const noexcept { return RefreshIntervalNs; }
+    [[nodiscard]] u64 GetFrameIntervalNs() const noexcept { return FrameIntervalNs; }
+
+private:
+    u64 RefreshIntervalNs = 0;
+    u64 RefreshDurationNs = 0;
+    u64 FrameIntervalNs = 0;
+
+    u64 AccumulatorNs = 0;
+    u64 PendingAccumulatorNs = 0;
+    u64 PendingQuanta = 0;
+    bool Pending = false;
+};
+
 // Presentation scheduling state for one swapchain.
 //
 // Two sequences are tracked on purpose:

@@ -118,6 +118,17 @@ const char* VulkanPacingAuthorityName(VulkanPacingAuthority authority) noexcept
     return "GenericHost";
 }
 
+const char* VulkanTargetSchedulingModeName(VulkanTargetSchedulingMode mode) noexcept
+{
+    switch (mode)
+    {
+    case VulkanTargetSchedulingMode::None: return "none";
+    case VulkanTargetSchedulingMode::Absolute: return "absolute";
+    case VulkanTargetSchedulingMode::Relative: return "relative";
+    }
+    return "none";
+}
+
 const char* VulkanRefreshDynamicsName(VulkanRefreshDynamics dynamics) noexcept
 {
     switch (dynamics)
@@ -145,10 +156,10 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
     case VulkanJitFallbackReason::PresentWait2Unsupported:
         return "present_wait2 unsupported (optional bounded wait only)";
     case VulkanJitFallbackReason::PresentTimingUnsupported: return "present timing unsupported";
-    case VulkanJitFallbackReason::AbsoluteTimingUnsupportedDevice:
-        return "absolute timing unsupported by device";
-    case VulkanJitFallbackReason::AbsoluteTimingUnsupportedSurface:
-        return "absolute timing unsupported by surface";
+    case VulkanJitFallbackReason::NoTargetTimingModeDevice:
+        return "device supports neither absolute nor relative target timing";
+    case VulkanJitFallbackReason::NoTargetTimingModeSurface:
+        return "surface supports neither absolute nor relative target timing";
     case VulkanJitFallbackReason::NonFifoPresentMode: return "present mode is not FIFO";
     case VulkanJitFallbackReason::NoFrameInterval: return "no emulator frame interval";
     case VulkanJitFallbackReason::TimingPropertiesNotReady: return "timing properties not ready";
@@ -156,6 +167,8 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
     case VulkanJitFallbackReason::NoValidTargetStage: return "no valid target stage";
     case VulkanJitFallbackReason::BootstrapWaitingForFeedback:
         return "bootstrap waiting for feedback";
+    case VulkanJitFallbackReason::BootstrapWaitingForFirstPresent:
+        return "bootstrap waiting for the first present";
     case VulkanJitFallbackReason::DomainChanged: return "domain changed";
     case VulkanJitFallbackReason::TimingQueryFailed: return "timing query failed";
     }
@@ -180,6 +193,11 @@ bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR sur
     TimeDomainQueryAvailable = device.Fns().GetSwapchainTimeDomainPropertiesEXT != nullptr;
     AbsoluteTimingDevice = PresentTimingDevice && TimeDomainQueryAvailable
         && device.GetPresentTimingFeatures().PresentAtAbsoluteTime;
+    // A relative target is a duration and needs no clock of its own, but the
+    // metadata carrying it still has a mandatory timeDomainId, so the
+    // time-domain query is required for this mode too.
+    RelativeTimingDevice = PresentTimingDevice && TimeDomainQueryAvailable
+        && device.GetPresentTimingFeatures().PresentAtRelativeTime;
     LatestReadyDevice = HasEnabledExtension(
         device, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
     WaitRuntimeEnabled = PresentWait2Device;
@@ -196,12 +214,13 @@ void VulkanPresentPacer::Shutdown() noexcept
     PresentWait2Device = false;
     PresentTimingDevice = false;
     AbsoluteTimingDevice = false;
+    RelativeTimingDevice = false;
     LatestReadyDevice = false;
     TimeDomainQueryAvailable = false;
     PresentId2Surface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
-    PresentTimingRelative = false;
+    PresentTimingRelativeSurface = false;
     PresentTimingAbsoluteSurface = false;
     TimingMetadataEnabled = false;
     TimingResultsQueryEnabled = false;
@@ -234,7 +253,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
     PresentId2Surface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
-    PresentTimingRelative = false;
+    PresentTimingRelativeSurface = false;
     PresentTimingAbsoluteSurface = false;
     TimingMetadataEnabled = false;
     TimingResultsQueryEnabled = false;
@@ -286,7 +305,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
                 && timing.presentTimingSupported == VK_TRUE;
             TimingMetadataEnabled = PresentTimingSurface;
             TimingResultsQueryEnabled = PresentTimingSurface;
-            PresentTimingRelative = PresentTimingSurface
+            PresentTimingRelativeSurface = PresentTimingSurface
                 && timing.presentAtRelativeTimeSupported == VK_TRUE;
             PresentTimingAbsoluteSurface = PresentTimingSurface
                 && timing.presentAtAbsoluteTimeSupported == VK_TRUE;
@@ -340,8 +359,15 @@ bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept
         return false;
     // Deliberately independent of VK_KHR_present_wait2: the bounded wait is a
     // different mechanism and its absence must not cost this present mode.
+    //
+    // Either scheduling mode qualifies. Requiring absolute specifically would
+    // deny this present mode to exactly the surfaces relative scheduling was
+    // added for -- and time-based image selection is the whole point of
+    // FIFO_LATEST_READY, so a relative scheduler benefits from it just as much.
+    const bool absoluteCapable = PresentTimingAbsoluteSurface && AbsoluteTimingDevice;
+    const bool relativeCapable = PresentTimingRelativeSurface && RelativeTimingDevice;
     return PresentTimingSurface && PresentId2Surface && LatestReadyDevice
-        && PresentTimingAbsoluteSurface && AbsoluteTimingDevice && TimeDomainQueryAvailable
+        && (absoluteCapable || relativeCapable) && TimeDomainQueryAvailable
         && Device != nullptr
         && Device->Fns().SetSwapchainPresentTimingQueueSizeEXT != nullptr;
 }
@@ -403,11 +429,16 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     OutstandingTimedPresents = 0;
     RefreshDurationNs = 0;
     RefreshIntervalNs = 0;
-    LastTargetTimeNs = 0;
+    LastTargetValueNs = 0;
+    LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
+    LastTargetMode = VulkanTargetSchedulingMode::None;
     LastFeedbackId = 0;
     LastFeedbackStageTimeNs = 0;
     TimingModel.Reset();
     TimingModel.ClearTimeDomain();
+    // The cadence phase belongs to the retired swapchain's refresh grid.
+    RelativeCadence.Reset();
+    RelativeCadence.Configure(0, 0, 0);
     TargetSchedulingActive.store(false, std::memory_order_release);
 }
 
@@ -487,6 +518,8 @@ VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
     caps.PresentTimingSurface = PresentTimingSurface;
     caps.TimingMetadataEnabled = TimingMetadataEnabled;
     caps.AbsoluteTimingDevice = AbsoluteTimingDevice;
+    caps.RelativeTimingDevice = RelativeTimingDevice;
+    caps.RelativeTimingSurface = PresentTimingRelativeSurface;
     caps.AbsoluteTimingSurface = PresentTimingAbsoluteSurface;
     caps.FifoPresentMode = FifoFamilyPresentMode;
     caps.TimingPropertiesReady = TimingPropertiesReady;
@@ -529,6 +562,16 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
 
     const VulkanPacingDecision decision =
         ResolveDecision(reflexActive, antiLagActive, normalSpeed);
+    // A mode change restarts the relative cadence. The accumulated fraction
+    // describes a phase against one scheduling scheme; carrying it across a
+    // switch (or across a spell of vendor-owned pacing, or fast-forward) would
+    // apply a stale phase to a fresh cadence.
+    if (decision.TargetMode != LastTargetMode)
+    {
+        RelativeCadence.Reset();
+        LastTargetMode = decision.TargetMode;
+    }
+
     LastDecision = decision;
     Authority.store(static_cast<int>(decision.Authority), std::memory_order_release);
     FallbackReason = decision.Reason;
@@ -586,23 +629,8 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     return VulkanPacerBeginResult::Continue;
 }
 
-u64 VulkanPresentPacer::EvaluateTargetTime(u64 sequence) noexcept
+u64 VulkanPresentPacer::EvaluateAbsoluteTargetTime(u64 sequence) noexcept
 {
-    // The capability decision was made once at the top of this frame, against
-    // the same pure resolver the authority came from. Re-deriving it here is
-    // how the two used to drift apart.
-    //
-    // Note what is absent: VK_KHR_present_wait2. Target-time presentation
-    // depends on VK_EXT_present_timing, VK_KHR_present_id2,
-    // VK_KHR_get_surface_capabilities2 and VK_KHR_calibrated_timestamps -- not
-    // on the previous-present wait. A surface offering only present timing gets
-    // scheduling with no wait rather than nothing at all.
-    if (!LastDecision.TargetTimeScheduling)
-    {
-        FallbackReason = LastDecision.Reason;
-        return 0;
-    }
-
     const u64 target = TimingModel.ComputeTargetTime(sequence, TargetFrameIntervalNs);
     if (target == 0)
     {
@@ -622,6 +650,87 @@ u64 VulkanPresentPacer::EvaluateTargetTime(u64 sequence) noexcept
 
     FallbackReason = VulkanJitFallbackReason::None;
     return target;
+}
+
+VulkanRelativeCadence::Request VulkanPresentPacer::EvaluateRelativeTargetDuration() noexcept
+{
+    // A relative target says "hold the PREVIOUS image at least this long". On a
+    // swapchain that has never presented there is no previous image, and the
+    // spec has the engine ignore the request. Reporting that as bootstrap
+    // rather than silently sending an ignored value keeps the log honest about
+    // when scheduling actually became active.
+    if (LastPresentedId == 0)
+    {
+        FallbackReason = VulkanJitFallbackReason::BootstrapWaitingForFirstPresent;
+        return VulkanRelativeCadence::Request{};
+    }
+
+    // Refresh properties come from the swapchain and the interval from the
+    // emulator; re-configuring on every frame is what makes a refresh-rate or
+    // TargetFPS change reset the accumulated fraction instead of carrying a
+    // phase from one grid onto another.
+    RelativeCadence.Configure(RefreshIntervalNs, RefreshDurationNs, TargetFrameIntervalNs);
+
+    const VulkanRelativeCadence::Request request = RelativeCadence.Prepare();
+    if (request.DurationNs == 0)
+    {
+        FallbackReason = VulkanJitFallbackReason::NoFrameInterval;
+        return VulkanRelativeCadence::Request{};
+    }
+
+    FallbackReason = VulkanJitFallbackReason::None;
+    return request;
+}
+
+VulkanPresentPacer::TargetTimingRequest
+    VulkanPresentPacer::EvaluateTargetTiming(u64 sequence) noexcept
+{
+    // The capability decision was made once at the top of this frame, against
+    // the same pure resolver the authority came from. Re-deriving it here is
+    // how the two used to drift apart.
+    //
+    // Note what is absent: VK_KHR_present_wait2. Target-time presentation
+    // depends on VK_EXT_present_timing, VK_KHR_present_id2,
+    // VK_KHR_get_surface_capabilities2 and VK_KHR_calibrated_timestamps -- not
+    // on the previous-present wait. A surface offering only present timing gets
+    // scheduling with no wait rather than nothing at all.
+    TargetTimingRequest request;
+    if (!LastDecision.TargetTimeScheduling)
+    {
+        FallbackReason = LastDecision.Reason;
+        return request;
+    }
+
+    switch (LastDecision.TargetMode)
+    {
+    case VulkanTargetSchedulingMode::Absolute:
+    {
+        const u64 target = EvaluateAbsoluteTargetTime(sequence);
+        if (target == 0)
+            return request;
+        request.Mode = VulkanTargetSchedulingMode::Absolute;
+        request.ValueNs = target;
+        // An absolute target names an instant, so asking for the nearest
+        // refresh cycle is always meaningful.
+        request.Quantized = true;
+        return request;
+    }
+    case VulkanTargetSchedulingMode::Relative:
+    {
+        const VulkanRelativeCadence::Request cadence = EvaluateRelativeTargetDuration();
+        if (cadence.DurationNs == 0)
+            return request;
+        request.Mode = VulkanTargetSchedulingMode::Relative;
+        request.ValueNs = cadence.DurationNs;
+        request.Quantized = cadence.Quantized;
+        return request;
+    }
+    case VulkanTargetSchedulingMode::None:
+        break;
+    }
+
+    FallbackReason = LastDecision.Reason;
+    return request;
 }
 
 u64 VulkanPresentPacer::PreparePresent(
@@ -647,32 +756,51 @@ u64 VulkanPresentPacer::PreparePresent(
     // after the first accepted present if the driver answered VK_NOT_READY.
     if (TimingMetadataEnabled && TimeDomainsReady)
     {
-        metadata.TargetTimeNs = EvaluateTargetTime(metadata.Sequence);
+        const TargetTimingRequest target = EvaluateTargetTiming(metadata.Sequence);
+        metadata.TargetMode = target.Mode;
+        metadata.TargetValueNs = target.ValueNs;
         metadata.Timing.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT;
         metadata.Timing.presentStageQueries = RequestedStageQueries();
         metadata.Timing.timeDomainId = TargetTimeDomainId;
-        if (metadata.TargetTimeNs != 0)
+        if (target.Mode != VulkanTargetSchedulingMode::None && target.ValueNs != 0)
         {
+            // Absolute: targetTime is an instant on the presentation timeline.
+            // Relative: targetTime is how long the PREVIOUS image must stay
+            // visible. The same field carries both, which is exactly why the
+            // flag has to be set from the mode rather than assumed.
+            metadata.Timing.flags =
+                target.Mode == VulkanTargetSchedulingMode::Relative
+                    ? VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT
+                    : 0u;
             // NEAREST_REFRESH_CYCLE rather than a hand-written cadence: at 60
             // emulated FPS on a 144 Hz display the ideal present lands between
             // refresh cycles, and choosing which one is the presentation
-            // engine's job, not the emulator's.
-            metadata.Timing.flags =
-                VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT;
-            metadata.Timing.targetTime = metadata.TargetTimeNs;
-            // Only meaningful alongside a target time, and only for the
-            // per-stage domain. Left zero otherwise rather than guessed.
+            // engine's job, not the emulator's. For a relative duration it is
+            // only added when that duration is a whole number of refreshes --
+            // on a variable or unknown refresh grid there is no cycle to snap
+            // to and asking for one would be meaningless.
+            if (target.Quantized)
+            {
+                metadata.Timing.flags |=
+                    VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT;
+            }
+            metadata.Timing.targetTime = target.ValueNs;
+            // Only meaningful alongside a target, and only for the per-stage
+            // domain. Left zero otherwise rather than guessed -- and not
+            // zeroed just because the target happens to be relative.
             metadata.Timing.targetTimeDomainPresentStage =
                 TargetTimeDomain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT
                     ? TargetPresentStage
                     : 0;
-            LastTargetTimeNs = metadata.TargetTimeNs;
+            LastTargetValueNs = target.ValueNs;
+            LastAppliedTargetMode = target.Mode;
             TargetSchedulingActive.store(true, std::memory_order_release);
         }
         else
         {
             // flags=0 with targetTime=0 is telemetry-only metadata: results are
             // still reported, but no presentation deadline is requested.
+            LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
             TargetSchedulingActive.store(false, std::memory_order_release);
         }
         metadata.Timings.sType = VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT;
@@ -711,7 +839,8 @@ bool VulkanPresentPacer::PrepareRetryWithoutTiming(
     // retry cannot leave a hole in the cadence.
     metadata.Id2.pNext = metadata.Timings.pNext;
     metadata.TimingAttached = false;
-    metadata.TargetTimeNs = 0;
+    metadata.TargetValueNs = 0;
+    metadata.TargetMode = VulkanTargetSchedulingMode::None;
     ++TimingQueueFullCount;
     TimingMetadataEnabled = false;
     TargetSchedulingActive.store(false, std::memory_order_release);
@@ -741,6 +870,11 @@ void VulkanPresentPacer::NotifyPresentResult(
         if (metadata.LogicalId != 0)
             LastPresentedId = metadata.LogicalId;
         TimingModel.CommitPresent();
+        // Exactly one cadence commit per accepted present -- including a
+        // queue-full retry that dropped its timing metadata. The frame was
+        // still displayed, so the relative cadence advances with it; skipping
+        // it would leave the fraction describing fewer frames than were shown.
+        RelativeCadence.Commit();
         // Only an accepted present with timing metadata occupies a results-queue
         // slot and owes a report. The retry path clears TimingAttached before
         // re-presenting, so a queue-full retry is not counted.
@@ -750,8 +884,9 @@ void VulkanPresentPacer::NotifyPresentResult(
     }
 
     // A rejected present never reached the presentation engine, so it must not
-    // consume a presentation sequence number.
+    // consume a presentation sequence number or a cadence step.
     TimingModel.AbandonPresent();
+    RelativeCadence.Abandon();
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         LastPresentedId = 0;
@@ -1134,7 +1269,7 @@ void VulkanPresentPacer::ReportPastTiming()
             latest.reportComplete ? "yes" : "no",
             latest.presentStageCount,
             IsTargetSchedulingActive() ? "active" : "inactive",
-            static_cast<unsigned long long>(LastTargetTimeNs),
+            static_cast<unsigned long long>(LastTargetValueNs),
             static_cast<unsigned long long>(LastFeedbackId),
             static_cast<unsigned long long>(LastFeedbackStageTimeNs),
             static_cast<unsigned long long>(TimingModel.GetBaselineSequence()),
@@ -1187,14 +1322,20 @@ void VulkanPresentPacer::LogTargetSchedulingIfChanged()
 
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] present JIT: policy=%s authority=%s state=%s targetScheduling=%s "
-        "boundedWait=%s optionalWait=%s timingReady=%s "
-        "timeDomainsReady=%s absoluteSupported=%s targetStage=%s timeDomain=%s "
-        "domainId=%llu frameIntervalNs=%llu baselineId=%llu baselineSequence=%llu "
-        "baselineTime=%llu targetTime=%llu fallback=%s\n",
+        "targetMode=%s boundedWait=%s optionalWait=%s timingReady=%s "
+        "timeDomainsReady=%s absoluteSupported=%s relativeSupported=%s "
+        "targetStage=%s timeDomain=%s "
+        "domainId=%llu frameIntervalNs=%llu refreshIntervalNs=%llu dynamics=%s "
+        "relativeQuanta=%llu baselineId=%llu baselineSequence=%llu "
+        "baselineTime=%llu targetValue=%llu fallback=%s\n",
         VulkanPresentPacingPolicyName(GetPolicy()),
         VulkanPacingAuthorityName(GetAuthority()),
         active ? "TargetSchedulingActive" : "TelemetryBootstrap",
         LastDecision.TargetTimeScheduling ? "capable" : "off",
+        // The mode is what tells an A/B reader whether a JustInTime run really
+        // scheduled, and against which semantics the target value should be
+        // read: an instant for absolute, a duration for relative.
+        VulkanTargetSchedulingModeName(LastDecision.TargetMode),
         LastDecision.BoundedPresentWait ? "on" : "off",
         // The bounded wait is optional and independent: reporting it here is
         // what keeps a wait-less driver from looking like a broken JIT setup.
@@ -1203,15 +1344,19 @@ void VulkanPresentPacer::LogTargetSchedulingIfChanged()
             : "available",
         TimingPropertiesReady ? "yes" : "no",
         TimeDomainsReady ? "yes" : "no",
-        PresentTimingAbsoluteSurface ? "yes" : "no",
+        (PresentTimingAbsoluteSurface && AbsoluteTimingDevice) ? "yes" : "no",
+        (PresentTimingRelativeSurface && RelativeTimingDevice) ? "yes" : "no",
         PresentStageName(TargetPresentStage),
         TimeDomainName(TargetTimeDomain),
         static_cast<unsigned long long>(TargetTimeDomainId),
         static_cast<unsigned long long>(TargetFrameIntervalNs),
+        static_cast<unsigned long long>(RefreshIntervalNs),
+        VulkanRefreshDynamicsName(RefreshDynamics),
+        static_cast<unsigned long long>(RelativeCadence.GetPendingQuanta()),
         static_cast<unsigned long long>(TimingModel.GetBaselineLogicalId()),
         static_cast<unsigned long long>(TimingModel.GetBaselineSequence()),
         static_cast<unsigned long long>(TimingModel.GetBaselineStageTimeNs()),
-        static_cast<unsigned long long>(LastTargetTimeNs),
+        static_cast<unsigned long long>(LastTargetValueNs),
         VulkanJitFallbackReasonName(FallbackReason));
 #endif
 }
@@ -1221,6 +1366,7 @@ void VulkanPresentPacer::LogState(const char* context) const
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] %s generic present pacing: policy=%s authority=%s caps2=%s "
         "present-id2=%s present-wait2=%s present-timing=%s absolute-timing=%s "
+        "relative-timing=%s "
         "target-stage=%s timing-queue=%u fifo-latest-ready=%s presentMode=%d reason=%s\n",
         context ? context : "state:",
         VulkanPresentPacingPolicyName(GetPolicy()),
@@ -1230,6 +1376,7 @@ void VulkanPresentPacer::LogState(const char* context) const
         PresentWait2Surface ? "yes" : "no",
         TimingMetadataEnabled ? "yes" : "no",
         (PresentTimingAbsoluteSurface && AbsoluteTimingDevice) ? "yes" : "no",
+        (PresentTimingRelativeSurface && RelativeTimingDevice) ? "yes" : "no",
         PresentStageName(TargetPresentStage),
         TimingQueueSize,
         (PresentMode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR) ? "yes" : "no",
@@ -1256,7 +1403,8 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState() const noexc
     snapshot.TargetTimeScheduling = LastDecision.TargetTimeScheduling;
     snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
     snapshot.FallbackReason = static_cast<int>(FallbackReason);
-    snapshot.TargetTimeNs = LastTargetTimeNs;
+    snapshot.TargetMode = static_cast<int>(LastAppliedTargetMode);
+    snapshot.TargetValueNs = LastTargetValueNs;
     snapshot.FeedbackPresentId = LastFeedbackId;
     snapshot.FeedbackStageTimeNs = LastFeedbackStageTimeNs;
     snapshot.BaselineSequence = TimingModel.GetBaselineSequence();

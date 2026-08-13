@@ -1,0 +1,239 @@
+MelonPrimeDS (build 2026-08-13 02:40:17 GMT+9) (melonDS 1.1)
+https://melonds.kuribo64.net
+Opened "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\melonDS.toml" with FileMode 0x1 (effective mode "rb")
+Opened "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\melonDS.toml" with FileMode 0x20 (effective mode "ab")
+MP comm init OK
+Audio output frequency: 48000 Hz
+Audio output buffer size: 512 samples
+[Vulkan] loaded vulkan-1.dll, instance API version 1.4.357
+[Vulkan] validation layer enabled
+[Vulkan] instance ok   Vulkan runtime -- vulkan-1.dll
+[Vulkan] instance ok   Vulkan instance version -- 1.4.357
+[Vulkan] instance ok   VK_KHR_surface -- present
+[Vulkan] instance ok   VK_KHR_get_surface_capabilities2 -- present
+[Vulkan] instance ok   VK_KHR_win32_surface -- present
+[Vulkan] instance ok   VK_EXT_debug_utils -- present
+[Vulkan/general] Loader Message: Removing layer VK_LAYER_OBS_HOOK (C:\ProgramData\obs-studio-hook\obs-vulkan32.json) because it is a duplicate of VK_LAYER_OBS_HOOK (C:\ProgramData\obs-studio-hook\obs-vulkan64.json)
+[Vulkan] instance created (API 1.1.0 requested, 4 extensions, 1 layers)
+[Vulkan]   instance extension: VK_KHR_surface
+[Vulkan]   instance extension: VK_KHR_get_surface_capabilities2
+[Vulkan]   instance extension: VK_KHR_win32_surface
+[Vulkan]   instance extension: VK_EXT_debug_utils
+[Vulkan] probed NVIDIA GeForce RTX 5070 Ti (NVIDIA, discrete GPU) API 1.4.341 driver 610.74.0.0: eligible
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Device API version -- 1.4.341
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Device-local memory -- 15995.0 MiB
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Queue families -- family 0 supports graphics+compute (present not checked)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Surface support -- not checked (probe ran without a surface)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UNORM storage image -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R16G16B16A16_UINT uniform texel buffer -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UINT texture array -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R32_UINT clear bitmap -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UNORM capture texture -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxBoundDescriptorSets -- maxBoundDescriptorSets = 32 (need 2)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPushConstantsSize -- maxPushConstantsSize = 256 (need 32)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorUniformBuffers -- maxPerStageDescriptorUniformBuffers = 1048576 (need 1)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorStorageBuffers -- maxPerStageDescriptorStorageBuffers = 1048576 (need 14)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxDescriptorSetStorageBuffers -- maxDescriptorSetStorageBuffers = 1048576 (need 14)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorStorageImages -- maxPerStageDescriptorStorageImages = 1048576 (need 1)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorSampledImages -- maxPerStageDescriptorSampledImages = 1048576 (need 6)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorSamplers -- maxPerStageDescriptorSamplers = 1048576 (need 5)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageResources -- maxPerStageResources = 4294967295 (need 22)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxUniformBufferRange -- maxUniformBufferRange = 65536 (need 4096)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageDimension2D -- maxImageDimension2D = 32768 (need 4096)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageArrayLayers -- maxImageArrayLayers = 2048 (need 64)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupInvocations -- maxComputeWorkGroupInvocations = 1024 (need 256)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupSize[0] -- maxComputeWorkGroupSize[0] = 1024 (need 64)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupSize[1] -- maxComputeWorkGroupSize[1] = 1024 (need 16)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageDimension2D (texcache) -- maxImageDimension2D (texcache) = 32768 (need 1024)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Internal resolution -- up to 16x supported
+[Vulkan] selected NVIDIA GeForce RTX 5070 Ti (NVIDIA) -- score 1175, up to 16x internal resolution
+[Vulkan] feature check: available device=NVIDIA GeForce RTX 5070 Ti api=1.4.341 driver=610.74.0.0 maxScale=16x reflex=yes antilag2=no
+[Vulkan] loaded vulkan-1.dll, instance API version 1.4.357
+[Vulkan] validation layer enabled
+[Vulkan] instance ok   Vulkan runtime -- vulkan-1.dll
+[Vulkan] instance ok   Vulkan instance version -- 1.4.357
+[Vulkan] instance ok   VK_KHR_surface -- present
+[Vulkan] instance ok   VK_KHR_get_surface_capabilities2 -- present
+[Vulkan] instance ok   VK_KHR_win32_surface -- present
+[Vulkan] instance ok   VK_EXT_debug_utils -- present
+[Vulkan/general] Loader Message: Removing layer VK_LAYER_OBS_HOOK (C:\ProgramData\obs-studio-hook\obs-vulkan32.json) because it is a duplicate of VK_LAYER_OBS_HOOK (C:\ProgramData\obs-studio-hook\obs-vulkan64.json)
+[Vulkan] instance created (API 1.1.0 requested, 4 extensions, 1 layers)
+[Vulkan]   instance extension: VK_KHR_surface
+[Vulkan]   instance extension: VK_KHR_get_surface_capabilities2
+[Vulkan]   instance extension: VK_KHR_win32_surface
+[Vulkan]   instance extension: VK_EXT_debug_utils
+[Vulkan] presentation surface created backend=VK_KHR_win32_surface hwnd=00000000000909d6
+[Vulkan] probed NVIDIA GeForce RTX 5070 Ti (NVIDIA, discrete GPU) API 1.4.341 driver 610.74.0.0: eligible
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Device API version -- 1.4.341
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Device-local memory -- 15995.0 MiB
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Queue families -- family 0 supports graphics+compute+present
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   VK_KHR_swapchain -- present
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Surface support -- 7 surface formats, 5 present modes
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UNORM storage image -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R16G16B16A16_UINT uniform texel buffer -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UINT texture array -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R32_UINT clear bitmap -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   R8G8B8A8_UNORM capture texture -- supported
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxBoundDescriptorSets -- maxBoundDescriptorSets = 32 (need 2)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPushConstantsSize -- maxPushConstantsSize = 256 (need 32)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorUniformBuffers -- maxPerStageDescriptorUniformBuffers = 1048576 (need 1)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorStorageBuffers -- maxPerStageDescriptorStorageBuffers = 1048576 (need 14)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxDescriptorSetStorageBuffers -- maxDescriptorSetStorageBuffers = 1048576 (need 14)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorStorageImages -- maxPerStageDescriptorStorageImages = 1048576 (need 1)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorSampledImages -- maxPerStageDescriptorSampledImages = 1048576 (need 6)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageDescriptorSamplers -- maxPerStageDescriptorSamplers = 1048576 (need 5)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxPerStageResources -- maxPerStageResources = 4294967295 (need 22)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxUniformBufferRange -- maxUniformBufferRange = 65536 (need 4096)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageDimension2D -- maxImageDimension2D = 32768 (need 4096)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageArrayLayers -- maxImageArrayLayers = 2048 (need 64)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupInvocations -- maxComputeWorkGroupInvocations = 1024 (need 256)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupSize[0] -- maxComputeWorkGroupSize[0] = 1024 (need 64)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxComputeWorkGroupSize[1] -- maxComputeWorkGroupSize[1] = 1024 (need 16)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   maxImageDimension2D (texcache) -- maxImageDimension2D (texcache) = 32768 (need 1024)
+[Vulkan] NVIDIA GeForce RTX 5070 Ti ok   Internal resolution -- up to 16x supported
+[Vulkan] selected NVIDIA GeForce RTX 5070 Ti (NVIDIA) -- score 1175, up to 16x internal resolution
+[Vulkan] generic present device capabilities: caps2=yes present-id2=yes present-wait2=yes calibrated-timestamps=yes present-timing=yes present-at-absolute-time=yes present-at-relative-time=yes fifo-latest-ready=yes
+[Vulkan] renderer requested=Vulkan presenter actual=Vulkan
+[Vulkan] instance API 1.4.357, device API 1.4.341
+[Vulkan] GPU NVIDIA GeForce RTX 5070 Ti (NVIDIA, discrete GPU) driver 610.74.0.0
+[Vulkan] queues: family 0 handles graphics, compute and present
+[Vulkan] device extension: VK_KHR_swapchain
+[Vulkan] device extension: VK_KHR_timeline_semaphore
+[Vulkan] device extension: VK_KHR_present_id
+[Vulkan] device extension: VK_NV_low_latency2
+[Vulkan] device extension: VK_KHR_present_id2
+[Vulkan] device extension: VK_KHR_present_wait2
+[Vulkan] device extension: VK_KHR_calibrated_timestamps
+[Vulkan] device extension: VK_EXT_present_timing
+[Vulkan] device extension: VK_KHR_present_mode_fifo_latest_ready
+[Vulkan] device features: none required (core 1.1 functionality only)
+[Vulkan] device-local memory 15995.0 MiB, internal resolution up to 16x
+[Vulkan] NVIDIA Reflex (VK_NV_low_latency2) device creation: extension-requested=yes supported=yes device-extension-enabled=yes reason=enabled at device creation
+[Vulkan] AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] NVIDIA Reflex mode=off lowLatencyMode=false lowLatencyBoost=false
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=yes absolute-timing=no relative-timing=yes target-stage=IMAGE_FIRST_PIXEL_OUT timing-queue=16 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,FIFO_RELAXED,MAILBOX,IMMEDIATE,FIFO_LATEST_READY selected-present-mode=FIFO swapchain-images=3 extent=256x384 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] NVIDIA Reflex mode=on lowLatencyMode=true lowLatencyBoost=false
+[Vulkan] presenter ready: NVIDIA Reflex (VK_NV_low_latency2): requested=on supported=yes device-extension-enabled=yes actual=active reason=latency markers active; no frame-rate cap requested
+[Vulkan] presenter ready: AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] presenter ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=yes absolute-timing=no relative-timing=yes target-stage=IMAGE_FIRST_PIXEL_OUT timing-queue=16 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+Opened "C:\Users\Admin\Documents\git\melonPrimeDS\build\codex-visual-checks\mph-test.nds" with FileMode 0x1 (effective mode "rb")
+Opened "C:\Users\Admin\Documents\git\melonPrimeDS\build\codex-visual-checks/mph-test.sav" with FileMode 0x1 (effective mode "rb")
+Opened "C:\Users\Admin\Documents\git\melonPrimeDS\build\codex-visual-checks/mph-test.sav" with FileMode 0x1 (effective mode "rb")
+Opened "C:\Users\Admin\Documents\git\melonPrimeDS\build\codex-visual-checks/mph-test.sav" with FileMode 0x20 (effective mode "ab")
+Failed to open "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\wfcsettings.bin" with FileMode 0x1 (effective mode "rb")
+Resetting JIT block cache...
+done resetting jit mem
+done resetting jit mem
+MAC: 00:09:BF:11:22:33
+FW: WIFI CRC16 = GOOD
+FW: AP1 CRC16 = GOOD
+FW: AP2 CRC16 = GOOD
+FW: AP3 CRC16 = GOOD
+FW: USER0 CRC16 = GOOD
+FW: USER1 CRC16 = GOOD
+Failed to open "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\rtc.bin" with FileMode 0x1 (effective mode "rb")
+Re-encrypting cart secure area
+NDSCart: Initialized Key1_KeyBuf to zero
+NDSCart: Initialized Key1_KeyBuf to zero
+Re-encrypted cart secure area
+Inserted cart with game code: AMHE
+Inserted cart with ID: 00003FC2
+ROM entry: 04000000 00000005
+Ejected GBA cart
+Failed to open "C:\Users\Admin\Documents\git\melonPrimeDS\build\codex-visual-checks/mph-test.mch" with FileMode 0x11 (effective mode "r")
+Resetting JIT block cache...
+done resetting jit mem
+done resetting jit mem
+MAC: 00:09:BF:11:22:33
+FW: WIFI CRC16 = GOOD
+FW: AP1 CRC16 = GOOD
+FW: AP2 CRC16 = GOOD
+FW: AP3 CRC16 = GOOD
+FW: USER0 CRC16 = GOOD
+FW: USER1 CRC16 = GOOD
+remapping SWRAM
+NDSCart: Initialized Key1_KeyBuf to zero
+NDSCart: Initialized Key1_KeyBuf to zero
+Secure area decryption OK
+remapping DTCM 0 1000 ffffffff ffffffff
+PU: region 0 = 04000033 : enabled, start: 04000000 size: 19
+PU: region 0 = 04000033 : enabled, start: 04000000 size: 19
+PU: region 1 = 0200002B : enabled, start: 02000000 size: 15
+PU: region 1 = 0200002B : enabled, start: 02000000 size: 15
+PU: region 2 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 2 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 3 = 08000035 : enabled, start: 08000000 size: 1A
+PU: region 3 = 08000035 : enabled, start: 08000000 size: 1A
+PU: region 4 = 0300001B : enabled, start: 03000000 size: 0D
+PU: region 4 = 0300001B : enabled, start: 03000000 size: 0D
+PU: region 5 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 5 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 6 = FFFF001D : enabled, start: FFFF0000 size: 0E
+PU: region 6 = FFFF001D : enabled, start: FFFF0000 size: 0E
+PU: region 7 = 027FF017 : enabled, start: 027FF000 size: 0B
+PU: region 7 = 027FF017 : enabled, start: 027FF000 size: 0B
+remapping DTCM 3000000 3004000 0 fffff000
+Game is now booting
+Resetting JIT block cache...
+done resetting jit mem
+Resetting JIT block cache...
+done resetting jit mem
+Renderer transition begin previous=-1 requested=3
+Renderer selection requested=Vulkan presentation=VulkanOpened "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\melonDS.toml" with FileMode 0x1 (effective mode "rb")
+Opened "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\melonDS.toml" with FileMode 0x20 (effective mode "ab")
+[Vulkan] renderer requested=Vulkan actual=Vulkan
+[Vulkan] instance API 1.4.357, device API 1.4.341
+[Vulkan] GPU NVIDIA GeForce RTX 5070 Ti (NVIDIA, discrete GPU) driver 610.74.0.0
+[Vulkan] queues: family 0 handles graphics, compute and present
+[Vulkan] device extension: VK_KHR_swapchain
+[Vulkan] device extension: VK_KHR_timeline_semaphore
+[Vulkan] device extension: VK_KHR_present_id
+[Vulkan] device extension: VK_NV_low_latency2
+[Vulkan] device extension: VK_KHR_present_id2
+[Vulkan] device extension: VK_KHR_present_wait2
+[Vulkan] device extension: VK_KHR_calibrated_timestamps
+[Vulkan] device extension: VK_EXT_present_timing
+[Vulkan] device extension: VK_KHR_present_mode_fifo_latest_ready
+[Vulkan] device features: none required (core 1.1 functionality only)
+[Vulkan] device-local memory 15995.0 MiB, internal resolution up to 16x
+[Vulkan] NVIDIA Reflex (VK_NV_low_latency2) device creation: extension-requested=yes supported=yes device-extension-enabled=yes reason=enabled at device creation
+[Vulkan] AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] descriptor pool: 6153 sets (6 rasterizer, 6147 texture) across 3 frames in flight
+Failed to open "C:/Users/Admin/Documents/git/melonPrimeDS/build/debug-mingw-x86_64\melonPrimeDS_vulkan_pipeline_cache.bin" with FileMode 0x1 (effective mode "rb")
+[Vulkan] 3D renderer initialized on "NVIDIA GeForce RTX 5070 Ti" (up to 16x internal resolution)
+Vulkan renderer init succeeded requested=Vulkan actual=Vulkan
+Renderer transition complete previous=-1 actual=3
+[Vulkan] internal resolution 4x -> 3D output 1024x768, tiles 128x96 (8px), tile-geometry bucket 0, capture resolve 256x192; memory raster=335.7 MiB capture-sidecar=32.0 MiB compositor-device=25.9 MiB compositor-host=7.9 MiB
+[Vulkan] present JIT: policy=JustInTime authority=NvidiaReflex state=TelemetryBootstrap targetScheduling=off targetMode=none boundedWait=off optionalWait=available timingReady=yes timeDomainsReady=yes absoluteSupported=no relativeSupported=yes targetStage=IMAGE_FIRST_PIXEL_OUT timeDomain=PRESENT_STAGE_LOCAL domainId=1000208000 frameIntervalNs=16666667 refreshIntervalNs=1850200 dynamics=FRR relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=0 fallback=vendor latency API owns pacing
+[Vulkan] low-latency: NVIDIA Reflex (VK_NV_low_latency2): requested=on supported=yes device-extension-enabled=yes actual=active reason=latency markers active; no frame-rate cap requested
+[Vulkan] low-latency: AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] low-latency: generic present pacing: policy=JustInTime authority=NvidiaReflex caps2=yes present-id2=yes present-wait2=yes present-timing=yes absolute-timing=no relative-timing=yes target-stage=IMAGE_FIRST_PIXEL_OUT timing-queue=16 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] NVIDIA Reflex mode=on lowLatencyMode=true lowLatencyBoost=false
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=yes absolute-timing=no relative-timing=yes target-stage=IMAGE_FIRST_PIXEL_OUT timing-queue=16 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,FIFO_RELAXED,MAILBOX,IMMEDIATE,FIFO_LATEST_READY selected-present-mode=FIFO swapchain-images=3 extent=256x384 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] first frame presented extent=256x384 presentMode=FIFO
+[Vulkan] present JIT: policy=JustInTime authority=NvidiaReflex state=TelemetryBootstrap targetScheduling=off targetMode=none boundedWait=off optionalWait=available timingReady=yes timeDomainsReady=yes absoluteSupported=no relativeSupported=yes targetStage=IMAGE_FIRST_PIXEL_OUT timeDomain=PRESENT_STAGE_LOCAL domainId=1000208000 frameIntervalNs=1000000 refreshIntervalNs=1864300 dynamics=FRR relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=0 fallback=vendor latency API owns pacing
+remapping DTCM ffffffff ffffffff 3000000 2ffc000
+PU: region 0 = 04000033 : enabled, start: 04000000 size: 19
+PU: region 1 = 0200002D : enabled, start: 02000000 size: 16
+PU: region 2 = 027E0021 : enabled, start: 027E0000 size: 10
+PU: region 3 = 08000035 : enabled, start: 08000000 size: 1A
+PU: region 4 = 027E001B : enabled, start: 027E0000 size: 0D
+PU: region 5 = 0100002F : enabled, start: 01000000 size: 17
+PU: region 6 = FFFF001D : enabled, start: FFFF0000 size: 0E
+PU: region 7 = 027FF017 : enabled, start: 027FF000 size: 0B
+remapping DTCM 27e0000 27e4000 ffffffff ffffffff
+unmapping 9 3800000 10000 1 0
+PU region 0: 04000000-07FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 1: 02000000-027FFFFF, user=70 priv=77, 15111011/05100011
+PU region 2: 027E0000-027FFFFF, user=00 priv=00, 15111011/05100011
+PU region 3: 08000000-0FFFFFFF, user=00 priv=03, 15111011/05100011
+PU region 4: 027E0000-027E3FFF, user=00 priv=03, 15111011/05100011
+PU region 5: 01000000-01FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 6: FFFF0000-FFFF7FFF, user=50 priv=55, 15111011/05100011
+PU region 7: 027FF000-027FFFFF, user=00 priv=03, 15111011/05100011
+PU: region 1 = 0200002B : enabled, start: 02000000 size: 15
+PU region 0: 04000000-07FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 1: 02000000-023FFFFF, user=70 priv=77, 15111011/05100011
+PU region 2: 027E0000-027FFFFF, user=00 priv=00, 1

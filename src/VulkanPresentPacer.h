@@ -60,8 +60,23 @@ public:
         VkPresentTimingsInfoEXT Timings{};
         u64 LogicalId = 0;
         u64 Sequence = 0;
-        u64 TargetTimeNs = 0;
+        // Meaning depends on TargetMode: an absolute presentation timestamp for
+        // Absolute, a minimum previous-image visible duration for Relative.
+        // Named "value" rather than "time" precisely so the two are not read as
+        // the same quantity.
+        u64 TargetValueNs = 0;
+        VulkanTargetSchedulingMode TargetMode = VulkanTargetSchedulingMode::None;
         bool TimingAttached = false;
+    };
+
+    // One frame's answer to "what target may this present request".
+    struct TargetTimingRequest
+    {
+        VulkanTargetSchedulingMode Mode = VulkanTargetSchedulingMode::None;
+        u64 ValueNs = 0;
+        // Relative durations that land on whole refresh intervals may also ask
+        // for the nearest refresh cycle; unquantized ones must not.
+        bool Quantized = false;
     };
 
     bool Initialize(const VulkanDevice& device, VkSurfaceKHR surface);
@@ -122,7 +137,10 @@ public:
         bool TargetTimeScheduling = false;
         bool BoundedPresentWait = false;
         int FallbackReason = 0;
-        u64 TargetTimeNs = 0;
+        // Without the mode, a capture cannot tell an A2 run that actually
+        // scheduled from one that silently fell through to no target.
+        int TargetMode = 0;
+        u64 TargetValueNs = 0;
         u64 FeedbackPresentId = 0;
         u64 FeedbackStageTimeNs = 0;
         u64 BaselineSequence = 0;
@@ -152,7 +170,12 @@ private:
     [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
     void ResetTimingLifecycle() noexcept;
     void ReportPastTiming();
-    u64 EvaluateTargetTime(u64 sequence) noexcept;
+    // Absolute and relative are deliberately separate functions: one returns a
+    // point on a clock, the other a duration, and merging them behind one
+    // return value is how the distinction gets lost.
+    [[nodiscard]] TargetTimingRequest EvaluateTargetTiming(u64 sequence) noexcept;
+    [[nodiscard]] u64 EvaluateAbsoluteTargetTime(u64 sequence) noexcept;
+    [[nodiscard]] VulkanRelativeCadence::Request EvaluateRelativeTargetDuration() noexcept;
     void DisableWait(const char* reason);
     void LogTargetSchedulingIfChanged();
 
@@ -170,12 +193,13 @@ private:
     bool PresentWait2Device = false;
     bool PresentTimingDevice = false;
     bool AbsoluteTimingDevice = false;
+    bool RelativeTimingDevice = false;
     bool LatestReadyDevice = false;
     bool TimeDomainQueryAvailable = false;
     bool PresentId2Surface = false;
     bool PresentWait2Surface = false;
     bool PresentTimingSurface = false;
-    bool PresentTimingRelative = false;
+    bool PresentTimingRelativeSurface = false;
     bool PresentTimingAbsoluteSurface = false;
     bool WaitRuntimeEnabled = false;
     VkPresentStageFlagsEXT PresentStageQueries = 0;
@@ -207,11 +231,16 @@ private:
 
     // --- Phase 3/4: feedback and target scheduling ---------------------------
     VulkanPresentTimingModel TimingModel;
+    VulkanRelativeCadence RelativeCadence;
     // Resolved once per frame in BeginFrame() and reused by PreparePresent(),
     // so the wait decision and the scheduling decision can never disagree.
     VulkanPacingDecision LastDecision{};
+    // Switching between absolute and relative restarts the cadence: a fraction
+    // accumulated while absolute was driving describes nothing relative needs.
+    VulkanTargetSchedulingMode LastTargetMode = VulkanTargetSchedulingMode::None;
     u64 TargetFrameIntervalNs = 0;
-    u64 LastTargetTimeNs = 0;
+    u64 LastTargetValueNs = 0;
+    VulkanTargetSchedulingMode LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
     bool FifoFamilyPresentMode = true;
     VulkanJitFallbackReason FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
     VulkanJitFallbackReason LoggedFallbackReason = VulkanJitFallbackReason::None;
@@ -252,6 +281,7 @@ private:
 
 const char* VulkanPresentPacingPolicyName(VulkanPresentPacingPolicy policy) noexcept;
 const char* VulkanPacingAuthorityName(VulkanPacingAuthority authority) noexcept;
+const char* VulkanTargetSchedulingModeName(VulkanTargetSchedulingMode mode) noexcept;
 const char* VulkanRefreshDynamicsName(VulkanRefreshDynamics dynamics) noexcept;
 const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept;
 

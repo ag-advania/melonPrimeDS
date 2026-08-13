@@ -290,6 +290,24 @@ python tools/perf/aggregate-vulkan-latency.py --warmup 600 --out summary.csv run
 Percentiles are computed per run and then compared across runs of the same mode.
 Do not pool every frame of every run — a longer run would outvote a shorter one.
 
+### Reading `target_mode` and `target_value_ns`
+
+Every captured frame records which scheduling mode it actually used. Check this
+before comparing anything: a `JustInTime` run that fell through to no target is
+an A1 run wearing an A2 label, and averaging the two together produces a
+meaningless number.
+
+| `target_mode` | Meaning | `target_value_ns` is |
+|---|---|---|
+| `0` none | no target was requested | 0 |
+| `1` absolute | an instant on the presentation timeline | a timestamp |
+| `2` relative | a minimum previous-image visible duration | a **duration** |
+
+The two are not comparable quantities, which is why the aggregation script puts
+the mode in the run label rather than pooling them. On a surface without
+`presentAtAbsoluteTimeSupported` the `JustInTime` policies use relative mode;
+that is the supported fallback, not a fault.
+
 ### What the numbers are and are not
 
 `vkGetLatencyTimingsNV` and the capture CSV are **software marker timings**. They

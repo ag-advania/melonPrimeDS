@@ -166,7 +166,11 @@ bool VulkanPresentLatencyCapture::Flush()
         "gpu_render_start_time_us,gpu_render_end_time_us,"
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
         "present_mode,fallback_reason,"
-        "target_time_ns,feedback_present_id,feedback_stage_time_ns,"
+        // target_mode decides how target_value_ns is read: 1 (absolute) is an
+        // instant on the presentation timeline, 2 (relative) is a minimum
+        // previous-image visible duration. Without it a run that silently fell
+        // through to no target looks like one that scheduled.
+        "target_mode,target_value_ns,feedback_present_id,feedback_stage_time_ns,"
         "baseline_sequence,present_sequence,frame_interval_ns,"
         "wait_timeout_count,timing_queue_size,timing_queue_full_count,"
         "timing_queue_recovery_count\n");
@@ -182,7 +186,7 @@ bool VulkanPresentLatencyCapture::Flush()
             "%llu,%llu,"
             "%d,%d,%d,%d,%d,"
             "%d,%d,"
-            "%llu,%llu,%llu,"
+            "%d,%llu,%llu,%llu,"
             "%llu,%llu,%llu,"
             "%u,%u,%u,%u\n",
             RunId.c_str(),
@@ -204,7 +208,8 @@ bool VulkanPresentLatencyCapture::Flush()
             p.BoundedPresentWait ? 1 : 0,
             p.PresentMode,
             p.FallbackReason,
-            static_cast<unsigned long long>(p.TargetTimeNs),
+            p.TargetMode,
+            static_cast<unsigned long long>(p.TargetValueNs),
             static_cast<unsigned long long>(p.FeedbackPresentId),
             static_cast<unsigned long long>(p.FeedbackStageTimeNs),
             static_cast<unsigned long long>(p.BaselineSequence),

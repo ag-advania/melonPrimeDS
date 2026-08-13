@@ -41,6 +41,26 @@ enum class VulkanPacingAuthority : int
     GenericPresentTiming,
 };
 
+// How a frame asks the presentation engine to schedule its display.
+//
+// The two modes mean genuinely different things and must not be treated as two
+// clocks for the same quantity:
+//
+//   Absolute -- a point on the presentation timeline. "Show this at time T."
+//   Relative -- a duration. "Keep the PREVIOUS image visible for at least N ns."
+//
+// Absolute is preferred because it is expressed directly in the same terms the
+// feedback baseline is measured in, so a rebase corrects drift exactly.
+// Relative exists because a surface may support only that -- which is the case
+// on the NVIDIA driver this path was first validated against, where the device
+// advertises presentAtAbsoluteTime but the surface does not support it.
+enum class VulkanTargetSchedulingMode : int
+{
+    None = 0,
+    Absolute,
+    Relative,
+};
+
 // Why a target presentation time was not requested. Reported in the developer
 // summary so an A/B session can tell "the policy does not ask for one" apart
 // from "this driver never answered".
@@ -53,14 +73,22 @@ enum class VulkanJitFallbackReason : int
     NotNormalSpeed,
     PresentId2Unsupported,
     PresentTimingUnsupported,
-    AbsoluteTimingUnsupportedDevice,
-    AbsoluteTimingUnsupportedSurface,
+    // Neither absolute nor relative scheduling is available. Reported per
+    // level, because "the driver cannot do it at all" and "this surface cannot
+    // do it" lead to different conclusions. Falling back from absolute to
+    // relative is NOT one of these: a working relative mode reports None.
+    NoTargetTimingModeDevice,
+    NoTargetTimingModeSurface,
     NonFifoPresentMode,
     NoFrameInterval,
     TimingPropertiesNotReady,
     TimeDomainsNotReady,
     NoValidTargetStage,
+    // Absolute scheduling needs a measured presentation to project from.
     BootstrapWaitingForFeedback,
+    // Relative scheduling needs a previous presentation to be relative to; the
+    // spec ignores a relative target on a swapchain that has never presented.
+    BootstrapWaitingForFirstPresent,
     DomainChanged,
     TimingQueryFailed,
     // Diagnostic only: the optional bounded wait is unavailable. This never
@@ -132,6 +160,11 @@ struct VulkanPacingCapabilities
     // entry point resolved.
     bool AbsoluteTimingDevice = false;
     bool AbsoluteTimingSurface = false;
+    // The same for presentAtRelativeTime. Kept as a separate pair rather than
+    // an "any timing" flag because the surface can support one and not the
+    // other, which is exactly the case this fallback exists for.
+    bool RelativeTimingDevice = false;
+    bool RelativeTimingSurface = false;
     // Target presentation time semantics are defined for the FIFO family only.
     bool FifoPresentMode = false;
     bool TimingPropertiesReady = false;
@@ -146,14 +179,30 @@ struct VulkanPacingDecision
     VulkanPacingAuthority Authority = VulkanPacingAuthority::GenericHost;
     // May vkWaitForPresent2KHR run before late input this frame.
     bool BoundedPresentWait = false;
-    // May VkPresentTimingInfoEXT carry a non-zero targetTime this frame, once a
-    // feedback baseline exists.
+    // Which kind of target the frame may request. `TargetTimeScheduling` is
+    // derived from this so the two can never disagree -- the bool exists only
+    // because most call sites just want "is a target being requested at all".
+    VulkanTargetSchedulingMode TargetMode = VulkanTargetSchedulingMode::None;
     bool TargetTimeScheduling = false;
     VulkanJitFallbackReason Reason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
     // Diagnostic companion: the policy would take the bounded wait, but the
     // capability is missing. Never a reason to refuse target scheduling.
     bool OptionalWaitUnavailable = false;
 };
+
+// Absolute wins wherever it is available; relative is the fallback, not a
+// preference. Absolute targets are expressed in the same units the feedback
+// baseline measures, so drift is corrected exactly on every rebase, whereas a
+// relative duration only constrains the gap between two presentations.
+constexpr VulkanTargetSchedulingMode SelectVulkanTargetSchedulingMode(
+    const VulkanPacingCapabilities& caps) noexcept
+{
+    if (caps.AbsoluteTimingDevice && caps.AbsoluteTimingSurface)
+        return VulkanTargetSchedulingMode::Absolute;
+    if (caps.RelativeTimingDevice && caps.RelativeTimingSurface)
+        return VulkanTargetSchedulingMode::Relative;
+    return VulkanTargetSchedulingMode::None;
+}
 
 constexpr bool VulkanPolicyRequestsTargetTime(VulkanPresentPacingPolicy policy) noexcept
 {
@@ -181,10 +230,14 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
             ? VulkanJitFallbackReason::TimingQueryFailed
             : VulkanJitFallbackReason::PresentTimingUnsupported;
     }
-    if (!caps.AbsoluteTimingDevice)
-        return VulkanJitFallbackReason::AbsoluteTimingUnsupportedDevice;
-    if (!caps.AbsoluteTimingSurface)
-        return VulkanJitFallbackReason::AbsoluteTimingUnsupportedSurface;
+    if (SelectVulkanTargetSchedulingMode(caps) == VulkanTargetSchedulingMode::None)
+    {
+        // Falling back from absolute to relative is a supported outcome and
+        // never lands here; reaching this means neither mode is usable.
+        return (!caps.AbsoluteTimingDevice && !caps.RelativeTimingDevice)
+            ? VulkanJitFallbackReason::NoTargetTimingModeDevice
+            : VulkanJitFallbackReason::NoTargetTimingModeSurface;
+    }
     if (!caps.FifoPresentMode)
         return VulkanJitFallbackReason::NonFifoPresentMode;
     if (!caps.FrameIntervalKnown)
@@ -211,31 +264,32 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
     bool normalSpeed,
     const VulkanPacingCapabilities& caps) noexcept
 {
+    constexpr VulkanTargetSchedulingMode noMode = VulkanTargetSchedulingMode::None;
     if (reflexActive)
     {
-        return {VulkanPacingAuthority::NvidiaReflex, false, false,
+        return {VulkanPacingAuthority::NvidiaReflex, false, noMode, false,
                 VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false};
     }
     if (antiLagActive)
     {
-        return {VulkanPacingAuthority::AmdAntiLag2, false, false,
+        return {VulkanPacingAuthority::AmdAntiLag2, false, noMode, false,
                 VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false};
     }
     if (!normalSpeed)
     {
         // Fast-forward and slow motion are not presentation problems. Neither
         // mechanism may hold frames to a cadence the emulator is not running at.
-        return {VulkanPacingAuthority::GenericHost, false, false,
+        return {VulkanPacingAuthority::GenericHost, false, noMode, false,
                 VulkanJitFallbackReason::NotNormalSpeed, false};
     }
     if (policy == VulkanPresentPacingPolicy::TelemetryOnly)
     {
-        return {VulkanPacingAuthority::GenericHost, false, false,
+        return {VulkanPacingAuthority::GenericHost, false, noMode, false,
                 VulkanJitFallbackReason::TelemetryOnlyPolicy, false};
     }
     if (!caps.SwapchainValid || !caps.PresentId2Surface)
     {
-        return {VulkanPacingAuthority::GenericHost, false, false,
+        return {VulkanPacingAuthority::GenericHost, false, noMode, false,
                 VulkanJitFallbackReason::PresentId2Unsupported, false};
     }
 
@@ -243,13 +297,15 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
     const VulkanJitFallbackReason reason = ClassifyVulkanTargetFallback(policy, caps);
     const bool target = VulkanPolicyRequestsTargetTime(policy)
         && reason == VulkanJitFallbackReason::None;
+    const VulkanTargetSchedulingMode mode =
+        target ? SelectVulkanTargetSchedulingMode(caps) : noMode;
 
     // The authority exists to keep exactly one owner of optional late waiting
     // and presentation scheduling. Either mechanism alone is enough to claim it.
     const VulkanPacingAuthority authority = (wait || target)
         ? VulkanPacingAuthority::GenericPresentTiming
         : VulkanPacingAuthority::GenericHost;
-    return {authority, wait, target, reason, !wait};
+    return {authority, wait, mode, target, reason, !wait};
 }
 
 } // namespace melonDS

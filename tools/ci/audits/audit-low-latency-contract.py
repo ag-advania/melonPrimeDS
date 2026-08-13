@@ -302,6 +302,78 @@ def main() -> int:
         "the latency capture flag must be independent of pacing and stage-query behaviour",
         failures,
     )
+    # --- absolute / relative target scheduling ------------------------------
+    # A surface may support presentAtRelativeTime and not presentAtAbsoluteTime,
+    # which is the case on the driver this path was validated against. Requiring
+    # absolute made the JustInTime policies silently equal to PresentWait there.
+    require(
+        "enum class VulkanTargetSchedulingMode" in vulkan_pacing_policy
+        and "SelectVulkanTargetSchedulingMode" in vulkan_pacing_policy
+        and "bool RelativeTimingDevice = false;" in vulkan_pacing_policy
+        and "bool RelativeTimingSurface = false;" in vulkan_pacing_policy
+        and ordered(
+            function_body(
+                vulkan_pacing_policy,
+                "constexpr VulkanTargetSchedulingMode SelectVulkanTargetSchedulingMode(",
+                "struct VulkanPacingDecision",
+            )
+            or function_body(
+                vulkan_pacing_policy,
+                "constexpr VulkanTargetSchedulingMode SelectVulkanTargetSchedulingMode(",
+                "constexpr bool VulkanPolicyRequestsTargetTime(",
+            ),
+            [
+                "AbsoluteTimingDevice && caps.AbsoluteTimingSurface",
+                "VulkanTargetSchedulingMode::Absolute",
+                "RelativeTimingDevice && caps.RelativeTimingSurface",
+                "VulkanTargetSchedulingMode::Relative",
+            ],
+        ),
+        "target scheduling must model absolute and relative modes with absolute preferred",
+        failures,
+    )
+    require(
+        "NoTargetTimingModeDevice" in vulkan_pacing_policy
+        and "NoTargetTimingModeSurface" in vulkan_pacing_policy
+        and "AbsoluteTimingUnsupportedSurface" not in vulkan_pacing_policy,
+        "falling back from absolute to relative must not be reported as a failure reason",
+        failures,
+    )
+    require(
+        "VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT" in vulkan_pacer
+        and "target.Mode == VulkanTargetSchedulingMode::Relative" in vulkan_pacer
+        and "EvaluateRelativeTargetDuration" in vulkan_pacer
+        and "EvaluateAbsoluteTargetTime" in vulkan_pacer,
+        "the relative flag must be attached only in relative mode, from a separate evaluator",
+        failures,
+    )
+    require(
+        "class VulkanRelativeCadence" in read("src/VulkanPresentTimingModel.h")
+        and "VariableRefreshInterval" in read("src/VulkanPresentTimingModel.h")
+        and "RelativeCadence.Commit();" in vulkan_pacer
+        and "RelativeCadence.Abandon();" in vulkan_pacer
+        and "RelativeCadence.Reset();" in vulkan_pacer,
+        "relative cadence must be transactional and reset on mode and lifecycle changes",
+        failures,
+    )
+    require(
+        "absoluteCapable || relativeCapable" in vulkan_pacer,
+        "FIFO_LATEST_READY must accept a relative-capable scheduler",
+        failures,
+    )
+    require(
+        "TestRelativeFallbackWhenSurfaceLacksAbsolute" in vulkan_timing_tests
+        and "caps.AbsoluteTimingSurface = false;" in vulkan_timing_tests
+        and "TestRelativeCadence60On144" in vulkan_timing_tests
+        and "TestRelativeSuppressedByVendorAndSpeed" in vulkan_timing_tests,
+        "the relative scheduling path must be covered by the pure capability and cadence tests",
+        failures,
+    )
+    require(
+        "target_mode,target_value_ns" in read("src/VulkanPresentLatencyCapture.cpp"),
+        "the A/B capture must record which target mode a frame actually used",
+        failures,
+    )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
         and "if (result != VK_INCOMPLETE)" in vulkan_pacer
@@ -316,7 +388,7 @@ def main() -> int:
     # tinguishable from telemetry-only at runtime unless somebody reads the log.
     require(
         all(token in vulkan_pacer for token in (
-            "metadata.Timing.targetTime = metadata.TargetTimeNs;",
+            "metadata.Timing.targetTime = target.ValueNs;",
             "VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT",
             "metadata.Timing.timeDomainId = TargetTimeDomainId;",
             "metadata.Timing.targetTimeDomainPresentStage =",
@@ -369,8 +441,8 @@ def main() -> int:
         and ordered(
             vulkan_pacing_policy,
             [
-                "VulkanPacingAuthority::NvidiaReflex, false, false",
-                "VulkanPacingAuthority::AmdAntiLag2, false, false",
+                "VulkanPacingAuthority::NvidiaReflex, false, noMode, false",
+                "VulkanPacingAuthority::AmdAntiLag2, false, noMode, false",
             ],
         )
         and "TestVendorLatencyApisWin" in vulkan_timing_tests,

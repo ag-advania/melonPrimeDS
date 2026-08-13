@@ -42,6 +42,10 @@ AUTHORITY_NAMES = {
     3: "GenericPresentTiming",
 }
 REFLEX_NAMES = {0: "Off", 1: "On", 2: "On+Boost"}
+# target_value_ns means different things per mode: an absolute presentation
+# timestamp, or a minimum previous-image visible duration. Mixing the two in one
+# statistic would be meaningless, so the mode is carried into the run label.
+TARGET_MODE_NAMES = {0: "none", 1: "absolute", 2: "relative"}
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -71,6 +75,7 @@ class RunStats:
         self.policy = -1
         self.authority = -1
         self.reflex_mode = -1
+        self.target_mode = 0
         self.target_active = 0
         self.bounded_wait = 0
         self.wait_timeouts = 0
@@ -97,6 +102,11 @@ class RunStats:
             self.reflex_mode = as_int(row, "reflex_mode", self.reflex_mode)
             self.target_active += as_int(row, "target_scheduling")
             self.bounded_wait += as_int(row, "bounded_wait")
+            # Whichever mode actually scheduled wins the label; a run that never
+            # scheduled keeps "none" and is visible as such.
+            row_mode = as_int(row, "target_mode")
+            if row_mode != 0:
+                self.target_mode = row_mode
 
             # These are running counters in the capture, so the last row holds
             # the run total rather than a per-frame delta.
@@ -123,7 +133,8 @@ class RunStats:
     def mode(self) -> str:
         policy = POLICY_NAMES.get(self.policy, f"policy{self.policy}")
         reflex = REFLEX_NAMES.get(self.reflex_mode, f"reflex{self.reflex_mode}")
-        return f"{policy}/Reflex{reflex}"
+        target = TARGET_MODE_NAMES.get(self.target_mode, f"mode{self.target_mode}")
+        return f"{policy}/Reflex{reflex}/{target}"
 
     @property
     def target_active_ratio(self) -> float:
@@ -137,6 +148,7 @@ class RunStats:
             "policy": POLICY_NAMES.get(self.policy, self.policy),
             "authority": AUTHORITY_NAMES.get(self.authority, self.authority),
             "reflex_mode": REFLEX_NAMES.get(self.reflex_mode, self.reflex_mode),
+            "target_mode": TARGET_MODE_NAMES.get(self.target_mode, self.target_mode),
             "samples": self.samples,
             "warmup_dropped": self.dropped_warmup,
             "fps_mean": round(1000.0 / statistics.fmean(self.frame_times_ms), 3)

@@ -477,16 +477,79 @@ schedules *this* one, and its dependencies are `VK_KHR_swapchain`,
 timing therefore gets full target-time scheduling with the wait simply skipped,
 and a runtime failure that retires the wait does not retire the scheduler.
 
+### Absolute and relative target modes
+
+`VK_EXT_present_timing` offers two ways to ask for a target, and they mean
+different things:
+
+| Mode | `targetTime` is | Flag |
+|---|---|---|
+| Absolute | a point on the presentation timeline | `NEAREST_REFRESH_CYCLE` |
+| Relative | how long the **previous** image must stay visible | `PRESENT_AT_RELATIVE_TIME` (+ `NEAREST_REFRESH_CYCLE` when quantized) |
+
+`SelectVulkanTargetSchedulingMode()` picks absolute wherever both the device
+feature and the surface capability allow it, and falls back to relative
+otherwise. Absolute is preferred because its targets are expressed in the same
+units the feedback baseline measures, so every rebase corrects drift exactly;
+relative only constrains the gap between two presentations. Falling back to
+relative is a supported outcome, not a failure — it reports `Reason=None`, and
+only a surface or device with neither mode produces `NoTargetTimingMode*`.
+
+The fallback is not hypothetical: the NVIDIA driver this path was validated
+against advertises `presentAtAbsoluteTime` at device level but reports
+`presentAtAbsoluteTimeSupported = false` for the surface. Without relative
+support the `JustInTime` policies would silently behave exactly like
+`PresentWait` there.
+
+A relative duration is quantized to whole refresh intervals on a fixed-refresh
+display, because that is the only granularity the engine can act on. The
+emulator's rate is rarely an integer divisor of the display's — 60 FPS on 144 Hz
+is 2.4 refreshes per frame — so `VulkanRelativeCadence` spreads the remainder
+with a fractional accumulator, producing 2,2,3,2,3… rather than rounding every
+frame to 2 (17% fast) or 3 (25% slow). The invariant it holds is that
+accumulated error stays below one refresh, so the long-run average is the
+emulator's own interval.
+
+Three cases are not quantized. Variable refresh (`refreshInterval` is
+`UINT64_MAX`) has no grid, so the duration is the frame interval floored at the
+display's minimum cycle. An unknown refresh interval (`0`) uses the raw frame
+interval rather than inventing a quantum. And a display slower than the emulator
+would compute zero quanta, which is the extension's "no target" value, so it is
+clamped to one refresh — the most such a display can give.
+
+The cadence is transactional like the presentation sequence: prepared per
+present, committed once when the engine accepts it (including a queue-full retry
+that dropped its timing metadata, since the frame was still displayed), and
+abandoned on rejection. It resets on swapchain recreation, on a mode change, and
+whenever the refresh interval or the emulator's frame interval changes — a phase
+accumulated against one grid describes nothing on another.
+
+Relative scheduling also waits for a first present: the spec ignores a relative
+target on a swapchain that has never presented, so the first accepted present
+reports `bootstrap waiting for the first present` and scheduling starts on the
+next one.
+
+### When scheduling activates
+
 Scheduling requires all of: a `JustInTime` policy, normal speed, a non-zero
-frame interval, present ID 2 surface support, the `presentAtAbsoluteTime` device
-feature and surface capability, a FIFO-family present mode, ready timing
-properties and time domains, a valid target stage, and a feedback baseline.
+frame interval, present ID 2 surface support, **either** timing mode supported
+at both device and surface level, a FIFO-family present mode, ready timing
+properties and time domains, a valid target stage, and — for absolute — a
+feedback baseline.
 Anything missing falls back to `targetTime = 0` and is recorded as a named
 reason in the developer log -- never to a renderer failure or a software
 fallback. `FIFO_LATEST_READY` is selected only for VSync when that whole
-capability and lifecycle path is in place, since time-based image selection is
-the reason the mode exists; a baseline is deliberately not part of that gate,
-because one cannot exist before the first present.
+capability and lifecycle path is in place -- with **either** scheduling mode,
+since requiring absolute would deny the present mode to exactly the surfaces
+relative was added for -- because time-based image selection is the reason the
+mode exists; a baseline is deliberately not part of that gate, because one
+cannot exist before the first present.
+
+The developer log reports `targetMode=absolute|relative|none` alongside
+`targetScheduling`, and the A/B capture records `target_mode` per frame. Without
+it a run that silently fell through to no target is indistinguishable from one
+that scheduled, and `target_value_ns` cannot be read at all — it is an instant
+in absolute mode and a duration in relative mode.
 
 The optional results queue is sized from the swapchain image count (16 to 64
 slots), because a report holds its slot until the presentation engine completes
@@ -597,14 +660,21 @@ defect this session found and fixed:
 This driver exposes every generic present capability at device level -- present
 ID 2, present wait 2, calibrated timestamps, present timing,
 `presentAtAbsoluteTime`, `presentAtRelativeTime` and FIFO latest-ready -- but
-the **surface** reports `presentAtAbsoluteTimeSupported = false`. Target-time
-scheduling therefore stays off with `fallback=absolute timing unsupported by
-surface`, and `FIFO_LATEST_READY` is correctly not selected. That is the
-capability gate working, not a failure; but it does mean the `JustInTime`
-policies currently behave as `PresentWait` on this driver, so an A/B here cannot
-yet measure target-time presentation. Relative-time scheduling
-(`VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT`), which this device
-does advertise, is the obvious next avenue.
+the **surface** reports `presentAtAbsoluteTimeSupported = false`. That is what
+relative-time scheduling was implemented for; with it, the same hardware now
+reaches:
+
+```text
+policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive
+targetMode=relative absoluteSupported=no relativeSupported=yes fallback=none
+```
+
+and `JustInTimeFifoLatestReady` selects `FIFO_LATEST_READY`. Both were
+unreachable before. Evidence:
+[`docs/archive/audits/vulkan/2026-08-13-relative-scheduling/`](../../archive/audits/vulkan/2026-08-13-relative-scheduling/).
+
+Implemented and active is not the same as beneficial: whether relative
+scheduling actually reduces latency still needs the A/B.
 
 Synchronization validation was then enabled as a second pass (layer banner
 confirming `Core Checks, Synchronization, Stateless Parameter, Object lifetime,
