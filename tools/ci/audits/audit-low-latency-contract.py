@@ -460,10 +460,18 @@ def main() -> int:
         ordered(
             function_body(
                 vulkan_presenter,
-                "    if (tagLatency)\n        Reflex.MarkPresentStart();",
+                # Both anchors are unique in this file, so the window is exactly
+                # the present span and its immediate bookkeeping.
+                "std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());",
                 "if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)",
             ),
             [
+                # The lock is taken before the span and released after it, so
+                # neither queue contention nor the release lands inside the
+                # measured present. unique_lock with an explicit unlock is what
+                # makes that boundary checkable here rather than implied by a
+                # closing brace.
+                "queueLock(Device.GetQueueMutex());",
                 "Reflex.MarkPresentStart();",
                 "LatencyCapture.MarkPresentStart();",
                 "res = fns.QueuePresentKHR(",
@@ -471,12 +479,14 @@ def main() -> int:
                 "res = fns.QueuePresentKHR(",
                 "LatencyCapture.MarkPresentEnd();",
                 "Reflex.MarkPresentEnd();",
+                "queueLock.unlock();",
+                # Bookkeeping stays outside the span.
                 "PresentPacer.NotifyPresentResult(",
                 "LatencyCapture.Commit(",
                 "Reflex.NotifyPresented();",
             ],
         ),
-        "present end markers must close immediately after the final QueuePresent returns",
+        "present markers must bracket only QueuePresent, inside the queue lock",
         failures,
     )
     # The bounded wait is skipped whenever there is nothing to wait on, so the
@@ -489,6 +499,20 @@ def main() -> int:
         and "snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;" in vulkan_pacer
         and "bounded_wait_attempted_ratio" in read("tools/perf/aggregate-vulkan-latency.py"),
         "the capture must separate an allowed bounded wait from one that actually ran",
+        failures,
+    )
+    # wait_timeout_count is cumulative for the whole run, so the warm-up value
+    # has to be subtracted before a rate is computed -- otherwise warm-up
+    # timeouts are charged to the measured window and can fake a breach of the
+    # runbook threshold. The rate is per attempted wait, not per frame.
+    require(
+        all(token in read("tools/perf/aggregate-vulkan-latency.py") for token in (
+            "wait_timeouts_at_warmup",
+            "wait_timeouts_in_window",
+            "wait_timeout_rate",
+            "self.wait_timeouts_in_window / self.bounded_wait_attempted",
+        )),
+        "the wait timeout rate must exclude warm-up and divide by attempted waits",
         failures,
     )
     require(

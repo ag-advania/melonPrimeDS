@@ -84,6 +84,7 @@ class RunStats:
         self.queue_full = 0
         self.queue_recoveries = 0
         self.queue_size = 0
+        self.wait_timeouts_at_warmup = 0
         self._load(warmup)
 
     def _load(self, warmup: int) -> None:
@@ -95,6 +96,11 @@ class RunStats:
             if index < warmup:
                 self.dropped_warmup += 1
                 previous_present_end = as_int(row, "present_end_time_us")
+                # wait_timeout_count is a running total for the whole run, so
+                # the value standing at the warmup boundary has to be subtracted
+                # out. Using the final value alone would charge warm-up timeouts
+                # to the measured window.
+                self.wait_timeouts_at_warmup = as_int(row, "wait_timeout_count")
                 continue
 
             self.samples += 1
@@ -187,6 +193,23 @@ class RunStats:
     def target_active_ratio(self) -> float:
         return (self.target_active / self.samples) if self.samples else float("nan")
 
+    @property
+    def wait_timeouts_in_window(self) -> int:
+        """Timeouts inside the measured window, excluding warm-up."""
+        return max(0, self.wait_timeouts - self.wait_timeouts_at_warmup)
+
+    @property
+    def wait_timeout_rate(self) -> float:
+        """Timeouts per attempted wait.
+
+        The runbook threshold is a rate over waits that actually ran, not over
+        frames: a frame with nothing to wait on never had the chance to time
+        out, and including it would understate the rate.
+        """
+        if not self.bounded_wait_attempted:
+            return float("nan")
+        return self.wait_timeouts_in_window / self.bounded_wait_attempted
+
     def summary_row(self) -> dict[str, object]:
         return {
             "run_id": self.run_id,
@@ -223,6 +246,10 @@ class RunStats:
                 4,
             ),
             "wait_timeout_count": self.wait_timeouts,
+            "wait_timeouts_in_window": self.wait_timeouts_in_window,
+            # The runbook's "< 1%" threshold, computed the way the runbook
+            # defines it: timeouts per wait that actually ran.
+            "wait_timeout_rate": round(self.wait_timeout_rate, 6),
             "timing_queue_size": self.queue_size,
             "timing_queue_full_count": self.queue_full,
             "timing_queue_recovery_count": self.queue_recoveries,

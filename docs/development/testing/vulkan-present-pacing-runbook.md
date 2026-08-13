@@ -360,7 +360,12 @@ wait ran. The aggregator reports both as `bounded_wait_allowed_ratio` and
 `bounded_wait_attempted_ratio`.
 
 The acceptance threshold below is a timeout *rate*, so compute it against
-attempted waits, not against every frame.
+attempted waits, not against every frame. The aggregator reports it directly as
+`wait_timeout_rate`, and reports `wait_timeouts_in_window` alongside the raw
+`wait_timeout_count`: the raw column is a running total for the entire run, so
+subtracting its value at the warm-up boundary is what keeps warm-up timeouts
+from being charged to the measured window. Use `wait_timeout_rate`; deriving a
+rate from `wait_timeout_count` directly will overstate it.
 
 ### Where the present span ends
 

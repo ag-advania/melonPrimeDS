@@ -1651,31 +1651,39 @@ bool VulkanPresenter::EndFrame()
 
     // PRESENT_START / PRESENT_END bracket the real vkQueuePresentKHR and
     // nothing else. VK_NV_low_latency2 specifies PRESENT_START "just before
-    // vkQueuePresentKHR" and PRESENT_END "when vkQueuePresentKHR returns", so
-    // both the Reflex marker and the host capture timestamp close the span the
-    // instant the call comes back -- before any pacer or capture bookkeeping.
-    // Putting that bookkeeping inside the span would fold post-present CPU work
-    // into every Reflex latency report and into the host input-to-present
-    // figure the A/B compares, shifting the very boundary being measured.
-    if (tagLatency)
-        Reflex.MarkPresentStart();
-    LatencyCapture.MarkPresentStart();
-
+    // vkQueuePresentKHR" and PRESENT_END "when vkQueuePresentKHR returns".
+    //
+    // Both markers therefore sit INSIDE the queue lock: taking the mutex before
+    // the span keeps queue contention out of it, and closing the span before
+    // the unlock keeps the release out too. With the markers outside, a
+    // contended queue would charge its wait to every Reflex latency report and
+    // to the host input-to-present figure the A/B compares -- time that is not
+    // the presentation call at all. Nor may any pacer or capture bookkeeping
+    // sit between the call returning and the end markers.
+    //
+    // unique_lock rather than lock_guard so the release is an explicit
+    // statement: the marker/lock boundary is then a source ordering a static
+    // audit can check, not something implied by a closing brace.
     VkResult res = VK_SUCCESS;
     {
-        std::lock_guard<std::mutex> queueLock(Device.GetQueueMutex());
+        std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());
+
+        if (tagLatency)
+            Reflex.MarkPresentStart();
+        LatencyCapture.MarkPresentStart();
+
         res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
+        // On the queue-full retry path the span covers both calls and ends when
+        // the second returns; one presentation gets one marker pair.
         if (PresentPacer.PrepareRetryWithoutTiming(res, genericPresentMetadata))
             res = fns.QueuePresentKHR(Device.GetPresentQueue(), &present);
-    }
 
-    // Nothing may be inserted between the final QueuePresent returning and
-    // these two lines. On the queue-full retry path the span covers both calls
-    // and ends when the second one returns; the present is one presentation
-    // either way, so it gets one marker pair.
-    LatencyCapture.MarkPresentEnd();
-    if (tagLatency)
-        Reflex.MarkPresentEnd();
+        LatencyCapture.MarkPresentEnd();
+        if (tagLatency)
+            Reflex.MarkPresentEnd();
+
+        queueLock.unlock();
+    }
 
     PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
