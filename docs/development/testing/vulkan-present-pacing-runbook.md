@@ -146,13 +146,45 @@ Per policy (`3D.Vulkan.PresentPacingPolicy`), warm up ~300 frames then run 3,000
 - [ ] Fast Forward hold, Fast Forward toggle, Slow Motion — both generic
       mechanisms off
 
-Event coverage (counts, not frames):
+Event coverage (counts, not frames). The window-driven ones are automated —
+doing them by hand is slow, unrepeatable, and the interesting failures are races
+that need dozens of events to surface:
 
-- [ ] fullscreen toggle x20
-- [ ] resize x50, DPI change, minimize, restore
-- [ ] F2 Video Settings open/cancel/apply x20
+```bash
+powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 -Rom <rom> -Phase resize   -Tag resize1
+powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 -Rom <rom> -Phase minimize -Tag min1
+powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 -Rom <rom> -Phase idle     -Tag idle1
+```
+
+It exits non-zero on any VUID or device loss and prints the VUIDs grouped by
+count. Run each phase separately: attributing a failure to "resize" or to
+"minimize/restore" is most of the work of fixing it.
+
+- [x] resize x40 (drives one swapchain rebuild each)
+- [x] minimize / restore x20
+- [x] fullscreen toggle x8
+- [x] idle control (same runtime, no events)
+- [ ] DPI change
+- [ ] Video Settings open/cancel/apply x20
 - [ ] Vulkan ↔ Software x20, ↔ OpenGL Compute, ↔ DX12 where the build has it
 - [ ] ROM launch, savestate load, reset, close, reopen
+
+**Known open defect.** The minimize/restore phase reproduces
+`VUID-vkQueuePresentKHR-pWaitSemaphores-03268` — a present waiting on a
+render-finished semaphore with no pending signal — at roughly one per cycle
+(20 messages over 22 rebuilds). Resize is clean (0 over 42 rebuilds), so the
+trigger is the zero-extent path specifically, not swapchain recreation in
+general. It reproduces identically on the commit before the present markers were
+moved inside the queue lock, so it is not caused by that change. No device loss,
+no software fallback, no recreate storm accompanies it.
+
+One hypothesis has already been tested and **disproved**: deferring the
+render-finished semaphores' destruction until after the old swapchain is
+destroyed (so a queued present's wait is released first) changed nothing —
+still 20 over 22. Whatever the cause is, it is not that ordering alone.
+
+This must be closed before the formal A/B, because the gate above requires zero
+core-validation errors.
 
 Watch especially for VUIDs touching `VkPresentId2KHR`, `VkPresentTimingInfoEXT`,
 `VkPresentTimingsInfoEXT`, `presentStageQueries`, `targetTime`, `timeDomainId`,

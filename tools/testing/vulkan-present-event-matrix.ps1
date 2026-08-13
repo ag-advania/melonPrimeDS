@@ -1,0 +1,163 @@
+<#
+.SYNOPSIS
+    Drives the Vulkan presenter's swapchain-lifecycle event matrix automatically.
+
+.DESCRIPTION
+    The present-pacing runbook's Phase 1 asks for resize, minimize/restore and
+    fullscreen cycling under the Validation Layer. Doing that by hand is slow and
+    not repeatable, and the interesting failures are races that need dozens of
+    events to surface -- so this drives the window through Win32 instead.
+
+    Point it at a Debug build (tools\build\windows\build-mingw-validation.bat),
+    which is the configuration that enables MELONDS_VULKAN_ENABLE_VALIDATION.
+    A Release build will run but proves nothing about validation.
+
+    Each phase can be run alone, which is what makes it a diagnostic rather than
+    just a stress test: attributing a validation error to "resize" or to
+    "minimize/restore" is most of the work of fixing it.
+
+.PARAMETER Phase
+    all | resize | minimize | fullscreen | idle
+    "idle" is the control: same runtime, no window events.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
+        -Rom "C:\roms\game.nds" -Phase minimize -Tag min-run1
+    Select-String -Path $env:TEMP\vk-min-run1.out.log -Pattern 'VUID-'
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Rom,
+    [string]$BuildDir = "build\debug-mingw-x86_64",
+    [ValidateSet('all', 'resize', 'minimize', 'fullscreen', 'idle')][string]$Phase = 'all',
+    [int]$ReflexMode = 0,
+    [int]$Policy = 2,
+    [string]$Tag = "event-matrix",
+    [int]$WarmupSeconds = 18,
+    [string]$OutDir = $env:TEMP
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path $BuildDir)) { throw "build directory not found: $BuildDir" }
+if (-not (Test-Path $Rom)) { throw "ROM not found: $Rom" }
+$dir = (Resolve-Path $BuildDir).Path
+$exe = Join-Path $dir 'melonPrimeDS.exe'
+if (-not (Test-Path $exe)) { throw "melonPrimeDS.exe not found in $dir" }
+$out = Join-Path $OutDir "vk-$Tag.out.log"
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class MpWin {
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+  public delegate bool EnumWindowsProc(IntPtr h, IntPtr p);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int t, bool repaint);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+  public static IntPtr Find(uint pid) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows(delegate(IntPtr h, IntPtr p) {
+      uint wpid; GetWindowThreadProcessId(h, out wpid);
+      if (wpid == pid && IsWindowVisible(h) && GetWindowTextLength(h) > 0) { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
+}
+"@
+
+# Portable config next to the exe, so the run is reproducible regardless of
+# whatever is in %LOCALAPPDATA%.
+$cfg = @"
+3D.Renderer = 3
+Screen.UseGL = false
+Screen.VSync = true
+Screen.VSyncInterval = 1
+LimitFPS = true
+TargetFPS = 60.0
+3D.Vulkan.PresentPacingPolicy = $Policy
+3D.DX12.NvidiaReflexMode = $ReflexMode
+3D.AMD.AntiLag2Enabled = false
+Emu.DirectBoot = true
+Emu.ExternalBIOSEnable = false
+"@
+Set-Content -Path (Join-Path $dir 'melonDS.toml') -Value $cfg -NoNewline
+
+$proc = Start-Process -FilePath $exe -ArgumentList "`"$Rom`"" -WorkingDirectory $dir `
+        -PassThru -RedirectStandardOutput $out -RedirectStandardError (Join-Path $OutDir "vk-$Tag.err.log")
+
+try {
+    # The first swapchain, shader warm-up and the ROM's own boot all have to be
+    # past before window events mean anything.
+    Start-Sleep -Seconds $WarmupSeconds
+
+    $h = [MpWin]::Find([uint32]$proc.Id)
+    if ($h -eq [IntPtr]::Zero) { throw "could not find the melonPrimeDS window" }
+
+    if ($Phase -eq 'all' -or $Phase -eq 'resize') {
+        $sizes = @(@(900,700),@(1280,800),@(640,480),@(1024,768),@(1600,900),@(800,600),@(1440,900),@(720,540))
+        for ($i = 0; $i -lt 40; $i++) {
+            $s = $sizes[$i % $sizes.Count]
+            [void][MpWin]::MoveWindow($h, 80, 60, $s[0], $s[1], $true)
+            Start-Sleep -Milliseconds 220
+        }
+        Write-Host "resize x40"
+    }
+
+    if ($Phase -eq 'all' -or $Phase -eq 'minimize') {
+        # Minimize drives the surface to a zero extent, which is the one path
+        # that skips swapchain creation entirely and retries on restore.
+        for ($i = 0; $i -lt 20; $i++) {
+            [void][MpWin]::ShowWindow($h, 6)   # SW_MINIMIZE
+            Start-Sleep -Milliseconds 400
+            [void][MpWin]::ShowWindow($h, 9)   # SW_RESTORE
+            Start-Sleep -Milliseconds 500
+        }
+        Write-Host "minimize/restore x20"
+    }
+
+    if ($Phase -eq 'all' -or $Phase -eq 'fullscreen') {
+        Add-Type -AssemblyName System.Windows.Forms
+        for ($i = 0; $i -lt 8; $i++) {
+            [void][MpWin]::SetForegroundWindow($h)
+            Start-Sleep -Milliseconds 250
+            [System.Windows.Forms.SendKeys]::SendWait('{F11}')
+            Start-Sleep -Milliseconds 700
+        }
+        Write-Host "fullscreen toggle x8"
+    }
+
+    if ($Phase -eq 'idle') {
+        Start-Sleep -Seconds 20
+        Write-Host "idle control"
+    }
+
+    Start-Sleep -Seconds 3
+}
+finally {
+    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+}
+
+$log = Get-Content $out -ErrorAction SilentlyContinue
+$recreations = ($log | Select-String -SimpleMatch 'swapchain ready').Count
+$vuids = ($log | Select-String -Pattern 'VUID-[A-Za-z0-9-]+' -AllMatches).Matches.Value
+$deviceLost = ($log | Select-String -SimpleMatch 'DEVICE_LOST').Count
+
+Write-Host ""
+Write-Host "log            : $out"
+Write-Host "swapchain rebuilds: $recreations"
+Write-Host "device lost       : $deviceLost"
+if ($vuids.Count -eq 0) {
+    Write-Host "validation        : clean"
+} else {
+    Write-Host "validation        : $($vuids.Count) message(s)"
+    $vuids | Group-Object | Sort-Object Count -Descending |
+        ForEach-Object { Write-Host ("  {0,4}x {1}" -f $_.Count, $_.Name) }
+}
+if ($deviceLost -gt 0 -or $vuids.Count -gt 0) { exit 1 }
+exit 0
