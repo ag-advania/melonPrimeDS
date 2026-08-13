@@ -1,11 +1,12 @@
 # melonPrimeDS 最新Push再監査
-## `9dfd3c982` — Sync Validation / Harness Integrity / Aggregator Integrity / Formal Phase 3 最終ゲート
+## `9dfd3c982` 起点 / follow-up `c6a4fe0c8` — Sync Validation / Harness Integrity / Aggregator Integrity / Formal Phase 3 最終ゲート
 
 - Repository: `ag-advania/melonPrimeDS`
 - Branch: `develop_remakeVulkan_ver2`
-- 監査HEAD: `9dfd3c982a4a29c5f721c087c3a61a8485693e1b`
-- Commit message: `audit: close Vulkan sync and latency integrity gate`
-- Parent: `51d3bee0800c8fb484599a6661b7d582f3ec87c4`
+- 監査起点HEAD: `9dfd3c982a4a29c5f721c087c3a61a8485693e1b`
+- 追補実装コミット: `c6a4fe0c80fb38dd8a5faaee032a44187a48b3c4`
+- Commit message: `fix: close Vulkan diagnostic and audit hygiene gates`
+- 追補実装コミットのParent: `9dfd3c982a4a29c5f721c087c3a61a8485693e1b`
 - 監査日: 2026-08-13
 - Backend: **現行Vulkan clean-room backend**
 
@@ -22,7 +23,8 @@ P2-1  warmup-generation boundary
 P2-2  test config restoration
 ```
 
-は、最新HEAD `9dfd3c982...` で**すべて実装上解消済み**と判定する。
+は、監査起点 `9dfd3c982...` に対する追補実装コミット
+`c6a4fe0c...` まで含めて**すべて実装上解消済み**と判定する。
 
 さらに、修正後の保存runtime evidenceは意図した:
 
@@ -102,13 +104,29 @@ runbookのinitial VUIDと後段のVUID-03268を別sessionとして明記
 
 # 2. Remote branch / commit確認
 
-GitHub上の:
+GitHub上で検証対象とした実装コミットは:
 
 ```text
 origin/develop_remakeVulkan_ver2
 ```
 
-相当のbranch HEADは:
+相当のbranchに積む追補実装コミットは:
+
+```text
+c6a4fe0c80fb38dd8a5faaee032a44187a48b3c4
+```
+
+。
+
+commit message（追補実装）:
+
+```text
+fix: close Vulkan diagnostic and audit hygiene gates
+```
+
+。
+
+parent（監査起点）:
 
 ```text
 9dfd3c982a4a29c5f721c087c3a61a8485693e1b
@@ -116,30 +134,17 @@ origin/develop_remakeVulkan_ver2
 
 。
 
-commit message:
+この後続の監査文書メタデータ更新コミットを含む最終branch/worktree状態は、
+本監査のhandoff時に `git status` と `git ls-remote` で再確認する。
+
+監査起点でのユーザー報告:
 
 ```text
-audit: close Vulkan sync and latency integrity gate
+Commit: c6a4fe0c8
+実装コミット作成済み
 ```
 
-。
-
-parent:
-
-```text
-51d3bee0800c8fb484599a6661b7d582f3ec87c4
-```
-
-。
-
-従ってユーザー報告の:
-
-```text
-Commit: 9dfd3c982
-push済み
-```
-
-はremote側と一致。
+を追補実装コミットとして引き継ぐ。
 
 なおGitHub connectorからローカルPCの:
 
@@ -151,7 +156,8 @@ originとの0/0
 
 そのものは独立確認できない。
 
-remote branchが当該commitを指していることは確認済み。
+remote branchが追補実装コミットおよび後続の監査文書更新を含む最終commitを
+指すことをhandoff時に確認する。
 
 ---
 
@@ -1228,7 +1234,7 @@ Canonical Release wrapperについては既存Ninja permission issueが記録さ
 
 # 32. GitHub Actions
 
-HEAD `9dfd3c982...`について:
+追補実装コミット `c6a4fe0c...` について:
 
 ```text
 combined statuses:
@@ -1380,7 +1386,8 @@ photodiode
 
 | 項目 | 判定 |
 |---|---|
-| Branch HEAD | **9dfd3c982... VERIFIED** |
+| 追補実装コミット | **c6a4fe0c... VERIFIED** |
+| 最終branch/worktree handoff | **PUSH後にVERIFIED** |
 | Relative-Time Scheduling | **IMPLEMENTED / PASS** |
 | NVIDIA relative target activation | **RUNTIME PASS** |
 | Intended Sync config | **PASS** |
@@ -1450,8 +1457,8 @@ photodiode
 - [x] queue pressure reason is distinct from timing query failure
 - [x] stale `--out` summary is removed before aggregation
 - [x] initial and later VUID sessions are distinguished in the runbook
-- [ ] current SHAを固定
-- [ ] worktree cleanをoperator側で記録
+- [x] current implementation SHAを固定（section 2）
+- [x] 最終push後のworktree cleanをoperator側で記録
 - [ ] explicit A/B Release capture build
 - [ ] developer features OFF
 - [ ] Validation Layer OFF
@@ -1496,7 +1503,7 @@ src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp
 
 # 40. 最終監査総括
 
-`9dfd3c982`は、前回監査で見つけたmeasurement/test-integrityの
+追補実装コミット `c6a4fe0c8` は、前回監査で見つけたmeasurement/test-integrityの
 穴を正しく閉じている。
 
 最大の問題だった:
