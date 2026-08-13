@@ -116,6 +116,7 @@ def main() -> int:
     metal_depth = read("src/GPU3D_MetalComputeDepthBlendShaders.inc")
     metal_final = read("src/GPU3D_MetalComputeFinalPassShaders.inc")
     metal_wrapper = read("src/GPU3D_Metal.mm")
+    video_settings = read("src/frontend/qt_sdl/VideoSettingsDialog.cpp")
     vk_wrapper = read("src/GPU_Vulkan.cpp")
     dx_wrapper = read("src/GPU_DX12.cpp")
 
@@ -394,6 +395,18 @@ def main() -> int:
             "Metal overlapping right-edge coverage origin", failures)
     require(metal_cpp, "State->HiresCoordinates && State->ScaleFactor > 1",
             "Metal native quantized coordinate selection", failures)
+    require(metal_cpp, "RasterReference.SetBetterPolygons(betterPolygons);",
+            "Metal Compute polygon option is fallback-only", failures)
+    forbid(metal_cpp, "State->BetterPolygons",
+           "Metal Compute production polygon-splitting state", failures)
+    require(video_settings,
+            "ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRasterRenderer);",
+            "Metal Compute polygon-splitting UI gate", failures)
+    require(video_settings, "MetalComputeBetterPolygonsDescription",
+            "Metal Compute polygon-splitting UI explanation", failures)
+    require(video_settings,
+            "computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer",
+            "Metal high-resolution-coordinate UI gate", failures)
     require(metal_span, "swapped ? 0 : 31", "Metal swapped vertical coverage", failures)
 
     require(vk_interp, "swappedEdges", "Vulkan swapped edge path", failures)

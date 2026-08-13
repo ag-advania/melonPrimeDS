@@ -97,6 +97,21 @@ QString DX12HiresCoordinatesDescription()
 } // namespace
 #endif
 
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+namespace
+{
+
+QString MetalComputeBetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting does not affect Metal Compute's normal rendering "
+        "path because it processes DS polygons directly without splitting them into "
+        "triangles.");
+}
+
+} // namespace
+#endif
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
@@ -185,9 +200,10 @@ void VideoSettingsDialog::setEnabled()
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
     // BetterPolygons is a center-fan workaround for renderers that must split
-    // DS polygons into GPU triangles. OpenGL Compute and Vulkan rasterize the
-    // original polygon as scanline spans, so enabling it there would be a lie.
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+    // DS polygons into GPU triangles. Metal raster uses it, while Metal
+    // Compute processes the original polygon as scanline spans and has no
+    // triangle-splitting stage to improve.
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRasterRenderer);
 
 #ifdef MELONPRIME_DS
     constexpr const char* originalBetterPolygonsHelp =
@@ -199,6 +215,10 @@ void VideoSettingsDialog::setEnabled()
     }
     QString betterPolygonsDescription =
         ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString();
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    if (metalComputeRenderer)
+        betterPolygonsDescription = MetalComputeBetterPolygonsDescription();
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (vulkanRenderer)
         betterPolygonsDescription = VulkanBetterPolygonsDescription();
@@ -211,10 +231,8 @@ void VideoSettingsDialog::setEnabled()
     ui->cbBetterPolygons->setWhatsThis(betterPolygonsDescription);
 #endif
 
-    // OpenGL Compute uses this directly. Metal and Metal Compute now forward
-    // it to the visible Metal raster path; Metal Compute also keeps its hidden
-    // compute mirror in the same coordinate mode. Vulkan and DX12 also follow
-    // the OpenGL compute renderer's coordinate-mode setting.
+    // Every compute backend uses this directly. Metal raster also consumes it
+    // when its internal scale is above native resolution.
     ui->cbxComputeHiResCoords->setEnabled(
         computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 #ifdef MELONPRIME_DS
