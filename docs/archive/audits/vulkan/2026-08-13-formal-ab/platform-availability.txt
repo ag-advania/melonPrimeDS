@@ -60,3 +60,7 @@ Re-audit on 2026-08-14:
   `94cd1de77`; arm64 MoltenVK startup/WSI smoke passed. Its separate
   `macos-26-intel` diagnostic used an Apple Paravirtual Metal device and
   exited `SIGABRT (-6)` before presenter readiness; artifact `9187724074`.
+- Local alternate-runtime recheck on 2026-08-14:
+  `wsl.exe --list --verbose` exposed no installed Linux distribution;
+  `docker`, `qemu-system-x86_64`, and `virsh` were unavailable. No additional
+  Linux AMD/Intel hardware execution path was available from this host.

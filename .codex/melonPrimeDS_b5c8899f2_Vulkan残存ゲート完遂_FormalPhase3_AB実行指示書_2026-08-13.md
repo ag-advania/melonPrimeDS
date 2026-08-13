@@ -2158,3 +2158,8 @@ NOT RUN — native Intel Vulkan, AMD runtime, Linux hardware/vendor runtime,
           physical retail-Mac/full-ROM, and DPI transition.
 Artifact — GitHub Actions artifact 9187724074 retains the Intel diagnostic log.
 ```
+
+The 2026-08-14 local availability recheck also found no installed WSL Linux
+distribution and no `docker`, `qemu-system-x86_64`, or `virsh` executable.
+Therefore no additional Linux AMD/Intel hardware execution path was available
+from the audited host; the Linux hardware/vendor gate remains `NOT RUN`.
