@@ -1,0 +1,8 @@
+action=video-change
+iterations=1
+window=1706644
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.51 avg:16.75 max:20.18ms jit:5.67] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+video-dialog rect=781,437,1373,996
+apply-changed-vsync=1
+validation findings: 0
+runtime changed-VSync evidence: 1

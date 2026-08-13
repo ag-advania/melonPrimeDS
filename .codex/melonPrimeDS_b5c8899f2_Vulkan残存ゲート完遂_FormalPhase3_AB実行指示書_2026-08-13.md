@@ -39,7 +39,7 @@ Current intended Sync gate       PASS
 Relative JIT NVIDIA runtime      PASS
 Measurement-integrity tooling    PASS
 New blocking P0/P1               NONE FOUND
-New P3 documentation mismatch    OPEN / NON-BLOCKING
+New P3 documentation mismatch    CLOSED / NON-BLOCKING
 Manual Phase 1                   PASS except DPI NOT RUN
 Formal NVIDIA Phase 3 A/B        COMPLETE
 AMD actual runtime               NOT RUN
@@ -296,11 +296,11 @@ rather than changing the documentation to match an unexplained result.
 ### DoD
 
 ```markdown
-- [ ] absolute非対応だけでtarget schedulerが失敗する説明を削除
-- [ ] relative fallbackを明記
-- [ ] VSync OFF / non-FIFO controlの期待を明記
-- [ ] current runtime evidenceと矛盾しない
-- [ ] runtime codeを変更しない
+- [x] absolute非対応だけでtarget schedulerが失敗する説明を削除
+- [x] relative fallbackを明記
+- [x] VSync OFF / non-FIFO controlの期待を明記
+- [x] current runtime evidenceと矛盾しない
+- [x] runtime codeを変更しない
 ```
 
 Classification:
@@ -385,12 +385,12 @@ Automated subsetは既に完了:
 残件:
 
 ```text
-[ ] DPI change
-[ ] Video Settings open/cancel/apply
-[ ] renderer switching
-[ ] ROM lifecycle
-[ ] Fast Forward
-[ ] Slow Motion
+[ ] DPI change — NOT RUN; one physical monitor was exposed
+[x] Video Settings open/cancel/apply — cancel/same-value x20 and changed-VSync Apply PASS
+[x] renderer switching — Software/OpenGL/OpenGL Compute/DX12 x20 PASS
+[x] ROM lifecycle — save/load/undo/reset and second-session reopen PASS
+[x] Fast Forward
+[x] Slow Motion
 ```
 
 ---
@@ -472,13 +472,13 @@ swapchain / surface / window coordinate lifecycle
 確認:
 
 ```markdown
-- [ ] Vulkanがactual rendererのまま
-- [ ] swapchain再生成後に表示正常
-- [ ] VUID 0
-- [ ] DEVICE_LOST 0
-- [ ] resize stormなし
-- [ ] mouse/cursor regressionなし
-- [ ] Custom HUD位置破綻なし
+- [ ] Vulkanがactual rendererのまま — NOT RUN; no genuine cross-DPI transition
+- [ ] swapchain再生成後に表示正常 — NOT RUN; no genuine cross-DPI transition
+- [ ] VUID 0 — NOT RUN; no genuine cross-DPI transition
+- [ ] DEVICE_LOST 0 — NOT RUN; no genuine cross-DPI transition
+- [ ] resize stormなし — NOT RUN; no genuine cross-DPI transition
+- [ ] mouse/cursor regressionなし — NOT RUN; no genuine cross-DPI transition
+- [ ] Custom HUD位置破綻なし — NOT RUN; no genuine cross-DPI transition
 ```
 
 ---
@@ -546,15 +546,19 @@ runbook目安:
 確認:
 
 ```markdown
-- [ ] requested rendererとactual renderer一致
-- [ ] silent software fallbackなし
-- [ ] Vulkan再初期化成功
-- [ ] old swapchain/device resource残留なし
-- [ ] VUID 0
-- [ ] DEVICE_LOST 0
-- [ ] cursor/focus正常
-- [ ] ROM進行継続
+- [x] requested rendererとactual renderer一致
+- [x] silent software fallbackなし
+- [x] Vulkan再初期化成功
+- [x] old swapchain/device resource残留なし
+- [x] VUID 0
+- [x] DEVICE_LOST 0
+- [x] cursor/focus正常
+- [x] ROM進行継続
 ```
+
+Evidence: `docs/archive/audits/vulkan/2026-08-13-formal-ab/manual-phase1/`
+contains the four x20 switch logs, each with actual-renderer, swapchain,
+validation, and Sync Validation results.
 
 ---
 
@@ -585,13 +589,13 @@ renderer / pacer / swapchain generation
 確認:
 
 ```markdown
-- [ ] reopen後もVulkan actual
-- [ ] JIT bootstrap正常
-- [ ] stale present IDなし
-- [ ] stale target baselineなし
-- [ ] stale swapchain generationなし
-- [ ] VUID 0
-- [ ] DEVICE_LOST 0
+- [x] reopen後もVulkan actual
+- [x] JIT bootstrap正常
+- [x] stale present IDなし
+- [x] stale target baselineなし
+- [x] stale swapchain generationなし
+- [x] VUID 0
+- [x] DEVICE_LOST 0
 ```
 
 ---
@@ -634,13 +638,13 @@ relative target scheduling
 確認:
 
 ```markdown
-- [ ] FF中 generic wait OFF
-- [ ] FF中 target scheduling OFF
-- [ ] Slow Motion中 generic wait OFF
-- [ ] Slow Motion中 target scheduling OFF
-- [ ] normal復帰後target path再開
-- [ ] frame limiter挙動正常
-- [ ] VUID 0
+- [x] FF中 generic wait OFF
+- [x] FF中 target scheduling OFF
+- [x] Slow Motion中 generic wait OFF
+- [x] Slow Motion中 target scheduling OFF
+- [x] normal復帰後target path再開
+- [x] frame limiter挙動正常
+- [x] VUID 0
 ```
 
 ---
@@ -1449,22 +1453,22 @@ run 20260813_A2_R2 = INVALID
 # 45. NVIDIA Formal A/B completion condition
 
 ```markdown
-- [ ] manual Phase 1 PASS
-- [ ] release capture build fixed
-- [ ] same SHA
-- [ ] same scene
-- [ ] same display conditions
-- [ ] >=3 runs/mode
-- [ ] randomized order
-- [ ] 600 warmup
-- [ ] >=10,000 measured
-- [ ] aggregator exit 0
-- [ ] no measured-window generation changes
-- [ ] A2/A3 target active >=95%
-- [ ] wait timeout <1%
-- [ ] queue pressure acceptable
-- [ ] no pooled-frame analysis
-- [ ] winner criteria evaluated
+- [x] manual Phase 1 PASS except DPI NOT RUN
+- [x] release capture build fixed
+- [x] same SHA
+- [x] same scene
+- [x] same display conditions
+- [x] >=3 runs/mode
+- [x] randomized order
+- [x] 600 warmup
+- [x] >=10,000 measured
+- [x] aggregator exit 0
+- [x] no measured-window generation changes
+- [x] A2/A3 target active >=95%
+- [x] wait timeout <1%
+- [x] queue pressure acceptable
+- [x] no pooled-frame analysis
+- [x] winner criteria evaluated
 ```
 
 。
@@ -1837,7 +1841,7 @@ PASS
 
 # 62. GitHub Actions
 
-current HEADについてGitHub connector上:
+初期監査時のcurrent HEADについてGitHub connector上:
 
 ```text
 combined status: none
@@ -1849,12 +1853,22 @@ workflow run: none
 従って:
 
 ```text
-GitHub Actions = NOT VERIFIED
+初期スナップショットではGitHub Actions = NOT VERIFIED
 ```
 
 。
 
-local build結果でActions PASSと書かない。
+実行結果（監査対象実装 SHA `4a503debf15abd4120e1bf4e19629f396800bf33`）:
+
+```text
+Ubuntu 31707409936 = PASS
+macOS 31707412897 = PASS
+Windows 31707415459 = PASS
+```
+
+各結果は `docs/archive/audits/vulkan/2026-08-13-formal-ab/ci/README.md` に
+記録し、Linux llvmpipe smoke / macOS MoltenVK bundle verification と
+実機ランタイム未実行を分離する。local build結果だけでActions PASSとは書かない。
 
 ---
 
@@ -2045,7 +2059,8 @@ PASS — current relative-capability fallback semantics documented.
 ## Manual Phase 1
 
 ```text
-PASS — Video Settings cancel x20 and same-value apply x20.
+PASS — Video Settings cancel x20, same-value apply x20, and changed-VSync
+      Apply; `requested-vsync=off` / `selected-present-mode=IMMEDIATE` observed.
 PASS — renderer switching x20 each for Software, OpenGL, OpenGL Compute, DX12.
 PASS — ROM save/load/undo/reset and second-session reopen.
 PASS — Fast Forward and Slow Motion hold/toggle paths.

@@ -6,12 +6,13 @@ same menu/hotkey actions a person would send; it does not bypass the Qt or
 emulation-thread paths. All temporary config/layer files are restored exactly.
 #>
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('video', 'speed', 'rom', 'dpi')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('video', 'video-change', 'speed', 'rom', 'dpi')][string]$Action,
     [Parameter(Mandatory = $true)][string]$Rom,
     [string]$BuildDir = 'build\debug-mingw-vulkan-validation2',
     [Parameter(Mandatory = $true)][string]$OutDir,
     [int]$Iterations = 20,
-    [int]$WarmupSeconds = 18
+    [int]$WarmupSeconds = 18,
+    [switch]$HoldDialog
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +47,21 @@ public static class MpManualWin {
     EnumWindows(delegate(IntPtr h, IntPtr p) {
       uint pid; GetWindowThreadProcessId(h, out pid);
       if (pid == wantedPid && IsWindowVisible(h) && GetWindowTextLength(h) > 0) {
+        found = h; return false;
+      }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
+  public static IntPtr FindTitle(uint wantedPid, string token) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows(delegate(IntPtr h, IntPtr p) {
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      if (pid != wantedPid || !IsWindowVisible(h)) return true;
+      int len = GetWindowTextLength(h);
+      if (len <= 0) return true;
+      var text = new StringBuilder(len + 1); GetWindowText(h, text, text.Capacity);
+      if (text.ToString().IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0) {
         found = h; return false;
       }
       return true;
@@ -160,6 +176,11 @@ function Open-VideoSettings {
     if (($titles -notmatch '(?i)video') -and ($titles -notlike "*$videoTitleToken*")) {
         throw "Video settings dialog was not observed: $titles"
     }
+    $script:videoDialog = [MpManualWin]::FindTitle([uint32]$proc.Id, $videoTitleToken)
+    if ($script:videoDialog -eq [IntPtr]::Zero) {
+        $script:videoDialog = [MpManualWin]::FindTitle([uint32]$proc.Id, 'video')
+    }
+    if ($script:videoDialog -eq [IntPtr]::Zero) { throw 'Video settings dialog handle was not found' }
 }
 
 try {
@@ -189,6 +210,29 @@ try {
             Open-VideoSettings
             Send-Key '{ENTER}'
             Add-Content -LiteralPath $harness -Value "apply-same-value=$i"
+        }
+    }
+
+    if ($Action -eq 'video-change') {
+        # The dialog opens with the first Designer tab stop focused. The
+        # fourth tab stop is the VSync checkbox; toggling it exercises the
+        # real signal/config/update path before accepting the dialog.
+        for ($i = 1; $i -le $Iterations; $i++) {
+            Open-VideoSettings
+            if ($HoldDialog) {
+                Add-Content -LiteralPath $harness -Value 'video-change dialog held for inspection'
+                Start-Sleep -Seconds 30
+            }
+            $dialogRect = [MpManualRect]::new()
+            [void][MpManualWin]::GetWindowRect($script:videoDialog, [ref]$dialogRect)
+            Add-Content -LiteralPath $harness -Value "video-dialog rect=$($dialogRect.Left),$($dialogRect.Top),$($dialogRect.Right),$($dialogRect.Bottom)"
+            # The native dialog is DPI-scaled on this host; use the captured
+            # dialog-relative VSync checkbox center rather than a desktop
+            # absolute coordinate.
+            [MpManualWin]::Click($dialogRect.Left + 42, $dialogRect.Top + 302)
+            Start-Sleep -Milliseconds 350
+            Send-Key '{ENTER}'
+            Add-Content -LiteralPath $harness -Value "apply-changed-vsync=$i"
         }
     }
 
@@ -261,6 +305,11 @@ if ($Action -eq 'speed') {
     $speedEvidence = @($allLogs | Select-String -Pattern 'fallback=not normal speed|targetScheduling=off|boundedWait=off' -ErrorAction SilentlyContinue)
     Add-Content -LiteralPath $harness -Value "runtime speed-path evidence: $($speedEvidence.Count)"
     if ($speedEvidence.Count -eq 0) { exit 1 }
+}
+if ($Action -eq 'video-change') {
+    $changedVsyncEvidence = @($allLogs | Select-String -Pattern 'requested-vsync=off' -ErrorAction SilentlyContinue)
+    Add-Content -LiteralPath $harness -Value "runtime changed-VSync evidence: $($changedVsyncEvidence.Count)"
+    if ($changedVsyncEvidence.Count -eq 0) { exit 1 }
 }
 Write-Host "manual action $Action PASS; validation findings=$($findings.Count)"
 exit 0

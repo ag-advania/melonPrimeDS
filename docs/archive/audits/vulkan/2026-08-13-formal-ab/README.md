@@ -72,7 +72,9 @@ including the late A1-R0 catch-up caused by an initial batch omission, is in
 
 The Debug Validation manual harness results are summarized in
 [`manual-phase1/README.md`](manual-phase1/README.md). Video settings passed
-20 cancel and 20 same-value apply cycles; speed modes passed with runtime
+20 cancel, 20 same-value apply, and a changed-VSync Apply cycle; the changed
+run observed `requested-vsync=off` and `selected-present-mode=IMMEDIATE`.
+Speed modes passed with runtime
 `fallback=not normal speed`, `targetScheduling=off`, and `boundedWait=off`
 evidence; ROM save/load/undo/reset plus reopen passed; renderer switching
 passed 20 iterations each for Software, OpenGL, OpenGL Compute, and DX12.
