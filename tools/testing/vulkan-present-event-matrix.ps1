@@ -29,6 +29,12 @@ param(
     [Parameter(Mandatory = $true)][string]$Rom,
     [string]$BuildDir = "build\debug-mingw-x86_64",
     [ValidateSet('all', 'resize', 'minimize', 'fullscreen', 'idle')][string]$Phase = 'all',
+    # VSync off drops FIFO for a free-running present mode (IMMEDIATE on the
+    # NVIDIA surface). Measured: it does NOT fill the present-timing results
+    # queue -- minimize/restore does, because presents stall while the window is
+    # hidden. Use it as the VSync-off contract control, not as timing-queue
+    # stress.
+    [switch]$NoVSync,
     [int]$ReflexMode = 0,
     [int]$Policy = 2,
     [string]$Tag = "event-matrix",
@@ -75,7 +81,7 @@ public class MpWin {
 $cfg = @"
 3D.Renderer = 3
 Screen.UseGL = false
-Screen.VSync = true
+Screen.VSync = $(if ($NoVSync) { 'false' } else { 'true' })
 Screen.VSyncInterval = 1
 LimitFPS = true
 TargetFPS = 60.0

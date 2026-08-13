@@ -164,10 +164,32 @@ count. Run each phase separately: attributing a failure to "resize" or to
 - [x] minimize / restore x20
 - [x] fullscreen toggle x8
 - [x] idle control (same runtime, no events)
-- [ ] DPI change
-- [ ] Video Settings open/cancel/apply x20
-- [ ] Vulkan ↔ Software x20, ↔ OpenGL Compute, ↔ DX12 where the build has it
-- [ ] ROM launch, savestate load, reset, close, reopen
+- [ ] DPI change — manual; automating it means changing a Windows display
+      setting, which the harness deliberately does not do
+- [ ] Video Settings open/cancel/apply x20 — manual (dialog interaction)
+- [ ] Vulkan ↔ Software x20, ↔ OpenGL Compute, ↔ DX12 where the build has it —
+      manual (dialog interaction)
+- [ ] ROM launch, savestate load, reset, close, reopen — manual, and see below
+- [ ] Fast Forward, Slow Motion — manual, and see below
+
+**Why the hotkey-driven rows are not automated.** Driving them with `SendKeys`
+was tried and does not work, and the details are worth keeping so the next
+attempt does not repeat them:
+
+* Hotkeys are **per-instance** config. A top-level `Keyboard.HK_*` in
+  `melonDS.toml` is silently ignored; the binding has to go in
+  `[Instance0.Keyboard]`, and `[Instance0]` must be declared too or the config
+  save throws `toml::serialization_error` ("an implicit table cannot have
+  non-table value") and the app dies.
+* With the bindings correctly applied and confirmed by reading back the config
+  the app itself re-saved, synthesised key events still never reached the
+  emulator. `SendKeys` does reach `QAction` shortcuts — F11 fullscreen toggles
+  reliably, which is why that phase is automated — so the gap is in the `HK_*`
+  key-event path, not in the input synthesis. Foreground activation and a
+  client-area click to focus the render widget did not change it.
+* `HK_SlowMo` has **no keyboard binding at all** in this build: there is no
+  `HKKey_SlowMo` entry in `Config.cpp`, only the joystick one. The Slow Motion
+  row can only be driven by a pad.
 
 All four automated phases are **clean** — no VUID, no device loss, no software
 fallback, no recreate storm. Evidence and the full history of the one defect
@@ -183,7 +205,13 @@ on the retry, and held by a contract in `audit-low-latency-contract.py`.
 
 When re-running the minimize phase, check it is not a vacuous pass: the retry
 path should still fire (`grep 'retrying present without optional timing
-metadata'`). A clean run with zero retries has not exercised it.
+metadata'`). A clean run with zero retries has not exercised it. Measured across
+three runs: 9, 10 and 10 retries.
+
+Minimize/restore is the **only** phase that fills the present-timing results
+queue, because presents stall while the window is hidden. Running free (`-NoVSync`,
+which selects IMMEDIATE on this surface) does not fill it, so it is a VSync-off
+contract control rather than timing-queue stress.
 
 Watch especially for VUIDs touching `VkPresentId2KHR`, `VkPresentTimingInfoEXT`,
 `VkPresentTimingsInfoEXT`, `presentStageQueries`, `targetTime`, `timeDomainId`,
