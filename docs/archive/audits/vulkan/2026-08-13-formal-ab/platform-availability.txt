@@ -47,3 +47,16 @@ Consequences:
 - AMD/Intel/DPI/physical-device gaps remain NOT RUN, not PASS, and are not
   converted into synthetic results; the hosted CI checks above remain
   explicitly limited to their stated build/smoke/bundle scope.
+
+Re-audit on 2026-08-14:
+- `vulkaninfo --summary` exposed one GPU: NVIDIA GeForce RTX 5070 Ti,
+  vendor `0x10de`, device `0x2c05`, proprietary NVIDIA driver.
+- CPU is Intel Core i7-14700KF; WMI exposed no Intel display adapter and no
+  AMD display adapter. The `F`-suffix CPU has no usable integrated graphics
+  path for this gate.
+- WMI exposed one active physical display (`DISPLAY\\GSM5CEC...`), so no
+  genuine cross-monitor DPI transition is available in this environment.
+- macOS workflow 31716658392 completed successfully at current workflow SHA
+  `94cd1de77`; arm64 MoltenVK startup/WSI smoke passed. Its separate
+  `macos-26-intel` diagnostic used an Apple Paravirtual Metal device and
+  exited `SIGABRT (-6)` before presenter readiness; artifact `9187724074`.

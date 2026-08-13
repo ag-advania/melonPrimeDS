@@ -99,6 +99,14 @@ MoltenVK startup/WSI smoke at run `31711999894`; source runtime code remained
 unchanged. The run-level evidence and limitations are recorded in
 [`ci/README.md`](ci/README.md).
 
+The current-SHA macOS follow-up at run `31716658392` completed successfully
+with arm64 runtime smoke, x86_64/arm64/universal bundle checks, and signatures
+passing. Its separate Intel-host MoltenVK diagnostic was intentionally
+non-gating: the hosted Apple Paravirtual Metal device reached Vulkan
+instance/surface/logical-device creation but exited `SIGABRT (-6)` before
+presenter readiness. This is not native Intel Vulkan coverage; the raw log is
+retained as artifact `9187724074`.
+
 ## Reproduction and evidence
 
 - Runner: [`tools/testing/vulkan-present-formal-ab.ps1`](../../../../../tools/testing/vulkan-present-formal-ab.ps1)
