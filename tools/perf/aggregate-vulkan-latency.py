@@ -79,6 +79,7 @@ class RunStats:
         self.target_active = 0
         self.problems: list[str] = []
         self.bounded_wait = 0
+        self.bounded_wait_attempted = 0
         self.wait_timeouts = 0
         self.queue_full = 0
         self.queue_recoveries = 0
@@ -104,6 +105,7 @@ class RunStats:
             applied = as_int(row, "target_scheduling")
             self.target_active += applied
             self.bounded_wait += as_int(row, "bounded_wait")
+            self.bounded_wait_attempted += as_int(row, "bounded_wait_attempted")
 
             # Only a row that actually applied a target may name the run's mode.
             # A row claiming a mode without having applied one is a producer
@@ -208,8 +210,17 @@ class RunStats:
             "pipeline_p95_ms": round(percentile(self.input_to_present_ms, 0.95), 4),
             "pipeline_p99_ms": round(percentile(self.input_to_present_ms, 0.99), 4),
             "target_active_ratio": round(self.target_active_ratio, 4),
-            "bounded_wait_ratio": round(
+            # Allowed vs actually called. The gap is normal -- a frame with
+            # nothing to wait on is permitted but does not wait -- so reporting
+            # only the permission would overstate how often the wait ran.
+            "bounded_wait_allowed_ratio": round(
                 (self.bounded_wait / self.samples) if self.samples else float("nan"), 4
+            ),
+            "bounded_wait_attempted_ratio": round(
+                (self.bounded_wait_attempted / self.samples)
+                if self.samples
+                else float("nan"),
+                4,
             ),
             "wait_timeout_count": self.wait_timeouts,
             "timing_queue_size": self.queue_size,

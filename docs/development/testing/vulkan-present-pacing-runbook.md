@@ -350,6 +350,18 @@ the target columns themselves, and **exits non-zero** with the offending rows
 listed if any run contradicts itself. A run flagged this way is `INVALID`, not a
 slower or faster result — do not compare it.
 
+### `bounded_wait` vs `bounded_wait_attempted`
+
+`bounded_wait` is the policy's permission for the frame; `bounded_wait_attempted`
+records whether `vkWaitForPresent2KHR` was actually called. They differ whenever
+there is nothing to wait on — no accepted present yet, or the previous one has
+already been waited for — so the permission alone would overstate how often the
+wait ran. The aggregator reports both as `bounded_wait_allowed_ratio` and
+`bounded_wait_attempted_ratio`.
+
+The acceptance threshold below is a timeout *rate*, so compute it against
+attempted waits, not against every frame.
+
 ### Where the present span ends
 
 `present_end_time_us` and the Reflex `PRESENT_END` marker are both taken the

@@ -142,7 +142,13 @@ public:
         int Authority = 0;
         int PresentMode = 0;
         bool TargetTimeScheduling = false;
+        // Allowed by the policy and capabilities this frame.
         bool BoundedPresentWait = false;
+        // Actually called vkWaitForPresent2KHR. The two differ whenever there
+        // is nothing to wait on -- no accepted present yet, or the previous one
+        // was already waited for -- so an A/B cannot read "the wait ran" from
+        // the permission alone.
+        bool BoundedWaitAttempted = false;
         int FallbackReason = 0;
         // Without the mode, a capture cannot tell an A2 run that actually
         // scheduled from one that silently fell through to no target.
@@ -274,6 +280,9 @@ private:
     u64 LastWaitedId = 0;
     u64 LastFeedbackId = 0;
     u64 LastFeedbackStageTimeNs = 0;
+    // Whether this frame actually issued the bounded wait, as opposed to being
+    // allowed to. Reset at the top of every BeginFrame.
+    bool WaitAttemptedThisFrame = false;
     u32 TimingReportCountdown = 0;
     u32 WaitTimeouts = 0;
 

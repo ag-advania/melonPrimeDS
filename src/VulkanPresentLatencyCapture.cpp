@@ -158,6 +158,22 @@ bool VulkanPresentLatencyCapture::Flush()
         return false;
     }
 
+    // Column notes, kept out of the argument list so the header stays one
+    // uninterrupted string literal:
+    //
+    //   bounded_wait            the policy allowed the bounded present wait
+    //   bounded_wait_attempted  vkWaitForPresent2KHR was actually called; a
+    //                           frame with nothing to wait on is allowed but
+    //                           does not wait
+    //   target_scheduling       the accepted present actually carried a target
+    //   target_mode             how to read target_value_ns: 1 absolute is an
+    //                           instant on the presentation timeline, 2
+    //                           relative is a minimum visible duration
+    //   target_generation_*     the cadence inputs the target was built from,
+    //   relative_quanta         so that offline
+    //   relative_accumulator_*  target_value_ns == relative_quanta *
+    //                           target_generation_refresh_interval_ns
+    //                           can be verified per present
     std::fprintf(file,
         "run_id,sample_index,present_id,"
         "input_sample_time_us,sim_start_time_us,sim_end_time_us,"
@@ -165,15 +181,9 @@ bool VulkanPresentLatencyCapture::Flush()
         "present_start_time_us,present_end_time_us,"
         "gpu_render_start_time_us,gpu_render_end_time_us,"
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
+        "bounded_wait_attempted,"
         "present_mode,fallback_reason,"
-        // target_mode decides how target_value_ns is read: 1 (absolute) is an
-        // instant on the presentation timeline, 2 (relative) is a minimum
-        // previous-image visible duration. Without it a run that silently fell
-        // through to no target looks like one that scheduled.
         "target_mode,target_value_ns,"
-        // Enough to re-derive the cadence offline:
-        //   target_value_ns == relative_quanta * target_generation_refresh_interval_ns
-        // and the accumulator pair shows the fraction being carried.
         "target_generation_refresh_interval_ns,target_generation_refresh_duration_ns,"
         "relative_quanta,relative_accumulator_before_ns,relative_accumulator_after_ns,"
         "feedback_present_id,feedback_stage_time_ns,"
@@ -191,6 +201,7 @@ bool VulkanPresentLatencyCapture::Flush()
             "%llu,%llu,"
             "%llu,%llu,"
             "%d,%d,%d,%d,%d,"
+            "%d,"
             "%d,%d,"
             "%d,%llu,"
             "%llu,%llu,%llu,%llu,%llu,"
@@ -214,6 +225,7 @@ bool VulkanPresentLatencyCapture::Flush()
             sample.ReflexMode,
             p.TargetTimeScheduling ? 1 : 0,
             p.BoundedPresentWait ? 1 : 0,
+            p.BoundedWaitAttempted ? 1 : 0,
             p.PresentMode,
             p.FallbackReason,
             p.TargetMode,

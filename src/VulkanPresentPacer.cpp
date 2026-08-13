@@ -547,6 +547,9 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     //
     // Set before the decision is resolved, because it is one of the inputs.
     TargetFrameIntervalNs = normalSpeed ? targetFrameIntervalNs : 0;
+    // Permission is resolved below; whether the wait actually ran is only known
+    // once every skip condition has been checked.
+    WaitAttemptedThisFrame = false;
 
     // Telemetry-only is the safe default: collect periodic timing reports even
     // though no behavioural wait owns pacing. Draining also feeds the
@@ -600,6 +603,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
             ? std::min(MaxPresentWaitNs, std::max<u64>(250'000, RefreshDurationNs / 4))
             : MaxPresentWaitNs);
 
+    WaitAttemptedThisFrame = true;
     const VkResult result = Device->Fns().WaitForPresent2KHR(
         Device->GetHandle(), Swapchain, &wait);
     LastWaitedId = LastPresentedId;
@@ -1410,6 +1414,7 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
     snapshot.Authority = static_cast<int>(GetAuthority());
     snapshot.PresentMode = static_cast<int>(PresentMode);
     snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
+    snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;
     snapshot.FallbackReason = static_cast<int>(FallbackReason);
 
     // Everything about the target comes from this present, not from the

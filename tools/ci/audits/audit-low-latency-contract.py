@@ -479,6 +479,18 @@ def main() -> int:
         "present end markers must close immediately after the final QueuePresent returns",
         failures,
     )
+    # The bounded wait is skipped whenever there is nothing to wait on, so the
+    # policy's permission is not evidence that vkWaitForPresent2KHR ran.
+    require(
+        "bounded_wait_attempted" in read("src/VulkanPresentLatencyCapture.cpp")
+        and "BoundedWaitAttempted" in vulkan_pacer_header
+        and "WaitAttemptedThisFrame = true;" in vulkan_pacer
+        and "WaitAttemptedThisFrame = false;" in vulkan_pacer
+        and "snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;" in vulkan_pacer
+        and "bounded_wait_attempted_ratio" in read("tools/perf/aggregate-vulkan-latency.py"),
+        "the capture must separate an allowed bounded wait from one that actually ran",
+        failures,
+    )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
         and "if (result != VK_INCOMPLETE)" in vulkan_pacer
