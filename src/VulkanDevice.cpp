@@ -611,12 +611,24 @@ bool VulkanDevice::Create(
             chain(latestReadyFeatures);
         }
 
+        // GOOGLE has no feature struct and no present_id2 dependency. Enable it
+        // alongside EXT when exposed so the pacer can retain EXT priority yet
+        // fail over without recreating the logical device.
+        const bool hasGoogleDisplayTiming = Vk::FeatureProbe::HasExtension(
+            available, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+        if (hasGoogleDisplayTiming)
+        {
+            EnabledExtensions.push_back(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+            State->PresentTimingFeatures.GoogleDisplayTiming = true;
+            genericPresentExtensionsEnabled = true;
+        }
+
         Platform::Log(
             Platform::LogLevel::Info,
             "[Vulkan] generic present device capabilities: caps2=%s present-id2=%s "
             "present-wait2=%s calibrated-timestamps=%s present-timing=%s "
             "present-at-absolute-time=%s present-at-relative-time=%s "
-            "fifo-latest-ready=%s\n",
+            "fifo-latest-ready=%s google-display-timing=%s\n",
             hasCaps2 ? "yes" : "no",
             hasPresentId2 ? "yes" : "no",
             hasPresentWait2 ? "yes" : "no",
@@ -624,7 +636,8 @@ bool VulkanDevice::Create(
             hasPresentTiming ? "yes" : "no",
             State->PresentTimingFeatures.PresentAtAbsoluteTime ? "yes" : "no",
             State->PresentTimingFeatures.PresentAtRelativeTime ? "yes" : "no",
-            hasLatestReady ? "yes" : "no");
+            hasLatestReady ? "yes" : "no",
+            hasGoogleDisplayTiming ? "yes" : "no");
     }
 
     if (lowLatency.AmdAntiLag)
@@ -716,6 +729,7 @@ bool VulkanDevice::Create(
                         || std::strcmp(name, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_EXT_PRESENT_TIMING_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME) == 0
                         || std::strcmp(
                             name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0;
                 }),

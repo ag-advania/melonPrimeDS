@@ -166,6 +166,7 @@ bool VulkanPresentLatencyCapture::Flush()
     //                           frame with nothing to wait on is allowed but
     //                           does not wait
     //   target_scheduling       the accepted present actually carried a target
+    //   target_backend          metadata implementation: 1 EXT, 2 GOOGLE
     //   target_mode             how to read target_value_ns: 1 absolute is an
     //                           instant on the presentation timeline, 2
     //                           relative is a minimum visible duration
@@ -186,10 +187,12 @@ bool VulkanPresentLatencyCapture::Flush()
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
         "bounded_wait_attempted,"
         "present_mode,fallback_reason,swapchain_generation,"
-        "target_mode,target_value_ns,"
+        "target_backend,target_mode,target_value_ns,"
         "target_generation_refresh_interval_ns,target_generation_refresh_duration_ns,"
         "relative_quanta,relative_accumulator_before_ns,relative_accumulator_after_ns,"
         "feedback_present_id,feedback_stage_time_ns,"
+        "feedback_desired_present_time_ns,feedback_actual_present_time_ns,"
+        "feedback_earliest_present_time_ns,feedback_present_margin_ns,"
         "baseline_sequence,present_sequence,frame_interval_ns,"
         "wait_timeout_count,timing_queue_size,timing_queue_full_count,"
         "timing_queue_recovery_count\n");
@@ -206,9 +209,9 @@ bool VulkanPresentLatencyCapture::Flush()
             "%d,%d,%d,%d,%d,"
             "%d,"
             "%d,%d,"
-            "%d,%llu,"
+            "%llu,%d,%d,%llu,"
             "%llu,%llu,%llu,%llu,%llu,"
-            "%llu,%llu,"
+            "%llu,%llu,%llu,%llu,%llu,%llu,"
             "%llu,%llu,%llu,"
             "%u,%u,%u,%u\n",
             RunId.c_str(),
@@ -232,6 +235,7 @@ bool VulkanPresentLatencyCapture::Flush()
             p.PresentMode,
             p.FallbackReason,
             static_cast<unsigned long long>(p.SwapchainGeneration),
+            p.TimingBackend,
             p.TargetMode,
             static_cast<unsigned long long>(p.TargetValueNs),
             static_cast<unsigned long long>(p.TargetGenerationRefreshIntervalNs),
@@ -241,6 +245,10 @@ bool VulkanPresentLatencyCapture::Flush()
             static_cast<unsigned long long>(p.RelativeAccumulatorAfterNs),
             static_cast<unsigned long long>(p.FeedbackPresentId),
             static_cast<unsigned long long>(p.FeedbackStageTimeNs),
+            static_cast<unsigned long long>(p.FeedbackDesiredPresentTimeNs),
+            static_cast<unsigned long long>(p.FeedbackActualPresentTimeNs),
+            static_cast<unsigned long long>(p.FeedbackEarliestPresentTimeNs),
+            static_cast<unsigned long long>(p.FeedbackPresentMarginNs),
             static_cast<unsigned long long>(p.BaselineSequence),
             static_cast<unsigned long long>(p.PresentSequence),
             static_cast<unsigned long long>(p.FrameIntervalNs),

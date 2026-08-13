@@ -46,6 +46,7 @@ REFLEX_NAMES = {0: "Off", 1: "On", 2: "On+Boost"}
 # timestamp, or a minimum previous-image visible duration. Mixing the two in one
 # statistic would be meaningless, so the mode is carried into the run label.
 TARGET_MODE_NAMES = {0: "none", 1: "absolute", 2: "relative"}
+TIMING_BACKEND_NAMES = {0: "none", 1: "EXT", 2: "GOOGLE"}
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -76,6 +77,9 @@ class RunStats:
         self.authority = -1
         self.reflex_mode = -1
         self.target_mode = 0
+        self.timing_backend = 0
+        self.last_google_desired_time = 0
+        self.present_margins_ms: list[float] = []
         self.target_active = 0
         self.problems: list[str] = []
         self.bounded_wait = 0
@@ -153,9 +157,16 @@ class RunStats:
             # A row claiming a mode without having applied one is a producer
             # bug, not a data point, so it is counted as a problem instead.
             row_mode = as_int(row, "target_mode")
+            row_backend = as_int(row, "target_backend")
+            if row_backend != 0:
+                self.timing_backend = row_backend
             if applied and row_mode != 0:
                 self.target_mode = row_mode
-            self._check_row(row, index, applied, row_mode)
+            self._check_row(row, index, applied, row_mode, row_backend)
+
+            margin_ns = as_int(row, "feedback_present_margin_ns")
+            if row_backend == 2 and margin_ns > 0:
+                self.present_margins_ms.append(margin_ns / 1_000_000.0)
 
             # These are running counters in the capture, so the last row holds
             # the run total rather than a per-frame delta.
@@ -202,7 +213,9 @@ class RunStats:
             )
         return generation
 
-    def _check_row(self, row: dict[str, str], index: int, applied: int, mode: int) -> None:
+    def _check_row(
+        self, row: dict[str, str], index: int, applied: int, mode: int, backend: int
+    ) -> None:
         """Validate one row against what the capture is supposed to guarantee.
 
         A measurement tool has to be truthful when things go wrong, not only
@@ -219,8 +232,21 @@ class RunStats:
         value = as_int(row, "target_value_ns")
         if applied and value == 0:
             flag("target_scheduling=1 with target_value_ns=0")
+        if applied and backend == 0:
+            flag("target_scheduling=1 with target_backend=none")
         if not applied and value != 0:
             flag(f"target_value_ns={value} on a row that applied no target")
+
+        if backend == 2:
+            if mode not in (0, 1):
+                flag(f"GOOGLE backend cannot use target_mode={mode}")
+            if as_int(row, "feedback_stage_time_ns") != 0:
+                flag("GOOGLE backend synthesized an EXT feedback_stage_time_ns")
+            desired = as_int(row, "target_value_ns") if applied else 0
+            if desired != 0:
+                if self.last_google_desired_time and desired < self.last_google_desired_time:
+                    flag("GOOGLE desiredPresentTime moved backwards")
+                self.last_google_desired_time = desired
 
         # Relative rows carry the inputs their duration was computed from, so
         # the cadence can be re-derived here rather than trusted.
@@ -247,7 +273,10 @@ class RunStats:
         policy = POLICY_NAMES.get(self.policy, f"policy{self.policy}")
         reflex = REFLEX_NAMES.get(self.reflex_mode, f"reflex{self.reflex_mode}")
         target = TARGET_MODE_NAMES.get(self.target_mode, f"mode{self.target_mode}")
-        return f"{policy}/Reflex{reflex}/{target}"
+        backend = TIMING_BACKEND_NAMES.get(
+            self.timing_backend, f"backend{self.timing_backend}"
+        )
+        return f"{policy}/Reflex{reflex}/{backend}/{target}"
 
     @property
     def target_active_ratio(self) -> float:
@@ -279,6 +308,9 @@ class RunStats:
             "authority": AUTHORITY_NAMES.get(self.authority, self.authority),
             "reflex_mode": REFLEX_NAMES.get(self.reflex_mode, self.reflex_mode),
             "target_mode": TARGET_MODE_NAMES.get(self.target_mode, self.target_mode),
+            "target_backend": TIMING_BACKEND_NAMES.get(
+                self.timing_backend, self.timing_backend
+            ),
             "invalid_rows": len(self.problems),
             "samples": self.samples,
             "warmup_dropped": self.dropped_warmup,
@@ -292,6 +324,12 @@ class RunStats:
             "pipeline_p50_ms": round(percentile(self.input_to_present_ms, 0.50), 4),
             "pipeline_p95_ms": round(percentile(self.input_to_present_ms, 0.95), 4),
             "pipeline_p99_ms": round(percentile(self.input_to_present_ms, 0.99), 4),
+            "present_margin_p50_ms": round(
+                percentile(self.present_margins_ms, 0.50), 4
+            ),
+            "present_margin_p95_ms": round(
+                percentile(self.present_margins_ms, 0.95), 4
+            ),
             "target_active_ratio": round(self.target_active_ratio, 4),
             # Allowed vs actually called. The gap is normal -- a frame with
             # nothing to wait on is permitted but does not wait -- so reporting

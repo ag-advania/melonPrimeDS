@@ -13,6 +13,7 @@
 #include <string>
 
 #include "VulkanDevice.h"
+#include "VulkanGoogleDisplayTimingModel.h"
 #include "VulkanPresentPacingPolicy.h"
 #include "VulkanPresentTimingModel.h"
 
@@ -58,6 +59,8 @@ public:
         VkPresentId2KHR Id2{};
         VkPresentTimingInfoEXT Timing{};
         VkPresentTimingsInfoEXT Timings{};
+        VkPresentTimeGOOGLE GoogleTime{};
+        VkPresentTimesInfoGOOGLE GoogleTimes{};
         u64 LogicalId = 0;
         u64 Sequence = 0;
         // Meaning depends on TargetMode: an absolute presentation timestamp for
@@ -72,6 +75,9 @@ public:
         // actually carried a relative target.
         VulkanRelativeCadence::Request RelativeRequest{};
         bool TimingAttached = false;
+        bool GoogleTimingAttached = false;
+        bool Id2Attached = false;
+        VulkanPresentTimingBackend TimingBackend = VulkanPresentTimingBackend::None;
     };
 
     // One frame's answer to "what target may this present request".
@@ -160,6 +166,7 @@ public:
         // Without the mode, a capture cannot tell an A2 run that actually
         // scheduled from one that silently fell through to no target.
         int TargetMode = 0;
+        int TimingBackend = 0;
         u64 TargetValueNs = 0;
         // The relative-cadence inputs the target was generated from, so a
         // capture can verify TargetValueNs == RelativeQuanta x
@@ -173,6 +180,10 @@ public:
         u64 RelativeAccumulatorAfterNs = 0;
         u64 FeedbackPresentId = 0;
         u64 FeedbackStageTimeNs = 0;
+        u64 FeedbackDesiredPresentTimeNs = 0;
+        u64 FeedbackActualPresentTimeNs = 0;
+        u64 FeedbackEarliestPresentTimeNs = 0;
+        u64 FeedbackPresentMarginNs = 0;
         u64 BaselineSequence = 0;
         u64 PresentSequence = 0;
         u64 FrameIntervalNs = 0;
@@ -203,6 +214,8 @@ private:
     [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
     void ResetTimingLifecycle() noexcept;
     void ReportPastTiming();
+    [[nodiscard]] VulkanPacerBeginResult ReportGooglePastTiming();
+    [[nodiscard]] VulkanPacerBeginResult RefreshGoogleTiming();
     // Absolute and relative are deliberately separate functions: one returns a
     // point on a clock, the other a duration, and merging them behind one
     // return value is how the distinction gets lost.
@@ -230,6 +243,9 @@ private:
     bool PresentId2Device = false;
     bool PresentWait2Device = false;
     bool PresentTimingDevice = false;
+    bool GoogleDisplayTimingDevice = false;
+    bool GoogleDisplayTimingRuntimeEnabled = false;
+    bool GoogleRefreshDurationReady = false;
     bool AbsoluteTimingDevice = false;
     bool RelativeTimingDevice = false;
     bool LatestReadyDevice = false;
@@ -269,6 +285,7 @@ private:
 
     // --- Phase 3/4: feedback and target scheduling ---------------------------
     VulkanPresentTimingModel TimingModel;
+    VulkanGoogleDisplayTimingModel GoogleTimingModel;
     VulkanRelativeCadence RelativeCadence;
     // Resolved once per frame in BeginFrame() and reused by PreparePresent(),
     // so the wait decision and the scheduling decision can never disagree.
@@ -327,6 +344,7 @@ private:
 const char* VulkanPresentPacingPolicyName(VulkanPresentPacingPolicy policy) noexcept;
 const char* VulkanPacingAuthorityName(VulkanPacingAuthority authority) noexcept;
 const char* VulkanTargetSchedulingModeName(VulkanTargetSchedulingMode mode) noexcept;
+const char* VulkanPresentTimingBackendName(VulkanPresentTimingBackend backend) noexcept;
 const char* VulkanRefreshDynamicsName(VulkanRefreshDynamics dynamics) noexcept;
 const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept;
 

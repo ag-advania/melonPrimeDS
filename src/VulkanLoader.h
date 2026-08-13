@@ -264,6 +264,8 @@ struct DeviceDispatch
     PFN_vkGetSwapchainTimingPropertiesEXT       GetSwapchainTimingPropertiesEXT = nullptr;
     PFN_vkGetSwapchainTimeDomainPropertiesEXT   GetSwapchainTimeDomainPropertiesEXT = nullptr;
     PFN_vkGetPastPresentationTimingEXT          GetPastPresentationTimingEXT = nullptr;
+    PFN_vkGetPastPresentationTimingGOOGLE       GetPastPresentationTimingGOOGLE = nullptr;
+    PFN_vkGetRefreshCycleDurationGOOGLE         GetRefreshCycleDurationGOOGLE = nullptr;
 
     // --- VK_KHR_timeline_semaphore (optional: VK_NV_low_latency2 dependency) ---
     //

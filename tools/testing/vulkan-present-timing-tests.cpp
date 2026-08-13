@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "VulkanPresentPacingPolicy.h"
+#include "VulkanGoogleDisplayTimingModel.h"
 #include "VulkanPresentTimingModel.h"
 
 namespace
@@ -307,6 +308,7 @@ using Policy = VulkanPresentPacingPolicy;
 using Authority = VulkanPacingAuthority;
 using Reason = VulkanJitFallbackReason;
 using TargetMode = VulkanTargetSchedulingMode;
+using TimingBackend = VulkanPresentTimingBackend;
 
 // A driver that supports everything, with a swapchain that is up and reporting.
 VulkanPacingCapabilities FullCapabilities()
@@ -333,6 +335,146 @@ VulkanPacingCapabilities FullCapabilities()
 VulkanPacingDecision Resolve(Policy policy, const VulkanPacingCapabilities& caps)
 {
     return ResolveVulkanPresentPacing(policy, false, false, true, caps);
+}
+
+VulkanPacingCapabilities GoogleCapabilities()
+{
+    VulkanPacingCapabilities caps = FullCapabilities();
+    caps.PresentId2Surface = false;
+    caps.PresentWait2Surface = false;
+    caps.PresentWaitRuntimeEnabled = false;
+    caps.PresentTimingSurface = false;
+    caps.TimingMetadataEnabled = false;
+    caps.AbsoluteTimingDevice = false;
+    caps.AbsoluteTimingSurface = false;
+    caps.RelativeTimingDevice = false;
+    caps.RelativeTimingSurface = false;
+    caps.TimingPropertiesReady = false;
+    caps.TimeDomainsReady = false;
+    caps.TargetStageValid = false;
+    caps.GoogleDisplayTimingAvailable = true;
+    caps.GoogleDisplayTimingRuntimeEnabled = true;
+    caps.GoogleRefreshDurationReady = true;
+    return caps;
+}
+
+void TestTimingBackendSelection()
+{
+    VulkanPacingCapabilities both = FullCapabilities();
+    both.GoogleDisplayTimingAvailable = true;
+    both.GoogleDisplayTimingRuntimeEnabled = true;
+    both.GoogleRefreshDurationReady = true;
+    Require(SelectVulkanPresentTimingBackend(both) == TimingBackend::ExtPresentTiming,
+        "VK_EXT_present_timing must win when EXT and GOOGLE are both usable");
+
+    const VulkanPacingCapabilities google = GoogleCapabilities();
+    const VulkanPacingDecision googleDecision = Resolve(Policy::JustInTime, google);
+    Require(googleDecision.TimingBackend == TimingBackend::GoogleDisplayTiming,
+        "GOOGLE must be selected when EXT is absent");
+    Require(googleDecision.TargetTimeScheduling
+            && googleDecision.TargetMode == TargetMode::Absolute,
+        "GOOGLE JIT must schedule absolute monotonic timestamps");
+    Require(!googleDecision.BoundedPresentWait,
+        "GOOGLE scheduling must not acquire an unsupported present_id2 wait");
+
+    VulkanPacingCapabilities neither = google;
+    neither.GoogleDisplayTimingAvailable = false;
+    neither.GoogleDisplayTimingRuntimeEnabled = false;
+    Require(SelectVulkanPresentTimingBackend(neither) == TimingBackend::None,
+        "the backend must be none when neither extension is usable");
+
+    const VulkanPacingDecision reflex = ResolveVulkanPresentPacing(
+        Policy::JustInTime, true, false, true, google);
+    const VulkanPacingDecision antiLag = ResolveVulkanPresentPacing(
+        Policy::JustInTime, false, true, true, google);
+    Require(reflex.TimingBackend == TimingBackend::None
+            && antiLag.TimingBackend == TimingBackend::None,
+        "vendor latency APIs must suppress GOOGLE metadata, not stack with it");
+
+    const VulkanPacingDecision telemetry = Resolve(Policy::TelemetryOnly, google);
+    Require(!telemetry.TargetTimeScheduling
+            && telemetry.TimingBackend == TimingBackend::GoogleDisplayTiming,
+        "TelemetryOnly may collect GOOGLE feedback but must request no target");
+
+    const VulkanPacingDecision abnormal = ResolveVulkanPresentPacing(
+        Policy::JustInTime, false, false, false, google);
+    Require(!abnormal.TargetTimeScheduling
+            && abnormal.TimingBackend == TimingBackend::None,
+        "fast-forward and slow motion must suppress the GOOGLE backend entirely");
+
+    VulkanPacingCapabilities nonFifo = google;
+    nonFifo.FifoPresentMode = false;
+    Require(!Resolve(Policy::JustInTime, nonFifo).TargetTimeScheduling,
+        "VSync-off present modes must suppress GOOGLE targets");
+}
+
+void TestGoogleTimingTransactions()
+{
+    Require(NextGooglePresentId(0) == 1 && NextGooglePresentId(41) == 42,
+        "GOOGLE present IDs must increment independently");
+    Require(NextGooglePresentId(std::numeric_limits<u32>::max()) == 1,
+        "GOOGLE present ID wrap must skip reserved ID zero");
+
+    VulkanGoogleDisplayTimingModel model;
+    const VulkanGooglePresentRequest first = model.Prepare(
+        1'000'000'000, Interval60Fps, true);
+    Require(first.PresentId == 1
+            && first.DesiredPresentTimeNs == 1'016'666'667,
+        "the first GOOGLE target must bootstrap one frame into the future");
+    model.Commit();
+
+    const VulkanGooglePresentRequest second = model.Prepare(
+        1'005'000'000, Interval60Fps, true);
+    Require(second.PresentId == 2
+            && second.DesiredPresentTimeNs >= first.DesiredPresentTimeNs,
+        "GOOGLE desired times must never move backwards");
+    model.Abandon();
+    const VulkanGooglePresentRequest retry = model.Prepare(
+        1'005'000'000, Interval60Fps, true);
+    Require(retry.PresentId == second.PresentId
+            && retry.DesiredPresentTimeNs == second.DesiredPresentTimeNs,
+        "a rejected present must roll back GOOGLE ID and target state");
+    model.Commit();
+
+    const VulkanGooglePresentRequest telemetry = model.Prepare(
+        1'010'000'000, Interval60Fps, false);
+    Require(telemetry.PresentId == 3 && telemetry.DesiredPresentTimeNs == 0,
+        "telemetry metadata must carry a unique ID and desired time zero");
+    model.Commit();
+
+    VulkanGooglePresentationFeedback feedback;
+    feedback.PresentId = 2;
+    feedback.DesiredPresentTimeNs = retry.DesiredPresentTimeNs;
+    feedback.ActualPresentTimeNs = retry.DesiredPresentTimeNs + 100;
+    feedback.EarliestPresentTimeNs = retry.DesiredPresentTimeNs - 50;
+    feedback.PresentMarginNs = 150;
+    model.RecordFeedback(feedback);
+    Require(model.GetFeedback().PresentMarginNs == 150,
+        "GOOGLE feedback must preserve present margin without EXT field synthesis");
+
+    model.Reset();
+    Require(model.GetCommittedPresentId() == 0
+            && model.GetCommittedDesiredPresentTimeNs() == 0
+            && model.GetFeedback().PresentId == 0,
+        "swapchain recreation must reset GOOGLE IDs, cadence and feedback");
+
+    Require(VulkanGoogleActionFor(VulkanGoogleQueryStatus::Success)
+            == VulkanGoogleQueryAction::Continue
+            && VulkanGoogleActionFor(VulkanGoogleQueryStatus::Incomplete)
+                == VulkanGoogleQueryAction::Continue,
+        "empty feedback and VK_INCOMPLETE must remain normal polling states");
+    Require(VulkanGoogleActionFor(VulkanGoogleQueryStatus::OutOfDate)
+            == VulkanGoogleQueryAction::RebuildSwapchain,
+        "GOOGLE out-of-date must request swapchain recreation");
+    Require(VulkanGoogleActionFor(VulkanGoogleQueryStatus::DeviceLost)
+            == VulkanGoogleQueryAction::FailDevice,
+        "GOOGLE device loss must remain fatal");
+    Require(VulkanGoogleActionFor(VulkanGoogleQueryStatus::SurfaceLost)
+            == VulkanGoogleQueryAction::FailSurface,
+        "GOOGLE surface loss must leave the swapchain-only rebuild loop");
+    Require(VulkanGoogleActionFor(VulkanGoogleQueryStatus::Failure)
+            == VulkanGoogleQueryAction::DisableBackend,
+        "other GOOGLE query failures must disable only the optional backend");
 }
 
 
@@ -471,7 +613,7 @@ void TestFallbackReasonsAreSpecific()
         {"present id2", [](VulkanPacingCapabilities& c) { c.PresentId2Surface = false; },
          Reason::PresentId2Unsupported},
         {"swapchain", [](VulkanPacingCapabilities& c) { c.SwapchainValid = false; },
-         Reason::PresentId2Unsupported},
+         Reason::PresentTimingUnsupported},
         {"every device timing mode",
          [](VulkanPacingCapabilities& c) {
              c.AbsoluteTimingDevice = false;
@@ -978,6 +1120,11 @@ void TestBeginResultRouting()
         "device loss must reach the renderer's runtime-failure path");
     Require(!deviceLost.RebuildSwapchain,
         "device loss must never be answered with a swapchain rebuild");
+
+    const VulkanPacerBeginAction surfaceLost =
+        VulkanPacerActionFor(VulkanPacerBeginResult::SurfaceLost);
+    Require(surfaceLost.FailRenderer && !surfaceLost.RebuildSwapchain,
+        "surface loss must leave the swapchain-only rebuild loop");
 }
 
 
@@ -1009,7 +1156,9 @@ int main()
     TestResetOnSwapchainRecreation();
     TestGuards();
     TestHistoryWraparound();
+    TestGoogleTimingTransactions();
 
+    TestTimingBackendSelection();
     TestTargetTimeDoesNotRequirePresentWait2();
     TestBoundedWaitWithoutPresentTiming();
     TestVendorLatencyApisWin();

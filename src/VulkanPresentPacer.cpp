@@ -10,8 +10,13 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <limits>
 #include <vector>
+
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#endif
 
 namespace melonDS
 {
@@ -61,6 +66,41 @@ bool IsFifoFamily(VkPresentModeKHR mode) noexcept
     return mode == VK_PRESENT_MODE_FIFO_KHR
         || mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR
         || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
+}
+
+u64 GoogleMonotonicTimeNs() noexcept
+{
+#if defined(__APPLE__)
+    // MoltenVK implements VK_GOOGLE_display_timing on mach_absolute_time(),
+    // which pauses while the Mac sleeps. libc++ steady_clock uses the
+    // continuous clock and includes sleep, so its epoch can be days ahead.
+    // Convert the exact clock MoltenVK reports into the extension's ns unit.
+    static const mach_timebase_info_data_t timebase = [] {
+        mach_timebase_info_data_t value{};
+        mach_timebase_info(&value);
+        return value;
+    }();
+    const __uint128_t scaled = static_cast<__uint128_t>(mach_absolute_time())
+        * timebase.numer;
+    return static_cast<u64>(scaled / timebase.denom);
+#else
+    using Clock = std::chrono::steady_clock;
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        Clock::now().time_since_epoch()).count());
+#endif
+}
+
+VulkanGoogleQueryStatus GoogleQueryStatusFor(VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS: return VulkanGoogleQueryStatus::Success;
+    case VK_INCOMPLETE: return VulkanGoogleQueryStatus::Incomplete;
+    case VK_ERROR_OUT_OF_DATE_KHR: return VulkanGoogleQueryStatus::OutOfDate;
+    case VK_ERROR_DEVICE_LOST: return VulkanGoogleQueryStatus::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR: return VulkanGoogleQueryStatus::SurfaceLost;
+    default: return VulkanGoogleQueryStatus::Failure;
+    }
 }
 
 // Both name helpers only feed the developer state-change log.
@@ -129,6 +169,17 @@ const char* VulkanTargetSchedulingModeName(VulkanTargetSchedulingMode mode) noex
     return "none";
 }
 
+const char* VulkanPresentTimingBackendName(VulkanPresentTimingBackend backend) noexcept
+{
+    switch (backend)
+    {
+    case VulkanPresentTimingBackend::None: return "none";
+    case VulkanPresentTimingBackend::ExtPresentTiming: return "ext_present_timing";
+    case VulkanPresentTimingBackend::GoogleDisplayTiming: return "google_display_timing";
+    }
+    return "none";
+}
+
 const char* VulkanRefreshDynamicsName(VulkanRefreshDynamics dynamics) noexcept
 {
     switch (dynamics)
@@ -188,6 +239,12 @@ bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR sur
     PresentTimingDevice = HasEnabledExtension(device, VK_EXT_PRESENT_TIMING_EXTENSION_NAME)
         && device.Fns().GetSwapchainTimingPropertiesEXT
         && device.Fns().GetPastPresentationTimingEXT;
+    GoogleDisplayTimingDevice =
+        HasEnabledExtension(device, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME)
+        && device.GetPresentTimingFeatures().GoogleDisplayTiming
+        && device.Fns().GetPastPresentationTimingGOOGLE
+        && device.Fns().GetRefreshCycleDurationGOOGLE;
+    GoogleDisplayTimingRuntimeEnabled = GoogleDisplayTimingDevice;
     // Absolute target scheduling additionally needs the feature bit that
     // vkCreateDevice enabled and the entry point that enumerates the swapchain's
     // time domains; without the latter there is no legal timeDomainId to name.
@@ -214,6 +271,9 @@ void VulkanPresentPacer::Shutdown() noexcept
     PresentId2Device = false;
     PresentWait2Device = false;
     PresentTimingDevice = false;
+    GoogleDisplayTimingDevice = false;
+    GoogleDisplayTimingRuntimeEnabled = false;
+    GoogleRefreshDurationReady = false;
     AbsoluteTimingDevice = false;
     RelativeTimingDevice = false;
     LatestReadyDevice = false;
@@ -439,6 +499,8 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     LastFeedbackStageTimeNs = 0;
     TimingModel.Reset();
     TimingModel.ClearTimeDomain();
+    GoogleTimingModel.Reset();
+    GoogleRefreshDurationReady = false;
     // The cadence phase belongs to the retired swapchain's refresh grid.
     RelativeCadence.Reset();
     RelativeCadence.Configure(0, 0, 0);
@@ -497,6 +559,15 @@ void VulkanPresentPacer::OnSwapchainCreated(
                 "[Vulkan] %s\n", WaitDisabledReason.c_str());
         }
     }
+    if (!PresentTimingSurface && GoogleDisplayTimingRuntimeEnabled)
+    {
+        const VulkanPacerBeginResult google = RefreshGoogleTiming();
+        if (google != VulkanPacerBeginResult::Continue)
+        {
+            Platform::Log(Platform::LogLevel::Warn,
+                "[Vulkan] GOOGLE display timing initialization deferred after swapchain creation\n");
+        }
+    }
 
     LogState("swapchain ready:");
 }
@@ -531,6 +602,9 @@ VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
     caps.TimeDomainsReady = TimeDomainsReady && TimingModel.HasTimeDomain();
     caps.TargetStageValid = TargetPresentStage != 0;
     caps.FrameIntervalKnown = TargetFrameIntervalNs != 0;
+    caps.GoogleDisplayTimingAvailable = GoogleDisplayTimingDevice;
+    caps.GoogleDisplayTimingRuntimeEnabled = GoogleDisplayTimingRuntimeEnabled;
+    caps.GoogleRefreshDurationReady = GoogleRefreshDurationReady;
     return caps;
 }
 
@@ -554,6 +628,18 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     // Permission is resolved below; whether the wait actually ran is only known
     // once every skip condition has been checked.
     WaitAttemptedThisFrame = false;
+
+    // Google feedback is independent of present_id2 and has no finite queue to
+    // size. Poll a fixed stack buffer only while it is the selected fallback.
+    // Vendor APIs suppress the backend completely, including telemetry.
+    if (!reflexActive && !antiLagActive
+        && SelectVulkanPresentTimingBackend(BuildCapabilities())
+            == VulkanPresentTimingBackend::GoogleDisplayTiming)
+    {
+        const VulkanPacerBeginResult google = ReportGooglePastTiming();
+        if (google != VulkanPacerBeginResult::Continue)
+            return google;
+    }
 
     // Telemetry-only is the safe default: collect periodic timing reports even
     // though no behavioural wait owns pacing. Draining also feeds the
@@ -749,7 +835,11 @@ u64 VulkanPresentPacer::PreparePresent(
     VkPresentInfoKHR& present, u64 preferredId, PresentMetadata& metadata)
 {
     metadata = PresentMetadata{};
-    if (!PresentId2Surface || Swapchain == VK_NULL_HANDLE)
+    if (Swapchain == VK_NULL_HANDLE)
+        return 0;
+
+    const VulkanPresentTimingBackend backend = LastDecision.TimingBackend;
+    if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming)
         return 0;
 
     metadata.LogicalId = preferredId != 0 ? preferredId : LastSubmittedId + 1;
@@ -757,7 +847,8 @@ u64 VulkanPresentPacer::PreparePresent(
 
     // The logical ID counts emulation frames; the sequence counts accepted
     // presents. Only the latter may be multiplied by the frame interval.
-    metadata.Sequence = TimingModel.BeginPresent(metadata.LogicalId);
+    if (PresentId2Surface)
+        metadata.Sequence = TimingModel.BeginPresent(metadata.LogicalId);
 
     // VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT is returned after the present
     // operation has already enqueued its semaphore waits. Retrying that same
@@ -787,7 +878,8 @@ u64 VulkanPresentPacer::PreparePresent(
     // VUID-VkPresentTimingInfoEXT-timeDomainId-12400. Telemetry therefore waits
     // for the domains, which are enumerated at swapchain creation and retried
     // after the first accepted present if the driver answered VK_NOT_READY.
-    if (TimingMetadataEnabled && TimeDomainsReady)
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming
+        && TimingMetadataEnabled && TimeDomainsReady)
     {
         const TargetTimingRequest target = EvaluateTargetTiming(metadata.Sequence);
         metadata.TargetMode = target.Mode;
@@ -843,6 +935,43 @@ u64 VulkanPresentPacer::PreparePresent(
         metadata.Timings.pNext = present.pNext;
         present.pNext = &metadata.Timings;
         metadata.TimingAttached = true;
+        metadata.TimingBackend = VulkanPresentTimingBackend::ExtPresentTiming;
+    }
+    else if (backend == VulkanPresentTimingBackend::GoogleDisplayTiming
+        && GoogleDisplayTimingRuntimeEnabled)
+    {
+        const u64 nowNs = GoogleMonotonicTimeNs();
+        const bool requestTarget = LastDecision.TargetTimeScheduling;
+        const VulkanGooglePresentRequest request = GoogleTimingModel.Prepare(
+            nowNs, TargetFrameIntervalNs, requestTarget);
+        metadata.GoogleTime.presentID = request.PresentId;
+        metadata.GoogleTime.desiredPresentTime = request.DesiredPresentTimeNs;
+        metadata.GoogleTimes.sType = VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE;
+        metadata.GoogleTimes.swapchainCount = 1;
+        metadata.GoogleTimes.pTimes = &metadata.GoogleTime;
+        metadata.GoogleTimes.pNext = present.pNext;
+        present.pNext = &metadata.GoogleTimes;
+        metadata.GoogleTimingAttached = true;
+        metadata.TimingBackend = VulkanPresentTimingBackend::GoogleDisplayTiming;
+        metadata.Sequence = request.PresentId;
+        if (!PresentId2Surface)
+        {
+            metadata.LogicalId = request.PresentId;
+            LastSubmittedId = metadata.LogicalId;
+        }
+        if (request.DesiredPresentTimeNs != 0)
+        {
+            metadata.TargetMode = VulkanTargetSchedulingMode::Absolute;
+            metadata.TargetValueNs = request.DesiredPresentTimeNs;
+            LastTargetValueNs = request.DesiredPresentTimeNs;
+            LastAppliedTargetMode = VulkanTargetSchedulingMode::Absolute;
+            TargetSchedulingActive.store(true, std::memory_order_release);
+        }
+        else
+        {
+            LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
+            TargetSchedulingActive.store(false, std::memory_order_release);
+        }
     }
     else
     {
@@ -852,11 +981,15 @@ u64 VulkanPresentPacer::PreparePresent(
     // Keep ID2 outermost. If timing metadata makes vkQueuePresentKHR reject
     // the operation, retry preparation can splice only that node out while
     // preserving Reflex's outer VkPresentIdKHR and any pre-existing chain.
-    metadata.Id2.sType = VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR;
-    metadata.Id2.swapchainCount = 1;
-    metadata.Id2.pPresentIds = &metadata.LogicalId;
-    metadata.Id2.pNext = present.pNext;
-    present.pNext = &metadata.Id2;
+    if (PresentId2Surface)
+    {
+        metadata.Id2.sType = VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR;
+        metadata.Id2.swapchainCount = 1;
+        metadata.Id2.pPresentIds = &metadata.LogicalId;
+        metadata.Id2.pNext = present.pNext;
+        present.pNext = &metadata.Id2;
+        metadata.Id2Attached = true;
+    }
     return metadata.LogicalId;
 }
 
@@ -920,12 +1053,16 @@ void VulkanPresentPacer::NotifyPresentResult(
     {
         if (metadata.LogicalId != 0)
             LastPresentedId = metadata.LogicalId;
-        TimingModel.CommitPresent();
+        if (metadata.Id2Attached)
+            TimingModel.CommitPresent();
+        if (metadata.GoogleTimingAttached)
+            GoogleTimingModel.Commit();
         // Exactly one cadence commit per accepted present -- including a
         // queue-full retry that dropped its timing metadata. The frame was
         // still displayed, so the relative cadence advances with it; skipping
         // it would leave the fraction describing fewer frames than were shown.
-        RelativeCadence.Commit();
+        if (metadata.TimingAttached)
+            RelativeCadence.Commit();
         // Only an accepted present with timing metadata occupies a results-queue
         // slot and owes a report. The retry path clears TimingAttached before
         // re-presenting, so a queue-full retry is not counted.
@@ -936,8 +1073,12 @@ void VulkanPresentPacer::NotifyPresentResult(
 
     // A rejected present never reached the presentation engine, so it must not
     // consume a presentation sequence number or a cadence step.
-    TimingModel.AbandonPresent();
-    RelativeCadence.Abandon();
+    if (metadata.Id2Attached)
+        TimingModel.AbandonPresent();
+    if (metadata.GoogleTimingAttached)
+        GoogleTimingModel.Abandon();
+    if (metadata.TimingAttached)
+        RelativeCadence.Abandon();
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         LastPresentedId = 0;
@@ -1142,6 +1283,91 @@ void VulkanPresentPacer::SelectTargetPresentStage() noexcept
             return;
         }
     }
+}
+
+VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()
+{
+    if (!GoogleDisplayTimingRuntimeEnabled || !Device
+        || Swapchain == VK_NULL_HANDLE || !Device->Fns().GetRefreshCycleDurationGOOGLE)
+    {
+        GoogleRefreshDurationReady = false;
+        return VulkanPacerBeginResult::Continue;
+    }
+
+    VkRefreshCycleDurationGOOGLE duration{};
+    const VkResult result = Device->Fns().GetRefreshCycleDurationGOOGLE(
+        Device->GetHandle(), Swapchain, &duration);
+    if (result == VK_SUCCESS && duration.refreshDuration != 0)
+    {
+        RefreshDurationNs = duration.refreshDuration;
+        RefreshIntervalNs = duration.refreshDuration;
+        GoogleRefreshDurationReady = true;
+        return VulkanPacerBeginResult::Continue;
+    }
+    if (result == VK_ERROR_DEVICE_LOST)
+        return VulkanPacerBeginResult::DeviceLost;
+    if (result == VK_ERROR_SURFACE_LOST_KHR)
+        return VulkanPacerBeginResult::SurfaceLost;
+
+    GoogleRefreshDurationReady = false;
+    GoogleDisplayTimingRuntimeEnabled = false;
+    WaitDisabledReason = "GOOGLE refresh-cycle query failed: " + Vk::FormatResult(result);
+    Platform::Log(Platform::LogLevel::Warn,
+        "[Vulkan] %s; GOOGLE display timing disabled for this device\n",
+        WaitDisabledReason.c_str());
+    return VulkanPacerBeginResult::Continue;
+}
+
+VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()
+{
+    if (!GoogleDisplayTimingRuntimeEnabled || !Device || Swapchain == VK_NULL_HANDLE)
+        return VulkanPacerBeginResult::Continue;
+    if (!GoogleRefreshDurationReady)
+    {
+        const VulkanPacerBeginResult refresh = RefreshGoogleTiming();
+        if (refresh != VulkanPacerBeginResult::Continue)
+            return refresh;
+    }
+
+    std::array<VkPastPresentationTimingGOOGLE, 16> reports{};
+    u32 count = static_cast<u32>(reports.size());
+    const VkResult result = Device->Fns().GetPastPresentationTimingGOOGLE(
+        Device->GetHandle(), Swapchain, &count, reports.data());
+    const VulkanGoogleQueryAction action = VulkanGoogleActionFor(
+        GoogleQueryStatusFor(result));
+    if (action != VulkanGoogleQueryAction::Continue)
+    {
+        if (action == VulkanGoogleQueryAction::FailDevice)
+            return VulkanPacerBeginResult::DeviceLost;
+        if (action == VulkanGoogleQueryAction::RebuildSwapchain)
+            return VulkanPacerBeginResult::SwapchainOutOfDate;
+        if (action == VulkanGoogleQueryAction::FailSurface)
+            return VulkanPacerBeginResult::SurfaceLost;
+
+        GoogleDisplayTimingRuntimeEnabled = false;
+        GoogleRefreshDurationReady = false;
+        FallbackReason = VulkanJitFallbackReason::TimingQueryFailed;
+        WaitDisabledReason = "GOOGLE presentation feedback query failed: "
+            + Vk::FormatResult(result);
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] %s; GOOGLE display timing disabled\n", WaitDisabledReason.c_str());
+        return VulkanPacerBeginResult::Continue;
+    }
+
+    count = std::min<u32>(count, static_cast<u32>(reports.size()));
+    for (u32 i = 0; i < count; ++i)
+    {
+        const VkPastPresentationTimingGOOGLE& report = reports[i];
+        VulkanGooglePresentationFeedback feedback;
+        feedback.PresentId = report.presentID;
+        feedback.DesiredPresentTimeNs = report.desiredPresentTime;
+        feedback.ActualPresentTimeNs = report.actualPresentTime;
+        feedback.EarliestPresentTimeNs = report.earliestPresentTime;
+        feedback.PresentMarginNs = report.presentMargin;
+        GoogleTimingModel.RecordFeedback(feedback);
+        LastFeedbackId = report.presentID;
+    }
+    return VulkanPacerBeginResult::Continue;
 }
 
 void VulkanPresentPacer::ReportPastTiming()
@@ -1385,7 +1611,7 @@ void VulkanPresentPacer::LogTargetSchedulingIfChanged()
 
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] present JIT: policy=%s authority=%s state=%s targetScheduling=%s "
-        "targetMode=%s boundedWait=%s optionalWait=%s timingReady=%s "
+        "timingBackend=%s targetMode=%s boundedWait=%s optionalWait=%s timingReady=%s "
         "timeDomainsReady=%s absoluteSupported=%s relativeSupported=%s "
         "targetStage=%s timeDomain=%s "
         "domainId=%llu frameIntervalNs=%llu refreshIntervalNs=%llu dynamics=%s "
@@ -1395,6 +1621,7 @@ void VulkanPresentPacer::LogTargetSchedulingIfChanged()
         VulkanPacingAuthorityName(GetAuthority()),
         active ? "TargetSchedulingActive" : "TelemetryBootstrap",
         LastDecision.TargetTimeScheduling ? "capable" : "off",
+        VulkanPresentTimingBackendName(LastDecision.TimingBackend),
         // The mode is what tells an A/B reader whether a JustInTime run really
         // scheduled, and against which semantics the target value should be
         // read: an instant for absolute, a duration for relative.
@@ -1429,7 +1656,7 @@ void VulkanPresentPacer::LogState(const char* context) const
     Platform::Log(Platform::LogLevel::Info,
         "[Vulkan] %s generic present pacing: policy=%s authority=%s caps2=%s "
         "present-id2=%s present-wait2=%s present-timing=%s absolute-timing=%s "
-        "relative-timing=%s "
+        "relative-timing=%s google-display-timing=%s timingBackend=%s "
         "target-stage=%s timing-queue=%u fifo-latest-ready=%s presentMode=%d reason=%s\n",
         context ? context : "state:",
         VulkanPresentPacingPolicyName(GetPolicy()),
@@ -1440,6 +1667,8 @@ void VulkanPresentPacer::LogState(const char* context) const
         TimingMetadataEnabled ? "yes" : "no",
         (PresentTimingAbsoluteSurface && AbsoluteTimingDevice) ? "yes" : "no",
         (PresentTimingRelativeSurface && RelativeTimingDevice) ? "yes" : "no",
+        GoogleDisplayTimingRuntimeEnabled ? "yes" : "no",
+        VulkanPresentTimingBackendName(LastDecision.TimingBackend),
         PresentStageName(TargetPresentStage),
         TimingQueueSize,
         (PresentMode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR) ? "yes" : "no",
@@ -1474,9 +1703,11 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
     // retry re-presents the same frame with its timing metadata stripped: the
     // frame is displayed, but with no target, and the row has to say so.
     const VulkanAppliedTarget applied = ResolveVulkanAppliedTarget(
-        metadata.TimingAttached, metadata.TargetMode, metadata.TargetValueNs);
+        metadata.TimingAttached || metadata.GoogleTimingAttached,
+        metadata.TargetMode, metadata.TargetValueNs);
     snapshot.TargetTimeScheduling = applied.Applied;
     snapshot.TargetMode = static_cast<int>(applied.Mode);
+    snapshot.TimingBackend = static_cast<int>(metadata.TimingBackend);
     snapshot.TargetValueNs = applied.ValueNs;
 
     const VulkanRelativeCadence::Request& cadence = metadata.RelativeRequest;
@@ -1493,6 +1724,12 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
         relativeApplied ? cadence.AccumulatorAfterNs : 0;
     snapshot.FeedbackPresentId = LastFeedbackId;
     snapshot.FeedbackStageTimeNs = LastFeedbackStageTimeNs;
+    const VulkanGooglePresentationFeedback& googleFeedback =
+        GoogleTimingModel.GetFeedback();
+    snapshot.FeedbackDesiredPresentTimeNs = googleFeedback.DesiredPresentTimeNs;
+    snapshot.FeedbackActualPresentTimeNs = googleFeedback.ActualPresentTimeNs;
+    snapshot.FeedbackEarliestPresentTimeNs = googleFeedback.EarliestPresentTimeNs;
+    snapshot.FeedbackPresentMarginNs = googleFeedback.PresentMarginNs;
     snapshot.BaselineSequence = TimingModel.GetBaselineSequence();
     snapshot.PresentSequence = TimingModel.GetCommittedSequence();
     snapshot.FrameIntervalNs = TargetFrameIntervalNs;

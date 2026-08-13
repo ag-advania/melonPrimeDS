@@ -549,6 +549,19 @@ bool LoadDeviceDispatch(
                 get("vkGetPastPresentationTimingEXT"));
     }
 
+    if (ExtensionEnabled(enabledExtensions, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME))
+    {
+        // Optional and fail-soft, like VK_EXT_present_timing above. MoltenVK
+        // versions have exposed this extension for years, but a mismatched
+        // runtime must disable only Google pacing rather than the renderer.
+        out.GetPastPresentationTimingGOOGLE =
+            reinterpret_cast<PFN_vkGetPastPresentationTimingGOOGLE>(
+                get("vkGetPastPresentationTimingGOOGLE"));
+        out.GetRefreshCycleDurationGOOGLE =
+            reinterpret_cast<PFN_vkGetRefreshCycleDurationGOOGLE>(
+                get("vkGetRefreshCycleDurationGOOGLE"));
+    }
+
     // --- optional low-latency extensions ------------------------------------
     //
     // Same contract as every other extension block: the entry points are looked

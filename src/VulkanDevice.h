@@ -67,6 +67,7 @@ struct VulkanPresentTimingDeviceFeatures
     bool PresentTiming = false;
     bool PresentAtAbsoluteTime = false;
     bool PresentAtRelativeTime = false;
+    bool GoogleDisplayTiming = false;
 };
 
 // Outcome of one VulkanLowLatencyRequest member, kept so the caller can log

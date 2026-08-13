@@ -63,6 +63,16 @@ enum class VulkanTargetSchedulingMode : int
     Relative,
 };
 
+// Which mutually-exclusive timing metadata implementation owns a present.
+// This is intentionally separate from VulkanTargetSchedulingMode: Google uses
+// absolute timestamps too, but has different IDs, feedback and lifecycle.
+enum class VulkanPresentTimingBackend : int
+{
+    None = 0,
+    ExtPresentTiming,
+    GoogleDisplayTiming,
+};
+
 // Why a target presentation time was not requested. Reported in the developer
 // summary so an A/B session can tell "the policy does not ask for one" apart
 // from "this driver never answered".
@@ -116,6 +126,7 @@ enum class VulkanPacerBeginResult : int
     Continue = 0,
     SwapchainOutOfDate,
     DeviceLost,
+    SurfaceLost,
 };
 
 // How the presenter must react to a begin result. Kept next to the enum so the
@@ -136,6 +147,8 @@ constexpr VulkanPacerBeginAction VulkanPacerActionFor(VulkanPacerBeginResult res
         // Deliberately not a rebuild: device loss belongs to the existing
         // Vulkan runtime-failure path, which tears the renderer down and
         // reports it, rather than to the swapchain recreation loop.
+        return {false, true};
+    case VulkanPacerBeginResult::SurfaceLost:
         return {false, true};
     case VulkanPacerBeginResult::Continue:
         break;
@@ -183,6 +196,11 @@ struct VulkanPacingCapabilities
     bool TargetStageValid = false;
     // The emulator's own frame interval is known for this frame.
     bool FrameIntervalKnown = false;
+
+    // --- VK_GOOGLE_display_timing fallback ---------------------------------
+    bool GoogleDisplayTimingAvailable = false;
+    bool GoogleDisplayTimingRuntimeEnabled = false;
+    bool GoogleRefreshDurationReady = false;
 };
 
 struct VulkanPacingDecision
@@ -199,6 +217,7 @@ struct VulkanPacingDecision
     // Diagnostic companion: the policy would take the bounded wait, but the
     // capability is missing. Never a reason to refuse target scheduling.
     bool OptionalWaitUnavailable = false;
+    VulkanPresentTimingBackend TimingBackend = VulkanPresentTimingBackend::None;
 };
 
 // What a present actually carried, as opposed to what the resolver permitted.
@@ -245,6 +264,18 @@ constexpr VulkanTargetSchedulingMode SelectVulkanTargetSchedulingMode(
     return VulkanTargetSchedulingMode::None;
 }
 
+// VK_EXT_present_timing is the primary implementation. Google is selected only
+// when the EXT path is unavailable or has retired itself at runtime.
+constexpr VulkanPresentTimingBackend SelectVulkanPresentTimingBackend(
+    const VulkanPacingCapabilities& caps) noexcept
+{
+    if (caps.PresentTimingSurface && caps.TimingMetadataEnabled)
+        return VulkanPresentTimingBackend::ExtPresentTiming;
+    if (caps.GoogleDisplayTimingAvailable && caps.GoogleDisplayTimingRuntimeEnabled)
+        return VulkanPresentTimingBackend::GoogleDisplayTiming;
+    return VulkanPresentTimingBackend::None;
+}
+
 constexpr bool VulkanPolicyRequestsTargetTime(VulkanPresentPacingPolicy policy) noexcept
 {
     return policy == VulkanPresentPacingPolicy::JustInTime
@@ -261,9 +292,11 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
         return VulkanJitFallbackReason::TelemetryOnlyPolicy;
     if (policy == VulkanPresentPacingPolicy::PresentWait)
         return VulkanJitFallbackReason::PresentWaitPolicyNoTarget;
-    if (!caps.SwapchainValid || !caps.PresentId2Surface)
-        return VulkanJitFallbackReason::PresentId2Unsupported;
-    if (!caps.TimingMetadataEnabled)
+    if (!caps.SwapchainValid)
+        return VulkanJitFallbackReason::PresentTimingUnsupported;
+
+    const VulkanPresentTimingBackend backend = SelectVulkanPresentTimingBackend(caps);
+    if (backend == VulkanPresentTimingBackend::None)
     {
         if (caps.TimingQueuePressure)
             return VulkanJitFallbackReason::TimingQueuePressure;
@@ -273,7 +306,13 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
             ? VulkanJitFallbackReason::TimingQueryFailed
             : VulkanJitFallbackReason::PresentTimingUnsupported;
     }
-    if (SelectVulkanTargetSchedulingMode(caps) == VulkanTargetSchedulingMode::None)
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming
+        && !caps.PresentId2Surface)
+    {
+        return VulkanJitFallbackReason::PresentId2Unsupported;
+    }
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming
+        && SelectVulkanTargetSchedulingMode(caps) == VulkanTargetSchedulingMode::None)
     {
         // Falling back from absolute to relative is a supported outcome and
         // never lands here; reaching this means neither mode is usable.
@@ -285,11 +324,17 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
         return VulkanJitFallbackReason::NonFifoPresentMode;
     if (!caps.FrameIntervalKnown)
         return VulkanJitFallbackReason::NoFrameInterval;
-    if (!caps.TimingPropertiesReady)
+    if (backend == VulkanPresentTimingBackend::GoogleDisplayTiming
+        && !caps.GoogleRefreshDurationReady)
+    {
         return VulkanJitFallbackReason::TimingPropertiesNotReady;
-    if (!caps.TimeDomainsReady)
+    }
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming
+        && !caps.TimingPropertiesReady)
+        return VulkanJitFallbackReason::TimingPropertiesNotReady;
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming && !caps.TimeDomainsReady)
         return VulkanJitFallbackReason::TimeDomainsNotReady;
-    if (!caps.TargetStageValid)
+    if (backend == VulkanPresentTimingBackend::ExtPresentTiming && !caps.TargetStageValid)
         return VulkanJitFallbackReason::NoValidTargetStage;
     return VulkanJitFallbackReason::None;
 }
@@ -308,47 +353,53 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
     const VulkanPacingCapabilities& caps) noexcept
 {
     constexpr VulkanTargetSchedulingMode noMode = VulkanTargetSchedulingMode::None;
+    constexpr VulkanPresentTimingBackend noBackend = VulkanPresentTimingBackend::None;
     if (reflexActive)
     {
         return {VulkanPacingAuthority::NvidiaReflex, false, noMode, false,
-                VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false};
+                VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false, noBackend};
     }
     if (antiLagActive)
     {
         return {VulkanPacingAuthority::AmdAntiLag2, false, noMode, false,
-                VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false};
+                VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false, noBackend};
     }
+    const VulkanPresentTimingBackend backend = SelectVulkanPresentTimingBackend(caps);
     if (!normalSpeed)
     {
         // Fast-forward and slow motion are not presentation problems. Neither
         // mechanism may hold frames to a cadence the emulator is not running at.
         return {VulkanPacingAuthority::GenericHost, false, noMode, false,
-                VulkanJitFallbackReason::NotNormalSpeed, false};
+                VulkanJitFallbackReason::NotNormalSpeed, false, noBackend};
     }
     if (policy == VulkanPresentPacingPolicy::TelemetryOnly)
     {
         return {VulkanPacingAuthority::GenericHost, false, noMode, false,
-                VulkanJitFallbackReason::TelemetryOnlyPolicy, false};
+                VulkanJitFallbackReason::TelemetryOnlyPolicy, false, backend};
     }
-    if (!caps.SwapchainValid || !caps.PresentId2Surface)
+    if (!caps.SwapchainValid)
     {
         return {VulkanPacingAuthority::GenericHost, false, noMode, false,
-                VulkanJitFallbackReason::PresentId2Unsupported, false};
+                VulkanJitFallbackReason::PresentTimingUnsupported, false, noBackend};
     }
 
-    const bool wait = caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled;
+    const bool wait = caps.PresentId2Surface
+        && caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled;
     const VulkanJitFallbackReason reason = ClassifyVulkanTargetFallback(policy, caps);
     const bool target = VulkanPolicyRequestsTargetTime(policy)
         && reason == VulkanJitFallbackReason::None;
-    const VulkanTargetSchedulingMode mode =
-        target ? SelectVulkanTargetSchedulingMode(caps) : noMode;
+    const VulkanTargetSchedulingMode mode = target
+        ? (backend == VulkanPresentTimingBackend::GoogleDisplayTiming
+            ? VulkanTargetSchedulingMode::Absolute
+            : SelectVulkanTargetSchedulingMode(caps))
+        : noMode;
 
     // The authority exists to keep exactly one owner of optional late waiting
     // and presentation scheduling. Either mechanism alone is enough to claim it.
     const VulkanPacingAuthority authority = (wait || target)
         ? VulkanPacingAuthority::GenericPresentTiming
         : VulkanPacingAuthority::GenericHost;
-    return {authority, wait, mode, target, reason, !wait};
+    return {authority, wait, mode, target, reason, !wait, backend};
 }
 
 } // namespace melonDS

@@ -1770,18 +1770,20 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // fresh input read. The host frame limiter is a separate responsibility and
     // still owns the emulation rate: presentation scheduling decides when a
     // finished frame is shown, not how fast the DS runs.
-    const melonDS::VulkanPacerBeginAction pacerAction = melonDS::VulkanPacerActionFor(
-        PresentPacer.BeginFrame(
-            Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs));
+    const melonDS::VulkanPacerBeginResult pacerResult = PresentPacer.BeginFrame(
+        Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs);
+    const melonDS::VulkanPacerBeginAction pacerAction =
+        melonDS::VulkanPacerActionFor(pacerResult);
     if (pacerAction.RebuildSwapchain)
         SwapchainDirty.store(true, std::memory_order_release);
     if (pacerAction.FailRenderer)
     {
-        // Device loss is not a stale swapchain. It goes to the same runtime
-        // failure path as any other lost device, which tears the presenter down
-        // and reports it, rather than into the swapchain rebuild loop where it
-        // would simply fail again every frame.
-        Fail("vkWaitForPresent2KHR", VK_ERROR_DEVICE_LOST);
+        // Device and surface loss are not stale-swapchain events. Route each
+        // through the renderer failure path with the original class intact.
+        const VkResult result = pacerResult == melonDS::VulkanPacerBeginResult::DeviceLost
+            ? VK_ERROR_DEVICE_LOST
+            : VK_ERROR_SURFACE_LOST_KHR;
+        Fail("Vulkan present timing query", result);
         return;
     }
 

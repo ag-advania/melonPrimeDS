@@ -287,8 +287,9 @@ def main() -> int:
         and "VulkanPacerActionFor" in vulkan_pacing_policy
         and "return VulkanPacerBeginResult::SwapchainOutOfDate;" in vulkan_pacer
         and "return VulkanPacerBeginResult::DeviceLost;" in vulkan_pacer
+        and "return VulkanPacerBeginResult::SurfaceLost;" in vulkan_pacer
         and "pacerAction.FailRenderer" in vulkan_presenter
-        and 'Fail("vkWaitForPresent2KHR", VK_ERROR_DEVICE_LOST);' in vulkan_presenter
+        and 'Fail("Vulkan present timing query", result);' in vulkan_presenter
         and "TestBeginResultRouting" in vulkan_timing_tests,
         "present-wait device loss must not share the swapchain-out-of-date result",
         failures,
@@ -430,7 +431,8 @@ def main() -> int:
                 "} // namespace melonDS",
             ),
             [
-                "metadata.TimingAttached, metadata.TargetMode, metadata.TargetValueNs",
+                "metadata.TimingAttached || metadata.GoogleTimingAttached,",
+                "metadata.TargetMode, metadata.TargetValueNs",
                 "snapshot.TargetTimeScheduling = applied.Applied;",
                 "snapshot.TargetMode = static_cast<int>(applied.Mode);",
                 "snapshot.TargetValueNs = applied.ValueNs;",
