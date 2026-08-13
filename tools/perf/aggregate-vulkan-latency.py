@@ -331,6 +331,27 @@ def collect_inputs(paths: list[str]) -> list[Path]:
     return files
 
 
+def remove_stale_output(path: Path, inputs: list[Path]) -> bool:
+    """Remove a previous summary before this invocation can be mistaken for it."""
+    resolved = path.resolve()
+    if any(input_path.resolve() == resolved for input_path in inputs):
+        print(
+            f"--out must not overwrite an input capture: {path}",
+            file=sys.stderr,
+        )
+        return False
+
+    existed = path.exists()
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"could not remove stale output {path}: {exc}", file=sys.stderr)
+        return False
+    if existed:
+        print(f"removed stale summary output: {path}", file=sys.stderr)
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", help="CSV files or directories of them")
@@ -344,6 +365,9 @@ def main() -> int:
     args = parser.parse_args()
 
     files = collect_inputs(args.inputs)
+    out_path = Path(args.out) if args.out else None
+    if out_path is not None and not remove_stale_output(out_path, files):
+        return 2
     if not files:
         print("no capture CSVs found", file=sys.stderr)
         return 2
@@ -386,8 +410,8 @@ def main() -> int:
     writer.writeheader()
     writer.writerows(rows)
 
-    if args.out:
-        with Path(args.out).open("w", newline="", encoding="utf-8") as handle:
+    if out_path is not None:
+        with out_path.open("w", newline="", encoding="utf-8") as handle:
             out = csv.DictWriter(handle, fieldnames=fieldnames)
             out.writeheader()
             out.writerows(rows)

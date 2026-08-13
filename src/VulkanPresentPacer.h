@@ -317,6 +317,9 @@ private:
     u64 OutstandingTimedPresents = 0;
     u32 TimingQueueFullCount = 0;
     u32 TimingQueueRecoveries = 0;
+    // Sticky while metadata is paused because the finite timing-results queue
+    // is under pressure. Cleared only after a larger queue is installed.
+    bool TimingQueuePressureActive = false;
     bool TimingQueueRecoveryPending = false;
     std::string WaitDisabledReason;
 };

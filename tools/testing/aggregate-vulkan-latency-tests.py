@@ -71,6 +71,7 @@ def main() -> int:
         invalid_capture = directory / "generation-boundary.csv"
         invalid_summary = directory / "invalid-summary.csv"
         write_capture(invalid_capture, measured_generation=2)
+        invalid_summary.write_text("stale summary\n", encoding="utf-8")
         invalid = run(invalid_capture, invalid_summary)
 
         if invalid.returncode != 1:
@@ -78,11 +79,13 @@ def main() -> int:
         if invalid.stdout:
             raise AssertionError("invalid run emitted a normal summary on stdout")
         if invalid_summary.exists():
-            raise AssertionError("invalid run created summary.csv")
+            raise AssertionError("invalid run left a stale summary.csv")
         if "# per-mode" in invalid.stderr:
             raise AssertionError("invalid run emitted per-mode output")
         if "warm-up baseline invalid" not in invalid.stderr:
             raise AssertionError("warm-up generation diagnostic missing")
+        if "removed stale summary output" not in invalid.stderr:
+            raise AssertionError("invalid run did not report stale summary removal")
 
         valid_capture = directory / "same-generation.csv"
         valid_summary = directory / "valid-summary.csv"

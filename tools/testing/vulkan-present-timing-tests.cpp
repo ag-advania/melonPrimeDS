@@ -513,6 +513,12 @@ void TestFallbackReasonsAreSpecific()
     Require(Resolve(Policy::JustInTime, runtimeFailure).Reason == Reason::TimingQueryFailed,
         "a supported surface that stopped reporting must be a runtime failure");
 
+    VulkanPacingCapabilities queuePressure = FullCapabilities();
+    queuePressure.TimingMetadataEnabled = false;
+    queuePressure.TimingQueuePressure = true;
+    Require(Resolve(Policy::JustInTime, queuePressure).Reason == Reason::TimingQueuePressure,
+        "a full timing queue must be reported as pressure, not a query failure");
+
     VulkanPacingCapabilities absent = FullCapabilities();
     absent.PresentTimingSurface = false;
     absent.TimingMetadataEnabled = false;

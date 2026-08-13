@@ -580,11 +580,14 @@ def main() -> int:
             "self.warmup_generation",
             "warm-up boundary",
             "warm-up baseline invalid",
+            "remove_stale_output",
+            "unlink(missing_ok=True)",
         ))
         and all(token in latency_tests for token in (
             "summary.csv",
             "# per-mode",
             "warm-up baseline invalid",
+            "stale summary",
         ))
         and ordered(
             function_body(aggregator, "def main() -> int:", 'if __name__ == "__main__":'),
@@ -597,6 +600,26 @@ def main() -> int:
             ],
         ),
         "invalid latency runs must be rejected before summary or per-mode output",
+        failures,
+    )
+    require(
+        all(token in vulkan_pacing_policy for token in (
+            "TimingQueuePressure",
+            "VulkanJitFallbackReason::TimingQueuePressure",
+        ))
+        and ordered(
+            vulkan_pacing_policy,
+            ["PresentWait2Unsupported,", "TimingQueuePressure,"],
+        )
+        and all(token in vulkan_pacer for token in (
+            "TimingQueuePressureActive",
+            "caps.TimingQueuePressure = TimingQueuePressureActive;",
+            "TimingQueuePressureActive = true;",
+            "TimingQueuePressureActive = false;",
+            "timing queue pressure",
+        ))
+        and "TimingQueuePressure" in vulkan_timing_tests,
+        "timing queue pressure must be distinct from a timing-query failure",
         failures,
     )
     # The bounded wait is skipped whenever there is nothing to wait on, so the

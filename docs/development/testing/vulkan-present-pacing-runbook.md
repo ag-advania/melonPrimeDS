@@ -91,8 +91,10 @@ A first session ran on 2026-08-13 (RTX 5070 Ti, driver 610.74.0.0, loader
 | Device loss / software fallback / recreate storm | none |
 | Automated window matrix at the recorded fix | 4 phases clean; current-tree Sync gate also clean |
 
-One VUID was found and fixed during the session
-(`VUID-VkPresentTimingInfoEXT-timeDomainId-12400`).
+An earlier validation session found and fixed
+(`VUID-VkPresentTimingInfoEXT-timeDomainId-12400`). The later current-tree
+Sync session also found and fixed
+(`VUID-vkQueuePresentKHR-pWaitSemaphores-03268`); both are recorded below.
 
 The historical session covered startup, ROM load and steady-state presentation.
 The window-driven subset is now automated and has a separate after-fix archive:
@@ -214,6 +216,11 @@ current-tree follow-up additionally pauses timing metadata before the results
 queue is full, so Synchronization Validation does not encounter the
 retry-as-a-second-present hazard.
 
+When that proactive pause happens, developer telemetry must report
+`fallback=timing queue pressure`. `fallback=timing query failed` is reserved for
+an actual `GetPastPresentationTimingEXT` failure; the distinction keeps a
+recoverable finite-queue pressure event separate from a driver query failure.
+
 The archived post-semaphore-fix core run intentionally exercised the retry path
 (9, 10 and 10 retries across three runs) and stayed clean. On the current tree,
 the new capacity guard is expected to prevent an actual driver queue-full error:
@@ -277,17 +284,19 @@ an empty log is indistinguishable from a settings file the loader never found.
 sync validation for every later run of that binary.
 
 Current-tree intended-configuration gate result (2026-08-13, Debug build with
-`MELONDS_VULKAN_ENABLE_VALIDATION=1`):
+`MELONDS_VULKAN_ENABLE_VALIDATION=1`), rerun after the `TimingQueuePressure`
+follow-up:
 
 ```text
 Policy=JustInTime, Reflex requested=off actual=inactive
 requested-vsync=on, selected-present-mode=FIFO
 config path=<BuildDir>\portable\melonDS.toml
 config restore=PASS, layer restore=PASS, config integrity=PASS
-Phase=minimize, minimize/restore x20, swapchain rebuilds=23
+Phase=minimize, minimize/restore x20, swapchain rebuilds=22
 CURRENT-VALIDATION-ENABLED: confirmed; Synchronization listed
 VUID=0, SYNC-HAZARD=0, DEVICE_LOST=0, exit=0
-queue-at-capacity events=13, queue growth events=4 (16 -> 32)
+queue-at-capacity events=15, queue growth events=4 (16 -> 32)
+fallback=timing queue pressure=14, timing query failure=0
 queue-full errors=0
 ```
 
@@ -295,10 +304,11 @@ The first current-tree attempt exposed 20 `SYNC-HAZARD-WRITE-AFTER-PRESENT`
 messages on the retry-as-a-second-present path and was correctly rejected. The
 capacity guard fixed that path. The earlier `vk-min-sync-final2.*` log is
 retained as a diagnostic run of the wrong effective configuration
-(`TelemetryOnly` / Reflex On / VSync Off); the intended-configuration log is
-archived as `vk-min-sync-configfix3.out.log` / `.err.log`, with the harness
-summary saved as `vk-min-sync-configfix3.harness.log`. This targeted gate
-does not close the manual lifecycle rows or the full Phase 3 A/B matrix.
+(`TelemetryOnly` / Reflex On / VSync Off); the parent intended-configuration
+log is `vk-min-sync-configfix3.*`, while the current post-follow-up gate is
+archived as `vk-min-sync-final-audit.out.log` / `.err.log`, with the harness
+summary saved as `vk-min-sync-final-audit.harness.log`. This targeted gate does
+not close the manual lifecycle rows or the full Phase 3 A/B matrix.
 
 GPU-Assisted Validation is not required for present pacing. If used at all, use
 a separate run.
@@ -396,6 +406,11 @@ Aggregate:
 ```bash
 python tools/perf/aggregate-vulkan-latency.py --warmup 600 --out summary.csv runs/
 ```
+
+The aggregator removes an existing `summary.csv` at the start of the
+invocation. If a run is then classified `INVALID`, the stale summary remains
+absent; do not interpret a previous run's file as the current result. It also
+rejects an `--out` path that is one of the input captures.
 
 Percentiles are computed per run and then compared across runs of the same mode.
 Do not pool every frame of every run — a longer run would outvote a shorter one.

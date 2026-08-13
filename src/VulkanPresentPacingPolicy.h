@@ -96,6 +96,11 @@ enum class VulkanJitFallbackReason : int
     // Diagnostic only: the optional bounded wait is unavailable. This never
     // blocks target-time scheduling -- it is reported alongside it.
     PresentWait2Unsupported,
+    // The finite present-timing results queue reached capacity and metadata
+    // was paused deliberately. This is recoverable pressure, not a failed
+    // GetPastPresentationTimingEXT query. Keep this new value at the end so
+    // existing numeric fallback-reason values in capture CSVs remain stable.
+    TimingQueuePressure,
 };
 
 // What happened during the pacer's pre-input phase.
@@ -158,6 +163,10 @@ struct VulkanPacingCapabilities
     bool PresentTimingSurface = false;
     // Cleared when the results queue filled or the query failed.
     bool TimingMetadataEnabled = false;
+    // True only when metadata was paused because the finite results queue
+    // reached capacity. Keep this separate from TimingMetadataEnabled so the
+    // diagnostic reason distinguishes pressure from a query failure.
+    bool TimingQueuePressure = false;
     // vkCreateDevice enabled presentAtAbsoluteTime and the time-domain query
     // entry point resolved.
     bool AbsoluteTimingDevice = false;
@@ -256,6 +265,8 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
         return VulkanJitFallbackReason::PresentId2Unsupported;
     if (!caps.TimingMetadataEnabled)
     {
+        if (caps.TimingQueuePressure)
+            return VulkanJitFallbackReason::TimingQueuePressure;
         // A surface that advertised present timing but is no longer reporting
         // failed at runtime; one that never advertised it simply lacks it.
         return caps.PresentTimingSurface

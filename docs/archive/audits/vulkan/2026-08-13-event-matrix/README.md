@@ -76,6 +76,53 @@ Policy2 / ReflexOn / VSyncOn: 2 rebuilds, banner confirmed, VUID 0,
 Their raw logs and harness summaries are `vk-sync-policy0-short.*` and
 `vk-sync-reflexon-short.*`.
 
+## Follow-up diagnostic semantics and aggregator hygiene
+
+The Release developer build was rerun after the follow-up source change as
+`vk-min-sync-pressurefix.out.log` / `.err.log`:
+
+```text
+Phase=minimize, minimize/restore x20, rebuilds=23
+queue-at-capacity=12
+fallback=timing queue pressure=12
+fallback=timing query failed=0
+queue growth=5
+queue-full driver errors=0
+config restore=PASS; config self-check=JustInTime/ReflexOff/VSyncOn/FIFO
+exit=0
+```
+
+`TimingQueuePressure` is a distinct fallback reason and is appended after the
+existing enum values so numeric reason values in older capture CSVs remain
+stable. The aggregator regression test now pre-creates a stale summary,
+requires it to be removed on an `INVALID` run, and passes with:
+
+```text
+python tools/testing/aggregate-vulkan-latency-tests.py  PASS
+```
+
+The runbook's historical VUID sentence now names the initial
+`timeDomainId-12400` session separately from the later
+`pWaitSemaphores-03268` Sync session.
+
+## Current `9dfd3c982` Sync Validation rerun
+
+After rebuilding the Debug validation tree with the `TimingQueuePressure`
+follow-up, the intended configuration was rerun as
+`vk-min-sync-final-audit.out.log` / `.err.log`, with the harness summary in
+`vk-min-sync-final-audit.harness.log`:
+
+```text
+swapchain rebuilds: 22
+queue-at-capacity: 15; queue growth: 4 (16 -> 32)
+fallback=timing queue pressure: 14
+fallback=timing query failed: 0
+VUID: 0; SYNC-HAZARD: 0; DEVICE_LOST: 0; exit: 0
+config restore: PASS; layer restore: PASS
+config self-check: JustInTime / ReflexOff / VSyncOn / FIFO
+Synchronization banner: confirmed
+```
+
 ## The defect that was open, and its cause
 
 ```text

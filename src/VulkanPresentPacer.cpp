@@ -170,6 +170,7 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
     case VulkanJitFallbackReason::BootstrapWaitingForFirstPresent:
         return "bootstrap waiting for the first present";
     case VulkanJitFallbackReason::DomainChanged: return "domain changed";
+    case VulkanJitFallbackReason::TimingQueuePressure: return "timing queue pressure";
     case VulkanJitFallbackReason::TimingQueryFailed: return "timing query failed";
     }
     return "none";
@@ -425,6 +426,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TimingQueueAllocated = false;
     TimingQueueSize = 0;
     TimingQueueRecoveries = 0;
+    TimingQueuePressureActive = false;
     TimingQueueRecoveryPending = false;
     OutstandingTimedPresents = 0;
     RefreshDurationNs = 0;
@@ -519,6 +521,7 @@ VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
     caps.PresentWaitRuntimeEnabled = WaitRuntimeEnabled;
     caps.PresentTimingSurface = PresentTimingSurface;
     caps.TimingMetadataEnabled = TimingMetadataEnabled;
+    caps.TimingQueuePressure = TimingQueuePressureActive;
     caps.AbsoluteTimingDevice = AbsoluteTimingDevice;
     caps.RelativeTimingDevice = RelativeTimingDevice;
     caps.RelativeTimingSurface = PresentTimingRelativeSurface;
@@ -769,6 +772,7 @@ u64 VulkanPresentPacer::PreparePresent(
         && OutstandingTimedPresents >= TimingQueueSize)
     {
         TimingMetadataEnabled = false;
+        TimingQueuePressureActive = true;
         TimingQueueRecoveryPending = true;
         WaitDisabledReason =
             "present timing results queue at capacity; timing metadata paused pending drain";
@@ -889,6 +893,7 @@ bool VulkanPresentPacer::PrepareRetryWithoutTiming(
     metadata.RelativeRequest = VulkanRelativeCadence::Request{};
     ++TimingQueueFullCount;
     TimingMetadataEnabled = false;
+    TimingQueuePressureActive = true;
     TargetSchedulingActive.store(false, std::memory_order_release);
 
     // Draining stays on: it is what frees the slots. Recovery is attempted from
@@ -1280,6 +1285,7 @@ void VulkanPresentPacer::ReportPastTiming()
         if (grown > TimingQueueSize && ApplyTimingQueueSize(grown))
         {
             ++TimingQueueRecoveries;
+            TimingQueuePressureActive = false;
             TimingMetadataEnabled = PresentTimingSurface;
             WaitDisabledReason.clear();
             Platform::Log(Platform::LogLevel::Info,
