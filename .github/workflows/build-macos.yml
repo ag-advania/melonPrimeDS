@@ -197,6 +197,79 @@ jobs:
           path: ${{ github.workspace }}/vcpkg_cache
           key: ${{ steps.restore-vcpkg-cache.outputs.cache-primary-key }}
 
+  # GitHub also provides an Intel macOS host. Run the x86_64 bundle there to
+  # separate an Intel-host MoltenVK result from the Apple-Silicon result above.
+  # This remains a MoltenVK/Metal runtime check, not native Intel Vulkan.
+  runtime-macos-intel:
+    name: Intel macOS MoltenVK runtime smoke
+    needs: [build-macos]
+    runs-on: macos-26-intel
+
+    steps:
+      - name: Download x86_64 bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: melonPrimeDS-macOS-x86_64.zip
+          path: x86_64
+          skip-decompress: true
+
+      - name: Run MoltenVK runtime smoke on Intel host
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_path=x86_64/melonPrimeDS-macOS-x86_64.zip
+          [ -f "$zip_path" ] || { echo "x86_64 artifact not found at $zip_path"; exit 1; }
+          unzip "$zip_path" -d x86_64
+          app="$PWD/x86_64/melonPrimeDS.app"
+          portable="$PWD/x86_64/portable"
+          log="$RUNNER_TEMP/melonprime-moltenvk-intel-runtime.log"
+          mkdir -p "$portable"
+          printf '3D.Renderer = 5\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
+          python3 - "$app/Contents/MacOS/melonPrimeDS" "$log" <<'PY'
+          import os
+          import signal
+          import subprocess
+          import sys
+
+          executable, log_path = sys.argv[1:]
+          env = os.environ.copy()
+          env["SDL_AUDIODRIVER"] = "dummy"
+          with open(log_path, "w", encoding="utf-8") as log:
+              process = subprocess.Popen(
+                  [executable],
+                  stdout=log,
+                  stderr=subprocess.STDOUT,
+                  env=env,
+              )
+              try:
+                  process.wait(timeout=15)
+              except subprocess.TimeoutExpired:
+                  process.send_signal(signal.SIGTERM)
+                  try:
+                      process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      process.kill()
+                      process.wait()
+          if process.returncode != 0:
+              raise SystemExit(f"Intel-host MoltenVK runtime smoke exited {process.returncode}")
+          print(log_path)
+          PY
+          cat "$log"
+          grep -F '[Vulkan] renderer requested=Vulkan presenter actual=Vulkan' "$log"
+          grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log"
+          grep -F '[Vulkan] presentation: requested-vsync=off' "$log"
+          grep -F '[Vulkan] presenter ready:' "$log"
+          ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"
+
+      - name: Upload Intel-host MoltenVK runtime log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: moltenvk-intel-runtime-smoke
+          path: ${{ runner.temp }}/melonprime-moltenvk-intel-runtime.log
+          if-no-files-found: warn
+          archive: false
+
   universal-binary:
     name: Universal binary
     needs: [build-macos]
