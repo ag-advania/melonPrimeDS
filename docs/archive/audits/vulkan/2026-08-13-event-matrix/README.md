@@ -46,6 +46,36 @@ slots. The final logs are `vk-min-sync-final2.out.log` and
 `vk-min-sync-final2.err.log`; the failed diagnostic run is retained as
 `vk-min-sync-current.out.log` / `.err.log`.
 
+The earlier `min-sync-final2` result is valid only for the configuration it
+actually ran (`TelemetryOnly` / Reflex On / VSync Off). The harness was then
+fixed to write the portable config root, verify the effective runtime state,
+and restore both config files byte-for-byte. The intended current-tree gate was
+rerun with `Policy=2`, `ReflexMode=0`, VSync on and saved as
+`vk-min-sync-configfix3.out.log` / `.err.log`, with the harness summary in
+`vk-min-sync-configfix3.harness.log`:
+
+```text
+config path: build/debug-mingw-vulkan-validation2/portable/melonDS.toml
+config self-check: policy=JustInTime reflex=off/inactive vsync=on present-mode=FIFO
+config restore: PASS; layer restore: PASS
+swapchain rebuilds: 23
+VUID: 0; SYNC-HAZARD: 0; DEVICE_LOST: 0; exit: 0
+queue-at-capacity: 13; queue growth: 4 (16 -> 32); queue-full errors: 0
+```
+
+The harness self-check also passed short idle controls for the adjacent
+configurations:
+
+```text
+Policy0 / ReflexOff / VSyncOn: 2 rebuilds, banner confirmed, VUID 0,
+  SYNC-HAZARD 0, DEVICE_LOST 0, config/layer restore PASS
+Policy2 / ReflexOn / VSyncOn: 2 rebuilds, banner confirmed, VUID 0,
+  SYNC-HAZARD 0, DEVICE_LOST 0, config/layer restore PASS
+```
+
+Their raw logs and harness summaries are `vk-sync-policy0-short.*` and
+`vk-sync-reflexon-short.*`.
+
 ## The defect that was open, and its cause
 
 ```text

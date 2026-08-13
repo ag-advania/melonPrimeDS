@@ -99,9 +99,12 @@ The window-driven subset is now automated and has a separate after-fix archive:
 resize x40, minimize/restore x20, fullscreen x8 and idle control. The remaining
 rows are still **NOT RUN** in the archive and need a person driving the
 emulator: DPI, Video Settings, renderer switching, ROM lifecycle, speed modes,
-and every latency number in Phases 2-3. The current-tree synchronization gate is
-recorded in `docs/archive/audits/vulkan/2026-08-13-event-matrix/vk-min-sync-final2.*`.
-It is a targeted minimize/restore gate; the full policy/manual matrix remains open.
+and every latency number in Phases 2-3. The intended current-tree
+synchronization gate is recorded in
+`docs/archive/audits/vulkan/2026-08-13-event-matrix/vk-min-sync-configfix3.*`.
+The older `vk-min-sync-final2.*` files are retained as a diagnostic run of the
+wrong effective configuration. This is a targeted minimize/restore gate; the
+full policy/manual matrix remains open.
 
 One expectation in the source instructions cannot be observed on this surface:
 with VSync off the fallback reason reads `absolute timing unsupported by
@@ -250,14 +253,18 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 khronos_validation.log_filename = C:\tmp\vk-sync-run.log
 ```
 
-For the reproducible window stress, use the harness switch below. It writes the
-same core/sync settings next to the Debug executable, requires the validation
-banner to list **Synchronization**, scans both stdout and stderr for VUIDs and
-`SYNC-HAZARD`, and restores/removes the temporary settings file afterward:
+For the reproducible window stress, use the harness switch below. It resolves
+the same config root the portable executable uses (`<BuildDir>\portable\melonDS.toml`
+when that directory exists, otherwise `<BuildDir>\melonDS.toml`), backs up and
+restores that config byte-for-byte, and self-checks the final policy, Reflex
+requested/actual state, requested VSync and selected present mode. It also
+requires the validation banner to list **Synchronization**, scans both stdout
+and stderr for VUIDs and `SYNC-HAZARD`, and restores/removes the temporary layer
+settings file afterward:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
-  -Rom <rom> -Phase minimize -ValidateSync -Tag min-sync1
+  -Rom <rom> -Phase minimize -ValidateSync -Policy 2 -ReflexMode 0 -Tag min-sync1
 ```
 
 An empty log file is only evidence of "no findings" once you have proved the
@@ -269,22 +276,29 @@ an empty log is indistinguishable from a settings file the loader never found.
 **Delete the file when the pass is over.** Left in place it silently enables
 sync validation for every later run of that binary.
 
-Current-tree targeted gate result (2026-08-13, Debug build with
+Current-tree intended-configuration gate result (2026-08-13, Debug build with
 `MELONDS_VULKAN_ENABLE_VALIDATION=1`):
 
 ```text
-Phase=minimize, minimize/restore x20, swapchain rebuilds=26
+Policy=JustInTime, Reflex requested=off actual=inactive
+requested-vsync=on, selected-present-mode=FIFO
+config path=<BuildDir>\portable\melonDS.toml
+config restore=PASS, layer restore=PASS, config integrity=PASS
+Phase=minimize, minimize/restore x20, swapchain rebuilds=23
 CURRENT-VALIDATION-ENABLED: confirmed; Synchronization listed
 VUID=0, SYNC-HAZARD=0, DEVICE_LOST=0, exit=0
-queue-at-capacity events=22, queue growth events=10 (16 -> 32)
+queue-at-capacity events=13, queue growth events=4 (16 -> 32)
 queue-full errors=0
 ```
 
 The first current-tree attempt exposed 20 `SYNC-HAZARD-WRITE-AFTER-PRESENT`
 messages on the retry-as-a-second-present path and was correctly rejected. The
-capacity guard fixed that path; the final log is archived as
-`vk-min-sync-final2.out.log` / `.err.log`. This targeted gate does not close
-the manual lifecycle rows or the full Phase 3 A/B matrix.
+capacity guard fixed that path. The earlier `vk-min-sync-final2.*` log is
+retained as a diagnostic run of the wrong effective configuration
+(`TelemetryOnly` / Reflex On / VSync Off); the intended-configuration log is
+archived as `vk-min-sync-configfix3.out.log` / `.err.log`, with the harness
+summary saved as `vk-min-sync-configfix3.harness.log`. This targeted gate
+does not close the manual lifecycle rows or the full Phase 3 A/B matrix.
 
 GPU-Assisted Validation is not required for present pacing. If used at all, use
 a separate run.
@@ -442,9 +456,14 @@ against the *current* interval rather than its generating one will produce false
 mismatches. That is why the generating value is stored per row.
 
 `aggregate-vulkan-latency.py` checks both invariants, plus the consistency of
-the target columns themselves, and **exits non-zero** with the offending rows
-listed if any run contradicts itself. A run flagged this way is `INVALID`, not a
-slower or faster result — do not compare it.
+the target columns themselves, and **exits non-zero before writing any normal
+summary or per-mode output** with the offending rows listed if any run
+contradicts itself. A run flagged this way is `INVALID`, not a slower or faster
+result — do not compare it. The synthetic regression check is:
+
+```text
+python tools/testing/aggregate-vulkan-latency-tests.py  PASS
+```
 
 ### `bounded_wait` vs `bounded_wait_attempted`
 
@@ -470,10 +489,11 @@ rate from `wait_timeout_count` directly will overstate it.
 latency-capture row therefore carries a monotonic `swapchain_generation`.
 `aggregate-vulkan-latency.py` treats a generation change inside the measured
 window as `INVALID`; it never subtracts a post-recreate counter from the
-warm-up baseline and reports a plausible but incomplete total. Re-run that
-mode without a measured-window recreation. A recreation at or before the warm-up
-boundary is allowed because the measured baseline then belongs to one current
-swapchain.
+warm-up baseline and reports a plausible but incomplete total. It also treats
+a generation change between the last warm-up row and the first measured row as
+`INVALID`, because the timeout baseline would belong to a different
+swapchain. Re-run that mode with one generation spanning the whole measured
+window and its warm-up boundary.
 
 ### Where the present span ends
 

@@ -556,6 +556,8 @@ def main() -> int:
         failures,
     )
     event_matrix = read("tools/testing/vulkan-present-event-matrix.ps1")
+    aggregator = read("tools/perf/aggregate-vulkan-latency.py")
+    latency_tests = read("tools/testing/aggregate-vulkan-latency-tests.py")
     require(
         all(token in event_matrix for token in (
             "[switch]$ValidateSync",
@@ -563,8 +565,38 @@ def main() -> int:
             "CURRENT-VALIDATION-ENABLED",
             "SYNC-HAZARD",
             "$err",
+            "$configPath",
+            "$originalConfig",
+            "$hadConfig",
+            "config integrity : MISMATCH",
+            "requested-vsync=",
+            "syncBannerWithSynchronization",
         )),
-        "the event matrix must support confirmed Synchronization Validation and scan stderr",
+        "the event matrix must apply, verify, and restore its actual runtime config",
+        failures,
+    )
+    require(
+        all(token in aggregator for token in (
+            "self.warmup_generation",
+            "warm-up boundary",
+            "warm-up baseline invalid",
+        ))
+        and all(token in latency_tests for token in (
+            "summary.csv",
+            "# per-mode",
+            "warm-up baseline invalid",
+        ))
+        and ordered(
+            function_body(aggregator, "def main() -> int:", 'if __name__ == "__main__":'),
+            [
+                "problems = [problem for run in runs for problem in run.problems]",
+                "if problems:",
+                "rows = [run.summary_row() for run in runs]",
+                "writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)",
+                "# Per mode:",
+            ],
+        ),
+        "invalid latency runs must be rejected before summary or per-mode output",
         failures,
     )
     # The bounded wait is skipped whenever there is nothing to wait on, so the

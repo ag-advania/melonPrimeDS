@@ -85,6 +85,7 @@ class RunStats:
         self.queue_recoveries = 0
         self.queue_size = 0
         self.wait_timeouts_at_warmup = 0
+        self.warmup_generation: int | None = None
         self.swapchain_generation: int | None = None
         self.swapchain_recreations_in_window = 0
         self._load(warmup)
@@ -104,6 +105,7 @@ class RunStats:
             if index < warmup:
                 self.dropped_warmup += 1
                 previous_present_end = as_int(row, "present_end_time_us")
+                self.warmup_generation = generation
                 # wait_timeout_count is a running total for the whole run, so
                 # the value standing at the warmup boundary has to be subtracted
                 # out. Using the final value alone would charge warm-up timeouts
@@ -129,6 +131,15 @@ class RunStats:
             if generation is not None:
                 if self.swapchain_generation is None:
                     self.swapchain_generation = generation
+                    if (
+                        self.warmup_generation is not None
+                        and generation != self.warmup_generation
+                    ):
+                        self.problems.append(
+                            f"{self.path.name}:{index}: swapchain_generation changed "
+                            f"at the warm-up boundary from {self.warmup_generation} "
+                            f"to {generation}; warm-up baseline invalid"
+                        )
                 elif generation != self.swapchain_generation:
                     self.swapchain_recreations_in_window += 1
                     self.problems.append(
@@ -346,6 +357,28 @@ def main() -> int:
         )
         return 2
 
+    # A run whose capture contradicts itself is not a measurement. Decide this
+    # before producing any normal summary or per-mode output: a consumer must
+    # never mistake a file left behind by an INVALID run for an approved A/B
+    # result. Diagnostics stay on stderr so the stdout CSV remains empty.
+    problems = [problem for run in runs for problem in run.problems]
+    if problems:
+        print(
+            f"\nINVALID: {len(problems)} contradictory rows across "
+            f"{sum(1 for run in runs if run.problems)} run(s)",
+            file=sys.stderr,
+        )
+        for problem in problems[:20]:
+            print(f"  {problem}", file=sys.stderr)
+        if len(problems) > 20:
+            print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
+        print(
+            "These rows contradict the capture contract. Treat the affected "
+            "runs as INVALID rather than comparing them.",
+            file=sys.stderr,
+        )
+        return 1
+
     rows = [run.summary_row() for run in runs]
     fieldnames = list(rows[0].keys())
 
@@ -395,28 +428,6 @@ def main() -> int:
             "the runbook requires at least 3 per mode in randomized order.",
             file=sys.stderr,
         )
-
-    # A run whose capture contradicts itself is not a measurement. Report it
-    # loudly and fail, rather than quietly averaging numbers that cannot be
-    # trusted: the whole point of the target columns is deciding whether a
-    # policy actually scheduled.
-    problems = [problem for run in runs for problem in run.problems]
-    if problems:
-        print(
-            f"\nINVALID: {len(problems)} contradictory rows across "
-            f"{sum(1 for run in runs if run.problems)} run(s)",
-            file=sys.stderr,
-        )
-        for problem in problems[:20]:
-            print(f"  {problem}", file=sys.stderr)
-        if len(problems) > 20:
-            print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
-        print(
-            "These rows disagree about whether a target was applied. Treat the "
-            "affected runs as INVALID rather than comparing them.",
-            file=sys.stderr,
-        )
-        return 1
 
     return 0
 

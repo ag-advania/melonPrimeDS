@@ -23,8 +23,9 @@
 .PARAMETER ValidateSync
     Enable core and Synchronization Validation through vk_layer_settings.txt,
     require the layer's CURRENT-VALIDATION-ENABLED banner to list
-    Synchronization, and fail on SYNC-HAZARD messages. The temporary settings
-    file is restored or removed when the run ends.
+    Synchronization, and fail on SYNC-HAZARD messages. The actual melonDS
+    config and temporary layer settings are restored or removed when the run
+    ends; the effective policy/Reflex/VSync/present-mode state is self-checked.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File tools\testing\vulkan-present-event-matrix.ps1 `
@@ -58,6 +59,19 @@ $exe = Join-Path $dir 'melonPrimeDS.exe'
 if (-not (Test-Path $exe)) { throw "melonPrimeDS.exe not found in $dir" }
 $out = Join-Path $OutDir "vk-$Tag.out.log"
 $err = Join-Path $OutDir "vk-$Tag.err.log"
+$portableDir = Join-Path $dir 'portable'
+$configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) {
+    $portableDir
+} else {
+    $dir
+}
+$configPath = Join-Path $configRoot 'melonDS.toml'
+$hadConfig = Test-Path -LiteralPath $configPath
+$originalConfig = if ($hadConfig) {
+    [System.IO.File]::ReadAllBytes($configPath)
+} else {
+    $null
+}
 $layerSettings = Join-Path $dir 'vk_layer_settings.txt'
 $hadLayerSettings = Test-Path -LiteralPath $layerSettings
 $originalLayerSettings = if ($hadLayerSettings) {
@@ -65,6 +79,8 @@ $originalLayerSettings = if ($hadLayerSettings) {
 } else {
     $null
 }
+$configRestored = $false
+$layerSettingsRestored = -not $ValidateSync
 
 Add-Type @"
 using System;
@@ -91,8 +107,10 @@ public class MpWin {
 }
 "@
 
-# Portable config next to the exe, so the run is reproducible regardless of
-# whatever is in %LOCALAPPDATA%.
+# Write the config where melonDS actually reads it. Windows portable builds
+# prefer <exe>\portable\melonDS.toml; a build without that directory falls
+# back to the executable directory (or the platform config path in a
+# non-portable build). Preserve the exact original bytes for restoration.
 $cfg = @"
 3D.Renderer = 3
 Screen.UseGL = false
@@ -106,10 +124,10 @@ TargetFPS = 60.0
 Emu.DirectBoot = true
 Emu.ExternalBIOSEnable = false
 "@
-Set-Content -Path (Join-Path $dir 'melonDS.toml') -Value $cfg -NoNewline
-
 $proc = $null
 try {
+    Set-Content -LiteralPath $configPath -Value $cfg -NoNewline
+
     if ($ValidateSync) {
         $syncCfg = @"
 khronos_validation.validate_core = true
@@ -174,18 +192,31 @@ finally {
     if ($null -ne $proc -and -not $proc.HasExited) {
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
     }
-    Start-Sleep -Seconds 2
+    if ($null -ne $proc) { Start-Sleep -Seconds 2 }
     if ($ValidateSync) {
         if ($hadLayerSettings) {
             [System.IO.File]::WriteAllBytes($layerSettings, $originalLayerSettings)
+            $layerSettingsRestored = [Convert]::ToBase64String(
+                [System.IO.File]::ReadAllBytes($layerSettings)) -ceq
+                [Convert]::ToBase64String($originalLayerSettings)
         } elseif (Test-Path -LiteralPath $layerSettings) {
             Remove-Item -LiteralPath $layerSettings -Force
+            $layerSettingsRestored = -not (Test-Path -LiteralPath $layerSettings)
         }
+    }
+    if ($hadConfig) {
+        [System.IO.File]::WriteAllBytes($configPath, $originalConfig)
+        $configRestored = [Convert]::ToBase64String(
+            [System.IO.File]::ReadAllBytes($configPath)) -ceq
+            [Convert]::ToBase64String($originalConfig)
+    } elseif (Test-Path -LiteralPath $configPath) {
+        Remove-Item -LiteralPath $configPath -Force
+        $configRestored = -not (Test-Path -LiteralPath $configPath)
     }
 }
 
 $logPaths = @($out, $err) | Where-Object { Test-Path -LiteralPath $_ }
-$log = Get-Content -LiteralPath $logPaths -ErrorAction SilentlyContinue
+$log = @(Get-Content -LiteralPath $logPaths -ErrorAction SilentlyContinue)
 $recreations = @($log | Select-String -SimpleMatch 'swapchain ready').Count
 $vuids = @(
     $log | Select-String -Pattern 'VUID-[A-Za-z0-9-]+' -AllMatches |
@@ -197,13 +228,130 @@ $syncHazards = @(
 )
 $deviceLost = @($log | Select-String -SimpleMatch 'DEVICE_LOST').Count
 $syncBanner = @($log | Select-String -SimpleMatch 'CURRENT-VALIDATION-ENABLED')
-$syncEnabled = @($log | Select-String -SimpleMatch 'Synchronization')
+$syncBannerWithSynchronization = @()
+for ($i = 0; $i -lt $log.Count; $i++) {
+    if ($log[$i] -notmatch 'CURRENT-VALIDATION-ENABLED') { continue }
+    $blockEnd = [Math]::Min($log.Count - 1, $i + 20)
+    if (@($log[$i..$blockEnd] | Select-String -SimpleMatch 'Synchronization').Count -gt 0) {
+        $syncBannerWithSynchronization += $log[$i]
+    }
+}
+$syncEnabled = $syncBannerWithSynchronization
+
+$expectedPolicy = switch ($Policy) {
+    0 { 'TelemetryOnly' }
+    1 { 'PresentWait' }
+    2 { 'JustInTime' }
+    3 { 'JustInTimeFifoLatestReady' }
+    default { "policy=$Policy" }
+}
+$expectedReflexRequest = if ($ReflexMode -eq 0) { 'off' } else { 'on' }
+$expectedReflexBoost = $ReflexMode -eq 2
+$expectedVsync = if ($NoVSync) { 'off' } else { 'on' }
+$policyStates = @()
+$reflexStates = @()
+$reflexModeStates = @()
+$presentStates = @()
+foreach ($line in $log) {
+    if ($line -match 'policy=(TelemetryOnly|PresentWait|JustInTime|JustInTimeFifoLatestReady)') {
+        $policyStates += $Matches[1]
+    }
+    if ($line -match 'NVIDIA Reflex.*requested=(on|off).*actual=(active|inactive)') {
+        $reflexStates += [pscustomobject]@{
+            Requested = $Matches[1]
+            Actual = $Matches[2]
+        }
+    }
+    if ($line -match 'NVIDIA Reflex mode=(on|off) lowLatencyMode=(true|false) lowLatencyBoost=(true|false)') {
+        $reflexModeStates += [pscustomobject]@{
+            Mode = $Matches[1]
+            LowLatencyMode = $Matches[2]
+            Boost = $Matches[3]
+        }
+    }
+    if ($line -match 'requested-vsync=(on|off).*selected-present-mode=([A-Z_]+)') {
+        $presentStates += [pscustomobject]@{
+            Requested = $Matches[1]
+            Mode = $Matches[2]
+        }
+    }
+}
+
+$configMismatch = @()
+if (-not $configRestored) {
+    $configMismatch += 'test melonDS.toml was not restored byte-for-byte'
+}
+if (-not $layerSettingsRestored) {
+    $configMismatch += 'test vk_layer_settings.txt was not restored byte-for-byte'
+}
+if ($policyStates.Count -eq 0) {
+    $configMismatch += 'policy state missing from runtime log'
+} elseif ($policyStates[-1] -ne $expectedPolicy) {
+    $configMismatch += "policy expected=$expectedPolicy actual=$($policyStates[-1])"
+}
+if ($reflexStates.Count -eq 0) {
+    $configMismatch += 'NVIDIA Reflex requested/actual state missing from runtime log'
+} else {
+    $lastReflex = $reflexStates[-1]
+    if ($lastReflex.Requested -ne $expectedReflexRequest) {
+        $configMismatch += "Reflex requested expected=$expectedReflexRequest actual=$($lastReflex.Requested)"
+    }
+    $expectedReflexActual = if ($ReflexMode -eq 0) { 'inactive' } else { 'active' }
+    if ($lastReflex.Actual -ne $expectedReflexActual) {
+        $configMismatch += "Reflex actual expected=$expectedReflexActual actual=$($lastReflex.Actual)"
+    }
+}
+if ($reflexModeStates.Count -eq 0) {
+    $configMismatch += 'NVIDIA Reflex mode state missing from runtime log'
+} else {
+    $lastReflexMode = $reflexModeStates[-1]
+    $expectedMode = if ($ReflexMode -eq 0) { 'off' } else { 'on' }
+    $expectedLowLatency = if ($ReflexMode -eq 0) { 'false' } else { 'true' }
+    $expectedBoostText = if ($expectedReflexBoost) { 'true' } else { 'false' }
+    if ($lastReflexMode.Mode -ne $expectedMode -or
+        $lastReflexMode.LowLatencyMode -ne $expectedLowLatency -or
+        $lastReflexMode.Boost -ne $expectedBoostText) {
+        $configMismatch += "Reflex mode expected=$expectedMode/$expectedLowLatency/$expectedBoostText " +
+            "actual=$($lastReflexMode.Mode)/$($lastReflexMode.LowLatencyMode)/$($lastReflexMode.Boost)"
+    }
+}
+if ($presentStates.Count -eq 0) {
+    $configMismatch += 'requested VSync/present mode state missing from runtime log'
+} else {
+    $lastPresent = $presentStates[-1]
+    $fifoModes = @('FIFO', 'FIFO_RELAXED', 'FIFO_LATEST_READY')
+    $presentModeMismatch = $lastPresent.Requested -ne $expectedVsync
+    if ($NoVSync) {
+        $presentModeMismatch = $presentModeMismatch -or ($fifoModes -contains $lastPresent.Mode)
+    } else {
+        $presentModeMismatch = $presentModeMismatch -or -not ($fifoModes -contains $lastPresent.Mode)
+    }
+    if ($presentModeMismatch) {
+        $configMismatch += "VSync/present mode expected=$expectedVsync actual=$($lastPresent.Requested)/$($lastPresent.Mode)"
+    }
+}
 
 Write-Host ""
 Write-Host "log            : $out"
 Write-Host "error log      : $err"
+Write-Host "config path    : $configPath"
+Write-Host "config restore : $(if ($configRestored) { 'PASS' } else { 'FAIL' })"
+if ($ValidateSync) {
+    Write-Host "layer restore  : $(if ($layerSettingsRestored) { 'PASS' } else { 'FAIL' })"
+}
 Write-Host "swapchain rebuilds: $recreations"
 Write-Host "device lost       : $deviceLost"
+if ($policyStates.Count -gt 0 -and $reflexStates.Count -gt 0 -and $presentStates.Count -gt 0) {
+    $lastReflex = $reflexStates[-1]
+    $lastPresent = $presentStates[-1]
+    Write-Host "config self-check: policy=$($policyStates[-1]) reflex=$($lastReflex.Requested)/$($lastReflex.Actual) vsync=$($lastPresent.Requested) present-mode=$($lastPresent.Mode)"
+}
+if ($configMismatch.Count -eq 0) {
+    Write-Host "config integrity : PASS"
+} else {
+    Write-Host "config integrity : MISMATCH"
+    $configMismatch | ForEach-Object { Write-Host "  $_" }
+}
 if ($ValidateSync) {
     if ($syncBanner.Count -gt 0 -and $syncEnabled.Count -gt 0) {
         Write-Host "sync validation   : enabled (banner confirmed)"
@@ -219,6 +367,6 @@ if ($vuids.Count -eq 0) {
     $vuids | Group-Object | Sort-Object Count -Descending |
         ForEach-Object { Write-Host ("  {0,4}x {1}" -f $_.Count, $_.Name) }
 }
-if ($deviceLost -gt 0 -or $vuids.Count -gt 0 -or $syncHazards.Count -gt 0) { exit 1 }
+if ($configMismatch.Count -gt 0 -or $deviceLost -gt 0 -or $vuids.Count -gt 0 -or $syncHazards.Count -gt 0) { exit 1 }
 if ($ValidateSync -and ($syncBanner.Count -eq 0 -or $syncEnabled.Count -eq 0)) { exit 1 }
 exit 0
