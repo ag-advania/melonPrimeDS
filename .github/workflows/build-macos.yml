@@ -116,6 +116,56 @@ jobs:
         run: |
           codesign --verify --deep --strict build/release-mac-${{ matrix.arch }}/melonPrimeDS.app
 
+      # The bundle checks above prove that MoltenVK is packaged, but they do
+      # not create a Vulkan instance or a CAMetalLayer surface. Run the native
+      # arm64 artifact on the macOS host so the MoltenVK WSI path is exercised
+      # without claiming an external physical-device or latency result.
+      - name: Run MoltenVK runtime smoke
+        if: matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/release-mac-${{ matrix.arch }}/melonPrimeDS.app"
+          portable="build/release-mac-${{ matrix.arch }}/portable"
+          log="$RUNNER_TEMP/melonprime-moltenvk-runtime.log"
+          mkdir -p "$portable"
+          printf '3D.Renderer = 5\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
+          python3 - "$app/Contents/MacOS/melonPrimeDS" "$log" <<'PY'
+          import os
+          import signal
+          import subprocess
+          import sys
+
+          executable, log_path = sys.argv[1:]
+          env = os.environ.copy()
+          env["SDL_AUDIODRIVER"] = "dummy"
+          with open(log_path, "w", encoding="utf-8") as log:
+              process = subprocess.Popen(
+                  [executable],
+                  stdout=log,
+                  stderr=subprocess.STDOUT,
+                  env=env,
+              )
+              try:
+                  process.wait(timeout=15)
+              except subprocess.TimeoutExpired:
+                  process.send_signal(signal.SIGTERM)
+                  try:
+                      process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      process.kill()
+                      process.wait()
+          if process.returncode != 0:
+              raise SystemExit(f"MoltenVK runtime smoke exited {process.returncode}")
+          print(log_path)
+          PY
+          cat "$log"
+          grep -F '[Vulkan] instance created' "$log"
+          grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log"
+          grep -F '[Vulkan] presentation: requested-vsync=off' "$log"
+          grep -F '[Vulkan] presenter ready:' "$log"
+          ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"
+
       - name: Compress app bundle
         shell: bash
         run: |
