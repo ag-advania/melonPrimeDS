@@ -227,10 +227,23 @@ bool VulkanPresenter::CreateDeviceObjects()
     // either one at runtime without rebuilding the device or the swapchain. On
     // hardware that lacks one, VulkanDevice records the reason and creates the
     // identical device it would have created anyway.
+    //
+    // MoltenVK on the hosted macOS 26 Intel path advertises VK_KHR_present_id2
+    // and VK_KHR_present_wait2, but aborts while servicing the corresponding
+    // surface-capability chain. Those extensions are optional; keep the basic
+    // swapchain path available on the x86_64 slice and leave the vendor
+    // low-latency requests unchanged.
     melonDS::VulkanLowLatencyRequest lowLatency;
     lowLatency.NvLowLatency2 = true;
     lowLatency.AmdAntiLag = true;
+#if defined(__APPLE__) && defined(__x86_64__)
+    lowLatency.GenericPresentTiming = false;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] generic present timing disabled on the macOS x86_64 compatibility path\n");
+#else
     lowLatency.GenericPresentTiming = true;
+#endif
 
     if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
         return Fail(Device.GetFailureReason());
