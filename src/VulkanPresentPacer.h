@@ -141,6 +141,16 @@ public:
         // scheduled from one that silently fell through to no target.
         int TargetMode = 0;
         u64 TargetValueNs = 0;
+        // The relative-cadence inputs the target was generated from, so a
+        // capture can verify TargetValueNs == RelativeQuanta x
+        // TargetGenerationRefreshIntervalNs per present. The pacer's periodic
+        // log cannot show that: its refresh interval is the current one, which
+        // may already have moved on from the one the target was built against.
+        u64 TargetGenerationRefreshIntervalNs = 0;
+        u64 TargetGenerationRefreshDurationNs = 0;
+        u64 RelativeQuanta = 0;
+        u64 RelativeAccumulatorBeforeNs = 0;
+        u64 RelativeAccumulatorAfterNs = 0;
         u64 FeedbackPresentId = 0;
         u64 FeedbackStageTimeNs = 0;
         u64 BaselineSequence = 0;
@@ -241,6 +251,7 @@ private:
     u64 TargetFrameIntervalNs = 0;
     u64 LastTargetValueNs = 0;
     VulkanTargetSchedulingMode LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
+    VulkanRelativeCadence::Request LastRelativeRequest{};
     bool FifoFamilyPresentMode = true;
     VulkanJitFallbackReason FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
     VulkanJitFallbackReason LoggedFallbackReason = VulkanJitFallbackReason::None;

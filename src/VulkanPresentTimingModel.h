@@ -97,6 +97,15 @@ public:
         // which is the condition for also asking for the nearest refresh cycle.
         bool Quantized = false;
         u64 Quanta = 0;
+        // The inputs this duration was generated from, carried alongside it so
+        // a capture can verify `DurationNs == Quanta * RefreshIntervalNs` per
+        // present afterwards. A periodic log line cannot prove that on its own:
+        // the refresh interval it prints is the current one, while the target
+        // beside it may have been generated against an earlier value.
+        u64 RefreshIntervalNs = 0;
+        u64 RefreshDurationNs = 0;
+        u64 AccumulatorBeforeNs = 0;
+        u64 AccumulatorAfterNs = 0;
     };
 
     // Computes the duration this frame should request. Call once per prepared
@@ -104,10 +113,21 @@ public:
     Request Prepare() noexcept
     {
         Request request;
+        request.RefreshIntervalNs = RefreshIntervalNs;
+        request.RefreshDurationNs = RefreshDurationNs;
+        request.AccumulatorBeforeNs = AccumulatorNs;
+        request.AccumulatorAfterNs = AccumulatorNs;
         if (FrameIntervalNs == 0)
             return request;
 
-        if (RefreshIntervalNs == 0)
+        // A refresh interval above half the range would overflow the
+        // accumulator sum below. No real display reports one, but a malformed
+        // driver value must degrade to the unquantized path rather than wrap
+        // into a nonsense duration.
+        constexpr u64 MaxQuantizableInterval = (std::numeric_limits<u64>::max)() / 2;
+        if (RefreshIntervalNs == 0
+            || (RefreshIntervalNs > MaxQuantizableInterval
+                && RefreshIntervalNs != VariableRefreshInterval))
         {
             // The swapchain does not know its refresh granularity. Ask for the
             // emulator's own interval rather than inventing a quantum: a
@@ -157,6 +177,7 @@ public:
         request.DurationNs = quanta * RefreshIntervalNs;
         request.Quantized = true;
         request.Quanta = quanta;
+        request.AccumulatorAfterNs = accumulator;
         PendingQuanta = quanta;
         PendingAccumulatorNs = accumulator;
         Pending = true;

@@ -26,16 +26,36 @@ refreshIntervalNs=1859000  dynamics=FRR  queueFull=0  fallback=none
 ```
 
 `14,885,600 = 8 x 1,860,700` — a whole number of refresh intervals, which is what
-the quantizer must produce on a fixed-refresh display. The emulator's interval
-divided by that refresh is 8.957, so the fractional accumulator carries
-1,781,067 ns of remainder per frame and spends it as an extra refresh roughly
-every eleventh frame. That is the mechanism working: a fixed `round(8.957) = 9`
-would run 3.8% slow forever, and truncating to 8 would run 10.7% fast.
+the quantizer must produce on a fixed-refresh display.
+
+The emulator's interval divided by that refresh is **8.9572**, so the base is 8
+quanta and the fractional accumulator carries 1,781,067 ns of remainder per
+frame. That remainder is 0.9572 of a refresh, so the accumulator crosses the
+threshold on **about 95.7% of frames**: the steady cadence is 9 quanta most of
+the time with an 8-quanta frame roughly every 23rd frame. The sample above is
+one of those 8-quanta frames.
+
+Both fixed alternatives are worse, in opposite directions:
+
+| Choice | Duration | Error vs 16,666,667 ns |
+|---|---:|---:|
+| fixed 9 (`round(8.9572)`) | 16,746,300 | +0.478% (slow) |
+| fixed 8 (truncate) | 14,885,600 | -10.686% (fast) |
+
+The accumulator gives neither: it spends 9 quanta 95.7% of the time and 8 the
+rest, so the long-run average is the emulator's own interval and the accumulated
+error never exceeds one refresh. That invariant — not any particular pattern —
+is what `TestRelativeCadence60On144` asserts.
 
 (The refresh interval drifts slightly between samples — 1,859,000 vs 1,860,700 —
 because the driver bumps `timingPropertiesCounter` and the pacer re-reads it.
 The logged interval is the current one; the logged target came from the present
-that last changed the scheduling state.)
+that last changed the scheduling state, so a summary line alone cannot prove the
+target is a multiple of the interval printed beside it. The A/B capture records
+the refresh interval each target was generated against, together with the quanta
+and the accumulator either side of it, precisely so that
+`target_value_ns == relative_quanta x target_generation_refresh_interval_ns`
+can be checked per present after the fact.)
 
 ## Synchronization validation
 

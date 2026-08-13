@@ -374,6 +374,26 @@ def main() -> int:
         "the A/B capture must record which target mode a frame actually used",
         failures,
     )
+    # A periodic log line cannot prove a target was a whole number of refresh
+    # intervals: the interval it prints is the current one, which may have moved
+    # on since the target was generated. Capture the generating inputs instead.
+    require(
+        all(token in read("src/VulkanPresentLatencyCapture.cpp") for token in (
+            "target_generation_refresh_interval_ns",
+            "relative_quanta",
+            "relative_accumulator_before_ns",
+            "relative_accumulator_after_ns",
+        ))
+        and "TestRelativeCadenceReportsItsInputs" in vulkan_timing_tests,
+        "the capture must let the relative cadence be re-derived per present",
+        failures,
+    )
+    require(
+        "MaxQuantizableInterval" in read("src/VulkanPresentTimingModel.h")
+        and "TestRelativeCadenceRejectsAbsurdRefreshInterval" in vulkan_timing_tests,
+        "a malformed refresh interval must not overflow the cadence accumulator",
+        failures,
+    )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
         and "if (result != VK_INCOMPLETE)" in vulkan_pacer

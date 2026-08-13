@@ -308,6 +308,29 @@ the mode in the run label rather than pooling them. On a surface without
 `presentAtAbsoluteTimeSupported` the `JustInTime` policies use relative mode;
 that is the supported fallback, not a fault.
 
+In relative mode the capture also records the inputs each duration was computed
+from, so the cadence can be checked per present without trusting a log line:
+
+```text
+target_generation_refresh_interval_ns
+target_generation_refresh_duration_ns
+relative_quanta
+relative_accumulator_before_ns
+relative_accumulator_after_ns
+```
+
+Two invariants worth asserting over a run:
+
+* `target_value_ns == relative_quanta * target_generation_refresh_interval_ns`
+  on every quantized frame.
+* `relative_accumulator_after_ns < target_generation_refresh_interval_ns`
+  always — the carried fraction never reaches a whole refresh.
+
+The refresh interval genuinely moves during a session (the driver bumps
+`timingPropertiesCounter` and the pacer re-reads it), so comparing a target
+against the *current* interval rather than its generating one will produce false
+mismatches. That is why the generating value is stored per row.
+
 ### What the numbers are and are not
 
 `vkGetLatencyTimingsNV` and the capture CSV are **software marker timings**. They

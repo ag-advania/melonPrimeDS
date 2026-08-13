@@ -432,6 +432,7 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     LastTargetValueNs = 0;
     LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
     LastTargetMode = VulkanTargetSchedulingMode::None;
+    LastRelativeRequest = VulkanRelativeCadence::Request{};
     LastFeedbackId = 0;
     LastFeedbackStageTimeNs = 0;
     TimingModel.Reset();
@@ -678,6 +679,8 @@ VulkanRelativeCadence::Request VulkanPresentPacer::EvaluateRelativeTargetDuratio
         return VulkanRelativeCadence::Request{};
     }
 
+    // Kept for the A/B capture so the cadence can be re-derived per present.
+    LastRelativeRequest = request;
     FallbackReason = VulkanJitFallbackReason::None;
     return request;
 }
@@ -1405,6 +1408,11 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState() const noexc
     snapshot.FallbackReason = static_cast<int>(FallbackReason);
     snapshot.TargetMode = static_cast<int>(LastAppliedTargetMode);
     snapshot.TargetValueNs = LastTargetValueNs;
+    snapshot.TargetGenerationRefreshIntervalNs = LastRelativeRequest.RefreshIntervalNs;
+    snapshot.TargetGenerationRefreshDurationNs = LastRelativeRequest.RefreshDurationNs;
+    snapshot.RelativeQuanta = LastRelativeRequest.Quanta;
+    snapshot.RelativeAccumulatorBeforeNs = LastRelativeRequest.AccumulatorBeforeNs;
+    snapshot.RelativeAccumulatorAfterNs = LastRelativeRequest.AccumulatorAfterNs;
     snapshot.FeedbackPresentId = LastFeedbackId;
     snapshot.FeedbackStageTimeNs = LastFeedbackStageTimeNs;
     snapshot.BaselineSequence = TimingModel.GetBaselineSequence();

@@ -775,6 +775,60 @@ void TestRelativeCadenceVariableAndUnknownRefresh()
 }
 
 
+// Every request carries the inputs it was computed from, so a capture can prove
+// `duration == quanta * refreshInterval` per present rather than inferring it
+// from a log line whose refresh interval may already have moved on.
+void TestRelativeCadenceReportsItsInputs()
+{
+    constexpr u64 refresh = 6'944'444;
+    VulkanRelativeCadence cadence;
+    cadence.Configure(refresh, refresh, Interval60Fps);
+
+    u64 previousAfter = 0;
+    for (int i = 0; i < 20; ++i)
+    {
+        const VulkanRelativeCadence::Request request = cadence.Prepare();
+        Require(request.RefreshIntervalNs == refresh && request.RefreshDurationNs == refresh,
+            "a request must report the refresh values it was generated against");
+        Require(request.DurationNs == request.Quanta * request.RefreshIntervalNs,
+            "duration must be re-derivable from quanta and the refresh interval");
+        Require(request.AccumulatorBeforeNs == previousAfter,
+            "the accumulator must carry from one committed frame to the next");
+        Require(request.AccumulatorAfterNs < refresh,
+            "the carried fraction must always stay below one refresh interval");
+        cadence.Commit();
+        previousAfter = request.AccumulatorAfterNs;
+        Require(cadence.GetAccumulatorNs() == request.AccumulatorAfterNs,
+            "the committed accumulator must match what the request reported");
+    }
+}
+
+
+// A malformed refresh interval must degrade to the unquantized path rather than
+// overflow the accumulator sum. No real display reports one; a driver might.
+void TestRelativeCadenceRejectsAbsurdRefreshInterval()
+{
+    constexpr u64 absurd = (std::numeric_limits<u64>::max)() - 4;
+    VulkanRelativeCadence cadence;
+    cadence.Configure(absurd, absurd, Interval60Fps);
+
+    const VulkanRelativeCadence::Request request = cadence.Prepare();
+    Require(request.DurationNs == Interval60Fps,
+        "an unusable refresh interval must fall back to the raw frame interval");
+    Require(!request.Quantized,
+        "an unusable refresh interval must not claim a quantized duration");
+    Require(request.AccumulatorAfterNs == 0,
+        "the unquantized path must not accumulate a fraction");
+
+    // Variable refresh uses the same sentinel magnitude but is a defined value
+    // and must keep its own behaviour rather than being caught by the guard.
+    VulkanRelativeCadence vrr;
+    vrr.Configure(VulkanRelativeCadence::VariableRefreshInterval, 5'000'000, Interval60Fps);
+    Require(vrr.Prepare().DurationNs == Interval60Fps,
+        "the overflow guard must not swallow the variable-refresh path");
+}
+
+
 // The transactional contract, matching presentation sequence numbering: a
 // rejected present releases its cadence step, and a queue-full retry that is
 // finally accepted commits exactly once.
@@ -915,6 +969,8 @@ int main()
     TestRelativeCadenceIntegerRatios();
     TestRelativeCadenceDisplaySlowerThanTarget();
     TestRelativeCadenceVariableAndUnknownRefresh();
+    TestRelativeCadenceReportsItsInputs();
+    TestRelativeCadenceRejectsAbsurdRefreshInterval();
     TestRelativeCadenceTransactions();
     TestRelativeCadenceResets();
 

@@ -170,7 +170,13 @@ bool VulkanPresentLatencyCapture::Flush()
         // instant on the presentation timeline, 2 (relative) is a minimum
         // previous-image visible duration. Without it a run that silently fell
         // through to no target looks like one that scheduled.
-        "target_mode,target_value_ns,feedback_present_id,feedback_stage_time_ns,"
+        "target_mode,target_value_ns,"
+        // Enough to re-derive the cadence offline:
+        //   target_value_ns == relative_quanta * target_generation_refresh_interval_ns
+        // and the accumulator pair shows the fraction being carried.
+        "target_generation_refresh_interval_ns,target_generation_refresh_duration_ns,"
+        "relative_quanta,relative_accumulator_before_ns,relative_accumulator_after_ns,"
+        "feedback_present_id,feedback_stage_time_ns,"
         "baseline_sequence,present_sequence,frame_interval_ns,"
         "wait_timeout_count,timing_queue_size,timing_queue_full_count,"
         "timing_queue_recovery_count\n");
@@ -186,7 +192,9 @@ bool VulkanPresentLatencyCapture::Flush()
             "%llu,%llu,"
             "%d,%d,%d,%d,%d,"
             "%d,%d,"
-            "%d,%llu,%llu,%llu,"
+            "%d,%llu,"
+            "%llu,%llu,%llu,%llu,%llu,"
+            "%llu,%llu,"
             "%llu,%llu,%llu,"
             "%u,%u,%u,%u\n",
             RunId.c_str(),
@@ -210,6 +218,11 @@ bool VulkanPresentLatencyCapture::Flush()
             p.FallbackReason,
             p.TargetMode,
             static_cast<unsigned long long>(p.TargetValueNs),
+            static_cast<unsigned long long>(p.TargetGenerationRefreshIntervalNs),
+            static_cast<unsigned long long>(p.TargetGenerationRefreshDurationNs),
+            static_cast<unsigned long long>(p.RelativeQuanta),
+            static_cast<unsigned long long>(p.RelativeAccumulatorBeforeNs),
+            static_cast<unsigned long long>(p.RelativeAccumulatorAfterNs),
             static_cast<unsigned long long>(p.FeedbackPresentId),
             static_cast<unsigned long long>(p.FeedbackStageTimeNs),
             static_cast<unsigned long long>(p.BaselineSequence),
