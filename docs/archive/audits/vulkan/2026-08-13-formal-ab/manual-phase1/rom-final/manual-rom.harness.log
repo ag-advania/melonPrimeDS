@@ -1,0 +1,10 @@
+action=rom
+iterations=20
+window=1116752
+savestate save slot 1: sent
+savestate load slot 1: sent
+savestate undo: sent
+reset hotkey: sent
+first ROM lifecycle: PASS (launch/save/load/undo/reset actions sent)
+second ROM lifecycle: reopened and ran
+validation findings: 0

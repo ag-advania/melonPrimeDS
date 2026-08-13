@@ -1,0 +1,8 @@
+action=speed
+iterations=20
+window=3541484
+fast-forward hold: PASS
+fast-forward toggle: PASS
+slow-motion toggle: PASS
+slow-motion hold: PASS
+validation findings: 0

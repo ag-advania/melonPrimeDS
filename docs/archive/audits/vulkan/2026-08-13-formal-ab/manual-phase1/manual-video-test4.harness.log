@@ -1,0 +1,22 @@
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:160 char:22
++     if ($Action -eq 'dpi') {
++                      ~~~~~~~
+Unexpected token 'dpi') {
+        $monitors = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction Silently
+Continue)
+        Add-Content -LiteralPath $harness -Value "DPI monitor count: $($monitors.Count)"
+        Add-Content -LiteralPath $harness -Value 'DPI' in expression or statement.
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:160 char:22
++     if ($Action -eq 'dpi') {
++                      ~~~~~~~
+Missing closing ')' after expression in 'if' statement.
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:251 char:97
++ ... -HAZARD|DEVICE_LOST|software fallback' -ErrorAction SilentlyContinue)
++                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The string is missing the terminator: '.
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:143 char:29
++ function Open-VideoSettings {
++                             ~
+Missing closing '}' in statement block or type definition.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : UnexpectedToken

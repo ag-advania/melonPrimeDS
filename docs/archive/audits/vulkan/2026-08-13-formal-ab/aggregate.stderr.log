@@ -1,0 +1,11 @@
+removed stale summary output: docs\archive\audits\vulkan\2026-08-13-formal-ab\summary.csv
+
+# per-mode (each cell is the median of the per-run values)
+mode                               runs   ft_p50   ft_p95   ft_p99  pipe_p50  pipe_p95   jit%  qfull
+JustInTime/ReflexOff/none             3   16.599   19.273   20.503     3.988     6.960   0.0%      0
+JustInTime/ReflexOff/relative         3   16.604   19.357   20.513     3.943     6.910 100.0%      0
+JustInTime/ReflexOn+Boost/none        3   16.615   19.470   20.707     4.156     7.194   0.0%      0
+JustInTime/ReflexOn/none              3   16.607   19.388   20.604     4.098     7.126   0.0%      0
+JustInTimeFifoLatestReady/ReflexOff/relative    3   16.607   19.382   20.498     4.159     7.034 100.0%      0
+PresentWait/ReflexOff/none            3   16.601   19.337   20.606     4.119     7.078   0.0%      0
+TelemetryOnly/ReflexOff/none          3   16.590   19.376   20.614     4.081     7.046   0.0%      0

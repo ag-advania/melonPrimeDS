@@ -1,0 +1,9 @@
+action=speed
+iterations=20
+window=920222
+fast-forward hold: sent
+fast-forward toggle: sent
+slow-motion toggle: sent
+slow-motion hold: sent
+validation findings: 0
+runtime speed-path evidence: 11

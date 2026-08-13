@@ -2016,4 +2016,68 @@ unsupportedをFAILにしない。
 AMD未確認をNVIDIA A/Bのblockerにしない。
 AMD未確認のままcross-vendor defaultを変えない。
 defaultはTelemetryOnlyのまま維持する。
+
+---
+
+# 68. 2026-08-13 execution addendum
+
+This addendum is the authoritative result of executing this instruction on
+the fixed local NVIDIA surface. The raw evidence is in
+`docs/archive/audits/vulkan/2026-08-13-formal-ab/`.
+
+## Documentation
+
+```text
+PASS — VSync-off stale note corrected in the runbook.
+PASS — current relative-capability fallback semantics documented.
+```
+
+## Manual Phase 1
+
+```text
+PASS — Video Settings cancel x20 and same-value apply x20.
+PASS — renderer switching x20 each for Software, OpenGL, OpenGL Compute, DX12.
+PASS — ROM save/load/undo/reset and second-session reopen.
+PASS — Fast Forward and Slow Motion hold/toggle paths.
+PASS — window/minimize/fullscreen matrix and targeted Sync follow-up.
+PASS — Debug Validation clean; VUID/SYNC-HAZARD/DEVICE_LOST findings 0.
+NOT RUN — DPI transition; only one physical monitor was exposed.
+```
+
+The first Video Settings 20-cycle attempt was aborted after desktop mouse
+input stole focus. It is retained as a diagnostic artifact; the independent
+`video-20-final-r2` run is the authoritative PASS.
+
+## NVIDIA Formal Phase 3
+
+```text
+COMPLETE — Release capture build, developer features OFF, latency capture ON.
+COMPLETE — fixed source SHA, executable SHA, ROM SHA and display conditions.
+COMPLETE — 21 valid CSV runs: 7 modes x 3 runs, randomized order recorded.
+COMPLETE — 600 warmup + >=10,000 measured rows in every run.
+COMPLETE — aggregator exit 0; invalid_rows 0; measured generation changes 0.
+COMPLETE — A2/A3 target active 100% in every measured run.
+COMPLETE — wait timeout rate <1%; queue full/recovery 0/0 in every run.
+COMPLETE — per-run percentiles retained; no pooled-frame winner analysis.
+COMPLETE — winner criteria evaluated without click-to-photon overclaim.
+```
+
+Formal result: A2 is the closest candidate, with median host-pipeline proxy
+P50 improvement 3.3815% versus A0, but P95 improvement 1.9302% is below the
+2% threshold. No mode satisfies the winner rule. `TelemetryOnly` remains the
+shipping default. This is a fixed NVIDIA/Windows host-proxy result, not a
+system-latency or cross-vendor claim.
+
+## Separate environment gates
+
+```text
+NOT RUN — AMD Anti-Lag runtime (NVIDIA GPU only).
+NOT RUN — Intel Vulkan runtime.
+NOT RUN — Linux.
+NOT RUN — MoltenVK/macOS.
+```
+
+These are separate shipping-default/generalization gates. Their absence does
+not invalidate the completed NVIDIA Formal Phase 3 result, but it prevents a
+cross-vendor recommendation or a default change.
 ```
