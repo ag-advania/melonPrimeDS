@@ -1,0 +1,41 @@
+Renderer-switch stress evidence
+===============================
+
+Date: 2026-08-14 (Asia/Tokyo)
+Tested source: c72dd79b464d8335e62baad53ba7be9b92657f1a
+Host: Intel MacBookPro15,2, macOS 15.7.7, x86_64
+GPU: Intel Iris Plus Graphics 655 via bundled MoltenVK 1.4.2
+Build: developer features ON, Metal + Vulkan, signed app bundle
+ROM: AMHJ / Japanese local test ROM (hash recorded in README; binary not stored)
+
+The developer-only renderer stress hook exercised the production renderer
+transition path with the current renderer IDs:
+
+  0 = Software
+  3 = Metal
+  4 = Metal Compute
+  5 = Vulkan
+
+Environment:
+
+  MELONPRIME_RENDERER_SWITCH_STRESS=5,0,5,3,5,4
+  MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS=5
+  MELONPRIME_RENDERER_SWITCH_STRESS_INTERVAL_MS=600
+
+Result: PASS (lifecycle/log-level stress; visual parity not claimed)
+
+- 30/30 transitions completed.
+- Vulkan <-> Software, Vulkan <-> Metal, and Vulkan <-> Metal Compute each
+  completed five round trips.
+- The hook restored Vulkan (renderer 5) after the final transition.
+- Vulkan produced a first frame after each reinitialization observed in the
+  sanitized run output.
+- No ARM9 data abort, SIGABRT, SIGSEGV, DEVICE_LOST, or runtime-failure line
+  occurred.
+
+This evidence covers renderer teardown/recreation and ROM-preserving runtime
+switching. It does not replace the required manual visual handover check,
+window resize/fullscreen/minimize matrix, or match lifecycle test.
+
+The raw log is intentionally not checked in because it contains absolute
+local paths. It remains in /tmp on the test machine only.

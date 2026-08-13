@@ -58,9 +58,9 @@ the redacted excerpt set below.
 | match gameplay | NOT RUN | — | no controlled human match was completed |
 | match-end recap | NOT RUN | — | no controlled match lifecycle |
 | resize/fullscreen/minimize | NOT RUN | — | required matrix not completed |
-| renderer switch | NOT RUN | — | automatic Vulkan↔Software transitions were observed, but no controlled matrix |
+| renderer switch | PASS (stress) | AMHJ / Intel Iris Plus 655 | 30/30 production transitions: Vulkan↔Software, Vulkan↔Metal, and Vulkan↔Metal Compute, five round trips each; visual handover not claimed |
 | savestate/reset | NOT RUN | — | no controlled in-match run |
-| 30-minute stability | BLOCKED | — | machine was not on AC; no long session was started |
+| 30-minute stability | NOT RUN | AC available for follow-up | launch produced no runtime evidence; no 30-minute session was completed |
 | pinned MoltenVK 1.4.0 | PASS (smoke) | Intel Iris Plus 655 | no-ROM and AMHP ROM launch/presenter checks passed; full matrix remains open |
 | validation layer | BLOCKED | Debug / MoltenVK direct load | layer package installed, but app reported it was not installed/enabled |
 | current GenericPresentTiming | PASS (baseline) | current source | no OFF A/B: required baseline presenter path reached; optional timing caps were absent |
@@ -73,6 +73,7 @@ The sanitized, repository-safe evidence is:
 - [`platform-availability.txt`](platform-availability.txt)
 - [`build-checks.txt`](build-checks.txt)
 - [`runtime-excerpts.txt`](runtime-excerpts.txt)
+- [`renderer-switch-stress.txt`](renderer-switch-stress.txt)
 - [`fixwifi-verification.txt`](fixwifi-verification.txt)
 - [`validation-excerpts.txt`](validation-excerpts.txt)
 - [`MoltenVK-LICENSE.txt`](pinned-1.4.0/MoltenVK-LICENSE.txt)
