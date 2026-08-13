@@ -1,0 +1,23 @@
+Platform and hardware availability audit, 2026-08-13
+
+GPU devices exposed by WMI:
+- NVIDIA GeForce RTX 5070 Ti, driver 32.0.16.1074
+- no AMD GPU exposed
+- no Intel GPU exposed
+
+Physical displays exposed by WMI:
+- 1 monitor: DISPLAY\\GSM5CEC\\5&3b07d34e&0&UID4357_0
+- genuine cross-DPI monitor transition unavailable
+
+Local alternate-runtime checks:
+- wsl.exe --list --verbose: exit 1; WSL help shown, no distribution is installed
+- docker command: unavailable
+- qemu-system-x86_64 command: unavailable
+- virsh command: unavailable
+- no .github/workflows directory entries for a Linux/macOS/AMD/Intel runner
+
+Consequences:
+- AMD Anti-Lag runtime cannot be executed on this NVIDIA-only host.
+- Intel Vulkan cannot be executed without an Intel Vulkan device.
+- Linux and MoltenVK/macOS runtime gates cannot be executed locally.
+- These are NOT RUN, not PASS and not converted into synthetic results.

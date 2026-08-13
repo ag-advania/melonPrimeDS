@@ -90,6 +90,7 @@ on this NVIDIA/Windows host and remain separate gates.
 - Aggregator: [`tools/perf/aggregate-vulkan-latency.py`](../../../../../tools/perf/aggregate-vulkan-latency.py)
 - Evidence verifier: [`tools/perf/verify-vulkan-formal-ab.py`](../../../../../tools/perf/verify-vulkan-formal-ab.py)
 - Environment: [`environment.txt`](environment.txt)
+- Platform availability audit: [`platform-availability.txt`](platform-availability.txt)
 - Verification output: [`verification.log`](verification.log)
 - Aggregator stderr: [`aggregate.stderr.log`](aggregate.stderr.log)
 - Aggregator stdout CSV: [`aggregate.stdout.csv`](aggregate.stdout.csv)

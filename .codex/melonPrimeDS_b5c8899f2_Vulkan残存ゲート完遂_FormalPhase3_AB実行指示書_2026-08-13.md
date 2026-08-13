@@ -1913,46 +1913,46 @@ default TelemetryOnly
 ## Documentation
 
 ```markdown
-- [ ] VSync-off stale note corrected
-- [ ] current relative fallback semantics documented
+- [x] VSync-off stale note corrected
+- [x] current relative fallback semantics documented
 ```
 
 ## Manual Phase 1
 
 ```markdown
-- [ ] DPI
-- [ ] Video Settings
-- [ ] renderer switching
-- [ ] ROM lifecycle
-- [ ] Fast Forward
-- [ ] Slow Motion
-- [ ] core validation clean
-- [ ] targeted Sync follow-up clean
+- [ ] DPI — NOT RUN; one physical monitor is exposed
+- [x] Video Settings
+- [x] renderer switching
+- [x] ROM lifecycle
+- [x] Fast Forward
+- [x] Slow Motion
+- [x] core validation clean
+- [x] targeted Sync follow-up clean
 ```
 
 ## Formal NVIDIA
 
 ```markdown
-- [ ] release capture build
-- [ ] developer features OFF
-- [ ] validation OFF
-- [ ] fixed environment
-- [ ] >=3 randomized runs/mode
-- [ ] 600 warmup
-- [ ] >=10k measured
-- [ ] all valid run CSVs
-- [ ] aggregator exit 0
-- [ ] thresholds checked
-- [ ] conclusion written without overclaim
+- [x] release capture build
+- [x] developer features OFF
+- [x] validation OFF
+- [x] fixed environment
+- [x] >=3 randomized runs/mode
+- [x] 600 warmup
+- [x] >=10k measured
+- [x] all valid run CSVs
+- [x] aggregator exit 0
+- [x] thresholds checked
+- [x] conclusion written without overclaim
 ```
 
 ## AMD / generalization
 
 ```markdown
-- [ ] AMD runtime
-- [ ] Intel Vulkan
-- [ ] Linux
-- [ ] MoltenVK
+- [ ] AMD runtime — NOT RUN; host exposes NVIDIA only
+- [ ] Intel Vulkan — NOT RUN; no Intel Vulkan device
+- [ ] Linux — NOT RUN; no WSL distribution or Linux runner is available
+- [ ] MoltenVK — NOT RUN; no macOS/MoltenVK host is available
 ```
 
 。
@@ -1977,19 +1977,22 @@ NEW DOC P3:
     ONE NON-BLOCKING CLEANUP
 
 MANUAL PHASE 1:
-    OPEN
+    PASS except DPI NOT RUN
 
 FORMAL NVIDIA A/B:
-    OPEN
+    COMPLETE
 
 AMD RUNTIME:
-    OPEN
+    NOT RUN — NVIDIA-only host
 
 LATENCY BENEFIT:
-    NOT MEASURED
+    NO WINNER — A2 P50 improved, but P95 threshold was missed
 
 DEFAULT:
     TelemetryOnly
+
+OVERALL INSTRUCTION:
+    OPEN — external hardware/platform gates remain
 ```
 
 。
