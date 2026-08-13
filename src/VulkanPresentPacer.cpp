@@ -726,6 +726,7 @@ VulkanPresentPacer::TargetTimingRequest
         request.Mode = VulkanTargetSchedulingMode::Relative;
         request.ValueNs = cadence.DurationNs;
         request.Quantized = cadence.Quantized;
+        request.Cadence = cadence;
         return request;
     }
     case VulkanTargetSchedulingMode::None:
@@ -762,6 +763,7 @@ u64 VulkanPresentPacer::PreparePresent(
         const TargetTimingRequest target = EvaluateTargetTiming(metadata.Sequence);
         metadata.TargetMode = target.Mode;
         metadata.TargetValueNs = target.ValueNs;
+        metadata.RelativeRequest = target.Cadence;
         metadata.Timing.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT;
         metadata.Timing.presentStageQueries = RequestedStageQueries();
         metadata.Timing.timeDomainId = TargetTimeDomainId;
@@ -844,6 +846,9 @@ bool VulkanPresentPacer::PrepareRetryWithoutTiming(
     metadata.TimingAttached = false;
     metadata.TargetValueNs = 0;
     metadata.TargetMode = VulkanTargetSchedulingMode::None;
+    // The retried present carries no target, so it must not carry the cadence
+    // inputs of the target it no longer has. The capture reads this metadata.
+    metadata.RelativeRequest = VulkanRelativeCadence::Request{};
     ++TimingQueueFullCount;
     TimingMetadataEnabled = false;
     TargetSchedulingActive.store(false, std::memory_order_release);
@@ -1397,22 +1402,38 @@ bool VulkanPresentPacer::IsTargetSchedulingActive() const noexcept
     return TargetSchedulingActive.load(std::memory_order_acquire);
 }
 
-VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState() const noexcept
+VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
+    const PresentMetadata& metadata) const noexcept
 {
     StateSnapshot snapshot;
     snapshot.Policy = static_cast<int>(GetPolicy());
     snapshot.Authority = static_cast<int>(GetAuthority());
     snapshot.PresentMode = static_cast<int>(PresentMode);
-    snapshot.TargetTimeScheduling = LastDecision.TargetTimeScheduling;
     snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
     snapshot.FallbackReason = static_cast<int>(FallbackReason);
-    snapshot.TargetMode = static_cast<int>(LastAppliedTargetMode);
-    snapshot.TargetValueNs = LastTargetValueNs;
-    snapshot.TargetGenerationRefreshIntervalNs = LastRelativeRequest.RefreshIntervalNs;
-    snapshot.TargetGenerationRefreshDurationNs = LastRelativeRequest.RefreshDurationNs;
-    snapshot.RelativeQuanta = LastRelativeRequest.Quanta;
-    snapshot.RelativeAccumulatorBeforeNs = LastRelativeRequest.AccumulatorBeforeNs;
-    snapshot.RelativeAccumulatorAfterNs = LastRelativeRequest.AccumulatorAfterNs;
+
+    // Everything about the target comes from this present, not from the
+    // resolver's permission or the pacer's last-known values. A queue-full
+    // retry re-presents the same frame with its timing metadata stripped: the
+    // frame is displayed, but with no target, and the row has to say so.
+    const VulkanAppliedTarget applied = ResolveVulkanAppliedTarget(
+        metadata.TimingAttached, metadata.TargetMode, metadata.TargetValueNs);
+    snapshot.TargetTimeScheduling = applied.Applied;
+    snapshot.TargetMode = static_cast<int>(applied.Mode);
+    snapshot.TargetValueNs = applied.ValueNs;
+
+    const VulkanRelativeCadence::Request& cadence = metadata.RelativeRequest;
+    const bool relativeApplied = applied.Applied
+        && applied.Mode == VulkanTargetSchedulingMode::Relative;
+    snapshot.TargetGenerationRefreshIntervalNs =
+        relativeApplied ? cadence.RefreshIntervalNs : 0;
+    snapshot.TargetGenerationRefreshDurationNs =
+        relativeApplied ? cadence.RefreshDurationNs : 0;
+    snapshot.RelativeQuanta = relativeApplied ? cadence.Quanta : 0;
+    snapshot.RelativeAccumulatorBeforeNs =
+        relativeApplied ? cadence.AccumulatorBeforeNs : 0;
+    snapshot.RelativeAccumulatorAfterNs =
+        relativeApplied ? cadence.AccumulatorAfterNs : 0;
     snapshot.FeedbackPresentId = LastFeedbackId;
     snapshot.FeedbackStageTimeNs = LastFeedbackStageTimeNs;
     snapshot.BaselineSequence = TimingModel.GetBaselineSequence();

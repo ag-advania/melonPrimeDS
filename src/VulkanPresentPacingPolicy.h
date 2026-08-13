@@ -22,6 +22,8 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include "types.h"
+
 namespace melonDS
 {
 
@@ -189,6 +191,36 @@ struct VulkanPacingDecision
     // capability is missing. Never a reason to refuse target scheduling.
     bool OptionalWaitUnavailable = false;
 };
+
+// What a present actually carried, as opposed to what the resolver permitted.
+//
+// These are not the same thing and must not be recorded as if they were. The
+// resolver can allow target scheduling for a frame that then requests no target
+// at all -- absolute is still waiting for its feedback baseline, relative is
+// still waiting for a first present, or a full timing-results queue made the
+// present retry with its timing metadata stripped off. An A/B run judges
+// "target scheduling active >= 95%" from this column, so recording the
+// permission instead of the outcome would count misses as hits.
+struct VulkanAppliedTarget
+{
+    bool Applied = false;
+    VulkanTargetSchedulingMode Mode = VulkanTargetSchedulingMode::None;
+    u64 ValueNs = 0;
+};
+
+// Derives the applied state from what the present info actually ended up
+// carrying. Pure so the three cases that matter -- bootstrap, steady state, and
+// queue-full retry -- are testable without a Vulkan device.
+constexpr VulkanAppliedTarget ResolveVulkanAppliedTarget(
+    bool timingAttached, VulkanTargetSchedulingMode mode, u64 valueNs) noexcept
+{
+    const bool applied = timingAttached
+        && mode != VulkanTargetSchedulingMode::None
+        && valueNs != 0;
+    if (!applied)
+        return {false, VulkanTargetSchedulingMode::None, 0};
+    return {true, mode, valueNs};
+}
 
 // Absolute wins wherever it is available; relative is the fallback, not a
 // preference. Absolute targets are expressed in the same units the feedback

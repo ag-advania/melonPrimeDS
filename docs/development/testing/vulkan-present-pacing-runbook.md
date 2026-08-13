@@ -303,6 +303,20 @@ meaningless number.
 | `1` absolute | an instant on the presentation timeline | a timestamp |
 | `2` relative | a minimum previous-image visible duration | a **duration** |
 
+`target_scheduling` records what the accepted present **actually carried**, not
+what the policy allowed. The two differ in three situations, and all three must
+count as misses rather than hits:
+
+* **bootstrap** — absolute has no feedback baseline yet, or relative has no
+  previous present to be relative to;
+* **queue-full retry** — the present was re-issued with its timing metadata
+  stripped, so the frame was displayed with no target at all;
+* any frame where the target evaluated to zero.
+
+This matters because the acceptance threshold below is read straight from this
+column: sourcing it from the resolver's permission would count those misses as
+active and inflate the ratio.
+
 The two are not comparable quantities, which is why the aggregation script puts
 the mode in the run label rather than pooling them. On a surface without
 `presentAtAbsoluteTimeSupported` the `JustInTime` policies use relative mode;
@@ -330,6 +344,11 @@ The refresh interval genuinely moves during a session (the driver bumps
 `timingPropertiesCounter` and the pacer re-reads it), so comparing a target
 against the *current* interval rather than its generating one will produce false
 mismatches. That is why the generating value is stored per row.
+
+`aggregate-vulkan-latency.py` checks both invariants, plus the consistency of
+the target columns themselves, and **exits non-zero** with the offending rows
+listed if any run contradicts itself. A run flagged this way is `INVALID`, not a
+slower or faster result — do not compare it.
 
 ### What the numbers are and are not
 

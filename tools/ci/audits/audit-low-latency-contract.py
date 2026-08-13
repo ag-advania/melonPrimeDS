@@ -394,6 +394,64 @@ def main() -> int:
         "a malformed refresh interval must not overflow the cadence accumulator",
         failures,
     )
+    # The A/B "target scheduling active" ratio decides whether a policy is
+    # judged to have scheduled. It must therefore be sourced from what the
+    # accepted present carried, not from the resolver's permission for that
+    # frame -- a bootstrap frame or a queue-full retry has permission and no
+    # target, and counting those as hits would inflate the ratio.
+    require(
+        "ResolveVulkanAppliedTarget" in vulkan_pacing_policy
+        and "struct VulkanAppliedTarget" in vulkan_pacing_policy
+        and "CaptureState(const PresentMetadata& metadata) const noexcept;"
+            in vulkan_pacer_header
+        and "PresentPacer.CaptureState(genericPresentMetadata)" in vulkan_presenter
+        and "snapshot.TargetTimeScheduling = LastDecision.TargetTimeScheduling"
+            not in vulkan_pacer
+        and ordered(
+            function_body(
+                vulkan_pacer,
+                "VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(",
+                "} // namespace melonDS",
+            ),
+            [
+                "metadata.TimingAttached, metadata.TargetMode, metadata.TargetValueNs",
+                "snapshot.TargetTimeScheduling = applied.Applied;",
+                "snapshot.TargetMode = static_cast<int>(applied.Mode);",
+                "snapshot.TargetValueNs = applied.ValueNs;",
+            ],
+        )
+        and "TestAppliedTargetReflectsThePresent" in vulkan_timing_tests,
+        "the A/B capture must record the target the accepted present actually carried",
+        failures,
+    )
+    require(
+        "metadata.RelativeRequest = VulkanRelativeCadence::Request{};" in vulkan_pacer
+        and ordered(
+            function_body(
+                vulkan_pacer,
+                "bool VulkanPresentPacer::PrepareRetryWithoutTiming(",
+                "void VulkanPresentPacer::NotifyPresentResult(",
+            ),
+            [
+                "metadata.TimingAttached = false;",
+                "metadata.TargetValueNs = 0;",
+                "metadata.TargetMode = VulkanTargetSchedulingMode::None;",
+                "metadata.RelativeRequest = VulkanRelativeCadence::Request{};",
+            ],
+        ),
+        "a queue-full retry must clear every target field the capture reads",
+        failures,
+    )
+    require(
+        all(token in read("tools/perf/aggregate-vulkan-latency.py") for token in (
+            "if applied and row_mode != 0:",
+            "_check_row",
+            "relative_quanta",
+            "INVALID",
+        )),
+        "the aggregator must reject captures whose target columns contradict each other",
+        failures,
+    )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
         and "if (result != VK_INCOMPLETE)" in vulkan_pacer

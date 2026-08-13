@@ -66,6 +66,11 @@ public:
         // the same quantity.
         u64 TargetValueNs = 0;
         VulkanTargetSchedulingMode TargetMode = VulkanTargetSchedulingMode::None;
+        // The cadence inputs this present's relative duration came from, so the
+        // capture can re-derive it from the same present rather than from
+        // whatever the pacer happened to compute last. Zero unless this present
+        // actually carried a relative target.
+        VulkanRelativeCadence::Request RelativeRequest{};
         bool TimingAttached = false;
     };
 
@@ -77,6 +82,8 @@ public:
         // Relative durations that land on whole refresh intervals may also ask
         // for the nearest refresh cycle; unquantized ones must not.
         bool Quantized = false;
+        // Empty unless Mode is Relative.
+        VulkanRelativeCadence::Request Cadence{};
     };
 
     bool Initialize(const VulkanDevice& device, VkSurfaceKHR surface);
@@ -161,7 +168,10 @@ public:
         u32 TimingQueueFullCount = 0;
         u32 TimingQueueRecoveries = 0;
     };
-    [[nodiscard]] StateSnapshot CaptureState() const noexcept;
+    // Takes the present it describes: the target columns must report what that
+    // accepted present actually carried, not what the resolver permitted or
+    // what some earlier present happened to request.
+    [[nodiscard]] StateSnapshot CaptureState(const PresentMetadata& metadata) const noexcept;
 
 private:
     // Snapshots every capability the pure resolver needs. Building it is a few

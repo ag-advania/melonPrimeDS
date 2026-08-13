@@ -900,6 +900,53 @@ void TestRelativeCadenceResets()
 }
 
 
+// An A/B row must describe what the accepted present actually carried, not what
+// the resolver allowed. The resolver can permit target scheduling for a frame
+// that ends up requesting nothing -- and counting those as hits would inflate
+// the "target scheduling active" ratio the Phase 3 acceptance criterion reads.
+void TestAppliedTargetReflectsThePresent()
+{
+    // Steady state: metadata carries a real relative target.
+    const VulkanAppliedTarget relative =
+        ResolveVulkanAppliedTarget(true, TargetMode::Relative, 14'885'600);
+    Require(relative.Applied && relative.Mode == TargetMode::Relative
+            && relative.ValueNs == 14'885'600,
+        "a present carrying a relative target must be recorded as applied");
+
+    const VulkanAppliedTarget absolute =
+        ResolveVulkanAppliedTarget(true, TargetMode::Absolute, 1'016'666'667);
+    Require(absolute.Applied && absolute.Mode == TargetMode::Absolute,
+        "a present carrying an absolute target must be recorded as applied");
+
+    // Bootstrap: timing metadata is attached for telemetry, but no target was
+    // requested -- absolute has no baseline yet, relative has no first present.
+    const VulkanAppliedTarget bootstrap =
+        ResolveVulkanAppliedTarget(true, TargetMode::None, 0);
+    Require(!bootstrap.Applied && bootstrap.Mode == TargetMode::None
+            && bootstrap.ValueNs == 0,
+        "a bootstrap present requests no target and must not count as applied");
+
+    // Queue-full retry: the present was re-issued with its timing metadata
+    // stripped. The frame was displayed, but with no target at all.
+    const VulkanAppliedTarget retried =
+        ResolveVulkanAppliedTarget(false, TargetMode::None, 0);
+    Require(!retried.Applied && retried.Mode == TargetMode::None
+            && retried.ValueNs == 0,
+        "a present retried without timing metadata must not count as applied");
+
+    // Defensive: an inconsistent pair must resolve to "not applied" rather than
+    // reporting a mode with no value or a value with no metadata.
+    Require(!ResolveVulkanAppliedTarget(false, TargetMode::Relative, 14'885'600).Applied,
+        "a target value without attached metadata was never sent");
+    Require(!ResolveVulkanAppliedTarget(true, TargetMode::Relative, 0).Applied,
+        "a mode without a value is not an applied target");
+    const VulkanAppliedTarget contradiction =
+        ResolveVulkanAppliedTarget(false, TargetMode::Relative, 14'885'600);
+    Require(contradiction.Mode == TargetMode::None && contradiction.ValueNs == 0,
+        "a rejected pair must be cleared, not passed through");
+}
+
+
 // A lost device and a stale swapchain are different failure classes. They once
 // shared a single `true` return, which routed device loss into the swapchain
 // rebuild loop -- where it would fail again on every following frame.
@@ -973,6 +1020,7 @@ int main()
     TestRelativeCadenceRejectsAbsurdRefreshInterval();
     TestRelativeCadenceTransactions();
     TestRelativeCadenceResets();
+    TestAppliedTargetReflectsThePresent();
 
     if (Failures != 0)
     {

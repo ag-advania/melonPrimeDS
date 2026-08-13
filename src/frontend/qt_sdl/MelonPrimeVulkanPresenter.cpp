@@ -1670,7 +1670,9 @@ bool VulkanPresenter::EndFrame()
     if (LatencyCapture.IsEnabled() && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
     {
         LatencyCapture.SetReflexMode(static_cast<int>(Reflex.GetMode()));
-        LatencyCapture.Commit(genericPresentMetadata.LogicalId, PresentPacer.CaptureState());
+        LatencyCapture.Commit(
+            genericPresentMetadata.LogicalId,
+            PresentPacer.CaptureState(genericPresentMetadata));
     }
 
     if (tagLatency)

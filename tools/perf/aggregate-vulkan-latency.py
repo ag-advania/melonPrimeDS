@@ -77,6 +77,7 @@ class RunStats:
         self.reflex_mode = -1
         self.target_mode = 0
         self.target_active = 0
+        self.problems: list[str] = []
         self.bounded_wait = 0
         self.wait_timeouts = 0
         self.queue_full = 0
@@ -100,13 +101,17 @@ class RunStats:
             self.policy = as_int(row, "policy", self.policy)
             self.authority = as_int(row, "authority", self.authority)
             self.reflex_mode = as_int(row, "reflex_mode", self.reflex_mode)
-            self.target_active += as_int(row, "target_scheduling")
+            applied = as_int(row, "target_scheduling")
+            self.target_active += applied
             self.bounded_wait += as_int(row, "bounded_wait")
-            # Whichever mode actually scheduled wins the label; a run that never
-            # scheduled keeps "none" and is visible as such.
+
+            # Only a row that actually applied a target may name the run's mode.
+            # A row claiming a mode without having applied one is a producer
+            # bug, not a data point, so it is counted as a problem instead.
             row_mode = as_int(row, "target_mode")
-            if row_mode != 0:
+            if applied and row_mode != 0:
                 self.target_mode = row_mode
+            self._check_row(row, index, applied, row_mode)
 
             # These are running counters in the capture, so the last row holds
             # the run total rather than a per-frame delta.
@@ -129,6 +134,46 @@ class RunStats:
             if input_us and present_end > input_us:
                 self.input_to_present_ms.append((present_end - input_us) / 1000.0)
 
+    def _check_row(self, row: dict[str, str], index: int, applied: int, mode: int) -> None:
+        """Validate one row against what the capture is supposed to guarantee.
+
+        A measurement tool has to be truthful when things go wrong, not only
+        when they go right. These are cheap checks that catch a producer whose
+        columns have drifted apart -- for example recording the resolver's
+        permission in `target_scheduling` while `target_mode` still holds a
+        stale value from an earlier present.
+        """
+        def flag(message: str) -> None:
+            self.problems.append(f"{self.path.name}:{index}: {message}")
+
+        if not applied and mode != 0:
+            flag(f"target_mode={mode} on a row that applied no target")
+        value = as_int(row, "target_value_ns")
+        if applied and value == 0:
+            flag("target_scheduling=1 with target_value_ns=0")
+        if not applied and value != 0:
+            flag(f"target_value_ns={value} on a row that applied no target")
+
+        # Relative rows carry the inputs their duration was computed from, so
+        # the cadence can be re-derived here rather than trusted.
+        if not (applied and mode == 2):
+            return
+        quanta = as_int(row, "relative_quanta")
+        interval = as_int(row, "target_generation_refresh_interval_ns")
+        after = as_int(row, "relative_accumulator_after_ns")
+        if quanta and interval:
+            expected = quanta * interval
+            if expected != value:
+                flag(
+                    f"target_value_ns={value} != relative_quanta({quanta})"
+                    f" * refresh_interval({interval}) = {expected}"
+                )
+            if after >= interval:
+                flag(
+                    f"relative_accumulator_after_ns={after} >= refresh interval"
+                    f" {interval}; the carried fraction must stay below one refresh"
+                )
+
     @property
     def mode(self) -> str:
         policy = POLICY_NAMES.get(self.policy, f"policy{self.policy}")
@@ -149,6 +194,7 @@ class RunStats:
             "authority": AUTHORITY_NAMES.get(self.authority, self.authority),
             "reflex_mode": REFLEX_NAMES.get(self.reflex_mode, self.reflex_mode),
             "target_mode": TARGET_MODE_NAMES.get(self.target_mode, self.target_mode),
+            "invalid_rows": len(self.problems),
             "samples": self.samples,
             "warmup_dropped": self.dropped_warmup,
             "fps_mean": round(1000.0 / statistics.fmean(self.frame_times_ms), 3)
@@ -260,6 +306,29 @@ def main() -> int:
             "the runbook requires at least 3 per mode in randomized order.",
             file=sys.stderr,
         )
+
+    # A run whose capture contradicts itself is not a measurement. Report it
+    # loudly and fail, rather than quietly averaging numbers that cannot be
+    # trusted: the whole point of the target columns is deciding whether a
+    # policy actually scheduled.
+    problems = [problem for run in runs for problem in run.problems]
+    if problems:
+        print(
+            f"\nINVALID: {len(problems)} contradictory rows across "
+            f"{sum(1 for run in runs if run.problems)} run(s)",
+            file=sys.stderr,
+        )
+        for problem in problems[:20]:
+            print(f"  {problem}", file=sys.stderr)
+        if len(problems) > 20:
+            print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
+        print(
+            "These rows disagree about whether a target was applied. Treat the "
+            "affected runs as INVALID rather than comparing them.",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 
