@@ -108,11 +108,13 @@ The older `vk-min-sync-final2.*` files are retained as a diagnostic run of the
 wrong effective configuration. This is a targeted minimize/restore gate; the
 full policy/manual matrix remains open.
 
-One expectation in the source instructions cannot be observed on this surface:
-with VSync off the fallback reason reads `absolute timing unsupported by
-surface` rather than `present mode is not FIFO`. Both conditions hold; the
-classifier reports the earlier one in its debug order. Once a surface supports
-absolute timing, the non-FIFO reason becomes the visible one.
+On this NVIDIA surface absolute timing is unavailable but relative timing is
+supported. With VSync off, target scheduling should therefore progress through
+the relative-capability path and then be disabled because the selected present
+mode is outside the FIFO family. The C0 runtime control is the source of truth.
+If a future driver reports a different fallback reason, record the exact
+capability state and investigate rather than changing the documentation to
+match an unexplained result.
 
 ## Phase 1 — Validation Layer
 
