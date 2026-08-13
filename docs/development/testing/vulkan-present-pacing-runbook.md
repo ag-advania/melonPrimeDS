@@ -86,7 +86,7 @@ A first session ran on 2026-08-13 (RTX 5070 Ti, driver 610.74.0.0, loader
 | Core validation, policies 0/1/2/3, Reflex off | **0 errors** |
 | Core validation, Reflex on | **0 errors** |
 | Synchronization validation, current-tree minimize/restore | **PASS**; banner confirmed, VUID 0, `SYNC-HAZARD` 0, `DEVICE_LOST` 0 |
-| VSync off control — `IMMEDIATE`, target scheduling off | as specified |
+| VSync off control — `IMMEDIATE`, relative-capability path then target scheduling off | **PASS / current contract** |
 | Reflex on → `authority=NvidiaReflex`, both generic mechanisms off | as specified |
 | Device loss / software fallback / recreate storm | none |
 | Automated window matrix at the recorded fix | 4 phases clean; current-tree Sync gate also clean |
