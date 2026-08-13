@@ -166,6 +166,15 @@ jobs:
           grep -F '[Vulkan] presenter ready:' "$log"
           ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"
 
+      - name: Upload MoltenVK runtime smoke log
+        if: always() && matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: moltenvk-runtime-smoke-${{ matrix.arch }}
+          path: ${{ runner.temp }}/melonprime-moltenvk-runtime.log
+          if-no-files-found: warn
+          archive: false
+
       - name: Compress app bundle
         shell: bash
         run: |
