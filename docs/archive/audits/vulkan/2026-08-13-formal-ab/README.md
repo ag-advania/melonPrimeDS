@@ -118,3 +118,12 @@ retained as artifact `9187724074`.
 - Verification output: [`verification.log`](verification.log)
 - Aggregator stderr: [`aggregate.stderr.log`](aggregate.stderr.log)
 - Aggregator stdout CSV: [`aggregate.stdout.csv`](aggregate.stdout.csv)
+
+## Physical Intel macOS follow-up — 2026-08-14
+
+The separate physical Intel/MoltenVK current-SHA gate is recorded in
+[`docs/archive/audits/vulkan/2026-08-14-intel-macbook/README.md`](../2026-08-14-intel-macbook/README.md).
+It must not be merged into this NVIDIA/Windows formal A/B verdict. The
+follow-up reached bundled MoltenVK, `VK_EXT_metal_surface`, the real Intel
+GPU, and a Vulkan ROM frame, while controlled gameplay/lifecycle and long AC
+coverage remained open. No historical evidence in this directory was deleted.

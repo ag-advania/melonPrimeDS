@@ -1,0 +1,25 @@
+Physical Intel macOS build checks — 2026-08-14
+
+Release command:
+  ./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal --release --jobs 2
+
+Release result:
+  211/211 build steps completed.
+  CMake Vulkan and Metal gates enabled; developer features OFF.
+  Vulkan present-timing model tests PASS.
+  Bundle contains libMoltenVK.dylib and was ad-hoc signed.
+  melonPrimeDS executable: x86_64.
+  bundled local libMoltenVK.dylib: x86_64.
+  codesign --verify --deep --strict: PASS.
+
+Pinned runtime result:
+  MoltenVK 1.4.0 archive checksum verified.
+  pinned app executable: x86_64.
+  pinned libMoltenVK.dylib: x86_64 + arm64 universal archive binary.
+  pinned app was ad-hoc signed and deep strict verification passed.
+
+Debug result:
+  295/295 build steps completed.
+  Debug Vulkan present-timing model tests PASS.
+  Validation package installation completed, but runtime layer enablement
+  remained blocked; see validation-excerpts.txt.

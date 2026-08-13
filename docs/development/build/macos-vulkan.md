@@ -177,6 +177,23 @@ Not verified:
   made.
 - Gameplay inside a match, controller/aim behaviour, and long-session stability.
 
+### Physical Intel follow-up — 2026-08-14
+
+The current source revision `7f56b91b14bb223db1fa2194761f15c050a70de5` was
+also exercised on a physical x86_64 MacBookPro15,2 with Intel Iris Plus 655.
+The release bundle loaded MoltenVK 1.4.2, created a `VK_EXT_metal_surface`,
+selected the real Intel GPU, reached a Vulkan presenter, and displayed a real
+AMHP ROM frame. A separately assembled, signed MoltenVK 1.4.0 bundle reached
+the same no-ROM and AMHP launch/presenter checkpoints.
+
+This follow-up is not a full gameplay PASS: controlled match lifecycle,
+resize/fullscreen/minimize, renderer switching, savestate/reset, and the
+30-minute AC session remain NOT RUN or BLOCKED. The Debug validation-layer gate
+was BLOCKED because the macOS direct runtime loader did not enumerate the
+installed Khronos layer. See the dated audit's
+[`README.md`](../../archive/audits/vulkan/2026-08-14-intel-macbook/README.md) for
+the exact status and sanitized evidence.
+
 Windows remains the tuned gameplay target; macOS Vulkan is a supported build
 and runtime target, not a validated-parity one. MoltenVK translates SPIR-V to
 Metal, so compute-heavy renderer paths can differ from a native Vulkan driver.

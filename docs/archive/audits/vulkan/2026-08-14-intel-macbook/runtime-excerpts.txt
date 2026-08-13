@@ -1,0 +1,35 @@
+Physical Intel macOS Vulkan runtime excerpts — sanitized
+
+Local MoltenVK 1.4.2, no ROM:
+  Vulkan instance created.
+  presentation surface created backend=VK_EXT_metal_surface
+  selected Intel Iris Plus Graphics 655.
+  renderer requested=Vulkan presenter actual=Vulkan.
+  presentation selected IMMEDIATE with VSync off.
+  presenter ready.
+
+Local MoltenVK 1.4.2, AMHP Rev.01:
+  Intel Iris Plus Graphics 655 selected through MoltenVK.
+  renderer requested=Vulkan actual=Vulkan.
+  first frame presented.
+  valid game imagery observed in the local ignored screenshot evidence.
+
+Pinned MoltenVK 1.4.0, no ROM and AMHP Rev.01:
+  MoltenVK version 1.4.0, supporting Vulkan 1.4.323.
+  VK_EXT_metal_surface surface creation and Intel GPU selection succeeded.
+  renderer requested=Vulkan presenter actual=Vulkan.
+  first frame presented.
+  two MoltenVK primitive-restart warnings were emitted; no VUID, SYNC-HAZARD,
+  DEVICE_LOST, SIGABRT, SIGSEGV, or Vulkan runtime-failure finding was seen.
+
+Additional AMHJ Rev.00 trial:
+  Vulkan window remained white and an ARM9 data abort was logged.
+  The isolated software-renderer run showed game imagery. This is a
+  ROM-specific failure finding, not a blanket Intel/MoltenVK verdict.
+
+Current GenericPresentTiming:
+  present-id2=yes, present-wait2=yes, present-timing=no,
+  present-at-absolute-time=no, present-at-relative-time=no,
+  fifo-latest-ready=no.
+  Runtime used the optional-capability fail-soft TelemetryOnly/GenericHost
+  path; no conditional OFF A/B was required.

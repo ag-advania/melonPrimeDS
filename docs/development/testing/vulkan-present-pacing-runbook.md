@@ -108,6 +108,16 @@ The older `vk-min-sync-final2.*` files are retained as a diagnostic run of the
 wrong effective configuration. This is a targeted minimize/restore gate; the
 full policy/manual matrix remains open.
 
+### Physical Intel macOS gate
+
+The physical Intel macOS/MoltenVK gate is a separate correctness check, not a
+latency comparison. It must record the tested source SHA, actual Metal GPU,
+MoltenVK version, bundled-runtime result, ROM hash, visual/lifecycle status,
+and any unavailable validation-layer path. The 2026-08-14 follow-up is in
+[`docs/archive/audits/vulkan/2026-08-14-intel-macbook/README.md`](../../archive/audits/vulkan/2026-08-14-intel-macbook/README.md).
+Do not turn a physical MoltenVK smoke result into a native Intel Vulkan or
+formal latency claim.
+
 On this NVIDIA surface absolute timing is unavailable but relative timing is
 supported. With VSync off, target scheduling should therefore progress through
 the relative-capability path and then be disabled because the selected present
