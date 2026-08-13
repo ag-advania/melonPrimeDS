@@ -2163,3 +2163,11 @@ The 2026-08-14 local availability recheck also found no installed WSL Linux
 distribution and no `docker`, `qemu-system-x86_64`, or `virsh` executable.
 Therefore no additional Linux AMD/Intel hardware execution path was available
 from the audited host; the Linux hardware/vendor gate remains `NOT RUN`.
+
+The repository runner recheck identified `ag-advania/melonPrimeDS` as a public
+fork owned by a user account. Runner enumeration and Actions-permission reads
+returned HTTP 403, while workflow dispatch required repository administrator
+rights. No GPU/self-hosted runner label could be selected with the available
+authority. GitHub's standard public runner table does not provide an
+AMD/Intel/Linux GPU label; GPU-powered larger runners require organization or
+enterprise configuration.

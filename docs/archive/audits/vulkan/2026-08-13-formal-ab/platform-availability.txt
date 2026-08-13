@@ -64,3 +64,13 @@ Re-audit on 2026-08-14:
   `wsl.exe --list --verbose` exposed no installed Linux distribution;
   `docker`, `qemu-system-x86_64`, and `virsh` were unavailable. No additional
   Linux AMD/Intel hardware execution path was available from this host.
+- GitHub runner availability recheck on 2026-08-14:
+  repository metadata identifies `ag-advania/melonPrimeDS` as a public fork
+  owned by a user account. The current token could not enumerate repository
+  runners or Actions permissions (HTTP 403), and workflow dispatch required
+  repository admin rights (HTTP 403). No GPU/self-hosted label could therefore
+  be enumerated or selected from this authority. GitHub's standard public
+  runner table has no AMD/Intel/Linux GPU label; GPU-powered larger runners
+  require an organization or enterprise configuration.
+  References: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+  and https://docs.github.com/en/actions/how-tos/manage-runners/larger-runners/manage-larger-runners
