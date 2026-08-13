@@ -114,6 +114,7 @@ def main() -> int:
     metal_span = read("src/GPU3D_MetalComputeSpanMath.inc")
     metal_textured = read("src/GPU3D_MetalComputeTexturedShaders.inc")
     metal_depth = read("src/GPU3D_MetalComputeDepthBlendShaders.inc")
+    metal_final = read("src/GPU3D_MetalComputeFinalPassShaders.inc")
     metal_wrapper = read("src/GPU3D_Metal.mm")
     vk_wrapper = read("src/GPU_Vulkan.cpp")
     dx_wrapper = read("src/GPU_DX12.cpp")
@@ -192,6 +193,28 @@ def main() -> int:
             "Metal texture dirty version", failures)
     require(metal_cpp, "State->TexturePaletteVersion++",
             "Metal palette dirty version", failures)
+    require(metal_cpp, "MELONPRIME_METAL_COMPUTE_DEAD_WORK_REMOVAL_V1",
+            "Metal dead-work removal contract", failures)
+    require(metal_cpp, "std::memset([headerBuffer contents], 0xA5",
+            "Metal GPU-owned header initialization self-test", failures)
+    require(metal_final, "mpf_read_rgb6a5",
+            "Metal reversible final-texture native resolve", failures)
+    require(metal_final, "texture2d<float, access::read> finalTexture",
+            "Metal native resolve texture source", failures)
+    forbid(metal_cpp, "FinalColorBuffer",
+           "Metal duplicate full-resolution final-color buffer", failures)
+    forbid(metal_cpp, "std::memset([slot->Header contents]",
+           "Metal per-frame CPU header clear", failures)
+    forbid(metal_cpp, "CoarseMask",
+           "Metal write-only coarse mask", failures)
+    forbid(metal_cpp, "coarseMask",
+           "Metal write-only coarse mask shader argument", failures)
+    forbid(metal_cpp, "CoarseBinStride",
+           "Metal unused coarse-mask stride", failures)
+    forbid(metal_cpp, "coarseBinStride",
+           "Metal unused coarse-mask shader stride", failures)
+    forbid(metal_cpp, "mp_compute_clear_coarse_mask",
+           "Metal unused coarse-mask clear dispatch", failures)
     forbid(metal_cpp, "keepCount", "Metal work-tile layer drop", failures)
     forbid(metal_cpp, "workOffset >= config.maxWorkTiles",
            "Metal work-tile overflow discard", failures)

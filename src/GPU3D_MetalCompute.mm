@@ -21,6 +21,7 @@
 // MELONPRIME_METAL_COMPUTE_LEGACY_SUMMARY_RETIREMENT_V1
 // MELONPRIME_METAL_COMPUTE_FRAME_BOOKKEEPING_CLEANUP_V1
 // MELONPRIME_METAL_COMPUTE_CHANGE_DRIVEN_SNAPSHOTS_V1
+// MELONPRIME_METAL_COMPUTE_DEAD_WORK_REMOVAL_V1
 
 #if defined(MELONPRIME_ENABLE_METAL)
 
@@ -54,7 +55,6 @@ constexpr uint32_t kMaxPolygons = 2048;
 constexpr uint32_t kMaxYSpanSetups = kMaxPolygons * 10;
 constexpr uint32_t kRasteriseChunkSize = 32768;
 constexpr uint32_t kBinStride = 2048 / 32;
-constexpr uint32_t kCoarseBinStride = kBinStride / 32;
 constexpr uint32_t kCoarseTileCountX = 8;
 constexpr uint32_t kFrameSlotCount = 3;
 // Per-slot tile scratch budget. Each frame slot owns its own Color/Depth/Attr
@@ -154,10 +154,9 @@ struct FoundationConfig
 {
     uint32_t VariantCount;
     uint32_t MaxWorkTiles;
-    uint32_t CoarseTileCount;
     uint32_t RasteriseChunkSize;
 };
-static_assert(sizeof(FoundationConfig) == 16, "MSL FoundationConfig layout mismatch");
+static_assert(sizeof(FoundationConfig) == 12, "MSL FoundationConfig layout mismatch");
 
 struct SpanBinConfig
 {
@@ -175,7 +174,6 @@ struct SpanBinConfig
     uint32_t CoarseTileH;
     uint32_t MaxWorkTiles;
     uint32_t BinStride;
-    uint32_t CoarseBinStride;
     uint32_t PolygonGroups;
     uint32_t AlphaRef;
     uint32_t DispCnt;
@@ -184,7 +182,7 @@ struct SpanBinConfig
     uint32_t FirstPolygon;
     uint32_t BatchPolygonCount;
 };
-static_assert(sizeof(SpanBinConfig) == 88, "MSL SpanBinConfig layout mismatch");
+static_assert(sizeof(SpanBinConfig) == 84, "MSL SpanBinConfig layout mismatch");
 
 struct PolygonBatch
 {
@@ -324,7 +322,6 @@ struct FoundationConfig
 {
     uint variantCount;
     uint maxWorkTiles;
-    uint coarseTileCount;
     uint rasteriseChunkSize;
 };
 
@@ -344,7 +341,6 @@ struct SpanBinConfig
     uint coarseTileH;
     uint maxWorkTiles;
     uint binStride;
-    uint coarseBinStride;
     uint polygonGroups;
     uint alphaRef;
     uint dispCnt;
@@ -434,18 +430,6 @@ kernel void mp_compute_clear_indirect(
     atomic_store_explicit(&header[base + 3u], 0u, memory_order_relaxed);
     atomic_store_explicit(&header[SortedWorkOffsetStart + gid], 0u, memory_order_relaxed);
     atomic_store_explicit(&header[VariantWorkRealCountStart + gid], 0u, memory_order_relaxed);
-}
-
-kernel void mp_compute_clear_coarse_mask(
-    device uint* coarseMask [[buffer(0)]],
-    constant FoundationConfig& config [[buffer(1)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid >= config.coarseTileCount)
-        return;
-
-    coarseMask[gid * 2u + 0u] = 0u;
-    coarseMask[gid * 2u + 1u] = 0u;
 }
 
 kernel void mp_compute_calc_offsets(
@@ -802,7 +786,6 @@ kernel void mp_compute_bin_combined(
     device atomic_uint* header [[buffer(0)]],
     device const RenderPolygon* polygons [[buffer(1)]],
     device const SpanSetupX* xSpans [[buffer(2)]],
-    device atomic_uint* coarseMask [[buffer(3)]],
     device uint* fineMask [[buffer(4)]],
     device uint* workOffsets [[buffer(5)]],
     device uint2* workDescs [[buffer(6)]],
@@ -875,10 +858,6 @@ kernel void mp_compute_bin_combined(
     if (binnedMask == 0u)
         return;
 
-    const uint coarseIndex = linearTile * config.coarseBinStride + (groupIdx >> 5u);
-    atomic_fetch_or_explicit(&coarseMask[coarseIndex],
-                             1u << (groupIdx & 31u),
-                             memory_order_relaxed);
     workOffsets[maskIndex] = workOffset;
 
     const uint packedTilePosition = uint(fineTopLeft.x) | (uint(fineTopLeft.y) << 16u);
@@ -1172,7 +1151,6 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> YSpans = nil;
         id<MTLBuffer> XSpans = nil;
         id<MTLBuffer> Polygons = nil;
-        id<MTLBuffer> CoarseMask = nil;
         id<MTLBuffer> FineMask = nil;
         id<MTLBuffer> WorkOffsets = nil;
         id<MTLBuffer> WorkDescs = nil;
@@ -1192,7 +1170,6 @@ struct MetalComputeRenderer3D::MetalComputeState
         id<MTLBuffer> DepthBlendAttr = nil;
         id<MTLBuffer> DepthBlendWinner = nil;
         id<MTLBuffer> BlendContinuationState = nil;
-        id<MTLBuffer> FinalColorBuffer = nil;
         id<MTLBuffer> NativeColorBuffer = nil;
         id<MTLTexture> NativeTexture = nil;
         bool VariantMetaSnapshotValid = false;
@@ -1212,7 +1189,6 @@ struct MetalComputeRenderer3D::MetalComputeState
     id<MTLLibrary> CompleteDepthBlendLibrary = nil;
     id<MTLLibrary> FinalPassLibrary = nil;
     id<MTLComputePipelineState> ClearIndirectPipeline = nil;
-    id<MTLComputePipelineState> ClearCoarseMaskPipeline = nil;
     id<MTLComputePipelineState> CalcOffsetsPipeline = nil;
     id<MTLComputePipelineState> SortWorkPipeline = nil;
     id<MTLComputePipelineState> SortWorkPolygonsPipeline = nil;
@@ -1304,7 +1280,6 @@ void ReleaseFrameSlotResources(SlotT& slot)
     ReleaseMetalObject(slot.YSpans);
     ReleaseMetalObject(slot.XSpans);
     ReleaseMetalObject(slot.Polygons);
-    ReleaseMetalObject(slot.CoarseMask);
     ReleaseMetalObject(slot.FineMask);
     ReleaseMetalObject(slot.WorkOffsets);
     ReleaseMetalObject(slot.WorkDescs);
@@ -1322,7 +1297,6 @@ void ReleaseFrameSlotResources(SlotT& slot)
     ReleaseMetalObject(slot.DepthBlendAttr);
     ReleaseMetalObject(slot.DepthBlendWinner);
     ReleaseMetalObject(slot.BlendContinuationState);
-    ReleaseMetalObject(slot.FinalColorBuffer);
     ReleaseMetalObject(slot.NativeColorBuffer);
     ReleaseMetalObject(slot.NativeTexture);
     slot.VariantMetaSnapshotValid = false;
@@ -1370,7 +1344,6 @@ MetalComputeRenderer3D::~MetalComputeRenderer3D()
     ReleaseMetalObject(State->DummyCapture128Texture);
     ReleaseMetalObject(State->DummyCapture256Texture);
     ReleaseMetalObject(State->ClearIndirectPipeline);
-    ReleaseMetalObject(State->ClearCoarseMaskPipeline);
     ReleaseMetalObject(State->CalcOffsetsPipeline);
     ReleaseMetalObject(State->SortWorkPipeline);
     ReleaseMetalObject(State->SortWorkPolygonsPipeline);
@@ -1564,8 +1537,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
 
     State->ClearIndirectPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_clear_indirect");
-    State->ClearCoarseMaskPipeline = BuildComputePipeline(
-        State->Device, State->Library, @"mp_compute_clear_coarse_mask");
     State->CalcOffsetsPipeline = BuildComputePipeline(
         State->Device, State->Library, @"mp_compute_calc_offsets");
     State->SortWorkPipeline = BuildComputePipeline(
@@ -1595,8 +1566,8 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
         State->Device, State->FinalPassLibrary,
         @"mp_compute_native_resolve");
 
-    if (!State->ClearIndirectPipeline || !State->ClearCoarseMaskPipeline ||
-        !State->CalcOffsetsPipeline || !State->SortWorkPipeline ||
+    if (!State->ClearIndirectPipeline || !State->CalcOffsetsPipeline ||
+        !State->SortWorkPipeline ||
         !State->SortWorkPolygonsPipeline || !State->InterpSpansPipeline ||
         !State->BinCombinedPipeline || !State->TextureRasterPipeline ||
         !State->CompleteDepthBlendPipeline || !State->CorrectCoveragePipeline ||
@@ -1608,7 +1579,6 @@ bool MetalComputeRenderer3D::CreateComputeFoundation()
 
     const NSUInteger minMaxThreads = std::min({
         State->ClearIndirectPipeline.maxTotalThreadsPerThreadgroup,
-        State->ClearCoarseMaskPipeline.maxTotalThreadsPerThreadgroup,
         State->CalcOffsetsPipeline.maxTotalThreadsPerThreadgroup,
         State->SortWorkPipeline.maxTotalThreadsPerThreadgroup,
         State->SortWorkPolygonsPipeline.maxTotalThreadsPerThreadgroup,
@@ -1818,7 +1788,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
     const size_t ySpanBytes = static_cast<size_t>(kMaxYSpanSetups) * sizeof(SpanSetupY);
     const size_t xSpanBytes = static_cast<size_t>(State->MaxSetupIndices) * sizeof(SpanSetupX);
     const size_t polygonBytes = static_cast<size_t>(kMaxPolygons) * sizeof(RenderPolygon);
-    const size_t coarseBytes = tileCount * kCoarseBinStride * sizeof(uint32_t);
     const size_t fineBytes = tileCount * kBinStride * sizeof(uint32_t);
     const size_t workOffsetBytes = fineBytes;
     const size_t workDescBytes = static_cast<size_t>(State->MaxWorkTiles) * 2u * sizeof(WorkDesc);
@@ -1839,7 +1808,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.YSpans = [State->Device newBufferWithLength:ySpanBytes options:MTLResourceStorageModeShared];
         slot.XSpans = [State->Device newBufferWithLength:xSpanBytes options:MTLResourceStorageModeShared];
         slot.Polygons = [State->Device newBufferWithLength:polygonBytes options:MTLResourceStorageModeShared];
-        slot.CoarseMask = [State->Device newBufferWithLength:coarseBytes options:MTLResourceStorageModeShared];
         slot.FineMask = [State->Device newBufferWithLength:fineBytes options:MTLResourceStorageModeShared];
         slot.WorkOffsets = [State->Device newBufferWithLength:workOffsetBytes options:MTLResourceStorageModeShared];
         slot.WorkDescs = [State->Device newBufferWithLength:workDescBytes options:MTLResourceStorageModeShared];
@@ -1886,9 +1854,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.BlendContinuationState =
             [State->Device newBufferWithLength:screenPixelBytes
                                        options:MTLResourceStorageModePrivate];
-        slot.FinalColorBuffer =
-            [State->Device newBufferWithLength:screenPixelBytes
-                                       options:MTLResourceStorageModePrivate];
         slot.NativeColorBuffer =
             [State->Device newBufferWithLength:kNativePixelBytes
                                        options:MTLResourceStorageModeShared];
@@ -1905,7 +1870,7 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
         slot.NativeTexture = [State->Device newTextureWithDescriptor:nativeDescriptor];
 
         if (!slot.Header || !slot.SetupIndices || !slot.YSpans || !slot.XSpans ||
-            !slot.Polygons || !slot.CoarseMask || !slot.FineMask ||
+            !slot.Polygons || !slot.FineMask ||
             !slot.WorkOffsets || !slot.WorkDescs || !slot.VariantMetaBuffer ||
             !slot.TextureMemoryBuffer || !slot.TexturePaletteBuffer ||
             !slot.ToonTableBuffer || !slot.FinalTablesBuffer ||
@@ -1913,7 +1878,6 @@ bool MetalComputeRenderer3D::ConfigureSpanBinResources(int scale)
             !slot.AttrTiles || !slot.DepthBlendColor || !slot.DepthBlendDepth ||
             !slot.DepthBlendAttr || !slot.BlendContinuationState ||
             !slot.DepthBlendWinner ||
-            !slot.FinalColorBuffer ||
             !slot.NativeColorBuffer || !slot.NativeTexture)
         {
             std::fprintf(stderr,
@@ -1960,17 +1924,13 @@ bool MetalComputeRenderer3D::RunFoundationSelfTest()
 
     constexpr uint32_t variantCount = 3;
     constexpr uint32_t maxWorkTiles = 8;
-    constexpr uint32_t coarseTileCount = 5;
     constexpr uint32_t polygonCount = 4;
     const FoundationConfig config {
-        variantCount, maxWorkTiles, coarseTileCount, kRasteriseChunkSize
+        variantCount, maxWorkTiles, kRasteriseChunkSize
     };
 
     id<MTLBuffer> headerBuffer =
         [State->Device newBufferWithLength:kBinHeaderWords * sizeof(uint32_t)
-                                   options:MTLResourceStorageModeShared];
-    id<MTLBuffer> coarseMaskBuffer =
-        [State->Device newBufferWithLength:coarseTileCount * 2 * sizeof(uint32_t)
                                    options:MTLResourceStorageModeShared];
     id<MTLBuffer> polygonVariantBuffer =
         [State->Device newBufferWithLength:polygonCount * sizeof(uint32_t)
@@ -1978,11 +1938,12 @@ bool MetalComputeRenderer3D::RunFoundationSelfTest()
     id<MTLBuffer> workDescBuffer =
         [State->Device newBufferWithLength:maxWorkTiles * 2 * sizeof(WorkDesc)
                                    options:MTLResourceStorageModeShared];
-    if (!headerBuffer || !coarseMaskBuffer || !polygonVariantBuffer || !workDescBuffer)
+    if (!headerBuffer || !polygonVariantBuffer || !workDescBuffer)
         return false;
 
-    std::memset([headerBuffer contents], 0, headerBuffer.length);
-    std::memset([coarseMaskBuffer contents], 0xA5, coarseMaskBuffer.length);
+    // Poison every word so this test proves mp_compute_clear_indirect is the
+    // sole initialization owner for all production header readers.
+    std::memset([headerBuffer contents], 0xA5, headerBuffer.length);
     std::memset([polygonVariantBuffer contents], 0, polygonVariantBuffer.length);
     std::memset([workDescBuffer contents], 0, workDescBuffer.length);
 
@@ -1991,15 +1952,6 @@ bool MetalComputeRenderer3D::RunFoundationSelfTest()
         id<MTLComputeCommandEncoder> encoder = [clearCommand computeCommandEncoder];
         [encoder setComputePipelineState:State->ClearIndirectPipeline];
         [encoder setBuffer:headerBuffer offset:0 atIndex:0];
-        [encoder setBytes:&config length:sizeof(config) atIndex:1];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
-                 threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-        [encoder endEncoding];
-    }
-    {
-        id<MTLComputeCommandEncoder> encoder = [clearCommand computeCommandEncoder];
-        [encoder setComputePipelineState:State->ClearCoarseMaskPipeline];
-        [encoder setBuffer:coarseMaskBuffer offset:0 atIndex:0];
         [encoder setBytes:&config length:sizeof(config) atIndex:1];
         [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1)
                  threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
@@ -2125,27 +2077,25 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         1, 1, setupCount,
         64, 32, 8, 8, 4,
         8, 4, 64, 32,
-        maxWorkTiles, kBinStride, kCoarseBinStride, 1,
+        maxWorkTiles, kBinStride, 1,
         0, 0, maxWorkTiles, 0,
         0, 1
     };
-    const FoundationConfig foundationConfig { 1, maxWorkTiles, tileCount, kRasteriseChunkSize };
+    const FoundationConfig foundationConfig { 1, maxWorkTiles, kRasteriseChunkSize };
 
     id<MTLBuffer> header = [State->Device newBufferWithLength:kBinHeaderWords * sizeof(uint32_t) options:MTLResourceStorageModeShared];
     id<MTLBuffer> setupBuffer = [State->Device newBufferWithBytes:setup.data() length:sizeof(setup) options:MTLResourceStorageModeShared];
     id<MTLBuffer> yBuffer = [State->Device newBufferWithBytes:yspans.data() length:sizeof(yspans) options:MTLResourceStorageModeShared];
     id<MTLBuffer> xBuffer = [State->Device newBufferWithBytes:xspans.data() length:sizeof(xspans) options:MTLResourceStorageModeShared];
     id<MTLBuffer> polygonBuffer = [State->Device newBufferWithBytes:&polygon length:sizeof(polygon) options:MTLResourceStorageModeShared];
-    id<MTLBuffer> coarse = [State->Device newBufferWithLength:tileCount * kCoarseBinStride * sizeof(uint32_t) options:MTLResourceStorageModeShared];
     id<MTLBuffer> fine = [State->Device newBufferWithLength:tileCount * kBinStride * sizeof(uint32_t) options:MTLResourceStorageModeShared];
     id<MTLBuffer> offsets = [State->Device newBufferWithLength:tileCount * kBinStride * sizeof(uint32_t) options:MTLResourceStorageModeShared];
     id<MTLBuffer> work = [State->Device newBufferWithLength:maxWorkTiles * 2 * sizeof(WorkDesc) options:MTLResourceStorageModeShared];
     if (!header || !setupBuffer || !yBuffer || !xBuffer || !polygonBuffer ||
-        !coarse || !fine || !offsets || !work)
+        !fine || !offsets || !work)
         return false;
 
-    std::memset([header contents], 0, header.length);
-    std::memset([coarse contents], 0, coarse.length);
+    std::memset([header contents], 0xA5, header.length);
     std::memset([fine contents], 0, fine.length);
     std::memset([offsets contents], 0, offsets.length);
     std::memset([work contents], 0, work.length);
@@ -2155,14 +2105,6 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
         [encoder setComputePipelineState:State->ClearIndirectPipeline];
         [encoder setBuffer:header offset:0 atIndex:0];
-        [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
-        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-        [encoder endEncoding];
-    }
-    {
-        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-        [encoder setComputePipelineState:State->ClearCoarseMaskPipeline];
-        [encoder setBuffer:coarse offset:0 atIndex:0];
         [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
         [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
         [encoder endEncoding];
@@ -2184,7 +2126,6 @@ bool MetalComputeRenderer3D::RunSpanBinSelfTest()
         [encoder setBuffer:header offset:0 atIndex:0];
         [encoder setBuffer:polygonBuffer offset:0 atIndex:1];
         [encoder setBuffer:xBuffer offset:0 atIndex:2];
-        [encoder setBuffer:coarse offset:0 atIndex:3];
         [encoder setBuffer:fine offset:0 atIndex:4];
         [encoder setBuffer:offsets offset:0 atIndex:5];
         [encoder setBuffer:work offset:0 atIndex:6];
@@ -2863,19 +2804,18 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             slot->InFlight.store(false, std::memory_order_release);
             return false;
         }
-        std::memset([slot->Header contents], 0, slot->Header.length);
+        // mp_compute_clear_indirect initializes every header word consumed by
+        // this batch. Keeping initialization on the GPU avoids a shared-memory
+        // write of the full 48 KiB header before every submitted frame.
 
         // Binning only runs when there are X-spans to bin. Reporting zero
         // polygon groups in that case keeps the depth-blend pass from reading
         // fine-mask words this frame never wrote.
         const uint32_t coarseTilesX = State->ScreenWidth / State->CoarseTileW;
         const uint32_t coarseTilesY = State->ScreenHeight / State->CoarseTileH;
-        const uint32_t tileCount = State->TilesPerLine * State->TileLines;
-
         const FoundationConfig foundationConfig {
             variantCount,
             State->MaxWorkTiles,
-            tileCount,
             kRasteriseChunkSize,
         };
         const SpanBinConfig baseSpanConfig {
@@ -2893,7 +2833,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
             State->CoarseTileH,
             State->MaxWorkTiles,
             kBinStride,
-            kCoarseBinStride,
             0u,
             GPU3D.RenderAlphaRef,
             GPU3D.RenderDispCnt,
@@ -3019,15 +2958,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
                 [encoder endEncoding];
             }
-            {
-                id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-                [encoder setComputePipelineState:State->ClearCoarseMaskPipeline];
-                [encoder setBuffer:slot->CoarseMask offset:0 atIndex:0];
-                [encoder setBytes:&foundationConfig length:sizeof(foundationConfig) atIndex:1];
-                [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(tileCount, 64), 1, 1)
-                         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-                [encoder endEncoding];
-            }
             if (polygonGroups > 0)
             {
                 id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
@@ -3035,7 +2965,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:slot->Header offset:0 atIndex:0];
                 [encoder setBuffer:slot->Polygons offset:0 atIndex:1];
                 [encoder setBuffer:slot->XSpans offset:0 atIndex:2];
-                [encoder setBuffer:slot->CoarseMask offset:0 atIndex:3];
                 [encoder setBuffer:slot->FineMask offset:0 atIndex:4];
                 [encoder setBuffer:slot->WorkOffsets offset:0 atIndex:5];
                 [encoder setBuffer:slot->WorkDescs offset:0 atIndex:6];
@@ -3149,7 +3078,6 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 [encoder setBuffer:slot->DepthBlendAttr offset:0 atIndex:2];
                 [encoder setBuffer:slot->FinalTablesBuffer offset:0 atIndex:4];
                 [encoder setBytes:&finalPassConfig length:sizeof(finalPassConfig) atIndex:5];
-                [encoder setBuffer:slot->FinalColorBuffer offset:0 atIndex:6];
                 [encoder setTexture:slot->FinalTexture atIndex:0];
                 [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(finalPixelCount, 64), 1, 1)
                          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
@@ -3166,10 +3094,10 @@ bool MetalComputeRenderer3D::SubmitRealFrameSpanBin()
                 };
                 id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
                 [encoder setComputePipelineState:State->NativeResolvePipeline];
-                [encoder setBuffer:slot->FinalColorBuffer offset:0 atIndex:0];
                 [encoder setBuffer:slot->NativeColorBuffer offset:0 atIndex:1];
                 [encoder setBytes:&resolveConfig length:sizeof(resolveConfig) atIndex:2];
-                [encoder setTexture:slot->NativeTexture atIndex:0];
+                [encoder setTexture:slot->FinalTexture atIndex:0];
+                [encoder setTexture:slot->NativeTexture atIndex:1];
                 [encoder dispatchThreadgroups:MTLSizeMake(DispatchGroups(256u * 192u, 64), 1, 1)
                          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
                 [encoder endEncoding];

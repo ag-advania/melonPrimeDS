@@ -15,7 +15,7 @@ struct MPSpanBinConfig
     uint numPolygons, numVariants, numSetupIndices;
     uint screenWidth, screenHeight, tileSize, tilesPerLine, tileLines;
     uint coarseTileCountX, coarseTileCountY, coarseTileW, coarseTileH;
-    uint maxWorkTiles, binStride, coarseBinStride, polygonGroups;
+    uint maxWorkTiles, binStride, polygonGroups;
     uint alphaRef, dispCnt, tileWorkCapacity, wBuffer;
     uint firstPolygon, batchPolygonCount;
 };
