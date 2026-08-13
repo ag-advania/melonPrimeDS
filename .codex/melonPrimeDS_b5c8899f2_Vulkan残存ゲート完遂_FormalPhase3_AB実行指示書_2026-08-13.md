@@ -1884,6 +1884,22 @@ macOS 31711999894 = PASS
 ただしROM gameplay、physical retail-Mac、AMD/Intel、DPIの代替ではない。
 smoke logはGitHub Actions artifactとして保存した。
 
+最新再実行（current workflow commit `94cd1de77bd67a381e489434103197e387f467b6`）:
+
+```text
+macOS 31716658392 = PASS
+  arm64 hosted MoltenVK runtime smoke = PASS
+  x86_64/arm64/universal bundle + signature checks = PASS
+  Intel-host MoltenVK diagnostic = NOT PASS / NON-GATING
+```
+
+Intel diagnosticは公式 `macos-26-intel` labelでx86_64 bundleを起動し、
+Vulkan instance / `VK_EXT_metal_surface` surface / logical device作成まで到達した。
+ただしApple Paravirtual Metal device上でprocessが`SIGABRT (-6)`となり、
+`presentation: requested-vsync`および`presenter ready`には到達しなかった。
+artifact `9187724074`にraw logを保存した。この結果はnative Intel Vulkanの証跡ではなく、
+Intel Vulkan gateを閉じない非ゲート診断として記録する。
+
 ---
 
 # 63. P3 doc cleanup後の推奨commit
@@ -1978,7 +1994,9 @@ default TelemetryOnly
 
 ```markdown
 - [ ] AMD runtime — NOT RUN; host exposes NVIDIA only
-- [ ] Intel Vulkan — NOT RUN; no Intel Vulkan device
+- [ ] Intel Vulkan — NOT RUN; no native Intel Vulkan device. Hosted Intel-host
+      MoltenVK diagnostic was attempted separately and did not pass; it is
+      non-gating evidence only.
 - [ ] Linux hardware/vendor runtime — NOT RUN; hosted CI build + llvmpipe/Xvfb
       validation smoke PASS, but no AMD/Intel Linux device was exercised
 - [x] MoltenVK/macOS hosted runtime smoke — PASS; hosted arm64 MoltenVK
@@ -2028,7 +2046,8 @@ OVERALL INSTRUCTION:
 CURRENT-SHA HOSTED CI:
     Ubuntu PASS — build + x86_64 Xvfb Vulkan validation smoke
     macOS PASS — x86_64/arm64/universal + MoltenVK bundle verification;
-               hosted arm64 runtime smoke PASS (Apple Paravirtual)
+               hosted arm64 runtime smoke PASS (Apple Paravirtual);
+               Intel-host diagnostic non-gating NOT PASS (SIGABRT before presenter ready)
     Windows PASS — Vulkan-enabled release build
 ```
 
@@ -2125,4 +2144,17 @@ not invalidate the completed NVIDIA Formal Phase 3 result, but the remaining
 hardware/runtime gaps prevent a cross-vendor recommendation or a default
 change. Hosted CI evidence is summarized in
 `docs/archive/audits/vulkan/2026-08-13-formal-ab/ci/README.md`.
+
+## 2026-08-14 hosted CI follow-up
+
+```text
+PASS — workflow 31716658392 completed successfully at current SHA
+      94cd1de77bd67a381e489434103197e387f467b6.
+PASS — arm64 MoltenVK runtime smoke and x86_64/arm64/universal bundle checks.
+NOT PASS / NON-GATING — Intel-host MoltenVK diagnostic; Apple Paravirtual
+      Metal probe reported an unexpected texture-array sample and the process
+      exited SIGABRT (-6) before presenter readiness.
+NOT RUN — native Intel Vulkan, AMD runtime, Linux hardware/vendor runtime,
+          physical retail-Mac/full-ROM, and DPI transition.
+Artifact — GitHub Actions artifact 9187724074 retains the Intel diagnostic log.
 ```
