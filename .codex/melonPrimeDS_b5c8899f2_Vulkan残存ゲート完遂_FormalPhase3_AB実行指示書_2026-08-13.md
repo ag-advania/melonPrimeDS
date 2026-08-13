@@ -45,7 +45,7 @@ Formal NVIDIA Phase 3 A/B        COMPLETE
 AMD actual runtime               NOT RUN
 Latency benefit                  NO WINNER / threshold not met
 Default pacing                   TelemetryOnly
-GitHub Actions                   PASS at audited implementation SHA
+GitHub Actions                   PASS; hosted macOS MoltenVK smoke PASS
 ```
 
 したがって、今後の主作業は**コード修正ではなく、残存validationと正式measurement**である。
@@ -1870,6 +1870,20 @@ Windows 31707415459 = PASS
 記録し、Linux llvmpipe smoke / macOS MoltenVK bundle verification と
 実機ランタイム未実行を分離する。local build結果だけでActions PASSとは書かない。
 
+追加実行（workflow-only commit `56eddfb61ca6d87fd921da8f1937324bd86cd9a2`、
+runtime sourceは同一）:
+
+```text
+macOS 31711999894 = PASS
+  arm64 hosted runtime smoke: Apple Paravirtual device,
+  VK_EXT_metal_surface, swapchain, IMMEDIATE, presenter ready,
+  VUID/SYNC-HAZARD/DEVICE_LOST/runtime failure = none
+```
+
+これはbundle-only確認を越えるhosted macOS startup/WSI evidenceである。
+ただしROM gameplay、physical retail-Mac、AMD/Intel、DPIの代替ではない。
+smoke logはGitHub Actions artifactとして保存した。
+
 ---
 
 # 63. P3 doc cleanup後の推奨commit
@@ -1967,8 +1981,9 @@ default TelemetryOnly
 - [ ] Intel Vulkan — NOT RUN; no Intel Vulkan device
 - [ ] Linux hardware/vendor runtime — NOT RUN; hosted CI build + llvmpipe/Xvfb
       validation smoke PASS, but no AMD/Intel Linux device was exercised
-- [ ] MoltenVK/macOS runtime — NOT RUN; hosted CI bundle verification PASS,
-      but no macOS runtime host was exercised
+- [x] MoltenVK/macOS hosted runtime smoke — PASS; hosted arm64 MoltenVK
+      instance/surface/swapchain/presenter path exercised; physical retail-Mac
+      and full-ROM gameplay coverage remain NOT RUN
 ```
 
 。
@@ -1990,7 +2005,7 @@ NEW RUNTIME P0/P1:
     NONE FOUND
 
 NEW DOC P3:
-    ONE NON-BLOCKING CLEANUP
+    CLOSED / NON-BLOCKING
 
 MANUAL PHASE 1:
     PASS except DPI NOT RUN
@@ -2012,7 +2027,8 @@ OVERALL INSTRUCTION:
 
 CURRENT-SHA HOSTED CI:
     Ubuntu PASS — build + x86_64 Xvfb Vulkan validation smoke
-    macOS PASS — x86_64/arm64/universal + MoltenVK bundle verification
+    macOS PASS — x86_64/arm64/universal + MoltenVK bundle verification;
+               hosted arm64 runtime smoke PASS (Apple Paravirtual)
     Windows PASS — Vulkan-enabled release build
 ```
 
@@ -2100,8 +2116,8 @@ NOT RUN — AMD Anti-Lag runtime (NVIDIA GPU only).
 NOT RUN — Intel Vulkan runtime.
 PARTIAL — Linux hosted CI build + Xvfb/llvmpipe Vulkan validation smoke PASS;
           Linux hardware/vendor runtime NOT RUN.
-PARTIAL — macOS hosted CI MoltenVK bundle verification PASS;
-          physical macOS/MoltenVK runtime NOT RUN.
+PARTIAL — macOS hosted CI MoltenVK bundle verification and arm64 startup/WSI
+          runtime smoke PASS; physical retail-Mac/full-ROM runtime NOT RUN.
 ```
 
 These are separate shipping-default/generalization gates. Their absence does

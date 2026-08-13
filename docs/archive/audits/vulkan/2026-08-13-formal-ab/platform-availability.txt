@@ -23,17 +23,27 @@ Current-SHA hosted CI follow-up (4a503debf15abd4120e1bf4e19629f396800bf33):
   this is Linux build/validation-path evidence, not AMD/Intel hardware evidence.
 - macOS workflow 31707412897: PASS; x86_64, arm64, and universal bundles
   passed pinned MoltenVK v1.4.0 dylib/license, lipo architecture, and bundle
-  signature checks. macOS runtime was not executed.
+  signature checks. macOS runtime was not executed in this bundle-only run.
 - Windows workflow 31707415459: PASS; current-SHA Vulkan-enabled Windows
   release build completed. No replacement for the local NVIDIA formal A/B
   capture or the missing AMD/Intel hardware runs.
 
+Hosted macOS runtime follow-up (workflow-only commit 56eddfb61ca6d87fd921da8f1937324bd86cd9a2):
+- macOS workflow 31711999894: PASS; arm64 `macos-26-arm64` ran the bundled
+  app through MoltenVK. `Apple Paravirtual device`, Vulkan instance,
+  `VK_EXT_metal_surface`, swapchain, `selected-present-mode=IMMEDIATE`, and
+  presenter readiness were observed. No VUID/SYNC-HAZARD/DEVICE_LOST/runtime
+  failure finding; the smoke log was uploaded as an artifact.
+- This is hosted Apple Paravirtual/Apple Virtual startup/WSI evidence without
+  a ROM gameplay session. It does not represent a physical retail-Mac,
+  full-ROM, or performance result.
+
 Consequences:
 - AMD Anti-Lag runtime cannot be executed on this NVIDIA-only host.
 - Intel Vulkan cannot be executed without an Intel Vulkan device.
-- Linux hardware/vendor runtime and the physical macOS/MoltenVK runtime gates
-  cannot be executed locally; hosted CI covers only the build/validation or
-  bundle checks stated above.
-- The hardware/runtime gaps remain NOT RUN, not PASS and are not converted
-  into synthetic results; the hosted CI checks above remain explicitly
-  limited to their stated build/smoke/bundle scope.
+- Linux hardware/vendor runtime and physical retail-Mac/full-ROM coverage
+  cannot be executed locally; hosted CI covers only the build/validation,
+  bundle, or startup/WSI smoke checks stated above.
+- AMD/Intel/DPI/physical-device gaps remain NOT RUN, not PASS, and are not
+  converted into synthetic results; the hosted CI checks above remain
+  explicitly limited to their stated build/smoke/bundle scope.
