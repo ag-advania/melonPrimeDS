@@ -1194,6 +1194,7 @@ void EmuThread::handleMessages()
 
 #ifdef MELONPRIME_DS
             melonPrime->OnEmuStart();
+            tryLoadDiagnosticSavestate();
 #endif // MELONPRIME_DS
             break;
 
@@ -1413,6 +1414,58 @@ void EmuThread::handleMessages()
         glBorrowMutex.unlock();
     }
 }
+
+#ifdef MELONPRIME_DS
+void EmuThread::tryLoadDiagnosticSavestate()
+{
+    // Dormant real-ROM differential hook. msg_EmuRun is handled only after
+    // NDS::Start(), and loadROM() has already installed the selected renderer.
+    // This matches the normal F-key load order without depending on macOS
+    // function-key routing.
+    static bool attempted = false;
+    const char* path = std::getenv("MELONPRIME_TEST_SAVESTATE");
+    if (attempted || !path || path[0] == '\0')
+        return;
+    attempted = true;
+
+    const char* customHudOff = std::getenv("MELONPRIME_TEST_CUSTOM_HUD_OFF");
+    const bool customHudForcedOff = customHudOff && customHudOff[0] != '\0' &&
+        std::strcmp(customHudOff, "0") != 0;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[SavestateDiff] customHudForcedOff=%u\n",
+        customHudForcedOff ? 1u : 0u);
+
+    const bool loaded = emuInstance->loadState(path);
+    if (loaded)
+    {
+        melonPrime->OnSavestateLoaded();
+        RasterDifferential::NotifyDiagnosticSavestateLoaded();
+
+        // Some real-ROM F2 snapshots are taken while the game is in its
+        // internal pause state. Keep the diagnostic path deterministic by
+        // allowing an explicit one-frame START pulse after the state load;
+        // production startup never sets this environment variable.
+        const char* unpause =
+            std::getenv("MELONPRIME_TEST_SAVESTATE_UNPAUSE");
+        if (unpause && unpause[0] != '\0' &&
+            std::strcmp(unpause, "0") != 0)
+        {
+            emuInstance->nds->SetKeyMask(0xFF7u); // START pressed (active low)
+            emuInstance->nds->RunFrame();
+            emuInstance->nds->SetKeyMask(0xFFFu); // release all buttons
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[SavestateDiff] one-frame START pulse sent\n");
+        }
+    }
+    Platform::Log(
+        loaded ? Platform::LogLevel::Info : Platform::LogLevel::Error,
+        "[SavestateDiff] path=%s loaded=%u\n",
+        path,
+        loaded ? 1u : 0u);
+}
+#endif
 
 void EmuThread::changeWindowTitle(char* title)
 {
@@ -1718,38 +1771,6 @@ void EmuThread::updateRenderer()
 #endif
     };
     nds->GetRenderer().SetRenderSettings(settings);
-
-#if defined(MELONPRIME_DS)
-    // Dormant real-ROM differential hook. Loading here guarantees the ROM and
-    // selected renderer both exist before the savestate replaces emulated
-    // state, without relying on macOS function-key routing.
-    static bool testSavestateAttempted = false;
-    const char* testSavestate = std::getenv("MELONPRIME_TEST_SAVESTATE");
-    if (!testSavestateAttempted && testSavestate && testSavestate[0] != '\0')
-    {
-        testSavestateAttempted = true;
-        const char* testCustomHudOff =
-            std::getenv("MELONPRIME_TEST_CUSTOM_HUD_OFF");
-        const bool customHudForcedOff = testCustomHudOff &&
-            testCustomHudOff[0] != '\0' &&
-            std::strcmp(testCustomHudOff, "0") != 0;
-        Platform::Log(
-            Platform::LogLevel::Info,
-            "[SavestateDiff] customHudForcedOff=%u\n",
-            customHudForcedOff ? 1u : 0u);
-        const bool loaded = emuInstance->loadState(testSavestate);
-        if (loaded)
-        {
-            melonPrime->OnSavestateLoaded();
-            RasterDifferential::NotifyDiagnosticSavestateLoaded();
-        }
-        Platform::Log(
-            loaded ? Platform::LogLevel::Info : Platform::LogLevel::Error,
-            "[SavestateDiff] path=%s loaded=%u\n",
-            testSavestate,
-            loaded ? 1u : 0u);
-    }
-#endif
 
 #include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
 }

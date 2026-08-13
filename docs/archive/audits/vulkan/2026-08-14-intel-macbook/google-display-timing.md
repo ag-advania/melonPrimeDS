@@ -77,12 +77,30 @@ disable the renderer or the GOOGLE timing backend.
 
 ## Formal A/B status
 
-Formal M0/M1/M2 is **NOT RUN**. The runbook requires a human-controlled fixed
-in-match scene (same savestate, room, camera and HUD), three randomized runs per
-mode, 600 warm-up frames and at least 10,000 measured frames per run. This
-checkout has a ROM save but no reproducible in-match savestate or automation to
-establish that scene. Boot/menu captures would not satisfy that contract and
-are not reported as Formal evidence.
+Formal M0/M1/M2 is **COMPLETE for the fixed F2 scene**. The run used the same
+AMHJ Japanese real ROM and its matching F2 slot 2 savestate, three randomized
+runs per mode, 600 warm-up frames and at least 10,000 measured frames per run.
+The earlier AMHP-ROM/Japanese-state trial is rejected as an invalid pair; it
+was the cause of the apparently frozen in-match clock. With the matching pair,
+the camera/HUD/time advanced and no ARM9 abort, `DEVICE_LOST`, `SIGABRT`, or
+VUID was observed. The diagnostic state-load hook now runs after `NDS::Start()`
+and renderer selection.
+
+| Mode | Runs | Frame P50 median | Frame P95 median | Frame P99 median | Pipeline P50 median | Pipeline P95 median |
+|---|---:|---:|---:|---:|---:|---:|
+| M0 TelemetryOnly | 3 | 16.671 ms | 20.719 ms | 23.036 ms | 16.611 ms | 18.703 ms |
+| M1 PresentWait | 3 | 16.678 ms | 20.125 ms | 22.442 ms | 15.851 ms | 18.425 ms |
+| M2 JustInTime | 3 | 16.688 ms | 20.506 ms | 23.326 ms | 15.543 ms | 18.474 ms |
+
+M0 remains the shipping default. M2's median pipeline P50 was about 1.068 ms
+better than M0, but median frame P99 was about 0.290 ms worse and median FPS
+was lower (59.257 versus 59.708). This is **NO MATERIAL DIFFERENCE** under the
+strict gate, not a correctness failure. M1/M2 bounded-wait timeout rates were
+approximately 54.4–58.5%, which is not appropriate for this low-spec machine.
+No 4x or 16x configuration was used in the formal runs.
+
+The complete run manifest, binary/ROM/state hashes and limitations are in
+[`formal-f2-macbook.md`](formal-f2-macbook.md).
 
 Short functional captures also showed frequent two-millisecond bounded-wait
 timeouts on this MoltenVK setup. That is recorded as a performance concern for

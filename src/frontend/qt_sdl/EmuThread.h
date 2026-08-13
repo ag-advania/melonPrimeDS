@@ -183,6 +183,9 @@ signals:
 
 private:
     void handleMessages();
+#ifdef MELONPRIME_DS
+    void tryLoadDiagnosticSavestate();
+#endif
 
     void updateRenderer();
     void compileShaders();
