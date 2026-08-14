@@ -742,7 +742,7 @@ bool DX12CommandContext::WaitQueueIdle()
     return WaitForFence(queueIdleValue);
 }
 
-ID3D12GraphicsCommandList* DX12CommandContext::Begin()
+ID3D12GraphicsCommandList* DX12CommandContext::Begin(bool recordRasterBegin)
 {
     if (!List || !Allocator)
         return nullptr;
@@ -752,7 +752,7 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin()
 
     // The allocator can only be recycled once the GPU is done with everything
     // recorded from it.
-    WaitForFence(SubmittedValue, true);
+    WaitForFence(SubmittedValue, recordRasterBegin);
 
     return ResetList();
 }

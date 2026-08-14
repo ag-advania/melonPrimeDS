@@ -159,7 +159,11 @@ public:
 
     // Blocks until every previously submitted list finished, then opens a fresh
     // command list. Returns nullptr if the context is not initialized.
-    ID3D12GraphicsCommandList* Begin();
+    //
+    // `recordRasterBegin` is reserved for the main 3D renderer entry point.
+    // Presenter/compositor command contexts use the default so their waits do
+    // not contaminate the renderer's RasterBeginWait telemetry.
+    ID3D12GraphicsCommandList* Begin(bool recordRasterBegin = false);
 
     // Opens the list only when its previous submission has already retired.
     // Never waits: compositor rings use this to drop a frame instead of

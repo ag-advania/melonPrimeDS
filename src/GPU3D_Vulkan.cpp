@@ -2115,7 +2115,7 @@ void VulkanRenderer3D::RenderFrame()
     VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
     Vk::FrameContext* frame = nullptr;
-    frame = Frames.BeginFrame();
+    frame = Frames.BeginFrame(true);
     if (!frame)
     {
         SetRuntimeFailure("could not begin a frame command buffer");

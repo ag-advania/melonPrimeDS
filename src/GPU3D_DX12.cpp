@@ -2159,7 +2159,7 @@ void DX12Renderer3D::RenderFrame()
     }
 
     ID3D12GraphicsCommandList* list = nullptr;
-    list = Commands.Begin();
+    list = Commands.Begin(true);
     if (!list)
     {
         SetRuntimeFailure("could not begin a frame command list");

@@ -368,17 +368,17 @@ VkCommandBuffer FrameRing::GetCommandBuffer() const noexcept
     return Frames[CurrentIndex].CommandBuffer;
 }
 
-FrameContext* FrameRing::BeginFrame()
+FrameContext* FrameRing::BeginFrame(bool recordRasterBegin)
 {
-    return BeginFrameInternal(true);
+    return BeginFrameInternal(true, recordRasterBegin);
 }
 
 FrameContext* FrameRing::TryBeginFrame()
 {
-    return BeginFrameInternal(false);
+    return BeginFrameInternal(false, false);
 }
 
-FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
+FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterBegin)
 {
     if (!Device || Frames.empty())
         return nullptr;
@@ -404,7 +404,7 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
         VkResult res = VK_SUCCESS;
         if (waitForSlot)
         {
-            VulkanPerf::ScopedRasterBeginWait rasterWait;
+            VulkanPerf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
             res = fns.WaitForFences(
                 handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
         }
@@ -416,7 +416,7 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
             return nullptr;
         if (res == VK_TIMEOUT)
         {
-            if (waitForSlot)
+            if (waitForSlot && recordRasterBegin)
                 VulkanPerf::RecordRasterBeginFenceTimeout();
             Platform::Log(Platform::LogLevel::Error,
                 "[Vulkan] frame slot %u did not complete within 1s; the GPU is not responding\n",
@@ -433,7 +433,7 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
         CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
         frame.HasPendingSubmission = false;
     }
-    else if (waitForSlot)
+    else if (waitForSlot && recordRasterBegin)
     {
         VulkanPerf::RecordRasterBeginNoWait();
     }

@@ -198,9 +198,13 @@ public:
     // Waits for the slot about to be reused, retires everything that frame was
     // holding, resets the command pool and opens the command buffer.
     //
+    // `recordRasterBegin` is reserved for the main 3D renderer entry point.
+    // Presenter/capture command rings use the default so their waits do not
+    // contaminate the renderer's RasterBeginWait telemetry.
+    //
     // Returns nullptr on failure (device lost, out of memory); the caller must
     // not record anything in that case.
-    FrameContext* BeginFrame();
+    FrameContext* BeginFrame(bool recordRasterBegin = false);
 
     // Non-blocking counterpart for work that is allowed to drop a frame. If
     // the next slot's fence is not signalled, returns nullptr immediately
@@ -253,7 +257,7 @@ public:
     void WaitIdle();
 
 private:
-    FrameContext* BeginFrameInternal(bool waitForSlot);
+    FrameContext* BeginFrameInternal(bool waitForSlot, bool recordRasterBegin);
     void DestroyFrames();
 
     const VulkanDevice* Device = nullptr;
