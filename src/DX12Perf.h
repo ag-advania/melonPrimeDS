@@ -52,6 +52,9 @@ enum class Counter : u32
     RasterBeginNoWaitCount,
     RasterBeginFenceTimeoutCount,
     IdenticalFrames,
+    DX12IndirectArgsCopyBytes,
+    DX12IndirectArgsCopyCount,
+    DX12IndirectArgsDirectWriteCount,
     Polygons,
     Variants,
     YSpans,
@@ -279,7 +282,8 @@ inline void MaybeReport()
     };
     std::fprintf(stderr,
         "[DX12Perf] counters scale=%u frames=%llu raster_wait_ns=%llu raster_wait_count=%llu "
-        "raster_no_wait_count=%llu raster_timeout_count=%llu identical=%llu polygons=%llu variants=%llu "
+        "raster_no_wait_count=%llu raster_timeout_count=%llu identical=%llu indirect_args_copy_B=%llu "
+        "indirect_args_copy_count=%llu indirect_args_direct_writes=%llu polygons=%llu variants=%llu "
         "y_spans=%llu setup_indices=%llu span_upload_B=%llu structured_pack_B=%llu "
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
@@ -289,6 +293,8 @@ inline void MaybeReport()
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
+        count(Counter::DX12IndirectArgsCopyBytes), count(Counter::DX12IndirectArgsCopyCount),
+        count(Counter::DX12IndirectArgsDirectWriteCount),
         count(Counter::Polygons), count(Counter::Variants), count(Counter::YSpans),
         count(Counter::SetupIndices), count(Counter::SpanUploadBytes),
         count(Counter::StructuredPackBytes),
@@ -317,7 +323,9 @@ enum class CpuMetric : u32 { RasterBeginWait, TexcacheUpdate, BuildPolygons, Spa
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
-    RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames, Polygons, Variants, YSpans, SetupIndices,
+    RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames,
+    DX12IndirectArgsCopyBytes, DX12IndirectArgsCopyCount, DX12IndirectArgsDirectWriteCount,
+    Polygons, Variants, YSpans, SetupIndices,
     SpanUploadBytes, StructuredPackBytes, StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,

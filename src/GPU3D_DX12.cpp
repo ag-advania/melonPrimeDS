@@ -50,7 +50,7 @@ constexpr u64 kUploadRingBytes = 32ull * 1024 * 1024;
 constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
 constexpr u32 kTextureSrvCount = 1;
-constexpr u32 kUavTableSize = 12;
+constexpr u32 kUavTableSize = 13;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
@@ -510,8 +510,8 @@ bool DX12Renderer3D::CreateFixedResources()
     IndirectArgsBuffer = Context->CreateBuffer(
         sizeof(BinResultHeader),
         D3D12_HEAP_TYPE_DEFAULT,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_FLAG_NONE,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
         L"MelonPrime DX12 indirect arguments");
     if (!IndirectArgsBuffer)
         return false;
@@ -1278,6 +1278,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
             4, false },
         { BlendStateBuffer.Get(), pixels, 4, false },
         { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
+        { IndirectArgsBuffer.Get(), static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -1364,6 +1365,7 @@ bool DX12Renderer3D::BindCompositionUavTable(
             4, false },
         { BlendStateBuffer.Get(),            pixels,                              4, false },
         { ResultWinnerBuffer.Get(),           resultWinnerElements,                4, false },
+        { IndirectArgsBuffer.Get(),           static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true  },
     };
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
@@ -2073,7 +2075,7 @@ void DX12Renderer3D::RenderFrame()
     if (RuntimeFailed)
         return;
     if (!Context || !RootSignature || !ResultBuffer || !ResultWinnerBuffer
-        || !FinalFBBuffer || !BinResultBuffer)
+        || !FinalFBBuffer || !BinResultBuffer || !IndirectArgsBuffer)
     {
         SetRuntimeFailure("required frame resources are unavailable");
         return;
@@ -2263,17 +2265,17 @@ void DX12Renderer3D::RenderFrame()
         list->SetPipelineState(PipelineCalcOffsets.Get());
         list->Dispatch(DivRoundUp(numVariants, 32), 1, 1);
         InsertUavBarrier(list, BinResultBuffer.Get());
+        InsertUavBarrier(list, IndirectArgsBuffer.Get());
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::DX12IndirectArgsDirectWriteCount,
+            static_cast<u64>(numVariants) + 1ull);
 
-        // The indirect arguments live in their own buffer: a resource cannot be
-        // in UNORDERED_ACCESS and INDIRECT_ARGUMENT at the same time, and the
-        // rasterise dispatches still read BinResult as a UAV.
-        TransitionBuffer(list, BinResultBuffer.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        list->CopyBufferRegion(IndirectArgsBuffer.Get(), 0, BinResultBuffer.Get(), 0, sizeof(BinResultHeader));
-        TransitionBuffer(list, BinResultBuffer.Get(),
-            D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        // CalcOffsets writes the same header layout directly into the dedicated
+        // indirect-argument UAV. BinResult stays UAV for the following sort and
+        // raster passes; only the argument buffer changes state here.
         TransitionBuffer(list, IndirectArgsBuffer.Get(),
-            D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
         // 6. sort the work list by variant
         list->SetPipelineState(PipelineSortWork.Get());
@@ -2368,7 +2370,8 @@ void DX12Renderer3D::RenderFrame()
         }
 
         TransitionBuffer(list, IndirectArgsBuffer.Get(),
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_COPY_DEST);
+            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         InsertUavBarrier(list, TileBuffers[0].Get());
         InsertUavBarrier(list, TileBuffers[1].Get());

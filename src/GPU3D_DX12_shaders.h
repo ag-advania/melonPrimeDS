@@ -212,6 +212,7 @@ RWStructuredBuffer<uint> ResolveOut : register(u8);
 RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
 RWStructuredBuffer<uint> BlendContinuationState : register(u10);
 RWStructuredBuffer<uint> ResultWinner : register(u11);
+RWByteAddressBuffer IndirectArgs : register(u12);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -975,7 +976,9 @@ void main(uint3 id : SV_DispatchThreadID)
         if (id.x == 0u)
         {
             uint total = BinResult.Load(BinVariantWorkCountBase + 12u);
-            BinResult.Store4(BinSortWorkWorkCountBase, uint4((total + 31u) / 32u, 1u, 1u, 0u));
+            uint4 sortArgs = uint4((total + 31u) / 32u, 1u, 1u, 0u);
+            BinResult.Store4(BinSortWorkWorkCountBase, sortArgs);
+            IndirectArgs.Store4(BinSortWorkWorkCountBase, sortArgs);
         }
 
         uint realCount = BinResult.Load(BinVariantWorkCountBase + id.x * 16u + 8u);
@@ -992,6 +995,11 @@ void main(uint3 id : SV_DispatchThreadID)
             (realCount + RasteriseChunkSize - 1u) / RasteriseChunkSize);
         BinResult.Store(BinVariantWorkCountBase + id.x * 16u + 8u,
             min(realCount, RasteriseChunkSize));
+        IndirectArgs.Store4(
+            BinVariantWorkCountBase + id.x * 16u,
+            uint4(1u,
+                (realCount + RasteriseChunkSize - 1u) / RasteriseChunkSize,
+                min(realCount, RasteriseChunkSize), 0u));
     }
 }
 )";
