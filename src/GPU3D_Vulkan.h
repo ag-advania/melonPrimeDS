@@ -412,12 +412,17 @@ private:
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
     u32 BuildPolygonBatches(u32 numPolygons);
 
+    bool RecordNativeResolveAndReadback();
     void EnsureFrameReadback();
 
     // --- device objects ----------------------------------------------------
     VulkanContext* Context = nullptr;
     VulkanDevice Device;
     Vk::FrameRing Frames;
+    // Native capture is demand-driven. A separate one-slot ring lets the
+    // first GetLine() append resolve/copy work after the main render and wait
+    // on only that capture submission's fence.
+    Vk::FrameRing CaptureFrames;
     // The compositor records into its own command buffers and fences
     // rather than sharing the rasterizer's. It has to: the structured 2D planes
     // are only complete after all 192 scanlines have been drawn, which is long
@@ -540,7 +545,8 @@ private:
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
-    VkFence PendingFence = VK_NULL_HANDLE;
+    bool NativeReadbackSubmitted = false;
+    VkFence PendingCaptureFence = VK_NULL_HANDLE;
     // Whether FinalFB holds a rendered frame at all. Its contents are undefined
     // until the first RenderFrame() submission completes, and the compositor
     // must not sample undefined memory and call it 3D.

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -268,6 +269,8 @@ bool DX12Renderer3D::Init()
 
     if (!Commands.Init(device, Context->GetQueue()))
         return false;
+    if (!CaptureCommands.Init(device, Context->GetQueue()))
+        return false;
     if (!Uploads.Init(*Context, kUploadRingBytes))
         return false;
     if (!Descriptors.Init(device, kDescriptorCount, true))
@@ -278,6 +281,8 @@ bool DX12Renderer3D::Init()
         return false;
     if (!CompositorUavDescriptors.Init(
             device, kUavTableSize * kCompositorFramesInFlight, false))
+        return false;
+    if (!CaptureDescriptors.Init(device, kUavTableSize, true))
         return false;
     if (!CreateRootSignature())
         return false;
@@ -301,6 +306,7 @@ bool DX12Renderer3D::Init()
 void DX12Renderer3D::Stop()
 {
     Commands.WaitIdle();
+    CaptureCommands.WaitIdle();
 
     Texcache.Reset();
     TextureHeap.CollectGarbage();
@@ -346,11 +352,14 @@ void DX12Renderer3D::Stop()
     StaticSrvDescriptors.Shutdown();
     FrameUavDescriptors.Shutdown();
     CompositorUavDescriptors.Shutdown();
+    CaptureDescriptors.Shutdown();
     Uploads.Shutdown();
     Commands.Shutdown();
+    CaptureCommands.Shutdown();
 
     FrameInFlight = false;
     FrameReadbackValid = false;
+    NativeReadbackSubmitted = false;
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
@@ -359,11 +368,13 @@ void DX12Renderer3D::Stop()
 void DX12Renderer3D::Reset()
 {
     Commands.WaitIdle();
+    CaptureCommands.WaitIdle();
     Texcache.Reset();
     TextureHeap.CollectGarbage();
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
     FrameReadbackValid = false;
+    NativeReadbackSubmitted = false;
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
@@ -850,6 +861,7 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     }
 
     Commands.WaitIdle();
+    CaptureCommands.WaitIdle();
 
     const int previousTileSize = TileSize;
     const bool pipelinesReady = ShaderStepIdx >= ShaderStepCount;
@@ -905,6 +917,7 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
 
     FrameInFlight = false;
     FrameReadbackValid = false;
+    NativeReadbackSubmitted = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2024,6 +2037,8 @@ void DX12Renderer3D::RenderFrame()
 {
     if (RuntimeFailed)
         return;
+    FrameReadbackValid = false;
+    NativeReadbackSubmitted = false;
     if (!Context || !RootSignature || !ResultBuffer || !ResultWinnerBuffer
         || !FinalFBBuffer || !BinResultBuffer || !IndirectArgsBuffer)
     {
@@ -2375,21 +2390,6 @@ void DX12Renderer3D::RenderFrame()
         InsertUavBarrier(list, FinalFBBuffer.Get());
     }
 
-    // 10. preserve a native-resolution source for display capture
-    if (PipelineResolve)
-    {
-        list->SetPipelineState(PipelineResolve.Get());
-        list->Dispatch(DivRoundUp(256, 8), DivRoundUp(192, 8), 1);
-        InsertUavBarrier(list, ResolveBuffer.Get());
-    }
-
-    // 11. copy to the readback heap the software compositor reads from
-    TransitionBuffer(list, ResolveBuffer.Get(),
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    list->CopyBufferRegion(ReadbackBuffer.Get(), 0, ResolveBuffer.Get(), 0, 256ull * 192ull * 4ull);
-    TransitionBuffer(list, ResolveBuffer.Get(),
-        D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
     bool submitted = false;
     {
         DX12Perf::ScopedCpuTimer submitTimer(DX12Perf::CpuMetric::QueueSubmit);
@@ -2408,18 +2408,90 @@ void DX12Renderer3D::RenderFrame()
     DX12Perf::MaybeReport();
 }
 
+bool DX12Renderer3D::RecordNativeResolveAndReadback()
+{
+    if (!CaptureCommands.GetList() || !CaptureDescriptors.GetHeap()
+        || !RootSignature || !PipelineResolve || !FinalFBBuffer || !ResolveBuffer
+        || !ReadbackBuffer || !FrameUavCpu.ptr)
+        return false;
+
+    // Retire only the previous lazy-capture submission before recycling its
+    // command allocator and descriptor table. This is not a queue-wide idle.
+    CaptureCommands.WaitIdle();
+
+    ID3D12GraphicsCommandList* list = CaptureCommands.TryBegin();
+    if (!list)
+        return false;
+
+    CaptureDescriptors.Reset();
+    D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
+    D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
+    {
+        DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
+        if (!CaptureDescriptors.Allocate(kUavTableSize, cpu, gpu))
+        {
+            CaptureCommands.Submit();
+            return false;
+        }
+        Context->GetDevice()->CopyDescriptorsSimple(
+            kUavTableSize,
+            cpu,
+            FrameUavCpu,
+            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCopyCount, kUavTableSize);
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kUavTableSize);
+
+    ID3D12DescriptorHeap* heaps[] = { CaptureDescriptors.GetHeap() };
+    list->SetDescriptorHeaps(1, heaps);
+    list->SetComputeRootSignature(RootSignature.Get());
+    SetDispatchConstants(list, MakeDispatchUniform());
+    list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
+
+    // The main render and compositor use the same direct queue. This UAV
+    // barrier makes FinalFB writes visible to the resolve in this later list.
+    InsertUavBarrier(list, FinalFBBuffer.Get());
+    list->SetPipelineState(PipelineResolve.Get());
+    list->Dispatch(DivRoundUp(256, 8), DivRoundUp(192, 8), 1);
+    InsertUavBarrier(list, ResolveBuffer.Get());
+    TransitionBuffer(list, ResolveBuffer.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    list->CopyBufferRegion(ReadbackBuffer.Get(), 0, ResolveBuffer.Get(), 0,
+        256ull * 192ull * 4ull);
+    TransitionBuffer(list, ResolveBuffer.Get(),
+        D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+    if (!CaptureCommands.Submit())
+        return false;
+
+    NativeReadbackSubmitted = true;
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeResolveCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeReadbackCopyBytes, 256ull * 192ull * 4ull);
+    return true;
+}
+
 void DX12Renderer3D::EnsureFrameReadback()
 {
-    if (FrameReadbackValid || !FrameInFlight || !ReadbackBuffer)
+    if (FrameReadbackValid || NativeReadbackSubmitted || !FinalFBHasValidFrame
+        || !ReadbackBuffer)
         return;
 
-    // Deliberately deferred to the first GetLine() of the frame instead of the
-    // end of RenderFrame(): the GPU gets to overlap with whatever the emulation
-    // thread does between the two.
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeReadbackDemandCount);
+    if (!RecordNativeResolveAndReadback())
+    {
+        SetRuntimeFailure("could not submit the demand-driven capture resolve/readback");
+        return;
+    }
+
+    const auto waitStart = DX12Perf::Clock::now();
     {
         DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::CaptureWait);
-        Commands.WaitIdle();
+        CaptureCommands.WaitIdle();
     }
+    DX12Perf::RecordNativeReadbackWait(static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            DX12Perf::Clock::now() - waitStart).count()));
 
     DX12Perf::ScopedCpuTimer mapTimer(DX12Perf::CpuMetric::CaptureMapCopy);
     DX12Perf::AddCounter(DX12Perf::Counter::CaptureReadCount);
@@ -2434,6 +2506,8 @@ void DX12Renderer3D::EnsureFrameReadback()
     else
     {
         SetRuntimeFailure("native capture readback mapping failed");
+        FrameInFlight = false;
+        return;
     }
 
     FrameInFlight = false;

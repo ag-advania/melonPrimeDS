@@ -356,10 +356,12 @@ private:
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
     u32 BuildPolygonBatches(u32 numPolygons);
 
+    bool RecordNativeResolveAndReadback();
     void EnsureFrameReadback();
 
     DX12Context* Context = nullptr;
     DX12CommandContext Commands;
+    DX12CommandContext CaptureCommands;
     DX12UploadRing Uploads;
     DX12DescriptorRing Descriptors;
     // Descriptor lifetime classification:
@@ -369,6 +371,9 @@ private:
     DX12DescriptorRing StaticSrvDescriptors;
     DX12DescriptorRing FrameUavDescriptors;
     DX12DescriptorRing CompositorUavDescriptors;
+    // One shader-visible table for the lazy Resolve submission. It is reset
+    // only after CaptureCommands has retired its prior submission.
+    DX12DescriptorRing CaptureDescriptors;
     DX12TextureHeap TextureHeap;
 
     TexcacheDX12 Texcache;
@@ -479,6 +484,7 @@ private:
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
+    bool NativeReadbackSubmitted = false;
     bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;

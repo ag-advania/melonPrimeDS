@@ -76,6 +76,10 @@ enum class Counter : u32
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
+    NativeResolveCount,
+    NativeReadbackCopyBytes,
+    NativeReadbackDemandCount,
+    NativeReadbackWaitNs,
     Count,
 };
 
@@ -155,6 +159,11 @@ inline void AddCounter(Counter counter, u64 value = 1) noexcept
     if (!IsEnabled())
         return;
     GetState().Counters[static_cast<std::size_t>(counter)] += value;
+}
+
+inline void RecordNativeReadbackWait(u64 nanoseconds) noexcept
+{
+    AddCounter(Counter::NativeReadbackWaitNs, nanoseconds);
 }
 
 class ScopedRasterBeginWait
@@ -317,7 +326,8 @@ inline void MaybeReport()
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
         "presenter_descriptor_updates=%llu compositor_descriptor_updates=%llu compose_drops=%llu "
-        "screen_copy_B=%llu\n",
+        "screen_copy_B=%llu native_resolves=%llu native_readback_copy_B=%llu "
+        "native_readback_demands=%llu native_readback_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -332,7 +342,9 @@ inline void MaybeReport()
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
         count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
-        count(Counter::PresentedScreenCopyBytes));
+        count(Counter::PresentedScreenCopyBytes), count(Counter::NativeResolveCount),
+        count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
+        count(Counter::NativeReadbackWaitNs));
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
@@ -390,11 +402,16 @@ enum class Counter : u32
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
+    NativeResolveCount,
+    NativeReadbackCopyBytes,
+    NativeReadbackDemandCount,
+    NativeReadbackWaitNs,
     Count,
 };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}
+inline void RecordNativeReadbackWait(u64) noexcept {}
 class ScopedRasterBeginWait
 {
 public:

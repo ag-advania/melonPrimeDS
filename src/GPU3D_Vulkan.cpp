@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <functional>
 #include <mutex>
@@ -264,6 +265,9 @@ bool VulkanRenderer3D::Init()
     if (!Frames.Create(Device, Device.GetMainQueueFamily(), RendererFramesInFlight))
         return false;
 
+    if (!CaptureFrames.Create(Device, Device.GetMainQueueFamily(), 1))
+        return false;
+
     // Same queue family, separate command pool / command buffer / fence. Both
     // rings submit to the same queue, so the compositor's barriers can depend on
     // the rasterizer's earlier submission through submission order.
@@ -315,6 +319,7 @@ void VulkanRenderer3D::Stop()
         // Permitted WaitIdle site: teardown. Every destroy below assumes no
         // command buffer still references the object.
         Frames.WaitIdle();
+        CaptureFrames.WaitIdle();
         ComposeFrames.WaitIdle();
 
         SavePipelineCache();
@@ -352,12 +357,14 @@ void VulkanRenderer3D::Stop()
     TextureHeap.Shutdown();
 
     ComposeFrames.Destroy();
+    CaptureFrames.Destroy();
     Frames.Destroy();
     Device.Destroy();
 
     FrameInFlight = false;
     FrameReadbackValid = false;
-    PendingFence = VK_NULL_HANDLE;
+    NativeReadbackSubmitted = false;
+    PendingCaptureFence = VK_NULL_HANDLE;
     FinalFBHasContent = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
@@ -378,7 +385,8 @@ void VulkanRenderer3D::Reset()
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
     FrameReadbackValid = false;
-    PendingFence = VK_NULL_HANDLE;
+    NativeReadbackSubmitted = false;
+    PendingCaptureFence = VK_NULL_HANDLE;
     // FinalFB still holds the last ROM's final frame. Nothing has invalidated
     // it, but nothing has re-rendered it either, so the compositor must go back
     // to treating it as "no 3D" until the next RenderFrame() lands.
@@ -739,6 +747,7 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     // no command buffer still references them. Both rings, because the
     // compositor references FinalFB and its own output buffer.
     Frames.WaitIdle();
+    CaptureFrames.WaitIdle();
     ComposeFrames.WaitIdle();
 
     ScaleFactor = scale;
@@ -789,7 +798,8 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
     FrameReadbackValid = false;
-    PendingFence = VK_NULL_HANDLE;
+    NativeReadbackSubmitted = false;
+    PendingCaptureFence = VK_NULL_HANDLE;
     // The old FinalFB was destroyed; the new one starts UNDEFINED.
     FinalFBHasContent = false;
 
@@ -2016,6 +2026,10 @@ void VulkanRenderer3D::RenderFrame()
         return;
     }
 
+    FrameReadbackValid = false;
+    NativeReadbackSubmitted = false;
+    PendingCaptureFence = VK_NULL_HANDLE;
+
     const Vk::DeviceDispatch& fns = Device.Fns();
     VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
@@ -2068,7 +2082,6 @@ void VulkanRenderer3D::RenderFrame()
         // Keep the frame-ring fence progression intact while skipping every
         // 3D upload/dispatch. The compositor still runs at VBlank with the
         // current structured 2D planes and samples the unchanged FinalFB.
-        PendingFence = frame->InFlightFence;
         bool identicalSubmitted = false;
         {
             VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
@@ -2079,7 +2092,6 @@ void VulkanRenderer3D::RenderFrame()
             FrameInFlight = true;
             return;
         }
-        PendingFence = VK_NULL_HANDLE;
         SetRuntimeFailure("identical-frame submission failed");
         return;
     }
@@ -2505,56 +2517,6 @@ void VulkanRenderer3D::RenderFrame()
     fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(ScreenWidth), 32),
         static_cast<u32>(ScreenHeight), 1);
 
-    // 10. resolve to the DS's native resolution for display capture (GetLine()).
-    //
-    // Presentation does *not* go through here -- ComposeStructuredOutput()
-    // samples FinalFB at its full internal resolution. This path exists because
-    // display capture writes its result back into real VRAM as 15-bit DS words,
-    // so it has to be 256x192 exactly. Match OpenGL's CaptureDownscaleFS by
-    // selecting the centre texel of each internal-resolution pixel block;
-    // averaging here changes the emulated capture contents. See Resolve.comp.
-    //
-    // FinalFB stays in GENERAL -- it is a storage image on both sides of this
-    // barrier -- so only the FinalPass writes have to be made available to the
-    // Resolve reads. Equal layouts, hence an execution+memory dependency rather
-    // than a transition.
-    FinalFB.RecordLayoutTransition(cmd,
-        VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-
-    // No WAR barrier for NativeResolveBuffer against the previous frame's
-    // copy-to-readback: this renderer runs one frame in flight, so BeginFrame()
-    // already waited on the fence that covered that copy.
-    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-        Pipelines[VulkanShaders::Pipeline_Resolve]);
-    fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(192u, 8u), 1);
-
-    {
-        const VkBuffer resolved = NativeResolveBuffer.GetHandle();
-        BufferBarrier(cmd, &resolved, 1,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-    }
-
-    {
-        VkBufferCopy copy{};
-        copy.srcOffset = 0;
-        copy.dstOffset = 0;
-        copy.size = NativeResolveBytes;
-        fns.CmdCopyBuffer(cmd,
-            NativeResolveBuffer.GetHandle(), NativeReadback.GetHandle(), 1, &copy);
-    }
-
-    // Host visibility is not implicit: the transfer write has to be made
-    // available to the HOST_READ access the CPU performs after the fence.
-    {
-        const VkBuffer readback = NativeReadback.GetHandle();
-        BufferBarrier(cmd, &readback, 1,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
-    }
-
     if (!FrameStaging.FlushWritten())
     {
         Frames.SubmitFrame(Device.GetMainQueue());
@@ -2562,7 +2524,6 @@ void VulkanRenderer3D::RenderFrame()
         return;
     }
 
-    PendingFence = frame->InFlightFence;
     bool submitted = false;
     {
         VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
@@ -2578,27 +2539,99 @@ void VulkanRenderer3D::RenderFrame()
     }
     else
     {
-        PendingFence = VK_NULL_HANDLE;
         SetRuntimeFailure("frame command submission failed");
     }
 }
 
-void VulkanRenderer3D::EnsureFrameReadback()
+bool VulkanRenderer3D::RecordNativeResolveAndReadback()
 {
-    if (FrameReadbackValid || !FrameInFlight || PendingFence == VK_NULL_HANDLE)
-        return;
+    if (!CaptureFrames.IsValid() || !FinalFB.IsValid()
+        || NativeResolveBuffer.GetHandle() == VK_NULL_HANDLE
+        || NativeReadback.GetHandle() == VK_NULL_HANDLE
+        || Pipelines[VulkanShaders::Pipeline_Resolve] == VK_NULL_HANDLE)
+        return false;
 
     const Vk::DeviceDispatch& fns = Device.Fns();
+    Vk::FrameContext* frame = CaptureFrames.BeginFrame();
+    if (!frame)
+        return false;
 
-    // Deliberately deferred to the first GetLine() of the frame rather than the
-    // end of RenderFrame(): the GPU overlaps with whatever the emulation thread
-    // does in between. This waits on *this frame's* fence only -- never
-    // vkDeviceWaitIdle, which would also stall the presenter.
+    const VkDescriptorSet rasterizerSet =
+        Descriptors.GetRasterizerSet(Frames.GetFrameIndex(), RasterizerSetSlot);
+    if (rasterizerSet == VK_NULL_HANDLE)
+    {
+        CaptureFrames.SubmitFrame(Device.GetMainQueue());
+        return false;
+    }
+
+    VkCommandBuffer cmd = frame->CommandBuffer;
+
+    // FinalFB is kept in GENERAL for its whole lifetime. This dependency is
+    // recorded in the dedicated capture command buffer, after the main render
+    // and any compositor submission on the same queue.
+    FinalFB.RecordLayoutTransition(cmd,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+    fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        Layouts.GetPipelineLayout(), Vk::RasterizerSetIndex, 1, &rasterizerSet, 0, nullptr);
+    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        Pipelines[VulkanShaders::Pipeline_Resolve]);
+    fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(192u, 8u), 1);
+
+    const VkBuffer resolved = NativeResolveBuffer.GetHandle();
+    BufferBarrier(cmd, &resolved, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+    VkBufferCopy copy{};
+    copy.size = NativeResolveBytes;
+    fns.CmdCopyBuffer(cmd,
+        NativeResolveBuffer.GetHandle(), NativeReadback.GetHandle(), 1, &copy);
+
+    const VkBuffer readback = NativeReadback.GetHandle();
+    BufferBarrier(cmd, &readback, 1,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+
+    if (!CaptureFrames.SubmitFrame(Device.GetMainQueue()))
+        return false;
+
+    PendingCaptureFence = frame->InFlightFence;
+    NativeReadbackSubmitted = true;
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeResolveCount);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::NativeReadbackCopyBytes, NativeResolveBytes);
+    return true;
+}
+
+void VulkanRenderer3D::EnsureFrameReadback()
+{
+    if (FrameReadbackValid || NativeReadbackSubmitted || !FinalFBHasContent)
+        return;
+
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeReadbackDemandCount);
+    if (!RecordNativeResolveAndReadback())
+    {
+        SetRuntimeFailure("could not submit the demand-driven capture resolve/readback");
+        return;
+    }
+
+    const auto waitStart = VulkanPerf::Clock::now();
+    const Vk::DeviceDispatch& fns = Device.Fns();
+
     const VkResult res = fns.WaitForFences(
-        Device.GetHandle(), 1, &PendingFence, VK_TRUE, 1000000000ull /* 1 s */);
+        Device.GetHandle(), 1, &PendingCaptureFence, VK_TRUE,
+        1000000000ull /* 1 s */);
+    VulkanPerf::RecordNativeReadbackWait(static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            VulkanPerf::Clock::now() - waitStart).count()));
+    PendingCaptureFence = VK_NULL_HANDLE;
     if (res != VK_SUCCESS)
     {
-        SetRuntimeFailure("the frame did not complete in time for the capture readback: "
+        SetRuntimeFailure("the demand-driven capture readback did not complete in time: "
             + Vk::FormatResult(res));
         FrameInFlight = false;
         return;

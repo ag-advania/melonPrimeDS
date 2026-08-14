@@ -78,6 +78,10 @@ enum class Counter : u32
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     CaptureReadCount,
+    NativeResolveCount,
+    NativeReadbackCopyBytes,
+    NativeReadbackDemandCount,
+    NativeReadbackWaitNs,
     PresentedScreenCopyBytes,
     HudUploadBytes,
     HudTextureRecreateCount,
@@ -158,6 +162,11 @@ inline void AddCounter(Counter counter, u64 value = 1) noexcept
 {
     if (IsEnabled())
         GetState().Counters[static_cast<std::size_t>(counter)] += value;
+}
+
+inline void RecordNativeReadbackWait(u64 nanoseconds) noexcept
+{
+    AddCounter(Counter::NativeReadbackWaitNs, nanoseconds);
 }
 
 class ScopedRasterBeginWait
@@ -301,7 +310,8 @@ inline void MaybeReport()
         "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
         "descriptor_cpu_ns=%llu presenter_descriptor_updates=%llu "
         "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
-        "screen_copy_B=%llu hud_upload_B=%llu hud_recreates=%llu\n",
+        "native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
+        "native_readback_wait_ns=%llu screen_copy_B=%llu hud_upload_B=%llu hud_recreates=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -319,7 +329,9 @@ inline void MaybeReport()
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
         count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
-        count(Counter::CaptureReadCount), count(Counter::PresentedScreenCopyBytes),
+        count(Counter::CaptureReadCount), count(Counter::NativeResolveCount),
+        count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
+        count(Counter::NativeReadbackWaitNs), count(Counter::PresentedScreenCopyBytes),
         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
 
     for (SampleWindow& window : state.Cpu)
@@ -347,11 +359,13 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
     PresenterDescriptorUpdateCount, CompositorDescriptorUpdateCount,
-    CompositorDropCount, CaptureReadCount,
+    CompositorDropCount, CaptureReadCount, NativeResolveCount,
+    NativeReadbackCopyBytes, NativeReadbackDemandCount, NativeReadbackWaitNs,
     PresentedScreenCopyBytes, HudUploadBytes, HudTextureRecreateCount, Count };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}
+inline void RecordNativeReadbackWait(u64) noexcept {}
 class ScopedRasterBeginWait { public: explicit ScopedRasterBeginWait(bool = true) noexcept {} };
 inline void RecordRasterBeginNoWait() noexcept {}
 inline void RecordRasterBeginFenceTimeout() noexcept {}
