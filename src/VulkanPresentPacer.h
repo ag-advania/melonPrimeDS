@@ -20,20 +20,6 @@
 namespace melonDS
 {
 
-// Result of one vkGetSwapchainTimingPropertiesEXT call.
-//
-// VK_NOT_READY is a documented, non-fatal answer: a swapchain may not know its
-// refresh timing until it has presented at least once. Distinguishing it from a
-// real failure is the difference between "retry after the first present" and
-// "this driver will never answer, stop asking".
-enum class VulkanTimingRefreshResult : int
-{
-    Updated = 0,
-    NotReady,
-    Unavailable,
-    Failed,
-};
-
 // How the display's refresh cadence behaves, derived from the refreshInterval
 // the swapchain reports. Diagnostics only: the pacer never rewrites the user's
 // VSync setting from this.
@@ -54,6 +40,27 @@ enum class VulkanRefreshDynamics : int
 class VulkanPresentPacer
 {
 public:
+    // Collapse only lifecycle results that must reach the presenter. Query
+    // callers retain their own success/pending contract; an optional timing
+    // failure outside these classes remains a timing-only downgrade. Keeping
+    // this mapping pure makes the fault-injection contract executable without
+    // a Vulkan device.
+    [[nodiscard]] static constexpr VulkanPacerBeginResult
+    ClassifyPresentLifecycleResult(VkResult result) noexcept
+    {
+        switch (result)
+        {
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return VulkanPacerBeginResult::SwapchainOutOfDate;
+        case VK_ERROR_DEVICE_LOST:
+            return VulkanPacerBeginResult::DeviceLost;
+        case VK_ERROR_SURFACE_LOST_KHR:
+            return VulkanPacerBeginResult::SurfaceLost;
+        default:
+            return VulkanPacerBeginResult::Continue;
+        }
+    }
+
     struct PresentMetadata
     {
         VkPresentId2KHR Id2{};
@@ -203,8 +210,8 @@ private:
     [[nodiscard]] VulkanPacingCapabilities BuildCapabilities() const noexcept;
     [[nodiscard]] VulkanPacingDecision ResolveDecision(
         bool reflexActive, bool antiLagActive, bool normalSpeed) const noexcept;
-    VulkanTimingRefreshResult RefreshTimingProperties();
-    bool RefreshTimeDomains();
+    [[nodiscard]] VulkanPacerBeginResult RefreshTimingProperties();
+    [[nodiscard]] VulkanPacerBeginResult RefreshTimeDomains();
     void SelectTargetPresentStage() noexcept;
     // Returns false when the driver refused the requested queue size. The
     // caller must distinguish the initial allocation (no queue exists, so no
@@ -213,7 +220,8 @@ private:
     [[nodiscard]] bool ApplyTimingQueueSize(u32 size);
     [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
     void ResetTimingLifecycle() noexcept;
-    void ReportPastTiming();
+    void LatchPendingBeginResult(VulkanPacerBeginResult result) noexcept;
+    [[nodiscard]] VulkanPacerBeginResult ReportPastTiming();
     [[nodiscard]] VulkanPacerBeginResult ReportGooglePastTiming();
     [[nodiscard]] VulkanPacerBeginResult RefreshGoogleTiming();
     // Absolute and relative are deliberately separate functions: one returns a
@@ -280,7 +288,9 @@ private:
     // --- Phase 2: time domains ----------------------------------------------
     u64 TimeDomainsCounter = 0;
     bool TimeDomainsReady = false;
-    bool TimeDomainsRetryPending = false;
+    // Set only when bounded VK_INCOMPLETE enumeration retries were exhausted;
+    // VK_NOT_READY is not a valid pending result for the time-domain query.
+    bool TimeDomainsEnumerationRetryPending = false;
     VkTimeDomainKHR TargetTimeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
     u64 TargetTimeDomainId = 0;
     VkPresentStageFlagsEXT TargetPresentStage = 0;
@@ -314,6 +324,10 @@ private:
     // Whether this frame actually issued the bounded wait, as opposed to being
     // allowed to. Reset at the top of every BeginFrame.
     bool WaitAttemptedThisFrame = false;
+    // OnSwapchainCreated() is intentionally void because the presenter owns
+    // swapchain construction. A fatal eager timing query is latched here and
+    // consumed by the next BeginFrame(), so it cannot disappear in a log line.
+    VulkanPacerBeginResult PendingBeginResult = VulkanPacerBeginResult::Continue;
     u32 TimingReportCountdown = 0;
     u32 WaitTimeouts = 0;
 

@@ -156,6 +156,15 @@ constexpr VulkanPacerBeginAction VulkanPacerActionFor(VulkanPacerBeginResult res
     return {false, false};
 }
 
+// A swapchain-creation query runs before the presenter's next typed routing
+// point. Preserve the first fatal class so a later optional query cannot
+// overwrite it or turn it into a log-only downgrade.
+constexpr VulkanPacerBeginResult VulkanLatchBeginResult(
+    VulkanPacerBeginResult current, VulkanPacerBeginResult observed) noexcept
+{
+    return current == VulkanPacerBeginResult::Continue ? observed : current;
+}
+
 // Everything the pacing decision depends on that is not a per-frame value.
 // Split into device-level and surface-level members wherever the extension
 // draws that line, because a capability can be present on one and not the other.

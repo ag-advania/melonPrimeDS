@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "VulkanPresentPacingPolicy.h"
+#include "VulkanPresentPacer.h"
 #include "VulkanGoogleDisplayTimingModel.h"
 #include "VulkanPresentTimingModel.h"
 
@@ -1226,6 +1227,46 @@ void TestBeginResultRouting()
         "surface loss must leave the swapchain-only rebuild loop");
 }
 
+// Query fault injection uses the production VkResult classifier. The mapping
+// is pure, so these lifecycle classes can be tested without a Vulkan device or
+// a window while the source audit verifies each API keeps its own success set.
+void TestPresentTimingLifecycleResultClassification()
+{
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_SUCCESS)
+                == VulkanPacerBeginResult::Continue,
+        "successful timing query must continue");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_INCOMPLETE)
+                == VulkanPacerBeginResult::Continue,
+        "incomplete timing query must continue with partial results");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_NOT_READY)
+                == VulkanPacerBeginResult::Continue,
+        "VK_NOT_READY must not become a fatal lifecycle result");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_ERROR_OUT_OF_DATE_KHR)
+                == VulkanPacerBeginResult::SwapchainOutOfDate,
+        "out-of-date timing result must request swapchain rebuild");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_ERROR_DEVICE_LOST)
+                == VulkanPacerBeginResult::DeviceLost,
+        "device-lost timing result must fail the renderer");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_ERROR_SURFACE_LOST_KHR)
+                == VulkanPacerBeginResult::SurfaceLost,
+        "surface-lost timing result must fail the surface/runtime");
+    Require(VulkanPresentPacer::ClassifyPresentLifecycleResult(VK_ERROR_UNKNOWN)
+                == VulkanPacerBeginResult::Continue,
+        "unknown optional timing failure must remain a timing-only downgrade");
+    Require(VulkanLatchBeginResult(
+                VulkanPacerBeginResult::Continue, VulkanPacerBeginResult::DeviceLost)
+                == VulkanPacerBeginResult::DeviceLost,
+        "a Google eager DeviceLost must be held for the next routing point");
+    Require(VulkanLatchBeginResult(
+                VulkanPacerBeginResult::Continue, VulkanPacerBeginResult::SurfaceLost)
+                == VulkanPacerBeginResult::SurfaceLost,
+        "a Google eager SurfaceLost must be held for the next routing point");
+    Require(VulkanLatchBeginResult(
+                VulkanPacerBeginResult::DeviceLost, VulkanPacerBeginResult::SurfaceLost)
+                == VulkanPacerBeginResult::DeviceLost,
+        "the first fatal lifecycle class must not be overwritten");
+}
+
 
 // VSync off means IMMEDIATE or MAILBOX, where "present at this time" has no
 // defined meaning -- but telemetry and the bounded wait are still fine.
@@ -1255,6 +1296,8 @@ int main()
     TestResetOnSwapchainRecreation();
     TestGuards();
     TestHistoryWraparound();
+    TestBeginResultRouting();
+    TestPresentTimingLifecycleResultClassification();
     TestGoogleTimingTransactions();
 
     TestTimingBackendSelection();
@@ -1265,7 +1308,6 @@ int main()
     TestVendorLatencyApisWin();
     TestSpeedAndPolicyGates();
     TestFallbackReasonsAreSpecific();
-    TestBeginResultRouting();
     TestNonFifoKeepsWaitButNotTarget();
 
     TestRelativeFallbackWhenSurfaceLacksAbsolute();

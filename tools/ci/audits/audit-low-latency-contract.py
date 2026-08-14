@@ -285,9 +285,10 @@ def main() -> int:
     require(
         "enum class VulkanPacerBeginResult" in vulkan_pacing_policy
         and "VulkanPacerActionFor" in vulkan_pacing_policy
-        and "return VulkanPacerBeginResult::SwapchainOutOfDate;" in vulkan_pacer
-        and "return VulkanPacerBeginResult::DeviceLost;" in vulkan_pacer
-        and "return VulkanPacerBeginResult::SurfaceLost;" in vulkan_pacer
+        and "return VulkanPacerBeginResult::SwapchainOutOfDate;" in vulkan_pacer_header
+        and "return VulkanPacerBeginResult::DeviceLost;" in vulkan_pacer_header
+        and "return VulkanPacerBeginResult::SurfaceLost;" in vulkan_pacer_header
+        and "return lifecycle;" in vulkan_pacer
         and "pacerAction.FailRenderer" in vulkan_presenter
         and 'Fail("Vulkan present timing query", result);' in vulkan_presenter
         and "TestBeginResultRouting" in vulkan_timing_tests,
@@ -743,10 +744,95 @@ def main() -> int:
         failures,
     )
     require(
-        "if (result == VK_NOT_READY)" in vulkan_pacer
+        "if (result == VK_NOT_READY)" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+        )
         and "TimingPropertiesRetryPending = true;" in vulkan_pacer
-        and "TimeDomainsRetryPending = true;" in vulkan_pacer,
-        "VK_NOT_READY must be a pending retry state, never a fatal timing failure",
+        and "TimeDomainsEnumerationRetryPending = true;" in vulkan_pacer
+        and "if (result == VK_NOT_READY)" not in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+            "void VulkanPresentPacer::SelectTargetPresentStage() noexcept",
+        )
+        and "VK_NOT_READY" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+        )
+        and "VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+            "void VulkanPresentPacer::SelectTargetPresentStage() noexcept",
+        ),
+        "only timing properties may use VK_NOT_READY; time-domain enumeration must enforce its required domain contract",
+        failures,
+    )
+    require(
+        "ClassifyPresentLifecycleResult" in vulkan_pacer_header
+        and "VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()" in vulkan_pacer
+        and "const VulkanPacerBeginResult extTiming = ReportPastTiming();" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(",
+            "u64 VulkanPresentPacer::EvaluateAbsoluteTargetTime(u64 sequence)",
+        )
+        and "const VulkanPacerBeginResult lifecycle =" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()",
+            "void VulkanPresentPacer::DisableWait(const char* reason)",
+        )
+        and "GetPastPresentationTimingEXT" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()",
+            "void VulkanPresentPacer::DisableWait(const char* reason)",
+        )
+        and "LogPresentLifecycleRoute" in vulkan_pacer
+        and "TestPresentTimingLifecycleResultClassification" in vulkan_timing_tests,
+        "present timing fatal VkResults must use typed production routing and fault-injection coverage",
+        failures,
+    )
+    require(
+        "GetSwapchainTimingPropertiesEXT" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+        )
+        and "GetSwapchainTimeDomainPropertiesEXT(count)" in vulkan_pacer
+        and "GetSwapchainTimeDomainPropertiesEXT(array)" in vulkan_pacer
+        and "return lifecycle;" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+        )
+        and "return lifecycle;" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
+            "void VulkanPresentPacer::SelectTargetPresentStage() noexcept",
+        ),
+        "EXT properties and time-domain SURFACE_LOST results must reach typed routing",
+        failures,
+    )
+    require(
+        "PendingBeginResult" in vulkan_pacer_header
+        and "VulkanLatchBeginResult" in vulkan_pacing_policy
+        and "LatchPendingBeginResult" in vulkan_pacer
+        and "LatchPendingBeginResult(google);" in function_body(
+            vulkan_pacer,
+            "void VulkanPresentPacer::OnSwapchainCreated(",
+            "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
+        )
+        and "PendingBeginResult = VulkanPacerBeginResult::Continue;" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(",
+            "u64 VulkanPresentPacer::EvaluateAbsoluteTargetTime(u64 sequence)",
+        )
+        and "GetRefreshCycleDurationGOOGLE" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()",
+            "VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()",
+        ),
+        "GOOGLE eager refresh failures must be latched for the next typed routing point",
         failures,
     )
     require(
