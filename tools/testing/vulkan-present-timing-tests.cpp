@@ -1232,6 +1232,18 @@ void TestBeginResultRouting()
         "surface loss must leave the swapchain-only rebuild loop");
 }
 
+void TestSwapchainRecreationInvalidatesFrameDecision()
+{
+    Require(VulkanFrameDecisionMatchesSwapchain(10, 10),
+        "a decision from the current swapchain generation is usable");
+    Require(!VulkanFrameDecisionMatchesSwapchain(10, 11),
+        "an old-generation decision must not control a recreated swapchain");
+    Require(!VulkanFrameDecisionMatchesSwapchain(0, 11),
+        "an unstamped decision must not authorize any swapchain");
+    Require(!VulkanFrameDecisionMatchesSwapchain(11, 0),
+        "a live decision must not authorize an absent swapchain generation");
+}
+
 // Query fault injection uses the production VkResult classifier. The mapping
 // is pure, so these lifecycle classes can be tested without a Vulkan device or
 // a window while the source audit verifies each API keeps its own success set.
@@ -1315,21 +1327,33 @@ void TestPresentTimingQueryContractClassification()
                     == VulkanPresentTimingQueryAction::DisableTargetLifecycle,
         "time-domain VK_NOT_READY must not become spec-expected pending");
 
-    Require(ClassifyVulkanGoogleTimingResult(VK_SUCCESS)
+    Require(ClassifyVulkanGooglePastTimingResult(VK_SUCCESS)
                 == VulkanPresentTimingQueryAction::Continue
-                && ClassifyVulkanGoogleTimingResult(VK_INCOMPLETE)
+                && ClassifyVulkanGooglePastTimingResult(VK_INCOMPLETE)
                     == VulkanPresentTimingQueryAction::Continue,
         "GOOGLE feedback success and partial results must continue");
-    Require(ClassifyVulkanGoogleTimingResult(VK_ERROR_OUT_OF_DATE_KHR)
+    Require(ClassifyVulkanGooglePastTimingResult(VK_ERROR_OUT_OF_DATE_KHR)
                 == VulkanPresentTimingQueryAction::SwapchainOutOfDate
-                && ClassifyVulkanGoogleTimingResult(VK_ERROR_DEVICE_LOST)
+                && ClassifyVulkanGooglePastTimingResult(VK_ERROR_DEVICE_LOST)
                     == VulkanPresentTimingQueryAction::DeviceLost
-                && ClassifyVulkanGoogleTimingResult(VK_ERROR_SURFACE_LOST_KHR)
+                && ClassifyVulkanGooglePastTimingResult(VK_ERROR_SURFACE_LOST_KHR)
                     == VulkanPresentTimingQueryAction::SurfaceLost,
         "GOOGLE feedback lifecycle failures must stay typed");
-    Require(ClassifyVulkanGoogleTimingResult(VK_ERROR_UNKNOWN)
+    Require(ClassifyVulkanGooglePastTimingResult(VK_ERROR_UNKNOWN)
                 == VulkanPresentTimingQueryAction::DisableOptional,
         "GOOGLE unknown failures must only disable optional timing");
+    Require(ClassifyVulkanGoogleRefreshCycleResult(VK_SUCCESS)
+                == VulkanPresentTimingQueryAction::Continue
+                && ClassifyVulkanGoogleRefreshCycleResult(VK_INCOMPLETE)
+                    == VulkanPresentTimingQueryAction::DisableOptional
+                && ClassifyVulkanGoogleRefreshCycleResult(VK_ERROR_OUT_OF_DATE_KHR)
+                    == VulkanPresentTimingQueryAction::DisableOptional,
+        "GOOGLE refresh-cycle query must keep its narrower return contract");
+    Require(ClassifyVulkanGoogleRefreshCycleResult(VK_ERROR_DEVICE_LOST)
+                == VulkanPresentTimingQueryAction::DeviceLost
+                && ClassifyVulkanGoogleRefreshCycleResult(VK_ERROR_SURFACE_LOST_KHR)
+                    == VulkanPresentTimingQueryAction::SurfaceLost,
+        "GOOGLE refresh-cycle lifecycle failures must stay typed");
 }
 
 // vkWaitForPresent2KHR has its own success/status contract. Keep this test
@@ -1394,6 +1418,7 @@ int main()
     TestGuards();
     TestHistoryWraparound();
     TestBeginResultRouting();
+    TestSwapchainRecreationInvalidatesFrameDecision();
     TestPresentTimingLifecycleResultClassification();
     TestPresentTimingQueryContractClassification();
     TestPresentWait2ResultClassification();

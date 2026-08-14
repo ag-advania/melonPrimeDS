@@ -716,7 +716,8 @@ def main() -> int:
         and "BoundedWaitAttempted" in vulkan_pacer_header
         and "WaitAttemptedThisFrame = true;" in vulkan_pacer
         and "WaitAttemptedThisFrame = false;" in vulkan_pacer
-        and "snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;" in vulkan_pacer
+        and "WaitAttemptSwapchainGeneration" in vulkan_pacer
+        and "snapshot.BoundedWaitAttempted = waitAttemptCurrent && WaitAttemptedThisFrame;" in vulkan_pacer
         and "bounded_wait_attempted_ratio" in read("tools/perf/aggregate-vulkan-latency.py"),
         "the capture must separate an allowed bounded wait from one that actually ran",
         failures,
@@ -825,16 +826,57 @@ def main() -> int:
             "ClassifyVulkanPastTimingResult",
             "ClassifyVulkanTimingPropertiesResult",
             "ClassifyVulkanTimeDomainResult",
-            "ClassifyVulkanGoogleTimingResult",
+            "ClassifyVulkanGoogleRefreshCycleResult",
+            "ClassifyVulkanGooglePastTimingResult",
         ))
         and all(token in vulkan_pacer for token in (
             "ClassifyVulkanPastTimingResult(result)",
             "ClassifyVulkanTimingPropertiesResult(result)",
             "ClassifyVulkanTimeDomainResult(result)",
-            "ClassifyVulkanGoogleTimingResult(result)",
+            "ClassifyVulkanGoogleRefreshCycleResult(result)",
+            "ClassifyVulkanGooglePastTimingResult(result)",
         ))
         and "TestPresentTimingQueryContractClassification" in vulkan_timing_tests,
         "EXT and GOOGLE timing query success/pending/fatal contracts must have production classifiers and pure coverage",
+        failures,
+    )
+    require(
+        "VulkanFrameDecisionMatchesSwapchain" in vulkan_pacing_policy
+        and all(token in vulkan_pacer_header for token in (
+            "DecisionSwapchainGeneration",
+            "WaitAttemptSwapchainGeneration",
+        ))
+        and all(token in function_body(
+            vulkan_pacer,
+            "void VulkanPresentPacer::ResetTimingLifecycle() noexcept",
+            "void VulkanPresentPacer::LatchPendingBeginResult(",
+        ) for token in (
+            "LastDecision = VulkanPacingDecision{};",
+            "DecisionSwapchainGeneration = 0;",
+            "WaitAttemptedThisFrame = false;",
+            "WaitAttemptSwapchainGeneration = 0;",
+            "TargetFrameIntervalNs = 0;",
+        ))
+        and all(token in function_body(
+            vulkan_pacer,
+            "u64 VulkanPresentPacer::PreparePresent(",
+            "bool VulkanPresentPacer::PrepareRetryWithoutTiming(",
+        ) for token in (
+            "VulkanFrameDecisionMatchesSwapchain(",
+            "const bool decisionCurrent",
+            "decisionCurrent\n        ? LastDecision.TimingBackend",
+        ))
+        and all(token in function_body(
+            vulkan_pacer,
+            "VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(",
+            "} // namespace melonDS",
+        ) for token in (
+            "VulkanFrameDecisionMatchesSwapchain(",
+            "WaitAttemptSwapchainGeneration",
+            "snapshot.FrameIntervalNs = decisionCurrent ? TargetFrameIntervalNs : 0;",
+        ))
+        and "TestSwapchainRecreationInvalidatesFrameDecision" in vulkan_timing_tests,
+        "same-frame swapchain recreation must invalidate old frame decisions and wait attribution",
         failures,
     )
     require(

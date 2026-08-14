@@ -532,6 +532,12 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TimingModel.ClearTimeDomain();
     GoogleTimingModel.Reset();
     GoogleRefreshDurationReady = false;
+    LastDecision = VulkanPacingDecision{};
+    DecisionSwapchainGeneration = 0;
+    TargetFrameIntervalNs = 0;
+    WaitAttemptedThisFrame = false;
+    WaitAttemptSwapchainGeneration = 0;
+    FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
     PendingBeginResult = VulkanPacerBeginResult::Continue;
     // The cadence phase belongs to the retired swapchain's refresh grid.
     RelativeCadence.Reset();
@@ -690,6 +696,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     // Permission is resolved below; whether the wait actually ran is only known
     // once every skip condition has been checked.
     WaitAttemptedThisFrame = false;
+    WaitAttemptSwapchainGeneration = 0;
 
     // Google feedback is independent of present_id2 and has no finite queue to
     // size. Poll a fixed stack buffer only while the same policy-aware backend
@@ -741,6 +748,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     }
 
     LastDecision = decision;
+    DecisionSwapchainGeneration = SwapchainGeneration;
     Authority.store(static_cast<int>(decision.Authority), std::memory_order_release);
     FallbackReason = decision.Reason;
 
@@ -768,6 +776,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
             : MaxPresentWaitNs);
 
     WaitAttemptedThisFrame = true;
+    WaitAttemptSwapchainGeneration = SwapchainGeneration;
     const VkResult result = Device->Fns().WaitForPresent2KHR(
         Device->GetHandle(), Swapchain, &wait);
     LastWaitedId = LastPresentedId;
@@ -879,6 +888,12 @@ VulkanPresentPacer::TargetTimingRequest
     // on the previous-present wait. A surface offering only present timing gets
     // scheduling with no wait rather than nothing at all.
     TargetTimingRequest request;
+    if (!VulkanFrameDecisionMatchesSwapchain(
+        DecisionSwapchainGeneration, SwapchainGeneration))
+    {
+        FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
+        return request;
+    }
     if (!LastDecision.TargetTimeScheduling)
     {
         FallbackReason = LastDecision.Reason;
@@ -925,7 +940,14 @@ u64 VulkanPresentPacer::PreparePresent(
     if (Swapchain == VK_NULL_HANDLE)
         return 0;
 
-    const VulkanPresentTimingBackend backend = LastDecision.TimingBackend;
+    const bool decisionCurrent = VulkanFrameDecisionMatchesSwapchain(
+        DecisionSwapchainGeneration, SwapchainGeneration);
+    // Swapchain recreation can happen after the pre-input BeginFrame() and
+    // before this draw-side call. Never let the retired generation's backend
+    // or target permission control the first present on the new swapchain.
+    const VulkanPresentTimingBackend backend = decisionCurrent
+        ? LastDecision.TimingBackend
+        : VulkanPresentTimingBackend::None;
     if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming)
         return 0;
 
@@ -1028,7 +1050,7 @@ u64 VulkanPresentPacer::PreparePresent(
         && GoogleDisplayTimingRuntimeEnabled)
     {
         const u64 nowNs = GoogleMonotonicTimeNs();
-        const bool requestTarget = LastDecision.TargetTimeScheduling;
+        const bool requestTarget = decisionCurrent && LastDecision.TargetTimeScheduling;
         const VulkanGooglePresentRequest request = GoogleTimingModel.Prepare(
             nowNs, TargetFrameIntervalNs, requestTarget);
         metadata.GoogleTime.presentID = request.PresentId;
@@ -1449,7 +1471,7 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()
         return VulkanPacerBeginResult::Continue;
     }
     const VulkanPresentTimingQueryAction queryAction =
-        ClassifyVulkanGoogleTimingResult(result);
+        ClassifyVulkanGoogleRefreshCycleResult(result);
     if (queryAction != VulkanPresentTimingQueryAction::Continue
         && queryAction != VulkanPresentTimingQueryAction::DisableOptional)
     {
@@ -1485,7 +1507,7 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()
     const VkResult result = Device->Fns().GetPastPresentationTimingGOOGLE(
         Device->GetHandle(), Swapchain, &count, reports.data());
     const VulkanPresentTimingQueryAction queryAction =
-        ClassifyVulkanGoogleTimingResult(result);
+        ClassifyVulkanGooglePastTimingResult(result);
     if (queryAction != VulkanPresentTimingQueryAction::Continue)
     {
         if (queryAction != VulkanPresentTimingQueryAction::DisableOptional)
@@ -1876,9 +1898,15 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
     snapshot.Authority = static_cast<int>(GetAuthority());
     snapshot.PresentMode = static_cast<int>(PresentMode);
     snapshot.SwapchainGeneration = SwapchainGeneration;
-    snapshot.BoundedPresentWait = LastDecision.BoundedPresentWait;
-    snapshot.BoundedWaitAttempted = WaitAttemptedThisFrame;
-    snapshot.FallbackReason = static_cast<int>(FallbackReason);
+    const bool decisionCurrent = VulkanFrameDecisionMatchesSwapchain(
+        DecisionSwapchainGeneration, SwapchainGeneration);
+    const bool waitAttemptCurrent = VulkanFrameDecisionMatchesSwapchain(
+        WaitAttemptSwapchainGeneration, SwapchainGeneration);
+    snapshot.BoundedPresentWait = decisionCurrent && LastDecision.BoundedPresentWait;
+    snapshot.BoundedWaitAttempted = waitAttemptCurrent && WaitAttemptedThisFrame;
+    snapshot.FallbackReason = static_cast<int>(decisionCurrent
+            ? FallbackReason
+            : VulkanJitFallbackReason::TelemetryOnlyPolicy);
 
     // Everything about the target comes from this present, not from the
     // resolver's permission or the pacer's last-known values. A queue-full
@@ -1914,7 +1942,7 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
     snapshot.FeedbackPresentMarginNs = googleFeedback.PresentMarginNs;
     snapshot.BaselineSequence = TimingModel.GetBaselineSequence();
     snapshot.PresentSequence = TimingModel.GetCommittedSequence();
-    snapshot.FrameIntervalNs = TargetFrameIntervalNs;
+    snapshot.FrameIntervalNs = decisionCurrent ? TargetFrameIntervalNs : 0;
     snapshot.WaitTimeouts = WaitTimeouts;
     snapshot.TimingQueueSize = TimingQueueSize;
     snapshot.TimingQueueFullCount = TimingQueueFullCount;

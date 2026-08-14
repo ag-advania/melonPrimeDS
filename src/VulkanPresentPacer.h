@@ -124,7 +124,23 @@ constexpr VulkanPresentTimingQueryAction ClassifyVulkanTimeDomainResult(
     }
 }
 
-constexpr VulkanPresentTimingQueryAction ClassifyVulkanGoogleTimingResult(
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanGoogleRefreshCycleResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanGooglePastTimingResult(
     VkResult result) noexcept
 {
     switch (result)
@@ -425,6 +441,10 @@ private:
     // Resolved once per frame in BeginFrame() and reused by PreparePresent(),
     // so the wait decision and the scheduling decision can never disagree.
     VulkanPacingDecision LastDecision{};
+    // A decision is valid only for the swapchain generation that produced it.
+    // Recreating a swapchain between BeginFrame() and PreparePresent() must
+    // invalidate all behavioral permission from the retired generation.
+    u64 DecisionSwapchainGeneration = 0;
     // Switching between absolute and relative restarts the cadence: a fraction
     // accumulated while absolute was driving describes nothing relative needs.
     VulkanTargetSchedulingMode LastTargetMode = VulkanTargetSchedulingMode::None;
@@ -447,6 +467,9 @@ private:
     // Whether this frame actually issued the bounded wait, as opposed to being
     // allowed to. Reset at the top of every BeginFrame.
     bool WaitAttemptedThisFrame = false;
+    // Capture attribution must not carry an old generation's wait into a new
+    // swapchain row after same-frame recreation.
+    u64 WaitAttemptSwapchainGeneration = 0;
     // OnSwapchainCreated() is intentionally void because the presenter owns
     // swapchain construction. A fatal eager timing query is latched here and
     // consumed by the next BeginFrame(), so it cannot disappear in a log line.

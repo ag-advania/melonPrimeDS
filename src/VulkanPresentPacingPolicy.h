@@ -170,6 +170,15 @@ constexpr VulkanPacerBeginResult VulkanLatchBeginResult(
     return current == VulkanPacerBeginResult::Continue ? observed : current;
 }
 
+// A decision is behavioral state for one swapchain generation. A zero stamp
+// means no current-frame decision exists (for example immediately after
+// recreation), so it must never authorize a present on any generation.
+constexpr bool VulkanFrameDecisionMatchesSwapchain(
+    u64 decisionGeneration, u64 swapchainGeneration) noexcept
+{
+    return decisionGeneration != 0 && decisionGeneration == swapchainGeneration;
+}
+
 // Everything the pacing decision depends on that is not a per-frame value.
 // Split into device-level and surface-level members wherever the extension
 // draws that line, because a capability can be present on one and not the other.
