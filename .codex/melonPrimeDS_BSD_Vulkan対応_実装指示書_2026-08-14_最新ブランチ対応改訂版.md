@@ -1383,50 +1383,50 @@ VulkanContext adopted instance lifetime
 
 ## Source
 
-- [ ] `MelonPrimeVulkanSurfaceBSD.cpp`が追加されている
-- [ ] FreeBSD / NetBSD / OpenBSDだけにbuild gateされている
-- [ ] BSD Vulkan adapterがQt private QPA headerへ依存していない
-- [ ] Qt 6.5+でpublic `QNativeInterface::QX11Application`を使用している
-- [ ] older Qtはprivate QPAへ逃げず、明確なunsupported failureへ落ちる
-- [ ] XCB WSIが実装されている
-- [ ] Xlib fallbackが実装されている
-- [ ] unknown Qt platform pluginは明確にfailする
-- [ ] Linux WSI実装を壊していない
-- [ ] Windows/macOS adapterを変更していない、または必要最小限
+- [x] `MelonPrimeVulkanSurfaceBSD.cpp`が追加されている
+- [x] FreeBSD / NetBSD / OpenBSDだけにbuild gateされている
+- [x] BSD Vulkan adapterがQt private QPA headerへ依存していない
+- [x] Qt 6.5+でpublic `QNativeInterface::QX11Application`を使用している
+- [x] older Qtはprivate QPAへ逃げず、明確なunsupported failureへ落ちる
+- [x] XCB WSIが実装されている
+- [x] Xlib fallbackが実装されている
+- [x] unknown Qt platform pluginは明確にfailする
+- [x] Linux WSI実装を壊していない（共通Unix extension判定の意味上のrenameのみ）
+- [x] Windows/macOS adapterを変更していない、または必要最小限
 
 ## CMake
 
-- [ ] BSD 3種がBSD adapterへ入る
-- [ ] unknown UnixはStubへ入る
-- [ ] Vulkan header無しでは既存どおりcleanly disabled
-- [ ] Vulkan hard disableでBSD Vulkan sourceが完全除外される
+- [x] BSD 3種がBSD adapterへ入る
+- [x] unknown UnixはStubへ入る
+- [x] Vulkan header無しでは既存どおりcleanly disabled
+- [x] Vulkan hard disableでBSD Vulkan sourceが完全除外される
 
 ## CI
 
-- [ ] BSD Vulkan validationが`continue-on-error`ではないstrict gateになっている
-- [ ] FreeBSD Vulkan ON build PASS
-- [ ] NetBSD Vulkan ON build PASS
-- [ ] OpenBSD Vulkan ON build PASS
-- [ ] FreeBSD Vulkan OFF build PASS
-- [ ] NetBSD Vulkan OFF build PASS
-- [ ] OpenBSD Vulkan OFF build PASS
-- [ ] Vulkan backend enabledログを確認
-- [ ] FreeBSD Vulkan present timing model test PASS
-- [ ] NetBSD Vulkan present timing model test PASS
-- [ ] OpenBSD Vulkan present timing model test PASS
-- [ ] FreeBSD Vulkan present pacer fake-dispatch test PASS
-- [ ] NetBSD Vulkan present pacer fake-dispatch test PASS
-- [ ] OpenBSD Vulkan present pacer fake-dispatch test PASS
-- [ ] shader/generated source audit PASS
-- [ ]既存Windows/Linux/macOS workflowsに回帰なし
+- [x] BSD Vulkan validationが`continue-on-error`ではないstrict gateになっている
+- [x] FreeBSD Vulkan ON build PASS
+- [x] NetBSD Vulkan ON build PASS
+- [x] OpenBSD Vulkan ON build PASS
+- [x] FreeBSD Vulkan OFF build PASS
+- [x] NetBSD Vulkan OFF build PASS
+- [x] OpenBSD Vulkan OFF build PASS
+- [x] Vulkan backend enabledログを確認
+- [x] FreeBSD Vulkan present timing model test PASS
+- [x] NetBSD Vulkan present timing model test PASS
+- [x] OpenBSD Vulkan present timing model test PASS
+- [x] FreeBSD Vulkan present pacer fake-dispatch test PASS
+- [x] NetBSD Vulkan present pacer fake-dispatch test PASS
+- [x] OpenBSD Vulkan present pacer fake-dispatch test PASS
+- [x] shader/generated source audit PASS
+- [ ] 既存Windows/Linux/macOS workflowsに回帰なし（Windows公式回帰はPASS、Linux/macOS workflowはNOT RUN）
 
 ## Runtime
 
-- [ ] CI software Vulkan smokeは可能なら実施
-- [ ] physical FreeBSD GPU runtimeは未検証と明記
-- [ ] physical NetBSD GPU runtimeは未検証と明記
-- [ ] physical OpenBSD GPU runtimeは未検証と明記
-- [ ] runtime smoke未実施でもcompile/static evidenceを保存
+- [ ] CI software Vulkan smokeは可能なら実施（NOT RUN; pure model/fake-dispatch testsはPASS）
+- [x] physical FreeBSD GPU runtimeは未検証と明記
+- [x] physical NetBSD GPU runtimeは未検証と明記
+- [x] physical OpenBSD GPU runtimeは未検証と明記
+- [x] runtime smoke未実施でもcompile/static evidenceを保存
 
 ---
 
@@ -1569,26 +1569,25 @@ CI成功をphysical GPU成功と偽らない。
 |---|---|---|
 | Windows official build | PASS | `tools/build/windows/build-mingw.bat --jobs 1 --tail 220` returned 0; Vulkan present timing, pacer fake-dispatch, renderer fallback, and Intel XeLL tests passed |
 | Shader source sync | PASS | `tools/vulkan/compile-shaders.py --check-source-sync`; 111 committed SPIR-V modules matched manifest hashes |
-| BSD workflow YAML parse | PASS | PyYAML parsed `.github/workflows/build-bsd.yml`; GitHub Actions execution is still required |
-| BSD source compile | NOT RUN | No BSD VM/toolchain is available in this workspace |
+| BSD workflow YAML parse | PASS | PyYAML parsed `.github/workflows/build-bsd.yml`; build job has no job-level `continue-on-error` |
+| BSD strict ON/OFF matrix | PASS | GitHub Actions run [31814100515](https://github.com/ag-advania/melonPrimeDS/actions/runs/31814100515), all FreeBSD / NetBSD / OpenBSD jobs and All BSD artifacts succeeded |
 
 ## BSD build and runtime status
 
-| OS | Vulkan ON | Vulkan OFF | CI software Vulkan | Physical GPU |
+| OS | Vulkan ON | Vulkan OFF | CI software Vulkan smoke | Physical GPU |
 |---|---|---|---|---|
-| FreeBSD | NOT RUN | NOT RUN | NOT RUN | NOT TESTED |
-| NetBSD | NOT RUN | NOT RUN | NOT RUN | NOT TESTED |
-| OpenBSD | NOT RUN | NOT RUN | NOT RUN | NOT TESTED |
+| FreeBSD | PASS | PASS | NOT RUN | NOT TESTED |
+| NetBSD | PASS | PASS | NOT RUN | NOT TESTED |
+| OpenBSD | PASS | PASS | NOT RUN | NOT TESTED |
 
-The strict workflow was dispatched as run
-`31812835788` for commit `15cf59a56c40941189e6be0c39f3290d378789aa`.
-FreeBSD passed dependency/header/shader checks and was still building when the
-first NetBSD probe failure was found; NetBSD installed both Vulkan packages but
-the portable dependency probe used a `find -path` expression that did not find
-the installed header on that VM. The probe was corrected to test the actual
-candidate files in the BSD package prefixes directly, without relying on
-BSD-specific `find` expression behavior, and must be re-run before any BSD
-build PASS is claimed.
+The first dispatch (`31812835788`) exposed a NetBSD-specific `find -path`
+probe incompatibility. The probe was corrected to test the actual candidate
+files in the BSD package prefixes directly, without relying on BSD-specific
+`find` expression behavior. The final strict dispatch was run against commit
+`d1fbd92949e5728121fe1ffaae246548396a2697`; all three OS jobs passed dependency
+and loader/header checks, Vulkan ON validation targets, Vulkan OFF builds, and
+binary packaging. The workflow does not perform a physical GPU or optional
+software-Vulkan presentation smoke test.
 Native BSD Wayland WSI, vendor low-latency extensions, and physical GPU
 validation remain outside the verified scope.
 
@@ -1596,8 +1595,7 @@ validation remain outside the verified scope.
 
 The pre-existing deletion of
 `.codex/melonPrimeDS_VulkanRendererFallback_bc849b0_Push後再監査結果_2026-08-14.md`
-is preserved as-is. This implementation and this instruction/report document
-are ready to commit and push on the current branch; after push, the BSD
-workflow must be manually dispatched or run through its permitted trigger, and
-its three ON plus three OFF matrix results must be appended here before BSD
-build verification can be marked PASS.
+is preserved as-is. The implementation, probe correction, and this instruction/
+report update are committed and pushed on `develop_remakeVulkan_ver3`; the
+strict BSD result is recorded above. Native BSD Wayland WSI, vendor low-latency
+extension validation, and physical GPU runtime remain unverified.
