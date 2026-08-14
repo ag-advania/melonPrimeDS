@@ -19,7 +19,8 @@
 // falls back to the Qt presentation panel without changing the saved renderer.
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) \
-    && !defined(_WIN32) && !defined(__APPLE__) && !defined(__linux__)  // scatter-budget-exempt: platform-owned WSI adapter selection; this TU exists precisely to keep window-system code out of the shared path
+    && !defined(_WIN32) && !defined(__APPLE__) && !defined(__linux__) \
+    && !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)  // scatter-budget-exempt: platform-owned WSI adapter selection; this TU exists precisely to keep window-system code out of the shared path
 
 #include "MelonPrimeVulkanSurface.h"
 
@@ -63,4 +64,4 @@ void UpdateGeometry(const Surface& surface, QWidget* widget)
 
 } // namespace MelonPrime::VulkanSurface
 
-#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && !_WIN32 && !__APPLE__ && !__linux__  // scatter-budget-exempt: closing guard of the platform-owned WSI adapter above
+#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && unknown Unix  // scatter-budget-exempt: closing guard of the platform-owned WSI adapter above

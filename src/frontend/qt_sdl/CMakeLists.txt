@@ -169,15 +169,17 @@ elseif (MELONPRIME_ENABLE_VULKAN)
     # macOS) is opened with dlopen()/LoadLibrary() at runtime by
     # VulkanDispatch, so no import library is linked here.
     #
-    # HINTS cover the LunarG SDK on every platform plus Homebrew's
-    # vulkan-headers on macOS, whose prefixes CMake does not search by default
-    # on Apple Silicon.
+    # HINTS cover the LunarG SDK on every platform, Homebrew's
+    # vulkan-headers on macOS, and the package prefixes used by the BSD CI
+    # images. CMake does not search all of those prefixes by default.
     find_path(MELONPRIME_VULKAN_INCLUDE_DIR
         NAMES vulkan/vulkan.h
         HINTS
             ENV VULKAN_SDK
             /opt/homebrew
             /usr/local
+            /usr/pkg
+            /usr/X11R6
         PATH_SUFFIXES include
         DOC "Directory containing the Vulkan headers")
     if (MELONPRIME_VULKAN_INCLUDE_DIR)
@@ -579,9 +581,14 @@ if (MELONPRIME_VULKAN_ACTIVE)
     elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_sources(melonDS PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLinux.cpp)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"
+        OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD"
+        OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceBSD.cpp)
     else()
-        # BSD and anything else: no supported WSI extension in this build. The
-        # stub fails loudly at runtime rather than failing to compile.
+        # Unknown Unix-like systems: no supported WSI extension in this build.
+        # The stub fails loudly at runtime rather than failing to compile.
         target_sources(melonDS PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceStub.cpp)
     endif()

@@ -343,7 +343,8 @@ symbols:
 | Windows | `VK_KHR_win32_surface` | `MelonPrimeVulkanSurfaceWin32.cpp` |
 | Linux | `VK_KHR_xcb_surface`, `VK_KHR_xlib_surface`, `VK_KHR_wayland_surface` | `MelonPrimeVulkanSurfaceLinux.cpp` |
 | macOS | `VK_EXT_metal_surface` over a `CAMetalLayer` (MoltenVK) | `MelonPrimeVulkanSurfaceMacOS.mm` |
-| BSD / other | none; fails loudly at runtime | `MelonPrimeVulkanSurfaceStub.cpp` |
+| FreeBSD / NetBSD / OpenBSD | `VK_KHR_xcb_surface`, `VK_KHR_xlib_surface` fallback | `MelonPrimeVulkanSurfaceBSD.cpp` |
+| Other Unix | none; fails loudly at runtime | `MelonPrimeVulkanSurfaceStub.cpp` |
 
 The Linux adapter chooses its backend from the **live** Qt platform plugin
 (`QGuiApplication::platformName()` plus the handles Qt actually hands out), never
@@ -353,6 +354,15 @@ because it is the transport Qt's own `xcb` plugin speaks, with Xlib as fallback.
 On Linux only, the panel also re-binds the presenter when a compositor or Qt
 reparent hands out a new native window (`prepareLinuxPresentationSurface()`),
 because the old `VkSurfaceKHR` then refers to a window that no longer exists.
+
+The BSD adapter is intentionally narrower than the Linux adapter: it accepts
+only Qt's `xcb` platform plugin, uses Qt 6.5+'s public
+`QNativeInterface::QX11Application` to obtain the live XCB connection and Xlib
+display, tries `VK_KHR_xcb_surface` first, and falls back to
+`VK_KHR_xlib_surface`. Older Qt versions, non-XCB plugins, and native Wayland
+are explicit unsupported failures. The BSD workflow builds this adapter with
+Vulkan enabled and also compiles a separate hard-disabled variant; the
+workflow itself remains the authoritative BSD build evidence.
 
 None of the platform units define `VK_USE_PLATFORM_*`. Doing so would add members
 to `Vk::InstanceDispatch` for that translation unit alone and give the struct two

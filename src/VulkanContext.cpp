@@ -235,23 +235,23 @@ bool VulkanContext::BuildInstanceExtensionList(
         // X11/XCB or Wayland, so every WSI extension the runtime offers is
         // enabled and the surface adapter picks one. At least one must exist;
         // that requirement is checked by the caller through the required list.
-        bool anyLinuxSurface = false;
+        bool anyUnixSurface = false;
         if (ContainsExtension(available, XlibSurfaceExtensionName))
         {
             AppendUnique(EnabledInstanceExtensions, XlibSurfaceExtensionName);
-            anyLinuxSurface = true;
+            anyUnixSurface = true;
         }
         if (ContainsExtension(available, XcbSurfaceExtensionName))
         {
             AppendUnique(EnabledInstanceExtensions, XcbSurfaceExtensionName);
-            anyLinuxSurface = true;
+            anyUnixSurface = true;
         }
         if (ContainsExtension(available, WaylandSurfaceExtensionName))
         {
             AppendUnique(EnabledInstanceExtensions, WaylandSurfaceExtensionName);
-            anyLinuxSurface = true;
+            anyUnixSurface = true;
         }
-        if (!anyLinuxSurface)
+        if (!anyUnixSurface)
         {
             FailureReason =
                 "the Vulkan runtime exposes no window-system surface extension "

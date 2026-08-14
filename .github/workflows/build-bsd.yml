@@ -19,7 +19,6 @@ env:
 
 jobs:
   build:
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +32,7 @@ jobs:
             install_deps: >
               pkg install -y cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-base qt6-multimedia qt6-svg sdl2 libarchive zstd enet
-              faad2 zip
+              faad2 zip vulkan-headers vulkan-loader python3
 
           - flavor: netbsd
             os_name: NetBSD
@@ -117,7 +116,8 @@ jobs:
               success=0; i=1; while [ $i -le 3 ]; do
               if pkgin -y update && pkgin -y install cmake
               extra-cmake-modules pkgconf ninja-build qt6-qtbase
-              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip;
+              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip
+              vulkan-headers vulkan-loader python313;
               then success=1; break; fi;
               echo "pkgin attempt $i failed, retrying in $((i * 10))s..." >&2;
               sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
@@ -139,7 +139,7 @@ jobs:
               success=0; i=1; while [ $i -le 3 ]; do
               if pkg_add -v cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-qtbase qt6-qtmultimedia qt6-qtsvg sdl2 libarchive zstd
-              enet faad zip;
+              enet faad zip vulkan-headers vulkan-loader python%3;
               then success=1; break; fi;
               echo "pkg_add attempt $i failed, retrying in $((i * 10))s..." >&2;
               sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
@@ -206,9 +206,75 @@ jobs:
       run: cat /var/db/pkgin/pkg_install-err.log || true
 
     - name: Configure
-      run: >
-        cmake -S $GITHUB_WORKSPACE -B /tmp/build -G Ninja
-        -DMELONDS_EMBED_BUILD_INFO=ON
+      run: |
+        set -eu
+        configure_log=/tmp/melonprime-bsd-vulkan-configure.log
+        cmake -S "$GITHUB_WORKSPACE" -B /tmp/build -G Ninja \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DMELONPRIME_ENABLE_VULKAN=ON \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
+          >"$configure_log" 2>&1
+        cat "$configure_log"
+        grep -F "MelonPrime Vulkan backend: enabled" "$configure_log"
+
+    - name: Verify BSD Vulkan dependencies and shader source sync
+      run: |
+        set -eu
+
+        headers="$(find -L /usr/local/include /usr/pkg/include /usr/X11R6/include \
+          -path '*/vulkan/vulkan.h' -print -quit 2>/dev/null || true)"
+        if [ -z "$headers" ]; then
+          echo "Vulkan headers were not found in the BSD package prefixes."
+          exit 1
+        fi
+        echo "vulkan_headers=$headers"
+
+        loader="$(find -L /usr/local/lib /usr/pkg/lib /usr/X11R6/lib \
+          -type f -name 'libvulkan.so*' -print -quit 2>/dev/null || true)"
+        if [ -z "$loader" ]; then
+          echo "Vulkan loader library was not found after package installation."
+          exit 1
+        fi
+        case "$loader" in
+          *.so|*.so.*) ;;
+          *) echo "Unexpected Vulkan loader name: $loader"; exit 1 ;;
+        esac
+        echo "vulkan_loader=$loader"
+
+        python_cmd=""
+        for candidate in python3.14 python3.13 python3.12 python3 python; do
+          if command -v "$candidate" >/dev/null 2>&1; then
+            python_cmd="$candidate"
+            break
+          fi
+        done
+        if [ -z "$python_cmd" ]; then
+          echo "Python 3 is required for the compiler-independent Vulkan shader sync audit."
+          exit 1
+        fi
+        "$python_cmd" tools/vulkan/compile-shaders.py --check-source-sync
+
+    - name: Build and run BSD Vulkan validation targets
+      run: |
+        set -eu
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_present_timing_check --parallel 1
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_present_pacer_dispatch_check --parallel 1
+        cmake --build /tmp/build --parallel 1
+
+    - name: Build Vulkan-disabled BSD variant
+      run: |
+        set -eu
+        configure_log=/tmp/melonprime-bsd-vulkan-off-configure.log
+        cmake -S "$GITHUB_WORKSPACE" -B /tmp/build-vulkan-off -G Ninja \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DMELONPRIME_ENABLE_VULKAN=OFF \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=ON \
+          >"$configure_log" 2>&1
+        cat "$configure_log"
+        grep -F "MelonPrime Vulkan backend: disabled" "$configure_log"
+        cmake --build /tmp/build-vulkan-off --parallel 1
 
     - name: Build and package binary
       # MELONPRIME_BSD_LOCAL_PACKAGE_V3
@@ -216,8 +282,6 @@ jobs:
       # Copy only the completed ZIP to the NFS-backed GitHub workspace.
       run: |
         set -eu
-        cmake --build /tmp/build
-
         binary=""
 
         for candidate in \
