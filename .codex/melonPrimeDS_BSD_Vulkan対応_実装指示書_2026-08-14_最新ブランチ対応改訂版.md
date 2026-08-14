@@ -1418,7 +1418,7 @@ VulkanContext adopted instance lifetime
 - [x] NetBSD Vulkan present pacer fake-dispatch test PASS
 - [x] OpenBSD Vulkan present pacer fake-dispatch test PASS
 - [x] shader/generated source audit PASS
-- [ ] 既存Windows/Linux/macOS workflowsに回帰なし（Windows公式回帰はPASS、Linux/macOS workflowはNOT RUN）
+- [x] 既存Windows/Linux/macOS workflowsに回帰なし（Ubuntu `31816875432`、Windows `31816881225`、macOS `31816878478` が現行HEADでPASS）
 
 ## Runtime
 
@@ -1570,7 +1570,8 @@ CI成功をphysical GPU成功と偽らない。
 | Windows official build | PASS | `tools/build/windows/build-mingw.bat --jobs 1 --tail 220` returned 0; Vulkan present timing, pacer fake-dispatch, renderer fallback, and Intel XeLL tests passed |
 | Shader source sync | PASS | `tools/vulkan/compile-shaders.py --check-source-sync`; 111 committed SPIR-V modules matched manifest hashes |
 | BSD workflow YAML parse | PASS | PyYAML parsed `.github/workflows/build-bsd.yml`; build job has no job-level `continue-on-error` |
-| BSD strict ON/OFF matrix | PASS | GitHub Actions run [31814100515](https://github.com/ag-advania/melonPrimeDS/actions/runs/31814100515), all FreeBSD / NetBSD / OpenBSD jobs and All BSD artifacts succeeded |
+| BSD strict ON/OFF matrix | PASS | GitHub Actions run [31816873249](https://github.com/ag-advania/melonPrimeDS/actions/runs/31816873249), all FreeBSD / NetBSD / OpenBSD jobs and All BSD artifacts succeeded |
+| Existing Linux / macOS / Windows workflows | PASS | Ubuntu [31816875432](https://github.com/ag-advania/melonPrimeDS/actions/runs/31816875432), macOS [31816878478](https://github.com/ag-advania/melonPrimeDS/actions/runs/31816878478), Windows [31816881225](https://github.com/ag-advania/melonPrimeDS/actions/runs/31816881225); all targeted the current branch HEAD |
 
 ## BSD build and runtime status
 
@@ -1583,11 +1584,12 @@ CI成功をphysical GPU成功と偽らない。
 The first dispatch (`31812835788`) exposed a NetBSD-specific `find -path`
 probe incompatibility. The probe was corrected to test the actual candidate
 files in the BSD package prefixes directly, without relying on BSD-specific
-`find` expression behavior. The final strict dispatch was run against commit
-`d1fbd92949e5728121fe1ffaae246548396a2697`; all three OS jobs passed dependency
-and loader/header checks, Vulkan ON validation targets, Vulkan OFF builds, and
-binary packaging. The workflow does not perform a physical GPU or optional
-software-Vulkan presentation smoke test.
+`find` expression behavior. The corrected dispatch (`31814100515`) passed all
+three OS jobs; the final current-HEAD dispatch (`31816873249`) was run against
+commit `24157d40f0723a090a55117448973887c650b8dd` and again passed all three OS
+jobs plus All BSD artifacts. The Ubuntu, macOS, and Windows regression
+workflows also passed against that same current HEAD. These workflows do not
+perform a physical GPU or optional software-Vulkan presentation smoke test.
 Native BSD Wayland WSI, vendor low-latency extensions, and physical GPU
 validation remain outside the verified scope.
 
@@ -1595,7 +1597,8 @@ validation remain outside the verified scope.
 
 The pre-existing deletion of
 `.codex/melonPrimeDS_VulkanRendererFallback_bc849b0_Push後再監査結果_2026-08-14.md`
-is preserved as-is. The implementation, probe correction, and this instruction/
-report update are committed and pushed on `develop_remakeVulkan_ver3`; the
-strict BSD result is recorded above. Native BSD Wayland WSI, vendor low-latency
+is preserved as-is. The implementation, probe correction, scatter-audit fix,
+and this instruction/report update are committed and pushed on
+`develop_remakeVulkan_ver3`; the strict BSD and cross-platform regression
+results are recorded above. Native BSD Wayland WSI, vendor low-latency
 extension validation, and physical GPU runtime remain unverified.
