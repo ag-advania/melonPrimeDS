@@ -264,9 +264,11 @@ private:
     bool TimingMetadataEnabled = false;
     bool TimingResultsQueryEnabled = false;
 
-    // Sticky across swapchain recreation: once a surface has proved that the
-    // timing lifecycle cannot complete, re-selecting FIFO_LATEST_READY for it
-    // would just rebuild the swapchain into the same dead end.
+    // Sticky for the pacer/surface lifetime, including swapchain recreation:
+    // once a surface has proved that the EXT timing lifecycle cannot complete,
+    // re-selecting its EXT path would just rebuild the swapchain into the same
+    // dead end. Initialize/Shutdown clears this state for a new lifetime, and
+    // a usable GOOGLE backend may still take over within the current lifetime.
     bool TargetSchedulingLifecycleFailed = false;
 
     // --- Phase 1: timing properties -----------------------------------------

@@ -570,7 +570,15 @@ void VulkanPresentPacer::OnSwapchainCreated(
                 "[Vulkan] %s\n", WaitDisabledReason.c_str());
         }
     }
-    if (!PresentTimingSurface && GoogleDisplayTimingRuntimeEnabled)
+    // Use the same policy-aware backend choice as BeginFrame/ResolveDecision.
+    // In a mixed EXT+GOOGLE surface, target policies may choose GOOGLE even
+    // while EXT telemetry remains active; eager refresh initialization must not
+    // skip that bootstrap merely because PresentTimingSurface is true.
+    const VulkanPacingCapabilities lifecycleCaps = BuildCapabilities();
+    const VulkanPresentTimingBackend lifecycleBackend =
+        SelectVulkanPresentBackendForPolicy(GetPolicy(), lifecycleCaps);
+    if (lifecycleBackend == VulkanPresentTimingBackend::GoogleDisplayTiming
+        && GoogleDisplayTimingRuntimeEnabled)
     {
         const VulkanPacerBeginResult google = RefreshGoogleTiming();
         if (google != VulkanPacerBeginResult::Continue)
@@ -643,11 +651,12 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     WaitAttemptedThisFrame = false;
 
     // Google feedback is independent of present_id2 and has no finite queue to
-    // size. Poll a fixed stack buffer only while it is the selected fallback.
-    // Vendor APIs suppress the backend completely, including telemetry.
-    if (!reflexActive && !antiLagActive
-        && SelectVulkanPresentTimingBackend(BuildCapabilities())
-            == VulkanPresentTimingBackend::GoogleDisplayTiming)
+    // size. Poll a fixed stack buffer only while the same policy-aware backend
+    // that will resolve this frame selects GOOGLE. Vendor APIs, abnormal speed
+    // and Telemetry/target policy differences are handled by the pure helper.
+    const VulkanPacingCapabilities frameCaps = BuildCapabilities();
+    if (VulkanShouldPollGoogleForFrame(
+            GetPolicy(), reflexActive, antiLagActive, normalSpeed, frameCaps))
     {
         const VulkanPacerBeginResult google = ReportGooglePastTiming();
         if (google != VulkanPacerBeginResult::Continue)

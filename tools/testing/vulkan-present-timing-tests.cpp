@@ -472,6 +472,41 @@ void TestFifoLatestReadyBackendCompatibility()
         "a failed EXT timing lifecycle must still allow GOOGLE target fallback");
 }
 
+void TestPolicyAwareGooglePolling()
+{
+    VulkanPacingCapabilities mixed = FullCapabilities();
+    mixed.AbsoluteTimingDevice = false;
+    mixed.RelativeTimingDevice = false;
+    mixed.GoogleDisplayTimingAvailable = true;
+    mixed.GoogleDisplayTimingRuntimeEnabled = true;
+    mixed.GoogleRefreshDurationReady = false;
+
+    Require(SelectVulkanPresentBackendForPolicy(Policy::JustInTime, mixed)
+                == TimingBackend::GoogleDisplayTiming,
+        "JIT mixed capability must select GOOGLE before refresh bootstrap is ready");
+    Require(VulkanShouldPollGoogleForFrame(
+                Policy::JustInTime, false, false, true, mixed),
+        "JIT mixed capability must request GOOGLE refresh/past-timing bootstrap");
+
+    Require(SelectVulkanPresentBackendForPolicy(Policy::TelemetryOnly, mixed)
+                == TimingBackend::ExtPresentTiming
+            && !VulkanShouldPollGoogleForFrame(
+                Policy::TelemetryOnly, false, false, true, mixed),
+        "TelemetryOnly must retain EXT telemetry priority and skip GOOGLE polling");
+
+    mixed.TargetSchedulingLifecycleFailed = true;
+    Require(VulkanShouldPollGoogleForFrame(
+                Policy::JustInTime, false, false, true, mixed),
+        "EXT lifecycle failure must request GOOGLE bootstrap in the same JIT frame");
+    Require(!VulkanShouldPollGoogleForFrame(
+                 Policy::JustInTime, true, false, true, mixed)
+            && !VulkanShouldPollGoogleForFrame(
+                 Policy::JustInTime, false, true, true, mixed)
+            && !VulkanShouldPollGoogleForFrame(
+                 Policy::JustInTime, false, false, false, mixed),
+        "vendor-owned pacing and abnormal speed must suppress GOOGLE polling");
+}
+
 void TestGoogleTimingTransactions()
 {
     Require(NextGooglePresentId(0) == 1 && NextGooglePresentId(41) == 42,
@@ -1224,6 +1259,7 @@ int main()
 
     TestTimingBackendSelection();
     TestFifoLatestReadyBackendCompatibility();
+    TestPolicyAwareGooglePolling();
     TestTargetTimeDoesNotRequirePresentWait2();
     TestBoundedWaitWithoutPresentTiming();
     TestVendorLatencyApisWin();

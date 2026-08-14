@@ -380,6 +380,38 @@ def main() -> int:
         failures,
     )
     require(
+        "SelectVulkanPresentBackendForPolicy" in vulkan_pacing_policy
+        and "VulkanShouldPollGoogleForFrame" in vulkan_pacing_policy
+        and "VulkanShouldPollGoogleForFrame(" in function_body(
+            vulkan_pacer,
+            "VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(",
+            "VulkanPresentPacer::TargetTimingRequest",
+        )
+        and "SelectVulkanPresentBackendForPolicy(GetPolicy(), lifecycleCaps)"
+            in function_body(
+                vulkan_pacer,
+                "void VulkanPresentPacer::OnSwapchainCreated(",
+                "void VulkanPresentPacer::OnSwapchainDestroyed() noexcept",
+            )
+        and "SelectVulkanPresentTimingBackend(BuildCapabilities())"
+            not in function_body(
+                vulkan_pacer,
+                "VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(",
+                "VulkanPresentPacer::TargetTimingRequest",
+            )
+        and "TestPolicyAwareGooglePolling" in vulkan_timing_tests
+        and "JIT mixed capability must request GOOGLE refresh/past-timing bootstrap"
+            in vulkan_timing_tests,
+        "Google feedback polling and swapchain bootstrap must use the policy-aware target backend",
+        failures,
+    )
+    require(
+        "Sticky for this pacer/surface lifetime" in vulkan_pacing_policy
+        and "Sticky for the pacer/surface lifetime" in vulkan_pacer_header,
+        "TargetSchedulingLifecycleFailed semantics must be documented consistently",
+        failures,
+    )
+    require(
         "VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT" in vulkan_pacer
         and "target.Mode == VulkanTargetSchedulingMode::Relative" in vulkan_pacer
         and "EvaluateRelativeTargetDuration" in vulkan_pacer

@@ -205,9 +205,10 @@ struct VulkanPacingCapabilities
     // depends only on VK_KHR_swapchain plus its feature bit; it is not an EXT
     // present-timing dependency and can therefore pair with GOOGLE.
     bool LatestReadyDevice = false;
-    // Sticky per-swapchain failure of the EXT timing lifecycle. This is a
-    // structural runtime failure, not the temporary bootstrap state where
-    // timing properties or domains are simply not ready yet.
+    // Sticky for this pacer/surface lifetime (including swapchain recreation).
+    // This is a structural runtime failure, not the temporary bootstrap state
+    // where timing properties or domains are simply not ready yet. Initialize
+    // / Shutdown clears it when the device or surface lifetime ends.
     bool TargetSchedulingLifecycleFailed = false;
 };
 
@@ -324,6 +325,32 @@ constexpr bool VulkanPolicyRequestsTargetTime(VulkanPresentPacingPolicy policy) 
         || policy == VulkanPresentPacingPolicy::JustInTimeFifoLatestReady;
 }
 
+// One policy-aware backend choice shared by the resolver and the runtime
+// lifecycle. TelemetryOnly/PresentWait retain EXT telemetry priority, while
+// JIT policies use the stricter target-capability selector. Keeping this as a
+// pure helper prevents feedback polling from silently selecting a different
+// backend than target metadata preparation.
+constexpr VulkanPresentTimingBackend SelectVulkanPresentBackendForPolicy(
+    VulkanPresentPacingPolicy policy, const VulkanPacingCapabilities& caps) noexcept
+{
+    return VulkanPolicyRequestsTargetTime(policy)
+        ? SelectVulkanPresentTargetBackend(caps)
+        : SelectVulkanPresentTimingBackend(caps);
+}
+
+constexpr bool VulkanShouldPollGoogleForFrame(
+    VulkanPresentPacingPolicy policy,
+    bool reflexActive,
+    bool antiLagActive,
+    bool normalSpeed,
+    const VulkanPacingCapabilities& caps) noexcept
+{
+    if (reflexActive || antiLagActive || !normalSpeed)
+        return false;
+    return SelectVulkanPresentBackendForPolicy(policy, caps)
+        == VulkanPresentTimingBackend::GoogleDisplayTiming;
+}
+
 // The first missing prerequisite for absolute target-time scheduling, in the
 // order a reader would want to debug them. Deliberately does NOT consider
 // VK_KHR_present_wait2: target-time presentation does not depend on it.
@@ -337,9 +364,8 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
     if (!caps.SwapchainValid)
         return VulkanJitFallbackReason::PresentTimingUnsupported;
 
-    const VulkanPresentTimingBackend backend = VulkanPolicyRequestsTargetTime(policy)
-        ? SelectVulkanPresentTargetBackend(caps)
-        : SelectVulkanPresentTimingBackend(caps);
+    const VulkanPresentTimingBackend backend =
+        SelectVulkanPresentBackendForPolicy(policy, caps);
     if (backend == VulkanPresentTimingBackend::None)
     {
         const bool googleUsable = caps.GoogleDisplayTimingAvailable
@@ -428,9 +454,8 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
         return {VulkanPacingAuthority::AmdAntiLag2, false, noMode, false,
                 VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false, noBackend};
     }
-    const VulkanPresentTimingBackend backend = VulkanPolicyRequestsTargetTime(policy)
-        ? SelectVulkanPresentTargetBackend(caps)
-        : SelectVulkanPresentTimingBackend(caps);
+    const VulkanPresentTimingBackend backend =
+        SelectVulkanPresentBackendForPolicy(policy, caps);
     if (!normalSpeed)
     {
         // Fast-forward and slow motion are not presentation problems. Neither
