@@ -1244,6 +1244,32 @@ void TestSwapchainRecreationInvalidatesFrameDecision()
         "a live decision must not authorize an absent swapchain generation");
 }
 
+void TestSwapchainRecreationFallbackReason()
+{
+    const Policy policies[] = {
+        Policy::JustInTime,
+        Policy::JustInTimeFifoLatestReady,
+        Policy::PresentWait,
+    };
+    for (const Policy policy : policies)
+    {
+        const VulkanPacingDecision decision = Resolve(policy, FullCapabilities());
+        const bool decisionCurrent = VulkanFrameDecisionMatchesSwapchain(41, 42);
+        const Reason captured = VulkanFrameDecisionFallbackReason(
+            decisionCurrent, decision.Reason);
+        Require(captured == Reason::FrameDecisionInvalidatedBySwapchainRecreation,
+            "same-frame swapchain recreation must report an explicit lifecycle reason");
+        Require(captured != Reason::TelemetryOnlyPolicy,
+            "generation invalidation must not masquerade as TelemetryOnlyPolicy");
+    }
+
+    Require(VulkanFrameDecisionFallbackReason(
+                VulkanFrameDecisionMatchesSwapchain(42, 42),
+                Reason::PresentWaitPolicyNoTarget)
+                == Reason::PresentWaitPolicyNoTarget,
+        "a current decision must preserve its policy-specific fallback reason");
+}
+
 // Query fault injection uses the production VkResult classifier. The mapping
 // is pure, so these lifecycle classes can be tested without a Vulkan device or
 // a window while the source audit verifies each API keeps its own success set.
@@ -1419,6 +1445,7 @@ int main()
     TestHistoryWraparound();
     TestBeginResultRouting();
     TestSwapchainRecreationInvalidatesFrameDecision();
+    TestSwapchainRecreationFallbackReason();
     TestPresentTimingLifecycleResultClassification();
     TestPresentTimingQueryContractClassification();
     TestPresentWait2ResultClassification();

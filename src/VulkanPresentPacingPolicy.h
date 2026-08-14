@@ -108,9 +108,14 @@ enum class VulkanJitFallbackReason : int
     PresentWait2Unsupported,
     // The finite present-timing results queue reached capacity and metadata
     // was paused deliberately. This is recoverable pressure, not a failed
-    // GetPastPresentationTimingEXT query. Keep this new value at the end so
-    // existing numeric fallback-reason values in capture CSVs remain stable.
+    // GetPastPresentationTimingEXT query. Keep this and subsequent diagnostic
+    // values at the end so existing numeric fallback-reason values in capture
+    // CSVs remain stable.
     TimingQueuePressure,
+    // A same-frame swapchain recreation invalidated the decision that was
+    // resolved for the retired generation. Keep this diagnostic distinct from
+    // TelemetryOnlyPolicy: the policy did not change, the decision did.
+    FrameDecisionInvalidatedBySwapchainRecreation,
 };
 
 // What happened during the pacer's pre-input phase.
@@ -177,6 +182,18 @@ constexpr bool VulkanFrameDecisionMatchesSwapchain(
     u64 decisionGeneration, u64 swapchainGeneration) noexcept
 {
     return decisionGeneration != 0 && decisionGeneration == swapchainGeneration;
+}
+
+// Capture must explain why an old-generation frame was sent untimed. The
+// policy reason is meaningful only while the decision stamp is current; once
+// the swapchain changes, the lifecycle invalidation is the reason regardless
+// of whether the policy was JIT, FIFO_LATEST_READY or PresentWait.
+constexpr VulkanJitFallbackReason VulkanFrameDecisionFallbackReason(
+    bool decisionCurrent, VulkanJitFallbackReason currentReason) noexcept
+{
+    return decisionCurrent
+        ? currentReason
+        : VulkanJitFallbackReason::FrameDecisionInvalidatedBySwapchainRecreation;
 }
 
 // Everything the pacing decision depends on that is not a per-frame value.

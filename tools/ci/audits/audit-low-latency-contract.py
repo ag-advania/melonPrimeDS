@@ -856,6 +856,7 @@ def main() -> int:
             "WaitAttemptedThisFrame = false;",
             "WaitAttemptSwapchainGeneration = 0;",
             "TargetFrameIntervalNs = 0;",
+            "FallbackReason = VulkanJitFallbackReason::None;",
         ))
         and all(token in function_body(
             vulkan_pacer,
@@ -877,6 +878,31 @@ def main() -> int:
         ))
         and "TestSwapchainRecreationInvalidatesFrameDecision" in vulkan_timing_tests,
         "same-frame swapchain recreation must invalidate old frame decisions and wait attribution",
+        failures,
+    )
+    capture_state = function_body(
+        vulkan_pacer,
+        "VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(",
+        "} // namespace melonDS",
+    )
+    evaluate_target_timing = function_body(
+        vulkan_pacer,
+        "VulkanPresentPacer::EvaluateTargetTiming(u64 sequence) noexcept",
+        "u64 VulkanPresentPacer::PreparePresent(",
+    )
+    require(
+        ordered(
+            vulkan_pacing_policy,
+            ["TimingQueuePressure,", "FrameDecisionInvalidatedBySwapchainRecreation,"],
+        )
+        and "VulkanFrameDecisionFallbackReason" in vulkan_pacing_policy
+        and "case VulkanJitFallbackReason::FrameDecisionInvalidatedBySwapchainRecreation"
+            in vulkan_pacer
+        and "FrameDecisionInvalidatedBySwapchainRecreation" in evaluate_target_timing
+        and "VulkanFrameDecisionFallbackReason(" in capture_state
+        and "VulkanJitFallbackReason::TelemetryOnlyPolicy" not in capture_state
+        and "TestSwapchainRecreationFallbackReason" in vulkan_timing_tests,
+        "generation mismatch captures must use an explicit recreation reason, not TelemetryOnlyPolicy",
         failures,
     )
     require(

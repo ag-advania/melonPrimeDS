@@ -242,6 +242,8 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
         return "bootstrap waiting for the first present";
     case VulkanJitFallbackReason::DomainChanged: return "domain changed";
     case VulkanJitFallbackReason::TimingQueuePressure: return "timing queue pressure";
+    case VulkanJitFallbackReason::FrameDecisionInvalidatedBySwapchainRecreation:
+        return "frame decision invalidated by swapchain recreation";
     case VulkanJitFallbackReason::TimingQueryFailed: return "timing query failed";
     }
     return "none";
@@ -537,7 +539,11 @@ void VulkanPresentPacer::ResetTimingLifecycle() noexcept
     TargetFrameIntervalNs = 0;
     WaitAttemptedThisFrame = false;
     WaitAttemptSwapchainGeneration = 0;
-    FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
+    // A reset has no current policy decision to explain. Keep the baseline
+    // neutral; CaptureState() supplies the explicit recreation reason when a
+    // stale frame is observed, while BeginFrame() records the live policy
+    // reason for the next generation.
+    FallbackReason = VulkanJitFallbackReason::None;
     PendingBeginResult = VulkanPacerBeginResult::Continue;
     // The cadence phase belongs to the retired swapchain's refresh grid.
     RelativeCadence.Reset();
@@ -891,7 +897,8 @@ VulkanPresentPacer::TargetTimingRequest
     if (!VulkanFrameDecisionMatchesSwapchain(
         DecisionSwapchainGeneration, SwapchainGeneration))
     {
-        FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
+        FallbackReason =
+            VulkanJitFallbackReason::FrameDecisionInvalidatedBySwapchainRecreation;
         return request;
     }
     if (!LastDecision.TargetTimeScheduling)
@@ -1904,9 +1911,8 @@ VulkanPresentPacer::StateSnapshot VulkanPresentPacer::CaptureState(
         WaitAttemptSwapchainGeneration, SwapchainGeneration);
     snapshot.BoundedPresentWait = decisionCurrent && LastDecision.BoundedPresentWait;
     snapshot.BoundedWaitAttempted = waitAttemptCurrent && WaitAttemptedThisFrame;
-    snapshot.FallbackReason = static_cast<int>(decisionCurrent
-            ? FallbackReason
-            : VulkanJitFallbackReason::TelemetryOnlyPolicy);
+    snapshot.FallbackReason = static_cast<int>(VulkanFrameDecisionFallbackReason(
+        decisionCurrent, FallbackReason));
 
     // Everything about the target comes from this present, not from the
     // resolver's permission or the pacer's last-known values. A queue-full
