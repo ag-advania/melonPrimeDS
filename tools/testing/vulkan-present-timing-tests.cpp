@@ -388,6 +388,12 @@ void TestTimingBackendSelection()
     Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::GoogleDisplayTiming,
         "missing EXT present_id2 correlation must not suppress GOOGLE targeting");
 
+    mixed = both;
+    mixed.TimingPropertiesReady = false;
+    mixed.TimeDomainsReady = false;
+    Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::ExtPresentTiming,
+        "EXT bootstrap readiness must not flap the target backend to GOOGLE");
+
     const VulkanPacingCapabilities google = GoogleCapabilities();
     const VulkanPacingDecision googleDecision = Resolve(Policy::JustInTime, google);
     Require(googleDecision.TimingBackend == TimingBackend::GoogleDisplayTiming,

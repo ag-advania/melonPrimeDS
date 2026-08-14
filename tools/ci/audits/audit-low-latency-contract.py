@@ -363,6 +363,8 @@ def main() -> int:
         and "target selection must fall back from target-incapable EXT to GOOGLE" in vulkan_timing_tests
         and "a failed EXT timing lifecycle must still allow GOOGLE target fallback"
             in vulkan_timing_tests
+        and "EXT bootstrap readiness must not flap the target backend to GOOGLE"
+            in vulkan_timing_tests
         and "GOOGLE target scheduling must make FIFO_LATEST_READY eligible without EXT"
             in vulkan_timing_tests,
         "target backend selection must fall back from target-incapable EXT to GOOGLE",
