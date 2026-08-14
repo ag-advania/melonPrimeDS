@@ -49,6 +49,10 @@ enum class CpuMetric : u32
 enum class Counter : u32
 {
     Frames = 0,
+    RasterBeginWaitNs,
+    RasterBeginWaitCount,
+    RasterBeginNoWaitCount,
+    RasterBeginFenceTimeoutCount,
     Polygons,
     Variants,
     YSpans,
@@ -145,6 +149,47 @@ inline void AddCounter(Counter counter, u64 value = 1) noexcept
     if (!IsEnabled())
         return;
     GetState().Counters[static_cast<std::size_t>(counter)] += value;
+}
+
+class ScopedRasterBeginWait
+{
+public:
+    explicit ScopedRasterBeginWait(bool enabled = true) noexcept
+        : Enabled(enabled && IsEnabled())
+    {
+        if (Enabled)
+            Start = Clock::now();
+    }
+
+    ~ScopedRasterBeginWait()
+    {
+        if (!Enabled)
+            return;
+        const u64 ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            Clock::now() - Start).count());
+        State& state = GetState();
+        state.Cpu[static_cast<std::size_t>(CpuMetric::RasterBeginWait)].Add(
+            static_cast<double>(ns) / 1000.0);
+        state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitNs)] += ns;
+        state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitCount)]++;
+    }
+
+    ScopedRasterBeginWait(const ScopedRasterBeginWait&) = delete;
+    ScopedRasterBeginWait& operator=(const ScopedRasterBeginWait&) = delete;
+
+private:
+    bool Enabled = false;
+    Clock::time_point Start{};
+};
+
+inline void RecordRasterBeginNoWait() noexcept
+{
+    AddCounter(Counter::RasterBeginNoWaitCount);
+}
+
+inline void RecordRasterBeginFenceTimeout() noexcept
+{
+    AddCounter(Counter::RasterBeginFenceTimeoutCount);
 }
 
 inline void RecordGeometry(u32 polygons, u32 variants, u32 ySpans, u32 setupIndices) noexcept
@@ -255,12 +300,15 @@ inline void MaybeReport()
         return static_cast<unsigned long long>(state.Counters[static_cast<std::size_t>(counter)]);
     };
     std::fprintf(stderr,
-        "[VulkanPerf] counters scale=%u frames=%llu polygons=%llu variants=%llu y_spans=%llu "
+        "[VulkanPerf] counters scale=%u frames=%llu raster_wait_ns=%llu raster_wait_count=%llu "
+        "raster_no_wait_count=%llu raster_timeout_count=%llu polygons=%llu variants=%llu y_spans=%llu "
         "setup_indices=%llu structured_pack_B=%llu route_copy_B=%llu route_copy_ns=%llu "
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu compose_drops=%llu "
         "screen_copy_B=%llu\n",
-        state.Scale, count(Counter::Frames), count(Counter::Polygons), count(Counter::Variants),
+        state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
+        count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
+        count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
         count(Counter::YSpans), count(Counter::SetupIndices), count(Counter::StructuredPackBytes),
         count(Counter::StructuredScreenRouteCopyBytes),
         count(Counter::StructuredScreenRouteCopyNanoseconds),
@@ -300,6 +348,10 @@ enum class CpuMetric : u32
 enum class Counter : u32
 {
     Frames,
+    RasterBeginWaitNs,
+    RasterBeginWaitCount,
+    RasterBeginNoWaitCount,
+    RasterBeginFenceTimeoutCount,
     Polygons,
     Variants,
     YSpans,
@@ -322,6 +374,13 @@ enum class Counter : u32
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}
+class ScopedRasterBeginWait
+{
+public:
+    explicit ScopedRasterBeginWait(bool = true) noexcept {}
+};
+inline void RecordRasterBeginNoWait() noexcept {}
+inline void RecordRasterBeginFenceTimeout() noexcept {}
 inline void RecordGeometry(u32, u32, u32, u32) noexcept {}
 inline void BeginStructured2DFrame() noexcept {}
 inline void EndStructured2DFrame() noexcept {}

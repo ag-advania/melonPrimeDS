@@ -2008,10 +2008,7 @@ void VulkanRenderer3D::RenderFrame()
     VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
     Vk::FrameContext* frame = nullptr;
-    {
-        VulkanPerf::ScopedCpuTimer waitTimer(VulkanPerf::CpuMetric::RasterBeginWait);
-        frame = Frames.BeginFrame();
-    }
+    frame = Frames.BeginFrame();
     if (!frame)
     {
         SetRuntimeFailure("could not begin a frame command buffer");

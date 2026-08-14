@@ -17,6 +17,7 @@
 */
 
 #include "VulkanSync.h"
+#include "VulkanPerf.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
@@ -400,14 +401,23 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
         // Renderer/presenter rings throttle the CPU to framesInFlight. The
         // compositor uses the non-blocking branch and keeps the last published
         // frame when all of its slots are still executing.
-        const VkResult res = waitForSlot
-            ? fns.WaitForFences(
-                handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds)
-            : fns.GetFenceStatus(handle, frame.InFlightFence);
+        VkResult res = VK_SUCCESS;
+        if (waitForSlot)
+        {
+            VulkanPerf::ScopedRasterBeginWait rasterWait;
+            res = fns.WaitForFences(
+                handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
+        }
+        else
+        {
+            res = fns.GetFenceStatus(handle, frame.InFlightFence);
+        }
         if (!waitForSlot && res == VK_NOT_READY)
             return nullptr;
         if (res == VK_TIMEOUT)
         {
+            if (waitForSlot)
+                VulkanPerf::RecordRasterBeginFenceTimeout();
             Platform::Log(Platform::LogLevel::Error,
                 "[Vulkan] frame slot %u did not complete within 1s; the GPU is not responding\n",
                 CurrentIndex);
@@ -422,6 +432,10 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot)
         // queue complete in submission order.
         CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
         frame.HasPendingSubmission = false;
+    }
+    else if (waitForSlot)
+    {
+        VulkanPerf::RecordRasterBeginNoWait();
     }
 
     // Retire everything the completed frames were holding. This is the only

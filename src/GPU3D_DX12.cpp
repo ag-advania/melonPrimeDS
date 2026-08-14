@@ -2100,10 +2100,7 @@ void DX12Renderer3D::RenderFrame()
     }
 
     ID3D12GraphicsCommandList* list = nullptr;
-    {
-        DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::RasterBeginWait);
-        list = Commands.Begin();
-    }
+    list = Commands.Begin();
     if (!list)
     {
         SetRuntimeFailure("could not begin a frame command list");

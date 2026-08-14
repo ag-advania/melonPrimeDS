@@ -19,6 +19,7 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "DX12Context.h"
+#include "DX12Perf.h"
 
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
@@ -689,18 +690,27 @@ void DX12CommandContext::Shutdown()
     Recording = false;
 }
 
-bool DX12CommandContext::WaitForFence(u64 value)
+bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
 {
     if (!Fence || value == 0)
+    {
+        if (recordRasterBegin)
+            DX12Perf::RecordRasterBeginNoWait();
         return true;
+    }
 
     if (Fence->GetCompletedValue() >= value)
+    {
+        if (recordRasterBegin)
+            DX12Perf::RecordRasterBeginNoWait();
         return true;
+    }
 
     const HRESULT hr = Fence->SetEventOnCompletion(value, FenceEvent);
     if (FAILED(hr))
         return DX12::Fail("SetEventOnCompletion", hr);
 
+    DX12Perf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
     WaitForSingleObject(FenceEvent, INFINITE);
     return true;
 }
@@ -742,7 +752,7 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin()
 
     // The allocator can only be recycled once the GPU is done with everything
     // recorded from it.
-    WaitForFence(SubmittedValue);
+    WaitForFence(SubmittedValue, true);
 
     return ResetList();
 }

@@ -182,7 +182,7 @@ public:
     bool WaitQueueIdle();
 
 private:
-    bool WaitForFence(u64 value);
+    bool WaitForFence(u64 value, bool recordRasterBegin = false);
     ID3D12GraphicsCommandList* ResetList();
 
     ID3D12Device* Device = nullptr;
