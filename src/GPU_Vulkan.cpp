@@ -187,7 +187,8 @@ void VulkanRenderer::VBlank()
         // refreshed is never recomposed, and a stale one is never composed at
         // all.
         const bool composed = vulkan->ComposeStructuredOutput(
-            planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation);
+            planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
+            view.ContentGeneration);
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::StructuredScreenRouteCopyBytes,
             view.ScreenRouteCopyBytes);

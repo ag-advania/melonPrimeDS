@@ -99,7 +99,8 @@ public:
         const std::array<const u32*, 2>& lineMeta,
         const u32* captureCommands,
         const StructuredComposition::ScreenRoutingView& screenRouting,
-        u64 generation);
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
 
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
     // returns nullptr here; callers use AcquireComposedOutputLease().

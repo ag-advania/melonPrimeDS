@@ -27,6 +27,7 @@
 #include <cstring>
 #include <functional>
 #include <mutex>
+#include <numeric>
 
 #include "GPU.h"
 #include "GPU3D_RasterEdge.h"
@@ -127,6 +128,8 @@ struct VulkanRenderer3D::OutputState
         Vk::Buffer StructuredStaging;
         Vk::Buffer StructuredInput;
         Vk::Buffer Composed;
+        StructuredComposition::GenerationState UploadedContentGeneration{};
+        bool StructuredUploadInitialized = false;
         VulkanPresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
     };
@@ -394,6 +397,14 @@ void VulkanRenderer3D::Reset()
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     ColorBuffer.fill(0);
+    if (ComposedOutput)
+    {
+        for (OutputState::Slot& slot : ComposedOutput->Slots)
+        {
+            slot.UploadedContentGeneration = {};
+            slot.StructuredUploadInitialized = false;
+        }
+    }
 }
 
 void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
@@ -2669,7 +2680,8 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 2>& lineMeta,
     const u32* captureCommands,
     const StructuredComposition::ScreenRoutingView& screenRouting,
-    u64 generation)
+    u64 generation,
+    const StructuredComposition::GenerationState& contentGeneration)
 {
     if (RuntimeFailed || !Initialized || ScaleFactor <= 0)
         return false;
@@ -2715,49 +2727,11 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     }
 
     OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
-    u32* staging = static_cast<u32*>(outputSlot.StructuredStaging.GetMappedPointer());
-    if (!staging)
-    {
-        SetRuntimeFailure("the structured staging buffer is not mapped");
-        return false;
-    }
 
-    {
-        VulkanPerf::ScopedCpuTimer packTimer(VulkanPerf::CpuMetric::ComposePack);
-        // Pack exactly the layout PresentationBuffers.glsl documents: eight
-        // routed screen planes, six capture/provenance planes, then the two
-        // per-screen line-metadata arrays and capture commands.
-        const StructuredComposition::ScreenPackResult screenPack =
-            StructuredComposition::PackRoutedScreenPlanes(staging, screenRouting);
-        if (!screenPack.Valid)
-            return false;
-        VulkanPerf::AddCounter(
-            VulkanPerf::Counter::StructuredRouteRuns, screenPack.RouteRuns);
-        for (std::size_t i = 8u; i < planes.size(); i++)
-        {
-            std::memcpy(
-                staging + i * StructuredPixelCount,
-                planes[i],
-                static_cast<std::size_t>(StructuredPixelCount) * sizeof(u32));
-        }
-        u32* metaDestination = staging + (planes.size() * StructuredPixelCount);
-        std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
-        std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
-        std::memcpy(
-            metaDestination + 384u,
-            captureCommands,
-            StructuredCaptureCommandCount * sizeof(u32));
-    }
-    VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredPackBytes, StructuredInputBytes);
-
-    if (!outputSlot.StructuredStaging.FlushRange(0, StructuredInputBytes))
-    {
-        SetRuntimeFailure("could not flush the structured staging buffer");
-        return false;
-    }
-
+    // Acquire the compositor ring slot before touching its mapped staging
+    // buffer.  The slot's previous submission may still be reading that
+    // staging memory, so generation comparison alone is not a safe acquire.
     const Vk::DeviceDispatch& fns = Device.Fns();
-
     Vk::FrameContext* frame = ComposeFrames.TryBeginFrame();
     if (!frame)
     {
@@ -2773,19 +2747,167 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return false;
     }
 
+    constexpr u32 logicalUnitCount =
+        StructuredComposition::kStructuredInputPlaneCount
+        + StructuredComposition::kStructuredInputLineMetaCount + 1u;
+    struct UploadRange
     {
-        VkBufferCopy copy{};
-        copy.srcOffset = 0;
-        copy.dstOffset = 0;
-        copy.size = StructuredInputBytes;
-        fns.CmdCopyBuffer(cmd,
-            outputSlot.StructuredStaging.GetHandle(),
-            outputSlot.StructuredInput.GetHandle(), 1, &copy);
+        VkDeviceSize Offset = 0;
+        VkDeviceSize Size = 0;
+    };
+    const VkDeviceSize planeBytes =
+        static_cast<VkDeviceSize>(StructuredPixelCount) * sizeof(u32);
+    const VkDeviceSize lineMetaBytes = 192u * sizeof(u32);
+    const VkDeviceSize captureCommandBytes =
+        StructuredCaptureCommandCount * sizeof(u32);
+    std::array<VkDeviceSize, logicalUnitCount> unitOffsets{};
+    std::array<VkDeviceSize, logicalUnitCount> unitSizes{};
+    for (u32 unit = 0; unit < StructuredPlaneCount; ++unit)
+    {
+        unitOffsets[unit] = static_cast<VkDeviceSize>(unit) * planeBytes;
+        unitSizes[unit] = planeBytes;
+    }
+    unitOffsets[14u] = static_cast<VkDeviceSize>(StructuredPlaneCount) * planeBytes;
+    unitOffsets[15u] = unitOffsets[14u] + lineMetaBytes;
+    unitOffsets[16u] = unitOffsets[15u] + lineMetaBytes;
+    unitSizes[14u] = lineMetaBytes;
+    unitSizes[15u] = lineMetaBytes;
+    unitSizes[16u] = captureCommandBytes;
 
-        const VkBuffer structured = outputSlot.StructuredInput.GetHandle();
-        BufferBarrier(cmd, &structured, 1,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    std::array<bool, logicalUnitCount> dirty{};
+    const bool fullUpload = !outputSlot.StructuredUploadInitialized;
+    for (u32 plane = 0; plane < StructuredPlaneCount; ++plane)
+    {
+        dirty[plane] = fullUpload
+            || contentGeneration.Plane[plane]
+                != outputSlot.UploadedContentGeneration.Plane[plane];
+    }
+    dirty[14u] = fullUpload
+        || contentGeneration.LineMeta[0]
+            != outputSlot.UploadedContentGeneration.LineMeta[0];
+    dirty[15u] = fullUpload
+        || contentGeneration.LineMeta[1]
+            != outputSlot.UploadedContentGeneration.LineMeta[1];
+    dirty[16u] = fullUpload
+        || contentGeneration.CaptureCommands
+            != outputSlot.UploadedContentGeneration.CaptureCommands;
+
+    std::array<UploadRange, logicalUnitCount> ranges{};
+    std::size_t rangeCount = 0;
+    for (u32 unit = 0; unit < logicalUnitCount; ++unit)
+    {
+        if (!dirty[unit])
+            continue;
+        const VkDeviceSize offset = unitOffsets[unit];
+        const VkDeviceSize size = unitSizes[unit];
+        if (rangeCount != 0
+            && ranges[rangeCount - 1].Offset + ranges[rangeCount - 1].Size == offset)
+        {
+            ranges[rangeCount - 1].Size += size;
+        }
+        else
+        {
+            ranges[rangeCount++] = {offset, size};
+        }
+    }
+    const bool uploadRequired = rangeCount != 0;
+    VkDeviceSize packedBytes = 0;
+    u32 routeRuns = 0;
+    std::array<bool, 2> routeRunsCounted{};
+
+    if (uploadRequired)
+    {
+        u32* staging = static_cast<u32*>(outputSlot.StructuredStaging.GetMappedPointer());
+        if (!staging)
+        {
+            ComposeFrames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("the structured staging buffer is not mapped");
+            return false;
+        }
+
+        {
+            VulkanPerf::ScopedCpuTimer packTimer(VulkanPerf::CpuMetric::ComposePack);
+            for (u32 unit = 0; unit < logicalUnitCount; ++unit)
+            {
+                if (!dirty[unit])
+                    continue;
+                if (unit < 8u)
+                {
+                    // The per-plane path preserves the same routing contract
+                    // as PackRoutedScreenPlanes(staging, screenRouting).
+                    const u32 screen = unit / StructuredComposition::kPlaneCount;
+                    const u32 plane = unit % StructuredComposition::kPlaneCount;
+                    const StructuredComposition::ScreenPackResult screenPack =
+                        StructuredComposition::PackRoutedScreenPlane(
+                            staging + static_cast<std::size_t>(unit) * StructuredPixelCount,
+                            screen, plane, screenRouting);
+                    if (!screenPack.Valid)
+                    {
+                        ComposeFrames.SubmitFrame(Device.GetMainQueue());
+                        return false;
+                    }
+                    if (!routeRunsCounted[screen])
+                    {
+                        routeRuns += screenPack.RouteRuns;
+                        routeRunsCounted[screen] = true;
+                    }
+                }
+                else if (unit < StructuredPlaneCount)
+                {
+                    std::memcpy(
+                        staging + static_cast<std::size_t>(unit) * StructuredPixelCount,
+                        planes[unit], static_cast<std::size_t>(StructuredPixelCount) * sizeof(u32));
+                }
+                else if (unit < 16u)
+                {
+                    std::memcpy(
+                        staging + unitOffsets[unit] / sizeof(u32),
+                        lineMeta[unit - 14u], 192u * sizeof(u32));
+                }
+                else
+                {
+                    std::memcpy(
+                        staging + unitOffsets[unit] / sizeof(u32),
+                        captureCommands, captureCommandBytes);
+                }
+                packedBytes += unitSizes[unit];
+            }
+        }
+        for (std::size_t i = 0; i < rangeCount; ++i)
+        {
+            if (!outputSlot.StructuredStaging.FlushRange(
+                    ranges[i].Offset, ranges[i].Size))
+            {
+                ComposeFrames.SubmitFrame(Device.GetMainQueue());
+                SetRuntimeFailure("could not flush the structured staging buffer");
+                return false;
+            }
+        }
+        VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredPackBytes, packedBytes);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredInputBytesPacked, packedBytes);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::StructuredRouteRuns, routeRuns);
+    }
+
+    {
+        if (uploadRequired)
+        {
+            std::array<VkBufferCopy, logicalUnitCount> copies{};
+            for (std::size_t i = 0; i < rangeCount; ++i)
+            {
+                copies[i].srcOffset = ranges[i].Offset;
+                copies[i].dstOffset = ranges[i].Offset;
+                copies[i].size = ranges[i].Size;
+            }
+            fns.CmdCopyBuffer(cmd,
+                outputSlot.StructuredStaging.GetHandle(),
+                outputSlot.StructuredInput.GetHandle(),
+                static_cast<u32>(rangeCount), copies.data());
+
+            const VkBuffer structured = outputSlot.StructuredInput.GetHandle();
+            BufferBarrier(cmd, &structured, 1,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+        }
     }
 
     // FinalFB was written by FinalPass and read by Resolve in a *different*
@@ -2868,6 +2990,26 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         SetRuntimeFailure("compositor command submission failed");
         return false;
     }
+
+    if (uploadRequired)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredInputBytesUploaded,
+            static_cast<u64>(std::accumulate(
+                ranges.begin(), ranges.begin() + rangeCount, VkDeviceSize{0},
+                [](VkDeviceSize total, const UploadRange& range) {
+                    return total + range.Size;
+                })));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredInputCopyRegionCount,
+            static_cast<u64>(rangeCount));
+        VulkanPerf::AddCounter(
+            fullUpload
+                ? VulkanPerf::Counter::StructuredInputFullUploadCount
+                : VulkanPerf::Counter::StructuredInputPartialUploadCount);
+    }
+    outputSlot.UploadedContentGeneration = contentGeneration;
+    outputSlot.StructuredUploadInitialized = true;
 
     {
         std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);

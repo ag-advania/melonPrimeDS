@@ -144,6 +144,8 @@ struct DX12Renderer3D::OutputState
         DX12::ComPtr<ID3D12Resource> StructuredInput;
         DX12::ComPtr<ID3D12Resource> Composed;
         u32* StructuredMapped = nullptr;
+        StructuredComposition::GenerationState UploadedContentGeneration{};
+        bool StructuredUploadInitialized = false;
         DX12PresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
     };
@@ -383,6 +385,11 @@ void DX12Renderer3D::Reset()
     {
         std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
         ComposedOutput->PublishedSlot = -1;
+        for (OutputState::Slot& slot : ComposedOutput->Slots)
+        {
+            slot.UploadedContentGeneration = {};
+            slot.StructuredUploadInitialized = false;
+        }
     }
 }
 
@@ -2519,7 +2526,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 2>& lineMeta,
     const u32* captureCommands,
     const StructuredComposition::ScreenRoutingView& screenRouting,
-    u64 generation)
+    u64 generation,
+    const StructuredComposition::GenerationState& contentGeneration)
 {
     if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
         return false;
@@ -2567,38 +2575,132 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    u32* staging = slot.StructuredMapped;
-    if (!staging)
+    constexpr u32 logicalUnitCount =
+        StructuredComposition::kStructuredInputPlaneCount
+        + StructuredComposition::kStructuredInputLineMetaCount + 1u;
+    struct UploadRange
     {
-        SetRuntimeFailure("the compositor staging slot is not mapped");
-        return false;
+        u64 Offset = 0;
+        u64 Size = 0;
+    };
+    const u64 planeBytes = static_cast<u64>(kStructuredPixelCount) * sizeof(u32);
+    const u64 lineMetaBytes = 192u * sizeof(u32);
+    const u64 captureCommandBytes =
+        192u * StructuredComposition::kCaptureCommandWords * sizeof(u32);
+    std::array<u64, logicalUnitCount> unitOffsets{};
+    std::array<u64, logicalUnitCount> unitSizes{};
+    for (u32 unit = 0; unit < 14u; ++unit)
+    {
+        unitOffsets[unit] = static_cast<u64>(unit) * planeBytes;
+        unitSizes[unit] = planeBytes;
     }
+    unitOffsets[14u] = 14u * planeBytes;
+    unitOffsets[15u] = unitOffsets[14u] + lineMetaBytes;
+    unitOffsets[16u] = unitOffsets[15u] + lineMetaBytes;
+    unitSizes[14u] = lineMetaBytes;
+    unitSizes[15u] = lineMetaBytes;
+    unitSizes[16u] = captureCommandBytes;
+
+    std::array<bool, logicalUnitCount> dirty{};
+    const bool fullUpload = !slot.StructuredUploadInitialized;
+    for (u32 plane = 0; plane < 14u; ++plane)
     {
-        DX12Perf::ScopedCpuTimer packTimer(DX12Perf::CpuMetric::ComposePack);
-        const StructuredComposition::ScreenPackResult screenPack =
-            StructuredComposition::PackRoutedScreenPlanes(staging, screenRouting);
-        if (!screenPack.Valid)
-            return false;
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::StructuredRouteRuns, screenPack.RouteRuns);
-        for (std::size_t i = 8u; i < planes.size(); ++i)
+        dirty[plane] = fullUpload
+            || contentGeneration.Plane[plane]
+                != slot.UploadedContentGeneration.Plane[plane];
+    }
+    dirty[14u] = fullUpload
+        || contentGeneration.LineMeta[0] != slot.UploadedContentGeneration.LineMeta[0];
+    dirty[15u] = fullUpload
+        || contentGeneration.LineMeta[1] != slot.UploadedContentGeneration.LineMeta[1];
+    dirty[16u] = fullUpload
+        || contentGeneration.CaptureCommands
+            != slot.UploadedContentGeneration.CaptureCommands;
+
+    std::array<UploadRange, logicalUnitCount> ranges{};
+    std::size_t rangeCount = 0;
+    for (u32 unit = 0; unit < logicalUnitCount; ++unit)
+    {
+        if (!dirty[unit])
+            continue;
+        const u64 offset = unitOffsets[unit];
+        const u64 size = unitSizes[unit];
+        if (rangeCount != 0
+            && ranges[rangeCount - 1].Offset + ranges[rangeCount - 1].Size == offset)
         {
-            std::memcpy(
-                staging + i * kStructuredPixelCount,
-                planes[i],
-                static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+            ranges[rangeCount - 1].Size += size;
         }
-        u32* metaDestination = staging + (kStructuredPixelCount * planes.size());
-        std::memcpy(metaDestination, lineMeta[0], 192u * sizeof(u32));
-        std::memcpy(metaDestination + 192u, lineMeta[1], 192u * sizeof(u32));
-        std::memcpy(
-            metaDestination + 384u,
-            captureCommands,
-            192u * StructuredComposition::kCaptureCommandWords * sizeof(u32));
+        else
+        {
+            ranges[rangeCount++] = {offset, size};
+        }
     }
-    DX12Perf::AddCounter(
-        DX12Perf::Counter::StructuredPackBytes,
-        static_cast<u64>(kCompositionInputDwords) * sizeof(u32));
+    const bool uploadRequired = rangeCount != 0;
+    u64 packedBytes = 0;
+    u32 routeRuns = 0;
+    std::array<bool, 2> routeRunsCounted{};
+
+    if (uploadRequired)
+    {
+        u32* staging = slot.StructuredMapped;
+        if (!staging)
+        {
+            slot.Commands.Submit();
+            SetRuntimeFailure("the compositor staging slot is not mapped");
+            return false;
+        }
+        {
+            DX12Perf::ScopedCpuTimer packTimer(DX12Perf::CpuMetric::ComposePack);
+            for (u32 unit = 0; unit < logicalUnitCount; ++unit)
+            {
+                if (!dirty[unit])
+                    continue;
+                if (unit < 8u)
+                {
+                    // The per-plane path preserves the same routing contract
+                    // as PackRoutedScreenPlanes(staging, screenRouting).
+                    const u32 screen = unit / StructuredComposition::kPlaneCount;
+                    const u32 plane = unit % StructuredComposition::kPlaneCount;
+                    const StructuredComposition::ScreenPackResult screenPack =
+                        StructuredComposition::PackRoutedScreenPlane(
+                            staging + static_cast<std::size_t>(unit) * kStructuredPixelCount,
+                            screen, plane, screenRouting);
+                    if (!screenPack.Valid)
+                    {
+                        slot.Commands.Submit();
+                        return false;
+                    }
+                    if (!routeRunsCounted[screen])
+                    {
+                        routeRuns += screenPack.RouteRuns;
+                        routeRunsCounted[screen] = true;
+                    }
+                }
+                else if (unit < 14u)
+                {
+                    std::memcpy(
+                        staging + static_cast<std::size_t>(unit) * kStructuredPixelCount,
+                        planes[unit], static_cast<std::size_t>(kStructuredPixelCount) * sizeof(u32));
+                }
+                else if (unit < 16u)
+                {
+                    std::memcpy(
+                        staging + unitOffsets[unit] / sizeof(u32),
+                        lineMeta[unit - 14u], 192u * sizeof(u32));
+                }
+                else
+                {
+                    std::memcpy(
+                        staging + unitOffsets[unit] / sizeof(u32),
+                        captureCommands, captureCommandBytes);
+                }
+                packedBytes += unitSizes[unit];
+            }
+        }
+        DX12Perf::AddCounter(DX12Perf::Counter::StructuredPackBytes, packedBytes);
+        DX12Perf::AddCounter(DX12Perf::Counter::StructuredInputBytesPacked, packedBytes);
+        DX12Perf::AddCounter(DX12Perf::Counter::StructuredRouteRuns, routeRuns);
+    }
 
     DX12Perf::ScopedCpuTimer recordTimer(DX12Perf::CpuMetric::ComposeRecord);
 
@@ -2607,9 +2709,15 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     BoundSrvTable = {};
     ResetFrameSrvCache();
 
-    const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
-    list->CopyBufferRegion(
-        slot.StructuredInput.Get(), 0, slot.StructuredStaging.Get(), 0, inputBytes);
+    if (uploadRequired)
+    {
+        for (std::size_t i = 0; i < rangeCount; ++i)
+        {
+            list->CopyBufferRegion(
+                slot.StructuredInput.Get(), ranges[i].Offset,
+                slot.StructuredStaging.Get(), ranges[i].Offset, ranges[i].Size);
+        }
+    }
     TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
@@ -2680,6 +2788,24 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         SetRuntimeFailure("compositor command submission failed");
         return false;
     }
+
+    if (uploadRequired)
+    {
+        u64 uploadedBytes = 0;
+        for (std::size_t i = 0; i < rangeCount; ++i)
+            uploadedBytes += ranges[i].Size;
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::StructuredInputBytesUploaded, uploadedBytes);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::StructuredInputCopyRegionCount,
+            static_cast<u64>(rangeCount));
+        DX12Perf::AddCounter(
+            fullUpload
+                ? DX12Perf::Counter::StructuredInputFullUploadCount
+                : DX12Perf::Counter::StructuredInputPartialUploadCount);
+    }
+    slot.UploadedContentGeneration = contentGeneration;
+    slot.StructuredUploadInitialized = true;
 
     {
         std::lock_guard<std::mutex> lock(state->Mutex);

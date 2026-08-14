@@ -85,6 +85,7 @@ public:
         u32 StructuredRegularLines = 0;
         u32 StructuredFallbackLines = 0;
         u64 Generation = 0;
+        StructuredComposition::GenerationState ContentGeneration{};
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
@@ -119,6 +120,8 @@ private:
     std::array<u8, 4u * StructuredCapturePixelCount> StructuredCapturePixelVersion{};
     std::array<u8, 4u> StructuredCaptureBankVersion{};
     std::array<u8, 4u> StructuredCaptureBankWrittenThisFrame{};
+    std::array<u8, 192u> StructuredCaptureCommandWrittenThisFrame{};
+    std::array<u16, 192u> StructuredCaptureSourceBWidthThisFrame{};
     std::array<u32, StructuredPixelCount> StructuredCaptureSourceBNative{};
     std::array<u32, StructuredPixelCount> StructuredCaptureSourceBReference{};
     std::array<u32, 192u * StructuredComposition::kCaptureCommandWords> StructuredCaptureCommands{};
@@ -135,8 +138,75 @@ private:
     u32 StructuredRegularLines = 0;
     u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
+    StructuredComposition::GenerationState StructuredContentGeneration{};
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
+    inline void MarkStructuredPlaneDirty(u32 plane) noexcept
+    {
+        if (plane < StructuredComposition::kStructuredInputPlaneCount)
+            StructuredContentGeneration.Plane[plane] = StructuredFrameGeneration;
+    }
+    inline void MarkStructuredScreenPlanesDirty() noexcept
+    {
+        for (u32 plane = 0; plane < 8u; ++plane)
+            MarkStructuredPlaneDirty(plane);
+    }
+    inline void MarkStructuredLineMetaDirty(u32 screen) noexcept
+    {
+        if (screen < StructuredComposition::kStructuredInputLineMetaCount)
+        {
+            StructuredContentGeneration.LineMeta[screen] =
+                StructuredFrameGeneration;
+        }
+    }
+    inline void MarkStructuredCaptureCommandsDirty() noexcept
+    {
+        StructuredContentGeneration.CaptureCommands = StructuredFrameGeneration;
+    }
+    inline void StoreStructuredScreenSource(u32 screen, u32 line, u8 value) noexcept
+    {
+        if (screen >= 2u || line >= StructuredComposition::kScreenHeight)
+            return;
+        u8& destination = StructuredScreenSource[
+            static_cast<std::size_t>(screen) * StructuredComposition::kScreenHeight + line];
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredScreenPlanesDirty();
+    }
+    inline void StoreStructuredScreenPlaneWord(
+        u32 screen, u32 plane, std::size_t pixelIndex, u32 value) noexcept
+    {
+        if (screen >= 2u || plane >= StructuredComposition::kPlaneCount
+            || pixelIndex >= StructuredPixelCount)
+        {
+            return;
+        }
+        u32& destination = StructuredScreenPlanes[
+            static_cast<std::size_t>(screen) * StructuredComposition::kPlaneCount
+                * StructuredPixelCount
+            + static_cast<std::size_t>(plane) * StructuredPixelCount
+            + pixelIndex];
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredPlaneDirty(screen * StructuredComposition::kPlaneCount + plane);
+    }
+    inline void StoreStructuredCaptureSourceWord(
+        u32 plane, u32& destination, u32 value) noexcept
+    {
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredPlaneDirty(plane);
+    }
+    inline void StoreStructuredCaptureCommandWord(u32& destination, u32 value) noexcept
+    {
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredCaptureCommandsDirty();
+    }
     inline void StoreStructuredEnginePixel(
         u32 engine,
         u32 line,
@@ -193,14 +263,42 @@ private:
             captureReference = reference2;
         }
 
-        StructuredEnginePlanes[engineBase + pixelIndex] = plane0;
-        StructuredEnginePlanes[engineBase + StructuredPixelCount + pixelIndex] = plane1;
-        StructuredEnginePlanes[engineBase + (2u * StructuredPixelCount) + pixelIndex] =
+        const u32 control =
             ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
             | ((evb & 0xFFu) << Contract::kControlEvbShift)
             | ((eva & 0xFFu) << Contract::kControlEvaShift);
-        StructuredEnginePlanes[engineBase + (3u * StructuredPixelCount) + pixelIndex] =
-            captureReference;
+        std::array<bool, Contract::kPlaneCount> changedPlane{};
+        const auto store = [&](u32 plane, u32 value) {
+            u32& destination = StructuredEnginePlanes[
+                engineBase + (static_cast<std::size_t>(plane) * StructuredPixelCount)
+                + pixelIndex];
+            if (destination == value)
+                return;
+            destination = value;
+            changedPlane[plane] = true;
+            if (engine == 0u)
+                MarkStructuredPlaneDirty(8u + plane);
+        };
+        store(0u, plane0);
+        store(1u, plane1);
+        store(2u, control);
+        store(3u, captureReference);
+        for (u32 screen = 0; screen < 2u; ++screen)
+        {
+            const u8 source = StructuredScreenSource[
+                static_cast<std::size_t>(screen) * StructuredComposition::kScreenHeight
+                + line];
+            if (source != engine)
+                continue;
+            for (u32 plane = 0; plane < Contract::kPlaneCount; ++plane)
+            {
+                if (changedPlane[plane])
+                {
+                    MarkStructuredPlaneDirty(
+                        screen * Contract::kPlaneCount + plane);
+                }
+            }
+        }
     }
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
     void StoreStructuredCaptureLine(
@@ -223,6 +321,7 @@ private:
         const u16* sourceB,
         u32 sourceBBank,
         u32 sourceBAddress);
+    void FinalizeStructuredCaptureFrame();
     [[nodiscard]] bool SnapshotStructuredVramDisplayLine(
         u32 screen, u32 outputLine, u32 sourceLine);
     void BuildStructuredScreenLine(

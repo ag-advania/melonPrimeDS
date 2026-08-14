@@ -58,6 +58,11 @@ enum class Counter : u32
     YSpans,
     SetupIndices,
     StructuredPackBytes,
+    StructuredInputBytesPacked,
+    StructuredInputBytesUploaded,
+    StructuredInputCopyRegionCount,
+    StructuredInputFullUploadCount,
+    StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds,
     StructuredRegularLines,
@@ -321,7 +326,9 @@ inline void MaybeReport()
     std::fprintf(stderr,
         "[VulkanPerf] counters scale=%u frames=%llu raster_wait_ns=%llu raster_wait_count=%llu "
         "raster_no_wait_count=%llu raster_timeout_count=%llu polygons=%llu variants=%llu y_spans=%llu "
-        "setup_indices=%llu structured_pack_B=%llu route_copy_B=%llu route_copy_ns=%llu "
+        "setup_indices=%llu structured_pack_B=%llu structured_input_packed_B=%llu "
+        "structured_input_uploaded_B=%llu structured_input_regions=%llu structured_input_full=%llu "
+        "structured_input_partial=%llu route_copy_B=%llu route_copy_ns=%llu "
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
@@ -332,6 +339,11 @@ inline void MaybeReport()
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
         count(Counter::YSpans), count(Counter::SetupIndices), count(Counter::StructuredPackBytes),
+        count(Counter::StructuredInputBytesPacked),
+        count(Counter::StructuredInputBytesUploaded),
+        count(Counter::StructuredInputCopyRegionCount),
+        count(Counter::StructuredInputFullUploadCount),
+        count(Counter::StructuredInputPartialUploadCount),
         count(Counter::StructuredScreenRouteCopyBytes),
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
@@ -384,6 +396,11 @@ enum class Counter : u32
     YSpans,
     SetupIndices,
     StructuredPackBytes,
+    StructuredInputBytesPacked,
+    StructuredInputBytesUploaded,
+    StructuredInputCopyRegionCount,
+    StructuredInputFullUploadCount,
+    StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds,
     StructuredRegularLines,

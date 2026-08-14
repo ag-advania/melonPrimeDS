@@ -184,7 +184,8 @@ void DX12Renderer::VBlank()
         view.LineMeta[1],
     };
     const bool composed = dx12->ComposeStructuredOutput(
-        planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation);
+        planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
+        view.ContentGeneration);
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredScreenRouteCopyBytes,
         view.ScreenRouteCopyBytes);

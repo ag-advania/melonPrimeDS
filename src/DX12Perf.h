@@ -61,6 +61,11 @@ enum class Counter : u32
     SetupIndices,
     SpanUploadBytes,
     StructuredPackBytes,
+    StructuredInputBytesPacked,
+    StructuredInputBytesUploaded,
+    StructuredInputCopyRegionCount,
+    StructuredInputFullUploadCount,
+    StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds,
     StructuredRegularLines,
@@ -304,6 +309,8 @@ inline void MaybeReport()
         "raster_no_wait_count=%llu raster_timeout_count=%llu identical=%llu indirect_args_copy_B=%llu "
         "indirect_args_copy_count=%llu indirect_args_direct_writes=%llu polygons=%llu variants=%llu "
         "y_spans=%llu setup_indices=%llu span_upload_B=%llu structured_pack_B=%llu "
+        "structured_input_packed_B=%llu structured_input_uploaded_B=%llu "
+        "structured_input_regions=%llu structured_input_full=%llu structured_input_partial=%llu "
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
         "texture_upload_B=%llu upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
@@ -320,6 +327,11 @@ inline void MaybeReport()
         count(Counter::Polygons), count(Counter::Variants), count(Counter::YSpans),
         count(Counter::SetupIndices), count(Counter::SpanUploadBytes),
         count(Counter::StructuredPackBytes),
+        count(Counter::StructuredInputBytesPacked),
+        count(Counter::StructuredInputBytesUploaded),
+        count(Counter::StructuredInputCopyRegionCount),
+        count(Counter::StructuredInputFullUploadCount),
+        count(Counter::StructuredInputPartialUploadCount),
         count(Counter::StructuredScreenRouteCopyBytes),
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
@@ -353,7 +365,10 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames,
     DX12IndirectArgsCopyBytes, DX12IndirectArgsCopyCount, DX12IndirectArgsDirectWriteCount,
     Polygons, Variants, YSpans, SetupIndices,
-    SpanUploadBytes, StructuredPackBytes, StructuredScreenRouteCopyBytes,
+    SpanUploadBytes, StructuredPackBytes, StructuredInputBytesPacked,
+    StructuredInputBytesUploaded, StructuredInputCopyRegionCount,
+    StructuredInputFullUploadCount, StructuredInputPartialUploadCount,
+    StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount,

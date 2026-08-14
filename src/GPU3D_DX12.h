@@ -78,7 +78,8 @@ public:
         const std::array<const u32*, 2>& lineMeta,
         const u32* captureCommands,
         const StructuredComposition::ScreenRoutingView& screenRouting,
-        u64 generation);
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }

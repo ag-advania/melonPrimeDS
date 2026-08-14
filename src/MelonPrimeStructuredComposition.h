@@ -23,6 +23,7 @@
 
 #include "types.h"
 
+#include <array>
 #include <cstddef>
 #include <cstring>
 
@@ -99,6 +100,21 @@ struct ScreenPackResult
     u32 RouteRuns = 0;
 };
 
+// The device-local structured input keeps the same fourteen-plane,
+// line-metadata, and capture-command layout on every backend.  These
+// generations describe logical producer units within that layout; they are
+// deliberately separate from the frame generation used to identify a
+// composed output.
+inline constexpr u32 kStructuredInputPlaneCount = 14u;
+inline constexpr u32 kStructuredInputLineMetaCount = 2u;
+
+struct GenerationState
+{
+    std::array<u64, kStructuredInputPlaneCount> Plane{};
+    std::array<u64, kStructuredInputLineMetaCount> LineMeta{};
+    u64 CaptureCommands = 0;
+};
+
 // Pack the first eight compositor planes in screen-major/plane-major order.
 // Route runs are found once per screen, then copied across all four planes, so
 // the common two-constant-route frame uses eight large memcpy calls rather
@@ -155,6 +171,58 @@ inline ScreenPackResult PackRoutedScreenPlanes(
             ++result.RouteRuns;
             firstLine = endLine;
         }
+    }
+
+    result.Valid = true;
+    return result;
+}
+
+// Pack one routed screen plane.  The full-frame helper above remains the
+// canonical path for callers that need the complete eight-plane prefix; this
+// variant lets the Vulkan/DX12 upload paths pack only the logical plane units
+// whose producer generations changed.
+inline ScreenPackResult PackRoutedScreenPlane(
+    u32* destination,
+    u32 screen,
+    u32 plane,
+    const ScreenRoutingView& routing) noexcept
+{
+    ScreenPackResult result{};
+    if (!destination || screen >= 2u || plane >= kPlaneCount
+        || !routing.ScreenSource[screen])
+    {
+        return result;
+    }
+
+    u32 firstLine = 0u;
+    while (firstLine < kScreenHeight)
+    {
+        const u8 source = routing.ScreenSource[screen][firstLine];
+        if (source > kScreenSourceFallback)
+            return result;
+
+        u32 endLine = firstLine + 1u;
+        while (endLine < kScreenHeight
+            && routing.ScreenSource[screen][endLine] == source)
+        {
+            ++endLine;
+        }
+
+        const u32* sourcePlane = source == kScreenSourceFallback
+            ? routing.FallbackPlane[screen][plane]
+            : routing.EnginePlane[source][plane];
+        if (!sourcePlane)
+            return result;
+
+        const std::size_t firstPixel =
+            static_cast<std::size_t>(firstLine) * kScreenWidth;
+        const std::size_t copyBytes =
+            static_cast<std::size_t>(endLine - firstLine)
+            * kScreenWidth * sizeof(u32);
+        std::memcpy(destination + firstPixel, sourcePlane + firstPixel, copyBytes);
+
+        ++result.RouteRuns;
+        firstLine = endLine;
     }
 
     result.Valid = true;
