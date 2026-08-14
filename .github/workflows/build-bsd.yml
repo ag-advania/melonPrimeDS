@@ -286,7 +286,7 @@ jobs:
 
         loader=""
         for lib_root in /usr/local/lib /usr/pkg/lib /usr/X11R6/lib /usr/X11R7/lib; do
-          for candidate in "$lib_root"/libvulkan.so.1 "$lib_root"/libvulkan.so; do
+          for candidate in "$lib_root"/libvulkan.so "$lib_root"/libvulkan.so.*; do
             if [ -f "$candidate" ]; then
               loader="$candidate"
               break 2

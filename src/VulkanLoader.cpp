@@ -20,13 +20,20 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #if defined(_WIN32)
     #include <windows.h>
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    #include <glob.h>
 #else
+    #include <dlfcn.h>
+#endif
+
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
     #include <dlfcn.h>
 #endif
 
@@ -43,12 +50,13 @@ namespace
 // absent on a user's machine, while libvulkan.so.1 ships with the runtime. On
 // macOS packaged apps try the bundled MoltenVK runtime first so Vulkan does
 // not depend on Homebrew, the Vulkan SDK, or the Finder launch environment.
-const char* const* GetLibraryCandidates(size_t& outCount) noexcept
+std::vector<std::string> GetLibraryCandidates()
 {
+    std::vector<std::string> names;
 #if defined(_WIN32)
-    static const char* const names[] = { "vulkan-1.dll" };
+    names.emplace_back("vulkan-1.dll");
 #elif defined(__APPLE__)
-    static const char* const names[] = {
+    names = {
         "@executable_path/../Frameworks/libMoltenVK.dylib",
         "libvulkan.1.dylib",
         "libvulkan.dylib",
@@ -56,9 +64,36 @@ const char* const* GetLibraryCandidates(size_t& outCount) noexcept
         "@rpath/libvulkan.1.dylib",
     };
 #else
-    static const char* const names[] = { "libvulkan.so.1", "libvulkan.so" };
+    names = { "libvulkan.so.1", "libvulkan.so" };
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    // BSD package managers may install a fully versioned shared object such
+    // as OpenBSD's libvulkan.so.1.3 without providing either libvulkan.so.1
+    // or libvulkan.so. The production loader must test those exact installed
+    // candidates rather than relying on a file-exists probe to imply that a
+    // bare soname will resolve through the system's runtime search path.
+    constexpr const char* PackageLibRoots[] = {
+        "/usr/local/lib",
+        "/usr/pkg/lib",
+        "/usr/X11R6/lib",
+        "/usr/X11R7/lib",
+    };
+    for (const char* root : PackageLibRoots)
+    {
+        const std::string pattern = std::string(root) + "/libvulkan.so.*";
+        glob_t matches{};
+        if (::glob(pattern.c_str(), GLOB_NOSORT, nullptr, &matches) == 0)
+        {
+            for (size_t i = 0; i < matches.gl_pathc; i++)
+            {
+                const std::string candidate = matches.gl_pathv[i];
+                if (std::find(names.begin(), names.end(), candidate) == names.end())
+                    names.push_back(candidate);
+            }
+        }
+        ::globfree(&matches);
+    }
 #endif
-    outCount = sizeof(names) / sizeof(names[0]);
+#endif
     return names;
 }
 
@@ -146,27 +181,28 @@ bool Library::Open()
 
     FailureReason.clear();
 
-    size_t candidateCount = 0;
-    const char* const* candidates = GetLibraryCandidates(candidateCount);
+    const std::vector<std::string> candidates = GetLibraryCandidates();
     std::vector<std::string> openErrors;
 
-    for (size_t i = 0; i < candidateCount && !Handle; i++)
+    for (const std::string& candidate : candidates)
     {
-        Handle = OpenLibrary(candidates[i]);
+        Handle = OpenLibrary(candidate.c_str());
         if (Handle)
         {
-            LibraryName = candidates[i];
+            LibraryName = candidate;
         }
         else
         {
-            openErrors.emplace_back(std::string(candidates[i]) + ": " + GetLibraryOpenError());
+            openErrors.emplace_back(candidate + ": " + GetLibraryOpenError());
         }
+        if (Handle)
+            break;
     }
 
     if (!Handle)
     {
         FailureReason = "No Vulkan runtime could be loaded (tried ";
-        for (size_t i = 0; i < candidateCount; i++)
+        for (size_t i = 0; i < candidates.size(); i++)
         {
             if (i)
                 FailureReason += ", ";
