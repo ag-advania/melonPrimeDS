@@ -131,6 +131,9 @@ set(SOURCES_QT_SDL
 )
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
+option(MELONPRIME_REQUIRE_QT6_5
+    "Fail configure unless the selected Qt is Qt 6.5 or newer"
+    OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
 # Per-frame CSV capture for Vulkan present-pacing A/B measurement.
@@ -262,6 +265,21 @@ endif()
 
 if (USE_QT6)
     find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
+    set(_melonprime_qt6_version "${Qt6_VERSION}")
+    if (NOT _melonprime_qt6_version)
+        set(_melonprime_qt6_version "${Qt6Core_VERSION}")
+    endif()
+    message(STATUS "MelonPrime Qt6 version: ${_melonprime_qt6_version}")
+    if (MELONPRIME_REQUIRE_QT6_5)
+        if (NOT _melonprime_qt6_version)
+            message(FATAL_ERROR
+                "MELONPRIME_REQUIRE_QT6_5 is ON, but CMake did not report a Qt6 version")
+        endif()
+        if (_melonprime_qt6_version VERSION_LESS "6.5.0")
+            message(FATAL_ERROR
+                "MELONPRIME_REQUIRE_QT6_5 is ON, but Qt ${_melonprime_qt6_version} was found; Qt 6.5+ is required")
+        endif()
+    endif()
     if (WIN32 AND MINGW AND TARGET WrapRt::WrapRt)
         # Qt's FindWrapRt can pick up MSYS /usr/lib/librt.a during a MinGW
         # configure, but Windows targets do not need librt and cannot link it.
@@ -283,6 +301,10 @@ if (USE_QT6)
         endif()
     endif()
 else()
+    if (MELONPRIME_REQUIRE_QT6_5)
+        message(FATAL_ERROR
+            "MELONPRIME_REQUIRE_QT6_5 is ON, but USE_QT6 is OFF; Qt 6.5+ is required")
+    endif()
     find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia Svg REQUIRED)
     set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Multimedia)
 endif()
@@ -535,6 +557,31 @@ if (MELONPRIME_VULKAN_ACTIVE)
         DEPENDS melonprime_vulkan_present_pacer_dispatch_tests
         COMMENT "Running Vulkan present pacer fake-dispatch tests..."
         VERBATIM)
+
+    if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD|NetBSD|OpenBSD")
+        # Exercise the production VulkanLoader::Library::Open() path against
+        # the installed runtime. A successful file-exists probe is not enough:
+        # this target must resolve the loader's global entry points through the
+        # same dlopen() implementation used by melonPrimeDS.
+        add_executable(melonprime_vulkan_loader_open_tests
+            ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-loader-open-tests.cpp)
+        target_include_directories(melonprime_vulkan_loader_open_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../..
+            "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+        target_compile_definitions(melonprime_vulkan_loader_open_tests PRIVATE
+            MELONPRIME_DS
+            MELONPRIME_ENABLE_VULKAN=1)
+        target_link_libraries(melonprime_vulkan_loader_open_tests PRIVATE
+            core
+            ${CMAKE_DL_LIBS})
+        set_target_properties(melonprime_vulkan_loader_open_tests PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        add_custom_target(melonprime_vulkan_loader_open_check
+            COMMAND $<TARGET_FILE:melonprime_vulkan_loader_open_tests>
+            DEPENDS melonprime_vulkan_loader_open_tests
+            COMMENT "Running production Vulkan loader open check..."
+            VERBATIM)
+    endif()
 
     if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         # Exercise the production renderer-selection code in both forced

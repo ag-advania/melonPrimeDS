@@ -212,12 +212,54 @@ jobs:
         cmake -S "$GITHUB_WORKSPACE" -B /tmp/build -G Ninja \
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_VULKAN=ON \
+          -DMELONPRIME_REQUIRE_QT6_5=ON \
           -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
           >"$configure_log" 2>&1
         cat "$configure_log"
         grep -F "MelonPrime Vulkan backend: enabled" "$configure_log"
 
-    - name: Verify BSD Vulkan dependencies and shader source sync
+    - name: Verify Qt 6.5+
+      run: |
+        set -eu
+
+        qt_version=""
+        qt_source=""
+        for package in Qt6Core Qt6Core6; do
+          candidate="$(pkg-config --modversion "$package" 2>/dev/null || true)"
+          if [ -n "$candidate" ]; then
+            qt_version="$candidate"
+            qt_source="pkg-config:$package"
+            break
+          fi
+        done
+        if [ -z "$qt_version" ]; then
+          for tool in qtpaths6 qtpaths; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              candidate="$("$tool" --qt-version 2>/dev/null || true)"
+              if [ -n "$candidate" ]; then
+                qt_version="$candidate"
+                qt_source="$tool"
+                break
+              fi
+            fi
+          done
+        fi
+        if [ -z "$qt_version" ]; then
+          echo "Qt 6 version could not be queried."
+          exit 1
+        fi
+        qt_major="${qt_version%%.*}"
+        qt_minor="${qt_version#*.}"
+        qt_minor="${qt_minor%%.*}"
+        case "$qt_major" in ''|*[!0-9]*) echo "Invalid Qt major version: $qt_version"; exit 1;; esac
+        case "$qt_minor" in ''|*[!0-9]*) echo "Invalid Qt minor version: $qt_version"; exit 1;; esac
+        if [ "$qt_major" -lt 6 ] || { [ "$qt_major" -eq 6 ] && [ "$qt_minor" -lt 5 ]; }; then
+          echo "Qt $qt_version is too old; Qt 6.5+ is required."
+          exit 1
+        fi
+        echo "qt_version=$qt_version source=$qt_source"
+
+    - name: Verify Vulkan headers
       run: |
         set -eu
 
@@ -238,9 +280,13 @@ jobs:
         fi
         echo "vulkan_headers=$headers"
 
+    - name: Verify Vulkan loader candidate files
+      run: |
+        set -eu
+
         loader=""
         for lib_root in /usr/local/lib /usr/pkg/lib /usr/X11R6/lib /usr/X11R7/lib; do
-          for candidate in "$lib_root"/libvulkan.so "$lib_root"/libvulkan.so.*; do
+          for candidate in "$lib_root"/libvulkan.so.1 "$lib_root"/libvulkan.so; do
             if [ -f "$candidate" ]; then
               loader="$candidate"
               break 2
@@ -257,6 +303,10 @@ jobs:
         esac
         echo "vulkan_loader=$loader"
 
+    - name: Verify shader source sync
+      run: |
+        set -eu
+
         python_cmd=""
         for candidate in python3.14 python3.13 python3.12 python3 python; do
           if command -v "$candidate" >/dev/null 2>&1; then
@@ -269,6 +319,12 @@ jobs:
           exit 1
         fi
         "$python_cmd" tools/vulkan/compile-shaders.py --check-source-sync
+
+    - name: Build and run production Vulkan loader open check
+      run: |
+        set -eu
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_loader_open_check --parallel 1
 
     - name: Build and run BSD Vulkan validation targets
       run: |
@@ -286,6 +342,7 @@ jobs:
         cmake -S "$GITHUB_WORKSPACE" -B /tmp/build-vulkan-off -G Ninja \
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_VULKAN=OFF \
+          -DMELONPRIME_REQUIRE_QT6_5=ON \
           -DMELONPRIME_FORCE_DISABLE_VULKAN=ON \
           >"$configure_log" 2>&1
         cat "$configure_log"

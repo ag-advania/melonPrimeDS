@@ -9,9 +9,9 @@
 */
 
 // Fallback WSI adapter for platforms with no supported Vulkan surface
-// extension in this build -- currently the BSDs, which are build-only CI
-// coverage and where the private QPA headers the Linux adapter needs may not be
-// packaged.
+// extension in this build. The BSDs use the dedicated BSD X11 adapter; this
+// translation unit remains for other Unix-like platforms where the private QPA
+// headers needed by the Linux adapter may not be packaged.
 //
 // This is not a placeholder implementation: it is the honest answer for a
 // platform whose native handle this build cannot turn into a VkSurfaceKHR. It
