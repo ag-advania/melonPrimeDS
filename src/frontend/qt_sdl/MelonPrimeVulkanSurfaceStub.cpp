@@ -18,9 +18,7 @@
 // fails immediately with a reason the user can act on, and MainWindow then
 // falls back to the Qt presentation panel without changing the saved renderer.
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) \
-    && !defined(_WIN32) && !defined(__APPLE__) && !defined(__linux__) \
-    && !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)  // scatter-budget-exempt: platform-owned WSI adapter selection; this TU exists precisely to keep window-system code out of the shared path
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && !defined(_WIN32) && !defined(__APPLE__) && !defined(__linux__) && !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)  // scatter-budget-exempt: platform-owned WSI adapter selection; this TU exists precisely to keep window-system code out of the shared path
 
 #include "MelonPrimeVulkanSurface.h"
 
