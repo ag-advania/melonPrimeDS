@@ -5,7 +5,7 @@
 - Repository: `ag-advania/melonPrimeDS`
 - Branch: `develop_remakeVulkan_ver3`
 - 元監査・作業指示書HEAD: `94d767591d9c144491037ad07336563b85869736`
-- 今回の実装確認HEAD: `bd375cad7f38c0a3fb8a1734c3a50ec4dbddf7c4`
+- 今回の実装確認HEAD: `bd375cad7c926f22b0c5a7f429e4952d8f3a3e53`
 - 差分: 元監査HEADから **10 commits ahead / 0 behind**
 - 監査日: 2026-08-14
 - 対象: Vulkan低遅延技術、とくに `VK_GOOGLE_display_timing` fallback実装とその周辺契約
@@ -19,6 +19,10 @@
   - 今回こちらで新規の実機build/runtimeを実行したわけではない。
   - `PASS (repository evidence)` は、branchへ記録済みのbuild/runtime証拠を監査して妥当と判断したもの。
   - HEAD `bd375cad...` に対するGitHub combined statusはstatus entryなし。したがってGitHub Actions PASSとは数えない。
+
+> **Superseded:** 現行のcanonical判定は
+> `.codex/melonPrimeDS_Vulkan低遅延技術_353cd23c_コミット後再監査_2026-08-14.md`
+> を参照する。この文書は履歴資料として保持する。
 
 ---
 
@@ -101,7 +105,7 @@ VK_GOOGLE_display_timing  available
 からP2実装確認HEAD:
 
 ```text
-bd375cad7f38c0a3fb8a1734c3a50ec4dbddf7c4
+bd375cad7c926f22b0c5a7f429e4952d8f3a3e53
 ```
 
 まで10 commits進んでいる。
@@ -1830,7 +1834,7 @@ Google fallbackのcapability selectionを完全にbackend-neutral化し、
 実装commit:
 
 ```text
-bd375cad7f38c0a3fb8a1734c3a50ec4dbddf7c4
+bd375cad7c926f22b0c5a7f429e4952d8f3a3e53
 vulkan: complete Google timing fallback compatibility
 ```
 
