@@ -6,9 +6,10 @@
 - Repository: `ag-advania/melonPrimeDS`
 - Branch: `develop_remakeVulkan_ver3`
 - 前回監査HEAD: `0b5b49d10eb512ff87025afe4e02463514654786`
-- 今回HEAD: `bc849b0baf61db47dec8ee7657b8772b20d0c092`
-- HEAD commit: `Complete Vulkan renderer fallback re-audit`
-- 前回HEADから: `1 commit ahead / 0 behind`
+- 監査対象HEAD: `bc849b0baf61db47dec8ee7657b8772b20d0c092`
+- 監査対象commit: `Complete Vulkan renderer fallback re-audit`
+- 監査対象HEADの前回HEADから: `1 commit ahead / 0 behind`
+- 本報告書commit: `bd9160b5d42f7cdc55f5ab2149ad950ca2b88a73`
 - 前回P3-1: **CLOSED**
 - 前回P3-2: **CLOSED**
 - 前回P4-1: **CLOSED**
@@ -157,7 +158,7 @@ current branch:
 develop_remakeVulkan_ver3
 ```
 
-current HEAD:
+監査対象HEAD:
 
 ```text
 bc849b0baf61db47dec8ee7657b8772b20d0c092
@@ -186,6 +187,10 @@ behind_by:
 total_commits:
     1
 ```
+
+本報告書追加後のbranch tipは、報告書commit
+`bd9160b5d42f7cdc55f5ab2149ad950ca2b88a73`である。上記compareは、監査対象
+`bc849b0`が前回監査HEADから1 commit aheadであることを示す。
 
 **判定: Push確認 PASS**
 
@@ -1255,7 +1260,7 @@ panel transition
 
 # 24. GitHub-hosted CI
 
-current HEAD:
+監査対象source HEAD:
 
 ```text
 bc849b0baf61db47dec8ee7657b8772b20d0c092
@@ -2121,7 +2126,7 @@ AMD runtime
 
 # 42. 最終判定
 
-current HEAD:
+監査対象source HEAD:
 
 ```text
 bc849b0baf61db47dec8ee7657b8772b20d0c092
@@ -2203,6 +2208,9 @@ NO NEW P2/P3 PRODUCTION DEFECT FOUND
 GITHUB-HOSTED CI / EXTERNAL PLATFORM VALIDATION REMAIN OPEN
 ```
 
+なお、監査対象sourceは `bc849b0`、本報告書をbranchへ追加したcommitは
+`bd9160b5d42f7cdc55f5ab2149ad950ca2b88a73`である。
+
 ---
 
 # 43. GitHub参照
@@ -2213,16 +2221,22 @@ Branch:
 https://github.com/ag-advania/melonPrimeDS/tree/develop_remakeVulkan_ver3
 ```
 
-Current HEAD:
+Audited source HEAD:
 
 ```text
 https://github.com/ag-advania/melonPrimeDS/tree/bc849b0baf61db47dec8ee7657b8772b20d0c092
 ```
 
-Current commit:
+Audited source commit:
 
 ```text
 https://github.com/ag-advania/melonPrimeDS/commit/bc849b0baf61db47dec8ee7657b8772b20d0c092
+```
+
+Report commit:
+
+```text
+https://github.com/ag-advania/melonPrimeDS/commit/bd9160b5d42f7cdc55f5ab2149ad950ca2b88a73
 ```
 
 主要source:
