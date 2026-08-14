@@ -1180,6 +1180,9 @@ bool VulkanPresenter::UpdateLayerDescriptorSets(Layer layer)
 
 VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(Layer layer, bool linearFilter) const noexcept
 {
+    const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if (texture.UsesDirect)
+        return texture.DirectDescriptorSets[linearFilter ? 1 : 0];
     return LayerDescriptorSets[static_cast<std::size_t>(layer)][linearFilter ? 1 : 0];
 }
 
@@ -1228,6 +1231,12 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     // so nothing the previous use of this slot recorded is still executing.
     Staging[frameIndex].Reset();
     Device.Fns().ResetDescriptorPool(Device.GetHandle(), DescriptorPools[frameIndex], 0);
+    for (LayerTexture& texture : Layers)
+    {
+        texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+        texture.UsesDirect = false;
+    }
 
     VkResult res = VK_SUCCESS;
     {
@@ -1435,6 +1444,9 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
     if (!EnsureLayerImage(layer, texture, frame.Width, frame.Height, LayerDebugName(layer)))
         return false;
+    texture.DirectView = VK_NULL_HANDLE;
+    texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+    texture.UsesDirect = false;
 
     VkBufferMemoryBarrier sourceBarrier{};
     sourceBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1489,6 +1501,75 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     return true;
 }
 
+bool VulkanPresenter::UploadLayerFromImage(
+    Layer layer, const melonDS::VulkanPresentedFrame& frame)
+{
+    if (!FrameOpen || CompositionOpen || !frame.HasDirectSampledOutput()
+        || frame.Width == 0 || frame.Height == 0
+        || (layer != Layer::ScreenTop && layer != Layer::ScreenBottom))
+    {
+        return false;
+    }
+
+    const VkImageView view = layer == Layer::ScreenTop
+        ? frame.DirectImageViewTop : frame.DirectImageViewBottom;
+    if (view == VK_NULL_HANDLE)
+        return false;
+
+    LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    const u32 frameIndex = Frames.GetFrameIndex();
+    std::array<VkDescriptorSetLayout, kPresenterSamplerCount> layouts{};
+    layouts.fill(SetLayout);
+    std::array<VkDescriptorSet, kPresenterSamplerCount> descriptorSets{};
+    VkDescriptorSetAllocateInfo allocateInfo{};
+    allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocateInfo.descriptorPool = DescriptorPools[frameIndex];
+    allocateInfo.descriptorSetCount = static_cast<u32>(descriptorSets.size());
+    allocateInfo.pSetLayouts = layouts.data();
+    const VkResult allocateResult = Device.Fns().AllocateDescriptorSets(
+        Device.GetHandle(), &allocateInfo, descriptorSets.data());
+    if (allocateResult != VK_SUCCESS)
+        return Fail("vkAllocateDescriptorSets(direct presenter layer)", allocateResult);
+
+    std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
+    std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
+    for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
+    {
+        imageInfos[sampler].sampler = sampler == 0 ? SamplerNearest : SamplerLinear;
+        imageInfos[sampler].imageView = view;
+        imageInfos[sampler].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writes[sampler].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[sampler].dstSet = descriptorSets[sampler];
+        writes[sampler].dstBinding = 0;
+        writes[sampler].descriptorCount = 1;
+        writes[sampler].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[sampler].pImageInfo = &imageInfos[sampler];
+    }
+    Device.Fns().UpdateDescriptorSets(
+        Device.GetHandle(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+    texture.Width = frame.Width;
+    texture.Height = frame.Height;
+    texture.DirectView = view;
+    texture.DirectDescriptorSets = descriptorSets;
+    texture.UsesDirect = true;
+    texture.HasContent = true;
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorCreateCount,
+        static_cast<u64>(descriptorSets.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorWriteCount,
+        static_cast<u64>(writes.size()));
+    return true;
+}
+
 
 void VulkanPresenter::BeginComposition()
 {
@@ -1530,7 +1611,7 @@ void VulkanPresenter::DrawLayer(Layer layer, const Quad& quad, Blend blend, bool
         return;
 
     const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
-    if (!texture.Image.IsValid() || !texture.HasContent)
+    if ((!texture.UsesDirect && !texture.Image.IsValid()) || !texture.HasContent)
         return;
 
     const VkDescriptorSet set = AcquireDescriptorSet(layer, linearFilter);
@@ -1565,7 +1646,7 @@ void VulkanPresenter::DrawRadar(
         return;
 
     const LayerTexture& texture = Layers[static_cast<std::size_t>(Layer::ScreenBottom)];
-    if (!texture.Image.IsValid() || !texture.HasContent)
+    if ((!texture.UsesDirect && !texture.Image.IsValid()) || !texture.HasContent)
         return;
 
     const VkDescriptorSet set = AcquireDescriptorSet(Layer::ScreenBottom, true);

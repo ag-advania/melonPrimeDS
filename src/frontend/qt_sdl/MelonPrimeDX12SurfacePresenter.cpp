@@ -194,6 +194,7 @@ void DX12SurfacePresenter::Shutdown() noexcept
     }
 
     NativeSource = nullptr;
+    NativeSourceDirect = false;
     OpenList = nullptr;
     OpaquePipeline.Reset();
     BlendedPipeline.Reset();
@@ -602,6 +603,13 @@ bool DX12SurfacePresenter::BeginFrame(
     Descriptors.Reset();
     NativeSource = nullptr;
     NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    NativeSourceDirect = false;
+    for (LayerTexture& texture : Layers)
+    {
+        texture.DirectTexture = nullptr;
+        texture.DirectArraySlice = 0;
+        texture.UsesDirect = false;
+    }
 
     const UINT index = Swapchain->GetCurrentBackBufferIndex();
     ID3D12Resource* backBuffer = BackBuffers[index].Get();
@@ -752,10 +760,14 @@ bool DX12SurfacePresenter::UploadLayerFromBuffer(
     {
         NativeSource = frame.Buffer;
         NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        NativeSourceDirect = false;
     }
     TransitionNativeSource(D3D12_RESOURCE_STATE_COPY_SOURCE);
 
     LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
+    layer.DirectTexture = nullptr;
+    layer.DirectArraySlice = 0;
+    layer.UsesDirect = false;
     TransitionLayer(layer, D3D12_RESOURCE_STATE_COPY_DEST);
     D3D12_TEXTURE_COPY_LOCATION source{};
     source.pResource = frame.Buffer;
@@ -776,12 +788,47 @@ bool DX12SurfacePresenter::UploadLayerFromBuffer(
     return true;
 }
 
+bool DX12SurfacePresenter::UploadLayerFromTexture(
+    Layer layerId,
+    const melonDS::DX12PresentedFrame& frame)
+{
+    if (!FrameOpen || !OpenList || !frame.HasDirectSampledOutput()
+        || frame.Width == 0 || frame.Height == 0
+        || (layerId != Layer::ScreenTop && layerId != Layer::ScreenBottom))
+    {
+        return false;
+    }
+
+    if (NativeSource && NativeSource != frame.DirectTexture)
+        return false;
+    if (NativeSource != frame.DirectTexture)
+    {
+        NativeSource = frame.DirectTexture;
+        // The renderer submitted the compositor UAV->PS transition before it
+        // published this leased frame. The presenter does not own that
+        // resource's producer transition; record the state it receives and
+        // leave it in PS_RESOURCE for the graphics draws and next producer.
+        NativeSourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        NativeSourceDirect = true;
+    }
+
+    LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
+    layer.DirectTexture = frame.DirectTexture;
+    layer.DirectArraySlice = layerId == Layer::ScreenTop ? 0u : 1u;
+    layer.Width = frame.Width;
+    layer.Height = frame.Height;
+    layer.UsesDirect = true;
+    layer.Valid = true;
+    return true;
+}
+
 bool DX12SurfacePresenter::AllocateLayerSrv(
     Layer layerId,
     D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
 {
     LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
-    if (!layer.Valid || !layer.Texture)
+    ID3D12Resource* source = layer.UsesDirect ? layer.DirectTexture : layer.Texture.Get();
+    if (!layer.Valid || !source)
         return false;
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     if (!Descriptors.Allocate(1, cpu, gpu))
@@ -790,11 +837,25 @@ bool DX12SurfacePresenter::AllocateLayerSrv(
         return false;
     }
     D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    desc.Format = layer.UsesDirect
+        ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.ViewDimension = layer.UsesDirect
+        ? D3D12_SRV_DIMENSION_TEXTURE2DARRAY : D3D12_SRV_DIMENSION_TEXTURE2D;
     desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    desc.Texture2D.MipLevels = 1;
-    Context->GetDevice()->CreateShaderResourceView(layer.Texture.Get(), &desc, cpu);
+    if (layer.UsesDirect)
+    {
+        desc.Texture2DArray.MostDetailedMip = 0;
+        desc.Texture2DArray.MipLevels = 1;
+        desc.Texture2DArray.FirstArraySlice = layer.DirectArraySlice;
+        desc.Texture2DArray.ArraySize = 1;
+        desc.Texture2DArray.PlaneSlice = 0;
+        desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+    }
+    else
+    {
+        desc.Texture2D.MipLevels = 1;
+    }
+    Context->GetDevice()->CreateShaderResourceView(source, &desc, cpu);
     return true;
 }
 
@@ -842,7 +903,8 @@ bool DX12SurfacePresenter::EndFrame()
 {
     if (!FrameOpen || !OpenList)
         return false;
-    TransitionNativeSource(D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (!NativeSourceDirect)
+        TransitionNativeSource(D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
     const UINT index = Swapchain->GetCurrentBackBufferIndex();
     D3D12_RESOURCE_BARRIER barrier{};

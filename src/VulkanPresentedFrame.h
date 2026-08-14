@@ -18,20 +18,33 @@
 namespace melonDS
 {
 
-// Opaque renderer -> presenter handoff. The backing buffer contains two
-// tightly packed BGRA8 screens and belongs to a leased compositor ring slot.
-// Both producers and consumers submit to the shared VulkanDevice main queue;
-// the presenter's compute-write -> transfer-read barrier provides the GPU-side
-// dependency, while RendererOutputLease provides the CPU-side lifetime.
+// Opaque renderer -> presenter handoff. The fallback backing buffer contains
+// two tightly packed BGRA8 screens; when the device supports the direct path,
+// the two sampleable RGBA8 images are the primary output. All resources belong
+// to a leased compositor ring slot. Both producers and consumers submit to the
+// shared VulkanDevice main queue, while RendererOutputLease provides the
+// CPU-side lifetime.
 struct VulkanPresentedFrame
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
+    VkImage DirectImageTop = VK_NULL_HANDLE;
+    VkImageView DirectImageViewTop = VK_NULL_HANDLE;
+    VkImage DirectImageBottom = VK_NULL_HANDLE;
+    VkImageView DirectImageViewBottom = VK_NULL_HANDLE;
     VkDeviceSize TopOffset = 0;
     VkDeviceSize BottomOffset = 0;
     u32 Width = 0;
     u32 Height = 0;
     u64 Serial = 0;
     u64 Generation = 0;
+
+    [[nodiscard]] bool HasDirectSampledOutput() const noexcept
+    {
+        return DirectImageTop != VK_NULL_HANDLE
+            && DirectImageViewTop != VK_NULL_HANDLE
+            && DirectImageBottom != VK_NULL_HANDLE
+            && DirectImageViewBottom != VK_NULL_HANDLE;
+    }
 };
 
 } // namespace melonDS

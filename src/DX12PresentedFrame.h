@@ -18,19 +18,27 @@
 namespace melonDS
 {
 
-// Opaque renderer -> presenter handoff. The resource contains two tightly
-// packed BGRA8 screens and belongs to a leased compositor ring slot. Renderer
-// and presenter submit to the same process-wide command queue, so queue order
-// supplies the GPU dependency and RendererOutputLease supplies CPU lifetime.
+// Opaque renderer -> presenter handoff. The fallback resource contains two
+// tightly packed BGRA8 screens; when the direct path is available, the
+// compositor slot's sampleable RGBA8 texture is the primary output. All
+// resources belong to a leased compositor ring slot. Renderer and presenter
+// submit to the same process-wide command queue, so queue order supplies the
+// GPU dependency and RendererOutputLease supplies CPU lifetime.
 struct DX12PresentedFrame
 {
     ID3D12Resource* Buffer = nullptr;
+    ID3D12Resource* DirectTexture = nullptr;
     u64 TopOffset = 0;
     u64 BottomOffset = 0;
     u32 Width = 0;
     u32 Height = 0;
     u64 Serial = 0;
     u64 Generation = 0;
+
+    [[nodiscard]] bool HasDirectSampledOutput() const noexcept
+    {
+        return DirectTexture != nullptr;
+    }
 };
 
 } // namespace melonDS

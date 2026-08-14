@@ -213,6 +213,7 @@ RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
 RWStructuredBuffer<uint> BlendContinuationState : register(u10);
 RWStructuredBuffer<uint> ResultWinner : register(u11);
 RWByteAddressBuffer IndirectArgs : register(u12);
+RWTexture2DArray<float4> DirectOutput : register(u13);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -2213,7 +2214,22 @@ void main(uint3 id : SV_DispatchThreadID)
             color = BrightnessDown(color, brightnessFactor, 15u);
     }
 
-    ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] = ToBgra8(color);
+    uint bgra8 = ToBgra8(color);
+    if (DispatchPad != 0u)
+    {
+        // ToBgra8 is the packed CPU/presenter word (B,G,R,A in memory). The
+        // direct texture is RGBA8, so preserve the existing channel order by
+        // expanding the packed bytes into normalized texture channels.
+        DirectOutput[uint3(id.x, scaledY, screen)] = float4(
+            float((bgra8 >> 16u) & 0xFFu) / 255.0,
+            float((bgra8 >> 8u) & 0xFFu) / 255.0,
+            float(bgra8 & 0xFFu) / 255.0,
+            float((bgra8 >> 24u) & 0xFFu) / 255.0);
+    }
+    else
+    {
+        ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] = bgra8;
+    }
 }
 )";
 

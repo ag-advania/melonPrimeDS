@@ -88,6 +88,11 @@ enum class Counter : u32
     NativeReadbackDemandCount,
     NativeReadbackWaitNs,
     PresentedScreenCopyBytes,
+    // Reserved for a future calibrated D3D12 timestamp query. Keep it
+    // explicit rather than deriving GPU time from the CPU recording timer.
+    PresentedScreenCopyGpuTimeNs,
+    DirectCompositorImageFrames,
+    FallbackCompositorBufferFrames,
     HudUploadBytes,
     HudTextureRecreateCount,
     Count,
@@ -318,7 +323,8 @@ inline void MaybeReport()
         "descriptor_cpu_ns=%llu presenter_descriptor_updates=%llu "
         "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
         "native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
-        "native_readback_wait_ns=%llu screen_copy_B=%llu hud_upload_B=%llu hud_recreates=%llu\n",
+        "native_readback_wait_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu "
+        "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -344,6 +350,8 @@ inline void MaybeReport()
         count(Counter::CaptureReadCount), count(Counter::NativeResolveCount),
         count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
         count(Counter::NativeReadbackWaitNs), count(Counter::PresentedScreenCopyBytes),
+        count(Counter::PresentedScreenCopyGpuTimeNs),
+        count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
 
     for (SampleWindow& window : state.Cpu)
@@ -376,7 +384,9 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     PresenterDescriptorUpdateCount, CompositorDescriptorUpdateCount,
     CompositorDropCount, CaptureReadCount, NativeResolveCount,
     NativeReadbackCopyBytes, NativeReadbackDemandCount, NativeReadbackWaitNs,
-    PresentedScreenCopyBytes, HudUploadBytes, HudTextureRecreateCount, Count };
+    PresentedScreenCopyBytes, PresentedScreenCopyGpuTimeNs,
+    DirectCompositorImageFrames, FallbackCompositorBufferFrames,
+    HudUploadBytes, HudTextureRecreateCount, Count };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}

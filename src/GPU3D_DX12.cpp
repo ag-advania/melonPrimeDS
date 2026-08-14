@@ -51,7 +51,7 @@ constexpr u64 kUploadRingBytes = 32ull * 1024 * 1024;
 constexpr u32 kDescriptorCount = 8192;
 constexpr u32 kStaticSrvCount = 5;
 constexpr u32 kTextureSrvCount = 1;
-constexpr u32 kUavTableSize = 13;
+constexpr u32 kUavTableSize = 14;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
@@ -86,6 +86,9 @@ struct UavDescriptorEntry
     u32 Elements = 0;
     u32 Stride = 0;
     bool Raw = false;
+    bool Texture = false;
+    DXGI_FORMAT Format = DXGI_FORMAT_UNKNOWN;
+    u32 ArraySize = 1;
 };
 
 bool CreateUavDescriptorTable(
@@ -104,23 +107,35 @@ bool CreateUavDescriptorTable(
             return false;
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
-        desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        desc.Buffer.FirstElement = 0;
-        desc.Buffer.CounterOffsetInBytes = 0;
-        if (entries[i].Raw)
+        if (entries[i].Texture)
         {
-            // RWByteAddressBuffer: a raw view is indexed in 32-bit words.
-            desc.Format = DXGI_FORMAT_R32_TYPELESS;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = 0;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+            desc.Format = entries[i].Format;
+            desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+            desc.Texture2DArray.MipSlice = 0;
+            desc.Texture2DArray.FirstArraySlice = 0;
+            desc.Texture2DArray.ArraySize = entries[i].ArraySize;
+            desc.Texture2DArray.PlaneSlice = 0;
         }
         else
         {
-            desc.Format = DXGI_FORMAT_UNKNOWN;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = entries[i].Stride;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+            desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            desc.Buffer.FirstElement = 0;
+            desc.Buffer.CounterOffsetInBytes = 0;
+            if (entries[i].Raw)
+            {
+                // RWByteAddressBuffer: a raw view is indexed in 32-bit words.
+                desc.Format = DXGI_FORMAT_R32_TYPELESS;
+                desc.Buffer.NumElements = entries[i].Elements;
+                desc.Buffer.StructureByteStride = 0;
+                desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+            }
+            else
+            {
+                desc.Format = DXGI_FORMAT_UNKNOWN;
+                desc.Buffer.NumElements = entries[i].Elements;
+                desc.Buffer.StructureByteStride = entries[i].Stride;
+                desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+            }
         }
 
         const D3D12_CPU_DESCRIPTOR_HANDLE handle{
@@ -143,9 +158,11 @@ struct DX12Renderer3D::OutputState
         DX12::ComPtr<ID3D12Resource> StructuredStaging;
         DX12::ComPtr<ID3D12Resource> StructuredInput;
         DX12::ComPtr<ID3D12Resource> Composed;
+        DX12::ComPtr<ID3D12Resource> DirectTexture;
         u32* StructuredMapped = nullptr;
         StructuredComposition::GenerationState UploadedContentGeneration{};
         bool StructuredUploadInitialized = false;
+        bool DirectTextureInShaderResource = false;
         DX12PresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
     };
@@ -178,6 +195,25 @@ struct DX12Renderer3D::OutputState
         ID3D12Device* device = context.GetDevice();
         const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
         const u64 screenBytes = static_cast<u64>(width) * height * sizeof(u32);
+        D3D12_FEATURE_DATA_FORMAT_SUPPORT formatSupport{};
+        formatSupport.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        const bool directFormatSupported =
+            SUCCEEDED(device->CheckFeatureSupport(
+                D3D12_FEATURE_FORMAT_SUPPORT,
+                &formatSupport,
+                sizeof(formatSupport)))
+            && (formatSupport.Support1 & D3D12_FORMAT_SUPPORT1_TEXTURE2D) != 0
+            && (formatSupport.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE) != 0
+            && (formatSupport.Support1
+                    & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW) != 0
+            && (formatSupport.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE) != 0;
+        DirectTextureEnabled = directFormatSupported;
+        if (!DirectTextureEnabled)
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "DX12: compositor direct texture disabled: RGBA8 lacks sampled or typed UAV support\n");
+        }
         for (Slot& slot : Slots)
         {
             if (!slot.Commands.Init(device, context.GetQueue())
@@ -205,7 +241,41 @@ struct DX12Renderer3D::OutputState
                 || !slot.StructuredMapped)
                 return false;
 
+        }
+
+        if (DirectTextureEnabled)
+        {
+            for (Slot& slot : Slots)
+            {
+                slot.DirectTexture = context.CreateTexture2D(
+                    DXGI_FORMAT_R8G8B8A8_UNORM,
+                    width,
+                    height,
+                    2,
+                    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    L"MelonPrime DX12 direct compositor output slot");
+                if (!slot.DirectTexture)
+                {
+                    DirectTextureEnabled = false;
+                    break;
+                }
+            }
+        }
+        if (!DirectTextureEnabled)
+        {
+            for (Slot& slot : Slots)
+            {
+                slot.DirectTexture.Reset();
+                slot.DirectTextureInShaderResource = false;
+            }
+        }
+
+        for (Slot& slot : Slots)
+        {
             slot.Frame.Buffer = slot.Composed.Get();
+            slot.Frame.DirectTexture = DirectTextureEnabled
+                ? slot.DirectTexture.Get() : nullptr;
             slot.Frame.TopOffset = 0;
             slot.Frame.BottomOffset = screenBytes;
             slot.Frame.Width = width;
@@ -216,6 +286,7 @@ struct DX12Renderer3D::OutputState
 
     DX12Context* Context = nullptr;
     bool OwnsContextReference = false;
+    bool DirectTextureEnabled = false;
     std::array<Slot, kCompositorFramesInFlight> Slots;
     std::mutex Mutex;
     int PublishedSlot = -1;
@@ -347,6 +418,7 @@ void DX12Renderer3D::Stop()
     ClearBitmapTex[0].Reset();
     ClearBitmapTex[1].Reset();
     DummyTexture.Reset();
+    DirectOutputDummy.Reset();
     DispatchSignature.Reset();
     RootSignature.Reset();
 
@@ -564,6 +636,19 @@ bool DX12Renderer3D::CreateFixedResources()
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
         L"MelonPrime DX12 dummy texture");
     if (!DummyTexture)
+        return false;
+
+    // Binding u13 is present in every compute descriptor table because the
+    // compositor shader has both the direct and fallback output declarations.
+    // Unsupported devices bind this valid, never-used UAV instead of leaving
+    // a descriptor undefined.
+    DirectOutputDummy = Context->CreateTexture2D(
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        1, 1, 2,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        L"MelonPrime DX12 direct compositor dummy");
+    if (!DirectOutputDummy)
         return false;
 
     ResolveBuffer = Context->CreateBuffer(
@@ -2724,6 +2809,16 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
+    if (slot.DirectTexture && slot.DirectTextureInShaderResource)
+    {
+        TransitionBuffer(
+            list,
+            slot.DirectTexture.Get(),
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        slot.DirectTextureInShaderResource = false;
+    }
+
     // The 3D final pass was submitted immediately before this list on the same
     // queue. This cross-list UAV barrier makes those writes visible without a
     // CPU fence wait.
@@ -2750,6 +2845,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     // The 3D X scroll now travels per scanline in the structured line
     // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
+    constants.Pad = slot.DirectTexture ? 1u : 0u;
     list->SetPipelineState(PipelineCaptureSidecar.Get());
     for (u32 captureLine = 0; captureLine < 192u; ++captureLine)
     {
@@ -2771,7 +2867,22 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1u);
-    InsertUavBarrier(list, slot.Composed.Get());
+    if (slot.DirectTexture)
+    {
+        InsertUavBarrier(list, slot.DirectTexture.Get());
+        TransitionBuffer(
+            list,
+            slot.DirectTexture.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        slot.DirectTextureInShaderResource = true;
+        DX12Perf::AddCounter(DX12Perf::Counter::DirectCompositorImageFrames);
+    }
+    else
+    {
+        InsertUavBarrier(list, slot.Composed.Get());
+        DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
+    }
     TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
@@ -2851,6 +2962,8 @@ bool DX12Renderer3D::BuildFrameUavDescriptors()
         { BlendStateBuffer.Get(), pixels, 4, false },
         { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
         { IndirectArgsBuffer.Get(), static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+        { DirectOutputDummy.Get(), 0, 0, false, true,
+            DXGI_FORMAT_R8G8B8A8_UNORM, 2 },
     };
     return CreateUavDescriptorTable(
         Context->GetDevice(), FrameUavDescriptors.GetIncrement(), FrameUavCpu,
@@ -2904,6 +3017,8 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
             { ResultWinnerBuffer.Get(),    resultWinnerElements,      4, false },
             { IndirectArgsBuffer.Get(),
                 static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+            { slot.DirectTexture ? slot.DirectTexture.Get() : DirectOutputDummy.Get(),
+                0, 0, false, true, DXGI_FORMAT_R8G8B8A8_UNORM, 2 },
         };
         if (!CreateUavDescriptorTable(
                 Context->GetDevice(), increment, CompositorUavCpu[slotIndex],

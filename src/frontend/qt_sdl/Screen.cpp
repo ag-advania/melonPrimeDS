@@ -2040,8 +2040,11 @@ void ScreenPanelDX12::drawScreen()
             : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom;
         if (gpuFrame)
         {
-            screenUploaded[kind] = dx12->presenter.UploadLayerFromBuffer(
-                layer, *gpuFrame, kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
+                ? dx12->presenter.UploadLayerFromTexture(layer, *gpuFrame)
+                : dx12->presenter.UploadLayerFromBuffer(
+                    layer, *gpuFrame,
+                    kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
         }
         else
         {
@@ -2143,10 +2146,13 @@ void ScreenPanelDX12::drawScreen()
         {
             if (!screenUploaded[1])
             {
-                screenUploaded[1] = dx12->presenter.UploadLayerFromBuffer(
-                    MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
-                    *gpuFrame,
-                    gpuFrame->BottomOffset);
+                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
+                    ? dx12->presenter.UploadLayerFromTexture(
+                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom, *gpuFrame)
+                    : dx12->presenter.UploadLayerFromBuffer(
+                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+                        *gpuFrame,
+                        gpuFrame->BottomOffset);
             }
 
             const float anchorX = topMatrix[0] * m_radarAnchorDsX

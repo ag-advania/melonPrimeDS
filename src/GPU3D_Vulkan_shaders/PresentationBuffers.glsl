@@ -65,6 +65,14 @@ layout (std430, set = 0, binding = 14) buffer CaptureSidecarBuffer
     uint CaptureSidecarPixels[];
 };
 
+// The compositor uses these only when the host sets pc._pad to one. Resolve,
+// CaptureSidecar, and the fallback compositor path still receive valid image
+// descriptors, but do not touch them. Separate 2D images keep the existing
+// presenter layer model (one view per LCD) and avoid an array-layer change in
+// the graphics presenter.
+layout (rgba8, set = 0, binding = 17) writeonly uniform image2D DirectOutputTop;
+layout (rgba8, set = 0, binding = 18) writeonly uniform image2D DirectOutputBottom;
+
 const uint StructuredPlaneStride = uint(NativePixelCount);
 const uint StructuredScreenStride = 4u * StructuredPlaneStride;
 const uint StructuredCaptureSourceBase = 8u * StructuredPlaneStride;

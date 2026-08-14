@@ -389,7 +389,9 @@ private:
     // the Resolve stage), slot 1 the compositor's. `presentationOutput` is the
     // buffer bound at binding 13, which is the only thing that differs.
     bool WriteRasterizerDescriptorSet(
-        u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput);
+        u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput,
+        VkImageView directOutputTop = VK_NULL_HANDLE,
+        VkImageView directOutputBottom = VK_NULL_HANDLE);
     VkDescriptorSet AcquireTextureSet(u32 frameIndex, VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 

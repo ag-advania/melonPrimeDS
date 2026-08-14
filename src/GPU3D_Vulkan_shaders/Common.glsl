@@ -55,6 +55,8 @@
         14  storage buffer            CaptureSidecar     (std430)
         15  storage buffer            BlendState         (std430)
         16  storage buffer            ResultWinner       (std430)
+        17  storage image             DirectOutputTop    (rgba8)
+        18  storage image             DirectOutputBottom (rgba8)
       set 1
         0   usampler2DArray           CurrentTexture
         1   sampler2DArray            Capture128Texture

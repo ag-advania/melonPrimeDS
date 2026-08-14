@@ -253,6 +253,25 @@ void main()
             color = BrightnessDown(color, brightnessFactor, 0xFu);
     }
 
-    PresentationOutput[screen * uint(FramebufferStride) + scaledY * uint(ScreenWidth) + id.x] =
-        ToBgra8(color);
+    uint bgra8 = ToBgra8(color);
+    if (pc._pad != 0u)
+    {
+        // ToBgra8 is the packed CPU/presenter word (B,G,R,A in memory). The
+        // direct image is RGBA8, so write the same four bytes as image
+        // channels without changing any compositor arithmetic.
+        vec4 rgba8 = vec4(
+            float((bgra8 >> 16u) & 0xFFu) / 255.0,
+            float((bgra8 >> 8u) & 0xFFu) / 255.0,
+            float(bgra8 & 0xFFu) / 255.0,
+            float((bgra8 >> 24u) & 0xFFu) / 255.0);
+        if (screen == 0u)
+            imageStore(DirectOutputTop, ivec2(id.x, scaledY), rgba8);
+        else
+            imageStore(DirectOutputBottom, ivec2(id.x, scaledY), rgba8);
+    }
+    else
+    {
+        PresentationOutput[screen * uint(FramebufferStride)
+            + scaledY * uint(ScreenWidth) + id.x] = bgra8;
+    }
 }

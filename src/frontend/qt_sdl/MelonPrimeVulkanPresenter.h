@@ -188,6 +188,13 @@ public:
         const melonDS::VulkanPresentedFrame& frame,
         VkDeviceSize sourceOffset);
 
+    // Binds the compositor's sampleable image directly. The image belongs to
+    // the retained renderer lease and is already in SHADER_READ_ONLY_OPTIMAL;
+    // this path deliberately contains no high-resolution buffer copy.
+    bool UploadLayerFromImage(
+        Layer layer,
+        const melonDS::VulkanPresentedFrame& frame);
+
     // Begins the render pass and clears the whole swapchain image to black,
     // which is what produces the letterbox/pillarbox bars.
     void BeginComposition();
@@ -272,6 +279,9 @@ private:
         melonDS::u32 Width = 0;
         melonDS::u32 Height = 0;
         bool HasContent = false;
+        VkImageView DirectView = VK_NULL_HANDLE;
+        std::array<VkDescriptorSet, 2> DirectDescriptorSets{};
+        bool UsesDirect = false;
     };
 
     bool AcquireContext();

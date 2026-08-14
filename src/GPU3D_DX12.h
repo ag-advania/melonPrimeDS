@@ -427,6 +427,7 @@ private:
     DX12::ComPtr<ID3D12Resource> MetaUniformUpload;
     u8* MetaUniformUploadPtr = nullptr;
     DX12::ComPtr<ID3D12Resource> DummyTexture;
+    DX12::ComPtr<ID3D12Resource> DirectOutputDummy;
 
     std::unique_ptr<u32[]> ClearBitmap[2];
     u8 ClearBitmapDirty = 0x3;

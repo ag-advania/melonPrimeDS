@@ -83,6 +83,12 @@ public:
         Layer layer,
         const melonDS::DX12PresentedFrame& frame,
         std::uint64_t sourceOffset);
+    // Binds one slice of the compositor's sampleable texture directly. The
+    // resource is already in PIXEL_SHADER_RESOURCE state and is retained by
+    // the caller's renderer output lease.
+    bool UploadLayerFromTexture(
+        Layer layer,
+        const melonDS::DX12PresentedFrame& frame);
     void BeginComposition() noexcept {}
     void DrawLayer(Layer layer, const Quad& quad, Blend blend, bool linearFilter);
     void DrawRadar(
@@ -110,8 +116,11 @@ private:
         std::uint32_t UploadRowPitch = 0;
         std::uint32_t Width = 0;
         std::uint32_t Height = 0;
+        ID3D12Resource* DirectTexture = nullptr;
+        std::uint32_t DirectArraySlice = 0;
         D3D12_RESOURCE_STATES State = D3D12_RESOURCE_STATE_COPY_DEST;
         bool Valid = false;
+        bool UsesDirect = false;
     };
 
     bool CreateSwapchain(std::uint32_t width, std::uint32_t height);
@@ -143,6 +152,7 @@ private:
     ID3D12GraphicsCommandList* OpenList = nullptr;
     ID3D12Resource* NativeSource = nullptr;
     D3D12_RESOURCE_STATES NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    bool NativeSourceDirect = false;
     HANDLE FrameLatencyWaitable = nullptr;
     std::uint32_t Width = 0;
     std::uint32_t Height = 0;

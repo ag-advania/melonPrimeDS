@@ -49,6 +49,8 @@ SET0_BINDINGS = [
     ("CaptureSidecar", 14),
     ("BlendState", 15),
     ("ResultWinner", 16),
+    ("DirectOutputTop", 17),
+    ("DirectOutputBottom", 18),
 ]
 SET1_BINDINGS = [
     ("CurrentTexture", 0),

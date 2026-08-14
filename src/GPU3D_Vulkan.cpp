@@ -118,6 +118,7 @@ constexpr u32 StructuredInputWords =
     + StructuredCaptureCommandCount;
 constexpr VkDeviceSize StructuredInputBytes =
     static_cast<VkDeviceSize>(StructuredInputWords) * sizeof(u32);
+constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace
 
@@ -128,6 +129,8 @@ struct VulkanRenderer3D::OutputState
         Vk::Buffer StructuredStaging;
         Vk::Buffer StructuredInput;
         Vk::Buffer Composed;
+        Vk::Image DirectImageTop;
+        Vk::Image DirectImageBottom;
         StructuredComposition::GenerationState UploadedContentGeneration{};
         bool StructuredUploadInitialized = false;
         VulkanPresentedFrame Frame;
@@ -139,6 +142,19 @@ struct VulkanRenderer3D::OutputState
         Device = device;
         const VkDeviceSize screenBytes =
             static_cast<VkDeviceSize>(width) * height * sizeof(u32);
+
+        VkFormatProperties directProperties{};
+        Device.InstanceFns().GetPhysicalDeviceFormatProperties(
+            Device.GetPhysicalDevice(), DirectCompositorFormat, &directProperties);
+        DirectImageEnabled =
+            (directProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0
+            && (directProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
+        if (!DirectImageEnabled)
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[Vulkan] compositor direct image disabled: RGBA8 lacks storage or sampled support\n");
+        }
 
         for (u32 i = 0; i < Slots.size(); ++i)
         {
@@ -164,8 +180,47 @@ struct VulkanRenderer3D::OutputState
                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
                     "MelonPrime Vulkan composed output slot"))
                 return false;
+        }
 
+        if (DirectImageEnabled)
+        {
+            for (Slot& slot : Slots)
+            {
+                Vk::Image::CreateInfo directInfo{};
+                directInfo.Format = DirectCompositorFormat;
+                directInfo.Width = width;
+                directInfo.Height = height;
+                directInfo.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+                directInfo.ViewType = VK_IMAGE_VIEW_TYPE_2D;
+                directInfo.DebugName = "MelonPrime Vulkan direct compositor output";
+                if (!slot.DirectImageTop.Create(Device, directInfo)
+                    || !slot.DirectImageBottom.Create(Device, directInfo))
+                {
+                    DirectImageEnabled = false;
+                    break;
+                }
+            }
+        }
+        if (!DirectImageEnabled)
+        {
+            for (Slot& slot : Slots)
+            {
+                slot.DirectImageTop.Destroy();
+                slot.DirectImageBottom.Destroy();
+            }
+        }
+
+        for (Slot& slot : Slots)
+        {
             slot.Frame.Buffer = slot.Composed.GetHandle();
+            slot.Frame.DirectImageTop = DirectImageEnabled
+                ? slot.DirectImageTop.GetHandle() : VK_NULL_HANDLE;
+            slot.Frame.DirectImageViewTop = DirectImageEnabled
+                ? slot.DirectImageTop.GetView() : VK_NULL_HANDLE;
+            slot.Frame.DirectImageBottom = DirectImageEnabled
+                ? slot.DirectImageBottom.GetHandle() : VK_NULL_HANDLE;
+            slot.Frame.DirectImageViewBottom = DirectImageEnabled
+                ? slot.DirectImageBottom.GetView() : VK_NULL_HANDLE;
             slot.Frame.TopOffset = 0;
             slot.Frame.BottomOffset = screenBytes;
             slot.Frame.Width = width;
@@ -176,6 +231,7 @@ struct VulkanRenderer3D::OutputState
 
     VulkanDevice Device;
     std::array<Slot, CompositorFramesInFlight> Slots;
+    bool DirectImageEnabled = false;
     std::mutex Mutex;
     int PublishedSlot = -1;
     u64 NextSerial = 1;
@@ -1808,7 +1864,8 @@ void VulkanRenderer3D::UpdateClearBitmap(VkCommandBuffer cmd, Vk::StagingRing& s
 }
 
 bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
-    u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput)
+    u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput,
+    VkImageView directOutputTop, VkImageView directOutputBottom)
 {
     VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
     VkDescriptorSet set = Descriptors.GetRasterizerSet(frameIndex, slot);
@@ -1818,6 +1875,11 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
 
     Vk::DescriptorWriter writer;
     writer.Reset();
+
+    if (directOutputTop == VK_NULL_HANDLE)
+        directOutputTop = FinalFB.GetView();
+    if (directOutputBottom == VK_NULL_HANDLE)
+        directOutputBottom = FinalFB.GetView();
 
     const bool ok =
         writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::MetaUniform),
@@ -1862,7 +1924,15 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::ResultWinner),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ResultWinnerBuffer.GetHandle(), 0, VK_WHOLE_SIZE);
 
-    if (!ok)
+    const bool directImagesOk = ok
+        && writer.WriteImage(set, static_cast<u32>(Vk::RasterizerBinding::DirectOutputTop),
+            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_NULL_HANDLE, directOutputTop,
+            VK_IMAGE_LAYOUT_GENERAL)
+        && writer.WriteImage(set, static_cast<u32>(Vk::RasterizerBinding::DirectOutputBottom),
+            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_NULL_HANDLE, directOutputBottom,
+            VK_IMAGE_LAYOUT_GENERAL);
+
+    if (!directImagesOk)
         return false;
 
     writer.Flush(Device.Fns(), Device.GetHandle());
@@ -2922,11 +2992,33 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 
+    const bool directImageOutput = outputSlot.DirectImageTop.IsValid()
+        && outputSlot.DirectImageBottom.IsValid();
+    if (directImageOutput)
+    {
+        const auto beginDirectWrite = [&](Vk::Image& image) {
+            const VkImageLayout previous = image.GetLayout();
+            image.RecordLayoutTransition(
+                cmd,
+                VK_IMAGE_LAYOUT_GENERAL,
+                previous == VK_IMAGE_LAYOUT_UNDEFINED
+                    ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+                    : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                previous == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT);
+        };
+        beginDirectWrite(outputSlot.DirectImageTop);
+        beginDirectWrite(outputSlot.DirectImageBottom);
+    }
+
     // Set-0 slot 1: identical to the rasterizer's set except that binding 13
     // points at the composed output instead of the native capture buffer.
     if (!WriteRasterizerDescriptorSet(
             frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
-            outputSlot.StructuredInput.GetHandle()))
+            outputSlot.StructuredInput.GetHandle(),
+            directImageOutput ? outputSlot.DirectImageTop.GetView() : VK_NULL_HANDLE,
+            directImageOutput ? outputSlot.DirectImageBottom.GetView() : VK_NULL_HANDLE))
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
         SetRuntimeFailure("could not write the compositor descriptor set");
@@ -2947,6 +3039,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     // 3D slot showing the 2D pixel underneath, which is what the software
     // renderer produces from an all-transparent 3D line.
     push.TexWidth = (GPU3D.AbortFrame || !FinalFBHasContent) ? 0u : 1u;
+    // The padding word is unused by the presentation stages otherwise and is
+    // deliberately reused as a mode bit so the shared 32-byte push contract
+    // does not change for the rasterizer pipelines.
+    push.Padding = directImageOutput ? 1u : 0u;
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
 
@@ -2979,6 +3075,26 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
+
+    if (directImageOutput)
+    {
+        const auto finishDirectRead = [&](Vk::Image& image) {
+            image.RecordLayoutTransition(
+                cmd,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT);
+        };
+        finishDirectRead(outputSlot.DirectImageTop);
+        finishDirectRead(outputSlot.DirectImageBottom);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::DirectCompositorImageFrames);
+    }
+    else
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::FallbackCompositorBufferFrames);
+    }
 
     bool composeSubmitted = false;
     {

@@ -1095,11 +1095,15 @@ void ScreenPanelVulkan::drawScreenFrame()
             const int kind = kinds[index] & 1;
             if (screenUploaded[kind])
                 continue;
-            screenUploaded[kind] = vulkan->presenter.UploadLayerFromBuffer(
-                kind == 0 ? MelonPrime::VulkanPresenter::Layer::ScreenTop
-                          : MelonPrime::VulkanPresenter::Layer::ScreenBottom,
-                *gpuFrame,
-                kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+            const auto layer = kind == 0
+                ? MelonPrime::VulkanPresenter::Layer::ScreenTop
+                : MelonPrime::VulkanPresenter::Layer::ScreenBottom;
+            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
+                ? vulkan->presenter.UploadLayerFromImage(layer, *gpuFrame)
+                : vulkan->presenter.UploadLayerFromBuffer(
+                    layer,
+                    *gpuFrame,
+                    kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
         }
     }
     else if (topPixels && bottomPixels)
@@ -1165,10 +1169,13 @@ void ScreenPanelVulkan::drawScreenFrame()
             // Vulkan path instead of leaving ScreenBottom empty (or stale).
             if (!screenUploaded[1])
             {
-                screenUploaded[1] = vulkan->presenter.UploadLayerFromBuffer(
-                    MelonPrime::VulkanPresenter::Layer::ScreenBottom,
-                    *gpuFrame,
-                    gpuFrame->BottomOffset);
+                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
+                    ? vulkan->presenter.UploadLayerFromImage(
+                        MelonPrime::VulkanPresenter::Layer::ScreenBottom, *gpuFrame)
+                    : vulkan->presenter.UploadLayerFromBuffer(
+                        MelonPrime::VulkanPresenter::Layer::ScreenBottom,
+                        *gpuFrame,
+                        gpuFrame->BottomOffset);
             }
 
             const float anchorX = topMatrix[0] * m_radarAnchorDsX

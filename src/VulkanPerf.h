@@ -81,6 +81,11 @@ enum class Counter : u32
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
+    // Reserved for a future calibrated Vulkan timestamp query. Keep it
+    // explicit rather than deriving GPU time from the CPU recording timer.
+    PresentedScreenCopyGpuTimeNs,
+    DirectCompositorImageFrames,
+    FallbackCompositorBufferFrames,
     NativeResolveCount,
     NativeReadbackCopyBytes,
     NativeReadbackDemandCount,
@@ -333,7 +338,8 @@ inline void MaybeReport()
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
         "presenter_descriptor_updates=%llu compositor_descriptor_updates=%llu compose_drops=%llu "
-        "screen_copy_B=%llu native_resolves=%llu native_readback_copy_B=%llu "
+        "screen_copy_B=%llu screen_copy_gpu_ns=%llu direct_image_frames=%llu "
+        "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
         "native_readback_demands=%llu native_readback_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
@@ -354,7 +360,9 @@ inline void MaybeReport()
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
         count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
-        count(Counter::PresentedScreenCopyBytes), count(Counter::NativeResolveCount),
+        count(Counter::PresentedScreenCopyBytes), count(Counter::PresentedScreenCopyGpuTimeNs),
+        count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
+        count(Counter::NativeResolveCount),
         count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
         count(Counter::NativeReadbackWaitNs));
     for (SampleWindow& window : state.Cpu)
@@ -419,6 +427,9 @@ enum class Counter : u32
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
+    PresentedScreenCopyGpuTimeNs,
+    DirectCompositorImageFrames,
+    FallbackCompositorBufferFrames,
     NativeResolveCount,
     NativeReadbackCopyBytes,
     NativeReadbackDemandCount,

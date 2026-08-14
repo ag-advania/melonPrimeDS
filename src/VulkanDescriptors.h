@@ -82,8 +82,10 @@ enum class RasterizerBinding : u32
                             // retained across bounded polygon batches
     ResultWinner = 16,      // STORAGE_BUFFER: polygon owning each result layer;
                             // used by native-resolution accepted-AA correction
+    DirectOutputTop = 17,   // STORAGE_IMAGE: sampleable RGBA8 top-screen output
+    DirectOutputBottom = 18,// STORAGE_IMAGE: sampleable RGBA8 bottom-screen output
 
-    Count           = 17
+    Count           = 19
 };
 
 // Set 1 -- texture resources, rebound when the active texture changes.
@@ -126,6 +128,8 @@ inline constexpr std::array<VkDescriptorType, RasterizerBindingCount> Rasterizer
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 14 CaptureSidecar
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 15 BlendState
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          // 16 ResultWinner
+    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,           // 17 DirectOutputTop
+    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,           // 18 DirectOutputBottom
 };
 
 inline constexpr std::array<VkDescriptorType, TextureBindingCount> TextureBindingTypes = {
@@ -144,7 +148,7 @@ static_assert(RasterizerBindingTypes[static_cast<size_t>(RasterizerBinding::Fina
     == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, "FinalFB must stay a storage image");
 static_assert(RasterizerBindingTypes[static_cast<size_t>(RasterizerBinding::PresentationOut)]
     == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    "PresentationOut must stay a storage buffer: Resolve and Compositor both write it directly");
+    "PresentationOut must stay a storage buffer for the fallback Resolve path");
 
 // Formats fixed by the contract. The feature probe verifies both against
 // VkFormatProperties before a device is declared eligible.
